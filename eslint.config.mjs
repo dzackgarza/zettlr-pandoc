@@ -13,7 +13,10 @@ export default [
       '*.js',
       'scripts/**/*.js',
       'resources/**/*.js',
-      '.webpack/**/*.js'
+      '.webpack/**/*.js',
+      // Electron-invoked CommonJS proof harnesses; same runner-script
+      // category as scripts/, and require() is their module system.
+      'test/**/*.cjs'
     ]
   },
   // This extends the following configs:
