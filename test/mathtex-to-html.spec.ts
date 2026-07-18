@@ -25,6 +25,11 @@ describe('Utility#katexToHTML()', function () {
     assert.match(html, /data-latex="\\left\\langle a, b/)
     assert.match(html, /data-latex="\\left\\langle y, x/)
     assert.match(html, /data-latex="\\mathrm\{H\}"/)
+
+    const stylesheet = document.getElementById('MJX-CHTML-styles')
+    assert.ok(stylesheet)
+    assert.match(stylesheet.textContent ?? '', /url\("mathjax\/mjx-ncm-ds\.woff2"\)/)
+    assert.doesNotMatch(stylesheet.textContent ?? '', /https?:\/\//)
   })
   it('renders into the supplied element synchronously', function () {
     const element = document.createElement('div')
