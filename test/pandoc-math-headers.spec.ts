@@ -77,6 +77,67 @@ describe('Pandoc math export headers', function () {
     assert.ok(html.includes('file:///'))
   })
 
+  it('renders canonical macros and mhchem in a local Chromium HTML export', async function () {
+    this.timeout(12000)
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-pandoc-browser-'))
+    const inputFile = path.join(directory, 'input.md')
+    const outputFile = path.join(directory, 'output.html')
+    const component = path.join(directory, 'assets', 'defaults', 'mathjax-tex-chtml.js')
+    const extensions = path.join(directory, 'assets', 'defaults', 'mathjax-tex-extensions')
+    const fontDirectory = path.join(directory, 'assets', 'defaults', 'mathjax-font')
+    const screenshot = path.join(directory, 'render.png')
+
+    await mkdir(path.dirname(component), { recursive: true })
+    await cp('node_modules/@mathjax/src/bundle/tex-chtml.js', component)
+    await cp('node_modules/@mathjax/src/bundle/input/tex/extensions', extensions, { recursive: true })
+    await cp('node_modules/@mathjax/mathjax-newcm-font/chtml', fontDirectory, { recursive: true })
+    await writeFile(inputFile, '$\\RR$ and $\\ce{H2O}$\n')
+
+    const config = {
+      export: {
+        cslLibrary: '',
+        cslStyle: '',
+        stripTags: false,
+        stripLinks: 'no' as const,
+        enforceMarkSupport: false
+      },
+      zkn: { linkFormat: 'link|title' as const }
+    }
+    const defaultsFile = await writeDefaults(
+      YAML.parse(await readFile('static/defaults/HTML.yaml', { encoding: 'utf8' })),
+      {
+        'input-files': [ inputFile ],
+        'output-file': outputFile,
+        standalone: true
+      },
+      config,
+      [],
+      directory,
+      component
+    )
+
+    await runPandoc(defaultsFile, outputFile)
+    const { stdout, stderr } = await execFileAsync('xvfb-run', [
+      '-a',
+      'chromium',
+      '--headless',
+      '--no-sandbox',
+      '--allow-file-access-from-files',
+      '--enable-logging=stderr',
+      '--v=0',
+      '--virtual-time-budget=10000',
+      `--screenshot=${screenshot}`,
+      '--dump-dom',
+      pathToFileURL(outputFile).href
+    ])
+
+    assert.strictEqual((stdout.match(/<mjx-container/g) ?? []).length, 2)
+    assert.ok(!stdout.includes('$\\RR$'))
+    assert.ok(!stdout.includes('$\\ce{H2O}$'))
+    assert.ok(stdout.includes('data-latex="\\mathbb{R}"'))
+    assert.ok(stdout.includes('data-latex="\\ce{H2O}"'))
+    assert.ok(!stderr.includes("MathJax Warning: Package 'mhchem' not found"))
+  })
   it('writes copied Reveal defaults through the exporter seam before real Pandoc output', async function () {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-pandoc-write-defaults-'))
     const defaultsDirectory = path.join(directory, 'defaults')
