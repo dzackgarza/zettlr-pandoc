@@ -46,9 +46,28 @@ export async function injectPandocMathHeaders (
       loader: {
         paths: {
           tex: `${pathToFileURL(path.join(path.dirname(mathJaxComponent), 'mathjax-tex-extensions')).href}/`,
-          fonts: `${pathToFileURL(path.dirname(mathJaxComponent)).href}/`
+          fonts: `${pathToFileURL(path.dirname(mathJaxComponent)).href}/`,
+          sre: pathToFileURL(path.join(path.dirname(mathJaxComponent), 'mathjax-sre')).href,
+          mathmaps: pathToFileURL(path.join(path.dirname(mathJaxComponent), 'mathjax-sre', 'mathmaps')).href
         },
         load: ['[tex]/mhchem']
+      },
+      options: {
+        enableSpeech: false,
+        enableBraille: false,
+        enableEnrichment: false,
+        a11y: {
+          speech: false,
+          braille: false
+        },
+        renderActions: {
+          assistiveMml: []
+        },
+        worker: {
+          path: pathToFileURL(path.join(path.dirname(mathJaxComponent), 'mathjax-sre')).href,
+          maps: pathToFileURL(path.join(path.dirname(mathJaxComponent), 'mathjax-sre', 'mathmaps')).href,
+          worker: 'speech-worker.js'
+        }
       },
       tex: {
         inlineMath: { '[+]': [[ '$', '$' ]] },
