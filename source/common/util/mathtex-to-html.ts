@@ -37,7 +37,7 @@ const tex = new TeX({
 })
 const chtml = new CHTML({
   fontData: MathJaxNewcmFont,
-  fontURL: `${document.baseURI === 'about:blank' ? '/' : document.baseURI}mathjax`,
+  fontURL: new URL('../mathjax', document.baseURI).href,
   dynamicPrefix: ''
 })
 const html = mathjax.document(document, { InputJax: tex, OutputJax: chtml })
