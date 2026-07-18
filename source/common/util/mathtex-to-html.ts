@@ -16,9 +16,8 @@
 import { mathjax } from '@mathjax/src/cjs/mathjax.js'
 import { TeX } from '@mathjax/src/cjs/input/tex.js'
 import { CHTML } from '@mathjax/src/cjs/output/chtml.js'
-import { liteAdaptor } from '@mathjax/src/cjs/adaptors/liteAdaptor.js'
+import { browserAdaptor } from '@mathjax/src/cjs/adaptors/browserAdaptor.js'
 import { RegisterHTMLHandler } from '@mathjax/src/cjs/handlers/html.js'
-import '@mathjax/src/cjs/util/asyncLoad/node.js'
 import '@mathjax/src/cjs/input/tex/ams/AmsConfiguration.js'
 import '@mathjax/src/cjs/input/tex/configmacros/ConfigMacrosConfiguration.js'
 import '@mathjax/src/cjs/input/tex/mhchem/MhchemConfiguration.js'
@@ -27,20 +26,48 @@ import '@mathjax/src/cjs/input/tex/noundefined/NoUndefinedConfiguration.js'
 import { MathJaxNewcmFont } from '@mathjax/mathjax-newcm-font/cjs/chtml.js'
 import { mathJaxConfig } from './mathjax-config'
 
-const adaptor = liteAdaptor()
+import './mathjax-newcm-dynamic'
+
+const adaptor = browserAdaptor()
 RegisterHTMLHandler(adaptor)
 
 const tex = new TeX({
   packages: mathJaxConfig.packages,
   macros: mathJaxConfig.macros
 })
-const chtml = new CHTML({ fontData: MathJaxNewcmFont })
-const html = mathjax.document('', { InputJax: tex, OutputJax: chtml })
+const chtml = new CHTML({
+  fontData: MathJaxNewcmFont,
+  fontURL: `${document.baseURI === 'about:blank' ? '/' : document.baseURI}mathjax`,
+  dynamicPrefix: ''
+})
+const html = mathjax.document(document, { InputJax: tex, OutputJax: chtml })
 
-chtml.font.loadDynamicFilesSync()
+mathjax.asyncLoad = () => Promise.resolve()
+
+let initialized = false
+let initializing: Promise<void> | undefined
+
+export function initializeMathJax (): Promise<void> {
+  if (initialized) return Promise.resolve()
+
+  if (initializing === undefined) {
+    initializing = chtml.font.loadDynamicFiles().then(() => {
+      html.updateDocument()
+      initialized = true
+    })
+  }
+
+  return initializing
+}
 
 function mathJaxToNode (equation: string, displayMode: boolean) {
-  return html.convert(equation, { display: displayMode })
+  if (!initialized) {
+    throw new Error('MathJax must be initialized before rendering')
+  }
+
+  const node = html.convert(equation, { display: displayMode })
+  html.updateDocument()
+  return node
 }
 
 /**
@@ -52,7 +79,7 @@ function mathJaxToNode (equation: string, displayMode: boolean) {
  * @param   {boolean}      displayMode  Whether to use displayMode.
  */
 export function katexToElem (equation: string, element: HTMLElement, displayMode: boolean) {
-  element.innerHTML = adaptor.outerHTML(mathJaxToNode(equation, displayMode))
+  element.replaceChildren(mathJaxToNode(equation, displayMode))
 }
 
 /**
@@ -64,5 +91,5 @@ export function katexToElem (equation: string, element: HTMLElement, displayMode
  * @return  {string}                The equation as HTML.
  */
 export function katexToHTML (equation: string, displayMode: boolean): string {
-  return adaptor.outerHTML(mathJaxToNode(equation, displayMode))
+  return mathJaxToNode(equation, displayMode).outerHTML
 }

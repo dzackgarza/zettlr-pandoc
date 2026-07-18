@@ -19,6 +19,7 @@ import registerThemes from './register-themes'
 import registerDefaultContextMenu from './register-default-context'
 import loadIcons from './load-icons'
 import { loadData } from '@common/i18n-renderer'
+import { initializeMathJax } from '@common/util/mathtex-to-html'
 
 /**
  * This function is the renderer's counterpart to the main process's window
@@ -30,6 +31,9 @@ export default async function windowRegister (): Promise<void> {
   await loadData()
   // Load the clarity icons
   await loadIcons()
+
+  // Preload MathJax font data before synchronous document conversion begins.
+  await initializeMathJax()
 
   // ... the theming functionality ...
   registerThemes()
