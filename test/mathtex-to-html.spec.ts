@@ -14,10 +14,20 @@
 
 import { strict as assert } from "assert"
 import { execFileSync } from 'child_process'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
 import { initializeMathJax, mathJaxToElem, mathJaxToHTML } from "source/common/util/mathtex-to-html"
 
 it('requires initialization before conversion', function () {
   assert.throws(() => mathJaxToHTML('\\RR', 'inline'), Error)
+})
+
+it('registers the updater IPC handler only after MathJax initialization', function () {
+  const source = readFileSync(resolve('source/app/service-providers/updates/index.ts'), 'utf8')
+  const registration = source.indexOf("ipcMain.handle('update-provider'")
+  const initialization = source.indexOf('await initializeMathJax()')
+
+  assert.ok(registration > initialization)
 })
 
 it('renders updater Markdown with the lite adaptor without a global document', function () {
