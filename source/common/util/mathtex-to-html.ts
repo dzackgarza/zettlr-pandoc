@@ -2,21 +2,46 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        KaTeX rendering utility
+ * Contains:        MathJax rendering utility
  * CVM-Role:        Utility functions
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     This module contains helper functions to render MathTeX
- *                  equations into HTML strings and into elements. This module
- *                  should only be used in the renderer, as it also depends on
- *                  the KaTeX styles being loaded.
+ * Description:     This module renders MathTeX equations into CommonHTML strings
+ *                  and elements with MathJax.
  *
  * END HEADER
  */
 
-import katex from 'katex'
-import 'katex/contrib/mhchem'
+import { mathjax } from '@mathjax/src/cjs/mathjax.js'
+import { TeX } from '@mathjax/src/cjs/input/tex.js'
+import { CHTML } from '@mathjax/src/cjs/output/chtml.js'
+import { liteAdaptor } from '@mathjax/src/cjs/adaptors/liteAdaptor.js'
+import { RegisterHTMLHandler } from '@mathjax/src/cjs/handlers/html.js'
+import '@mathjax/src/cjs/util/asyncLoad/node.js'
+import '@mathjax/src/cjs/input/tex/ams/AmsConfiguration.js'
+import '@mathjax/src/cjs/input/tex/configmacros/ConfigMacrosConfiguration.js'
+import '@mathjax/src/cjs/input/tex/mhchem/MhchemConfiguration.js'
+import '@mathjax/src/cjs/input/tex/newcommand/NewcommandConfiguration.js'
+import '@mathjax/src/cjs/input/tex/noundefined/NoUndefinedConfiguration.js'
+import { MathJaxNewcmFont } from '@mathjax/mathjax-newcm-font/cjs/chtml.js'
+import { mathJaxConfig } from './mathjax-config'
+
+const adaptor = liteAdaptor()
+RegisterHTMLHandler(adaptor)
+
+const tex = new TeX({
+  packages: mathJaxConfig.packages,
+  macros: mathJaxConfig.macros
+})
+const chtml = new CHTML({ fontData: MathJaxNewcmFont })
+const html = mathjax.document('', { InputJax: tex, OutputJax: chtml })
+
+chtml.font.loadDynamicFilesSync()
+
+function mathJaxToNode (equation: string, displayMode: boolean) {
+  return html.convert(equation, { display: displayMode })
+}
 
 /**
  * Renders the provided equation to HTML and places it inside the provided
@@ -27,7 +52,7 @@ import 'katex/contrib/mhchem'
  * @param   {boolean}      displayMode  Whether to use displayMode.
  */
 export function katexToElem (equation: string, element: HTMLElement, displayMode: boolean) {
-  katex.render(equation, element, { throwOnError: false, displayMode })
+  element.innerHTML = adaptor.outerHTML(mathJaxToNode(equation, displayMode))
 }
 
 /**
@@ -39,5 +64,5 @@ export function katexToElem (equation: string, element: HTMLElement, displayMode
  * @return  {string}                The equation as HTML.
  */
 export function katexToHTML (equation: string, displayMode: boolean): string {
-  return katex.renderToString(equation, { throwOnError: false, displayMode })
+  return adaptor.outerHTML(mathJaxToNode(equation, displayMode))
 }
