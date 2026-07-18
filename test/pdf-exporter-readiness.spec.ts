@@ -178,7 +178,7 @@ describe('Simple PDF MathJax readiness', function () {
     )
     await assert.rejects(
       composePdfOperationAndCleanup(Promise.reject(operationError), Promise.reject(cleanupError)),
-      (error: unknown) => error instanceof AggregateError && error.errors.includes(operationError) && error.errors.includes(cleanupError)
+      (error: unknown) => error instanceof AggregateError && error.errors[0] === operationError && error.errors[1] === cleanupError
     )
   })
 
