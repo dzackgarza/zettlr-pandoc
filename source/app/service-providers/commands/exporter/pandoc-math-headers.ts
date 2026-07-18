@@ -43,7 +43,14 @@ export async function injectPandocMathHeaders (
     const header = path.join(temporaryDirectory, 'zettlr-mathjax-header.html')
     const fontDirectory = path.join(path.dirname(mathJaxComponent), 'mathjax-font')
     const config = JSON.stringify({
+      loader: {
+        paths: {
+          tex: `${pathToFileURL(path.join(path.dirname(mathJaxComponent), 'mathjax-tex-extensions')).href}/`
+        },
+        load: ['[tex]/mhchem']
+      },
       tex: {
+        inlineMath: { '[+]': [[ '$', '$' ]] },
         packages: { '[+]': mathJaxConfig.packages.slice(1) },
         macros: mathJaxConfig.macros
       },

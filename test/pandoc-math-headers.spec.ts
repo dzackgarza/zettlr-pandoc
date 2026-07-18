@@ -17,6 +17,7 @@ interface MathJaxWindow {
       paths?: Record<string, string>
     }
     tex?: {
+      inlineMath?: Record<string, string[][]>
       macros?: Record<string, unknown>
       packages?: Record<string, string[]>
     }
@@ -63,6 +64,7 @@ describe('Pandoc math export headers', function () {
     }
 
     assert.strictEqual(window.MathJax?.tex?.macros?.RR, '\\mathbb{R}')
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(window.MathJax?.tex?.inlineMath?.['[+]'])), [ [ '$', '$' ] ])
     assert.deepStrictEqual(Array.from(window.MathJax?.loader?.load ?? []), [ '[tex]/mhchem' ])
     assert.strictEqual(window.MathJax?.loader?.paths?.tex, `${pathToFileURL(path.join(path.dirname(component), 'mathjax-tex-extensions')).href}/`)
     assert.deepStrictEqual(Array.from(window.MathJax?.tex?.packages?.['[+]'] ?? []), [ 'ams', 'configmacros', 'mhchem', 'newcommand', 'noundefined' ])
