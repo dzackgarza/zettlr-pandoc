@@ -22,12 +22,11 @@ it('requires initialization before conversion', function () {
   assert.throws(() => mathJaxToHTML('\\RR', 'inline'), Error)
 })
 
-it('registers the updater IPC handler only after MathJax initialization', function () {
+it('registers updater IPC only after its boot initialization', function () {
   const source = readFileSync(resolve('source/app/service-providers/updates/index.ts'), 'utf8')
-  const registration = source.indexOf("ipcMain.handle('update-provider'")
-  const initialization = source.indexOf('await initializeMathJax()')
+  const boot = source.slice(source.indexOf('async boot (): Promise<void>'))
 
-  assert.ok(registration > initialization)
+  assert.ok(boot.indexOf('await initializeMathJax()') < boot.indexOf('this._registerIpcHandler()'))
 })
 
 it('renders updater Markdown with the lite adaptor without a global document', function () {

@@ -228,8 +228,9 @@ export default class UpdateProvider extends ProviderContract {
     // Initialize the write/read streams used during downloads
     this._downloadReadStream = undefined
     this._downloadWriteStream = undefined
+  }
 
-    // Handle events
+  private _registerIpcHandler (): void {
     ipcMain.handle('update-provider', async (event, data) => {
       const { command, payload } = data
 
@@ -699,6 +700,7 @@ export default class UpdateProvider extends ProviderContract {
 
   async boot (): Promise<void> {
     await initializeMathJax()
+    this._registerIpcHandler()
 
     // Initiate the update check
     setInterval(() => {
