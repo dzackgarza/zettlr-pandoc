@@ -32,6 +32,7 @@ module.exports = {
         { from: 'static/defaults', to: 'assets/defaults' },
         { from: 'node_modules/@mathjax/src/bundle/tex-chtml.js', to: 'assets/defaults/mathjax-tex-chtml.js' },
         { from: 'node_modules/@mathjax/src/bundle/input/tex/extensions', to: 'assets/defaults/mathjax-tex-extensions' },
+        { from: 'node_modules/@mathjax/mathjax-mhchem-font-extension', to: 'assets/defaults/mathjax-mhchem-font-extension' },
         { from: 'node_modules/@mathjax/mathjax-newcm-font/chtml', to: 'assets/defaults/mathjax-font' },
         { from: 'static/lua-filter', to: 'assets/lua-filter' },
         { from: 'resources/icons/icon.ico', to: 'assets/icons' },

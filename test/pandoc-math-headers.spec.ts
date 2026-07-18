@@ -67,6 +67,7 @@ describe('Pandoc math export headers', function () {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(window.MathJax?.tex?.inlineMath?.['[+]'])), [ [ '$', '$' ] ])
     assert.deepStrictEqual(Array.from(window.MathJax?.loader?.load ?? []), [ '[tex]/mhchem' ])
     assert.strictEqual(window.MathJax?.loader?.paths?.tex, `${pathToFileURL(path.join(path.dirname(component), 'mathjax-tex-extensions')).href}/`)
+    assert.strictEqual(window.MathJax?.loader?.paths?.fonts, `${pathToFileURL(path.dirname(component)).href}/`)
     assert.deepStrictEqual(Array.from(window.MathJax?.tex?.packages?.['[+]'] ?? []), [ 'ams', 'configmacros', 'mhchem', 'newcommand', 'noundefined' ])
     assert.match(window.MathJax?.chtml?.fontURL ?? '', /^file:\/\//)
     assert.match(config, /"RR": "\\\\mathbb\{R\}"/)
@@ -84,12 +85,14 @@ describe('Pandoc math export headers', function () {
     const outputFile = path.join(directory, 'output.html')
     const component = path.join(directory, 'assets', 'defaults', 'mathjax-tex-chtml.js')
     const extensions = path.join(directory, 'assets', 'defaults', 'mathjax-tex-extensions')
+    const mhchemFontExtension = path.join(directory, 'assets', 'defaults', 'mathjax-mhchem-font-extension')
     const fontDirectory = path.join(directory, 'assets', 'defaults', 'mathjax-font')
     const screenshot = path.join(directory, 'render.png')
 
     await mkdir(path.dirname(component), { recursive: true })
     await cp('node_modules/@mathjax/src/bundle/tex-chtml.js', component)
     await cp('node_modules/@mathjax/src/bundle/input/tex/extensions', extensions, { recursive: true })
+    await cp('node_modules/@mathjax/mathjax-mhchem-font-extension', mhchemFontExtension, { recursive: true })
     await cp('node_modules/@mathjax/mathjax-newcm-font/chtml', fontDirectory, { recursive: true })
     await writeFile(inputFile, '$\\RR$ and $\\ce{H2O}$\n')
 
@@ -132,6 +135,9 @@ describe('Pandoc math export headers', function () {
     ])
 
     assert.strictEqual((stdout.match(/<mjx-container/g) ?? []).length, 2)
+    const mathJaxConfig = stdout.match(/window\.MathJax = ([\s\S]*?)<\/script>/)?.[1] ?? ''
+    assert.ok(!mathJaxConfig.includes('https://'))
+    assert.ok(!mathJaxConfig.includes('http://'))
     assert.ok(!stdout.includes('$\\RR$'))
     assert.ok(!stdout.includes('$\\ce{H2O}$'))
     assert.ok(stdout.includes('data-latex="\\mathbb{R}"'))

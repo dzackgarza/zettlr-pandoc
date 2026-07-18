@@ -45,7 +45,8 @@ export async function injectPandocMathHeaders (
     const config = JSON.stringify({
       loader: {
         paths: {
-          tex: `${pathToFileURL(path.join(path.dirname(mathJaxComponent), 'mathjax-tex-extensions')).href}/`
+          tex: `${pathToFileURL(path.join(path.dirname(mathJaxComponent), 'mathjax-tex-extensions')).href}/`,
+          fonts: `${pathToFileURL(path.dirname(mathJaxComponent)).href}/`
         },
         load: ['[tex]/mhchem']
       },
