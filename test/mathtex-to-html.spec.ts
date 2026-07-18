@@ -34,7 +34,7 @@ describe('Utility#katexToHTML()', function () {
 
     const stylesheet = document.getElementById('MJX-CHTML-styles')
     assert.ok(stylesheet)
-    assert.match(stylesheet.textContent ?? '', /url\("\/mathjax\/mjx-ncm-ds\.woff2"\)/)
+    assert.match(stylesheet.textContent ?? '', /url\("http:\/\/localhost:3000\/main_window\/mathjax\/mjx-ncm-ds\.woff2"\)/)
     assert.doesNotMatch(stylesheet.textContent ?? '', /https?:\/\//)
   })
   it('renders into the supplied element synchronously', function () {
