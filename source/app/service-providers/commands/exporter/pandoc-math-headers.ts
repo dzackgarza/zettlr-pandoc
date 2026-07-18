@@ -2,7 +2,8 @@ import { promises as fs } from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { mathJaxConfig } from '@common/util/mathjax-config'
-import { projectMathJaxHeader, projectTexHeader } from './macro-projections'
+import { parseReaderWriter } from '@common/pandoc-util/parse-reader-writer'
+import { projectTexHeader } from './macro-projections'
 
 function headerFiles (defaults: Record<string, unknown>): string[] {
   const headers = defaults['include-in-header']
@@ -33,22 +34,26 @@ function isTexWriter (writer: string): boolean {
  */
 export async function injectPandocMathHeaders (
   defaults: Record<string, unknown>,
-  writer: string,
   temporaryDirectory: string,
   mathJaxComponent: string
 ): Promise<void> {
+  const writer = parseReaderWriter(defaults.writer as string).name
+
   if (isHtmlWriter(writer)) {
     const header = path.join(temporaryDirectory, 'zettlr-mathjax-header.html')
     const fontDirectory = path.join(path.dirname(mathJaxComponent), 'mathjax-font')
-    const options = JSON.stringify({
-      tex: { packages: { '[+]': mathJaxConfig.packages.slice(1) } },
+    const config = JSON.stringify({
+      tex: {
+        packages: { '[+]': mathJaxConfig.packages.slice(1) },
+        macros: mathJaxConfig.macros
+      },
       chtml: {
         fontURL: pathToFileURL(path.join(fontDirectory, 'woff2')).href,
         dynamicPrefix: pathToFileURL(path.join(fontDirectory, 'dynamic')).href
       }
     }, null, 2).replace(/<\/script/gi, '<\\/script')
 
-    await fs.writeFile(header, `${projectMathJaxHeader(mathJaxConfig.macros)}\n<script>\nObject.assign(window.MathJax, ${options});\n</script>\n<script defer src="${pathToFileURL(mathJaxComponent).href}"></script>\n`, { encoding: 'utf8' })
+    await fs.writeFile(header, `<script>\nwindow.MathJax = ${config};\n</script>\n<script defer src="${pathToFileURL(mathJaxComponent).href}"></script>\n`, { encoding: 'utf8' })
     defaults['include-in-header'] = [ ...headerFiles(defaults), header ]
     delete defaults['html-math-method']
   } else if (isTexWriter(writer)) {

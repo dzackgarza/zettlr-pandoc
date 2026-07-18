@@ -1,10 +1,24 @@
 import assert from 'assert'
 import { execFile } from 'child_process'
-import { mkdtemp, readFile, writeFile } from 'fs/promises'
+import { cp, mkdtemp, mkdir, readFile, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { promisify } from 'util'
+import { runInNewContext } from 'vm'
+import YAML from 'yaml'
 import { injectPandocMathHeaders } from 'source/app/service-providers/commands/exporter/pandoc-math-headers'
+
+interface MathJaxWindow {
+  MathJax?: {
+    tex?: {
+      macros?: Record<string, unknown>
+      packages?: Record<string, string[]>
+    }
+    chtml?: {
+      fontURL?: string
+    }
+  }
+}
 
 const execFileAsync = promisify(execFile)
 
@@ -21,30 +35,70 @@ describe('Pandoc math export headers', function () {
     const defaultsFile = path.join(directory, 'defaults.yaml')
     const existingHeader = path.join(directory, 'existing.html')
     const component = path.join(directory, 'mathjax', 'tex-chtml.js')
-    const defaults: Record<string, unknown> = {
-      from: 'markdown',
-      to: 'html',
-      standalone: true,
-      'input-files': [ inputFile ],
-      'output-file': outputFile,
-      'include-in-header': [ existingHeader ]
-    }
+    const defaults = YAML.parse(await readFile('static/defaults/HTML.yaml', { encoding: 'utf8' })) as Record<string, unknown>
+    defaults.standalone = true
+    defaults['input-files'] = [ inputFile ]
+    defaults['output-file'] = outputFile
+    defaults['include-in-header'] = [ existingHeader ]
 
     await writeFile(inputFile, '$\\RR$ and $\\ce{H2O}$\n')
     await writeFile(existingHeader, '<meta name="preserved-header" content="yes">')
-    await injectPandocMathHeaders(defaults, 'html', directory, component)
+    await mkdir(path.dirname(component), { recursive: true })
+    await cp('node_modules/@mathjax/src/bundle/tex-chtml.js', component)
+    await injectPandocMathHeaders(defaults, directory, component)
     await writeFile(defaultsFile, Object.entries(defaults).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n'))
 
     const html = await runPandoc(defaultsFile, outputFile)
     const configHeader = (defaults['include-in-header'] as string[])[1]
     const config = await readFile(configHeader, { encoding: 'utf8' })
+    const window: MathJaxWindow = {}
+    for (const script of config.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+      runInNewContext(script[1], { window })
+    }
 
+    assert.strictEqual(window.MathJax?.tex?.macros?.RR, '\\mathbb{R}')
+    assert.deepStrictEqual(Array.from(window.MathJax?.tex?.packages?.['[+]'] ?? []), [ 'ams', 'configmacros', 'mhchem', 'newcommand', 'noundefined' ])
+    assert.match(window.MathJax?.chtml?.fontURL ?? '', /^file:\/\//)
     assert.match(config, /"RR": "\\\\mathbb\{R\}"/)
     assert.match(config, /"mhchem"/)
     assert.match(config, /"fontURL": "file:\/\//)
-    assert.ok(html.indexOf('window.MathJax') < html.indexOf('tex-chtml.js'))
+    assert.match(config, /<\/script>\n<script defer src="file:\/\/[^\"]+tex-chtml\.js">/)
     assert.ok(html.includes('preserved-header'))
     assert.ok(html.includes('file:///'))
+  })
+
+  it('classifies copied Reveal, PDF, and plain-text profile defaults at the shared header seam', async function () {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-pandoc-profiles-'))
+    const existingHeader = path.join(directory, 'existing-header')
+    const component = path.join(directory, 'mathjax', 'tex-chtml.js')
+    const fixtureNames = [ 'Reveal.js.yaml', 'XeLaTeX PDF.yaml', 'Plain Text.yaml' ]
+    const profileDirectories = [ 'reveal', 'pdf', 'plain' ].map(name => path.join(directory, name))
+    await Promise.all(profileDirectories.map(async (profileDirectory, index) => {
+      await mkdir(profileDirectory, { recursive: true })
+      await cp(path.join('static/defaults', fixtureNames[index]), path.join(profileDirectory, 'copied-defaults.yaml'))
+    }))
+    const profiles = await Promise.all(profileDirectories.map(async profileDirectory => YAML.parse(await readFile(path.join(profileDirectory, 'copied-defaults.yaml'), { encoding: 'utf8' })) as Record<string, unknown>))
+
+    await writeFile(existingHeader, 'preserved')
+    await mkdir(path.dirname(component), { recursive: true })
+    await cp('node_modules/@mathjax/src/bundle/tex-chtml.js', component)
+
+    for (const [index, defaults] of profiles.entries()) {
+      defaults['include-in-header'] = [ existingHeader ]
+      await injectPandocMathHeaders(defaults, profileDirectories[index], component)
+    }
+
+    const [ reveal, pdf, plain ] = profiles
+    const revealHeaders = reveal['include-in-header'] as string[]
+    const pdfHeaders = pdf['include-in-header'] as string[]
+
+    assert.strictEqual(revealHeaders[0], existingHeader)
+    assert.strictEqual(pdfHeaders[0], existingHeader)
+    assert.strictEqual(revealHeaders.length, 2)
+    assert.strictEqual(pdfHeaders.length, 2)
+    assert.match(await readFile(revealHeaders[1], { encoding: 'utf8' }), /window\.MathJax/)
+    assert.match(await readFile(pdfHeaders[1], { encoding: 'utf8' }), /\\usepackage\[version=4\]\{mhchem\}/)
+    assert.deepStrictEqual(plain['include-in-header'], [ existingHeader ])
   })
 
   it('runs real Pandoc TeX with projected macros while preserving existing headers', async function () {
@@ -53,18 +107,15 @@ describe('Pandoc math export headers', function () {
     const outputFile = path.join(directory, 'output.tex')
     const defaultsFile = path.join(directory, 'defaults.yaml')
     const existingHeader = path.join(directory, 'existing.tex')
-    const defaults: Record<string, unknown> = {
-      from: 'markdown',
-      to: 'latex',
-      standalone: true,
-      'input-files': [ inputFile ],
-      'output-file': outputFile,
-      'include-in-header': [ existingHeader ]
-    }
+    const defaults = YAML.parse(await readFile('static/defaults/LaTeX.yaml', { encoding: 'utf8' })) as Record<string, unknown>
+    defaults.standalone = true
+    defaults['input-files'] = [ inputFile ]
+    defaults['output-file'] = outputFile
+    defaults['include-in-header'] = [ existingHeader ]
 
     await writeFile(inputFile, '$\\RR$ and $\\ce{H2O}$\n')
     await writeFile(existingHeader, '\\newcommand{\\Preserved}{yes}')
-    await injectPandocMathHeaders(defaults, 'latex', directory, path.join(directory, 'unused.js'))
+    await injectPandocMathHeaders(defaults, directory, path.join(directory, 'unused.js'))
     await writeFile(defaultsFile, Object.entries(defaults).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n'))
 
     const tex = await runPandoc(defaultsFile, outputFile)

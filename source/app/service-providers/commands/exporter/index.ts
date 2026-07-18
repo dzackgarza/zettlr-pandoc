@@ -258,10 +258,8 @@ async function writeDefaults (
     defaults[key] = properties[key]
   }
 
-  const parsedWriter = parseReaderWriter(defaults.writer as string)
   await injectPandocMathHeaders(
     defaults as Record<string, unknown>,
-    parsedWriter.name,
     app.getPath('temp'),
     path.join(__dirname, 'assets/defaults/mathjax-tex-chtml.js')
   )
