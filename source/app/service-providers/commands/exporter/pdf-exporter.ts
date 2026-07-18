@@ -18,9 +18,25 @@
 
 import path from 'path'
 import { promises as fs } from 'fs'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, type WebContents } from 'electron'
 import type { ExporterOptions, ExporterPlugin, ExporterOutput, ExporterAPI } from './types'
 import sanitize from 'sanitize-filename'
+
+export async function waitForPrintableHtmlReadiness (webContents: WebContents): Promise<void> {
+  await webContents.executeJavaScript(`
+    (async () => {
+      const mathJax = window.MathJax
+      if (mathJax === undefined || mathJax.startup === undefined || mathJax.startup.promise === undefined || mathJax.typesetPromise === undefined) {
+        throw new Error('Simple PDF MathJax runtime is unavailable')
+      }
+
+      await mathJax.startup.promise
+      await mathJax.typesetPromise()
+      await document.fonts.ready
+      document.documentElement.dataset.readiness = 'mathjax-and-fonts-ready'
+    })()
+  `)
+}
 
 export const plugin: ExporterPlugin = async function (options: ExporterOptions, sourceFiles: string[], ctx: ExporterAPI): Promise<ExporterOutput> {
   // First file determines the name of the output path, EXCEPT a title is
@@ -59,6 +75,7 @@ export const plugin: ExporterPlugin = async function (options: ExporterOptions, 
   })
 
   await printer.loadFile(htmlFilePath)
+  await waitForPrintableHtmlReadiness(printer.webContents)
   const pdfData = await printer.webContents.printToPDF({
     printBackground: false,
     landscape: false,
