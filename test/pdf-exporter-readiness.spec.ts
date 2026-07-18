@@ -11,8 +11,8 @@ const execFileAsync = promisify(execFile)
 
 async function runElectronReadinessProbe (htmlFile: string): Promise<string> {
   const result = await execFileAsync(
-    path.resolve('node_modules/.bin/electron'),
-    [ path.resolve('test/pdf-exporter-boundary.cjs'), htmlFile ],
+    'xvfb-run',
+    [ '-a', path.resolve('node_modules/.bin/electron'), path.resolve('test/pdf-exporter-boundary.cjs'), htmlFile ],
     {
       env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }
     }
@@ -21,6 +21,9 @@ async function runElectronReadinessProbe (htmlFile: string): Promise<string> {
 }
 
 describe('Simple PDF MathJax readiness', function () {
+  // A fresh Electron renderer exceeds Mocha's default two-second test budget.
+  this.timeout(10_000)
+
   it('loads actual Simple PDF HTML through BrowserWindow before proving MathJax and fonts are ready', async function () {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-simple-pdf-'))
     const inputFile = path.join(directory, 'input.md')
