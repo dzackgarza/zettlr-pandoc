@@ -3009,7 +3009,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/katex@npm:^0.16.0, @types/katex@npm:^0.16.8":
+"@types/katex@npm:^0.16.0":
   version: 0.16.8
   resolution: "@types/katex@npm:0.16.8"
   checksum: 10/4bf5d83d2430bc04c183765c5916c21180a75cb0181172a0aac7350943507679ceb79bfd13e394cf7c101b7417564d14c0c660baa93b16f2f42baef22a99435c
@@ -9579,7 +9579,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"katex@npm:^0.16.21":
+"katex@npm:^0.16.0, katex@npm:^0.16.25":
   version: 0.16.47
   resolution: "katex@npm:0.16.47"
   dependencies:
@@ -15790,7 +15790,6 @@ __metadata:
     "@types/command-exists": "npm:^1.2.3"
     "@types/d3": "npm:^7.4.3"
     "@types/gettext-parser": "npm:^9.0.0"
-    "@types/katex": "npm:^0.16.8"
     "@types/luxon": "npm:^3.7.1"
     "@types/md5": "npm:^2.3.6"
     "@types/mocha": "npm:^10.0.10"
@@ -15831,7 +15830,6 @@ __metadata:
     gettext-parser: "npm:^9.0.2"
     got: "npm:^11.8.6"
     jsdom: "npm:^29.1.1"
-    katex: "npm:^0.17.0"
     ky: "npm:^2.0.2"
     lang-criticmarkup: "npm:^0.3.0"
     less: "npm:^4.6.6"

@@ -27,12 +27,12 @@
           A JavaScript implementation of the Citation Style Language (CSL)
         </p>
       </div>
-      <div class="project-box" onclick="window.location = 'https://katex.org/'">
+      <div class="project-box" onclick="window.location = 'https://www.mathjax.org/'">
         <h4 class="project-name">
-          KaTeX
+          MathJax
         </h4>
         <p class="project-description">
-          Fast math typesetting for the web
+          JavaScript display engine for mathematics
         </p>
       </div>
       <div class="project-box" onclick="window.location = 'http://lesscss.org/'">

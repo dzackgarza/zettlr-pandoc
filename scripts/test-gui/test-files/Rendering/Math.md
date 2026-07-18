@@ -4,6 +4,18 @@ This file includes several cases to test out rendering of math equations:
 
 $x^2+y*(3+2)=z^2$
 
+## Configured Macros
+
+These use the fork's checked-in MathJax macro configuration.
+
+Inline: $\RR$ and $\pair{a}{b}$ and $\optpair{c}$.
+
+Display:
+
+$$
+\RR \subseteq \pair{\RR}{\RR}
+$$
+
 ## Block Rendering
 
 Now follows a math block (= display) equation which should even feature syntax highlighting so that you can easily edit it.
@@ -37,7 +49,7 @@ $$
 
 ## Chemical Formulae
 
-These are enabled by the mhchem extension to KaTeX. These examples are taken from the [official package's manpage](https://mhchem.github.io/MathJax-mhchem/). Feel free to add more if necessary.
+These are enabled by the mhchem extension to MathJax. These examples are taken from the [official package's manpage](https://mhchem.github.io/MathJax-mhchem/). Feel free to add more if necessary.
 
 One:
 

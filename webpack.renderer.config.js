@@ -12,6 +12,9 @@ const plugins = [
     patterns: [{
       from: 'node_modules/@mathjax/mathjax-newcm-font/chtml/woff2',
       to: 'mathjax'
+    }, {
+      from: 'node_modules/@mathjax/mathjax-mhchem-font-extension/chtml/woff2',
+      to: 'mathjax'
     }]
   }),
 

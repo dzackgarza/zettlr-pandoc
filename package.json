@@ -104,7 +104,6 @@
     "gemoji": "^8.1.0",
     "gettext-parser": "^9.0.2",
     "got": "^11.8.6",
-    "katex": "^0.17.0",
     "ky": "^2.0.2",
     "lang-criticmarkup": "^0.3.0",
     "luxon": "^3.7.2",
@@ -161,7 +160,6 @@
     "@electron/rebuild": "4.0.4",
     "node-gyp": "^12.1.0",
     "node-abi": "^3.74.0",
-    "katex": "^0.16.21",
     "yauzl": "^3.3.2"
   },
   "devDependencies": {
@@ -180,7 +178,6 @@
     "@types/command-exists": "^1.2.3",
     "@types/d3": "^7.4.3",
     "@types/gettext-parser": "^9.0.0",
-    "@types/katex": "^0.16.8",
     "@types/luxon": "^3.7.1",
     "@types/md5": "^2.3.6",
     "@types/mocha": "^10.0.10",

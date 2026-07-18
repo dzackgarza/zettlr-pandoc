@@ -46,6 +46,8 @@ process.stdout.write(await md2html('$$\\\\RR$$', { onCitation: () => undefined, 
 
 describe('Utility#mathJaxToHTML()', function () {
   before(async function () {
+    // Full-stylesheet initialization loads every dynamic font module once.
+    this.timeout(30000)
     await initializeMathJax()
   })
 

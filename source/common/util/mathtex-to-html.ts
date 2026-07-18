@@ -30,11 +30,23 @@ import { type MathDocument } from '@mathjax/src/cjs/core/MathDocument.js'
 import { type MmlNode } from '@mathjax/src/cjs/core/MmlTree/MmlNode.js'
 import { HTMLDocument } from '@mathjax/src/cjs/handlers/html/HTMLDocument.js'
 import { MathJaxNewcmFont } from '@mathjax/mathjax-newcm-font/cjs/chtml.js'
+import { MathJaxMhchemFontExtension } from '@mathjax/mathjax-mhchem-font-extension/cjs/chtml.js'
 import { mathJaxConfig } from './mathjax-config'
 
 import './mathjax-newcm-dynamic'
 
 const documentElement = globalThis.document
+
+// Register the mhchem glyphs (long reaction arrows and bonds) on the font
+// class before any output jax is constructed: with the complete stylesheet
+// (adaptiveCSS: false) only class-level registration emits the @font-face
+// rules for the extension's own woff2 files.
+MathJaxNewcmFont.addExtension({
+  ...MathJaxMhchemFontExtension,
+  fontURL: documentElement === undefined
+    ? ''
+    : new URL('../mathjax', documentElement.baseURI).href
+})
 
 const tex = new TeX({
   packages: mathJaxConfig.packages,
@@ -55,7 +67,10 @@ if (documentElement === undefined) {
   mainAdaptorInstance = liteAdaptor()
   mainChtml = new CHTML<LiteElement, LiteText, LiteDocument>({
     fontData: MathJaxNewcmFont,
-    dynamicPrefix: ''
+    dynamicPrefix: '',
+    // Emit the complete stylesheet: widgets render incrementally, so
+    // adaptive CSS would miss constructs first used after initialization.
+    adaptiveCSS: false
   })
   mainRenderer = new HTMLDocument(mainAdaptorInstance.parse(''), mainAdaptorInstance, { InputJax: tex, OutputJax: mainChtml })
 } else {
@@ -63,7 +78,10 @@ if (documentElement === undefined) {
   browserChtml = new CHTML({
     fontData: MathJaxNewcmFont,
     fontURL: new URL('../mathjax', documentElement.baseURI).href,
-    dynamicPrefix: ''
+    dynamicPrefix: '',
+    // Emit the complete stylesheet: widgets render incrementally, so
+    // adaptive CSS would miss constructs first used after initialization.
+    adaptiveCSS: false
   })
   browserRenderer = new HTMLDocument(documentElement, browserAdaptorInstance, { InputJax: tex, OutputJax: browserChtml })
 }
