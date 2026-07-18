@@ -83,10 +83,12 @@ export const plugin: ExporterPlugin = async function (options: ExporterOptions, 
         pageSize: 'A4'
       })
     })
-    .finally(() => printer.close())
+    .finally(async () => {
+      printer.close()
+      await fs.unlink(htmlFilePath)
+    })
 
   await fs.writeFile(pdfFilePath, pdfData)
-  await fs.unlink(htmlFilePath) // Remove the intermediary HTML file
 
   // Make sure to propagate the results
   return {

@@ -1,6 +1,6 @@
 import assert from 'assert'
 import { execFile } from 'child_process'
-import { cp, mkdtemp, mkdir, readFile, writeFile } from 'fs/promises'
+import { access, cp, mkdtemp, mkdir, readFile, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { promisify } from 'util'
@@ -35,15 +35,25 @@ async function runSimplePdfExport (defaultsFile: string, inputFile: string, targ
   return JSON.parse(output[1]) as { code: number, targetFile: string }
 }
 
-async function runMissingMathJaxExport (defaultsFile: string, inputFile: string, targetDirectory: string): Promise<string> {
-  const result = await execFileAsync(
-    'xvfb-run',
-    [ '-a', path.resolve('node_modules/.bin/electron'), path.resolve('test/pdf-exporter-readiness-failure.cjs'), defaultsFile, inputFile, targetDirectory ],
-    {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }
+async function runMissingMathJaxExport (defaultsFile: string, inputFile: string, targetDirectory: string): Promise<{ windows: number }> {
+  let failure: (NodeJS.ErrnoException & { code?: number, stdout: string }) | undefined
+  await assert.rejects(
+    execFileAsync(
+      'xvfb-run',
+      [ '-a', path.resolve('node_modules/.bin/electron'), path.resolve('test/pdf-exporter-readiness-failure.cjs'), defaultsFile, inputFile, targetDirectory ],
+      {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }
+      }
+    ),
+    (error: NodeJS.ErrnoException & { code?: number, stdout: string }) => {
+      failure = error
+      return error.code === 1
     }
   )
-  return result.stdout.trim()
+  if (failure === undefined) {
+    throw new Error('Missing expected Simple PDF failure')
+  }
+  return JSON.parse(failure.stdout) as { windows: number }
 }
 
 describe('Simple PDF MathJax readiness', function () {
@@ -163,9 +173,7 @@ describe('Simple PDF MathJax readiness', function () {
       'output-file': htmlFile
     }))
 
-    assert.strictEqual(
-      await runMissingMathJaxExport(defaultsFile, inputFile, directory),
-      'Simple PDF MathJax runtime is unavailable:0'
-    )
+    assert.deepStrictEqual(await runMissingMathJaxExport(defaultsFile, inputFile, directory), { windows: 0 })
+    await assert.rejects(access(htmlFile))
   })
 })

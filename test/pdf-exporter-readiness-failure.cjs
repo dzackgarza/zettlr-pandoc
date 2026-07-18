@@ -19,32 +19,24 @@ async function main () {
   const [ defaultsFile, inputFile, targetDirectory ] = process.argv.slice(2)
   await app.whenReady()
 
-  try {
-    await exportSimplePdf(
-      {
-        profile: { name: 'Simple PDF.yaml', reader: 'markdown', writer: 'simple-pdf', isInvalid: false },
-        sourceFiles: [ { path: inputFile, name: 'input', ext: '.md' } ],
-        targetDirectory
-      },
-      [ inputFile ],
-      {
-        listDefaults: async () => [ { name: 'HTML.yaml', reader: 'markdown', writer: 'html', isInvalid: false } ],
-        writeDefaults: async () => defaultsFile,
-        runPandoc
-      }
-    )
-  } catch (error) {
+  await exportSimplePdf(
+    {
+      profile: { name: 'Simple PDF.yaml', reader: 'markdown', writer: 'simple-pdf', isInvalid: false },
+      sourceFiles: [ { path: inputFile, name: 'input', ext: '.md' } ],
+      targetDirectory
+    },
+    [ inputFile ],
+    {
+      listDefaults: async () => [ { name: 'HTML.yaml', reader: 'markdown', writer: 'html', isInvalid: false } ],
+      writeDefaults: async () => defaultsFile,
+      runPandoc
+    }
+  ).finally(async () => {
     await new Promise(resolve => setImmediate(resolve))
-    process.stdout.write(`${error.message}:${BrowserWindow.getAllWindows().length}`)
-    app.quit()
-    return
-  }
+    process.stdout.write(JSON.stringify({ windows: BrowserWindow.getAllWindows().length }))
+  })
 
-  process.stdout.write('unexpected-success')
   app.quit()
 }
 
-main().catch(error => {
-  console.error(error)
-  app.exit(1)
-})
+main().catch(() => app.exit(1))
