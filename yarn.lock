@@ -2120,6 +2120,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@mathjax/mathjax-mhchem-font-extension@npm:^4.1.3":
+  version: 4.1.3
+  resolution: "@mathjax/mathjax-mhchem-font-extension@npm:4.1.3"
+  checksum: 10/ed9398b7fc26b603224685b5eb038733e39c1aed629bd33a3e2335c6ae899217ef2655fdd44ec0f2bc907175319148a821b4f060e44659ac1e7793d36f111dad
+  languageName: node
+  linkType: hard
+
 "@mathjax/mathjax-newcm-font@npm:4.1.3, @mathjax/mathjax-newcm-font@npm:^4.1.3":
   version: 4.1.3
   resolution: "@mathjax/mathjax-newcm-font@npm:4.1.3"
@@ -15771,6 +15778,7 @@ __metadata:
     "@lezer/highlight": "npm:^1.2.3"
     "@lezer/lr": "npm:^1.4.10"
     "@lezer/markdown": "npm:^1.6.4"
+    "@mathjax/mathjax-mhchem-font-extension": "npm:^4.1.3"
     "@mathjax/mathjax-newcm-font": "npm:^4.1.3"
     "@mathjax/src": "npm:^4.1.3"
     "@replit/codemirror-emacs": "npm:^6.1.0"
