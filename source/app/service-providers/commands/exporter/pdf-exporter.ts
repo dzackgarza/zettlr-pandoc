@@ -38,6 +38,33 @@ export async function waitForPrintableHtmlReadiness (webContents: WebContents): 
   `)
 }
 
+export async function composePdfOperationAndCleanup<T> (operation: Promise<T>, cleanup: Promise<void>): Promise<T> {
+  const [ operationOutcome, cleanupOutcome ] = await Promise.all([
+    operation.then(
+      value => ({ status: 'fulfilled' as const, value }),
+      reason => ({ status: 'rejected' as const, reason })
+    ),
+    cleanup.then(
+      () => ({ status: 'fulfilled' as const }),
+      reason => ({ status: 'rejected' as const, reason })
+    )
+  ])
+
+  if (operationOutcome.status === 'fulfilled' && cleanupOutcome.status === 'fulfilled') {
+    return operationOutcome.value
+  }
+  if (operationOutcome.status === 'rejected' && cleanupOutcome.status === 'fulfilled') {
+    throw operationOutcome.reason
+  }
+  if (operationOutcome.status === 'fulfilled' && cleanupOutcome.status === 'rejected') {
+    throw cleanupOutcome.reason
+  }
+  if (operationOutcome.status === 'rejected' && cleanupOutcome.status === 'rejected') {
+    throw new AggregateError([ operationOutcome.reason, cleanupOutcome.reason ])
+  }
+  throw new Error('Unreachable Simple PDF outcome')
+}
+
 export const plugin: ExporterPlugin = async function (options: ExporterOptions, sourceFiles: string[], ctx: ExporterAPI): Promise<ExporterOutput> {
   // First file determines the name of the output path, EXCEPT a title is
   // explicitly set.
@@ -74,7 +101,7 @@ export const plugin: ExporterPlugin = async function (options: ExporterOptions, 
     show: false
   })
 
-  const pdfData = await printer.loadFile(htmlFilePath)
+  const printOperation = printer.loadFile(htmlFilePath)
     .then(async () => {
       await waitForPrintableHtmlReadiness(printer.webContents)
       return await printer.webContents.printToPDF({
@@ -83,10 +110,14 @@ export const plugin: ExporterPlugin = async function (options: ExporterOptions, 
         pageSize: 'A4'
       })
     })
-    .finally(async () => {
-      printer.close()
-      await fs.unlink(htmlFilePath)
-    })
+  const cleanup = async (): Promise<void> => {
+    printer.close()
+    await fs.unlink(htmlFilePath)
+  }
+  const pdfData = await composePdfOperationAndCleanup(
+    printOperation,
+    printOperation.then(cleanup, cleanup)
+  )
 
   await fs.writeFile(pdfFilePath, pdfData)
 

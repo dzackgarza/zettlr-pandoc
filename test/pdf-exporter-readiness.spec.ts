@@ -6,6 +6,7 @@ import path from 'path'
 import { promisify } from 'util'
 import YAML from 'yaml'
 import { writeDefaults } from 'source/app/service-providers/commands/exporter/index'
+import { composePdfOperationAndCleanup } from 'source/app/service-providers/commands/exporter/pdf-exporter'
 
 const execFileAsync = promisify(execFile)
 
@@ -156,6 +157,16 @@ describe('Simple PDF MathJax readiness', function () {
     assert.ok(!pdfText.includes('\\ce{H2O}'))
     assert.match(pdfText, /ℝ/)
     assert.match(pdfText, /H\s*2\s*O/)
+  })
+
+  it('preserves operation and cleanup failures together', async function () {
+    const operationError = new TypeError()
+    const cleanupError = new RangeError()
+
+    await assert.rejects(
+      composePdfOperationAndCleanup(Promise.reject(operationError), Promise.reject(cleanupError)),
+      (error: unknown) => error instanceof AggregateError && error.errors.includes(operationError) && error.errors.includes(cleanupError)
+    )
   })
 
   it('closes the hidden BrowserWindow when MathJax is unavailable', async function () {
