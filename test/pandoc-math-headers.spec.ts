@@ -6,6 +6,7 @@ import path from 'path'
 import { promisify } from 'util'
 import { runInNewContext } from 'vm'
 import YAML from 'yaml'
+import { writeDefaults } from 'source/app/service-providers/commands/exporter/index'
 import { injectPandocMathHeaders } from 'source/app/service-providers/commands/exporter/pandoc-math-headers'
 
 interface MathJaxWindow {
@@ -67,6 +68,63 @@ describe('Pandoc math export headers', function () {
     assert.ok(html.includes('file:///'))
   })
 
+  it('writes copied Reveal defaults through the exporter seam before real Pandoc output', async function () {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-pandoc-write-defaults-'))
+    const defaultsDirectory = path.join(directory, 'defaults')
+    const filterDirectory = path.join(directory, 'filters')
+    const inputFile = path.join(directory, 'input.md')
+    const outputFile = path.join(directory, 'output.html')
+    const existingHeader = path.join(directory, 'existing.html')
+    const copiedDefaults = path.join(defaultsDirectory, 'Copied Reveal.yaml')
+    const component = path.join(directory, 'assets', 'defaults', 'mathjax-tex-chtml.js')
+    const template = path.join(directory, 'project-template.html')
+
+    await mkdir(defaultsDirectory, { recursive: true })
+    await mkdir(filterDirectory, { recursive: true })
+    await mkdir(path.dirname(component), { recursive: true })
+    await cp('static/defaults/Reveal.js.yaml', copiedDefaults)
+    await cp('node_modules/@mathjax/src/bundle/tex-chtml.js', component)
+    await writeFile(inputFile, '$\\RR$ and $\\ce{H2O}$\n')
+    await writeFile(existingHeader, '<meta name="preserved-header" content="yes">')
+    await writeFile(template, '<!doctype html><html><head>$for(include-in-header)$$include-in-header$$endfor$</head><body>$body$</body></html>')
+
+    const config = {
+      export: {
+        cslLibrary: '',
+        cslStyle: '',
+        stripTags: false,
+        stripLinks: 'no' as const,
+        enforceMarkSupport: false
+      },
+      zkn: { linkFormat: 'link|title' as const }
+    }
+    const defaultsFile = await writeDefaults(
+      YAML.parse(await readFile(copiedDefaults, { encoding: 'utf8' })),
+      {
+        'input-files': [ inputFile ],
+        'output-file': outputFile,
+        standalone: true,
+        template,
+        'include-in-header': [ existingHeader ]
+      },
+      config,
+      [],
+      directory,
+      component
+    )
+    const defaults = YAML.parse(await readFile(defaultsFile, { encoding: 'utf8' })) as Record<string, unknown>
+    const headers = defaults['include-in-header'] as string[]
+    const html = await runPandoc(defaultsFile, outputFile)
+
+    assert.strictEqual(defaults.writer, 'revealjs')
+    assert.strictEqual(defaults.template, template)
+    assert.strictEqual(headers[0], existingHeader)
+    assert.strictEqual(headers.length, 2)
+    assert.match(await readFile(headers[1], { encoding: 'utf8' }), /window\.MathJax/)
+    assert.match(html, /<section class="slide level6">/)
+    assert.match(html, /\\RR/)
+    assert.match(html, /\\ce\{H2O\}/)
+  })
   it('classifies copied Reveal, PDF, and plain-text profile defaults at the shared header seam', async function () {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-pandoc-profiles-'))
     const existingHeader = path.join(directory, 'existing-header')
