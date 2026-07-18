@@ -74,14 +74,16 @@ export const plugin: ExporterPlugin = async function (options: ExporterOptions, 
     show: false
   })
 
-  await printer.loadFile(htmlFilePath)
-  await waitForPrintableHtmlReadiness(printer.webContents)
-  const pdfData = await printer.webContents.printToPDF({
-    printBackground: false,
-    landscape: false,
-    pageSize: 'A4'
-  })
-  printer.close()
+  const pdfData = await printer.loadFile(htmlFilePath)
+    .then(async () => {
+      await waitForPrintableHtmlReadiness(printer.webContents)
+      return await printer.webContents.printToPDF({
+        printBackground: false,
+        landscape: false,
+        pageSize: 'A4'
+      })
+    })
+    .finally(() => printer.close())
 
   await fs.writeFile(pdfFilePath, pdfData)
   await fs.unlink(htmlFilePath) // Remove the intermediary HTML file

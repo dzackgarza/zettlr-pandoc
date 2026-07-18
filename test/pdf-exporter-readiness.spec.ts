@@ -20,6 +20,17 @@ async function runElectronReadinessProbe (htmlFile: string): Promise<string> {
   return result.stdout.trim()
 }
 
+async function runMissingMathJaxExport (defaultsFile: string, inputFile: string, targetDirectory: string): Promise<string> {
+  const result = await execFileAsync(
+    'xvfb-run',
+    [ '-a', path.resolve('node_modules/.bin/electron'), path.resolve('test/pdf-exporter-readiness-failure.cjs'), defaultsFile, inputFile, targetDirectory ],
+    {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }
+    }
+  )
+  return result.stdout.trim()
+}
+
 describe('Simple PDF MathJax readiness', function () {
   // A fresh Electron renderer exceeds Mocha's default two-second test budget.
   this.timeout(10_000)
@@ -61,5 +72,26 @@ describe('Simple PDF MathJax readiness', function () {
 
     await execFileAsync('pandoc', [ '--defaults', defaultsFile ])
     assert.strictEqual(await runElectronReadinessProbe(htmlFile), 'mathjax-and-fonts-ready')
+  })
+
+  it('closes the hidden BrowserWindow when MathJax is unavailable', async function () {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-simple-pdf-missing-mathjax-'))
+    const inputFile = path.join(directory, 'input.md')
+    const htmlFile = path.join(directory, 'input.html')
+    const defaultsFile = path.join(directory, 'defaults.yml')
+
+    await writeFile(inputFile, '$x$\n')
+    await writeFile(defaultsFile, YAML.stringify({
+      reader: 'markdown',
+      writer: 'html',
+      standalone: true,
+      'input-files': [ inputFile ],
+      'output-file': htmlFile
+    }))
+
+    assert.strictEqual(
+      await runMissingMathJaxExport(defaultsFile, inputFile, directory),
+      'Simple PDF MathJax runtime is unavailable:0'
+    )
   })
 })
