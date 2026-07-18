@@ -8,13 +8,8 @@ import { injectPandocMathHeaders } from 'source/app/service-providers/commands/e
 
 const execFileAsync = promisify(execFile)
 
-async function runPandoc (defaultsFile: string): Promise<string> {
+async function runPandoc (defaultsFile: string, outputFile: string): Promise<string> {
   await execFileAsync('pandoc', [ '--defaults', defaultsFile ])
-  const defaults = await readFile(defaultsFile, { encoding: 'utf8' })
-  const outputFile = defaults.match(/^output-file: (.+)$/m)?.[1]
-  if (outputFile === undefined) {
-    throw new Error('Pandoc defaults did not specify an output file')
-  }
   return await readFile(outputFile, { encoding: 'utf8' })
 }
 
@@ -40,8 +35,8 @@ describe('Pandoc math export headers', function () {
     await injectPandocMathHeaders(defaults, 'html', directory, component)
     await writeFile(defaultsFile, Object.entries(defaults).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n'))
 
-    const html = await runPandoc(defaultsFile)
-    const configHeader = (defaults['include-in-header'] as string[])[0]
+    const html = await runPandoc(defaultsFile, outputFile)
+    const configHeader = (defaults['include-in-header'] as string[])[1]
     const config = await readFile(configHeader, { encoding: 'utf8' })
 
     assert.match(config, /"RR": "\\\\mathbb\{R\}"/)
@@ -72,7 +67,7 @@ describe('Pandoc math export headers', function () {
     await injectPandocMathHeaders(defaults, 'latex', directory, path.join(directory, 'unused.js'))
     await writeFile(defaultsFile, Object.entries(defaults).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n'))
 
-    const tex = await runPandoc(defaultsFile)
+    const tex = await runPandoc(defaultsFile, outputFile)
 
     assert.match(tex, /\\usepackage\[version=4\]\{mhchem\}/)
     assert.match(tex, /\\newcommand\{\\RR\}\{\\mathbb\{R\}\}/)

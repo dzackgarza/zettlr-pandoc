@@ -33,6 +33,7 @@ import { type PandocProfileMetadata } from '@providers/assets'
 import type ConfigProvider from '@providers/config'
 import { enableExtension, parseReaderWriter, readerWriterToString } from '@common/pandoc-util/parse-reader-writer'
 import { EXT2READER } from '@common/pandoc-util/pandoc-maps'
+import { injectPandocMathHeaders } from './pandoc-math-headers'
 
 /**
  * This function returns faux metadata for the custom export formats the
@@ -256,6 +257,14 @@ async function writeDefaults (
   for (const key in properties) {
     defaults[key] = properties[key]
   }
+
+  const parsedWriter = parseReaderWriter(defaults.writer as string)
+  await injectPandocMathHeaders(
+    defaults as Record<string, unknown>,
+    parsedWriter.name,
+    app.getPath('temp'),
+    path.join(__dirname, 'assets/defaults/mathjax-tex-chtml.js')
+  )
 
   const YAMLOptions = {
     indent: 4,
