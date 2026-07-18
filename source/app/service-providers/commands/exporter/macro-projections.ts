@@ -12,10 +12,9 @@
  * END HEADER
  */
 
-export type MacroDefinition = string | readonly [body: string, requiredArguments: number] | readonly [body: string, requiredArguments: number, optionalDefault: string]
-export type MacroConfig = Record<string, MacroDefinition>
+import { type MathJaxMacro } from '@common/util/mathjax-config'
 
-function assertMacroDefinition (name: string, definition: unknown): asserts definition is MacroDefinition {
+function assertMacroDefinition (name: string, definition: unknown): asserts definition is MathJaxMacro {
   const isString = typeof definition === 'string'
   const isRequiredArguments = Array.isArray(definition) && definition.length === 2 && typeof definition[0] === 'string' && Number.isInteger(definition[1]) && definition[1] > 0
   const isOptionalArguments = Array.isArray(definition) && definition.length === 3 && typeof definition[0] === 'string' && Number.isInteger(definition[1]) && definition[1] > 0 && typeof definition[2] === 'string'
@@ -25,7 +24,7 @@ function assertMacroDefinition (name: string, definition: unknown): asserts defi
   }
 }
 
-function sortedEntries (macros: Record<string, unknown>): Array<[string, MacroDefinition]> {
+function sortedEntries (macros: Record<string, unknown>): Array<[string, MathJaxMacro]> {
   return Object.entries(macros)
     .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
     .map(([name, definition]) => {
@@ -40,6 +39,7 @@ function sortedEntries (macros: Record<string, unknown>): Array<[string, MacroDe
 export function projectMathJaxHeader (macros: Record<string, unknown>): string {
   const config = Object.fromEntries(sortedEntries(macros))
   const json = JSON.stringify({ tex: { macros: config } }, null, 2)
+    .replace(/<\/script/gi, '<\\/script')
 
   return `<script>\nwindow.MathJax = ${json};\n</script>`
 }
