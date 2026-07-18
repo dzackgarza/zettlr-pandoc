@@ -3,6 +3,7 @@ import { execFile } from 'child_process'
 import { cp, mkdtemp, mkdir, readFile, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
+import { pathToFileURL } from 'url'
 import { promisify } from 'util'
 import { runInNewContext } from 'vm'
 import YAML from 'yaml'
@@ -11,6 +12,10 @@ import { injectPandocMathHeaders } from 'source/app/service-providers/commands/e
 
 interface MathJaxWindow {
   MathJax?: {
+    loader?: {
+      load?: string[]
+      paths?: Record<string, string>
+    }
     tex?: {
       macros?: Record<string, unknown>
       packages?: Record<string, string[]>
@@ -58,6 +63,8 @@ describe('Pandoc math export headers', function () {
     }
 
     assert.strictEqual(window.MathJax?.tex?.macros?.RR, '\\mathbb{R}')
+    assert.deepStrictEqual(Array.from(window.MathJax?.loader?.load ?? []), [ '[tex]/mhchem' ])
+    assert.strictEqual(window.MathJax?.loader?.paths?.tex, `${pathToFileURL(path.join(path.dirname(component), 'mathjax-tex-extensions')).href}/`)
     assert.deepStrictEqual(Array.from(window.MathJax?.tex?.packages?.['[+]'] ?? []), [ 'ams', 'configmacros', 'mhchem', 'newcommand', 'noundefined' ])
     assert.match(window.MathJax?.chtml?.fontURL ?? '', /^file:\/\//)
     assert.match(config, /"RR": "\\\\mathbb\{R\}"/)
