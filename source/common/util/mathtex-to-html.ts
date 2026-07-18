@@ -18,12 +18,17 @@ import { TeX } from '@mathjax/src/cjs/input/tex.js'
 import { CHTML } from '@mathjax/src/cjs/output/chtml.js'
 import { browserAdaptor } from '@mathjax/src/cjs/adaptors/browserAdaptor.js'
 import { liteAdaptor } from '@mathjax/src/cjs/adaptors/liteAdaptor.js'
-import { RegisterHTMLHandler } from '@mathjax/src/cjs/handlers/html.js'
 import '@mathjax/src/cjs/input/tex/ams/AmsConfiguration.js'
 import '@mathjax/src/cjs/input/tex/configmacros/ConfigMacrosConfiguration.js'
 import '@mathjax/src/cjs/input/tex/mhchem/MhchemConfiguration.js'
 import '@mathjax/src/cjs/input/tex/newcommand/NewcommandConfiguration.js'
 import '@mathjax/src/cjs/input/tex/noundefined/NoUndefinedConfiguration.js'
+import { type LiteDocument } from '@mathjax/src/cjs/adaptors/lite/Document.js'
+import { LiteElement, type LiteNode } from '@mathjax/src/cjs/adaptors/lite/Element.js'
+import { type LiteText } from '@mathjax/src/cjs/adaptors/lite/Text.js'
+import { type MathDocument } from '@mathjax/src/cjs/core/MathDocument.js'
+import { type MmlNode } from '@mathjax/src/cjs/core/MmlTree/MmlNode.js'
+import { HTMLDocument } from '@mathjax/src/cjs/handlers/html/HTMLDocument.js'
 import { MathJaxNewcmFont } from '@mathjax/mathjax-newcm-font/cjs/chtml.js'
 import { mathJaxConfig } from './mathjax-config'
 
@@ -36,27 +41,32 @@ const tex = new TeX({
   macros: mathJaxConfig.macros
 })
 
-const browserRenderer = documentElement === undefined
-  ? undefined
-  : (() => {
-    const adaptor = browserAdaptor()
-    RegisterHTMLHandler(adaptor)
-    const chtml = new CHTML({
-      fontData: MathJaxNewcmFont,
-      fontURL: new URL('../mathjax', documentElement.baseURI).href,
-      dynamicPrefix: ''
-    })
-    return { adaptor, chtml, html: mathjax.document(documentElement, { InputJax: tex, OutputJax: chtml }) }
-  })()
+type BrowserDocument = MathDocument<HTMLElement, Text, Document>
+type MainDocument = MathDocument<LiteNode, LiteText, LiteDocument>
 
-const mainRenderer = documentElement === undefined
-  ? (() => {
-    const adaptor = liteAdaptor()
-    RegisterHTMLHandler(adaptor)
-    const chtml = new CHTML({ fontData: MathJaxNewcmFont, dynamicPrefix: '' })
-    return { adaptor, chtml, html: mathjax.document('', { InputJax: tex, OutputJax: chtml }) }
-  })()
-  : undefined
+let browserRenderer: BrowserDocument|undefined
+let mainRenderer: MainDocument|undefined
+let browserChtml: CHTML<HTMLElement, Text, Document>|undefined
+let mainChtml: CHTML<LiteElement, LiteText, LiteDocument>|undefined
+let browserAdaptorInstance: ReturnType<typeof browserAdaptor>|undefined
+let mainAdaptorInstance: ReturnType<typeof liteAdaptor>|undefined
+
+if (documentElement === undefined) {
+  mainAdaptorInstance = liteAdaptor()
+  mainChtml = new CHTML<LiteElement, LiteText, LiteDocument>({
+    fontData: MathJaxNewcmFont,
+    dynamicPrefix: ''
+  })
+  mainRenderer = new HTMLDocument(mainAdaptorInstance.parse(''), mainAdaptorInstance, { InputJax: tex, OutputJax: mainChtml })
+} else {
+  browserAdaptorInstance = browserAdaptor()
+  browserChtml = new CHTML({
+    fontData: MathJaxNewcmFont,
+    fontURL: new URL('../mathjax', documentElement.baseURI).href,
+    dynamicPrefix: ''
+  })
+  browserRenderer = new HTMLDocument(documentElement, browserAdaptorInstance, { InputJax: tex, OutputJax: browserChtml })
+}
 
 mathjax.asyncLoad = () => Promise.resolve()
 
@@ -69,14 +79,18 @@ export function initializeMathJax (): Promise<void> {
   }
 
   if (initializing === undefined) {
-    const renderer = browserRenderer ?? mainRenderer
-    if (renderer === undefined) {
+    if (browserRenderer !== undefined && browserChtml !== undefined) {
+      initializing = browserChtml.font.loadDynamicFiles().then(() => {
+        browserRenderer?.updateDocument()
+        initialized = true
+      })
+    } else if (mainRenderer !== undefined && mainChtml !== undefined) {
+      initializing = mainChtml.font.loadDynamicFiles().then(() => {
+        initialized = true
+      })
+    } else {
       throw new Error('MathJax renderer is unavailable')
     }
-    initializing = renderer.chtml.font.loadDynamicFiles().then(() => {
-      renderer.html.updateDocument()
-      initialized = true
-    })
   }
 
   return initializing
@@ -84,18 +98,33 @@ export function initializeMathJax (): Promise<void> {
 
 type MathJaxDisplay = 'inline'|'display'
 
-function mathJaxToNode (equation: string, display: MathJaxDisplay) {
-  if (!initialized) {
-    throw new Error('MathJax must be initialized before rendering')
+function isMmlNode (node: LiteNode|HTMLElement|MmlNode): node is MmlNode {
+  return 'isToken' in node
+}
+
+function mathJaxToBrowserNode (equation: string, display: MathJaxDisplay): HTMLElement {
+  if (browserRenderer === undefined) {
+    throw new Error('Browser MathJax renderer is unavailable')
   }
 
-  const renderer = browserRenderer ?? mainRenderer
-  if (renderer === undefined) {
-    throw new Error('MathJax renderer is unavailable')
+  const node = browserRenderer.convert(equation, { display: display === 'display' })
+  if (isMmlNode(node)) {
+    throw new Error('MathJax did not produce HTML')
+  }
+  browserRenderer.updateDocument()
+  return node
+}
+
+function mathJaxToMainNode (equation: string, display: MathJaxDisplay): LiteElement {
+  if (mainRenderer === undefined) {
+    throw new Error('Main-process MathJax renderer is unavailable')
   }
 
-  const node = renderer.html.convert(equation, { display: display === 'display' })
-  renderer.html.updateDocument()
+  const node = mainRenderer.convert(equation, { display: display === 'display' })
+  if (isMmlNode(node) || !(node instanceof LiteElement)) {
+    throw new Error('MathJax did not produce HTML')
+  }
+  mainRenderer.updateDocument()
   return node
 }
 
@@ -108,7 +137,11 @@ function mathJaxToNode (equation: string, display: MathJaxDisplay) {
  * @param   {'inline'|'display'}  display   The MathJax display variant.
  */
 export function mathJaxToElem (equation: string, element: HTMLElement, display: MathJaxDisplay) {
-  element.replaceChildren(mathJaxToNode(equation, display))
+  if (!initialized) {
+    throw new Error('MathJax must be initialized before rendering')
+  }
+
+  element.replaceChildren(mathJaxToBrowserNode(equation, display))
 }
 
 /**
@@ -119,10 +152,19 @@ export function mathJaxToElem (equation: string, element: HTMLElement, display: 
  * @return  {string}                     The equation as HTML.
  */
 export function mathJaxToHTML (equation: string, display: MathJaxDisplay): string {
-  const renderer = browserRenderer ?? mainRenderer
-  if (renderer === undefined) {
-    throw new Error('MathJax renderer is unavailable')
+  if (!initialized) {
+    throw new Error('MathJax must be initialized before rendering')
   }
 
-  return renderer.adaptor.outerHTML(mathJaxToNode(equation, display))
+  if (browserRenderer === undefined) {
+    if (mainAdaptorInstance === undefined) {
+      throw new Error('Main-process MathJax adaptor is unavailable')
+    }
+    return mainAdaptorInstance.outerHTML(mathJaxToMainNode(equation, display))
+  }
+
+  if (browserAdaptorInstance === undefined) {
+    throw new Error('Browser MathJax adaptor is unavailable')
+  }
+  return browserAdaptorInstance.outerHTML(mathJaxToBrowserNode(equation, display))
 }

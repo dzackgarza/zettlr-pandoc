@@ -13,10 +13,26 @@
  */
 
 import { strict as assert } from "assert"
+import { execFileSync } from 'child_process'
 import { initializeMathJax, mathJaxToElem, mathJaxToHTML } from "source/common/util/mathtex-to-html"
 
 it('requires initialization before conversion', function () {
   assert.throws(() => mathJaxToHTML('\\RR', 'inline'), Error)
+})
+
+it('renders updater Markdown with the lite adaptor without a global document', function () {
+  const html = execFileSync(process.execPath, [
+    '--import', 'tsx',
+    '--input-type', 'module',
+    '--eval',
+    `import { initializeMathJax } from './source/common/util/mathtex-to-html.ts'
+import { md2html } from './source/common/modules/markdown-utils/markdown-to-html.ts'
+await initializeMathJax()
+process.stdout.write(await md2html('$$\\\\RR$$', { onCitation: () => undefined, zknLinkFormat: 'link|title' }))`
+  ], { encoding: 'utf8' })
+
+  assert.match(html, /<mjx-container[^>]*display="true"/)
+  assert.match(html, /ℝ/)
 })
 
 describe('Utility#mathJaxToHTML()', function () {
