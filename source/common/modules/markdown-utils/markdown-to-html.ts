@@ -25,7 +25,7 @@ import { extractASTNodes, markdownToAST } from '.'
 import type { CitationNode, ASTNode, GenericNode, FootnoteRef } from './markdown-ast'
 import { type MarkdownParserConfig } from '../markdown-editor/parser/markdown-parser'
 import _ from 'underscore'
-import { katexToHTML } from '@common/util/mathtex-to-html'
+import { mathJaxToHTML } from '@common/util/mathtex-to-html'
 
 /**
  * Represents an HTML tag. This is a purposefully shallow representation
@@ -312,7 +312,7 @@ export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, in
     return node.whitespaceBefore + node.value // Plain text
   } else if (node.type === 'FencedCode') {
     if (node.info === '$$') {
-      return node.whitespaceBefore + katexToHTML(node.source, true)
+      return node.whitespaceBefore + mathJaxToHTML(node.source, 'display')
     } else {
       addAttribute(node, 'class', `language-${node.info}`)
       const attr = renderNodeAttributes(node)
@@ -320,7 +320,7 @@ export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, in
     }
   } else if (node.type === 'InlineCode') {
     if (node.info === '$' || node.info === '$$') {
-      return node.whitespaceBefore + katexToHTML(node.source, node.info === '$$')
+      return node.whitespaceBefore + mathJaxToHTML(node.source, node.info === '$$' ? 'display' : 'inline')
     } else {
       const attr = renderNodeAttributes(node)
       return `${node.whitespaceBefore}<code${attr}>${_.escape(node.source)}</code>`

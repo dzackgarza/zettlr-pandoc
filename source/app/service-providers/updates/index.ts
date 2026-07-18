@@ -34,6 +34,7 @@ import type LogProvider from '../log'
 import type CommandProvider from '../commands'
 import type ConfigProvider from '@providers/config'
 import { md2html } from '@common/modules/markdown-utils'
+import { initializeMathJax } from '@common/util/mathtex-to-html'
 import { showNativeNotification } from '@common/util/show-notification'
 import type WindowProvider from '../windows'
 
@@ -697,6 +698,8 @@ export default class UpdateProvider extends ProviderContract {
   }
 
   async boot (): Promise<void> {
+    await initializeMathJax()
+
     // Initiate the update check
     setInterval(() => {
       // Only check if the user wants to, and if there is not yet a new version.
