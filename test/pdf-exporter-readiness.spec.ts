@@ -159,10 +159,23 @@ describe('Simple PDF MathJax readiness', function () {
     assert.match(pdfText, /H\s*2\s*O/)
   })
 
-  it('preserves operation and cleanup failures together', async function () {
+  it('preserves all operation and cleanup outcomes', async function () {
+    const pdfData = Buffer.from('pdf')
     const operationError = new TypeError()
     const cleanupError = new RangeError()
 
+    assert.strictEqual(
+      await composePdfOperationAndCleanup(Promise.resolve(pdfData), Promise.resolve()),
+      pdfData
+    )
+    await assert.rejects(
+      composePdfOperationAndCleanup(Promise.reject(operationError), Promise.resolve()),
+      error => error === operationError
+    )
+    await assert.rejects(
+      composePdfOperationAndCleanup(Promise.resolve(pdfData), Promise.reject(cleanupError)),
+      error => error === cleanupError
+    )
     await assert.rejects(
       composePdfOperationAndCleanup(Promise.reject(operationError), Promise.reject(cleanupError)),
       (error: unknown) => error instanceof AggregateError && error.errors.includes(operationError) && error.errors.includes(cleanupError)
