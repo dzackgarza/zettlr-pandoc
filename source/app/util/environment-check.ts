@@ -13,7 +13,7 @@
  */
 
 import path from 'path'
-import { app } from 'electron'
+import { app, dialog } from 'electron'
 import tls from 'tls'
 import { promises as fs } from 'fs'
 import isFile from '../../common/util/is-file'
@@ -21,6 +21,7 @@ import isTraySupported from './is-tray-supported'
 import { getProgramVersion } from './get-program-version'
 import fixPath from 'fix-path'
 import { runCommand } from './run-command'
+import { preflight } from './preflight'
 
 export default async function environmentCheck (): Promise<void> {
   console.log('[Application] Performing environment check ...')
@@ -37,6 +38,23 @@ export default async function environmentCheck (): Promise<void> {
   // inherit the same PATH environment variable as terminal programs. This is
   // necessary, however, to detect additional helper programs, such as quarto.
   fixPath()
+
+  // Hard preflight: with PATH now repaired, verify every external tool and file
+  // the app cannot function without actually resolves in this runtime
+  // environment, and fail loud and fast (native error dialog + exit) if any is
+  // missing -- rather than letting a missing `just`/`latexmk`/recipe surface as
+  // a cryptic error mid-export. No fallbacks.
+  const passed = await preflight(
+    (title, message) => {
+      console.error(`[Application] Preflight FAILED.\n${message}`)
+      dialog.showErrorBox(title, message)
+    },
+    (code) => app.exit(code)
+  )
+  if (!passed) {
+    return // app.exit(1) was called; do not continue booting.
+  }
+  console.log('[Application] Preflight OK: all required tooling resolved.')
 
   /**
    * Required directories that must exist on the system in order for certain
