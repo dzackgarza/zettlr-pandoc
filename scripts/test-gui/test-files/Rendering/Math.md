@@ -7,9 +7,9 @@ $x^2+y*(3+2)=z^2$
 ## Configured Macros
 
 These render only if a MathJax macro file is present in the app config
-directory (`mathjax-macros.json`, using the standard `tex.macros` format). The
-examples below use the macros from the bundled example fixture; link a macro
-export into place with `just link-macros`.
+directory — `~/.config/Zettlr/mathjax-macros.json` on Linux — using the
+standard `tex.macros` format. Add macros by placing or symlinking such a file
+there; without one, the app defines no custom macros.
 
 Inline: $\RR$, $\qty{x + y}$, and $\optpair{a}{b}$.
 
