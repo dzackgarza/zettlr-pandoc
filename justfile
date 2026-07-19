@@ -25,3 +25,14 @@ run-packaged:
 #   just export-headless PDF.yaml path/to/file.md
 export-headless profile file:
     node --require "{{justfile_directory()}}/scripts/harness/electron-stub.cjs" --import tsx "{{justfile_directory()}}/scripts/harness/export-run.ts" "{{profile}}" "{{file}}"
+
+# Build observability: run the production package build and PROVE it produced a
+# fresh app.asar built from the current commit. Exits non-zero (loud) if the
+# build silently produced stale/no bytes -- the failure that shipped old code.
+verify-build:
+    python3 "{{justfile_directory()}}/scripts/verify-build.py"
+
+# Verify the EXISTING packaged artifact is built from the current commit, without
+# rebuilding. Fast staleness check.
+verify-build-only:
+    python3 "{{justfile_directory()}}/scripts/verify-build.py" --verify-only
