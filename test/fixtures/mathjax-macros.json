@@ -1,5 +1,8 @@
 {
   "RR": "\\mathbb{R}",
   "qty": ["\\left( {#1} \\right)", 1],
-  "optpair": ["\\left\\langle {#2}, {#1} \\right\\rangle", 2, ""]
+  "optpair": ["\\left\\langle {#2}, {#1} \\right\\rangle", 2, ""],
+  "Co": "{\\mathrm{Co}}",
+  "da": "\\coloneqq",
+  "gens": ["\\left\\langle{#1}\\right\\rangle", 1]
 }
