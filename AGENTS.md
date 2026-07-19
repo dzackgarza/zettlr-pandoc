@@ -3,7 +3,7 @@
 
 This repository uses the central agent memory vault at `/home/dzack/.agent-memory-vault`.
 
-Project memory key: `projects/github.com__dzackgarza__Zettlr-pandoc-mathjax/index`.
+Project memory key: `projects/github.com__dzackgarza__zettlr-pandoc/index`.
 
 Repository `.agents` and `.hermes` paths are symlinks to the same vault-owned project directory.
 
@@ -35,3 +35,4 @@ Move reusable lessons during maintenance with:
 agent-memory maintain move <key> --to global/advice
 ```
 <!-- agent-memory:end -->
+
