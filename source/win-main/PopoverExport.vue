@@ -8,16 +8,12 @@
         v-bind:label="formatLabel"
         v-bind:options="availableFormats"
       ></SelectControl>
-      <details class="export-config-details">
-        <summary>What this export uses</summary>
-        <ExportConfigSummary
-          v-bind:filters="exportSummary.filters"
-          v-bind:template="exportSummary.template"
-          v-bind:inject-math="exportSummary.injectMath"
-          v-bind:data-dir="exportSummary.dataDir"
-          v-bind:script-info="exportSummary.scriptInfo"
-        ></ExportConfigSummary>
-      </details>
+      <ExportConfigSummary
+        v-bind:filters="exportSummary.filters"
+        v-bind:template="exportSummary.template"
+        v-bind:data-dir="exportSummary.dataDir"
+        v-bind:script-info="exportSummary.scriptInfo"
+      ></ExportConfigSummary>
       <!-- The choice of working directory vs. temporary applies to all exporters -->
       <hr>
       <RadioControl
@@ -165,7 +161,6 @@ const exportSummary = computed(() => {
   return {
     filters: configStore.config.export.filters,
     template: profile?.template ?? '',
-    injectMath: configStore.config.export.injectMathHeaders,
     dataDir: '~/.pandoc',
     scriptInfo
   }

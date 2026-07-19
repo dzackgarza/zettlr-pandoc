@@ -9,10 +9,6 @@
       <span class="ecs-value">{{ templateText }}</span>
     </div>
     <div class="ecs-row">
-      <span class="ecs-label">Math</span>
-      <span class="ecs-value">{{ mathText }}</span>
-    </div>
-    <div class="ecs-row">
       <span class="ecs-label">Pandoc data dir</span>
       <span class="ecs-value">{{ dataDir }}</span>
     </div>
@@ -31,8 +27,6 @@ const props = withDefaults(defineProps<{
   filters: string[]
   // The profile's declared Pandoc template, or '' for Pandoc's built-in default.
   template: string
-  // Whether the fork injects local MathJax (true) or defers to the template.
-  injectMath: boolean
   // The Pandoc data directory names/templates resolve from.
   dataDir: string
   // For script formats: a "profile -> command" summary. '' when not a script.
@@ -41,7 +35,6 @@ const props = withDefaults(defineProps<{
 
 const filtersText = computed(() => props.filters.length > 0 ? props.filters.join('  →  ') : '(none)')
 const templateText = computed(() => props.template !== '' ? props.template : 'Pandoc default')
-const mathText = computed(() => props.injectMath ? 'local MathJax injected' : 'deferred to template')
 </script>
 
 <style>

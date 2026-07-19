@@ -130,6 +130,44 @@ export function getImportExportFields (): PreferencesFieldset[] {
           editable: true
         }
       ]
+    },
+    {
+      title: trans('Export filters'),
+      infoString: trans('Pandoc filters applied to every export, in order, before the profile\'s own filters. Names resolve from Pandoc\'s data directory (e.g. ~/.pandoc/filters) or an absolute path.'),
+      group: PreferencesGroups.ImportExport,
+      help: undefined,
+      fields: [
+        {
+          type: 'list',
+          valueType: 'simpleArray',
+          model: 'export.filters',
+          columnLabels: [ trans('Filter') ],
+          deletable: true,
+          searchable: true,
+          addable: true,
+          editable: true,
+          striped: true
+        }
+      ]
+    },
+    {
+      title: trans('Export scripts'),
+      infoString: trans('Declare a compilation script as an export format. The source is exported through the base Pandoc profile to an intermediate file, then the command runs with the intermediate path and the output path as its two arguments.'),
+      group: PreferencesGroups.ImportExport,
+      help: undefined,
+      fields: [
+        {
+          type: 'list',
+          valueType: 'record',
+          keyNames: [ 'name', 'profile', 'command', 'extension' ],
+          columnLabels: [ trans('Name'), trans('Base profile'), trans('Command'), trans('Extension') ],
+          model: 'export.scripts',
+          deletable: true,
+          searchable: true,
+          addable: true,
+          editable: true
+        }
+      ]
     }
   ]
 }
