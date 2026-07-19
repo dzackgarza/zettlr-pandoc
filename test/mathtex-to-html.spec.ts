@@ -41,7 +41,7 @@ process.stdout.write(await md2html('$$\\\\RR$$', { onCitation: () => undefined, 
   ], { encoding: 'utf8' })
 
   assert.match(html, /<mjx-container[^>]*display="true"/)
-  assert.match(html, /ℝ/)
+  assert.match(html, /𝐑/)
 })
 
 describe('Utility#mathJaxToHTML()', function () {
@@ -52,15 +52,16 @@ describe('Utility#mathJaxToHTML()', function () {
   })
 
   it('serializes configured macros and mhchem as CommonHTML display math', function () {
-    const html = mathJaxToHTML('\\RR + \\pair{a}{b} + \\optpair[x]{y} + \\ce{H2O}', 'display')
+    // \RR (zero-arg) and \qty (one-arg) are real macros from the vendored
+    // ~/.pandoc snapshot; \ce exercises mhchem.
+    const html = mathJaxToHTML('\\RR + \\qty{x} + \\ce{H2O}', 'display')
 
     const rendered = document.createElement('div')
     rendered.innerHTML = html
 
     assert.equal(rendered.querySelector('mjx-container')?.getAttribute('display'), 'true')
-    assert.match(rendered.textContent ?? '', /ℝ/)
-    assert.match(rendered.textContent ?? '', /⟨𝑎,𝑏⟩/)
-    assert.match(rendered.textContent ?? '', /⟨𝑦,𝑥⟩/)
+    assert.match(rendered.textContent ?? '', /𝐑/)
+    assert.match(rendered.textContent ?? '', /\(𝑥\)/)
     assert.equal(rendered.querySelector('mjx-msub')?.textContent, '𝐴2')
 
     const stylesheet = document.getElementById('MJX-CHTML-styles')
@@ -75,6 +76,6 @@ describe('Utility#mathJaxToHTML()', function () {
     mathJaxToElem('\\RR', element, 'inline')
 
     assert.equal(element.querySelector('mjx-container')?.getAttribute('jax'), 'CHTML')
-    assert.match(element.textContent ?? '', /ℝ/)
+    assert.match(element.textContent ?? '', /𝐑/)
   })
 })

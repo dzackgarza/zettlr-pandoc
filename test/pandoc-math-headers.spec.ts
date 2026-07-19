@@ -63,14 +63,14 @@ describe('Pandoc math export headers', function () {
       runInNewContext(script[1], { window })
     }
 
-    assert.strictEqual(window.MathJax?.tex?.macros?.RR, '\\mathbb{R}')
+    assert.strictEqual(window.MathJax?.tex?.macros?.RR, '{\\mathbf{R}}')
     assert.deepStrictEqual(JSON.parse(JSON.stringify(window.MathJax?.tex?.inlineMath?.['[+]'])), [ [ '$', '$' ] ])
     assert.deepStrictEqual(Array.from(window.MathJax?.loader?.load ?? []), [ '[tex]/mhchem' ])
     assert.strictEqual(window.MathJax?.loader?.paths?.tex, `${pathToFileURL(path.join(path.dirname(component), 'mathjax-tex-extensions')).href}/`)
     assert.strictEqual(window.MathJax?.loader?.paths?.fonts, `${pathToFileURL(path.dirname(component)).href}/`)
     assert.deepStrictEqual(Array.from(window.MathJax?.tex?.packages?.['[+]'] ?? []), [ 'ams', 'configmacros', 'mhchem', 'newcommand', 'noundefined' ])
     assert.match(window.MathJax?.chtml?.fontURL ?? '', /^file:\/\//)
-    assert.match(config, /"RR": "\\\\mathbb\{R\}"/)
+    assert.match(config, /"RR": "\{\\\\mathbf\{R\}\}"/)
     assert.match(config, /"mhchem"/)
     assert.match(config, /"fontURL": "file:\/\//)
     assert.match(config, /<\/script>\n<script defer src="file:\/\/[^\"]+tex-chtml\.js">/)
@@ -132,7 +132,11 @@ describe('Pandoc math export headers', function () {
       `--screenshot=${screenshot}`,
       '--dump-dom',
       pathToFileURL(outputFile).href
-    ])
+    ], {
+      // --dump-dom emits the full inline macro config (>1000 macros) plus the
+      // rendered DOM, which exceeds execFile's default 1 MB stdout buffer.
+      maxBuffer: 32 * 1024 * 1024
+    })
 
     assert.strictEqual((stdout.match(/<mjx-container/g) ?? []).length, 2)
     const mathJaxConfig = stdout.match(/window\.MathJax = ([\s\S]*?)<\/script>/)?.[1] ?? ''
@@ -140,7 +144,7 @@ describe('Pandoc math export headers', function () {
     assert.ok(!mathJaxConfig.includes('http://'))
     assert.ok(!stdout.includes('$\\RR$'))
     assert.ok(!stdout.includes('$\\ce{H2O}$'))
-    assert.ok(stdout.includes('data-latex="\\mathbb{R}"'))
+    assert.match(stdout, /data-latex="[^"]*\\mathbf\{R\}/)
     assert.ok(stdout.includes('data-latex="\\ce{H2O}"'))
     assert.ok(!stderr.includes("MathJax Warning: Package 'mhchem' not found"))
   })
@@ -255,7 +259,7 @@ describe('Pandoc math export headers', function () {
     const tex = await runPandoc(defaultsFile, outputFile)
 
     assert.match(tex, /\\usepackage\[version=4\]\{mhchem\}/)
-    assert.match(tex, /\\newcommand\{\\RR\}\{\\mathbb\{R\}\}/)
+    assert.match(tex, /\\newcommand\{\\RR\}\{\{\\mathbf\{R\}\}\}/)
     assert.match(tex, /\\newcommand\{\\Preserved\}\{yes\}/)
   })
 })

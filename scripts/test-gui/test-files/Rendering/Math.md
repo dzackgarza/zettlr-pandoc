@@ -6,14 +6,15 @@ $x^2+y*(3+2)=z^2$
 
 ## Configured Macros
 
-These use the fork's checked-in MathJax macro configuration.
+These use the fork's checked-in MathJax macro configuration, vendored from
+`~/.pandoc`.
 
-Inline: $\RR$ and $\pair{a}{b}$ and $\optpair{c}$.
+Inline: $\RR$, $\CC$, $\ZZ$, and $\qty{x + y}$.
 
 Display:
 
 $$
-\RR \subseteq \pair{\RR}{\RR}
+\RR \subseteq \CC \quad\text{and}\quad \qty{\ZZ \oplus \QQ}
 $$
 
 ## Block Rendering

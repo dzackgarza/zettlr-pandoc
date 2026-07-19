@@ -35,7 +35,7 @@ const RENDER_SCRIPT = `(async () => {
     return div
   }
 
-  mod.mathJaxToElem('\\\\RR \\\\subseteq \\\\pair{\\\\RR}{\\\\RR}', section('Configured macros (display)'), 'display')
+  mod.mathJaxToElem('\\\\QQ \\\\subseteq \\\\RR \\\\subseteq \\\\CC \\\\quad \\\\qty{\\\\ZZ}', section('Configured macros (display)'), 'display')
   mod.mathJaxToElem('x^2 + y^2 = z^2', section('Inline math'), 'inline')
   mod.mathJaxToElem('p(x\\\\vert y) = \\\\frac{p(y \\\\vert x)p(x)}{p(y)}', section('Display fraction'), 'display')
   mod.mathJaxToElem('\\\\ce{Hg^2+ ->[I-] HgI2 ->[I-] [Hg^{II}I4]^2-}', section('mhchem'), 'inline')
@@ -44,7 +44,7 @@ const RENDER_SCRIPT = `(async () => {
   const table = document.createElement('table')
   table.style.borderCollapse = 'collapse'
   const row = table.insertRow()
-  for (const eq of ['\\\\optpair{c}', '\\\\ce{CO2 + C -> 2 CO}']) {
+  for (const eq of ['\\\\qty{a + b}', '\\\\ce{CO2 + C -> 2 CO}']) {
     const cell = row.insertCell()
     cell.style.border = '1px solid #888'
     cell.style.padding = '0.5rem'

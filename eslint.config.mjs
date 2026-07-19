@@ -16,7 +16,10 @@ export default [
       '.webpack/**/*.js',
       // Electron-invoked CommonJS proof harnesses; same runner-script
       // category as scripts/, and require() is their module system.
-      'test/**/*.cjs'
+      'test/**/*.cjs',
+      // Machine-generated macro snapshot vendored from ~/.pandoc; regenerated
+      // upstream, so its style is not this repo's to enforce.
+      'source/common/util/mathjax-macros.generated.ts'
     ]
   },
   // This extends the following configs:

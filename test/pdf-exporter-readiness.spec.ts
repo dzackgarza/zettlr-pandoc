@@ -155,7 +155,7 @@ describe('Simple PDF MathJax readiness', function () {
     assert.strictEqual(output.code, 0)
     assert.ok(!pdfText.includes('\\RR'))
     assert.ok(!pdfText.includes('\\ce{H2O}'))
-    assert.match(pdfText, /ℝ/)
+    assert.match(pdfText, /𝐑/)
     assert.match(pdfText, /H\s*2\s*O/)
   })
 

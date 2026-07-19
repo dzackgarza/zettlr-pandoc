@@ -8,9 +8,16 @@
  * License:         GNU GPL v3
  *
  * Description:     Defines the TeX packages and macros used by the renderer.
+ *                  The macro set is a static, checked-in snapshot vendored from
+ *                  ~/.pandoc (github.com/dzackgarza/pandoc-config), generated
+ *                  there by bin/generate-mathjax-config.py. Refresh the snapshot
+ *                  with `just sync-mathjax-macros`; do not hand-edit the
+ *                  generated file.
  *
  * END HEADER
  */
+
+import { macros } from './mathjax-macros.generated'
 
 export type MathJaxMacro =
   | string
@@ -19,9 +26,5 @@ export type MathJaxMacro =
 
 export const mathJaxConfig = {
   packages: [ 'base', 'ams', 'configmacros', 'mhchem', 'newcommand', 'noundefined' ],
-  macros: {
-    RR: '\\mathbb{R}',
-    pair: [ '\\left\\langle #1, #2 \\right\\rangle', 2 ],
-    optpair: [ '\\left\\langle #2, #1 \\right\\rangle', 2, '' ]
-  } satisfies Readonly<Record<string, MathJaxMacro>>
+  macros: macros satisfies Readonly<Record<string, MathJaxMacro>>
 } as const
