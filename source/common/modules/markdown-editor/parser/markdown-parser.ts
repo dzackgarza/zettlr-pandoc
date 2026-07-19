@@ -87,7 +87,7 @@ import { nix } from '@replit/codemirror-lang-nix'
 import { citationParser } from './citation-parser'
 import { footnoteComposite, footnoteParser, footnoteRefParser } from './footnote-parser'
 import { frontmatterParser, yamlCodeParse } from './frontmatter-parser'
-import { inlineMathParser, blockMathParser } from './math-parser'
+import { inlineMathParser, inlineBracketMathParser, blockMathParser } from './math-parser'
 import { pandocLinkParser } from './pandoc-link-parser'
 import { gridTableParser, pipeTableParser } from './pandoc-table-parser'
 import { type ZknLinkParserConfig, zknLinkParser } from './zkn-link-parser'
@@ -240,6 +240,7 @@ export default function markdownParser (config?: MarkdownParserConfig): Language
         // Add inline parsers that add AST elements for various additional types
         pandocSpanParser,
         inlineMathParser,
+        inlineBracketMathParser,
         footnoteParser,
         citationParser,
         zknLinkParser(config?.zknLinkParserConfig),

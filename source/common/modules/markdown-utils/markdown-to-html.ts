@@ -26,6 +26,7 @@ import type { CitationNode, ASTNode, GenericNode, FootnoteRef } from './markdown
 import { type MarkdownParserConfig } from '../markdown-editor/parser/markdown-parser'
 import _ from 'underscore'
 import { mathJaxToHTML } from '@common/util/mathtex-to-html'
+import { mathDisplayForOpen } from '../markdown-editor/parser/math-parser'
 
 /**
  * Represents an HTML tag. This is a purposefully shallow representation
@@ -311,16 +312,18 @@ export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, in
   } else if (node.type === 'Text') {
     return node.whitespaceBefore + node.value // Plain text
   } else if (node.type === 'FencedCode') {
-    if (node.info === '$$') {
-      return node.whitespaceBefore + mathJaxToHTML(node.source, 'display')
+    const mathDisplay = mathDisplayForOpen(node.info)
+    if (mathDisplay !== null) {
+      return node.whitespaceBefore + mathJaxToHTML(node.source, mathDisplay ? 'display' : 'inline')
     } else {
       addAttribute(node, 'class', `language-${node.info}`)
       const attr = renderNodeAttributes(node)
       return `${node.whitespaceBefore}<pre><code${attr}>${_.escape(node.source)}</code></pre>`
     }
   } else if (node.type === 'InlineCode') {
-    if (node.info === '$' || node.info === '$$') {
-      return node.whitespaceBefore + mathJaxToHTML(node.source, node.info === '$$' ? 'display' : 'inline')
+    const mathDisplay = mathDisplayForOpen(node.info)
+    if (mathDisplay !== null) {
+      return node.whitespaceBefore + mathJaxToHTML(node.source, mathDisplay ? 'display' : 'inline')
     } else {
       const attr = renderNodeAttributes(node)
       return `${node.whitespaceBefore}<code${attr}>${_.escape(node.source)}</code>`

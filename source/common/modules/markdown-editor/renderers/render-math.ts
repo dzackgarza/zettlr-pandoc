@@ -20,6 +20,7 @@ import { type EditorState } from '@codemirror/state'
 import clickAndSelect from './click-and-select'
 import { equationMenu } from '../context-menu/equation-menu'
 import { mathJaxToElem } from 'source/common/util/mathtex-to-html'
+import { stripMathDelimiters } from '../parser/math-parser'
 import { rangeInSelection } from '../util/range-in-selection'
 import { configField } from '../util/configuration'
 
@@ -97,13 +98,13 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): MathWidget|unde
   }
 
   const nodeText = state.sliceDoc(node.from, node.to)
-  if (!nodeText.startsWith('$') && (!nodeText.endsWith('$\n') || nodeText.endsWith('$'))) {
+  // Recognizes $…$, $$…$$, \(…\) and \[…\]; returns null for regular code.
+  const math = stripMathDelimiters(nodeText)
+  if (math === null) {
     return undefined // It's regular FencedCode/InlineCode
   }
 
-  const displayMode = nodeText.startsWith('$$')
-  const equation = nodeText.replace(/^\$\$?(.+?)\$\$?$/s, '$1') // NOTE the s flag
-  return new MathWidget(equation, displayMode, node.node)
+  return new MathWidget(math.equation, math.display, node.node)
 }
 
 export const renderMath = [
