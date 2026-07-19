@@ -70,20 +70,19 @@ export async function bootApplication (): Promise<AppServiceContainer> {
   // browser windows with external URLs
   attachAppNavigationHandlers(log)
 
-  // Now boot up the service container
-  await appServiceContainer.boot()
-
-  // Serve the user's MathJax macros to sandboxed renderer windows, which cannot
-  // read the config file themselves. Loaded on demand (macros are restart-gated
-  // in the renderer, so a fresh read per window is sufficient).
+  // Seed the config directory with the default macro set and register the IPC
+  // handler that serves macros to sandboxed renderer windows -- both BEFORE the
+  // service container boots, because booting the ConfigProvider opens the
+  // onboarding window on a fresh install, and that window's renderer invokes
+  // this handler during its own startup. Registering after boot() would lose
+  // that race.
+  await seedDefaultMacros(app.getPath('userData'), path.join(__dirname, 'assets/mathjax-macros.json'))
   ipcMain.handle('mathjax-macros', async () => {
     return await loadMathJaxMacros(mathJaxMacrosPath(app.getPath('userData')))
   })
 
-  // Seed the config directory with the default macro set on first run, so a
-  // fresh install has standard macros working out of the box and a real file
-  // to edit -- no in-app UI, no copy step.
-  await seedDefaultMacros(app.getPath('userData'), path.join(__dirname, 'assets/mathjax-macros.json'))
+  // Now boot up the service container
+  await appServiceContainer.boot()
 
   // Now make the service container available for the rest of the main process.
   setAppServiceContainer(appServiceContainer)
