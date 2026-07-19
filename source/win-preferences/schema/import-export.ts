@@ -132,6 +132,30 @@ export function getImportExportFields (): PreferencesFieldset[] {
       ]
     },
     {
+      title: trans('Export templates'),
+      infoString: trans('Default Pandoc templates, applied when the export profile declares none. Choose a file, or type a name resolved from Pandoc\'s data directory (~/.pandoc/templates).'),
+      group: PreferencesGroups.ImportExport,
+      help: undefined,
+      fields: [
+        {
+          type: 'file',
+          label: trans('HTML template (HTML, reveal.js)'),
+          model: 'export.htmlTemplate',
+          placeholder: trans('Pandoc default'),
+          reset: '',
+          filter: [ { extensions: [ 'html', 'htm', 'template' ], name: 'HTML template' } ]
+        },
+        {
+          type: 'file',
+          label: trans('LaTeX template (LaTeX, PDF, Beamer)'),
+          model: 'export.latexTemplate',
+          placeholder: trans('Pandoc default'),
+          reset: '',
+          filter: [ { extensions: [ 'tex', 'latex', 'template' ], name: 'LaTeX template' } ]
+        }
+      ]
+    },
+    {
       title: trans('Export filters'),
       infoString: trans('Pandoc filters applied to every export, in order, before the profile\'s own filters. Names resolve from Pandoc\'s data directory (e.g. ~/.pandoc/filters) or an absolute path.'),
       group: PreferencesGroups.ImportExport,

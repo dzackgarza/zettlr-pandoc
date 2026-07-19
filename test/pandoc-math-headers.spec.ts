@@ -111,7 +111,9 @@ describe('Pandoc math export headers', function () {
         stripTags: false,
         stripLinks: 'no' as const,
         enforceMarkSupport: false,
-        injectMathHeaders: true
+        injectMathHeaders: true,
+        htmlTemplate: '',
+        latexTemplate: ''
       },
       zkn: { linkFormat: 'link|title' as const }
     }
@@ -181,7 +183,9 @@ describe('Pandoc math export headers', function () {
         stripTags: false,
         stripLinks: 'no' as const,
         enforceMarkSupport: false,
-        injectMathHeaders: true
+        injectMathHeaders: true,
+        htmlTemplate: '',
+        latexTemplate: ''
       },
       zkn: { linkFormat: 'link|title' as const }
     }

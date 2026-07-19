@@ -158,9 +158,21 @@ const exportSummary = computed(() => {
   } else if (customCommand !== undefined) {
     scriptInfo = `raw command: ${customCommand.command}`
   }
+
+  // Effective template: the profile's own, else the configured per-writer default.
+  let template = profile?.template ?? ''
+  if (template === '' && profile !== undefined) {
+    const writer = parseReaderWriter(profile.writer).name
+    if ([ 'html', 'html4', 'html5', 'revealjs', 's5', 'slidy', 'dzslides' ].includes(writer)) {
+      template = configStore.config.export.htmlTemplate
+    } else if ([ 'latex', 'beamer', 'pdf' ].includes(writer)) {
+      template = configStore.config.export.latexTemplate
+    }
+  }
+
   return {
     filters: configStore.config.export.filters,
-    template: profile?.template ?? '',
+    template,
     dataDir: '~/.pandoc',
     scriptInfo
   }

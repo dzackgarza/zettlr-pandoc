@@ -17,7 +17,7 @@ before(async function () {
 })
 
 const config = {
-  export: { cslLibrary: '', cslStyle: '', stripTags: false, stripLinks: 'no' as const, enforceMarkSupport: false, injectMathHeaders: true },
+  export: { cslLibrary: '', cslStyle: '', stripTags: false, stripLinks: 'no' as const, enforceMarkSupport: false, injectMathHeaders: true, htmlTemplate: '', latexTemplate: '' },
   zkn: { linkFormat: 'link|title' as const }
 }
 
@@ -82,5 +82,32 @@ describe('Export math-header injection toggle', function () {
     assert.ok(!headers.some(h => /zettlr-mathjax/.test(h)), 'no injected MathJax header')
     // Injection deletes the profile's html-math-method; skipping preserves it.
     assert.ok(written['html-math-method'] !== undefined, 'profile html-math-method survives')
+  })
+})
+
+describe('Export template defaults', function () {
+  async function writeHtml (directory: string, profileExtra: Record<string, unknown>, configExtra: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const inputFile = path.join(directory, 'input.md')
+    await writeFile(inputFile, '# Hi\n')
+    const htmlProfile = { ...(YAML.parse(await readFile('static/defaults/HTML.yaml', { encoding: 'utf8' })) as Record<string, unknown>), ...profileExtra }
+    const cfg = { export: { ...config.export, injectMathHeaders: false, ...configExtra }, zkn: config.zkn }
+    await writeDefaults(
+      htmlProfile,
+      { 'input-files': [ inputFile ], 'output-file': path.join(directory, 'out.html'), standalone: true },
+      cfg, [], directory, path.join(directory, 'unused.js'), macros
+    )
+    return YAML.parse(await readFile(path.join(directory, 'defaults.yml'), { encoding: 'utf8' })) as Record<string, unknown>
+  }
+
+  it('applies the configured per-writer template when the profile declares none', async function () {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-export-tmpl-'))
+    const written = await writeHtml(directory, {}, { htmlTemplate: 'my-template.html' })
+    assert.strictEqual(written.template, 'my-template.html')
+  })
+
+  it('does not override a template the profile already declares', async function () {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-export-tmpl2-'))
+    const written = await writeHtml(directory, { template: 'profile-owned.html' }, { htmlTemplate: 'config.html' })
+    assert.strictEqual(written.template, 'profile-owned.html')
   })
 })

@@ -102,7 +102,9 @@ describe('Simple PDF MathJax readiness', function () {
           stripTags: false,
           stripLinks: 'no',
           enforceMarkSupport: false,
-          injectMathHeaders: true
+          injectMathHeaders: true,
+          htmlTemplate: '',
+          latexTemplate: ''
         },
         zkn: { linkFormat: 'link|title' }
       },
@@ -149,7 +151,9 @@ describe('Simple PDF MathJax readiness', function () {
           stripTags: false,
           stripLinks: 'no',
           enforceMarkSupport: false,
-          injectMathHeaders: true
+          injectMathHeaders: true,
+          htmlTemplate: '',
+          latexTemplate: ''
         },
         zkn: { linkFormat: 'link|title' }
       },

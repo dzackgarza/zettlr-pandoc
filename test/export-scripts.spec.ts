@@ -19,7 +19,7 @@ before(async function () {
 })
 
 const config = {
-  export: { cslLibrary: '', cslStyle: '', stripTags: false, stripLinks: 'no' as const, enforceMarkSupport: false, injectMathHeaders: true },
+  export: { cslLibrary: '', cslStyle: '', stripTags: false, stripLinks: 'no' as const, enforceMarkSupport: false, injectMathHeaders: true, htmlTemplate: '', latexTemplate: '' },
   zkn: { linkFormat: 'link|title' as const }
 }
 

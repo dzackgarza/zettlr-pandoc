@@ -117,7 +117,7 @@ function normalizePandocDefaults (value: unknown, filename: string): PandocDefau
 }
 
 type DefaultsWriterConfig = {
-  export: Pick<ConfigOptions['export'], 'cslLibrary'|'cslStyle'|'stripTags'|'stripLinks'|'enforceMarkSupport'|'injectMathHeaders'>
+  export: Pick<ConfigOptions['export'], 'cslLibrary'|'cslStyle'|'stripTags'|'stripLinks'|'enforceMarkSupport'|'injectMathHeaders'|'htmlTemplate'|'latexTemplate'>
   zkn: Pick<ConfigOptions['zkn'], 'linkFormat'>
 }
 
@@ -297,6 +297,18 @@ export async function writeDefaults (
 
   if (defaultsOverride?.template !== undefined) {
     defaults.template = defaultsOverride.template
+  }
+
+  // Apply a configured default template per writer family when the profile (and
+  // any override) leave the template unset. A configured file browses to an
+  // absolute path, or a name is resolved from ~/.pandoc/templates.
+  if (defaults.template === undefined || defaults.template === '') {
+    const writerName = parseReaderWriter(defaults.writer as string).name
+    if ([ 'html', 'html4', 'html5', 'revealjs', 's5', 'slidy', 'dzslides' ].includes(writerName) && config.export.htmlTemplate !== '') {
+      defaults.template = config.export.htmlTemplate
+    } else if ([ 'latex', 'beamer', 'pdf' ].includes(writerName) && config.export.latexTemplate !== '') {
+      defaults.template = config.export.latexTemplate
+    }
   }
 
   // Prepend the declared, ordered export filter chain before the profile's own
