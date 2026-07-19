@@ -108,7 +108,7 @@ function normalizePandocDefaults (value: unknown, filename: string): PandocDefau
 }
 
 type DefaultsWriterConfig = {
-  export: Pick<ConfigOptions['export'], 'cslLibrary'|'cslStyle'|'stripTags'|'stripLinks'|'enforceMarkSupport'>
+  export: Pick<ConfigOptions['export'], 'cslLibrary'|'cslStyle'|'stripTags'|'stripLinks'|'enforceMarkSupport'|'injectMathHeaders'>
   zkn: Pick<ConfigOptions['zkn'], 'linkFormat'>
 }
 
@@ -295,12 +295,16 @@ export async function writeDefaults (
     defaults[key] = properties[key]
   }
 
-  await injectPandocMathHeaders(
-    defaults as Record<string, unknown>,
-    temporaryDirectory,
-    mathJaxComponent,
-    macros
-  )
+  // Inject the fork's local MathJax config/preamble unless the user defers math
+  // to the profile's template (e.g. a ~/.pandoc template that owns MathJax).
+  if (config.export.injectMathHeaders) {
+    await injectPandocMathHeaders(
+      defaults as Record<string, unknown>,
+      temporaryDirectory,
+      mathJaxComponent,
+      macros
+    )
+  }
 
   const YAMLOptions = {
     indent: 4,

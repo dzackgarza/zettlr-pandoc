@@ -17,7 +17,7 @@ before(async function () {
 })
 
 const config = {
-  export: { cslLibrary: '', cslStyle: '', stripTags: false, stripLinks: 'no' as const, enforceMarkSupport: false },
+  export: { cslLibrary: '', cslStyle: '', stripTags: false, stripLinks: 'no' as const, enforceMarkSupport: false, injectMathHeaders: true },
   zkn: { linkFormat: 'link|title' as const }
 }
 
@@ -54,5 +54,33 @@ describe('Declarative export filter chain', function () {
     await execFileAsync('pandoc', [ '--defaults', path.join(directory, 'defaults.yml') ])
     const tex = await readFile(outputFile, { encoding: 'utf8' })
     assert.match(tex, /THEOREM_MARKER/)
+  })
+})
+
+describe('Export math-header injection toggle', function () {
+  it('skips the local MathJax injection when injectMathHeaders is off', async function () {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-export-nomath-'))
+    const inputFile = path.join(directory, 'input.md')
+    const outputFile = path.join(directory, 'output.html')
+
+    await writeFile(inputFile, '$\\RR$\n')
+    const htmlProfile = YAML.parse(await readFile('static/defaults/HTML.yaml', { encoding: 'utf8' })) as Record<string, unknown>
+    const noInject = { export: { ...config.export, injectMathHeaders: false }, zkn: config.zkn }
+
+    await writeDefaults(
+      htmlProfile,
+      { 'input-files': [ inputFile ], 'output-file': outputFile, standalone: true },
+      noInject,
+      [],
+      directory,
+      path.join(directory, 'unused.js'),
+      macros
+    )
+
+    const written = YAML.parse(await readFile(path.join(directory, 'defaults.yml'), { encoding: 'utf8' })) as Record<string, unknown>
+    const headers = (written['include-in-header'] ?? []) as string[]
+    assert.ok(!headers.some(h => /zettlr-mathjax/.test(h)), 'no injected MathJax header')
+    // Injection deletes the profile's html-math-method; skipping preserves it.
+    assert.ok(written['html-math-method'] !== undefined, 'profile html-math-method survives')
   })
 })

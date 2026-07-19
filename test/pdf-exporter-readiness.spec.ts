@@ -101,7 +101,8 @@ describe('Simple PDF MathJax readiness', function () {
           cslStyle: '',
           stripTags: false,
           stripLinks: 'no',
-          enforceMarkSupport: false
+          enforceMarkSupport: false,
+          injectMathHeaders: true
         },
         zkn: { linkFormat: 'link|title' }
       },
@@ -147,7 +148,8 @@ describe('Simple PDF MathJax readiness', function () {
           cslStyle: '',
           stripTags: false,
           stripLinks: 'no',
-          enforceMarkSupport: false
+          enforceMarkSupport: false,
+          injectMathHeaders: true
         },
         zkn: { linkFormat: 'link|title' }
       },

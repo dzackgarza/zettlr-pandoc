@@ -122,6 +122,10 @@ export interface ConfigOptions {
     // (~/.pandoc/filters) or an absolute path. Ordered and declared, unlike the
     // former implicit fs.readdir sweep of the lua-filter directory.
     filters: string[]
+    // Whether the exporter injects its own local MathJax config/preamble into
+    // HTML and TeX exports (self-contained, offline). Turn off to defer math to
+    // the profile's template (e.g. a ~/.pandoc template that owns MathJax).
+    injectMathHeaders: boolean
     selectedProfiles: Array<{ filePath: string, profile: string }>
     lastUsedProfile: string
   }
@@ -340,6 +344,7 @@ export function getConfigTemplate (): ConfigOptions {
       exportQmdWithQuarto: false, // Whether .qmd-files should be exported with Quarto
       customCommands: [], // Custom commands that the user can use to run arbitrary exports
       filters: [], // Ordered Pandoc filters applied to every export (resolved from ~/.pandoc/filters)
+      injectMathHeaders: true, // Inject local MathJax config/preamble into exports; off defers to the profile template
       selectedProfiles: [], // Remembers the last chosen exporter per file for easy re-exporting
       lastUsedProfile: 'HTML.yaml' // Remembers the last chosen exporter for easy re-exporting
     },

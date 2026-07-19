@@ -110,7 +110,8 @@ describe('Pandoc math export headers', function () {
         cslStyle: '',
         stripTags: false,
         stripLinks: 'no' as const,
-        enforceMarkSupport: false
+        enforceMarkSupport: false,
+        injectMathHeaders: true
       },
       zkn: { linkFormat: 'link|title' as const }
     }
@@ -179,7 +180,8 @@ describe('Pandoc math export headers', function () {
         cslStyle: '',
         stripTags: false,
         stripLinks: 'no' as const,
-        enforceMarkSupport: false
+        enforceMarkSupport: false,
+        injectMathHeaders: true
       },
       zkn: { linkFormat: 'link|title' as const }
     }
