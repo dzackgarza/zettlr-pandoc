@@ -16,7 +16,7 @@ include-in-header: []
 bibliography: []
 filters:
 - type: citeproc
-pdf-engine: xelatex # Change this if you want to use a different engine, e.g. pdflatex
+pdf-engine: pdflatex # Change this if you want to use a different engine, e.g. xelatex or lualatex
 dpi: 72
 toc: false # Include a table of contents?
 toc-depth: 2 # 2 means to only include headings level 1 and 2 in the ToC
