@@ -217,12 +217,12 @@ describe('Pandoc math export headers', function () {
     assert.match(html, /\\RR/)
     assert.match(html, /\\ce\{H2O\}/)
   })
-  it('classifies copied Reveal, PDF, and plain-text profile defaults at the shared header seam', async function () {
+  it('classifies copied Reveal, LaTeX, and plain-text profile defaults at the shared header seam', async function () {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-pandoc-profiles-'))
     const existingHeader = path.join(directory, 'existing-header')
     const component = path.join(directory, 'mathjax', 'tex-chtml.js')
-    const fixtureNames = [ 'Reveal.js.yaml', 'PDF.yaml', 'Plain Text.yaml' ]
-    const profileDirectories = [ 'reveal', 'pdf', 'plain' ].map(name => path.join(directory, name))
+    const fixtureNames = [ 'Reveal.js.yaml', 'LaTeX.yaml', 'Plain Text.yaml' ]
+    const profileDirectories = [ 'reveal', 'latex', 'plain' ].map(name => path.join(directory, name))
     await Promise.all(profileDirectories.map(async (profileDirectory, index) => {
       await mkdir(profileDirectory, { recursive: true })
       await cp(path.join('static/defaults', fixtureNames[index]), path.join(profileDirectory, 'copied-defaults.yaml'))
@@ -238,16 +238,16 @@ describe('Pandoc math export headers', function () {
       await injectPandocMathHeaders(defaults, profileDirectories[index], component, macros)
     }
 
-    const [ reveal, pdf, plain ] = profiles
+    const [ reveal, latex, plain ] = profiles
     const revealHeaders = reveal['include-in-header'] as string[]
-    const pdfHeaders = pdf['include-in-header'] as string[]
+    const latexHeaders = latex['include-in-header'] as string[]
 
     assert.strictEqual(revealHeaders[0], existingHeader)
-    assert.strictEqual(pdfHeaders[0], existingHeader)
+    assert.strictEqual(latexHeaders[0], existingHeader)
     assert.strictEqual(revealHeaders.length, 2)
-    assert.strictEqual(pdfHeaders.length, 2)
+    assert.strictEqual(latexHeaders.length, 2)
     assert.match(await readFile(revealHeaders[1], { encoding: 'utf8' }), /window\.MathJax/)
-    assert.match(await readFile(pdfHeaders[1], { encoding: 'utf8' }), /\\usepackage\[version=4\]\{mhchem\}/)
+    assert.match(await readFile(latexHeaders[1], { encoding: 'utf8' }), /\\usepackage\[version=4\]\{mhchem\}/)
     assert.deepStrictEqual(plain['include-in-header'], [ existingHeader ])
   })
 

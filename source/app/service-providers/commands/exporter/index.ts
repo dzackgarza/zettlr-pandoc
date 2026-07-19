@@ -27,6 +27,7 @@ import type { DefaultsOverride, ExporterAPI, ExporterOptions, ExporterOutput, Pa
 import { plugin as DefaultExporter } from './default-exporter'
 import { plugin as TextbundleExporter } from './textbundle-exporter'
 import { runScriptExport } from './script-exporter'
+import { runRecipeExport } from './recipe-exporter'
 import type AssetsProvider from '@providers/assets'
 import type LogProvider from '@providers/log'
 import { type PandocProfileMetadata } from '@providers/assets'
@@ -48,6 +49,14 @@ import { loadMathJaxMacros, mathJaxMacrosPath } from '../../../util/load-mathjax
  */
 export function getCustomProfiles (scripts: ConfigOptions['export']['scripts'] = []): PandocProfileMetadata[] {
   return [
+    {
+      // PDF export is not a Pandoc-defaults export: it delegates to the
+      // authoritative ~/.pandoc `compile-pandoc` recipe (see recipe-exporter).
+      name: 'PDF.yaml',
+      reader: 'markdown',
+      writer: 'compile-pandoc',
+      isInvalid: false
+    },
     {
       name: 'Textbundle.yaml', // Fake name
       reader: 'markdown', // Not completely the truth
@@ -160,6 +169,9 @@ export async function makeExport (
   // Search for the correct plugin to run, and run it. First the custom ones ...
   if ([ 'textbundle', 'textpack' ].includes(options.profile.writer)) {
     return await PLUGINS.textbundle(options, inputFiles, ctx)
+  } else if (options.profile.writer === 'compile-pandoc') {
+    // PDF: delegate to the authoritative ~/.pandoc compile-pandoc recipe.
+    return await runRecipeExport(options, config.get().export.latexTemplate)
   } else if (options.profile.writer === 'script') {
     const script = config.get().export.scripts.find(s => s.name === options.profile.name)
     if (script === undefined) {
