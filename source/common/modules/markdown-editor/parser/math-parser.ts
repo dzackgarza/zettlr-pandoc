@@ -34,44 +34,6 @@ const blockMathRE = /^(\s*\$\$)\s*$/
 const bracketOpenRE = /^\s*\\\[\s*$/
 const blankLineRe = /^\s*$/
 
-/**
- * Every math delimiter pair the editor understands, most specific first so that
- * `$$` is tried before `$`. `open`/`close` are the literal source delimiters.
- */
-export interface MathDelimiterPair { open: string, close: string, display: boolean }
-export const MATH_DELIMITERS: MathDelimiterPair[] = [
-  { open: '$$', close: '$$', display: true },
-  { open: '\\[', close: '\\]', display: true },
-  { open: '\\(', close: '\\)', display: false },
-  { open: '$', close: '$', display: false }
-]
-
-/**
- * Given an opening delimiter string, returns whether it opens display math, or
- * null if it is not a recognized math delimiter. Used by the AST builder and the
- * HTML/editor renderers to classify a code node's mark.
- */
-export function mathDisplayForOpen (open: string): boolean | null {
-  const pair = MATH_DELIMITERS.find(d => d.open === open)
-  return pair === undefined ? null : pair.display
-}
-
-/**
- * Strips a recognized delimiter pair off fully-delimited math text (e.g. `$$x$$`,
- * `\[x\]`, `\(x\)`, `$x$`), returning the display mode and inner equation, or
- * null if the text is not delimited math.
- */
-export function stripMathDelimiters (text: string): { display: boolean, equation: string } | null {
-  // A block math node may carry a single trailing newline; tolerate it.
-  const trimmed = text.endsWith('\n') ? text.slice(0, -1) : text
-  for (const { open, close, display } of MATH_DELIMITERS) {
-    if (trimmed.length >= open.length + close.length && trimmed.startsWith(open) && trimmed.endsWith(close)) {
-      return { display, equation: trimmed.slice(open.length, trimmed.length - close.length) }
-    }
-  }
-  return null
-}
-
 export const inlineMathParser: InlineParser = {
   // This parser should only match inline-math (we have to divide that here)
   name: 'inlineMath',

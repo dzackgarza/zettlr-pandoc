@@ -26,7 +26,7 @@ import type { CitationNode, ASTNode, GenericNode, FootnoteRef } from './markdown
 import { type MarkdownParserConfig } from '../markdown-editor/parser/markdown-parser'
 import _ from 'underscore'
 import { mathJaxToHTML } from '@common/util/mathtex-to-html'
-import { mathDisplayForOpen } from '../markdown-editor/parser/math-parser'
+import { mathDisplayForOpen } from '@common/util/math-delimiters'
 
 /**
  * Represents an HTML tag. This is a purposefully shallow representation

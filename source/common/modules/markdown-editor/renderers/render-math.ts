@@ -20,7 +20,7 @@ import { type EditorState } from '@codemirror/state'
 import clickAndSelect from './click-and-select'
 import { equationMenu } from '../context-menu/equation-menu'
 import { mathJaxToElem } from 'source/common/util/mathtex-to-html'
-import { stripMathDelimiters } from '../parser/math-parser'
+import { stripMathDelimiters } from 'source/common/util/math-delimiters'
 import { rangeInSelection } from '../util/range-in-selection'
 import { configField } from '../util/configuration'
 
