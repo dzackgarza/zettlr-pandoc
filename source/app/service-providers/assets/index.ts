@@ -52,6 +52,11 @@ export interface PandocProfileMetadata {
    * some misconceptions, i.e. why certain files cannot be deleted.
    */
   isProtected?: boolean
+  /**
+   * The Pandoc template the profile declares (resolved by name from the Pandoc
+   * data directory), if any. Surfaced for export observability.
+   */
+  template?: string
 }
 
 export type AssetsProviderIPCAPI = IPCAPI<{
@@ -543,7 +548,8 @@ export default class AssetsProvider extends ProviderContract {
           writer: yaml.writer,
           reader: yaml.reader,
           isInvalid: !(hasWriter && hasReader && (validWriter || validReader)),
-          isProtected: this._protectedDefaults.includes(file)
+          isProtected: this._protectedDefaults.includes(file),
+          template: typeof yaml.template === 'string' ? yaml.template : undefined
         })
       } catch (err) {
         this._logger.warning(`[Assets Provider] Installed profile ${file} had an error and could not be parsed`)
