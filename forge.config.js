@@ -263,7 +263,9 @@ module.exports = {
         // collide on every system on which PHP is installed, we change the
         // default ports for both the logger and the dev servers. We have to set
         // both ports, because changing only one doesn't solve the issue.
-        port: 3000,
+        // ponytail: upstream default 3000 collides with a persistent local
+        // dev server on this machine; moved to a free port for the fork spike.
+        port: 3100,
         loggerPort: 9001,
         renderer: {
           config: './webpack.renderer.config.js',

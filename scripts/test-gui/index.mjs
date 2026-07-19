@@ -138,7 +138,24 @@ function startApp (argv = []) {
   // Finally spawn the process
   const proc = spawn(command, forgeArgs, spawnOptions)
 
+  // Surface a failed spawn (e.g. electron-forge not found) instead of letting
+  // the promise rejection go unhandled.
+  proc.on('error', (err) => {
+    error(`Failed to start Zettlr: ${err.message}`)
+    console.error(err)
+    process.exitCode = 1
+  })
+
+  // Fail loud on a non-zero exit and propagate the code, so callers (this
+  // script's own exit status, justfiles, CI) can actually detect the failure
+  // instead of seeing a success-shaped log line. The cause itself is printed
+  // above by electron-forge on the inherited stdio.
   proc.on('close', (code) => {
+    if (code !== 0) {
+      error(`Zettlr exited with code ${code} — see the output above for the cause.`)
+      process.exitCode = code ?? 1
+      return
+    }
     info(`Child process exited with code ${code}`)
   })
 }
