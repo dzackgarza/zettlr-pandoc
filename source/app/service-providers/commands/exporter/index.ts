@@ -144,7 +144,7 @@ export async function makeExport (
         defaults,
         overrides,
         config.get(),
-        await assets.listFilters(true),
+        config.get().export.filters,
         app.getPath('temp'),
         path.join(__dirname, 'assets/defaults/mathjax-tex-chtml.js'),
         macros,
@@ -284,7 +284,10 @@ export async function writeDefaults (
     defaults.template = defaultsOverride.template
   }
 
-  defaults.filters = defaults.filters.concat(filters)
+  // Prepend the declared, ordered export filter chain before the profile's own
+  // filters, so structural filters (e.g. amsthm-env conversion) run before the
+  // profile's citeproc rather than in filesystem order.
+  defaults.filters = [ ...filters, ...defaults.filters ]
 
   // After we have added our default keys, let the plugin add their keys, which
   // enables them to override certain keys if necessary.

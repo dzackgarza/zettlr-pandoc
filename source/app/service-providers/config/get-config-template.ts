@@ -117,6 +117,11 @@ export interface ConfigOptions {
     useBundledPandoc: boolean
     exportQmdWithQuarto: boolean
     customCommands: Array<{ displayName: string, command: string }>
+    // Ordered list of Pandoc filters applied to every export before the
+    // profile's own filters. Names resolve from Pandoc's data directory
+    // (~/.pandoc/filters) or an absolute path. Ordered and declared, unlike the
+    // former implicit fs.readdir sweep of the lua-filter directory.
+    filters: string[]
     selectedProfiles: Array<{ filePath: string, profile: string }>
     lastUsedProfile: string
   }
@@ -334,6 +339,7 @@ export function getConfigTemplate (): ConfigOptions {
       useBundledPandoc: true, // Whether to use the bundled Pandoc
       exportQmdWithQuarto: false, // Whether .qmd-files should be exported with Quarto
       customCommands: [], // Custom commands that the user can use to run arbitrary exports
+      filters: [], // Ordered Pandoc filters applied to every export (resolved from ~/.pandoc/filters)
       selectedProfiles: [], // Remembers the last chosen exporter per file for easy re-exporting
       lastUsedProfile: 'HTML.yaml' // Remembers the last chosen exporter for easy re-exporting
     },
