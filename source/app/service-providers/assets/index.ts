@@ -21,6 +21,7 @@ import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
 import ProviderContract, { type IPCAPI } from '../provider-contract'
 import type LogProvider from '../log'
 import { getCustomProfiles } from '@providers/commands/exporter'
+import { getAppServiceContainer, isAppServiceContainerReady } from '../../app-service-container'
 import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import { parseReaderWriter } from '@common/pandoc-util/parse-reader-writer'
 
@@ -156,7 +157,8 @@ export default class AssetsProvider extends ProviderContract {
         return await this.listDefaults()
       } else if (command === 'list-export-profiles') {
         const profiles = await this.listDefaults()
-        return profiles.concat(getCustomProfiles())
+        const scripts = isAppServiceContainerReady() ? getAppServiceContainer().config.get().export.scripts : []
+        return profiles.concat(getCustomProfiles(scripts))
       } else if (command === 'open-defaults-directory') {
         this._logger.info(`[AssetsProvider] Opening path ${this._defaultsPath}`)
         return await shell.openPath(this._defaultsPath)

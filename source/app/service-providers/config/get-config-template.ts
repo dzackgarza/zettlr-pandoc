@@ -126,6 +126,12 @@ export interface ConfigOptions {
     // HTML and TeX exports (self-contained, offline). Turn off to defer math to
     // the profile's template (e.g. a ~/.pandoc template that owns MathJax).
     injectMathHeaders: boolean
+    // Declarative, pipeline-integrated export scripts. Each becomes a first-class
+    // Format item: export the source through the named base Pandoc `profile` to
+    // an intermediate, then run `command "<intermediate>" "<output>"`, producing
+    // an `extension` file. Unlike customCommands (raw source), the script
+    // receives the Pandoc-processed output.
+    scripts: Array<{ name: string, profile: string, command: string, extension: string }>
     selectedProfiles: Array<{ filePath: string, profile: string }>
     lastUsedProfile: string
   }
@@ -345,6 +351,7 @@ export function getConfigTemplate (): ConfigOptions {
       customCommands: [], // Custom commands that the user can use to run arbitrary exports
       filters: [], // Ordered Pandoc filters applied to every export (resolved from ~/.pandoc/filters)
       injectMathHeaders: true, // Inject local MathJax config/preamble into exports; off defers to the profile template
+      scripts: [], // Pipeline-integrated export scripts (base profile -> command -> output); see interface above
       selectedProfiles: [], // Remembers the last chosen exporter per file for easy re-exporting
       lastUsedProfile: 'HTML.yaml' // Remembers the last chosen exporter for easy re-exporting
     },

@@ -27,6 +27,7 @@ import type { DefaultsOverride, ExporterAPI, ExporterOptions, ExporterOutput, Pa
 import { plugin as DefaultExporter } from './default-exporter'
 import { plugin as PDFExporter } from './pdf-exporter'
 import { plugin as TextbundleExporter } from './textbundle-exporter'
+import { runScriptExport } from './script-exporter'
 import type AssetsProvider from '@providers/assets'
 import type LogProvider from '@providers/log'
 import { type PandocProfileMetadata } from '@providers/assets'
@@ -46,7 +47,7 @@ import { loadMathJaxMacros, mathJaxMacrosPath } from '../../../util/load-mathjax
  *
  * @return  {PandocProfileMetadata[]}The additional profiles
  */
-export function getCustomProfiles (): PandocProfileMetadata[] {
+export function getCustomProfiles (scripts: ConfigOptions['export']['scripts'] = []): PandocProfileMetadata[] {
   return [
     {
       name: 'Textbundle.yaml', // Fake name
@@ -65,7 +66,15 @@ export function getCustomProfiles (): PandocProfileMetadata[] {
       reader: 'markdown',
       writer: 'simple-pdf',
       isInvalid: false
-    }
+    },
+    // User-declared pipeline-integrated export scripts (config.export.scripts),
+    // passed by callers that have config access.
+    ...scripts.map(script => ({
+      name: script.name,
+      reader: 'markdown',
+      writer: 'script',
+      isInvalid: false
+    }))
   ]
 }
 
@@ -161,6 +170,12 @@ export async function makeExport (
     return await PLUGINS.textbundle(options, inputFiles, ctx)
   } else if (options.profile.writer === 'simple-pdf') {
     return await PLUGINS['simple-pdf'](options, inputFiles, ctx)
+  } else if (options.profile.writer === 'script') {
+    const script = config.get().export.scripts.find(s => s.name === options.profile.name)
+    if (script === undefined) {
+      throw new Error(`Cannot run export script "${options.profile.name}": not found in config`)
+    }
+    return await runScriptExport(options, inputFiles, ctx, script)
   } else {
     // ... otherwise run the regular Pandoc exporter.
     return await PLUGINS.pandoc(options, inputFiles, ctx)
