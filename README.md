@@ -17,9 +17,11 @@ installation, features, and general use, see the
   [mhchem](https://mhchem.github.io/MathJax-mhchem/) for chemistry.
 - **Configurable TeX macros.** Define your own macros in a config file; the
   same set is used both in the editor and in every export (see below).
-- **Pandoc export parity.** HTML, LaTeX/PDF, and the built-in Simple PDF export
-  inject the same macros and MathJax configuration, so exported math matches
-  what you see in the editor.
+- **Every export goes through Pandoc.** HTML, LaTeX, and PDF all run through
+  Pandoc, so your configured filters and templates always apply and exported
+  math matches what you see in the editor. (The upstream Chromium "Simple PDF"
+  export, which bypassed Pandoc and silently ignored filters and templates, has
+  been removed.)
 
 ## MathJax macros
 

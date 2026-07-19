@@ -25,7 +25,6 @@ import isFile from '@common/util/is-file'
 // Exporters
 import type { DefaultsOverride, ExporterAPI, ExporterOptions, ExporterOutput, PandocRunnerOutput } from './types'
 import { plugin as DefaultExporter } from './default-exporter'
-import { plugin as PDFExporter } from './pdf-exporter'
 import { plugin as TextbundleExporter } from './textbundle-exporter'
 import { runScriptExport } from './script-exporter'
 import type AssetsProvider from '@providers/assets'
@@ -61,12 +60,6 @@ export function getCustomProfiles (scripts: ConfigOptions['export']['scripts'] =
       writer: 'textpack',
       isInvalid: false
     },
-    {
-      name: 'Simple PDF.yaml',
-      reader: 'markdown',
-      writer: 'simple-pdf',
-      isInvalid: false
-    },
     // User-declared pipeline-integrated export scripts (config.export.scripts),
     // passed by callers that have config access.
     ...scripts.map(script => ({
@@ -80,7 +73,6 @@ export function getCustomProfiles (scripts: ConfigOptions['export']['scripts'] =
 
 const PLUGINS = {
   pandoc: DefaultExporter,
-  'simple-pdf': PDFExporter,
   textbundle: TextbundleExporter
 }
 
@@ -168,8 +160,6 @@ export async function makeExport (
   // Search for the correct plugin to run, and run it. First the custom ones ...
   if ([ 'textbundle', 'textpack' ].includes(options.profile.writer)) {
     return await PLUGINS.textbundle(options, inputFiles, ctx)
-  } else if (options.profile.writer === 'simple-pdf') {
-    return await PLUGINS['simple-pdf'](options, inputFiles, ctx)
   } else if (options.profile.writer === 'script') {
     const script = config.get().export.scripts.find(s => s.name === options.profile.name)
     if (script === undefined) {

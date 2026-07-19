@@ -221,7 +221,7 @@ describe('Pandoc math export headers', function () {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-pandoc-profiles-'))
     const existingHeader = path.join(directory, 'existing-header')
     const component = path.join(directory, 'mathjax', 'tex-chtml.js')
-    const fixtureNames = [ 'Reveal.js.yaml', 'XeLaTeX PDF.yaml', 'Plain Text.yaml' ]
+    const fixtureNames = [ 'Reveal.js.yaml', 'PDF.yaml', 'Plain Text.yaml' ]
     const profileDirectories = [ 'reveal', 'pdf', 'plain' ].map(name => path.join(directory, name))
     await Promise.all(profileDirectories.map(async (profileDirectory, index) => {
       await mkdir(profileDirectory, { recursive: true })
