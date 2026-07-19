@@ -2,11 +2,11 @@ import { strict as assert } from 'assert'
 import { mkdtemp, readFile, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
-import { ensureMacroExample, loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
+import { loadMathJaxMacros, seedDefaultMacros } from 'source/app/util/load-mathjax-macros'
 
 const VALID = 'test/fixtures/mathjax-macros.json'
 const MALFORMED = 'test/fixtures/mathjax-macros.malformed.json'
-const SHIPPED_EXAMPLE = 'static/mathjax-macros.example.json'
+const SHIPPED_DEFAULT = 'static/mathjax-macros.json'
 
 describe('loadMathJaxMacros()', function () {
   it('parses a MathJax macro file into validated definitions', async function () {
@@ -25,27 +25,27 @@ describe('loadMathJaxMacros()', function () {
     await assert.rejects(loadMathJaxMacros(MALFORMED), /broken/)
   })
 
-  it('ships a valid example the loader accepts', async function () {
-    const macros = await loadMathJaxMacros(SHIPPED_EXAMPLE)
+  it('ships a valid default macro set the loader accepts', async function () {
+    const macros = await loadMathJaxMacros(SHIPPED_DEFAULT)
     assert.ok(Object.keys(macros).length > 0)
   })
 })
 
-describe('ensureMacroExample()', function () {
-  it('writes the example file when the config directory has none', async function () {
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-macro-example-'))
-    await ensureMacroExample(directory, SHIPPED_EXAMPLE)
+describe('seedDefaultMacros()', function () {
+  it('writes the default macro file when the config directory has none', async function () {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-macro-seed-'))
+    await seedDefaultMacros(directory, SHIPPED_DEFAULT)
 
-    const written = await readFile(path.join(directory, 'mathjax-macros.json.example'), { encoding: 'utf8' })
-    assert.strictEqual(written, await readFile(SHIPPED_EXAMPLE, { encoding: 'utf8' }))
+    const written = await readFile(path.join(directory, 'mathjax-macros.json'), { encoding: 'utf8' })
+    assert.strictEqual(written, await readFile(SHIPPED_DEFAULT, { encoding: 'utf8' }))
   })
 
-  it('does not overwrite an existing example file', async function () {
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-macro-example-'))
-    const target = path.join(directory, 'mathjax-macros.json.example')
-    await writeFile(target, 'user edited')
-    await ensureMacroExample(directory, SHIPPED_EXAMPLE)
+  it('does not overwrite an existing macro file', async function () {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-macro-seed-'))
+    const target = path.join(directory, 'mathjax-macros.json')
+    await writeFile(target, '{ "MINE": "\\\\mathbb{M}" }')
+    await seedDefaultMacros(directory, SHIPPED_DEFAULT)
 
-    assert.strictEqual(await readFile(target, { encoding: 'utf8' }), 'user edited')
+    assert.strictEqual(await readFile(target, { encoding: 'utf8' }), '{ "MINE": "\\\\mathbb{M}" }')
   })
 })

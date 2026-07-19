@@ -21,7 +21,6 @@ import isFile from '@common/util/is-file'
 import { parseMathJaxMacros, type MathJaxMacro } from '@common/util/mathjax-config'
 
 export const MATHJAX_MACROS_FILENAME = 'mathjax-macros.json'
-export const MATHJAX_MACROS_EXAMPLE_FILENAME = 'mathjax-macros.json.example'
 
 /**
  * Resolves the macro file inside the given config directory (the app's
@@ -32,18 +31,18 @@ export function mathJaxMacrosPath (configDirectory: string): string {
 }
 
 /**
- * Places a discoverable example macro file next to where the real one is read,
- * so a user browsing the config directory sees the expected filename and
- * format without any in-app UI. Copies the shipped example only if the user
- * has no example file yet, so a deleted example stays deleted.
+ * Seeds the config directory with the shipped default macro file so a fresh
+ * install has a set of standard macros working out of the box, editable in
+ * place. Only writes if the user has no macro file yet, so it never clobbers
+ * user edits or a symlinked macro set.
  */
-export async function ensureMacroExample (configDirectory: string, sourceExamplePath: string): Promise<void> {
-  const target = path.join(configDirectory, MATHJAX_MACROS_EXAMPLE_FILENAME)
+export async function seedDefaultMacros (configDirectory: string, defaultMacrosPath: string): Promise<void> {
+  const target = mathJaxMacrosPath(configDirectory)
   if (isFile(target)) {
     return
   }
 
-  await fs.copyFile(sourceExamplePath, target)
+  await fs.copyFile(defaultMacrosPath, target)
 }
 
 /**

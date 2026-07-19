@@ -132,16 +132,16 @@ to unlock all export profiles of the app.
 ## MathJax Macros
 
 This build renders math with MathJax and lets you define your own TeX macros.
-Macros are read from a single file in the app's configuration directory:
+On first run the app writes a default set of standard macros to a single file
+in its configuration directory, which you can edit directly:
 
 - **Linux:** `~/.config/Zettlr/mathjax-macros.json`
 - **macOS:** `~/Library/Application Support/Zettlr/mathjax-macros.json`
 - **Windows:** `%APPDATA%\Zettlr\mathjax-macros.json`
 
-On first run the app drops a `mathjax-macros.json.example` next to it so you can
-see the expected filename and format. To enable your macros, copy that file to
-`mathjax-macros.json` (or place/symlink your own there) and restart the app —
-macros are loaded once at startup.
+Edit that file and restart the app to change your macros — they are loaded once
+at startup. The app never overwrites your edits (it only writes the defaults
+when no file exists yet), so to reset you can delete the file and restart.
 
 The file uses the standard MathJax
 [`tex.macros`](https://docs.mathjax.org/en/latest/input/tex/macros.html) shape:
@@ -156,9 +156,9 @@ or `[replacement, argCount]`, or `[replacement, argCount, optionalDefault]`:
 }
 ```
 
-Any MathJax-compatible macro export works, so a macro set you already maintain
-(for example a Pandoc macro export) can be dropped in unchanged. If the file is
-absent, no custom macros are defined; if it is present but malformed, the app
+Any MathJax-compatible macro export uses this same shape, so a macro set you
+already maintain (for example a Pandoc macro export) can replace the file
+unchanged — copy or symlink it into place. If the file is malformed, the app
 reports the error rather than silently ignoring it.
 
 ## Building from Source
