@@ -266,12 +266,16 @@ interface ThemeField extends BasicInfo {
   options: Record<string, ThemeDescriptor>
 }
 
+interface FilterSelectField extends BasicInfo {
+  type: 'filter-select'
+}
+
 /**
  * Fields that can occur within the form field list
  */
 export type FormField = Separator|FormText|FormButton|TextField|NumberField|
 TimeField|ColorField|FileField|CheckboxField|RadioField|SelectField|ListField|
-TokenField|SliderField|ThemeField
+TokenField|SliderField|ThemeField|FilterSelectField
 
 /**
  * Fields that can only occur within the title area of a fieldset

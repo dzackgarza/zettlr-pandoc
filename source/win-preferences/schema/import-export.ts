@@ -157,20 +157,14 @@ export function getImportExportFields (): PreferencesFieldset[] {
     },
     {
       title: trans('Export filters'),
-      infoString: trans('Pandoc filters applied to every export, in order, before the profile\'s own filters. Names resolve from Pandoc\'s data directory (e.g. ~/.pandoc/filters) or an absolute path.'),
+      infoString: trans('Lua filters discovered in Pandoc\'s data directory (~/.pandoc/filters) and Zettlr\'s lua-filter directory. Enable the ones to run on every export; enabled filters run in the order shown (before the profile\'s own filters).'),
       group: PreferencesGroups.ImportExport,
       help: undefined,
       fields: [
         {
-          type: 'list',
-          valueType: 'simpleArray',
-          model: 'export.filters',
-          columnLabels: [ trans('Filter') ],
-          deletable: true,
-          searchable: true,
-          addable: true,
-          editable: true,
-          striped: true
+          type: 'filter-select',
+          label: trans('Enabled export filters'),
+          model: 'export.filters'
         }
       ]
     },

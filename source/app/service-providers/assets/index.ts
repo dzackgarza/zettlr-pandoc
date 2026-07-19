@@ -76,6 +76,7 @@ export type AssetsProviderIPCAPI = IPCAPI<{
   'set-snippet': { name: string, contents: string }
   'list-defaults': unknown
   'list-export-profiles': unknown
+  'list-available-filters': unknown
   'open-defaults-directory': unknown
   'open-snippets-directory': unknown
   'open-filter-directory': unknown
@@ -164,6 +165,8 @@ export default class AssetsProvider extends ProviderContract {
         const profiles = await this.listDefaults()
         const scripts = isAppServiceContainerReady() ? getAppServiceContainer().config.get().export.scripts : []
         return profiles.concat(getCustomProfiles(scripts))
+      } else if (command === 'list-available-filters') {
+        return await this.listAvailableFilters()
       } else if (command === 'open-defaults-directory') {
         this._logger.info(`[AssetsProvider] Opening path ${this._defaultsPath}`)
         return await shell.openPath(this._defaultsPath)
@@ -374,6 +377,28 @@ export default class AssetsProvider extends ProviderContract {
     return files
       .filter(file => /\.lua$/i.test(file))
       .map(file => returnAbsolutePaths ? path.join(this._filterPath, file) : file)
+  }
+
+  /**
+   * Lists the Lua filters available to declare in the export filter chain,
+   * discovered from Pandoc's data directory (~/.pandoc/filters) and Zettlr's own
+   * lua-filter directory. Returns bare filenames, which resolve by name when
+   * passed to Pandoc.
+   *
+   * @return  {Promise<string[]>}  Sorted, de-duplicated filter filenames.
+   */
+  async listAvailableFilters (): Promise<string[]> {
+    const dirs = [ path.join(app.getPath('home'), '.pandoc', 'filters'), this._filterPath ]
+    const names = new Set<string>()
+    for (const dir of dirs) {
+      const files = await fs.readdir(dir).catch(() => [] as string[])
+      for (const file of files) {
+        if (/\.lua$/i.test(file)) {
+          names.add(file)
+        }
+      }
+    }
+    return Array.from(names).sort()
   }
 
   /**
