@@ -129,6 +129,38 @@ to unlock all export profiles of the app.
 
 ![The central window of Zettlr using the dark theme](/resources/screenshots/zettlr_view_dark.png)
 
+## MathJax Macros
+
+This build renders math with MathJax and lets you define your own TeX macros.
+Macros are read from a single file in the app's configuration directory:
+
+- **Linux:** `~/.config/Zettlr/mathjax-macros.json`
+- **macOS:** `~/Library/Application Support/Zettlr/mathjax-macros.json`
+- **Windows:** `%APPDATA%\Zettlr\mathjax-macros.json`
+
+On first run the app drops a `mathjax-macros.json.example` next to it so you can
+see the expected filename and format. To enable your macros, copy that file to
+`mathjax-macros.json` (or place/symlink your own there) and restart the app —
+macros are loaded once at startup.
+
+The file uses the standard MathJax
+[`tex.macros`](https://docs.mathjax.org/en/latest/input/tex/macros.html) shape:
+a JSON object mapping each macro name to its definition — a replacement string,
+or `[replacement, argCount]`, or `[replacement, argCount, optionalDefault]`:
+
+```json
+{
+  "RR": "\\mathbb{R}",
+  "abs": ["\\left\\lvert {#1} \\right\\rvert", 1],
+  "poly": ["{#1}[{#2}]", 2, "x"]
+}
+```
+
+Any MathJax-compatible macro export works, so a macro set you already maintain
+(for example a Pandoc macro export) can be dropped in unchanged. If the file is
+absent, no custom macros are defined; if it is present but malformed, the app
+reports the error rather than silently ignoring it.
+
 ## Building from Source
 
 You can compile the app for yourself, if you prefer. To do so, refer to our

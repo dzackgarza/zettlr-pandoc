@@ -1,0 +1,6 @@
+{
+  "RR": "\\mathbb{R}",
+  "abs": ["\\left\\lvert {#1} \\right\\rvert", 1],
+  "norm": ["\\left\\lVert {#1} \\right\\rVert", 1],
+  "poly": ["{#1}[{#2}]", 2, "x"]
+}

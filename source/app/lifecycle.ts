@@ -26,7 +26,7 @@ import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
 import { AppServiceContainer, getAppServiceContainer, setAppServiceContainer } from './app-service-container'
 import { app, ipcMain } from 'electron'
 import { attachAppNavigationHandlers } from './util/attach-app-navigation-handlers'
-import { loadMathJaxMacros, mathJaxMacrosPath } from './util/load-mathjax-macros'
+import { ensureMacroExample, loadMathJaxMacros, mathJaxMacrosPath } from './util/load-mathjax-macros'
 
 // Statistics: Record the uptime of the application
 let upTimestamp: number
@@ -79,6 +79,10 @@ export async function bootApplication (): Promise<AppServiceContainer> {
   ipcMain.handle('mathjax-macros', async () => {
     return await loadMathJaxMacros(mathJaxMacrosPath(app.getPath('userData')))
   })
+
+  // Drop a discoverable example macro file into the config directory so users
+  // can find the expected filename and format without any in-app UI.
+  await ensureMacroExample(app.getPath('userData'), path.join(__dirname, 'assets/mathjax-macros.example.json'))
 
   // Now make the service container available for the rest of the main process.
   setAppServiceContainer(appServiceContainer)

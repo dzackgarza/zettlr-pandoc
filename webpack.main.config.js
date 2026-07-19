@@ -30,6 +30,7 @@ module.exports = {
         { from: 'static/csl-locales', to: 'assets/csl-locales' },
         { from: 'static/csl-styles', to: 'assets/csl-styles' },
         { from: 'static/defaults', to: 'assets/defaults' },
+        { from: 'static/mathjax-macros.example.json', to: 'assets/mathjax-macros.example.json' },
         { from: 'node_modules/@mathjax/src/bundle/tex-chtml.js', to: 'assets/defaults/mathjax-tex-chtml.js' },
         { from: 'node_modules/@mathjax/src/bundle/input/tex/extensions', to: 'assets/defaults/mathjax-tex-extensions' },
         { from: 'node_modules/@mathjax/mathjax-mhchem-font-extension', to: 'assets/defaults/mathjax-mhchem-font-extension' },
