@@ -164,7 +164,14 @@ export default class AssetsProvider extends ProviderContract {
       } else if (command === 'list-export-profiles') {
         const profiles = await this.listDefaults()
         const scripts = isAppServiceContainerReady() ? getAppServiceContainer().config.get().export.scripts : []
-        return profiles.concat(getCustomProfiles(scripts))
+        const custom = getCustomProfiles(scripts)
+        // Custom profiles (e.g. the compile-pandoc PDF) override any same-named
+        // defaults file. userData/defaults is copied once and never pruned, so a
+        // stale shipped default (e.g. an old xelatex PDF.yaml renamed/removed in
+        // a later version) can linger there; it must not shadow the custom
+        // profile of the same name in the export menu.
+        const customNames = new Set(custom.map(p => p.name))
+        return profiles.filter(p => !customNames.has(p.name)).concat(custom)
       } else if (command === 'list-available-filters') {
         return await this.listAvailableFilters()
       } else if (command === 'open-defaults-directory') {

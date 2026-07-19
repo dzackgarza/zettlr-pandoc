@@ -18,3 +18,10 @@ package:
 # Run the packaged binary (build it first with `just package`).
 run-packaged:
     ./out/Zettlr-Pandoc-linux-x64/zettlr-pandoc
+
+# Run a real export headlessly (no GUI), via the app's own makeExport with the
+# exact profile list the GUI sees (userData/defaults + custom profiles). Proves
+# an export end-to-end from the terminal. Usage:
+#   just export-headless PDF.yaml path/to/file.md
+export-headless profile file:
+    node --require "{{justfile_directory()}}/scripts/harness/electron-stub.cjs" --import tsx "{{justfile_directory()}}/scripts/harness/export-run.ts" "{{profile}}" "{{file}}"
