@@ -33,10 +33,13 @@ describe('Exporter macro projections', function () {
   })
 
   it('projects the same macro config into deterministic TeX definitions', function () {
+    // \providecommand, not \newcommand: a template preamble that already defines
+    // these macros (e.g. dzg-macros' \RR) would otherwise abort the LaTeX build
+    // with "Command already defined". \providecommand yields to the template.
     assert.strictEqual(projectTexHeader(macros), [
-      '\\newcommand{\\RR}{\\mathbb{R}}',
-      '\\newcommand{\\inner}[2][x]{\\langle #1, #2 \\rangle}',
-      '\\newcommand{\\vect}[1]{\\mathbf{#1}}'
+      '\\providecommand{\\RR}{\\mathbb{R}}',
+      '\\providecommand{\\inner}[2][x]{\\langle #1, #2 \\rangle}',
+      '\\providecommand{\\vect}[1]{\\mathbf{#1}}'
     ].join('\n'))
   })
 

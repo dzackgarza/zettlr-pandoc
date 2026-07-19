@@ -271,7 +271,10 @@ describe('Pandoc math export headers', function () {
     const tex = await runPandoc(defaultsFile, outputFile)
 
     assert.match(tex, /\\usepackage\[version=4\]\{mhchem\}/)
-    assert.match(tex, /\\newcommand\{\\RR\}\{\\mathbb\{R\}\}/)
+    // Projected macros use \providecommand so they never collide with a
+    // template preamble that already defines them (see macro-projections.ts).
+    assert.match(tex, /\\providecommand\{\\RR\}\{\\mathbb\{R\}\}/)
+    // The user's pre-existing include-header content is preserved verbatim.
     assert.match(tex, /\\newcommand\{\\Preserved\}\{yes\}/)
   })
 })

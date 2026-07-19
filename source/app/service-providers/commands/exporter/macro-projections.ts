@@ -46,17 +46,24 @@ export function projectMathJaxHeader (macros: Record<string, unknown>): string {
 
 /**
  * Produces deterministic TeX macro definitions for Pandoc TeX headers.
+ *
+ * Emitted with \providecommand, not \newcommand: a LaTeX template's own preamble
+ * (e.g. dzg-unified -> dzg-macros) commonly defines the same blackboard macros
+ * (\RR, \CC, ...), and \newcommand aborts the build with "Command already
+ * defined" on the redefinition. \providecommand is a no-op when the macro
+ * already exists (the template's definition wins) yet still defines it when no
+ * template provides one, so injection never collides.
  */
 export function projectTexHeader (macros: Record<string, unknown>): string {
   return sortedEntries(macros)
     .map(([name, definition]) => {
       if (typeof definition === 'string') {
-        return `\\newcommand{\\${name}}{${definition}}`
+        return `\\providecommand{\\${name}}{${definition}}`
       }
 
       const [body, requiredArguments, optionalDefault] = definition
       const optionalArguments = optionalDefault === undefined ? '' : `[${optionalDefault}]`
-      return `\\newcommand{\\${name}}[${requiredArguments}]${optionalArguments}{${body}}`
+      return `\\providecommand{\\${name}}[${requiredArguments}]${optionalArguments}{${body}}`
     })
     .join('\n')
 }
