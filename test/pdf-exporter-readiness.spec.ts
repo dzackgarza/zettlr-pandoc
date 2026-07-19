@@ -7,8 +7,16 @@ import { promisify } from 'util'
 import YAML from 'yaml'
 import { writeDefaults } from 'source/app/service-providers/commands/exporter/index'
 import { composePdfOperationAndCleanup } from 'source/app/service-providers/commands/exporter/pdf-exporter'
+import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
+import type { MathJaxMacro } from 'source/common/util/mathjax-config'
 
 const execFileAsync = promisify(execFile)
+
+// Example macro fixture loaded through the real loader; the app ships none.
+let macros: Record<string, MathJaxMacro>
+before(async function () {
+  macros = await loadMathJaxMacros('test/fixtures/mathjax-macros.json')
+})
 
 async function runElectronReadinessProbe (htmlFile: string): Promise<string> {
   const result = await execFileAsync(
@@ -99,7 +107,8 @@ describe('Simple PDF MathJax readiness', function () {
       },
       [],
       directory,
-      component
+      component,
+      macros
     )
 
     await execFileAsync('pandoc', [ '--defaults', defaultsFile ])
@@ -144,7 +153,8 @@ describe('Simple PDF MathJax readiness', function () {
       },
       [],
       directory,
-      component
+      component,
+      macros
     )
 
     const output = await runSimplePdfExport(defaultsFile, inputFile, directory)
@@ -155,7 +165,7 @@ describe('Simple PDF MathJax readiness', function () {
     assert.strictEqual(output.code, 0)
     assert.ok(!pdfText.includes('\\RR'))
     assert.ok(!pdfText.includes('\\ce{H2O}'))
-    assert.match(pdfText, /𝐑/)
+    assert.match(pdfText, /ℝ/)
     assert.match(pdfText, /H\s*2\s*O/)
   })
 

@@ -35,6 +35,8 @@ import type ConfigProvider from '@providers/config'
 import { enableExtension, parseReaderWriter, readerWriterToString } from '@common/pandoc-util/parse-reader-writer'
 import { EXT2READER } from '@common/pandoc-util/pandoc-maps'
 import { injectPandocMathHeaders } from './pandoc-math-headers'
+import { type MathJaxMacro } from '@common/util/mathjax-config'
+import { loadMathJaxMacros, mathJaxMacrosPath } from '../../../util/load-mathjax-macros'
 
 /**
  * This function returns faux metadata for the custom export formats the
@@ -127,6 +129,9 @@ export async function makeExport (
   // We already know where the exported file will end up, so set the property
   const inputFiles = options.sourceFiles.map(file => file.path)
 
+  // Load the user's MathJax macros once for all defaults written in this export.
+  const macros = await loadMathJaxMacros(mathJaxMacrosPath(app.getPath('userData')))
+
   // This is basically the "plugin API"
   const ctx: ExporterAPI = {
     runPandoc: async (defaults: string) => {
@@ -142,6 +147,7 @@ export async function makeExport (
         await assets.listFilters(true),
         app.getPath('temp'),
         path.join(__dirname, 'assets/defaults/mathjax-tex-chtml.js'),
+        macros,
         options.defaultsOverride
       )
     },
@@ -217,6 +223,7 @@ export async function writeDefaults (
   filters: string[],
   temporaryDirectory: string,
   mathJaxComponent: string,
+  macros: Record<string, MathJaxMacro>,
   defaultsOverride?: DefaultsOverride
 ): Promise<string> {
   const defaultsFile = path.join(temporaryDirectory, 'defaults.yml')
@@ -288,7 +295,8 @@ export async function writeDefaults (
   await injectPandocMathHeaders(
     defaults as Record<string, unknown>,
     temporaryDirectory,
-    mathJaxComponent
+    mathJaxComponent,
+    macros
   )
 
   const YAMLOptions = {

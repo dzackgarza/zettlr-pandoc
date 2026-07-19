@@ -17,6 +17,11 @@ import { execFileSync } from 'child_process'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { initializeMathJax, mathJaxToElem, mathJaxToHTML } from "source/common/util/mathtex-to-html"
+import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
+
+// The app ships no macros; this test supplies its own example fixture file and
+// loads it through the real loader.
+const FIXTURE = 'test/fixtures/mathjax-macros.json'
 
 it('requires initialization before conversion', function () {
   assert.throws(() => mathJaxToHTML('\\RR', 'inline'), Error)
@@ -26,7 +31,7 @@ it('registers updater IPC only after its boot initialization', function () {
   const source = readFileSync(resolve('source/app/service-providers/updates/index.ts'), 'utf8')
   const boot = source.slice(source.indexOf('async boot (): Promise<void>'))
 
-  assert.ok(boot.indexOf('await initializeMathJax()') < boot.indexOf('this._registerIpcHandler()'))
+  assert.ok(boot.indexOf('await initializeMathJax(') < boot.indexOf('this._registerIpcHandler()'))
 })
 
 it('renders updater Markdown with the lite adaptor without a global document', function () {
@@ -35,32 +40,33 @@ it('renders updater Markdown with the lite adaptor without a global document', f
     '--input-type', 'module',
     '--eval',
     `import { initializeMathJax } from './source/common/util/mathtex-to-html.ts'
+import { loadMathJaxMacros } from './source/app/util/load-mathjax-macros.ts'
 import { md2html } from './source/common/modules/markdown-utils/markdown-to-html.ts'
-await initializeMathJax()
+await initializeMathJax(await loadMathJaxMacros('test/fixtures/mathjax-macros.json'))
 process.stdout.write(await md2html('$$\\\\RR$$', { onCitation: () => undefined, zknLinkFormat: 'link|title' }))`
   ], { encoding: 'utf8' })
 
   assert.match(html, /<mjx-container[^>]*display="true"/)
-  assert.match(html, /𝐑/)
+  assert.match(html, /ℝ/)
 })
 
 describe('Utility#mathJaxToHTML()', function () {
   before(async function () {
     // Full-stylesheet initialization loads every dynamic font module once.
     this.timeout(30000)
-    await initializeMathJax()
+    await initializeMathJax(await loadMathJaxMacros(FIXTURE))
   })
 
   it('serializes configured macros and mhchem as CommonHTML display math', function () {
-    // \RR (zero-arg) and \qty (one-arg) are real macros from the vendored
-    // ~/.pandoc snapshot; \ce exercises mhchem.
+    // \RR (zero-arg) and \qty (one-arg) come from the fixture macro file;
+    // \ce exercises mhchem.
     const html = mathJaxToHTML('\\RR + \\qty{x} + \\ce{H2O}', 'display')
 
     const rendered = document.createElement('div')
     rendered.innerHTML = html
 
     assert.equal(rendered.querySelector('mjx-container')?.getAttribute('display'), 'true')
-    assert.match(rendered.textContent ?? '', /𝐑/)
+    assert.match(rendered.textContent ?? '', /ℝ/)
     assert.match(rendered.textContent ?? '', /\(𝑥\)/)
     assert.equal(rendered.querySelector('mjx-msub')?.textContent, '𝐴2')
 
@@ -76,6 +82,6 @@ describe('Utility#mathJaxToHTML()', function () {
     mathJaxToElem('\\RR', element, 'inline')
 
     assert.equal(element.querySelector('mjx-container')?.getAttribute('jax'), 'CHTML')
-    assert.match(element.textContent ?? '', /𝐑/)
+    assert.match(element.textContent ?? '', /ℝ/)
   })
 })

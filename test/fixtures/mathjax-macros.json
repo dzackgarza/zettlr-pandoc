@@ -1,0 +1,5 @@
+{
+  "RR": "\\mathbb{R}",
+  "qty": ["\\left( {#1} \\right)", 1],
+  "optpair": ["\\left\\langle {#2}, {#1} \\right\\rangle", 2, ""]
+}

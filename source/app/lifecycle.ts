@@ -24,8 +24,9 @@ import { getProgramVersion } from './util/get-program-version'
 // Developer tools
 import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
 import { AppServiceContainer, getAppServiceContainer, setAppServiceContainer } from './app-service-container'
-import { app } from 'electron'
+import { app, ipcMain } from 'electron'
 import { attachAppNavigationHandlers } from './util/attach-app-navigation-handlers'
+import { loadMathJaxMacros, mathJaxMacrosPath } from './util/load-mathjax-macros'
 
 // Statistics: Record the uptime of the application
 let upTimestamp: number
@@ -71,6 +72,13 @@ export async function bootApplication (): Promise<AppServiceContainer> {
 
   // Now boot up the service container
   await appServiceContainer.boot()
+
+  // Serve the user's MathJax macros to sandboxed renderer windows, which cannot
+  // read the config file themselves. Loaded on demand (macros are restart-gated
+  // in the renderer, so a fresh read per window is sufficient).
+  ipcMain.handle('mathjax-macros', async () => {
+    return await loadMathJaxMacros(mathJaxMacrosPath(app.getPath('userData')))
+  })
 
   // Now make the service container available for the rest of the main process.
   setAppServiceContainer(appServiceContainer)

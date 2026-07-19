@@ -31,7 +31,7 @@ import { type MmlNode } from '@mathjax/src/cjs/core/MmlTree/MmlNode.js'
 import { HTMLDocument } from '@mathjax/src/cjs/handlers/html/HTMLDocument.js'
 import { MathJaxNewcmFont } from '@mathjax/mathjax-newcm-font/cjs/chtml.js'
 import { MathJaxMhchemFontExtension } from '@mathjax/mathjax-mhchem-font-extension/cjs/chtml.js'
-import { mathJaxConfig } from './mathjax-config'
+import { mathJaxPackages, type MathJaxMacro } from './mathjax-config'
 
 import './mathjax-newcm-dynamic'
 
@@ -48,11 +48,6 @@ MathJaxNewcmFont.addExtension({
     : new URL('../mathjax', documentElement.baseURI).href
 })
 
-const tex = new TeX({
-  packages: mathJaxConfig.packages,
-  macros: mathJaxConfig.macros
-})
-
 type BrowserDocument = MathDocument<HTMLElement, Text, Document>
 type MainDocument = MathDocument<LiteNode, LiteText, LiteDocument>
 
@@ -63,52 +58,56 @@ let mainChtml: CHTML<LiteElement, LiteText, LiteDocument>|undefined
 let browserAdaptorInstance: ReturnType<typeof browserAdaptor>|undefined
 let mainAdaptorInstance: ReturnType<typeof liteAdaptor>|undefined
 
-if (documentElement === undefined) {
-  mainAdaptorInstance = liteAdaptor()
-  mainChtml = new CHTML<LiteElement, LiteText, LiteDocument>({
-    fontData: MathJaxNewcmFont,
-    dynamicPrefix: '',
-    // Emit the complete stylesheet: widgets render incrementally, so
-    // adaptive CSS would miss constructs first used after initialization.
-    adaptiveCSS: false
-  })
-  mainRenderer = new HTMLDocument(mainAdaptorInstance.parse(''), mainAdaptorInstance, { InputJax: tex, OutputJax: mainChtml })
-} else {
-  browserAdaptorInstance = browserAdaptor()
-  browserChtml = new CHTML({
-    fontData: MathJaxNewcmFont,
-    fontURL: new URL('../mathjax', documentElement.baseURI).href,
-    dynamicPrefix: '',
-    // Emit the complete stylesheet: widgets render incrementally, so
-    // adaptive CSS would miss constructs first used after initialization.
-    adaptiveCSS: false
-  })
-  browserRenderer = new HTMLDocument(documentElement, browserAdaptorInstance, { InputJax: tex, OutputJax: browserChtml })
-}
-
 mathjax.asyncLoad = () => Promise.resolve()
 
 let initialized = false
 let initializing: Promise<void>|undefined
 
-export function initializeMathJax (): Promise<void> {
-  if (initialized) {
-    return Promise.resolve()
+/**
+ * Constructs the MathJax input/output pipeline with the supplied macro set and
+ * loads the font data. The macros come from the user's macro file (renderer:
+ * fetched over IPC; main process: read from disk), so no macro set is baked
+ * into the app. This is restart-gated: the first call builds the renderer and
+ * subsequent calls return the same in-flight/settled promise, ignoring any
+ * later macro argument.
+ *
+ * @param   {Record<string, MathJaxMacro>}  macros  The user's macro definitions.
+ */
+export function initializeMathJax (macros: Record<string, MathJaxMacro>): Promise<void> {
+  if (initializing !== undefined) {
+    return initializing
   }
 
-  if (initializing === undefined) {
-    if (browserRenderer !== undefined && browserChtml !== undefined) {
-      initializing = browserChtml.font.loadDynamicFiles().then(() => {
-        browserRenderer?.updateDocument()
-        initialized = true
-      })
-    } else if (mainRenderer !== undefined && mainChtml !== undefined) {
-      initializing = mainChtml.font.loadDynamicFiles().then(() => {
-        initialized = true
-      })
-    } else {
-      throw new Error('MathJax renderer is unavailable')
-    }
+  const tex = new TeX({ packages: [ ...mathJaxPackages ], macros })
+
+  if (documentElement === undefined) {
+    mainAdaptorInstance = liteAdaptor()
+    mainChtml = new CHTML<LiteElement, LiteText, LiteDocument>({
+      fontData: MathJaxNewcmFont,
+      dynamicPrefix: '',
+      // Emit the complete stylesheet: widgets render incrementally, so
+      // adaptive CSS would miss constructs first used after initialization.
+      adaptiveCSS: false
+    })
+    mainRenderer = new HTMLDocument(mainAdaptorInstance.parse(''), mainAdaptorInstance, { InputJax: tex, OutputJax: mainChtml })
+    initializing = mainChtml.font.loadDynamicFiles().then(() => {
+      initialized = true
+    })
+  } else {
+    browserAdaptorInstance = browserAdaptor()
+    browserChtml = new CHTML({
+      fontData: MathJaxNewcmFont,
+      fontURL: new URL('../mathjax', documentElement.baseURI).href,
+      dynamicPrefix: '',
+      // Emit the complete stylesheet: widgets render incrementally, so
+      // adaptive CSS would miss constructs first used after initialization.
+      adaptiveCSS: false
+    })
+    browserRenderer = new HTMLDocument(documentElement, browserAdaptorInstance, { InputJax: tex, OutputJax: browserChtml })
+    initializing = browserChtml.font.loadDynamicFiles().then(() => {
+      browserRenderer?.updateDocument()
+      initialized = true
+    })
   }
 
   return initializing

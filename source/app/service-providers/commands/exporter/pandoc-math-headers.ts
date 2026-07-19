@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
-import { mathJaxConfig } from '@common/util/mathjax-config'
+import { mathJaxPackages, type MathJaxMacro } from '@common/util/mathjax-config'
 import { parseReaderWriter } from '@common/pandoc-util/parse-reader-writer'
 import { projectTexHeader } from './macro-projections'
 
@@ -35,7 +35,8 @@ function isTexWriter (writer: string): boolean {
 export async function injectPandocMathHeaders (
   defaults: Record<string, unknown>,
   temporaryDirectory: string,
-  mathJaxComponent: string
+  mathJaxComponent: string,
+  macros: Record<string, MathJaxMacro>
 ): Promise<void> {
   const writer = parseReaderWriter(defaults.writer as string).name
 
@@ -71,8 +72,8 @@ export async function injectPandocMathHeaders (
       },
       tex: {
         inlineMath: { '[+]': [[ '$', '$' ]] },
-        packages: { '[+]': mathJaxConfig.packages.slice(1) },
-        macros: mathJaxConfig.macros
+        packages: { '[+]': mathJaxPackages.slice(1) },
+        macros
       },
       chtml: {
         fontURL: pathToFileURL(path.join(fontDirectory, 'woff2')).href,
@@ -85,7 +86,7 @@ export async function injectPandocMathHeaders (
     delete defaults['html-math-method']
   } else if (isTexWriter(writer)) {
     const header = path.join(temporaryDirectory, 'zettlr-mathjax-header.tex')
-    await fs.writeFile(header, `\\usepackage[version=4]{mhchem}\n${projectTexHeader(mathJaxConfig.macros)}\n`, { encoding: 'utf8' })
+    await fs.writeFile(header, `\\usepackage[version=4]{mhchem}\n${projectTexHeader(macros)}\n`, { encoding: 'utf8' })
     defaults['include-in-header'] = [ ...headerFiles(defaults), header ]
   }
 }

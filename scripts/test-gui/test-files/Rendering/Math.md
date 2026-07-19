@@ -6,15 +6,17 @@ $x^2+y*(3+2)=z^2$
 
 ## Configured Macros
 
-These use the fork's checked-in MathJax macro configuration, vendored from
-`~/.pandoc`.
+These render only if a MathJax macro file is present in the app config
+directory (`mathjax-macros.json`, using the standard `tex.macros` format). The
+examples below use the macros from the bundled example fixture; link a macro
+export into place with `just link-macros`.
 
-Inline: $\RR$, $\CC$, $\ZZ$, and $\qty{x + y}$.
+Inline: $\RR$, $\qty{x + y}$, and $\optpair{a}{b}$.
 
 Display:
 
 $$
-\RR \subseteq \CC \quad\text{and}\quad \qty{\ZZ \oplus \QQ}
+\RR \quad \qty{x + y} \quad \optpair{a}{b}
 $$
 
 ## Block Rendering

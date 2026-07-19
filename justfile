@@ -19,9 +19,10 @@ package:
 run-packaged:
     ./out/Zettlr-linux-x64/Zettlr
 
-# Refresh the vendored MathJax macro snapshot from ~/.pandoc.
-# The generator (bin/generate-mathjax-config.py) lives upstream in
-# github.com/dzackgarza/pandoc-config; this copies its current output.
-sync-mathjax-macros:
-    cp ~/.pandoc/templates/css/mathjax-macros.ts source/common/util/mathjax-macros.generated.ts
-    @echo "Synced $(wc -l < source/common/util/mathjax-macros.generated.ts) lines from ~/.pandoc"
+# Link a MathJax macro export (any tex.macros-format JSON) into the config dir
+# so the app loads it. Defaults to the pandoc macro export. `just launch` uses
+# the dev data dir; a packaged install reads ~/.config/Zettlr/mathjax-macros.json.
+link-macros source="$HOME/.pandoc/templates/css/mathjax-macros.json":
+    mkdir -p resources/test-cfg
+    ln -sf "{{source}}" resources/test-cfg/mathjax-macros.json
+    @echo "Linked {{source}} -> resources/test-cfg/mathjax-macros.json"

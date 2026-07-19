@@ -12,8 +12,13 @@
 const { app, BrowserWindow } = require('electron')
 const path = require('path')
 const fs = require('fs/promises')
+const { readFileSync } = require('fs')
 
 const workDirectory = process.argv[process.argv.length - 1]
+
+// The app ships no macros; load the example fixture (the tex.macros format a
+// user drops into their config dir) and inject it into the page.
+const MACROS = readFileSync(path.join(__dirname, 'fixtures/mathjax-macros.json'), 'utf8')
 
 const SCENES = [
   { name: 'light-wide', width: 1400, height: 1000, dark: false },
@@ -23,7 +28,7 @@ const SCENES = [
 
 const RENDER_SCRIPT = `(async () => {
   const mod = mathtex
-  await mod.initializeMathJax()
+  await mod.initializeMathJax(${MACROS})
 
   const content = document.getElementById('content')
   const section = (title) => {
@@ -35,7 +40,7 @@ const RENDER_SCRIPT = `(async () => {
     return div
   }
 
-  mod.mathJaxToElem('\\\\QQ \\\\subseteq \\\\RR \\\\subseteq \\\\CC \\\\quad \\\\qty{\\\\ZZ}', section('Configured macros (display)'), 'display')
+  mod.mathJaxToElem('\\\\RR \\\\quad \\\\qty{x + y} \\\\quad \\\\optpair{a}{b}', section('Configured macros (display)'), 'display')
   mod.mathJaxToElem('x^2 + y^2 = z^2', section('Inline math'), 'inline')
   mod.mathJaxToElem('p(x\\\\vert y) = \\\\frac{p(y \\\\vert x)p(x)}{p(y)}', section('Display fraction'), 'display')
   mod.mathJaxToElem('\\\\ce{Hg^2+ ->[I-] HgI2 ->[I-] [Hg^{II}I4]^2-}', section('mhchem'), 'inline')
