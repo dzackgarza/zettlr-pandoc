@@ -1,7 +1,7 @@
 {
-  "name": "zettlr",
-  "productName": "Zettlr",
-  "homepage": "https://www.zettlr.com",
+  "name": "zettlr-pandoc",
+  "productName": "Zettlr-Pandoc",
+  "homepage": "https://github.com/dzackgarza/zettlr-pandoc",
   "author": {
     "name": "Hendrik Erz",
     "email": "info@zettlr.com"

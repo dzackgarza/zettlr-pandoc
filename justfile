@@ -11,10 +11,10 @@ default:
 launch:
     {{yarn}} start
 
-# Build a packaged Linux x64 app into out/Zettlr-linux-x64/.
+# Build a packaged Linux x64 app into out/Zettlr-Pandoc-linux-x64/.
 package:
     {{yarn}} package:linux-x64
 
 # Run the packaged binary (build it first with `just package`).
 run-packaged:
-    ./out/Zettlr-linux-x64/Zettlr
+    ./out/Zettlr-Pandoc-linux-x64/zettlr-pandoc

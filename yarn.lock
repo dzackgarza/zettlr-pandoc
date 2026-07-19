@@ -15729,9 +15729,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"zettlr@workspace:.":
+"zettlr-pandoc@workspace:.":
   version: 0.0.0-use.local
-  resolution: "zettlr@workspace:."
+  resolution: "zettlr-pandoc@workspace:."
   dependencies:
     "@cds/core": "npm:^6.17.0"
     "@codemirror/autocomplete": "npm:^6.20.3"

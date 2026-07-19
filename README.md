@@ -26,9 +26,9 @@ installation, features, and general use, see the
 On first run the app writes a default set of standard macros to a single file
 in its configuration directory, which you can edit directly:
 
-- **Linux:** `~/.config/Zettlr/mathjax-macros.json`
-- **macOS:** `~/Library/Application Support/Zettlr/mathjax-macros.json`
-- **Windows:** `%APPDATA%\Zettlr\mathjax-macros.json`
+- **Linux:** `~/.config/Zettlr-Pandoc/mathjax-macros.json`
+- **macOS:** `~/Library/Application Support/Zettlr-Pandoc/mathjax-macros.json`
+- **Windows:** `%APPDATA%\Zettlr-Pandoc\mathjax-macros.json`
 
 Edit that file and restart the app to change your macros — they are loaded once
 at startup. The app never overwrites your edits (it only writes the defaults

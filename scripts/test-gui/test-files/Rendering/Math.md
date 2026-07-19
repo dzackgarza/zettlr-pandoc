@@ -7,7 +7,7 @@ $x^2+y*(3+2)=z^2$
 ## Configured Macros
 
 These render only if a MathJax macro file is present in the app config
-directory — `~/.config/Zettlr/mathjax-macros.json` on Linux — using the
+directory — `~/.config/Zettlr-Pandoc/mathjax-macros.json` on Linux — using the
 standard `tex.macros` format. Add macros by placing or symlinking such a file
 there; without one, the app defines no custom macros.
 
