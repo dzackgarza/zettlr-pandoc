@@ -11,6 +11,7 @@ const scenes = [
   { name: 'overview-light-narrow', scene: 'overview', dark: false, width: 480, height: 1050 },
   { name: 'overview-dark-narrow', scene: 'overview', dark: true, width: 480, height: 1050 },
   { name: 'active-hybrid-preview', scene: 'active', dark: false, width: 1200, height: 700 },
+  { name: 'active-citation-edit', scene: 'citation-edit', dark: false, width: 1200, height: 700 },
   { name: 'nested-light', scene: 'nested', dark: false, width: 1200, height: 800 },
   { name: 'nested-dark', scene: 'nested', dark: true, width: 1200, height: 800 },
 ]

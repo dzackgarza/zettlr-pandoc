@@ -67,8 +67,9 @@ Outside the structure.
 const active = `# Editing state
 
 ::: {.definition #proper-map}
-A *proper map* $f\\colon X\\to Y$ has [compact](https://example.com) inverse images by [@Ols04
-Cor. 6.2].
+A *proper map* $f\\colon X\\to Y$ has [compact](https://example.com) inverse images.
+
+By [@Ols04 Lem. 7.1, 7.2], some result follows.
 :::
 
 Outside the active div.
@@ -76,12 +77,20 @@ Outside the active div.
 
 async function mount (): Promise<void> {
   await initializeMathJax({ RR: '\\mathbb{R}' })
-  window.getCitationCallback = () => citations => citations.map(citation => citation.id).join('; ')
+  window.getCitationCallback = () => citations => citations.map(citation => {
+    return [ citation.id, citation.locator, citation.suffix?.trimStart() ]
+      .filter(part => part !== undefined)
+      .join(' ')
+  }).join('; ')
 
   const scene = document.body.dataset.scene ?? 'overview'
   const dark = document.body.dataset.dark === 'true'
-  const doc = scene === 'active' ? active : scene === 'nested' ? nested : overview
-  const anchor = scene === 'active' ? doc.indexOf('*proper') + 2 : doc.length
+  const doc = [ 'active', 'citation-edit' ].includes(scene) ? active : scene === 'nested' ? nested : overview
+  const anchor = scene === 'active'
+    ? doc.indexOf('*proper') + 2
+    : scene === 'citation-edit'
+      ? doc.indexOf('Lem.') + 1
+      : doc.length
   const state = EditorState.create({
     doc,
     selection: { anchor },

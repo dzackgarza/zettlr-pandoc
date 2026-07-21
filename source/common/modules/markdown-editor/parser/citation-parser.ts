@@ -116,6 +116,28 @@ const ROMAN_NUMERAL_CODES = [
   99, 100, 105, 108, 109, 118, 120 // Lowercase
 ]
 
+const CANONICAL_ROMAN_NUMERAL = /^(?=[MDCLXVI]+$)M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})$/i
+
+/**
+ * Checks whether the text starts with a complete Roman-numeral locator. The
+ * token must end before another letter and every range component must be a
+ * canonical Roman numeral. Without these boundaries, suffixes such as
+ * "Lemma" and "Corollary" are split after their initial L or C.
+ */
+function startsWithRomanNumeralLocator (text: string): boolean {
+  const token = /^[CDILMVX]+(?:-[CDILMVX]+)*/i.exec(text)?.[0]
+  if (token === undefined) {
+    return false
+  }
+
+  const followingCharacter = text[token.length]
+  if (followingCharacter !== undefined && /[A-Za-z]/.test(followingCharacter)) {
+    return false
+  }
+
+  return token.split('-').every(part => CANONICAL_ROMAN_NUMERAL.test(part))
+}
+
 /**
  * Record of all valid citation node names.
  */
@@ -545,7 +567,8 @@ export const citationParser: InlineParser = {
 
         // Code points 48-57 are digits. Implicit and explicit locators must be
         // preceded by a space, bracketed locators do not.
-        if (citekeyEnd > -1 && locatorStart < 0 && prevCh === CHAR.SPACE && ((ch >= 48 && ch <= 57) || ROMAN_NUMERAL_CODES.includes(ch))) {
+        const startsImplicitLocator = (ch >= 48 && ch <= 57) || startsWithRomanNumeralLocator(ctx.slice(i, ctxEndPos))
+        if (citekeyEnd > -1 && locatorStart < 0 && prevCh === CHAR.SPACE && startsImplicitLocator) {
           // First, check if there are only punctuation marks and spaces between
           // the citekey end and the locator start. If not, we should not detect
           // this as a locator.
