@@ -36,8 +36,8 @@ export function rangeInSelection (
   includeAdjacent: boolean = false
 ): boolean {
   if (includeAdjacent) {
-    return !selection.ranges.some(range => range.to < rangeFrom || range.from > rangeTo)
+    return selection.ranges.some(range => range.to >= rangeFrom && range.from <= rangeTo)
   } else {
-    return !selection.ranges.some(range => range.to <= rangeFrom || range.from >= rangeTo)
+    return selection.ranges.some(range => range.to > rangeFrom && range.from < rangeTo)
   }
 }

@@ -19,6 +19,33 @@ package:
 run-packaged:
     ./out/Zettlr-Pandoc-linux-x64/zettlr-pandoc
 
+# Run exactly one focused TypeScript test file without inheriting Mocha's
+# repository-wide spec glob. Usage: just test-file test/example.spec.ts
+test-file file:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "{{file}}"
+
+# Run the repository test suite. The guard executes before Mocha can start.
+test:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --inline-diffs
+
+[private]
+test-commit: test
+
+# Lint exactly one source file after the same development-server safety check.
+lint-file file:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    "{{justfile_directory()}}/node_modules/.bin/eslint" "{{file}}"
+
+# Capture the real editor renderer in an isolated offscreen Electron process.
+# This never starts Forge, a dev server, xdg-open, or the system browser.
+capture-pandoc-divs output:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    mkdir -p "{{output}}"
+    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-pandoc-div-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/pandoc-div-visual-bundle.js"
+    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" "{{justfile_directory()}}/test/editor-pandoc-div-visual-capture.cjs" "{{output}}"
+
 # Run a real export headlessly (no GUI), via the app's own makeExport with the
 # exact profile list the GUI sees (userData/defaults + custom profiles). Proves
 # an export end-to-end from the terminal. Usage:
