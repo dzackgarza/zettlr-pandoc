@@ -33,6 +33,9 @@ test:
 [private]
 test-commit: test
 
+[private]
+test-push: test
+
 # Lint exactly one source file after the same development-server safety check.
 lint-file file:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
