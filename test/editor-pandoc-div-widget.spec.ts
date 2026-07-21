@@ -88,6 +88,30 @@ describe('Editor presents Pandoc fenced divs semantically', function () {
     return view
   }
 
+  const hybridPreviewDoc = `::: theorem
+Ordinary prose with *emphasis*, [a link](https://example.com), inline $x=y$, and another $u=v$.
+
+$$
+z=w
+$$
+:::
+
+outside`
+
+  const hybridPreviewExtensions = [ markdownParser(), renderPandoc, renderEmphasis, renderLinks, renderMath ]
+
+  function renderedEquations (view: EditorView): string[] {
+    return [ ...view.dom.querySelectorAll<HTMLElement>('.preview-math') ]
+      .map(element => element.dataset.equation?.trim() ?? '')
+  }
+
+  function activeHybridDiv (view: EditorView): Element {
+    const active = view.dom.querySelector('pandoc-div-active-wrapper[data-pandoc-div-family="result"]')
+    assert.ok(active !== null, 'the theorem shell must be raw while its content is being edited')
+    assert.equal(view.dom.querySelector('pandoc-div-wrapper'), null, 'the semantic panel must be disabled while editing inside it')
+    return active
+  }
+
   it('shows an inactive semantic panel while preserving authored content and inner renderers', function () {
     const doc = '::: {.layout .definition #term title="Term" style="display:none"}\nA *set* has $\\RR$.\n:::\n\noutside'
     const view = createEditor(doc, doc.length, [ markdownParser(), renderPandoc, renderEmphasis, renderMath ])
@@ -113,16 +137,78 @@ describe('Editor presents Pandoc fenced divs semantically', function () {
     assert.match(panel?.textContent ?? '', /A set has/)
   })
 
-  it('reveals all nested Markdown source while any part of the div is active', function () {
-    const doc = '::: definition\nA *set* has [$\\RR$](https://example.com).\n:::\n\noutside'
-    const view = createEditor(doc, doc.indexOf('set'), [ markdownParser(), renderPandoc, renderEmphasis, renderLinks, renderMath ])
+  it('reveals the div shell while preserving cursor-local nested preview behavior', function () {
+    const view = createEditor(hybridPreviewDoc, hybridPreviewDoc.indexOf('Ordinary'), hybridPreviewExtensions)
+    const active = activeHybridDiv(view)
 
-    const active = view.dom.querySelector('pandoc-div-active-wrapper[data-pandoc-div-family="definition"]')
-    assert.ok(active !== null)
-    assert.match(active?.textContent ?? '', /\*set\*/)
-    assert.match(active?.textContent ?? '', /\$\\RR\$/)
-    assert.match(active?.textContent ?? '', /https:\/\/example\.com/)
-    assert.equal(active?.querySelector('.preview-math'), null)
+    assert.match(active.textContent ?? '', /::: theorem/)
+    assert.match(active.textContent ?? '', /:::/)
+    assert.equal(view.state.doc.toString(), hybridPreviewDoc)
+  })
+
+  it('keeps inline equations rendered while editing ordinary theorem prose', function () {
+    const view = createEditor(hybridPreviewDoc, hybridPreviewDoc.indexOf('Ordinary'), hybridPreviewExtensions)
+    activeHybridDiv(view)
+
+    assert.deepStrictEqual(renderedEquations(view).filter(equation => equation !== 'z=w'), [ 'x=y', 'u=v' ])
+  })
+
+  it('keeps display equations rendered while editing ordinary theorem prose', function () {
+    const view = createEditor(hybridPreviewDoc, hybridPreviewDoc.indexOf('Ordinary'), hybridPreviewExtensions)
+    activeHybridDiv(view)
+
+    const display = view.dom.querySelector<HTMLElement>('.preview-math mjx-container[display="true"]')?.closest<HTMLElement>('.preview-math')
+    assert.equal(display?.dataset.equation?.trim(), 'z=w')
+  })
+
+  it('makes only the selected inline equation raw', function () {
+    const view = createEditor(hybridPreviewDoc, hybridPreviewDoc.indexOf('x=y') + 1, hybridPreviewExtensions)
+    const active = activeHybridDiv(view)
+
+    assert.deepStrictEqual(renderedEquations(view), [ 'u=v', 'z=w' ])
+    assert.match(active.textContent ?? '', /\$x=y\$/)
+  })
+
+  it('makes only the selected display equation raw', function () {
+    const view = createEditor(hybridPreviewDoc, hybridPreviewDoc.indexOf('z=w') + 1, hybridPreviewExtensions)
+    const active = activeHybridDiv(view)
+
+    assert.deepStrictEqual(renderedEquations(view), [ 'x=y', 'u=v' ])
+    assert.match(active.textContent ?? '', /z=w/)
+  })
+
+  it('keeps emphasis rendered while editing unrelated theorem prose', function () {
+    const view = createEditor(hybridPreviewDoc, hybridPreviewDoc.indexOf('Ordinary'), hybridPreviewExtensions)
+    const active = activeHybridDiv(view)
+    const visibleText = active.textContent ?? ''
+
+    assert.doesNotMatch(visibleText, /\*emphasis\*/)
+    assert.match(visibleText, /emphasis/)
+  })
+
+  it('keeps links rendered while editing unrelated theorem prose', function () {
+    const view = createEditor(hybridPreviewDoc, hybridPreviewDoc.indexOf('Ordinary'), hybridPreviewExtensions)
+    const active = activeHybridDiv(view)
+    const visibleText = active.textContent ?? ''
+
+    assert.doesNotMatch(visibleText, /https:\/\/example\.com/)
+    assert.match(visibleText, /a link/)
+  })
+
+  it('makes only selected emphasis raw while links and equations remain rendered', function () {
+    const emphasisView = createEditor(hybridPreviewDoc, hybridPreviewDoc.indexOf('emphasis') + 1, hybridPreviewExtensions)
+    const activeEmphasis = activeHybridDiv(emphasisView)
+    assert.match(activeEmphasis.textContent ?? '', /\*emphasis\*/)
+    assert.doesNotMatch(activeEmphasis.textContent ?? '', /https:\/\/example\.com/)
+    assert.deepStrictEqual(renderedEquations(emphasisView), [ 'x=y', 'u=v', 'z=w' ])
+  })
+
+  it('makes only the selected link raw while emphasis and equations remain rendered', function () {
+    const linkView = createEditor(hybridPreviewDoc, hybridPreviewDoc.indexOf('a link') + 1, hybridPreviewExtensions)
+    const activeLink = activeHybridDiv(linkView)
+    assert.match(activeLink.textContent ?? '', /\[a link\]\(https:\/\/example\.com\)/)
+    assert.doesNotMatch(activeLink.textContent ?? '', /\*emphasis\*/)
+    assert.deepStrictEqual(renderedEquations(linkView), [ 'x=y', 'u=v', 'z=w' ])
   })
 
   it('reveals the complete raw div for cursor positions on every authored part', function () {
