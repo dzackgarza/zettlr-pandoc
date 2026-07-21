@@ -14,12 +14,22 @@ export async function readDirectoryFromDisk (
   getDescriptor: (absPath: string) => Promise<AnyDescriptor>,
   logger: DirectoryReadLogger
 ): Promise<AnyDescriptor[]> {
-  let isDirectory = false
+  if (isDeadWorkspace) {
+    throw new Error(`[FSAL] Cannot read path ${absPath}: Not a directory!`)
+  }
+
+  let isDirectory: boolean
   try {
     isDirectory = (await fs.lstat(absPath)).isDirectory()
-  } catch (err: unknown) {}
+  } catch (err: unknown) {
+    const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined
+    if (code === 'ENOENT') {
+      return []
+    }
+    throw new Error(`[FSAL] Cannot read path ${absPath}: Not a directory!`)
+  }
 
-  if (isDeadWorkspace || !isDirectory) {
+  if (!isDirectory) {
     throw new Error(`[FSAL] Cannot read path ${absPath}: Not a directory!`)
   }
 
