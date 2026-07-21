@@ -23,6 +23,7 @@ import { zoomIn, zoomOut } from './font-zoom'
 import type ConfigProvider from '@providers/config'
 import type DocumentManager from '@providers/documents'
 import { DocumentType } from '@dts/common/documents'
+import openPandocQuickHelp from './open-pandoc-quick-help'
 
 export default function getMenu (
   logger: LogProvider,
@@ -678,6 +679,13 @@ export default function getMenu (
             shell.openExternal(target).catch(e => {
               logger.error(`[Menu Provider] Cannot open target: ${target}`, e.message)
             })
+          }
+        },
+        {
+          id: 'menu.pandoc_quick_reference',
+          label: trans('Pandoc quick reference…'),
+          click: function (_menuitem, focusedWindow) {
+            openPandocQuickHelp(focusedWindow as BrowserWindow|undefined)
           }
         },
         {

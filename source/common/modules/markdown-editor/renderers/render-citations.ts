@@ -22,6 +22,7 @@ import { citationMenu } from '../context-menu/citation-menu'
 import { configField } from '../util/configuration'
 import { type Citation, NODES, nodeToCiteItem } from '../parser/citation-parser'
 import { sanitizeHTML } from 'source/common/util/sanitize-html'
+import { isSupportedPandocCrossref } from '@common/util/pandoc-quick-reference'
 
 class CitationWidget extends WidgetType {
   constructor (readonly citation: Citation, readonly rawCitation: string, readonly node: SyntaxNode) {
@@ -34,7 +35,7 @@ class CitationWidget extends WidgetType {
 
   toDOM (view: EditorView): HTMLElement {
     const { items } = this.citation
-    const hasCrossref = items.every(i => /^fig:|tbl:|eq:|sec:/.test(i.id))
+    const hasCrossref = items.every(i => isSupportedPandocCrossref(i.id))
 
     if (hasCrossref) {
       // We're not dealing with a citation, but rather with a crossref-style
@@ -49,6 +50,8 @@ class CitationWidget extends WidgetType {
         const label = parts.slice(1).join(':')
         if (item.prefix !== undefined) {
           citationTexts.push(`${item.prefix.trimEnd()} #${label}`)
+        } else if (item['suppress-author'] === true) {
+          citationTexts.push(`#${label}`)
         } else {
           citationTexts.push(`${type}. ${label}`)
         }

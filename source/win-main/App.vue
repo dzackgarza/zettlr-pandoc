@@ -127,6 +127,10 @@
     v-on:close="showPandocPopover = false"
     v-on:insert-pandoc="insertPandoc($event)"
   ></PopoverPandoc>
+  <PandocQuickHelp
+    v-if="showPandocQuickHelp"
+    v-on:close="showPandocQuickHelp = false"
+  ></PandocQuickHelp>
 </template>
 
 <script setup lang="ts">
@@ -158,6 +162,7 @@ import PopoverPomodoro from './PopoverPomodoro.vue'
 import PopoverTable from './PopoverTable.vue'
 import PopoverDocInfo from './PopoverDocInfo.vue'
 import PopoverPandoc from './PopoverPandoc.vue'
+import PandocQuickHelp from './PandocQuickHelp.vue'
 import { trans } from '@common/i18n-renderer'
 import localiseNumber from '@common/util/localise-number'
 import generateId from '@common/util/generate-id'
@@ -243,6 +248,7 @@ const tasksButton = ref<HTMLElement|null>(null)
 const showTasksPopover = ref(false)
 const pandocButton = ref<HTMLElement|null>(null)
 const showPandocPopover = ref<boolean>(false)
+const showPandocQuickHelp = ref<boolean>(false)
 
 export interface PomodoroConfig {
   currentEffectFile: string
@@ -725,6 +731,8 @@ onMounted(() => {
       mainSplitViewVisibleComponent.value = 'fileManager'
     } else if (shortcut === 'export') {
       showExportPopover.value = true
+    } else if (shortcut === 'pandoc-quick-help') {
+      showPandocQuickHelp.value = true
     } else if (shortcut === 'print') {
       if (activeFile.value !== undefined) {
         ipcRenderer.invoke('application', { command: 'print', payload: activeFile.value.path })

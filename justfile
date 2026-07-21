@@ -46,6 +46,14 @@ capture-pandoc-divs output:
     "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-pandoc-div-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/pandoc-div-visual-bundle.js"
     xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" "{{justfile_directory()}}/test/editor-pandoc-div-visual-capture.cjs" "{{output}}"
 
+# Capture the real Pandoc quick-reference Vue component in isolated Electron.
+# This never starts Forge, a dev server, xdg-open, or the system browser.
+capture-pandoc-help output:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    mkdir -p "{{output}}"
+    node "{{justfile_directory()}}/test/pandoc-quick-help-visual-build.cjs" "{{output}}"
+    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" "{{justfile_directory()}}/test/pandoc-quick-help-visual-capture.cjs" "{{output}}"
+
 # Run a real export headlessly (no GUI), via the app's own makeExport with the
 # exact profile list the GUI sees (userData/defaults + custom profiles). Proves
 # an export end-to-end from the terminal. Usage:
