@@ -387,9 +387,7 @@ const pandocDivSpanPlugin = ViewPlugin.fromClass(class {
       }
 
       const label = target.closest('pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]')
-      const panel = target.closest('pandoc-div-wrapper[data-pandoc-div-state="inactive"]')
-      const activationTarget = label ?? (panel === target ? panel : null)
-      const from = activationTarget?.getAttribute('data-pandoc-div-from')
+      const from = label?.getAttribute('data-pandoc-div-from')
       if (from === null || from === undefined) {
         return false
       }
@@ -445,8 +443,8 @@ export const renderPandoc = [
       '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-generic)',
       '--pandoc-div-surface': 'color-mix(in srgb, var(--pandoc-div-accent) 7%, transparent)',
       position: 'relative',
-      margin: '0 0 0.75em 0',
-      padding: '0.55em 0.8em 0.65em 0.9em',
+      margin: '0',
+      padding: '0 0.8em 0 0.9em',
       borderLeft: '3px solid var(--pandoc-div-accent)',
       borderRadius: '0 0.35em 0.35em 0',
       backgroundColor: 'var(--pandoc-div-surface)',
@@ -480,17 +478,21 @@ export const renderPandoc = [
       display: 'block',
     },
     'pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]': {
-      minHeight: '1.35rem',
-      marginTop: '0.35em',
-      fontSize: '0',
-      lineHeight: '1',
+      position: 'relative',
       cursor: 'text',
       userSelect: 'none',
     },
+    'pandoc-div-open-wrapper[data-pandoc-div-state="inactive"] > .cm-line, pandoc-div-close-wrapper[data-pandoc-div-state="inactive"] > .cm-line, pandoc-div-open-wrapper[data-pandoc-div-state="ancestor"] > .cm-line, pandoc-div-close-wrapper[data-pandoc-div-state="ancestor"] > .cm-line': {
+      visibility: 'hidden',
+    },
     'pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]::before': {
       content: 'attr(data-pandoc-div-label)',
-      display: 'inline-block',
-      padding: '0.22em 0.55em',
+      position: 'absolute',
+      inset: '0 auto 0 0',
+      display: 'flex',
+      alignItems: 'center',
+      padding: '0 0.55em',
+      boxSizing: 'border-box',
       border: '1px solid color-mix(in srgb, var(--pandoc-div-accent) 35%, transparent)',
       borderRadius: '999px',
       color: 'var(--pandoc-div-accent)',
@@ -498,7 +500,7 @@ export const renderPandoc = [
       fontSize: '0.72rem',
       fontWeight: '600',
       letterSpacing: '0.035em',
-      lineHeight: '1.15',
+      lineHeight: 'inherit',
       textTransform: 'uppercase',
     },
     'pandoc-div-open-wrapper': { '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-generic)' },
@@ -518,17 +520,12 @@ export const renderPandoc = [
       outline: '2px solid var(--pandoc-div-accent)',
       outlineOffset: '2px',
     },
-    'pandoc-div-close-wrapper[data-pandoc-div-state="inactive"], pandoc-div-open-wrapper[data-pandoc-div-state="ancestor"], pandoc-div-close-wrapper[data-pandoc-div-state="ancestor"]': {
-      display: 'none',
-    },
     'pandoc-div-ancestor-wrapper': {
       marginLeft: '0.25em',
       paddingLeft: '0.7em',
       borderLeft: '1px solid color-mix(in srgb, currentColor 22%, transparent)',
     },
     'pandoc-div-wrapper[data-pandoc-div-depth="1"], pandoc-div-wrapper[data-pandoc-div-depth="2"], pandoc-div-wrapper[data-pandoc-div-depth="3"]': {
-      marginBottom: '0.4em',
-      paddingBlock: '0.35em',
       borderLeftWidth: '2px',
       backgroundColor: 'transparent',
     },
@@ -537,7 +534,7 @@ export const renderPandoc = [
       fontWeight: '550',
     },
     'pandoc-div-active-wrapper': {
-      margin: '0.3em 0',
+      margin: '0',
       paddingLeft: '0.65em',
       borderLeft: '2px solid color-mix(in srgb, currentColor 28%, transparent)',
       backgroundColor: 'color-mix(in srgb, currentColor 2.5%, transparent)',
