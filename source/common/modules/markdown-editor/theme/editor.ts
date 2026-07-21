@@ -87,6 +87,14 @@ export interface ThemeVars {
   '--zettlr-editor-header-6-size': string
   /** CSS `<color>` value */
   '--zettlr-editor-error-color': string
+  /** CSS `<color>` values for semantic Pandoc fenced-div accents */
+  '--zettlr-editor-pandoc-div-generic': string
+  '--zettlr-editor-pandoc-div-result': string
+  '--zettlr-editor-pandoc-div-definition': string
+  '--zettlr-editor-pandoc-div-explanation': string
+  '--zettlr-editor-pandoc-div-task': string
+  '--zettlr-editor-pandoc-div-warning': string
+  '--zettlr-editor-pandoc-div-proof': string
   /** CSS `opacity` value */
   '--zettlr-editor-opacity': string|number
   /** CSS `text-decoration` value */
@@ -149,6 +157,26 @@ const headerSize6 = '1em'
 
 const errorColor = 'var(--red-2)'
 
+const pandocDivLight = {
+  generic: '#566170',
+  result: '#74417d',
+  definition: '#23638f',
+  explanation: '#356948',
+  task: '#845300',
+  warning: '#a33b2d',
+  proof: '#566170',
+}
+
+const pandocDivDark = {
+  generic: '#c3cad4',
+  result: '#d7a7df',
+  definition: '#86c5f4',
+  explanation: '#8fcca5',
+  task: '#f2bd63',
+  warning: '#ff9b82',
+  proof: '#c3cad4',
+}
+
 const opacity = 0.65
 
 const linkDecoration = 'none'
@@ -182,6 +210,13 @@ export const defaultVarsLight: ThemeVars = {
   '--zettlr-editor-header-5-size': headerSize5,
   '--zettlr-editor-header-6-size': headerSize6,
   '--zettlr-editor-error-color': errorColor,
+  '--zettlr-editor-pandoc-div-generic': pandocDivLight.generic,
+  '--zettlr-editor-pandoc-div-result': pandocDivLight.result,
+  '--zettlr-editor-pandoc-div-definition': pandocDivLight.definition,
+  '--zettlr-editor-pandoc-div-explanation': pandocDivLight.explanation,
+  '--zettlr-editor-pandoc-div-task': pandocDivLight.task,
+  '--zettlr-editor-pandoc-div-warning': pandocDivLight.warning,
+  '--zettlr-editor-pandoc-div-proof': pandocDivLight.proof,
   '--zettlr-editor-opacity': opacity,
   '--zettlr-editor-line-decoration': linkDecoration,
 }
@@ -215,6 +250,13 @@ export const defaultVarsDark: ThemeVars = {
   '--zettlr-editor-header-5-size': headerSize5,
   '--zettlr-editor-header-6-size': headerSize6,
   '--zettlr-editor-error-color': errorColor,
+  '--zettlr-editor-pandoc-div-generic': pandocDivDark.generic,
+  '--zettlr-editor-pandoc-div-result': pandocDivDark.result,
+  '--zettlr-editor-pandoc-div-definition': pandocDivDark.definition,
+  '--zettlr-editor-pandoc-div-explanation': pandocDivDark.explanation,
+  '--zettlr-editor-pandoc-div-task': pandocDivDark.task,
+  '--zettlr-editor-pandoc-div-warning': pandocDivDark.warning,
+  '--zettlr-editor-pandoc-div-proof': pandocDivDark.proof,
   '--zettlr-editor-opacity': opacity,
   '--zettlr-editor-line-decoration': linkDecoration,
 }

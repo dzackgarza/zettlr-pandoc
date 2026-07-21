@@ -17,7 +17,7 @@
  */
 
 import { type RangeSet, type Range, type Extension } from '@codemirror/state'
-import { rangeInSelection } from '../util/range-in-selection'
+import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
 import { syntaxTree } from '@codemirror/language'
 import { Decoration, type DecorationSet, ViewPlugin, type ViewUpdate, EditorView, gutter, GutterMarker } from '@codemirror/view'
 
@@ -33,7 +33,7 @@ function hideHeadingMarks (view: EditorView): RangeSet<Decoration> {
         // adjacent for a proper UX. If we didn't do that, users would have to
         // click within this element to show the heading characters, which is
         // undesirable.
-        if(rangeInSelection(view.state.selection, node.from, node.to, true)) {
+        if(rangeInPreviewSuppression(view.state, node.from, node.to, true)) {
           return
         }
 

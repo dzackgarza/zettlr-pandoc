@@ -46,6 +46,7 @@ import type { EventName } from 'chokidar/handler'
 import { getIDRE } from 'source/common/regular-expressions'
 import type LongRunningTaskProvider from '../long-running-tasks'
 import { trans } from 'source/common/i18n-main'
+import { readDirectoryFromDisk } from './util/read-directory'
 
 // Re-export all interfaces necessary for other parts of the code (Document Manager)
 export {
@@ -956,36 +957,14 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<AnyDescriptor>[]}           The children.
    */
   public async readDirectory (absPath: string): Promise<AnyDescriptor[]> {
-    if (this.deadWorkspaces.has(absPath) || !await this.isDir(absPath)) {
-      throw new Error(`[FSAL] Cannot read path ${absPath}: Not a directory!`)
-    }
-
     const { files } = this._config.get()
     const ignoreDotFiles = !files.dotFiles.showInFilemanager && !files.dotFiles.showInSidebar
-
-    try {
-      const children = await fs.readdir(absPath, { withFileTypes: true })
-
-      const childPaths = children
-        .filter(dirent => !ignorePath(dirent.name, ignoreDotFiles) && (dirent.isFile() || dirent.isDirectory()))
-        .map(dirent => path.join(absPath, dirent.name))
-
-      const results = await Promise.allSettled(
-        childPaths.map(p => {
-          return this.getDescriptorFor(p)
-            .catch(err => this._logger.error(`[FSAL] Error while reading directory ${absPath}: Could not read child ${path.relative(absPath, p)}`, err))
-        })
-      )
-
-      return results
-        .filter((r): r is PromiseFulfilledResult<AnyDescriptor> => r.status === 'fulfilled')
-        .map(r => r.value)
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        this._logger.error(`[FSAL] Could not read directory: ${absPath}`, err)
-      }
-
-      return []
-    }
+    return await readDirectoryFromDisk(
+      absPath,
+      ignoreDotFiles,
+      this.deadWorkspaces.has(absPath),
+      async childPath => await this.getDescriptorFor(childPath),
+      this._logger
+    )
   }
 }

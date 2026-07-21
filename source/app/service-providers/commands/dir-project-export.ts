@@ -98,7 +98,7 @@ export default class DirProjectExport extends ZettlrCommand {
 
     // We have to fetch both the regular as well as the custom defaults profiles.
     const regularDefaults = await this._app.assets.listDefaults()
-    const customDefaults = getCustomProfiles()
+    const customDefaults = getCustomProfiles(this._app.config.get().export.scripts)
     const allDefaults = regularDefaults.concat(customDefaults)
 
     for (const profilePathOrCommand of config.profiles) {

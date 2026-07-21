@@ -16,7 +16,7 @@
 import { syntaxTree } from '@codemirror/language'
 import type { Range, RangeSet } from '@codemirror/state'
 import { BlockWrapper, EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
-import { rangeInSelection } from '../util/range-in-selection'
+import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
 import type { SyntaxNode } from '@lezer/common'
 import { configField } from '../util/configuration'
 
@@ -28,7 +28,7 @@ function showBlockquoteWrappers (view: EditorView): RangeSet<BlockWrapper> {
     syntaxTree(view.state).iterate({
       from, to,
       enter: (node) => {
-        if (rangeInSelection(view.state.selection, node.from, node.to, includeAdjacent)) {
+        if (rangeInPreviewSuppression(view.state, node.from, node.to, includeAdjacent)) {
           return
         }
 
@@ -46,7 +46,7 @@ function showBlockquoteWrappers (view: EditorView): RangeSet<BlockWrapper> {
           parent = parent.parent
         }
 
-        if (parentNode && rangeInSelection(view.state.selection, parentNode.from, parentNode.to, includeAdjacent)) {
+        if (parentNode && rangeInPreviewSuppression(view.state, parentNode.from, parentNode.to, includeAdjacent)) {
           return
         }
 

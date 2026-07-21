@@ -130,6 +130,62 @@ export function getImportExportFields (): PreferencesFieldset[] {
           editable: true
         }
       ]
+    },
+    {
+      title: trans('Export templates'),
+      infoString: trans('Default Pandoc templates, applied when the export profile declares none. Choose a file, or type a name resolved from Pandoc\'s data directory (~/.pandoc/templates).'),
+      group: PreferencesGroups.ImportExport,
+      help: undefined,
+      fields: [
+        {
+          type: 'file',
+          label: trans('HTML template (HTML, reveal.js)'),
+          model: 'export.htmlTemplate',
+          placeholder: trans('Pandoc default'),
+          reset: '',
+          filter: [ { extensions: [ 'html', 'htm', 'template' ], name: 'HTML template' } ]
+        },
+        {
+          type: 'file',
+          label: trans('LaTeX template (LaTeX, PDF, Beamer)'),
+          model: 'export.latexTemplate',
+          placeholder: trans('Pandoc default'),
+          reset: '',
+          filter: [ { extensions: [ 'tex', 'latex', 'template' ], name: 'LaTeX template' } ]
+        }
+      ]
+    },
+    {
+      title: trans('Export filters'),
+      infoString: trans('Lua filters discovered in Pandoc\'s data directory (~/.pandoc/filters) and Zettlr\'s lua-filter directory. Enable the ones to run on every export; enabled filters run in the order shown (before the profile\'s own filters).'),
+      group: PreferencesGroups.ImportExport,
+      help: undefined,
+      fields: [
+        {
+          type: 'filter-select',
+          label: trans('Enabled export filters'),
+          model: 'export.filters'
+        }
+      ]
+    },
+    {
+      title: trans('Export scripts'),
+      infoString: trans('Declare a compilation script as an export format. The source is exported through the base Pandoc profile to an intermediate file, then the command runs with the intermediate path and the output path as its two arguments.'),
+      group: PreferencesGroups.ImportExport,
+      help: undefined,
+      fields: [
+        {
+          type: 'list',
+          valueType: 'record',
+          keyNames: [ 'name', 'profile', 'command', 'extension' ],
+          columnLabels: [ trans('Name'), trans('Base profile'), trans('Command'), trans('Extension') ],
+          model: 'export.scripts',
+          deletable: true,
+          searchable: true,
+          addable: true,
+          editable: true
+        }
+      ]
     }
   ]
 }

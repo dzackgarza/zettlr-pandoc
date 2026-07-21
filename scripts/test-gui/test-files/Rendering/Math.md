@@ -4,6 +4,21 @@ This file includes several cases to test out rendering of math equations:
 
 $x^2+y*(3+2)=z^2$
 
+## Configured Macros
+
+These render only if a MathJax macro file is present in the app config
+directory — `~/.config/Zettlr-Pandoc/mathjax-macros.json` on Linux — using the
+standard `tex.macros` format. Add macros by placing or symlinking such a file
+there; without one, the app defines no custom macros.
+
+Inline: $\RR$, $\qty{x + y}$, and $\optpair{a}{b}$.
+
+Display:
+
+$$
+\RR \quad \qty{x + y} \quad \optpair{a}{b}
+$$
+
 ## Block Rendering
 
 Now follows a math block (= display) equation which should even feature syntax highlighting so that you can easily edit it.
@@ -37,7 +52,7 @@ $$
 
 ## Chemical Formulae
 
-These are enabled by the mhchem extension to KaTeX. These examples are taken from the [official package's manpage](https://mhchem.github.io/MathJax-mhchem/). Feel free to add more if necessary.
+These are enabled by the mhchem extension to MathJax. These examples are taken from the [official package's manpage](https://mhchem.github.io/MathJax-mhchem/). Feel free to add more if necessary.
 
 One:
 

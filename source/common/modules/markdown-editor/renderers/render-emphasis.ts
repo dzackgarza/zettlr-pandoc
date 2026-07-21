@@ -16,7 +16,7 @@
 import { syntaxTree } from '@codemirror/language'
 import { type RangeSet, type Range } from '@codemirror/state'
 import { type ViewUpdate, type EditorView, ViewPlugin, Decoration, type DecorationSet, WidgetType } from '@codemirror/view'
-import { rangeInSelection } from '../util/range-in-selection'
+import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
 import type { SyntaxNode } from '@lezer/common'
 import { configField } from '../util/configuration'
 
@@ -69,7 +69,7 @@ function hideFormattingCharacters (view: EditorView): RangeSet<Decoration> {
       to,
       enter (node) {
         // Do not hide any characters if a selection is inside here
-        if (rangeInSelection(view.state.selection, node.from, node.to, includeAdjacent)) {
+        if (rangeInPreviewSuppression(view.state, node.from, node.to, includeAdjacent)) {
           return
         }
 
@@ -149,7 +149,7 @@ function hideFormattingCharacters (view: EditorView): RangeSet<Decoration> {
             }
 
             // Only render QuoteMark if the parent does not contain a cursor.
-            if (parentNode && !rangeInSelection(view.state.selection, parentNode.from, parentNode.to, includeAdjacent)) {
+            if (parentNode && !rangeInPreviewSuppression(view.state, parentNode.from, parentNode.to, includeAdjacent)) {
               // We want to also hide any trailing whitespace. Since quotemarks
               // can be followed by a max of 3 spaces, we grab three more characters
               // and test the resulting string

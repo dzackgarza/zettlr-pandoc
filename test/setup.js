@@ -19,7 +19,9 @@ import path from 'path'
  * Code is essentially taken from https://github.com/enzymejs/enzyme/blob/master/docs/guides/jsdom.md.
  */
 function mockBrowser () {
-  const jsdom = new JSDOM('<!doctype html><html><body></body></html>')
+  const jsdom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'http://localhost:3000/main_window/index.html'
+  })
   const { window } = jsdom
 
   function copyProps (src, target) {

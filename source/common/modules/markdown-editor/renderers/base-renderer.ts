@@ -25,7 +25,7 @@ import {
 import { syntaxTree } from '@codemirror/language'
 import { type SyntaxNodeRef } from '@lezer/common'
 import { StateField, type Range, type EditorState } from '@codemirror/state'
-import { rangeInSelection } from '../util/range-in-selection'
+import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
 import { configField } from '../util/configuration'
 
 /**
@@ -85,7 +85,7 @@ function renderWidgets (
       enter: (node) => {
         // Determine the number of overlapping selections. If these are non-
         // null, we must not render this widget
-        if (rangeInSelection(state.selection, node.from, node.to, includeAdjacent)) {
+        if (rangeInPreviewSuppression(state, node.from, node.to, includeAdjacent)) {
           return
         }
 

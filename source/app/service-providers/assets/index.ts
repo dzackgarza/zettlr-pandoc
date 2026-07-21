@@ -21,6 +21,7 @@ import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
 import ProviderContract, { type IPCAPI } from '../provider-contract'
 import type LogProvider from '../log'
 import { getCustomProfiles } from '@providers/commands/exporter'
+import { getAppServiceContainer, isAppServiceContainerReady } from '../../app-service-container'
 import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import { parseReaderWriter } from '@common/pandoc-util/parse-reader-writer'
 
@@ -51,6 +52,11 @@ export interface PandocProfileMetadata {
    * some misconceptions, i.e. why certain files cannot be deleted.
    */
   isProtected?: boolean
+  /**
+   * The Pandoc template the profile declares (resolved by name from the Pandoc
+   * data directory), if any. Surfaced for export observability.
+   */
+  template?: string
 }
 
 export type AssetsProviderIPCAPI = IPCAPI<{
@@ -70,6 +76,7 @@ export type AssetsProviderIPCAPI = IPCAPI<{
   'set-snippet': { name: string, contents: string }
   'list-defaults': unknown
   'list-export-profiles': unknown
+  'list-available-filters': unknown
   'open-defaults-directory': unknown
   'open-snippets-directory': unknown
   'open-filter-directory': unknown
@@ -156,7 +163,17 @@ export default class AssetsProvider extends ProviderContract {
         return await this.listDefaults()
       } else if (command === 'list-export-profiles') {
         const profiles = await this.listDefaults()
-        return profiles.concat(getCustomProfiles())
+        const scripts = isAppServiceContainerReady() ? getAppServiceContainer().config.get().export.scripts : []
+        const custom = getCustomProfiles(scripts)
+        // Custom profiles (e.g. the compile-pandoc PDF) override any same-named
+        // defaults file. userData/defaults is copied once and never pruned, so a
+        // stale shipped default (e.g. an old xelatex PDF.yaml renamed/removed in
+        // a later version) can linger there; it must not shadow the custom
+        // profile of the same name in the export menu.
+        const customNames = new Set(custom.map(p => p.name))
+        return profiles.filter(p => !customNames.has(p.name)).concat(custom)
+      } else if (command === 'list-available-filters') {
+        return await this.listAvailableFilters()
       } else if (command === 'open-defaults-directory') {
         this._logger.info(`[AssetsProvider] Opening path ${this._defaultsPath}`)
         return await shell.openPath(this._defaultsPath)
@@ -370,6 +387,28 @@ export default class AssetsProvider extends ProviderContract {
   }
 
   /**
+   * Lists the Lua filters available to declare in the export filter chain,
+   * discovered from Pandoc's data directory (~/.pandoc/filters) and Zettlr's own
+   * lua-filter directory. Returns bare filenames, which resolve by name when
+   * passed to Pandoc.
+   *
+   * @return  {Promise<string[]>}  Sorted, de-duplicated filter filenames.
+   */
+  async listAvailableFilters (): Promise<string[]> {
+    const dirs = [ path.join(app.getPath('home'), '.pandoc', 'filters'), this._filterPath ]
+    const names = new Set<string>()
+    for (const dir of dirs) {
+      const files = await fs.readdir(dir).catch(() => [] as string[])
+      for (const file of files) {
+        if (/\.lua$/i.test(file)) {
+          names.add(file)
+        }
+      }
+    }
+    return Array.from(names).sort()
+  }
+
+  /**
    * Lists protected filters
    *
    * @return  {string[]}  A list of protected filters
@@ -541,7 +580,8 @@ export default class AssetsProvider extends ProviderContract {
           writer: yaml.writer,
           reader: yaml.reader,
           isInvalid: !(hasWriter && hasReader && (validWriter || validReader)),
-          isProtected: this._protectedDefaults.includes(file)
+          isProtected: this._protectedDefaults.includes(file),
+          template: typeof yaml.template === 'string' ? yaml.template : undefined
         })
       } catch (err) {
         this._logger.warning(`[Assets Provider] Installed profile ${file} had an error and could not be parsed`)

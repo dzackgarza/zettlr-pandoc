@@ -24,8 +24,9 @@ import { getProgramVersion } from './util/get-program-version'
 // Developer tools
 import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
 import { AppServiceContainer, getAppServiceContainer, setAppServiceContainer } from './app-service-container'
-import { app } from 'electron'
+import { app, ipcMain } from 'electron'
 import { attachAppNavigationHandlers } from './util/attach-app-navigation-handlers'
+import { loadMathJaxMacros, mathJaxMacrosPath, seedDefaultMacros } from './util/load-mathjax-macros'
 
 // Statistics: Record the uptime of the application
 let upTimestamp: number
@@ -68,6 +69,17 @@ export async function bootApplication (): Promise<AppServiceContainer> {
   // Prevent navigation away from our main windows and the creation of arbitrary
   // browser windows with external URLs
   attachAppNavigationHandlers(log)
+
+  // Seed the config directory with the default macro set and register the IPC
+  // handler that serves macros to sandboxed renderer windows -- both BEFORE the
+  // service container boots, because booting the ConfigProvider opens the
+  // onboarding window on a fresh install, and that window's renderer invokes
+  // this handler during its own startup. Registering after boot() would lose
+  // that race.
+  await seedDefaultMacros(app.getPath('userData'), path.join(__dirname, 'assets/mathjax-macros.json'))
+  ipcMain.handle('mathjax-macros', async () => {
+    return await loadMathJaxMacros(mathJaxMacrosPath(app.getPath('userData')))
+  })
 
   // Now boot up the service container
   await appServiceContainer.boot()

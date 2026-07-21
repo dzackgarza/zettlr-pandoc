@@ -7,8 +7,15 @@
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     This module provides an inline and a block parser for both
- *                  inline and block math.
+ * Description:     This module provides inline and block parsers for math. It
+ *                  recognizes both the dollar delimiters ($ inline, $$ display)
+ *                  and the LaTeX delimiters (\( \) inline, \[ \] display).
+ *
+ *                  The LaTeX-delimiter matching mirrors markdown-it-texmath's
+ *                  "brackets" flavor (github.com/goessner/markdown-it-texmath):
+ *                  inline \( ... \), display \[ ... \]; the closing \] may sit at
+ *                  the end of a content line (e.g. a trailing sentence period,
+ *                  ".\]"), not only on its own line.
  *
  * END HEADER
  */
@@ -21,7 +28,10 @@ const stexLang = StreamLanguage.define(stexMath)
 
 const MathDelimiter: DelimiterType = {}
 
+// A line that is only `$$` (opens or closes a dollar display block).
 const blockMathRE = /^(\s*\$\$)\s*$/
+// A line that is only `\[` (opens a bracket display block).
+const bracketOpenRE = /^\s*\\\[\s*$/
 const blankLineRe = /^\s*$/
 
 export const inlineMathParser: InlineParser = {
@@ -88,10 +98,54 @@ export const inlineMathParser: InlineParser = {
   }
 }
 
+/**
+ * Inline parser for the LaTeX delimiters `\( ... \)` (inline) and `\[ ... \]`
+ * (display). The dollar parser above cannot handle these because their opening
+ * and closing delimiters differ, so this is a direct scan (mirroring
+ * markdown-it-texmath's `/\\\((.+?)\\\)/` and `/\\\[([\s\S]+?)\\\]/`). Running as
+ * an inline parser lets `\[ ... \]` be recognized even when it follows prose on
+ * the previous line (mid-paragraph), which the block parser cannot catch.
+ */
+export const inlineBracketMathParser: InlineParser = {
+  name: 'inlineBracketMath',
+  // Must run before the built-in Escape rule, which would otherwise consume the
+  // `\(` / `\[` opener as an escaped character before we ever see it.
+  before: 'Escape',
+  parse: (ctx, next, pos) => {
+    if (next !== 92) { // 92 === '\'
+      return -1
+    }
+    const second = ctx.char(pos + 1)
+    // 40 === '(' -> inline \( \); 91 === '[' -> display \[ \]
+    const closeDelim = second === 40 ? '\\)' : second === 91 ? '\\]' : null
+    if (closeDelim === null) {
+      return -1
+    }
+
+    const rest = ctx.slice(pos + 2, ctx.end)
+    const closeOffset = rest.indexOf(closeDelim)
+    if (closeOffset === -1) {
+      return -1
+    }
+
+    const contentFrom = pos + 2
+    const contentTo = pos + 2 + closeOffset
+    const closeTo = contentTo + 2
+
+    const innerElements = ctx.elt(stexLang.parser.parse(ctx.slice(contentFrom, contentTo)), contentFrom)
+    const openingMark = ctx.elt('CodeMark', pos, contentFrom)
+    const closingMark = ctx.elt('CodeMark', contentTo, closeTo)
+
+    return ctx.addElement(ctx.elt('InlineCode', pos, closeTo, [ openingMark, innerElements, closingMark ]))
+  }
+}
+
 export const blockMathParser: BlockParser = {
   name: 'blockMath',
   parse: (ctx, line) => {
-    if (!blockMathRE.test(line.text)) {
+    const isDollar = blockMathRE.test(line.text)
+    const isBracket = !isDollar && bracketOpenRE.test(line.text)
+    if (!isDollar && !isBracket) {
       return false
     }
 
@@ -100,29 +154,57 @@ export const blockMathParser: BlockParser = {
     const blockStart = ctx.lineStart
     const from = ctx.lineStart + line.text.length + 1
 
+    let closeMarkFrom = -1
+    let closeMarkTo = -1
+    let contentEnd = -1
+    let closed = false
+
     while (ctx.nextLine()) {
-      if (blankLineRe.test(line.text) || blockMathRE.test(line.text)) {
-        break
+      if (blankLineRe.test(line.text)) {
+        break // A blank line aborts the block (it never closed).
       }
 
-      equationLines.push(line.text)
+      if (isDollar) {
+        if (blockMathRE.test(line.text)) {
+          closeMarkFrom = ctx.lineStart
+          closeMarkTo = ctx.lineStart + line.text.length
+          contentEnd = ctx.prevLineEnd()
+          closed = true
+          break
+        }
+        equationLines.push(line.text)
+      } else {
+        // Bracket display: close on `\]`, which may follow content on the same
+        // line (e.g. a trailing ".\]").
+        const idx = line.text.indexOf('\\]')
+        if (idx !== -1) {
+          if (idx > 0) {
+            equationLines.push(line.text.slice(0, idx))
+          }
+          closeMarkFrom = ctx.lineStart + idx
+          closeMarkTo = closeMarkFrom + 2
+          contentEnd = closeMarkFrom
+          closed = true
+          break
+        }
+        equationLines.push(line.text)
+      }
     }
 
-    if (!blockMathRE.test(line.text)) {
-      // The parser has collected the full rest of the document. This means
-      // the math block never stopped. In order to maintain readability, we
-      // simply abort parsing.
+    if (!closed) {
+      // The parser collected the rest of the document without finding a closing
+      // delimiter. Abort to keep the document readable.
       return false
     }
 
     // Parse the interior content using stex
     const innerElements = ctx.elt(stexLang.parser.parse(equationLines.join('\n')), from)
-    const codeText = ctx.elt('CodeText', from, ctx.prevLineEnd(), [innerElements])
+    const codeText = ctx.elt('CodeText', from, contentEnd, [ innerElements ])
 
     const openingMark = ctx.elt('CodeMark', blockStart, from - 1)
-    const closingMark = ctx.elt('CodeMark', ctx.lineStart, ctx.lineStart + line.text.length)
+    const closingMark = ctx.elt('CodeMark', closeMarkFrom, closeMarkTo)
 
-    ctx.addElement(ctx.elt('FencedCode', blockStart, ctx.lineStart + line.text.length, [ openingMark, codeText, closingMark ]))
+    ctx.addElement(ctx.elt('FencedCode', blockStart, closeMarkTo, [ openingMark, codeText, closingMark ]))
     ctx.nextLine()
 
     return true

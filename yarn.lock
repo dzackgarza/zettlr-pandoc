@@ -2120,6 +2120,32 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@mathjax/mathjax-mhchem-font-extension@npm:^4.1.3":
+  version: 4.1.3
+  resolution: "@mathjax/mathjax-mhchem-font-extension@npm:4.1.3"
+  checksum: 10/ed9398b7fc26b603224685b5eb038733e39c1aed629bd33a3e2335c6ae899217ef2655fdd44ec0f2bc907175319148a821b4f060e44659ac1e7793d36f111dad
+  languageName: node
+  linkType: hard
+
+"@mathjax/mathjax-newcm-font@npm:4.1.3, @mathjax/mathjax-newcm-font@npm:^4.1.3":
+  version: 4.1.3
+  resolution: "@mathjax/mathjax-newcm-font@npm:4.1.3"
+  checksum: 10/bf4edcd4f1efa35df4a7d4f2239f92515369254d9eba01aa31192304c18eccf9a1d03ffffa041919a102dd66e102d4f35f805b7f23fe7b15f8ebf79219693da1
+  languageName: node
+  linkType: hard
+
+"@mathjax/src@npm:^4.1.3":
+  version: 4.1.3
+  resolution: "@mathjax/src@npm:4.1.3"
+  dependencies:
+    "@mathjax/mathjax-newcm-font": "npm:4.1.3"
+    mhchemparser: "npm:^4.2.1"
+    mj-context-menu: "npm:^1.0.0"
+    speech-rule-engine: "npm:5.0.0-rc.4"
+  checksum: 10/b3f75d98595b6894e146935c9f7ad411fbf4d66444b76fd251dd148a03e2f2200dea0f1bf5268fbd89ce8bc878391caf1713c78dda26dc70d5c3c5117778d73a
+  languageName: node
+  linkType: hard
+
 "@mermaid-js/parser@npm:^1.1.1":
   version: 1.1.1
   resolution: "@mermaid-js/parser@npm:1.1.1"
@@ -2983,7 +3009,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/katex@npm:^0.16.0, @types/katex@npm:^0.16.8":
+"@types/katex@npm:^0.16.0":
   version: 0.16.8
   resolution: "@types/katex@npm:0.16.8"
   checksum: 10/4bf5d83d2430bc04c183765c5916c21180a75cb0181172a0aac7350943507679ceb79bfd13e394cf7c101b7417564d14c0c660baa93b16f2f42baef22a99435c
@@ -5113,6 +5139,13 @@ __metadata:
   version: 11.1.0
   resolution: "commander@npm:11.1.0"
   checksum: 10/66bd2d8a0547f6cb1d34022efb25f348e433b0e04ad76a65279b1b09da108f59a4d3001ca539c60a7a46ea38bcf399fc17d91adad76a8cf43845d8dcbaf5cda1
+  languageName: node
+  linkType: hard
+
+"commander@npm:^14.0.3":
+  version: 14.0.3
+  resolution: "commander@npm:14.0.3"
+  checksum: 10/dfa9ebe2a433d277de5cb0252d23b10a543d245d892db858d23b516336a835c50fd4f52bee4cd13c705cc8acb6f03dc632c73dd806f7d06d3353eb09953dd17a
   languageName: node
   linkType: hard
 
@@ -9546,7 +9579,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"katex@npm:^0.16.21":
+"katex@npm:^0.16.0, katex@npm:^0.16.25":
   version: 0.16.47
   resolution: "katex@npm:0.16.47"
   dependencies:
@@ -10406,6 +10439,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"mhchemparser@npm:^4.2.1":
+  version: 4.2.1
+  resolution: "mhchemparser@npm:4.2.1"
+  checksum: 10/06aeb3893a1015c9e66430e4d24a7cd876cc3761aa7258900310f674296ff9797e62d9411bfa0898514100922ccf7bbc9f9eafb34d6bd169177f85df3723a333
+  languageName: node
+  linkType: hard
+
 "micromark-core-commonmark@npm:^2.0.0":
   version: 2.0.3
   resolution: "micromark-core-commonmark@npm:2.0.3"
@@ -10904,6 +10944,15 @@ __metadata:
   version: 3.0.1
   resolution: "mitt@npm:3.0.1"
   checksum: 10/287c70d8e73ffc25624261a4989c783768aed95ecb60900f051d180cf83e311e3e59865bfd6e9d029cdb149dc20ba2f128a805e9429c5c4ce33b1416c65bbd14
+  languageName: node
+  linkType: hard
+
+"mj-context-menu@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "mj-context-menu@npm:1.0.0"
+  dependencies:
+    rimraf: "npm:^6.0.1"
+  checksum: 10/e14d842b57081fc1bf19aa9af339bf5a6470c997c1b0e88b7b58dbd3209cd3d2ea0bc81f08b2e6bd318db25c92167bea7aef3ba234b7dc9109bd2b9d8499d412
   languageName: node
   linkType: hard
 
@@ -13083,7 +13132,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"rimraf@npm:^6.1.3":
+"rimraf@npm:^6.0.1, rimraf@npm:^6.1.3":
   version: 6.1.3
   resolution: "rimraf@npm:6.1.3"
   dependencies:
@@ -13712,6 +13761,19 @@ __metadata:
   version: 14.0.1
   resolution: "speakingurl@npm:14.0.1"
   checksum: 10/4a49e532e495436982c9555867f0f97a7bc331b4567c8263942f9a11bd8570efe0d5d08a0f8a549c28819f10b8884e27fc5c2b04b93fd6eaa6c4494104e6c763
+  languageName: node
+  linkType: hard
+
+"speech-rule-engine@npm:5.0.0-rc.4":
+  version: 5.0.0-rc.4
+  resolution: "speech-rule-engine@npm:5.0.0-rc.4"
+  dependencies:
+    "@xmldom/xmldom": "npm:^0.9.10"
+    commander: "npm:^14.0.3"
+    wicked-good-xpath: "npm:^1.3.0"
+  bin:
+    sre: bin/sre
+  checksum: 10/88ff7855bb8c95d512c3e3031d837602eb443367801f6426eba30f5a7b4d5fd78785913588852351ab5b973be2d7a21fe60880834ba9c0d1f67da6214885c282
   languageName: node
   linkType: hard
 
@@ -15336,6 +15398,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"wicked-good-xpath@npm:^1.3.0":
+  version: 1.3.0
+  resolution: "wicked-good-xpath@npm:1.3.0"
+  checksum: 10/e4d7d6c1b48ccb4f406d69217b2fe1073988bcb970645c64be359a1cc81e5aec49d348a7763ad54c7c4a05b6a92986dff7c23edcc5462b54bf1260d52217ace4
+  languageName: node
+  linkType: hard
+
 "wildcard@npm:^2.0.0":
   version: 2.0.1
   resolution: "wildcard@npm:2.0.1"
@@ -15660,9 +15729,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"zettlr@workspace:.":
+"zettlr-pandoc@workspace:.":
   version: 0.0.0-use.local
-  resolution: "zettlr@workspace:."
+  resolution: "zettlr-pandoc@workspace:."
   dependencies:
     "@cds/core": "npm:^6.17.0"
     "@codemirror/autocomplete": "npm:^6.20.3"
@@ -15709,6 +15778,9 @@ __metadata:
     "@lezer/highlight": "npm:^1.2.3"
     "@lezer/lr": "npm:^1.4.10"
     "@lezer/markdown": "npm:^1.6.4"
+    "@mathjax/mathjax-mhchem-font-extension": "npm:^4.1.3"
+    "@mathjax/mathjax-newcm-font": "npm:^4.1.3"
+    "@mathjax/src": "npm:^4.1.3"
     "@replit/codemirror-emacs": "npm:^6.1.0"
     "@replit/codemirror-lang-nix": "npm:^6.0.1"
     "@replit/codemirror-vim": "npm:^6.3.0"
@@ -15718,7 +15790,6 @@ __metadata:
     "@types/command-exists": "npm:^1.2.3"
     "@types/d3": "npm:^7.4.3"
     "@types/gettext-parser": "npm:^9.0.0"
-    "@types/katex": "npm:^0.16.8"
     "@types/luxon": "npm:^3.7.1"
     "@types/md5": "npm:^2.3.6"
     "@types/mocha": "npm:^10.0.10"
@@ -15759,7 +15830,6 @@ __metadata:
     gettext-parser: "npm:^9.0.2"
     got: "npm:^11.8.6"
     jsdom: "npm:^29.1.1"
-    katex: "npm:^0.17.0"
     ky: "npm:^2.0.2"
     lang-criticmarkup: "npm:^0.3.0"
     less: "npm:^4.6.6"

@@ -19,8 +19,9 @@ import { WidgetType, EditorView } from '@codemirror/view'
 import { type EditorState } from '@codemirror/state'
 import clickAndSelect from './click-and-select'
 import { equationMenu } from '../context-menu/equation-menu'
-import { katexToElem } from 'source/common/util/mathtex-to-html'
-import { rangeInSelection } from '../util/range-in-selection'
+import { mathJaxToElem } from 'source/common/util/mathtex-to-html'
+import { stripMathDelimiters } from 'source/common/util/math-delimiters'
+import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
 import { configField } from '../util/configuration'
 
 class MathWidget extends WidgetType {
@@ -38,7 +39,7 @@ class MathWidget extends WidgetType {
     const elem = document.createElement('span')
     elem.classList.add('preview-math')
     elem.dataset.equation = this.equation
-    katexToElem(this.equation, elem, this.displayMode)
+    mathJaxToElem(this.equation, elem, this.displayMode ? 'display' : 'inline')
     elem.addEventListener('click', clickAndSelect(view))
     elem.addEventListener('contextmenu', (event) => {
       equationMenu(view, this.equation, { x: event.clientX, y: event.clientY })
@@ -52,7 +53,7 @@ class MathWidget extends WidgetType {
     }
 
     dom.dataset.equation = this.equation
-    katexToElem(this.equation, dom, this.displayMode)
+    mathJaxToElem(this.equation, dom, this.displayMode ? 'display' : 'inline')
     return true
   }
 
@@ -92,30 +93,30 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): MathWidget|unde
   const includeAdjacent = state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true
 
   // Don't render if the selection is within the node
-  if (rangeInSelection(state.selection, node.from, node.to, includeAdjacent)) {
+  if (rangeInPreviewSuppression(state, node.from, node.to, includeAdjacent)) {
     return undefined
   }
 
   const nodeText = state.sliceDoc(node.from, node.to)
-  if (!nodeText.startsWith('$') && (!nodeText.endsWith('$\n') || nodeText.endsWith('$'))) {
+  // Recognizes $…$, $$…$$, \(…\) and \[…\]; returns null for regular code.
+  const math = stripMathDelimiters(nodeText)
+  if (math === null) {
     return undefined // It's regular FencedCode/InlineCode
   }
 
-  const displayMode = nodeText.startsWith('$$')
-  const equation = nodeText.replace(/^\$\$?(.+?)\$\$?$/s, '$1') // NOTE the s flag
-  return new MathWidget(equation, displayMode, node.node)
+  return new MathWidget(math.equation, math.display, node.node)
 }
 
 export const renderMath = [
   renderBlockWidgets(shouldHandleNode, createWidget),
   EditorView.baseTheme({
-    // KaTeX overrides
-    '.katex': {
+    // MathJax CommonHTML overrides
+    'mjx-container': {
       fontSize: '1.1em', // reduce font-size of math a bit
       display: 'inline-block', // needed for display math to behave properly
       userSelect: 'none' // Disable user text selection
     },
-    '.katex-display, .katex-display > .katex > .katex-html': {
+    'mjx-container[display="true"]': {
       width: '100%' // display math should be centered
     }
   })

@@ -136,6 +136,12 @@
     v-bind:empty-message="props.field.emptyMessage"
     v-on:update:model-value="emit('update:modelValue', $event)"
   ></ListControl>
+  <FilterSelector
+    v-else-if="props.field.type === 'filter-select'"
+    v-bind:model-value="model"
+    v-bind:label="props.field.label"
+    v-on:update:model-value="emit('update:modelValue', $event)"
+  ></FilterSelector>
   <TokenInput
     v-else-if="props.field.type === 'token'"
     v-bind:model-value="model"
@@ -178,6 +184,7 @@ import RadioInput from './elements/RadioControl.vue'
 import SelectInput from './elements/SelectControl.vue'
 import SliderInput from './elements/SliderControl.vue'
 import ListControl from './elements/ListControl.vue'
+import FilterSelector from './elements/FilterSelector.vue'
 import TokenInput from './elements/TokenList.vue'
 import ThemeInput from './elements/ThemeSelector.vue'
 

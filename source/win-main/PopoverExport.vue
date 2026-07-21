@@ -8,6 +8,12 @@
         v-bind:label="formatLabel"
         v-bind:options="availableFormats"
       ></SelectControl>
+      <ExportConfigSummary
+        v-bind:filters="exportSummary.filters"
+        v-bind:template="exportSummary.template"
+        v-bind:data-dir="exportSummary.dataDir"
+        v-bind:script-info="exportSummary.scriptInfo"
+      ></ExportConfigSummary>
       <!-- The choice of working directory vs. temporary applies to all exporters -->
       <hr>
       <RadioControl
@@ -54,6 +60,7 @@ import PopoverWrapper from '@common/vue/PopoverWrapper.vue'
 import RadioControl from '@common/vue/form/elements/RadioControl.vue'
 import SelectControl from '@common/vue/form/elements/SelectControl.vue'
 import CheckboxControl from '@common/vue/form/elements/CheckboxControl.vue'
+import ExportConfigSummary from './ExportConfigSummary.vue'
 import { ref, computed, watch, onMounted } from 'vue'
 import type { AssetsProviderIPCAPI, PandocProfileMetadata } from '@providers/assets'
 import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
@@ -138,6 +145,37 @@ const availableFormats = computed(() => {
   }
 
   return selectOptions
+})
+
+// Observability: at a glance, what the selected format actually uses.
+const exportSummary = computed(() => {
+  const profile = profileMetadata.value.find(p => p.name === format.value)
+  const script = configStore.config.export.scripts.find(s => s.name === format.value)
+  const customCommand = customCommands.value.find(c => c.command === format.value)
+  let scriptInfo = ''
+  if (script !== undefined) {
+    scriptInfo = `${script.profile} → ${script.command}`
+  } else if (customCommand !== undefined) {
+    scriptInfo = `raw command: ${customCommand.command}`
+  }
+
+  // Effective template: the profile's own, else the configured per-writer default.
+  let template = profile?.template ?? ''
+  if (template === '' && profile !== undefined) {
+    const writer = parseReaderWriter(profile.writer).name
+    if ([ 'html', 'html4', 'html5', 'revealjs', 's5', 'slidy', 'dzslides' ].includes(writer)) {
+      template = configStore.config.export.htmlTemplate
+    } else if ([ 'latex', 'beamer', 'pdf' ].includes(writer)) {
+      template = configStore.config.export.latexTemplate
+    }
+  }
+
+  return {
+    filters: configStore.config.export.filters,
+    template,
+    dataDir: '~/.pandoc',
+    scriptInfo
+  }
 })
 
 watch(autoOpenExport, function (value) {

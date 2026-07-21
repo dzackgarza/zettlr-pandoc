@@ -13,8 +13,15 @@
  * END HEADER
  */
 
-/* KaTeX */
-@import '~katex/dist/katex.css';
+/* MathJax CommonHTML */
+mjx-container {
+  vertical-align: middle;
+}
+
+mjx-container[display="true"] {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
 
 /* Tippy */
 @import '~tippy.js/dist/tippy.css';

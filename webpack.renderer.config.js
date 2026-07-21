@@ -1,4 +1,5 @@
 const rules = require('./webpack.rules')
+const CopyWebpackPlugin = require('copy-webpack-plugin')
 const path = require('path')
 
 const { VueLoaderPlugin } = require('vue-loader')
@@ -7,6 +8,15 @@ const { DefinePlugin } = require('webpack')
 const plugins = [
   // Apply webpack rules to the corresponding language blocks in .vue files
   new VueLoaderPlugin(),
+  new CopyWebpackPlugin({
+    patterns: [{
+      from: 'node_modules/@mathjax/mathjax-newcm-font/chtml/woff2',
+      to: 'mathjax'
+    }, {
+      from: 'node_modules/@mathjax/mathjax-mhchem-font-extension/chtml/woff2',
+      to: 'mathjax'
+    }]
+  }),
 
   // Set a few Vue 3 options; see: http://link.vuejs.org/feature-flags
   new DefinePlugin({

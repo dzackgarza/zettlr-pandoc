@@ -194,7 +194,7 @@ module.exports = {
     force: false // NOTE: By now covered by the global flag on packaging.
   },
   packagerConfig: {
-    appBundleId: 'com.zettlr.app',
+    appBundleId: 'com.dzackgarza.zettlr-pandoc',
     // This info.plist file contains file association for the app on macOS.
     extendInfo: './scripts/assets/info.plist',
     asar: {
@@ -207,14 +207,12 @@ module.exports = {
     darwinDarkModeSupport: 'true',
     // Electron-forge automatically adds the file extension based on OS
     icon: './resources/icons/icon',
-    // The binary name should always be uppercase Zettlr. As we cannot specify
-    // this on a per-maker basis, we need to output everything this way. With
-    // this property, macOS builds are named Zettlr.app, Windows builds
-    // Zettlr.exe and the linux binaries are called Zettlr (albeit on Linux,
-    // lowercase is preferred). Due to the last issue (Linux binaries being
-    // with capital Z) we have to explicitly set executableName on the Linux
-    // target.
-    name: 'Zettlr',
+    // This fork rebrands to Zettlr-Pandoc so it installs and stores its config
+    // separately from an upstream Zettlr. name gives macOS Zettlr-Pandoc.app
+    // and Windows Zettlr-Pandoc.exe; executableName gives a clean lowercase
+    // Linux binary.
+    name: 'Zettlr-Pandoc',
+    executableName: 'zettlr-pandoc',
     // The certificate is written to the default keychain during CI build.
     // See ./scripts/add-osx-cert.sh
     osxSign: {
@@ -263,7 +261,9 @@ module.exports = {
         // collide on every system on which PHP is installed, we change the
         // default ports for both the logger and the dev servers. We have to set
         // both ports, because changing only one doesn't solve the issue.
-        port: 3000,
+        // ponytail: upstream default 3000 collides with a persistent local
+        // dev server on this machine; moved to a free port for the fork spike.
+        port: 3100,
         loggerPort: 9001,
         renderer: {
           config: './webpack.renderer.config.js',
@@ -307,8 +307,8 @@ module.exports = {
       name: '@electron-forge/maker-deb',
       config: {
         options: {
-          name: 'zettlr',
-          bin: 'Zettlr', // See packagerConfig.name property,
+          name: 'zettlr-pandoc',
+          bin: 'zettlr-pandoc', // See packagerConfig.executableName property,
           categories: [ 'Office', 'Education', 'Science' ],
           section: 'editors',
           // size: 500, // NOTE: Estimate, need to refine
@@ -329,12 +329,12 @@ module.exports = {
       name: '@electron-forge/maker-rpm',
       config: {
         options: {
-          name: 'zettlr',
-          bin: 'Zettlr', // See packagerConfig.name property,
+          name: 'zettlr-pandoc',
+          bin: 'zettlr-pandoc', // See packagerConfig.executableName property,
           categories: [ 'Office', 'Education', 'Science' ],
           description: 'Your one-stop publication workbench.',
           productDescription: 'Your one-stop publication workbench.',
-          productName: 'Zettlr',
+          productName: 'Zettlr-Pandoc',
           genericName: 'Markdown Editor',
           // Electron forge recommends 512px
           icon: './resources/icons/png/512x512.png',

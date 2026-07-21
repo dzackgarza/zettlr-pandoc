@@ -17,7 +17,7 @@ import { type SyntaxNode, type SyntaxNodeRef } from '@lezer/common'
 import { WidgetType } from '@codemirror/view'
 
 import { type EditorState } from '@codemirror/state'
-import { rangeInSelection } from '../util/range-in-selection'
+import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
 
 class RuleWidget extends WidgetType {
   constructor (readonly node: SyntaxNode) {
@@ -46,7 +46,7 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): RuleWidget|unde
   // Horizontal rules must always show their syntax even if the cursor is only
   // adjacent for a proper UX. If we didn't do that, users would have to click
   // within this element to show the heading characters, which is undesirable.
-  if (rangeInSelection(state.selection, node.from, node.to, true)) {
+  if (rangeInPreviewSuppression(state, node.from, node.to, true)) {
     return undefined
   }
 

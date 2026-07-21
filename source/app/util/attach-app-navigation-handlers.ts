@@ -55,6 +55,8 @@ function maybeOpenExternal (url: string): void {
  * the file browser, if applicable.
  */
 export function attachAppNavigationHandlers (log: LogProvider): void {
+  const devServerOrigin = app.isPackaged ? undefined : new URL(MAIN_WINDOW_WEBPACK_ENTRY).origin
+
   app.on('web-contents-created', (event, webContents) => {
     webContents.setWindowOpenHandler(({ url }) => {
       log.info(`[Navigation Handler] Preventing opening a new window to <${url}>`)
@@ -68,7 +70,7 @@ export function attachAppNavigationHandlers (log: LogProvider): void {
       log.info(`[Navigation Handler] webContents wants to navigate to ${url}`)
       // NOTE: app.isPackaged is false if the executable is called electron
       // (instead of Zettlr)
-      if (!app.isPackaged && url.startsWith('http://localhost:3000')) {
+      if (devServerOrigin !== undefined && new URL(url).origin === devServerOrigin) {
         // We are in development, so we must make sure to allow webpack to
         // actually reload the windows. Webpack will always spin up devServers
         // at localhost.
