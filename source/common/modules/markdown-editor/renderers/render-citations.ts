@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import { renderInlineWidgets } from './base-renderer'
+import { renderBlockWidgets } from './base-renderer'
 import { type SyntaxNodeRef, type SyntaxNode } from '@lezer/common'
 import { WidgetType, type EditorView } from '@codemirror/view'
 import { type EditorState } from '@codemirror/state'
@@ -102,4 +102,4 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): CitationWidget|
   }
 }
 
-export const renderCitations = renderInlineWidgets(shouldHandleNode, createWidget)
+export const renderCitations = renderBlockWidgets(shouldHandleNode, createWidget)

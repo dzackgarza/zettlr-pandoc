@@ -3,12 +3,14 @@
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
+import { renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
 import { renderEmphasis } from 'source/common/modules/markdown-editor/renderers/render-emphasis'
 import { renderLinks } from 'source/common/modules/markdown-editor/renderers/render-links'
 import { renderMath } from 'source/common/modules/markdown-editor/renderers/render-math'
 import { renderPandoc } from 'source/common/modules/markdown-editor/renderers/render-pandoc-div-span'
 import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
 import { initializeMathJax } from 'source/common/util/mathtex-to-html'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 
 declare global {
   interface Window {
@@ -65,7 +67,8 @@ Outside the structure.
 const active = `# Editing state
 
 ::: {.definition #proper-map}
-A *proper map* $f\\colon X\\to Y$ has [compact](https://example.com) inverse images.
+A *proper map* $f\\colon X\\to Y$ has [compact](https://example.com) inverse images by [@Ols04
+Cor. 6.2].
 :::
 
 Outside the active div.
@@ -73,6 +76,7 @@ Outside the active div.
 
 async function mount (): Promise<void> {
   await initializeMathJax({ RR: '\\mathbb{R}' })
+  window.getCitationCallback = () => citations => citations.map(citation => citation.id).join('; ')
 
   const scene = document.body.dataset.scene ?? 'overview'
   const dark = document.body.dataset.dark === 'true'
@@ -83,10 +87,12 @@ async function mount (): Promise<void> {
     selection: { anchor },
     extensions: [
       markdownParser(),
+      configField,
       EditorView.lineWrapping,
       editorTheme,
       dark ? defaultDark : defaultLight,
       renderPandoc,
+      renderCitations,
       renderEmphasis,
       renderLinks,
       renderMath,

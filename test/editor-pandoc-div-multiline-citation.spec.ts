@@ -159,7 +159,8 @@ outside`
 
     assert.ok(view !== undefined)
     assert.deepStrictEqual(renderedCitations(view), [ 'AEGS23' ])
-    assert.match(view.dom.textContent ?? '', /\[@Ols04\s+Cor\. 6\.2\]/)
+    assert.match(view.dom.textContent ?? '', /\[@Ols04Cor\. 6\.2\]/)
+    assert.match(view.state.doc.toString(), /\[@Ols04\nCor\. 6\.2\]/)
   })
 
   it('keeps a wrapped citation rendered while a neighboring equation is selected', function () {
