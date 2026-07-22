@@ -25,11 +25,15 @@
  *                                                payload.generation)
  *                      'drop-live-buffer'   -> index.dropLiveBuffer(
  *                                                payload.documentPath)
- *                      'preview-rename'     -> this.previewRename(
- *                                                payload.oldKey,
- *                                                payload.newKey)
- *                      'commit-rename'      -> this.commitRename(payload.edit)
- *                      'undo-rename'        -> this.undoRename()
+ *
+ *                    The rename protocol (previewRename/commitRename/
+ *                    undoRename) is NOT part of this channel (review B7):
+ *                    production reaches it exclusively through the
+ *                    'application' channel's RenameReference command
+ *                    (commands/rename-reference.ts), which calls the
+ *                    provider methods directly. That chain is locked by
+ *                    test/reference-rename-atomicity.spec.ts and
+ *                    test/reference-rename-undo-route.spec.ts.
  *
  *                  - boot() subscribes to the injected FSAL's 'fsal-event':
  *                    'add'/'change' events carrying a markdown file
@@ -167,14 +171,6 @@ export default class ReferenceProvider extends ProviderContract {
         const { documentPath } = message.payload as { documentPath: string }
         this._index.dropLiveBuffer(documentPath)
         broadcastIpcMessage('references')
-      } else if (command === 'preview-rename') {
-        const { oldKey, newKey } = message.payload as { oldKey: string, newKey: string }
-        return this.previewRename(oldKey, newKey)
-      } else if (command === 'commit-rename') {
-        const { edit } = message.payload as { edit: WorkspaceReferenceEdit }
-        return this.commitRename(edit)
-      } else if (command === 'undo-rename') {
-        return this.undoRename()
       }
     })
   }

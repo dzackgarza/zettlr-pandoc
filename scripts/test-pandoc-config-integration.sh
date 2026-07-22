@@ -36,7 +36,11 @@ grep -qF '\label{thm:torelli}' "$TEX" || fail 'explicit theorem-div id did not e
 grep -qF '\cref{thm:torelli,lem:embedding}' "$TEX" || fail 'cluster [@thm:torelli; @lem:embedding] did not become \cref{thm:torelli,lem:embedding}'
 grep -qF '\cref{tbl:coble-lattices}' "$TEX" || fail '@tbl:coble-lattices did not become \cref{tbl:coble-lattices} (crossref inactive?)'
 grep -qF '\begin{theorem}' "$TEX" || fail 'theorem environment missing'
-grep -q 'Ols04' "$TEX" || fail 'bibliography citation Ols04 vanished'
+# The strong citeproc form, matching the companion's own assertion
+# (tests/test-project-references.sh): the authored [@Ols04, Lem. 7.1] must
+# survive as a real biblatex \autocite with its locator, not merely as the
+# key appearing somewhere in the output.
+grep -qF '\autocite[Lem. 7.1]{Ols04}' "$TEX" || fail 'authored [@Ols04, Lem. 7.1] did not render as \autocite[Lem. 7.1]{Ols04} (citeproc/biblatex passthrough broken?)'
 grep -qF '{thm:should-not-index}' "$TEX" && fail 'proof-div id leaked into a label or reference' || true
 
 # Ordered inputs: file 1 content before file 2 content before file 3 content.

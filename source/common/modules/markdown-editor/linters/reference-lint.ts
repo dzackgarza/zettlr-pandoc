@@ -58,7 +58,7 @@ import { linter, type Diagnostic } from '@codemirror/lint'
 import { type EditorView } from '@codemirror/view'
 import { markdownToAST } from '@common/modules/markdown-utils'
 import type { ASTNode } from '@common/modules/markdown-utils/markdown-ast'
-import { parsePandocAttributes } from '@common/pandoc-util/parse-pandoc-attributes'
+import { locateAttribute } from '@common/pandoc-util/extract-references'
 import { SEMANTIC_DIV_CLASSES } from '@common/pandoc-util/pandoc-div-model'
 import { THEOREM_DIV_PREFIXES, REFERENCEABLE_DIV_CLASSES } from '@common/util/pandoc-quick-reference'
 import { referenceFamilyOf, type ReferenceFamily } from '@dts/common/references'
@@ -138,41 +138,15 @@ function walkAST (node: ASTNode, visit: (node: ASTNode) => void): void {
 }
 
 /**
- * Locates the authored `#id` token of an attribute block, extended over the
- * full colon-preserving key (the shared parser truncates ids at colons).
- *
- * @param   {string}  attrText  The authored `{…}` substring
- * @param   {number}  offset    The document offset of the substring
- *
- * @return  {{ key: string, from: number, to: number, classes: string[] }|undefined}
- */
-function locateIdToken (attrText: string, offset: number): { key: string, from: number, to: number, classes: string[] }|undefined {
-  const attributes = parsePandocAttributes(attrText)
-  if (attributes.id === undefined) {
-    return undefined
-  }
-
-  const idStart = attrText.indexOf('#' + attributes.id)
-  if (idStart === -1) {
-    return undefined
-  }
-
-  let idEnd = idStart + 1 + attributes.id.length
-  while (idEnd < attrText.length && !' \t\n}'.includes(attrText[idEnd])) {
-    idEnd++
-  }
-
-  return {
-    key: attrText.slice(idStart + 1, idEnd),
-    from: offset + idStart,
-    to: offset + idEnd,
-    classes: attributes.classes ?? []
-  }
-}
-
-/**
  * Collects the AST-derived diagnostics of the current buffer: ids on
  * proof-like divs and mixed bibliography/reference citation clusters.
+ *
+ * The id-token locator is the extractor's own exported locateAttribute
+ * (review B6) — one authority, not a parallel copy. Its fail-loud contract
+ * is kept deliberately: an inconsistent attribute block (parsed id absent
+ * from the authored text) is a parser bug, and the resulting throw
+ * propagates out of the lint source instead of silently dropping the
+ * diagnostic — the condition is not reachable through authored input.
  */
 function collectASTDiagnostics (markdown: string, diagnostics: Diagnostic[]): void {
   walkAST(markdownToAST(markdown), node => {
@@ -184,16 +158,17 @@ function collectASTDiagnostics (markdown: string, diagnostics: Diagnostic[]): vo
         return
       }
 
-      const located = locateIdToken(openLine.slice(brace), node.from + brace)
+      const located = locateAttribute(openLine.slice(brace), node.from + brace)
       if (located === undefined) {
         return
       }
 
-      const isProofLike = located.classes.some(divClass => SEMANTIC_DIV_CLASSES[divClass.toLowerCase()] === 'proof')
+      const classes = located.attributes.classes ?? []
+      const isProofLike = classes.some(divClass => SEMANTIC_DIV_CLASSES[divClass.toLowerCase()] === 'proof')
       if (isProofLike) {
         diagnostics.push({
-          from: located.from,
-          to: located.to,
+          from: located.range.from,
+          to: located.range.to,
           severity: 'info',
           message: `The id "#${located.key}" on a proof div defines no reference target: proofs stay unnumbered and unreferenceable.`,
           source: 'reference-lint'
@@ -235,24 +210,21 @@ function collectSnapshotDiagnostics (references: EditorWorkspaceReferences, diag
     }
 
     if (definition.sourceKind === 'theorem-div') {
-      const openLine = definition.previewSource.split('\n', 1)[0]
-      const brace = openLine.indexOf('{')
-      const located = brace === -1 ? undefined : locateIdToken(openLine.slice(brace), 0)
-      if (located !== undefined) {
-        const referenceableClasses = located.classes.filter(divClass => REFERENCEABLE_DIV_CLASSES.includes(divClass.toLowerCase()))
-        const authoredClass = referenceableClasses.length > 0 ? referenceableClasses[0].toLowerCase() : undefined
-        const expectedPrefix = authoredClass !== undefined ? CLASS_TO_PREFIX[authoredClass] : undefined
-        if (authoredClass !== undefined && expectedPrefix !== undefined && definition.family !== expectedPrefix) {
-          const remainder = definition.key.slice(definition.key.indexOf(':') + 1)
-          const example = `#${expectedPrefix}:${remainder}`
-          diagnostics.push({
-            from: definition.range.from,
-            to: definition.range.to,
-            severity: 'error',
-            message: `The div class "${authoredClass}" conflicts with the id "#${definition.key}": a ${authoredClass} div is labeled with the "${expectedPrefix}:" prefix, e.g. "${example}". Change one side to match the other.`,
-            source: 'reference-lint'
-          })
-        }
+      // The authored classes ride on the definition itself (review B6):
+      // previewSource is a display excerpt and is never re-parsed here.
+      const referenceableClasses = definition.classes.filter(divClass => REFERENCEABLE_DIV_CLASSES.includes(divClass.toLowerCase()))
+      const authoredClass = referenceableClasses.length > 0 ? referenceableClasses[0].toLowerCase() : undefined
+      const expectedPrefix = authoredClass !== undefined ? CLASS_TO_PREFIX[authoredClass] : undefined
+      if (authoredClass !== undefined && expectedPrefix !== undefined && definition.family !== expectedPrefix) {
+        const remainder = definition.key.slice(definition.key.indexOf(':') + 1)
+        const example = `#${expectedPrefix}:${remainder}`
+        diagnostics.push({
+          from: definition.range.from,
+          to: definition.range.to,
+          severity: 'error',
+          message: `The div class "${authoredClass}" conflicts with the id "#${definition.key}": a ${authoredClass} div is labeled with the "${expectedPrefix}:" prefix, e.g. "${example}". Change one side to match the other.`,
+          source: 'reference-lint'
+        })
       }
     }
   }

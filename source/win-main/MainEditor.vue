@@ -80,6 +80,7 @@ import {
   type LiveBufferScheduler
 } from '@common/modules/markdown-editor/util/live-buffer-reporter'
 import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
+import { runRecoverably } from '@common/util/run-recoverably'
 import RenameReferencePreviewDialog from './RenameReferencePreviewDialog.vue'
 import {
   buildRenamePreviewSummary,
@@ -222,13 +223,12 @@ ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
   })
 })
 
-// Combined @-completion label feed (issue #1 Phase 3). Mirrors the
-// citation-keys feed above: whenever main broadcasts changed workspace
-// references, fetch the snapshot and push the typed 'references' completion
-// database. NOTE: the main-process reference provider Electron shell is
-// deferred, so a missing handler must fail gracefully at runtime (log only —
-// never fabricate fallback data). No headless spec exercises Vue components;
-// this wiring is probe-covered later.
+// Combined @-completion label feed (issue #1). Mirrors the citation-keys
+// feed above: whenever main broadcasts changed workspace references, fetch
+// the snapshot and push the typed 'references' completion database.
+// updateReferenceEntries() itself routes provider failures through the
+// recoverable-error boundary (closable toast, typed outcome); this catch
+// only guards against unexpected renderer-side faults.
 ipcRenderer.on('references', _event => {
   updateReferenceEntries().catch(e => {
     console.error('Could not update workspace reference entries', e)
@@ -958,7 +958,10 @@ function promptWorkspaceRename (intent: ReferenceKeyEditPromptIntent): void {
       id: 'apply-workspace-rename',
       type: 'normal',
       action: () => {
-        runWorkspaceRename(intent).catch(err => console.error('Workspace rename failed', err))
+        // A failed rename protocol run surfaces through the recoverable
+        // boundary (review B8): one closable error toast, never a silent
+        // console-only line.
+        void runRecoverably(async () => { await runWorkspaceRename(intent) }, trans('Workspace rename'))
       }
     },
     {

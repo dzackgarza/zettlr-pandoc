@@ -8,18 +8,15 @@
  * License:         GNU GPL v3
  *
  * Description:     The MainEditor-owned production half of the live-overlay
- *                  authority contract (issue #1, Phase 8). The
- *                  ReferenceProvider already accepts 'report-live-buffer' /
- *                  'drop-live-buffer' on the 'reference-provider' ipc channel
- *                  (contract locked by test/reference-provider-shell.spec.ts),
- *                  but until this phase NO production code sends those
- *                  commands: the merged workspace state never sees unsaved
- *                  editor buffers. This module is the pure, injectable unit
- *                  MainEditor.vue wires to its editor 'change' events
- *                  (MarkdownEditor emits 'change' on every docChanged update)
- *                  and to document close/switch (onBeforeUnmount / file-path
- *                  change): the Vue wiring itself is thin and lands green;
- *                  the semantics live here.
+ *                  authority contract (issue #1). The ReferenceProvider
+ *                  accepts 'report-live-buffer' / 'drop-live-buffer' on the
+ *                  'reference-provider' ipc channel (contract locked by
+ *                  test/reference-provider-shell.spec.ts); this module is
+ *                  the pure, injectable unit MainEditor.vue wires to its
+ *                  editor 'change' events (MarkdownEditor emits 'change' on
+ *                  every docChanged update) and to document close/switch
+ *                  (onBeforeUnmount / file-path change): the Vue wiring is
+ *                  thin; the semantics live here.
  *
  *                  CONTRACT (locked red by test/live-buffer-reporter.spec.ts):
  *
@@ -73,7 +70,9 @@
  * END HEADER
  */
 
+import { trans } from '@common/i18n-renderer'
 import { extractReferences } from '@common/pandoc-util/extract-references'
+import { runRecoverably } from '@common/util/run-recoverably'
 
 /** The renderer ipc seam the reporter delivers through (ipcRenderer.invoke). */
 export type ReferenceProviderInvoker =
@@ -143,13 +142,16 @@ export function createLiveBufferReporter (
     }
     deliveredGenerations.set(documentPath, report.generation)
 
-    ipcInvoke('reference-provider', {
+    // A rejected delivery surfaces through the recoverable boundary
+    // (review B8): one closable error toast naming the operation, never a
+    // silent console-only line. The wire invocation itself is unchanged.
+    void runRecoverably(async () => await ipcInvoke('reference-provider', {
       command: 'report-live-buffer',
       payload: {
         snapshot: extractReferences(documentPath, report.content),
         generation: report.generation
       }
-    }).catch(err => console.error(`Could not report the live buffer for ${documentPath}`, err))
+    }), trans('Live reference indexing of %s', documentPath))
   }
 
   return {
@@ -172,10 +174,10 @@ export function createLiveBufferReporter (
         report.task.cancel()
         pending.delete(documentPath)
       }
-      ipcInvoke('reference-provider', {
+      void runRecoverably(async () => await ipcInvoke('reference-provider', {
         command: 'drop-live-buffer',
         payload: { documentPath }
-      }).catch(err => console.error(`Could not drop the live buffer for ${documentPath}`, err))
+      }), trans('Releasing the live reference overlay of %s', documentPath))
     }
   }
 }

@@ -7,15 +7,19 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Locks the ReferenceProvider rename protocol
- *                  ('preview-rename' / 'commit-rename' / 'undo-rename' on
- *                  the real 'reference-provider' ipcMain handler, recorded
- *                  by the headless harness) against a SCRATCH COPY of the
- *                  reference-workspace fixture on disk — the committed
- *                  fixture is never mutated. The provider is constructed
- *                  exactly like production (LogProvider + injected FSAL
- *                  seam) and fed real FSAL event payloads whose snapshots
- *                  come from the real extractor.
+ * Description:     Locks the ReferenceProvider rename protocol against a
+ *                  SCRATCH COPY of the reference-workspace fixture on disk —
+ *                  the committed fixture is never mutated. The rename
+ *                  protocol is driven through the PRODUCTION command surface
+ *                  (review B7): the 'application' channel's RenameReference
+ *                  command ('preview-/commit-/undo-reference-rename')
+ *                  delegating to the real provider — the same chain
+ *                  MainEditor.vue invokes. Live-buffer plays stay on the
+ *                  real 'reference-provider' ipcMain handler (their own
+ *                  production path). The provider is constructed exactly
+ *                  like production (LogProvider + injected FSAL seam) and
+ *                  fed real FSAL event payloads whose snapshots come from
+ *                  the real extractor.
  *
  *                  BOUNDARY SPLIT (stated per the red-proof contract): the
  *                  main-process provider owns hash-fencing and CLOSED-FILE
@@ -44,6 +48,7 @@ import { cp, mkdtemp, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
 import ReferenceProvider from 'source/app/service-providers/references'
+import RenameReference from 'source/app/service-providers/commands/rename-reference'
 import LogProvider from 'source/app/service-providers/log'
 import { extractReferences, hashDocumentSource } from 'source/common/pandoc-util/extract-references'
 import type {
@@ -52,6 +57,7 @@ import type {
   UndoRenameOutcome
 } from 'source/common/pandoc-util/compute-reference-edits'
 import type FSAL from 'source/app/service-providers/fsal'
+import type { AppServiceContainer } from 'source/app/app-service-container'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import type { MDFileDescriptor } from 'source/types/common/fsal'
 import type { WorkspaceReferenceEdit, WorkspaceTextEdit } from '@dts/common/references'
@@ -132,6 +138,8 @@ function editOf (preview: ReferenceRenamePreview, label: string): WorkspaceRefer
 interface ScratchWorkspace {
   root: string
   provider: ReferenceProvider
+  /** The real 'application'-channel command chain over this provider (B7) */
+  command: RenameReference
   paths: {
     theorems: string
     halphen: string
@@ -168,6 +176,11 @@ async function setUpScratchWorkspace (): Promise<ScratchWorkspace> {
     seam.emit('fsal-event', { event: 'change', descriptor: makeDescriptor(absolute) })
   }
 
+  // The REAL command object CommandProvider dispatches 'application'-channel
+  // rename events to, bound to this provider at the exact injection point
+  // (this._app.references) — the renderer-reachable production route.
+  const command = new RenameReference({ references: provider } as unknown as AppServiceContainer)
+
   // Halphen_Surfaces.md is OPEN: report its live buffer (content identical
   // to disk, generation 1). The commit must route Halphen through
   // openBufferTransactions, never through a disk write.
@@ -176,7 +189,7 @@ async function setUpScratchWorkspace (): Promise<ScratchWorkspace> {
     generation: 1
   })
 
-  return { root, provider, paths, originals }
+  return { root, provider, command, paths, originals }
 }
 
 /** Byte-compares every workspace file against the expected content map. */
@@ -204,9 +217,9 @@ describe('Workspace rename commit protocol', function () {
       await rm(scratch.root, { recursive: true, force: true })
     })
 
-    it('preview-rename over the merged workspace computes the complete four-document edit', async function () {
-      const preview = await invoke('preview-rename', { oldKey: OLD_KEY, newKey: NEW_KEY }) as ReferenceRenamePreview
-      const edit = editOf(preview, 'ipc preview-rename')
+    it('preview-reference-rename over the merged workspace computes the complete four-document edit', async function () {
+      const preview = await scratch.command.run('preview-reference-rename', { oldKey: OLD_KEY, newKey: NEW_KEY }) as ReferenceRenamePreview
+      const edit = editOf(preview, 'command preview-reference-rename')
 
       const touched = [...new Set(edit.edits.map(e => e.documentPath))].sort()
       assert.deepEqual(
@@ -226,8 +239,8 @@ describe('Workspace rename commit protocol', function () {
       )
     })
 
-    it('commit-rename aborts atomically with a structured conflict when a closed file changed on disk', async function () {
-      const preview = await invoke('preview-rename', { oldKey: OLD_KEY, newKey: NEW_KEY }) as ReferenceRenamePreview
+    it('commit-reference-rename aborts atomically with a structured conflict when a closed file changed on disk', async function () {
+      const preview = await scratch.command.run('preview-reference-rename', { oldKey: OLD_KEY, newKey: NEW_KEY }) as ReferenceRenamePreview
       const edit = editOf(preview, 'conflict-path preview')
 
       // Concurrent interference: ONE closed file changes on disk after the
@@ -239,7 +252,7 @@ describe('Workspace rename commit protocol', function () {
       const expectedBytes = new Map(scratch.originals)
       expectedBytes.set(scratch.paths.standalone, mutated)
 
-      const outcome = await invoke('commit-rename', { edit }) as CommitRenameOutcome
+      const outcome = await scratch.command.run('commit-reference-rename', { edit }) as CommitRenameOutcome
       assert.equal(
         outcome.status,
         'conflict',
@@ -289,11 +302,11 @@ describe('Workspace rename commit protocol', function () {
       await rm(scratch.root, { recursive: true, force: true })
     })
 
-    it('commit-rename writes closed files atomically and returns the open-buffer transactions', async function () {
-      const preview = await invoke('preview-rename', { oldKey: OLD_KEY, newKey: NEW_KEY }) as ReferenceRenamePreview
+    it('commit-reference-rename writes closed files atomically and returns the open-buffer transactions', async function () {
+      const preview = await scratch.command.run('preview-reference-rename', { oldKey: OLD_KEY, newKey: NEW_KEY }) as ReferenceRenamePreview
       previewedEdit = editOf(preview, 'applied-path preview')
 
-      const outcome = await invoke('commit-rename', { edit: previewedEdit }) as CommitRenameOutcome
+      const outcome = await scratch.command.run('commit-reference-rename', { edit: previewedEdit }) as CommitRenameOutcome
       assert.equal(outcome.status, 'applied', `the clean commit must apply, got ${JSON.stringify(outcome)}`)
       commitOutcome = outcome
 
@@ -344,7 +357,7 @@ describe('Workspace rename commit protocol', function () {
       }
     })
 
-    it('undo-rename is hash-fenced, restores every byte, and is one-shot', async function () {
+    it('undo-reference-rename is hash-fenced, restores every byte, and is one-shot', async function () {
       assert.ok(
         previewedEdit !== undefined && commitOutcome?.status === 'applied',
         'undo requires the applied commit from the previous spec'
@@ -360,7 +373,7 @@ describe('Workspace rename commit protocol', function () {
       const interfered = renamedTheorems + '\nPost-commit interference.\n'
       writeFileSync(scratch.paths.theorems, interfered, 'utf-8')
 
-      const conflicted = await invoke('undo-rename') as UndoRenameOutcome
+      const conflicted = await scratch.command.run('undo-reference-rename', {}) as UndoRenameOutcome
       assert.equal(
         conflicted.status,
         'conflict',
@@ -382,7 +395,7 @@ describe('Workspace rename commit protocol', function () {
       // conflicted attempt.
       writeFileSync(scratch.paths.theorems, renamedTheorems, 'utf-8')
 
-      const applied = await invoke('undo-rename') as UndoRenameOutcome
+      const applied = await scratch.command.run('undo-reference-rename', {}) as UndoRenameOutcome
       assert.equal(applied.status, 'applied', `the clean undo must apply, got ${JSON.stringify(applied)}`)
       assert.deepEqual(
         applied.status === 'applied' ? [...applied.closedFilesWritten].sort() : undefined,
@@ -409,7 +422,7 @@ describe('Workspace rename commit protocol', function () {
       }
 
       // One-shot: the applied undo consumed the record.
-      const exhausted = await invoke('undo-rename') as UndoRenameOutcome
+      const exhausted = await scratch.command.run('undo-reference-rename', {}) as UndoRenameOutcome
       assert.deepEqual(
         exhausted,
         { status: 'no-pending-undo' },

@@ -22,7 +22,7 @@ import os from 'os'
 import { promises as fs } from 'fs'
 import sanitize from 'sanitize-filename'
 import type { ExporterOptions, ExporterOutput } from './types'
-import { runShellCommand } from './run-shell-command'
+import { runProcess } from './run-shell-command'
 import { splitLines } from './split-lines'
 
 // The canonical recipe file. compile-pandoc has no internal `pandoc::` module
@@ -64,22 +64,24 @@ export async function runRecipeExport (
     runDir = options.cwd
     // The ordered inputs, exactly as dir-project-export.ts builds them from
     // ProjectSettings.files: project-relative, Unix separators, in
-    // ProjectSettings order. Each is single-quoted so a filename containing
-    // spaces arrives at the recipe as ONE argument (shell: true).
+    // ProjectSettings order. The argv is a LITERAL vector (shell: false,
+    // review B2): every token — spaces, quotes, and all — arrives at the
+    // recipe as exactly one argument, with no quoting layer to break.
     const orderedInputs = options.sourceFiles.map(file =>
       path.relative(runDir, file.path).split(path.sep).join('/')
     )
     // compile-pandoc-project's template parameter is positional BEFORE the
     // variadic input list, so it cannot be omitted the way compile-pandoc's
-    // trailing template can. An unconfigured template therefore names the
-    // companion's own compile-pandoc default explicitly.
-    const template = latexTemplate.trim() !== '' ? latexTemplate : 'research_draft.tex'
+    // trailing template can. An unconfigured template passes the companion's
+    // '' sentinel (review B11): the recipe maps ''/'-' to its own
+    // DEFAULT_TEMPLATE, so the default template name lives in exactly one
+    // repository.
     argv = [
-      '--justfile', `'${JUSTFILE}'`,
+      '--justfile', JUSTFILE,
       'compile-pandoc-project',
-      `'${title}'`,
-      `'${template}'`,
-      ...orderedInputs.map(input => `'${input}'`)
+      title,
+      latexTemplate.trim(),
+      ...orderedInputs
     ]
   } else {
     runDir = path.dirname(source.path)
@@ -87,13 +89,13 @@ export async function runRecipeExport (
     // Override ONLY what the app owns: the input file, the output base name,
     // and the template when one is configured. Bibliography, build dir,
     // filters, flags, and pdf-engine all come from the recipe's own defaults.
-    argv = [ '--justfile', `'${JUSTFILE}'`, 'compile-pandoc', `'${sourceBase}'`, `'${title}'` ]
+    argv = [ '--justfile', JUSTFILE, 'compile-pandoc', sourceBase, title ]
     if (latexTemplate.trim() !== '') {
-      argv.push(`'${latexTemplate}'`)
+      argv.push(latexTemplate.trim())
     }
   }
 
-  const result = await runShellCommand('just', argv, runDir)
+  const result = await runProcess('just', argv, runDir)
 
   // The recipe writes `<title>-<DD-MM-YY>.pdf` into its ROOT (runDir).
   // Find the newest such file rather than reconstructing the date string.

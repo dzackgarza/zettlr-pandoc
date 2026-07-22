@@ -13,10 +13,9 @@ import { parsePandocAttributes, type ParsedPandocAttributes } from './parse-pand
 import { isReferenceableDivClass } from '../util/pandoc-quick-reference'
 import {
   CROSSREF_FAMILIES,
-  REFERENCE_FAMILIES,
+  referenceFamilyOf,
   type DocumentReferenceSnapshot,
   type ReferenceDefinition,
-  type ReferenceFamily,
   type ReferenceOccurrence,
   type SourceRange
 } from '../../types/common/references'
@@ -40,31 +39,10 @@ export function hashDocumentSource (markdown: string): string {
 }
 
 /**
- * Returns the supported family of a full reference key, or undefined when the
- * key is structurally not a reference: no colon, an empty remainder after the
- * family (`thm:`), or a family outside the supported registry (`table:`).
- *
- * @param   {string}  key  The full authored key (colons preserved)
- *
- * @return  {ReferenceFamily|undefined}  The family, if supported
- */
-function supportedFamilyOf (key: string): ReferenceFamily|undefined {
-  const colon = key.indexOf(':')
-  if (colon <= 0 || colon === key.length - 1) {
-    return undefined
-  }
-
-  const family = key.slice(0, colon)
-  return (REFERENCE_FAMILIES as readonly string[]).includes(family)
-    ? family as ReferenceFamily
-    : undefined
-}
-
-/**
  * An authored `{…}` attribute block, located at an exact document offset,
  * with the full (colon-preserving) id token recovered from the authored text.
  */
-interface LocatedAttribute {
+export interface LocatedAttribute {
   /** The full authored id (parsePandocAttributes truncates ids at colons) */
   key: string
   /** The exact range of the id token including its `#` sigil */
@@ -79,12 +57,18 @@ interface LocatedAttribute {
  * re-anchored on the parser's own id match and extended over the authored
  * characters up to whitespace or the closing brace.
  *
+ * This is the single id-token locator (review B6): reference-lint imports it
+ * instead of keeping a parallel copy. It fails LOUD on an inconsistent
+ * attribute block (an id the parser reported but the authored text does not
+ * contain is a parser bug, not an authorable state) — callers must not
+ * downgrade that into a silent skip.
+ *
  * @param   {string}  attrText  The authored `{…}` substring
  * @param   {number}  offset    The document offset of the substring
  *
  * @return  {LocatedAttribute|undefined}  The located id, if one is authored
  */
-function locateAttribute (attrText: string, offset: number): LocatedAttribute|undefined {
+export function locateAttribute (attrText: string, offset: number): LocatedAttribute|undefined {
   const attributes = parsePandocAttributes(attrText)
   if (attributes.id === undefined) {
     return undefined
@@ -225,7 +209,7 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
     title: string|undefined,
     previewSource: string
   ): void => {
-    const family = supportedFamilyOf(located.key)
+    const family = referenceFamilyOf(located.key)
     if (family === undefined) {
       // Structurally not a definition: empty key or unsupported family.
       return
@@ -237,6 +221,7 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
       sourceKind,
       documentPath,
       range: located.range,
+      classes: located.attributes.classes ?? [],
       title,
       previewSource,
       enclosingSection: currentSection,
@@ -318,7 +303,7 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
     // attributed-block walk. Theorem-prefixed ids without their class stay
     // out (that class/prefix mismatch is reference-lint's diagnostic), as
     // does every unsupported family.
-    const family = supportedFamilyOf(located.key)
+    const family = referenceFamilyOf(located.key)
     if (family !== undefined && (CROSSREF_FAMILIES as readonly string[]).includes(family)) {
       pushDefinition(
         located, 'crossref-attr',
@@ -368,7 +353,7 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
       return
     }
 
-    const family = supportedFamilyOf(located.key)
+    const family = referenceFamilyOf(located.key)
     let title: string|undefined
     if (family === 'fig') {
       title = firstImageAlt(node)
@@ -399,7 +384,7 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
         const syntaxKind = cluster.startsWith('[') ? 'bracketed' : 'bare'
         let searchFrom = 0
         for (const item of node.parsedCitation.items) {
-          const family = supportedFamilyOf(item.id)
+          const family = referenceFamilyOf(item.id)
           if (family === undefined) {
             // Bibliography citations (e.g. @Ols04) are never occurrences.
             continue

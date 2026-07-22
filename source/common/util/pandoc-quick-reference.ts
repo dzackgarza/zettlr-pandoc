@@ -59,6 +59,11 @@ export const PANDOC_ATTRIBUTE_EXAMPLES = [
   { kind: 'bracketed-span', syntax: '[text]{.class #identifier}' },
 ] as const
 
+/**
+ * The crossref label-family authority (review B5): the typed model's
+ * CROSSREF_FAMILIES tuple in types/common/references.ts is DERIVED from this
+ * list, so the help examples and the reference model cannot drift apart.
+ */
 export const PANDOC_CROSSREF_PREFIXES = PANDOC_CROSS_REFERENCE_EXAMPLES.map(example => example.prefix)
 
 /**

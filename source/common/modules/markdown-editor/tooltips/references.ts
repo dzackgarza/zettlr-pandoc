@@ -199,22 +199,22 @@ function getPreviewElement (
   excerpt.dataset.referenceExcerpt = 'true'
 
   // The excerpt is available synchronously as fence-stripped source text and
-  // upgrades in place to fully rendered markdown where the citation callback
-  // exists (the production renderer window).
+  // upgrades in place to fully rendered markdown. window.getCitationCallback
+  // is the production preload bridge, present in every renderer window
+  // (review B9: no existence probe — the headless specs provision the same
+  // seam).
   const source = excerptSource(definition)
   excerpt.textContent = source
 
-  if (typeof window.getCitationCallback === 'function') {
-    const config = view.state.field(configField, false)
-    md2html(source, {
-      zknLinkFormat: config?.zknLinkFormat ?? 'link|title',
-      onCitation: window.getCitationCallback(CITEPROC_MAIN_DB)
+  const config = view.state.field(configField, false)
+  md2html(source, {
+    zknLinkFormat: config?.zknLinkFormat ?? 'link|title',
+    onCitation: window.getCitationCallback(CITEPROC_MAIN_DB)
+  })
+    .then(html => {
+      excerpt.innerHTML = sanitizeHTML(html)
     })
-      .then(html => {
-        excerpt.innerHTML = sanitizeHTML(html)
-      })
-      .catch(err => console.error('Could not render the reference excerpt', err))
-  }
+    .catch(err => console.error('Could not render the reference excerpt', err))
 
   const expand = document.createElement('button')
   expand.classList.add('reference-hover-expand')

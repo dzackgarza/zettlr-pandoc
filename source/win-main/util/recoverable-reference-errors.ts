@@ -51,19 +51,18 @@
  * END HEADER
  */
 
-import { trans } from '@common/i18n-renderer'
-import showToast from '@common/util/show-toast'
+import { runRecoverably, type RecoverableOutcome } from '@common/util/run-recoverably'
 import type { ReferenceProviderInvoker } from '@common/modules/markdown-editor/util/live-buffer-reporter'
 
 /** The typed outcome of a recoverable reference-provider invocation. */
-export type RecoverableReferenceOutcome<T> =
-  | { status: 'ok', value: T }
-  | { status: 'failed' }
+export type RecoverableReferenceOutcome<T> = RecoverableOutcome<T>
 
 /**
  * Invokes a reference-provider command, surfacing any rejection as one
  * closable error toast plus a typed 'failed' outcome, per the module
- * contract above.
+ * contract above. The surfacing semantics live in the shared
+ * common/util/run-recoverably boundary (review B8); this module remains the
+ * window-level entry point the probe contract pins.
  *
  * @param   {ReferenceProviderInvoker}  ipcInvoke       The renderer ipc seam
  * @param   {object}                    message         The provider command message
@@ -76,16 +75,5 @@ export async function invokeReferenceProviderRecoverably<T> (
   message: { command: string, payload?: unknown },
   operationLabel: string
 ): Promise<RecoverableReferenceOutcome<T>> {
-  return await ipcInvoke('reference-provider', message)
-    .then((value): RecoverableReferenceOutcome<T> => ({ status: 'ok', value: value as T }))
-    .catch((err): RecoverableReferenceOutcome<T> => {
-      // The sanctioned boundary: exactly one closable error toast naming the
-      // failed operation, plus the typed outcome. The rejection never
-      // escapes, so the uncloseable runtime-error overlay never appears; the
-      // console line keeps the raw diagnostic available.
-      console.error(`Reference operation failed (${operationLabel})`, err)
-      const detail = err instanceof Error ? err.message : String(err)
-      showToast(trans('%s failed: %s', operationLabel, detail), 'error')
-      return { status: 'failed' }
-    })
+  return await runRecoverably<T>(async () => await ipcInvoke('reference-provider', message) as T, operationLabel)
 }

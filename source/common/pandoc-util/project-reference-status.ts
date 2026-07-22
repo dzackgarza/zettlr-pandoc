@@ -269,9 +269,17 @@ export function annotateCompletionEntries (
 ): ReferenceCompletionEntry[] {
   return entries.map(entry => {
     const projectStatus = computeProjectReferenceStatus(entry.documentPath, activeDocumentPath, projectRoots)
-    const appendPlan = projectStatus === 'omitted-from-active-project'
-      ? computeAppendAndContinuePlan(entry.documentPath, activeDocumentPath, projectRoots) ?? undefined
-      : undefined
+    let appendPlan
+    if (projectStatus === 'omitted-from-active-project') {
+      const plan = computeAppendAndContinuePlan(entry.documentPath, activeDocumentPath, projectRoots)
+      if (plan === null) {
+        // Both functions derive the status from the same pure inputs, so an
+        // omitted entry without a plan is a status divergence — a bug, not a
+        // presentable state (review B13: fail loud, never silently degrade).
+        throw new Error(`No append-and-continue plan for the omitted entry ${entry.key} (${entry.documentPath})`)
+      }
+      appendPlan = plan
+    }
     return { ...entry, projectStatus, appendPlan }
   })
 }

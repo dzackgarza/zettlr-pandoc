@@ -36,11 +36,10 @@
  *                    brackets and never rewrites the authored `@` or an
  *                    authored bracket cluster.
  *                  - projectStatus never gates, reorders, or restyles label
- *                    entries in Phase 3 (status computation is Phase 7).
- *                  - citations.ts stays UNTOUCHED. The production dispatcher
- *                    swap (replacing `citations` with `atSymbols` in the
- *                    first-match array of autocomplete/index.ts) happens only
- *                    in the green step, once this contract holds.
+ *                    entries; it feeds only the typed insertion affordance.
+ *                  - citations.ts stays untouched: this provider replaces
+ *                    `citations` in the first-match array of
+ *                    autocomplete/index.ts and delegates to it verbatim.
  *
  * END HEADER
  */
@@ -48,9 +47,8 @@
 import { type Completion } from '@codemirror/autocomplete'
 import { StateEffect, StateField } from '@codemirror/state'
 import { type EditorView } from '@codemirror/view'
-import { type AppendAndContinuePlan, type ReferenceCompletionEntry, type ReferenceFamily } from '@dts/common/references'
+import { referenceFamilyDisplayName, type AppendAndContinuePlan, type ReferenceCompletionEntry } from '@dts/common/references'
 import { type ProjectSettings } from '@dts/common/fsal'
-import { THEOREM_DIV_PREFIXES } from '@common/util/pandoc-quick-reference'
 import {
   applyAppendPlan,
   appendToastMessage,
@@ -58,15 +56,11 @@ import {
   type CompletionInsertionAffordance
 } from '@common/pandoc-util/project-reference-status'
 import showToast from '@common/util/show-toast'
+import { trans } from '@common/i18n-renderer'
+import { runRecoverably } from '@common/util/run-recoverably'
 import { requestPandocQuickHelp } from '../plugins/pandoc-quick-help-effect'
 import { type AutocompletePlugin } from '.'
 import { citations, citekeyUpdateField } from './citations'
-
-// The ipc bridge of the production renderer window. Headless editor views
-// (the reference specs) have no bridge: there, applying a completion only
-// performs its insertion half — mirroring how tooltips/references.ts only
-// upgrades its excerpt where window.getCitationCallback exists.
-const ipcRenderer = window.ipc
 
 /**
  * Use this effect to provide the editor state with a new set of workspace
@@ -144,37 +138,9 @@ function labelInfoPanel (detail: string): HTMLElement {
 }
 
 /**
- * Display names of the explicit pandoc-crossref label families.
- */
-const CROSSREF_DISPLAY: Record<string, string> = {
-  fig: 'Figure',
-  tbl: 'Table',
-  eq: 'Equation',
-  sec: 'Section',
-  lst: 'Listing'
-}
-
-/**
- * The display name of a reference family, derived from the fixed theorem
- * prefix registry ('thm' -> 'Theorem') or the crossref family map
- * ('fig' -> 'Figure').
- *
- * @param   {ReferenceFamily}  family  The reference family
- *
- * @return  {string}                   The capitalized display name
- */
-function familyDisplay (family: ReferenceFamily): string {
-  const theoremClass = (THEOREM_DIV_PREFIXES as Record<string, string|undefined>)[family]
-  if (theoremClass !== undefined) {
-    return theoremClass.charAt(0).toUpperCase() + theoremClass.slice(1)
-  }
-
-  return CROSSREF_DISPLAY[family]
-}
-
-/**
  * The locked `Type — title` display text of a label entry, or the bare
- * family display name when no title was authored.
+ * family display name when no title was authored. The display name comes
+ * from the single shared authority (referenceFamilyDisplayName).
  *
  * @param   {ReferenceCompletionEntry}  entry  The label entry
  *
@@ -182,8 +148,8 @@ function familyDisplay (family: ReferenceFamily): string {
  */
 function labelDetail (entry: ReferenceCompletionEntry): string {
   return entry.title !== undefined
-    ? `${familyDisplay(entry.family)} — ${entry.title}`
-    : familyDisplay(entry.family)
+    ? `${referenceFamilyDisplayName(entry.family)} — ${entry.title}`
+    : referenceFamilyDisplayName(entry.family)
 }
 
 /**
@@ -214,7 +180,9 @@ const applyDisabled = function (_view: EditorView, _completion: Completion, _fro
  * @param   {AppendAndContinuePlan}  plan  The plan carried by the applied option
  */
 async function runAppendAndContinue (plan: AppendAndContinuePlan): Promise<void> {
-  const descriptor = await ipcRenderer.invoke('fsal', {
+  // window.ipc is the production preload bridge, present in every renderer
+  // window; the headless completion specs provision the same seam.
+  const descriptor = await window.ipc.invoke('fsal', {
     command: 'get-descriptor',
     payload: plan.rootPath
   })
@@ -224,7 +192,7 @@ async function runAppendAndContinue (plan: AppendAndContinuePlan): Promise<void>
     throw new Error(`Cannot append to the Project at ${plan.rootPath}: the directory carries no Project settings`)
   }
 
-  await ipcRenderer.invoke('application', {
+  await window.ipc.invoke('application', {
     command: 'update-project-properties',
     payload: { path: plan.rootPath, properties: applyAppendPlan(settings, plan) }
   })
@@ -250,11 +218,10 @@ function applyFor (affordance: CompletionInsertionAffordance): typeof applyLabel
   if (affordance.kind === 'insert-with-append') {
     return function (view: EditorView, completion: Completion, from: number, to: number): void {
       applyLabel(view, completion, from, to)
-      if (ipcRenderer !== undefined) {
-        runAppendAndContinue(affordance.plan).catch(err => {
-          console.error('Could not append the referenced file to the active Project', err)
-        })
-      }
+      // The append continuation surfaces failures through the recoverable
+      // boundary (review B8): one closable error toast, never a silent
+      // console-only line. The insertion above already happened either way.
+      void runRecoverably(async () => { await runAppendAndContinue(affordance.plan) }, trans('Appending to the Project'))
     }
   }
 

@@ -28,7 +28,7 @@ test-file file:
 # Run the focused workspace-reference test suite.
 test-references:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/extract-references-subfigures.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/editor-reference-completion-help.spec.ts" "test/reference-fzf-search.spec.ts" "test/reference-search-project-ranking.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/reference-lint.spec.ts" "test/tab-manager-history.spec.ts" "test/compute-reference-edits.spec.ts" "test/rename-preview-summary.spec.ts" "test/reference-rename-atomicity.spec.ts" "test/reference-rename-undo-route.spec.ts" "test/show-toast-action.spec.ts" "test/navigation-shortcut-config.spec.ts" "test/project-reference-status.spec.ts" "test/editor-reference-completion-project-status.spec.ts" "test/reference-hover-project-status.spec.ts" "test/export-ordered-inputs.spec.ts" "test/preflight-crossref.spec.ts" "test/live-buffer-reporter.spec.ts" "test/reference-create-label-confirm.spec.ts" "test/pandoc-quick-reference-lst.spec.ts" "test/pandoc-quick-help-references.spec.ts" "test/pandoc-quick-help-search.spec.ts"
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/extract-references-subfigures.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/editor-reference-completion-help.spec.ts" "test/reference-fzf-search.spec.ts" "test/reference-search-project-ranking.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/reference-lint.spec.ts" "test/tab-manager-history.spec.ts" "test/compute-reference-edits.spec.ts" "test/rename-preview-summary.spec.ts" "test/reference-rename-atomicity.spec.ts" "test/reference-rename-undo-route.spec.ts" "test/show-toast-action.spec.ts" "test/navigation-shortcut-config.spec.ts" "test/project-reference-status.spec.ts" "test/editor-reference-completion-project-status.spec.ts" "test/reference-hover-project-status.spec.ts" "test/export-ordered-inputs.spec.ts" "test/export-quoted-inputs.spec.ts" "test/documents-provider-navigation.spec.ts" "test/preflight-crossref.spec.ts" "test/live-buffer-reporter.spec.ts" "test/reference-create-label-confirm.spec.ts" "test/pandoc-quick-reference-lst.spec.ts" "test/pandoc-quick-help-references.spec.ts" "test/pandoc-quick-help-search.spec.ts"
 
 # Run the reference UI suite: the references-provider Electron shell spec
 # (Phase 3b) plus the Chromium probe specs (Mod-P search overlay incl. the
@@ -64,11 +64,15 @@ lint-file file:
 
 # Capture the real editor renderer in an isolated offscreen Electron process.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
+# A fresh yarn install leaves electron's chrome-sandbox without its
+# root-owned SUID bits, which aborts Chromium under xvfb. The probe renders
+# local test content only, so run unsandboxed rather than requiring sudo
+# provisioning for the test suite.
 capture-pandoc-divs output:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     mkdir -p "{{output}}"
     "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-pandoc-div-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/pandoc-div-visual-bundle.js"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" "{{justfile_directory()}}/test/editor-pandoc-div-visual-capture.cjs" "{{output}}"
+    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/editor-pandoc-div-visual-capture.cjs" "{{output}}"
 
 # Capture the real Pandoc quick-reference Vue component in isolated Electron.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
@@ -93,24 +97,32 @@ capture-reference-search output:
 # capture files land with the green implementation, and the recipe fails
 # loudly until they exist. This never starts Forge, a dev server, xdg-open,
 # or the system browser.
+# A fresh yarn install leaves electron's chrome-sandbox without its
+# root-owned SUID bits, which aborts Chromium under xvfb. The probe renders
+# local test content only, so run unsandboxed rather than requiring sudo
+# provisioning for the test suite.
 capture-reference-chips output:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     test -f "{{justfile_directory()}}/test/editor-reference-chips-visual-entry.ts" || { echo "FATAL: test/editor-reference-chips-visual-entry.ts does not exist yet (Phase 4 green work)"; exit 1; }
     mkdir -p "{{output}}"
     "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-reference-chips-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/reference-chips-visual-bundle.js"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" "{{justfile_directory()}}/test/editor-reference-chips-visual-capture.cjs" "{{output}}"
+    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/editor-reference-chips-visual-capture.cjs" "{{output}}"
 
 # Capture the reference hover tooltip presentation in isolated offscreen
 # Electron (issue #1 Phase 4). Follows the capture-pandoc-divs pattern; the
 # entry and capture files land with the green implementation, and the recipe
 # fails loudly until they exist. This never starts Forge, a dev server,
 # xdg-open, or the system browser.
+# A fresh yarn install leaves electron's chrome-sandbox without its
+# root-owned SUID bits, which aborts Chromium under xvfb. The probe renders
+# local test content only, so run unsandboxed rather than requiring sudo
+# provisioning for the test suite.
 capture-reference-hover output:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     test -f "{{justfile_directory()}}/test/reference-hover-visual-entry.ts" || { echo "FATAL: test/reference-hover-visual-entry.ts does not exist yet (Phase 4 green work)"; exit 1; }
     mkdir -p "{{output}}"
     "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/reference-hover-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/reference-hover-visual-bundle.js"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" "{{justfile_directory()}}/test/reference-hover-visual-capture.cjs" "{{output}}"
+    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/reference-hover-visual-capture.cjs" "{{output}}"
 
 # Capture the Phase 5 reference navigation scenes (edit-first reveal, fold +
 # scroll capture state, Mod-click states) in isolated offscreen Electron.

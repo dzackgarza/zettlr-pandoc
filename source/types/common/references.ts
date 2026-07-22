@@ -2,14 +2,21 @@
 // (FSAL-owned saved snapshots) and the renderer (live CodeMirror
 // replacements). This is the typed model locked by issue #1.
 
-import { THEOREM_DIV_PREFIXES } from '../../common/util/pandoc-quick-reference'
+import { PANDOC_CROSSREF_PREFIXES, THEOREM_DIV_PREFIXES } from '../../common/util/pandoc-quick-reference'
 
 /**
  * The explicit pandoc-crossref label families supported at launch.
+ *
+ * AUTHORITY (review B5): the tuple is DERIVED from the quick-reference
+ * registry (PANDOC_CROSS_REFERENCE_EXAMPLES -> PANDOC_CROSSREF_PREFIXES),
+ * which is the single owner of the crossref family set. The dependency
+ * points this way because this module already consumes
+ * THEOREM_DIV_PREFIXES from the same registry module; the reverse
+ * direction would create an import cycle.
  */
-export const CROSSREF_FAMILIES = [ 'fig', 'tbl', 'eq', 'sec', 'lst' ] as const
+export const CROSSREF_FAMILIES: readonly CrossrefFamily[] = PANDOC_CROSSREF_PREFIXES
 
-export type CrossrefFamily = typeof CROSSREF_FAMILIES[number]
+export type CrossrefFamily = typeof PANDOC_CROSSREF_PREFIXES[number]
 
 /**
  * Theorem-like fenced-div label families, derived from the fixed prefix
@@ -121,6 +128,14 @@ export interface ReferenceDefinition {
   sourceKind: ReferenceSourceKind
   documentPath: string
   range: SourceRange
+  /**
+   * The authored classes of the id-bearing attribute block (review B6):
+   * `['theorem']` for `::: {.theorem #thm:key}`, empty when the block
+   * authors no classes. Carried on the definition so consumers (e.g. the
+   * class/prefix mismatch diagnostic) never re-parse previewSource, which
+   * is a display excerpt, not a parsing surface.
+   */
+  classes: string[]
   title: string | undefined
   previewSource: string
   enclosingSection: string | undefined

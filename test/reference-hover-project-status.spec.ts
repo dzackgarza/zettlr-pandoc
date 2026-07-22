@@ -106,9 +106,19 @@ function workspaceSnapshots (): DocumentReferenceSnapshot[] {
 
 describe('Reference hover Project status (issue #1 Phase 7)', function () {
   const views: EditorView[] = []
+  const originalCitationCallback = window.getCitationCallback
 
   before(function () {
     polyfillJsdomForCodeMirror()
+    // The production preload bridge exists in every renderer window, so the
+    // tooltip renders its excerpt through it unconditionally (review B9);
+    // the harness provisions the same seam with a deterministic renderer
+    // (the established chips-spec pattern).
+    window.getCitationCallback = () => citations => citations.map(item => item.id).join('; ')
+  })
+
+  after(function () {
+    window.getCitationCallback = originalCitationCallback
   })
 
   afterEach(function () {

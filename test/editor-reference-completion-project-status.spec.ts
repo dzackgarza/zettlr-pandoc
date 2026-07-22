@@ -138,8 +138,49 @@ function affordanceOf (option: Completion): CompletionInsertionAffordance|undefi
 describe('Project-status completion gating (issue #1 Phase 7)', function () {
   const views: EditorView[] = []
 
+  /** Every renderer->main request recorded at the window.ipc preload seam. */
+  interface RecordedInvoke { channel: string, message: { command: string, payload?: unknown } }
+  const recordedInvokes: RecordedInvoke[] = []
+  const windowWithIpc = window as unknown as { ipc?: { invoke: (channel: string, message: RecordedInvoke['message']) => Promise<unknown> } }
+  let previousIpc: typeof windowWithIpc.ipc
+
   before(function () {
     polyfillJsdomForCodeMirror()
+    // window.ipc is the production preload bridge, present in every renderer
+    // window (review B9: no existence guard in at-symbols). The harness
+    // provisions the same seam; get-descriptor answers with the REAL
+    // ProjectA settings shape so the append continuation runs against the
+    // exact dir-settings surface production consumes.
+    previousIpc = windowWithIpc.ipc
+    windowWithIpc.ipc = {
+      invoke: async (channel, message) => {
+        recordedInvokes.push({ channel, message })
+        if (channel === 'fsal' && message.command === 'get-descriptor') {
+          return {
+            path: PROJECT_A,
+            settings: {
+              project: {
+                title: 'Project A',
+                profiles: [],
+                filters: [],
+                cslStyle: '',
+                templates: { tex: '', html: '' },
+                files: [ 'Theorems.md', 'Halphen_Surfaces.md' ]
+              }
+            }
+          }
+        }
+        return undefined
+      }
+    }
+  })
+
+  after(function () {
+    windowWithIpc.ipc = previousIpc
+  })
+
+  beforeEach(function () {
+    recordedInvokes.splice(0)
   })
 
   afterEach(function () {
@@ -184,6 +225,12 @@ describe('Project-status completion gating (issue #1 Phase 7)', function () {
     const matches = surface.options.filter(option => option.label === key)
     assert.strictEqual(matches.length, 1, `exactly one label option for ${key}`)
     return { surface, option: matches[0] }
+  }
+
+  /** Lets the fire-and-forget append continuation drain (two awaits). */
+  async function waitForAppend (): Promise<void> {
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await new Promise(resolve => setTimeout(resolve, 0))
   }
 
   /** Applies one option through its own apply handler. */
@@ -237,6 +284,27 @@ describe('Project-status completion gating (issue #1 Phase 7)', function () {
     // Append-and-continue CONTINUES: the insertion itself is the unchanged
     // bare-key insertion.
     assert.strictEqual(view.state.doc.toString(), 'See @tbl:coble-lattices')
+
+    // … and the mechanical append actually runs through the EXISTING
+    // dir-settings surface (review B8/B9): the plan's root descriptor is
+    // fetched and 'update-project-properties' receives the settings with
+    // the omitted file appended — no new ipc channel, no dialog.
+    return waitForAppend().then(() => {
+      assert.deepStrictEqual(
+        recordedInvokes.map(entry => [ entry.channel, entry.message.command ]),
+        [
+          [ 'fsal', 'get-descriptor' ],
+          [ 'application', 'update-project-properties' ]
+        ]
+      )
+      const update = recordedInvokes[1].message.payload as { path: string, properties: { files: string[] } }
+      assert.strictEqual(update.path, PROJECT_A)
+      assert.deepStrictEqual(
+        update.properties.files,
+        [ 'Theorems.md', 'Halphen_Surfaces.md', 'Coble_Lattice_Table.md' ],
+        'the append plan must extend ProjectSettings.files with exactly the omitted target'
+      )
+    })
   })
 
   it('inserts standalone entries with the export-unit warning affordance', function () {

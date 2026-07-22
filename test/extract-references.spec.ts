@@ -2,6 +2,7 @@ import assert from 'assert'
 import { readFileSync } from 'fs'
 import path from 'path'
 import { extractReferences, hashDocumentSource } from 'source/common/pandoc-util/extract-references'
+import { THEOREM_DIV_PREFIXES } from 'source/common/util/pandoc-quick-reference'
 import { THEOREM_FAMILIES, type ReferenceDefinition, type ReferenceFamily, type ReferenceOccurrence, type SourceRange, type TheoremFamily } from 'source/types/common/references'
 
 const FIXTURE_ROOT = path.join('test', 'fixtures', 'reference-workspace')
@@ -58,6 +59,7 @@ function definition (
   fixture: Fixture,
   key: string,
   sourceKind: ReferenceDefinition['sourceKind'],
+  classes: string[],
   title: string | undefined,
   previewSource: string,
   enclosingSection: string | undefined
@@ -68,6 +70,7 @@ function definition (
     sourceKind,
     documentPath: fixture.documentPath,
     range: tokenRange(fixture.content, '#' + key),
+    classes,
     title,
     previewSource,
     enclosingSection,
@@ -123,31 +126,31 @@ describe('extractReferences()', function () {
 
     assert.deepStrictEqual(snapshot.definitions, [
       definition(
-        fixture, 'sec:moduli', 'crossref-attr',
+        fixture, 'sec:moduli', 'crossref-attr', [],
         'Moduli of marked surfaces',
         lineAt(fixture.content, '#sec:moduli'),
         'Coble lattices and rational surfaces'
       ),
       definition(
-        fixture, 'tbl:coble-lattices', 'crossref-attr',
+        fixture, 'tbl:coble-lattices', 'crossref-attr', [],
         'Coble lattices of Halphen type',
         lineAt(fixture.content, '#tbl:coble-lattices'),
         'Moduli of marked surfaces'
       ),
       definition(
-        fixture, 'eq:intersection-form', 'crossref-attr',
+        fixture, 'eq:intersection-form', 'crossref-attr', [],
         undefined,
         lineAt(fixture.content, '#eq:intersection-form'),
         'Moduli of marked surfaces'
       ),
       definition(
-        fixture, 'fig:root-diagram', 'crossref-attr',
+        fixture, 'fig:root-diagram', 'crossref-attr', [],
         'Root diagram',
         lineAt(fixture.content, '#fig:root-diagram'),
         'Moduli of marked surfaces'
       ),
       definition(
-        fixture, 'lst:sage-run', 'crossref-attr',
+        fixture, 'lst:sage-run', 'crossref-attr', [ 'python' ],
         'Sage session',
         fenceBlockAt(fixture.content, '#lst:sage-run'),
         'Moduli of marked surfaces'
@@ -161,7 +164,7 @@ describe('extractReferences()', function () {
 
     assert.deepStrictEqual(snapshot.definitions, THEOREM_FIXTURE_DEFINITIONS.map(entry =>
       definition(
-        fixture, entry.key, 'theorem-div', entry.title,
+        fixture, entry.key, 'theorem-div', [ THEOREM_DIV_PREFIXES[entry.family] ], entry.title,
         divBlockAt(fixture.content, '#' + entry.key),
         'Main results'
       )
@@ -174,7 +177,7 @@ describe('extractReferences()', function () {
 
     const lemma = snapshot.definitions.find(def => def.family === 'lem')
     assert.deepStrictEqual(lemma, definition(
-      fixture, 'lem:kodaira:embedding', 'theorem-div', undefined,
+      fixture, 'lem:kodaira:embedding', 'theorem-div', [ 'lemma' ], undefined,
       divBlockAt(fixture.content, '#lem:kodaira:embedding'),
       'Main results'
     ))
@@ -234,7 +237,7 @@ describe('extractReferences()', function () {
     assert.deepStrictEqual(inTheorems.map(def => def.documentPath), [theorems.documentPath])
     assert.deepStrictEqual(inOtherPaper, [
       definition(
-        otherPaper, 'thm:torelli', 'theorem-div',
+        otherPaper, 'thm:torelli', 'theorem-div', [ 'theorem' ],
         'Torelli for rational elliptic surfaces',
         divBlockAt(otherPaper.content, '#thm:torelli'),
         'Lattice preliminaries'
@@ -248,12 +251,12 @@ describe('extractReferences()', function () {
 
     assert.deepStrictEqual(snapshot.definitions, [
       definition(
-        fixture, 'def:lattice', 'theorem-div', undefined,
+        fixture, 'def:lattice', 'theorem-div', [ 'definition' ], undefined,
         divBlockAt(fixture.content, '#def:lattice'),
         'Lattice preliminaries'
       ),
       definition(
-        fixture, 'thm:torelli', 'theorem-div',
+        fixture, 'thm:torelli', 'theorem-div', [ 'theorem' ],
         'Torelli for rational elliptic surfaces',
         divBlockAt(fixture.content, '#thm:torelli'),
         'Lattice preliminaries'
@@ -267,7 +270,7 @@ describe('extractReferences()', function () {
 
     assert.deepStrictEqual(snapshot.definitions, [
       definition(
-        fixture, 'rmk:standalone-note', 'theorem-div', undefined,
+        fixture, 'rmk:standalone-note', 'theorem-div', [ 'remark' ], undefined,
         divBlockAt(fixture.content, '#rmk:standalone-note'),
         'Reading notes'
       )
@@ -275,6 +278,38 @@ describe('extractReferences()', function () {
     assert.deepStrictEqual(snapshot.occurrences, [
       occurrence(fixture, 'thm:torelli', 'bare', '@thm:torelli')
     ])
+  })
+
+  it('preserves escaped quotes inside authored title attributes (review C8)', function () {
+    // Pandoc's attribute syntax backslash-escapes quotes inside quoted
+    // values; the extracted title must carry the literal quotes, not a
+    // value truncated at the first escape.
+    const doc = '::: {.theorem #thm:quoted title="He said \\"stop\\" twice"}\nBody.\n:::\n'
+    const snapshot = extractReferences('crafted-escapes.md', doc)
+
+    assert.strictEqual(snapshot.definitions.length, 1, 'the escaped-quote div must still define its target')
+    assert.strictEqual(snapshot.definitions[0].key, 'thm:quoted')
+    assert.strictEqual(
+      snapshot.definitions[0].title,
+      'He said "stop" twice',
+      'the authored escaped quotes must survive as literal quotes in the title'
+    )
+  })
+
+  it('never fabricates definitions from unclosed attribute-block near-misses (review C8)', function () {
+    // A heading whose attribute block never closes is structurally not a
+    // labeled definition; the citing occurrence still extracts and simply
+    // stays unresolved.
+    const headingDoc = '## Broken heading {#sec:broken\n\nSee @sec:broken.\n'
+    const headingSnapshot = extractReferences('crafted-unclosed-heading.md', headingDoc)
+    assert.deepStrictEqual(headingSnapshot.definitions, [], 'an unclosed heading attribute block defines nothing')
+    assert.strictEqual(headingSnapshot.occurrences.length, 1, 'the citing occurrence itself must still extract')
+    assert.strictEqual(headingSnapshot.occurrences[0].key, 'sec:broken')
+
+    // Same for a fenced div whose opening line never closes its brace.
+    const divDoc = '::: {.theorem #thm:unclosed\nBody.\n:::\n'
+    const divSnapshot = extractReferences('crafted-unclosed-div.md', divDoc)
+    assert.deepStrictEqual(divSnapshot.definitions, [], 'an unclosed div attribute block defines nothing')
   })
 
   it('computes a deterministic source hash that distinguishes different content', function () {

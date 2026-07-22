@@ -30,6 +30,8 @@ import { foldedRanges, syntaxTree } from '@codemirror/language'
 import { getSyncedVersion } from '@codemirror/collab'
 import { EditorView } from '@codemirror/view'
 import type { SyntaxNode } from '@lezer/common'
+import { trans } from '@common/i18n-renderer'
+import { runRecoverably } from '@common/util/run-recoverably'
 import { referenceFamilyOf, type DocumentLocation, type ReferenceFamily, type SourceRange } from '@dts/common/references'
 import { NODES } from '../parser/citation-parser'
 import { workspaceReferencesField } from '../plugins/workspace-references-field'
@@ -315,9 +317,11 @@ export function followReferenceNavigationIntent (view: EditorView, intent: Refer
   }
 
   // Cross-file: hand over to the documents provider, which owns tab
-  // reuse/opening and the widened per-pane history (TabManager).
+  // reuse/opening and the widened per-pane history (TabManager). A failed
+  // handover surfaces through the recoverable boundary (review B8): one
+  // closable error toast, never a silent console-only line.
   const { windowId, leafId } = view.state.facet(editorMetadataFacet)
-  window.ipc.invoke('documents-provider', {
+  void runRecoverably(async () => await window.ipc.invoke('documents-provider', {
     command: 'open-file',
     payload: {
       path: intent.target.documentPath,
@@ -328,7 +332,7 @@ export function followReferenceNavigationIntent (view: EditorView, intent: Refer
       targetRange: intent.target.range,
       sourceLocation: intent.source
     }
-  } as DocumentManagerIPCAPI).catch(err => console.error(err))
+  } as DocumentManagerIPCAPI), trans('Following the reference'))
   return true
 }
 
@@ -347,10 +351,12 @@ function requestHistoryNavigation (view: EditorView, command: 'navigate-back'|'n
 
   const documentPath = currentDocumentPath(view)
   const location = documentPath === null ? undefined : captureDocumentLocation(view, documentPath) ?? undefined
-  window.ipc.invoke('documents-provider', {
+  // A failed history request surfaces through the recoverable boundary
+  // (review B8): one closable error toast, never a silent console-only line.
+  void runRecoverably(async () => await window.ipc.invoke('documents-provider', {
     command,
     payload: { windowId, leafId, location }
-  } as DocumentManagerIPCAPI).catch(err => console.error(err))
+  } as DocumentManagerIPCAPI), trans('History navigation'))
   return true
 }
 

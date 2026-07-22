@@ -24,6 +24,7 @@ const tests: Array<{ input: string, output: ParsedPandocAttributes|'logs-error' 
   { input: '{width=10}', output: { properties: { width: '10px' } } }, // Parsing width without unit
   { input: '{height=75}', output: { properties: { height: '75px' } } }, // Parsing height without unit
   { input: '{key="some long value"}', output: { properties: { key: 'some long value' } } }, // Parsing quoted values
+  { input: '{key="He said \\"stop\\" twice"}', output: { properties: { key: 'He said "stop" twice' } } }, // Escaped quotes inside quoted values (review C8)
   { input: '{key=some long value}', output: { properties: { key: 'some' } } }, // Parsing malformed unquoted values
   {
     // Longer test with all available classes

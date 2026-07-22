@@ -45,6 +45,7 @@ import {
   assessCrossrefCompatibility,
   checkCrossrefCompatibility,
   crossrefCompatibilityFailure,
+  preflight,
   REQUIRED_COMMANDS,
   type VersionOutputRunner
 } from '../source/app/util/preflight'
@@ -135,5 +136,53 @@ describe('pandoc-crossref preflight compatibility (issue #1 Phase 7)', function 
     assert.strictEqual(result.status, 'compatible')
     assert.strictEqual(result.crossrefBuiltWithPandoc, pandocVersion)
     assert.strictEqual(result.pandocVersion, pandocVersion)
+  })
+
+  it('preflight() itself fails the boot on a compatibility mismatch (review C1)', async function () {
+    // The boot-gate proof: preflight() must CONSULT the compatibility gate
+    // and fold its failure into the missing-requirement surface. Deleting
+    // the crossrefFailure() call from preflight() must turn this spec red.
+    // Commands and paths are empty so the ONLY failure source is the gate;
+    // the gate itself is the real crossrefCompatibilityFailure over the
+    // captured mismatched outputs.
+    const runner: VersionOutputRunner = async (command, _args) => {
+      return command === 'pandoc-crossref'
+        ? { code: 0, stdout: CROSSREF_OUTPUT_MISMATCHED }
+        : { code: 0, stdout: PANDOC_OUTPUT }
+    }
+
+    const shown: Array<{ title: string, message: string }> = []
+    const exits: number[] = []
+    const passed = await preflight(
+      (title, message) => { shown.push({ title, message }) },
+      (code) => { exits.push(code) },
+      [],
+      [],
+      async () => await crossrefCompatibilityFailure(runner)
+    )
+
+    assert.strictEqual(passed, false, 'a mismatched toolchain must fail the boot preflight')
+    assert.strictEqual(exits.length, 1, 'preflight must terminate the process exactly once')
+    assert.strictEqual(exits[0], 1)
+    assert.strictEqual(shown.length, 1, 'preflight must present exactly one fatal message')
+    assert.ok(shown[0].message.includes('3.6.4'), `the boot failure must name the version pandoc-crossref was built with: ${JSON.stringify(shown[0].message)}`)
+    assert.ok(shown[0].message.includes('3.9.0.2'), `the boot failure must name the installed pandoc version: ${JSON.stringify(shown[0].message)}`)
+
+    // The complementary compatible path: the same boot gate passes silently.
+    const compatibleRunner: VersionOutputRunner = async (command, _args) => {
+      return command === 'pandoc-crossref'
+        ? { code: 0, stdout: CROSSREF_OUTPUT_MATCHING }
+        : { code: 0, stdout: PANDOC_OUTPUT }
+    }
+    const cleanPassed = await preflight(
+      (title, message) => { shown.push({ title, message }) },
+      (code) => { exits.push(code) },
+      [],
+      [],
+      async () => await crossrefCompatibilityFailure(compatibleRunner)
+    )
+    assert.strictEqual(cleanPassed, true, 'a matching toolchain must boot')
+    assert.strictEqual(shown.length, 1, 'no additional message may appear on the clean path')
+    assert.strictEqual(exits.length, 1, 'no additional exit may occur on the clean path')
   })
 })

@@ -187,6 +187,32 @@ describe('ReferenceIndex overlay authority', function () {
     assert.strictEqual(state.resolutions.get('rmk:standalone-note'), undefined)
   })
 
+  it('follows a file move (unlink + add) to the new path without duplicating the definition (review C8)', function () {
+    // A move arrives from FSAL as an unlink of the old path plus an add of
+    // the same content under the new path. The index must end up serving
+    // exactly one snapshot — under the new path — and resolve the moved
+    // definition there, never as a duplicate and never as missing.
+    const index = new ReferenceIndex()
+    index.applySavedSnapshot(savedSnapshot(THEOREMS))
+    index.applySavedSnapshot(savedSnapshot(HALPHEN)) // cites @thm:torelli
+
+    const movedPath = path.join(FIXTURE_ROOT, 'ProjectA', 'Theorems_Renamed.md')
+    index.removeSavedSnapshot(THEOREMS)
+    index.applySavedSnapshot(extractReferences(movedPath, readFileSync(THEOREMS, 'utf-8')))
+
+    const state = index.getSnapshot()
+    assert.deepStrictEqual(
+      state.snapshots.map(snapshot => snapshot.documentPath).sort(),
+      [ HALPHEN, movedPath ].sort(),
+      'the old path must vanish and the new path must serve the moved snapshot'
+    )
+    const resolution = servedResolution(state, 'thm:torelli')
+    assert.strictEqual(resolution.status, 'resolved', 'the moved definition must resolve, not duplicate or go missing')
+    if (resolution.status === 'resolved') {
+      assert.strictEqual(resolution.definition.documentPath, movedPath, 'the resolution must point at the NEW path')
+    }
+  })
+
   it('keeps the live overlay of an unlinked but still open document', function () {
     const index = new ReferenceIndex()
     index.applySavedSnapshot(savedSnapshot(STANDALONE))
