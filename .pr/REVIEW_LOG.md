@@ -39,4 +39,18 @@ Reviewer A confirmed: no contract-exclusion violations (no GUI numbering, no Pan
 | B11 | Cross-repo prefix registries and default template name duplicated without drift canaries | Accepted — add registry-equality assertion to the cross-repo proof; sentinel template default owned by the recipe | open |
 | B12–B23 | Debt notes (isFile fork, dead control flow in append-plan affordance, unused runner code field, stale JSDoc/phase comments, hand-enumerated spec list, source-text help spec, stringly crossref_mode, silent unknown-ipc, placeholder snapshot default, lua labeling asymmetry, class-registry overlap) | Cheap ones folded into remediation (13, 16, 21); remainder batched to a debt issue at the gate | open |
 
-### Reviewer C — proof quality (pending)
+### Reviewer C — proof quality (test-guidelines admissibility + fresh capture sweep)
+
+Headline verdict: no fabricated proofs, no behavior mocking, no vacuous passes in the completion differential, rename atomicity, or Pandoc oracle — each excludes the specific broken implementation it claims to. Findings:
+
+| # | Claim | Disposition | Status |
+|---|---|---|---|
+| C1 | preflight() boot integration of the crossref gate unproven (deleting the call would pass every spec) | Accepted — boot-gate spec | open |
+| C2 | Renderer Vue glue (reporter instantiation, referencesUpdate feed, overlay mount) has no owning spec | Accepted with modified remediation — cover the highest-risk joins via probes where honest; residual glue risk documented rather than laundered through fake Vue harnesses | open |
+| C3 | capture-pandoc-divs / -chips / -hover lack --no-sandbox and hard-fail as committed | Accepted — recipe fix | open |
+| C4 | Contract-named captures missing: completion popup, expanded hover, duplicate/outside-Project chip states, rename preview, navigation controls; two receipt-frames carry no visual information | Accepted — captures land with the behavioral remediations | open |
+| C5 | Subfigure/wrapping forms have zero coverage (= A1) | Accepted (tracked as A1) | open |
+| C6 | documents-provider navigation join (targetRange/sourceLocation/stamping/tab reuse) unspecced | Accepted — provider-layer spec via harness | open |
+| C7 | Cross-repo script's `grep -q 'Ols04'` passes even if citeproc breaks | Accepted — assert the strong \autocite form | open |
+| C8 | Escaped/structurally-malformed attribute cases, file-move index case, keymap-routing assertion missing | Accepted — cheap spec additions | open |
+| C9 | Oracle covers 2 of 5 fixture files; dispatcher replicated in differential; recorder single-spawn blindness; conflicted-path temp-debris unasserted; second export profile unexercised | Accepted as debt-batch (low-severity, documented limits) unless trivially foldable | open |
