@@ -22,6 +22,21 @@ Three fresh-context reviewers (contract-completion, code-quality/anti-slop, proo
 
 Reviewer A confirmed: no contract-exclusion violations (no GUI numbering, no Pandoc-on-type, no citation redesign, no fallbacks, no bespoke matcher); red/green pairs exist for every phase; core proofs re-run independently green (168 unit / 31 probe / cross-repo).
 
-### Reviewer B — code quality (pending)
+### Reviewer B — code quality (anti-slop / reviewing-llm-code lenses)
+
+| # | Claim | Disposition | Status |
+|---|---|---|---|
+| B1 | MUST-FIX: companion lua Cite handler rebuilds \cref from ids only — authored prefix/suffix/locators and SuppressAuthor silently discarded on documented syntax; no fixture exercises the shapes | Accepted — current-PR (export correctness gate); companion-repo remediation with red fixture | open |
+| B2 | New shell:true single-quote interpolations scale to N+2 per export; quotes in titles/filenames break tokenization; spec covers spaces but not quotes | Accepted with remediation = shell:false argv array (deletes the whole class) | open |
+| B3 | at-symbols duplicates the family display-name authority | Accepted — mechanical dedup | open |
+| B4 | extract-references duplicates referenceFamilyOf from a module it already imports | Accepted — mechanical dedup | open |
+| B5 | CROSSREF_FAMILIES vs PANDOC_CROSSREF_PREFIXES glued by canary not derivation; two predicates with divergent empty-slug semantics used in one file | Accepted — derive one from the other; reconcile predicates deliberately | open |
+| B6 | reference-lint duplicates the id-token locator with fail-loud downgraded to fail-silent; re-parses previewSource (a display excerpt) for the mismatch diagnostic | Accepted — share the locator; carry classes on the definition | open |
+| B7 | Rename proof lives on a provider ipc route production never uses; undo protocol has no production caller (overlaps A5) | Accepted — wire user-reachable undo + unify or justify the wire route; proof must ride the production path | open |
+| B8 | Error contract contradicted by siblings: navigation/live-buffer/append-and-continue/menu-rename failures are log-only while the contract forbids exactly that | Accepted — route the named sites through the recoverable boundary | open |
+| B9 | Test-accommodation guards in production (getCitationCallback probe, window.ipc guard comment, production-dead render-citations branch) | Accepted with modified remediation — fix harnesses to provide the globals/field where honest, delete guards; keep any branch only with a production justification | open |
+| B10 | "Legacy single-file surface byte-stable" laundered: the shared Cite handler changes legacy output for @thm: citations; baseline fixture avoids the trigger | Accepted — extend baseline with a theorem citation, bless the intended new behavior explicitly, and narrow the written claim to what the test proves | open |
+| B11 | Cross-repo prefix registries and default template name duplicated without drift canaries | Accepted — add registry-equality assertion to the cross-repo proof; sentinel template default owned by the recipe | open |
+| B12–B23 | Debt notes (isFile fork, dead control flow in append-plan affordance, unused runner code field, stale JSDoc/phase comments, hand-enumerated spec list, source-text help spec, stringly crossref_mode, silent unknown-ipc, placeholder snapshot default, lua labeling asymmetry, class-registry overlap) | Cheap ones folded into remediation (13, 16, 21); remainder batched to a debt issue at the gate | open |
 
 ### Reviewer C — proof quality (pending)
