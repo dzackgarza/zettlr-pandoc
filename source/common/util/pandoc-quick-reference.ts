@@ -89,3 +89,65 @@ export const REFERENCEABLE_DIV_CLASSES = Object.values(THEOREM_DIV_PREFIXES) as 
 export function isReferenceableDivClass (className: string): boolean {
   return REFERENCEABLE_DIV_CLASSES.includes(className.toLowerCase())
 }
+
+/**
+ * One reference-authoring capability documented by the in-app quick help
+ * (issue #1 Phase 8, workstream 3): what the editor DOES with authored
+ * references, complementing the syntax examples above.
+ */
+export interface ReferenceAuthoringTopic {
+  /** The stable topic identity the help surface keys its rows on */
+  kind: string
+  /** The short user-facing capability name */
+  title: string
+  /** The one-line user-facing description */
+  detail: string
+  /** The affordance that invokes it: a syntax token, shortcut, or gesture */
+  syntax: string
+}
+
+/**
+ * The reference-authoring capabilities the quick help documents.
+ *
+ * CONTRACT (locked red by test/pandoc-quick-help-references.spec.ts): the
+ * editor now SHIPS combined @ completion, hover target previews, Mod-P
+ * definition search, Mod-Click navigation with per-pane Back/Forward
+ * history, workspace rename, and Project-membership warnings — so the help
+ * must document each of them, and the footer claim that cross-reference
+ * autocomplete and target previews "are not currently available" (plus the
+ * fig/tbl/eq/sec-only convention note) is FALSE and must disappear from
+ * PandocQuickHelp.vue.
+ *
+ * PHASE 8 INERT SKELETON: empty until the help content lands green; the
+ * spec locks the required topic set red.
+ */
+export const PANDOC_REFERENCE_AUTHORING_TOPICS: readonly ReferenceAuthoringTopic[] = []
+
+/**
+ * One fenced-div labeling example pairing a theorem-div label prefix with
+ * the exact authored syntax that defines and cites it.
+ */
+export interface TheoremDivExample {
+  /** The label prefix, a key of THEOREM_DIV_PREFIXES */
+  prefix: string
+  /** The fenced-div class the prefix labels */
+  divClass: string
+  /** The exact authored definition example */
+  label: string
+  /** The exact authored reference example */
+  reference: string
+}
+
+/**
+ * The exact fenced-div prefix examples the quick help shows — one per
+ * THEOREM_DIV_PREFIXES entry (all 15; proof-like divs stay absent because
+ * they are unreferenceable).
+ *
+ * CONTRACT (locked red by test/pandoc-quick-help-references.spec.ts): each
+ * example is derived from the registry above so the help can never drift
+ * from the extractor's supported set: label
+ * `::: {.<divClass> #<prefix>:key}` and reference `@<prefix>:key`.
+ *
+ * PHASE 8 INERT SKELETON: empty until the help content lands green.
+ */
+export const THEOREM_DIV_EXAMPLES: readonly TheoremDivExample[] = []

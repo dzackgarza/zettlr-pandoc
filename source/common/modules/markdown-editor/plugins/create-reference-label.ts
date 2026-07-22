@@ -65,7 +65,24 @@ export interface CreateReferenceLabelRequest {
   family: ReferenceFamily
   proposedSlug: string
   insertion: ReferenceLabelInsertion
+  /**
+   * The exact authored text of the target's open line at preparation time
+   * (issue #1 Phase 8): the CONTENT anchor confirm-time re-resolution uses
+   * to re-locate the target after intervening edits. The dialog is modal
+   * only visually — the document can shift underneath it (a workspace
+   * rename lands, another pane edits the buffer), so the prepared offsets
+   * alone are not trustworthy at confirm time.
+   */
+  targetLine: string
 }
+
+/**
+ * The typed outcome of confirm-time re-resolution
+ * (confirmReferenceLabelInsertion below).
+ */
+export type ConfirmReferenceLabelOutcome =
+  | { status: 'applied', insertion: ReferenceLabelInsertion }
+  | { status: 'stale', reason: 'target-vanished' | 'already-labeled' }
 
 /**
  * Signals that the user requested the create-reference-label dialog for a
@@ -174,7 +191,8 @@ function resolveNodeRequest (view: EditorView, node: SyntaxNode): CreateReferenc
       return {
         family,
         proposedSlug: proposeSlug(title),
-        insertion: { from: openLine.from + close, to: openLine.from + close, prefix: ' ', suffix: '' }
+        insertion: { from: openLine.from + close, to: openLine.from + close, prefix: ' ', suffix: '' },
+        targetLine: openLine.text
       }
     }
 
@@ -185,7 +203,8 @@ function resolveNodeRequest (view: EditorView, node: SyntaxNode): CreateReferenc
     return {
       family,
       proposedSlug: proposeSlug(title),
-      insertion: { from: classStart, to: classStart + className.length, prefix: `{.${className} `, suffix: '}' }
+      insertion: { from: classStart, to: classStart + className.length, prefix: `{.${className} `, suffix: '}' },
+      targetLine: openLine.text
     }
   }
 
@@ -197,13 +216,15 @@ function resolveNodeRequest (view: EditorView, node: SyntaxNode): CreateReferenc
       return {
         family: 'sec',
         proposedSlug: proposeSlug(headingText),
-        insertion: { from: openLine.from + close, to: openLine.from + close, prefix: ' ', suffix: '' }
+        insertion: { from: openLine.from + close, to: openLine.from + close, prefix: ' ', suffix: '' },
+        targetLine: openLine.text
       }
     }
     return {
       family: 'sec',
       proposedSlug: proposeSlug(headingText),
-      insertion: { from: openLine.to, to: openLine.to, prefix: ' {', suffix: '}' }
+      insertion: { from: openLine.to, to: openLine.to, prefix: ' {', suffix: '}' },
+      targetLine: openLine.text
     }
   }
 
@@ -214,7 +235,8 @@ function resolveNodeRequest (view: EditorView, node: SyntaxNode): CreateReferenc
     return {
       family: 'fig',
       proposedSlug: proposeSlug(alt),
-      insertion: { from: node.to, to: node.to, prefix: '{', suffix: '}' }
+      insertion: { from: node.to, to: node.to, prefix: '{', suffix: '}' },
+      targetLine: openLine.text
     }
   }
 
@@ -227,7 +249,8 @@ function resolveNodeRequest (view: EditorView, node: SyntaxNode): CreateReferenc
       return {
         family: 'eq',
         proposedSlug: '',
-        insertion: { from: closeLine.to, to: closeLine.to, prefix: ' {', suffix: '}' }
+        insertion: { from: closeLine.to, to: closeLine.to, prefix: ' {', suffix: '}' },
+        targetLine: openLine.text
       }
     }
 
@@ -241,7 +264,8 @@ function resolveNodeRequest (view: EditorView, node: SyntaxNode): CreateReferenc
       return {
         family: 'lst',
         proposedSlug: '',
-        insertion: { from: openLine.from + close, to: openLine.from + close, prefix: ' ', suffix: '' }
+        insertion: { from: openLine.from + close, to: openLine.from + close, prefix: ' ', suffix: '' },
+        targetLine: openLine.text
       }
     }
 
@@ -258,11 +282,61 @@ function resolveNodeRequest (view: EditorView, node: SyntaxNode): CreateReferenc
         to: openLine.to,
         prefix: infoMatch[2] === '' ? '{' : `{.${infoMatch[2]} `,
         suffix: '}'
-      }
+      },
+      targetLine: openLine.text
     }
   }
 
   return null
+}
+
+/**
+ * Re-resolves a prepared create-label request against the CURRENT document
+ * at confirm time (issue #1 Phase 8).
+ *
+ * CONTRACT (locked red by test/reference-create-label-confirm.spec.ts):
+ *
+ * The dialog is modal only visually: between preparation and confirmation
+ * the document can shift (a workspace rename lands, a second pane edits the
+ * buffer, content is pasted above the target). The prepared
+ * request.insertion offsets are therefore untrustworthy at confirm time and
+ * MUST NOT be applied verbatim. Confirming re-locates the target through
+ * its content anchor (request.targetLine):
+ *
+ * - The target's open line still exists in the current document (preferring
+ *   the line still containing the original offsets, otherwise the unique
+ *   line equal to targetLine) and re-resolving there yields a same-family
+ *   still-unlabeled request: the outcome is
+ *   { status: 'applied', insertion } where insertion is the FRESHLY
+ *   RECOMPUTED insertion for the target's current position — byte-identical
+ *   to what resolveCreateReferenceLabelRequest would prepare there now.
+ *
+ * - The target's own lines already carry a definition (someone labeled it
+ *   while the dialog was open — the real extractor is the authority, the
+ *   same alreadyLabeled gate preparation uses): the outcome is
+ *   { status: 'stale', reason: 'already-labeled' } and NOTHING may be
+ *   inserted; the host surfaces the structured staleness instead.
+ *
+ * - The target no longer exists (its open line was deleted or rewritten,
+ *   or no unique same-family target matches the anchor): the outcome is
+ *   { status: 'stale', reason: 'target-vanished' } and NOTHING may be
+ *   inserted.
+ *
+ * PHASE 8 INERT SKELETON: this reproduces the current confirm behavior —
+ * the host applies the request-time offsets verbatim — by returning the
+ * original insertion unconditionally. Every recompute and staleness branch
+ * above is locked red by test/reference-create-label-confirm.spec.ts.
+ *
+ * @param   {EditorView}                   _view    The editor view (current document)
+ * @param   {CreateReferenceLabelRequest}  request  The request prepared at dialog-open time
+ *
+ * @return  {ConfirmReferenceLabelOutcome}          The recomputed insertion or a typed stale result
+ */
+export function confirmReferenceLabelInsertion (
+  _view: EditorView,
+  request: CreateReferenceLabelRequest
+): ConfirmReferenceLabelOutcome {
+  return { status: 'applied', insertion: request.insertion }
 }
 
 /**

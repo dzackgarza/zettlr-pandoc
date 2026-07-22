@@ -36,6 +36,23 @@ interface JumpIntent {
   range: { from: number, to: number }
 }
 
+interface CitingLocation {
+  documentPath: string
+  range: { from: number, to: number }
+  clusterRaw: string
+}
+
+interface KeyedProbeResult {
+  componentAvailable: boolean
+  componentFailure: string|null
+  requestedKey: string
+  expectedCitingLocations: CitingLocation[]
+  query: string|null
+  mode: string|null
+  rows: Array<{ documentPath: string|null, from: number|null, text: string }>
+  jumpIntents: JumpIntent[]
+}
+
 interface OverlayProbeResult {
   componentAvailable: boolean
   componentFailure: string|null
@@ -43,6 +60,7 @@ interface OverlayProbeResult {
   query: string|null
   rows: Array<{ key: string|null, documentPath: string|null, text: string }>
   jumpIntents: JumpIntent[]
+  keyed: KeyedProbeResult
   screenshots: string[]
 }
 
@@ -140,5 +158,68 @@ describe('Mod-P reference search overlay', function () {
       result.expectedIntent,
       'the emitted jump intent must target the selected definition'
     )
+  })
+
+  // ——— Reverse lookup (issue #1 Phase 8): the definition count badge
+  // dispatches openReferenceSearchEffect.of({ key }); the overlay must open
+  // pre-keyed on that definition and present its workspace CITING LOCATIONS
+  // (occurrence rows with snippets and jump actions), not the definition
+  // list. Today the keyed request is dropped along the relay chain and the
+  // component knows no citing-locations mode — every spec below fails on
+  // assertions.
+  describe('badge-keyed reverse lookup', function () {
+    it('opening with a key pre-populates the query and enters citing-locations mode', function () {
+      assert.equal(result.keyed.componentAvailable, true, `the overlay must mount for the keyed scene: ${result.keyed.componentFailure ?? ''}`)
+      assert.equal(
+        result.keyed.query,
+        result.keyed.requestedKey,
+        'the keyed request must pre-populate the query input with the definition key'
+      )
+      assert.equal(
+        result.keyed.mode,
+        'citing-locations',
+        'a keyed request must open the reverse-lookup mode, not the definition search'
+      )
+    })
+
+    it('presents every workspace citing location with its authored snippet', function () {
+      // Independent oracle: the citing locations computed by the real
+      // extractor over the whole fixture workspace. thm:torelli is cited
+      // from Halphen_Surfaces.md (inside a bracketed cluster) and
+      // Standalone_Notes.md (bare) — and is duplicate-DEFINED across
+      // projects, which must not suppress its citing locations.
+      const expected = result.keyed.expectedCitingLocations
+      assert.equal(
+        expected.length,
+        2,
+        `the fixture cites thm:torelli exactly twice (oracle precondition), got ${JSON.stringify(expected)}`
+      )
+
+      assert.deepEqual(
+        result.keyed.rows.map(row => ({ documentPath: row.documentPath, from: row.from })),
+        expected.map(location => ({ documentPath: location.documentPath, from: location.range.from })),
+        'the overlay must list exactly the workspace citing locations, in workspace document order'
+      )
+      for (const [ index, location ] of expected.entries()) {
+        assert.ok(
+          result.keyed.rows[index]?.text.includes(location.clusterRaw),
+          `row ${index} must show the authored citing snippet ${JSON.stringify(location.clusterRaw)}, got ${JSON.stringify(result.keyed.rows[index]?.text)}`
+        )
+      }
+    })
+
+    it('Enter jumps to the first citing location, not to a definition', function () {
+      const expected = result.keyed.expectedCitingLocations
+      assert.ok(expected.length > 0, 'oracle precondition: the key must have citing locations')
+      assert.deepEqual(
+        result.keyed.jumpIntents,
+        [{
+          key: result.keyed.requestedKey,
+          documentPath: expected[0].documentPath,
+          range: expected[0].range
+        }],
+        'the jump intent must carry the OCCURRENCE range of the citing location — reverse lookup navigates to usages, never to the definition row'
+      )
+    })
   })
 })

@@ -18,11 +18,30 @@ const path = require('path')
 
 const outputDirectory = process.argv[process.argv.length - 1]
 const QUERY = 'kodemb'
+// The reverse-lookup scene (issue #1 Phase 8): the key whose citing
+// locations the badge-opened overlay must present. thm:torelli is cited
+// from Halphen_Surfaces.md and Standalone_Notes.md (and is duplicate-
+// DEFINED across projects — reverse lookup presents citing locations
+// regardless of the definition's resolution state).
+const KEYED_REQUEST_KEY = 'thm:torelli'
 
 const fixtureRoot = path.join(__dirname, 'fixtures', 'reference-workspace')
 const documents = [
   path.join(fixtureRoot, 'ProjectA', 'Theorems.md'),
   path.join(fixtureRoot, 'ProjectB', 'Other_Paper.md'),
+].map(documentPath => ({
+  path: documentPath,
+  content: readFileSync(documentPath, 'utf-8'),
+}))
+
+// The keyed scene spans the WHOLE workspace: the citing locations live in
+// documents the plain Mod-P scene does not load.
+const allDocuments = [
+  path.join(fixtureRoot, 'ProjectA', 'Theorems.md'),
+  path.join(fixtureRoot, 'ProjectA', 'Halphen_Surfaces.md'),
+  path.join(fixtureRoot, 'ProjectA', 'Coble_Lattice_Table.md'),
+  path.join(fixtureRoot, 'ProjectB', 'Other_Paper.md'),
+  path.join(fixtureRoot, 'Standalone_Notes.md'),
 ].map(documentPath => ({
   path: documentPath,
   content: readFileSync(documentPath, 'utf-8'),
@@ -91,6 +110,34 @@ app.whenReady().then(async () => {
     screenshots.push(await screenshot(window, 'reference-search-overlay-after-enter.png'))
   }
 
+  // ——— Reverse-lookup scene (issue #1 Phase 8): reload for a fresh JS
+  // context, then mount the overlay pre-keyed on a definition, exactly as
+  // the badge-relayed openReferenceSearchEffect.of({ key }) opens it.
+  await window.loadFile(pagePath)
+  const keyedReadiness = await window.webContents.executeJavaScript('typeof window.referenceSearchProbeMountKeyed')
+  if (keyedReadiness !== 'function') {
+    throw new Error(`reference-search-overlay-entry did not initialize the keyed scene (referenceSearchProbeMountKeyed is ${keyedReadiness})`)
+  }
+
+  const keyedMountReport = await window.webContents.executeJavaScript(
+    `window.referenceSearchProbeMountKeyed(${JSON.stringify(allDocuments)}, ${JSON.stringify(KEYED_REQUEST_KEY)})`
+  )
+
+  let keyedState = { query: null, mode: null, rows: [] }
+  let keyedJumpIntents = []
+  if (keyedMountReport.componentAvailable === true) {
+    window.focus()
+    window.webContents.focus()
+    await nextFrame(window)
+    keyedState = await window.webContents.executeJavaScript('window.referenceSearchProbeKeyedState()')
+    screenshots.push(await screenshot(window, 'reference-search-overlay-citing-locations.png'))
+
+    sendKey(window, 'Return')
+    await nextFrame(window)
+    keyedJumpIntents = await window.webContents.executeJavaScript('window.referenceSearchProbeJumpIntents()')
+    screenshots.push(await screenshot(window, 'reference-search-overlay-citing-jump.png'))
+  }
+
   const result = {
     componentAvailable: mountReport.componentAvailable === true,
     componentFailure: mountReport.componentFailure ?? null,
@@ -98,6 +145,16 @@ app.whenReady().then(async () => {
     query: state.query,
     rows: state.rows,
     jumpIntents,
+    keyed: {
+      componentAvailable: keyedMountReport.componentAvailable === true,
+      componentFailure: keyedMountReport.componentFailure ?? null,
+      requestedKey: KEYED_REQUEST_KEY,
+      expectedCitingLocations: keyedMountReport.expectedCitingLocations ?? [],
+      query: keyedState.query,
+      mode: keyedState.mode,
+      rows: keyedState.rows,
+      jumpIntents: keyedJumpIntents,
+    },
     screenshots,
   }
   process.stdout.write(`${JSON.stringify(result)}\n`)
