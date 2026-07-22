@@ -30,7 +30,7 @@ This PR owns the complete Zettlr-Pandoc side of issue #1:
 - preflight and recoverable-error behavior;
 - guarded real-boundary regression and visual proof.
 
-A required companion `pandoc-config` PR will update the authoritative `compile-pandoc` contract and theorem/reference export pipeline. This PR cannot become ready or merge until that companion PR is linked here and the cross-repository proof passes.
+The required companion PR is [pandoc-config#5](https://github.com/dzackgarza/pandoc-config/pull/5) (draft): ordered multi-file `compile-pandoc-project`, `pandoc-crossref` in the project filter chain, and the explicit-ID/`@thm:`-family theorem filter bridge, with the legacy single-file surface proven byte-stable. This PR cannot become ready or merge until the cross-repository proof passes against that branch.
 
 # Product boundaries
 
@@ -63,9 +63,11 @@ A required companion `pandoc-config` PR will update the authoritative `compile-p
 
 # Current blockers
 
-- The required companion `pandoc-config` PR has not yet been opened.
-- The red proof constellation has not yet been committed.
-- Implementation and evidence are unstarted.
+- Editor/provider phases beyond the extraction core (completion, presentation, navigation, rename, Project status, ordered-export wiring, help/error surfaces) are not yet implemented; each still owes its red constellation through the sanctioned path before its implementation.
+- The cross-repository proof (guarded recipe against [pandoc-config#5](https://github.com/dzackgarza/pandoc-config/pull/5)) has not yet been added or run from this repository.
+- Visual proof captures and the independent adversarial review have not started.
+
+Landed so far: pre-feature hygiene refactor of the fork surface; a green commit-gate baseline (three real environment defects fixed); the Phase-1 red constellation via `ai-review-ci red-commit` (`Red-Proof: #1`, 7e3494aa5) and its green extraction/resolution implementation (5ed4fd71a); `pandoc-crossref` v0.3.24a provisioned; companion draft PR opened.
 
 # Review focus
 
