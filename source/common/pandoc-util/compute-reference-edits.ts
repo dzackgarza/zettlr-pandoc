@@ -257,3 +257,76 @@ export function previewReferenceRename (
     }
   }
 }
+
+/**
+ * One affected document of a previewed rename, as the rename preview UI
+ * presents it (issue #1, review A4 / US-17): the document, its exact edit
+ * count, and the authored context snippet of every affected range in
+ * document order.
+ */
+export interface RenamePreviewFileSummary {
+  documentPath: string
+  /** The number of previewed text edits in this document */
+  editCount: number
+  /** One authored context snippet per affected range, in document order */
+  snippets: string[]
+}
+
+/**
+ * Builds the per-file summary the rename preview dialog renders, from a
+ * previewed WorkspaceReferenceEdit and the workspace snapshots it was
+ * computed over. Documents appear in the edit's own document order; each
+ * affected range contributes its authored context — the definition's
+ * preview-source head line for definition tokens, the authored citation
+ * cluster for occurrence tokens.
+ *
+ * @param   {WorkspaceReferenceEdit}       edit       The previewed edit
+ * @param   {DocumentReferenceSnapshot[]}  snapshots  The snapshots previewed over
+ * @param   {string}                       oldKey     The key being renamed
+ *
+ * @return  {RenamePreviewFileSummary[]}              The per-file summary
+ */
+export function buildRenamePreviewSummary (
+  edit: WorkspaceReferenceEdit,
+  snapshots: DocumentReferenceSnapshot[],
+  oldKey: string
+): RenamePreviewFileSummary[] {
+  const summaries: RenamePreviewFileSummary[] = []
+  const byPath = new Map(snapshots.map(snapshot => [ snapshot.documentPath, snapshot ]))
+
+  for (const textEdit of edit.edits) {
+    let summary = summaries.find(candidate => candidate.documentPath === textEdit.documentPath)
+    if (summary === undefined) {
+      summary = { documentPath: textEdit.documentPath, editCount: 0, snippets: [] }
+      summaries.push(summary)
+    }
+    summary.editCount++
+
+    const snapshot = byPath.get(textEdit.documentPath)
+    if (snapshot === undefined) {
+      throw new Error(`Rename preview summary: no snapshot for previewed document ${textEdit.documentPath}`)
+    }
+
+    // The affected range is either a definition id token or an occurrence
+    // key token of oldKey; surface its authored context.
+    const definition = snapshot.definitions.find(candidate => {
+      return candidate.key === oldKey &&
+        textEdit.range.from >= candidate.range.from && textEdit.range.to <= candidate.range.to
+    })
+    if (definition !== undefined) {
+      summary.snippets.push(definition.previewSource.split('\n', 1)[0])
+      continue
+    }
+
+    const occurrence = snapshot.occurrences.find(candidate => {
+      return candidate.key === oldKey &&
+        textEdit.range.from >= candidate.range.from && textEdit.range.to <= candidate.range.to
+    })
+    if (occurrence === undefined) {
+      throw new Error(`Rename preview summary: previewed range [${textEdit.range.from},${textEdit.range.to}] in ${textEdit.documentPath} matches no authored ${oldKey} token`)
+    }
+    summary.snippets.push(occurrence.clusterRaw)
+  }
+
+  return summaries
+}

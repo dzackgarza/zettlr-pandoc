@@ -11,14 +11,26 @@
         v-bind:data-search-mode="mode"
         v-bind:aria-label="mode === 'citing-locations' ? trans('Workspace citing locations') : trans('Search workspace definitions')"
       >
-        <input
-          ref="queryInput"
-          v-model="query"
-          type="text"
-          v-bind:placeholder="trans('Search workspace definitions…')"
-          v-bind:aria-label="trans('Definition search query')"
-          v-on:keydown="handleKeydown"
-        >
+        <div class="query-row">
+          <input
+            ref="queryInput"
+            v-model="query"
+            type="text"
+            v-bind:placeholder="trans('Search workspace definitions…')"
+            v-bind:aria-label="trans('Definition search query')"
+            v-on:keydown="handleKeydown"
+          >
+          <button
+            class="open-help"
+            data-open-help
+            type="button"
+            v-bind:title="trans('Pandoc quick reference')"
+            v-bind:aria-label="trans('Open the Pandoc quick reference')"
+            v-on:click="emit('open-help')"
+          >
+            ?
+          </button>
+        </div>
         <template v-if="mode === 'citing-locations'">
           <ul
             v-if="citingLocations.length > 0"
@@ -55,11 +67,18 @@
               v-bind:class="{ result: true, selected: index === selectedIndex }"
               v-bind:data-reference-key="definition.key"
               v-bind:data-reference-path="definition.documentPath"
+              v-bind:data-project-status="projectMarkerOf(definition)?.status"
               role="option"
               v-bind:aria-selected="index === selectedIndex"
               v-on:click="emitJump(definition)"
             >
-              <span class="type-title">{{ typeAndTitle(definition) }}</span>
+              <span class="type-title">
+                {{ typeAndTitle(definition) }}
+                <span
+                  v-if="projectMarkerOf(definition) !== null"
+                  class="project-marker"
+                >{{ projectMarkerOf(definition)?.display }}</span>
+              </span>
               <span class="key">{{ definition.key }}</span>
               <span class="path">{{ definition.documentPath }}</span>
             </li>
@@ -122,9 +141,17 @@ export interface ReferenceJumpIntent {
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { trans } from '@common/i18n-renderer'
-import { searchWorkspaceDefinitions } from '@common/modules/markdown-editor/util/reference-search'
+import {
+  searchWorkspaceDefinitions,
+  isCurrentProjectDefinition,
+  type WorkspaceSearchContext
+} from '@common/modules/markdown-editor/util/reference-search'
+import {
+  computeProjectReferenceStatus,
+  projectStatusDisplayName
+} from '@common/pandoc-util/project-reference-status'
 import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
-import type { ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
+import type { ProjectRootSpec, ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
 import { THEOREM_DIV_PREFIXES } from '@common/util/pandoc-quick-reference'
 
 const props = withDefaults(defineProps<{
@@ -133,15 +160,29 @@ const props = withDefaults(defineProps<{
   occurrences?: ReferenceOccurrence[]
   /** The relayed request: null keeps the plain definition search */
   initialRequest?: ReferenceSearchRequest
+  /** Every visible Project root (review A3: current-Project-first ranking) */
+  projectRoots?: ProjectRootSpec[]
+  /** The document Mod-P was invoked from (review A3) */
+  activeDocumentPath?: string
 }>(), {
   occurrences: () => [],
-  initialRequest: null
+  initialRequest: null,
+  projectRoots: () => [],
+  activeDocumentPath: undefined
 })
 
 const emit = defineEmits<{
   (e: 'jump', intent: ReferenceJumpIntent): void
   (e: 'close'): void
+  (e: 'open-help'): void
 }>()
+
+/** The US-16 ranking context, when the host names the invoking document. */
+const searchContext = computed<WorkspaceSearchContext|undefined>(() => {
+  return props.activeDocumentPath === undefined
+    ? undefined
+    : { activeDocumentPath: props.activeDocumentPath, projectRoots: props.projectRoots }
+})
 
 /** A keyed request opens the reverse lookup; null keeps definition search. */
 const mode = computed<'definitions'|'citing-locations'>(() => {
@@ -153,8 +194,31 @@ const selectedIndex = ref<number>(0)
 const queryInput = ref<HTMLInputElement|null>(null)
 
 const matches = computed<ReferenceDefinition[]>(() => {
-  return searchWorkspaceDefinitions(props.definitions, query.value)
+  return searchWorkspaceDefinitions(props.definitions, query.value, searchContext.value)
 })
+
+/**
+ * The Project marker of a result row (review A3, US-16): current-Project
+ * definitions stay unmarked; every other definition is marked with its
+ * computed Project status. Null without a ranking context.
+ *
+ * @param   {ReferenceDefinition}  definition  The row's definition
+ *
+ * @return  {{ status: string, display: string }|null}  The marker, if any
+ */
+function projectMarkerOf (definition: ReferenceDefinition): { status: string, display: string }|null {
+  const context = searchContext.value
+  if (context === undefined || isCurrentProjectDefinition(definition, context)) {
+    return null
+  }
+
+  const status = computeProjectReferenceStatus(
+    definition.documentPath,
+    context.activeDocumentPath,
+    context.projectRoots
+  )
+  return { status, display: projectStatusDisplayName(status) }
+}
 
 /**
  * The workspace citing locations of the queried key, in workspace document
@@ -313,22 +377,59 @@ onMounted(() => { queryInput.value?.focus() })
   box-shadow: 0 20px 60px rgba(0, 0, 0, .32);
   font: 13px/1.4 system-ui, sans-serif;
 
-  input {
+  .query-row {
+    display: flex;
     flex: 0 0 auto;
+    align-items: center;
+    border-bottom: 1px solid var(--search-border);
+  }
+
+  input {
+    flex: 1 1 auto;
     box-sizing: border-box;
-    width: 100%;
+    min-width: 0;
     margin: 0;
     padding: 13px 16px;
     color: inherit;
     background: transparent;
     border: none;
-    border-bottom: 1px solid var(--search-border);
     border-radius: 0;
     font: inherit;
     font-size: 15px;
     outline: none;
 
     &::placeholder { color: var(--search-muted); }
+  }
+
+  button.open-help {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    margin-right: 12px;
+    padding: 0;
+    color: var(--search-muted);
+    background: transparent;
+    border: 1px solid var(--search-border);
+    border-radius: 50%;
+    font: 600 13px/1 system-ui, sans-serif;
+    cursor: pointer;
+
+    &:hover, &:focus-visible {
+      color: var(--search-text);
+      border-color: var(--search-accent);
+      outline: none;
+    }
+  }
+
+  .project-marker {
+    margin-left: 6px;
+    padding: 1px 6px;
+    color: var(--search-accent);
+    background: var(--search-accent-soft);
+    border-radius: 999px;
+    font-size: 10px;
   }
 
   .results {

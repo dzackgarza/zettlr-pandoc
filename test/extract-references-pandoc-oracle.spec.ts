@@ -115,7 +115,13 @@ describe('extractReferences() against the real Pandoc AST oracle', function () {
 
   const ORACLE_FILES: Array<{ relativePath: string, supportedIdentifierCount: number }> = [
     { relativePath: path.join('ProjectA', 'Coble_Lattice_Table.md'), supportedIdentifierCount: 5 },
-    { relativePath: path.join('ProjectA', 'Theorems.md'), supportedIdentifierCount: 15 }
+    { relativePath: path.join('ProjectA', 'Theorems.md'), supportedIdentifierCount: 15 },
+    // Wrapping/subfigure forms (review A1): pandoc carries the wrapping div
+    // ids (#fig:coble-panels, #lst:lattice-scan) as Div Attr identifiers
+    // beside the nested Figure ids and the explicit section id. The gallery
+    // lives beside the workspace (the atomicity spec pins the workspace
+    // directory's exact listing).
+    { relativePath: path.join('..', 'subfigure-gallery', 'Subfigure_Gallery.md'), supportedIdentifierCount: 5 }
   ]
 
   for (const { relativePath, supportedIdentifierCount } of ORACLE_FILES) {

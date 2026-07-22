@@ -61,6 +61,34 @@ export const PANDOC_ATTRIBUTE_EXAMPLES = [
 
 export const PANDOC_CROSSREF_PREFIXES = PANDOC_CROSS_REFERENCE_EXAMPLES.map(example => example.prefix)
 
+/**
+ * The shared quick-help text filter (issue #1, review A2 / US-06): keeps the
+ * entries whose named parts contain the query as a case-insensitive
+ * substring. The empty query keeps everything. Each help section supplies
+ * its own partsOf projection (titles, details, syntax, examples), so the
+ * component never grows a parallel hand-authored matcher.
+ *
+ * @param   {readonly T[]}                          entries  The section's entries
+ * @param   {string}                                query    The typed filter query
+ * @param   {(entry: T) => Array<string|undefined>} partsOf  The searchable parts
+ *
+ * @return  {T[]}                                            The matching entries
+ */
+export function filterHelpEntries<T> (
+  entries: readonly T[],
+  query: string,
+  partsOf: (entry: T) => Array<string|undefined>
+): T[] {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') {
+    return [...entries]
+  }
+
+  return entries.filter(entry => {
+    return partsOf(entry).some(part => part !== undefined && part.toLowerCase().includes(needle))
+  })
+}
+
 export function isSupportedPandocCrossref (id: string): boolean {
   return PANDOC_CROSSREF_PREFIXES.some(prefix => id.startsWith(`${prefix}:`))
 }

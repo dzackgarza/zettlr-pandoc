@@ -55,6 +55,7 @@
               v-on:global-search="startGlobalSearch($event)"
               v-on:reference-search="openReferenceSearch($event)"
               v-on:create-reference-label="openCreateReferenceLabel($event)"
+              v-on:open-pandoc-quick-help="showPandocQuickHelp = true"
             ></EditorPane>
             <EditorBranch
               v-else-if="paneConfiguration !== undefined"
@@ -65,6 +66,7 @@
               v-on:global-search="startGlobalSearch($event)"
               v-on:reference-search="openReferenceSearch($event)"
               v-on:create-reference-label="openCreateReferenceLabel($event)"
+              v-on:open-pandoc-quick-help="showPandocQuickHelp = true"
             ></EditorBranch>
           </template>
           <template #view2>
@@ -140,8 +142,11 @@
     v-bind:definitions="referenceSearchDefinitions"
     v-bind:occurrences="referenceSearchOccurrences"
     v-bind:initial-request="referenceSearchRequest"
+    v-bind:project-roots="referenceSearchProjectRoots"
+    v-bind:active-document-path="referenceSearchActiveDocumentPath"
     v-on:close="showReferenceSearch = false"
     v-on:jump="handleReferenceJump($event)"
+    v-on:open-help="openQuickHelpFromOverlay()"
   ></ReferenceSearchOverlay>
   <CreateReferenceLabelDialog
     v-if="createLabelPrompt !== undefined"
@@ -214,10 +219,10 @@ import { buildPipeMarkdownTable } from '@common/util/build-pipe-markdown-table'
 import { type UpdateState } from '@providers/updates'
 import { type ToolbarControl } from '@common/vue/window/WindowToolbar.vue'
 import getDocumentTitle from './util/get-document-title'
-import { useConfigStore, useDocumentTreeStore, useLRTStore, useWindowStateStore } from 'source/pinia'
+import { useConfigStore, useDocumentTreeStore, useLRTStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
 import { type AnyDescriptor } from 'source/types/common/fsal'
-import type { ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
+import type { ProjectRootSpec, ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
 import { TaskStatus } from 'source/pinia/lrt-store'
@@ -228,6 +233,7 @@ const ipcRenderer = window.ipc
 const configStore = useConfigStore()
 const documentTreeStore = useDocumentTreeStore()
 const windowStateStore = useWindowStateStore()
+const workspaceStore = useWorkspaceStore()
 const LRTStore = useLRTStore()
 
 const SOUND_EFFECTS = [
@@ -290,6 +296,37 @@ const showReferenceSearch = ref<boolean>(false)
 const referenceSearchDefinitions = ref<ReferenceDefinition[]>([])
 const referenceSearchOccurrences = ref<ReferenceOccurrence[]>([])
 const referenceSearchRequest = ref<ReferenceSearchRequest>(null)
+// The US-16 ranking context (review A3): every visible Project root plus the
+// document the search was invoked from, captured at open time.
+const referenceSearchProjectRoots = ref<ProjectRootSpec[]>([])
+const referenceSearchActiveDocumentPath = ref<string|undefined>(undefined)
+
+/**
+ * Every Project root visible in the workspace, projected to the pure
+ * ProjectRootSpec shape the ranking consumes (the same projection
+ * MainEditor.vue feeds the completion status computation).
+ */
+function collectProjectRoots (): ProjectRootSpec[] {
+  const roots: ProjectRootSpec[] = []
+  for (const descriptor of workspaceStore.descriptorMap.values()) {
+    if (descriptor.type === 'directory' && descriptor.settings.project !== null) {
+      roots.push({
+        rootPath: descriptor.path,
+        files: [...descriptor.settings.project.files]
+      })
+    }
+  }
+  return roots
+}
+
+/**
+ * The Mod-P overlay's help affordance (review A2, US-06): swap the search
+ * overlay for the searchable Pandoc quick help.
+ */
+function openQuickHelpFromOverlay (): void {
+  showReferenceSearch.value = false
+  showPandocQuickHelp.value = true
+}
 
 /**
  * Fetches the merged workspace state from the reference provider and mounts
@@ -313,6 +350,8 @@ function openReferenceSearch (request: ReferenceSearchRequest = null): void {
       referenceSearchDefinitions.value = outcome.value.snapshots.flatMap(snapshot => snapshot.definitions)
       referenceSearchOccurrences.value = outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
       referenceSearchRequest.value = request
+      referenceSearchProjectRoots.value = collectProjectRoots()
+      referenceSearchActiveDocumentPath.value = documentTreeStore.lastLeafActiveFile?.path
       showReferenceSearch.value = true
     })
     .catch(err => console.error('Could not open the reference search overlay', err))

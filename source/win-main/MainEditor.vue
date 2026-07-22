@@ -13,6 +13,14 @@
     <div v-bind:id="`cm-text-${props.leafId}`">
       <!-- This element will be replaced with Codemirror's wrapper element on mount -->
     </div>
+    <RenameReferencePreviewDialog
+      v-if="renamePreviewPrompt !== undefined"
+      v-bind:old-key="renamePreviewPrompt.intent.oldKey"
+      v-bind:new-key="renamePreviewPrompt.intent.newKey"
+      v-bind:files="renamePreviewPrompt.files"
+      v-on:apply="applyWorkspaceRename()"
+      v-on:close="cancelWorkspaceRename()"
+    ></RenameReferencePreviewDialog>
   </div>
 </template>
 
@@ -72,11 +80,16 @@ import {
   type LiveBufferScheduler
 } from '@common/modules/markdown-editor/util/live-buffer-reporter'
 import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
-import type {
-  CommitRenameOutcome,
-  ReferenceRenamePreview,
-  ReferenceRenameRejection
+import RenameReferencePreviewDialog from './RenameReferencePreviewDialog.vue'
+import {
+  buildRenamePreviewSummary,
+  type CommitRenameOutcome,
+  type ReferenceRenamePreview,
+  type ReferenceRenameRejection,
+  type RenamePreviewFileSummary,
+  type UndoRenameOutcome
 } from '@common/pandoc-util/compute-reference-edits'
+import type { WorkspaceReferenceEdit } from '@dts/common/references'
 
 const ipcRenderer = window.ipc
 
@@ -151,6 +164,7 @@ const emit = defineEmits<{
   (e: 'globalSearch', query: string): void
   (e: 'referenceSearch', request: ReferenceSearchRequest): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
+  (e: 'openPandocQuickHelp'): void
 }>()
 
 const windowStateStore = useWindowStateStore()
@@ -427,7 +441,11 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
     theme: display.theme,
     highlightWhitespace: editor.showWhitespace,
     showMarkdownLineNumbers: editor.showMarkdownLineNumbers,
-    countChars: editor.countChars
+    countChars: editor.countChars,
+    navigationShortcuts: {
+      back: editor.navigationShortcuts.back,
+      forward: editor.navigationShortcuts.forward
+    }
   } satisfies EditorConfigOptions
 })
 
@@ -679,6 +697,13 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   // App.vue.
   editor.on('reference-search', (request: ReferenceSearchRequest) => {
     emit('referenceSearch', request)
+  })
+
+  // An in-editor help link (the completion info panel, issue #1 review A2)
+  // requested the searchable Pandoc quick help: relay up to App.vue's
+  // PandocQuickHelp mount — the same surface the Help menu opens.
+  editor.on('pandoc-quick-help', () => {
+    emit('openPandocQuickHelp')
   })
 
   // The context menu (or command registry) requested the create-label
@@ -947,10 +972,26 @@ function promptWorkspaceRename (intent: ReferenceKeyEditPromptIntent): void {
 }
 
 /**
- * Runs the confirmed workspace rename protocol: withdraws the local token
- * edit (the atomic workspace rename owns the whole change), previews, and
- * commits. Typed rejections and conflicts surface as closable toasts —
- * never as blocking dialogs.
+ * The pending rename preview shown by the dialog (issue #1, review A4):
+ * the confirmed intent, the previewed workspace edit, and the per-file
+ * affected-occurrence summary. Nothing commits while this is pending —
+ * Apply commits, Cancel restores the authored local edit.
+ */
+interface RenamePreviewPrompt {
+  intent: ReferenceKeyEditPromptIntent
+  edit: WorkspaceReferenceEdit
+  files: RenamePreviewFileSummary[]
+}
+
+const renamePreviewPrompt = ref<RenamePreviewPrompt|undefined>(undefined)
+
+/**
+ * Runs the confirmed workspace rename protocol up to the PREVIEW (issue #1,
+ * review A4 / US-17): withdraws the local token edit (the atomic workspace
+ * rename owns the whole change), previews, and presents the affected
+ * occurrences in the rename-preview dialog. Nothing commits here — Apply
+ * in the dialog commits, Cancel restores the authored edit. Typed
+ * rejections surface as closable toasts, never as blocking dialogs.
  *
  * @param   {ReferenceKeyEditPromptIntent}  intent  The confirmed intent
  */
@@ -976,9 +1017,64 @@ async function runWorkspaceRename (intent: ReferenceKeyEditPromptIntent): Promis
     return
   }
 
+  // The per-file summary is built over the same merged workspace state the
+  // preview was computed from (the provider's snapshots carry the authored
+  // previewSource/clusterRaw context the dialog shows).
+  const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+    async (channel, message) => await ipcRenderer.invoke(channel, message),
+    { command: 'get-snapshot' },
+    trans('Loading workspace references')
+  )
+  if (outcome.status === 'failed') {
+    return // The boundary surfaced the closable toast; the withdrawal stays.
+  }
+
+  renamePreviewPrompt.value = {
+    intent,
+    edit: preview.edit,
+    files: buildRenamePreviewSummary(preview.edit, outcome.value.snapshots, intent.oldKey)
+  }
+}
+
+/**
+ * Cancels the pending rename at the preview stage: nothing was committed,
+ * and the user's authored key edit is restored so declining here equals
+ * declining the original prompt (the diagnostics flag the stale uses).
+ */
+function cancelWorkspaceRename (): void {
+  const prompt = renamePreviewPrompt.value
+  renamePreviewPrompt.value = undefined
+  const view = currentEditor?.instance
+  if (prompt === undefined || view === undefined) {
+    return
+  }
+
+  const { intent } = prompt
+  const from = intent.range.from
+  const to = from + ('#' + intent.oldKey).length
+  if (view.state.doc.sliceString(from, to) === '#' + intent.oldKey) {
+    view.dispatch({ changes: { from, to, insert: '#' + intent.newKey } })
+  }
+}
+
+/**
+ * Applies the previewed workspace rename (the dialog's Apply all): the
+ * hash-fenced atomic commit, this document's returned open-buffer
+ * transactions, and the confirmation toast carrying the reachable Undo
+ * (issue #1, review A5 / US-17). Conflicts surface as closable toasts.
+ */
+async function applyWorkspaceRename (): Promise<void> {
+  const prompt = renamePreviewPrompt.value
+  renamePreviewPrompt.value = undefined
+  const view = currentEditor?.instance
+  if (prompt === undefined || view === undefined) {
+    return
+  }
+  const { intent, edit } = prompt
+
   const outcome: CommitRenameOutcome = await ipcRenderer.invoke('application', {
     command: 'commit-reference-rename',
-    payload: { edit: preview.edit }
+    payload: { edit }
   })
 
   if (outcome.status === 'conflict') {
@@ -995,7 +1091,7 @@ async function runWorkspaceRename (intent: ReferenceKeyEditPromptIntent): Promis
   // same edits locally so the buffer matches the rewritten disk content.
   const ownEdits = (outcome.openBufferTransactions.length > 0
     ? outcome.openBufferTransactions
-    : preview.edit.edits
+    : edit.edits
   ).filter(e => e.documentPath === intent.documentPath)
   if (ownEdits.length > 0) {
     view.dispatch({
@@ -1003,12 +1099,61 @@ async function runWorkspaceRename (intent: ReferenceKeyEditPromptIntent): Promis
     })
   }
 
-  showToast(trans(
-    'Renamed %s to %s across %s documents.',
-    intent.oldKey,
-    intent.newKey,
-    Object.keys(preview.edit.expectedSourceHashes).length
-  ))
+  showToast(
+    trans(
+      'Renamed %s to %s across %s documents.',
+      intent.oldKey,
+      intent.newKey,
+      Object.keys(edit.expectedSourceHashes).length
+    ),
+    'info',
+    8000,
+    {
+      label: trans('Undo'),
+      onAction: () => {
+        undoWorkspaceRename(intent.documentPath).catch(err => console.error('Workspace rename undo failed', err))
+      }
+    }
+  )
+}
+
+/**
+ * Invokes the production rename-undo route (issue #1, review A5): the
+ * 'application' channel's 'undo-reference-rename' command reaches the
+ * reference provider's one-shot, hash-fenced undoRename(). An applied undo
+ * replays this document's returned open-buffer transactions; conflicts and
+ * a consumed record surface as closable toasts.
+ *
+ * @param   {string}  documentPath  The invoking document (own-edit replay)
+ */
+async function undoWorkspaceRename (documentPath: string): Promise<void> {
+  const outcome: UndoRenameOutcome = await ipcRenderer.invoke('application', {
+    command: 'undo-reference-rename',
+    payload: {}
+  })
+
+  if (outcome.status === 'no-pending-undo') {
+    showToast(trans('Nothing to undo: no workspace rename is pending.'), 'error')
+    return
+  }
+
+  if (outcome.status === 'conflict') {
+    showToast(trans(
+      'Undo aborted: %s changed after the rename. No document was modified.',
+      outcome.conflict.documentPath
+    ), 'error')
+    return
+  }
+
+  const view = currentEditor?.instance
+  const ownEdits = outcome.openBufferTransactions.filter(e => e.documentPath === documentPath)
+  if (view !== undefined && ownEdits.length > 0) {
+    view.dispatch({
+      changes: ownEdits.map(e => ({ from: e.range.from, to: e.range.to, insert: e.insert }))
+    })
+  }
+
+  showToast(trans('Workspace rename undone.'))
 }
 
 async function updateFileDatabase (): Promise<void> {

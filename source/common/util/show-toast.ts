@@ -36,14 +36,28 @@ function toastContainer (): HTMLElement {
 }
 
 /**
+ * One optional labeled action rendered as a real button on the toast
+ * (issue #1, review A5): e.g. the committed workspace rename's Undo. The
+ * action runs exactly once and dismisses the toast; dismissing the toast
+ * any other way never runs it.
+ */
+export interface ToastAction {
+  /** The button label, e.g. 'Undo' */
+  label: string
+  /** Runs when (and only when) the button is clicked */
+  onAction: () => void
+}
+
+/**
  * Shows one closable toast. The toast dismisses itself after the timeout or
  * immediately on click.
  *
  * @param   {string}                     message  The message to show
  * @param   {'info'|'error'}             kind     The visual severity
  * @param   {number}                     timeout  Auto-dismiss delay in ms
+ * @param   {ToastAction}                action   Optional labeled action button
  */
-export default function showToast (message: string, kind: 'info'|'error' = 'info', timeout = 6000): void {
+export default function showToast (message: string, kind: 'info'|'error' = 'info', timeout = 6000, action?: ToastAction): void {
   const toast = document.createElement('div')
   toast.className = `zettlr-toast ${kind}`
   toast.setAttribute('role', 'status')
@@ -66,9 +80,31 @@ export default function showToast (message: string, kind: 'info'|'error' = 'info
   close.setAttribute('aria-label', 'Dismiss')
   close.style.cssText = 'flex: 0 0 auto; opacity: .7'
 
-  toast.append(text, close)
-
   const dismiss = (): void => { toast.remove() }
+
+  if (action !== undefined) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.setAttribute('data-toast-action', '')
+    button.textContent = action.label
+    button.style.cssText = [
+      'flex: 0 0 auto', 'padding: 3px 10px', 'color: inherit',
+      'background: rgba(255, 255, 255, .08)',
+      'border: 1px solid currentColor', 'border-radius: 6px',
+      'font: inherit', 'cursor: pointer'
+    ].join(';')
+    button.addEventListener('click', event => {
+      // The action is not the dismissal: keep the body's dismiss handler
+      // out of the click, run the action exactly once, then dismiss.
+      event.stopPropagation()
+      dismiss()
+      action.onAction()
+    })
+    toast.append(text, button, close)
+  } else {
+    toast.append(text, close)
+  }
+
   toast.addEventListener('click', dismiss)
   setTimeout(dismiss, timeout)
 

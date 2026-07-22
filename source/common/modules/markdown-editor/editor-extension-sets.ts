@@ -179,8 +179,9 @@ function getCoreExtensions (options: CoreExtensionOptions): Extension[] {
     // Both vim and emacs modes need to be included first, before any other
     // keymap.
     inputModeCompartment.of(inputMode),
-    // Then, include the default keymap
-    defaultKeymap(),
+    // Then, include the default keymap, with the configured Back/Forward
+    // navigation combos (review A8) read at extension-build time.
+    defaultKeymap(options.initialConfig.navigationShortcuts),
     darkMode({ darkMode: useDarkModeEditor(options.initialConfig.darkMode, options.initialConfig.darkModeEditor), ...themes[options.initialConfig.theme] }),
     // CODE FOLDING
     codeFolding(),

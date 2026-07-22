@@ -27,6 +27,7 @@ import { mkdtemp, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
 import { promisify } from 'util'
+import { extractReferences } from 'source/common/pandoc-util/extract-references'
 
 const execFileAsync = promisify(execFile)
 
@@ -53,13 +54,28 @@ interface KeyedProbeResult {
   jumpIntents: JumpIntent[]
 }
 
+interface OverlayProbeRow {
+  key: string|null
+  documentPath: string|null
+  projectStatus: string|null
+  text: string
+}
+
+interface OverlayProbeState {
+  query: string|null
+  helpAffordancePresent: boolean
+  rows: OverlayProbeRow[]
+}
+
 interface OverlayProbeResult {
   componentAvailable: boolean
   componentFailure: string|null
   expectedIntent: JumpIntent|null
   query: string|null
-  rows: Array<{ key: string|null, documentPath: string|null, text: string }>
+  rows: OverlayProbeRow[]
   jumpIntents: JumpIntent[]
+  initialState: OverlayProbeState
+  openHelpCount: number
   keyed: KeyedProbeResult
   screenshots: string[]
 }
@@ -158,6 +174,82 @@ describe('Mod-P reference search overlay', function () {
       result.expectedIntent,
       'the emitted jump intent must target the selected definition'
     )
+  })
+
+  // ——— Current-Project-first ranking with marked rest (review A3, US-16):
+  // the probe feeds the other-Project document FIRST and mounts the overlay
+  // with the Theorems.md ranking context, so only the implemented grouping
+  // can order the initial (empty-query) rows.
+  describe('current-Project ranking and Project markers', function () {
+    it('lists every active-Project definition before every other-Project definition', function () {
+      const fixtureRoot = path.join('test', 'fixtures', 'reference-workspace')
+      const theoremsPath = path.join(fixtureRoot, 'ProjectA', 'Theorems.md')
+      const otherPath = path.join(fixtureRoot, 'ProjectB', 'Other_Paper.md')
+      // Independent oracle: the real extractor over the two fed documents.
+      const theoremsCount = extractReferences(theoremsPath, readFileSync(theoremsPath, 'utf-8')).definitions.length
+      const otherCount = extractReferences(otherPath, readFileSync(otherPath, 'utf-8')).definitions.length
+      assert.ok(theoremsCount >= 10 && otherCount >= 1, 'the fixture documents must stay representative')
+
+      const rows = result.initialState.rows
+      assert.equal(
+        rows.length,
+        theoremsCount + otherCount,
+        'the empty query must list every workspace definition'
+      )
+      for (const row of rows.slice(0, theoremsCount)) {
+        assert.ok(
+          row.documentPath !== null && row.documentPath.endsWith(path.join('ProjectA', 'Theorems.md')),
+          `every current-Project row must precede the marked rest, got early row from ${String(row.documentPath)}`
+        )
+      }
+      for (const row of rows.slice(theoremsCount)) {
+        assert.ok(
+          row.documentPath !== null && row.documentPath.endsWith(path.join('ProjectB', 'Other_Paper.md')),
+          `other-Project rows must follow the current Project, got late row from ${String(row.documentPath)}`
+        )
+      }
+    })
+
+    it('marks other-Project rows with their Project status and leaves current rows unmarked', function () {
+      const rows = result.initialState.rows
+      const marked = rows.filter(row => row.projectStatus !== null)
+      const unmarked = rows.filter(row => row.projectStatus === null)
+      assert.ok(marked.length >= 1 && unmarked.length >= 1, 'both groups must be present in the scene')
+
+      for (const row of marked) {
+        assert.equal(row.projectStatus, 'another-project', 'marked rows carry the computed Project status')
+        assert.ok(
+          row.text.includes('Another Project'),
+          `the marker must be visible in the row, got ${JSON.stringify(row.text)}`
+        )
+        assert.ok(
+          row.documentPath !== null && row.documentPath.endsWith(path.join('ProjectB', 'Other_Paper.md')),
+          'only other-Project rows may be marked'
+        )
+      }
+      for (const row of unmarked) {
+        assert.ok(
+          row.documentPath !== null && row.documentPath.endsWith(path.join('ProjectA', 'Theorems.md')),
+          'current-Project rows stay unmarked'
+        )
+      }
+    })
+  })
+
+  // ——— Quick-help affordance (review A2, US-06): the symbol picker links to
+  // the searchable Pandoc quick help.
+  describe('quick-help affordance', function () {
+    it('exposes the [data-open-help] affordance beside the query input', function () {
+      assert.equal(result.initialState.helpAffordancePresent, true, 'the overlay must expose its quick-help link')
+    })
+
+    it('a real click on the affordance emits exactly one open-help intent', function () {
+      assert.equal(
+        result.openHelpCount,
+        1,
+        'clicking [data-open-help] must emit exactly one open-help event for App.vue to mount PandocQuickHelp'
+      )
+    })
   })
 
   // ——— Reverse lookup (issue #1 Phase 8): the definition count badge

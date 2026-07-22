@@ -24,6 +24,7 @@
         v-on:global-search="emit('globalSearch', $event)"
         v-on:reference-search="emit('referenceSearch', $event)"
         v-on:create-reference-label="emit('createReferenceLabel', $event)"
+        v-on:open-pandoc-quick-help="emit('openPandocQuickHelp')"
       ></EditorBranch>
       <EditorPane
         v-else
@@ -40,6 +41,7 @@
         v-on:global-search="emit('globalSearch', $event)"
         v-on:reference-search="emit('referenceSearch', $event)"
         v-on:create-reference-label="emit('createReferenceLabel', $event)"
+        v-on:open-pandoc-quick-help="emit('openPandocQuickHelp')"
       ></EditorPane>
       <!-- Here comes the resizing (for every but the last child) -->
       <div
@@ -75,6 +77,7 @@ const emit = defineEmits<{
   (e: 'globalSearch', query: string): void
   (e: 'referenceSearch', request: ReferenceSearchRequest): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
+  (e: 'openPandocQuickHelp'): void
 }>()
 
 const sizes = ref<number[]>(props.node.sizes.map(s => s))

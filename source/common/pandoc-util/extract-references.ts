@@ -12,6 +12,7 @@ import type { ASTNode, FencedCode, Heading, PandocDiv } from '../modules/markdow
 import { parsePandocAttributes, type ParsedPandocAttributes } from './parse-pandoc-attributes'
 import { isReferenceableDivClass } from '../util/pandoc-quick-reference'
 import {
+  CROSSREF_FAMILIES,
   REFERENCE_FAMILIES,
   type DocumentReferenceSnapshot,
   type ReferenceDefinition,
@@ -263,6 +264,28 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
     currentSection = headingText(node)
   }
 
+  /**
+   * The caption paragraph of a pandoc-crossref wrapping div: the last child
+   * block that is prose — not a fence line, not a code block, and without an
+   * image descendant. Subfigure groups author it below the images; wrapped
+   * listings author it above the code block.
+   */
+  const wrappingDivCaption = (node: PandocDiv): string|undefined => {
+    const children = childrenOf(node)
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i]
+      if (child.type === 'FencedCode' || firstImageAlt(child) !== undefined) {
+        continue
+      }
+      const text = markdown.slice(child.from, child.to).trim()
+      if (text === '' || /^:{3,}/.test(text)) {
+        continue // Empty inter-block runs and the div's own fence lines
+      }
+      return text
+    }
+    return undefined
+  }
+
   const visitPandocDiv = (node: PandocDiv): void => {
     const openLineEnd = markdown.indexOf('\n', node.from)
     const openLine = markdown.slice(node.from, openLineEnd === -1 || openLineEnd > node.to ? node.to : openLineEnd)
@@ -276,18 +299,33 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
       return
     }
 
-    // Only theorem-like divs define targets; proof-like and other
-    // non-referenceable div classes never do.
+    // Theorem-like divs define targets through their class registry;
+    // proof-like and other non-referenceable div classes never do.
     const classes = located.attributes.classes ?? []
-    if (!classes.some(isReferenceableDivClass)) {
+    if (classes.some(isReferenceableDivClass)) {
+      pushDefinition(
+        located, 'theorem-div',
+        located.attributes.properties?.title,
+        markdown.slice(lineStart(markdown, node.from), node.to)
+      )
       return
     }
 
-    pushDefinition(
-      located, 'theorem-div',
-      located.attributes.properties?.title,
-      markdown.slice(lineStart(markdown, node.from), node.to)
-    )
+    // pandoc-crossref wrapping/subfigure forms (issue #1, review A1): a div
+    // whose OWN id bears a supported crossref family prefix (`::: {#fig:…}`
+    // subfigure groups, `::: {#lst:…}` wrapped listings) defines a target;
+    // its nested image ids are extracted independently by the generic
+    // attributed-block walk. Theorem-prefixed ids without their class stay
+    // out (that class/prefix mismatch is reference-lint's diagnostic), as
+    // does every unsupported family.
+    const family = supportedFamilyOf(located.key)
+    if (family !== undefined && (CROSSREF_FAMILIES as readonly string[]).includes(family)) {
+      pushDefinition(
+        located, 'crossref-attr',
+        located.attributes.properties?.title ?? wrappingDivCaption(node),
+        markdown.slice(lineStart(markdown, node.from), node.to)
+      )
+    }
   }
 
   const visitFencedCode = (node: FencedCode): void => {

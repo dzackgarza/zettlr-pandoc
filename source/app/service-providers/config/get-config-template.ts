@@ -16,6 +16,7 @@ import { app, nativeTheme } from 'electron'
 import * as bcp47 from 'bcp-47'
 import { v4 as uuid4 } from 'uuid'
 import getLanguageFile from '@common/util/get-language-file'
+import { NAVIGATION_SHORTCUT_DEFAULTS } from '@common/util/navigation-shortcuts'
 
 export type MarkdownTheme = 'berlin'|'frankfurt'|'bielefeld'|'karl-marx-stadt'|'bordeaux'
 
@@ -167,6 +168,13 @@ export interface ConfigOptions {
     alwaysIndentLineOnTab: boolean
     fontSize: number
     countChars: boolean
+    // The per-pane history Back/Forward combos (issue #1 workstream 4), in
+    // CodeMirror keybinding syntax. Defaults come from the shared
+    // NAVIGATION_SHORTCUT_DEFAULTS registry.
+    navigationShortcuts: {
+      back: string
+      forward: string
+    }
     inputMode: 'default'|'vim'|'emacs'
     boldFormatting: '**'|'__'
     italicFormatting: '_'|'*'
@@ -389,6 +397,7 @@ export function getConfigTemplate (): ConfigOptions {
       alwaysIndentLineOnTab: false, // Whether `Tab` always indents the current line
       fontSize: 18, // The editor's font size in pixels
       countChars: false, // Set to true to enable counting characters instead of words
+      navigationShortcuts: { ...NAVIGATION_SHORTCUT_DEFAULTS }, // Back/Forward history combos
       inputMode: 'default', // Can be default, vim, emacs
       boldFormatting: '**', // Can be ** or __
       italicFormatting: '_', // Can be * or _

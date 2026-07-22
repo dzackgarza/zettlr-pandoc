@@ -43,7 +43,7 @@ import {
   openSearchPanel, findNext, findPrevious, closeSearchPanel,
   selectSelectionMatches, gotoLine, selectNextOccurrence
 } from '@codemirror/search'
-import { keymap } from '@codemirror/view'
+import { keymap, type KeyBinding } from '@codemirror/view'
 import {
   insertNewlineContinueMarkup, deleteMarkupBackward
 } from '@codemirror/lang-markdown'
@@ -72,13 +72,47 @@ import { addRowAfter, addRowBefore, moveNextRow, movePrevRow, swapNextRow, swapP
 import { removeLineBreaks } from '../commands/transforms/remove-line-breaks'
 import { openReferenceSearch } from '../plugins/reference-search-effect'
 import { navigateHistoryBack, navigateHistoryForward } from '../util/reference-navigation'
+import {
+  NAVIGATION_SHORTCUT_DEFAULTS,
+  type NavigationShortcutConfig
+} from '@common/util/navigation-shortcuts'
+
+/**
+ * The per-pane Back/Forward history bindings (issue #1 Phase 5, review A8):
+ * built from the CONFIGURED combos, defaulting to the shared Alt-Left/
+ * Alt-Right registry. The macOS Ctrl-Arrow platform variants apply only
+ * while the matching default combo is in effect — a user-configured combo
+ * binds identically on every platform.
+ *
+ * @param   {NavigationShortcutConfig}  navigation  The configured combos
+ *
+ * @return  {KeyBinding[]}                          The two history bindings
+ */
+export function navigationKeybindings (
+  navigation: NavigationShortcutConfig = NAVIGATION_SHORTCUT_DEFAULTS
+): KeyBinding[] {
+  return [
+    {
+      key: navigation.back,
+      mac: navigation.back === NAVIGATION_SHORTCUT_DEFAULTS.back ? 'Ctrl-ArrowLeft' : undefined,
+      run: navigateHistoryBack,
+      preventDefault: true
+    },
+    {
+      key: navigation.forward,
+      mac: navigation.forward === NAVIGATION_SHORTCUT_DEFAULTS.forward ? 'Ctrl-ArrowRight' : undefined,
+      run: navigateHistoryForward,
+      preventDefault: true
+    }
+  ]
+}
 
 // Includes:
 // * defaultKeymap
 // * historyKeymap
 // * closeBracketsKeymap
 // * searchKeymap
-export function defaultKeymap (): Extension {
+export function defaultKeymap (navigation?: NavigationShortcutConfig): Extension {
   // TODO: Disable alignment commands until custom keymapping is implemented
   // const alignLeft = setAlignment('left')
   // const alignCenter = setAlignment('center')
@@ -179,8 +213,9 @@ export function defaultKeymap (): Extension {
     // (table-editor/subview.ts), which runs before this keymap inside a
     // table cell. The navigation commands return false in views without
     // editor metadata (window/leaf IDs), so non-main editors fall through.
-    { key: 'Alt-ArrowLeft', mac: 'Ctrl-ArrowLeft', run: navigateHistoryBack, preventDefault: true },
-    { key: 'Alt-ArrowRight', mac: 'Ctrl-ArrowRight', run: navigateHistoryForward, preventDefault: true },
+    // The combos are configurable (review A8): the host passes the
+    // editor.navigationShortcuts config at extension-build time.
+    ...navigationKeybindings(navigation),
 
     // defaultKeymap (cursorSyntaxLeft/Right remapped from Alt-Arrow, see above)
     { key: 'Mod-Alt-ArrowLeft', run: cursorSyntaxLeft, shift: selectSyntaxLeft },

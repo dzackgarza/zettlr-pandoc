@@ -26,13 +26,32 @@ const QUERY = 'kodemb'
 const KEYED_REQUEST_KEY = 'thm:torelli'
 
 const fixtureRoot = path.join(__dirname, 'fixtures', 'reference-workspace')
+// DELIBERATELY fed with the other-Project document FIRST (review A3): a
+// broken overlay that ignores the ranking context and lists the feed order
+// must fail the current-Project-first assertions.
 const documents = [
-  path.join(fixtureRoot, 'ProjectA', 'Theorems.md'),
   path.join(fixtureRoot, 'ProjectB', 'Other_Paper.md'),
+  path.join(fixtureRoot, 'ProjectA', 'Theorems.md'),
 ].map(documentPath => ({
   path: documentPath,
   content: readFileSync(documentPath, 'utf-8'),
 }))
+
+// The US-16 ranking context of the plain scene: Mod-P invoked from
+// Theorems.md with both fixture Project roots visible.
+const searchContext = {
+  activeDocumentPath: path.join(fixtureRoot, 'ProjectA', 'Theorems.md'),
+  projectRoots: [
+    {
+      rootPath: path.join(fixtureRoot, 'ProjectA'),
+      files: [ 'Theorems.md', 'Coble_Lattice_Table.md', 'Halphen_Surfaces.md' ],
+    },
+    {
+      rootPath: path.join(fixtureRoot, 'ProjectB'),
+      files: ['Other_Paper.md'],
+    },
+  ],
+}
 
 // The keyed scene spans the WHOLE workspace: the citing locations live in
 // documents the plain Mod-P scene does not load.
@@ -85,17 +104,35 @@ app.whenReady().then(async () => {
   }
 
   const mountReport = await window.webContents.executeJavaScript(
-    `window.referenceSearchProbeMount(${JSON.stringify(documents)})`
+    `window.referenceSearchProbeMount(${JSON.stringify(documents)}, ${JSON.stringify(searchContext)})`
   )
 
-  let state = { query: null, rows: [] }
+  let initialState = { query: null, helpAffordancePresent: false, rows: [] }
+  let state = { query: null, helpAffordancePresent: false, rows: [] }
   let jumpIntents = []
+  let openHelpCount = 0
   const screenshots = []
   if (mountReport.componentAvailable === true) {
     window.focus()
     window.webContents.focus()
     await nextFrame(window)
+    // The empty query lists EVERY workspace definition: the review A3
+    // current-Project ranking and the Project markers are asserted on this
+    // initial state.
+    initialState = await window.webContents.executeJavaScript('window.referenceSearchProbeState()')
     screenshots.push(await screenshot(window, 'reference-search-overlay-initial.png'))
+
+    // Scroll the marked other-Project rows into view so the Project marker
+    // presentation is visually inspectable (review A3).
+    await window.webContents.executeJavaScript(
+      "(() => { const rows = document.querySelectorAll('[data-reference-key]'); rows[rows.length - 1]?.scrollIntoView(); })()"
+    )
+    await nextFrame(window)
+    screenshots.push(await screenshot(window, 'reference-search-overlay-project-markers.png'))
+    await window.webContents.executeJavaScript(
+      "(() => { const rows = document.querySelectorAll('[data-reference-key]'); rows[0]?.scrollIntoView(); })()"
+    )
+    await nextFrame(window)
 
     for (const character of QUERY) {
       sendKey(window, character)
@@ -108,6 +145,13 @@ app.whenReady().then(async () => {
     await nextFrame(window)
     jumpIntents = await window.webContents.executeJavaScript('window.referenceSearchProbeJumpIntents()')
     screenshots.push(await screenshot(window, 'reference-search-overlay-after-enter.png'))
+
+    // The overlay's quick-help affordance (review A2, US-06): a real click
+    // on [data-open-help] must emit exactly one 'open-help'.
+    openHelpCount = await window.webContents.executeJavaScript(
+      "(() => { const link = document.querySelector('.reference-search-overlay [data-open-help]'); if (link !== null) { link.click() } return window.referenceSearchProbeOpenHelpCount() })()"
+    )
+    screenshots.push(await screenshot(window, 'reference-search-overlay-help-affordance.png'))
   }
 
   // ——— Reverse-lookup scene (issue #1 Phase 8): reload for a fresh JS
@@ -145,6 +189,9 @@ app.whenReady().then(async () => {
     query: state.query,
     rows: state.rows,
     jumpIntents,
+    initialState,
+    openHelpCount,
+    searchContext,
     keyed: {
       componentAvailable: keyedMountReport.componentAvailable === true,
       componentFailure: keyedMountReport.componentFailure ?? null,

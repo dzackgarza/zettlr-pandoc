@@ -58,6 +58,7 @@ import {
   type CompletionInsertionAffordance
 } from '@common/pandoc-util/project-reference-status'
 import showToast from '@common/util/show-toast'
+import { requestPandocQuickHelp } from '../plugins/pandoc-quick-help-effect'
 import { type AutocompletePlugin } from '.'
 import { citations, citekeyUpdateField } from './citations'
 
@@ -94,6 +95,52 @@ export const referencesUpdateField = StateField.define<ReferenceCompletionEntry[
  */
 interface ReferenceLabelCompletion extends Completion {
   referenceAffordance: CompletionInsertionAffordance
+}
+
+/**
+ * The editor view of the current completion session (review A2). The
+ * production autocomplete source constructs its CompletionContext WITH the
+ * view; synchronous CompletionResult.update calls construct it without one,
+ * so entries() records the last seen view here for the info panel's
+ * quick-help link — the panel DOM outlives the context that created it.
+ */
+let lastCompletionView: EditorView|undefined
+
+/**
+ * Builds a label option's info panel: the US-06 "help from completion"
+ * entry point. Beside the option's display detail it renders a quick-help
+ * link that dispatches openPandocQuickHelpEffect on the inviting view (the
+ * MarkdownEditor re-emits the effect and App.vue mounts PandocQuickHelp).
+ *
+ * @param   {string}  detail  The option's `Type — title` display text
+ *
+ * @return  {HTMLElement}     The info panel element
+ */
+function labelInfoPanel (detail: string): HTMLElement {
+  const panel = document.createElement('div')
+  panel.className = 'reference-completion-info'
+
+  const description = document.createElement('div')
+  description.textContent = detail
+  panel.appendChild(description)
+
+  const link = document.createElement('button')
+  link.type = 'button'
+  link.setAttribute('data-open-help', '')
+  link.textContent = 'Pandoc quick reference…'
+  link.style.cssText = 'margin-top: 6px; padding: 0; color: inherit; background: none; border: none; font: inherit; text-decoration: underline; cursor: pointer'
+  link.addEventListener('click', () => {
+    const view = lastCompletionView
+    if (view === undefined) {
+      // The panel cannot exist without a completion session having seen a
+      // view; reaching this state is a protocol violation, not a fallback.
+      throw new Error('Pandoc quick-help link clicked outside a completion session')
+    }
+    requestPandocQuickHelp(view)
+  })
+  panel.appendChild(link)
+
+  return panel
 }
 
 /**
@@ -227,15 +274,23 @@ export const atSymbols: AutocompletePlugin = {
   },
   entries (ctx, query) {
     query = query.toLowerCase()
+    if (ctx.view !== undefined) {
+      lastCompletionView = ctx.view
+    }
     const labelEntries: ReferenceLabelCompletion[] = ctx.state.field(referencesUpdateField)
       .map(entry => {
         // The Phase-7 gating: the typed affordance decides HOW the entry
         // applies; it never gates visibility or label/detail presentation.
         const referenceAffordance = completionAffordanceFor(entry.projectStatus, entry.appendPlan)
+        const detail = labelDetail(entry)
         return {
           label: entry.key,
-          detail: labelDetail(entry),
+          detail,
           apply: applyFor(referenceAffordance),
+          // US-06 (review A2): every label option links to the searchable
+          // quick help from its info panel. Citation options never carry
+          // this — their objects pass through byte-identically.
+          info: () => labelInfoPanel(detail),
           referenceAffordance
         }
       })

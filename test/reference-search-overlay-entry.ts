@@ -30,11 +30,17 @@
 
 import { createApp, nextTick } from 'vue'
 import { extractReferences } from 'source/common/pandoc-util/extract-references'
-import type { ReferenceDefinition, ReferenceOccurrence, SourceRange } from '@dts/common/references'
+import type { ProjectRootSpec, ReferenceDefinition, ReferenceOccurrence, SourceRange } from '@dts/common/references'
 
 interface ProbeDocument {
   path: string
   content: string
+}
+
+/** The US-16 ranking context of the plain scene (review A3). */
+interface ProbeSearchContext {
+  activeDocumentPath: string
+  projectRoots: ProjectRootSpec[]
 }
 
 interface JumpIntent {
@@ -52,6 +58,8 @@ interface MountReport {
 interface ProbeRow {
   key: string|null
   documentPath: string|null
+  /** The row's Project marker status attribute (review A3), if marked */
+  projectStatus: string|null
   text: string
 }
 
@@ -76,9 +84,10 @@ interface KeyedProbeRow {
 
 declare global {
   interface Window {
-    referenceSearchProbeMount: (documents: ProbeDocument[]) => Promise<MountReport>
-    referenceSearchProbeState: () => { query: string|null, rows: ProbeRow[] }
+    referenceSearchProbeMount: (documents: ProbeDocument[], context?: ProbeSearchContext) => Promise<MountReport>
+    referenceSearchProbeState: () => { query: string|null, helpAffordancePresent: boolean, rows: ProbeRow[] }
     referenceSearchProbeJumpIntents: () => JumpIntent[]
+    referenceSearchProbeOpenHelpCount: () => number
     referenceSearchProbeMountKeyed: (documents: ProbeDocument[], key: string) => Promise<KeyedMountReport>
     referenceSearchProbeKeyedState: () => { query: string|null, mode: string|null, rows: KeyedProbeRow[] }
   }
@@ -89,8 +98,10 @@ declare global {
 const overlayContext = require.context('../source/win-main/', false, /ReferenceSearchOverlay\.vue$/)
 
 const recordedJumpIntents: JumpIntent[] = []
+/** Every 'open-help' emission of the overlay (review A2, US-06). */
+let recordedOpenHelpCount = 0
 
-window.referenceSearchProbeMount = async (documents: ProbeDocument[]): Promise<MountReport> => {
+window.referenceSearchProbeMount = async (documents: ProbeDocument[], context?: ProbeSearchContext): Promise<MountReport> => {
   const definitions: ReferenceDefinition[] = documents
     .flatMap(document => extractReferences(document.path, document.content).definitions)
 
@@ -120,7 +131,10 @@ window.referenceSearchProbeMount = async (documents: ProbeDocument[]): Promise<M
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   createApp(overlayModule.default as any, {
     definitions,
-    onJump: (intent: JumpIntent) => { recordedJumpIntents.push(intent) }
+    projectRoots: context?.projectRoots ?? [],
+    activeDocumentPath: context?.activeDocumentPath,
+    onJump: (intent: JumpIntent) => { recordedJumpIntents.push(intent) },
+    onOpenHelp: () => { recordedOpenHelpCount++ }
   }).mount('#app')
 
   await nextTick()
@@ -135,15 +149,19 @@ window.referenceSearchProbeState = () => {
   const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-reference-key]'))
   return {
     query: input?.value ?? null,
+    helpAffordancePresent: document.querySelector('.reference-search-overlay [data-open-help]') !== null,
     rows: rows.map(row => ({
       key: row.getAttribute('data-reference-key'),
       documentPath: row.getAttribute('data-reference-path'),
+      projectStatus: row.getAttribute('data-project-status'),
       text: row.textContent ?? ''
     }))
   }
 }
 
 window.referenceSearchProbeJumpIntents = () => recordedJumpIntents
+
+window.referenceSearchProbeOpenHelpCount = () => recordedOpenHelpCount
 
 /**
  * The Phase 8 reverse-lookup scene (issue #1 Phase 4 badge contract): a

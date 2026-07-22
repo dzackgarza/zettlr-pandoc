@@ -101,6 +101,7 @@ import {
 import { markdownToAST } from '../markdown-utils'
 import { countField, updateWordCountEffect } from './plugins/statistics-fields'
 import { openReferenceSearchEffect } from './plugins/reference-search-effect'
+import { openPandocQuickHelpEffect } from './plugins/pandoc-quick-help-effect'
 import { createReferenceLabel, openCreateReferenceLabelEffect } from './plugins/create-reference-label'
 import { useDarkModeEditor, darkModeEffect } from './theme/dark-mode'
 import { editorMetadataFacet } from './plugins/editor-metadata'
@@ -355,6 +356,14 @@ export default class MarkdownEditor extends EventEmitter {
             // to App.vue's CreateReferenceLabelDialog mount).
             if (effect.is(openCreateReferenceLabelEffect)) {
               this.emit('create-reference-label', effect.value)
+            }
+
+            // Pandoc quick-help request (issue #1, review A2 / US-06): an
+            // in-editor help link — the completion info panel — asked for
+            // the searchable quick help; MainEditor.vue relays it up to
+            // App.vue's PandocQuickHelp mount.
+            if (effect.is(openPandocQuickHelpEffect)) {
+              this.emit('pandoc-quick-help')
             }
 
             // Listen for config updates, and parse them into the internal cache. We

@@ -53,6 +53,7 @@
             v-on:global-search="emit('globalSearch', $event)"
             v-on:reference-search="emit('referenceSearch', $event)"
             v-on:create-reference-label="emit('createReferenceLabel', $event)"
+            v-on:open-pandoc-quick-help="emit('openPandocQuickHelp')"
           ></MainEditor>
         </Teleport>
       </template>
@@ -164,6 +165,7 @@ const emit = defineEmits<{
   (e: 'globalSearch', query: string): void
   (e: 'referenceSearch', request: ReferenceSearchRequest): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
+  (e: 'openPandocQuickHelp'): void
 }>()
 
 // UNREFFED SCROLL MAP
