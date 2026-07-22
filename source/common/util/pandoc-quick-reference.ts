@@ -58,3 +58,34 @@ export const PANDOC_CROSSREF_PREFIXES = PANDOC_CROSS_REFERENCE_EXAMPLES.map(exam
 export function isSupportedPandocCrossref (id: string): boolean {
   return PANDOC_CROSSREF_PREFIXES.some(prefix => id.startsWith(`${prefix}:`))
 }
+
+/**
+ * The fixed registry of referenceable theorem-like fenced-div label prefixes,
+ * mapping each label prefix (as authored in `{#thm:key}`) to the fenced-div
+ * class it labels (as authored in `::: {.theorem #thm:key}` and matched by the
+ * export theorem filter). Proof-like divs (`proof`, `sketch`, `solution`) are
+ * deliberately absent: they stay unnumbered and unreferenceable.
+ */
+export const THEOREM_DIV_PREFIXES = {
+  thm: 'theorem',
+  lem: 'lemma',
+  prop: 'proposition',
+  cor: 'corollary',
+  def: 'definition',
+  rmk: 'remark',
+  ex: 'example',
+  conj: 'conjecture',
+  clm: 'claim',
+  obs: 'observation',
+  qst: 'question',
+  prob: 'problem',
+  ass: 'assumption',
+  warn: 'warning',
+  exr: 'exercise',
+} as const
+
+export const REFERENCEABLE_DIV_CLASSES = Object.values(THEOREM_DIV_PREFIXES) as readonly string[]
+
+export function isReferenceableDivClass (className: string): boolean {
+  return REFERENCEABLE_DIV_CLASSES.includes(className.toLowerCase())
+}
