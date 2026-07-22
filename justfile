@@ -28,7 +28,7 @@ test-file file:
 # Run the focused workspace-reference test suite.
 test-references:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts"
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/reference-fzf-search.spec.ts"
 
 # Cross-repository proof: ordered Project inputs through the companion
 # pandoc-config compile-pandoc-project recipe (issue #1). Hard-bails when the

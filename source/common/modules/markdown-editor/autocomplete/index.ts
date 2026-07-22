@@ -131,6 +131,7 @@ export const autocomplete = [
 // Lastly, also re-export the effects which the main class (MarkdownEditor)
 // requires in order to provide data for these fields.
 export { citekeyUpdate } from './citations'
+export { referencesUpdate } from './at-symbols'
 export { filesUpdate } from './files'
 export { tagsUpdate } from './tags'
 export { snippetsUpdate } from './snippets'

@@ -97,6 +97,41 @@ export interface ReferenceOccurrence {
 }
 
 /**
+ * Project-membership status of a reference target relative to the active
+ * Project: the target lives in the same file, in a file included in the
+ * active Project, in an in-root file omitted from the active Project, in
+ * another Project root, or in a standalone document outside any Project.
+ * Status affects export warnings and insertion affordances, never whether
+ * the editor can find or navigate to the target.
+ */
+export type ProjectReferenceStatus =
+  | 'same-file'
+  | 'in-active-project'
+  | 'omitted-from-active-project'
+  | 'another-project'
+  | 'standalone'
+
+/**
+ * One typed label entry of the renderer's 'references' completion database,
+ * pushed into the editor through setCompletionDatabase('references', …) and
+ * consumed by the combined `@` completion surface.
+ *
+ * Phase 3 contract (issue #1): `projectStatus` is optional and defaults to
+ * undefined; completion renders label entries without any status gating.
+ * Computing real Project statuses is Phase 7 work.
+ */
+export interface ReferenceCompletionEntry {
+  /** The full authored key, e.g. 'thm:main' (colons inside keys preserved) */
+  key: string
+  family: ReferenceFamily
+  /** The authored title/caption, or undefined when nothing was authored */
+  title: string | undefined
+  documentPath: string
+  /** Optional Project-membership status; undefined until Phase 7 computes it */
+  projectStatus?: ProjectReferenceStatus
+}
+
+/**
  * The workspace resolution outcome for one key. Duplicates always retain
  * every definition and never select one silently.
  */

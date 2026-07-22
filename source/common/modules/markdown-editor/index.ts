@@ -47,8 +47,10 @@ import {
   citekeyUpdate,
   filesUpdate,
   tagsUpdate,
-  snippetsUpdate
+  snippetsUpdate,
+  referencesUpdate
 } from './autocomplete'
+import { type ReferenceCompletionEntry } from '@dts/common/references'
 
 // Main configuration
 import {
@@ -217,6 +219,7 @@ export default class MarkdownEditor extends EventEmitter {
     citations: Array<{ citekey: string, displayText: string }>
     snippets: Array<{ name: string, content: string }>
     files: Array<{ filename: string, displayName: string, id: string }>
+    references: ReferenceCompletionEntry[]
   }
 
   /**
@@ -260,7 +263,7 @@ export default class MarkdownEditor extends EventEmitter {
     // Since the editor state needs to be rebuilt from scratch sometimes, we
     // cache the autocomplete databases so that we don't have to re-fetch them
     // everytime.
-    this.databaseCache = { tags: [], citations: [], snippets: [], files: [] }
+    this.databaseCache = { tags: [], citations: [], snippets: [], files: [], references: [] }
 
     // Same goes for the config
     this.config = getDefaultConfig()
@@ -404,6 +407,10 @@ export default class MarkdownEditor extends EventEmitter {
     this._instance.dispatch({ effects: citekeyUpdate.of(this.databaseCache.citations) })
     this._instance.dispatch({ effects: snippetsUpdate.of(this.databaseCache.snippets) })
     this._instance.dispatch({ effects: filesUpdate.of(this.databaseCache.files) })
+    // NOTE: referencesUpdate is a no-op until the at-symbols provider is
+    // registered in the dispatcher (issue #1 Phase 3 green step): no state
+    // field consuming the effect is part of the production extension set yet.
+    this._instance.dispatch({ effects: referencesUpdate.of(this.databaseCache.references) })
 
     // Determine if this is a code doc and add the corresponding class to the
     // outer content DOM so that we can style it.
@@ -683,6 +690,7 @@ export default class MarkdownEditor extends EventEmitter {
   setCompletionDatabase (type: 'citations', database: Array<{ citekey: string, displayText: string }>): void
   setCompletionDatabase (type: 'snippets', database: Array<{ name: string, content: string }>): void
   setCompletionDatabase (type: 'files', database: Array<{ filename: string, displayName: string, id: string }>): void
+  setCompletionDatabase (type: 'references', database: ReferenceCompletionEntry[]): void
   setCompletionDatabase (type: string, database: any): void {
     switch (type) {
       case 'tags':
@@ -700,6 +708,13 @@ export default class MarkdownEditor extends EventEmitter {
       case 'files':
         this.databaseCache.files = database
         this._instance.dispatch({ effects: filesUpdate.of(database as Array<{ filename: string, displayName: string, id: string }>) })
+        break
+      case 'references':
+        // No-op wiring until the combined at-symbols provider joins the
+        // dispatcher (issue #1 Phase 3 green step): the dispatched effect has
+        // no consuming state field in the production extension set yet.
+        this.databaseCache.references = database
+        this._instance.dispatch({ effects: referencesUpdate.of(database as ReferenceCompletionEntry[]) })
         break
     }
   }
