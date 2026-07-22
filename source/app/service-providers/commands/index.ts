@@ -52,6 +52,7 @@ import { clipboard, ipcMain, nativeImage } from 'electron'
 import enumLangFiles from '@common/util/enum-lang-files'
 import enumDictFiles from '@common/util/enum-dict-files'
 import RenameTag from './rename-tag'
+import RenameReference from './rename-reference'
 import WorkspaceSort from './ws-sort'
 
 export const commands = [
@@ -80,6 +81,7 @@ export const commands = [
   OpenAttachment,
   OpenAuxWindow,
   Print,
+  RenameReference,
   RenameTag,
   RequestMove,
   RootClose,

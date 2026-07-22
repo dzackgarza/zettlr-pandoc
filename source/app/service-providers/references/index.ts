@@ -25,6 +25,11 @@
  *                                                payload.generation)
  *                      'drop-live-buffer'   -> index.dropLiveBuffer(
  *                                                payload.documentPath)
+ *                      'preview-rename'     -> this.previewRename(
+ *                                                payload.oldKey,
+ *                                                payload.newKey)
+ *                      'commit-rename'      -> this.commitRename(payload.edit)
+ *                      'undo-rename'        -> this.undoRename()
  *
  *                  - boot() subscribes to the injected FSAL's 'fsal-event':
  *                    'add'/'change' events carrying a markdown file
@@ -52,7 +57,13 @@ import ProviderContract from '../provider-contract'
 import type LogProvider from '@providers/log'
 import type FSAL from '../fsal'
 import type { FSALEventPayload } from '../fsal'
-import type { DocumentReferenceSnapshot } from '@dts/common/references'
+import type { DocumentReferenceSnapshot, WorkspaceReferenceEdit } from '@dts/common/references'
+import {
+  previewReferenceRename,
+  type CommitRenameOutcome,
+  type ReferenceRenamePreview,
+  type UndoRenameOutcome
+} from '@common/pandoc-util/compute-reference-edits'
 import { ReferenceIndex, type WorkspaceReferenceState } from './reference-index'
 
 /**
@@ -99,6 +110,14 @@ export default class ReferenceProvider extends ProviderContract {
         const { documentPath } = message.payload as { documentPath: string }
         this._index.dropLiveBuffer(documentPath)
         broadcastIpcMessage('references')
+      } else if (command === 'preview-rename') {
+        const { oldKey, newKey } = message.payload as { oldKey: string, newKey: string }
+        return this.previewRename(oldKey, newKey)
+      } else if (command === 'commit-rename') {
+        const { edit } = message.payload as { edit: WorkspaceReferenceEdit }
+        return this.commitRename(edit)
+      } else if (command === 'undo-rename') {
+        return this.undoRename()
       }
     })
   }
@@ -119,6 +138,77 @@ export default class ReferenceProvider extends ProviderContract {
    */
   public getSnapshot (): WorkspaceReferenceState {
     return this._index.getSnapshot()
+  }
+
+  /**
+   * Previews the workspace rename of oldKey to newKey over the CURRENT
+   * merged workspace state (live overlays already substituted), delegating
+   * to the pure previewReferenceRename(). The preview never partitions
+   * open-buffer vs closed-file documents and never touches disk.
+   *
+   * @param   {string}                  oldKey  The full key being renamed
+   * @param   {string}                  newKey  The full replacement key
+   *
+   * @return  {ReferenceRenamePreview}          The previewed edit or a typed rejection
+   */
+  public previewRename (oldKey: string, newKey: string): ReferenceRenamePreview {
+    return previewReferenceRename(this._index.getSnapshot().snapshots, oldKey, newKey)
+  }
+
+  /**
+   * Commits a previewed workspace rename atomically.
+   *
+   * CONTRACT (locked red by test/reference-rename-atomicity.spec.ts):
+   *
+   * - Re-verifies EVERY document named in edit.expectedSourceHashes against
+   *   current reality BEFORE applying anything: documents with a live
+   *   overlay are checked against the overlay's current sourceHash; all
+   *   other documents are RE-READ FROM DISK and re-hashed (a stale index
+   *   snapshot is not trusted). ANY mismatch aborts the ENTIRE operation
+   *   with a structured conflict naming the first mismatching document —
+   *   nothing is applied anywhere, no file and no buffer.
+   * - On success, partitions the edits by the live-overlay map: closed
+   *   files are rewritten atomically (write to a temp file in the same
+   *   directory, then rename over the original); open-buffer edits are
+   *   RETURNED as openBufferTransactions for the RENDERER to apply as
+   *   CodeMirror transactions, leaving those buffers dirty/unsaved (the
+   *   main process cannot reach live CodeMirror buffers).
+   * - Records a one-shot inverse WorkspaceReferenceEdit as the pending
+   *   workspace undo consumed by undoRename().
+   *
+   * PHASE 6 INERT SKELETON: verifies nothing, writes nothing, records no
+   * undo, and reports the empty applied set. Every contract clause above is
+   * locked red by the atomicity spec.
+   *
+   * @param   {WorkspaceReferenceEdit}        _edit  The previewed edit to apply
+   *
+   * @return  {Promise<CommitRenameOutcome>}         The typed commit outcome
+   */
+  public async commitRename (_edit: WorkspaceReferenceEdit): Promise<CommitRenameOutcome> {
+    return { status: 'applied', closedFilesWritten: [], openBufferTransactions: [] }
+  }
+
+  /**
+   * Applies the pending one-shot workspace undo recorded by the last
+   * applied commitRename().
+   *
+   * CONTRACT (locked red by test/reference-rename-atomicity.spec.ts): the
+   * undo is hash-fenced exactly like the commit — closed files are re-read
+   * from disk and re-hashed against the post-commit content, open buffers
+   * are checked through the live overlay — and ANY mismatch aborts the
+   * whole undo with a structured conflict, leaving the pending undo record
+   * intact. An applied undo restores every touched document (closed files
+   * via atomic temp+rename writes, open buffers via returned
+   * openBufferTransactions the renderer applies) and CONSUMES the record:
+   * a subsequent undoRename() reports 'no-pending-undo'.
+   *
+   * PHASE 6 INERT SKELETON: no commit ever records an undo, so this
+   * truthfully reports that nothing is pending.
+   *
+   * @return  {Promise<UndoRenameOutcome>}  The typed undo outcome
+   */
+  public async undoRename (): Promise<UndoRenameOutcome> {
+    return { status: 'no-pending-undo' }
   }
 
   /**
