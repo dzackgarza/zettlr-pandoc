@@ -17,9 +17,22 @@
  */
 
 import { spawn } from 'child_process'
+import { statSync } from 'fs'
 import path from 'path'
 import os from 'os'
-import isFile from '../../common/util/is-file'
+
+/**
+ * True iff `target` resolves to a regular file, following symlinks — the
+ * shared isFile helper uses lstat, which reports false for a symlinked
+ * ~/.pandoc/justfile even though the recipe behind it is perfectly usable.
+ */
+function resolvesToFile (target: string): boolean {
+  try {
+    return statSync(target).isFile()
+  } catch (err) {
+    return false
+  }
+}
 
 export interface CommandRequirement { command: string, purpose: string }
 export interface PathRequirement { target: string, purpose: string }
@@ -34,7 +47,8 @@ export const REQUIRED_COMMANDS: CommandRequirement[] = [
   { command: 'just', purpose: 'PDF export — runs the ~/.pandoc compile-pandoc recipe' },
   { command: 'latexmk', purpose: 'PDF build driver invoked by the compile-pandoc recipe' },
   { command: 'pdflatex', purpose: 'PDF typesetting engine used by the recipe' },
-  { command: 'biber', purpose: 'bibliography resolution for PDF export' }
+  { command: 'biber', purpose: 'bibliography resolution for PDF export' },
+  { command: 'pandoc-crossref', purpose: 'cross-file reference resolution in the Project export filter chain' }
 ]
 
 /**
@@ -56,7 +70,7 @@ export function requiredPaths (): PathRequirement[] {
  */
 export async function commandResolves (command: string): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
-    const proc = spawn(command, [ '--version' ], { shell: false })
+    const proc = spawn(command, ['--version'], { shell: false })
     proc.on('error', () => resolve(false))
     proc.on('close', () => resolve(true))
   })
@@ -77,7 +91,7 @@ export async function findMissingRequirements (
     }
   }
   for (const { target, purpose } of paths) {
-    if (!isFile(target)) {
+    if (!resolvesToFile(target)) {
       missing.push(`${target} — missing (${purpose})`)
     }
   }
@@ -85,20 +99,161 @@ export async function findMissingRequirements (
 }
 
 /**
+ * The typed outcome of the pandoc-crossref <-> pandoc compatibility check
+ * (issue #1 Phase 7).
+ *
+ * CONTRACT (locked red by test/preflight-crossref.spec.ts):
+ *
+ * - `crossrefBuiltWithPandoc` is the Pandoc version pandoc-crossref names in
+ *   its own `--version` output ("… built with Pandoc vX.Y.Z …" -> 'X.Y.Z').
+ * - `pandocVersion` is the version of the installed pandoc, parsed from the
+ *   FIRST line of `pandoc --version` ('pandoc X.Y.Z' -> 'X.Y.Z').
+ * - status 'compatible' iff both parse and are exactly equal; 'incompatible'
+ *   iff both parse and differ; 'unparseable' when either output does not
+ *   yield a version (that side's field stays undefined).
+ */
+export interface CrossrefCompatibility {
+  status: 'compatible' | 'incompatible' | 'unparseable'
+  crossrefBuiltWithPandoc?: string
+  pandocVersion?: string
+}
+
+/**
+ * Runs a command and captures its stdout — the injectable seam of the
+ * compatibility check, following this module's existing injection style
+ * (preflight() injects showError/exit the same way).
+ */
+export type VersionOutputRunner = (command: string, args: string[]) => Promise<{ code: number, stdout: string }>
+
+/**
+ * The pure comparison at the heart of the compatibility check: given the two
+ * captured `--version` outputs, decides compatibility per the
+ * CrossrefCompatibility contract above.
+ *
+ * @param   {string}  _crossrefVersionOutput  Captured `pandoc-crossref --version` stdout
+ * @param   {string}  _pandocVersionOutput    Captured `pandoc --version` stdout
+ *
+ * @return  {CrossrefCompatibility}           The typed compatibility outcome
+ */
+export function assessCrossrefCompatibility (
+  crossrefVersionOutput: string,
+  pandocVersionOutput: string
+): CrossrefCompatibility {
+  const crossrefMatch = /built with Pandoc v(\d[\d.]*)/.exec(crossrefVersionOutput)
+  const pandocMatch = /^pandoc(?:\.exe)?\s+(\d[\d.]*)/.exec(pandocVersionOutput.split('\n')[0])
+
+  const crossrefBuiltWithPandoc = crossrefMatch?.[1]
+  const pandocVersion = pandocMatch?.[1]
+
+  if (crossrefBuiltWithPandoc === undefined || pandocVersion === undefined) {
+    // A side that does not name its version cannot be assumed compatible.
+    const unparseable: CrossrefCompatibility = { status: 'unparseable' }
+    if (crossrefBuiltWithPandoc !== undefined) {
+      unparseable.crossrefBuiltWithPandoc = crossrefBuiltWithPandoc
+    }
+    if (pandocVersion !== undefined) {
+      unparseable.pandocVersion = pandocVersion
+    }
+    return unparseable
+  }
+
+  return {
+    status: crossrefBuiltWithPandoc === pandocVersion ? 'compatible' : 'incompatible',
+    crossrefBuiltWithPandoc,
+    pandocVersion
+  }
+}
+
+/**
+ * The default VersionOutputRunner: spawns the real command (shell:false) and
+ * captures its stdout. A command that cannot be spawned yields an empty
+ * output, which assessCrossrefCompatibility reports as 'unparseable' — the
+ * plain missing-command case is separately owned by REQUIRED_COMMANDS.
+ */
+const runVersionCommand: VersionOutputRunner = async (command, args) => {
+  return await new Promise((resolve) => {
+    const proc = spawn(command, args, { shell: false })
+    let stdout = ''
+    proc.stdout.on('data', (data) => { stdout += String(data) })
+    proc.on('error', () => resolve({ code: -1, stdout: '' }))
+    proc.on('close', (code) => resolve({ code: code ?? -1, stdout }))
+  })
+}
+
+/**
+ * Executes `pandoc-crossref --version` and `pandoc --version` through the
+ * given runner and assesses their compatibility. The default runner spawns
+ * the real tools; tests inject a runner serving captured outputs.
+ *
+ * @param   {VersionOutputRunner}  run  The command runner (defaults to real execution)
+ *
+ * @return  {Promise<CrossrefCompatibility>}  The typed compatibility outcome
+ */
+export async function checkCrossrefCompatibility (
+  run: VersionOutputRunner = runVersionCommand
+): Promise<CrossrefCompatibility> {
+  const crossref = await run('pandoc-crossref', ['--version'])
+  const pandoc = await run('pandoc', ['--version'])
+  return assessCrossrefCompatibility(crossref.stdout, pandoc.stdout)
+}
+
+/**
+ * The preflight-facing compatibility gate: resolves null when
+ * pandoc-crossref executes and names the installed pandoc version, and
+ * otherwise a human-readable failure message that names BOTH versions (the
+ * one pandoc-crossref was built with and the installed pandoc). preflight()
+ * treats a non-null result exactly like a missing requirement.
+ *
+ * @param   {VersionOutputRunner}  run  The command runner (defaults to real execution)
+ *
+ * @return  {Promise<string|null>}      The failure message, or null
+ */
+export async function crossrefCompatibilityFailure (
+  run?: VersionOutputRunner
+): Promise<string|null> {
+  const result = await checkCrossrefCompatibility(run)
+
+  if (result.status === 'compatible') {
+    return null
+  }
+
+  if (result.status === 'incompatible') {
+    return `pandoc-crossref — built with Pandoc v${result.crossrefBuiltWithPandoc ?? '?'}, ` +
+      `but the installed pandoc is v${result.pandocVersion ?? '?'}; pandoc-crossref refuses ` +
+      'mismatched pandoc builds, so Project exports would fail at runtime'
+  }
+
+  return 'pandoc-crossref — could not verify its pandoc build compatibility ' +
+    `(pandoc-crossref names ${result.crossrefBuiltWithPandoc !== undefined ? `Pandoc v${result.crossrefBuiltWithPandoc}` : 'no Pandoc build version'}; ` +
+    `pandoc reports ${result.pandocVersion !== undefined ? `v${result.pandocVersion}` : 'no version'})`
+}
+
+/**
  * Runs the preflight. If anything is missing, reports it through `showError`,
  * calls `exit(1)`, and resolves false. Otherwise resolves true. The failure
  * side effects are injected so the whole path is testable without Electron.
+ * The pandoc-crossref <-> pandoc compatibility gate (issue #1 Phase 7) is
+ * part of the preflight: a non-null crossrefCompatibilityFailure() is
+ * reported exactly like a missing requirement.
  *
- * @param   showError  Presents a fatal message to the user (e.g. dialog box).
- * @param   exit       Terminates the process with the given code.
+ * @param   showError       Presents a fatal message to the user (e.g. dialog box).
+ * @param   exit            Terminates the process with the given code.
+ * @param   commands        The required external commands.
+ * @param   paths           The required on-disk files.
+ * @param   crossrefFailure The compatibility gate (injected for testability).
  */
 export async function preflight (
   showError: (title: string, message: string) => void,
   exit: (code: number) => void,
   commands: CommandRequirement[] = REQUIRED_COMMANDS,
-  paths: PathRequirement[] = requiredPaths()
+  paths: PathRequirement[] = requiredPaths(),
+  crossrefFailure: () => Promise<string|null> = crossrefCompatibilityFailure
 ): Promise<boolean> {
   const missing = await findMissingRequirements(commands, paths)
+  const incompatibility = await crossrefFailure()
+  if (incompatibility !== null) {
+    missing.push(incompatibility)
+  }
   if (missing.length === 0) {
     return true
   }

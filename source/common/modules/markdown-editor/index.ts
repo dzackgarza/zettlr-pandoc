@@ -47,8 +47,14 @@ import {
   citekeyUpdate,
   filesUpdate,
   tagsUpdate,
-  snippetsUpdate
+  snippetsUpdate,
+  referencesUpdate
 } from './autocomplete'
+import { type DocumentLocation, type ReferenceCompletionEntry, type SourceRange } from '@dts/common/references'
+import {
+  workspaceReferencesUpdate,
+  type EditorWorkspaceReferences
+} from './plugins/workspace-references-field'
 
 // Main configuration
 import {
@@ -94,6 +100,9 @@ import {
 } from './plugins/remote-doc'
 import { markdownToAST } from '../markdown-utils'
 import { countField, updateWordCountEffect } from './plugins/statistics-fields'
+import { openReferenceSearchEffect } from './plugins/reference-search-effect'
+import { openPandocQuickHelpEffect } from './plugins/pandoc-quick-help-effect'
+import { createReferenceLabel, openCreateReferenceLabelEffect } from './plugins/create-reference-label'
 import { useDarkModeEditor, darkModeEffect } from './theme/dark-mode'
 import { editorMetadataFacet } from './plugins/editor-metadata'
 import { projectInfoUpdateEffect, type ProjectInfo } from './plugins/project-info-field'
@@ -217,7 +226,16 @@ export default class MarkdownEditor extends EventEmitter {
     citations: Array<{ citekey: string, displayText: string }>
     snippets: Array<{ name: string, content: string }>
     files: Array<{ filename: string, displayName: string, id: string }>
+    references: ReferenceCompletionEntry[]
   }
+
+  /**
+   * The last resolved workspace reference view pushed into this editor
+   * (issue #1 Phase 4), re-dispatched whenever the state is rebuilt.
+   *
+   * @var {EditorWorkspaceReferences|null}
+   */
+  private workspaceReferencesCache: EditorWorkspaceReferences|null
 
   /**
    * Creates a new MarkdownEditor instance associated with the given leafId and
@@ -260,7 +278,8 @@ export default class MarkdownEditor extends EventEmitter {
     // Since the editor state needs to be rebuilt from scratch sometimes, we
     // cache the autocomplete databases so that we don't have to re-fetch them
     // everytime.
-    this.databaseCache = { tags: [], citations: [], snippets: [], files: [] }
+    this.databaseCache = { tags: [], citations: [], snippets: [], files: [], references: [] }
+    this.workspaceReferencesCache = null
 
     // Same goes for the config
     this.config = getDefaultConfig()
@@ -323,6 +342,30 @@ export default class MarkdownEditor extends EventEmitter {
               this.emit('docUpdate')
             }
 
+            // Workspace reference search request — plain Mod-P (null) or a
+            // count badge's keyed reverse lookup ({ key }): surface the
+            // request payload to the shell (MainEditor.vue relays it up to
+            // App.vue's overlay; dropping the payload here would break the
+            // Phase 8 badge-keyed reverse lookup).
+            if (effect.is(openReferenceSearchEffect)) {
+              this.emit('reference-search', effect.value)
+            }
+
+            // Create-reference-label request (issue #1 Phase 6): surface
+            // the typed request to the shell (MainEditor.vue relays it up
+            // to App.vue's CreateReferenceLabelDialog mount).
+            if (effect.is(openCreateReferenceLabelEffect)) {
+              this.emit('create-reference-label', effect.value)
+            }
+
+            // Pandoc quick-help request (issue #1, review A2 / US-06): an
+            // in-editor help link — the completion info panel — asked for
+            // the searchable quick help; MainEditor.vue relays it up to
+            // App.vue's PandocQuickHelp mount.
+            if (effect.is(openPandocQuickHelpEffect)) {
+              this.emit('pandoc-quick-help')
+            }
+
             // Listen for config updates, and parse them into the internal cache. We
             // do it this way, because the editor itself is also capable of changing
             // its configuration (e.g., via the statusbar). This way we ensure that
@@ -344,7 +387,13 @@ export default class MarkdownEditor extends EventEmitter {
         onTag (tag) {
           editorInstance.emit('zettelkasten-tag', tag)
         }
-      })
+      }),
+      referenceKeyEditListener: (intent) => {
+        // The selection left a directly edited definition-id token: surface
+        // the prompt intent to the shell (MainEditor.vue confirms and runs
+        // the workspace rename protocol; declining keeps the local edit).
+        editorInstance.emit('reference-key-edit-prompt', intent)
+      }
     }
 
     switch (type) {
@@ -404,6 +453,10 @@ export default class MarkdownEditor extends EventEmitter {
     this._instance.dispatch({ effects: citekeyUpdate.of(this.databaseCache.citations) })
     this._instance.dispatch({ effects: snippetsUpdate.of(this.databaseCache.snippets) })
     this._instance.dispatch({ effects: filesUpdate.of(this.databaseCache.files) })
+    this._instance.dispatch({ effects: referencesUpdate.of(this.databaseCache.references) })
+    if (this.workspaceReferencesCache !== null) {
+      this._instance.dispatch({ effects: workspaceReferencesUpdate.of(this.workspaceReferencesCache) })
+    }
 
     // Determine if this is a code doc and add the corresponding class to the
     // outer content DOM so that we can style it.
@@ -485,6 +538,51 @@ export default class MarkdownEditor extends EventEmitter {
         effects: EditorView.scrollIntoView(lineDesc.from, { y: 'center' })
       })
     }
+    this._instance.focus()
+  }
+
+  /**
+   * Restores a captured DocumentLocation (issue #1 Phase 5): the exact
+   * selection, collapsed folds, and viewport scroll offset stamped onto a
+   * per-pane history entry at jump time. Out-of-range ranges (the document
+   * changed since the capture) are dropped rather than clamped wrongly.
+   *
+   * @param   {DocumentLocation}  location  The location to restore
+   */
+  restoreDocumentLocation (location: DocumentLocation): void {
+    const docLength = this._instance.state.doc.length
+    const { anchor, head } = location.selection
+    const effects = location.folds
+      .filter(fold => fold.from >= 0 && fold.to <= docLength && fold.from < fold.to)
+      .map(fold => foldEffect.of({ from: fold.from, to: fold.to }))
+
+    if (anchor >= 0 && anchor <= docLength && head >= 0 && head <= docLength) {
+      this._instance.dispatch({ selection: { anchor, head }, effects })
+    } else if (effects.length > 0) {
+      this._instance.dispatch({ effects })
+    }
+
+    this._instance.scrollDOM.scrollTop = location.scrollTop
+    this._instance.focus()
+  }
+
+  /**
+   * Selects the given source range and scrolls it into view (issue #1
+   * Phase 5): the landing step of a cross-file reference jump, targeting the
+   * authored definition id token.
+   *
+   * @param   {SourceRange}  range  The range to select
+   */
+  selectSourceRange (range: SourceRange): void {
+    const docLength = this._instance.state.doc.length
+    if (range.from < 0 || range.to > docLength || range.from > range.to) {
+      return // The document changed since the range was computed.
+    }
+
+    this._instance.dispatch({
+      selection: { anchor: range.from, head: range.to },
+      effects: EditorView.scrollIntoView(range.from, { y: 'center' })
+    })
     this._instance.focus()
   }
 
@@ -609,6 +707,9 @@ export default class MarkdownEditor extends EventEmitter {
       case 'markdownMakeTaskList':
         applyTaskList(this._instance)
         break
+      case 'createReferenceLabel':
+        createReferenceLabel(this._instance)
+        break
       default:
         console.warn('Unimplemented command:', cmd)
     }
@@ -683,6 +784,7 @@ export default class MarkdownEditor extends EventEmitter {
   setCompletionDatabase (type: 'citations', database: Array<{ citekey: string, displayText: string }>): void
   setCompletionDatabase (type: 'snippets', database: Array<{ name: string, content: string }>): void
   setCompletionDatabase (type: 'files', database: Array<{ filename: string, displayName: string, id: string }>): void
+  setCompletionDatabase (type: 'references', database: ReferenceCompletionEntry[]): void
   setCompletionDatabase (type: string, database: any): void {
     switch (type) {
       case 'tags':
@@ -701,7 +803,26 @@ export default class MarkdownEditor extends EventEmitter {
         this.databaseCache.files = database
         this._instance.dispatch({ effects: filesUpdate.of(database as Array<{ filename: string, displayName: string, id: string }>) })
         break
+      case 'references':
+        // No-op wiring until the combined at-symbols provider joins the
+        // dispatcher (issue #1 Phase 3 green step): the dispatched effect has
+        // no consuming state field in the production extension set yet.
+        this.databaseCache.references = database
+        this._instance.dispatch({ effects: referencesUpdate.of(database as ReferenceCompletionEntry[]) })
+        break
     }
+  }
+
+  /**
+   * Provides the editor state with a new resolved workspace reference view
+   * (issue #1 Phase 4): the single typed source behind reference chips,
+   * definition badges, reference hovers, and reference diagnostics.
+   *
+   * @param  {EditorWorkspaceReferences}  references  The resolved view
+   */
+  setWorkspaceReferences (references: EditorWorkspaceReferences): void {
+    this.workspaceReferencesCache = references
+    this._instance.dispatch({ effects: workspaceReferencesUpdate.of(references) })
   }
 
   /* * * * * * * * * * * *

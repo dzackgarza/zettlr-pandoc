@@ -37,6 +37,7 @@ import { trans } from '@common/i18n-main'
 import type FSALWatchdog from '@providers/fsal/fsal-watchdog'
 import { getDocumentTypeForExtension, hasImageExt, hasMdOrCodeExt, hasPDFExt } from 'source/common/util/file-extention-checks'
 import isDir from 'source/common/util/is-dir'
+import type { DocumentLocation, SourceRange } from '@dts/common/references'
 
 type DocumentWindows = Record<string, DocumentTree>
 type DocumentWindowsJSON = Record<string, BranchNodeJSON|LeafNodeJSON>
@@ -58,6 +59,17 @@ export interface DocumentsUpdateContext {
   originLeaf?: string
   key?: string
   status?: 'modification'|'pinned'
+  /**
+   * Additive (issue #1 Phase 5): the exact DocumentLocation to restore in
+   * the renderer when a Back/Forward navigation restored a stamped history
+   * entry. Only ever present on ACTIVE_FILE events.
+   */
+  location?: DocumentLocation
+  /**
+   * Additive (issue #1 Phase 5): the definition range to land on after a
+   * cross-file reference jump. Only ever present on ACTIVE_FILE events.
+   */
+  targetRange?: SourceRange
 }
 
 /**
@@ -138,7 +150,10 @@ export type DocumentManagerIPCAPI = IPCAPI<{
   'set-pinned': LeafLoc & { path: string, pinned: boolean }
   'retrieve-tab-config': { windowId: string }
   'save-file': { path: string }
-  'open-file': LeafLoc & { path: string, newTab: boolean }
+  // targetRange/sourceLocation are additive (issue #1 Phase 5): a reference
+  // jump lands on targetRange in the opened document and stamps the origin
+  // pane's current history entry with sourceLocation so Back can restore it.
+  'open-file': LeafLoc & { path: string, newTab: boolean, targetRange?: SourceRange, sourceLocation?: DocumentLocation }
   'close-file': LeafLoc & { path: string }
   'close-file-everywhere': { path: string }
   'get-open-workspace-files': { path: string }
@@ -163,8 +178,14 @@ export type DocumentManagerIPCAPI = IPCAPI<{
   'close-leaf': LeafLoc
   'focus-leaf': LeafLoc
   'set-branch-sizes': { windowId: string, branchId: string, sizes: number[] },
-  'navigate-forward': LeafLoc
-  'navigate-back': LeafLoc
+  // location is additive (issue #1 Phase 5): the current DocumentLocation of
+  // the navigating pane, stamped onto the current history entry before the
+  // move so the opposite direction can restore it.
+  'navigate-forward': LeafLoc & { location?: DocumentLocation }
+  'navigate-back': LeafLoc & { location?: DocumentLocation }
+  // Additive (issue #1 Phase 5): whether the leaf's session history has
+  // entries before/after the pointer (Back/Forward enabled state).
+  'get-navigation-state': LeafLoc
 }>
 
 export default class DocumentManager extends ProviderContract {
@@ -297,8 +318,8 @@ export default class DocumentManager extends ProviderContract {
           return await this.saveFile(payload.path)
         }
         case 'open-file': {
-          const { windowId, leafId, path, newTab } = payload
-          return await this.openFile(windowId, leafId, path, newTab)
+          const { windowId, leafId, path, newTab, targetRange, sourceLocation } = payload
+          return await this.openFile(windowId, leafId, path, newTab, { targetRange, sourceLocation })
         }
         case 'close-file': {
           const { windowId, leafId, path } = payload
@@ -363,10 +384,13 @@ export default class DocumentManager extends ProviderContract {
           return
         }
         case 'navigate-forward': {
-          return await this.navigateForward(payload.windowId, payload.leafId)
+          return await this.navigateForward(payload.windowId, payload.leafId, payload.location)
         }
         case 'navigate-back': {
-          return await this.navigateBack(payload.windowId, payload.leafId)
+          return await this.navigateBack(payload.windowId, payload.leafId, payload.location)
+        }
+        case 'get-navigation-state': {
+          return this.getNavigationState(payload.windowId, payload.leafId)
         }
       }
     })
@@ -795,7 +819,7 @@ current contents from the editor somewhere else, and restart the application.`
    *
    * @return {Promise<boolean>} True if it successfully opens the file
    */
-  public async openFile (windowId: string|undefined, leafId: string|undefined, filePath: string, newTab?: boolean): Promise<boolean> {
+  public async openFile (windowId: string|undefined, leafId: string|undefined, filePath: string, newTab?: boolean, navigation?: { targetRange?: SourceRange, sourceLocation?: DocumentLocation }): Promise<boolean> {
     if (!isFile(filePath)) {
       // The renderer process essentially just throws paths at the documents
       // provider when the user intents to open them. Users can also link
@@ -870,6 +894,14 @@ current contents from the editor somewhere else, and restart the application.`
 
     this._updateFocusLeaf(windowId, leafId)
 
+    // Issue #1 Phase 5: a reference jump carries the origin location captured
+    // at jump time. Stamp it onto the pane's current history entry (which
+    // corresponds to the currently active file) so Back can restore it.
+    const sourceLocation = navigation?.sourceLocation
+    if (sourceLocation !== undefined && leaf.tabMan.activeFile?.path === sourceLocation.documentPath) {
+      leaf.tabMan.updateCurrentHistoryLocation(sourceLocation)
+    }
+
     // After here, the document will in some way be opened.
     this._app.recentDocs.add(filePath)
 
@@ -884,7 +916,7 @@ current contents from the editor somewhere else, and restart the application.`
       // File is already open -> simply set it as active
       // leaf.tabMan.activeFile = filePath
       leaf.tabMan.openFile(filePath)
-      this.broadcastEvent(DP_EVENTS.ACTIVE_FILE, { windowId, leafId, filePath })
+      this.broadcastEvent(DP_EVENTS.ACTIVE_FILE, { windowId, leafId, filePath, targetRange: navigation?.targetRange })
       this.syncToConfig()
       return true
     }
@@ -907,7 +939,7 @@ current contents from the editor somewhere else, and restart the application.`
       this.broadcastEvent(DP_EVENTS.CLOSE_FILE, { windowId, leafId, filePath: activeFile.path })
     }
 
-    this.broadcastEvent(DP_EVENTS.ACTIVE_FILE, { windowId, leafId, filePath: leaf.tabMan.activeFile?.path })
+    this.broadcastEvent(DP_EVENTS.ACTIVE_FILE, { windowId, leafId, filePath: leaf.tabMan.activeFile?.path, targetRange: navigation?.targetRange })
     await this.synchronizeDatabases()
     this.syncToConfig()
     return ret
@@ -1502,26 +1534,62 @@ current contents from the editor somewhere else, and restart the application.`
     return true
   }
 
-  public async navigateForward (windowId: string, leafId: string): Promise<void> {
+  public async navigateForward (windowId: string, leafId: string, location?: DocumentLocation): Promise<void> {
     const leaf = this._windows[windowId].findLeaf(leafId)
     if (leaf === undefined) {
       return
     }
 
-    leaf.tabMan.forward()
+    this._stampCurrentHistoryLocation(leaf.tabMan, location)
+    const entry = leaf.tabMan.forward()
     this.broadcastEvent(DP_EVENTS.OPEN_FILE, { windowId, leafId })
-    this.broadcastEvent(DP_EVENTS.ACTIVE_FILE, { windowId, leafId })
+    this.broadcastEvent(DP_EVENTS.ACTIVE_FILE, { windowId, leafId, filePath: entry?.path, location: entry?.location })
   }
 
-  public async navigateBack (windowId: string, leafId: string): Promise<void> {
+  public async navigateBack (windowId: string, leafId: string, location?: DocumentLocation): Promise<void> {
     const leaf = this._windows[windowId].findLeaf(leafId)
     if (leaf === undefined) {
       return
     }
 
-    leaf.tabMan.back()
+    this._stampCurrentHistoryLocation(leaf.tabMan, location)
+    const entry = leaf.tabMan.back()
     this.broadcastEvent(DP_EVENTS.OPEN_FILE, { windowId, leafId })
-    this.broadcastEvent(DP_EVENTS.ACTIVE_FILE, { windowId, leafId })
+    this.broadcastEvent(DP_EVENTS.ACTIVE_FILE, { windowId, leafId, filePath: entry?.path, location: entry?.location })
+  }
+
+  /**
+   * Stamps the given location onto the tab manager's current history entry
+   * (issue #1 Phase 5) when it belongs to the currently active file, so the
+   * opposite navigation direction can restore the exact selection, viewport
+   * scroll, and folds.
+   *
+   * @param   {TabManager}        tabMan    The pane's tab manager
+   * @param   {DocumentLocation}  location  The location sent by the renderer
+   */
+  private _stampCurrentHistoryLocation (tabMan: TabManager, location?: DocumentLocation): void {
+    if (location !== undefined && tabMan.activeFile?.path === location.documentPath) {
+      tabMan.updateCurrentHistoryLocation(location)
+    }
+  }
+
+  /**
+   * Returns whether the given leaf can navigate back/forward through its
+   * session history (issue #1 Phase 5; feeds the toolbar Back/Forward
+   * enabled state).
+   *
+   * @param   {string}  windowId  The window ID
+   * @param   {string}  leafId    The leaf ID
+   *
+   * @return  {{ canGoBack: boolean, canGoForward: boolean }}  The state
+   */
+  public getNavigationState (windowId: string, leafId: string): { canGoBack: boolean, canGoForward: boolean } {
+    const leaf = windowId in this._windows ? this._windows[windowId].findLeaf(leafId) : undefined
+    if (leaf === undefined) {
+      return { canGoBack: false, canGoForward: false }
+    }
+
+    return { canGoBack: leaf.tabMan.canGoBack, canGoForward: leaf.tabMan.canGoForward }
   }
 
   public async saveFile (filePath: string): Promise<boolean> {

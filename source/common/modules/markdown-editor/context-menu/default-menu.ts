@@ -80,11 +80,16 @@ async function fetchSuggestions (term: string): Promise<string[]> {
  * Shows a default context menu for the given node at the given coordinates in
  * the given view.
  *
- * @param   {EditorView}                view    The view
- * @param   {SyntaxNode}                node    The node
- * @param   {{ x: number, y: number }}  coords  The screen coordinates
+ * @param   {EditorView}                view        The view
+ * @param   {SyntaxNode}                node        The node
+ * @param   {{ x: number, y: number }}  coords      The screen coordinates
+ * @param   {AnyMenuItem[]}             extraItems  Contextual items prepended
+ *                                                  to the default template
+ *                                                  (e.g. the node-routed
+ *                                                  "Create reference label…"
+ *                                                  entry)
  */
-export async function defaultMenu (view: EditorView, node: SyntaxNode, coords: { x: number, y: number }): Promise<void> {
+export async function defaultMenu (view: EditorView, node: SyntaxNode, coords: { x: number, y: number }, extraItems: AnyMenuItem[] = []): Promise<void> {
   // In this function, we're doing a lot of iffs to check if there is a
   // spellcheck underneath the cursor and, if there is, add suggestions (if
   // there are) to the context menu.
@@ -283,6 +288,11 @@ export async function defaultMenu (view: EditorView, node: SyntaxNode, coords: {
   // If we found a diagnostic earlier and a word, add the suggestion items
   if (diagnostic !== undefined && misspelledWord !== undefined) {
     tpl.unshift(...suggestionItems)
+  }
+
+  // Contextual node-routed items lead the menu
+  if (extraItems.length > 0) {
+    tpl.unshift(...extraItems, { type: 'separator' })
   }
 
   showPopupMenu(coords, tpl)

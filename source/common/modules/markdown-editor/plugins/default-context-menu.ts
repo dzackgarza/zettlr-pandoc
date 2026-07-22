@@ -16,11 +16,14 @@
 
 import { syntaxTree } from '@codemirror/language'
 import { EditorView } from '@codemirror/view'
+import { trans } from '@common/i18n-renderer'
+import { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import { defaultMenu } from '../context-menu/default-menu'
 import { linkImageMenu } from '../context-menu/link-image-menu'
 import { nodeAtPos } from '../util/node-in-selection'
 import { NODES } from '../parser/citation-parser'
 import { citationMenu } from '../context-menu/citation-menu'
+import { requestCreateReferenceLabel, resolveCreateReferenceLabelRequest } from './create-reference-label'
 
 export const defaultContextMenu = EditorView.domEventHandlers({
   contextmenu (event, view) {
@@ -49,6 +52,21 @@ export const defaultContextMenu = EditorView.domEventHandlers({
       return true
     }
 
+    // Node-routed create-label entry (issue #1 Phase 6): a supported,
+    // still-unlabeled reference target (theorem-like div, heading, figure
+    // image, listing, display math) offers "Create reference label…" on top
+    // of the default menu.
+    const extraItems: AnyMenuItem[] = []
+    if (resolveCreateReferenceLabelRequest(view, pos) !== null) {
+      extraItems.push({
+        label: trans('Create reference label…'),
+        type: 'normal',
+        action () {
+          requestCreateReferenceLabel(view, pos)
+        }
+      })
+    }
+
     // If there is nothing selected, select the word at the coords
     const nothingSelected = view.state.selection.ranges.every(x => x.empty)
     const wordAt = view.state.wordAt(pos)
@@ -57,7 +75,7 @@ export const defaultContextMenu = EditorView.domEventHandlers({
     }
 
     const node = tree.resolveInner(pos)
-    defaultMenu(view, node, coords).catch(err => console.error(err))
+    defaultMenu(view, node, coords, extraItems).catch(err => console.error(err))
     return true
   }
 })

@@ -20,6 +20,8 @@ import { renderLinks } from './render-links'
 import { renderMath } from './render-math'
 import { renderTasks } from './render-tasks'
 import { renderCitations } from './render-citations'
+import { renderReferenceChips } from './render-reference-chips'
+import { renderReferenceDefinitions } from './render-reference-definitions'
 import { renderMermaid } from './render-mermaid'
 import { renderTables } from '../table-editor'
 import { renderIframes } from './render-iframes'
@@ -66,6 +68,10 @@ function configureRenderers (config: Partial<EditorConfiguration>, ext?: Extensi
     updateExtension(renderTasks, config.renderTasks, ext)
     updateExtension(renderHeadings, config.renderHeadings, ext)
     updateExtension(renderCitations, config.renderCitations, ext)
+    // The reference chips and definition badges (issue #1 Phase 4) follow the
+    // citation-rendering toggle: they present the same `@`-cluster surface.
+    updateExtension(renderReferenceChips, config.renderCitations, ext)
+    updateExtension(renderReferenceDefinitions, config.renderCitations, ext)
     updateExtension(renderTables, config.renderTables, ext)
     updateExtension(renderIframes, config.renderIframes, ext)
     updateExtension(renderEmphasis, config.renderEmphasis, ext)

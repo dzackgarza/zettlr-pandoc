@@ -15,16 +15,30 @@
  */
 
 import type { OpenDocument } from '@dts/common/documents'
+import type { DocumentLocation } from '@dts/common/references'
 
 export interface TabManagerJSON {
   openFiles: OpenDocument[]
   activeFile: OpenDocument|null
 }
 
+/**
+ * One widened per-pane session history entry (issue #1 Phase 5): the file
+ * path plus, optionally, the exact DocumentLocation captured at the moment
+ * the pane jumped away from that file. Entries created by the plain
+ * openFile() flow carry no location (`location: undefined`) and keep
+ * restoring by path exactly as before the widening. Session history remains
+ * in-memory only: toJSON() still serializes only { openFiles, activeFile }.
+ */
+export interface HistoryEntry {
+  path: string
+  location?: DocumentLocation
+}
+
 export class TabManager {
   private readonly _openFiles: OpenDocument[]
   private _activeFile: OpenDocument|null
-  private readonly _sessionHistory: string[]
+  private readonly _sessionHistory: HistoryEntry[]
   private _sessionPointer: number
 
   constructor () {
@@ -70,6 +84,36 @@ export class TabManager {
    */
   public get activeFile (): OpenDocument|null {
     return this._activeFile
+  }
+
+  /**
+   * The widened per-pane session history (issue #1 Phase 5): one
+   * { path, location? } entry per session step, in order. Observability
+   * surface for the documents provider; never mutate the returned entries.
+   *
+   * @return  {readonly HistoryEntry[]}  The session history entries
+   */
+  public get history (): readonly HistoryEntry[] {
+    return this._sessionHistory
+  }
+
+  /**
+   * Whether a back() call would restore an older history entry.
+   *
+   * @return  {boolean}  True when history holds an entry before the pointer
+   */
+  public get canGoBack (): boolean {
+    return this._normalizedSessionPointer() > 0
+  }
+
+  /**
+   * Whether a forward() call would restore a newer history entry.
+   *
+   * @return  {boolean}  True when history holds an entry after the pointer
+   */
+  public get canGoForward (): boolean {
+    const pointer = this._normalizedSessionPointer()
+    return pointer >= 0 && pointer < this._sessionHistory.length - 1
   }
 
   // PUBLIC METHODS
@@ -139,7 +183,7 @@ export class TabManager {
 
     // Remove the file from the session history if applicable
     if (modifyHistory !== false) {
-      const sessionIndex = this._sessionHistory.indexOf(filePath)
+      const sessionIndex = this._sessionHistory.findIndex(entry => entry.path === filePath)
       if (sessionIndex > -1) {
         this._sessionHistory.splice(sessionIndex, 1)
       }
@@ -149,7 +193,7 @@ export class TabManager {
     // with it, no further action needed
     if (openFile !== undefined) {
       if (modifyHistory !== false) {
-        this._sessionHistory.push(filePath)
+        this._sessionHistory.push({ path: filePath })
         this._sessionPointer = this._sessionHistory.length - 1
       }
       this.activeFile = openFile
@@ -176,7 +220,7 @@ export class TabManager {
     this.activeFile = file
 
     if (modifyHistory !== false) {
-      this._sessionHistory.push(filePath)
+      this._sessionHistory.push({ path: filePath })
       this._sessionPointer = this._sessionHistory.length - 1
     }
 
@@ -260,42 +304,86 @@ export class TabManager {
   }
 
   /**
-   * Goes back in the session history and opens the previous file
+   * Stamps the CURRENT session history entry with the location captured at
+   * the moment the pane is about to jump away from it (issue #1 Phase 5), so
+   * a later back()/forward() can restore the exact selection, viewport
+   * scroll, and folds. A no-op while the history is empty.
+   *
+   * @param   {DocumentLocation}  location  The captured location
    */
-  public back (): void {
-    this._moveThroughHistory(-1)
+  public updateCurrentHistoryLocation (location: DocumentLocation): void {
+    const pointer = this._normalizedSessionPointer()
+    if (pointer < 0) {
+      return // Empty history: nothing to stamp
+    }
+
+    this._sessionHistory[pointer].location = location
+  }
+
+  /**
+   * Goes back in the session history and opens the previous file
+   *
+   * @return  {HistoryEntry|null}  The restored { path, location } entry, or
+   *                               null at the history boundary
+   */
+  public back (): HistoryEntry|null {
+    return this._moveThroughHistory(-1)
   }
 
   /**
    * Goes forward in the session history and opens the next file
+   *
+   * @return  {HistoryEntry|null}  The restored { path, location } entry, or
+   *                               null at the history boundary
    */
-  public forward (): void {
-    this._moveThroughHistory(1)
+  public forward (): HistoryEntry|null {
+    return this._moveThroughHistory(1)
+  }
+
+  /**
+   * Returns the session pointer, normalized the same way _moveThroughHistory
+   * always normalized it: an out-of-range pointer snaps to the newest entry
+   * (which is -1 exactly when the history is empty).
+   *
+   * @return  {number}  The normalized pointer
+   */
+  private _normalizedSessionPointer (): number {
+    if (this._sessionPointer < 0 || this._sessionPointer > this._sessionHistory.length - 1) {
+      return this._sessionHistory.length - 1
+    }
+
+    return this._sessionPointer
   }
 
   /**
    * Moves through history using the specified direction
    *
    * @param   {number}  direction  The direction to take. Negative = back, positive = forward
+   *
+   * @return  {HistoryEntry|null}  The entry navigated to, or null when the
+   *                               move was out of bounds
    */
-  private _moveThroughHistory (direction: number): void {
+  private _moveThroughHistory (direction: number): HistoryEntry|null {
     // Always make sure the session pointer is valid
-    if (this._sessionPointer < 0 || this._sessionPointer > this._sessionHistory.length - 1) {
-      this._sessionPointer = this._sessionHistory.length - 1
-    }
+    this._sessionPointer = this._normalizedSessionPointer()
 
     const targetIndex = this._sessionPointer + direction
 
     if (targetIndex > this._sessionHistory.length - 1 || targetIndex < 0) {
-      return console.log('Out of bounds') // Cannot move: Out of bounds
+      console.log('Out of bounds') // Cannot move: Out of bounds
+      return null
     }
 
     // Move the pointer
     this._sessionPointer = targetIndex
-    const pathToOpen = this._sessionHistory[this._sessionPointer]
+    const entry = this._sessionHistory[this._sessionPointer]
 
     // Open that file, but tell the opener explicitly not to modify the state
-    this.openFile(pathToOpen, false)
+    this.openFile(entry.path, false)
+
+    // Return a widened { path, location } copy (both keys always present) so
+    // the documents provider can broadcast the exact location to restore.
+    return { path: entry.path, location: entry.location }
   }
 
   /**

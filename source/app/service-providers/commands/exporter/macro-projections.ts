@@ -12,14 +12,10 @@
  * END HEADER
  */
 
-import { type MathJaxMacro } from '@common/util/mathjax-config'
+import { isMathJaxMacro, type MathJaxMacro } from '@common/util/mathjax-config'
 
 function assertMacroDefinition (name: string, definition: unknown): asserts definition is MathJaxMacro {
-  const isString = typeof definition === 'string'
-  const isRequiredArguments = Array.isArray(definition) && definition.length === 2 && typeof definition[0] === 'string' && Number.isInteger(definition[1]) && definition[1] > 0
-  const isOptionalArguments = Array.isArray(definition) && definition.length === 3 && typeof definition[0] === 'string' && Number.isInteger(definition[1]) && definition[1] > 0 && typeof definition[2] === 'string'
-
-  if (!isString && !isRequiredArguments && !isOptionalArguments) {
+  if (!isMathJaxMacro(definition)) {
     throw new TypeError(`Unsupported macro definition for ${name}`)
   }
 }

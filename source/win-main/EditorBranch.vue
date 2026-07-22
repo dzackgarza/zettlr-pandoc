@@ -22,6 +22,9 @@
         v-bind:available-height="(node.direction === 'vertical') ? sizes[index] : 100"
         v-bind:is-last="index === node.nodes.length - 1 || node.nodes.length === 1"
         v-on:global-search="emit('globalSearch', $event)"
+        v-on:reference-search="emit('referenceSearch', $event)"
+        v-on:create-reference-label="emit('createReferenceLabel', $event)"
+        v-on:open-pandoc-quick-help="emit('openPandocQuickHelp')"
       ></EditorBranch>
       <EditorPane
         v-else
@@ -36,6 +39,9 @@
         v-bind:available-width="(node.direction === 'horizontal') ? sizes[index] : 100"
         v-bind:available-height="(node.direction === 'vertical') ? sizes[index] : 100"
         v-on:global-search="emit('globalSearch', $event)"
+        v-on:reference-search="emit('referenceSearch', $event)"
+        v-on:create-reference-label="emit('createReferenceLabel', $event)"
+        v-on:open-pandoc-quick-help="emit('openPandocQuickHelp')"
       ></EditorPane>
       <!-- Here comes the resizing (for every but the last child) -->
       <div
@@ -52,6 +58,8 @@ import EditorPane from './EditorPane.vue'
 import { type BranchNodeJSON } from '@dts/common/documents'
 import { ref, computed, watch, toRef } from 'vue'
 import { type EditorCommands } from './App.vue'
+import { type CreateReferenceLabelDialogPrompt } from './MainEditor.vue'
+import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
 import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
 
 const ipcRenderer = window.ipc
@@ -65,7 +73,12 @@ const props = defineProps<{
   editorCommands: EditorCommands
 }>()
 
-const emit = defineEmits<(e: 'globalSearch', query: string) => void>()
+const emit = defineEmits<{
+  (e: 'globalSearch', query: string): void
+  (e: 'referenceSearch', request: ReferenceSearchRequest): void
+  (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
+  (e: 'openPandocQuickHelp'): void
+}>()
 
 const sizes = ref<number[]>(props.node.sizes.map(s => s))
 const currentResizerIndex = ref<number>(-1)

@@ -23,7 +23,7 @@ import {
 } from '@codemirror/autocomplete'
 import { type StateField } from '@codemirror/state'
 import { codeBlocks } from './code-blocks'
-import { citations } from './citations'
+import { atSymbols } from './at-symbols'
 import { snippets } from './snippets'
 import { files } from './files'
 import { tags } from './tags'
@@ -77,7 +77,7 @@ const autocompleteSource: CompletionSource = function (ctx): CompletionResult|nu
   let startpos = ctx.pos
 
   // NOTE: Headings has to be checked before tags
-  for (const p of [ codeBlocks, citations, files, headings, tags, snippets ]) {
+  for (const p of [ codeBlocks, atSymbols, files, headings, tags, snippets ]) {
     const res = p.applies(ctx)
     if (res !== false) {
       plugin = p
@@ -122,7 +122,9 @@ export const autocomplete = [
   // required by the main class (MarkdownEditor), hence we do not have to re-
   // export them here.
   codeBlocks.fields ?? [],
-  citations.fields ?? [],
+  // atSymbols carries both the citation field and the references field, so
+  // each is registered exactly once through this single entry.
+  atSymbols.fields ?? [],
   files.fields ?? [],
   tags.fields ?? [],
   snippets.fields ?? []
@@ -131,6 +133,7 @@ export const autocomplete = [
 // Lastly, also re-export the effects which the main class (MarkdownEditor)
 // requires in order to provide data for these fields.
 export { citekeyUpdate } from './citations'
+export { referencesUpdate } from './at-symbols'
 export { filesUpdate } from './files'
 export { tagsUpdate } from './tags'
 export { snippetsUpdate } from './snippets'

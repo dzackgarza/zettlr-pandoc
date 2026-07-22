@@ -258,7 +258,9 @@ export default function getMenu (
         {
           id: 'menu.print',
           label: trans('Print…'),
-          accelerator: 'Cmd+P',
+          // NOTE: No accelerator — Cmd+P belongs to the editor's workspace
+          // reference search (issue #1 Phase 3b); printing stays available
+          // through this menu item.
           click: function (_menuItem, focusedWindow) {
             (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'print')
           }

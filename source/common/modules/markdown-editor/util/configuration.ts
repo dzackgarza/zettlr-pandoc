@@ -20,6 +20,7 @@ import { StateEffect, StateField } from '@codemirror/state'
 import safeAssign from '@common/util/safe-assign'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import { type MarkdownTheme } from '@providers/config/get-config-template'
+import { NAVIGATION_SHORTCUT_DEFAULTS, type NavigationShortcutConfig } from '@common/util/navigation-shortcuts'
 
 export interface AutocorrectOptions {
   active: boolean
@@ -83,6 +84,12 @@ export interface EditorConfiguration {
   highlightWhitespace: boolean
   showMarkdownLineNumbers: boolean
   countChars: boolean
+  /**
+   * The per-pane history Back/Forward combos (issue #1 workstream 4). The
+   * default keymap reads these at extension-build time; defaults come from
+   * the shared NAVIGATION_SHORTCUT_DEFAULTS registry.
+   */
+  navigationShortcuts: NavigationShortcutConfig
 }
 
 export function getDefaultConfig (): EditorConfiguration {
@@ -148,7 +155,8 @@ export function getDefaultConfig (): EditorConfiguration {
     margins: 'M',
     highlightWhitespace: false,
     showMarkdownLineNumbers: false,
-    countChars: false
+    countChars: false,
+    navigationShortcuts: { ...NAVIGATION_SHORTCUT_DEFAULTS }
   }
 }
 

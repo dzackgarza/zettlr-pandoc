@@ -51,6 +51,9 @@
             v-bind:editor-commands="editorCommands"
             v-bind:persistent-state-map="persistentStateMap"
             v-on:global-search="emit('globalSearch', $event)"
+            v-on:reference-search="emit('referenceSearch', $event)"
+            v-on:create-reference-label="emit('createReferenceLabel', $event)"
+            v-on:open-pandoc-quick-help="emit('openPandocQuickHelp')"
           ></MainEditor>
         </Teleport>
       </template>
@@ -134,7 +137,8 @@ import { type LeafNodeJSON, type OpenDocument } from '@dts/common/documents'
 import { type EditorCommands } from './App.vue'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import DocumentTabs from './DocumentTabs.vue'
-import MainEditor from './MainEditor.vue'
+import MainEditor, { type CreateReferenceLabelDialogPrompt } from './MainEditor.vue'
+import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
 import { useDocumentTreeStore, useWindowStateStore } from 'source/pinia'
 import ImageViewer from './file-viewers/ImageViewer.vue'
 import { hasImageExt, hasPDFExt } from '@common/util/file-extention-checks'
@@ -157,7 +161,12 @@ const props = defineProps<{
 
 type DragTargetAreas = 'editor'|'top'|'left'|'right'|'bottom'
 
-const emit = defineEmits<(e: 'globalSearch', query: string) => void>()
+const emit = defineEmits<{
+  (e: 'globalSearch', query: string): void
+  (e: 'referenceSearch', request: ReferenceSearchRequest): void
+  (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
+  (e: 'openPandocQuickHelp'): void
+}>()
 
 // UNREFFED SCROLL MAP
 // Each individual editor pane has its own persistent state map so that the

@@ -133,12 +133,17 @@ they must be threaded through **four** layers:
 
 ### 3. PDF export → the `~/.pandoc` `compile-pandoc` recipe
 
-- **`~/.pandoc` is a symlink to `~/gitclones/pandoc-config`.** Its `justfile` is the
+- **`~/.pandoc` is a plain directory whose `justfile` and `filters/*` are symlinks
+  into a checkout of `dzackgarza/pandoc-config`** (currently the vendor submodule at
+  `~/pandoc-preview-greenfield2/src-tauri/resources/vendor/pandoc-config`; a
+  development clone lives at `~/gitclones/pandoc-config`). That `justfile` is the
   **authoritative contract** for PDF conventions (filters, flags, engine). Read it
   before reverse-engineering export behavior.
 - **PDF export delegates** to that recipe — the app owns no pandoc/LaTeX flags:
   `source/app/service-providers/commands/exporter/recipe-exporter.ts` runs
-  `just --justfile ~/.pandoc/justfile compile-pandoc <file> <title> [<template>]`.
+  `just --justfile ~/.pandoc/justfile compile-pandoc <file> <title> [<template>]`
+  for single files, and `compile-pandoc-project <title> <template> <files…>` for
+  ordered Project exports (issue #1).
   PDF is a **custom profile** (`writer: compile-pandoc`) in `getCustomProfiles`
   (`exporter/index.ts`); dispatch is in `makeExport`. The dzg templates require
   **pdflatex** (xelatex/lualatex fail).

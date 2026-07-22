@@ -52,13 +52,15 @@ export function formatPandocAttributes (attributes: ParsedPandocAttributes): str
 
 /** Pandoc Attribute Regex: {#my-id .classes .other-classes key=value attr="other value"}
  *
- *  #(?<id>[\w\-_]+)       => id
- *  \.(?<class>[\w\-_]+)   => class
- *  (?<key>[\w\-_]+)       => key
- *  "(?<quoted>[^"]*)"     => quoted values
- *  (?<unquoted>[^\s"]+)   => unquoted values
+ *  #(?<id>[\w\-_]+)                  => id
+ *  \.(?<class>[\w\-_]+)              => class
+ *  (?<key>[\w\-_]+)                  => key
+ *  "(?<quoted>(?:\\.|[^"\\])*)"      => quoted values (backslash escapes,
+ *                                       e.g. \" for a literal quote, per
+ *                                       Pandoc's attribute syntax)
+ *  (?<unquoted>[^\s"]+)              => unquoted values
  */
-const pandocAttributeRe = /#(?<id>[\w\-_]+)|\.(?<class>[\w\-_]+)|(?<attr>(?<key>[\w\-_]+)=(?:"(?<quoted>[^"]*)"|(?<unquoted>[^\s"]+)))/g
+const pandocAttributeRe = /#(?<id>[\w\-_]+)|\.(?<class>[\w\-_]+)|(?<attr>(?<key>[\w\-_]+)=(?:"(?<quoted>(?:\\.|[^"\\])*)"|(?<unquoted>[^\s"]+)))/g
 
 /**
  * Parses a Pandoc link attribute string, as defined in
@@ -98,7 +100,9 @@ export function parsePandocAttributes (attrString: string): ParsedPandocAttribut
 
     if (match.groups.attr) {
       const key = match.groups.key
-      let value = match.groups.unquoted ?? match.groups.quoted ?? ''
+      // A quoted value carries backslash escapes (\" -> "), which resolve to
+      // the escaped literal character; unquoted values are taken verbatim.
+      let value = match.groups.unquoted ?? match.groups.quoted?.replace(/\\(.)/g, '$1') ?? ''
 
       if (key.toLowerCase() === 'width') {
         if (/^\d+$/.test(value)) {

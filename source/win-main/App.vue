@@ -53,6 +53,9 @@
               v-bind:editor-commands="editorCommands"
               v-bind:window-id="windowId"
               v-on:global-search="startGlobalSearch($event)"
+              v-on:reference-search="openReferenceSearch($event)"
+              v-on:create-reference-label="openCreateReferenceLabel($event)"
+              v-on:open-pandoc-quick-help="showPandocQuickHelp = true"
             ></EditorPane>
             <EditorBranch
               v-else-if="paneConfiguration !== undefined"
@@ -61,6 +64,9 @@
               v-bind:editor-commands="editorCommands"
               v-bind:is-last="true"
               v-on:global-search="startGlobalSearch($event)"
+              v-on:reference-search="openReferenceSearch($event)"
+              v-on:create-reference-label="openCreateReferenceLabel($event)"
+              v-on:open-pandoc-quick-help="showPandocQuickHelp = true"
             ></EditorBranch>
           </template>
           <template #view2>
@@ -131,6 +137,25 @@
     v-if="showPandocQuickHelp"
     v-on:close="showPandocQuickHelp = false"
   ></PandocQuickHelp>
+  <ReferenceSearchOverlay
+    v-if="showReferenceSearch"
+    v-bind:definitions="referenceSearchDefinitions"
+    v-bind:occurrences="referenceSearchOccurrences"
+    v-bind:initial-request="referenceSearchRequest"
+    v-bind:project-roots="referenceSearchProjectRoots"
+    v-bind:active-document-path="referenceSearchActiveDocumentPath"
+    v-on:close="showReferenceSearch = false"
+    v-on:jump="handleReferenceJump($event)"
+    v-on:open-help="openQuickHelpFromOverlay()"
+  ></ReferenceSearchOverlay>
+  <CreateReferenceLabelDialog
+    v-if="createLabelPrompt !== undefined"
+    v-bind:family="createLabelPrompt.family"
+    v-bind:proposed-slug="createLabelPrompt.proposedSlug"
+    v-bind:existing-keys="createLabelExistingKeys"
+    v-on:close="createLabelPrompt = undefined"
+    v-on:create="handleCreateReferenceLabel($event)"
+  ></CreateReferenceLabelDialog>
 </template>
 
 <script setup lang="ts">
@@ -163,6 +188,16 @@ import PopoverTable from './PopoverTable.vue'
 import PopoverDocInfo from './PopoverDocInfo.vue'
 import PopoverPandoc from './PopoverPandoc.vue'
 import PandocQuickHelp from './PandocQuickHelp.vue'
+import ReferenceSearchOverlay, { type ReferenceJumpIntent } from './ReferenceSearchOverlay.vue'
+import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
+import type {
+  ConfirmReferenceLabelOutcome,
+  CreateReferenceLabelIntent
+} from '@common/modules/markdown-editor/plugins/create-reference-label'
+import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
+import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
+import { type CreateReferenceLabelDialogPrompt } from './MainEditor.vue'
+import showToast from '@common/util/show-toast'
 import { trans } from '@common/i18n-renderer'
 import localiseNumber from '@common/util/localise-number'
 import generateId from '@common/util/generate-id'
@@ -184,9 +219,11 @@ import { buildPipeMarkdownTable } from '@common/util/build-pipe-markdown-table'
 import { type UpdateState } from '@providers/updates'
 import { type ToolbarControl } from '@common/vue/window/WindowToolbar.vue'
 import getDocumentTitle from './util/get-document-title'
-import { useConfigStore, useDocumentTreeStore, useLRTStore, useWindowStateStore } from 'source/pinia'
+import { useConfigStore, useDocumentTreeStore, useLRTStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
 import { type AnyDescriptor } from 'source/types/common/fsal'
+import type { ProjectRootSpec, ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
+import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
 import { TaskStatus } from 'source/pinia/lrt-store'
 import PopoverLRT from './PopoverLRT.vue'
@@ -196,6 +233,7 @@ const ipcRenderer = window.ipc
 const configStore = useConfigStore()
 const documentTreeStore = useDocumentTreeStore()
 const windowStateStore = useWindowStateStore()
+const workspaceStore = useWorkspaceStore()
 const LRTStore = useLRTStore()
 
 const SOUND_EFFECTS = [
@@ -249,6 +287,180 @@ const showTasksPopover = ref(false)
 const pandocButton = ref<HTMLElement|null>(null)
 const showPandocPopover = ref<boolean>(false)
 const showPandocQuickHelp = ref<boolean>(false)
+
+// Mod-P workspace reference search (issue #1 Phase 3b) and the badge-keyed
+// reverse lookup (issue #1 Phase 8): the relayed request decides which mode
+// the overlay opens in, and the merged occurrence list feeds the
+// citing-locations rows.
+const showReferenceSearch = ref<boolean>(false)
+const referenceSearchDefinitions = ref<ReferenceDefinition[]>([])
+const referenceSearchOccurrences = ref<ReferenceOccurrence[]>([])
+const referenceSearchRequest = ref<ReferenceSearchRequest>(null)
+// The US-16 ranking context (review A3): every visible Project root plus the
+// document the search was invoked from, captured at open time.
+const referenceSearchProjectRoots = ref<ProjectRootSpec[]>([])
+const referenceSearchActiveDocumentPath = ref<string|undefined>(undefined)
+
+/**
+ * Every Project root visible in the workspace, projected to the pure
+ * ProjectRootSpec shape the ranking consumes (the same projection
+ * MainEditor.vue feeds the completion status computation).
+ */
+function collectProjectRoots (): ProjectRootSpec[] {
+  const roots: ProjectRootSpec[] = []
+  for (const descriptor of workspaceStore.descriptorMap.values()) {
+    if (descriptor.type === 'directory' && descriptor.settings.project !== null) {
+      roots.push({
+        rootPath: descriptor.path,
+        files: [...descriptor.settings.project.files]
+      })
+    }
+  }
+  return roots
+}
+
+/**
+ * The Mod-P overlay's help affordance (review A2, US-06): swap the search
+ * overlay for the searchable Pandoc quick help.
+ */
+function openQuickHelpFromOverlay (): void {
+  showReferenceSearch.value = false
+  showPandocQuickHelp.value = true
+}
+
+/**
+ * Fetches the merged workspace state from the reference provider and mounts
+ * the reference search overlay over it: the plain Mod-P definition search
+ * (request null) or the keyed citing-locations reverse lookup ({ key }).
+ * A failed fetch surfaces through the recoverable-error boundary (issue #1
+ * Phase 8) and the overlay simply does not open.
+ *
+ * @param   {ReferenceSearchRequest}  request  The relayed request payload
+ */
+function openReferenceSearch (request: ReferenceSearchRequest = null): void {
+  invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+    async (channel, message) => await ipcRenderer.invoke(channel, message),
+    { command: 'get-snapshot' },
+    trans('Loading workspace references')
+  )
+    .then(outcome => {
+      if (outcome.status === 'failed') {
+        return // The boundary surfaced the closable toast; nothing to open.
+      }
+      referenceSearchDefinitions.value = outcome.value.snapshots.flatMap(snapshot => snapshot.definitions)
+      referenceSearchOccurrences.value = outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
+      referenceSearchRequest.value = request
+      referenceSearchProjectRoots.value = collectProjectRoots()
+      referenceSearchActiveDocumentPath.value = documentTreeStore.lastLeafActiveFile?.path
+      showReferenceSearch.value = true
+    })
+    .catch(err => console.error('Could not open the reference search overlay', err))
+}
+
+// Create-reference-label dialog (issue #1 Phase 6): the relayed request
+// carries the fixed family, the slug proposal, and the editor-owned
+// insertion closure; the workspace key set feeds the live uniqueness verdict.
+const createLabelPrompt = ref<CreateReferenceLabelDialogPrompt|undefined>(undefined)
+const createLabelExistingKeys = ref<string[]>([])
+
+/**
+ * Fetches the current workspace definition keys from the reference provider
+ * (the live uniqueness verdict's data) and mounts the create-label dialog
+ * over the relayed request.
+ *
+ * @param   {CreateReferenceLabelDialogPrompt}  prompt  The relayed request
+ */
+function openCreateReferenceLabel (prompt: CreateReferenceLabelDialogPrompt): void {
+  invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+    async (channel, message) => await ipcRenderer.invoke(channel, message),
+    { command: 'get-snapshot' },
+    trans('Loading workspace references')
+  )
+    .then(outcome => {
+      if (outcome.status === 'failed') {
+        return // The boundary surfaced the closable toast; nothing to open.
+      }
+      createLabelExistingKeys.value = outcome.value.snapshots
+        .flatMap(snapshot => snapshot.definitions)
+        .map(definition => definition.key)
+      createLabelPrompt.value = prompt
+    })
+    .catch(err => console.error('Could not open the create-reference-label dialog', err))
+}
+
+/**
+ * Describes a stale confirm-time outcome as closable-toast material
+ * (issue #1 Phase 8): the document shifted while the dialog was open and
+ * the insertion did NOT happen.
+ *
+ * @param   {ConfirmReferenceLabelOutcome}  outcome  The stale outcome
+ *
+ * @return  {string}                                 The user-facing message
+ */
+function describeStaleCreateOutcome (outcome: ConfirmReferenceLabelOutcome & { status: 'stale' }): string {
+  switch (outcome.reason) {
+    case 'already-labeled':
+      return trans('No label created: the target gained a label while the dialog was open.')
+    case 'target-vanished':
+      return trans('No label created: the target no longer exists in the document.')
+  }
+}
+
+/**
+ * Acts on the dialog's single create intent: the editor re-resolves the
+ * target in the CURRENT document and inserts the explicit label token
+ * (issue #1 Phase 8), the @-reference lands on the clipboard, and a
+ * closable toast confirms both. A stale outcome inserted nothing and
+ * surfaces as a closable error toast instead.
+ *
+ * @param   {CreateReferenceLabelIntent}  intent  The confirmed intent
+ */
+function handleCreateReferenceLabel (intent: CreateReferenceLabelIntent): void {
+  const prompt = createLabelPrompt.value
+  createLabelPrompt.value = undefined
+  if (prompt === undefined) {
+    return
+  }
+
+  const outcome: ConfirmReferenceLabelOutcome = prompt.applyCreate(intent)
+  if (outcome.status === 'stale') {
+    showToast(describeStaleCreateOutcome(outcome), 'error')
+    return
+  }
+
+  navigator.clipboard.writeText(intent.clipboardText)
+    .then(() => {
+      showToast(trans('Created %s — %s copied to the clipboard.', intent.key, intent.clipboardText))
+    })
+    .catch(err => {
+      console.error('Could not copy the reference to the clipboard', err)
+      showToast(trans('Created %s. The clipboard copy failed.', intent.key), 'error')
+    })
+}
+
+/**
+ * Acts on a jump intent chosen in the reference search overlay: closes the
+ * overlay and opens the target document, landing on the intent's exact
+ * range through the Phase 5 targetRange navigation — the definition's id
+ * token for the Mod-P search, the occurrence's own range for the keyed
+ * citing-locations reverse lookup.
+ *
+ * @param   {ReferenceJumpIntent}  intent  The chosen jump intent
+ */
+function handleReferenceJump (intent: ReferenceJumpIntent): void {
+  showReferenceSearch.value = false
+  ipcRenderer.invoke('documents-provider', {
+    command: 'open-file',
+    payload: {
+      path: intent.documentPath,
+      windowId,
+      leafId: lastLeafId.value,
+      newTab: false,
+      targetRange: intent.range
+    }
+  } as DocumentManagerIPCAPI)
+    .catch(err => console.error(err))
+}
 
 export interface PomodoroConfig {
   currentEffectFile: string
@@ -487,20 +699,25 @@ const toolbarControls = computed<ToolbarControl[]>(() => {
       icon: 'plus',
       visible: getToolbarButtonDisplay('showNewFileButton')
     },
+    // Compact Back/Forward navigation controls (issue #1 Phase 5): enabled
+    // exactly when the focused pane's session history has an entry in that
+    // direction.
     {
       type: 'button',
       id: 'previous-file',
-      title: trans('Previous file'),
+      title: trans('Navigate back'),
       icon: 'arrow',
       direction: 'left',
+      disabled: !canGoBack.value,
       visible: getToolbarButtonDisplay('showPreviousFileButton')
     },
     {
       type: 'button',
       id: 'next-file',
-      title: trans('Next file'),
+      title: trans('Navigate forward'),
       icon: 'arrow',
       direction: 'right',
+      disabled: !canGoForward.value,
       visible: getToolbarButtonDisplay('showNextFileButton')
     },
     {
@@ -627,6 +844,35 @@ const globalSearchComponent = ref<typeof GlobalSearch|null>(null)
 const paneConfiguration = computed(() => documentTreeStore.paneStructure)
 const lastLeafId = computed(() => documentTreeStore.lastLeafId)
 const distractionFree = computed<boolean>(() => windowStateStore.distractionFreeMode !== undefined)
+
+// Per-pane session history position (issue #1 Phase 5): feeds the toolbar
+// Back/Forward controls' enabled state. Refreshed from the documents
+// provider whenever the focused leaf or its documents change.
+const canGoBack = ref(false)
+const canGoForward = ref(false)
+
+function refreshNavigationState (): void {
+  const leafId = lastLeafId.value
+  if (leafId === undefined) {
+    canGoBack.value = false
+    canGoForward.value = false
+    return
+  }
+
+  ipcRenderer.invoke('documents-provider', {
+    command: 'get-navigation-state',
+    payload: { windowId, leafId }
+  } as DocumentManagerIPCAPI)
+    .then((state: { canGoBack: boolean, canGoForward: boolean }) => {
+      canGoBack.value = state.canGoBack
+      canGoForward.value = state.canGoForward
+    })
+    .catch(err => console.error(err))
+}
+
+watch(lastLeafId, refreshNavigationState)
+ipcRenderer.on('documents-update', () => { refreshNavigationState() })
+refreshNavigationState()
 
 watch(sidebarVisible, (newValue) => {
   if (newValue) {
@@ -905,6 +1151,9 @@ function handleClick (clickedID?: string): void {
     ipcRenderer.invoke('application', { command: 'file-new', payload: { type: DocumentType.Markdown } })
       .catch(e => console.error(e))
   } else if (clickedID === 'previous-file') {
+    if (!canGoBack.value) {
+      return // The control renders disabled; never navigate past the boundary
+    }
     ipcRenderer.invoke('documents-provider', {
       command: 'navigate-back',
       payload: {
@@ -913,6 +1162,9 @@ function handleClick (clickedID?: string): void {
       }
     } as DocumentManagerIPCAPI).catch(err => console.error(err))
   } else if (clickedID === 'next-file') {
+    if (!canGoForward.value) {
+      return // The control renders disabled; never navigate past the boundary
+    }
     ipcRenderer.invoke('documents-provider', {
       command: 'navigate-forward',
       payload: {

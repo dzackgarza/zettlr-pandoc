@@ -13,6 +13,14 @@
     <div v-bind:id="`cm-text-${props.leafId}`">
       <!-- This element will be replaced with Codemirror's wrapper element on mount -->
     </div>
+    <RenameReferencePreviewDialog
+      v-if="renamePreviewPrompt !== undefined"
+      v-bind:old-key="renamePreviewPrompt.intent.oldKey"
+      v-bind:new-key="renamePreviewPrompt.intent.newKey"
+      v-bind:files="renamePreviewPrompt.files"
+      v-on:apply="applyWorkspaceRename()"
+      v-on:close="cancelWorkspaceRename()"
+    ></RenameReferencePreviewDialog>
   </div>
 </template>
 
@@ -51,8 +59,67 @@ import type { DocumentManagerIPCAPI, DocumentsUpdateContext } from 'source/app/s
 import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
 import type { ProjectInfo } from 'source/common/modules/markdown-editor/plugins/project-info-field'
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
+import type { DocumentLocation, ProjectRootSpec, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
+import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
+import { extractReferences } from '@common/pandoc-util/extract-references'
+import { annotateCompletionEntries } from '@common/pandoc-util/project-reference-status'
+import { resolveWorkspace } from '@common/pandoc-util/resolve-references'
+import { trans } from '@common/i18n-renderer'
+import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
+import showToast from '@common/util/show-toast'
+import type { ReferenceKeyEditPromptIntent } from '@common/modules/markdown-editor/plugins/reference-key-edit-prompt'
+import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
+import {
+  confirmReferenceLabelInsertion,
+  type ConfirmReferenceLabelOutcome,
+  type CreateReferenceLabelIntent,
+  type CreateReferenceLabelRequest
+} from '@common/modules/markdown-editor/plugins/create-reference-label'
+import {
+  createLiveBufferReporter,
+  type LiveBufferScheduler
+} from '@common/modules/markdown-editor/util/live-buffer-reporter'
+import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
+import { runRecoverably } from '@common/util/run-recoverably'
+import RenameReferencePreviewDialog from './RenameReferencePreviewDialog.vue'
+import {
+  buildRenamePreviewSummary,
+  type CommitRenameOutcome,
+  type ReferenceRenamePreview,
+  type ReferenceRenameRejection,
+  type RenamePreviewFileSummary,
+  type UndoRenameOutcome
+} from '@common/pandoc-util/compute-reference-edits'
+import type { WorkspaceReferenceEdit } from '@dts/common/references'
 
 const ipcRenderer = window.ipc
+
+// ——— Live-buffer reporting (issue #1 Phase 8) ———
+// Module-owned so the state survives editor remounts and pane switches: one
+// reporter per window plus one monotonic generation counter per document.
+// The reporter debounces per document and delivers the shared-extractor
+// snapshot to the reference provider ('report-live-buffer'), so unsaved
+// buffers reach the merged workspace state; closing/switching a document
+// drops its overlay immediately ('drop-live-buffer').
+const liveBufferGenerations = new Map<string, number>()
+
+function nextLiveBufferGeneration (documentPath: string): number {
+  const next = (liveBufferGenerations.get(documentPath) ?? 0) + 1
+  liveBufferGenerations.set(documentPath, next)
+  return next
+}
+
+const liveBufferScheduler: LiveBufferScheduler = {
+  schedule: (callback, delayMs) => {
+    const handle = setTimeout(callback, delayMs)
+    return { cancel: () => { clearTimeout(handle) } }
+  }
+}
+
+const liveBufferReporter = createLiveBufferReporter(
+  async (channel, message) => await ipcRenderer.invoke(channel, message),
+  liveBufferScheduler
+)
 
 // This function overwrites the getBibliographyForDescriptor function to ensure
 // the library is always absolute. We have to do it this ridiculously since the
@@ -78,7 +145,28 @@ const props = defineProps<{
   persistentStateMap: Map<string, EditorViewPersistentState>
 }>()
 
-const emit = defineEmits<(e: 'globalSearch', query: string) => void>()
+/**
+ * The relayed create-label request App.vue mounts the dialog over: the
+ * context-fixed family, the editable slug proposal, and the closure that
+ * performs the insertion in the invoking editor once the dialog confirms a
+ * key (clipboard write and toast are App.vue's half). The closure re-resolves
+ * the target against the CURRENT document at confirm time (issue #1 Phase 8:
+ * confirmReferenceLabelInsertion) and returns the typed outcome — a stale
+ * outcome means NOTHING was inserted and App.vue surfaces it as a closable
+ * toast.
+ */
+export interface CreateReferenceLabelDialogPrompt {
+  family: CreateReferenceLabelRequest['family']
+  proposedSlug: string
+  applyCreate: (intent: CreateReferenceLabelIntent) => ConfirmReferenceLabelOutcome
+}
+
+const emit = defineEmits<{
+  (e: 'globalSearch', query: string): void
+  (e: 'referenceSearch', request: ReferenceSearchRequest): void
+  (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
+  (e: 'openPandocQuickHelp'): void
+}>()
 
 const windowStateStore = useWindowStateStore()
 const documentTreeStore = useDocumentTreeStore()
@@ -88,6 +176,38 @@ const tagStore = useTagsStore()
 
 // UNREFFED STUFF
 let currentEditor: MarkdownEditor|null = null
+
+/**
+ * The navigation payload of the last ACTIVE_FILE event for this leaf
+ * (issue #1 Phase 5): either the DocumentLocation of a restored Back/Forward
+ * history entry, or the definition targetRange of a cross-file reference
+ * jump. Applied once the editor for that file is loaded (or immediately when
+ * it already is), then cleared.
+ */
+let pendingNavigation: { filePath: string, location?: DocumentLocation, targetRange?: SourceRange }|null = null
+
+/**
+ * Applies (and clears) the pending navigation payload when the currently
+ * loaded editor shows the file it belongs to.
+ */
+function applyPendingNavigation (): void {
+  if (pendingNavigation === null || currentEditor === null) {
+    return
+  }
+
+  if (pendingNavigation.filePath !== currentEditor.documentPath) {
+    return // The pane moved elsewhere; keep waiting or get superseded.
+  }
+
+  const { location, targetRange } = pendingNavigation
+  pendingNavigation = null
+
+  if (location !== undefined) {
+    currentEditor.restoreDocumentLocation(location)
+  } else if (targetRange !== undefined) {
+    currentEditor.selectSourceRange(targetRange)
+  }
+}
 
 // EVENT LISTENERS
 ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
@@ -100,6 +220,18 @@ ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
   const library = getBibliographyForDescriptor(descriptor)
   updateCitationKeys(library).catch(e => {
     console.error('Could not update citation keys', e)
+  })
+})
+
+// Combined @-completion label feed (issue #1). Mirrors the citation-keys
+// feed above: whenever main broadcasts changed workspace references, fetch
+// the snapshot and push the typed 'references' completion database.
+// updateReferenceEntries() itself routes provider failures through the
+// recoverable-error boundary (closable toast, typed outcome); this catch
+// only guards against unexpected renderer-side faults.
+ipcRenderer.on('references', _event => {
+  updateReferenceEntries().catch(e => {
+    console.error('Could not update workspace reference entries', e)
   })
 })
 
@@ -133,6 +265,24 @@ ipcRenderer.on('shortcut', (event, command) => {
 
 ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: DocumentsUpdateContext }) => {
   const { event, context } = payload
+  if (
+    event === DP_EVENTS.ACTIVE_FILE && context.leafId === props.leafId &&
+    context.filePath !== undefined &&
+    (context.location !== undefined || context.targetRange !== undefined)
+  ) {
+    // The activation carries a navigation payload (issue #1 Phase 5): a
+    // Back/Forward-restored DocumentLocation or a cross-file reference jump
+    // landing range. Record it, and apply it right away when the editor for
+    // that file is already loaded (otherwise the 'loaded' hook applies it
+    // after the remount).
+    pendingNavigation = {
+      filePath: context.filePath,
+      location: context.location,
+      targetRange: context.targetRange
+    }
+    applyPendingNavigation()
+  }
+
   if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
     // The currently loaded document has been changed remotely. This event indicates
     // that the document provider has already reloaded the document and we only
@@ -185,6 +335,9 @@ onBeforeUnmount(() => {
     props.persistentStateMap.set(props.file.path, currentEditor.persistentState)
     // Clear out the table of contents before unmounting the component.
     windowStateStore.tableOfContents = undefined
+    // The closed buffer's live overlay dies with it: the provider reverts
+    // to the saved FSAL snapshot immediately (issue #1 Phase 8).
+    liveBufferReporter.dropDocument(currentEditor.documentPath)
     currentEditor.unmount()
   }
 })
@@ -201,8 +354,10 @@ onUpdated(() => {
   const currentFilePath = currentEditor.documentPath
   if (currentFilePath !== props.activeFile?.path) {
     // File path has changed -> unmount and remount (duplicate code from
-    // onMounted and onBeforeUnmount hooks).
+    // onMounted and onBeforeUnmount hooks). The switched-away buffer's live
+    // overlay drops immediately (issue #1 Phase 8).
     props.persistentStateMap.set(currentFilePath, currentEditor.persistentState)
+    liveBufferReporter.dropDocument(currentFilePath)
     currentEditor.unmount()
     loadDocument().catch(err => console.error(err))
   }
@@ -286,7 +441,11 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
     theme: display.theme,
     highlightWhitespace: editor.showWhitespace,
     showMarkdownLineNumbers: editor.showMarkdownLineNumbers,
-    countChars: editor.countChars
+    countChars: editor.countChars,
+    navigationShortcuts: {
+      back: editor.navigationShortcuts.back,
+      forward: editor.navigationShortcuts.forward
+    }
   } satisfies EditorConfigOptions
 })
 
@@ -464,12 +623,27 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     if (currentEditor === editor) {
       windowStateStore.activeDocumentInfo = currentEditor.documentInfo
       windowStateStore.tableOfContents = currentEditor.tableOfContents
+      // A pane navigation may have arrived before this editor finished
+      // loading its document (issue #1 Phase 5); restore it now.
+      applyPendingNavigation()
     }
   })
 
   editor.on('change', () => {
     if (currentEditor === editor) {
       windowStateStore.tableOfContents = currentEditor.tableOfContents
+
+      // Report the changed live buffer to the reference provider (issue #1
+      // Phase 8): debounced per document, monotonic generations, the same
+      // shared extractor FSAL uses. Markdown documents only — code files
+      // never contribute reference snapshots.
+      if (isMarkdown.value) {
+        liveBufferReporter.reportChange(
+          editor.documentPath,
+          editor.value,
+          nextLiveBufferGeneration(editor.documentPath)
+        )
+      }
     }
   })
 
@@ -515,6 +689,54 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
 
   editor.on('zettelkasten-tag', (tag: string) => {
     emit('globalSearch', tag)
+  })
+
+  // The workspace reference search overlay was requested (issue #1 Phase
+  // 3b) — plain Mod-P (null) or a count badge's keyed reverse lookup
+  // ({ key }, Phase 8); relay the request payload up the component tree to
+  // App.vue.
+  editor.on('reference-search', (request: ReferenceSearchRequest) => {
+    emit('referenceSearch', request)
+  })
+
+  // An in-editor help link (the completion info panel, issue #1 review A2)
+  // requested the searchable Pandoc quick help: relay up to App.vue's
+  // PandocQuickHelp mount — the same surface the Help menu opens.
+  editor.on('pandoc-quick-help', () => {
+    emit('openPandocQuickHelp')
+  })
+
+  // The context menu (or command registry) requested the create-label
+  // dialog for a resolved target (issue #1 Phase 6): relay the typed
+  // request up to App.vue's dialog mount together with the closure that
+  // performs the insertion once the dialog confirms a key. The closure
+  // re-resolves the target in the CURRENT document (issue #1 Phase 8): the
+  // dialog is modal only visually, so the request-time offsets are never
+  // applied verbatim, and a stale target inserts nothing.
+  editor.on('create-reference-label', (request: CreateReferenceLabelRequest) => {
+    emit('createReferenceLabel', {
+      family: request.family,
+      proposedSlug: request.proposedSlug,
+      applyCreate: (intent: CreateReferenceLabelIntent): ConfirmReferenceLabelOutcome => {
+        const view = currentEditor?.instance
+        if (view === undefined) {
+          return { status: 'stale', reason: 'target-vanished' }
+        }
+        const outcome = confirmReferenceLabelInsertion(view, request)
+        if (outcome.status === 'applied') {
+          const { from, to, prefix, suffix } = outcome.insertion
+          view.dispatch({ changes: { from, to, insert: prefix + intent.insertText + suffix } })
+        }
+        return outcome
+      }
+    })
+  })
+
+  // The selection left a directly edited definition-id token (issue #1
+  // Phase 6): offer the workspace rename. Declining does nothing further —
+  // the local edit stays and the reference diagnostics flag the stale uses.
+  editor.on('reference-key-edit-prompt', (intent: ReferenceKeyEditPromptIntent) => {
+    promptWorkspaceRename(intent)
   })
 
   // Supply the configuration object once initially
@@ -617,6 +839,324 @@ async function updateCitationKeys (library: string): Promise<void> {
     })
 
   currentEditor?.setCompletionDatabase('citations', items)
+}
+
+/**
+ * Fetches the merged workspace reference state, selects the current file's
+ * snapshot, and pushes its definitions as the typed 'references' completion
+ * database (issue #1 Phase 3).
+ */
+/**
+ * Every Project root visible in the workspace, projected to the pure
+ * ProjectRootSpec shape the reference-status computation consumes (issue #1
+ * Phase 7): a DirDescriptor with non-null settings.project maps to its
+ * absolute path plus the ordered project-relative ProjectSettings.files list.
+ */
+function collectProjectRoots (): ProjectRootSpec[] {
+  const roots: ProjectRootSpec[] = []
+  for (const descriptor of workspaceStore.descriptorMap.values()) {
+    if (descriptor.type === 'directory' && descriptor.settings.project !== null) {
+      roots.push({
+        rootPath: descriptor.path,
+        files: [...descriptor.settings.project.files]
+      })
+    }
+  }
+  return roots
+}
+
+async function updateReferenceEntries (): Promise<void> {
+  // Routed through the recoverable-error boundary (issue #1 Phase 8): a
+  // failed fetch surfaces one closable toast and the editor keeps its last
+  // known reference state — never a fabricated fallback, never an
+  // uncloseable overlay.
+  const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+    async (channel, message) => await ipcRenderer.invoke(channel, message),
+    { command: 'get-snapshot' },
+    trans('Loading workspace references')
+  )
+  if (outcome.status === 'failed') {
+    return
+  }
+  const state = outcome.value
+
+  // The provider serves the whole merged workspace state; the completion
+  // database for this editor is fed from EVERY document's definitions,
+  // annotated with their Project-membership status relative to this editor's
+  // document and the visible Project roots (issue #1 Phase 7).
+  const projectRoots = collectProjectRoots()
+
+  const rawEntries: ReferenceCompletionEntry[] = state.snapshots
+    .flatMap(candidate => candidate.definitions)
+    .map(definition => ({
+      key: definition.key,
+      family: definition.family,
+      title: definition.title,
+      documentPath: definition.documentPath
+    }))
+  const entries = annotateCompletionEntries(rawEntries, props.file.path, projectRoots)
+
+  currentEditor?.setCompletionDatabase('references', entries)
+
+  if (currentEditor === null) {
+    return
+  }
+
+  // Additionally feed the resolved workspace reference view (issue #1
+  // Phase 4): the current document's snapshot comes from a live extraction
+  // of the local buffer (exact live ranges), which replaces the provider's
+  // saved snapshot inside the merged workspace view.
+  const liveSnapshot = extractReferences(props.file.path, currentEditor.value)
+  const workspace = state.snapshots
+    .filter(candidate => candidate.documentPath !== props.file.path)
+    .concat([liveSnapshot])
+  currentEditor.setWorkspaceReferences({
+    snapshot: liveSnapshot,
+    workspaceOccurrences: workspace.flatMap(candidate => candidate.occurrences),
+    resolutions: resolveWorkspace(workspace),
+    projectRoots
+  })
+}
+
+/**
+ * Describes a typed rename rejection as closable-toast material.
+ *
+ * @param   {ReferenceRenameRejection}  reason  The typed rejection
+ *
+ * @return  {string}                            The user-facing message
+ */
+function describeRenameRejection (reason: ReferenceRenameRejection): string {
+  switch (reason.kind) {
+    case 'malformed-key':
+      return trans('Cannot rename: "%s" is not a valid reference key.', reason.newKey)
+    case 'family-changed':
+      return trans('Cannot rename: references keep their family prefix ("%s:" cannot become "%s:").', reason.oldFamily, reason.newFamily)
+    case 'collision':
+      return trans('Cannot rename: %s is already defined in %s.', reason.newKey, reason.definitionPaths.join(', '))
+    case 'unknown-key':
+      return trans('Cannot rename: %s is not defined anywhere in this workspace.', reason.oldKey)
+  }
+}
+
+/**
+ * Offers the workspace rename for a directly edited definition id via a
+ * non-blocking popup anchored at the edited token. Declining does nothing:
+ * the local edit stays and the diagnostics flag the stale uses.
+ *
+ * @param   {ReferenceKeyEditPromptIntent}  intent  The prompt intent
+ */
+function promptWorkspaceRename (intent: ReferenceKeyEditPromptIntent): void {
+  const view = currentEditor?.instance
+  if (view === undefined || intent.documentPath !== props.file.path) {
+    return
+  }
+
+  const coords = view.coordsAtPos(Math.min(intent.range.from, view.state.doc.length))
+  const items: AnyMenuItem[] = [
+    {
+      label: trans('Rename "%s" to "%s" across the workspace…', intent.oldKey, intent.newKey),
+      id: 'apply-workspace-rename',
+      type: 'normal',
+      action: () => {
+        // A failed rename protocol run surfaces through the recoverable
+        // boundary (review B8): one closable error toast, never a silent
+        // console-only line.
+        void runRecoverably(async () => { await runWorkspaceRename(intent) }, trans('Workspace rename'))
+      }
+    },
+    {
+      label: trans('Keep this edit only'),
+      id: 'decline-workspace-rename',
+      type: 'normal',
+      action: () => { /* Declining does nothing further */ }
+    }
+  ]
+  showPopupMenu({ x: coords?.left ?? 0, y: coords?.bottom ?? 0 }, items)
+}
+
+/**
+ * The pending rename preview shown by the dialog (issue #1, review A4):
+ * the confirmed intent, the previewed workspace edit, and the per-file
+ * affected-occurrence summary. Nothing commits while this is pending —
+ * Apply commits, Cancel restores the authored local edit.
+ */
+interface RenamePreviewPrompt {
+  intent: ReferenceKeyEditPromptIntent
+  edit: WorkspaceReferenceEdit
+  files: RenamePreviewFileSummary[]
+}
+
+const renamePreviewPrompt = ref<RenamePreviewPrompt|undefined>(undefined)
+
+/**
+ * Runs the confirmed workspace rename protocol up to the PREVIEW (issue #1,
+ * review A4 / US-17): withdraws the local token edit (the atomic workspace
+ * rename owns the whole change), previews, and presents the affected
+ * occurrences in the rename-preview dialog. Nothing commits here — Apply
+ * in the dialog commits, Cancel restores the authored edit. Typed
+ * rejections surface as closable toasts, never as blocking dialogs.
+ *
+ * @param   {ReferenceKeyEditPromptIntent}  intent  The confirmed intent
+ */
+async function runWorkspaceRename (intent: ReferenceKeyEditPromptIntent): Promise<void> {
+  const view = currentEditor?.instance
+  if (view === undefined) {
+    return
+  }
+
+  // Withdraw the local definition edit so the previewed rename computes
+  // and applies the complete, consistent workspace edit set.
+  view.dispatch({
+    changes: { from: intent.range.from, to: intent.range.to, insert: '#' + intent.oldKey }
+  })
+
+  const preview: ReferenceRenamePreview = await ipcRenderer.invoke('application', {
+    command: 'preview-reference-rename',
+    payload: { oldKey: intent.oldKey, newKey: intent.newKey }
+  })
+
+  if (preview.status === 'rejected') {
+    showToast(describeRenameRejection(preview.reason), 'error')
+    return
+  }
+
+  // The per-file summary is built over the same merged workspace state the
+  // preview was computed from (the provider's snapshots carry the authored
+  // previewSource/clusterRaw context the dialog shows).
+  const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+    async (channel, message) => await ipcRenderer.invoke(channel, message),
+    { command: 'get-snapshot' },
+    trans('Loading workspace references')
+  )
+  if (outcome.status === 'failed') {
+    return // The boundary surfaced the closable toast; the withdrawal stays.
+  }
+
+  renamePreviewPrompt.value = {
+    intent,
+    edit: preview.edit,
+    files: buildRenamePreviewSummary(preview.edit, outcome.value.snapshots, intent.oldKey)
+  }
+}
+
+/**
+ * Cancels the pending rename at the preview stage: nothing was committed,
+ * and the user's authored key edit is restored so declining here equals
+ * declining the original prompt (the diagnostics flag the stale uses).
+ */
+function cancelWorkspaceRename (): void {
+  const prompt = renamePreviewPrompt.value
+  renamePreviewPrompt.value = undefined
+  const view = currentEditor?.instance
+  if (prompt === undefined || view === undefined) {
+    return
+  }
+
+  const { intent } = prompt
+  const from = intent.range.from
+  const to = from + ('#' + intent.oldKey).length
+  if (view.state.doc.sliceString(from, to) === '#' + intent.oldKey) {
+    view.dispatch({ changes: { from, to, insert: '#' + intent.newKey } })
+  }
+}
+
+/**
+ * Applies the previewed workspace rename (the dialog's Apply all): the
+ * hash-fenced atomic commit, this document's returned open-buffer
+ * transactions, and the confirmation toast carrying the reachable Undo
+ * (issue #1, review A5 / US-17). Conflicts surface as closable toasts.
+ */
+async function applyWorkspaceRename (): Promise<void> {
+  const prompt = renamePreviewPrompt.value
+  renamePreviewPrompt.value = undefined
+  const view = currentEditor?.instance
+  if (prompt === undefined || view === undefined) {
+    return
+  }
+  const { intent, edit } = prompt
+
+  const outcome: CommitRenameOutcome = await ipcRenderer.invoke('application', {
+    command: 'commit-reference-rename',
+    payload: { edit }
+  })
+
+  if (outcome.status === 'conflict') {
+    showToast(trans(
+      'Rename aborted: %s changed concurrently. No document was modified.',
+      outcome.conflict.documentPath
+    ), 'error')
+    return
+  }
+
+  // Renderer half of the boundary split: apply this document's returned
+  // open-buffer transactions (the buffer stays dirty/unsaved). When this
+  // document was committed as a closed-file disk write instead, replay the
+  // same edits locally so the buffer matches the rewritten disk content.
+  const ownEdits = (outcome.openBufferTransactions.length > 0
+    ? outcome.openBufferTransactions
+    : edit.edits
+  ).filter(e => e.documentPath === intent.documentPath)
+  if (ownEdits.length > 0) {
+    view.dispatch({
+      changes: ownEdits.map(e => ({ from: e.range.from, to: e.range.to, insert: e.insert }))
+    })
+  }
+
+  showToast(
+    trans(
+      'Renamed %s to %s across %s documents.',
+      intent.oldKey,
+      intent.newKey,
+      Object.keys(edit.expectedSourceHashes).length
+    ),
+    'info',
+    8000,
+    {
+      label: trans('Undo'),
+      onAction: () => {
+        undoWorkspaceRename(intent.documentPath).catch(err => console.error('Workspace rename undo failed', err))
+      }
+    }
+  )
+}
+
+/**
+ * Invokes the production rename-undo route (issue #1, review A5): the
+ * 'application' channel's 'undo-reference-rename' command reaches the
+ * reference provider's one-shot, hash-fenced undoRename(). An applied undo
+ * replays this document's returned open-buffer transactions; conflicts and
+ * a consumed record surface as closable toasts.
+ *
+ * @param   {string}  documentPath  The invoking document (own-edit replay)
+ */
+async function undoWorkspaceRename (documentPath: string): Promise<void> {
+  const outcome: UndoRenameOutcome = await ipcRenderer.invoke('application', {
+    command: 'undo-reference-rename',
+    payload: {}
+  })
+
+  if (outcome.status === 'no-pending-undo') {
+    showToast(trans('Nothing to undo: no workspace rename is pending.'), 'error')
+    return
+  }
+
+  if (outcome.status === 'conflict') {
+    showToast(trans(
+      'Undo aborted: %s changed after the rename. No document was modified.',
+      outcome.conflict.documentPath
+    ), 'error')
+    return
+  }
+
+  const view = currentEditor?.instance
+  const ownEdits = outcome.openBufferTransactions.filter(e => e.documentPath === documentPath)
+  if (view !== undefined && ownEdits.length > 0) {
+    view.dispatch({
+      changes: ownEdits.map(e => ({ from: e.range.from, to: e.range.to, insert: e.insert }))
+    })
+  }
+
+  showToast(trans('Workspace rename undone.'))
 }
 
 async function updateFileDatabase (): Promise<void> {

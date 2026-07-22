@@ -226,3 +226,23 @@ export const EXT2READER: Record<string, string[]> = {
   ipynb: ['ipynb'],
   jira: ['jira']
 }
+
+/**
+ * Writers whose output is an HTML document (used, e.g., to decide whether an
+ * HTML template or a MathJax browser header applies).
+ */
+export const HTML_WRITERS = [ 'html', 'html4', 'html5', 'revealjs', 's5', 'slidy', 'dzslides' ] as const
+
+/**
+ * Writers whose output passes through a TeX engine (used, e.g., to decide
+ * whether a LaTeX template or TeX macro header applies).
+ */
+export const TEX_WRITERS = [ 'latex', 'beamer', 'pdf' ] as const
+
+export function isHtmlWriter (writer: string): boolean {
+  return (HTML_WRITERS as readonly string[]).includes(writer)
+}
+
+export function isTexWriter (writer: string): boolean {
+  return (TEX_WRITERS as readonly string[]).includes(writer)
+}

@@ -68,14 +68,16 @@ describe('Pandoc quick reference', function () {
     assert.deepStrictEqual(messages, [[ 'shortcut', 'pandoc-quick-help' ]])
   })
 
-  it('documents the four cross-reference families rendered by the editor', function () {
+  it('documents the five cross-reference families rendered by the editor', function () {
+    // lst joined the launch families with issue #1 (workspace-resolved
+    // references); the earlier four-family pin predated that contract.
     assert.deepStrictEqual(
       PANDOC_CROSS_REFERENCE_EXAMPLES.map(example => example.prefix),
-      [ 'fig', 'tbl', 'eq', 'sec' ]
+      [ 'fig', 'tbl', 'eq', 'sec', 'lst' ]
     )
     assert.equal(isSupportedPandocCrossref('tbl:comparison'), true)
     assert.equal(isSupportedPandocCrossref('tab:comparison'), false)
-    assert.equal(isSupportedPandocCrossref('lst:algorithm'), false)
+    assert.equal(isSupportedPandocCrossref('lst:algorithm'), true)
   })
 
   it('pairs every cross-reference label with the reference that cites it', function () {

@@ -23,6 +23,8 @@ import { configField } from '../util/configuration'
 import { type Citation, NODES, nodeToCiteItem } from '../parser/citation-parser'
 import { sanitizeHTML } from 'source/common/util/sanitize-html'
 import { isSupportedPandocCrossref } from '@common/util/pandoc-quick-reference'
+import { referenceFamilyOf } from '@dts/common/references'
+import { workspaceReferencesField } from '../plugins/workspace-references-field'
 
 class CitationWidget extends WidgetType {
   constructor (readonly citation: Citation, readonly rawCitation: string, readonly node: SyntaxNode) {
@@ -35,6 +37,18 @@ class CitationWidget extends WidgetType {
 
   toDOM (view: EditorView): HTMLElement {
     const { items } = this.citation
+    // PREDICATE SPLIT (review B5, deliberate): createWidget's takeover gate
+    // uses referenceFamilyOf — a key counts as a workspace reference only
+    // with a supported family AND a non-empty slug, because those are the
+    // keys the chips renderer can resolve. THIS branch uses the looser
+    // prefix predicate isSupportedPandocCrossref (empty slugs included) so
+    // that every all-prefix-shaped cluster renders as crossref TEXT instead
+    // of being sent to citeproc as a fake bibliography lookup. The branch is
+    // production-reachable: a bracketed empty-slug cluster such as
+    // `[-@fig:]` parses to the item id 'fig:', which referenceFamilyOf
+    // rejects (no slug) but isSupportedPandocCrossref accepts — with the
+    // workspaceReferencesField present, such clusters land exactly here.
+    // Field-less harness states additionally exercise it for full keys.
     const hasCrossref = items.every(i => isSupportedPandocCrossref(i.id))
 
     if (hasCrossref) {
@@ -98,6 +112,19 @@ function shouldHandleNode (node: SyntaxNodeRef): boolean {
 function createWidget (state: EditorState, node: SyntaxNodeRef): CitationWidget|undefined {
   try {
     const citation = nodeToCiteItem(node.node, state.sliceDoc())
+    // Takeover design (issue #1 Phase 4): in a state carrying
+    // workspaceReferencesField (every production Markdown editor), a cluster
+    // containing a supported reference-family key is not a bibliography
+    // citation. All-supported clusters belong to render-reference-chips;
+    // mixed clusters are handled by NEITHER renderer (they stay raw and
+    // reference-lint owns the advisory). Pure bibliography clusters keep
+    // this widget byte-identical. The gate predicate is referenceFamilyOf
+    // (family + non-empty slug — the resolvable keys); see the deliberate
+    // predicate split documented in CitationWidget.toDOM (review B5).
+    const hasWorkspaceReferences = state.field(workspaceReferencesField, false) !== undefined
+    if (hasWorkspaceReferences && citation.items.some(item => referenceFamilyOf(item.id) !== undefined)) {
+      return undefined
+    }
     return new CitationWidget(citation, state.sliceDoc(node.from, node.to), node.node)
   } catch (err) {
     // nodeToCiteItem throws if it is unhappy

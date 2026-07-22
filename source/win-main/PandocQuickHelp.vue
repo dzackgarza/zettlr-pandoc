@@ -34,15 +34,36 @@
           </button>
         </header>
 
+        <div class="help-filter">
+          <input
+            ref="filterInput"
+            v-model="filterQuery"
+            data-help-filter
+            type="search"
+            v-bind:placeholder="trans('Filter the quick reference…')"
+            v-bind:aria-label="trans('Filter the quick reference')"
+          >
+        </div>
+
         <div class="convention-note">
           <strong>{{ trans('Use pandoc-crossref labels.') }}</strong>
           <span>
-            {{ trans('The editor currently recognizes the lower-case prefixes fig:, tbl:, eq:, and sec:. Use tbl:, not tab:.') }}
+            {{ trans('The editor recognizes the lower-case prefixes fig:, tbl:, eq:, sec:, and lst:, plus the theorem-environment prefixes below. Use tbl:, not tab:.') }}
           </span>
         </div>
 
+        <p
+          v-if="nothingMatches"
+          class="no-help-matches"
+        >
+          {{ trans('Nothing in the quick reference matches the filter.') }}
+        </p>
+
         <div class="help-grid">
-          <section class="help-card citations">
+          <section
+            v-if="citationExamples.length > 0"
+            class="help-card citations"
+          >
             <div class="section-heading">
               <span class="section-number">01</span>
               <div>
@@ -61,7 +82,10 @@
             </p>
           </section>
 
-          <section class="help-card crossrefs">
+          <section
+            v-if="crossReferenceExamples.length > 0"
+            class="help-card crossrefs"
+          >
             <div class="section-heading">
               <span class="section-number">02</span>
               <div>
@@ -88,7 +112,10 @@
             </div>
           </section>
 
-          <section class="help-card modifiers">
+          <section
+            v-if="referenceModifiers.length > 0"
+            class="help-card modifiers"
+          >
             <div class="section-heading">
               <span class="section-number">03</span>
               <div>
@@ -104,7 +131,10 @@
             </dl>
           </section>
 
-          <section class="help-card attributes">
+          <section
+            v-if="attributeExamples.length > 0"
+            class="help-card attributes"
+          >
             <div class="section-heading">
               <span class="section-number">04</span>
               <div>
@@ -119,12 +149,66 @@
               </template>
             </dl>
           </section>
+
+          <section
+            v-if="theoremDivExamples.length > 0"
+            class="help-card theorems"
+          >
+            <div class="section-heading">
+              <span class="section-number">05</span>
+              <div>
+                <h2>{{ trans('Label theorem environments') }}</h2>
+                <p>{{ trans('Fenced divs with these classes become referenceable when their attribute block carries a prefixed identifier.') }}</p>
+              </div>
+            </div>
+            <div class="theorem-table" role="table" v-bind:aria-label="trans('Theorem environment syntax')">
+              <div
+                v-for="example in theoremDivExamples"
+                v-bind:key="example.prefix"
+                class="theorem-row"
+                role="row"
+              >
+                <span role="cell">{{ theoremLabel(example) }}</span>
+                <code role="cell">{{ example.label }}</code>
+                <code role="cell">{{ example.reference }}</code>
+              </div>
+            </div>
+            <p class="fine-print">
+              {{ trans('Proof-like divs (proof, sketch, solution) stay unnumbered and unreferenceable.') }}
+            </p>
+          </section>
+
+          <section
+            v-if="referenceAuthoringTopics.length > 0"
+            class="help-card authoring"
+          >
+            <div class="section-heading">
+              <span class="section-number">06</span>
+              <div>
+                <h2>{{ trans('Work with references') }}</h2>
+                <p>{{ trans('What the editor does with the labels and references you author.') }}</p>
+              </div>
+            </div>
+            <div class="topic-grid">
+              <div
+                v-for="topic in referenceAuthoringTopics"
+                v-bind:key="topic.kind"
+                class="topic"
+              >
+                <code class="topic-syntax">{{ topic.syntax }}</code>
+                <div>
+                  <h3>{{ trans(topic.title) }}</h3>
+                  <p>{{ trans(topic.detail) }}</p>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
 
         <footer>
           <strong>{{ trans('Editor behavior') }}</strong>
           <span>
-            {{ trans('Rendered citations and cross-references reveal their source while the cursor is inside them. Cross-reference autocomplete and target previews are not currently available.') }}
+            {{ trans('Rendered citations and cross-references reveal their source while the cursor is inside them.') }}
           </span>
         </footer>
       </section>
@@ -133,24 +217,69 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { trans } from '@common/i18n-renderer'
 import {
+  filterHelpEntries,
   PANDOC_ATTRIBUTE_EXAMPLES,
   PANDOC_CITATION_EXAMPLES,
   PANDOC_CROSS_REFERENCE_EXAMPLES,
+  PANDOC_REFERENCE_AUTHORING_TOPICS,
   PANDOC_REFERENCE_MODIFIERS,
+  THEOREM_DIV_EXAMPLES,
+  type TheoremDivExample,
 } from '@common/util/pandoc-quick-reference'
 
 const emit = defineEmits<(event: 'close') => void>()
 const dialog = ref<HTMLElement|null>(null)
 
-const citationExamples = PANDOC_CITATION_EXAMPLES
-const crossReferenceExamples = PANDOC_CROSS_REFERENCE_EXAMPLES
-const referenceModifiers = PANDOC_REFERENCE_MODIFIERS
-const attributeExamples = PANDOC_ATTRIBUTE_EXAMPLES
+// The searchable-help filter (issue #1, review A2 / US-06): every section
+// narrows through the SHARED filterHelpEntries() by case-insensitive
+// substring across its displayed labels, details, and authored examples.
+const filterQuery = ref<string>('')
+const filterInput = ref<HTMLInputElement|null>(null)
 
-function citationLabel (kind: typeof citationExamples[number]['kind']): string {
+const citationExamples = computed(() => filterHelpEntries(
+  PANDOC_CITATION_EXAMPLES,
+  filterQuery.value,
+  example => [ citationLabel(example.kind), example.syntax ]
+))
+const crossReferenceExamples = computed(() => filterHelpEntries(
+  PANDOC_CROSS_REFERENCE_EXAMPLES,
+  filterQuery.value,
+  example => [ crossrefLabel(example.kind), example.label, example.reference ]
+))
+const referenceModifiers = computed(() => filterHelpEntries(
+  PANDOC_REFERENCE_MODIFIERS,
+  filterQuery.value,
+  example => [ modifierLabel(example.kind), example.syntax ]
+))
+const attributeExamples = computed(() => filterHelpEntries(
+  PANDOC_ATTRIBUTE_EXAMPLES,
+  filterQuery.value,
+  example => [ attributeLabel(example.kind), example.syntax ]
+))
+const theoremDivExamples = computed(() => filterHelpEntries(
+  THEOREM_DIV_EXAMPLES,
+  filterQuery.value,
+  example => [ theoremLabel(example), example.divClass, example.label, example.reference ]
+))
+const referenceAuthoringTopics = computed(() => filterHelpEntries(
+  PANDOC_REFERENCE_AUTHORING_TOPICS,
+  filterQuery.value,
+  topic => [ trans(topic.title), trans(topic.detail), topic.syntax ]
+))
+
+const nothingMatches = computed<boolean>(() => {
+  return citationExamples.value.length === 0 &&
+    crossReferenceExamples.value.length === 0 &&
+    referenceModifiers.value.length === 0 &&
+    attributeExamples.value.length === 0 &&
+    theoremDivExamples.value.length === 0 &&
+    referenceAuthoringTopics.value.length === 0
+})
+
+function citationLabel (kind: typeof PANDOC_CITATION_EXAMPLES[number]['kind']): string {
   const labels = {
     parenthetical: trans('Parenthetical'),
     narrative: trans('In text'),
@@ -162,17 +291,27 @@ function citationLabel (kind: typeof citationExamples[number]['kind']): string {
   return labels[kind]
 }
 
-function crossrefLabel (kind: typeof crossReferenceExamples[number]['kind']): string {
+function crossrefLabel (kind: typeof PANDOC_CROSS_REFERENCE_EXAMPLES[number]['kind']): string {
   const labels = {
     figure: trans('Figure'),
     table: trans('Table'),
     equation: trans('Equation'),
     section: trans('Section'),
+    listing: trans('Listing'),
   }
   return labels[kind]
 }
 
-function modifierLabel (kind: typeof referenceModifiers[number]['kind']): string {
+/**
+ * The display name of a theorem-div example: its registered div class,
+ * capitalized (the same derivation the reference views use), routed through
+ * the translation layer like every other label in this dialog.
+ */
+function theoremLabel (example: TheoremDivExample): string {
+  return trans(example.divClass.charAt(0).toUpperCase() + example.divClass.slice(1))
+}
+
+function modifierLabel (kind: typeof PANDOC_REFERENCE_MODIFIERS[number]['kind']): string {
   const labels = {
     group: trans('Group references'),
     'custom-prefix': trans('Custom prefix'),
@@ -181,7 +320,7 @@ function modifierLabel (kind: typeof referenceModifiers[number]['kind']): string
   return labels[kind]
 }
 
-function attributeLabel (kind: typeof attributeExamples[number]['kind']): string {
+function attributeLabel (kind: typeof PANDOC_ATTRIBUTE_EXAMPLES[number]['kind']): string {
   const labels = {
     attributes: trans('Attribute list'),
     'fenced-div': trans('Fenced div'),
@@ -200,7 +339,12 @@ function handleKeydown (event: KeyboardEvent): void {
 
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
-  dialog.value?.focus()
+  // Searchable at the point of use (US-06): typing filters immediately.
+  if (filterInput.value !== null) {
+    filterInput.value.focus()
+  } else {
+    dialog.value?.focus()
+  }
 })
 
 onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
@@ -303,6 +447,33 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
     }
   }
 
+  .help-filter {
+    margin: 18px 30px 0;
+
+    input {
+      box-sizing: border-box;
+      width: 100%;
+      margin: 0;
+      padding: 9px 12px;
+      color: inherit;
+      background: var(--help-panel);
+      border: 1px solid var(--help-border);
+      border-radius: 8px;
+      font: inherit;
+      outline: none;
+
+      &::placeholder { color: var(--help-muted); }
+
+      &:focus-visible { border-color: var(--help-accent); }
+    }
+  }
+
+  .no-help-matches {
+    margin: 20px 30px 0;
+    color: var(--help-muted);
+    text-align: center;
+  }
+
   .convention-note {
     display: flex;
     gap: 8px;
@@ -330,6 +501,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
   }
 
   .citations, .crossrefs { min-height: 295px; }
+
+  .theorems, .authoring { grid-column: 1 / -1; }
 
   .section-heading {
     display: flex;
@@ -410,6 +583,56 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
     text-transform: uppercase;
   }
 
+  .theorem-table {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 5px 22px;
+  }
+
+  .theorem-row {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr) 76px;
+    gap: 7px;
+    align-items: center;
+
+    > span:first-child {
+      color: var(--help-muted);
+      font-size: 11px;
+    }
+  }
+
+  .topic-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+    gap: 12px 18px;
+  }
+
+  .topic {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+
+    h3 {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    p {
+      margin-top: 2px;
+      color: var(--help-muted);
+      font-size: 11px;
+    }
+  }
+
+  .topic-syntax {
+    flex: 0 0 auto;
+    min-width: 58px;
+    text-align: center;
+    color: var(--help-accent);
+    font-weight: 600;
+  }
+
   > footer {
     display: flex;
     gap: 8px;
@@ -461,6 +684,8 @@ body.dark .pandoc-quick-help {
     .crossref-row { grid-template-columns: 50px minmax(0, 1fr); }
     .crossref-row > :last-child { grid-column: 2; }
     .crossref-header { display: none; }
+    .theorem-row { grid-template-columns: 62px minmax(0, 1fr); }
+    .theorem-row > :last-child { grid-column: 2; }
   }
 }
 </style>

@@ -18,8 +18,8 @@
 import { syntaxTree } from '@codemirror/language'
 import type { EditorSelection, Range, RangeSet } from '@codemirror/state'
 import { BlockWrapper, Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from '@codemirror/view'
-import type { SyntaxNode } from '@lezer/common'
 import { parsePandocAttributes } from 'source/common/pandoc-util/parse-pandoc-attributes'
+import { divModelFromNode, type PandocDivModel } from 'source/common/pandoc-util/pandoc-div-model'
 import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
 import { configField } from '../util/configuration'
 
@@ -84,124 +84,6 @@ function createSpanDecorations (view: EditorView): RangeSet<Decoration> {
 }
 
 type PandocDivState = 'active'|'ancestor'|'inactive'
-type PandocDivFamily = 'result'|'definition'|'explanation'|'task'|'warning'|'proof'|'generic'
-
-interface PandocDivModel {
-  from: number
-  to: number
-  openFrom: number
-  openTo: number
-  contentFrom: number
-  contentTo: number
-  closeFrom: number
-  closeTo: number
-  classes: string[]
-  id: string
-  properties: Record<string, string>
-  family: PandocDivFamily
-  label: string
-  depth: number
-}
-
-const semanticClasses: Record<string, PandocDivFamily> = {
-  theorem: 'result',
-  lemma: 'result',
-  proposition: 'result',
-  corollary: 'result',
-  conjecture: 'result',
-  claim: 'result',
-  definition: 'definition',
-  construction: 'definition',
-  notation: 'definition',
-  assumption: 'definition',
-  example: 'explanation',
-  remark: 'explanation',
-  observation: 'explanation',
-  fact: 'explanation',
-  exercise: 'task',
-  problem: 'task',
-  question: 'task',
-  warning: 'warning',
-  caution: 'warning',
-  danger: 'warning',
-  error: 'warning',
-  proof: 'proof',
-  sketch: 'proof',
-  solution: 'proof',
-}
-
-function humanizeClassName (className: string): string {
-  return className
-    .replace(/[._-]+/g, ' ')
-    .replace(/\b\w/g, char => char.toUpperCase())
-}
-
-function classifyDiv (classes: string[]): { family: PandocDivFamily, label: string } {
-  for (const authoredClass of classes) {
-    const normalizedClass = authoredClass.toLowerCase()
-    const family = semanticClasses[normalizedClass]
-    if (family !== undefined) {
-      return { family, label: humanizeClassName(normalizedClass) }
-    }
-  }
-
-  return {
-    family: 'generic',
-    label: classes.length > 0 ? `.${classes[0]}` : 'Div',
-  }
-}
-
-function safeProperties (properties: Record<string, string>|undefined): Record<string, string> {
-  if (properties === undefined) {
-    return {}
-  }
-
-  return Object.fromEntries(Object.entries(properties).filter(([name]) => {
-    return name === 'role' || name === 'title' || name.startsWith('aria-') || name.startsWith('data-')
-  }))
-}
-
-function divModelFromNode (view: EditorView, node: SyntaxNode): PandocDivModel|undefined {
-  const marks = node.getChildren('PandocDivMark')
-  const attrs = node.getChild('PandocAttribute')
-  const info = node.getChild('PandocDivInfo')
-
-  if ((!attrs && !info) || marks.length !== 2) {
-    return undefined
-  }
-
-  const openingLine = view.state.doc.lineAt(node.from)
-  const closingLine = view.state.doc.lineAt(node.to)
-  const contentFrom = Math.min(openingLine.to + 1, closingLine.from)
-  const attributes = attrs ? parsePandocAttributes(view.state.sliceDoc(attrs.from, attrs.to)) : {}
-  const classes = info ? [view.state.sliceDoc(info.from, info.to)] : []
-  if (attributes.classes) {
-    classes.push(...attributes.classes)
-  }
-
-  const classification = classifyDiv(classes)
-  let depth = 0
-  for (let parent = node.parent; parent !== null; parent = parent.parent) {
-    if (parent.name === 'PandocDiv') {
-      depth++
-    }
-  }
-  return {
-    from: node.from,
-    to: node.to,
-    openFrom: openingLine.from,
-    openTo: openingLine.to,
-    contentFrom,
-    contentTo: Math.max(contentFrom, closingLine.from - 1),
-    closeFrom: closingLine.from,
-    closeTo: closingLine.to,
-    classes,
-    id: attributes.id ?? '',
-    properties: safeProperties(attributes.properties),
-    depth,
-    ...classification,
-  }
-}
 
 function collectVisibleDivs (view: EditorView): PandocDivModel[] {
   const divs = new Map<string, PandocDivModel>()
@@ -217,7 +99,7 @@ function collectVisibleDivs (view: EditorView): PandocDivModel[] {
 
         const key = `${node.from}:${node.to}`
         if (!divs.has(key)) {
-          const model = divModelFromNode(view, node.node)
+          const model = divModelFromNode(view.state.doc, node.node)
           if (model !== undefined) {
             divs.set(key, model)
           }
@@ -279,9 +161,10 @@ function presentationAttributes (div: PandocDivModel, state: PandocDivState): Re
 }
 
 function contentAttributes (div: PandocDivModel, state: PandocDivState): Record<string, string> {
+  const presentation = presentationAttributes(div, state)
   return {
-    ...presentationAttributes(div, state),
-    class: [ presentationAttributes(div, state).class, ...div.classes ].join(' '),
+    ...presentation,
+    class: [ presentation.class, ...div.classes ].join(' '),
   }
 }
 
@@ -358,6 +241,26 @@ function createDivDecorations (view: EditorView): RangeSet<BlockWrapper> {
   return BlockWrapper.set(ranges, true)
 }
 
+/**
+ * Handles activating an inactive div's source from its rendered open-fence
+ * label. Shared by the mousedown and keydown plugin event handlers.
+ */
+function revealDivSource (target: EventTarget|null, view: EditorView): boolean {
+  if (!(target instanceof Element)) {
+    return false
+  }
+
+  const label = target.closest('pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]')
+  const from = label?.getAttribute('data-pandoc-div-from')
+  if (from === null || from === undefined) {
+    return false
+  }
+
+  view.dispatch({ selection: { anchor: Number(from) }, scrollIntoView: true })
+  view.focus()
+  return true
+}
+
 const pandocDivSpanPlugin = ViewPlugin.fromClass(class {
   spanDecorations: DecorationSet
   divWrappers: RangeSet<BlockWrapper>
@@ -368,7 +271,13 @@ const pandocDivSpanPlugin = ViewPlugin.fromClass(class {
   }
 
   update (update: ViewUpdate) {
-    if (update.docChanged || update.viewportChanged || update.selectionSet) {
+    // The syntax-tree comparison matters when the initial parse misses the
+    // synchronous time slice: the parser finishes asynchronously and applies
+    // its tree in a transaction that changes neither doc, viewport, nor
+    // selection. Without recomputing there, divs that were not yet parsed at
+    // construction would stay unwrapped until the next interaction.
+    if (update.docChanged || update.viewportChanged || update.selectionSet ||
+        syntaxTree(update.state) !== syntaxTree(update.startState)) {
       this.spanDecorations = createSpanDecorations(update.view)
       this.divWrappers = createDivDecorations(update.view)
     }
@@ -381,20 +290,11 @@ const pandocDivSpanPlugin = ViewPlugin.fromClass(class {
   }),
   eventHandlers: {
     mousedown: (event, view) => {
-      const target = event.target
-      if (!(target instanceof Element)) {
-        return false
-      }
-
-      const label = target.closest('pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]')
-      const from = label?.getAttribute('data-pandoc-div-from')
-      if (from === null || from === undefined) {
+      if (!revealDivSource(event.target, view)) {
         return false
       }
 
       event.preventDefault()
-      view.dispatch({ selection: { anchor: Number(from) }, scrollIntoView: true })
-      view.focus()
       return true
     },
     keydown: (event, view) => {
@@ -402,24 +302,25 @@ const pandocDivSpanPlugin = ViewPlugin.fromClass(class {
         return false
       }
 
-      const target = event.target
-      if (!(target instanceof Element)) {
-        return false
-      }
-
-      const label = target.closest('pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]')
-      const from = label?.getAttribute('data-pandoc-div-from')
-      if (from === null || from === undefined) {
+      if (!revealDivSource(event.target, view)) {
         return false
       }
 
       event.preventDefault()
-      view.dispatch({ selection: { anchor: Number(from) }, scrollIntoView: true })
-      view.focus()
       return true
     },
   },
 })
+
+// Accent variables per semantic family, applied identically to the content
+// wrapper and the open-fence wrapper. Kept as one generated map so the family
+// list cannot drift between element types.
+const SEMANTIC_FAMILY_ACCENTS = Object.fromEntries(
+  [ 'result', 'definition', 'explanation', 'task', 'warning', 'proof' ].map(family => [
+    `pandoc-div-wrapper.pandoc-div--${family}, pandoc-div-open-wrapper.pandoc-div--${family}`,
+    { '--pandoc-div-accent': `var(--zettlr-editor-pandoc-div-${family})` },
+  ])
+)
 
 export const renderPandoc = [
   pandocDivSpanPlugin,
@@ -449,23 +350,8 @@ export const renderPandoc = [
       borderRadius: '0 0.35em 0.35em 0',
       backgroundColor: 'var(--pandoc-div-surface)',
     },
-    'pandoc-div-wrapper.pandoc-div--result': {
-      '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-result)',
-    },
-    'pandoc-div-wrapper.pandoc-div--definition': {
-      '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-definition)',
-    },
-    'pandoc-div-wrapper.pandoc-div--explanation': {
-      '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-explanation)',
-    },
-    'pandoc-div-wrapper.pandoc-div--task': {
-      '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-task)',
-    },
-    'pandoc-div-wrapper.pandoc-div--warning': {
-      '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-warning)',
-    },
+    ...SEMANTIC_FAMILY_ACCENTS,
     'pandoc-div-wrapper.pandoc-div--proof': {
-      '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-proof)',
       borderLeftStyle: 'dotted',
     },
     'pandoc-div-wrapper .cm-line, pandoc-div-ancestor-wrapper .cm-line, pandoc-div-active-wrapper .cm-line': {
@@ -504,12 +390,6 @@ export const renderPandoc = [
       textTransform: 'uppercase',
     },
     'pandoc-div-open-wrapper': { '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-generic)' },
-    'pandoc-div-open-wrapper.pandoc-div--result': { '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-result)' },
-    'pandoc-div-open-wrapper.pandoc-div--definition': { '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-definition)' },
-    'pandoc-div-open-wrapper.pandoc-div--explanation': { '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-explanation)' },
-    'pandoc-div-open-wrapper.pandoc-div--task': { '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-task)' },
-    'pandoc-div-open-wrapper.pandoc-div--warning': { '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-warning)' },
-    'pandoc-div-open-wrapper.pandoc-div--proof': { '--pandoc-div-accent': 'var(--zettlr-editor-pandoc-div-proof)' },
     'pandoc-div-open-wrapper.pandoc-div--generic::before': {
       fontFamily: 'var(--zettlr-editor-code-font)',
       fontWeight: '500',

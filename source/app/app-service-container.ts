@@ -28,6 +28,7 @@ import LogProvider from '@providers/log'
 import MenuProvider from '@providers/menu'
 import type ProviderContract from '@providers/provider-contract'
 import RecentDocumentsProvider from '@providers/recent-docs'
+import ReferenceProvider from '@providers/references'
 import StatsProvider from '@providers/stats'
 import TagProvider from '@providers/tags'
 import TargetProvider from '@providers/targets'
@@ -84,6 +85,7 @@ export class AppServiceContainer {
   private readonly _logProvider: LogProvider
   private readonly _menuProvider: MenuProvider
   private readonly _recentDocsProvider: RecentDocumentsProvider
+  private readonly _referenceProvider: ReferenceProvider
   private readonly _statsProvider: StatsProvider
   private readonly _tagProvider: TagProvider
   private readonly _targetProvider: TargetProvider
@@ -118,6 +120,7 @@ export class AppServiceContainer {
 
     this._targetProvider = new TargetProvider(this._logProvider, this._fsal)
     this._linkProvider = new LinkProvider(this._logProvider, this._configProvider, this._fsal)
+    this._referenceProvider = new ReferenceProvider(this._logProvider, this._fsal)
     this._searchProvider = new SearchProvider(this._logProvider, this._fsal, this._configProvider)
     
     // The document provider accesses only the FSAL in its constructor
@@ -182,6 +185,7 @@ export class AppServiceContainer {
 
     await this._informativeBoot(this._targetProvider, 'TargetProvider')
     await this._informativeBoot(this._linkProvider, 'LinkProvider')
+    await this._informativeBoot(this._referenceProvider, 'ReferenceProvider')
     await this._informativeBoot(this._searchProvider, 'SearchProvider')
 
     // Boot the commands before the window provider to ensure the handler for
@@ -232,6 +236,7 @@ export class AppServiceContainer {
   public get log (): LogProvider { return this._logProvider }
   public get menu (): MenuProvider { return this._menuProvider }
   public get recentDocs (): RecentDocumentsProvider { return this._recentDocsProvider }
+  public get references (): ReferenceProvider { return this._referenceProvider }
   public get stats (): StatsProvider { return this._statsProvider }
   public get tags (): TagProvider { return this._tagProvider }
   public get targets (): TargetProvider { return this._targetProvider }
@@ -259,6 +264,7 @@ export class AppServiceContainer {
     await this._safeShutdown(this._cssProvider, 'CSSProvider')
     await this._safeShutdown(this._targetProvider, 'TargetProvider')
     await this._safeShutdown(this._linkProvider, 'LinkProvider')
+    await this._safeShutdown(this._referenceProvider, 'ReferenceProvider')
     await this._safeShutdown(this._tagProvider, 'TagProvider')
     await this._safeShutdown(this._searchProvider, 'SearchProvider')
     await this._safeShutdown(this._menuProvider, 'MenuProvider')

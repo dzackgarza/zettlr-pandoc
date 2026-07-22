@@ -34,7 +34,7 @@ import { type PandocProfileMetadata } from '@providers/assets'
 import type { ConfigOptions } from '@providers/config/get-config-template'
 import type ConfigProvider from '@providers/config'
 import { enableExtension, parseReaderWriter, readerWriterToString } from '@common/pandoc-util/parse-reader-writer'
-import { EXT2READER } from '@common/pandoc-util/pandoc-maps'
+import { EXT2READER, isHtmlWriter, isTexWriter } from '@common/pandoc-util/pandoc-maps'
 import { injectPandocMathHeaders } from './pandoc-math-headers'
 import { type MathJaxMacro } from '@common/util/mathjax-config'
 import { loadMathJaxMacros, mathJaxMacrosPath } from '../../../util/load-mathjax-macros'
@@ -306,9 +306,9 @@ export async function writeDefaults (
   // absolute path, or a name is resolved from ~/.pandoc/templates.
   if (defaults.template === undefined || defaults.template === '') {
     const writerName = parseReaderWriter(defaults.writer as string).name
-    if ([ 'html', 'html4', 'html5', 'revealjs', 's5', 'slidy', 'dzslides' ].includes(writerName) && config.export.htmlTemplate !== '') {
+    if (isHtmlWriter(writerName) && config.export.htmlTemplate !== '') {
       defaults.template = config.export.htmlTemplate
-    } else if ([ 'latex', 'beamer', 'pdf' ].includes(writerName) && config.export.latexTemplate !== '') {
+    } else if (isTexWriter(writerName) && config.export.latexTemplate !== '') {
       defaults.template = config.export.latexTemplate
     }
   }

@@ -74,7 +74,14 @@ export async function parse (
     linefeed: '\n',
     firstHeading: null, // May contain the first heading level 1
     yamlTitle: undefined,
-    frontmatter: null // May contain frontmatter variables
+    frontmatter: null, // May contain frontmatter variables
+    // DELIBERATELY NON-AUTHORITATIVE placeholder (review B21): the parser
+    // replaces this empty snapshot with the document's actual reference
+    // surface (issue #1). It survives only for files the parser skips
+    // (e.g. the >10 MB guard below). Its sourceHash '' can never equal a
+    // real 'fnv1a-…' hash, so hash-fenced workspace edits structurally
+    // refuse to touch a document that carries it.
+    references: { documentPath: filePath, sourceHash: '', definitions: [], occurrences: [] }
   }
 
   // In any case, we need the most recent times.

@@ -39,25 +39,25 @@ const tests = [
   // NOTE: We cannot currently test for "just now" (< 1 min) since that depends
   // on a translation which needs to come from main!
   {
-    input: Date.now() - 1000 * 60 * 23,
+    input: () => Date.now() - 1000 * 60 * 23,
     relative: true,
     locale: 'en-US',
     expected: '23 min. ago'
   },
   {
-    input: Date.now() - 1000 * 60 * 23,
+    input: () => Date.now() - 1000 * 60 * 23,
     relative: true,
     locale: 'de-DE',
     expected: 'vor 23 Min.'
   },
   {
-    input: Date.now() - 1000 * 60 * 120,
+    input: () => Date.now() - 1000 * 60 * 120,
     relative: true,
     locale: 'en-US',
     expected: '2 hr. ago'
   },
   {
-    input: Date.now() - 1000 * 60 * 120,
+    input: () => Date.now() - 1000 * 60 * 120,
     relative: true,
     locale: 'de-DE',
     expected: 'vor 2 Std.'
@@ -67,7 +67,8 @@ const tests = [
 describe('formatDate()', function () {
   for (const test of tests) {
     it(`formats the date ${test.expected}`, function () {
-      assert.deepStrictEqual(formatDate(test.input, test.locale, test.relative), test.expected)
+      const input = typeof test.input === 'function' ? test.input() : test.input
+      assert.deepStrictEqual(formatDate(input, test.locale, test.relative), test.expected)
     })
   }
 })

@@ -3,6 +3,7 @@ import path from 'path'
 import { pathToFileURL } from 'url'
 import { mathJaxPackages, type MathJaxMacro } from '@common/util/mathjax-config'
 import { parseReaderWriter } from '@common/pandoc-util/parse-reader-writer'
+import { isHtmlWriter, isTexWriter } from '@common/pandoc-util/pandoc-maps'
 import { projectTexHeader } from './macro-projections'
 
 function headerFiles (defaults: Record<string, unknown>): string[] {
@@ -19,14 +20,6 @@ function headerFiles (defaults: Record<string, unknown>): string[] {
   }
 
   throw new TypeError('Pandoc include-in-header must be a string or an array of strings')
-}
-
-function isHtmlWriter (writer: string): boolean {
-  return [ 'html', 'html4', 'html5', 'revealjs', 's5', 'slidy', 'dzslides' ].includes(writer)
-}
-
-function isTexWriter (writer: string): boolean {
-  return [ 'beamer', 'latex', 'pdf' ].includes(writer)
 }
 
 /**
