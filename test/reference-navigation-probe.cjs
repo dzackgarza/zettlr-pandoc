@@ -194,7 +194,13 @@ app.whenReady().then(async () => {
       selectionAfter: await js(window, 'window.refNavProbeSelection()'),
     }
   }
-  screenshots.push(await screenshot(window, 'reference-navigation-cross-after-modclick.png'))
+  // No post-Mod-click screenshot (ledger C4): the Mod-click's visible
+  // outcome — the target document opening at the definition — is owned by
+  // the main-process documents provider, and this renderer-only harness
+  // deliberately records that boundary (window.ipc invocations above)
+  // instead of simulating it. Headless, the editor pane is pixel-identical
+  // before and after the click, so a frame here would be a meaningless
+  // receipt; the recorded invocations in the JSON result are the proof.
 
   const crossFile = { parity, location, modClick: crossModClick }
 

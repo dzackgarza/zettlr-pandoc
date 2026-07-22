@@ -108,6 +108,18 @@ capture-reference-chips output:
     "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-reference-chips-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/reference-chips-visual-bundle.js"
     xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/editor-reference-chips-visual-capture.cjs" "{{output}}"
 
+# Capture the combined `@` completion popup in isolated offscreen Electron
+# (issue #1, ledger C4): citation entries and typed label entries together,
+# a label option's info panel with its quick-help link, and the disabled
+# another-Project entry (whose inert apply the driver proves). Follows the
+# capture-reference-chips esbuild pattern. This never starts Forge, a dev
+# server, xdg-open, or the system browser.
+capture-reference-completion output:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    mkdir -p "{{output}}"
+    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/reference-completion-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/reference-completion-visual-bundle.js"
+    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --ozone-platform=x11 --disable-gpu --no-sandbox "{{justfile_directory()}}/test/reference-completion-visual-capture.cjs" "{{output}}"
+
 # Capture the reference hover tooltip presentation in isolated offscreen
 # Electron (issue #1 Phase 4). Follows the capture-pandoc-divs pattern; the
 # entry and capture files land with the green implementation, and the recipe
@@ -135,6 +147,18 @@ capture-reference-navigation output:
     mkdir -p "{{output}}"
     "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/reference-navigation-entry.ts" --bundle --platform=browser --format=iife --define:process.platform='"linux"' --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/reference-navigation-bundle.js"
     xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --ozone-platform=x11 --disable-gpu --no-sandbox "{{justfile_directory()}}/test/reference-navigation-probe.cjs" "{{output}}"
+
+# Capture the REAL toolbar Back/Forward navigation controls (issue #1
+# Phase 5; ledger C4) in enabled and disabled states: bundles the entry with
+# the production renderer webpack config (real WindowToolbar + ButtonControl
+# .vue components and the Clarity icon loader) and screenshots them in
+# isolated offscreen Electron. This never starts Forge, a dev server,
+# xdg-open, or the system browser.
+capture-navigation-controls output:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    mkdir -p "{{output}}"
+    node "{{justfile_directory()}}/test/reference-navigation-controls-build.cjs" "{{output}}"
+    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --ozone-platform=x11 --disable-gpu --no-sandbox "{{justfile_directory()}}/test/reference-navigation-controls-capture.cjs" "{{output}}"
 
 # Capture the rename-preview dialog scenes (issue #1, review A4: the
 # contract's "rename preview" capture) in isolated offscreen Electron:

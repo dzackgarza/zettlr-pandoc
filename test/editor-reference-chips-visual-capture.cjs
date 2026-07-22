@@ -10,6 +10,11 @@ const scenes = [
   { name: 'chips-occurrences-dark', scene: 'occurrences', dark: true, width: 1200, height: 800 },
   { name: 'chips-definitions-light', scene: 'definitions', dark: false, width: 1200, height: 900 },
   { name: 'chips-definitions-dark', scene: 'definitions', dark: true, width: 1200, height: 900 },
+  // The resolution-states scene (ledger C4): duplicate and missing keys stay
+  // raw while resolved keys — including the one resolving into ProjectB with
+  // projectRoots fed — render chips.
+  { name: 'chips-states-light', scene: 'states', dark: false, width: 1200, height: 800 },
+  { name: 'chips-states-dark', scene: 'states', dark: true, width: 1200, height: 800 },
 ]
 
 async function capture (window, scene) {
@@ -41,6 +46,9 @@ async function capture (window, scene) {
       countBadges: document.querySelectorAll('.reference-count-badge').length,
       positionedGroups: document.querySelectorAll('.reference-badge-group.positioned').length,
       rawMixed: document.body.textContent.includes('[@thm:torelli; @Ols04, Lem. 7.1]'),
+      chipKeys: Array.from(document.querySelectorAll('.reference-chip')).map(chip => chip.getAttribute('data-reference-key')),
+      rawDuplicateVisible: document.body.textContent.includes('@thm:torelli'),
+      rawMissingVisible: document.body.textContent.includes('@fig:missing'),
     }
   })()`)
   console.log(scene.name, diagnostics)
@@ -55,6 +63,21 @@ async function capture (window, scene) {
   }
   if (scene.scene === 'definitions' && (diagnostics.countBadges === 0 || diagnostics.positionedGroups === 0)) {
     throw new Error(`${scene.name} rendered no positioned definition badges`)
+  }
+  if (scene.scene === 'states') {
+    // Resolved keys render chips — including the ProjectB-resolved key —
+    // while the duplicate and missing keys stay raw (no chip, authored
+    // token visible).
+    if (!diagnostics.chipKeys.includes('eq:intersection-form') ||
+        !diagnostics.chipKeys.includes('lem:halphen-degeneration')) {
+      throw new Error(`${scene.name} did not render the resolved chips: ${JSON.stringify(diagnostics.chipKeys)}`)
+    }
+    if (diagnostics.chipKeys.includes('thm:torelli')) {
+      throw new Error(`${scene.name} rendered a chip for the duplicate key`)
+    }
+    if (!diagnostics.rawDuplicateVisible || !diagnostics.rawMissingVisible) {
+      throw new Error(`${scene.name} does not show the raw duplicate/missing tokens`)
+    }
   }
   const image = await window.webContents.capturePage()
   await fs.writeFile(path.join(outputDirectory, `${scene.name}.png`), image.toPNG())

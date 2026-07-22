@@ -141,17 +141,27 @@ app.whenReady().then(async () => {
     state = await window.webContents.executeJavaScript('window.referenceSearchProbeState()')
     screenshots.push(await screenshot(window, 'reference-search-overlay-query.png'))
 
-    sendKey(window, 'Return')
-    await nextFrame(window)
-    jumpIntents = await window.webContents.executeJavaScript('window.referenceSearchProbeJumpIntents()')
-    screenshots.push(await screenshot(window, 'reference-search-overlay-after-enter.png'))
-
     // The overlay's quick-help affordance (review A2, US-06): a real click
-    // on [data-open-help] must emit exactly one 'open-help'.
+    // on [data-open-help] must emit exactly one 'open-help'. This runs
+    // BEFORE Enter: the entry mirrors App.vue's jump handling by closing
+    // the overlay, so nothing would be left to click afterwards.
     openHelpCount = await window.webContents.executeJavaScript(
       "(() => { const link = document.querySelector('.reference-search-overlay [data-open-help]'); if (link !== null) { link.click() } return window.referenceSearchProbeOpenHelpCount() })()"
     )
     screenshots.push(await screenshot(window, 'reference-search-overlay-help-affordance.png'))
+
+    sendKey(window, 'Return')
+    await nextFrame(window)
+    jumpIntents = await window.webContents.executeJavaScript('window.referenceSearchProbeJumpIntents()')
+    // The post-Enter frame shows a REAL state change (ledger C4): the jump
+    // intent closed the overlay, exactly as App.vue's v-on:jump handler
+    // does. Fail loudly if the overlay is somehow still mounted — that
+    // would make this frame a meaningless duplicate of the query frame.
+    const overlayStillPresent = await window.webContents.executeJavaScript('window.referenceSearchProbeOverlayPresent()')
+    if (overlayStillPresent === true) {
+      throw new Error('The overlay must close on the Enter jump before the closed-state frame')
+    }
+    screenshots.push(await screenshot(window, 'reference-search-overlay-after-enter-closed.png'))
   }
 
   // ——— Reverse-lookup scene (issue #1 Phase 8): reload for a fresh JS
@@ -179,7 +189,13 @@ app.whenReady().then(async () => {
     sendKey(window, 'Return')
     await nextFrame(window)
     keyedJumpIntents = await window.webContents.executeJavaScript('window.referenceSearchProbeJumpIntents()')
-    screenshots.push(await screenshot(window, 'reference-search-overlay-citing-jump.png'))
+    // As in the plain scene, the citing-location jump closes the overlay
+    // (App.vue's v-on:jump), so this frame captures the real closed state.
+    const keyedOverlayStillPresent = await window.webContents.executeJavaScript('window.referenceSearchProbeOverlayPresent()')
+    if (keyedOverlayStillPresent === true) {
+      throw new Error('The keyed overlay must close on the Enter jump before the closed-state frame')
+    }
+    screenshots.push(await screenshot(window, 'reference-search-overlay-citing-jump-closed.png'))
   }
 
   const result = {

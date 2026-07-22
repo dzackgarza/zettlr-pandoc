@@ -90,6 +90,7 @@ declare global {
     referenceSearchProbeOpenHelpCount: () => number
     referenceSearchProbeMountKeyed: (documents: ProbeDocument[], key: string) => Promise<KeyedMountReport>
     referenceSearchProbeKeyedState: () => { query: string|null, mode: string|null, rows: KeyedProbeRow[] }
+    referenceSearchProbeOverlayPresent: () => boolean
   }
 }
 
@@ -129,13 +130,20 @@ window.referenceSearchProbeMount = async (documents: ProbeDocument[], context?: 
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createApp(overlayModule.default as any, {
+  const overlayApp = createApp(overlayModule.default as any, {
     definitions,
     projectRoots: context?.projectRoots ?? [],
     activeDocumentPath: context?.activeDocumentPath,
-    onJump: (intent: JumpIntent) => { recordedJumpIntents.push(intent) },
+    onJump: (intent: JumpIntent) => {
+      recordedJumpIntents.push(intent)
+      // Mirror the overlay's OWNER (App.vue): a jump intent closes the
+      // overlay (v-on:jump -> showReferenceSearch = false), so the probe's
+      // post-Enter frame shows the real closed state (ledger C4).
+      overlayApp.unmount()
+    },
     onOpenHelp: () => { recordedOpenHelpCount++ }
-  }).mount('#app')
+  })
+  overlayApp.mount('#app')
 
   await nextTick()
   await document.fonts.ready
@@ -162,6 +170,10 @@ window.referenceSearchProbeState = () => {
 window.referenceSearchProbeJumpIntents = () => recordedJumpIntents
 
 window.referenceSearchProbeOpenHelpCount = () => recordedOpenHelpCount
+
+window.referenceSearchProbeOverlayPresent = () => {
+  return document.querySelector('.reference-search-overlay') !== null
+}
 
 /**
  * The Phase 8 reverse-lookup scene (issue #1 Phase 4 badge contract): a
@@ -227,12 +239,17 @@ window.referenceSearchProbeMountKeyed = async (documents: ProbeDocument[], key: 
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createApp(overlayModule.default as any, {
+  const keyedApp = createApp(overlayModule.default as any, {
     definitions,
     occurrences,
     initialRequest: { key },
-    onJump: (intent: JumpIntent) => { recordedJumpIntents.push(intent) }
-  }).mount('#app')
+    onJump: (intent: JumpIntent) => {
+      recordedJumpIntents.push(intent)
+      // Mirror App.vue: the citing-location jump closes the overlay too.
+      keyedApp.unmount()
+    }
+  })
+  keyedApp.mount('#app')
 
   await nextTick()
   await document.fonts.ready

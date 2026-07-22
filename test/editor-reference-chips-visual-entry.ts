@@ -20,6 +20,7 @@ import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/ma
 import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 import { extractReferences } from 'source/common/pandoc-util/extract-references'
 import { resolveWorkspace } from 'source/common/pandoc-util/resolve-references'
+import type { ProjectRootSpec } from '@dts/common/references'
 
 declare global {
   interface Window {
@@ -71,6 +72,78 @@ stays raw as well.
 For the construction of the pencil see [@Ols04, Lem. 7.1].
 `
 
+// ——— The resolution-states scene (ledger C4): a two-Project workspace in
+// which thm:torelli is defined in BOTH Projects (duplicate — the occurrence
+// stays raw per contract), fig:missing is defined nowhere (raw), and the
+// remaining keys resolve — one inside the active Project and one into
+// ProjectB (whose chip renders normally; the STATUS surfaces belong to the
+// hover tooltip and the completion popup).
+
+const stateDefinitionsA = `# Structural results
+
+::: {.theorem #thm:torelli title="Torelli for Enriques"}
+Two complex Enriques surfaces are isomorphic if and only if their period
+points agree in the quotient of the type IV domain.
+:::
+
+$$ q(x) = x^2 $$ {#eq:intersection-form}
+`
+
+const stateDefinitionsB = `# Companion paper
+
+::: {.theorem #thm:torelli title="Torelli, companion restatement"}
+The companion draft restates the Torelli theorem under its own numbering,
+which makes the key a workspace duplicate.
+:::
+
+::: {.lemma #lem:halphen-degeneration title="Halphen degenerations"}
+Every Halphen pencil of index two degenerates to a union of two rational
+elliptic surfaces glued along a half-fiber.
+:::
+`
+
+const stateOccurrences = `# Reference resolution states
+
+The intersection form @eq:intersection-form resolves inside the active
+Project, so its occurrence renders as a chip.
+
+The duplicate key @thm:torelli is defined in BOTH Projects, so the
+occurrence stays raw — diagnostics own that state and no definition is
+selected silently.
+
+The missing key @fig:missing has no definition anywhere in the workspace,
+so it stays raw as well.
+
+The outside key @lem:halphen-degeneration resolves into ProjectB, so its
+chip renders normally.
+`
+
+const STATE_PROJECT_ROOTS: ProjectRootSpec[] = [
+  {
+    rootPath: 'ProjectA',
+    files: [ 'Definitions.md', 'States.md' ],
+  },
+  {
+    rootPath: 'ProjectB',
+    files: ['Other_Paper.md'],
+  },
+]
+
+function statesPayload (): EditorWorkspaceReferences {
+  const workspace = [
+    extractReferences('ProjectA/Definitions.md', stateDefinitionsA),
+    extractReferences('ProjectB/Other_Paper.md', stateDefinitionsB),
+    extractReferences('ProjectA/States.md', stateOccurrences)
+  ]
+  const snapshot = workspace[2]
+  return {
+    snapshot,
+    workspaceOccurrences: workspace.flatMap(s => s.occurrences),
+    resolutions: resolveWorkspace(workspace),
+    projectRoots: STATE_PROJECT_ROOTS
+  }
+}
+
 function payloadFor (documentPath: string): EditorWorkspaceReferences {
   const workspace = [
     extractReferences('definitions.md', definitions),
@@ -97,7 +170,7 @@ async function mount (): Promise<void> {
   const scene = document.body.dataset.scene ?? 'occurrences'
   const dark = document.body.dataset.dark === 'true'
   const documentPath = scene === 'definitions' ? 'definitions.md' : 'occurrences.md'
-  const doc = scene === 'definitions' ? definitions : occurrences
+  const doc = scene === 'states' ? stateOccurrences : scene === 'definitions' ? definitions : occurrences
 
   const state = EditorState.create({
     doc,
@@ -122,7 +195,9 @@ async function mount (): Promise<void> {
   }
 
   const view = new EditorView({ state, parent: host })
-  view.dispatch({ effects: workspaceReferencesUpdate.of(payloadFor(documentPath)) })
+  view.dispatch({
+    effects: workspaceReferencesUpdate.of(scene === 'states' ? statesPayload() : payloadFor(documentPath))
+  })
   await document.fonts.ready
   // Give the badge layer its measure cycle before capturing.
   for (let i = 0; i < 3; i++) {
