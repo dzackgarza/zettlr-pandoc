@@ -63,7 +63,14 @@ module.exports = {
       source: [path.resolve(__dirname, 'source')],
       '@common': [path.resolve(__dirname, 'source/common')],
       '@providers': [path.resolve(__dirname, 'source/app/service-providers')],
-      '@dts': [path.resolve(__dirname, 'source/types')]
+      '@dts': [path.resolve(__dirname, 'source/types')],
+      // fzf publishes `"type": "module"` yet routes require() to a UMD file,
+      // which webpack then parses as an ESM file with zero exports. Since
+      // ts-loader emits CommonJS (tsconfig `module`), `import { Fzf }` becomes
+      // exactly such a require. Point the bare specifier straight at the ES
+      // build (the package's exports map blocks deep imports, an alias does
+      // not) so webpack's interop serves the real named exports.
+      fzf: path.resolve(__dirname, 'node_modules/fzf/dist/fzf.es.js')
     },
     fallback: {
       // Don't polyfill these modules

@@ -70,6 +70,7 @@ import { addColAfter, addColBefore, moveNextCell, movePrevCell, swapNextCol, swa
 import { alignTables } from '../table-editor/commands/tables'
 import { addRowAfter, addRowBefore, moveNextRow, movePrevRow, swapNextRow, swapPrevRow } from '../table-editor/commands/rows'
 import { removeLineBreaks } from '../commands/transforms/remove-line-breaks'
+import { openReferenceSearch } from '../plugins/reference-search-effect'
 
 // Includes:
 // * defaultKeymap
@@ -150,6 +151,9 @@ export function defaultKeymap (): Extension {
 
     // searchKeymap
     { key: 'Mod-f', run: openSearchPanel, scope: 'editor search-panel' },
+    // Workspace reference search (issue #1 Phase 3b): the freed Mod-P (the
+    // print menu items keep working but no longer claim the accelerator).
+    { key: 'Mod-p', run: openReferenceSearch, preventDefault: true },
     { key: 'F3', run: findNext, shift: findPrevious, scope: 'editor search-panel', preventDefault: true },
     { key: 'Mod-g', run: findNext, shift: findPrevious, scope: 'editor search-panel', preventDefault: true },
     { key: 'Escape', run: closeSearchPanel, scope: 'editor search-panel' },

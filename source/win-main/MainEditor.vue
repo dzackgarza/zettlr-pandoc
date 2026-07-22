@@ -51,7 +51,8 @@ import type { DocumentManagerIPCAPI, DocumentsUpdateContext } from 'source/app/s
 import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
 import type { ProjectInfo } from 'source/common/modules/markdown-editor/plugins/project-info-field'
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
-import type { DocumentReferenceSnapshot, ReferenceCompletionEntry } from '@dts/common/references'
+import type { ReferenceCompletionEntry } from '@dts/common/references'
+import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 
 const ipcRenderer = window.ipc
 
@@ -79,7 +80,10 @@ const props = defineProps<{
   persistentStateMap: Map<string, EditorViewPersistentState>
 }>()
 
-const emit = defineEmits<(e: 'globalSearch', query: string) => void>()
+const emit = defineEmits<{
+  (e: 'globalSearch', query: string): void
+  (e: 'referenceSearch'): void
+}>()
 
 const windowStateStore = useWindowStateStore()
 const documentTreeStore = useDocumentTreeStore()
@@ -531,6 +535,12 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     emit('globalSearch', tag)
   })
 
+  // Mod-P inside the editor requested the workspace reference search overlay
+  // (issue #1 Phase 3b); relay it up the component tree to App.vue.
+  editor.on('reference-search', () => {
+    emit('referenceSearch')
+  })
+
   // Supply the configuration object once initially
   editor.setOptions(editorConfiguration.value)
   return editor
@@ -634,18 +644,20 @@ async function updateCitationKeys (library: string): Promise<void> {
 }
 
 /**
- * Fetches the workspace reference snapshot for the current document and
- * pushes its definitions as the typed 'references' completion database
- * (issue #1 Phase 3). Rejects when the main-process reference provider is
- * not registered yet; callers log that rejection and push nothing.
+ * Fetches the merged workspace reference state, selects the current file's
+ * snapshot, and pushes its definitions as the typed 'references' completion
+ * database (issue #1 Phase 3).
  */
 async function updateReferenceEntries (): Promise<void> {
-  const snapshot: DocumentReferenceSnapshot = await ipcRenderer.invoke('reference-provider', {
-    command: 'get-snapshot',
-    payload: { path: props.file.path }
+  const state: WorkspaceReferenceState = await ipcRenderer.invoke('reference-provider', {
+    command: 'get-snapshot'
   })
 
-  const entries: ReferenceCompletionEntry[] = snapshot.definitions.map(definition => ({
+  // The provider serves the whole merged workspace state; the completion
+  // database for this editor is fed from the current file's snapshot.
+  const snapshot = state.snapshots.find(candidate => candidate.documentPath === props.file.path)
+
+  const entries: ReferenceCompletionEntry[] = (snapshot?.definitions ?? []).map(definition => ({
     key: definition.key,
     family: definition.family,
     title: definition.title,

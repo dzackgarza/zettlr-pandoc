@@ -53,6 +53,7 @@
               v-bind:editor-commands="editorCommands"
               v-bind:window-id="windowId"
               v-on:global-search="startGlobalSearch($event)"
+              v-on:reference-search="openReferenceSearch()"
             ></EditorPane>
             <EditorBranch
               v-else-if="paneConfiguration !== undefined"
@@ -61,6 +62,7 @@
               v-bind:editor-commands="editorCommands"
               v-bind:is-last="true"
               v-on:global-search="startGlobalSearch($event)"
+              v-on:reference-search="openReferenceSearch()"
             ></EditorBranch>
           </template>
           <template #view2>
@@ -131,6 +133,12 @@
     v-if="showPandocQuickHelp"
     v-on:close="showPandocQuickHelp = false"
   ></PandocQuickHelp>
+  <ReferenceSearchOverlay
+    v-if="showReferenceSearch"
+    v-bind:definitions="referenceSearchDefinitions"
+    v-on:close="showReferenceSearch = false"
+    v-on:jump="handleReferenceJump($event)"
+  ></ReferenceSearchOverlay>
 </template>
 
 <script setup lang="ts">
@@ -163,6 +171,7 @@ import PopoverTable from './PopoverTable.vue'
 import PopoverDocInfo from './PopoverDocInfo.vue'
 import PopoverPandoc from './PopoverPandoc.vue'
 import PandocQuickHelp from './PandocQuickHelp.vue'
+import ReferenceSearchOverlay, { type ReferenceJumpIntent } from './ReferenceSearchOverlay.vue'
 import { trans } from '@common/i18n-renderer'
 import localiseNumber from '@common/util/localise-number'
 import generateId from '@common/util/generate-id'
@@ -187,6 +196,8 @@ import getDocumentTitle from './util/get-document-title'
 import { useConfigStore, useDocumentTreeStore, useLRTStore, useWindowStateStore } from 'source/pinia'
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
 import { type AnyDescriptor } from 'source/types/common/fsal'
+import type { ReferenceDefinition } from '@dts/common/references'
+import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
 import { TaskStatus } from 'source/pinia/lrt-store'
 import PopoverLRT from './PopoverLRT.vue'
@@ -249,6 +260,44 @@ const showTasksPopover = ref(false)
 const pandocButton = ref<HTMLElement|null>(null)
 const showPandocPopover = ref<boolean>(false)
 const showPandocQuickHelp = ref<boolean>(false)
+
+// Mod-P workspace reference search (issue #1 Phase 3b)
+const showReferenceSearch = ref<boolean>(false)
+const referenceSearchDefinitions = ref<ReferenceDefinition[]>([])
+
+/**
+ * Fetches the merged workspace definition list from the reference provider
+ * and mounts the Mod-P reference search overlay over it.
+ */
+function openReferenceSearch (): void {
+  ipcRenderer.invoke('reference-provider', { command: 'get-snapshot' })
+    .then((state: WorkspaceReferenceState) => {
+      referenceSearchDefinitions.value = state.snapshots.flatMap(snapshot => snapshot.definitions)
+      showReferenceSearch.value = true
+    })
+    .catch(err => console.error('Could not open the reference search overlay', err))
+}
+
+/**
+ * Acts on a jump intent chosen in the reference search overlay: closes the
+ * overlay and opens the defining document. (Selection-precise jumps to the
+ * intent's range land in Phase 5.)
+ *
+ * @param   {ReferenceJumpIntent}  intent  The chosen definition's jump intent
+ */
+function handleReferenceJump (intent: ReferenceJumpIntent): void {
+  showReferenceSearch.value = false
+  ipcRenderer.invoke('documents-provider', {
+    command: 'open-file',
+    payload: {
+      path: intent.documentPath,
+      windowId,
+      leafId: lastLeafId.value,
+      newTab: false
+    }
+  } as DocumentManagerIPCAPI)
+    .catch(err => console.error(err))
+}
 
 export interface PomodoroConfig {
   currentEffectFile: string

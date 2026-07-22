@@ -10,10 +10,7 @@
  * Description:     The Electron shell around the pure ReferenceIndex
  *                  (./reference-index.ts) for issue #1 Phase 3b.
  *
- *                  CONTRACT (locked red by test/reference-provider-shell.spec.ts;
- *                  this skeleton intentionally implements none of it — every
- *                  method below is a no-op so the red spec fails on
- *                  assertions, never on invocation errors):
+ *                  CONTRACT (locked by test/reference-provider-shell.spec.ts):
  *
  *                  - The constructor follows the LinkProvider pattern
  *                    (../links/index.ts): it receives its LogProvider and
@@ -44,18 +41,19 @@
  *                    WorkspaceReferenceState the ipc handler serves, for
  *                    main-process consumers.
  *
- *                  - Registration in app-service-container.ts (LinkProvider
- *                    pattern: construct with logger + fsal, _informativeBoot,
- *                    _safeShutdown, getter) is green-phase work and lands
- *                    with the implementation of this contract.
+ *                  - shutdown() unsubscribes the FSAL event listener.
  *
  * END HEADER
  */
 
+import { ipcMain } from 'electron'
+import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
 import ProviderContract from '../provider-contract'
 import type LogProvider from '@providers/log'
 import type FSAL from '../fsal'
-import { type WorkspaceReferenceState } from './reference-index'
+import type { FSALEventPayload } from '../fsal'
+import type { DocumentReferenceSnapshot } from '@dts/common/references'
+import { ReferenceIndex, type WorkspaceReferenceState } from './reference-index'
 
 /**
  * Serves the merged workspace reference view (saved FSAL snapshots overlaid
@@ -63,39 +61,71 @@ import { type WorkspaceReferenceState } from './reference-index'
  * 'reference-provider' ipc channel.
  */
 export default class ReferenceProvider extends ProviderContract {
+  private readonly _index: ReferenceIndex
+
+  /**
+   * Applies FSAL state transitions to the index: 'add'/'change' events
+   * carrying a markdown file descriptor apply its FSAL-owned saved snapshot,
+   * 'unlink' events remove the document's saved snapshot. Every applied
+   * transition is announced with a 'references' broadcast.
+   */
+  private readonly _onFsalEvent = (payload: FSALEventPayload): void => {
+    if (payload.event === 'unlink') {
+      this._index.removeSavedSnapshot(payload.path)
+      broadcastIpcMessage('references')
+    } else if ((payload.event === 'add' || payload.event === 'change') && payload.descriptor.type === 'file') {
+      this._index.applySavedSnapshot(payload.descriptor.references)
+      broadcastIpcMessage('references')
+    }
+  }
+
   constructor (
     private readonly _logger: LogProvider,
     private readonly _fsal: FSAL
   ) {
     super()
-    // Phase 3b red skeleton: the 'reference-provider' ipcMain handler is NOT
-    // registered yet. test/reference-provider-shell.spec.ts fails on exactly
-    // this gap.
+    this._index = new ReferenceIndex()
+
+    ipcMain.handle('reference-provider', (_event, message: { command: string, payload?: unknown }) => {
+      const { command } = message
+
+      if (command === 'get-snapshot') {
+        return this._index.getSnapshot()
+      } else if (command === 'report-live-buffer') {
+        const { snapshot, generation } = message.payload as { snapshot: DocumentReferenceSnapshot, generation: number }
+        this._index.reportLiveBuffer(snapshot, generation)
+        broadcastIpcMessage('references')
+      } else if (command === 'drop-live-buffer') {
+        const { documentPath } = message.payload as { documentPath: string }
+        this._index.dropLiveBuffer(documentPath)
+        broadcastIpcMessage('references')
+      }
+    })
   }
 
   /**
-   * Phase 3b red skeleton: does not subscribe to FSAL events yet.
+   * Subscribes to the injected FSAL's 'fsal-event' stream so saved snapshots
+   * follow the on-disk workspace state.
    */
   public async boot (): Promise<void> {
-    // No-op until the contract in the header is implemented.
+    this._fsal.on('fsal-event', this._onFsalEvent)
   }
 
   /**
-   * Returns the merged workspace reference state.
-   *
-   * Phase 3b red skeleton: returns the empty workspace — nothing has been
-   * indexed because boot() and the ipc surface are unimplemented.
+   * Returns the merged workspace reference state — the same state the ipc
+   * surface serves.
    *
    * @return  {WorkspaceReferenceState}  The merged workspace reference state
    */
   public getSnapshot (): WorkspaceReferenceState {
-    return { snapshots: [], resolutions: new Map() }
+    return this._index.getSnapshot()
   }
 
   /**
-   * Shuts down the service provider.
+   * Shuts down the service provider, unsubscribing from FSAL events.
    */
   public async shutdown (): Promise<void> {
-    // Nothing to tear down in the red skeleton.
+    this._fsal.off('fsal-event', this._onFsalEvent)
+    this._logger.verbose('Reference provider shutting down ...')
   }
 }

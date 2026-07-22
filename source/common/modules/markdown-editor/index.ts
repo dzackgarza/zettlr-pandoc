@@ -96,6 +96,7 @@ import {
 } from './plugins/remote-doc'
 import { markdownToAST } from '../markdown-utils'
 import { countField, updateWordCountEffect } from './plugins/statistics-fields'
+import { openReferenceSearchEffect } from './plugins/reference-search-effect'
 import { useDarkModeEditor, darkModeEffect } from './theme/dark-mode'
 import { editorMetadataFacet } from './plugins/editor-metadata'
 import { projectInfoUpdateEffect, type ProjectInfo } from './plugins/project-info-field'
@@ -324,6 +325,12 @@ export default class MarkdownEditor extends EventEmitter {
             // Listen for word count updates
             if (effect.is(updateWordCountEffect)) {
               this.emit('docUpdate')
+            }
+
+            // Mod-P workspace reference search request: surface it to the
+            // shell (MainEditor.vue relays it up to App.vue's overlay).
+            if (effect.is(openReferenceSearchEffect)) {
+              this.emit('reference-search')
             }
 
             // Listen for config updates, and parse them into the internal cache. We
