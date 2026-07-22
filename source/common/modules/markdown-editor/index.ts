@@ -51,6 +51,10 @@ import {
   referencesUpdate
 } from './autocomplete'
 import { type ReferenceCompletionEntry } from '@dts/common/references'
+import {
+  workspaceReferencesUpdate,
+  type EditorWorkspaceReferences
+} from './plugins/workspace-references-field'
 
 // Main configuration
 import {
@@ -224,6 +228,14 @@ export default class MarkdownEditor extends EventEmitter {
   }
 
   /**
+   * The last resolved workspace reference view pushed into this editor
+   * (issue #1 Phase 4), re-dispatched whenever the state is rebuilt.
+   *
+   * @var {EditorWorkspaceReferences|null}
+   */
+  private workspaceReferencesCache: EditorWorkspaceReferences|null
+
+  /**
    * Creates a new MarkdownEditor instance associated with the given leafId and
    * the representedDocument. Immediately after instantiation the editor will
    * pull the document from the given authorityAPI and set it up.
@@ -265,6 +277,7 @@ export default class MarkdownEditor extends EventEmitter {
     // cache the autocomplete databases so that we don't have to re-fetch them
     // everytime.
     this.databaseCache = { tags: [], citations: [], snippets: [], files: [], references: [] }
+    this.workspaceReferencesCache = null
 
     // Same goes for the config
     this.config = getDefaultConfig()
@@ -415,6 +428,9 @@ export default class MarkdownEditor extends EventEmitter {
     this._instance.dispatch({ effects: snippetsUpdate.of(this.databaseCache.snippets) })
     this._instance.dispatch({ effects: filesUpdate.of(this.databaseCache.files) })
     this._instance.dispatch({ effects: referencesUpdate.of(this.databaseCache.references) })
+    if (this.workspaceReferencesCache !== null) {
+      this._instance.dispatch({ effects: workspaceReferencesUpdate.of(this.workspaceReferencesCache) })
+    }
 
     // Determine if this is a code doc and add the corresponding class to the
     // outer content DOM so that we can style it.
@@ -721,6 +737,18 @@ export default class MarkdownEditor extends EventEmitter {
         this._instance.dispatch({ effects: referencesUpdate.of(database as ReferenceCompletionEntry[]) })
         break
     }
+  }
+
+  /**
+   * Provides the editor state with a new resolved workspace reference view
+   * (issue #1 Phase 4): the single typed source behind reference chips,
+   * definition badges, reference hovers, and reference diagnostics.
+   *
+   * @param  {EditorWorkspaceReferences}  references  The resolved view
+   */
+  setWorkspaceReferences (references: EditorWorkspaceReferences): void {
+    this.workspaceReferencesCache = references
+    this._instance.dispatch({ effects: workspaceReferencesUpdate.of(references) })
   }
 
   /* * * * * * * * * * * *

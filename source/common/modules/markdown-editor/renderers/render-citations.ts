@@ -23,6 +23,8 @@ import { configField } from '../util/configuration'
 import { type Citation, NODES, nodeToCiteItem } from '../parser/citation-parser'
 import { sanitizeHTML } from 'source/common/util/sanitize-html'
 import { isSupportedPandocCrossref } from '@common/util/pandoc-quick-reference'
+import { referenceFamilyOf } from '@dts/common/references'
+import { workspaceReferencesField } from '../plugins/workspace-references-field'
 
 class CitationWidget extends WidgetType {
   constructor (readonly citation: Citation, readonly rawCitation: string, readonly node: SyntaxNode) {
@@ -35,6 +37,11 @@ class CitationWidget extends WidgetType {
 
   toDOM (view: EditorView): HTMLElement {
     const { items } = this.citation
+    // NOTE (issue #1 Phase 4): in states carrying workspaceReferencesField
+    // (every production Markdown editor), clusters containing supported
+    // reference-family keys are declined at createWidget time and never
+    // reach this branch: render-reference-chips owns all-supported clusters
+    // there. This textual branch only serves states without the field.
     const hasCrossref = items.every(i => isSupportedPandocCrossref(i.id))
 
     if (hasCrossref) {
@@ -98,6 +105,18 @@ function shouldHandleNode (node: SyntaxNodeRef): boolean {
 function createWidget (state: EditorState, node: SyntaxNodeRef): CitationWidget|undefined {
   try {
     const citation = nodeToCiteItem(node.node, state.sliceDoc())
+    // Takeover design (issue #1 Phase 4): in a state carrying
+    // workspaceReferencesField (every production Markdown editor), a cluster
+    // containing a supported reference-family key is not a bibliography
+    // citation. All-supported clusters belong to render-reference-chips;
+    // mixed clusters are handled by NEITHER renderer (they stay raw and
+    // reference-lint owns the advisory). Pure bibliography clusters keep
+    // this widget byte-identical. States without the field (the legacy
+    // spec harnesses) keep the textual crossref branch of the widget.
+    const hasWorkspaceReferences = state.field(workspaceReferencesField, false) !== undefined
+    if (hasWorkspaceReferences && citation.items.some(item => referenceFamilyOf(item.id) !== undefined)) {
+      return undefined
+    }
     return new CitationWidget(citation, state.sliceDoc(node.from, node.to), node.node)
   } catch (err) {
     // nodeToCiteItem throws if it is unhappy

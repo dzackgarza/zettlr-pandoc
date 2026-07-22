@@ -53,6 +53,8 @@ import type { ProjectInfo } from 'source/common/modules/markdown-editor/plugins/
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
 import type { ReferenceCompletionEntry } from '@dts/common/references'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
+import { extractReferences } from '@common/pandoc-util/extract-references'
+import { resolveWorkspace } from '@common/pandoc-util/resolve-references'
 
 const ipcRenderer = window.ipc
 
@@ -665,6 +667,24 @@ async function updateReferenceEntries (): Promise<void> {
   }))
 
   currentEditor?.setCompletionDatabase('references', entries)
+
+  if (currentEditor === null) {
+    return
+  }
+
+  // Additionally feed the resolved workspace reference view (issue #1
+  // Phase 4): the current document's snapshot comes from a live extraction
+  // of the local buffer (exact live ranges), which replaces the provider's
+  // saved snapshot inside the merged workspace view.
+  const liveSnapshot = extractReferences(props.file.path, currentEditor.value)
+  const workspace = state.snapshots
+    .filter(candidate => candidate.documentPath !== props.file.path)
+    .concat([liveSnapshot])
+  currentEditor.setWorkspaceReferences({
+    snapshot: liveSnapshot,
+    workspaceOccurrences: workspace.flatMap(candidate => candidate.occurrences),
+    resolutions: resolveWorkspace(workspace)
+  })
 }
 
 async function updateFileDatabase (): Promise<void> {

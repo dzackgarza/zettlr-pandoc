@@ -9,8 +9,7 @@
  *
  * Description:     Diagnostics for workspace reference contradictions
  *                  (issue #1 Phase 4), following the md-lint linter()
- *                  archetype (./md-lint.ts). Wiring into
- *                  editor-extension-sets.ts happens in the green step.
+ *                  archetype (./md-lint.ts).
  *
  *                  CONTRACT (locked by test/reference-lint.spec.ts):
  *
@@ -52,26 +51,251 @@
  *                  - NO AUTO-FIX: no diagnostic ever carries actions of any
  *                    kind.
  *
- *                  RED SKELETON: the source reports no diagnostics, so the
- *                  spec fails on its diagnostic assertions, not on wiring.
- *
  * END HEADER
  */
 
 import { linter, type Diagnostic } from '@codemirror/lint'
 import { type EditorView } from '@codemirror/view'
+import { markdownToAST } from '@common/modules/markdown-utils'
+import type { ASTNode } from '@common/modules/markdown-utils/markdown-ast'
+import { parsePandocAttributes } from '@common/pandoc-util/parse-pandoc-attributes'
+import { SEMANTIC_DIV_CLASSES } from '@common/pandoc-util/pandoc-div-model'
+import { THEOREM_DIV_PREFIXES, REFERENCEABLE_DIV_CLASSES } from '@common/util/pandoc-quick-reference'
+import { referenceFamilyOf, type ReferenceFamily } from '@dts/common/references'
+import { workspaceReferencesField, type EditorWorkspaceReferences } from '../plugins/workspace-references-field'
+
+/**
+ * The label prefix of each referenceable div class, inverted from the fixed
+ * THEOREM_DIV_PREFIXES registry ('lemma' -> 'lem').
+ */
+const CLASS_TO_PREFIX: Record<string, string> = Object.fromEntries(
+  Object.entries(THEOREM_DIV_PREFIXES).map(([ prefix, divClass ]) => [ divClass, prefix ])
+)
+
+/**
+ * The comparable remainder tokens of a key ('lem:kodaira:embedding' ->
+ * ['kodaira', 'embedding']), used to offer existing keys as candidates.
+ */
+function remainderTokens (key: string): string[] {
+  return key
+    .slice(key.indexOf(':') + 1)
+    .toLowerCase()
+    .split(/[:_-]+/)
+    .filter(token => token !== '')
+}
+
+/**
+ * Offers compatible existing keys as replacement candidates for a missing
+ * key: same-family keys actually defined in the workspace that share at
+ * least one remainder token. The linter never fabricates targets.
+ *
+ * @param   {string}                     missingKey  The missing key
+ * @param   {ReferenceFamily}            family      The missing key's family
+ * @param   {EditorWorkspaceReferences}  references  The workspace view
+ *
+ * @return  {string[]}                               Defined candidate keys
+ */
+function candidatesFor (missingKey: string, family: ReferenceFamily, references: EditorWorkspaceReferences): string[] {
+  const tokens = new Set(remainderTokens(missingKey))
+  const candidates: string[] = []
+
+  for (const [ key, resolution ] of references.resolutions) {
+    if (key === missingKey || resolution.status === 'missing') {
+      continue // Only keys actually defined somewhere qualify.
+    }
+
+    if (referenceFamilyOf(key) !== family) {
+      continue
+    }
+
+    if (remainderTokens(key).some(token => tokens.has(token))) {
+      candidates.push(key)
+    }
+  }
+
+  return candidates.sort()
+}
+
+/**
+ * Walks every node of the given AST in document order.
+ */
+function walkAST (node: ASTNode, visit: (node: ASTNode) => void): void {
+  visit(node)
+
+  const children = 'children' in node
+    ? node.children
+    : 'items' in node
+      ? node.items
+      : 'rows' in node
+        ? node.rows
+        : 'cells' in node
+          ? node.cells
+          : []
+
+  for (const child of children) {
+    walkAST(child, visit)
+  }
+}
+
+/**
+ * Locates the authored `#id` token of an attribute block, extended over the
+ * full colon-preserving key (the shared parser truncates ids at colons).
+ *
+ * @param   {string}  attrText  The authored `{…}` substring
+ * @param   {number}  offset    The document offset of the substring
+ *
+ * @return  {{ key: string, from: number, to: number, classes: string[] }|undefined}
+ */
+function locateIdToken (attrText: string, offset: number): { key: string, from: number, to: number, classes: string[] }|undefined {
+  const attributes = parsePandocAttributes(attrText)
+  if (attributes.id === undefined) {
+    return undefined
+  }
+
+  const idStart = attrText.indexOf('#' + attributes.id)
+  if (idStart === -1) {
+    return undefined
+  }
+
+  let idEnd = idStart + 1 + attributes.id.length
+  while (idEnd < attrText.length && !' \t\n}'.includes(attrText[idEnd])) {
+    idEnd++
+  }
+
+  return {
+    key: attrText.slice(idStart + 1, idEnd),
+    from: offset + idStart,
+    to: offset + idEnd,
+    classes: attributes.classes ?? []
+  }
+}
+
+/**
+ * Collects the AST-derived diagnostics of the current buffer: ids on
+ * proof-like divs and mixed bibliography/reference citation clusters.
+ */
+function collectASTDiagnostics (markdown: string, diagnostics: Diagnostic[]): void {
+  walkAST(markdownToAST(markdown), node => {
+    if (node.type === 'PandocDiv') {
+      const openLineEnd = markdown.indexOf('\n', node.from)
+      const openLine = markdown.slice(node.from, openLineEnd === -1 || openLineEnd > node.to ? node.to : openLineEnd)
+      const brace = openLine.indexOf('{')
+      if (brace === -1) {
+        return
+      }
+
+      const located = locateIdToken(openLine.slice(brace), node.from + brace)
+      if (located === undefined) {
+        return
+      }
+
+      const isProofLike = located.classes.some(divClass => SEMANTIC_DIV_CLASSES[divClass.toLowerCase()] === 'proof')
+      if (isProofLike) {
+        diagnostics.push({
+          from: located.from,
+          to: located.to,
+          severity: 'info',
+          message: `The id "#${located.key}" on a proof div defines no reference target: proofs stay unnumbered and unreferenceable.`,
+          source: 'reference-lint'
+        })
+      }
+    } else if (node.type === 'Citation') {
+      const items = node.parsedCitation.items
+      const supported = items.filter(item => referenceFamilyOf(item.id) !== undefined).length
+      if (supported > 0 && supported < items.length) {
+        diagnostics.push({
+          from: node.from,
+          to: node.to,
+          severity: 'warning',
+          message: 'This cluster mixes bibliography citations with cross-references, so it stays raw: it renders neither as a citation nor as reference chips. Split it into separate clusters.',
+          source: 'reference-lint'
+        })
+      }
+    }
+  })
+}
+
+/**
+ * Collects the snapshot-derived diagnostics: duplicate definitions, missing
+ * occurrences, and theorem-div class/prefix mismatches.
+ */
+function collectSnapshotDiagnostics (references: EditorWorkspaceReferences, diagnostics: Diagnostic[]): void {
+  for (const definition of references.snapshot.definitions) {
+    const resolution = references.resolutions.get(definition.key)
+
+    if (resolution?.status === 'duplicate') {
+      const sites = resolution.definitions.map(site => site.documentPath)
+      diagnostics.push({
+        from: definition.range.from,
+        to: definition.range.to,
+        severity: 'error',
+        message: `The reference key "${definition.key}" is defined more than once. Definition sites: ${sites.join(', ')}. Every key must be unique across the workspace.`,
+        source: 'reference-lint'
+      })
+    }
+
+    if (definition.sourceKind === 'theorem-div') {
+      const openLine = definition.previewSource.split('\n', 1)[0]
+      const brace = openLine.indexOf('{')
+      const located = brace === -1 ? undefined : locateIdToken(openLine.slice(brace), 0)
+      if (located !== undefined) {
+        const referenceableClasses = located.classes.filter(divClass => REFERENCEABLE_DIV_CLASSES.includes(divClass.toLowerCase()))
+        const authoredClass = referenceableClasses.length > 0 ? referenceableClasses[0].toLowerCase() : undefined
+        const expectedPrefix = authoredClass !== undefined ? CLASS_TO_PREFIX[authoredClass] : undefined
+        if (authoredClass !== undefined && expectedPrefix !== undefined && definition.family !== expectedPrefix) {
+          const remainder = definition.key.slice(definition.key.indexOf(':') + 1)
+          const example = `#${expectedPrefix}:${remainder}`
+          diagnostics.push({
+            from: definition.range.from,
+            to: definition.range.to,
+            severity: 'error',
+            message: `The div class "${authoredClass}" conflicts with the id "#${definition.key}": a ${authoredClass} div is labeled with the "${expectedPrefix}:" prefix, e.g. "${example}". Change one side to match the other.`,
+            source: 'reference-lint'
+          })
+        }
+      }
+    }
+  }
+
+  for (const occurrence of references.snapshot.occurrences) {
+    const resolution = references.resolutions.get(occurrence.key)
+    if (resolution?.status !== 'missing') {
+      continue
+    }
+
+    const candidates = candidatesFor(occurrence.key, occurrence.family, references)
+    const suffix = candidates.length > 0
+      ? ` Did you mean ${candidates.join(', ')}?`
+      : ''
+    diagnostics.push({
+      from: occurrence.range.from,
+      to: occurrence.range.to,
+      severity: 'warning',
+      message: `The reference "@${occurrence.key}" is not defined anywhere in the workspace.${suffix}`,
+      source: 'reference-lint'
+    })
+  }
+}
 
 /**
  * The diagnostic source for workspace reference lint: the specs drive this
  * function directly against a real EditorView.
  *
- * @param   {EditorView}  _view  The editor view
+ * @param   {EditorView}  view  The editor view
  *
  * @return  {Promise<Diagnostic[]>}  The reference diagnostics
  */
-export async function referenceLintSource (_view: EditorView): Promise<Diagnostic[]> {
-  // RED skeleton (issue #1 Phase 4): no reference diagnostics are produced yet.
-  return []
+export async function referenceLintSource (view: EditorView): Promise<Diagnostic[]> {
+  const references = view.state.field(workspaceReferencesField, false) ?? null
+  if (references === null) {
+    return [] // No workspace view yet: the linter reports nothing.
+  }
+
+  const diagnostics: Diagnostic[] = []
+  collectSnapshotDiagnostics(references, diagnostics)
+  collectASTDiagnostics(view.state.doc.toString(), diagnostics)
+
+  return diagnostics.sort((a, b) => a.from - b.from || a.to - b.to)
 }
 
 export const referenceLint = linter(referenceLintSource)

@@ -76,6 +76,9 @@ import { vimPlugin } from './plugins/vim-mode'
 import { projectInfoField } from './plugins/project-info-field'
 import { headingGutter } from './renderers/render-headings'
 import { citationTooltips } from './tooltips/citations'
+import { referenceTooltips } from './tooltips/references'
+import { referenceLint } from './linters/reference-lint'
+import { workspaceReferencesField } from './plugins/workspace-references-field'
 
 /**
  * This interface describes the required properties which the extension sets
@@ -273,7 +276,12 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
   // because if that thing has an error, that thing has an error.
   const mdLinterExtensions = [
     spellcheck,
-    yamlFrontmatterLint
+    yamlFrontmatterLint,
+    // Reference contradictions (duplicate keys, missing references,
+    // class/prefix mismatches) are correctness findings like a broken
+    // frontmatter, so the linter is always active (issue #1 Phase 4). It
+    // reports nothing until the workspace reference view arrives.
+    referenceLint
   ]
 
   let hasLinters = false
@@ -325,6 +333,10 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     distractionFree,
     tocField,
     projectInfoField,
+    // The resolved workspace reference view (issue #1 Phase 4): the single
+    // typed state source for reference chips, definition badges, reference
+    // hovers, and reference diagnostics. Fed by MainEditor.vue.
+    workspaceReferencesField,
     markdownFolding, // Should be before footnoteGutter
     autocomplete,
     readabilityMode,
@@ -334,6 +346,7 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     urlHover,
     filePreview,
     citationTooltips,
+    referenceTooltips,
     backgroundLayers, // Add a background behind inline code and code blocks
     defaultContextMenu, // A default context menu
     softwrapVisualIndent, // Always indent visually

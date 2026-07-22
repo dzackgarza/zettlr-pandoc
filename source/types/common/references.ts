@@ -28,6 +28,57 @@ export type ReferenceFamily = CrossrefFamily | TheoremFamily
 export const REFERENCE_FAMILIES: readonly ReferenceFamily[] = [ ...CROSSREF_FAMILIES, ...THEOREM_FAMILIES ]
 
 /**
+ * Returns the supported family of a full reference key, or undefined when the
+ * key is structurally not a reference: no colon, an empty remainder after the
+ * family (`thm:`), or a family outside the supported registry (`table:`).
+ *
+ * @param   {string}  key  The full authored key (colons preserved)
+ *
+ * @return  {ReferenceFamily|undefined}  The family, if supported
+ */
+export function referenceFamilyOf (key: string): ReferenceFamily|undefined {
+  const colon = key.indexOf(':')
+  if (colon <= 0 || colon === key.length - 1) {
+    return undefined
+  }
+
+  const family = key.slice(0, colon)
+  return (REFERENCE_FAMILIES as readonly string[]).includes(family)
+    ? family as ReferenceFamily
+    : undefined
+}
+
+/**
+ * Display names of the explicit pandoc-crossref label families.
+ */
+const CROSSREF_FAMILY_DISPLAY: Record<CrossrefFamily, string> = {
+  fig: 'Figure',
+  tbl: 'Table',
+  eq: 'Equation',
+  sec: 'Section',
+  lst: 'Listing'
+}
+
+/**
+ * The display name of a reference family, derived from the fixed theorem
+ * prefix registry ('thm' -> 'Theorem') or the crossref family map
+ * ('fig' -> 'Figure'). Display names never carry a computed number:
+ * numbering is owned exclusively by export tools and templates.
+ *
+ * @param   {ReferenceFamily}  family  The reference family
+ *
+ * @return  {string}                   The capitalized display name
+ */
+export function referenceFamilyDisplayName (family: ReferenceFamily): string {
+  const theoremClass = (THEOREM_DIV_PREFIXES as Record<string, string|undefined>)[family]
+  if (theoremClass !== undefined) {
+    return theoremClass.charAt(0).toUpperCase() + theoremClass.slice(1)
+  }
+
+  return CROSSREF_FAMILY_DISPLAY[family as CrossrefFamily]
+}
+
+/**
  * An exact authored character range within a document's markdown source.
  * `from` is inclusive, `to` is exclusive.
  */
