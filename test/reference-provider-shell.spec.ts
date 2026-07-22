@@ -109,6 +109,16 @@ describe('References provider Electron shell', function () {
     referenceHandler()
   })
 
+  it('throws on a command outside the delegation map instead of answering undefined (issue #5, B20)', function () {
+    // Fail-loud contract: an unknown command is a caller bug. Reverting the
+    // handler to the silent fall-through makes this call return undefined
+    // and the assertion fail.
+    assert.throws(
+      () => referenceHandler()(undefined, { command: 'no-such-reference-command' }),
+      Error
+    )
+  })
+
   it('applies FSAL change-event snapshots so get-snapshot serves the workspace definitions', async function () {
     fsalSeam.emit('fsal-event', { event: 'change', descriptor: makeDescriptor(THEOREMS_PATH) })
     fsalSeam.emit('fsal-event', { event: 'change', descriptor: makeDescriptor(OTHER_PAPER_PATH) })

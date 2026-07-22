@@ -26,6 +26,10 @@
  *                      'drop-live-buffer'   -> index.dropLiveBuffer(
  *                                                payload.documentPath)
  *
+ *                    A command outside that map THROWS (issue #5, B20):
+ *                    the channel never answers an unknown command with a
+ *                    silent undefined.
+ *
  *                    The rename protocol (previewRename/commitRename/
  *                    undoRename) is NOT part of this channel (review B7):
  *                    production reaches it exclusively through the
@@ -171,6 +175,10 @@ export default class ReferenceProvider extends ProviderContract {
         const { documentPath } = message.payload as { documentPath: string }
         this._index.dropLiveBuffer(documentPath)
         broadcastIpcMessage('references')
+      } else {
+        // Fail loud (issue #5, B20): a command outside the delegation map is
+        // a caller bug, never a silently-undefined response.
+        throw new Error(`reference-provider: unknown command ${command}`)
       }
     })
   }
