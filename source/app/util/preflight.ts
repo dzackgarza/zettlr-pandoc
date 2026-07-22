@@ -98,6 +98,86 @@ export async function findMissingRequirements (
 }
 
 /**
+ * The typed outcome of the pandoc-crossref <-> pandoc compatibility check
+ * (issue #1 Phase 7).
+ *
+ * CONTRACT (locked red by test/preflight-crossref.spec.ts):
+ *
+ * - `crossrefBuiltWithPandoc` is the Pandoc version pandoc-crossref names in
+ *   its own `--version` output ("… built with Pandoc vX.Y.Z …" -> 'X.Y.Z').
+ * - `pandocVersion` is the version of the installed pandoc, parsed from the
+ *   FIRST line of `pandoc --version` ('pandoc X.Y.Z' -> 'X.Y.Z').
+ * - status 'compatible' iff both parse and are exactly equal; 'incompatible'
+ *   iff both parse and differ; 'unparseable' when either output does not
+ *   yield a version (that side's field stays undefined).
+ */
+export interface CrossrefCompatibility {
+  status: 'compatible' | 'incompatible' | 'unparseable'
+  crossrefBuiltWithPandoc?: string
+  pandocVersion?: string
+}
+
+/**
+ * Runs a command and captures its stdout — the injectable seam of the
+ * compatibility check, following this module's existing injection style
+ * (preflight() injects showError/exit the same way).
+ */
+export type VersionOutputRunner = (command: string, args: string[]) => Promise<{ code: number, stdout: string }>
+
+/**
+ * The pure comparison at the heart of the compatibility check: given the two
+ * captured `--version` outputs, decides compatibility per the
+ * CrossrefCompatibility contract above.
+ *
+ * @param   {string}  _crossrefVersionOutput  Captured `pandoc-crossref --version` stdout
+ * @param   {string}  _pandocVersionOutput    Captured `pandoc --version` stdout
+ *
+ * @return  {CrossrefCompatibility}           The typed compatibility outcome
+ */
+export function assessCrossrefCompatibility (
+  _crossrefVersionOutput: string,
+  _pandocVersionOutput: string
+): CrossrefCompatibility {
+  // Phase 7 skeleton (issue #1): the real parsing/comparison is the green step.
+  return { status: 'compatible' }
+}
+
+/**
+ * Executes `pandoc-crossref --version` and `pandoc --version` through the
+ * given runner and assesses their compatibility. The default runner spawns
+ * the real tools (green step); tests inject a runner serving captured
+ * outputs.
+ *
+ * @param   {VersionOutputRunner}  _run  The command runner (defaults to real execution)
+ *
+ * @return  {Promise<CrossrefCompatibility>}  The typed compatibility outcome
+ */
+export async function checkCrossrefCompatibility (
+  _run?: VersionOutputRunner
+): Promise<CrossrefCompatibility> {
+  // Phase 7 skeleton (issue #1): the executing check is the green step.
+  return { status: 'compatible' }
+}
+
+/**
+ * The preflight-facing compatibility gate: resolves null when
+ * pandoc-crossref executes and names the installed pandoc version, and
+ * otherwise a human-readable failure message that names BOTH versions (the
+ * one pandoc-crossref was built with and the installed pandoc). preflight()
+ * treats a non-null result exactly like a missing requirement.
+ *
+ * @param   {VersionOutputRunner}  _run  The command runner (defaults to real execution)
+ *
+ * @return  {Promise<string|null>}       The failure message, or null
+ */
+export async function crossrefCompatibilityFailure (
+  _run?: VersionOutputRunner
+): Promise<string|null> {
+  // Phase 7 skeleton (issue #1): the real gate is the green step.
+  return null
+}
+
+/**
  * Runs the preflight. If anything is missing, reports it through `showError`,
  * calls `exit(1)`, and resolves false. Otherwise resolves true. The failure
  * side effects are injected so the whole path is testable without Electron.

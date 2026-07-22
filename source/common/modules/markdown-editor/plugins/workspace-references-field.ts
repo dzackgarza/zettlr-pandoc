@@ -40,6 +40,7 @@
 import { StateEffect, StateField } from '@codemirror/state'
 import type {
   DocumentReferenceSnapshot,
+  ProjectRootSpec,
   ReferenceOccurrence,
   Resolution
 } from '@dts/common/references'
@@ -56,6 +57,13 @@ export interface EditorWorkspaceReferences {
   workspaceOccurrences: ReferenceOccurrence[]
   /** The workspace resolution map over the merged snapshot view */
   resolutions: Map<string, Resolution>
+  /**
+   * Every visible Project root (issue #1 Phase 7). The hover tooltip derives
+   * the displayed Project status from these roots plus the snapshot's own
+   * documentPath (the active document). While undefined, presentation
+   * surfaces show NO Project status — they never fabricate one.
+   */
+  projectRoots?: ProjectRootSpec[]
 }
 
 /**

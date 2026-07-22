@@ -163,13 +163,54 @@ export type ProjectReferenceStatus =
   | 'standalone'
 
 /**
+ * One Project root visible to the reference layer (issue #1 Phase 7). This
+ * is the pure projection of a DirDescriptor whose settings.project is
+ * non-null: `rootPath` is the absolute directory path and `files` is the
+ * ordered, project-relative (Unix-separator) ProjectSettings.files list.
+ * Status computation takes these specs explicitly so it stays pure and
+ * headless-testable — it never reads .ztr-directory files itself.
+ */
+export interface ProjectRootSpec {
+  /** The absolute path of the Project's root directory */
+  rootPath: string
+  /** The ordered project-relative export file list (ProjectSettings.files) */
+  files: string[]
+}
+
+/**
+ * The mechanical "append and continue" plan for inserting a reference to an
+ * in-root file omitted from the active Project (issue #1 Phase 7).
+ *
+ * - `rootPath` is the active Project root whose ProjectSettings.files gains
+ *   the appended entries (applied through the existing dir-settings surface:
+ *   the 'update-project-properties' command -> FSAL.updateProject()).
+ * - `appendFiles` lists the ordered project-relative paths to append: when
+ *   the SOURCE document is itself omitted from the active Project it comes
+ *   first, then the target — both are appended in one operation and BOTH are
+ *   named in one confirmation toast.
+ */
+export interface AppendAndContinuePlan {
+  /** The absolute root path of the active Project being amended */
+  rootPath: string
+  /** Ordered project-relative paths to append to ProjectSettings.files */
+  appendFiles: string[]
+}
+
+/**
  * One typed label entry of the renderer's 'references' completion database,
  * pushed into the editor through setCompletionDatabase('references', …) and
  * consumed by the combined `@` completion surface.
  *
  * Phase 3 contract (issue #1): `projectStatus` is optional and defaults to
  * undefined; completion renders label entries without any status gating.
- * Computing real Project statuses is Phase 7 work.
+ *
+ * Phase 7 contract (issue #1): the provider side computes `projectStatus`
+ * for every entry (annotateCompletionEntries in
+ * common/pandoc-util/project-reference-status.ts) and attaches `appendPlan`
+ * exactly on omitted-from-active-Project entries. Entries stay visible with
+ * unchanged label/detail text regardless of status; the status feeds the
+ * insertion affordance only (disabled / append-and-continue / export-unit
+ * warning).
  */
 export interface ReferenceCompletionEntry {
   /** The full authored key, e.g. 'thm:main' (colons inside keys preserved) */
@@ -180,6 +221,8 @@ export interface ReferenceCompletionEntry {
   documentPath: string
   /** Optional Project-membership status; undefined until Phase 7 computes it */
   projectStatus?: ProjectReferenceStatus
+  /** The append-and-continue plan, present exactly on omitted entries */
+  appendPlan?: AppendAndContinuePlan
 }
 
 /**
