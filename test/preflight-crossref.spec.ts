@@ -107,8 +107,8 @@ describe('pandoc-crossref preflight compatibility (issue #1 Phase 7)', function 
   it('produces a preflight failure naming both versions on mismatch', async function () {
     const runner: VersionOutputRunner = async (command, _args) => {
       return command === 'pandoc-crossref'
-        ? { code: 0, stdout: CROSSREF_OUTPUT_MISMATCHED }
-        : { code: 0, stdout: PANDOC_OUTPUT }
+        ? { stdout: CROSSREF_OUTPUT_MISMATCHED }
+        : { stdout: PANDOC_OUTPUT }
     }
 
     const failure = await crossrefCompatibilityFailure(runner)
@@ -147,8 +147,8 @@ describe('pandoc-crossref preflight compatibility (issue #1 Phase 7)', function 
     // captured mismatched outputs.
     const runner: VersionOutputRunner = async (command, _args) => {
       return command === 'pandoc-crossref'
-        ? { code: 0, stdout: CROSSREF_OUTPUT_MISMATCHED }
-        : { code: 0, stdout: PANDOC_OUTPUT }
+        ? { stdout: CROSSREF_OUTPUT_MISMATCHED }
+        : { stdout: PANDOC_OUTPUT }
     }
 
     const shown: Array<{ title: string, message: string }> = []
@@ -171,8 +171,8 @@ describe('pandoc-crossref preflight compatibility (issue #1 Phase 7)', function 
     // The complementary compatible path: the same boot gate passes silently.
     const compatibleRunner: VersionOutputRunner = async (command, _args) => {
       return command === 'pandoc-crossref'
-        ? { code: 0, stdout: CROSSREF_OUTPUT_MATCHING }
-        : { code: 0, stdout: PANDOC_OUTPUT }
+        ? { stdout: CROSSREF_OUTPUT_MATCHING }
+        : { stdout: PANDOC_OUTPUT }
     }
     const cleanPassed = await preflight(
       (title, message) => { shown.push({ title, message }) },

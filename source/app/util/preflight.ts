@@ -17,22 +17,11 @@
  */
 
 import { spawn } from 'child_process'
-import { statSync } from 'fs'
 import path from 'path'
 import os from 'os'
-
-/**
- * True iff `target` resolves to a regular file, following symlinks — the
- * shared isFile helper uses lstat, which reports false for a symlinked
- * ~/.pandoc/justfile even though the recipe behind it is perfectly usable.
- */
-function resolvesToFile (target: string): boolean {
-  try {
-    return statSync(target).isFile()
-  } catch (err) {
-    return false
-  }
-}
+// The FOLLOW-SYMLINKS variant (not @common/util/is-file, which lstats): a
+// symlinked ~/.pandoc/justfile is perfectly usable and must pass preflight.
+import resolvesToFile from '@common/util/resolves-to-file'
 
 export interface CommandRequirement { command: string, purpose: string }
 export interface PathRequirement { target: string, purpose: string }
@@ -121,9 +110,13 @@ export interface CrossrefCompatibility {
 /**
  * Runs a command and captures its stdout — the injectable seam of the
  * compatibility check, following this module's existing injection style
- * (preflight() injects showError/exit the same way).
+ * (preflight() injects showError/exit the same way). The exit code is
+ * deliberately NOT part of the contract (review B14): compatibility is
+ * assessed purely from the version outputs, and a command that cannot run
+ * yields an empty stdout, which assessCrossrefCompatibility already reports
+ * loudly as 'unparseable'.
  */
-export type VersionOutputRunner = (command: string, args: string[]) => Promise<{ code: number, stdout: string }>
+export type VersionOutputRunner = (command: string, args: string[]) => Promise<{ stdout: string }>
 
 /**
  * The pure comparison at the heart of the compatibility check: given the two
@@ -175,8 +168,8 @@ const runVersionCommand: VersionOutputRunner = async (command, args) => {
     const proc = spawn(command, args, { shell: false })
     let stdout = ''
     proc.stdout.on('data', (data) => { stdout += String(data) })
-    proc.on('error', () => resolve({ code: -1, stdout: '' }))
-    proc.on('close', (code) => resolve({ code: code ?? -1, stdout }))
+    proc.on('error', () => resolve({ stdout: '' }))
+    proc.on('close', () => resolve({ stdout }))
   })
 }
 
