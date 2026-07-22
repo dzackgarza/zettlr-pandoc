@@ -54,6 +54,7 @@
               v-bind:window-id="windowId"
               v-on:global-search="startGlobalSearch($event)"
               v-on:reference-search="openReferenceSearch()"
+              v-on:create-reference-label="openCreateReferenceLabel($event)"
             ></EditorPane>
             <EditorBranch
               v-else-if="paneConfiguration !== undefined"
@@ -63,6 +64,7 @@
               v-bind:is-last="true"
               v-on:global-search="startGlobalSearch($event)"
               v-on:reference-search="openReferenceSearch()"
+              v-on:create-reference-label="openCreateReferenceLabel($event)"
             ></EditorBranch>
           </template>
           <template #view2>
@@ -139,6 +141,14 @@
     v-on:close="showReferenceSearch = false"
     v-on:jump="handleReferenceJump($event)"
   ></ReferenceSearchOverlay>
+  <CreateReferenceLabelDialog
+    v-if="createLabelPrompt !== undefined"
+    v-bind:family="createLabelPrompt.family"
+    v-bind:proposed-slug="createLabelPrompt.proposedSlug"
+    v-bind:existing-keys="createLabelExistingKeys"
+    v-on:close="createLabelPrompt = undefined"
+    v-on:create="handleCreateReferenceLabel($event)"
+  ></CreateReferenceLabelDialog>
 </template>
 
 <script setup lang="ts">
@@ -172,6 +182,10 @@ import PopoverDocInfo from './PopoverDocInfo.vue'
 import PopoverPandoc from './PopoverPandoc.vue'
 import PandocQuickHelp from './PandocQuickHelp.vue'
 import ReferenceSearchOverlay, { type ReferenceJumpIntent } from './ReferenceSearchOverlay.vue'
+import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
+import type { CreateReferenceLabelIntent } from '@common/modules/markdown-editor/plugins/create-reference-label'
+import { type CreateReferenceLabelDialogPrompt } from './MainEditor.vue'
+import showToast from '@common/util/show-toast'
 import { trans } from '@common/i18n-renderer'
 import localiseNumber from '@common/util/localise-number'
 import generateId from '@common/util/generate-id'
@@ -276,6 +290,55 @@ function openReferenceSearch (): void {
       showReferenceSearch.value = true
     })
     .catch(err => console.error('Could not open the reference search overlay', err))
+}
+
+// Create-reference-label dialog (issue #1 Phase 6): the relayed request
+// carries the fixed family, the slug proposal, and the editor-owned
+// insertion closure; the workspace key set feeds the live uniqueness verdict.
+const createLabelPrompt = ref<CreateReferenceLabelDialogPrompt|undefined>(undefined)
+const createLabelExistingKeys = ref<string[]>([])
+
+/**
+ * Fetches the current workspace definition keys from the reference provider
+ * (the live uniqueness verdict's data) and mounts the create-label dialog
+ * over the relayed request.
+ *
+ * @param   {CreateReferenceLabelDialogPrompt}  prompt  The relayed request
+ */
+function openCreateReferenceLabel (prompt: CreateReferenceLabelDialogPrompt): void {
+  ipcRenderer.invoke('reference-provider', { command: 'get-snapshot' })
+    .then((state: WorkspaceReferenceState) => {
+      createLabelExistingKeys.value = state.snapshots
+        .flatMap(snapshot => snapshot.definitions)
+        .map(definition => definition.key)
+      createLabelPrompt.value = prompt
+    })
+    .catch(err => console.error('Could not open the create-reference-label dialog', err))
+}
+
+/**
+ * Acts on the dialog's single create intent: the editor inserts the
+ * explicit label token at the prepared position, the @-reference lands on
+ * the clipboard, and a closable toast confirms both.
+ *
+ * @param   {CreateReferenceLabelIntent}  intent  The confirmed intent
+ */
+function handleCreateReferenceLabel (intent: CreateReferenceLabelIntent): void {
+  const prompt = createLabelPrompt.value
+  createLabelPrompt.value = undefined
+  if (prompt === undefined) {
+    return
+  }
+
+  prompt.applyCreate(intent)
+  navigator.clipboard.writeText(intent.clipboardText)
+    .then(() => {
+      showToast(trans('Created %s — %s copied to the clipboard.', intent.key, intent.clipboardText))
+    })
+    .catch(err => {
+      console.error('Could not copy the reference to the clipboard', err)
+      showToast(trans('Created %s. The clipboard copy failed.', intent.key), 'error')
+    })
 }
 
 /**

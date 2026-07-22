@@ -79,6 +79,7 @@ import { citationTooltips } from './tooltips/citations'
 import { referenceTooltips } from './tooltips/references'
 import { referenceLint } from './linters/reference-lint'
 import { workspaceReferencesField } from './plugins/workspace-references-field'
+import referenceKeyEditPrompt, { type ReferenceKeyEditPromptIntent } from './plugins/reference-key-edit-prompt'
 
 /**
  * This interface describes the required properties which the extension sets
@@ -95,6 +96,12 @@ export interface CoreExtensionOptions {
   }
   updateListener: (update: ViewUpdate) => void
   domEventsListeners: DOMEventHandlers<unknown>
+  /**
+   * Called when the selection leaves a directly edited definition-id token
+   * whose key changed (issue #1 Phase 6): the host confirms and runs the
+   * workspace rename protocol, or declines and keeps the local edit.
+   */
+  referenceKeyEditListener: (intent: ReferenceKeyEditPromptIntent) => void
 }
 
 /**
@@ -337,6 +344,12 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     // typed state source for reference chips, definition badges, reference
     // hovers, and reference diagnostics. Fed by MainEditor.vue.
     workspaceReferencesField,
+    // Prompts for the workspace rename after the selection leaves a
+    // directly edited definition-id token (issue #1 Phase 6).
+    referenceKeyEditPrompt({
+      documentPath: options.remoteConfig.filePath,
+      onPrompt: options.referenceKeyEditListener
+    }),
     markdownFolding, // Should be before footnoteGutter
     autocomplete,
     readabilityMode,

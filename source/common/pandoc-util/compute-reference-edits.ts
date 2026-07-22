@@ -64,11 +64,12 @@
  *     post-edit coordinates).
  */
 
-import type {
-  DocumentReferenceSnapshot,
-  ReferenceFamily,
-  WorkspaceReferenceEdit,
-  WorkspaceTextEdit
+import {
+  referenceFamilyOf,
+  type DocumentReferenceSnapshot,
+  type ReferenceFamily,
+  type WorkspaceReferenceEdit,
+  type WorkspaceTextEdit
 } from '../../types/common/references'
 
 /**
@@ -127,24 +128,132 @@ export type UndoRenameOutcome =
   | { status: 'no-pending-undo' }
 
 /**
+ * Characters that would terminate the authored token if they appeared inside
+ * a replacement key: whitespace plus the cluster/attribute delimiters.
+ */
+const TOKEN_TERMINATORS = /[\s}\];,@]/
+
+/**
  * Computes the previewed workspace rename of `oldKey` to `newKey` over the
  * merged snapshots, per the module contract above.
  *
- * PHASE 6 INERT SKELETON: no validation or edit computation exists yet; the
- * function rejects every request as `unknown-key`. Every branch of the real
- * contract is locked red by test/compute-reference-edits.spec.ts, including
- * a discrimination spec that fails on exactly this blanket rejection.
+ * VALIDATION ORDER (each rejection must stay independently reachable — the
+ * discrimination specs fail on any blanket rejection):
  *
- * @param   {DocumentReferenceSnapshot[]}  _snapshots  The merged workspace snapshots
- * @param   {string}                       oldKey      The full key being renamed
- * @param   {string}                       _newKey     The full replacement key
+ * 1. `malformed-key`: `newKey` is structurally not a supported reference key
+ *    (no supported `family:slug` shape, or the slug contains a character
+ *    that would terminate the authored token). Checked first so a malformed
+ *    replacement is never laundered into a family or collision rejection.
+ * 2. `family-changed`: both keys parse to supported families and they
+ *    differ. Checked before collision/unknown so a known key with a
+ *    family-crossing replacement reports the actual violation.
+ * 3. `collision`: `newKey` already has at least one definition anywhere
+ *    (including `newKey === oldKey`), naming every colliding definition.
+ * 4. `unknown-key`: `oldKey` has no definition in the given snapshots.
+ *    Checked last: it must only fire when nothing more specific applies.
  *
- * @return  {ReferenceRenamePreview}                   The previewed edit or a typed rejection
+ * @param   {DocumentReferenceSnapshot[]}  snapshots  The merged workspace snapshots
+ * @param   {string}                       oldKey     The full key being renamed
+ * @param   {string}                       newKey     The full replacement key
+ *
+ * @return  {ReferenceRenamePreview}                  The previewed edit or a typed rejection
  */
 export function previewReferenceRename (
-  _snapshots: DocumentReferenceSnapshot[],
+  snapshots: DocumentReferenceSnapshot[],
   oldKey: string,
-  _newKey: string
+  newKey: string
 ): ReferenceRenamePreview {
-  return { status: 'rejected', reason: { kind: 'unknown-key', oldKey } }
+  // 1. Structural validation of the replacement key
+  const newFamily = referenceFamilyOf(newKey)
+  if (newFamily === undefined || TOKEN_TERMINATORS.test(newKey)) {
+    return { status: 'rejected', reason: { kind: 'malformed-key', newKey } }
+  }
+
+  // 2. Prefix preservation: renames never move a key across families. An
+  // oldKey without a supported family cannot be defined anywhere, so it
+  // falls through to the unknown-key rejection below.
+  const oldFamily = referenceFamilyOf(oldKey)
+  if (oldFamily !== undefined && newFamily !== oldFamily) {
+    return { status: 'rejected', reason: { kind: 'family-changed', oldFamily, newFamily } }
+  }
+
+  // 3. Collision: the replacement key must be defined nowhere (a self-rename
+  // collides with itself, never a silent no-op).
+  const collidingPaths = snapshots
+    .filter(snapshot => snapshot.definitions.some(definition => definition.key === newKey))
+    .map(snapshot => snapshot.documentPath)
+  if (collidingPaths.length > 0) {
+    return { status: 'rejected', reason: { kind: 'collision', newKey, definitionPaths: collidingPaths } }
+  }
+
+  // 4. The old key must actually be defined somewhere in the workspace.
+  const isDefined = snapshots.some(snapshot => snapshot.definitions.some(definition => definition.key === oldKey))
+  if (!isDefined) {
+    return { status: 'rejected', reason: { kind: 'unknown-key', oldKey } }
+  }
+
+  // Edit computation: EVERY definition and EVERY occurrence of oldKey across
+  // every document (pinned duplicate-rename semantics), grouped per document
+  // in document order, ordered by range within each document.
+  const edits: WorkspaceTextEdit[] = []
+  const undo: WorkspaceTextEdit[] = []
+  const expectedSourceHashes: Record<string, string> = {}
+
+  for (const snapshot of snapshots) {
+    // The forward token replacements of this document, tagged with the
+    // inverse token so the undo edit restores the exact authored bytes.
+    const documentEdits: Array<{ edit: WorkspaceTextEdit, inverseInsert: string }> = []
+
+    for (const definition of snapshot.definitions) {
+      if (definition.key === oldKey) {
+        documentEdits.push({
+          edit: { documentPath: snapshot.documentPath, range: { ...definition.range }, insert: '#' + newKey },
+          inverseInsert: '#' + oldKey
+        })
+      }
+    }
+
+    for (const occurrence of snapshot.occurrences) {
+      if (occurrence.key === oldKey) {
+        documentEdits.push({
+          edit: { documentPath: snapshot.documentPath, range: { ...occurrence.range }, insert: '@' + newKey },
+          inverseInsert: '@' + oldKey
+        })
+      }
+    }
+
+    if (documentEdits.length === 0) {
+      continue
+    }
+
+    documentEdits.sort((a, b) => a.edit.range.from - b.edit.range.from)
+    expectedSourceHashes[snapshot.documentPath] = snapshot.sourceHash
+
+    // The inverse edits are expressed in POST-edit coordinates: walk the
+    // ascending forward edits, tracking the cumulative length delta of the
+    // preceding replacements.
+    let delta = 0
+    for (const { edit, inverseInsert } of documentEdits) {
+      edits.push(edit)
+      const from = edit.range.from + delta
+      undo.push({
+        documentPath: edit.documentPath,
+        range: { from, to: from + edit.insert.length },
+        insert: inverseInsert
+      })
+      delta += edit.insert.length - (edit.range.to - edit.range.from)
+    }
+  }
+
+  return {
+    status: 'ok',
+    edit: {
+      edits,
+      expectedSourceHashes,
+      openBufferPaths: [],
+      closedFilePaths: [],
+      conflict: { status: 'clean' },
+      undo
+    }
+  }
 }

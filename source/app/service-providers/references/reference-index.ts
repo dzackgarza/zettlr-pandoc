@@ -132,6 +132,23 @@ export class ReferenceIndex {
   }
 
   /**
+   * Returns the sourceHash of the live-buffer overlay for a document, or
+   * undefined when the document has no live overlay. This is the commit-time
+   * partitioning seam of the workspace rename protocol: documents WITH an
+   * overlay belong to renderer CodeMirror buffers (verified against the
+   * overlay hash, applied as returned transactions), documents WITHOUT one
+   * are closed files (verified against a fresh disk read, applied as atomic
+   * disk writes).
+   *
+   * @param   {string}  documentPath  The document's path
+   *
+   * @return  {string|undefined}      The overlay's sourceHash, if one exists
+   */
+  liveBufferSourceHash (documentPath: string): string|undefined {
+    return this.live.get(documentPath)?.snapshot.sourceHash
+  }
+
+  /**
    * Returns the merged workspace state: one snapshot per known document with
    * live overlays replacing saved snapshots, and the resolutions computed
    * over exactly that merged view.

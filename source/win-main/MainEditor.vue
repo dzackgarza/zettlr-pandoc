@@ -55,6 +55,16 @@ import type { DocumentLocation, ReferenceCompletionEntry, SourceRange } from '@d
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import { extractReferences } from '@common/pandoc-util/extract-references'
 import { resolveWorkspace } from '@common/pandoc-util/resolve-references'
+import { trans } from '@common/i18n-renderer'
+import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
+import showToast from '@common/util/show-toast'
+import type { ReferenceKeyEditPromptIntent } from '@common/modules/markdown-editor/plugins/reference-key-edit-prompt'
+import type { CreateReferenceLabelIntent, CreateReferenceLabelRequest } from '@common/modules/markdown-editor/plugins/create-reference-label'
+import type {
+  CommitRenameOutcome,
+  ReferenceRenamePreview,
+  ReferenceRenameRejection
+} from '@common/pandoc-util/compute-reference-edits'
 
 const ipcRenderer = window.ipc
 
@@ -82,9 +92,22 @@ const props = defineProps<{
   persistentStateMap: Map<string, EditorViewPersistentState>
 }>()
 
+/**
+ * The relayed create-label request App.vue mounts the dialog over: the
+ * context-fixed family, the editable slug proposal, and the closure that
+ * performs the prepared insertion in the invoking editor once the dialog
+ * confirms a key (clipboard write and toast are App.vue's half).
+ */
+export interface CreateReferenceLabelDialogPrompt {
+  family: CreateReferenceLabelRequest['family']
+  proposedSlug: string
+  applyCreate: (intent: CreateReferenceLabelIntent) => void
+}
+
 const emit = defineEmits<{
   (e: 'globalSearch', query: string): void
   (e: 'referenceSearch'): void
+  (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
 }>()
 
 const windowStateStore = useWindowStateStore()
@@ -596,6 +619,32 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     emit('referenceSearch')
   })
 
+  // The context menu (or command registry) requested the create-label
+  // dialog for a resolved target (issue #1 Phase 6): relay the typed
+  // request up to App.vue's dialog mount together with the closure that
+  // performs the prepared insertion once the dialog confirms a key.
+  editor.on('create-reference-label', (request: CreateReferenceLabelRequest) => {
+    emit('createReferenceLabel', {
+      family: request.family,
+      proposedSlug: request.proposedSlug,
+      applyCreate: (intent: CreateReferenceLabelIntent) => {
+        const view = currentEditor?.instance
+        if (view === undefined) {
+          return
+        }
+        const { from, to, prefix, suffix } = request.insertion
+        view.dispatch({ changes: { from, to, insert: prefix + intent.insertText + suffix } })
+      }
+    })
+  })
+
+  // The selection left a directly edited definition-id token (issue #1
+  // Phase 6): offer the workspace rename. Declining does nothing further —
+  // the local edit stays and the reference diagnostics flag the stale uses.
+  editor.on('reference-key-edit-prompt', (intent: ReferenceKeyEditPromptIntent) => {
+    promptWorkspaceRename(intent)
+  })
+
   // Supply the configuration object once initially
   editor.setOptions(editorConfiguration.value)
   return editor
@@ -738,6 +787,124 @@ async function updateReferenceEntries (): Promise<void> {
     workspaceOccurrences: workspace.flatMap(candidate => candidate.occurrences),
     resolutions: resolveWorkspace(workspace)
   })
+}
+
+/**
+ * Describes a typed rename rejection as closable-toast material.
+ *
+ * @param   {ReferenceRenameRejection}  reason  The typed rejection
+ *
+ * @return  {string}                            The user-facing message
+ */
+function describeRenameRejection (reason: ReferenceRenameRejection): string {
+  switch (reason.kind) {
+    case 'malformed-key':
+      return trans('Cannot rename: "%s" is not a valid reference key.', reason.newKey)
+    case 'family-changed':
+      return trans('Cannot rename: references keep their family prefix ("%s:" cannot become "%s:").', reason.oldFamily, reason.newFamily)
+    case 'collision':
+      return trans('Cannot rename: %s is already defined in %s.', reason.newKey, reason.definitionPaths.join(', '))
+    case 'unknown-key':
+      return trans('Cannot rename: %s is not defined anywhere in this workspace.', reason.oldKey)
+  }
+}
+
+/**
+ * Offers the workspace rename for a directly edited definition id via a
+ * non-blocking popup anchored at the edited token. Declining does nothing:
+ * the local edit stays and the diagnostics flag the stale uses.
+ *
+ * @param   {ReferenceKeyEditPromptIntent}  intent  The prompt intent
+ */
+function promptWorkspaceRename (intent: ReferenceKeyEditPromptIntent): void {
+  const view = currentEditor?.instance
+  if (view === undefined || intent.documentPath !== props.file.path) {
+    return
+  }
+
+  const coords = view.coordsAtPos(Math.min(intent.range.from, view.state.doc.length))
+  const items: AnyMenuItem[] = [
+    {
+      label: trans('Rename "%s" to "%s" across the workspace…', intent.oldKey, intent.newKey),
+      id: 'apply-workspace-rename',
+      type: 'normal',
+      action: () => {
+        runWorkspaceRename(intent).catch(err => console.error('Workspace rename failed', err))
+      }
+    },
+    {
+      label: trans('Keep this edit only'),
+      id: 'decline-workspace-rename',
+      type: 'normal',
+      action: () => { /* Declining does nothing further */ }
+    }
+  ]
+  showPopupMenu({ x: coords?.left ?? 0, y: coords?.bottom ?? 0 }, items)
+}
+
+/**
+ * Runs the confirmed workspace rename protocol: withdraws the local token
+ * edit (the atomic workspace rename owns the whole change), previews, and
+ * commits. Typed rejections and conflicts surface as closable toasts —
+ * never as blocking dialogs.
+ *
+ * @param   {ReferenceKeyEditPromptIntent}  intent  The confirmed intent
+ */
+async function runWorkspaceRename (intent: ReferenceKeyEditPromptIntent): Promise<void> {
+  const view = currentEditor?.instance
+  if (view === undefined) {
+    return
+  }
+
+  // Withdraw the local definition edit so the previewed rename computes
+  // and applies the complete, consistent workspace edit set.
+  view.dispatch({
+    changes: { from: intent.range.from, to: intent.range.to, insert: '#' + intent.oldKey }
+  })
+
+  const preview: ReferenceRenamePreview = await ipcRenderer.invoke('application', {
+    command: 'preview-reference-rename',
+    payload: { oldKey: intent.oldKey, newKey: intent.newKey }
+  })
+
+  if (preview.status === 'rejected') {
+    showToast(describeRenameRejection(preview.reason), 'error')
+    return
+  }
+
+  const outcome: CommitRenameOutcome = await ipcRenderer.invoke('application', {
+    command: 'commit-reference-rename',
+    payload: { edit: preview.edit }
+  })
+
+  if (outcome.status === 'conflict') {
+    showToast(trans(
+      'Rename aborted: %s changed concurrently. No document was modified.',
+      outcome.conflict.documentPath
+    ), 'error')
+    return
+  }
+
+  // Renderer half of the boundary split: apply this document's returned
+  // open-buffer transactions (the buffer stays dirty/unsaved). When this
+  // document was committed as a closed-file disk write instead, replay the
+  // same edits locally so the buffer matches the rewritten disk content.
+  const ownEdits = (outcome.openBufferTransactions.length > 0
+    ? outcome.openBufferTransactions
+    : preview.edit.edits
+  ).filter(e => e.documentPath === intent.documentPath)
+  if (ownEdits.length > 0) {
+    view.dispatch({
+      changes: ownEdits.map(e => ({ from: e.range.from, to: e.range.to, insert: e.insert }))
+    })
+  }
+
+  showToast(trans(
+    'Renamed %s to %s across %s documents.',
+    intent.oldKey,
+    intent.newKey,
+    Object.keys(preview.edit.expectedSourceHashes).length
+  ))
 }
 
 async function updateFileDatabase (): Promise<void> {

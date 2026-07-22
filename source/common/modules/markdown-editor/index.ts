@@ -101,6 +101,7 @@ import {
 import { markdownToAST } from '../markdown-utils'
 import { countField, updateWordCountEffect } from './plugins/statistics-fields'
 import { openReferenceSearchEffect } from './plugins/reference-search-effect'
+import { createReferenceLabel, openCreateReferenceLabelEffect } from './plugins/create-reference-label'
 import { useDarkModeEditor, darkModeEffect } from './theme/dark-mode'
 import { editorMetadataFacet } from './plugins/editor-metadata'
 import { projectInfoUpdateEffect, type ProjectInfo } from './plugins/project-info-field'
@@ -346,6 +347,13 @@ export default class MarkdownEditor extends EventEmitter {
               this.emit('reference-search')
             }
 
+            // Create-reference-label request (issue #1 Phase 6): surface
+            // the typed request to the shell (MainEditor.vue relays it up
+            // to App.vue's CreateReferenceLabelDialog mount).
+            if (effect.is(openCreateReferenceLabelEffect)) {
+              this.emit('create-reference-label', effect.value)
+            }
+
             // Listen for config updates, and parse them into the internal cache. We
             // do it this way, because the editor itself is also capable of changing
             // its configuration (e.g., via the statusbar). This way we ensure that
@@ -367,7 +375,13 @@ export default class MarkdownEditor extends EventEmitter {
         onTag (tag) {
           editorInstance.emit('zettelkasten-tag', tag)
         }
-      })
+      }),
+      referenceKeyEditListener: (intent) => {
+        // The selection left a directly edited definition-id token: surface
+        // the prompt intent to the shell (MainEditor.vue confirms and runs
+        // the workspace rename protocol; declining keeps the local edit).
+        editorInstance.emit('reference-key-edit-prompt', intent)
+      }
     }
 
     switch (type) {
@@ -680,6 +694,9 @@ export default class MarkdownEditor extends EventEmitter {
         break
       case 'markdownMakeTaskList':
         applyTaskList(this._instance)
+        break
+      case 'createReferenceLabel':
+        createReferenceLabel(this._instance)
         break
       default:
         console.warn('Unimplemented command:', cmd)

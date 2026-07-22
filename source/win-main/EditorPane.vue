@@ -52,6 +52,7 @@
             v-bind:persistent-state-map="persistentStateMap"
             v-on:global-search="emit('globalSearch', $event)"
             v-on:reference-search="emit('referenceSearch')"
+            v-on:create-reference-label="emit('createReferenceLabel', $event)"
           ></MainEditor>
         </Teleport>
       </template>
@@ -135,7 +136,7 @@ import { type LeafNodeJSON, type OpenDocument } from '@dts/common/documents'
 import { type EditorCommands } from './App.vue'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import DocumentTabs from './DocumentTabs.vue'
-import MainEditor from './MainEditor.vue'
+import MainEditor, { type CreateReferenceLabelDialogPrompt } from './MainEditor.vue'
 import { useDocumentTreeStore, useWindowStateStore } from 'source/pinia'
 import ImageViewer from './file-viewers/ImageViewer.vue'
 import { hasImageExt, hasPDFExt } from '@common/util/file-extention-checks'
@@ -161,6 +162,7 @@ type DragTargetAreas = 'editor'|'top'|'left'|'right'|'bottom'
 const emit = defineEmits<{
   (e: 'globalSearch', query: string): void
   (e: 'referenceSearch'): void
+  (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
 }>()
 
 // UNREFFED SCROLL MAP

@@ -59,12 +59,8 @@ export default class RenameReference extends ZettlrCommand {
 
   /**
    * Runs one of the three rename protocol events by delegating to the
-   * ReferenceProvider.
-   *
-   * PHASE 6 INERT SKELETON: delegates to the provider's inert skeleton
-   * surface, so previews reject, commits apply nothing, and undo reports
-   * nothing pending. The real protocol behavior is locked red at the
-   * provider boundary by test/reference-rename-atomicity.spec.ts.
+   * ReferenceProvider, whose protocol behavior is locked at the provider
+   * boundary by test/reference-rename-atomicity.spec.ts.
    *
    * @param   {string}  evt  One of the three bound rename events
    * @param   {any}     arg  The event payload (see the header contract)
