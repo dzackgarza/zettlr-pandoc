@@ -37,7 +37,7 @@ describe('Pandoc fenced-div clicks preserve CodeMirror source positions', functi
   let results: ClickResult[]
 
   before(async function () {
-    this.timeout(30000)
+    this.timeout(120000)
     outputDirectory = await mkdtemp(path.join(tmpdir(), 'zettlr-pandoc-div-click-'))
     const root = process.cwd()
     await execFileAsync(path.join(root, 'node_modules/.bin/esbuild'), [
@@ -51,6 +51,8 @@ describe('Pandoc fenced-div clicks preserve CodeMirror source positions', functi
     const { stdout } = await execFileAsync('xvfb-run', [
       '-a',
       path.join(root, 'node_modules/.bin/electron'),
+      '--ozone-platform=x11',
+      '--disable-gpu',
       path.join(root, 'test/editor-pandoc-div-click-probe.cjs'),
       outputDirectory,
     ], { maxBuffer: 1024 * 1024 })

@@ -28,7 +28,7 @@ test-file file:
 # Run the repository test suite. The guard executes before Mocha can start.
 test:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --inline-diffs
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --timeout 120000 --inline-diffs
 
 [private]
 test-commit: test

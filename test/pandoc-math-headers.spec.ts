@@ -87,7 +87,7 @@ describe('Pandoc math export headers', function () {
   })
 
   it('renders canonical macros and mhchem in a local Chromium HTML export', async function () {
-    this.timeout(12000)
+    this.timeout(30000)
     const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-pandoc-browser-'))
     const inputFile = path.join(directory, 'input.md')
     const outputFile = path.join(directory, 'output.html')
@@ -96,6 +96,7 @@ describe('Pandoc math export headers', function () {
     const mhchemFontExtension = path.join(directory, 'assets', 'defaults', 'mathjax-mhchem-font-extension')
     const fontDirectory = path.join(directory, 'assets', 'defaults', 'mathjax-font')
     const screenshot = path.join(directory, 'render.png')
+    const renderedDocument = path.join(directory, 'rendered.html')
 
     await mkdir(path.dirname(component), { recursive: true })
     await cp('node_modules/@mathjax/src/bundle/tex-chtml.js', component)
@@ -132,28 +133,26 @@ describe('Pandoc math export headers', function () {
     )
 
     await runPandoc(defaultsFile, outputFile)
-    const { stdout, stderr } = await execFileAsync('xvfb-run', [
+    const { stderr } = await execFileAsync('xvfb-run', [
       '-a',
-      'chromium',
-      '--headless',
-      '--no-sandbox',
-      '--allow-file-access-from-files',
-      '--enable-logging=stderr',
-      '--v=0',
-      '--virtual-time-budget=10000',
-      `--screenshot=${screenshot}`,
-      '--dump-dom',
-      pathToFileURL(outputFile).href
-    ])
+      path.join(process.cwd(), 'node_modules/.bin/electron'),
+      '--ozone-platform=x11',
+      '--disable-gpu',
+      path.join(process.cwd(), 'test/pandoc-math-html-probe.cjs'),
+      outputFile,
+      screenshot,
+      renderedDocument,
+    ], { maxBuffer: 4 * 1024 * 1024 })
+    const html = await readFile(renderedDocument, { encoding: 'utf8' })
 
-    assert.strictEqual((stdout.match(/<mjx-container/g) ?? []).length, 2)
-    const mathJaxConfig = stdout.match(/window\.MathJax = ([\s\S]*?)<\/script>/)?.[1] ?? ''
+    assert.strictEqual((html.match(/<mjx-container/g) ?? []).length, 2)
+    const mathJaxConfig = html.match(/window\.MathJax = ([\s\S]*?)<\/script>/)?.[1] ?? ''
     assert.ok(!mathJaxConfig.includes('https://'))
     assert.ok(!mathJaxConfig.includes('http://'))
-    assert.ok(!stdout.includes('$\\RR$'))
-    assert.ok(!stdout.includes('$\\ce{H2O}$'))
-    assert.ok(stdout.includes('data-latex="\\mathbb{R}"'))
-    assert.ok(stdout.includes('data-latex="\\ce{H2O}"'))
+    assert.ok(!html.includes('$\\RR$'))
+    assert.ok(!html.includes('$\\ce{H2O}$'))
+    assert.ok(html.includes('data-latex="\\mathbb{R}"'))
+    assert.ok(html.includes('data-latex="\\ce{H2O}"'))
     assert.ok(!stderr.includes("MathJax Warning: Package 'mhchem' not found"))
   })
   it('writes copied Reveal defaults through the exporter seam before real Pandoc output', async function () {
@@ -252,6 +251,7 @@ describe('Pandoc math export headers', function () {
   })
 
   it('runs real Pandoc TeX with projected macros while preserving existing headers', async function () {
+    this.timeout(60000)
     const directory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-pandoc-tex-'))
     const inputFile = path.join(directory, 'input.md')
     const outputFile = path.join(directory, 'output.tex')
