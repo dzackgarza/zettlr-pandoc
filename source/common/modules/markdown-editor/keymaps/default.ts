@@ -71,6 +71,7 @@ import { alignTables } from '../table-editor/commands/tables'
 import { addRowAfter, addRowBefore, moveNextRow, movePrevRow, swapNextRow, swapPrevRow } from '../table-editor/commands/rows'
 import { removeLineBreaks } from '../commands/transforms/remove-line-breaks'
 import { openReferenceSearch } from '../plugins/reference-search-effect'
+import { navigateHistoryBack, navigateHistoryForward } from '../util/reference-navigation'
 
 // Includes:
 // * defaultKeymap
@@ -167,9 +168,23 @@ export function defaultKeymap (): Extension {
     { key: 'Ctrl-Alt-[', run: foldAll },
     { key: 'Ctrl-Alt-]', run: unfoldAll },
 
-    // defaultKeymap
-    { key: 'Alt-ArrowLeft', mac: 'Ctrl-ArrowLeft', run: cursorSyntaxLeft, shift: selectSyntaxLeft },
-    { key: 'Alt-ArrowRight', mac: 'Ctrl-ArrowRight', run: cursorSyntaxRight, shift: selectSyntaxRight },
+    // Per-pane Back/Forward session-history navigation (issue #1 Phase 5).
+    // KEYMAP REMAP: the issue contract requires Alt-ArrowLeft/Right as the
+    // (configurable) navigation defaults, which previously ran
+    // cursorSyntaxLeft/Right here. Those commands move to
+    // Mod-Alt-ArrowLeft/Right (verified unbound in this keymap; the only
+    // Mod-Alt bindings are i/f/c/g/\/j and Ctrl-Alt-[/]). The table editor's
+    // Alt-ArrowLeft/Right column swaps are unaffected: table cell subviews
+    // register Prec.highest(tableEditorKeymap(mainView))
+    // (table-editor/subview.ts), which runs before this keymap inside a
+    // table cell. The navigation commands return false in views without
+    // editor metadata (window/leaf IDs), so non-main editors fall through.
+    { key: 'Alt-ArrowLeft', mac: 'Ctrl-ArrowLeft', run: navigateHistoryBack, preventDefault: true },
+    { key: 'Alt-ArrowRight', mac: 'Ctrl-ArrowRight', run: navigateHistoryForward, preventDefault: true },
+
+    // defaultKeymap (cursorSyntaxLeft/Right remapped from Alt-Arrow, see above)
+    { key: 'Mod-Alt-ArrowLeft', run: cursorSyntaxLeft, shift: selectSyntaxLeft },
+    { key: 'Mod-Alt-ArrowRight', run: cursorSyntaxRight, shift: selectSyntaxRight },
 
     { key: 'Alt-ArrowUp', run: moveLineUp },
     { key: 'Shift-Alt-ArrowUp', run: copyLineUp },

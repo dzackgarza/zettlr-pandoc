@@ -17,6 +17,10 @@ import { syntaxTree } from '@codemirror/language'
 import type { DOMEventHandlers } from '@codemirror/view'
 import type { SyntaxNode } from '@lezer/common'
 import openMarkdownLink from '../util/open-markdown-link'
+import {
+  followReferenceNavigationIntent,
+  resolveReferenceNavigationIntent
+} from '../util/reference-navigation'
 
 export interface ClickListenerCallbacks {
   onWikiLink?: (url: string) => void
@@ -76,6 +80,19 @@ export function clickListeners<T = unknown> (callbacks?: ClickListenerCallbacks)
         const tagContents = view.state.sliceDoc(mark ? mark.to : nodeAt.from, nodeAt.to)
         callbacks?.onTag?.(tagContents)
         event.preventDefault()
+        return true
+      }
+
+      // Reference occurrences (supported-family Citation clusters) and
+      // footnote refs join the Mod-click navigation surface (issue #1
+      // Phase 5): same-file intents select the definition in this view,
+      // cross-file intents request the documents provider to open the
+      // defining document. Ordinary clicks never reach this branch (the
+      // Mod-key guard at the top), so edit-first behavior is untouched.
+      const intent = resolveReferenceNavigationIntent(view, pos)
+      if (intent !== null) {
+        event.preventDefault()
+        followReferenceNavigationIntent(view, intent)
         return true
       }
 

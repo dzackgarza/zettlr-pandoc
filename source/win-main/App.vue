@@ -536,20 +536,25 @@ const toolbarControls = computed<ToolbarControl[]>(() => {
       icon: 'plus',
       visible: getToolbarButtonDisplay('showNewFileButton')
     },
+    // Compact Back/Forward navigation controls (issue #1 Phase 5): enabled
+    // exactly when the focused pane's session history has an entry in that
+    // direction.
     {
       type: 'button',
       id: 'previous-file',
-      title: trans('Previous file'),
+      title: trans('Navigate back'),
       icon: 'arrow',
       direction: 'left',
+      disabled: !canGoBack.value,
       visible: getToolbarButtonDisplay('showPreviousFileButton')
     },
     {
       type: 'button',
       id: 'next-file',
-      title: trans('Next file'),
+      title: trans('Navigate forward'),
       icon: 'arrow',
       direction: 'right',
+      disabled: !canGoForward.value,
       visible: getToolbarButtonDisplay('showNextFileButton')
     },
     {
@@ -676,6 +681,35 @@ const globalSearchComponent = ref<typeof GlobalSearch|null>(null)
 const paneConfiguration = computed(() => documentTreeStore.paneStructure)
 const lastLeafId = computed(() => documentTreeStore.lastLeafId)
 const distractionFree = computed<boolean>(() => windowStateStore.distractionFreeMode !== undefined)
+
+// Per-pane session history position (issue #1 Phase 5): feeds the toolbar
+// Back/Forward controls' enabled state. Refreshed from the documents
+// provider whenever the focused leaf or its documents change.
+const canGoBack = ref(false)
+const canGoForward = ref(false)
+
+function refreshNavigationState (): void {
+  const leafId = lastLeafId.value
+  if (leafId === undefined) {
+    canGoBack.value = false
+    canGoForward.value = false
+    return
+  }
+
+  ipcRenderer.invoke('documents-provider', {
+    command: 'get-navigation-state',
+    payload: { windowId, leafId }
+  } as DocumentManagerIPCAPI)
+    .then((state: { canGoBack: boolean, canGoForward: boolean }) => {
+      canGoBack.value = state.canGoBack
+      canGoForward.value = state.canGoForward
+    })
+    .catch(err => console.error(err))
+}
+
+watch(lastLeafId, refreshNavigationState)
+ipcRenderer.on('documents-update', () => { refreshNavigationState() })
+refreshNavigationState()
 
 watch(sidebarVisible, (newValue) => {
   if (newValue) {
@@ -954,6 +988,9 @@ function handleClick (clickedID?: string): void {
     ipcRenderer.invoke('application', { command: 'file-new', payload: { type: DocumentType.Markdown } })
       .catch(e => console.error(e))
   } else if (clickedID === 'previous-file') {
+    if (!canGoBack.value) {
+      return // The control renders disabled; never navigate past the boundary
+    }
     ipcRenderer.invoke('documents-provider', {
       command: 'navigate-back',
       payload: {
@@ -962,6 +999,9 @@ function handleClick (clickedID?: string): void {
       }
     } as DocumentManagerIPCAPI).catch(err => console.error(err))
   } else if (clickedID === 'next-file') {
+    if (!canGoForward.value) {
+      return // The control renders disabled; never navigate past the boundary
+    }
     ipcRenderer.invoke('documents-provider', {
       command: 'navigate-forward',
       payload: {

@@ -51,7 +51,7 @@ import type { DocumentManagerIPCAPI, DocumentsUpdateContext } from 'source/app/s
 import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
 import type { ProjectInfo } from 'source/common/modules/markdown-editor/plugins/project-info-field'
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
-import type { ReferenceCompletionEntry } from '@dts/common/references'
+import type { DocumentLocation, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import { extractReferences } from '@common/pandoc-util/extract-references'
 import { resolveWorkspace } from '@common/pandoc-util/resolve-references'
@@ -95,6 +95,38 @@ const tagStore = useTagsStore()
 
 // UNREFFED STUFF
 let currentEditor: MarkdownEditor|null = null
+
+/**
+ * The navigation payload of the last ACTIVE_FILE event for this leaf
+ * (issue #1 Phase 5): either the DocumentLocation of a restored Back/Forward
+ * history entry, or the definition targetRange of a cross-file reference
+ * jump. Applied once the editor for that file is loaded (or immediately when
+ * it already is), then cleared.
+ */
+let pendingNavigation: { filePath: string, location?: DocumentLocation, targetRange?: SourceRange }|null = null
+
+/**
+ * Applies (and clears) the pending navigation payload when the currently
+ * loaded editor shows the file it belongs to.
+ */
+function applyPendingNavigation (): void {
+  if (pendingNavigation === null || currentEditor === null) {
+    return
+  }
+
+  if (pendingNavigation.filePath !== currentEditor.documentPath) {
+    return // The pane moved elsewhere; keep waiting or get superseded.
+  }
+
+  const { location, targetRange } = pendingNavigation
+  pendingNavigation = null
+
+  if (location !== undefined) {
+    currentEditor.restoreDocumentLocation(location)
+  } else if (targetRange !== undefined) {
+    currentEditor.selectSourceRange(targetRange)
+  }
+}
 
 // EVENT LISTENERS
 ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
@@ -153,6 +185,24 @@ ipcRenderer.on('shortcut', (event, command) => {
 
 ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: DocumentsUpdateContext }) => {
   const { event, context } = payload
+  if (
+    event === DP_EVENTS.ACTIVE_FILE && context.leafId === props.leafId &&
+    context.filePath !== undefined &&
+    (context.location !== undefined || context.targetRange !== undefined)
+  ) {
+    // The activation carries a navigation payload (issue #1 Phase 5): a
+    // Back/Forward-restored DocumentLocation or a cross-file reference jump
+    // landing range. Record it, and apply it right away when the editor for
+    // that file is already loaded (otherwise the 'loaded' hook applies it
+    // after the remount).
+    pendingNavigation = {
+      filePath: context.filePath,
+      location: context.location,
+      targetRange: context.targetRange
+    }
+    applyPendingNavigation()
+  }
+
   if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
     // The currently loaded document has been changed remotely. This event indicates
     // that the document provider has already reloaded the document and we only
@@ -484,6 +534,9 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     if (currentEditor === editor) {
       windowStateStore.activeDocumentInfo = currentEditor.documentInfo
       windowStateStore.tableOfContents = currentEditor.tableOfContents
+      // A pane navigation may have arrived before this editor finished
+      // loading its document (issue #1 Phase 5); restore it now.
+      applyPendingNavigation()
     }
   })
 

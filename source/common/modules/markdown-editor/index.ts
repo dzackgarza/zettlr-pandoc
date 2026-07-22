@@ -50,7 +50,7 @@ import {
   snippetsUpdate,
   referencesUpdate
 } from './autocomplete'
-import { type ReferenceCompletionEntry } from '@dts/common/references'
+import { type DocumentLocation, type ReferenceCompletionEntry, type SourceRange } from '@dts/common/references'
 import {
   workspaceReferencesUpdate,
   type EditorWorkspaceReferences
@@ -512,6 +512,51 @@ export default class MarkdownEditor extends EventEmitter {
         effects: EditorView.scrollIntoView(lineDesc.from, { y: 'center' })
       })
     }
+    this._instance.focus()
+  }
+
+  /**
+   * Restores a captured DocumentLocation (issue #1 Phase 5): the exact
+   * selection, collapsed folds, and viewport scroll offset stamped onto a
+   * per-pane history entry at jump time. Out-of-range ranges (the document
+   * changed since the capture) are dropped rather than clamped wrongly.
+   *
+   * @param   {DocumentLocation}  location  The location to restore
+   */
+  restoreDocumentLocation (location: DocumentLocation): void {
+    const docLength = this._instance.state.doc.length
+    const { anchor, head } = location.selection
+    const effects = location.folds
+      .filter(fold => fold.from >= 0 && fold.to <= docLength && fold.from < fold.to)
+      .map(fold => foldEffect.of({ from: fold.from, to: fold.to }))
+
+    if (anchor >= 0 && anchor <= docLength && head >= 0 && head <= docLength) {
+      this._instance.dispatch({ selection: { anchor, head }, effects })
+    } else if (effects.length > 0) {
+      this._instance.dispatch({ effects })
+    }
+
+    this._instance.scrollDOM.scrollTop = location.scrollTop
+    this._instance.focus()
+  }
+
+  /**
+   * Selects the given source range and scrolls it into view (issue #1
+   * Phase 5): the landing step of a cross-file reference jump, targeting the
+   * authored definition id token.
+   *
+   * @param   {SourceRange}  range  The range to select
+   */
+  selectSourceRange (range: SourceRange): void {
+    const docLength = this._instance.state.doc.length
+    if (range.from < 0 || range.to > docLength || range.from > range.to) {
+      return // The document changed since the range was computed.
+    }
+
+    this._instance.dispatch({
+      selection: { anchor: range.from, head: range.to },
+      effects: EditorView.scrollIntoView(range.from, { y: 'center' })
+    })
     this._instance.focus()
   }
 

@@ -64,6 +64,10 @@ import { NODES, nodeToCiteItem } from '../parser/citation-parser'
 import { referenceFamilyOf, referenceFamilyDisplayName, type ReferenceFamily } from '@dts/common/references'
 import { workspaceReferencesField } from '../plugins/workspace-references-field'
 import clickAndSelect from './click-and-select'
+import {
+  followReferenceNavigationIntent,
+  resolveReferenceNavigationIntent
+} from '../util/reference-navigation'
 
 /**
  * One chip of a cluster widget: the authored key, its family, and the
@@ -124,7 +128,30 @@ class ReferenceChipClusterWidget extends WidgetType {
       elem.appendChild(document.createTextNode(inner.slice(cursor)))
     }
 
-    elem.addEventListener('click', clickAndSelect(view))
+    // Ordinary clicks reveal the authored source (edit-first parity). A
+    // platform Mod-click instead follows the clicked chip's reference to its
+    // definition (issue #1 Phase 5). Widget mouse events never reach the
+    // clickListeners() mousedown path (ignoreEvent below), so the navigation
+    // branch lives on the widget listener itself.
+    const revealAuthoredSource = clickAndSelect(view)
+    elem.addEventListener('click', event => {
+      const cmd = event.metaKey && process.platform === 'darwin'
+      const ctrl = event.ctrlKey && process.platform !== 'darwin'
+      if (cmd || ctrl) {
+        const chip = event.target instanceof HTMLElement
+          ? event.target.closest<HTMLElement>('.reference-chip')
+          : null
+        const pos = view.posAtDOM(elem)
+        const intent = resolveReferenceNavigationIntent(view, pos, chip?.dataset.referenceKey)
+        if (intent !== null) {
+          event.preventDefault()
+          followReferenceNavigationIntent(view, intent)
+          return
+        }
+      }
+
+      revealAuthoredSource(event)
+    })
 
     return elem
   }

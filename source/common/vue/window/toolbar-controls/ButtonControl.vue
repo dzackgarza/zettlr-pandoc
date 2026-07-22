@@ -4,6 +4,7 @@
       v-bind:id="`toolbar-${control.id ?? ''}`"
       role="button"
       v-bind:title="titleWithFallback"
+      v-bind:disabled="control.disabled === true"
     >
       <cds-icon
         v-if="control.icon"
@@ -45,6 +46,8 @@ export interface ToolbarButtonControl {
   icon: string
   badge?: boolean
   direction?: 'up'|'down'|'left'|'right'
+  /** Renders the button disabled (e.g. Back/Forward at a history boundary) */
+  disabled?: boolean
   // Allow arbitrary properties that we ignore
   [key: string]: unknown
 }
@@ -71,5 +74,10 @@ const labelWithFallback = computed<string>(() => {
   align-items: center;
   gap: 5px;
   font-size: 12px;
+
+  &:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
 }
 </style>
