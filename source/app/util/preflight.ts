@@ -69,7 +69,7 @@ export function requiredPaths (): PathRequirement[] {
  */
 export async function commandResolves (command: string): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
-    const proc = spawn(command, [ '--version' ], { shell: false })
+    const proc = spawn(command, ['--version'], { shell: false })
     proc.on('error', () => resolve(false))
     proc.on('close', () => resolve(true))
   })
