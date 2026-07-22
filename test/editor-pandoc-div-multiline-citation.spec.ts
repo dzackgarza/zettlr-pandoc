@@ -13,6 +13,7 @@
  */
 
 import { strict as assert } from 'assert'
+import { forceParsing } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
@@ -90,6 +91,11 @@ describe('Editor renders line-wrapped citations inside Pandoc fenced divs', func
       ],
     })
     const view = new EditorView({ state, parent: document.body })
+    // On a cold parser the markdown parse can miss CodeMirror's synchronous
+    // time slice, leaving the first render with a partial tree while these
+    // specs assert synchronously. forceParsing completes the parse and applies
+    // the resulting tree through a real view update.
+    assert.ok(forceParsing(view, doc.length, 5000), 'the syntax tree must be fully parsed before asserting')
     views.push(view)
     return view
   }

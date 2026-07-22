@@ -271,7 +271,13 @@ const pandocDivSpanPlugin = ViewPlugin.fromClass(class {
   }
 
   update (update: ViewUpdate) {
-    if (update.docChanged || update.viewportChanged || update.selectionSet) {
+    // The syntax-tree comparison matters when the initial parse misses the
+    // synchronous time slice: the parser finishes asynchronously and applies
+    // its tree in a transaction that changes neither doc, viewport, nor
+    // selection. Without recomputing there, divs that were not yet parsed at
+    // construction would stay unwrapped until the next interaction.
+    if (update.docChanged || update.viewportChanged || update.selectionSet ||
+        syntaxTree(update.state) !== syntaxTree(update.startState)) {
       this.spanDecorations = createSpanDecorations(update.view)
       this.divWrappers = createDivDecorations(update.view)
     }
