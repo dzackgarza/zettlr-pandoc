@@ -28,7 +28,7 @@ test-file file:
 # Run the focused workspace-reference test suite.
 test-references:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/reference-fzf-search.spec.ts"
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/reference-fzf-search.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/reference-lint.spec.ts"
 
 # Run the Phase 3b reference UI suite: the references-provider Electron shell
 # spec plus the Mod-P search overlay Chromium probe spec. Mirrors test-file's
@@ -85,6 +85,30 @@ capture-reference-search output:
     mkdir -p "{{output}}"
     node "{{justfile_directory()}}/test/reference-search-overlay-build.cjs" "{{output}}"
     xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --ozone-platform=x11 --disable-gpu --no-sandbox "{{justfile_directory()}}/test/reference-search-overlay-probe.cjs" "{{output}}"
+
+# Capture the reference chip presentation in isolated offscreen Electron
+# (issue #1 Phase 4). Follows the capture-pandoc-divs pattern; the entry and
+# capture files land with the green implementation, and the recipe fails
+# loudly until they exist. This never starts Forge, a dev server, xdg-open,
+# or the system browser.
+capture-reference-chips output:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    test -f "{{justfile_directory()}}/test/editor-reference-chips-visual-entry.ts" || { echo "FATAL: test/editor-reference-chips-visual-entry.ts does not exist yet (Phase 4 green work)"; exit 1; }
+    mkdir -p "{{output}}"
+    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-reference-chips-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/reference-chips-visual-bundle.js"
+    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" "{{justfile_directory()}}/test/editor-reference-chips-visual-capture.cjs" "{{output}}"
+
+# Capture the reference hover tooltip presentation in isolated offscreen
+# Electron (issue #1 Phase 4). Follows the capture-pandoc-divs pattern; the
+# entry and capture files land with the green implementation, and the recipe
+# fails loudly until they exist. This never starts Forge, a dev server,
+# xdg-open, or the system browser.
+capture-reference-hover output:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    test -f "{{justfile_directory()}}/test/reference-hover-visual-entry.ts" || { echo "FATAL: test/reference-hover-visual-entry.ts does not exist yet (Phase 4 green work)"; exit 1; }
+    mkdir -p "{{output}}"
+    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/reference-hover-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/reference-hover-visual-bundle.js"
+    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" "{{justfile_directory()}}/test/reference-hover-visual-capture.cjs" "{{output}}"
 
 # Run a real export headlessly (no GUI), via the app's own makeExport with the
 # exact profile list the GUI sees (userData/defaults + custom profiles). Proves
