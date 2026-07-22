@@ -27,14 +27,18 @@
  * END HEADER
  */
 
+// NOTE: fzf is ESM-only; this must remain a real ESM import. A require()
+// call resolves to an empty object at runtime.
+import { Fzf } from 'fzf'
 import { type ReferenceDefinition } from '@dts/common/references'
 
 /**
  * Ranks the workspace's reference definitions against a fuzzy query.
  *
- * RED SKELETON (issue #1 Phase 3): the fzf-backed ranking is not implemented
- * yet, so every query — including the empty one — currently reaches no
- * definitions and the search specs fail on their assertions.
+ * The search haystack of a definition is its authored key. The empty query
+ * reaches every workspace definition (including duplicate definitions of the
+ * same key); non-empty queries return the fzf matches in descending score
+ * order, so consecutive-substring matches rank above scattered fuzzy ones.
  *
  * @param   {ReferenceDefinition[]}  definitions  Every workspace definition
  * @param   {string}                 query        The typed fuzzy query
@@ -42,7 +46,13 @@ import { type ReferenceDefinition } from '@dts/common/references'
  * @return  {ReferenceDefinition[]}               The ranked matches
  */
 export function searchWorkspaceDefinitions (definitions: ReferenceDefinition[], query: string): ReferenceDefinition[] {
-  // The slice bounds reference both parameters so this skeleton compiles and
-  // lints without containing any matching logic; it always returns [].
-  return definitions.slice(query.length, 0)
+  if (query === '') {
+    return [...definitions]
+  }
+
+  const fzf = new Fzf(definitions, {
+    selector: definition => definition.key
+  })
+
+  return fzf.find(query).map(result => result.item)
 }

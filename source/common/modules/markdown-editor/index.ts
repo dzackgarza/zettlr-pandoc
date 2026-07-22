@@ -407,9 +407,6 @@ export default class MarkdownEditor extends EventEmitter {
     this._instance.dispatch({ effects: citekeyUpdate.of(this.databaseCache.citations) })
     this._instance.dispatch({ effects: snippetsUpdate.of(this.databaseCache.snippets) })
     this._instance.dispatch({ effects: filesUpdate.of(this.databaseCache.files) })
-    // NOTE: referencesUpdate is a no-op until the at-symbols provider is
-    // registered in the dispatcher (issue #1 Phase 3 green step): no state
-    // field consuming the effect is part of the production extension set yet.
     this._instance.dispatch({ effects: referencesUpdate.of(this.databaseCache.references) })
 
     // Determine if this is a code doc and add the corresponding class to the

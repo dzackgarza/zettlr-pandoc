@@ -51,6 +51,7 @@ import type { DocumentManagerIPCAPI, DocumentsUpdateContext } from 'source/app/s
 import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
 import type { ProjectInfo } from 'source/common/modules/markdown-editor/plugins/project-info-field'
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
+import type { DocumentReferenceSnapshot, ReferenceCompletionEntry } from '@dts/common/references'
 
 const ipcRenderer = window.ipc
 
@@ -100,6 +101,19 @@ ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
   const library = getBibliographyForDescriptor(descriptor)
   updateCitationKeys(library).catch(e => {
     console.error('Could not update citation keys', e)
+  })
+})
+
+// Combined @-completion label feed (issue #1 Phase 3). Mirrors the
+// citation-keys feed above: whenever main broadcasts changed workspace
+// references, fetch the snapshot and push the typed 'references' completion
+// database. NOTE: the main-process reference provider Electron shell is
+// deferred, so a missing handler must fail gracefully at runtime (log only —
+// never fabricate fallback data). No headless spec exercises Vue components;
+// this wiring is probe-covered later.
+ipcRenderer.on('references', _event => {
+  updateReferenceEntries().catch(e => {
+    console.error('Could not update workspace reference entries', e)
   })
 })
 
@@ -617,6 +631,28 @@ async function updateCitationKeys (library: string): Promise<void> {
     })
 
   currentEditor?.setCompletionDatabase('citations', items)
+}
+
+/**
+ * Fetches the workspace reference snapshot for the current document and
+ * pushes its definitions as the typed 'references' completion database
+ * (issue #1 Phase 3). Rejects when the main-process reference provider is
+ * not registered yet; callers log that rejection and push nothing.
+ */
+async function updateReferenceEntries (): Promise<void> {
+  const snapshot: DocumentReferenceSnapshot = await ipcRenderer.invoke('reference-provider', {
+    command: 'get-snapshot',
+    payload: { path: props.file.path }
+  })
+
+  const entries: ReferenceCompletionEntry[] = snapshot.definitions.map(definition => ({
+    key: definition.key,
+    family: definition.family,
+    title: definition.title,
+    documentPath: definition.documentPath
+  }))
+
+  currentEditor?.setCompletionDatabase('references', entries)
 }
 
 async function updateFileDatabase (): Promise<void> {

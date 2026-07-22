@@ -45,10 +45,13 @@
  * END HEADER
  */
 
+import { type Completion } from '@codemirror/autocomplete'
 import { StateEffect, StateField } from '@codemirror/state'
-import { type ReferenceCompletionEntry } from '@dts/common/references'
+import { type EditorView } from '@codemirror/view'
+import { type ReferenceCompletionEntry, type ReferenceFamily } from '@dts/common/references'
+import { THEOREM_DIV_PREFIXES } from '@common/util/pandoc-quick-reference'
 import { type AutocompletePlugin } from '.'
-import { citekeyUpdateField } from './citations'
+import { citations, citekeyUpdateField } from './citations'
 
 /**
  * Use this effect to provide the editor state with a new set of workspace
@@ -71,17 +74,84 @@ export const referencesUpdateField = StateField.define<ReferenceCompletionEntry[
 })
 
 /**
- * RED SKELETON (issue #1 Phase 3): the combined surface is not implemented
- * yet. applies() returning false means this provider never matches, so the
- * reference-completion specs fail on their assertions while every existing
- * citation code path stays untouched.
+ * Display names of the explicit pandoc-crossref label families.
+ */
+const CROSSREF_DISPLAY: Record<string, string> = {
+  fig: 'Figure',
+  tbl: 'Table',
+  eq: 'Equation',
+  sec: 'Section',
+  lst: 'Listing'
+}
+
+/**
+ * The display name of a reference family, derived from the fixed theorem
+ * prefix registry ('thm' -> 'Theorem') or the crossref family map
+ * ('fig' -> 'Figure').
+ *
+ * @param   {ReferenceFamily}  family  The reference family
+ *
+ * @return  {string}                   The capitalized display name
+ */
+function familyDisplay (family: ReferenceFamily): string {
+  const theoremClass = (THEOREM_DIV_PREFIXES as Record<string, string|undefined>)[family]
+  if (theoremClass !== undefined) {
+    return theoremClass.charAt(0).toUpperCase() + theoremClass.slice(1)
+  }
+
+  return CROSSREF_DISPLAY[family]
+}
+
+/**
+ * The locked `Type — title` display text of a label entry, or the bare
+ * family display name when no title was authored.
+ *
+ * @param   {ReferenceCompletionEntry}  entry  The label entry
+ *
+ * @return  {string}                           The detail display text
+ */
+function labelDetail (entry: ReferenceCompletionEntry): string {
+  return entry.title !== undefined
+    ? `${familyDisplay(entry.family)} — ${entry.title}`
+    : familyDisplay(entry.family)
+}
+
+/**
+ * Applies a label completion: the bare key text replaces the completion
+ * range. This never wraps the insertion in brackets and never rewrites the
+ * authored `@` or an authored bracket cluster.
+ */
+const applyLabel = function (view: EditorView, completion: Completion, from: number, to: number): void {
+  const insert = String(completion.label)
+  view.dispatch({ changes: [{ from, to, insert }], selection: { anchor: from + insert.length } })
+}
+
+/**
+ * The combined `@` completion surface: bibliography citation completion,
+ * delegated verbatim to the citations provider, followed by the typed
+ * workspace reference label entries of the 'references' database.
+ * projectStatus never gates, reorders, or restyles label entries in Phase 3.
  */
 export const atSymbols: AutocompletePlugin = {
-  applies () {
-    return false
+  applies (ctx) {
+    // The trigger surface is byte-identical to the citation provider's.
+    return citations.applies(ctx)
   },
-  entries () {
-    return []
+  entries (ctx, query) {
+    query = query.toLowerCase()
+    const labelEntries: Completion[] = ctx.state.field(referencesUpdateField)
+      .map(entry => ({
+        label: entry.key,
+        detail: labelDetail(entry),
+        apply: applyLabel
+      }))
+      .filter(entry => {
+        // The same case-insensitive substring filter the citation provider
+        // applies, over label and detail.
+        return entry.label.toLowerCase().includes(query) || entry.detail.toLowerCase().includes(query)
+      })
+
+    return citations.entries(ctx, query).concat(labelEntries)
   },
   fields: [ citekeyUpdateField, referencesUpdateField ]
 }
