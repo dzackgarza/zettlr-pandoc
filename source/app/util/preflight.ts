@@ -123,8 +123,8 @@ export type VersionOutputRunner = (command: string, args: string[]) => Promise<{
  * captured `--version` outputs, decides compatibility per the
  * CrossrefCompatibility contract above.
  *
- * @param   {string}  _crossrefVersionOutput  Captured `pandoc-crossref --version` stdout
- * @param   {string}  _pandocVersionOutput    Captured `pandoc --version` stdout
+ * @param   {string}  crossrefVersionOutput   Captured `pandoc-crossref --version` stdout
+ * @param   {string}  pandocVersionOutput     Captured `pandoc --version` stdout
  *
  * @return  {CrossrefCompatibility}           The typed compatibility outcome
  */

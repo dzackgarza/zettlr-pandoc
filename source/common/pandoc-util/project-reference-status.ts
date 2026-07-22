@@ -185,9 +185,9 @@ export function computeProjectReferenceStatus (
  * `targetDocumentPath` while editing `activeDocumentPath`. See the module
  * contract.
  *
- * @param   {string}             _targetDocumentPath  The omitted target document
- * @param   {string}             _activeDocumentPath  The active (source) document
- * @param   {ProjectRootSpec[]}  _projectRoots        Every visible Project root
+ * @param   {string}             targetDocumentPath   The omitted target document
+ * @param   {string}             activeDocumentPath   The active (source) document
+ * @param   {ProjectRootSpec[]}  projectRoots         Every visible Project root
  *
  * @return  {AppendAndContinuePlan|null}              The plan, or null
  */
@@ -224,7 +224,7 @@ export function computeAppendAndContinuePlan (
  * See the module contract.
  *
  * @param   {ProjectSettings}        settings  The current project settings
- * @param   {AppendAndContinuePlan}  _plan     The plan to apply
+ * @param   {AppendAndContinuePlan}  plan      The plan to apply
  *
  * @return  {ProjectSettings}                  The new settings (input unmutated)
  */
@@ -243,7 +243,7 @@ export function applyAppendPlan (
  * names EVERY appended file (both source and target when the source was
  * itself omitted).
  *
- * @param   {AppendAndContinuePlan}  _plan  The applied plan
+ * @param   {AppendAndContinuePlan}  plan   The applied plan
  *
  * @return  {string}                        The toast message
  */
@@ -257,8 +257,8 @@ export function appendToastMessage (plan: AppendAndContinuePlan): string {
  * omitted entries, the appendPlan). See the module contract.
  *
  * @param   {ReferenceCompletionEntry[]}  entries              The raw entries
- * @param   {string}                      _activeDocumentPath  The active document
- * @param   {ProjectRootSpec[]}           _projectRoots        Every visible root
+ * @param   {string}                      activeDocumentPath   The active document
+ * @param   {ProjectRootSpec[]}           projectRoots         Every visible root
  *
  * @return  {ReferenceCompletionEntry[]}                       Annotated entries
  */
@@ -288,8 +288,8 @@ export function annotateCompletionEntries (
  * The fixed status -> insertion affordance decision table of the completion
  * surface. See the module contract.
  *
- * @param   {ProjectReferenceStatus|undefined}  _status      The entry's status
- * @param   {AppendAndContinuePlan}             _appendPlan  The entry's plan, if any
+ * @param   {ProjectReferenceStatus|undefined}  status       The entry's status
+ * @param   {AppendAndContinuePlan}             appendPlan   The entry's plan, if any
  *
  * @return  {CompletionInsertionAffordance}                  The affordance
  */
@@ -315,7 +315,7 @@ export function completionAffordanceFor (
  * The exact user-facing wording of a Project status, shown in the hover
  * tooltip's [data-reference-project-status] element.
  *
- * @param   {ProjectReferenceStatus}  _status  The status
+ * @param   {ProjectReferenceStatus}  status   The status
  *
  * @return  {string}                           The display wording
  */
