@@ -14,13 +14,16 @@
  *                  been pushed.
  *
  *                  The differential drives two real headless EditorViews over
- *                  the same documents: one through the CURRENT first-match
+ *                  the same documents: one through the pre-Phase-3 first-match
  *                  dispatch ([codeBlocks, citations, files, headings, tags,
  *                  snippets]) and one through the combined dispatch with
- *                  atSymbols in the citations slot. The in-test dispatcher
- *                  replicates the production first-match loop of
- *                  autocomplete/index.ts; the shared forbidden-token gate is
- *                  unaffected by the provider swap and stays out of scope.
+ *                  atSymbols in the citations slot. Both run through the REAL
+ *                  production dispatcher — createAutocompleteSource() from
+ *                  autocomplete/index.ts, the exact source production
+ *                  installs via override — parameterized only by the provider
+ *                  order (issue #5, C9: no in-test replica of the loop). The
+ *                  shared forbidden-token gate therefore runs on both sides
+ *                  identically.
  *
  * END HEADER
  */
@@ -33,7 +36,7 @@ import { forceParsing } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
-import { type AutocompletePlugin } from 'source/common/modules/markdown-editor/autocomplete'
+import { createAutocompleteSource, type AutocompletePlugin } from 'source/common/modules/markdown-editor/autocomplete'
 import { citations, citekeyUpdate } from 'source/common/modules/markdown-editor/autocomplete/citations'
 import { atSymbols, referencesUpdate } from 'source/common/modules/markdown-editor/autocomplete/at-symbols'
 import { codeBlocks } from 'source/common/modules/markdown-editor/autocomplete/code-blocks'
@@ -178,22 +181,21 @@ describe('Combined @-symbol completion surface (issue #1 Phase 3)', function () 
   }
 
   /**
-   * Replicates the production first-match dispatch loop of
-   * autocomplete/index.ts over the given provider order and returns the
-   * completion surface at the view's cursor, or null when no provider
-   * applies.
+   * Runs the REAL production dispatcher (createAutocompleteSource — the same
+   * source production installs via autocompletion's override) over the given
+   * provider order and returns the completion surface at the view's cursor,
+   * or null when no provider applies (issue #5, C9: the first-match loop is
+   * invoked, never replicated in-test).
    */
   function completionSurface (providers: AutocompletePlugin[], view: EditorView): CompletionSurface | null {
     const pos = view.state.selection.main.head
     const ctx = new CompletionContext(view.state, pos, false)
-    for (const provider of providers) {
-      const result = provider.applies(ctx)
-      if (result !== false) {
-        const query = view.state.doc.sliceString(result, pos).toLowerCase()
-        return { from: result, options: provider.entries(ctx, query) }
-      }
+    const result = createAutocompleteSource(providers)(ctx)
+    if (result === null) {
+      return null
     }
-    return null
+    assert.ok(!(result instanceof Promise), 'the production source is synchronous')
+    return { from: result.from, options: [...result.options] }
   }
 
   /** Applies one completion option through its own apply handler. */

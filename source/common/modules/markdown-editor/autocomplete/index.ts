@@ -63,46 +63,63 @@ const forbiddenTokens = [
   'MathEquation'
 ]
 
-const autocompleteSource: CompletionSource = function (ctx): CompletionResult|null {
-  // This function is called for every keystroke and shall determine whether to
-  // actually start the autocomplete.
+/**
+ * Builds the completion source over an ordered provider list: the shared
+ * forbidden-token gate followed by the first-match dispatch. Production uses
+ * exactly one instance (over AUTOCOMPLETE_PROVIDERS below); the factory is
+ * exported so tests exercise THIS dispatch loop rather than replicating it
+ * (issue #5, C9).
+ *
+ * @param   {AutocompletePlugin[]}  providers  The ordered provider list
+ *
+ * @return  {CompletionSource}                 The dispatching source
+ */
+export function createAutocompleteSource (providers: AutocompletePlugin[]): CompletionSource {
+  return function (ctx): CompletionResult|null {
+    // This function is called for every keystroke and shall determine whether
+    // to actually start the autocomplete.
 
-  // With this function we check whether we are currently within "forbidden"
-  // tokens (i.e. codeblocks, YAML stuff, etc.)
-  if (ctx.tokenBefore(forbiddenTokens) !== null) {
-    return null
-  }
-
-  let plugin: AutocompletePlugin|undefined
-  let startpos = ctx.pos
-
-  // NOTE: Headings has to be checked before tags
-  for (const p of [ codeBlocks, atSymbols, files, headings, tags, snippets ]) {
-    const res = p.applies(ctx)
-    if (res !== false) {
-      plugin = p
-      startpos = res
-      break
+    // With this function we check whether we are currently within "forbidden"
+    // tokens (i.e. codeblocks, YAML stuff, etc.)
+    if (ctx.tokenBefore(forbiddenTokens) !== null) {
+      return null
     }
-  }
 
-  if (plugin !== undefined) {
-    const initialOptions = plugin.entries(ctx, ctx.state.doc.sliceString(startpos, ctx.pos).toLowerCase())
-    return {
-      from: startpos,
-      options: initialOptions,
-      filter: false,
-      update: (current, from, to, ctx) => {
-        const query = ctx.state.doc.sliceString(from, to).toLowerCase()
-        current.options = plugin!.entries(ctx, query)
-        return current
+    let plugin: AutocompletePlugin|undefined
+    let startpos = ctx.pos
+
+    for (const p of providers) {
+      const res = p.applies(ctx)
+      if (res !== false) {
+        plugin = p
+        startpos = res
+        break
       }
     }
-  }
 
-  // Return null to indicate that autocomplete does not apply.
-  return null
+    if (plugin !== undefined) {
+      const initialOptions = plugin.entries(ctx, ctx.state.doc.sliceString(startpos, ctx.pos).toLowerCase())
+      return {
+        from: startpos,
+        options: initialOptions,
+        filter: false,
+        update: (current, from, to, ctx) => {
+          const query = ctx.state.doc.sliceString(from, to).toLowerCase()
+          current.options = plugin!.entries(ctx, query)
+          return current
+        }
+      }
+    }
+
+    // Return null to indicate that autocomplete does not apply.
+    return null
+  }
 }
+
+// NOTE: Headings has to be checked before tags
+export const AUTOCOMPLETE_PROVIDERS: AutocompletePlugin[] = [ codeBlocks, atSymbols, files, headings, tags, snippets ]
+
+const autocompleteSource: CompletionSource = createAutocompleteSource(AUTOCOMPLETE_PROVIDERS)
 
 export const autocomplete = [
   autocompletion({
