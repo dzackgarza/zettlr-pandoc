@@ -30,6 +30,13 @@ test-references:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts"
 
+# Cross-repository proof: ordered Project inputs through the companion
+# pandoc-config compile-pandoc-project recipe (issue #1). Hard-bails when the
+# companion checkout is missing; run explicitly, not part of the commit gate
+# (it depends on a sibling checkout and a TeX toolchain run).
+test-pandoc-config-integration:
+    bash "{{justfile_directory()}}/scripts/test-pandoc-config-integration.sh"
+
 # Run the repository test suite. The guard executes before Mocha can start.
 test:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
