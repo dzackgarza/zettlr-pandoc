@@ -25,6 +25,11 @@ test-file file:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "{{file}}"
 
+# Run the focused workspace-reference test suite.
+test-references:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts"
+
 # Run the repository test suite. The guard executes before Mocha can start.
 test:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
