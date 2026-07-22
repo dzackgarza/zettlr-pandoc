@@ -37,7 +37,7 @@
         <div class="convention-note">
           <strong>{{ trans('Use pandoc-crossref labels.') }}</strong>
           <span>
-            {{ trans('The editor currently recognizes the lower-case prefixes fig:, tbl:, eq:, and sec:. Use tbl:, not tab:.') }}
+            {{ trans('The editor recognizes the lower-case prefixes fig:, tbl:, eq:, sec:, and lst:, plus the theorem-environment prefixes below. Use tbl:, not tab:.') }}
           </span>
         </div>
 
@@ -119,12 +119,60 @@
               </template>
             </dl>
           </section>
+
+          <section class="help-card theorems">
+            <div class="section-heading">
+              <span class="section-number">05</span>
+              <div>
+                <h2>{{ trans('Label theorem environments') }}</h2>
+                <p>{{ trans('Fenced divs with these classes become referenceable when their attribute block carries a prefixed identifier.') }}</p>
+              </div>
+            </div>
+            <div class="theorem-table" role="table" v-bind:aria-label="trans('Theorem environment syntax')">
+              <div
+                v-for="example in theoremDivExamples"
+                v-bind:key="example.prefix"
+                class="theorem-row"
+                role="row"
+              >
+                <span role="cell">{{ theoremLabel(example) }}</span>
+                <code role="cell">{{ example.label }}</code>
+                <code role="cell">{{ example.reference }}</code>
+              </div>
+            </div>
+            <p class="fine-print">
+              {{ trans('Proof-like divs (proof, sketch, solution) stay unnumbered and unreferenceable.') }}
+            </p>
+          </section>
+
+          <section class="help-card authoring">
+            <div class="section-heading">
+              <span class="section-number">06</span>
+              <div>
+                <h2>{{ trans('Work with references') }}</h2>
+                <p>{{ trans('What the editor does with the labels and references you author.') }}</p>
+              </div>
+            </div>
+            <div class="topic-grid">
+              <div
+                v-for="topic in referenceAuthoringTopics"
+                v-bind:key="topic.kind"
+                class="topic"
+              >
+                <code class="topic-syntax">{{ topic.syntax }}</code>
+                <div>
+                  <h3>{{ trans(topic.title) }}</h3>
+                  <p>{{ trans(topic.detail) }}</p>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
 
         <footer>
           <strong>{{ trans('Editor behavior') }}</strong>
           <span>
-            {{ trans('Rendered citations and cross-references reveal their source while the cursor is inside them. Cross-reference autocomplete and target previews are not currently available.') }}
+            {{ trans('Rendered citations and cross-references reveal their source while the cursor is inside them.') }}
           </span>
         </footer>
       </section>
@@ -139,7 +187,10 @@ import {
   PANDOC_ATTRIBUTE_EXAMPLES,
   PANDOC_CITATION_EXAMPLES,
   PANDOC_CROSS_REFERENCE_EXAMPLES,
+  PANDOC_REFERENCE_AUTHORING_TOPICS,
   PANDOC_REFERENCE_MODIFIERS,
+  THEOREM_DIV_EXAMPLES,
+  type TheoremDivExample,
 } from '@common/util/pandoc-quick-reference'
 
 const emit = defineEmits<(event: 'close') => void>()
@@ -149,6 +200,8 @@ const citationExamples = PANDOC_CITATION_EXAMPLES
 const crossReferenceExamples = PANDOC_CROSS_REFERENCE_EXAMPLES
 const referenceModifiers = PANDOC_REFERENCE_MODIFIERS
 const attributeExamples = PANDOC_ATTRIBUTE_EXAMPLES
+const theoremDivExamples = THEOREM_DIV_EXAMPLES
+const referenceAuthoringTopics = PANDOC_REFERENCE_AUTHORING_TOPICS
 
 function citationLabel (kind: typeof citationExamples[number]['kind']): string {
   const labels = {
@@ -168,8 +221,18 @@ function crossrefLabel (kind: typeof crossReferenceExamples[number]['kind']): st
     table: trans('Table'),
     equation: trans('Equation'),
     section: trans('Section'),
+    listing: trans('Listing'),
   }
   return labels[kind]
+}
+
+/**
+ * The display name of a theorem-div example: its registered div class,
+ * capitalized (the same derivation the reference views use), routed through
+ * the translation layer like every other label in this dialog.
+ */
+function theoremLabel (example: TheoremDivExample): string {
+  return trans(example.divClass.charAt(0).toUpperCase() + example.divClass.slice(1))
 }
 
 function modifierLabel (kind: typeof referenceModifiers[number]['kind']): string {
@@ -331,6 +394,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
 
   .citations, .crossrefs { min-height: 295px; }
 
+  .theorems, .authoring { grid-column: 1 / -1; }
+
   .section-heading {
     display: flex;
     gap: 11px;
@@ -410,6 +475,56 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
     text-transform: uppercase;
   }
 
+  .theorem-table {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 5px 22px;
+  }
+
+  .theorem-row {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr) 76px;
+    gap: 7px;
+    align-items: center;
+
+    > span:first-child {
+      color: var(--help-muted);
+      font-size: 11px;
+    }
+  }
+
+  .topic-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+    gap: 12px 18px;
+  }
+
+  .topic {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+
+    h3 {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    p {
+      margin-top: 2px;
+      color: var(--help-muted);
+      font-size: 11px;
+    }
+  }
+
+  .topic-syntax {
+    flex: 0 0 auto;
+    min-width: 58px;
+    text-align: center;
+    color: var(--help-accent);
+    font-weight: 600;
+  }
+
   > footer {
     display: flex;
     gap: 8px;
@@ -461,6 +576,8 @@ body.dark .pandoc-quick-help {
     .crossref-row { grid-template-columns: 50px minmax(0, 1fr); }
     .crossref-row > :last-child { grid-column: 2; }
     .crossref-header { display: none; }
+    .theorem-row { grid-template-columns: 62px minmax(0, 1fr); }
+    .theorem-row > :last-child { grid-column: 2; }
   }
 }
 </style>

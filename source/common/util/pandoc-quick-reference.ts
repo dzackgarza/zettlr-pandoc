@@ -39,6 +39,12 @@ export const PANDOC_CROSS_REFERENCE_EXAMPLES = [
     label: '## Heading {#sec:key}',
     reference: '@sec:key',
   },
+  {
+    kind: 'listing',
+    prefix: 'lst',
+    label: '```{#lst:key}',
+    reference: '@lst:key',
+  },
 ] as const
 
 export const PANDOC_REFERENCE_MODIFIERS = [
@@ -118,10 +124,45 @@ export interface ReferenceAuthoringTopic {
  * fig/tbl/eq/sec-only convention note) is FALSE and must disappear from
  * PandocQuickHelp.vue.
  *
- * PHASE 8 INERT SKELETON: empty until the help content lands green; the
- * spec locks the required topic set red.
  */
-export const PANDOC_REFERENCE_AUTHORING_TOPICS: readonly ReferenceAuthoringTopic[] = []
+export const PANDOC_REFERENCE_AUTHORING_TOPICS: readonly ReferenceAuthoringTopic[] = [
+  {
+    kind: 'completion',
+    title: 'Combined completion',
+    detail: 'Typing @ completes bibliography citekeys and workspace reference labels together.',
+    syntax: '@'
+  },
+  {
+    kind: 'hover-preview',
+    title: 'Target previews',
+    detail: 'Hovering a reference previews the authored source of its target definition.',
+    syntax: 'Hover'
+  },
+  {
+    kind: 'definition-search',
+    title: 'Definition search',
+    detail: 'Searches every definition in the workspace and jumps to the selected one.',
+    syntax: 'Mod-P'
+  },
+  {
+    kind: 'navigation',
+    title: 'Follow references',
+    detail: 'Jumps to the definition of the clicked reference; Back/Forward restores your previous location.',
+    syntax: 'Mod-Click'
+  },
+  {
+    kind: 'rename',
+    title: 'Workspace rename',
+    detail: 'Editing a definition key offers renaming every use of it across the workspace atomically.',
+    syntax: 'Edit #key'
+  },
+  {
+    kind: 'project-warnings',
+    title: 'Project warnings',
+    detail: 'References whose target lies outside the current Project are flagged before export.',
+    syntax: '⚠ Project'
+  },
+]
 
 /**
  * One fenced-div labeling example pairing a theorem-div label prefix with
@@ -147,7 +188,11 @@ export interface TheoremDivExample {
  * example is derived from the registry above so the help can never drift
  * from the extractor's supported set: label
  * `::: {.<divClass> #<prefix>:key}` and reference `@<prefix>:key`.
- *
- * PHASE 8 INERT SKELETON: empty until the help content lands green.
  */
-export const THEOREM_DIV_EXAMPLES: readonly TheoremDivExample[] = []
+export const THEOREM_DIV_EXAMPLES: readonly TheoremDivExample[] =
+  Object.entries(THEOREM_DIV_PREFIXES).map(([ prefix, divClass ]) => ({
+    prefix,
+    divClass,
+    label: `::: {.${divClass} #${prefix}:key}`,
+    reference: `@${prefix}:key`,
+  }))

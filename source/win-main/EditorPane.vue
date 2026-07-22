@@ -51,7 +51,7 @@
             v-bind:editor-commands="editorCommands"
             v-bind:persistent-state-map="persistentStateMap"
             v-on:global-search="emit('globalSearch', $event)"
-            v-on:reference-search="emit('referenceSearch')"
+            v-on:reference-search="emit('referenceSearch', $event)"
             v-on:create-reference-label="emit('createReferenceLabel', $event)"
           ></MainEditor>
         </Teleport>
@@ -137,6 +137,7 @@ import { type EditorCommands } from './App.vue'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import DocumentTabs from './DocumentTabs.vue'
 import MainEditor, { type CreateReferenceLabelDialogPrompt } from './MainEditor.vue'
+import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
 import { useDocumentTreeStore, useWindowStateStore } from 'source/pinia'
 import ImageViewer from './file-viewers/ImageViewer.vue'
 import { hasImageExt, hasPDFExt } from '@common/util/file-extention-checks'
@@ -161,7 +162,7 @@ type DragTargetAreas = 'editor'|'top'|'left'|'right'|'bottom'
 
 const emit = defineEmits<{
   (e: 'globalSearch', query: string): void
-  (e: 'referenceSearch'): void
+  (e: 'referenceSearch', request: ReferenceSearchRequest): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
 }>()
 

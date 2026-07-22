@@ -341,10 +341,13 @@ export default class MarkdownEditor extends EventEmitter {
               this.emit('docUpdate')
             }
 
-            // Mod-P workspace reference search request: surface it to the
-            // shell (MainEditor.vue relays it up to App.vue's overlay).
+            // Workspace reference search request — plain Mod-P (null) or a
+            // count badge's keyed reverse lookup ({ key }): surface the
+            // request payload to the shell (MainEditor.vue relays it up to
+            // App.vue's overlay; dropping the payload here would break the
+            // Phase 8 badge-keyed reverse lookup).
             if (effect.is(openReferenceSearchEffect)) {
-              this.emit('reference-search')
+              this.emit('reference-search', effect.value)
             }
 
             // Create-reference-label request (issue #1 Phase 6): surface

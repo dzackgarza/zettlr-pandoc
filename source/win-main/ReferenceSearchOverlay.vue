@@ -8,7 +8,8 @@
         class="reference-search-overlay"
         role="dialog"
         aria-modal="true"
-        v-bind:aria-label="trans('Search workspace definitions')"
+        v-bind:data-search-mode="mode"
+        v-bind:aria-label="mode === 'citing-locations' ? trans('Workspace citing locations') : trans('Search workspace definitions')"
       >
         <input
           ref="queryInput"
@@ -18,29 +19,55 @@
           v-bind:aria-label="trans('Definition search query')"
           v-on:keydown="handleKeydown"
         >
-        <ul
-          v-if="matches.length > 0"
-          class="results"
-          role="listbox"
-        >
-          <li
-            v-for="(definition, index) in matches"
-            v-bind:key="`${definition.documentPath}:${definition.key}:${definition.range.from}`"
-            v-bind:class="{ result: true, selected: index === selectedIndex }"
-            v-bind:data-reference-key="definition.key"
-            v-bind:data-reference-path="definition.documentPath"
-            role="option"
-            v-bind:aria-selected="index === selectedIndex"
-            v-on:click="emitJump(definition)"
+        <template v-if="mode === 'citing-locations'">
+          <ul
+            v-if="citingLocations.length > 0"
+            class="results"
+            role="listbox"
           >
-            <span class="type-title">{{ typeAndTitle(definition) }}</span>
-            <span class="key">{{ definition.key }}</span>
-            <span class="path">{{ definition.documentPath }}</span>
-          </li>
-        </ul>
-        <p v-else class="no-results">
-          {{ trans('No matching definitions') }}
-        </p>
+            <li
+              v-for="(occurrence, index) in citingLocations"
+              v-bind:key="`${occurrence.documentPath}:${occurrence.range.from}`"
+              v-bind:class="{ result: true, selected: index === selectedIndex }"
+              v-bind:data-occurrence-path="occurrence.documentPath"
+              v-bind:data-occurrence-from="occurrence.range.from"
+              role="option"
+              v-bind:aria-selected="index === selectedIndex"
+              v-on:click="emitOccurrenceJump(occurrence)"
+            >
+              <span class="key">{{ occurrence.clusterRaw }}</span>
+              <span class="path">{{ occurrence.documentPath }}</span>
+            </li>
+          </ul>
+          <p v-else class="no-results">
+            {{ trans('No citing locations in the workspace') }}
+          </p>
+        </template>
+        <template v-else>
+          <ul
+            v-if="matches.length > 0"
+            class="results"
+            role="listbox"
+          >
+            <li
+              v-for="(definition, index) in matches"
+              v-bind:key="`${definition.documentPath}:${definition.key}:${definition.range.from}`"
+              v-bind:class="{ result: true, selected: index === selectedIndex }"
+              v-bind:data-reference-key="definition.key"
+              v-bind:data-reference-path="definition.documentPath"
+              role="option"
+              v-bind:aria-selected="index === selectedIndex"
+              v-on:click="emitJump(definition)"
+            >
+              <span class="type-title">{{ typeAndTitle(definition) }}</span>
+              <span class="key">{{ definition.key }}</span>
+              <span class="path">{{ definition.documentPath }}</span>
+            </li>
+          </ul>
+          <p v-else class="no-results">
+            {{ trans('No matching definitions') }}
+          </p>
+        </template>
       </div>
     </div>
   </Teleport>
@@ -66,6 +93,17 @@
  *                  on Enter or click. ArrowUp/ArrowDown move the selection;
  *                  Escape (or a backdrop click) emits 'close'.
  *
+ *                  Keyed reverse lookup (issue #1 Phase 8): a definition's
+ *                  `N references` count badge relays
+ *                  openReferenceSearchEffect.of({ key }) up to App.vue,
+ *                  which mounts this overlay with initialRequest set. The
+ *                  overlay then opens in 'citing-locations' mode (the root
+ *                  carries data-search-mode), pre-populates the query with
+ *                  the key, and lists that key's workspace OCCURRENCES in
+ *                  document order — authored cluster snippets plus citing
+ *                  paths — where Enter/click emits the jump intent for the
+ *                  occurrence's own range, never the definition's.
+ *
  * END HEADER
  */
 
@@ -85,22 +123,45 @@ export interface ReferenceJumpIntent {
 import { computed, onMounted, ref, watch } from 'vue'
 import { trans } from '@common/i18n-renderer'
 import { searchWorkspaceDefinitions } from '@common/modules/markdown-editor/util/reference-search'
-import type { ReferenceDefinition } from '@dts/common/references'
+import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
+import type { ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
 import { THEOREM_DIV_PREFIXES } from '@common/util/pandoc-quick-reference'
 
-const props = defineProps<{ definitions: ReferenceDefinition[] }>()
+const props = withDefaults(defineProps<{
+  definitions: ReferenceDefinition[]
+  /** The merged workspace occurrence list feeding the reverse lookup */
+  occurrences?: ReferenceOccurrence[]
+  /** The relayed request: null keeps the plain definition search */
+  initialRequest?: ReferenceSearchRequest
+}>(), {
+  occurrences: () => [],
+  initialRequest: null
+})
 
 const emit = defineEmits<{
   (e: 'jump', intent: ReferenceJumpIntent): void
   (e: 'close'): void
 }>()
 
-const query = ref<string>('')
+/** A keyed request opens the reverse lookup; null keeps definition search. */
+const mode = computed<'definitions'|'citing-locations'>(() => {
+  return props.initialRequest === null ? 'definitions' : 'citing-locations'
+})
+
+const query = ref<string>(props.initialRequest?.key ?? '')
 const selectedIndex = ref<number>(0)
 const queryInput = ref<HTMLInputElement|null>(null)
 
 const matches = computed<ReferenceDefinition[]>(() => {
   return searchWorkspaceDefinitions(props.definitions, query.value)
+})
+
+/**
+ * The workspace citing locations of the queried key, in workspace document
+ * order (the merged occurrence list's own order): filtering never reorders.
+ */
+const citingLocations = computed<ReferenceOccurrence[]>(() => {
+  return props.occurrences.filter(occurrence => occurrence.key === query.value)
 })
 
 // A new query re-ranks the rows, so the selection restarts at the top match.
@@ -160,6 +221,25 @@ function emitJump (definition: ReferenceDefinition): void {
 }
 
 /**
+ * Emits the jump intent for a citing location: the occurrence's own authored
+ * range — reverse lookup navigates to usages, never to the definition.
+ *
+ * @param   {ReferenceOccurrence}  occurrence  The chosen citing location
+ */
+function emitOccurrenceJump (occurrence: ReferenceOccurrence): void {
+  emit('jump', {
+    key: occurrence.key,
+    documentPath: occurrence.documentPath,
+    range: { from: occurrence.range.from, to: occurrence.range.to }
+  })
+}
+
+/** The row count of whichever result list the current mode presents. */
+const activeRowCount = computed<number>(() => {
+  return mode.value === 'citing-locations' ? citingLocations.value.length : matches.value.length
+})
+
+/**
  * Keyboard interface of the query input: ArrowUp/ArrowDown move the
  * selection, Enter emits the jump intent for the selected row, Escape
  * closes the overlay.
@@ -169,7 +249,7 @@ function emitJump (definition: ReferenceDefinition): void {
 function handleKeydown (event: KeyboardEvent): void {
   if (event.key === 'ArrowDown') {
     event.preventDefault()
-    if (selectedIndex.value < matches.value.length - 1) {
+    if (selectedIndex.value < activeRowCount.value - 1) {
       selectedIndex.value += 1
     }
   } else if (event.key === 'ArrowUp') {
@@ -179,9 +259,16 @@ function handleKeydown (event: KeyboardEvent): void {
     }
   } else if (event.key === 'Enter') {
     event.preventDefault()
-    const selected = matches.value[selectedIndex.value]
-    if (selected !== undefined) {
-      emitJump(selected)
+    if (mode.value === 'citing-locations') {
+      const selected = citingLocations.value[selectedIndex.value]
+      if (selected !== undefined) {
+        emitOccurrenceJump(selected)
+      }
+    } else {
+      const selected = matches.value[selectedIndex.value]
+      if (selected !== undefined) {
+        emitJump(selected)
+      }
     }
   } else if (event.key === 'Escape') {
     event.preventDefault()

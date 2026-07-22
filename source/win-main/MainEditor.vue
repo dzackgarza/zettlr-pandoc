@@ -60,7 +60,18 @@ import { trans } from '@common/i18n-renderer'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import showToast from '@common/util/show-toast'
 import type { ReferenceKeyEditPromptIntent } from '@common/modules/markdown-editor/plugins/reference-key-edit-prompt'
-import type { CreateReferenceLabelIntent, CreateReferenceLabelRequest } from '@common/modules/markdown-editor/plugins/create-reference-label'
+import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
+import {
+  confirmReferenceLabelInsertion,
+  type ConfirmReferenceLabelOutcome,
+  type CreateReferenceLabelIntent,
+  type CreateReferenceLabelRequest
+} from '@common/modules/markdown-editor/plugins/create-reference-label'
+import {
+  createLiveBufferReporter,
+  type LiveBufferScheduler
+} from '@common/modules/markdown-editor/util/live-buffer-reporter'
+import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
 import type {
   CommitRenameOutcome,
   ReferenceRenamePreview,
@@ -68,6 +79,33 @@ import type {
 } from '@common/pandoc-util/compute-reference-edits'
 
 const ipcRenderer = window.ipc
+
+// ——— Live-buffer reporting (issue #1 Phase 8) ———
+// Module-owned so the state survives editor remounts and pane switches: one
+// reporter per window plus one monotonic generation counter per document.
+// The reporter debounces per document and delivers the shared-extractor
+// snapshot to the reference provider ('report-live-buffer'), so unsaved
+// buffers reach the merged workspace state; closing/switching a document
+// drops its overlay immediately ('drop-live-buffer').
+const liveBufferGenerations = new Map<string, number>()
+
+function nextLiveBufferGeneration (documentPath: string): number {
+  const next = (liveBufferGenerations.get(documentPath) ?? 0) + 1
+  liveBufferGenerations.set(documentPath, next)
+  return next
+}
+
+const liveBufferScheduler: LiveBufferScheduler = {
+  schedule: (callback, delayMs) => {
+    const handle = setTimeout(callback, delayMs)
+    return { cancel: () => { clearTimeout(handle) } }
+  }
+}
+
+const liveBufferReporter = createLiveBufferReporter(
+  async (channel, message) => await ipcRenderer.invoke(channel, message),
+  liveBufferScheduler
+)
 
 // This function overwrites the getBibliographyForDescriptor function to ensure
 // the library is always absolute. We have to do it this ridiculously since the
@@ -96,18 +134,22 @@ const props = defineProps<{
 /**
  * The relayed create-label request App.vue mounts the dialog over: the
  * context-fixed family, the editable slug proposal, and the closure that
- * performs the prepared insertion in the invoking editor once the dialog
- * confirms a key (clipboard write and toast are App.vue's half).
+ * performs the insertion in the invoking editor once the dialog confirms a
+ * key (clipboard write and toast are App.vue's half). The closure re-resolves
+ * the target against the CURRENT document at confirm time (issue #1 Phase 8:
+ * confirmReferenceLabelInsertion) and returns the typed outcome — a stale
+ * outcome means NOTHING was inserted and App.vue surfaces it as a closable
+ * toast.
  */
 export interface CreateReferenceLabelDialogPrompt {
   family: CreateReferenceLabelRequest['family']
   proposedSlug: string
-  applyCreate: (intent: CreateReferenceLabelIntent) => void
+  applyCreate: (intent: CreateReferenceLabelIntent) => ConfirmReferenceLabelOutcome
 }
 
 const emit = defineEmits<{
   (e: 'globalSearch', query: string): void
-  (e: 'referenceSearch'): void
+  (e: 'referenceSearch', request: ReferenceSearchRequest): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
 }>()
 
@@ -279,6 +321,9 @@ onBeforeUnmount(() => {
     props.persistentStateMap.set(props.file.path, currentEditor.persistentState)
     // Clear out the table of contents before unmounting the component.
     windowStateStore.tableOfContents = undefined
+    // The closed buffer's live overlay dies with it: the provider reverts
+    // to the saved FSAL snapshot immediately (issue #1 Phase 8).
+    liveBufferReporter.dropDocument(currentEditor.documentPath)
     currentEditor.unmount()
   }
 })
@@ -295,8 +340,10 @@ onUpdated(() => {
   const currentFilePath = currentEditor.documentPath
   if (currentFilePath !== props.activeFile?.path) {
     // File path has changed -> unmount and remount (duplicate code from
-    // onMounted and onBeforeUnmount hooks).
+    // onMounted and onBeforeUnmount hooks). The switched-away buffer's live
+    // overlay drops immediately (issue #1 Phase 8).
     props.persistentStateMap.set(currentFilePath, currentEditor.persistentState)
+    liveBufferReporter.dropDocument(currentFilePath)
     currentEditor.unmount()
     loadDocument().catch(err => console.error(err))
   }
@@ -567,6 +614,18 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   editor.on('change', () => {
     if (currentEditor === editor) {
       windowStateStore.tableOfContents = currentEditor.tableOfContents
+
+      // Report the changed live buffer to the reference provider (issue #1
+      // Phase 8): debounced per document, monotonic generations, the same
+      // shared extractor FSAL uses. Markdown documents only — code files
+      // never contribute reference snapshots.
+      if (isMarkdown.value) {
+        liveBufferReporter.reportChange(
+          editor.documentPath,
+          editor.value,
+          nextLiveBufferGeneration(editor.documentPath)
+        )
+      }
     }
   })
 
@@ -614,27 +673,36 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     emit('globalSearch', tag)
   })
 
-  // Mod-P inside the editor requested the workspace reference search overlay
-  // (issue #1 Phase 3b); relay it up the component tree to App.vue.
-  editor.on('reference-search', () => {
-    emit('referenceSearch')
+  // The workspace reference search overlay was requested (issue #1 Phase
+  // 3b) — plain Mod-P (null) or a count badge's keyed reverse lookup
+  // ({ key }, Phase 8); relay the request payload up the component tree to
+  // App.vue.
+  editor.on('reference-search', (request: ReferenceSearchRequest) => {
+    emit('referenceSearch', request)
   })
 
   // The context menu (or command registry) requested the create-label
   // dialog for a resolved target (issue #1 Phase 6): relay the typed
   // request up to App.vue's dialog mount together with the closure that
-  // performs the prepared insertion once the dialog confirms a key.
+  // performs the insertion once the dialog confirms a key. The closure
+  // re-resolves the target in the CURRENT document (issue #1 Phase 8): the
+  // dialog is modal only visually, so the request-time offsets are never
+  // applied verbatim, and a stale target inserts nothing.
   editor.on('create-reference-label', (request: CreateReferenceLabelRequest) => {
     emit('createReferenceLabel', {
       family: request.family,
       proposedSlug: request.proposedSlug,
-      applyCreate: (intent: CreateReferenceLabelIntent) => {
+      applyCreate: (intent: CreateReferenceLabelIntent): ConfirmReferenceLabelOutcome => {
         const view = currentEditor?.instance
         if (view === undefined) {
-          return
+          return { status: 'stale', reason: 'target-vanished' }
         }
-        const { from, to, prefix, suffix } = request.insertion
-        view.dispatch({ changes: { from, to, insert: prefix + intent.insertText + suffix } })
+        const outcome = confirmReferenceLabelInsertion(view, request)
+        if (outcome.status === 'applied') {
+          const { from, to, prefix, suffix } = outcome.insertion
+          view.dispatch({ changes: { from, to, insert: prefix + intent.insertText + suffix } })
+        }
+        return outcome
       }
     })
   })
@@ -773,9 +841,19 @@ function collectProjectRoots (): ProjectRootSpec[] {
 }
 
 async function updateReferenceEntries (): Promise<void> {
-  const state: WorkspaceReferenceState = await ipcRenderer.invoke('reference-provider', {
-    command: 'get-snapshot'
-  })
+  // Routed through the recoverable-error boundary (issue #1 Phase 8): a
+  // failed fetch surfaces one closable toast and the editor keeps its last
+  // known reference state — never a fabricated fallback, never an
+  // uncloseable overlay.
+  const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+    async (channel, message) => await ipcRenderer.invoke(channel, message),
+    { command: 'get-snapshot' },
+    trans('Loading workspace references')
+  )
+  if (outcome.status === 'failed') {
+    return
+  }
+  const state = outcome.value
 
   // The provider serves the whole merged workspace state; the completion
   // database for this editor is fed from EVERY document's definitions,

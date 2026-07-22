@@ -322,21 +322,76 @@ function resolveNodeRequest (view: EditorView, node: SyntaxNode): CreateReferenc
  *   { status: 'stale', reason: 'target-vanished' } and NOTHING may be
  *   inserted.
  *
- * PHASE 8 INERT SKELETON: this reproduces the current confirm behavior —
- * the host applies the request-time offsets verbatim — by returning the
- * original insertion unconditionally. Every recompute and staleness branch
- * above is locked red by test/reference-create-label-confirm.spec.ts.
- *
- * @param   {EditorView}                   _view    The editor view (current document)
+ * @param   {EditorView}                   view     The editor view (current document)
  * @param   {CreateReferenceLabelRequest}  request  The request prepared at dialog-open time
  *
  * @return  {ConfirmReferenceLabelOutcome}          The recomputed insertion or a typed stale result
  */
 export function confirmReferenceLabelInsertion (
-  _view: EditorView,
+  view: EditorView,
   request: CreateReferenceLabelRequest
 ): ConfirmReferenceLabelOutcome {
-  return { status: 'applied', insertion: request.insertion }
+  const anchorPos = locateConfirmAnchor(view, request)
+  if (anchorPos === null) {
+    return { status: 'stale', reason: 'target-vanished' }
+  }
+
+  // The real extractor is the authority on the labeled state — the same
+  // alreadyLabeled gate preparation uses. A target that gained a definition
+  // while the dialog was open must never receive a second label.
+  const node = nodeAtPos(anchorPos, syntaxTree(view.state), TARGET_NODES)
+  if (node === null) {
+    return { status: 'stale', reason: 'target-vanished' }
+  }
+  const openLine = lineAt(view, node.from)
+  const closeLine = lineAt(view, node.to)
+  const definitions = extractReferences('', view.state.doc.toString()).definitions
+  const alreadyLabeled = definitions.some(d => d.range.from >= openLine.from && d.range.to <= closeLine.to)
+  if (alreadyLabeled) {
+    return { status: 'stale', reason: 'already-labeled' }
+  }
+
+  // Fresh preparation against the CURRENT document: byte-identical to what
+  // resolveCreateReferenceLabelRequest computes there now. A vanished or
+  // family-changed target is structurally stale.
+  const fresh = resolveCreateReferenceLabelRequest(view, anchorPos)
+  if (fresh === null || fresh.family !== request.family) {
+    return { status: 'stale', reason: 'target-vanished' }
+  }
+
+  return { status: 'applied', insertion: fresh.insertion }
+}
+
+/**
+ * Re-locates the prepared target in the CURRENT document: preferred is a
+ * same-family target node still containing the original request offsets
+ * (covering in-place rewrites like a concurrently added label); the fallback
+ * is the UNIQUE line whose text still equals the captured targetLine anchor.
+ * Returns a position inside the target, or null when no unique target
+ * matches the anchor.
+ */
+function locateConfirmAnchor (view: EditorView, request: CreateReferenceLabelRequest): number|null {
+  const doc = view.state.doc
+
+  // Preferred: the original offsets still sit inside a same-family target.
+  const clamped = Math.min(request.insertion.from, doc.length)
+  const anchoredNode = nodeAtPos(clamped, syntaxTree(view.state), TARGET_NODES)
+  if (anchoredNode !== null && resolveNodeRequest(view, anchoredNode)?.family === request.family) {
+    return clamped
+  }
+
+  // Otherwise: the unique line whose text equals the captured content anchor.
+  let uniqueLineFrom: number|null = null
+  for (let i = 1; i <= doc.lines; i++) {
+    const line = doc.line(i)
+    if (line.text === request.targetLine) {
+      if (uniqueLineFrom !== null) {
+        return null // Ambiguous anchor: no unique target matches.
+      }
+      uniqueLineFrom = line.from
+    }
+  }
+  return uniqueLineFrom
 }
 
 /**

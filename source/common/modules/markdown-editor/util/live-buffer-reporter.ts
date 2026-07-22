@@ -73,6 +73,8 @@
  * END HEADER
  */
 
+import { extractReferences } from '@common/pandoc-util/extract-references'
+
 /** The renderer ipc seam the reporter delivers through (ipcRenderer.invoke). */
 export type ReferenceProviderInvoker =
   (channel: 'reference-provider', message: { command: string, payload?: unknown }) => Promise<unknown>
@@ -99,33 +101,81 @@ export interface LiveBufferReporter {
   dropDocument: (documentPath: string) => void
 }
 
+/** One not-yet-delivered change report, replaced wholesale on every edit. */
+interface PendingLiveReport {
+  content: string
+  generation: number
+  task: LiveBufferScheduledTask
+}
+
 /**
  * Creates the live-buffer reporter, per the module contract above.
  *
- * PHASE 8 INERT SKELETON: this reproduces the current production reality —
- * NO code path delivers 'report-live-buffer' or 'drop-live-buffer' — so
- * every debounce, coalescing, monotonicity, drop, and provider-acceptance
- * branch of the contract is locked red by
- * test/live-buffer-reporter.spec.ts. reportChange and dropDocument
- * schedule nothing and invoke nothing.
+ * @param   {ReferenceProviderInvoker}  ipcInvoke   The renderer ipc seam
+ * @param   {LiveBufferScheduler}       scheduler   The deferred-execution seam
+ * @param   {number}                    debounceMs  The debounce window
  *
- * @param   {ReferenceProviderInvoker}  _ipcInvoke   The renderer ipc seam
- * @param   {LiveBufferScheduler}       _scheduler   The deferred-execution seam
- * @param   {number}                    _debounceMs  The debounce window
- *
- * @return  {LiveBufferReporter}                     The reporter
+ * @return  {LiveBufferReporter}                    The reporter
  */
 export function createLiveBufferReporter (
-  _ipcInvoke: ReferenceProviderInvoker,
-  _scheduler: LiveBufferScheduler,
-  _debounceMs: number = LIVE_BUFFER_DEBOUNCE_MS
+  ipcInvoke: ReferenceProviderInvoker,
+  scheduler: LiveBufferScheduler,
+  debounceMs: number = LIVE_BUFFER_DEBOUNCE_MS
 ): LiveBufferReporter {
+  // Per-document state: the pending (debounced) report and the last
+  // generation actually delivered. Documents never share entries, so they
+  // debounce independently and stay individually monotonic.
+  const pending = new Map<string, PendingLiveReport>()
+  const deliveredGenerations = new Map<string, number>()
+
+  /** Fires when a document's debounce window elapses: delivers the LATEST
+   *  reported content/generation, unless a newer generation already went out. */
+  function deliver (documentPath: string): void {
+    const report = pending.get(documentPath)
+    if (report === undefined) {
+      return // Cancelled (dropDocument) or already delivered.
+    }
+    pending.delete(documentPath)
+
+    const lastDelivered = deliveredGenerations.get(documentPath)
+    if (lastDelivered !== undefined && report.generation <= lastDelivered) {
+      return // Stale out-of-order report: dropped, never reordered.
+    }
+    deliveredGenerations.set(documentPath, report.generation)
+
+    ipcInvoke('reference-provider', {
+      command: 'report-live-buffer',
+      payload: {
+        snapshot: extractReferences(documentPath, report.content),
+        generation: report.generation
+      }
+    }).catch(err => console.error(`Could not report the live buffer for ${documentPath}`, err))
+  }
+
   return {
-    reportChange: (_documentPath: string, _content: string, _generation: number): void => {
-      // Inert: the live overlay is never reported (the Phase 8 red).
+    reportChange: (documentPath: string, content: string, generation: number): void => {
+      // Reschedule: the pending task dies, the fresh content/generation
+      // replace it, and one delivery sits debounceMs in the future.
+      pending.get(documentPath)?.task.cancel()
+      pending.set(documentPath, {
+        content,
+        generation,
+        task: scheduler.schedule(() => { deliver(documentPath) }, debounceMs)
+      })
     },
-    dropDocument: (_documentPath: string): void => {
-      // Inert: the live overlay is never dropped (the Phase 8 red).
+    dropDocument: (documentPath: string): void => {
+      // The pending report dies with the document; the drop goes out
+      // immediately so the provider reverts to the saved FSAL snapshot
+      // without waiting out a debounce window.
+      const report = pending.get(documentPath)
+      if (report !== undefined) {
+        report.task.cancel()
+        pending.delete(documentPath)
+      }
+      ipcInvoke('reference-provider', {
+        command: 'drop-live-buffer',
+        payload: { documentPath }
+      }).catch(err => console.error(`Could not drop the live buffer for ${documentPath}`, err))
     }
   }
 }

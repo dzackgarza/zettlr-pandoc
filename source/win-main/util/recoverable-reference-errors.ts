@@ -14,12 +14,10 @@
  *                  and CLOSABLE toasts — never as an uncloseable
  *                  runtime-error overlay and never as silent log lines.
  *
- *                  Today every reference-provider invocation in
- *                  MainEditor.vue / App.vue only console.error()s its
- *                  rejection: the user gets no surface at all. This module
- *                  is the single boundary those call sites route through
- *                  (the Vue rewiring is thin and lands green; the surfacing
- *                  semantics live here).
+ *                  This module is the single boundary the MainEditor.vue /
+ *                  App.vue reference-provider invocations route through
+ *                  (the Vue wiring is thin; the surfacing semantics live
+ *                  here).
  *
  *                  CONTRACT (locked red by the
  *                  test/reference-error-surface probe trio —
@@ -53,6 +51,8 @@
  * END HEADER
  */
 
+import { trans } from '@common/i18n-renderer'
+import showToast from '@common/util/show-toast'
 import type { ReferenceProviderInvoker } from '@common/modules/markdown-editor/util/live-buffer-reporter'
 
 /** The typed outcome of a recoverable reference-provider invocation. */
@@ -64,11 +64,6 @@ export type RecoverableReferenceOutcome<T> =
  * Invokes a reference-provider command, surfacing any rejection as one
  * closable error toast plus a typed 'failed' outcome, per the module
  * contract above.
- *
- * PHASE 8 INERT SKELETON: this reproduces the current production reality —
- * the catch paths log only, no toast is ever surfaced — so the toast
- * presence, dismissal, and post-dismissal interactivity branches are locked
- * red by test/reference-error-surface.spec.ts.
  *
  * @param   {ReferenceProviderInvoker}  ipcInvoke       The renderer ipc seam
  * @param   {object}                    message         The provider command message
@@ -84,9 +79,13 @@ export async function invokeReferenceProviderRecoverably<T> (
   return await ipcInvoke('reference-provider', message)
     .then((value): RecoverableReferenceOutcome<T> => ({ status: 'ok', value: value as T }))
     .catch((err): RecoverableReferenceOutcome<T> => {
-      // Inert: log-only, exactly today's MainEditor catch paths. The
-      // closable-toast surfacing is the Phase 8 red gap.
+      // The sanctioned boundary: exactly one closable error toast naming the
+      // failed operation, plus the typed outcome. The rejection never
+      // escapes, so the uncloseable runtime-error overlay never appears; the
+      // console line keeps the raw diagnostic available.
       console.error(`Reference operation failed (${operationLabel})`, err)
+      const detail = err instanceof Error ? err.message : String(err)
+      showToast(trans('%s failed: %s', operationLabel, detail), 'error')
       return { status: 'failed' }
     })
 }

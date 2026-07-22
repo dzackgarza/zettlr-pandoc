@@ -76,7 +76,7 @@ capture-pandoc-help output:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     mkdir -p "{{output}}"
     node "{{justfile_directory()}}/test/pandoc-quick-help-visual-build.cjs" "{{output}}"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" "{{justfile_directory()}}/test/pandoc-quick-help-visual-capture.cjs" "{{output}}"
+    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/pandoc-quick-help-visual-capture.cjs" "{{output}}"
 
 # Capture the Mod-P reference search overlay in isolated Electron: bundles the
 # probe entry with the production renderer webpack config, drives the real

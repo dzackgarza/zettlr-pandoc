@@ -53,7 +53,7 @@
               v-bind:editor-commands="editorCommands"
               v-bind:window-id="windowId"
               v-on:global-search="startGlobalSearch($event)"
-              v-on:reference-search="openReferenceSearch()"
+              v-on:reference-search="openReferenceSearch($event)"
               v-on:create-reference-label="openCreateReferenceLabel($event)"
             ></EditorPane>
             <EditorBranch
@@ -63,7 +63,7 @@
               v-bind:editor-commands="editorCommands"
               v-bind:is-last="true"
               v-on:global-search="startGlobalSearch($event)"
-              v-on:reference-search="openReferenceSearch()"
+              v-on:reference-search="openReferenceSearch($event)"
               v-on:create-reference-label="openCreateReferenceLabel($event)"
             ></EditorBranch>
           </template>
@@ -138,6 +138,8 @@
   <ReferenceSearchOverlay
     v-if="showReferenceSearch"
     v-bind:definitions="referenceSearchDefinitions"
+    v-bind:occurrences="referenceSearchOccurrences"
+    v-bind:initial-request="referenceSearchRequest"
     v-on:close="showReferenceSearch = false"
     v-on:jump="handleReferenceJump($event)"
   ></ReferenceSearchOverlay>
@@ -183,7 +185,12 @@ import PopoverPandoc from './PopoverPandoc.vue'
 import PandocQuickHelp from './PandocQuickHelp.vue'
 import ReferenceSearchOverlay, { type ReferenceJumpIntent } from './ReferenceSearchOverlay.vue'
 import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
-import type { CreateReferenceLabelIntent } from '@common/modules/markdown-editor/plugins/create-reference-label'
+import type {
+  ConfirmReferenceLabelOutcome,
+  CreateReferenceLabelIntent
+} from '@common/modules/markdown-editor/plugins/create-reference-label'
+import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
+import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
 import { type CreateReferenceLabelDialogPrompt } from './MainEditor.vue'
 import showToast from '@common/util/show-toast'
 import { trans } from '@common/i18n-renderer'
@@ -210,7 +217,7 @@ import getDocumentTitle from './util/get-document-title'
 import { useConfigStore, useDocumentTreeStore, useLRTStore, useWindowStateStore } from 'source/pinia'
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
 import { type AnyDescriptor } from 'source/types/common/fsal'
-import type { ReferenceDefinition } from '@dts/common/references'
+import type { ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
 import { TaskStatus } from 'source/pinia/lrt-store'
@@ -275,18 +282,37 @@ const pandocButton = ref<HTMLElement|null>(null)
 const showPandocPopover = ref<boolean>(false)
 const showPandocQuickHelp = ref<boolean>(false)
 
-// Mod-P workspace reference search (issue #1 Phase 3b)
+// Mod-P workspace reference search (issue #1 Phase 3b) and the badge-keyed
+// reverse lookup (issue #1 Phase 8): the relayed request decides which mode
+// the overlay opens in, and the merged occurrence list feeds the
+// citing-locations rows.
 const showReferenceSearch = ref<boolean>(false)
 const referenceSearchDefinitions = ref<ReferenceDefinition[]>([])
+const referenceSearchOccurrences = ref<ReferenceOccurrence[]>([])
+const referenceSearchRequest = ref<ReferenceSearchRequest>(null)
 
 /**
- * Fetches the merged workspace definition list from the reference provider
- * and mounts the Mod-P reference search overlay over it.
+ * Fetches the merged workspace state from the reference provider and mounts
+ * the reference search overlay over it: the plain Mod-P definition search
+ * (request null) or the keyed citing-locations reverse lookup ({ key }).
+ * A failed fetch surfaces through the recoverable-error boundary (issue #1
+ * Phase 8) and the overlay simply does not open.
+ *
+ * @param   {ReferenceSearchRequest}  request  The relayed request payload
  */
-function openReferenceSearch (): void {
-  ipcRenderer.invoke('reference-provider', { command: 'get-snapshot' })
-    .then((state: WorkspaceReferenceState) => {
-      referenceSearchDefinitions.value = state.snapshots.flatMap(snapshot => snapshot.definitions)
+function openReferenceSearch (request: ReferenceSearchRequest = null): void {
+  invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+    async (channel, message) => await ipcRenderer.invoke(channel, message),
+    { command: 'get-snapshot' },
+    trans('Loading workspace references')
+  )
+    .then(outcome => {
+      if (outcome.status === 'failed') {
+        return // The boundary surfaced the closable toast; nothing to open.
+      }
+      referenceSearchDefinitions.value = outcome.value.snapshots.flatMap(snapshot => snapshot.definitions)
+      referenceSearchOccurrences.value = outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
+      referenceSearchRequest.value = request
       showReferenceSearch.value = true
     })
     .catch(err => console.error('Could not open the reference search overlay', err))
@@ -306,9 +332,16 @@ const createLabelExistingKeys = ref<string[]>([])
  * @param   {CreateReferenceLabelDialogPrompt}  prompt  The relayed request
  */
 function openCreateReferenceLabel (prompt: CreateReferenceLabelDialogPrompt): void {
-  ipcRenderer.invoke('reference-provider', { command: 'get-snapshot' })
-    .then((state: WorkspaceReferenceState) => {
-      createLabelExistingKeys.value = state.snapshots
+  invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+    async (channel, message) => await ipcRenderer.invoke(channel, message),
+    { command: 'get-snapshot' },
+    trans('Loading workspace references')
+  )
+    .then(outcome => {
+      if (outcome.status === 'failed') {
+        return // The boundary surfaced the closable toast; nothing to open.
+      }
+      createLabelExistingKeys.value = outcome.value.snapshots
         .flatMap(snapshot => snapshot.definitions)
         .map(definition => definition.key)
       createLabelPrompt.value = prompt
@@ -317,9 +350,29 @@ function openCreateReferenceLabel (prompt: CreateReferenceLabelDialogPrompt): vo
 }
 
 /**
- * Acts on the dialog's single create intent: the editor inserts the
- * explicit label token at the prepared position, the @-reference lands on
- * the clipboard, and a closable toast confirms both.
+ * Describes a stale confirm-time outcome as closable-toast material
+ * (issue #1 Phase 8): the document shifted while the dialog was open and
+ * the insertion did NOT happen.
+ *
+ * @param   {ConfirmReferenceLabelOutcome}  outcome  The stale outcome
+ *
+ * @return  {string}                                 The user-facing message
+ */
+function describeStaleCreateOutcome (outcome: ConfirmReferenceLabelOutcome & { status: 'stale' }): string {
+  switch (outcome.reason) {
+    case 'already-labeled':
+      return trans('No label created: the target gained a label while the dialog was open.')
+    case 'target-vanished':
+      return trans('No label created: the target no longer exists in the document.')
+  }
+}
+
+/**
+ * Acts on the dialog's single create intent: the editor re-resolves the
+ * target in the CURRENT document and inserts the explicit label token
+ * (issue #1 Phase 8), the @-reference lands on the clipboard, and a
+ * closable toast confirms both. A stale outcome inserted nothing and
+ * surfaces as a closable error toast instead.
  *
  * @param   {CreateReferenceLabelIntent}  intent  The confirmed intent
  */
@@ -330,7 +383,12 @@ function handleCreateReferenceLabel (intent: CreateReferenceLabelIntent): void {
     return
   }
 
-  prompt.applyCreate(intent)
+  const outcome: ConfirmReferenceLabelOutcome = prompt.applyCreate(intent)
+  if (outcome.status === 'stale') {
+    showToast(describeStaleCreateOutcome(outcome), 'error')
+    return
+  }
+
   navigator.clipboard.writeText(intent.clipboardText)
     .then(() => {
       showToast(trans('Created %s — %s copied to the clipboard.', intent.key, intent.clipboardText))
@@ -343,10 +401,12 @@ function handleCreateReferenceLabel (intent: CreateReferenceLabelIntent): void {
 
 /**
  * Acts on a jump intent chosen in the reference search overlay: closes the
- * overlay and opens the defining document. (Selection-precise jumps to the
- * intent's range land in Phase 5.)
+ * overlay and opens the target document, landing on the intent's exact
+ * range through the Phase 5 targetRange navigation — the definition's id
+ * token for the Mod-P search, the occurrence's own range for the keyed
+ * citing-locations reverse lookup.
  *
- * @param   {ReferenceJumpIntent}  intent  The chosen definition's jump intent
+ * @param   {ReferenceJumpIntent}  intent  The chosen jump intent
  */
 function handleReferenceJump (intent: ReferenceJumpIntent): void {
   showReferenceSearch.value = false
@@ -356,7 +416,8 @@ function handleReferenceJump (intent: ReferenceJumpIntent): void {
       path: intent.documentPath,
       windowId,
       leafId: lastLeafId.value,
-      newTab: false
+      newTab: false,
+      targetRange: intent.range
     }
   } as DocumentManagerIPCAPI)
     .catch(err => console.error(err))
