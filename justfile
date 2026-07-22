@@ -30,6 +30,13 @@ test-references:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/reference-fzf-search.spec.ts"
 
+# Run the Phase 3b reference UI suite: the references-provider Electron shell
+# spec plus the Mod-P search overlay Chromium probe spec. Mirrors test-file's
+# invocation with the longer timeout the xvfb Electron probes need.
+test-reference-ui:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/reference-provider-shell.spec.ts" "test/reference-search-overlay.spec.ts"
+
 # Cross-repository proof: ordered Project inputs through the companion
 # pandoc-config compile-pandoc-project recipe (issue #1). Hard-bails when the
 # companion checkout is missing; run explicitly, not part of the commit gate
@@ -68,6 +75,16 @@ capture-pandoc-help output:
     mkdir -p "{{output}}"
     node "{{justfile_directory()}}/test/pandoc-quick-help-visual-build.cjs" "{{output}}"
     xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" "{{justfile_directory()}}/test/pandoc-quick-help-visual-capture.cjs" "{{output}}"
+
+# Capture the Mod-P reference search overlay in isolated Electron: bundles the
+# probe entry with the production renderer webpack config, drives the real
+# fixture-backed overlay, and writes screenshots plus the probe result JSON.
+# This never starts Forge, a dev server, xdg-open, or the system browser.
+capture-reference-search output:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    mkdir -p "{{output}}"
+    node "{{justfile_directory()}}/test/reference-search-overlay-build.cjs" "{{output}}"
+    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --ozone-platform=x11 --disable-gpu --no-sandbox "{{justfile_directory()}}/test/reference-search-overlay-probe.cjs" "{{output}}"
 
 # Run a real export headlessly (no GUI), via the app's own makeExport with the
 # exact profile list the GUI sees (userData/defaults + custom profiles). Proves

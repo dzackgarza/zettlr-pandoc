@@ -25,6 +25,18 @@
 const Module = require('module')
 const os = require('os')
 const path = require('path')
+
+/**
+ * Records every ipcMain.handle registration made by main-process modules
+ * loaded under this harness, keyed by channel. The recorded listener is the
+ * REAL registered function — specs invoke it directly to exercise the real
+ * provider delegation path. The stub records registrations only; it never
+ * fabricates handler behavior.
+ *
+ * @type {Map<string, Function>}
+ */
+const ipcMainHandlers = new Map()
+
 const orig = Module._load
 Module._load = function (request, ...rest) {
   if (request === 'electron') {
@@ -39,13 +51,24 @@ Module._load = function (request, ...rest) {
         on () {},
         whenReady: async () => {}
       },
-      ipcMain: { handle () {}, on () {}, removeHandler () {} },
+      ipcMain: {
+        handle (channel, listener) { ipcMainHandlers.set(channel, listener) },
+        on () {},
+        removeHandler (channel) { ipcMainHandlers.delete(channel) }
+      },
       dialog: { showErrorBox () {} },
       shell: { openPath: async () => '' },
       nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
       Notification: class { show () {} },
-      BrowserWindow: class {}
+      BrowserWindow: class {
+        // Real Electron semantics for a process with no open windows: the
+        // list is empty, so broadcastIPCMessage() sends to nobody. This is
+        // the true headless state, not simulated behavior.
+        static getAllWindows () { return [] }
+      }
     }
   }
   return orig.call(this, request, ...rest)
 }
+
+module.exports = { ipcMainHandlers }
