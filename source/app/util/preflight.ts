@@ -17,9 +17,22 @@
  */
 
 import { spawn } from 'child_process'
+import { statSync } from 'fs'
 import path from 'path'
 import os from 'os'
-import isFile from '../../common/util/is-file'
+
+/**
+ * True iff `target` resolves to a regular file, following symlinks — the
+ * shared isFile helper uses lstat, which reports false for a symlinked
+ * ~/.pandoc/justfile even though the recipe behind it is perfectly usable.
+ */
+function resolvesToFile (target: string): boolean {
+  try {
+    return statSync(target).isFile()
+  } catch (err) {
+    return false
+  }
+}
 
 export interface CommandRequirement { command: string, purpose: string }
 export interface PathRequirement { target: string, purpose: string }
@@ -77,7 +90,7 @@ export async function findMissingRequirements (
     }
   }
   for (const { target, purpose } of paths) {
-    if (!isFile(target)) {
+    if (!resolvesToFile(target)) {
       missing.push(`${target} — missing (${purpose})`)
     }
   }
