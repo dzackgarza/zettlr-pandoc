@@ -3,6 +3,17 @@
 # companion pandoc-config compile-pandoc-project recipe and produce natively
 # labeled/linked LaTeX, driven from this repository's reference-workspace
 # fixture. Guarded: hard-bails when the companion checkout is absent.
+#
+# PROFILE COVERAGE (issue #5, C9): one export profile IS the entire recipe
+# surface. The recipe exporter is reachable only through the single custom
+# 'PDF.yaml' profile (writer 'compile-pandoc' — see getCustomProfiles() and
+# the makeExport dispatch in source/.../exporter/index.ts); every other
+# profile routes through the ordinary Pandoc-defaults, textbundle, or script
+# exporters, which never touch the ~/.pandoc justfile boundary this harness
+# proves. Within that one profile, BOTH recipes are argv-proven by
+# test/export-ordered-inputs.spec.ts / export-quoted-inputs.spec.ts
+# (compile-pandoc single-file and compile-pandoc-project), and this script
+# proves the Project recipe end-to-end against the real companion.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

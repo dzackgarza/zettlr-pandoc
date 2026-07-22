@@ -63,7 +63,7 @@ describe('Ordered Project export inputs (issue #1 Phase 7)', function () {
     // working directory and every argument it was spawned with, exactly as
     // the shell delivered them.
     const shim = path.join(binDir, 'just')
-    await writeFile(shim, '#!/bin/sh\nprintf \'%s\\0\' "$PWD" "$@" > "$(dirname "$0")/record.bin"\nexit 0\n')
+    await writeFile(shim, '#!/bin/sh\n{ printf \'%s\\0\' "$PWD" "$@"; printf \'\\036\'; } >> "$(dirname "$0")/record.bin"\nexit 0\n')
     await chmod(shim, 0o755)
 
     originalPath = process.env.PATH
@@ -79,10 +79,21 @@ describe('Ordered Project export inputs (issue #1 Phase 7)', function () {
     await rm(scratch, { recursive: true, force: true })
   })
 
-  /** The recorded { cwd, argv } of the last spawned `just` process. */
+  beforeEach(async function () {
+    // A fresh record stream per test: the shim APPENDS one record per spawn
+    // (issue #5, C9), so a stale file would hide or inflate spawn counts.
+    await rm(recordFile, { force: true })
+  })
+
+  /** The recorded { cwd, argv } of the SINGLE spawned `just` process. */
   async function recorded (): Promise<{ cwd: string, argv: string[] }> {
     const raw = await readFile(recordFile, 'utf-8')
-    const tokens = raw.split('\0')
+    // One RS-terminated record per spawned process: a double spawn is a
+    // contract violation and must be visible, never overwritten away.
+    const spawns = raw.split('\x1e')
+    assert.strictEqual(spawns[spawns.length - 1], '', 'the record stream is RS-terminated')
+    assert.strictEqual(spawns.length - 1, 1, 'the exporter must spawn exactly ONE just process per export')
+    const tokens = spawns[0].split('\0')
     assert.strictEqual(tokens[tokens.length - 1], '', 'the record is NUL-terminated')
     const [ cwd, ...argv ] = tokens.slice(0, -1)
     return { cwd, argv }

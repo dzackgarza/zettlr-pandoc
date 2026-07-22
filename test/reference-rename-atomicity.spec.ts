@@ -273,6 +273,13 @@ describe('Workspace rename commit protocol', function () {
       // pre-commit bytes (including the concurrent mutation itself).
       assertWorkspaceBytes(scratch, expectedBytes, 'after conflicted commit')
 
+      // No temp+rename debris either (issue #5, C9): the conflicted commit
+      // leaves the workspace directories containing exactly the fixture
+      // files — no staged .*.tmp artifact survives the abort.
+      assert.deepEqual(readdirSync(path.join(scratch.root, 'ProjectA')).sort(), [ 'Coble_Lattice_Table.md', 'Halphen_Surfaces.md', 'Theorems.md' ])
+      assert.deepEqual(readdirSync(path.join(scratch.root, 'ProjectB')), ['Other_Paper.md'])
+      assert.deepEqual(readdirSync(scratch.root).sort(), [ 'ProjectA', 'ProjectB', 'Standalone_Notes.md' ])
+
       // The live overlay is untouched: Halphen still serves its
       // generation-1 content, and no transaction reached any buffer.
       const state = await invoke('get-snapshot') as WorkspaceReferenceState
@@ -389,6 +396,13 @@ describe('Workspace rename commit protocol', function () {
         },
         'the undo fence must compare against the post-commit content'
       )
+
+      // The conflicted undo leaves no temp+rename debris behind (issue #5,
+      // C9): the workspace directories still contain exactly the fixture
+      // files.
+      assert.deepEqual(readdirSync(path.join(scratch.root, 'ProjectA')).sort(), [ 'Coble_Lattice_Table.md', 'Halphen_Surfaces.md', 'Theorems.md' ])
+      assert.deepEqual(readdirSync(path.join(scratch.root, 'ProjectB')), ['Other_Paper.md'])
+      assert.deepEqual(readdirSync(scratch.root).sort(), [ 'ProjectA', 'ProjectB', 'Standalone_Notes.md' ])
 
       // The interference is withdrawn (the concurrent editor restores the
       // post-commit bytes); the pending undo record must have survived the

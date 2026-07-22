@@ -113,9 +113,18 @@ describe('extractReferences() against the real Pandoc AST oracle', function () {
     assert.match(version, /^pandoc \d/)
   })
 
+  // EVERY fixture file participates in the oracle (issue #5, C9): the five
+  // workspace documents plus the adjacent subfigure gallery. Files without
+  // authored definitions (Halphen_Surfaces.md carries only references) pin a
+  // supported count of 0 — the differential there proves the extractor
+  // invents no definitions from mere usages, and the nonzero counts of the
+  // other files keep the collector itself honest.
   const ORACLE_FILES: Array<{ relativePath: string, supportedIdentifierCount: number }> = [
     { relativePath: path.join('ProjectA', 'Coble_Lattice_Table.md'), supportedIdentifierCount: 5 },
     { relativePath: path.join('ProjectA', 'Theorems.md'), supportedIdentifierCount: 15 },
+    { relativePath: path.join('ProjectA', 'Halphen_Surfaces.md'), supportedIdentifierCount: 0 },
+    { relativePath: path.join('ProjectB', 'Other_Paper.md'), supportedIdentifierCount: 2 },
+    { relativePath: 'Standalone_Notes.md', supportedIdentifierCount: 1 },
     // Wrapping/subfigure forms (review A1): pandoc carries the wrapping div
     // ids (#fig:coble-panels, #lst:lattice-scan) as Div Attr identifiers
     // beside the nested Figure ids and the explicit section id. The gallery
