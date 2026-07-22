@@ -250,7 +250,10 @@ describe('Combined @-symbol completion surface (issue #1 Phase 3)', function () 
     }
 
     it('keeps the combined surface citation-only while no references DB has been pushed', function () {
-      const doc = 'See [@Ols'
+      // Empty query after the '@' so the untouched citation filter returns the
+      // full DB — with a 'Ols' query the filter yields only Ols04, which would
+      // contradict the full-list assertion below.
+      const doc = 'See [@'
       const currentView = createEditor(CURRENT_DISPATCH, doc, doc.length)
       const combinedView = createEditor(COMBINED_DISPATCH, doc, doc.length)
 
