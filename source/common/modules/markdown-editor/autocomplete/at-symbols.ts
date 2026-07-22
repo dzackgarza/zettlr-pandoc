@@ -48,10 +48,24 @@
 import { type Completion } from '@codemirror/autocomplete'
 import { StateEffect, StateField } from '@codemirror/state'
 import { type EditorView } from '@codemirror/view'
-import { type ReferenceCompletionEntry, type ReferenceFamily } from '@dts/common/references'
+import { type AppendAndContinuePlan, type ReferenceCompletionEntry, type ReferenceFamily } from '@dts/common/references'
+import { type ProjectSettings } from '@dts/common/fsal'
 import { THEOREM_DIV_PREFIXES } from '@common/util/pandoc-quick-reference'
+import {
+  applyAppendPlan,
+  appendToastMessage,
+  completionAffordanceFor,
+  type CompletionInsertionAffordance
+} from '@common/pandoc-util/project-reference-status'
+import showToast from '@common/util/show-toast'
 import { type AutocompletePlugin } from '.'
 import { citations, citekeyUpdateField } from './citations'
+
+// The ipc bridge of the production renderer window. Headless editor views
+// (the reference specs) have no bridge: there, applying a completion only
+// performs its insertion half — mirroring how tooltips/references.ts only
+// upgrades its excerpt where window.getCitationCallback exists.
+const ipcRenderer = window.ipc
 
 /**
  * Use this effect to provide the editor state with a new set of workspace
@@ -72,6 +86,15 @@ export const referencesUpdateField = StateField.define<ReferenceCompletionEntry[
     return val
   }
 })
+
+/**
+ * A label option on the combined surface: a Completion exposing its typed
+ * insertion affordance as `referenceAffordance` (issue #1 Phase 7). Citation
+ * options never carry this property.
+ */
+interface ReferenceLabelCompletion extends Completion {
+  referenceAffordance: CompletionInsertionAffordance
+}
 
 /**
  * Display names of the explicit pandoc-crossref label families.
@@ -127,6 +150,71 @@ const applyLabel = function (view: EditorView, completion: Completion, from: num
 }
 
 /**
+ * A disabled label completion: another-Project targets stay visible on the
+ * surface but are inert for insertion — applying one changes nothing.
+ */
+const applyDisabled = function (_view: EditorView, _completion: Completion, _from: number, _to: number): void {
+  // Insertion is disabled for another-Project entries.
+}
+
+/**
+ * Runs the mechanical append-and-continue plan through the EXISTING
+ * dir-settings surface: fetch the Project root's descriptor, apply the plan
+ * to its ProjectSettings (applyAppendPlan), push the result through the
+ * 'update-project-properties' command (-> FSAL.updateProject()), and confirm
+ * with one toast naming every appended file. No new ipc channel, no dialog.
+ *
+ * @param   {AppendAndContinuePlan}  plan  The plan carried by the applied option
+ */
+async function runAppendAndContinue (plan: AppendAndContinuePlan): Promise<void> {
+  const descriptor = await ipcRenderer.invoke('fsal', {
+    command: 'get-descriptor',
+    payload: plan.rootPath
+  })
+
+  const settings: ProjectSettings|null = descriptor?.settings?.project ?? null
+  if (settings === null) {
+    throw new Error(`Cannot append to the Project at ${plan.rootPath}: the directory carries no Project settings`)
+  }
+
+  await ipcRenderer.invoke('application', {
+    command: 'update-project-properties',
+    payload: { path: plan.rootPath, properties: applyAppendPlan(settings, plan) }
+  })
+
+  showToast(appendToastMessage(plan))
+}
+
+/**
+ * The apply handler for one typed insertion affordance: disabled entries are
+ * inert, append-carrying entries insert the bare key and CONTINUE with the
+ * mechanical append (production renderer window only), and everything else
+ * is the unchanged bare-key insertion.
+ *
+ * @param   {CompletionInsertionAffordance}  affordance  The option's affordance
+ *
+ * @return  {typeof applyLabel}                          The apply handler
+ */
+function applyFor (affordance: CompletionInsertionAffordance): typeof applyLabel {
+  if (affordance.kind === 'disabled-another-project') {
+    return applyDisabled
+  }
+
+  if (affordance.kind === 'insert-with-append') {
+    return function (view: EditorView, completion: Completion, from: number, to: number): void {
+      applyLabel(view, completion, from, to)
+      if (ipcRenderer !== undefined) {
+        runAppendAndContinue(affordance.plan).catch(err => {
+          console.error('Could not append the referenced file to the active Project', err)
+        })
+      }
+    }
+  }
+
+  return applyLabel
+}
+
+/**
  * The combined `@` completion surface: bibliography citation completion,
  * delegated verbatim to the citations provider, followed by the typed
  * workspace reference label entries of the 'references' database.
@@ -139,12 +227,18 @@ export const atSymbols: AutocompletePlugin = {
   },
   entries (ctx, query) {
     query = query.toLowerCase()
-    const labelEntries: Completion[] = ctx.state.field(referencesUpdateField)
-      .map(entry => ({
-        label: entry.key,
-        detail: labelDetail(entry),
-        apply: applyLabel
-      }))
+    const labelEntries: ReferenceLabelCompletion[] = ctx.state.field(referencesUpdateField)
+      .map(entry => {
+        // The Phase-7 gating: the typed affordance decides HOW the entry
+        // applies; it never gates visibility or label/detail presentation.
+        const referenceAffordance = completionAffordanceFor(entry.projectStatus, entry.appendPlan)
+        return {
+          label: entry.key,
+          detail: labelDetail(entry),
+          apply: applyFor(referenceAffordance),
+          referenceAffordance
+        }
+      })
       .filter(entry => {
         // The same case-insensitive substring filter the citation provider
         // applies, over label and detail.

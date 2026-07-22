@@ -97,22 +97,87 @@ export type CompletionInsertionAffordance =
   | { kind: 'insert-with-export-warning' }
 
 /**
+ * True iff `documentPath` lies strictly inside `rootPath`, path-segment-safe:
+ * /w/ProjectA never contains /w/ProjectAB/x.md. Renderer-safe (no Node path
+ * module): the character following the root prefix must be a separator.
+ *
+ * @param   {string}   documentPath  The document's absolute path
+ * @param   {string}   rootPath      The Project root's absolute path
+ *
+ * @return  {boolean}                Whether the root contains the document
+ */
+function isInsideRoot (documentPath: string, rootPath: string): boolean {
+  if (!documentPath.startsWith(rootPath)) {
+    return false
+  }
+  const next = documentPath.charAt(rootPath.length)
+  return next === '/' || next === '\\'
+}
+
+/**
+ * The project-relative Unix-separator path of an in-root document.
+ *
+ * @param   {string}  documentPath  The document's absolute path
+ * @param   {string}  rootPath      The containing Project root
+ *
+ * @return  {string}                The relative path, '/'-separated
+ */
+function projectRelativePath (documentPath: string, rootPath: string): string {
+  return documentPath.slice(rootPath.length + 1).replace(/\\/g, '/')
+}
+
+/**
+ * The root containing `documentPath`, if any.
+ *
+ * @param   {string}             documentPath  The document's absolute path
+ * @param   {ProjectRootSpec[]}  projectRoots  Every visible Project root
+ *
+ * @return  {ProjectRootSpec|undefined}        The containing root
+ */
+function containingRoot (documentPath: string, projectRoots: ProjectRootSpec[]): ProjectRootSpec|undefined {
+  return projectRoots.find(root => isInsideRoot(documentPath, root.rootPath))
+}
+
+/**
  * Computes the Project-membership status of one definition relative to the
  * active document and the visible Project roots. See the module contract.
  *
- * @param   {string}                  _definitionPath      The definition's documentPath
- * @param   {string}                  _activeDocumentPath  The active (source) document
- * @param   {ProjectRootSpec[]}       _projectRoots        Every visible Project root
+ * @param   {string}                  definitionPath      The definition's documentPath
+ * @param   {string}                  activeDocumentPath  The active (source) document
+ * @param   {ProjectRootSpec[]}       projectRoots        Every visible Project root
  *
- * @return  {ProjectReferenceStatus}                       The membership status
+ * @return  {ProjectReferenceStatus}                      The membership status
  */
 export function computeProjectReferenceStatus (
-  _definitionPath: string,
-  _activeDocumentPath: string,
-  _projectRoots: ProjectRootSpec[]
+  definitionPath: string,
+  activeDocumentPath: string,
+  projectRoots: ProjectRootSpec[]
 ): ProjectReferenceStatus {
-  // Phase 7 skeleton (issue #1): the real computation is the green step.
-  return 'standalone'
+  if (definitionPath === activeDocumentPath) {
+    return 'same-file' // Always wins, regardless of Project membership.
+  }
+
+  // The ACTIVE Project is the root containing the active document — even
+  // when the active document itself is omitted from the root's files list.
+  const activeRoot = containingRoot(activeDocumentPath, projectRoots)
+  const definitionRoot = containingRoot(definitionPath, projectRoots)
+
+  if (activeRoot === undefined) {
+    // Standalone active document: any Project-rooted target is foreign.
+    return definitionRoot === undefined ? 'standalone' : 'another-project'
+  }
+
+  if (definitionRoot === undefined) {
+    return 'standalone'
+  }
+
+  if (definitionRoot.rootPath !== activeRoot.rootPath) {
+    return 'another-project'
+  }
+
+  return activeRoot.files.includes(projectRelativePath(definitionPath, activeRoot.rootPath))
+    ? 'in-active-project'
+    : 'omitted-from-active-project'
 }
 
 /**
@@ -127,12 +192,30 @@ export function computeProjectReferenceStatus (
  * @return  {AppendAndContinuePlan|null}              The plan, or null
  */
 export function computeAppendAndContinuePlan (
-  _targetDocumentPath: string,
-  _activeDocumentPath: string,
-  _projectRoots: ProjectRootSpec[]
+  targetDocumentPath: string,
+  activeDocumentPath: string,
+  projectRoots: ProjectRootSpec[]
 ): AppendAndContinuePlan|null {
-  // Phase 7 skeleton (issue #1): the real computation is the green step.
-  return null
+  const status = computeProjectReferenceStatus(targetDocumentPath, activeDocumentPath, projectRoots)
+  if (status !== 'omitted-from-active-project') {
+    return null // Included, other-Project, standalone, or same-file target.
+  }
+
+  // The status above guarantees an active root exists and contains the target.
+  const activeRoot = containingRoot(activeDocumentPath, projectRoots)
+  if (activeRoot === undefined) {
+    throw new Error(`No active Project root contains ${activeDocumentPath} despite an omitted target status`)
+  }
+
+  const appendFiles: string[] = []
+  const activeRelative = projectRelativePath(activeDocumentPath, activeRoot.rootPath)
+  if (!activeRoot.files.includes(activeRelative)) {
+    // The omitted SOURCE document comes first, then the target.
+    appendFiles.push(activeRelative)
+  }
+  appendFiles.push(projectRelativePath(targetDocumentPath, activeRoot.rootPath))
+
+  return { rootPath: activeRoot.rootPath, appendFiles }
 }
 
 /**
@@ -147,10 +230,12 @@ export function computeAppendAndContinuePlan (
  */
 export function applyAppendPlan (
   settings: ProjectSettings,
-  _plan: AppendAndContinuePlan
+  plan: AppendAndContinuePlan
 ): ProjectSettings {
-  // Phase 7 skeleton (issue #1): the real application is the green step.
-  return settings
+  return {
+    ...settings,
+    files: [ ...settings.files, ...plan.appendFiles ]
+  }
 }
 
 /**
@@ -162,9 +247,9 @@ export function applyAppendPlan (
  *
  * @return  {string}                        The toast message
  */
-export function appendToastMessage (_plan: AppendAndContinuePlan): string {
-  // Phase 7 skeleton (issue #1): the real message is the green step.
-  return ''
+export function appendToastMessage (plan: AppendAndContinuePlan): string {
+  const names = plan.appendFiles.join(' and ')
+  return `Added ${names} to the active Project's export file list.`
 }
 
 /**
@@ -179,11 +264,16 @@ export function appendToastMessage (_plan: AppendAndContinuePlan): string {
  */
 export function annotateCompletionEntries (
   entries: ReferenceCompletionEntry[],
-  _activeDocumentPath: string,
-  _projectRoots: ProjectRootSpec[]
+  activeDocumentPath: string,
+  projectRoots: ProjectRootSpec[]
 ): ReferenceCompletionEntry[] {
-  // Phase 7 skeleton (issue #1): the real annotation is the green step.
-  return entries.map(entry => ({ ...entry, projectStatus: 'standalone' }))
+  return entries.map(entry => {
+    const projectStatus = computeProjectReferenceStatus(entry.documentPath, activeDocumentPath, projectRoots)
+    const appendPlan = projectStatus === 'omitted-from-active-project'
+      ? computeAppendAndContinuePlan(entry.documentPath, activeDocumentPath, projectRoots) ?? undefined
+      : undefined
+    return { ...entry, projectStatus, appendPlan }
+  })
 }
 
 /**
@@ -196,10 +286,20 @@ export function annotateCompletionEntries (
  * @return  {CompletionInsertionAffordance}                  The affordance
  */
 export function completionAffordanceFor (
-  _status: ProjectReferenceStatus|undefined,
-  _appendPlan?: AppendAndContinuePlan
+  status: ProjectReferenceStatus|undefined,
+  appendPlan?: AppendAndContinuePlan
 ): CompletionInsertionAffordance {
-  // Phase 7 skeleton (issue #1): the real decision table is the green step.
+  if (status === 'another-project') {
+    return { kind: 'disabled-another-project' }
+  }
+  if (status === 'omitted-from-active-project' && appendPlan !== undefined) {
+    return { kind: 'insert-with-append', plan: appendPlan }
+  }
+  if (status === 'standalone') {
+    return { kind: 'insert-with-export-warning' }
+  }
+  // undefined (Phase-3 compatibility), 'same-file', 'in-active-project', and
+  // omitted entries carrying no mechanical append plan all insert plainly.
   return { kind: 'insert' }
 }
 
@@ -211,7 +311,17 @@ export function completionAffordanceFor (
  *
  * @return  {string}                           The display wording
  */
-export function projectStatusDisplayName (_status: ProjectReferenceStatus): string {
-  // Phase 7 skeleton (issue #1): the real wording is the green step.
-  return ''
+export function projectStatusDisplayName (status: ProjectReferenceStatus): string {
+  switch (status) {
+    case 'same-file':
+      return 'This file'
+    case 'in-active-project':
+      return 'In active Project'
+    case 'omitted-from-active-project':
+      return 'Omitted from active Project'
+    case 'another-project':
+      return 'Another Project'
+    case 'standalone':
+      return 'Standalone document'
+  }
 }

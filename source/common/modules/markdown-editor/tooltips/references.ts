@@ -50,7 +50,11 @@ import { hoverTooltip, EditorView, type Tooltip } from '@codemirror/view'
 import { md2html } from '@common/modules/markdown-utils/markdown-to-html'
 import { sanitizeHTML } from '@common/util/sanitize-html'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
-import { referenceFamilyDisplayName, type ReferenceDefinition } from '@dts/common/references'
+import { referenceFamilyDisplayName, type ProjectRootSpec, type ReferenceDefinition } from '@dts/common/references'
+import {
+  computeProjectReferenceStatus,
+  projectStatusDisplayName
+} from '@common/pandoc-util/project-reference-status'
 import { configField } from '../util/configuration'
 import { workspaceReferencesField } from '../plugins/workspace-references-field'
 
@@ -120,27 +124,42 @@ export function referenceTooltip (view: EditorView, pos: number, side: 1 | -1): 
 
   const { definition } = resolution
 
+  // The active document is the snapshot's own documentPath; the Project
+  // status is derivable only while the view carries projectRoots (issue #1
+  // Phase 7) — an undefined root set never fabricates a membership.
+  const activeDocumentPath = references.snapshot.documentPath
+  const projectRoots = references.projectRoots
+
   return {
     pos: occurrence.range.from,
     end: occurrence.range.to,
     above: true,
     create (view) {
-      return { dom: getPreviewElement(view, occurrence.key, definition) }
+      return { dom: getPreviewElement(view, occurrence.key, definition, activeDocumentPath, projectRoots) }
     }
   }
 }
 
 /**
  * Builds the hover DOM: type, key, defining path, enclosing section, the
- * bounded rendered excerpt, and the expand action indicator.
+ * Project-status row (only while projectRoots is present), the bounded
+ * rendered excerpt, and the expand action indicator.
  *
- * @param   {EditorView}           view        The editor view
- * @param   {string}               key         The authored key
- * @param   {ReferenceDefinition}  definition  The resolved definition
+ * @param   {EditorView}                     view                The editor view
+ * @param   {string}                         key                 The authored key
+ * @param   {ReferenceDefinition}            definition          The resolved definition
+ * @param   {string}                         activeDocumentPath  The hovering document
+ * @param   {ProjectRootSpec[]|undefined}    projectRoots        The visible Project roots
  *
- * @return  {HTMLDivElement}                   The tooltip DOM
+ * @return  {HTMLDivElement}                                     The tooltip DOM
  */
-function getPreviewElement (view: EditorView, key: string, definition: ReferenceDefinition): HTMLDivElement {
+function getPreviewElement (
+  view: EditorView,
+  key: string,
+  definition: ReferenceDefinition,
+  activeDocumentPath: string,
+  projectRoots: ProjectRootSpec[]|undefined
+): HTMLDivElement {
   const wrapper = document.createElement('div')
   wrapper.classList.add('reference-hover-preview')
 
@@ -208,6 +227,18 @@ function getPreviewElement (view: EditorView, key: string, definition: Reference
 
   wrapper.appendChild(header)
   wrapper.appendChild(location)
+
+  // The Project-status row (issue #1 Phase 7): rendered only while the view
+  // carries projectRoots — the tooltip never fabricates a membership.
+  if (projectRoots !== undefined) {
+    const projectStatus = computeProjectReferenceStatus(definition.documentPath, activeDocumentPath, projectRoots)
+    const status = document.createElement('p')
+    status.classList.add('reference-hover-project-status')
+    status.setAttribute('data-reference-project-status', projectStatus)
+    status.textContent = projectStatusDisplayName(projectStatus)
+    wrapper.appendChild(status)
+  }
+
   wrapper.appendChild(excerpt)
   wrapper.appendChild(expand)
 

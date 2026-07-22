@@ -51,9 +51,10 @@ import type { DocumentManagerIPCAPI, DocumentsUpdateContext } from 'source/app/s
 import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
 import type { ProjectInfo } from 'source/common/modules/markdown-editor/plugins/project-info-field'
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
-import type { DocumentLocation, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
+import type { DocumentLocation, ProjectRootSpec, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import { extractReferences } from '@common/pandoc-util/extract-references'
+import { annotateCompletionEntries } from '@common/pandoc-util/project-reference-status'
 import { resolveWorkspace } from '@common/pandoc-util/resolve-references'
 import { trans } from '@common/i18n-renderer'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
@@ -752,21 +753,45 @@ async function updateCitationKeys (library: string): Promise<void> {
  * snapshot, and pushes its definitions as the typed 'references' completion
  * database (issue #1 Phase 3).
  */
+/**
+ * Every Project root visible in the workspace, projected to the pure
+ * ProjectRootSpec shape the reference-status computation consumes (issue #1
+ * Phase 7): a DirDescriptor with non-null settings.project maps to its
+ * absolute path plus the ordered project-relative ProjectSettings.files list.
+ */
+function collectProjectRoots (): ProjectRootSpec[] {
+  const roots: ProjectRootSpec[] = []
+  for (const descriptor of workspaceStore.descriptorMap.values()) {
+    if (descriptor.type === 'directory' && descriptor.settings.project !== null) {
+      roots.push({
+        rootPath: descriptor.path,
+        files: [...descriptor.settings.project.files]
+      })
+    }
+  }
+  return roots
+}
+
 async function updateReferenceEntries (): Promise<void> {
   const state: WorkspaceReferenceState = await ipcRenderer.invoke('reference-provider', {
     command: 'get-snapshot'
   })
 
   // The provider serves the whole merged workspace state; the completion
-  // database for this editor is fed from the current file's snapshot.
-  const snapshot = state.snapshots.find(candidate => candidate.documentPath === props.file.path)
+  // database for this editor is fed from EVERY document's definitions,
+  // annotated with their Project-membership status relative to this editor's
+  // document and the visible Project roots (issue #1 Phase 7).
+  const projectRoots = collectProjectRoots()
 
-  const entries: ReferenceCompletionEntry[] = (snapshot?.definitions ?? []).map(definition => ({
-    key: definition.key,
-    family: definition.family,
-    title: definition.title,
-    documentPath: definition.documentPath
-  }))
+  const rawEntries: ReferenceCompletionEntry[] = state.snapshots
+    .flatMap(candidate => candidate.definitions)
+    .map(definition => ({
+      key: definition.key,
+      family: definition.family,
+      title: definition.title,
+      documentPath: definition.documentPath
+    }))
+  const entries = annotateCompletionEntries(rawEntries, props.file.path, projectRoots)
 
   currentEditor?.setCompletionDatabase('references', entries)
 
@@ -785,7 +810,8 @@ async function updateReferenceEntries (): Promise<void> {
   currentEditor.setWorkspaceReferences({
     snapshot: liveSnapshot,
     workspaceOccurrences: workspace.flatMap(candidate => candidate.occurrences),
-    resolutions: resolveWorkspace(workspace)
+    resolutions: resolveWorkspace(workspace),
+    projectRoots
   })
 }
 
