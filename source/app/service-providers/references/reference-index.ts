@@ -25,6 +25,7 @@
  */
 
 import type { DocumentReferenceSnapshot, Resolution } from '@dts/common/references'
+import { resolveWorkspace } from '@common/pandoc-util/resolve-references'
 
 /**
  * The complete workspace reference state served to every consumer: exactly
@@ -34,6 +35,15 @@ import type { DocumentReferenceSnapshot, Resolution } from '@dts/common/referenc
 export interface WorkspaceReferenceState {
   snapshots: DocumentReferenceSnapshot[]
   resolutions: Map<string, Resolution>
+}
+
+/**
+ * A live-buffer overlay: the reported snapshot together with the editor
+ * transaction generation it was reported at.
+ */
+interface LiveOverlay {
+  snapshot: DocumentReferenceSnapshot
+  generation: number
 }
 
 /**
@@ -53,42 +63,72 @@ export interface WorkspaceReferenceState {
  * live overlay exists, in which case the overlay stays authoritative.
  */
 export class ReferenceIndex {
+  /** Saved (on-disk) snapshots by documentPath, owned by FSAL events. */
+  private readonly saved: Map<string, DocumentReferenceSnapshot>
+  /** Live-buffer overlays by documentPath, owned by renderer reports. */
+  private readonly live: Map<string, LiveOverlay>
+
+  constructor () {
+    this.saved = new Map()
+    this.live = new Map()
+  }
+
   /**
    * Applies a saved snapshot reported by FSAL for the snapshot's document.
    *
-   * @param   {DocumentReferenceSnapshot}  _snapshot  The saved snapshot
+   * @param   {DocumentReferenceSnapshot}  snapshot  The saved snapshot
    */
-  applySavedSnapshot (_snapshot: DocumentReferenceSnapshot): void {
-    // Phase 2 skeleton: behavior specified by failing red proofs.
+  applySavedSnapshot (snapshot: DocumentReferenceSnapshot): void {
+    this.saved.set(snapshot.documentPath, snapshot)
+
+    // Eviction: the overlay hands authority back only when the saved content
+    // is exactly the current live buffer's content. Out-of-order live reports
+    // are dropped in reportLiveBuffer(), so the retained overlay always
+    // carries the newest reported generation: a hash match against it means
+    // no newer generation has been reported since that content was current.
+    // A differing hash is a stale FSAL event and never evicts.
+    const overlay = this.live.get(snapshot.documentPath)
+    if (overlay !== undefined && overlay.snapshot.sourceHash === snapshot.sourceHash) {
+      this.live.delete(snapshot.documentPath)
+    }
   }
 
   /**
    * Removes the saved snapshot for a document (FSAL unlink event).
    *
-   * @param   {string}  _documentPath  The unlinked document's path
+   * @param   {string}  documentPath  The unlinked document's path
    */
-  removeSavedSnapshot (_documentPath: string): void {
-    // Phase 2 skeleton: behavior specified by failing red proofs.
+  removeSavedSnapshot (documentPath: string): void {
+    // An unlink never touches a live overlay: an open buffer stays
+    // authoritative until it is dropped.
+    this.saved.delete(documentPath)
   }
 
   /**
    * Reports a live editor buffer's snapshot together with its transaction
    * generation. The snapshot replaces the saved snapshot for its document.
    *
-   * @param   {DocumentReferenceSnapshot}  _snapshot    The live snapshot
-   * @param   {number}                     _generation  The editor generation
+   * @param   {DocumentReferenceSnapshot}  snapshot    The live snapshot
+   * @param   {number}                     generation  The editor generation
    */
-  reportLiveBuffer (_snapshot: DocumentReferenceSnapshot, _generation: number): void {
-    // Phase 2 skeleton: behavior specified by failing red proofs.
+  reportLiveBuffer (snapshot: DocumentReferenceSnapshot, generation: number): void {
+    // Monotonic generation guard: an out-of-order report carrying an older
+    // generation than the current overlay's is ignored.
+    const overlay = this.live.get(snapshot.documentPath)
+    if (overlay !== undefined && generation < overlay.generation) {
+      return
+    }
+
+    this.live.set(snapshot.documentPath, { snapshot, generation })
   }
 
   /**
    * Drops the live overlay for a document, reverting to its saved snapshot.
    *
-   * @param   {string}  _documentPath  The closed document's path
+   * @param   {string}  documentPath  The closed document's path
    */
-  dropLiveBuffer (_documentPath: string): void {
-    // Phase 2 skeleton: behavior specified by failing red proofs.
+  dropLiveBuffer (documentPath: string): void {
+    this.live.delete(documentPath)
   }
 
   /**
@@ -99,7 +139,20 @@ export class ReferenceIndex {
    * @return  {WorkspaceReferenceState}  The merged workspace reference state
    */
   getSnapshot (): WorkspaceReferenceState {
-    // Phase 2 skeleton: behavior specified by failing red proofs.
-    return { snapshots: [], resolutions: new Map() }
+    const snapshots: DocumentReferenceSnapshot[] = []
+
+    for (const [ documentPath, snapshot ] of this.saved) {
+      snapshots.push(this.live.get(documentPath)?.snapshot ?? snapshot)
+    }
+
+    // Documents that only exist as open buffers (e.g. unlinked but still
+    // open) are part of the merged view too.
+    for (const [ documentPath, overlay ] of this.live) {
+      if (!this.saved.has(documentPath)) {
+        snapshots.push(overlay.snapshot)
+      }
+    }
+
+    return { snapshots, resolutions: resolveWorkspace(snapshots) }
   }
 }

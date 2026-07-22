@@ -195,6 +195,23 @@ function headingText (node: Heading): string {
  * @return  {DocumentReferenceSnapshot}  The typed reference snapshot
  */
 export function extractReferences (documentPath: string, markdown: string): DocumentReferenceSnapshot {
+  return extractReferencesFromAST(documentPath, markdown, markdownToAST(markdown))
+}
+
+/**
+ * Same extraction as extractReferences(), but over an already-parsed AST of
+ * exactly the given markdown source. This is the seam for callers (FSAL's
+ * file parser) that already hold the document's AST from a shared parse pass
+ * and must not parse twice; both entry points produce identical snapshots.
+ *
+ * @param   {string}   documentPath  The document's path (snapshot identity)
+ * @param   {string}   markdown      The full markdown source the AST was
+ *                                   parsed from (ranges and hash source)
+ * @param   {ASTNode}  ast           The parsed AST of that exact source
+ *
+ * @return  {DocumentReferenceSnapshot}  The typed reference snapshot
+ */
+export function extractReferencesFromAST (documentPath: string, markdown: string, ast: ASTNode): DocumentReferenceSnapshot {
   const sourceHash = hashDocumentSource(markdown)
   const definitions: ReferenceDefinition[] = []
   const occurrences: ReferenceOccurrence[] = []
@@ -378,7 +395,7 @@ export function extractReferences (documentPath: string, markdown: string): Docu
     }
   }
 
-  visit(markdownToAST(markdown))
+  visit(ast)
 
   return { documentPath, sourceHash, definitions, occurrences }
 }

@@ -31,6 +31,7 @@ import type {
   ZettelkastenTag
 } from '@common/modules/markdown-utils/markdown-ast'
 import { extractLinefeed } from './extract-linefeed'
+import { extractReferencesFromAST } from '@common/pandoc-util/extract-references'
 import { getAppServiceContainer, isAppServiceContainerReady } from '../../../app-service-container'
 
 // Here are all supported variables for Pandoc:
@@ -78,6 +79,11 @@ export default function getMarkdownFileParser (
 
     const citations = extractASTNodes(ast, 'Citation') as CitationNode[]
     file.citekeys = citations.flatMap(node => node.parsedCitation.items.map(item => item.id))
+
+    // Extract the document's reference surface from the same parse pass
+    // (issue #1): the descriptor snapshot can never diverge from the shared
+    // extractor's output over identical content.
+    file.references = extractReferencesFromAST(file.path, content, ast)
 
     file.firstHeading = null
     const headings = extractASTNodes(ast, 'Heading') as Heading[]
