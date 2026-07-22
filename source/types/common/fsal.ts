@@ -1,5 +1,7 @@
 // FSAL types available in both main process and renderer process
 
+import type { DocumentReferenceSnapshot } from './references'
+
 export interface ProjectSettings {
   /**
    * The title of the project, will be used, e.g., as title and filename for
@@ -95,6 +97,12 @@ export interface MDFileDescriptor extends FSMetaInfo {
   yamlTitle: string|undefined
   frontmatter: any|null
   linefeed: string
+  /**
+   * The document's saved reference surface (pandoc-crossref and theorem-div
+   * definitions and occurrences), extracted in the same markdownToAST pass
+   * that produces tags, links, and citekeys (issue #1).
+   */
+  references: DocumentReferenceSnapshot
 }
 
 /**

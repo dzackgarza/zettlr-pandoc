@@ -74,7 +74,10 @@ export async function parse (
     linefeed: '\n',
     firstHeading: null, // May contain the first heading level 1
     yamlTitle: undefined,
-    frontmatter: null // May contain frontmatter variables
+    frontmatter: null, // May contain frontmatter variables
+    // The parser replaces this empty snapshot with the document's actual
+    // reference surface (issue #1).
+    references: { documentPath: filePath, sourceHash: '', definitions: [], occurrences: [] }
   }
 
   // In any case, we need the most recent times.
