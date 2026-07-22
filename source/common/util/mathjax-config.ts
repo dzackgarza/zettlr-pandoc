@@ -26,7 +26,11 @@ export type MathJaxMacro =
  */
 export const mathJaxPackages = [ 'base', 'ams', 'configmacros', 'mhchem', 'newcommand', 'noundefined' ] as const
 
-function isMathJaxMacro (value: unknown): value is MathJaxMacro {
+/**
+ * Type guard for a single MathJax macro definition (the `tex.macros` value
+ * shape: replacement string, or [replacement, argCount, optionalDefault?]).
+ */
+export function isMathJaxMacro (value: unknown): value is MathJaxMacro {
   if (typeof value === 'string') {
     return true
   }

@@ -24,6 +24,7 @@ import type { ConfigOptions } from '@providers/config/get-config-template'
 import { WRITER2EXT } from '@common/pandoc-util/pandoc-maps'
 import { parseReaderWriter } from '@common/pandoc-util/parse-reader-writer'
 import { runShellCommand } from './run-shell-command'
+import { splitLines } from './split-lines'
 
 export type ExportScript = ConfigOptions['export']['scripts'][number]
 
@@ -61,8 +62,6 @@ export async function runScriptExport (
   const target = path.join(options.targetDirectory, `${title}.${script.extension}`)
   const cwd = options.cwd ?? path.dirname(intermediate)
   const scriptOutput = await runShellCommand(script.command, [ `'${intermediate}'`, `'${target}'` ], cwd)
-
-  const splitLines = (text: string): string[] => text.split('\n').filter(line => line.trim() !== '')
 
   return {
     code: scriptOutput.code,

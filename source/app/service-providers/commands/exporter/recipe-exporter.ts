@@ -23,13 +23,12 @@ import { promises as fs } from 'fs'
 import sanitize from 'sanitize-filename'
 import type { ExporterOptions, ExporterOutput } from './types'
 import { runShellCommand } from './run-shell-command'
+import { splitLines } from './split-lines'
 
 // The canonical recipe file. compile-pandoc has no internal `pandoc::` module
 // reference, so it is invocable directly via --justfile without a project
 // justfile declaring `mod pandoc`.
 const JUSTFILE = path.join(os.homedir(), '.pandoc', 'justfile')
-
-const splitLines = (text: string): string[] => text.split('\n').filter(line => line.trim() !== '')
 
 /**
  * Exports the source Markdown to PDF by delegating to the pandoc-config
