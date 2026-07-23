@@ -109,6 +109,19 @@ onBeforeUnmount(() => {
       width: 100%;
       height: 100%;
     }
+
+    // ImageViewer's fit mode caps an image at its natural size, which is the
+    // right default for a photograph and useless for a vector diagram a few
+    // dozen pixels wide: the lightbox would open showing the figure at
+    // exactly the size it already had inline. Scale the figure to the overlay
+    // instead, preserving its aspect ratio. This is scoped to the lightbox;
+    // the editor pane's viewer keeps its own behaviour, and the moment the
+    // user zooms or scrolls the class changes and the rule stops applying.
+    .image-wrapper img.fit {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
   }
 
   .tikz-lightbox-close {
