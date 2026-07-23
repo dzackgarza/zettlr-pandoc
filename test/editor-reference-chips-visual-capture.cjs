@@ -27,6 +27,9 @@ async function capture (window, scene) {
     .cm-editor { min-height: 620px; }
     .cm-scroller { padding: 18px 22px 60px; overflow-x: hidden; }
     .cm-content { overflow-wrap: anywhere; }
+    /* Minimal stand-in for the app stylesheet's code-block framing, so hidden
+       fence lines read as a code region instead of blank lines. */
+    .code { background: ${scene.dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'}; font-family: monospace; }
   </style></head><body data-scene="${scene.scene}" data-dark="${scene.dark}">
     <main id="editor"></main><script src="./reference-chips-visual-bundle.js"></script>
   </body></html>`
