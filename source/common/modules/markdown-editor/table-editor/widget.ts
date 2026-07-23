@@ -25,6 +25,7 @@ import { createSubviewForCell, hiddenSpanField } from './subview'
 import { getCoordinatesForRange } from './commands/util'
 import { generateColumnControls, generateEmptyTableWidgetElement, generateRowControls, tableTD, tableTH, tableTR } from './widget-dom'
 import { displayTableContextMenu } from './context-menu'
+import { WIDGET_LINE_STYLE_RESET_CLASS } from '../renderers/base-renderer'
 import { CITEPROC_MAIN_DB } from 'source/types/common/citeproc'
 import { configField } from '../util/configuration'
 import { interceptAnchorClicks } from './util/anchor-callbacks'
@@ -117,6 +118,9 @@ export class TableWidget extends WidgetType {
   toDOM (view: EditorView): HTMLElement {
     try {
       const { wrapper, table } = generateEmptyTableWidgetElement()
+      // This block widget cannot route through base-renderer, so it opts into
+      // the shared line-style reset itself (see WIDGET_LINE_STYLE_RESET_CLASS).
+      wrapper.classList.add(WIDGET_LINE_STYLE_RESET_CLASS)
       const tableAST = parseTableNode(this.node, view.state.sliceDoc())
       if (tableAST.type !== 'Table') {
         throw new Error('Cannot render table: Likely malformed')

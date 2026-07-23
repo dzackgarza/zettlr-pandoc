@@ -36,9 +36,10 @@ import { configField } from '../util/configuration'
  * have its first-line content pulled leftward out of its own box, over
  * whatever text precedes it. Every widget produced through this module
  * carries this class so a renderer cannot inherit line-level indent by
- * omission.
+ * omission. Widget paths that cannot route through this module (the table
+ * editor's block widget) add the class themselves.
  */
-const WIDGET_LINE_STYLE_RESET_CLASS = 'cm-widget-line-style-reset'
+export const WIDGET_LINE_STYLE_RESET_CLASS = 'cm-widget-line-style-reset'
 
 const widgetLineStyleResetTheme = EditorView.baseTheme({
   [`.${WIDGET_LINE_STYLE_RESET_CLASS}`]: {
