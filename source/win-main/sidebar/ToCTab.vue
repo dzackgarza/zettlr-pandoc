@@ -35,7 +35,6 @@ import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import { type AnyDescriptor } from '@dts/common/fsal'
 import { md2html } from '@common/modules/markdown-utils'
 import { useConfigStore, useDocumentTreeStore, useWindowStateStore } from 'source/pinia'
-import { sanitizeHTML } from 'source/common/util/sanitize-html'
 
 const ipcRenderer = window.ipc
 const windowStateStore = useWindowStateStore()
@@ -153,7 +152,6 @@ function updateToCHTML () {
 
   Promise.all(promises)
     .then(values => {
-      values = values.map(html => sanitizeHTML(html))
       tocEntryHTML.value = values
     })
     .catch(err => console.error(err))

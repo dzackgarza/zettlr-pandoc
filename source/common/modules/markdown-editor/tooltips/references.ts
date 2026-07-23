@@ -48,7 +48,6 @@
 
 import { hoverTooltip, EditorView, type Tooltip } from '@codemirror/view'
 import { md2html } from '@common/modules/markdown-utils/markdown-to-html'
-import { sanitizeHTML } from '@common/util/sanitize-html'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import { referenceFamilyDisplayName, type ProjectRootSpec, type ReferenceDefinition } from '@dts/common/references'
 import {
@@ -212,7 +211,7 @@ function getPreviewElement (
     onCitation: window.getCitationCallback(CITEPROC_MAIN_DB)
   })
     .then(html => {
-      excerpt.innerHTML = sanitizeHTML(html)
+      excerpt.innerHTML = html
     })
     .catch(err => console.error('Could not render the reference excerpt', err))
 

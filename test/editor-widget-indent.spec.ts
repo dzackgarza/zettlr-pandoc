@@ -47,6 +47,10 @@ interface SceneDiagnostics {
   indentedLineCount: number
   widgetCount: number
   widgets: WidgetDiagnostics[]
+  tableCellTexts: string[]|null
+  tableMathContainers: number|null
+  mermaidSvgChildCount: number|null
+  mermaidNodeLabels: string[]|null
 }
 
 const SCENES = [
@@ -54,6 +58,7 @@ const SCENES = [
   'list-math-dark-wide',
   'list-math-light-narrow',
   'quote-div-light',
+  'table-mermaid-light',
 ]
 
 describe('Widget renderers under the visual-indent plugin (issue #15)', function () {
@@ -69,6 +74,8 @@ describe('Widget renderers under the visual-indent plugin (issue #15)', function
       '--bundle',
       '--platform=browser',
       '--format=iife',
+      // The table editor imports its control icons as .svg files.
+      '--loader:.svg=dataurl',
       `--tsconfig=${path.join(root, 'tsconfig.json')}`,
       `--outfile=${path.join(outputDirectory, 'widget-indent-visual-bundle.js')}`,
     ])
@@ -126,6 +133,22 @@ describe('Widget renderers under the visual-indent plugin (issue #15)', function
           `(line text-indent ${widget.lineTextIndent ?? 'none'}) and overdraws the text before it`
         )
       }
+    }
+  })
+
+  it('renders table-editor cells and mermaid diagrams intact (issue #7 regression)', function () {
+    const observed = diagnostics.get('table-mermaid-light')
+    assert.ok(observed !== undefined, 'table-mermaid diagnostics missing')
+
+    const cells = observed.tableCellTexts
+    assert.ok(cells !== null, 'the pipe table must render as a table-editor widget')
+    assert.ok(cells.includes('Lattice') && cells.includes('Signature'), `the table must keep its header cells, saw ${JSON.stringify(cells)}`)
+    assert.ok(observed.tableMathContainers !== null && observed.tableMathContainers >= 3, `table cell math must keep its MathJax containers, saw ${String(observed.tableMathContainers)}`)
+
+    assert.ok(observed.mermaidSvgChildCount !== null && observed.mermaidSvgChildCount > 0, 'the mermaid diagram must render a populated SVG')
+    const labels = observed.mermaidNodeLabels ?? []
+    for (const expected of [ 'Coble', 'Halphen', 'Enriques' ]) {
+      assert.ok(labels.includes(expected), `mermaid must keep node label ${expected}, saw ${JSON.stringify(labels)}`)
     }
   })
 })

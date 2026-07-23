@@ -81,7 +81,7 @@ capture-pandoc-divs output:
 capture-widget-indent output:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     mkdir -p "{{output}}"
-    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-widget-indent-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/widget-indent-visual-bundle.js"
+    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-widget-indent-visual-entry.ts" --bundle --platform=browser --format=iife --loader:.svg=dataurl --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/widget-indent-visual-bundle.js"
     xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/editor-widget-indent-visual-capture.cjs" "{{output}}"
 
 # Capture the real Pandoc quick-reference Vue component in isolated Electron.

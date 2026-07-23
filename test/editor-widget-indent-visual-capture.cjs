@@ -23,6 +23,7 @@ const scenes = [
   { name: 'list-math-dark-wide', scene: 'list-math', dark: true, width: 1200, height: 800 },
   { name: 'list-math-light-narrow', scene: 'list-math', dark: false, width: 520, height: 900 },
   { name: 'quote-div-light', scene: 'quote-div', dark: false, width: 1200, height: 800 },
+  { name: 'table-mermaid-light', scene: 'table-mermaid', dark: false, width: 1200, height: 800 },
 ]
 
 async function capture (window, scene) {
@@ -36,7 +37,16 @@ async function capture (window, scene) {
     .cm-scroller { padding: 18px 22px 60px; overflow-x: hidden; }
     .cm-content { overflow-wrap: anywhere; }
   </style></head><body data-scene="${scene.scene}" data-dark="${scene.dark}">
-    <main id="editor"></main><script src="./widget-indent-visual-bundle.js"></script>
+    <main id="editor"></main>
+    <script>
+      // render-mermaid registers a config-provider listener and reads the
+      // dark-mode flag at module evaluation; provision the preload seams the
+      // renderer windows provide.
+      window.ipc = { on: () => () => {}, invoke: async () => undefined, send: () => {}, sendSync: () => undefined }
+      window.config = { get: key => key === 'darkMode' ? ${scene.dark} : undefined, set: () => {} }
+      window.getCitationCallback = () => citations => citations.map(citation => citation.id).join('; ')
+    </script>
+    <script src="./widget-indent-visual-bundle.js"></script>
   </body></html>`
   const pagePath = path.join(outputDirectory, `${scene.name}.html`)
   await fs.writeFile(pagePath, page)
@@ -65,10 +75,30 @@ async function capture (window, scene) {
           : null,
       }
     })
-    return { indentedLineCount, widgetCount: widgets.length, widgets }
+    const table = document.querySelector('.cm-content table')
+    const mermaidSvg = document.querySelector('.cm-content svg')
+    return {
+      indentedLineCount,
+      widgetCount: widgets.length,
+      widgets,
+      tableCellTexts: table === null
+        ? null
+        : Array.from(table.querySelectorAll('th, td')).map(cell => cell.textContent.trim()),
+      tableMathContainers: table === null ? null : table.querySelectorAll('mjx-container').length,
+      mermaidSvgChildCount: mermaidSvg === null ? null : mermaidSvg.childElementCount,
+      // htmlLabels is false in the app's mermaid config, so labels are SVG
+      // text nodes.
+      mermaidNodeLabels: mermaidSvg === null
+        ? null
+        : Array.from(mermaidSvg.querySelectorAll('text')).map(label => label.textContent.trim()),
+    }
   })()`)
   console.log(scene.name, JSON.stringify(diagnostics))
-  if (diagnostics.widgetCount === 0) {
+  if (scene.scene === 'table-mermaid') {
+    if (diagnostics.tableCellTexts === null || diagnostics.mermaidSvgChildCount === null) {
+      throw new Error(`${scene.name}: table or mermaid SVG missing — nothing under test`)
+    }
+  } else if (diagnostics.widgetCount === 0) {
     throw new Error(`${scene.name}: no math widget rendered — nothing under test`)
   }
   if (scene.scene === 'list-math') {

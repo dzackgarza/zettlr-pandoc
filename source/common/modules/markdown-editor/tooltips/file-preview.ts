@@ -24,7 +24,6 @@ import type { FindFileAndReturnMetadataResult } from 'source/app/service-provide
 import { pathDirname } from 'source/common/util/renderer-path-polyfill'
 import makeValidUri from 'source/common/util/make-valid-uri'
 import type { ForceOpenAPI } from 'source/app/service-providers/commands/force-open'
-import { sanitizeHTML } from 'source/common/util/sanitize-html'
 
 const ipcRenderer = window.ipc
 
@@ -115,7 +114,7 @@ function getPreviewElement (metadata: FindFileAndReturnMetadataResult, linkConte
   )
     .then(html => {
       // ... and then apply it to the content element.
-      content.innerHTML = sanitizeHTML(html)
+      content.innerHTML = html
     })
     .catch(err => console.error(err))
 

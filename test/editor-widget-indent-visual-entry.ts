@@ -16,7 +16,9 @@ import markdownParser from 'source/common/modules/markdown-editor/parser/markdow
 import { softwrapVisualIndent } from 'source/common/modules/markdown-editor/plugins/visual-indent'
 import { renderEmphasis } from 'source/common/modules/markdown-editor/renderers/render-emphasis'
 import { renderMath } from 'source/common/modules/markdown-editor/renderers/render-math'
+import { renderMermaid } from 'source/common/modules/markdown-editor/renderers/render-mermaid'
 import { renderPandoc } from 'source/common/modules/markdown-editor/renderers/render-pandoc-div-span'
+import { renderTables } from 'source/common/modules/markdown-editor/table-editor'
 import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
 import { initializeMathJax } from 'source/common/util/mathtex-to-html'
 import { configField } from 'source/common/modules/markdown-editor/util/configuration'
@@ -53,6 +55,24 @@ The trailing paragraph keeps the caret away from the scenes.
 `
 
 /**
+ * Table-editor and mermaid regression scenes for issue #7: both paths render
+ * generated markup directly, and their output must survive unchanged.
+ */
+const tableMermaid = `# Table and mermaid scenes
+
+| Lattice | Signature |
+|---------|-----------|
+| $U$     | $(1,1)$   |
+| $E_{8}$ | $(8,0)$   |
+
+\`\`\`mermaid
+graph TD; A[Coble] --> B[Halphen]; B --> C[Enriques];
+\`\`\`
+
+The trailing paragraph keeps the caret away from the scenes.
+`
+
+/**
  * The visual-indent plugin needs a measure round-trip before its line
  * decorations exist: the first render schedules measurements, and only a
  * later update pass can consume them. Pump empty transactions until an
@@ -65,6 +85,13 @@ async function waitForVisualIndent (view: EditorView, scene: string): Promise<vo
       // The fork hides blockquote marks, so quote lines measure a zero indent
       // and never arm the trap; this scene only needs its widgets mounted.
       if (document.querySelector('.preview-math') !== null) {
+        return
+      }
+    }
+    if (scene === 'table-mermaid') {
+      // The regression scene needs the table widget mounted and mermaid's
+      // async render landed; the indent trap is not its concern.
+      if (document.querySelector('table') !== null && document.querySelector('svg') !== null) {
         return
       }
     }
@@ -86,7 +113,7 @@ async function mount (): Promise<void> {
 
   const scene = document.body.dataset.scene ?? 'list-math'
   const dark = document.body.dataset.dark === 'true'
-  const doc = scene === 'quote-div' ? quoteDiv : listMath
+  const doc = scene === 'quote-div' ? quoteDiv : scene === 'table-mermaid' ? tableMermaid : listMath
 
   const state = EditorState.create({
     doc,
@@ -101,6 +128,8 @@ async function mount (): Promise<void> {
       renderPandoc,
       renderEmphasis,
       renderMath,
+      renderMermaid,
+      renderTables,
     ],
   })
 
