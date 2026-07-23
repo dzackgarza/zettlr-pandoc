@@ -23,11 +23,13 @@ import { renderCitations } from './render-citations'
 import { renderReferenceChips } from './render-reference-chips'
 import { renderReferenceDefinitions } from './render-reference-definitions'
 import { renderMermaid } from './render-mermaid'
+import { renderTikzFigures } from './render-tikz'
 import { renderTables } from '../table-editor'
 import { renderIframes } from './render-iframes'
 import { renderEmphasis } from './render-emphasis'
 import { renderCode } from './render-code'
 import { renderPandoc } from './render-pandoc-div-span'
+import { renderPandocAttributes } from './render-pandoc-attributes'
 import { configField, configUpdateEffect, type EditorConfiguration } from '../util/configuration'
 import type { EditorView } from '@codemirror/view'
 import { hasMarkdownExt } from 'source/common/util/file-extention-checks'
@@ -61,6 +63,7 @@ function configureRenderers (config: Partial<EditorConfiguration>, ext?: Extensi
 
   if (config.renderingMode === 'preview') {
     updateExtension(renderMermaid, true, ext)
+    updateExtension(renderTikzFigures, true, ext)
     updateExtension(renderCode, true, ext)
     updateExtension(renderImages, config.renderImages, ext)
     updateExtension(renderLinks, config.renderLinks, ext)
@@ -77,6 +80,10 @@ function configureRenderers (config: Partial<EditorConfiguration>, ext?: Extensi
     updateExtension(renderEmphasis, config.renderEmphasis, ext)
     updateExtension(renderBlockquotes, config.renderEmphasis, ext)
     updateExtension(renderPandoc, config.renderPandoc, ext)
+    // Attribute blocks on non-div carriers (headings, captions, images…)
+    // follow the same toggle as the div/span renderer: both present Pandoc
+    // attribute machinery.
+    updateExtension(renderPandocAttributes, config.renderPandoc, ext)
     updateExtension(renderHorizontalRules, config.renderHorizontalRules, ext)
   }
 

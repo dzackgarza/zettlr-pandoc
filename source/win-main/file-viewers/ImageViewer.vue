@@ -133,7 +133,6 @@
  * END HEADER
  */
 import type { OpenDocument } from 'source/types/common/documents'
-import type { EditorCommands } from '../App.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import makeValidUri from 'source/common/util/make-valid-uri'
 import SelectControl from 'source/common/vue/form/elements/SelectControl.vue'
@@ -145,11 +144,11 @@ import { pathBasename } from 'source/common/util/renderer-path-polyfill'
 const MINIMUM_ZOOM = 1 // Percent, not ratio
 const ZOOM_STEP = 10 // By how much the +/- buttons should affect the zoom level
 
+// The viewer displays one file and nothing else: it holds no leaf, no window
+// and no editor commands, and never did. Declaring those as props described a
+// dependency the component does not have, which is what made it look as
+// though a host without them had to be tolerated rather than simply served.
 const props = defineProps<{
-  leafId: string
-  windowId: string
-  activeFile: OpenDocument|null
-  editorCommands: EditorCommands
   file: OpenDocument
 }>()
 

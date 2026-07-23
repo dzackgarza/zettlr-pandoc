@@ -18,7 +18,6 @@ import { type EditorState } from '@codemirror/state'
 import { configField } from '../util/configuration'
 import { trans } from '@common/i18n-renderer'
 import { md2html } from '@common/modules/markdown-utils'
-import { sanitizeHTML } from 'source/common/util/sanitize-html'
 
 /**
  * Given fn in the format [^some-identifier], this function attempts to find a
@@ -102,7 +101,7 @@ function footnotesTooltip (view: EditorView, pos: number, side: 1 | -1): Tooltip
         }
       )
         .then(tooltipContent => {
-          content.innerHTML = sanitizeHTML(tooltipContent)
+          content.innerHTML = tooltipContent
         })
         .catch(err => console.error(err))
 

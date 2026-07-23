@@ -27,6 +27,8 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { referenceTooltip } from 'source/common/modules/markdown-editor/tooltips/references'
+import { initializeMathJax } from 'source/common/util/mathtex-to-html'
+import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
 import {
   workspaceReferencesField,
   workspaceReferencesUpdate,
@@ -95,8 +97,12 @@ describe('Reference hover tooltips (issue #1 Phase 4)', function () {
   const views: EditorView[] = []
   const originalCitationCallback = window.getCitationCallback
 
-  before(function () {
+  before(async function () {
+    this.timeout(30000)
     polyfillJsdomForCodeMirror()
+    // The excerpt upgrade renders math through md2html → mathJaxToHTML, which
+    // requires the same MathJax boot every renderer window performs.
+    await initializeMathJax(await loadMathJaxMacros('test/fixtures/mathjax-macros.json'))
     // The production preload bridge exists in every renderer window, so the
     // tooltip renders its excerpt through it unconditionally (review B9);
     // the harness provisions the same seam with a deterministic renderer
@@ -181,6 +187,34 @@ describe('Reference hover tooltips (issue #1 Phase 4)', function () {
     assert.ok(!/\bTheorem\s+\d/.test(text), 'the excerpt never displays a computed reference number')
 
     assert.ok(dom.querySelector('[data-reference-expand]') !== null, 'the tooltip must present its expand action indicator')
+  })
+
+  it('renders excerpt math with MathJax structure, not flattened Unicode text (issue #7)', async function () {
+    this.timeout(30000)
+    const { view, doc } = createHalphenEditor()
+    const from = doc.indexOf('@eq:intersection-form')
+    assert.ok(from > 0, 'the fixture must cite eq:intersection-form')
+
+    const tooltip = referenceTooltip(view, from + 3, 1)
+    assert.ok(tooltip !== null, 'the resolved equation occurrence must produce a hover tooltip')
+    const { dom } = tooltip.create(view)
+    const excerpt = dom.querySelector<HTMLElement>('[data-reference-excerpt]')
+    assert.ok(excerpt !== null, 'the tooltip must carry the rendered excerpt')
+
+    // The excerpt is fence-stripped source text synchronously and upgrades in
+    // place once the async md2html render lands; wait for that upgrade.
+    for (let round = 0; round < 200 && excerpt.childElementCount === 0; round++) {
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+    assert.ok(excerpt.childElementCount > 0, 'the excerpt must upgrade to rendered markdown')
+
+    // The reported symptom: hovering a reference to a math-bearing definition
+    // shows bare Unicode math-alphanumerics with no layout, because the
+    // render path destroys MathJax's custom elements. The rendered excerpt
+    // must keep the MathJax CommonHTML structure that positions the math.
+    const container = excerpt.querySelector('mjx-container')
+    assert.ok(container !== null, 'the excerpt must keep the MathJax container element')
+    assert.ok(container.querySelector('mjx-math') !== null, 'the container must keep its structural layout elements, not flat glyph text')
   })
 
   it('answers null for a missing reference instead of fabricating a target', function () {

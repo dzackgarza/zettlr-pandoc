@@ -37,6 +37,9 @@ module.exports = {
         { from: 'node_modules/@mathjax/mathjax-newcm-font/chtml', to: 'assets/defaults/mathjax-font' },
         { from: 'node_modules/@mathjax/src/bundle/sre', to: 'assets/defaults/mathjax-sre' },
         { from: 'static/lua-filter', to: 'assets/lua-filter' },
+        // The vendored TikZ pipeline (issue #14): filter, per-figure
+        // template, and the styles tree the template \usepackage's.
+        { from: 'static/tikz', to: 'assets/tikz' },
         { from: 'resources/icons/icon.ico', to: 'assets/icons' },
         { from: 'resources/icons/png', to: 'assets/icons/png' },
         { from: 'resources/icons/macOS-menubar', to: 'assets/icons/macOS-menubar' }

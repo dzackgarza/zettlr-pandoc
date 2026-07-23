@@ -18,15 +18,83 @@ import {
   Decoration,
   EditorView,
   ViewPlugin,
-  type WidgetType,
+  WidgetType,
   type DecorationSet,
   type ViewUpdate
 } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import { type SyntaxNodeRef } from '@lezer/common'
-import { StateField, type Range, type EditorState } from '@codemirror/state'
+import { StateField, type Range, type EditorState, type Extension } from '@codemirror/state'
 import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
 import { configField } from '../util/configuration'
+
+/**
+ * The visual-indent plugin hangs list markers outside the text block by
+ * applying a negative `text-indent` to the `.cm-line`. `text-indent` is
+ * inherited and applies to the first line inside any block container, so
+ * every widget whose DOM establishes one (`inline-block` included) would
+ * have its first-line content pulled leftward out of its own box, over
+ * whatever text precedes it. Every widget produced through this module
+ * carries this class so a renderer cannot inherit line-level indent by
+ * omission. Widget paths that cannot route through this module (the table
+ * editor's block widget) add the class themselves.
+ */
+export const WIDGET_LINE_STYLE_RESET_CLASS = 'cm-widget-line-style-reset'
+
+const widgetLineStyleResetTheme = EditorView.baseTheme({
+  [`.${WIDGET_LINE_STYLE_RESET_CLASS}`]: {
+    textIndent: '0'
+  }
+})
+
+/**
+ * Wraps a renderer's widget so its DOM is stamped with the line-style reset
+ * class. Everything else — identity, events, geometry, lifecycle — delegates
+ * to the wrapped widget.
+ */
+class LineStyleResetWidget extends WidgetType {
+  constructor (readonly inner: WidgetType) {
+    super()
+  }
+
+  eq (other: LineStyleResetWidget): boolean {
+    return other.inner.constructor === this.inner.constructor && this.inner.eq(other.inner)
+  }
+
+  toDOM (view: EditorView): HTMLElement {
+    const dom = this.inner.toDOM(view)
+    dom.classList.add(WIDGET_LINE_STYLE_RESET_CLASS)
+    return dom
+  }
+
+  updateDOM (dom: HTMLElement, view: EditorView): boolean {
+    const updated = this.inner.updateDOM(dom, view)
+    if (updated) {
+      dom.classList.add(WIDGET_LINE_STYLE_RESET_CLASS)
+    }
+    return updated
+  }
+
+  ignoreEvent (event: Event): boolean {
+    return this.inner.ignoreEvent(event)
+  }
+
+  get estimatedHeight (): number {
+    return this.inner.estimatedHeight
+  }
+
+  get lineBreaks (): number {
+    return this.inner.lineBreaks
+  }
+
+  coordsAt (dom: HTMLElement, pos: number, side: number): ReturnType<WidgetType['coordsAt']> {
+    return this.inner.coordsAt(dom, pos, side)
+  }
+
+  destroy (dom: HTMLElement): void {
+    this.inner.destroy(dom)
+  }
+}
 
 /**
  * Renders all widgets for the provided `visibleRanges`. The function traverses
@@ -109,7 +177,7 @@ function renderWidgets (
         // use inline renderers wherever possible is since block renderers
         // impose a larger performance penalty.
         const widget = Decoration.replace({
-          widget: renderedWidget,
+          widget: new LineStyleResetWidget(renderedWidget),
           inclusive: false
         })
 
@@ -136,12 +204,13 @@ function renderWidgets (
  *                                          return a widget to render in its
  *                                          place.
  *
- * @return  {ViewPlugin}                    The instantiated ViewPlugin
+ * @return  {Extension}                     The view plugin plus the shared
+ *                                          widget line-style reset theme
  */
 export function renderInlineWidgets (
   shouldHandleNode: (node: SyntaxNodeRef) => boolean,
   createWidget: (state: EditorState, node: SyntaxNodeRef) => WidgetType|undefined
-) {
+): Extension {
   const plugin = ViewPlugin.fromClass(class {
     decorations: DecorationSet
 
@@ -158,7 +227,7 @@ export function renderInlineWidgets (
     decorations: view => view.decorations
   })
 
-  return plugin
+  return [ plugin, widgetLineStyleResetTheme ]
 }
 
 /**
@@ -177,12 +246,13 @@ export function renderInlineWidgets (
  *                                          return a widget to render in its
  *                                          place.
  *
- * @return  {StateField<DecorationSet}      The instantiated StateField
+ * @return  {Extension}                     The decoration StateField plus the
+ *                                          shared widget line-style reset theme
  */
 export function renderBlockWidgets (
   shouldHandleNode: (node: SyntaxNodeRef) => boolean,
   createWidget: (state: EditorState, node: SyntaxNodeRef) => WidgetType|undefined
-): StateField<DecorationSet> {
+): Extension {
   const pluginField = StateField.define<DecorationSet>({
     create (state: EditorState) {
       return renderWidgets(state, [], shouldHandleNode, createWidget)
@@ -192,5 +262,5 @@ export function renderBlockWidgets (
     },
     provide: f => EditorView.decorations.from(f)
   })
-  return pluginField
+  return [ pluginField, widgetLineStyleResetTheme ]
 }

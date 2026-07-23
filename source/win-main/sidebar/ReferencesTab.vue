@@ -25,7 +25,6 @@ import { useDocumentTreeStore } from 'source/pinia'
 import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
 import localiseNumber from 'source/common/util/localise-number'
 import { hasMarkdownExt } from 'source/common/util/file-extention-checks'
-import { sanitizeHTML } from 'source/common/util/sanitize-html'
 
 const ipcRenderer = window.ipc
 const documentTreeStore = useDocumentTreeStore()
@@ -56,7 +55,7 @@ const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
  */
 const referenceHTML = computed(() => {
   if (bibliography.value === undefined || bibliography.value[1].length === 0) {
-    return sanitizeHTML(`<p>${trans('There are no citations in this document.')}</p>`)
+    return `<p>${trans('There are no citations in this document.')}</p>`
   }
 
   const bibHTML = [
@@ -65,7 +64,7 @@ const referenceHTML = computed(() => {
     bibliography.value[0].bibend
   ].join('\n')
 
-  return sanitizeHTML(bibHTML)
+  return bibHTML
 })
 
 // Provides an approximate word count. This can be used to, e.g., gauge how many

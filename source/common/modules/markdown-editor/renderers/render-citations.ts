@@ -21,7 +21,6 @@ import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import { citationMenu } from '../context-menu/citation-menu'
 import { configField } from '../util/configuration'
 import { type Citation, NODES, nodeToCiteItem } from '../parser/citation-parser'
-import { sanitizeHTML } from 'source/common/util/sanitize-html'
 import { isSupportedPandocCrossref } from '@common/util/pandoc-quick-reference'
 import { referenceFamilyOf } from '@dts/common/references'
 import { workspaceReferencesField } from '../plugins/workspace-references-field'
@@ -85,7 +84,7 @@ class CitationWidget extends WidgetType {
     const elem = document.createElement('span')
     elem.classList.add('citeproc-citation')
     if (renderedCitation !== undefined) {
-      elem.innerHTML = sanitizeHTML(renderedCitation)
+      elem.innerHTML = renderedCitation
     } else {
       elem.innerText = this.rawCitation
       elem.classList.add('error')

@@ -81,6 +81,9 @@
     </SplitView>
   </WindowChrome>
 
+  <!-- Full-screen lightbox for rendered TikZ figures (issue #14) -->
+  <TikzLightbox></TikzLightbox>
+
   <!-- Popover area: these will be teleported to the body element anyhow -->
   <PopoverExport
     v-if="showExportPopover && exportButton !== null && activeFile !== undefined"
@@ -180,6 +183,7 @@ import EditorPane from './EditorPane.vue'
 import EditorBranch from './EditorBranch.vue'
 import SplitView from '../common/vue/window/SplitView.vue'
 import GlobalSearch from './GlobalSearch.vue'
+import TikzLightbox from './TikzLightbox.vue'
 import PopoverExport from './PopoverExport.vue'
 import PopoverStats from './PopoverStats.vue'
 import PopoverTags from './PopoverTags.vue'

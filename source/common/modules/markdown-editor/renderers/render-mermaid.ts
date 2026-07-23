@@ -19,7 +19,6 @@ import mermaid, { type MermaidConfig } from 'mermaid'
 import { type EditorState } from '@codemirror/state'
 import clickAndSelect from './click-and-select'
 import { trans } from '@common/i18n-renderer'
-import { sanitizeHTML } from 'source/common/util/sanitize-html'
 
 // Define some default options
 const DEFAULT_MERMAID_OPTIONS: MermaidConfig = {
@@ -74,7 +73,7 @@ class MermaidWidget extends WidgetType {
     const id = `graphDiv${Date.now()}`
     elem.innerText = trans('Rendering mermaid graph …')
     mermaid.render(id, this.graph)
-      .then(result => { elem.innerHTML = sanitizeHTML(result.svg) })
+      .then(result => { elem.innerHTML = result.svg })
       .catch((err: unknown) => onError(err, elem))
 
     elem.addEventListener('click', clickAndSelect(view))
@@ -89,7 +88,7 @@ class MermaidWidget extends WidgetType {
     const id = `graphDiv${Date.now()}`
     dom.innerText = trans('Rendering mermaid graph …')
     mermaid.render(id, this.graph)
-      .then(result => { dom.innerHTML = sanitizeHTML(result.svg) })
+      .then(result => { dom.innerHTML = result.svg })
       .catch((err: unknown) => onError(err, dom))
 
     return true

@@ -165,7 +165,6 @@ import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import { useConfigStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { pathBasename, pathDirname, relativePath } from 'source/common/util/renderer-path-polyfill'
-import { sanitizeHTML } from 'source/common/util/sanitize-html'
 import type { SearchProviderIPCAPI, SearchResult, FileContentSearchResult } from 'source/app/service-providers/search'
 import CheckboxControl from 'source/common/vue/form/elements/CheckboxControl.vue'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
@@ -550,7 +549,7 @@ function markText (resultObject: FileContentSearchResult): string {
     marked = marked.substring(0, range.from) + startTag + marked.substring(range.from)
   }
 
-  return sanitizeHTML(marked.replace(/\n/g, '<br />'))
+  return marked.replace(/\n/g, '<br />')
 }
 
 function focusQueryInput (): void {

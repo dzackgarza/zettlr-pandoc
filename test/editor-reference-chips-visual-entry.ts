@@ -8,9 +8,11 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
+import { renderCode } from 'source/common/modules/markdown-editor/renderers/render-code'
 import { renderEmphasis } from 'source/common/modules/markdown-editor/renderers/render-emphasis'
 import { renderReferenceChips } from 'source/common/modules/markdown-editor/renderers/render-reference-chips'
 import { renderReferenceDefinitions } from 'source/common/modules/markdown-editor/renderers/render-reference-definitions'
+import { renderPandocAttributes } from 'source/common/modules/markdown-editor/renderers/render-pandoc-attributes'
 import {
   workspaceReferencesField,
   workspaceReferencesUpdate,
@@ -184,6 +186,13 @@ async function mount (): Promise<void> {
       renderCitations,
       renderReferenceChips,
       renderReferenceDefinitions,
+      // Attribute blocks hide when rendered (issue #11); the definitions
+      // scene proves the badge overlay still lands with line tails hidden.
+      renderPandocAttributes,
+      // renderEmphasis hides fence marks; renderCode supplies the code-block
+      // presentation that accompanies it in the app, so the fence lines do
+      // not capture as misleading blanks.
+      renderCode,
       renderEmphasis,
       workspaceReferencesField,
     ],
