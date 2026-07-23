@@ -19,6 +19,7 @@ import { BlockWrapper, EditorView, ViewPlugin, type ViewUpdate } from '@codemirr
 import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
 import type { SyntaxNode } from '@lezer/common'
 import { configField } from '../util/configuration'
+import { VISUAL_INDENT_EXEMPT_CLASS } from '../plugins/visual-indent'
 
 function showBlockquoteWrappers (view: EditorView): RangeSet<BlockWrapper> {
   const ranges: Range<BlockWrapper>[] = []
@@ -54,7 +55,7 @@ function showBlockquoteWrappers (view: EditorView): RangeSet<BlockWrapper> {
         const wrapper = BlockWrapper.create({
           tagName: 'blockquote-wrapper',
           attributes: {
-            class: 'blockquote-wrapper',
+            class: `blockquote-wrapper ${VISUAL_INDENT_EXEMPT_CLASS}`,
           }
         })
 
@@ -92,13 +93,10 @@ export const renderBlockquotes = [
       paddingLeft: '0.5em',
       marginLeft: '0.25em'
     },
+    // The visual-indent line decorations are reverted through the
+    // VISUAL_INDENT_EXEMPT_CLASS contract owned by the visual-indent plugin.
     '.blockquote-wrapper .cm-line': {
-      opacity: '0.7',
-      // We need to revert these stylings set by the
-      // visual-indent plugin since they conflict with
-      // the paddingLeft set by the blockquote-wrapper.
-      paddingLeft: 'revert !important',
-      textIndent: 'revert !important'
+      opacity: '0.7'
     }
   })
 ]

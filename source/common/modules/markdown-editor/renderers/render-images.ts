@@ -352,7 +352,8 @@ export const renderImages = [
       display: 'inline-block',
       textAlign: 'center',
       cursor: 'default',
-      textIndent: '0', // Reset the text indent
+      // The line-level text-indent is reset by base-renderer's shared widget
+      // wrapper; children inherit the reset from the figure.
       // Ensure that very un-proportional images do not overflow (see #5465)
       overflow: 'hidden',
       '& img': {
@@ -370,10 +371,7 @@ export const renderImages = [
         color: 'white',
         fontSize: '12px',
         borderRadius: '6px',
-        padding: '10px',
-        // If we have images in a list, they will inherit the textIndent applied
-        // by CodeMirror, so we have to set it explicitly
-        textIndent: '0'
+        padding: '10px'
       },
       '& .image-size-info': {
         top: '10px',

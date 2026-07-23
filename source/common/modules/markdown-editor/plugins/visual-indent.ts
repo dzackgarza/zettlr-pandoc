@@ -19,12 +19,28 @@ import { syntaxTree, foldedRanges } from '@codemirror/language'
 import { RangeSet, type Range } from '@codemirror/state'
 import {
   Decoration,
+  EditorView,
   MatchDecorator,
   ViewPlugin,
-  type EditorView,
   type ViewUpdate
 } from '@codemirror/view'
 import { SpaceWidget } from '../renderers/render-emphasis'
+
+/**
+ * Block wrappers that own their lines' horizontal layout (blockquotes, fenced
+ * divs) add this class to opt their `.cm-line` children out of the line-level
+ * `text-indent`/`padding-left` decorations this plugin applies. The escape
+ * rule lives here, next to the decoration it reverts, so wrapper renderers do
+ * not each carry a private copy.
+ */
+export const VISUAL_INDENT_EXEMPT_CLASS = 'visual-indent-exempt'
+
+const visualIndentExemptTheme = EditorView.baseTheme({
+  [`.${VISUAL_INDENT_EXEMPT_CLASS} .cm-line`]: {
+    paddingLeft: 'revert !important',
+    textIndent: 'revert !important'
+  }
+})
 
 // Each `.cm-line` has a padding of `0 2px 0 6px` as per CodeMirror's
 // base styles from somewhere in the library. We need to account for that
@@ -124,7 +140,7 @@ function render (view: EditorView, measurements?: Map<string, number>): RangeSet
   return Decoration.set(ranges, true)
 }
 
-export const softwrapVisualIndent = ViewPlugin.define(view => ({
+const softwrapVisualIndentPlugin = ViewPlugin.define(view => ({
   decorations: render(view),
   tabDecorations: tabReplaceDeco.createDeco(view),
   // This is an additional property, required to ensure that each editor
@@ -141,3 +157,5 @@ export const softwrapVisualIndent = ViewPlugin.define(view => ({
   }
 
 })
+
+export const softwrapVisualIndent = [ softwrapVisualIndentPlugin, visualIndentExemptTheme ]

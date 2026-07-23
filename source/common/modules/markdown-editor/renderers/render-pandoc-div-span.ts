@@ -22,6 +22,7 @@ import { parsePandocAttributes } from 'source/common/pandoc-util/parse-pandoc-at
 import { divModelFromNode, type PandocDivModel } from 'source/common/pandoc-util/pandoc-div-model'
 import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
 import { configField } from '../util/configuration'
+import { VISUAL_INDENT_EXEMPT_CLASS } from '../plugins/visual-indent'
 
 function createSpanDecorations (view: EditorView): RangeSet<Decoration> {
   const ranges: Range<Decoration>[] = []
@@ -218,9 +219,11 @@ function createDivDecorations (view: EditorView): RangeSet<BlockWrapper> {
     const state = stateForDiv(div, active)
 
     if (state === 'active') {
+      const attributes = presentationAttributes(div, state)
+      attributes.class = `${attributes.class} ${VISUAL_INDENT_EXEMPT_CLASS}`
       const wrapper = BlockWrapper.create({
         tagName: 'pandoc-div-active-wrapper',
-        attributes: presentationAttributes(div, state),
+        attributes,
         rank: wrapperRank(div),
       })
       ranges.push(wrapper.range(div.openFrom, div.closeTo))
@@ -229,9 +232,11 @@ function createDivDecorations (view: EditorView): RangeSet<BlockWrapper> {
 
     addFenceWrappers(ranges, div, state)
     if (div.contentFrom < div.contentTo) {
+      const attributes = contentAttributes(div, state)
+      attributes.class = `${attributes.class} ${VISUAL_INDENT_EXEMPT_CLASS}`
       const wrapper = BlockWrapper.create({
         tagName: state === 'ancestor' ? 'pandoc-div-ancestor-wrapper' : 'pandoc-div-wrapper',
-        attributes: contentAttributes(div, state),
+        attributes,
         rank: wrapperRank(div),
       })
       ranges.push(wrapper.range(div.contentFrom, div.contentTo))
@@ -354,9 +359,9 @@ export const renderPandoc = [
     'pandoc-div-wrapper.pandoc-div--proof': {
       borderLeftStyle: 'dotted',
     },
+    // The visual-indent line decorations are reverted through the
+    // VISUAL_INDENT_EXEMPT_CLASS contract owned by the visual-indent plugin.
     'pandoc-div-wrapper .cm-line, pandoc-div-ancestor-wrapper .cm-line, pandoc-div-active-wrapper .cm-line': {
-      paddingLeft: 'revert !important',
-      textIndent: 'revert !important',
       whiteSpace: 'pre-wrap !important',
       overflowWrap: 'anywhere !important',
     },
