@@ -1,0 +1,23 @@
+% Standalone TikZ compilation template for the pandoc tikzcd filter — the STARTER
+% per-figure preamble template ([figures].template, Phase D / D-3 / P92).
+% The angle-bracket source marker just before \end{document} (the QTikz .pgs
+% TemplateReplaceText convention) is replaced by the filter with the tikz figure
+% source; it must appear exactly once. The tikz macros/styles/defs come from
+% \usepackage{dzg-tikz}, which \input's the broken-out macro files (the single
+% source of truth, shared with the MathJax path) — no separate palette.
+\documentclass[tikz,border=2pt]{standalone}
+\usepackage{dzg-tikz}
+\usepackage{graphicx}
+\usepackage{import}
+% TikZiT native-format support: declares the dummy `tikzit ...` pgfkeys and the
+% standard layers so a NATIVE .tikzstyles palette (and .tikzdefs preamble) the
+% figure \input's below compiles unmodified (Phase D / D-2 / P91).
+\usepackage{tikzit}
+
+% Additional TikZ libraries beyond what dzg-preamble loads
+\usetikzlibrary{external}
+
+\begin{document}
+\nopagecolor
+<>
+\end{document}

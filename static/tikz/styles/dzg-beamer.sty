@@ -1,0 +1,41 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{dzg-beamer}[2026/06/17 DZG Beamer Style Package]
+
+% Load general macros package
+\RequirePackage{dzg-macros}
+
+% Undefine Beamer defaults to prevent collision with environments-arxiv
+\makeatletter
+\let\c@theorem\relax
+\let\thetheorem\relax
+\let\cl@theorem\relax
+\let\p@theorem\relax
+
+\let\theorem\relax
+\let\endtheorem\relax
+\let\lemma\relax
+\let\endlemma\relax
+\let\corollary\relax
+\let\endcorollary\relax
+\let\definition\relax
+\let\enddefinition\relax
+\let\example\relax
+\let\endexample\relax
+\let\examples\relax
+\let\endexamples\relax
+\let\fact\relax
+\let\endfact\relax
+\let\remark\relax
+\let\endremark\relax
+\let\problem\relax
+\let\endproblem\relax
+\let\conjecture\relax
+\let\endconjecture\relax
+\let\proposition\relax
+\let\endproposition\relax
+\makeatother
+
+% Load simple, non-tcolorbox theorem environments
+\input{environments-arxiv}
+
+\endinput
