@@ -13,6 +13,15 @@
 
 import { JSDOM } from 'jsdom'
 import path from 'path'
+import Module from 'module'
+import { readFileSync } from 'fs'
+
+// Webpack loads the icon SVGs as string literals (asset/source in
+// webpack.rules.js); mirror that contract for specs importing modules that
+// pull icon SVGs (e.g. the table editor's widget DOM).
+Module._extensions['.svg'] = function (mod, filename) {
+  mod.exports = readFileSync(filename, 'utf8')
+}
 
 /**
  * Emulates a browser environment, which is required for some tests (especially if Vue is involved).
