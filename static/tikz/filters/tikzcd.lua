@@ -1,6 +1,14 @@
 local system = require 'pandoc.system'
-local home = os.getenv("HOME")
-package.path = package.path .. ';' .. home .. '/.pandoc/filters/?.lua;'
+-- VENDORED into zettlr-pandoc (issue #14): this copy is app-owned. The asset
+-- tree is addressed exclusively through PANDOC_DIR (assets/tikz at runtime);
+-- resolving anything from ~/.pandoc would silently couple the app to an
+-- external checkout, so the env contract is mandatory and fails loudly.
+local pandoc_dir_env = os.getenv("PANDOC_DIR")
+assert(pandoc_dir_env and pandoc_dir_env ~= "",
+  "tikzcd.lua (vendored): PANDOC_DIR must point at the app-owned tikz asset tree")
+assert(os.getenv("SVG_DIR") and os.getenv("SVG_DIR") ~= "",
+  "tikzcd.lua (vendored): SVG_DIR must point at the app-owned render cache")
+package.path = package.path .. ';' .. pandoc_dir_env .. '/filters/?.lua;'
 require "utilities"
 
 -- Logging helper: writes to stderr, no-op unless TIKZCD_DEBUG=1
@@ -11,10 +19,10 @@ local function log(msg)
   end
 end
 
--- Output directories
-local pandoc_dir = os.getenv("PANDOC_DIR") or (home .. "/.pandoc")
-local figures_dir = os.getenv("FIGURES_DIR") or (home .. "/.pandoc/figures")
-local svg_dir = os.getenv("SVG_DIR") or (figures_dir .. "/rendered")
+-- Output directories — all app-owned; the asserts above guarantee presence.
+local pandoc_dir = os.getenv("PANDOC_DIR")
+local figures_dir = os.getenv("FIGURES_DIR") or (pandoc_dir .. "/figures")
+local svg_dir = os.getenv("SVG_DIR")
 
 -- Per-figure preamble template: the standalone LaTeX document each figure body is
 -- wrapped in. It \usepackage's dzg-tikz, which \input's the broken-out macro files
