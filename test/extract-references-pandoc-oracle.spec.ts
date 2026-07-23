@@ -70,9 +70,41 @@ function collectDisplayMathAttrIdentifiers (inlines: unknown[], into: string[]):
 }
 
 /**
+ * Plain Pandoc has no table_attributes (or generic attributes) extension in
+ * any version: a caption's trailing `{#tbl:key}` is pandoc-crossref-only
+ * syntax, so core Pandoc leaves it as a literal Str inside the caption's
+ * Plain block instead of populating the Table's own Attr -- the same gap
+ * collectDisplayMathAttrIdentifiers works around for display math above.
+ */
+function tableCaptionBraceIdentifier (caption: unknown): string | undefined {
+  if (!Array.isArray(caption) || !Array.isArray(caption[1])) {
+    return undefined
+  }
+  for (const block of caption[1]) {
+    if (!isElement(block) || !Array.isArray(block.c)) {
+      continue
+    }
+    const inlines = block.c as unknown[]
+    for (let j = inlines.length - 1; j >= 0; j--) {
+      const element = inlines[j]
+      if (isElement(element) && element.t === 'Space') {
+        continue
+      }
+      if (isElement(element) && element.t === 'Str' && typeof element.c === 'string') {
+        const match = /^\{#([^\s}]+)\}$/.exec(element.c)
+        return match !== null ? match[1] : undefined
+      }
+      return undefined
+    }
+  }
+  return undefined
+}
+
+/**
  * Collects every identifier of a referenceable node in the Pandoc AST:
  * Header, Div (except proof divs, which are unreferenceable), CodeBlock,
- * Table, Figure, and Image Attrs, plus display-math attribute ids.
+ * Table (Attr, falling back to its caption's trailing brace id), Figure,
+ * and Image Attrs, plus display-math attribute ids.
  */
 function collectReferenceableIdentifiers (node: unknown, into: string[]): void {
   if (Array.isArray(node)) {
@@ -92,7 +124,17 @@ function collectReferenceableIdentifiers (node: unknown, into: string[]): void {
     if (!attrClasses(content[0]).includes('proof')) {
       into.push(attrIdentifier(content[0]))
     }
-  } else if ([ 'CodeBlock', 'Table', 'Figure', 'Image' ].includes(node.t) && Array.isArray(content)) {
+  } else if (node.t === 'Table' && Array.isArray(content)) {
+    const identifier = attrIdentifier(content[0])
+    if (identifier !== '') {
+      into.push(identifier)
+    } else {
+      const captionId = tableCaptionBraceIdentifier(content[1])
+      if (captionId !== undefined) {
+        into.push(captionId)
+      }
+    }
+  } else if ([ 'CodeBlock', 'Figure', 'Image' ].includes(node.t) && Array.isArray(content)) {
     into.push(attrIdentifier(content[0]))
   }
   collectReferenceableIdentifiers(content, into)
