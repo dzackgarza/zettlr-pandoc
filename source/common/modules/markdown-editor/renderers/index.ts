@@ -28,6 +28,7 @@ import { renderIframes } from './render-iframes'
 import { renderEmphasis } from './render-emphasis'
 import { renderCode } from './render-code'
 import { renderPandoc } from './render-pandoc-div-span'
+import { renderPandocAttributes } from './render-pandoc-attributes'
 import { configField, configUpdateEffect, type EditorConfiguration } from '../util/configuration'
 import type { EditorView } from '@codemirror/view'
 import { hasMarkdownExt } from 'source/common/util/file-extention-checks'
@@ -77,6 +78,10 @@ function configureRenderers (config: Partial<EditorConfiguration>, ext?: Extensi
     updateExtension(renderEmphasis, config.renderEmphasis, ext)
     updateExtension(renderBlockquotes, config.renderEmphasis, ext)
     updateExtension(renderPandoc, config.renderPandoc, ext)
+    // Attribute blocks on non-div carriers (headings, captions, images…)
+    // follow the same toggle as the div/span renderer: both present Pandoc
+    // attribute machinery.
+    updateExtension(renderPandocAttributes, config.renderPandoc, ext)
     updateExtension(renderHorizontalRules, config.renderHorizontalRules, ext)
   }
 

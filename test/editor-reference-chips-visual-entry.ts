@@ -11,6 +11,7 @@ import { renderCitations } from 'source/common/modules/markdown-editor/renderers
 import { renderEmphasis } from 'source/common/modules/markdown-editor/renderers/render-emphasis'
 import { renderReferenceChips } from 'source/common/modules/markdown-editor/renderers/render-reference-chips'
 import { renderReferenceDefinitions } from 'source/common/modules/markdown-editor/renderers/render-reference-definitions'
+import { renderPandocAttributes } from 'source/common/modules/markdown-editor/renderers/render-pandoc-attributes'
 import {
   workspaceReferencesField,
   workspaceReferencesUpdate,
@@ -184,6 +185,9 @@ async function mount (): Promise<void> {
       renderCitations,
       renderReferenceChips,
       renderReferenceDefinitions,
+      // Attribute blocks hide when rendered (issue #11); the definitions
+      // scene proves the badge overlay still lands with line tails hidden.
+      renderPandocAttributes,
       renderEmphasis,
       workspaceReferencesField,
     ],
