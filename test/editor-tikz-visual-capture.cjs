@@ -36,7 +36,9 @@ async function computeResponses () {
   const config = { tikzAssetDir: path.join(__dirname, '../static/tikz'), cacheDir }
   const responses = {}
   for (const source of rawBlocks) {
-    const result = await renderTikz({ source, kind: 'raw' }, config)
+    // The scene document is not a file on disk, which the request models the
+    // same way the editor configuration does: the empty path.
+    const result = await renderTikz({ source, kind: 'raw', docPath: '' }, config)
     // Keyed as the page seam looks requests up: kind, NUL, source.
     responses[`raw\0${source}`] = result
   }

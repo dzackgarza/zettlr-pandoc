@@ -17,6 +17,12 @@
  *                  aggregate (renderers()), so a renderer added or removed
  *                  from the app's preview set is what is being tested.
  *
+ *                  The reveal threshold is the user's
+ *                  previewModeShowSyntaxWhenCursorIsAdjacent preference, so
+ *                  the editor configuration is a hard dependency: an editor
+ *                  assembled without it reports that, rather than hiding
+ *                  attribute blocks on a preference nobody set.
+ *
  * END HEADER
  */
 
@@ -27,6 +33,7 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { renderers } from 'source/common/modules/markdown-editor/renderers'
+import { renderPandocAttributes } from 'source/common/modules/markdown-editor/renderers/render-pandoc-attributes'
 import { configField, getDefaultConfig } from 'source/common/modules/markdown-editor/util/configuration'
 
 function polyfillJsdomForCodeMirror (): void {
@@ -90,9 +97,12 @@ describe('Pandoc attribute-block rendering (issue #11)', function () {
     document.body.replaceChildren()
   })
 
-  function createEditor (anchor: number): EditorView {
+  function createEditor (anchor: number, showSyntaxWhenAdjacent?: boolean): EditorView {
     const config = getDefaultConfig()
     config.renderingMode = 'preview'
+    if (showSyntaxWhenAdjacent !== undefined) {
+      config.previewModeShowSyntaxWhenCursorIsAdjacent = showSyntaxWhenAdjacent
+    }
     const state = EditorState.create({
       doc: DOC,
       selection: { anchor },
@@ -102,6 +112,30 @@ describe('Pandoc attribute-block rendering (issue #11)', function () {
     assert.ok(forceParsing(view, DOC.length, 5000), 'the syntax tree must be fully parsed before asserting')
     views.push(view)
     return view
+  }
+
+  /**
+   * The production attribute-block plugin in an editor that was assembled
+   * WITHOUT the editor configuration — the state in which the renderer's
+   * dependency is not satisfied. The renderer aggregate cannot be built that
+   * way at all (its mode switcher derives from the same field), so the plugin
+   * itself is the boundary where this can be observed.
+   */
+  function createUnconfiguredEditor (anchor: number): { view: EditorView, exceptions: unknown[] } {
+    const exceptions: unknown[] = []
+    const state = EditorState.create({
+      doc: DOC,
+      selection: { anchor },
+      extensions: [
+        markdownParser(),
+        EditorView.exceptionSink.of(exception => { exceptions.push(exception) }),
+        renderPandocAttributes,
+      ],
+    })
+    const view = new EditorView({ state, parent: document.body })
+    assert.ok(forceParsing(view, DOC.length, 5000), 'the syntax tree must be fully parsed before asserting')
+    views.push(view)
+    return { view, exceptions }
   }
 
   /** The visible text of the line containing the given needle. */
@@ -136,5 +170,38 @@ describe('Pandoc attribute-block rendering (issue #11)', function () {
     const view = createEditor(DOC.indexOf('compactification'))
     const text = lineText(view, 'Central compactification problem')
     assert.ok(text.includes('{#sec:central-problem}'), `the attribute block must reveal for editing, saw: ${text}`)
+  })
+
+  it('decides the reveal threshold by the user preference, not by a value of its own', function () {
+    // A caret resting exactly on the carrier line's first position is the case
+    // the preference governs: adjacency counts as "on the line" only when the
+    // user asked for it. Both editors are identical apart from that setting.
+    const revealing = createEditor(0, true)
+    assert.ok(
+      lineText(revealing, 'Central compactification problem').includes('{#sec:central-problem}'),
+      'with the preference on, a caret adjacent to the line reveals the block'
+    )
+
+    const hiding = createEditor(0, false)
+    assert.ok(
+      !lineText(hiding, 'Central compactification problem').includes('{#sec:central-problem}'),
+      'with the preference off, the same caret leaves the block rendered away'
+    )
+  })
+
+  it('reports an editor assembled without the configuration instead of hiding blocks on a preference nobody set', function () {
+    const { view, exceptions } = createUnconfiguredEditor(DOC.indexOf('prose paragraph'))
+
+    // The caret is nowhere near the carrier line, so any renderer that reached
+    // a decision at all would have hidden the block. The blocks staying put is
+    // the observable difference between reading the preference and inventing
+    // one.
+    const text = lineText(view, 'Central compactification problem')
+    assert.ok(
+      text.includes('{#sec:central-problem}'),
+      `an unconfigured editor must not decide the user's preference for them, saw: ${text}`
+    )
+    assert.strictEqual(exceptions.length, 1, 'the missing configuration is reported through the editor\'s exception channel')
+    assert.ok(exceptions[0] instanceof Error, `the report carries a real error, got ${String(exceptions[0])}`)
   })
 })

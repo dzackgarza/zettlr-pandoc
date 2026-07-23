@@ -11,11 +11,14 @@
  *                  fence render as async figure widgets over the tikz-render
  *                  IPC seam; a cache-hit response lands as inline SVG; a
  *                  compile failure surfaces the mapped diagnostic in place;
- *                  missing tools are named; clicking a rendered figure
- *                  requests the lightbox with the servable SVG path; and the
- *                  cursor entering the block reveals raw source. The spec
- *                  drives a real EditorView with the production renderer and
- *                  a recorded IPC seam — no fabricated widget states.
+ *                  missing tools are named; a render killed by a signal names
+ *                  the signal; the request carries the configured document
+ *                  path; a success whose markup carries no figure is refused
+ *                  rather than mounted; clicking a rendered figure requests
+ *                  the lightbox with the servable SVG path; and the cursor
+ *                  entering the block reveals raw source. The spec drives a
+ *                  real EditorView with the production renderer and a
+ *                  recorded IPC seam — no fabricated widget states.
  *
  * END HEADER
  */
@@ -26,7 +29,7 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { renderTikzFigures, __resetTikzRenderMemoForTests } from 'source/common/modules/markdown-editor/renderers/render-tikz'
-import { configField } from 'source/common/modules/markdown-editor/util/configuration'
+import { configField, getDefaultConfig, type EditorConfiguration } from 'source/common/modules/markdown-editor/util/configuration'
 import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-render'
 
 function polyfillJsdomForCodeMirror (): void {
@@ -67,6 +70,12 @@ const DOC = `Prose before keeps the caret away.\n\n${RAW_BLOCK}\n\n\`\`\`tikz\n$
 
 const SVG_OK = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><g id="abc12345-glyph0"><use xlink:href="#abc12345-glyph0"/></g></svg>'
 
+/**
+ * The markup pandoc's HTML writer actually produces for the filter's
+ * Para(RawInline(html)): the figure's own <div> wrapped in a paragraph.
+ */
+const FIGURE_HTML = `<p><div style="text-align:center;"><span class="tikzcd">${SVG_OK}</span></div></p>`
+
 type SeamResponse = TikzRenderResult|((request: TikzRenderRequest) => TikzRenderResult)
 
 describe('TikZ editor widgets (issue #14)', function () {
@@ -99,11 +108,15 @@ describe('TikZ editor widgets (issue #14)', function () {
     document.body.replaceChildren()
   })
 
-  function createEditor (anchor: number = 0): EditorView {
+  function createEditor (anchor: number = 0, config?: EditorConfiguration): EditorView {
     const state = EditorState.create({
       doc: DOC,
       selection: { anchor },
-      extensions: [ markdownParser(), configField, renderTikzFigures ],
+      extensions: [
+        markdownParser(),
+        config === undefined ? configField : configField.init(() => config),
+        renderTikzFigures,
+      ],
     })
     const view = new EditorView({ state, parent: document.body })
     assert.ok(forceParsing(view, DOC.length, 5000), 'the syntax tree must be fully parsed before asserting')
@@ -134,6 +147,63 @@ describe('TikZ editor widgets (issue #14)', function () {
     const fence = invocations.find(record => record.payload.kind === 'fence')
     assert.strictEqual(fence?.payload.source, FENCE_BODY, 'the fence body is sent without its fences')
     assert.ok(!(view.dom.textContent ?? '').includes('\\begin{tikzcd}'), 'the raw source is replaced by the widget')
+  })
+
+  it('carries the document path from the editor configuration into every render request', async function () {
+    // \input resolution depends on where the document lives, so the request
+    // must report the configuration's path rather than any value of its own.
+    respond = { ok: true, html: FIGURE_HTML, svgPath: '/cache/x.svg' }
+    const config = getDefaultConfig()
+    config.metadata.path = '/home/author/notes/coble-lattices.md'
+    const view = createEditor(0, config)
+    await waitFor(() => view.dom.querySelectorAll('.tikz-figure svg').length === 2, 'both figures to upgrade to SVG')
+
+    const docPaths = invocations.map(record => record.payload.docPath)
+    assert.deepStrictEqual(
+      docPaths,
+      [ config.metadata.path, config.metadata.path ],
+      'both figures are authored in the configured document'
+    )
+  })
+
+  it('mounts the figure without pandoc paragraph wrapper the HTML writer adds', async function () {
+    // The wrapper is why the widget extracts at all: mounting it leaves an
+    // empty paragraph whose margins displace the figure.
+    respond = { ok: true, html: FIGURE_HTML, svgPath: '/cache/x.svg' }
+    const view = createEditor()
+    await waitFor(() => view.dom.querySelectorAll('.tikz-figure svg').length === 2, 'both figures to upgrade to SVG')
+
+    for (const figure of Array.from(view.dom.querySelectorAll<HTMLElement>('.tikz-figure'))) {
+      assert.strictEqual(figure.querySelectorAll('p').length, 0, 'no paragraph wrapper survives into the mounted figure')
+      assert.ok(figure.querySelector('div > span.tikzcd > svg') !== null, 'the figure\'s own element hierarchy is mounted intact')
+    }
+  })
+
+  it('refuses a success whose markup carries no figure instead of mounting it', async function () {
+    // The service only reports success after confirming its pandoc output
+    // carries an <svg>; markup without one means the two sides disagree about
+    // what a successful render is. Mounting it anyway is what reintroduced the
+    // paragraph defect this extraction exists to prevent.
+    const bogus = '<p>the filter emitted no figure for this block</p>'
+    respond = { ok: true, html: bogus, svgPath: '/cache/x.svg' }
+    const view = createEditor()
+    await waitFor(() => invocations.length === 2, 'both figures to have been requested')
+    await new Promise(resolve => setTimeout(resolve, 50))
+
+    for (const figure of Array.from(view.dom.querySelectorAll<HTMLElement>('.tikz-figure'))) {
+      assert.ok(!(figure.textContent ?? '').includes('the filter emitted no figure'), 'the non-conforming markup is not mounted')
+      assert.strictEqual(figure.dataset.tikzSvgPath, undefined, 'no figure means no lightbox target')
+      assert.ok(figure.classList.contains('tikz-pending'), 'the widget stays unrendered rather than presenting a figure it did not get')
+    }
+  })
+
+  it('names the signal when the render was killed, distinct from a pandoc diagnostic', async function () {
+    respond = { ok: false, kind: 'render-terminated', signal: 'SIGKILL', log: 'pdflatex ...' }
+    const view = createEditor()
+    await waitFor(() => view.dom.querySelector('.tikz-error') !== null, 'the terminated-render box')
+    const text = view.dom.querySelector<HTMLElement>('.tikz-error')?.textContent ?? ''
+    assert.ok(text.includes('SIGKILL'), `the signal that ended the render is shown: ${text}`)
+    assert.ok(!text.toLowerCase().includes('pandoc error'), `a kill is not reported as a pandoc diagnostic: ${text}`)
   })
 
   it('surfaces a mapped compile failure in place, never silence', async function () {

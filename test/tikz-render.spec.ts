@@ -12,7 +12,12 @@
  *                  SVG with namespaced ids and a lightbox-servable SVG file;
  *                  a failing figure surfaces the filter's mapped bang-error
  *                  diagnostic; a machine without pdflatex/pdf2svg gets a
- *                  typed missing-tools result, never silence.
+ *                  typed missing-tools result, never silence; a render whose
+ *                  pandoc process is killed reports the signal that killed it
+ *                  rather than posing as a pandoc diagnostic; and the
+ *                  request's docPath is the single representation of the
+ *                  authoring document's location, empty when the buffer has
+ *                  none.
  *
  *                  The compile proofs run the real toolchain when pdflatex
  *                  and pdf2svg exist; on a machine without them the same
@@ -25,13 +30,22 @@
 
 import { strict as assert } from 'assert'
 import { spawnSync } from 'child_process'
-import { existsSync, readFileSync } from 'fs'
-import { mkdtemp, rm } from 'fs/promises'
+import { randomBytes } from 'crypto'
+import { existsSync, readdirSync, readFileSync } from 'fs'
+import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
 import { renderTikz, type TikzRenderResult } from 'source/app/util/tikz-render'
 
 const TIKZ_ASSET_DIR = path.join(process.cwd(), 'static/tikz')
+
+/**
+ * The document location of a buffer that has never been written to disk. The
+ * request models that fact with the empty path — the same value the editor
+ * configuration holds in metadata.path — and the filter reads it as "no
+ * document root", resolving \input against the working directory instead.
+ */
+const NO_DOC_PATH = ''
 
 const TIKZCD_OK = '\\begin{tikzcd}\nA \\arrow[r] & B\n\\end{tikzcd}'
 const TIKZCD_BROKEN = '\\begin{tikzcd}\nA \\arrow[r] & B \\thisMacroDoesNotExist\n\\end{tikzcd}'
@@ -41,6 +55,28 @@ function toolPresent (tool: string): boolean {
 }
 
 const toolchainPresent = toolPresent('pdflatex') && toolPresent('pdf2svg')
+
+/**
+ * A figure body no previous run can have compiled, so the filter's
+ * content-addressed cache cannot short-circuit the render being observed.
+ */
+function uncachedTikzcd (body: string): string {
+  return `\\begin{tikzcd}\n% ${randomBytes(8).toString('hex')}\n${body}\n\\end{tikzcd}`
+}
+
+/** The pids of pandoc processes currently running the vendored filter. */
+function filterProcessPids (): number[] {
+  const found = spawnSync('pgrep', [ '-f', 'lua-filter.*tikzcd\\.lua' ], { encoding: 'utf8' })
+  return found.stdout
+    .split('\n')
+    .map(line => Number(line.trim()))
+    .filter(pid => Number.isInteger(pid) && pid > 0)
+}
+
+/** The filter's per-figure scratch directories, named /tmp/<prefix>-<hash>. */
+function filterScratchDirs (): string[] {
+  return readdirSync(tmpdir()).filter(entry => /^tikz(cd|full)-[0-9a-f]+$/.test(entry))
+}
 
 describe('TikZ render service (issue #14)', function () {
   let cacheDir: string
@@ -58,7 +94,7 @@ describe('TikZ render service (issue #14)', function () {
     const emptyBin = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-nobin-'))
     try {
       const result = await renderTikz(
-        { source: TIKZCD_OK, kind: 'raw' },
+        { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
         { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: { ...process.env, PATH: emptyBin } }
       )
       assert.strictEqual(result.ok, false)
@@ -75,7 +111,7 @@ describe('TikZ render service (issue #14)', function () {
   it('renders a tikzcd snippet to namespaced inline SVG plus a lightbox file, or reports the toolchain', async function () {
     this.timeout(120000)
     const result: TikzRenderResult = await renderTikz(
-      { source: TIKZCD_OK, kind: 'raw' },
+      { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
       { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir }
     )
 
@@ -100,13 +136,13 @@ describe('TikZ render service (issue #14)', function () {
 
   it('serves a repeat render from the content-addressed cache', async function () {
     this.timeout(120000)
-    const first = await renderTikz({ source: TIKZCD_OK, kind: 'raw' }, { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir })
+    const first = await renderTikz({ source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH }, { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir })
     if (!toolchainPresent) {
       assert.ok(first.ok === false && first.kind === 'missing-tools')
       return
     }
     const started = Date.now()
-    const second = await renderTikz({ source: TIKZCD_OK, kind: 'raw' }, { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir })
+    const second = await renderTikz({ source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH }, { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir })
     const elapsed = Date.now() - started
     assert.ok(second.ok, 'the repeat render succeeds')
     assert.ok(elapsed < 5000, `a cache hit must not re-run pdflatex (took ${elapsed}ms)`)
@@ -115,7 +151,7 @@ describe('TikZ render service (issue #14)', function () {
   it('maps a figure-compile failure back to the tikz source line', async function () {
     this.timeout(120000)
     const result = await renderTikz(
-      { source: TIKZCD_BROKEN, kind: 'raw' },
+      { source: TIKZCD_BROKEN, kind: 'raw', docPath: NO_DOC_PATH },
       { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir }
     )
     if (!toolchainPresent) {
@@ -131,6 +167,106 @@ describe('TikZ render service (issue #14)', function () {
         assert.ok(error.message.toLowerCase().includes('undefined control sequence'), `the LaTeX message is carried: ${error.message}`)
         assert.ok(error.sourceLine.includes('\\thisMacroDoesNotExist'), `the verbatim source line is carried: ${error.sourceLine}`)
         assert.strictEqual(error.line, 2, 'the line is mapped into the figure body, not the generated .tex')
+      }
+    }
+  })
+
+  it('resolves the figure \\input against the document the request names', async function () {
+    this.timeout(240000)
+    // One domain fact — where the authoring document lives — carried by one
+    // field, and the filter acts on it: two documents in different directories
+    // include the same file name and get their own figure. The requests are
+    // identical except for docPath, so anything but a faithfully forwarded
+    // path renders the same figure twice.
+    const firstDir = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-doc-'))
+    const secondDir = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-doc-'))
+    const stamp = randomBytes(4).toString('hex')
+    await writeFile(path.join(firstDir, 'figbody.tikz'), `A \\arrow[r, "f${stamp}"] & B`)
+    await writeFile(path.join(secondDir, 'figbody.tikz'), `X \\arrow[r, "g${stamp}"] & Y \\arrow[r, "h${stamp}"] & Z`)
+    const source = uncachedTikzcd('\\input{figbody.tikz}')
+
+    const fromFirst = await renderTikz(
+      { source, kind: 'raw', docPath: path.join(firstDir, 'figures.md') },
+      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir }
+    )
+    const fromSecond = await renderTikz(
+      { source, kind: 'raw', docPath: path.join(secondDir, 'notes.md') },
+      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir }
+    )
+    await rm(firstDir, { recursive: true, force: true })
+    await rm(secondDir, { recursive: true, force: true })
+
+    if (!toolchainPresent) {
+      assert.ok(fromFirst.ok === false && fromFirst.kind === 'missing-tools')
+      assert.ok(fromSecond.ok === false && fromSecond.kind === 'missing-tools')
+      return
+    }
+
+    assert.ok(fromFirst.ok, `the first document's include resolves, got ${JSON.stringify(fromFirst).slice(0, 400)}`)
+    assert.ok(fromSecond.ok, `the second document's include resolves, got ${JSON.stringify(fromSecond).slice(0, 400)}`)
+    if (fromFirst.ok && fromSecond.ok) {
+      // The filter namespaces every id in a figure with a hash of that
+      // figure's own content, so two different bodies cannot share a prefix.
+      const firstPrefix = fromFirst.html.match(/id="([0-9a-f]{8})-/)?.[1]
+      const secondPrefix = fromSecond.html.match(/id="([0-9a-f]{8})-/)?.[1]
+      assert.ok(firstPrefix !== undefined && secondPrefix !== undefined, 'both renders carry content-hash namespaced ids')
+      assert.notStrictEqual(
+        firstPrefix,
+        secondPrefix,
+        'each document contributed its own figure body, so the two renders are different figures'
+      )
+    }
+  })
+
+  it('reports a render killed by a signal as its own outcome naming the signal, not as a pandoc diagnostic', async function () {
+    this.timeout(240000)
+    if (!toolchainPresent) {
+      const result = await renderTikz(
+        { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
+        { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir }
+      )
+      assert.ok(result.ok === false && result.kind === 'missing-tools', 'without the toolchain the typed missing-tools result is required')
+      return
+    }
+
+    const scratchBefore = new Set(filterScratchDirs())
+    const runningBefore = new Set(filterProcessPids())
+    // A real render of an uncached figure: pandoc runs the filter, which runs
+    // pdflatex, so the process is alive long enough to be signalled.
+    const pending = renderTikz(
+      { source: uncachedTikzcd('A \\arrow[r] & B'), kind: 'raw', docPath: NO_DOC_PATH },
+      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir }
+    )
+
+    let signalled = 0
+    for (let round = 0; round < 2000 && signalled === 0; round++) {
+      // Only the process this render started: an unrelated pandoc dying would
+      // prove nothing about this request's outcome.
+      for (const pid of filterProcessPids().filter(pid => !runningBefore.has(pid))) {
+        process.kill(pid, 'SIGTERM')
+        signalled++
+      }
+      if (signalled === 0) {
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
+    }
+    assert.ok(signalled > 0, 'the render must actually spawn a pandoc process for this proof to mean anything')
+
+    const result = await pending
+
+    // pdflatex outlives the pandoc process it was launched from; its scratch
+    // directory is normally removed by the filter, which never got to run.
+    for (const entry of filterScratchDirs()) {
+      if (!scratchBefore.has(entry)) {
+        await rm(path.join(tmpdir(), entry), { recursive: true, force: true })
+      }
+    }
+
+    assert.ok(result.ok === false, 'a killed render never produced a figure')
+    if (result.ok === false) {
+      assert.strictEqual(result.kind, 'render-terminated', `a signal kill is its own outcome, got ${JSON.stringify(result).slice(0, 400)}`)
+      if (result.kind === 'render-terminated') {
+        assert.strictEqual(result.signal, 'SIGTERM', 'the signal that ended the render is carried, not discarded')
       }
     }
   })

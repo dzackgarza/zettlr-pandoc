@@ -14,7 +14,8 @@
  *                  reveal-on-cursor semantics the fenced-div renderer applies
  *                  to its open fence, shared through
  *                  rangeInPreviewSuppression and the
- *                  previewModeShowSyntaxWhenCursorIsAdjacent flag.
+ *                  previewModeShowSyntaxWhenCursorIsAdjacent preference read
+ *                  from the required editor configuration field.
  *
  * END HEADER
  */
@@ -29,7 +30,12 @@ import { configField } from '../util/configuration'
 function hideAttributeBlocks (view: EditorView): DecorationSet {
   const ranges: Array<Range<Decoration>> = []
   const hiddenDeco = Decoration.replace({})
-  const includeAdjacent = view.state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true
+  // The reveal-on-cursor behaviour is a user preference, so the configuration
+  // is a hard dependency: this plugin is only installed by the renderer
+  // aggregate, which the editor always builds alongside configField. Reading
+  // the field as required means a state assembled without it reports that
+  // wiring defect instead of quietly picking a preference the user never set.
+  const includeAdjacent = view.state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
 
   for (const { from, to } of view.visibleRanges) {
     syntaxTree(view.state).iterate({

@@ -14,7 +14,8 @@
  *                  and emits one machine-parseable marker line per
  *                  figure-compile error; this module owns the process
  *                  plumbing and translates every outcome into a typed result —
- *                  missing tools and compile failures are loud, never silence.
+ *                  missing tools, compile failures and a render killed by a
+ *                  signal are loud and distinct, never silence.
  *
  * END HEADER
  */
@@ -32,8 +33,19 @@ export interface TikzRenderRequest {
    */
   source: string
   kind: 'raw'|'fence'
-  /** The document the figure was authored in, for \input resolution. */
-  docPath?: string
+  /**
+   * The document the figure was authored in; the filter resolves the figure's
+   * \input{…} against this file's directory.
+   *
+   * There is exactly one representation of "this buffer has no on-disk path":
+   * the empty string. That is what the editor configuration stores in
+   * `metadata.path` for an unsaved buffer (see getDefaultConfig), and it is
+   * what the vendored filter branches on (`doc_path ~= ""` selects the
+   * document root, otherwise the process working directory). The field is
+   * therefore always supplied — a caller with no path passes the
+   * configuration's own value, it does not omit the field.
+   */
+  docPath: string
 }
 
 export interface TikzRenderConfig {
@@ -58,7 +70,23 @@ export type TikzRenderResult =
   { ok: true, html: string, svgPath: string } |
   { ok: false, kind: 'missing-tools', missing: string[] } |
   { ok: false, kind: 'compile-error', errors: TikzCompileError[], log: string } |
-  { ok: false, kind: 'pandoc-error', log: string }
+  { ok: false, kind: 'pandoc-error', log: string } |
+  /**
+   * The render process was killed before it could finish (OOM killer, a
+   * timeout kill, an interrupt). This is not pandoc reporting a problem: no
+   * diagnostic was produced and nothing about the figure is known. The signal
+   * that ended it is the information that distinguishes this outcome.
+   */
+  { ok: false, kind: 'render-terminated', signal: NodeJS.Signals, log: string }
+
+/**
+ * How the pandoc child process ended. Node's 'close' event carries exactly one
+ * of (code, signal): a process either exits with a status or is terminated by
+ * a signal. Both are real outcomes, so both are carried as their own case.
+ */
+type PandocProcessOutcome =
+  { ended: 'exit', code: number, stdout: string, stderr: string } |
+  { ended: 'signal', signal: NodeJS.Signals, stdout: string, stderr: string }
 
 /** The tools the filter shells out to, checked before any render. */
 const REQUIRED_TOOLS = [ 'pandoc', 'pdflatex', 'pdf2svg' ]
@@ -81,6 +109,23 @@ async function toolAvailable (tool: string, env: NodeJS.ProcessEnv): Promise<boo
       resolve(true)
     })
   })
+}
+
+/**
+ * States Node's documented child-process contract: on 'close' exactly one of
+ * (code, signal) is non-null. The signal case is dispatched before this call,
+ * so reaching it with a null code means the runtime broke that contract and
+ * the outcome below cannot be formed at all.
+ */
+function assertExitedWithCode (code: number|null, signal: NodeJS.Signals|null): asserts code is number {
+  if (code === null) {
+    throw new Error(
+      'tikz-render: the pandoc child process closed carrying neither an exit code nor a signal ' +
+      `(code=${String(code)}, signal=${String(signal)}). Node's child_process 'close' event ` +
+      'guarantees exactly one of the two is non-null; the outcome handling in ' +
+      'source/app/util/tikz-render.ts is written against that guarantee.'
+    )
+  }
 }
 
 /**
@@ -115,22 +160,36 @@ export async function renderTikz (request: TikzRenderRequest, config: TikzRender
     FIGURE_TEMPLATE_FILE: path.join(config.tikzAssetDir, 'templates/standalone-tikz.tex'),
     SVG_DIR: config.cacheDir,
     FIGURES_DIR: config.cacheDir,
-    PANDOC_DOC_PATH: request.docPath ?? '',
+    PANDOC_DOC_PATH: request.docPath,
   }
 
-  const { code, stdout, stderr } = await new Promise<{ code: number, stdout: string, stderr: string }>((resolve, reject) => {
+  const outcome = await new Promise<PandocProcessOutcome>((resolve, reject) => {
     const proc = spawn('pandoc', [ '-f', 'markdown', '-t', 'html', '--lua-filter', filterPath ], { env: renderEnv })
     let out = ''
     let err = ''
     proc.stdout.on('data', chunk => { out += String(chunk) })
     proc.stderr.on('data', chunk => { err += String(chunk) })
     proc.once('error', reject)
-    proc.once('close', exitCode => resolve({ code: exitCode ?? -1, stdout: out, stderr: err }))
+    proc.once('close', (exitCode, signal) => {
+      if (signal !== null) {
+        resolve({ ended: 'signal', signal, stdout: out, stderr: err })
+        return
+      }
+      assertExitedWithCode(exitCode, signal)
+      resolve({ ended: 'exit', code: exitCode, stdout: out, stderr: err })
+    })
     proc.stdin.end(markdown)
   })
 
+  if (outcome.ended === 'signal') {
+    // The render never ran to completion, so whatever landed on stderr is a
+    // partial transcript, not a diagnostic about the figure. Reporting the
+    // signal keeps a kill distinguishable from pandoc failing on its own.
+    return { ok: false, kind: 'render-terminated', signal: outcome.signal, log: outcome.stderr }
+  }
+
   const errors: TikzCompileError[] = []
-  for (const line of stderr.split('\n')) {
+  for (const line of outcome.stderr.split('\n')) {
     const match = ERROR_MARKER_RE.exec(line)
     if (match !== null) {
       errors.push({ line: Number(match[1]), message: match[2], sourceLine: match[3] })
@@ -138,18 +197,18 @@ export async function renderTikz (request: TikzRenderRequest, config: TikzRender
   }
 
   if (errors.length > 0) {
-    return { ok: false, kind: 'compile-error', errors, log: stderr }
+    return { ok: false, kind: 'compile-error', errors, log: outcome.stderr }
   }
 
-  if (code !== 0) {
-    return { ok: false, kind: 'pandoc-error', log: stderr }
+  if (outcome.code !== 0) {
+    return { ok: false, kind: 'pandoc-error', log: outcome.stderr }
   }
 
-  const svgMarkup = stdout.match(/<svg[\s\S]*?<\/svg>/)?.[0]
+  const svgMarkup = outcome.stdout.match(/<svg[\s\S]*?<\/svg>/)?.[0]
   if (svgMarkup === undefined) {
     // The HTML writer omitted the figure: the filter dropped a block that did
     // not compile without a bang-error block to cite (or produced no SVG).
-    return { ok: false, kind: 'compile-error', errors: [], log: stderr }
+    return { ok: false, kind: 'compile-error', errors: [], log: outcome.stderr }
   }
 
   // The filter caches by an internal template-folded hash; the lightbox file
@@ -158,5 +217,7 @@ export async function renderTikz (request: TikzRenderRequest, config: TikzRender
   const svgPath = path.join(config.cacheDir, `lightbox-${requestHash}.svg`)
   await writeFile(svgPath, `<?xml version="1.0" encoding="UTF-8"?>\n${svgMarkup}\n`)
 
-  return { ok: true, html: stdout, svgPath }
+  // Reaching here means the pandoc output carries an <svg>…</svg>: that is the
+  // guarantee consumers of an ok result are entitled to assume of `html`.
+  return { ok: true, html: outcome.stdout, svgPath }
 }

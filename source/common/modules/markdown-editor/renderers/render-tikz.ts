@@ -15,7 +15,8 @@
  *                  immediately. A figure that fails to compile shows the
  *                  filter's LaTeX bang-error diagnostic mapped to the tikz
  *                  source line; a machine without the toolchain names the
- *                  missing tools. Clicking a rendered figure requests the
+ *                  missing tools; a render killed by a signal names the
+ *                  signal. Clicking a rendered figure requests the
  *                  full-screen lightbox with the servable SVG file.
  *
  * END HEADER
@@ -56,53 +57,106 @@ function requestRender (request: TikzRenderRequest): Promise<TikzRenderResult> {
   return pending
 }
 
-function populate (elem: HTMLElement, result: TikzRenderResult): void {
-  elem.classList.remove('tikz-pending')
-  if (result.ok) {
-    // The filter wraps the figure as Para(RawInline(html)); the HTML writer's
-    // <p> around a <div> gets split by the browser into a stray empty
-    // paragraph with margins. Mount only the element that hosts the SVG.
-    const template = document.createElement('template')
-    template.innerHTML = result.html
-    const svgHost = template.content.querySelector('svg')?.closest('div') ?? null
-    if (svgHost !== null) {
-      elem.replaceChildren(svgHost)
+/**
+ * Turns the render service's figure markup into the nodes to mount.
+ *
+ * The filter emits the figure as Para(RawInline(html)), so pandoc's HTML
+ * writer wraps it in a <p>; the browser splits <p><div> and leaves a stray
+ * empty paragraph whose margins push the figure around. Unwrapping every
+ * paragraph into its own children removes that wrapper for good: the
+ * transformation is total, so there is no "could not find the figure" case for
+ * the mount to fall back from.
+ */
+function figureNodes (html: string): Node[] {
+  const template = document.createElement('template')
+  template.innerHTML = html
+
+  // An ok result is only issued after the service confirmed the pandoc output
+  // carries an <svg>…</svg>; markup without one means service and widget
+  // disagree about what a successful render is, which no presentation can
+  // repair.
+  if (template.content.querySelector('svg') === null) {
+    throw new Error(
+      'render-tikz: the render service reported a successful figure whose markup carries no <svg> element. ' +
+      `Markup received (${html.length} chars): ${html.slice(0, 200)}. ` +
+      'renderTikz in source/app/util/tikz-render.ts only returns ok after matching <svg>…</svg> in the ' +
+      'pandoc output, so either that check or this widget must change.'
+    )
+  }
+
+  const nodes: Node[] = []
+  for (const child of Array.from(template.content.childNodes)) {
+    if (child instanceof HTMLParagraphElement) {
+      nodes.push(...Array.from(child.childNodes))
     } else {
-      elem.innerHTML = result.html
+      nodes.push(child)
     }
+  }
+  return nodes
+}
+
+function populate (elem: HTMLElement, result: TikzRenderResult): void {
+  if (result.ok) {
+    const figure = figureNodes(result.html)
+    elem.classList.remove('tikz-pending')
+    elem.replaceChildren(...figure)
     elem.dataset.tikzSvgPath = result.svgPath
     return
   }
 
+  elem.classList.remove('tikz-pending')
   const box = document.createElement('div')
   box.classList.add('tikz-error')
   const title = document.createElement('strong')
   box.appendChild(title)
 
-  if (result.kind === 'missing-tools') {
-    title.textContent = `TikZ rendering requires tools that were not found: ${result.missing.join(', ')}`
-  } else if (result.kind === 'compile-error') {
-    title.textContent = 'TikZ figure failed to compile'
-    for (const error of result.errors) {
-      const line = document.createElement('div')
-      const where = document.createElement('span')
-      where.textContent = `line ${error.line}: ${error.message} `
-      const source = document.createElement('code')
-      source.textContent = error.sourceLine
-      line.appendChild(where)
-      line.appendChild(source)
-      box.appendChild(line)
+  switch (result.kind) {
+    case 'missing-tools':
+      title.textContent = `TikZ rendering requires tools that were not found: ${result.missing.join(', ')}`
+      break
+    case 'compile-error': {
+      title.textContent = 'TikZ figure failed to compile'
+      for (const error of result.errors) {
+        const line = document.createElement('div')
+        const where = document.createElement('span')
+        where.textContent = `line ${error.line}: ${error.message} `
+        const source = document.createElement('code')
+        source.textContent = error.sourceLine
+        line.appendChild(where)
+        line.appendChild(source)
+        box.appendChild(line)
+      }
+      if (result.errors.length === 0) {
+        const note = document.createElement('div')
+        note.textContent = 'The figure produced no diagnostic; see the render log.'
+        box.appendChild(note)
+      }
+      break
     }
-    if (result.errors.length === 0) {
-      const note = document.createElement('div')
-      note.textContent = 'The figure produced no diagnostic; see the render log.'
-      box.appendChild(note)
+    case 'pandoc-error': {
+      title.textContent = 'TikZ render failed (pandoc error)'
+      const log = document.createElement('pre')
+      log.textContent = result.log.split('\n').slice(-8).join('\n')
+      box.appendChild(log)
+      break
     }
-  } else {
-    title.textContent = 'TikZ render failed (pandoc error)'
-    const log = document.createElement('pre')
-    log.textContent = result.log.split('\n').slice(-8).join('\n')
-    box.appendChild(log)
+    case 'render-terminated': {
+      // Naming the signal is the point: a killed render is not pandoc
+      // reporting anything about the figure, and the user needs to know the
+      // difference to act on it.
+      title.textContent = `TikZ render was killed by ${result.signal} before it finished`
+      const log = document.createElement('pre')
+      log.textContent = result.log.split('\n').slice(-8).join('\n')
+      box.appendChild(log)
+      break
+    }
+    default: {
+      const unhandled: never = result
+      throw new Error(
+        `render-tikz: unhandled TikzRenderResult case ${JSON.stringify(unhandled)}. ` +
+        'The union lives in source/app/util/tikz-render.ts; every case it declares must be presented here.'
+      )
+    }
   }
 
   elem.replaceChildren(box)
@@ -122,12 +176,22 @@ class TikzWidget extends WidgetType {
     elem.classList.add('tikz-figure', 'tikz-pending')
     elem.textContent = 'Rendering TikZ figure…'
 
-    const docPath = view.state.field(configField, false)?.metadata.path
+    // The configuration carries the buffer's path, using the empty string for
+    // a buffer that has none — the same value the request field is declared
+    // against. This renderer is only ever installed alongside configField, so
+    // its absence is a wiring defect and reads as one.
+    const docPath = view.state.field(configField).metadata.path
     requestRender({ source: this.source, kind: this.kind, docPath })
-      .then(result => { populate(elem, result) })
-      .catch(err => {
-        populate(elem, { ok: false, kind: 'pandoc-error', log: err instanceof Error ? err.message : String(err) })
-      })
+      .then(
+        result => { populate(elem, result) },
+        // Only the IPC round-trip is handled here. A failure to reach the main
+        // process is a render failure the user must see; a failure raised by
+        // populate is a broken service/widget contract and must not be dressed
+        // up as one of the render service's outcomes.
+        (err: unknown) => {
+          populate(elem, { ok: false, kind: 'pandoc-error', log: err instanceof Error ? err.message : String(err) })
+        }
+      )
 
     elem.addEventListener('click', () => {
       const svgPath = elem.dataset.tikzSvgPath
