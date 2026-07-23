@@ -14,8 +14,11 @@
  *                  and emits one machine-parseable marker line per
  *                  figure-compile error; this module owns the process
  *                  plumbing and translates every outcome into a typed result —
- *                  missing tools, compile failures and a render killed by a
- *                  signal are loud and distinct, never silence.
+ *                  missing tools, a toolchain probe that failed for a reason
+ *                  other than absence, compile failures and a render killed by
+ *                  a signal are loud and distinct, never silence. The
+ *                  environment every child runs under is supplied by the
+ *                  caller, never read from ambient process state.
  *
  * END HEADER
  */
@@ -53,8 +56,14 @@ export interface TikzRenderConfig {
   tikzAssetDir: string
   /** The app-owned render cache; SVGs land and persist here. */
   cacheDir: string
-  /** Environment override, primarily for tests. Defaults to process.env. */
-  env?: NodeJS.ProcessEnv
+  /**
+   * The environment every child process of this render runs under. It decides
+   * which pandoc, pdflatex and pdf2svg are found, so it is an input to the
+   * render, not an ambient condition the service may read for itself: the
+   * caller states which environment it is asking for and that decision is
+   * recorded at the call site.
+   */
+  env: NodeJS.ProcessEnv
 }
 
 export interface TikzCompileError {
@@ -69,6 +78,16 @@ export interface TikzCompileError {
 export type TikzRenderResult =
   { ok: true, html: string, svgPath: string } |
   { ok: false, kind: 'missing-tools', missing: string[] } |
+  /**
+   * The toolchain probe itself failed. A tool that is not installed makes
+   * spawn fail with ENOENT and is reported as 'missing-tools'; every other
+   * spawn failure — EACCES for a file that is present but not executable,
+   * EPERM, EAGAIN under resource exhaustion — means the tool's presence was
+   * never established. Telling that user to install a tool they already have
+   * is a wrong diagnosis, so the errno that ended the probe is carried and
+   * the toolchain status stays unknown.
+   */
+  { ok: false, kind: 'toolchain-probe-failed', tool: string, code: string } |
   { ok: false, kind: 'compile-error', errors: TikzCompileError[], log: string } |
   { ok: false, kind: 'pandoc-error', log: string } |
   /**
@@ -95,18 +114,41 @@ const REQUIRED_TOOLS = [ 'pandoc', 'pdflatex', 'pdf2svg' ]
 const ERROR_MARKER_RE = /^\[tikzcd-figure-error\] (\d+)\|([^|]*)\|(.*)$/
 
 /**
- * Resolves whether an executable is reachable in the given environment's
- * PATH. spawn with ENOENT is the discriminator — exit codes are irrelevant.
+ * What probing one executable established. 'absent' is the single errno that
+ * means the tool is not installed; any other spawn failure establishes
+ * nothing about the tool and is its own outcome.
  */
-async function toolAvailable (tool: string, env: NodeJS.ProcessEnv): Promise<boolean> {
-  return await new Promise<boolean>(resolve => {
+type ToolProbe =
+  { status: 'available' } |
+  { status: 'absent' } |
+  { status: 'probe-failed', code: string }
+
+/**
+ * Probes whether an executable is reachable in the given environment's PATH.
+ * spawn's ENOENT is what "not installed" means; EACCES, EPERM, EAGAIN and the
+ * rest are different facts and are reported as such rather than collapsed into
+ * absence.
+ */
+async function probeTool (tool: string, env: NodeJS.ProcessEnv): Promise<ToolProbe> {
+  return await new Promise<ToolProbe>((resolve, reject) => {
     const probe = spawn(tool, ['--version'], { env, stdio: 'ignore' })
-    probe.once('error', () => resolve(false))
+    probe.once('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === undefined) {
+        reject(new Error(
+          `tikz-render: probing ${tool} emitted a child-process error carrying no errno code ` +
+          `(message=${error.message}). Node reports a failure to spawn as a SystemError whose code ` +
+          'names the cause; the probe classifies ENOENT as "not installed" and every other code as a ' +
+          'failed probe, and cannot classify an error with no code at all.'
+        ))
+        return
+      }
+      resolve(error.code === 'ENOENT' ? { status: 'absent' } : { status: 'probe-failed', code: error.code })
+    })
     probe.once('spawn', () => {
-      probe.once('close', () => resolve(true))
+      probe.once('close', () => resolve({ status: 'available' }))
       // --version variants that wait on stdin must not hang the probe.
       probe.kill()
-      resolve(true)
+      resolve({ status: 'available' })
     })
   })
 }
@@ -132,11 +174,18 @@ function assertExitedWithCode (code: number|null, signal: NodeJS.Signals|null): 
  * Renders one TikZ figure to inline SVG through the vendored pandoc filter.
  */
 export async function renderTikz (request: TikzRenderRequest, config: TikzRenderConfig): Promise<TikzRenderResult> {
-  const env = config.env ?? process.env
+  const env = config.env
 
   const missing: string[] = []
   for (const tool of REQUIRED_TOOLS) {
-    if (!await toolAvailable(tool, env)) {
+    const probe = await probeTool(tool, env)
+    if (probe.status === 'probe-failed') {
+      // The remaining tools are deliberately not probed: with one probe broken
+      // the toolchain status is unknown, and a partial "missing" list would
+      // read as a complete diagnosis.
+      return { ok: false, kind: 'toolchain-probe-failed', tool, code: probe.code }
+    }
+    if (probe.status === 'absent') {
       missing.push(tool)
     }
   }

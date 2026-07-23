@@ -33,7 +33,9 @@ async function computeResponses () {
   }
 
   const cacheDir = path.join(outputDirectory, 'tikz-cache')
-  const config = { tikzAssetDir: path.join(__dirname, '../static/tikz'), cacheDir }
+  // The environment renders run under is an input to renderTikz, not something
+  // it reads for itself; the harness states the one it is asking for.
+  const config = { tikzAssetDir: path.join(__dirname, '../static/tikz'), cacheDir, env: process.env }
   const responses = {}
   for (const source of rawBlocks) {
     // The scene document is not a file on disk, which the request models the
@@ -49,6 +51,36 @@ async function computeResponses () {
     throw new Error(`unexpected render outcomes: ${JSON.stringify(Object.values(responses).map(r => r.ok ? 'ok' : r.kind))}`)
   }
   return responses
+}
+
+/**
+ * Clicks the first rendered figure the way a reader does and waits for the
+ * overlay. Returns the SVG file that figure carries, so the caller can hold
+ * the viewer to displaying that figure.
+ */
+async function openLightbox (window) {
+  const clicked = await window.webContents.executeJavaScript(`(() => {
+    const figure = document.querySelector('.tikz-figure[data-tikz-svg-path]')
+    figure.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    return figure.dataset.tikzSvgPath
+  })()`)
+  // Wait for the figure to have been fetched and decoded, not merely for the
+  // element to exist: a screenshot taken between those two moments shows an
+  // empty viewer and says nothing about whether the overlay works.
+  const opened = await window.webContents.executeJavaScript(`(async () => {
+    for (let round = 0; round < 80; round++) {
+      const img = document.querySelector('.tikz-lightbox img')
+      if (img !== null && img.complete && img.naturalWidth > 0) {
+        return true
+      }
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+    return false
+  })()`)
+  if (opened !== true) {
+    throw new Error(`the lightbox never displayed the clicked figure ${clicked}`)
+  }
+  return clicked
 }
 
 async function capture (window, responses, scene) {
@@ -96,10 +128,7 @@ async function capture (window, responses, scene) {
   await fs.writeFile(path.join(outputDirectory, `${scene.name}.png`), image.toPNG())
 
   if (scene.lightbox === true) {
-    await window.webContents.executeJavaScript(`(() => {
-      document.querySelector('.tikz-figure[data-tikz-svg-path]').dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })()`)
-    await new Promise(resolve => setTimeout(resolve, 400))
+    const clickedFigure = await openLightbox(window)
     const lightbox = await window.webContents.executeJavaScript(`(() => ({
       open: document.querySelector('.tikz-lightbox') !== null,
       viewer: document.querySelector('.tikz-lightbox .image-viewer-container') !== null,
@@ -109,9 +138,35 @@ async function capture (window, responses, scene) {
     if (!lightbox.open || !lightbox.viewer || lightbox.imgSrc === null) {
       throw new Error(`${scene.name}: lightbox did not open over ImageViewer`)
     }
+    // The viewer must be displaying the figure that was clicked. Resolved the
+    // way the safe-file handler above resolves it, the src is the file the
+    // clicked widget carries; an overlay handed anything else — a document
+    // assembled around a path that was never supplied, say — cannot produce it.
+    const shown = decodeURIComponent(lightbox.imgSrc.replace('safe-file://', ''))
+    if (shown !== clickedFigure) {
+      throw new Error(`${scene.name}: the viewer shows ${shown}, not the clicked figure ${clickedFigure}`)
+    }
     const lightboxImage = await window.webContents.capturePage()
     await fs.writeFile(path.join(outputDirectory, `${scene.name}-lightbox.png`), lightboxImage.toPNG())
-    const dismissed = await window.webContents.executeJavaScript(`(async () => {
+
+    // Both dismissals the overlay promises, each from a freshly opened
+    // lightbox: clicking the backdrop, and Escape.
+    const byBackdrop = await window.webContents.executeJavaScript(`(async () => {
+      document.querySelector('.tikz-lightbox').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      for (let round = 0; round < 40; round++) {
+        if (document.querySelector('.tikz-lightbox') === null) {
+          return true
+        }
+        await new Promise(resolve => setTimeout(resolve, 25))
+      }
+      return false
+    })()`)
+    if (byBackdrop !== true) {
+      throw new Error(`${scene.name}: clicking the backdrop did not dismiss the lightbox`)
+    }
+
+    await openLightbox(window)
+    const byEscape = await window.webContents.executeJavaScript(`(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       for (let round = 0; round < 40; round++) {
         if (document.querySelector('.tikz-lightbox') === null) {
@@ -121,7 +176,7 @@ async function capture (window, responses, scene) {
       }
       return false
     })()`)
-    if (dismissed !== true) {
+    if (byEscape !== true) {
       throw new Error(`${scene.name}: Escape did not dismiss the lightbox`)
     }
   }

@@ -25,13 +25,11 @@
           outside the DOM structure to have it render on top of everything else.
         -->
         <Teleport to="div#window-content" v-bind:disabled="!distractionFree">
+          <!-- The image viewer displays one file; it holds no leaf, window or
+               editor-command state, so the pane hands it only the file. -->
           <ImageViewer
             v-if="hasImageExt(activeFileDescriptor.path)"
             v-bind:file="activeFileDescriptor"
-            v-bind:leaf-id="leafId"
-            v-bind:active-file="activeFile"
-            v-bind:window-id="windowId"
-            v-bind:editor-commands="editorCommands"
           ></ImageViewer>
           <PDFViewer
             v-else-if="hasPDFExt(activeFileDescriptor.path)"

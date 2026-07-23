@@ -12,7 +12,10 @@
  *                  SVG with namespaced ids and a lightbox-servable SVG file;
  *                  a failing figure surfaces the filter's mapped bang-error
  *                  diagnostic; a machine without pdflatex/pdf2svg gets a
- *                  typed missing-tools result, never silence; a render whose
+ *                  typed missing-tools result, never silence; a toolchain
+ *                  probe that fails for a reason other than absence reports
+ *                  the tool and the errno rather than posing as absence; a
+ *                  render whose
  *                  pandoc process is killed reports the signal that killed it
  *                  rather than posing as a pandoc diagnostic; and the
  *                  request's docPath is the single representation of the
@@ -108,11 +111,39 @@ describe('TikZ render service (issue #14)', function () {
     }
   })
 
+  it('distinguishes a toolchain probe that failed from a tool that is absent', async function () {
+    this.timeout(60000)
+    // A pandoc that is present on the requested PATH and cannot be executed.
+    // execvp fails with EACCES, which says nothing about whether pandoc is
+    // installed — telling this user to install it sends them after a problem
+    // they do not have, and the permission bit they do have stays invisible.
+    const binDir = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-noexec-'))
+    try {
+      await writeFile(path.join(binDir, 'pandoc'), '#!/bin/sh\nexit 0\n', { mode: 0o644 })
+      const result = await renderTikz(
+        { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
+        { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: { ...process.env, PATH: binDir } }
+      )
+      assert.ok(result.ok === false, 'a render whose toolchain could not be checked did not produce a figure')
+      assert.strictEqual(
+        result.kind,
+        'toolchain-probe-failed',
+        `a probe that failed is its own outcome, not absence, got ${JSON.stringify(result).slice(0, 200)}`
+      )
+      if (result.kind === 'toolchain-probe-failed') {
+        assert.strictEqual(result.tool, 'pandoc', 'the tool whose probe failed is named')
+        assert.strictEqual(result.code, 'EACCES', 'the errno that distinguishes this failure from absence is carried')
+      }
+    } finally {
+      await rm(binDir, { recursive: true, force: true })
+    }
+  })
+
   it('renders a tikzcd snippet to namespaced inline SVG plus a lightbox file, or reports the toolchain', async function () {
     this.timeout(120000)
     const result: TikzRenderResult = await renderTikz(
       { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir }
+      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
     )
 
     if (!toolchainPresent) {
@@ -136,13 +167,13 @@ describe('TikZ render service (issue #14)', function () {
 
   it('serves a repeat render from the content-addressed cache', async function () {
     this.timeout(120000)
-    const first = await renderTikz({ source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH }, { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir })
+    const first = await renderTikz({ source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH }, { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env })
     if (!toolchainPresent) {
       assert.ok(first.ok === false && first.kind === 'missing-tools')
       return
     }
     const started = Date.now()
-    const second = await renderTikz({ source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH }, { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir })
+    const second = await renderTikz({ source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH }, { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env })
     const elapsed = Date.now() - started
     assert.ok(second.ok, 'the repeat render succeeds')
     assert.ok(elapsed < 5000, `a cache hit must not re-run pdflatex (took ${elapsed}ms)`)
@@ -152,7 +183,7 @@ describe('TikZ render service (issue #14)', function () {
     this.timeout(120000)
     const result = await renderTikz(
       { source: TIKZCD_BROKEN, kind: 'raw', docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir }
+      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
     )
     if (!toolchainPresent) {
       assert.ok(result.ok === false && result.kind === 'missing-tools')
@@ -187,11 +218,11 @@ describe('TikZ render service (issue #14)', function () {
 
     const fromFirst = await renderTikz(
       { source, kind: 'raw', docPath: path.join(firstDir, 'figures.md') },
-      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir }
+      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
     )
     const fromSecond = await renderTikz(
       { source, kind: 'raw', docPath: path.join(secondDir, 'notes.md') },
-      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir }
+      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
     )
     await rm(firstDir, { recursive: true, force: true })
     await rm(secondDir, { recursive: true, force: true })
@@ -223,7 +254,7 @@ describe('TikZ render service (issue #14)', function () {
     if (!toolchainPresent) {
       const result = await renderTikz(
         { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
-        { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir }
+        { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
       )
       assert.ok(result.ok === false && result.kind === 'missing-tools', 'without the toolchain the typed missing-tools result is required')
       return
@@ -235,7 +266,7 @@ describe('TikZ render service (issue #14)', function () {
     // pdflatex, so the process is alive long enough to be signalled.
     const pending = renderTikz(
       { source: uncachedTikzcd('A \\arrow[r] & B'), kind: 'raw', docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir }
+      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
     )
 
     let signalled = 0

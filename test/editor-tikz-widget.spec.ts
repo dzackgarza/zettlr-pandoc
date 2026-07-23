@@ -11,8 +11,11 @@
  *                  fence render as async figure widgets over the tikz-render
  *                  IPC seam; a cache-hit response lands as inline SVG; a
  *                  compile failure surfaces the mapped diagnostic in place;
- *                  missing tools are named; a render killed by a signal names
- *                  the signal; the request carries the configured document
+ *                  missing tools are named; a toolchain check that failed for
+ *                  a reason other than absence names the tool and the errno
+ *                  rather than telling the user to install it; a render killed
+ *                  by a signal names the signal; the request carries the
+ *                  configured document
  *                  path; a success whose markup carries no figure is refused
  *                  rather than mounted; clicking a rendered figure requests
  *                  the lightbox with the servable SVG path; and the cursor
@@ -228,19 +231,53 @@ describe('TikZ editor widgets (issue #14)', function () {
     assert.ok(text.includes('pdflatex') && text.includes('pdf2svg'), `both tools are named: ${text}`)
   })
 
-  it('requests the lightbox with the servable SVG path on click', async function () {
+  it('names the tool and the errno when the toolchain check itself failed, instead of reporting absence', async function () {
+    // EACCES, EPERM and EAGAIN are not "not installed". Presenting them as the
+    // missing-tools case sends the user to install software they already have
+    // and hides the permission or resource problem that actually stopped the
+    // render.
+    respond = { ok: false, kind: 'toolchain-probe-failed', tool: 'pdflatex', code: 'EACCES' }
+    const view = createEditor()
+    await waitFor(() => view.dom.querySelector('.tikz-error') !== null, 'the failed-probe box')
+    const text = view.dom.querySelector<HTMLElement>('.tikz-error')?.textContent ?? ''
+    assert.ok(text.includes('pdflatex'), `the tool whose check failed is named: ${text}`)
+    assert.ok(text.includes('EACCES'), `the errno that ended the check is shown: ${text}`)
+    assert.ok(
+      !/not found|install/i.test(text),
+      `a check that failed is not presented as an absent tool: ${text}`
+    )
+  })
+
+  it('requests the lightbox with the servable SVG path on click, built in the clicked document\'s own realm', async function () {
     respond = { ok: true, html: `<div><span>${SVG_OK}</span></div>`, svgPath: '/cache/lightbox-abc.svg' }
     const view = createEditor()
     await waitFor(() => view.dom.querySelectorAll('.tikz-figure svg').length === 2, 'figures to upgrade')
 
-    const requests: string[] = []
+    const editorWindow = view.dom.ownerDocument.defaultView
+    if (editorWindow === null) {
+      assert.fail('the widget is driven in a rendered document, which is what gives it a window')
+    }
+
+    const requests: Array<CustomEvent<{ svgPath: string }>> = []
     const listener = (event: Event): void => {
-      requests.push((event as CustomEvent<{ svgPath: string }>).detail.svgPath)
+      requests.push(event as CustomEvent<{ svgPath: string }>)
     }
     document.addEventListener('zettlr-tikz-lightbox', listener)
     try {
       view.dom.querySelector<HTMLElement>('.tikz-figure')?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
-      assert.deepStrictEqual(requests, [ '/cache/lightbox-abc.svg' ], 'one lightbox request carrying the SVG path')
+      assert.deepStrictEqual(
+        requests.map(request => request.detail.svgPath),
+        [ '/cache/lightbox-abc.svg' ],
+        'one lightbox request carrying the SVG path'
+      )
+      // A document only accepts an event constructed by its own realm, so the
+      // realm of the delivered request is what decides whether a click can
+      // reach the lightbox at all: an event built from any other CustomEvent
+      // constructor is refused by this document and no request arrives.
+      assert.ok(
+        requests[0] instanceof editorWindow.CustomEvent,
+        'the request the document delivered was constructed by that document\'s own window'
+      )
     } finally {
       document.removeEventListener('zettlr-tikz-lightbox', listener)
     }

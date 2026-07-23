@@ -30,6 +30,11 @@ export default class TikzRender extends ZettlrCommand {
     return await renderTikz(arg, {
       tikzAssetDir: path.join(__dirname, './assets/tikz'),
       cacheDir: path.join(app.getPath('userData'), 'tikz-cache'),
+      // The main process is where the app's environment is known, so this is
+      // where the decision "renders run under the environment Electron was
+      // started with" is made and recorded — the render service never reaches
+      // for it.
+      env: process.env,
     })
   }
 }

@@ -15,8 +15,10 @@
  *                  immediately. A figure that fails to compile shows the
  *                  filter's LaTeX bang-error diagnostic mapped to the tikz
  *                  source line; a machine without the toolchain names the
- *                  missing tools; a render killed by a signal names the
- *                  signal. Clicking a rendered figure requests the
+ *                  missing tools; a toolchain check that failed for a reason
+ *                  other than absence names the tool and the errno instead of
+ *                  telling the user to install it; a render killed by a signal
+ *                  names the signal. Clicking a rendered figure requests the
  *                  full-screen lightbox with the servable SVG file.
  *
  * END HEADER
@@ -114,6 +116,13 @@ function populate (elem: HTMLElement, result: TikzRenderResult): void {
     case 'missing-tools':
       title.textContent = `TikZ rendering requires tools that were not found: ${result.missing.join(', ')}`
       break
+    case 'toolchain-probe-failed':
+      // Deliberately not "install this tool": the tool may well be installed.
+      // The errno is the whole diagnosis — EACCES is a permission bit, EAGAIN
+      // is resource exhaustion — and telling the user to install something
+      // instead would send them after the wrong problem.
+      title.textContent = `TikZ could not check whether ${result.tool} is usable: the check failed with ${result.code}`
+      break
     case 'compile-error': {
       title.textContent = 'TikZ figure failed to compile'
       for (const error of result.errors) {
@@ -195,12 +204,30 @@ class TikzWidget extends WidgetType {
 
     elem.addEventListener('click', () => {
       const svgPath = elem.dataset.tikzSvgPath
-      if (svgPath !== undefined) {
-        // Construct the event through the element's own window so the
-        // dispatch works identically in the app and under jsdom.
-        const EventCtor = elem.ownerDocument.defaultView?.CustomEvent ?? CustomEvent
-        elem.ownerDocument.dispatchEvent(new EventCtor('zettlr-tikz-lightbox', { detail: { svgPath } }))
+      if (svgPath === undefined) {
+        // A figure that is still pending, or that failed, has no servable SVG
+        // and therefore nothing to open. This is a real state of the widget,
+        // not a missing value.
+        return
       }
+
+      // An event is only accepted by the document it is dispatched on if it
+      // was built by that document's own realm, so the constructor comes from
+      // the clicked element's window. A widget element that is handling a
+      // click is in a rendered document, so that window exists; if it does
+      // not, the widget is somewhere it was never mounted and the request has
+      // no host to reach.
+      const ownerWindow = elem.ownerDocument.defaultView
+      if (ownerWindow === null) {
+        throw new Error(
+          'render-tikz: a rendered TikZ figure was clicked while its element sat in a document with ' +
+          `no window (svgPath=${svgPath}, isConnected=${String(elem.isConnected)}). The lightbox ` +
+          'request is constructed through the element\'s own window because a CustomEvent built in a ' +
+          'different realm is rejected by the document it is dispatched on; a windowless document ' +
+          'offers neither that realm nor a TikzLightbox listening for the request.'
+        )
+      }
+      elem.ownerDocument.dispatchEvent(new ownerWindow.CustomEvent('zettlr-tikz-lightbox', { detail: { svgPath } }))
     })
     return elem
   }
