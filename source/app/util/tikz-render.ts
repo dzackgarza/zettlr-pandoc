@@ -72,7 +72,7 @@ const ERROR_MARKER_RE = /^\[tikzcd-figure-error\] (\d+)\|([^|]*)\|(.*)$/
  */
 async function toolAvailable (tool: string, env: NodeJS.ProcessEnv): Promise<boolean> {
   return await new Promise<boolean>(resolve => {
-    const probe = spawn(tool, [ '--version' ], { env, stdio: 'ignore' })
+    const probe = spawn(tool, ['--version'], { env, stdio: 'ignore' })
     probe.once('error', () => resolve(false))
     probe.once('spawn', () => {
       probe.once('close', () => resolve(true))

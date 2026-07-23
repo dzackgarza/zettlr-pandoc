@@ -84,6 +84,17 @@ capture-widget-indent output:
     "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-widget-indent-visual-entry.ts" --bundle --platform=browser --format=iife --loader:.svg=dataurl --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/widget-indent-visual-bundle.js"
     xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/editor-widget-indent-visual-capture.cjs" "{{output}}"
 
+# Capture the TikZ editor scenes (issue #14) in isolated offscreen Electron:
+# inline figures rendered by the REAL toolchain (pandoc + pdflatex + pdf2svg
+# through the vendored filter), the in-place compile diagnostic, and the
+# click-to-zoom lightbox reusing ImageViewer. Requires pdflatex and pdf2svg.
+# This never starts Forge, a dev server, xdg-open, or the system browser.
+capture-tikz output:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    mkdir -p "{{output}}"
+    node "{{justfile_directory()}}/test/editor-tikz-visual-build.cjs" "{{output}}"
+    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/editor-tikz-visual-capture.cjs" "{{output}}"
+
 # Capture the real Pandoc quick-reference Vue component in isolated Electron.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
 capture-pandoc-help output:

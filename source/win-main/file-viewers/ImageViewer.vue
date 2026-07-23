@@ -145,11 +145,14 @@ import { pathBasename } from 'source/common/util/renderer-path-polyfill'
 const MINIMUM_ZOOM = 1 // Percent, not ratio
 const ZOOM_STEP = 10 // By how much the +/- buttons should affect the zoom level
 
+// Only `file` is consumed; the host-interface props are optional so the
+// viewer can also serve overlay hosts (the TikZ lightbox) that have no leaf
+// or editor-command context.
 const props = defineProps<{
-  leafId: string
-  windowId: string
-  activeFile: OpenDocument|null
-  editorCommands: EditorCommands
+  leafId?: string
+  windowId?: string
+  activeFile?: OpenDocument|null
+  editorCommands?: EditorCommands
   file: OpenDocument
 }>()
 

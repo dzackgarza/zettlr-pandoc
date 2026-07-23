@@ -23,6 +23,7 @@ import { renderCitations } from './render-citations'
 import { renderReferenceChips } from './render-reference-chips'
 import { renderReferenceDefinitions } from './render-reference-definitions'
 import { renderMermaid } from './render-mermaid'
+import { renderTikzFigures } from './render-tikz'
 import { renderTables } from '../table-editor'
 import { renderIframes } from './render-iframes'
 import { renderEmphasis } from './render-emphasis'
@@ -62,6 +63,7 @@ function configureRenderers (config: Partial<EditorConfiguration>, ext?: Extensi
 
   if (config.renderingMode === 'preview') {
     updateExtension(renderMermaid, true, ext)
+    updateExtension(renderTikzFigures, true, ext)
     updateExtension(renderCode, true, ext)
     updateExtension(renderImages, config.renderImages, ext)
     updateExtension(renderLinks, config.renderLinks, ext)

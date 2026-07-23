@@ -53,6 +53,7 @@ import enumLangFiles from '@common/util/enum-lang-files'
 import enumDictFiles from '@common/util/enum-dict-files'
 import RenameTag from './rename-tag'
 import RenameReference from './rename-reference'
+import TikzRender from './tikz-render'
 import WorkspaceSort from './ws-sort'
 
 export const commands = [
@@ -87,6 +88,7 @@ export const commands = [
   RootClose,
   RootOpen,
   SaveImageFromClipboard,
+  TikzRender,
   TutorialOpen,
   UpdateProjectProperties,
   UpdateUserDictionary,
