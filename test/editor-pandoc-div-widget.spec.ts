@@ -77,7 +77,7 @@ describe('Editor presents Pandoc fenced divs semantically', function () {
   function createEditor (
     doc: string,
     anchor = doc.length,
-    extensions: Parameters<typeof EditorState.create>[0]['extensions'] = [ markdownParser(), renderPandoc ]
+    extensions: NonNullable<Parameters<typeof EditorState.create>[0]>['extensions'] = [ markdownParser(), renderPandoc ]
   ): EditorView {
     const state = EditorState.create({
       doc,
