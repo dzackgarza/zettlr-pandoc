@@ -28,7 +28,7 @@ import { type EditorView } from '@codemirror/view'
  */
 export type FormatResult =
   | { ok: true, formatted: string }
-  | { ok: false, kind: 'flowmark-absent' | 'flowmark-error', message: string }
+  | { ok: false, kind: 'flowmark-absent' | 'flowmark-error' | 'flowmark-timeout', message: string }
 
 /** Formats markdown source text, returning a typed result. */
 export type MarkdownFormatter = (text: string) => Promise<FormatResult>

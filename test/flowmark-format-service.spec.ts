@@ -20,6 +20,9 @@
  */
 
 import { strict as assert } from 'assert'
+import { readFile } from 'fs/promises'
+import { tmpdir } from 'os'
+import path from 'path'
 import { formatMarkdownText } from 'source/app/util/flowmark-format'
 
 describe('flowmark format service (issue #26)', function () {
@@ -69,5 +72,44 @@ describe('flowmark format service (issue #26)', function () {
     if (result.ok) {
       assert.equal(result.formatted, 'formatted\n')
     }
+  })
+
+  it('bounds a hung runner: resolves ok:false timeout and terminates the child', async function () {
+    // A runner that records its own PID and then blocks forever stands in for a
+    // wedged `uvx`/flowmark (a git fetch that stalls, a deadlocked process).
+    // `exec sleep` replaces the shell in-place, so the recorded $$ is the PID of
+    // the actual hanging process the service must kill — no grandchild orphan.
+    // Without a time bound `formatMarkdownText` would await `close` forever and
+    // the caller's save/format would silently hang; the service must instead
+    // resolve with a typed failure within the injected bound AND leave no
+    // lingering process.
+    const pidFile = path.join(tmpdir(), `zettlr-flowmark-timeout-${process.pid}-${Date.now()}.pid`)
+    const script = `echo $$ > '${pidFile}'; exec sleep 300`
+
+    const start = Date.now()
+    const result = await formatMarkdownText('The cat sat.\n', {
+      command: 'sh',
+      argsPrefix: [ '-c', script, 'sh' ],
+      timeoutMs: 250
+    })
+    const elapsed = Date.now() - start
+
+    assert.equal(result.ok, false, 'a hung runner must not resolve as a successful format')
+    if (!result.ok) {
+      assert.equal(result.kind, 'flowmark-timeout', 'exceeding the bound must be a typed timeout failure, not a swallowed no-op')
+    }
+    // The bound is real: resolution must not have waited on the 300s sleep.
+    assert.ok(elapsed < 30000, `expected resolution within the bound, took ${String(elapsed)}ms`)
+
+    // The child must actually be dead: signal 0 to a reaped PID raises ESRCH.
+    // If the service resolved the timeout without killing the child, the sleep
+    // is still alive here and this probe would NOT throw ESRCH.
+    const pid = Number.parseInt((await readFile(pidFile, 'utf-8')).trim(), 10)
+    assert.ok(Number.isInteger(pid) && pid > 0, 'the stand-in runner must have recorded its PID')
+    assert.throws(
+      () => { process.kill(pid, 0) },
+      (err: NodeJS.ErrnoException) => err.code === 'ESRCH',
+      'the timed-out child must be terminated, not left orphaned'
+    )
   })
 })
