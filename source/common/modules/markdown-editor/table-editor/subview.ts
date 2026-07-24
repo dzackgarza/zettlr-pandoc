@@ -28,6 +28,51 @@ import { darkMode, useDarkModeEditor } from '../theme/dark-mode'
 import { markdownSyntaxHighlighter } from '../theme/syntax'
 import { defaultKeymap } from '../keymaps/default'
 import { clickListeners } from '../plugins/click-listeners'
+import { type Extension } from '@codemirror/state'
+import { renderMath } from '../renderers/render-math'
+import { renderEmphasis } from '../renderers/render-emphasis'
+import { renderLinks } from '../renderers/render-links'
+import { renderCode } from '../renderers/render-code'
+import { renderCitations } from '../renderers/render-citations'
+import { renderReferenceChips } from '../renderers/render-reference-chips'
+import { renderReferenceDefinitions } from '../renderers/render-reference-definitions'
+import { renderPandocAttributes } from '../renderers/render-pandoc-attributes'
+
+/**
+ * The renderers that run inside a table-editor cell subview (issue #23). Without
+ * this the cell showed raw source ($x^2$ instead of typeset math).
+ *
+ * This is a DOCUMENTED SUBSET, not the full renderers() aggregate, for three
+ * reasons:
+ *
+ * - `renderTables` is excluded: a cell subview holds the ENTIRE document, so
+ *   rendering tables would render the very table this cell belongs to — an
+ *   infinite nesting of table widgets.
+ * - `renderImages` is excluded: it resolves image paths through the main-process
+ *   IPC (it imports `electron`), and this module is part of the shared editor
+ *   core that browser test bundles compile — importing electron here would break
+ *   them. Inline images therefore stay as source inside a cell.
+ * - The block-level renderers (headings, tasks, horizontal rules, blockquotes,
+ *   mermaid, tikz, pandoc divs, iframes) target block constructs that cannot
+ *   occur inside a single table cell's inline content.
+ *
+ * What remains is the inline, electron-free set, gated by the same per-renderer
+ * config toggles the main editor uses, and only in preview mode. The subview is
+ * rebuilt whenever the table re-renders, so the config is captured at creation.
+ */
+function cellRenderers (cfg: EditorConfiguration): Extension[] {
+  if (cfg.renderingMode !== 'preview') {
+    return []
+  }
+
+  const ext: Extension[] = [renderCode]
+  if (cfg.renderMath) { ext.push(renderMath) }
+  if (cfg.renderEmphasis) { ext.push(renderEmphasis) }
+  if (cfg.renderLinks) { ext.push(renderLinks) }
+  if (cfg.renderCitations) { ext.push(renderCitations, renderReferenceChips, renderReferenceDefinitions) }
+  if (cfg.renderPandoc) { ext.push(renderPandocAttributes) }
+  return ext
+}
 
 /**
  * A transaction filter that ensures that any changes made to the view that
@@ -207,12 +252,14 @@ function createHiddenDecorations (state: EditorState, cellRange: { from: number,
 *
 * @param  {EditorView}      mainView        The main view
 * @param  {HTMLDivElement}  contentWrapper  The cell's content wrapper
+*
+* @return {EditorView}                      The mounted cell subview
 */
 export function createSubviewForCell (
   mainView: EditorView,
   contentWrapper: HTMLDivElement,
   cellRange: { from: number, to: number }
-): void {
+): EditorView {
   const cfg: EditorConfiguration = JSON.parse(JSON.stringify(mainView.state.field(configField)))
   const themes = getMainEditorThemes()
 
@@ -241,6 +288,10 @@ export function createSubviewForCell (
       markdownSyntaxHighlighter(),
       EditorView.lineWrapping,
       markdownParser(), // TODO: Config?
+      // Render inline content (math, emphasis, links, citations, …) inside the
+      // cell the same way body text does (issue #23). Documented subset — see
+      // cellRenderers.
+      cellRenderers(cfg),
       // Two custom extensions that are required for the specific use-case of
       // this single-line minimal EditorView
       hiddenSpanField.init(s => {
@@ -267,6 +318,8 @@ export function createSubviewForCell (
   // using `setTimeout` which will execute its callback once the main loop is
   // empty.
   setTimeout(() => subview.focus(), 0)
+
+  return subview
 }
 
 /**
