@@ -67,8 +67,11 @@ class LineStyleResetWidget extends WidgetType {
     return dom
   }
 
-  updateDOM (dom: HTMLElement, view: EditorView): boolean {
-    const updated = this.inner.updateDOM(dom, view)
+  updateDOM (dom: HTMLElement, view: EditorView, from: LineStyleResetWidget): boolean {
+    // @codemirror/view's WidgetType.updateDOM is (dom, view, from) where `from`
+    // is the previous widget of this type; forward the previous INNER widget so
+    // the wrapped renderer sees its own predecessor, not this wrapper.
+    const updated = this.inner.updateDOM(dom, view, from.inner)
     if (updated) {
       dom.classList.add(WIDGET_LINE_STYLE_RESET_CLASS)
     }
