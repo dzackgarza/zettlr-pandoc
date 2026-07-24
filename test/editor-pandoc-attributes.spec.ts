@@ -80,6 +80,8 @@ The prose paragraph keeps the caret away from every carrier line.
 
 : Coble lattices of Halphen type {#tbl:coble-lattices}
 
+![A figure caption](figure.png){#fig:one .wide}
+
 A closing paragraph.
 `
 
@@ -170,6 +172,19 @@ describe('Pandoc attribute-block rendering (issue #11)', function () {
     const view = createEditor(DOC.indexOf('compactification'))
     const text = lineText(view, 'Central compactification problem')
     assert.ok(text.includes('{#sec:central-problem}'), `the attribute block must reveal for editing, saw: ${text}`)
+  })
+
+  it('renders the image attribute block away when the cursor is elsewhere (issue #27)', function () {
+    const view = createEditor(DOC.indexOf('prose paragraph'))
+    const text = lineText(view, 'A figure caption')
+    assert.ok(!text.includes('{#fig:one .wide}'), `the image attribute block must be rendered away, saw: ${text}`)
+    assert.ok(text.includes('A figure caption'), 'the image caption text itself must stay visible')
+  })
+
+  it('reveals the image attribute block while the cursor is on the image line (issue #27)', function () {
+    const view = createEditor(DOC.indexOf('A figure caption'))
+    const text = lineText(view, 'A figure caption')
+    assert.ok(text.includes('{#fig:one .wide}'), `the image attribute block must reveal for editing, saw: ${text}`)
   })
 
   it('decides the reveal threshold by the user preference, not by a value of its own', function () {
