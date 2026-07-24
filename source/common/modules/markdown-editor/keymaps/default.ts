@@ -70,6 +70,7 @@ import { addColAfter, addColBefore, moveNextCell, movePrevCell, swapNextCol, swa
 import { alignTables } from '../table-editor/commands/tables'
 import { addRowAfter, addRowBefore, moveNextRow, movePrevRow, swapNextRow, swapPrevRow } from '../table-editor/commands/rows'
 import { removeLineBreaks } from '../commands/transforms/remove-line-breaks'
+import { requestFormatDocument } from '../plugins/format-document-effect'
 import { openReferenceSearch } from '../plugins/reference-search-effect'
 import { navigateHistoryBack, navigateHistoryForward } from '../util/reference-navigation'
 import {
@@ -133,6 +134,11 @@ export function defaultKeymap (navigation?: NavigationShortcutConfig): Extension
     { key: 'Mod-b', run: applyBold },
     { key: 'Mod-i', run: applyItalic },
     { key: 'Mod-k', run: insertLink },
+
+    // Format the whole document with flowmark (issue #26). Dispatches a pure
+    // effect; the renderer runs the actual IPC format (electron stays out of
+    // the editor core so browser test bundles resolve).
+    { key: 'Mod-Alt-l', run: requestFormatDocument },
     { key: 'Ctrl-Shift-h', run: applyHighlight },
     // NOTE: We have to do it like this, because the Mod-Shift-i is occupied on
     // Windows/Linux by the DevTools shortcut, and Mod-Alt-i is the same for Mac.

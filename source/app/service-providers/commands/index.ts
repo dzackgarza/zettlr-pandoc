@@ -54,6 +54,7 @@ import enumDictFiles from '@common/util/enum-dict-files'
 import RenameTag from './rename-tag'
 import RenameReference from './rename-reference'
 import TikzRender from './tikz-render'
+import FormatDocument from './format-document'
 import WorkspaceSort from './ws-sort'
 
 export const commands = [
@@ -84,6 +85,7 @@ export const commands = [
   Print,
   RenameReference,
   RenameTag,
+  FormatDocument,
   RequestMove,
   RootClose,
   RootOpen,

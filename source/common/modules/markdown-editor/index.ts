@@ -37,6 +37,9 @@ import {
   type SelectionRange
 } from '@codemirror/state'
 import { foldEffect, foldState, syntaxTree } from '@codemirror/language'
+import { sendableUpdates } from '@codemirror/collab'
+import { formatDocument, type FormatResult, type MarkdownFormatter } from './commands/format-document'
+import { formatDocumentEffect } from './plugins/format-document-effect'
 
 // Keymaps/Input modes
 import { emacs } from '@replit/codemirror-emacs'
@@ -364,6 +367,13 @@ export default class MarkdownEditor extends EventEmitter {
             // App.vue's PandocQuickHelp mount.
             if (effect.is(openPandocQuickHelpEffect)) {
               this.emit('pandoc-quick-help')
+            }
+
+            // A keystroke requested a flowmark format (issue #26). The actual
+            // IPC format runs in the renderer (MainEditor.vue), which has
+            // electron; the editor core only relays the request.
+            if (effect.is(formatDocumentEffect)) {
+              this.emit('format-document')
             }
 
             // Listen for config updates, and parse them into the internal cache. We
@@ -939,6 +949,42 @@ export default class MarkdownEditor extends EventEmitter {
    */
   get value (): string {
     return [...this._instance.state.doc.iterLines()].join('\n')
+  }
+
+  /**
+   * Formats the current document with the injected formatter (issue #26),
+   * applying the result as a single, cursor-preserving undo step. A typed
+   * failure leaves the buffer untouched and is returned to the caller — the
+   * renderer surfaces it. The formatter is injected so this class (part of the
+   * shared editor core) never imports the electron-bound IPC formatter.
+   *
+   * @param   {MarkdownFormatter}      formatter  The formatter to run.
+   *
+   * @return  {Promise<FormatResult>}             The typed format result.
+   */
+  async runFormatter (formatter: MarkdownFormatter): Promise<FormatResult> {
+    return await formatDocument(this._instance, formatter)
+  }
+
+  /**
+   * Resolves once every pending change has been pushed to the document
+   * authority (there are no sendable collab updates left), or after `timeout`
+   * ms as a backstop. Callers use this to order a format-then-save: the on-disk
+   * write must see the formatted bytes, so the format's collab update has to
+   * reach main first.
+   *
+   * @param   {number}         timeout  Backstop in ms (default 2000).
+   *
+   * @return  {Promise<void>}
+   */
+  async whenSynced (timeout = 2000): Promise<void> {
+    const start = Date.now()
+    while (sendableUpdates(this._instance.state).length > 0) {
+      if (Date.now() - start > timeout) {
+        return
+      }
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
   }
 
   /**

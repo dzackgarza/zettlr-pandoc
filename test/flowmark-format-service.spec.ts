@@ -1,0 +1,115 @@
+/**
+ * @ignore
+ * BEGIN HEADER
+ *
+ * Contains:        Main-process flowmark format service contract (issue #26)
+ * CVM-Role:        TESTING
+ * Maintainer:      D. Zack Garza
+ * License:         GNU GPL v3
+ *
+ * Description:     Locks the flowmark service's typed outcomes over the REAL
+ *                  write-temp -> run -> read-back roundtrip. flowmark itself is
+ *                  a uvx external tool, so the runner command is injected here
+ *                  with ordinary POSIX utilities that stand in for the three
+ *                  cases the caller must distinguish: the binary is absent
+ *                  (flowmark-absent), it runs but fails (flowmark-error), and
+ *                  it succeeds and the file is read back (ok). Absence is a
+ *                  typed result the editor surfaces, never a silent no-op.
+ *
+ * END HEADER
+ */
+
+import { strict as assert } from 'assert'
+import { readFile } from 'fs/promises'
+import { tmpdir } from 'os'
+import path from 'path'
+import { formatMarkdownText } from 'source/app/util/flowmark-format'
+
+describe('flowmark format service (issue #26)', function () {
+  it('reports a typed flowmark-absent result when the runner binary does not exist', async function () {
+    const result = await formatMarkdownText('The cat sat.\n', {
+      command: 'zettlr-no-such-binary-xyzzy',
+      argsPrefix: []
+    })
+    assert.equal(result.ok, false)
+    if (!result.ok) {
+      assert.equal(result.kind, 'flowmark-absent', 'a missing runner must be typed as absent, not swallowed')
+    }
+  })
+
+  it('reports a typed flowmark-error when the runner exits non-zero', async function () {
+    // `false` exits 1 without touching the file.
+    const result = await formatMarkdownText('The cat sat.\n', {
+      command: 'false',
+      argsPrefix: []
+    })
+    assert.equal(result.ok, false)
+    if (!result.ok) {
+      assert.equal(result.kind, 'flowmark-error', 'a non-zero exit must be typed as an error')
+    }
+  })
+
+  it('reads the (possibly rewritten) temp file back on success', async function () {
+    // `true` exits 0 and leaves the temp file exactly as written, so the
+    // roundtrip returns the input bytes — proving write -> run -> read-back.
+    const text = 'The cat sat.  The dog ran.\n'
+    const result = await formatMarkdownText(text, { command: 'true', argsPrefix: [] })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.equal(result.formatted, text)
+    }
+  })
+
+  it('returns the rewritten bytes when the runner edits the temp file in place', async function () {
+    // A runner that appends a marker to its last argument (the temp file)
+    // stands in for flowmark's --inplace rewrite; the service must surface the
+    // rewritten bytes, not the original input.
+    const result = await formatMarkdownText('original\n', {
+      command: 'sh',
+      argsPrefix: [ '-c', 'printf "formatted\\n" > "$1"', 'sh' ]
+    })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.equal(result.formatted, 'formatted\n')
+    }
+  })
+
+  it('bounds a hung runner: resolves ok:false timeout and terminates the child', async function () {
+    // A runner that records its own PID and then blocks forever stands in for a
+    // wedged `uvx`/flowmark (a git fetch that stalls, a deadlocked process).
+    // `exec sleep` replaces the shell in-place, so the recorded $$ is the PID of
+    // the actual hanging process the service must kill — no grandchild orphan.
+    // Without a time bound `formatMarkdownText` would await `close` forever and
+    // the caller's save/format would silently hang; the service must instead
+    // resolve with a typed failure within the injected bound AND leave no
+    // lingering process.
+    const pidFile = path.join(tmpdir(), `zettlr-flowmark-timeout-${process.pid}-${Date.now()}.pid`)
+    const script = `echo $$ > '${pidFile}'; exec sleep 300`
+
+    const start = Date.now()
+    const result = await formatMarkdownText('The cat sat.\n', {
+      command: 'sh',
+      argsPrefix: [ '-c', script, 'sh' ],
+      timeoutMs: 250
+    })
+    const elapsed = Date.now() - start
+
+    assert.equal(result.ok, false, 'a hung runner must not resolve as a successful format')
+    if (!result.ok) {
+      assert.equal(result.kind, 'flowmark-timeout', 'exceeding the bound must be a typed timeout failure, not a swallowed no-op')
+    }
+    // The bound is real: resolution must not have waited on the 300s sleep.
+    assert.ok(elapsed < 30000, `expected resolution within the bound, took ${String(elapsed)}ms`)
+
+    // The child must actually be dead: signal 0 to a reaped PID raises ESRCH.
+    // If the service resolved the timeout without killing the child, the sleep
+    // is still alive here and this probe would NOT throw ESRCH.
+    const pid = Number.parseInt((await readFile(pidFile, 'utf-8')).trim(), 10)
+    assert.ok(Number.isInteger(pid) && pid > 0, 'the stand-in runner must have recorded its PID')
+    assert.throws(
+      () => { process.kill(pid, 0) },
+      (err: NodeJS.ErrnoException) => err.code === 'ESRCH',
+      'the timed-out child must be terminated, not left orphaned'
+    )
+  })
+})

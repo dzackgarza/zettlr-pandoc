@@ -143,7 +143,7 @@ export function getImportExportFields (): PreferencesFieldset[] {
           model: 'export.htmlTemplate',
           placeholder: trans('Pandoc default'),
           reset: '',
-          filter: [ { extensions: [ 'html', 'htm', 'template' ], name: 'HTML template' } ]
+          filter: [{ extensions: [ 'html', 'htm', 'template' ], name: 'HTML template' }]
         },
         {
           type: 'file',
@@ -151,7 +151,7 @@ export function getImportExportFields (): PreferencesFieldset[] {
           model: 'export.latexTemplate',
           placeholder: trans('Pandoc default'),
           reset: '',
-          filter: [ { extensions: [ 'tex', 'latex', 'template' ], name: 'LaTeX template' } ]
+          filter: [{ extensions: [ 'tex', 'latex', 'template' ], name: 'LaTeX template' }]
         }
       ]
     },

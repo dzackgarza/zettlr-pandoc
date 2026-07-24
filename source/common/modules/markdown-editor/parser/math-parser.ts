@@ -199,7 +199,7 @@ export const blockMathParser: BlockParser = {
 
     // Parse the interior content using stex
     const innerElements = ctx.elt(stexLang.parser.parse(equationLines.join('\n')), from)
-    const codeText = ctx.elt('CodeText', from, contentEnd, [ innerElements ])
+    const codeText = ctx.elt('CodeText', from, contentEnd, [innerElements])
 
     const openingMark = ctx.elt('CodeMark', blockStart, from - 1)
     const closingMark = ctx.elt('CodeMark', closeMarkFrom, closeMarkTo)

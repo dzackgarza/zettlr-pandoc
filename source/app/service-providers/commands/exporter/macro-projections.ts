@@ -23,9 +23,9 @@ function assertMacroDefinition (name: string, definition: unknown): asserts defi
 function sortedEntries (macros: Record<string, unknown>): Array<[string, MathJaxMacro]> {
   return Object.entries(macros)
     .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
-    .map(([name, definition]) => {
+    .map(([ name, definition ]) => {
       assertMacroDefinition(name, definition)
-      return [name, definition]
+      return [ name, definition ]
     })
 }
 
@@ -52,12 +52,12 @@ export function projectMathJaxHeader (macros: Record<string, unknown>): string {
  */
 export function projectTexHeader (macros: Record<string, unknown>): string {
   return sortedEntries(macros)
-    .map(([name, definition]) => {
+    .map(([ name, definition ]) => {
       if (typeof definition === 'string') {
         return `\\providecommand{\\${name}}{${definition}}`
       }
 
-      const [body, requiredArguments, optionalDefault] = definition
+      const [ body, requiredArguments, optionalDefault ] = definition
       const optionalArguments = optionalDefault === undefined ? '' : `[${optionalDefault}]`
       return `\\providecommand{\\${name}}[${requiredArguments}]${optionalArguments}{${body}}`
     })
