@@ -53,6 +53,7 @@ import type { CodeFileDescriptor, DirDescriptor, MDFileDescriptor } from '@dts/c
 import { getBibliographyForDescriptor as getBibliography } from '@common/util/get-bibliography-for-descriptor'
 import { EditorSelection } from '@codemirror/state'
 import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ipc-api'
+import { ipcMarkdownFormatter, surfaceFormatResult } from '@common/modules/markdown-editor/commands/format-document-ipc'
 import { useConfigStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { isAbsolutePath, pathBasename, pathDirname, resolvePath } from '@common/util/renderer-path-polyfill'
 import type { DocumentManagerIPCAPI, DocumentsUpdateContext } from 'source/app/service-providers/documents'
@@ -242,16 +243,38 @@ ipcRenderer.on('shortcut', (event, command) => {
 
   if (command === 'save-file') {
     // Main is telling us to save, so tell main to save the current file.
-    ipcRenderer.invoke('documents-provider', {
-      command: 'save-file',
-      payload: { path: props.file.path }
-    } as DocumentManagerIPCAPI)
-      .then(result => {
-        if (result !== true) {
-          console.error('Retrieved a falsy result from main, indicating an error with saving the file.')
-        }
-      })
-      .catch(e => console.error(e))
+    const doSave = (): void => {
+      ipcRenderer.invoke('documents-provider', {
+        command: 'save-file',
+        payload: { path: props.file.path }
+      } as DocumentManagerIPCAPI)
+        .then(result => {
+          if (result !== true) {
+            console.error('Retrieved a falsy result from main, indicating an error with saving the file.')
+          }
+        })
+        .catch(e => console.error(e))
+    }
+
+    // Format-on-save (issue #26): when enabled for a Markdown file, run flowmark
+    // over the buffer first and wait for the format's collab update to reach the
+    // document authority, so the on-disk write sees the formatted bytes. The
+    // format is a single undo step, so one undo reverts an unwanted auto-format.
+    if (configStore.config.editor.formatOnSave && isMarkdown.value && currentEditor !== undefined) {
+      const editor = currentEditor
+      editor.runFormatter(ipcMarkdownFormatter)
+        .then(async result => {
+          surfaceFormatResult(result)
+          await editor.whenSynced()
+        })
+        .then(doSave)
+        .catch(e => {
+          console.error('Format-on-save failed; saving unformatted', e)
+          doSave()
+        })
+    } else {
+      doSave()
+    }
   } else if (command === 'search') {
     currentEditor.toggleSearchPanel()
   } else if (command === 'toggle-typewriter-mode') {
@@ -704,6 +727,14 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   // PandocQuickHelp mount — the same surface the Help menu opens.
   editor.on('pandoc-quick-help', () => {
     emit('openPandocQuickHelp')
+  })
+
+  // A keystroke (Mod-Alt-l) requested a flowmark format (issue #26). Run the
+  // IPC format here in the renderer and surface any absence/error as a toast.
+  editor.on('format-document', () => {
+    editor.runFormatter(ipcMarkdownFormatter)
+      .then(surfaceFormatResult)
+      .catch(e => { console.error('Format document failed', e) })
   })
 
   // The context menu (or command registry) requested the create-label

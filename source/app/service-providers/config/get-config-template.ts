@@ -154,6 +154,8 @@ export interface ConfigOptions {
     autocompleteSuggestEmojis: boolean
     snippetAutocompleteTriggerCharacter: ':'
     autoSave: 'off'|'immediately'|'delayed'
+    // Run flowmark over the document on every save (issue #26). Off by default.
+    formatOnSave: boolean
     citeStyle: 'in-text'|'in-text-suffix'|'regular'
     autoCloseBrackets: boolean
     showLinkPreviews: boolean
@@ -383,6 +385,7 @@ export function getConfigTemplate (): ConfigOptions {
     // Editor related stuff
     editor: {
       autoSave: 'off',
+      formatOnSave: false, // Run flowmark on save (issue #26)
       autocompleteSuggestEmojis: true,
       snippetAutocompleteTriggerCharacter: ':',
       autoCloseBrackets: true,

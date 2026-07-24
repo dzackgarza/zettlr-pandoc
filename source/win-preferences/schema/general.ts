@@ -66,6 +66,12 @@ export function getGeneralFields (appLangOptions: Record<string, string>): Prefe
             immediately: trans('Immediately'),
             delayed: trans('After a short delay')
           }
+        },
+        {
+          // Issue #26: run flowmark over the document on every explicit save.
+          type: 'checkbox',
+          label: trans('Format the document with flowmark on save'),
+          model: 'editor.formatOnSave'
         }
       ]
     },
