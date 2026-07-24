@@ -78,7 +78,7 @@ export function initializeMathJax (macros: Record<string, MathJaxMacro>): Promis
     return initializing
   }
 
-  const tex = new TeX({ packages: [ ...mathJaxPackages ], macros })
+  const tex = new TeX({ packages: [...mathJaxPackages], macros })
 
   if (documentElement === undefined) {
     mainAdaptorInstance = liteAdaptor()

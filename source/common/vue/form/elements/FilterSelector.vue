@@ -66,7 +66,7 @@ function toggle (name: string): void {
 }
 
 function move (name: string, delta: number): void {
-  const arr = [ ...props.modelValue ]
+  const arr = [...props.modelValue]
   const i = arr.indexOf(name)
   const j = i + delta
   if (i < 0 || j < 0 || j >= arr.length) {

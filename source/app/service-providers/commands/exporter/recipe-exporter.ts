@@ -118,7 +118,7 @@ export async function runRecipeExport (
       code: result.code !== 0 ? result.code : 1,
       stdout: splitLines(result.stdout),
       stderr: splitLines(result.stderr).concat(
-        produced === undefined ? [ 'compile-pandoc did not produce a PDF' ] : []
+        produced === undefined ? ['compile-pandoc did not produce a PDF'] : []
       ),
       targetFile: target
     }
