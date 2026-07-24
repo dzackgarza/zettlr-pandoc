@@ -46,6 +46,17 @@ test-reference-ui:
 test-pandoc-config-integration:
     bash "{{justfile_directory()}}/scripts/test-pandoc-config-integration.sh"
 
+# Real-toolchain proof for issue #26: drives the production flowmark service
+# (source/app/util/flowmark-format.ts) with NO injected runner, so it runs the
+# exact production `uvx … flowmark --inplace --semantic …` command string
+# end-to-end against the real flowmark binary and asserts the semantic reflow.
+# uvx fetches flowmark from git (network), so this is deliberately NOT a
+# *.spec.ts file and is excluded from the default `just test` commit gate; run
+# it explicitly. Fails loudly (typed flowmark-absent) if flowmark can't launch.
+test-flowmark-integration:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 180000 "test/flowmark-format-integration.ts"
+
 # Run the repository test suite. The guard executes before Mocha can start.
 test:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"

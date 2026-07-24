@@ -14,8 +14,19 @@ export default [
       'scripts/**/*.js',
       'resources/**/*.js',
       '.webpack/**/*.js',
-      // Electron-invoked CommonJS proof harnesses; same runner-script
-      // category as scripts/, and require() is their module system.
+      // @typescript-eslint/no-require-imports is INAPPLICABLE to these files,
+      // not suppressed. They are Electron-invoked CommonJS harnesses run by
+      // `node --require` (e.g. scripts/harness/electron-stub.cjs patches
+      // Module._load before tsx loads — justfile:201). A .cjs file executed
+      // directly by node IS CommonJS: require() is its module system; ESM
+      // `import` is a syntax error, and the rule's only accepted alternative,
+      // `import x = require()`, is TypeScript-only syntax node cannot run — so
+      // no code form both satisfies the rule and preserves the preload. The
+      // rule stays fully active for all TS/ESM (a require() in any linted .ts
+      // is still an error); this only exempts the .cjs harness category, the
+      // same directory+extension shape as the scripts/**/*.js and
+      // resources/**/*.js exemptions above. scripts/**/*.cjs currently matches
+      // exactly scripts/harness/electron-stub.cjs.
       'test/**/*.cjs',
       'scripts/**/*.cjs'
     ]
