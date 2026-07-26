@@ -614,7 +614,10 @@ describe("Agent API integration (spec section 15)", function () {
     provider.reviewStore.applyChunkAccept(docId, review.reviewId, 0, 6, 1);
     // After accept, the remaining chunk (BETA) needs to be rejected
     // Use clearUnresolved to reject all remaining
-    const clearResult = provider.reviewStore.clearUnresolved(docId)!;
+    const clearRaw = provider.reviewStore.clearUnresolved(docId);
+    assert.equal(clearRaw.ok, true, "clear should succeed");
+    if (!clearRaw.ok) return;
+    const clearResult = clearRaw;
     // Push the cleared working text to the document (in a real flow, the
     // agent API's clearReview method would update the document)
     const docVersion = await currentDocumentVersion(filePath);
