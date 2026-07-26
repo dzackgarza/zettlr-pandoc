@@ -19,7 +19,9 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v6
         with:
-          ref: develop
+          # A workflow-change push validates the pushed revision. Scheduled and
+          # manual update runs continue to own the develop branch.
+          ref: ${{ github.event_name == 'push' && github.sha || 'develop' }}
       - name: Setup Bun 1.3.11
         uses: oven-sh/setup-bun@v2
         with:
@@ -51,6 +53,7 @@ jobs:
       - name: Test build
         run: bun run test
       - name: Push changes
+        if: github.event_name != 'push'
         uses: ad-m/github-push-action@v1.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
