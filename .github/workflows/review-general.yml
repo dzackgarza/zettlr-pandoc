@@ -1,14 +1,12 @@
 # Repo-owned configuration: edit triggers (cron, branches) and `with:` values
 # directly. All review behavior lives upstream in the referenced workflow.
 name: General Review
-
 on:
   workflow_dispatch:
   schedule:
     - cron: '0 8 * * 1'
   push:
-    branches: [main]
-
+    branches: [develop]
 jobs:
   general:
     uses: dzackgarza/ai-review-ci/.github/workflows/_review.yml@main

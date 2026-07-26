@@ -69,7 +69,7 @@ describe('Recoverable reference-error surface', function () {
       '--ozone-platform=x11',
       '--disable-gpu',
       // Same sandbox posture as the reference-search-overlay probe: a fresh
-      // yarn install leaves chrome-sandbox without SUID bits; the probe
+      // A fresh package-manager install leaves chrome-sandbox without SUID bits; the probe
       // renders local test content only.
       '--no-sandbox',
       path.join(root, 'test/reference-error-surface-probe.cjs'),

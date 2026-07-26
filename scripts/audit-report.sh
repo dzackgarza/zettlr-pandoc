@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Formats yarn audit output and reports results to Discord and/or GHA summary.
+# Formats Bun audit output and reports results to Discord and/or GHA summary.
 # Usage: ./scripts/audit-report.sh format|discord|summary
 set -euo pipefail
 
@@ -11,16 +11,34 @@ AUDIT_FILE=audit_result.txt
 load_audit_content() {
   AUDIT_CONTENT=$(<"$AUDIT_FILE")
   AUDIT_CHARS=${#AUDIT_CONTENT}
-  AUDIT_COUNT=$(jq length "$AUDIT_JSON")
+  AUDIT_COUNT=$(jq '.metadata.vulnerabilities.total' "$AUDIT_JSON")
 }
 
 # NOTE: The jq filter below condenses the most important info into a human-readable
 # txt file. This is merely meant as a canary; maintainers should run the audit
 # locally once informed to get all information if necessary.
 format_results() {
-  jq --slurp '.' "$AUDIT_JSON" > tmp.json
-  mv tmp.json "$AUDIT_JSON"
-  jq -r '.[] | .value as $v | .children += { package: $v } | .children | ("Package: \(.package)", "  Version(s) \(."Vulnerable Versions")", "  \(.Issue) (Severity: \(.Severity))", "  URL: \(.URL)")' "$AUDIT_JSON" > "$AUDIT_FILE"
+  jq -r '
+    .vulnerabilities
+    | to_entries[]
+    | .key as $package
+    | .value as $vulnerability
+    | (
+        "Package: \($package)",
+        "  Version(s): \($vulnerability.range)",
+        "  Severity: \($vulnerability.severity)",
+        "  Via: \(
+          [
+            $vulnerability.via[]
+            | if type == "string"
+              then .
+              else "\(.title) (\(.url))"
+              end
+          ]
+          | join("; ")
+        )"
+      )
+  ' "$AUDIT_JSON" > "$AUDIT_FILE"
 }
 
 report_discord() {
@@ -30,7 +48,7 @@ report_discord() {
   curl -d "$(cat <<EOF | jq -Rs '{content: .}'
 ## Repository Audit Results
 
-A new audit has been run against Zettlr’s \`yarn.lock\` file. This happens automatically if dependencies have changed, or if a maintainer has manually requested an audit. There have been **${AUDIT_COUNT} results**.
+A new audit has been run against Zettlr’s \`bun.lock\` file. This happens automatically if dependencies have changed, or if a maintainer has manually requested an audit. There have been **${AUDIT_COUNT} results**.
 
 For the full results (${AUDIT_CHARS} characters), please see the summary of the run: ${RUN_URL}.
 

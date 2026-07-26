@@ -9,7 +9,7 @@
  *
  * Description:     This script adds a .desktop shortcut file to the user's
  *                  application directory. This will point to whatever file the
- *                  `yarn package`-command will produce. This allows compiling
+ *                  `bun run package` command will produce. This allows compiling
  *                  the app from source and immediately use that one instead of
  *                  the predefined binaries. It should be used cautiously, since
  *                  building fresh from source may introduce bugs.

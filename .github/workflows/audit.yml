@@ -1,24 +1,19 @@
 name: Audit
-
 on:
   workflow_dispatch: {}
   push:
     paths:
-      - yarn.lock
+      - bun.lock
   pull_request:
     paths:
-      - yarn.lock
-
+      - bun.lock
 permissions:
   contents: read
-
 env:
   NODE_VERSION: '22'
-
 concurrency:
   group: 'audit'
   cancel-in-progress: true
-
 jobs:
   audit:
     name: Run audit
@@ -26,29 +21,33 @@ jobs:
     env:
       WEBHOOK: ${{ secrets.DISCORD_AUDIT_WEBHOOK }}
     steps:
-    # Setup
-    - uses: actions/checkout@v6
-      with:
-        ref: ${{ github.ref }}
-    - name: Enable Yarn 4.x
-      run: corepack enable
-    - name: Setup NodeJS ${{ env.NODE_VERSION }}
-      uses: actions/setup-node@v6
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'yarn'
-    - name: Install packages
-      run: yarn install --immutable
-    # Run the actual audit
-    - name: Audit
-      run: |
-        yarn npm audit --recursive --severity moderate --json > audit_result.json || true
-    - name: Format results
-      run: ./scripts/audit-report.sh format
-    - name: Report to Discord
-      if: env.WEBHOOK != ''
-      env:
-        RUN_URL: https://github.com/Zettlr/Zettlr/actions/runs/${{ github.run_id }}
-      run: ./scripts/audit-report.sh discord
-    - name: Report results in summary
-      run: ./scripts/audit-report.sh summary
+      # Setup
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+      - name: Setup Bun 1.3.11
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - name: Setup NodeJS ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install packages
+        run: bun ci
+      # Run the actual audit
+      - name: Audit
+        run: |-
+          audit_status=0
+          bun audit --audit-level moderate --json > audit_result.json || audit_status=$?
+          jq -e 'type == "object" and has("vulnerabilities") and has("metadata")' audit_result.json > /dev/null
+          test "${audit_status}" -eq 0 || test "${audit_status}" -eq 1
+      - name: Format results
+        run: ./scripts/audit-report.sh format
+      - name: Report to Discord
+        if: env.WEBHOOK != ''
+        env:
+          RUN_URL: https://github.com/Zettlr/Zettlr/actions/runs/${{ github.run_id }}
+        run: ./scripts/audit-report.sh discord
+      - name: Report results in summary
+        run: ./scripts/audit-report.sh summary
