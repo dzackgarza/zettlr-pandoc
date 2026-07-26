@@ -43,4 +43,10 @@ This PR owns the Zettlr-Pandoc side of document-diff review:
 
 # Known External State
 
-Repository QC wiring is already tracked by issue #4 and PR #35. This PR does not claim to repair that project-wide gate.
+Repository CI/QC infrastructure remains outside this PR.
+
+- Issue #4 tracks the repository QC wiring/toolchain gap.
+- PR #35 is closed and did not clear the current branch gates.
+- Current GitHub checks for this branch fail in existing CI surfaces that this PR does not edit: the hosted runner lacks the Pandoc/export toolchain required by the repository tests, and the `PR Review` workflow returned a startup failure with no jobs.
+
+This PR does not claim to repair those project-wide gates.
