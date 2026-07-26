@@ -204,6 +204,15 @@ capture-rename-preview output:
     node "{{justfile_directory()}}/test/reference-rename-preview-build.cjs" "{{output}}"
     xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --ozone-platform=x11 --disable-gpu --no-sandbox "{{justfile_directory()}}/test/reference-rename-preview-probe.cjs" "{{output}}"
 
+# Capture the issue #34 review-diff accept/reject interface in isolated
+# offscreen Electron at desktop and narrow widths, light and dark.
+# This never starts Forge, a dev server, xdg-open, or the system browser.
+capture-review-diff output:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    mkdir -p "{{output}}"
+    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-review-diff-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/review-diff-visual-bundle.js"
+    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --ozone-platform=x11 --disable-gpu --no-sandbox "{{justfile_directory()}}/test/editor-review-diff-visual-capture.cjs" "{{output}}"
+
 # Run a real export headlessly (no GUI), via the app's own makeExport with the
 # exact profile list the GUI sees (userData/defaults + custom profiles). Proves
 # an export end-to-end from the terminal. Usage:

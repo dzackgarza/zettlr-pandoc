@@ -1,75 +1,46 @@
 # Claim
 
-Implement the complete workspace-resolved Pandoc reference authoring workflow specified by issue #1.
+Implement the granular accept/reject review interface specified by issue #34.
 
-Closes #1.
+## GitHub Tracking
 
-Milestone: [Usable for basic Pandoc-based work](https://github.com/dzackgarza/zettlr-pandoc/milestone/1)
+- Target issue set: #34
+- Milestone: none assigned
+- Closes on merge: Closes #34
+- References only: none
 
-Canonical contract and rationale:
+# Delivery Boundary
 
-- [Issue #1 implementation contract](https://github.com/dzackgarza/zettlr-pandoc/issues/1)
-- [User-observable acceptance stories](https://github.com/dzackgarza/zettlr-pandoc/issues/1#issuecomment-5041669222)
-- [Product-intent and scope stories](https://github.com/dzackgarza/zettlr-pandoc/issues/1#issuecomment-5041693241)
+This PR owns the Zettlr-Pandoc side of document-diff review:
 
-This draft locks the claim before implementation. No checklist item below is complete merely because the contract files exist.
+- a `review-diff` CLI route that accepts a target document and a unified patch;
+- strict parsing and validation for a single text-file proposition;
+- optional SHA-256 baseline fencing before a review session starts;
+- a CodeMirror 6 unified diff review view for Markdown documents;
+- per-chunk accept/reject controls backed by CodeMirror merge chunks;
+- unresolved-chunk state tracked by the document provider;
+- save refusal while chunks remain unresolved;
+- save refusal when the on-disk document has drifted from the review baseline;
+- focused tests and rendered screenshots for the review UI.
 
-# Delivery boundary
+# Product Boundaries
 
-This PR owns the complete Zettlr-Pandoc side of issue #1:
+- This is not a Git repository review feature.
+- This does not support multi-file, binary, rename, copy, create, delete, mode-change, or directory patches.
+- The app reviews one already-supported Markdown/code text document at a time.
+- Accepting a chunk keeps the proposed text for that chunk.
+- Rejecting a chunk restores the baseline text for that chunk.
+- The document provider remains the authority for dirty state and final disk writes.
+- Unsupported inputs fail before opening or modifying the target document.
 
-- workspace-wide saved and live definition-and-occurrence indexing;
-- the combined citation-preserving `@` completion surface;
-- supported pandoc-crossref and theorem-div label extraction;
-- rendered reference and definition presentation, hover preview, diagnostics, and quick help;
-- Project-membership status and mechanical append actions;
-- Mod-P definition search and definition-local reverse lookup;
-- edit-first click behavior, Mod-click navigation, and per-pane Back/Forward history;
-- workspace Find References and safe rename;
-- ordered Project inputs for every export profile;
-- preflight and recoverable-error behavior;
-- guarded real-boundary regression and visual proof.
+# Acceptance and Proof Obligations
 
-The required companion PR is [pandoc-config#5](https://github.com/dzackgarza/pandoc-config/pull/5) (draft): ordered multi-file `compile-pandoc-project`, `pandoc-crossref` in the project filter chain, and the explicit-ID/`@thm:`-family theorem filter bridge, with the legacy single-file surface proven byte-stable. This PR cannot become ready or merge until the cross-repository proof passes against that branch.
+- [x] #34: Baseline plus valid multi-chunk proposition opens review mode; accepting the first chunk and rejecting the second saves exactly the expected mixed result. — `test/editor-review-diff.spec.ts` drives the real merge controls; `test/review-diff-save-gate.spec.ts` proves the provider writes the exact mixed buffer once chunks are resolved.
+- [x] #34: Baseline plus proposition plus external disk edit before resolution refuses the resolution/write and leaves the external edit intact. — `test/review-diff-save-gate.spec.ts`.
+- [x] #34: Malformed or non-applicable patch exits nonzero through the CLI route and does not open or modify the document. — `source/main.ts` preflight exits before the single-instance handoff; `test/review-diff-request.spec.ts`.
+- [x] #34: The rendered review interface has visible independently actionable chunks at desktop and narrow widths. — `just capture-review-diff /tmp/zettlr-review-diff-captures`, screenshots inspected.
+- [x] #34: The branch uses maintained CodeMirror/jsdiff dependencies and does not introduce a bespoke patch parser. — `@codemirror/merge@^6.12.2`, `diff@^9.0.0`.
 
-# Product boundaries
+# Known External State
 
-- The workspace is the authoring/discovery namespace; Project membership is publishability status.
-- The launch dialect is explicit Markdown-native pandoc-crossref labels plus the fixed theorem-div prefix registry.
-- Existing bibliography citation behavior remains unchanged.
-- Existing footnote behavior is preserved and only integrated with the shared navigation history and modifier navigation.
-- The GUI resolves authored identity and locations; export tools and templates exclusively own numbering.
-- Authoring never runs Pandoc or pandoc-crossref on typing or save.
-- Automatic heading IDs, arbitrary label families, raw LaTeX references, filter-created targets, generated/build-only targets, and mixed-provider rendering are outside the launch contract.
-- Diagnostics explain source contradictions without guessing author intent or fabricating targets.
-- GUI resolution warnings never block a valid custom export.
-
-# Acceptance and proof obligations
-
-- [x] Commit a constellation of faithful red proofs through the sanctioned red-commit path before production implementation. — 7 Red-Proof #1 commits (7e3494aa5, 9ca7e35b7, 515858f5f, 5ed9d44a5, 153af2fbf, 60afe7988, 7d130a07e, 68c1d3eaf, 00c47cba4), each gate-verified red on assertions before its green.
-- [x] Parse supported explicit attributes and labels with exact ranges, including colon-bearing IDs and malformed nearby syntax. — extract-references + subfigure + escaped-quote/near-miss specs; real-pandoc AST oracle over three fixture files.
-- [x] Reconcile saved FSAL snapshots and complete live-buffer replacements across save, edit, rename, move, deletion, and stale events. — fsal-reference-snapshots, reference-index-overlay (incl. file-move, stale events, generation guards), production live-buffer reporter.
-- [x] Preserve existing bibliography citation sourcing, insertion, rendering, and citeproc behavior while adding label completion. — byte-identity differential over the citation trigger matrix (options + applied docs, function identity included); pure-bib chip parity guards.
-- [x] Prove workspace completion and navigation across current-Project, omitted-file, another-Project, and standalone states. — project-reference-status matrix + completion gating + append-and-continue wire proof + hover status scenes.
-- [x] Prove reference chips, definition badges, hover excerpts, quick help, Mod-P, reverse lookup, and diagnostics in the real editor. — headless EditorView specs + Electron probes + inspected captures for every surface.
-- [x] Prove edit-first click, Mod-click navigation, tab reuse/opening, per-pane Back/Forward restoration, and footnote history. — click-listeners/probe trio, tab-manager + documents-provider join specs, footnote parity guards.
-- [x] Prove previewed atomic workspace rename, dirty-buffer preservation, collision and concurrency abort, and undo. — compute-reference-edits + rename-atomicity (disk-fenced abort-all, temp-debris asserted) + preview dialog probe + production undo route lock.
-- [x] Pass ordered Project inputs through every app export profile and the linked pandoc-config pipeline. — export-ordered-inputs/export-quoted-inputs argv proofs (shell:false), cross-repo recipe green against pandoc-config#5.
-- [x] Prove externally owned numbering and links through representative supported output profiles without introducing GUI numbering. — inspected PDFs with native cleveref numbering, preserved citation text, suppressed-form bare numbers; GUI renders identity only (no-number assertions). Batched limit: shell harnesses exercise one LaTeX profile (issue #5).
-- [x] Route every test, lint, build, Electron, Playwright, Pandoc, and capture workflow through guarded `just` recipes. — test-references / test-reference-ui / test-pandoc-config-integration / capture-* recipes, all guard-first.
-- [x] Hard-bail browser-capable recipes before process creation when a dev server is active; never use `xdg-open` or the user's running browser. — assert-dev-server-stopped.py fronts every such recipe; zero xdg-open.
-- [x] Capture and inspect all required visual states with one controlled application instance. — completion, resolved/missing/duplicate/outside-Project, collapsed/expanded hover, Mod-P, citing-locations, creation dialog, rename preview, navigation controls, nested divs: all captured and inspected (defects found visually were fixed and re-captured).
-- [x] Read and disposition every review and CI feedback surface before marking the PR ready. — `.pr/REVIEW_LOG.md`: three-reviewer adversarial round, every finding dispositioned with commit anchors or batched with evidence (issues #4, #5; pandoc-config#6).
-
-# Current blockers
-
-None. All issue #1 workstreams are implemented red-first and proven; the companion PR pandoc-config#5 is integrated and cross-repo-proven; the full commit gate stands at 727 passing / 0 failing; all contract-named visual states are captured and inspected; the independent three-reviewer adversarial round is fully dispositioned in `.pr/REVIEW_LOG.md`. Follow-up work is tracked publicly: QC wiring (#4), review debt batch (#5), companion style gap (pandoc-config#6).
-
-# Review focus
-
-Review this draft against issue #1 before implementation begins:
-
-- Does the claim preserve the product model expressed in the decision answers?
-- Does any checklist item reintroduce GUI numbering, profile-specific semantic emulation, generated-target analysis, citation redesign, or heuristic author-intent repair?
-- Are any issue #1 acceptance behaviors missing from the claimed delivery boundary or proof obligations?
-- Would the proposed proof still pass on a plausibly broken editor, unsafe browser harness, or inconsistent export path?
+Repository QC wiring is already tracked by issue #4 and PR #35. This PR does not claim to repair that project-wide gate.

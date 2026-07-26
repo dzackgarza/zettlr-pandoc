@@ -38,6 +38,8 @@ import type FSALWatchdog from '@providers/fsal/fsal-watchdog'
 import { getDocumentTypeForExtension, hasImageExt, hasMdOrCodeExt, hasPDFExt } from 'source/common/util/file-extention-checks'
 import isDir from 'source/common/util/is-dir'
 import type { DocumentLocation, SourceRange } from '@dts/common/references'
+import type { ReviewDiffSession } from '@dts/common/review-diff'
+import { sha256Text } from 'source/app/util/review-diff'
 
 type DocumentWindows = Record<string, DocumentTree>
 type DocumentWindowsJSON = Record<string, BranchNodeJSON|LeafNodeJSON>
@@ -70,6 +72,11 @@ export interface DocumentsUpdateContext {
    * cross-file reference jump. Only ever present on ACTIVE_FILE events.
    */
   targetRange?: SourceRange
+  /**
+   * Additive (issue #34): a validated single-document diff proposition to
+   * mount in the active editor.
+   */
+  reviewDiffSession?: ReviewDiffSession
 }
 
 /**
@@ -137,6 +144,11 @@ interface Document {
   saveTimeout: undefined|NodeJS.Timeout
 }
 
+interface ReviewDiffSessionState {
+  session: ReviewDiffSession
+  unresolvedChunks: number|undefined
+}
+
 export type DocumentAuthorityIPCAPI = IPCAPI<{
   'get-document': { filePath: string }
   'pull-updates': { filePath: string, version: number }
@@ -159,6 +171,8 @@ export type DocumentManagerIPCAPI = IPCAPI<{
   'get-open-workspace-files': { path: string }
   'sort-open-files': LeafLoc & { newOrder: string[] }
   'get-file-modification-status': unknown
+  'get-review-diff-session': { path: string }
+  'set-review-diff-status': { path: string, sessionId: string, unresolvedChunks: number }
   'move-file': {
     originWindow: string,
     targetWindow: string,
@@ -233,6 +247,12 @@ export default class DocumentManager extends ProviderContract {
   private readonly _remoteChangeDialogShownFor: string[]
 
   /**
+   * Active issue #34 review sessions keyed by document path. The renderer owns
+   * chunk resolution; the provider owns save refusal and baseline fencing.
+   */
+  private readonly _reviewDiffSessions: Map<string, ReviewDiffSessionState>
+
+  /**
    * This holds all currently opened documents somewhere across the app.
    *
    * @var {Document[]}
@@ -256,6 +276,7 @@ export default class DocumentManager extends ProviderContract {
     this._config = new PersistentDataContainer(containerPath, 'yaml')
     this._ignoreChanges = []
     this._remoteChangeDialogShownFor = []
+    this._reviewDiffSessions = new Map()
     this.documents = []
     this._shuttingDown = false
     this._lastEditor = {
@@ -339,6 +360,17 @@ export default class DocumentManager extends ProviderContract {
         }
         case 'get-file-modification-status': {
           return this.documents.filter(x => this.isModified(x.filePath)).map(x => x.filePath)
+        }
+        case 'get-review-diff-session': {
+          return this._reviewDiffSessions.get(payload.path)?.session
+        }
+        case 'set-review-diff-status': {
+          const review = this._reviewDiffSessions.get(payload.path)
+          if (review === undefined || review.session.id !== payload.sessionId) {
+            return false
+          }
+          review.unresolvedChunks = payload.unresolvedChunks
+          return true
         }
         case 'move-file': {
           const {
@@ -436,9 +468,13 @@ export default class DocumentManager extends ProviderContract {
             // Apply the choice to all open documents
             for (const document of this.documents) {
               if (response === 0) {
-                await this.saveFile(document.filePath)
+                const saved = await this.saveFile(document.filePath)
+                if (!saved) {
+                  return
+                }
               } else {
                 document.lastSavedVersion = document.currentVersion
+                this._reviewDiffSessions.delete(document.filePath)
               }
             }
 
@@ -491,7 +527,10 @@ export default class DocumentManager extends ProviderContract {
     } else if (result.response === 0) {
       // Save all docs
       for (const document of this.documents) {
-        await this.saveFile(document.filePath)
+        const saved = await this.saveFile(document.filePath)
+        if (!saved) {
+          return false
+        }
       }
 
       // If we're not shutting down, this function will only be called for when
@@ -766,6 +805,10 @@ current contents from the editor somewhere else, and restart the application.`
       doc.minimumVersion += 1
     }
 
+    if (this._reviewDiffSessions.has(filePath)) {
+      return true
+    }
+
     const autoSave = this._app.config.get().editor.autoSave
 
     // No autosave
@@ -983,9 +1026,13 @@ current contents from the editor somewhere else, and restart the application.`
       if (result.response === 1) {
         // Clear the modification flag
         openFile.lastSavedVersion = openFile.currentVersion
+        this._reviewDiffSessions.delete(filePath)
         this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, { filePath, status: 'modification' })
       } else if (result.response === 0) {
-        await this.saveFile(filePath) // TODO: Check return status
+        const saved = await this.saveFile(filePath)
+        if (!saved) {
+          return false
+        }
       } else {
         // Don't close the file
         this._app.log.info('[Document Manager] Not closing file, as the user did not want that.')
@@ -998,6 +1045,7 @@ current contents from the editor somewhere else, and restart the application.`
       // The file is not modified, but this is still the last instance, so we
       // can close it without having to ask.
       this.documents.splice(this.documents.indexOf(openFile), 1)
+      this._reviewDiffSessions.delete(filePath)
     }
 
     const ret = leaf.tabMan.closeFile(filePath)
@@ -1051,6 +1099,7 @@ current contents from the editor somewhere else, and restart the application.`
     if (idx > -1) {
       this.documents.splice(idx, 1)
     }
+    this._reviewDiffSessions.delete(filePath)
 
     this.syncWatchedFilePaths()
   }
@@ -1341,6 +1390,7 @@ current contents from the editor somewhere else, and restart the application.`
     // open the new document.
     const idx = this.documents.findIndex(file => file.filePath === filePath)
     this.documents.splice(idx, 1)
+    this._reviewDiffSessions.delete(filePath)
     // Indicate to all affected editors that they should reload the file
     this.broadcastEvent(DP_EVENTS.FILE_REMOTELY_CHANGED, { filePath })
   }
@@ -1592,6 +1642,61 @@ current contents from the editor somewhere else, and restart the application.`
     return { canGoBack: leaf.tabMan.canGoBack, canGoForward: leaf.tabMan.canGoForward }
   }
 
+  public async openReviewDiffSession (session: ReviewDiffSession): Promise<boolean> {
+    if (this.isModified(session.documentPath)) {
+      dialog.showErrorBox(
+        trans('Cannot open review'),
+        trans('Save or discard the existing editor changes before opening a diff review.')
+      )
+      return false
+    }
+
+    this._reviewDiffSessions.set(session.documentPath, {
+      session,
+      unresolvedChunks: undefined
+    })
+
+    this._app.windows.showAnyWindow()
+    const opened = await this.openFile(undefined, undefined, session.documentPath, true)
+    if (!opened) {
+      this._reviewDiffSessions.delete(session.documentPath)
+      return false
+    }
+
+    this.broadcastEvent(DP_EVENTS.REVIEW_DIFF, {
+      filePath: session.documentPath,
+      reviewDiffSession: session
+    })
+
+    return true
+  }
+
+  private async checkReviewDiffSaveGate (filePath: string): Promise<boolean> {
+    const review = this._reviewDiffSessions.get(filePath)
+    if (review === undefined) {
+      return true
+    }
+
+    if (review.unresolvedChunks === undefined || review.unresolvedChunks > 0) {
+      dialog.showErrorBox(
+        trans('Cannot save review'),
+        trans('Resolve every accept/reject chunk before saving this review.')
+      )
+      return false
+    }
+
+    const diskContents = await this._app.fsal.loadAnySupportedFile(filePath)
+    if (sha256Text(diskContents) !== review.session.baselineSha256) {
+      dialog.showErrorBox(
+        trans('Cannot save review'),
+        trans('The document changed on disk after this review opened. The external edit was preserved.')
+      )
+      return false
+    }
+
+    return true
+  }
+
   public async saveFile (filePath: string): Promise<boolean> {
     const doc = this.documents.find(doc => doc.filePath === filePath)
 
@@ -1607,6 +1712,10 @@ current contents from the editor somewhere else, and restart the application.`
     if (doc.saveTimeout !== undefined) {
       clearTimeout(doc.saveTimeout)
       doc.saveTimeout = undefined
+    }
+
+    if (!await this.checkReviewDiffSaveGate(filePath)) {
+      return false
     }
 
     // NOTE: Remember that we MUST under any circumstances adapt the document
@@ -1664,6 +1773,7 @@ current contents from the editor somewhere else, and restart the application.`
     }
 
     this._app.log.info(`[DocumentManager] File ${filePath} saved.`)
+    this._reviewDiffSessions.delete(filePath)
     this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, { filePath, status: 'modification' })
     this.broadcastEvent(DP_EVENTS.FILE_SAVED, { filePath })
 

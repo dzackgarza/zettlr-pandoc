@@ -648,6 +648,19 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@codemirror/merge@npm:^6.12.2":
+  version: 6.12.2
+  resolution: "@codemirror/merge@npm:6.12.2"
+  dependencies:
+    "@codemirror/language": "npm:^6.0.0"
+    "@codemirror/state": "npm:^6.0.0"
+    "@codemirror/view": "npm:^6.17.0"
+    "@lezer/highlight": "npm:^1.0.0"
+    style-mod: "npm:^4.1.0"
+  checksum: 10/3a1148119141c0a1cf933f39613112abb3594ae477854ed34c34577fc6001acc0f97a72e497f480d0c96c18aaf7c454b930cfb882885d7d9a774e70a7c94041f
+  languageName: node
+  linkType: hard
+
 "@codemirror/search@npm:^6.7.1":
   version: 6.7.1
   resolution: "@codemirror/search@npm:6.7.1"
@@ -6196,6 +6209,13 @@ __metadata:
   version: 7.0.0
   resolution: "diff@npm:7.0.0"
   checksum: 10/e9b8e48d054c9c0c093c65ce8e2637af94b35f2427001607b14e5e0589e534ea3413a7f91ebe6d7c5a1494ace49cb7c7c3972f442ddd96a4767ff091999a082e
+  languageName: node
+  linkType: hard
+
+"diff@npm:^9.0.0":
+  version: 9.0.0
+  resolution: "diff@npm:9.0.0"
+  checksum: 10/f8b5e38a6a7ec73d1850ccb7ff19cda1d02502dc0f2c562ada0f40d7211bfb3075c2f3742104619a1f8f47ae333d48a6c77bffb080a2df900db36935080ea4fb
   languageName: node
   linkType: hard
 
@@ -15769,6 +15789,7 @@ __metadata:
     "@codemirror/language": "npm:^6.12.3"
     "@codemirror/legacy-modes": "npm:^6.5.3"
     "@codemirror/lint": "npm:^6.9.7"
+    "@codemirror/merge": "npm:^6.12.2"
     "@codemirror/search": "npm:^6.7.1"
     "@codemirror/state": "npm:^6.6.0"
     "@codemirror/view": "npm:^6.43.1"
@@ -15822,6 +15843,7 @@ __metadata:
     css-loader: "npm:^7.1.4"
     csso: "npm:^5.0.5"
     d3: "npm:^7.9.0"
+    diff: "npm:^9.0.0"
     dompurify: "npm:^3.4.11"
     electron: "npm:^42.4.1"
     electron-builder: "npm:^26.15.4"

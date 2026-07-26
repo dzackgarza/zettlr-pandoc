@@ -14,6 +14,7 @@
 
 // Helpers to determine what files from argv we can open
 import { hasMdOrCodeExt } from '@common/util/file-extention-checks'
+import { isReviewDiffInvocation } from './review-diff'
 
 /**
  * Extracts files from argv.
@@ -24,6 +25,10 @@ import { hasMdOrCodeExt } from '@common/util/file-extention-checks'
  */
 export default function extractFilesFromArgv (argv = process.argv): string[] {
   if (!Array.isArray(argv)) {
+    return []
+  }
+
+  if (isReviewDiffInvocation(argv)) {
     return []
   }
 

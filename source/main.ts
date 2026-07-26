@@ -19,6 +19,7 @@ import { bootApplication, shutdownApplication } from './app/lifecycle'
 
 // Helper function to extract files to open from process.argv
 import extractFilesFromArgv from './app/util/extract-files-from-argv'
+import { isReviewDiffInvocation, parseReviewDiffCliRequest, validateReviewDiffInvocation } from './app/util/review-diff'
 import {
   DATA_DIR,
   DISABLE_HARDWARE_ACCELERATION,
@@ -28,6 +29,15 @@ import {
 import { getAppServiceContainer, isAppServiceContainerReady } from './app/app-service-container'
 
 handleExitArguments()
+
+if (isReviewDiffInvocation(process.argv)) {
+  try {
+    validateReviewDiffInvocation(process.argv, process.cwd())
+  } catch (err: unknown) {
+    console.error(err instanceof Error ? err.message : 'Invalid review-diff invocation')
+    process.exit(1)
+  }
+}
 
 // Immediately after launch, check if there is already another instance of
 // Zettlr running, and, if so, exit immediately. The arguments (including files)
@@ -119,7 +129,19 @@ app.whenReady().then(() => {
   // checks to make sure the environment is as expected for Zettlr, and boots
   // up the providers.
   bootApplication().then(() => {
-    getAppServiceContainer().commands.run('roots-add', filesBeforeOpen.concat(extractFilesFromArgv(process.argv)))
+    const serviceContainer = getAppServiceContainer()
+    const reviewDiffRequest = parseReviewDiffCliRequest(process.argv, process.cwd())
+    const rootFiles = reviewDiffRequest === null
+      ? filesBeforeOpen.concat(extractFilesFromArgv(process.argv))
+      : filesBeforeOpen
+
+    serviceContainer.commands.run('roots-add', rootFiles)
+      .then(async () => {
+        if (reviewDiffRequest !== null) {
+          serviceContainer.windows.showAnyWindow()
+          await serviceContainer.commands.run('review-diff', reviewDiffRequest)
+        }
+      })
       .catch(err => console.error(err))
   }).catch(err => {
     console.error(err)
@@ -136,7 +158,7 @@ app.whenReady().then(() => {
  * @param {Array} argv The arguments the second instance had received
  * @param {String} cwd The current working directory
  */
-app.on('second-instance', (event, argv, _cwd) => {
+app.on('second-instance', (event, argv, cwd) => {
   if (!isAppServiceContainerReady()) {
     return
   }
@@ -149,10 +171,15 @@ app.on('second-instance', (event, argv, _cwd) => {
   // with the nitty-gritty of actually making the main window visible.
   serviceContainer.windows.showAnyWindow()
 
+  const reviewDiffRequest = parseReviewDiffCliRequest(argv, cwd)
+
   // In case the user wants to open a file/folder with this running instance
-  serviceContainer.commands?.run('roots-add', extractFilesFromArgv(argv))
+  serviceContainer.commands?.run(
+    reviewDiffRequest === null ? 'roots-add' : 'review-diff',
+    reviewDiffRequest === null ? extractFilesFromArgv(argv) : reviewDiffRequest
+  )
     .catch(err => {
-      serviceContainer.log.error('[Application] Error while adding new roots', err)
+      serviceContainer.log.error('[Application] Error while handling second-instance arguments', err)
     })
 })
 

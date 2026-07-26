@@ -61,6 +61,7 @@ import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citepr
 import type { ProjectInfo } from 'source/common/modules/markdown-editor/plugins/project-info-field'
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
 import type { DocumentLocation, ProjectRootSpec, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
+import type { ReviewDiffSession, ReviewDiffStatus } from '@dts/common/review-diff'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import { extractReferences } from '@common/pandoc-util/extract-references'
 import { annotateCompletionEntries } from '@common/pandoc-util/project-reference-status'
@@ -186,6 +187,7 @@ let currentEditor: MarkdownEditor|null = null
  * it already is), then cleared.
  */
 let pendingNavigation: { filePath: string, location?: DocumentLocation, targetRange?: SourceRange }|null = null
+let pendingReviewDiffSession: ReviewDiffSession|null = null
 
 /**
  * Applies (and clears) the pending navigation payload when the currently
@@ -208,6 +210,33 @@ function applyPendingNavigation (): void {
   } else if (targetRange !== undefined) {
     currentEditor.selectSourceRange(targetRange)
   }
+}
+
+function applyReviewDiffSession (session: ReviewDiffSession): void {
+  if (session.documentPath !== props.file.path) {
+    return
+  }
+
+  if (currentEditor === null) {
+    pendingReviewDiffSession = session
+    return
+  }
+
+  pendingReviewDiffSession = null
+  currentEditor.startReviewDiffSession(session)
+}
+
+function fetchActiveReviewDiffSession (): void {
+  ipcRenderer.invoke('documents-provider', {
+    command: 'get-review-diff-session',
+    payload: { path: props.file.path }
+  } as DocumentManagerIPCAPI)
+    .then((session: ReviewDiffSession|undefined) => {
+      if (session !== undefined) {
+        applyReviewDiffSession(session)
+      }
+    })
+    .catch(err => console.error('Could not fetch active review-diff session', err))
 }
 
 // EVENT LISTENERS
@@ -312,6 +341,7 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     // need to tell the main editor to reload it as well.
     currentEditor?.reload().catch(e => console.error(e))
   } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
+    currentEditor?.clearReviewDiffSession()
     // The file has been saved to disk. This means we should probably update the
     // descriptor to know of, e.g., library changes.
     ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: props.file.path })
@@ -336,6 +366,8 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
         })
       })
       .catch(err => console.error(err))
+  } else if (event === DP_EVENTS.REVIEW_DIFF && context.filePath === props.file.path && context.reviewDiffSession !== undefined) {
+    applyReviewDiffSession(context.reviewDiffSession)
   }
 })
 
@@ -676,6 +708,22 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     }
   })
 
+  editor.on('review-diff-status', (status: ReviewDiffStatus) => {
+    ipcRenderer.invoke('documents-provider', {
+      command: 'set-review-diff-status',
+      payload: {
+        path: status.filePath,
+        sessionId: status.sessionId,
+        unresolvedChunks: status.unresolvedChunks
+      }
+    } as DocumentManagerIPCAPI)
+      .catch(err => console.error('Could not update review-diff status', err))
+  })
+
+  editor.on('review-diff-error', (message: string) => {
+    showToast(trans(message), 'error')
+  })
+
   editor.on('focus', () => {
     ipcRenderer.invoke('documents-provider', {
       command: 'focus-leaf',
@@ -812,6 +860,12 @@ async function loadDocument (): Promise<void> {
     }
   })
   currentEditor.projectInfo = updateProjectInfo()
+
+  if (pendingReviewDiffSession !== null) {
+    applyReviewDiffSession(pendingReviewDiffSession)
+  } else {
+    fetchActiveReviewDiffSession()
+  }
 }
 
 function jtl (lineNumber: number): void {

@@ -30,12 +30,14 @@ import EventEmitter from 'events'
 import { Decoration, type DecorationSet, EditorView } from '@codemirror/view'
 import {
   type EditorSelection,
+  Compartment,
   EditorState,
   Text,
   type StateEffect,
   type Extension,
   type SelectionRange
 } from '@codemirror/state'
+import { getChunks } from '@codemirror/merge'
 import { foldEffect, foldState, syntaxTree } from '@codemirror/language'
 import { sendableUpdates } from '@codemirror/collab'
 import { formatDocument, type FormatResult, type MarkdownFormatter } from './commands/format-document'
@@ -113,6 +115,8 @@ import { moveSection } from './commands/move-section'
 import { parsePandocAttributes } from 'source/common/pandoc-util/parse-pandoc-attributes'
 import { closeSearchPanel, openSearchPanel, searchPanelOpen } from '@codemirror/search'
 import { clickListeners } from './plugins/click-listeners'
+import type { ReviewDiffSession, ReviewDiffStatus } from '@dts/common/review-diff'
+import { reviewDiffMergeExtension } from './plugins/review-diff'
 
 export interface DocumentWrapper {
   path: string
@@ -240,6 +244,9 @@ export default class MarkdownEditor extends EventEmitter {
    */
   private workspaceReferencesCache: EditorWorkspaceReferences|null
 
+  private readonly reviewDiffCompartment: Compartment
+  private activeReviewDiffSession: ReviewDiffSession|null
+
   /**
    * Creates a new MarkdownEditor instance associated with the given leafId and
    * the representedDocument. Immediately after instantiation the editor will
@@ -283,6 +290,8 @@ export default class MarkdownEditor extends EventEmitter {
     // everytime.
     this.databaseCache = { tags: [], citations: [], snippets: [], files: [], references: [] }
     this.workspaceReferencesCache = null
+    this.reviewDiffCompartment = new Compartment()
+    this.activeReviewDiffSession = null
 
     // Same goes for the config
     this.config = getDefaultConfig()
@@ -324,6 +333,11 @@ export default class MarkdownEditor extends EventEmitter {
         pushUpdates: this.authority.pushUpdates
       },
       updateListener: (update) => {
+        const shouldReportReviewDiff = this.activeReviewDiffSession !== null && (
+          update.docChanged ||
+          update.transactions.some(transaction => transaction.isUserEvent('accept') || transaction.isUserEvent('revert'))
+        )
+
         // Listen for changes and emit events appropriately
         if (update.docChanged) {
           this.emit('change')
@@ -384,10 +398,15 @@ export default class MarkdownEditor extends EventEmitter {
             if (effect.is(reloadStateEffect)) {
               // ATTENTION: The document state is out of sync with the document
               // authority, so we must reload it.
+              this.clearReviewDiffSession()
               this.reload().catch(err => console.error('Could not reload document state', err))
               return
             }
           }
+        }
+
+        if (shouldReportReviewDiff) {
+          this.reportReviewDiffStatus()
         }
       },
       domEventsListeners: clickListeners({
@@ -406,16 +425,24 @@ export default class MarkdownEditor extends EventEmitter {
       }
     }
 
+    let extensions: Extension[]
     switch (type) {
       case DocumentType.Markdown:
-        return getMarkdownExtensions(options)
+        extensions = getMarkdownExtensions(options)
+        break
       case DocumentType.LaTeX:
-        return getTexExtensions(options)
+        extensions = getTexExtensions(options)
+        break
       case DocumentType.YAML:
-        return getYAMLExtensions(options)
+        extensions = getYAMLExtensions(options)
+        break
       case DocumentType.JSON:
-        return getJSONExtensions(options)
+        extensions = getJSONExtensions(options)
+        break
     }
+
+    extensions.push(this.reviewDiffCompartment.of([]))
+    return extensions
   }
 
   /**
@@ -833,6 +860,69 @@ export default class MarkdownEditor extends EventEmitter {
   setWorkspaceReferences (references: EditorWorkspaceReferences): void {
     this.workspaceReferencesCache = references
     this._instance.dispatch({ effects: workspaceReferencesUpdate.of(references) })
+  }
+
+  startReviewDiffSession (session: ReviewDiffSession): void {
+    if (session.documentPath !== this.representedDocument) {
+      return
+    }
+
+    const currentContent = this.value
+    if (currentContent !== session.baselineText && currentContent !== session.proposedText) {
+      this.emit('review-diff-error', 'The editor buffer no longer matches the review baseline.')
+      return
+    }
+
+    this.activeReviewDiffSession = session
+    this._instance.dom.classList.add('review-diff-active')
+
+    const effects = [
+      this.reviewDiffCompartment.reconfigure(reviewDiffMergeExtension(session.baselineText))
+    ]
+
+    if (currentContent === session.proposedText) {
+      this._instance.dispatch({ effects })
+    } else {
+      this._instance.dispatch({
+        changes: {
+          from: 0,
+          to: this._instance.state.doc.length,
+          insert: session.proposedText
+        },
+        effects
+      })
+    }
+
+    this.reportReviewDiffStatus()
+    this._instance.focus()
+  }
+
+  clearReviewDiffSession (sessionId?: string): void {
+    if (this.activeReviewDiffSession === null) {
+      return
+    }
+
+    if (sessionId !== undefined && this.activeReviewDiffSession.id !== sessionId) {
+      return
+    }
+
+    this.activeReviewDiffSession = null
+    this._instance.dom.classList.remove('review-diff-active')
+    this._instance.dispatch({ effects: this.reviewDiffCompartment.reconfigure([]) })
+  }
+
+  private reportReviewDiffStatus (): void {
+    const session = this.activeReviewDiffSession
+    const chunks = getChunks(this._instance.state)
+    if (session === null || chunks === null) {
+      return
+    }
+
+    this.emit('review-diff-status', {
+      filePath: session.documentPath,
+      sessionId: session.id,
+      unresolvedChunks: chunks.chunks.length
+    } satisfies ReviewDiffStatus)
   }
 
   /* * * * * * * * * * * *
