@@ -311,6 +311,7 @@ describe('TikZ render service (issue #14)', function () {
     await mkdir(path.join(configuredDir, 'filters'), { recursive: true })
     await mkdir(path.join(configuredDir, 'templates'), { recursive: true })
     await writeFile(path.join(configuredDir, 'filters/tikzcd.lua'), '-- configured filter\n')
+    await writeFile(path.join(configuredDir, 'filters/utilities.lua'), '-- configured utilities\n')
     await writeFile(path.join(configuredDir, 'templates/standalone-tikz.tex'), '% configured template\n')
 
     assert.strictEqual(
@@ -326,6 +327,7 @@ describe('TikZ render service (issue #14)', function () {
     await mkdir(path.join(userPandocDir, 'filters'), { recursive: true })
     await mkdir(path.join(userPandocDir, 'templates'), { recursive: true })
     await writeFile(path.join(userPandocDir, 'filters/tikzcd.lua'), '-- live user filter\n')
+    await writeFile(path.join(userPandocDir, 'filters/utilities.lua'), '-- live user utilities\n')
     await writeFile(path.join(userPandocDir, 'templates/standalone-tikz.tex'), '% live user template\n')
 
     assert.strictEqual(

@@ -1,13 +1,12 @@
 local system = require 'pandoc.system'
--- VENDORED into zettlr-pandoc (issue #14): this copy is app-owned. The asset
--- tree is addressed exclusively through PANDOC_DIR (assets/tikz at runtime);
--- resolving anything from ~/.pandoc would silently couple the app to an
--- external checkout, so the env contract is mandatory and fails loudly.
+-- App-owned fallback fork of pandoc-config's TikZ filter. PANDOC_DIR is
+-- resolved by the main process from tikz.dataDir, a complete ~/.pandoc tree,
+-- or the bundled generic fallback.
 local pandoc_dir_env = os.getenv("PANDOC_DIR")
 assert(pandoc_dir_env and pandoc_dir_env ~= "",
-  "tikzcd.lua (vendored): PANDOC_DIR must point at the app-owned tikz asset tree")
+  "tikzcd.lua: PANDOC_DIR must point at the selected Pandoc data tree")
 assert(os.getenv("SVG_DIR") and os.getenv("SVG_DIR") ~= "",
-  "tikzcd.lua (vendored): SVG_DIR must point at the app-owned render cache")
+  "tikzcd.lua: SVG_DIR must point at the app-owned render cache")
 package.path = package.path .. ';' .. pandoc_dir_env .. '/filters/?.lua;'
 require "utilities"
 
@@ -19,17 +18,15 @@ local function log(msg)
   end
 end
 
--- Output directories — all app-owned; the asserts above guarantee presence.
+-- Output directories — the cache is app-owned; the data tree is selected by
+-- the resolver above.
 local pandoc_dir = os.getenv("PANDOC_DIR")
 local figures_dir = os.getenv("FIGURES_DIR") or (pandoc_dir .. "/figures")
 local svg_dir = os.getenv("SVG_DIR")
 
--- Per-figure preamble template: the standalone LaTeX document each figure body is
--- wrapped in. It \usepackage's dzg-tikz, which \input's the broken-out macro files
--- (the single source of truth for tikz styles/defs — the same files the MathJax
--- path consumes), so the template carries the tikz macros directly; there is no
--- separate shared .tikzstyles/.tikzdefs palette. Defaults to the bundled template
--- under PANDOC_DIR (mirroring the PANDOC_DIR default above), overridable via
+-- Per-figure preamble template: the standalone LaTeX document each figure body
+-- is wrapped in. It belongs to the selected data tree and defaults to the
+-- template under PANDOC_DIR, overridable via
 -- FIGURE_TEMPLATE_FILE. Read LAZILY at compile time (not at filter load) so the
 -- doctor's empty-stdin invocation probe, which loads the filter but compiles no
 -- figure, needs no render-context env. Returns (compiled_template,
@@ -223,14 +220,13 @@ local function compile_tikz(source)
 
   local resolved_source = resolve_inputs(source, doc_dir)
 
-  -- The per-figure preamble template wraps this figure body; it \usepackage's
-  -- dzg-tikz, so the broken-out macro files (styles/defs) are already in scope —
-  -- no separate shared palette is wired in. Read lazily here.
+  -- The selected per-figure template wraps this figure body. Read it lazily so
+  -- changes in the configured Pandoc data tree take effect without rebuilding.
   local tikz_doc_template, template_str = figure_template()
 
   -- The cache key (hash) folds in the TEMPLATE content as well as the figure body:
-  -- the same body compiled against a different per-figure template (its bytes carry
-  -- the dzg-tikz \usepackage / macro-file includes) is a different figure, so
+  -- the same body compiled against a different per-figure template is a different
+  -- figure, so
   -- hashing only the body would return a stale cached SVG when the template
   -- changes.
   local hash = pandoc.sha1(resolved_source .. "\0" .. template_str)
