@@ -369,6 +369,13 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
   } else if (
     event === DP_EVENTS.REVIEW_DIFF &&
     context.filePath === props.file.path &&
+    context.reviewCleared === true
+  ) {
+    // Provider closed or completed the review — exit review mode (spec section 13)
+    currentEditor?.clearReviewDiffSession(context.reviewId)
+  } else if (
+    event === DP_EVENTS.REVIEW_DIFF &&
+    context.filePath === props.file.path &&
     context.reviewDiffSession !== undefined &&
     !(context.windowId === props.windowId && context.leafId === props.leafId)
   ) {

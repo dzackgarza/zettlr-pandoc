@@ -108,6 +108,10 @@ export interface DocumentsUpdateContext {
    * identify the source pane whose status update has already applied locally.
    */
   reviewDiffSession?: ReviewDiffSession;
+  /** Signal that a review was closed/completed/invalidated (spec section 13). */
+  reviewCleared?: boolean;
+  /** The reviewId that was cleared, for renderer session matching. */
+  reviewId?: string;
   /** Provider-owned review state (spec section 7). Replaces the old scalar. */
   reviewState?: {
     reviewId: string;
@@ -2345,6 +2349,10 @@ current contents from the editor somewhere else, and restart the application.`,
     {
       const _id = this.getDocumentId(filePath)
       if (_id !== undefined) {
+        const _review = this._reviewStore.getReview(_id)
+        if (_review !== undefined) {
+          this._broadcastReviewCleared(filePath, _review.reviewId)
+        }
         this._reviewStore.completeReview(_id)
       }
     }
@@ -2739,6 +2747,20 @@ current contents from the editor somewhere else, and restart the application.`,
           this._reviewStore.getReviewStatus(review.documentId)
             ?.unresolvedChunks ?? 0,
       },
+    })
+  }
+
+  /**
+   * Broadcast a review-cleared signal to all renderers displaying a document.
+   * Tells the renderer to exit review mode (spec section 13: clear review mode
+   * when the provider closes or invalidates the session).
+   */
+  private _broadcastReviewCleared (filePath: string, reviewId: string): void {
+    this.broadcastEvent(DP_EVENTS.REVIEW_DIFF, {
+      filePath,
+      reviewDiffSession: undefined,
+      reviewCleared: true,
+      reviewId,
     })
   }
 
