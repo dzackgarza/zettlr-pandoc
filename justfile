@@ -86,11 +86,6 @@ test-push:
 test-ci:
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-ci
 
-# Lint exactly one source file after the same development-server safety check.
-lint-file file:
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/eslint" "{{file}}"
-
 # Capture the real editor renderer in an isolated offscreen Electron process.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
 # A fresh package-manager install leaves electron's chrome-sandbox without its

@@ -4,6 +4,7 @@ source_repository = "https://github.com/dzackgarza/pandoc-config"
 source_commit = "4404f6746dfbfd7e51f7b38dcd6659a63156ebd6"
 source_paths = [
   "filters/tikzcd.lua",
+  "filters/utilities.lua",
   "templates/standalone-tikz.tex",
 ]
 maintenance = "App-owned fallback fork. A configured or complete user Pandoc data tree takes precedence."
