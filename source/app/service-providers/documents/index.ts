@@ -2698,6 +2698,14 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * Expose the loaded documents array for the agent API provider to enumerate
+   * open documents (spec section 5.2).
+   */
+  public get loadedDocuments (): readonly Document[] {
+    return this.documents
+  }
+
+  /**
    * Broadcast the current review state to all renderers displaying a document.
    * Constructs a legacy-compatible ReviewDiffSession for the renderer.
    */
