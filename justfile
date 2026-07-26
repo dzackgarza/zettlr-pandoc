@@ -8,7 +8,12 @@ default:
     @just --list
 
 # Launch the app in develop mode (webpack dev server + Electron).
+# Free the dev ports first: a launch that was killed (or whose app was never
+# quit) leaves a forge-start/Electron holding :9001, and the next launch dies
+# on EADDRINUSE with the cause swallowed. --kill reaps only this project's
+# stale dev processes.
 launch:
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py" --kill
     {{yarn}} start
 
 # Build a packaged Linux x64 app into out/Zettlr-Pandoc-linux-x64/.
