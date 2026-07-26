@@ -37,9 +37,9 @@ import {
   type Extension,
   type SelectionRange
 } from '@codemirror/state'
-import { getChunks } from '@codemirror/merge'
+import { getChunks, getOriginalDoc } from '@codemirror/merge'
 import { foldEffect, foldState, syntaxTree } from '@codemirror/language'
-import { sendableUpdates } from '@codemirror/collab'
+import { getSyncedVersion, sendableUpdates } from '@codemirror/collab'
 import { formatDocument, type FormatResult, type MarkdownFormatter } from './commands/format-document'
 import { formatDocumentEffect } from './plugins/format-document-effect'
 
@@ -246,6 +246,7 @@ export default class MarkdownEditor extends EventEmitter {
 
   private readonly reviewDiffCompartment: Compartment
   private activeReviewDiffSession: ReviewDiffSession|null
+  private reviewDiffStatusReportInFlight: boolean
 
   /**
    * Creates a new MarkdownEditor instance associated with the given leafId and
@@ -292,6 +293,7 @@ export default class MarkdownEditor extends EventEmitter {
     this.workspaceReferencesCache = null
     this.reviewDiffCompartment = new Compartment()
     this.activeReviewDiffSession = null
+    this.reviewDiffStatusReportInFlight = false
 
     // Same goes for the config
     this.config = getDefaultConfig()
@@ -406,7 +408,7 @@ export default class MarkdownEditor extends EventEmitter {
         }
 
         if (shouldReportReviewDiff) {
-          this.reportReviewDiffStatus()
+          this.queueReviewDiffStatusReport()
         }
       },
       domEventsListeners: clickListeners({
@@ -868,8 +870,29 @@ export default class MarkdownEditor extends EventEmitter {
     }
 
     const currentContent = this.value
-    if (currentContent !== session.baselineText && currentContent !== session.proposedText) {
-      this.emit('review-diff-error', 'The editor buffer no longer matches the review baseline.')
+    const shouldApplyInitialProposal = (
+      currentContent === session.baselineText &&
+      session.currentText === session.proposedText &&
+      session.originalText === session.baselineText
+    )
+    if (!shouldApplyInitialProposal && currentContent !== session.currentText) {
+      this.reload()
+        .then(() => {
+          if (this.value === session.currentText) {
+            this.startReviewDiffSession(session)
+          } else {
+            this.emit('review-diff-error', 'The editor buffer no longer matches the review baseline.')
+          }
+        })
+        .catch(err => console.error('Could not reload editor for review-diff session', err))
+      return
+    }
+
+    if (
+      this.activeReviewDiffSession?.id === session.id &&
+      currentContent === session.currentText &&
+      this.activeReviewDiffSession.originalText === session.originalText
+    ) {
       return
     }
 
@@ -877,10 +900,10 @@ export default class MarkdownEditor extends EventEmitter {
     this._instance.dom.classList.add('review-diff-active')
 
     const effects = [
-      this.reviewDiffCompartment.reconfigure(reviewDiffMergeExtension(session.baselineText))
+      this.reviewDiffCompartment.reconfigure(reviewDiffMergeExtension(session.originalText))
     ]
 
-    if (currentContent === session.proposedText) {
+    if (!shouldApplyInitialProposal) {
       this._instance.dispatch({ effects })
     } else {
       this._instance.dispatch({
@@ -893,7 +916,7 @@ export default class MarkdownEditor extends EventEmitter {
       })
     }
 
-    this.reportReviewDiffStatus()
+    this.queueReviewDiffStatusReport()
     this._instance.focus()
   }
 
@@ -907,8 +930,26 @@ export default class MarkdownEditor extends EventEmitter {
     }
 
     this.activeReviewDiffSession = null
+    this.reviewDiffStatusReportInFlight = false
     this._instance.dom.classList.remove('review-diff-active')
     this._instance.dispatch({ effects: this.reviewDiffCompartment.reconfigure([]) })
+  }
+
+  private queueReviewDiffStatusReport (): void {
+    if (this.reviewDiffStatusReportInFlight) {
+      return
+    }
+
+    this.reviewDiffStatusReportInFlight = true
+    this.whenSynced()
+      .then(() => {
+        this.reviewDiffStatusReportInFlight = false
+        this.reportReviewDiffStatus()
+      })
+      .catch(err => {
+        this.reviewDiffStatusReportInFlight = false
+        console.error('Could not report review-diff status', err)
+      })
   }
 
   private reportReviewDiffStatus (): void {
@@ -918,10 +959,20 @@ export default class MarkdownEditor extends EventEmitter {
       return
     }
 
+    if (sendableUpdates(this._instance.state).length > 0) {
+      this.queueReviewDiffStatusReport()
+      return
+    }
+
     this.emit('review-diff-status', {
       filePath: session.documentPath,
       sessionId: session.id,
-      unresolvedChunks: chunks.chunks.length
+      unresolvedChunks: chunks.chunks.length,
+      originalText: getOriginalDoc(this._instance.state).toString(),
+      currentText: this.value,
+      documentVersion: getSyncedVersion(this._instance.state),
+      sourceWindowId: this.windowId,
+      sourceLeafId: this.leafId
     } satisfies ReviewDiffStatus)
   }
 

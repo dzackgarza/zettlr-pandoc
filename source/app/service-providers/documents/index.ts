@@ -38,8 +38,14 @@ import type FSALWatchdog from '@providers/fsal/fsal-watchdog'
 import { getDocumentTypeForExtension, hasImageExt, hasMdOrCodeExt, hasPDFExt } from 'source/common/util/file-extention-checks'
 import isDir from 'source/common/util/is-dir'
 import type { DocumentLocation, SourceRange } from '@dts/common/references'
-import type { ReviewDiffSession } from '@dts/common/review-diff'
-import { sha256Text } from 'source/app/util/review-diff'
+import type {
+  ReviewDiffDocumentSnapshot,
+  ReviewDiffOpenRequest,
+  ReviewDiffOpenResult,
+  ReviewDiffSession,
+  ReviewDiffStatus
+} from '@dts/common/review-diff'
+import { buildReviewDiffSessionFromBaseline, normalizeText, sha256Text } from 'source/app/util/review-diff'
 
 type DocumentWindows = Record<string, DocumentTree>
 type DocumentWindowsJSON = Record<string, BranchNodeJSON|LeafNodeJSON>
@@ -74,7 +80,8 @@ export interface DocumentsUpdateContext {
   targetRange?: SourceRange
   /**
    * Additive (issue #34): a validated single-document diff proposition to
-   * mount in the active editor.
+   * mount in the active editor. For REVIEW_DIFF broadcasts, windowId/leafId
+   * identify the source pane whose status update has already applied locally.
    */
   reviewDiffSession?: ReviewDiffSession
 }
@@ -172,7 +179,9 @@ export type DocumentManagerIPCAPI = IPCAPI<{
   'sort-open-files': LeafLoc & { newOrder: string[] }
   'get-file-modification-status': unknown
   'get-review-diff-session': { path: string }
-  'set-review-diff-status': { path: string, sessionId: string, unresolvedChunks: number }
+  'set-review-diff-status': Omit<ReviewDiffStatus, 'filePath'> & { path: string }
+  'read-review-diff-document': { path: string }
+  'open-review-diff-from-snapshot': ReviewDiffOpenRequest
   'move-file': {
     originWindow: string,
     targetWindow: string,
@@ -365,12 +374,32 @@ export default class DocumentManager extends ProviderContract {
           return this._reviewDiffSessions.get(payload.path)?.session
         }
         case 'set-review-diff-status': {
-          const review = this._reviewDiffSessions.get(payload.path)
-          if (review === undefined || review.session.id !== payload.sessionId) {
-            return false
-          }
-          review.unresolvedChunks = payload.unresolvedChunks
-          return true
+          const {
+            path,
+            sessionId,
+            unresolvedChunks,
+            originalText,
+            currentText,
+            documentVersion,
+            sourceWindowId,
+            sourceLeafId
+          } = payload
+          return this.setReviewDiffStatus({
+            filePath: path,
+            sessionId,
+            unresolvedChunks,
+            originalText,
+            currentText,
+            documentVersion,
+            sourceWindowId,
+            sourceLeafId
+          })
+        }
+        case 'read-review-diff-document': {
+          return await this.readReviewDiffDocumentSnapshot(payload.path)
+        }
+        case 'open-review-diff-from-snapshot': {
+          return await this.openReviewDiffFromSnapshot(payload)
         }
         case 'move-file': {
           const {
@@ -1642,8 +1671,98 @@ current contents from the editor somewhere else, and restart the application.`
     return { canGoBack: leaf.tabMan.canGoBack, canGoForward: leaf.tabMan.canGoForward }
   }
 
-  public async openReviewDiffSession (session: ReviewDiffSession): Promise<boolean> {
-    if (this.isModified(session.documentPath)) {
+  public async readReviewDiffDocumentSnapshot (filePath: string): Promise<ReviewDiffDocumentSnapshot> {
+    const document = await this.getDocument(filePath)
+
+    return {
+      path: filePath,
+      content: document.content,
+      documentVersion: document.startVersion,
+      contentSha256: sha256Text(document.content),
+      dirty: this.isModified(filePath)
+    }
+  }
+
+  public async openReviewDiffFromSnapshot (request: ReviewDiffOpenRequest): Promise<ReviewDiffOpenResult> {
+    const document = await this.getDocument(request.path)
+    const currentSha256 = sha256Text(document.content)
+
+    if (document.startVersion !== request.baselineVersion || currentSha256 !== request.baselineSha256) {
+      return {
+        accepted: false,
+        reason: 'stale-baseline',
+        message: 'The open document changed after the review baseline was read.'
+      }
+    }
+
+    try {
+      const diskBaselineText = normalizeText(await this._app.fsal.loadAnySupportedFile(request.path))
+      const session = buildReviewDiffSessionFromBaseline({
+        documentPath: request.path,
+        baselineText: document.content,
+        baselineSha256: request.baselineSha256,
+        diskBaselineSha256: sha256Text(diskBaselineText),
+        patchPath: request.patchPath,
+        patchText: request.patchText,
+        proposedText: request.proposedText,
+        description: request.description
+      })
+      const accepted = await this.openReviewDiffSession(session, { allowModifiedBaseline: true })
+
+      if (!accepted) {
+        return {
+          accepted: false,
+          reason: 'open-failed',
+          message: 'The review session could not be opened.'
+        }
+      }
+
+      return { accepted: true, sessionId: session.id }
+    } catch (err: unknown) {
+      return {
+        accepted: false,
+        reason: 'invalid-request',
+        message: err instanceof Error ? err.message : 'The review request is invalid.'
+      }
+    }
+  }
+
+  private setReviewDiffStatus (status: ReviewDiffStatus): boolean {
+    const review = this._reviewDiffSessions.get(status.filePath)
+    if (review === undefined || review.session.id !== status.sessionId) {
+      return false
+    }
+
+    const document = this.documents.find(doc => doc.filePath === status.filePath)
+    if (
+      document === undefined ||
+      document.currentVersion !== status.documentVersion ||
+      document.document.toString() !== status.currentText
+    ) {
+      this.broadcastEvent(DP_EVENTS.REVIEW_DIFF, {
+        filePath: status.filePath,
+        reviewDiffSession: review.session
+      })
+      return false
+    }
+
+    review.session = {
+      ...review.session,
+      originalText: status.originalText,
+      currentText: status.currentText
+    }
+    review.unresolvedChunks = status.unresolvedChunks
+    this.broadcastEvent(DP_EVENTS.REVIEW_DIFF, {
+      windowId: status.sourceWindowId,
+      leafId: status.sourceLeafId,
+      filePath: status.filePath,
+      reviewDiffSession: review.session
+    })
+    return true
+  }
+
+  public async openReviewDiffSession (session: ReviewDiffSession, options?: { allowModifiedBaseline?: boolean }): Promise<boolean> {
+    if (this.isModified(session.documentPath) && options?.allowModifiedBaseline !== true) {
       dialog.showErrorBox(
         trans('Cannot open review'),
         trans('Save or discard the existing editor changes before opening a diff review.')
@@ -1677,7 +1796,11 @@ current contents from the editor somewhere else, and restart the application.`
       return true
     }
 
-    if (review.unresolvedChunks === undefined || review.unresolvedChunks > 0) {
+    if (
+      review.unresolvedChunks === undefined ||
+      review.unresolvedChunks > 0 ||
+      review.session.originalText !== review.session.currentText
+    ) {
       dialog.showErrorBox(
         trans('Cannot save review'),
         trans('Resolve every accept/reject chunk before saving this review.')
@@ -1686,7 +1809,7 @@ current contents from the editor somewhere else, and restart the application.`
     }
 
     const diskContents = await this._app.fsal.loadAnySupportedFile(filePath)
-    if (sha256Text(diskContents) !== review.session.baselineSha256) {
+    if (sha256Text(normalizeText(diskContents)) !== review.session.diskBaselineSha256) {
       dialog.showErrorBox(
         trans('Cannot save review'),
         trans('The document changed on disk after this review opened. The external edit was preserved.')

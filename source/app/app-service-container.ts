@@ -29,6 +29,7 @@ import MenuProvider from '@providers/menu'
 import type ProviderContract from '@providers/provider-contract'
 import RecentDocumentsProvider from '@providers/recent-docs'
 import ReferenceProvider from '@providers/references'
+import ReviewDiffAPIProvider from '@providers/review-diff-api'
 import StatsProvider from '@providers/stats'
 import TagProvider from '@providers/tags'
 import TargetProvider from '@providers/targets'
@@ -94,6 +95,7 @@ export class AppServiceContainer {
   private readonly _windowProvider: WindowProvider
   private readonly _fsal: FSAL
   private readonly _documentManager: DocumentManager
+  private readonly _reviewDiffAPIProvider: ReviewDiffAPIProvider
   private readonly _lrtProvider: LongRunningTaskProvider
   private readonly _searchProvider: SearchProvider
   private _isBooted: boolean
@@ -125,6 +127,7 @@ export class AppServiceContainer {
     
     // The document provider accesses only the FSAL in its constructor
     this._documentManager = new DocumentManager(this)
+    this._reviewDiffAPIProvider = new ReviewDiffAPIProvider(this._logProvider, this._documentManager)
     this._tagProvider = new TagProvider(this._logProvider, this._documentManager, this._configProvider, this._fsal)
     this._windowProvider = new WindowProvider(this._logProvider, this._configProvider, this._documentManager)
 
@@ -198,6 +201,7 @@ export class AppServiceContainer {
     await this._informativeBoot(this._citeprocProvider, 'CiteprocProvider')
     
     await this._informativeBoot(this._documentManager, 'DocumentManager')
+    await this._informativeBoot(this._reviewDiffAPIProvider, 'ReviewDiffAPIProvider')
     await this._informativeBoot(this._menuProvider, 'MenuProvider')
     await this._informativeBoot(this._updateProvider, 'UpdateProvider')
 
@@ -245,6 +249,7 @@ export class AppServiceContainer {
   public get windows (): WindowProvider { return this._windowProvider }
   public get fsal (): FSAL { return this._fsal }
   public get documents (): DocumentManager { return this._documentManager }
+  public get reviewDiffAPI (): ReviewDiffAPIProvider { return this._reviewDiffAPIProvider }
   public get commands (): CommandProvider { return this._commandProvider }
   public get lrt (): LongRunningTaskProvider { return this._lrtProvider }
 
@@ -254,6 +259,7 @@ export class AppServiceContainer {
   async shutdown (): Promise<void> {
     await this._safeShutdown(this._lrtProvider, 'Long-running Task Provider')
     await this._safeShutdown(this._commandProvider, 'CommandProvider')
+    await this._safeShutdown(this._reviewDiffAPIProvider, 'ReviewDiffAPIProvider')
     await this._safeShutdown(this._documentManager, 'DocumentManager')
     await this._safeShutdown(this._fsal, 'FSAL')
 

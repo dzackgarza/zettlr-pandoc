@@ -366,7 +366,12 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
         })
       })
       .catch(err => console.error(err))
-  } else if (event === DP_EVENTS.REVIEW_DIFF && context.filePath === props.file.path && context.reviewDiffSession !== undefined) {
+  } else if (
+    event === DP_EVENTS.REVIEW_DIFF &&
+    context.filePath === props.file.path &&
+    context.reviewDiffSession !== undefined &&
+    !(context.windowId === props.windowId && context.leafId === props.leafId)
+  ) {
     applyReviewDiffSession(context.reviewDiffSession)
   }
 })
@@ -714,9 +719,19 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
       payload: {
         path: status.filePath,
         sessionId: status.sessionId,
-        unresolvedChunks: status.unresolvedChunks
+        unresolvedChunks: status.unresolvedChunks,
+        originalText: status.originalText,
+        currentText: status.currentText,
+        documentVersion: status.documentVersion,
+        sourceWindowId: status.sourceWindowId,
+        sourceLeafId: status.sourceLeafId
       }
     } as DocumentManagerIPCAPI)
+      .then(accepted => {
+        if (accepted !== true) {
+          fetchActiveReviewDiffSession()
+        }
+      })
       .catch(err => console.error('Could not update review-diff status', err))
   })
 

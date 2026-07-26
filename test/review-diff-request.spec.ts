@@ -60,7 +60,7 @@ describe('review-diff CLI request boundary', function () {
       .replace('second baseline', 'second proposed')
 
     const documentPath = writeScratch('note.md', baseline)
-    const patchPath = writeScratch('note.diff', createTwoFilesPatch('a/note.md', 'b/note.md', baseline, proposed))
+    const patchPath = writeScratch('note.diff', createTwoFilesPatch(documentPath, documentPath, baseline, proposed))
     const baselineSha256 = sha256Text(baseline)
     const request = parseReviewDiffCliRequest([
       'zettlr-pandoc',
@@ -79,8 +79,11 @@ describe('review-diff CLI request boundary', function () {
     assert.equal(session.documentPath, documentPath)
     assert.equal(session.patchPath, patchPath)
     assert.equal(session.baselineSha256, baselineSha256)
+    assert.equal(session.diskBaselineSha256, baselineSha256)
     assert.equal(session.baselineText, baseline)
+    assert.equal(session.originalText, baseline)
     assert.equal(session.proposedText, proposed)
+    assert.equal(session.currentText, proposed)
     assert.equal(readFileSync(documentPath, 'utf8'), baseline, 'building the session must not modify the target document')
   })
 
@@ -88,7 +91,7 @@ describe('review-diff CLI request boundary', function () {
     const baseline = 'alpha\nbeta\n'
     const proposed = 'alpha\nBETTER\n'
     const documentPath = writeScratch('note.md', baseline)
-    const patchPath = writeScratch('note.diff', createTwoFilesPatch('a/note.md', 'b/note.md', baseline, proposed))
+    const patchPath = writeScratch('note.diff', createTwoFilesPatch(documentPath, documentPath, baseline, proposed))
     const request = {
       documentPath,
       patchPath,
@@ -107,7 +110,7 @@ describe('review-diff CLI request boundary', function () {
     const staleBaseline = 'alpha\ngamma\n'
     const proposed = 'alpha\nGAMMA\n'
     const documentPath = writeScratch('note.md', baseline)
-    const patchPath = writeScratch('note.diff', createTwoFilesPatch('a/note.md', 'b/note.md', staleBaseline, proposed))
+    const patchPath = writeScratch('note.diff', createTwoFilesPatch(documentPath, documentPath, staleBaseline, proposed))
 
     assert.throws(
       () => validateReviewDiffInvocation([
@@ -123,6 +126,19 @@ describe('review-diff CLI request boundary', function () {
     assert.equal(readFileSync(documentPath, 'utf8'), baseline)
   })
 
+  it('rejects basename-only patch headers instead of accepting an ambiguous target', function () {
+    const baseline = 'alpha\nbeta\n'
+    const proposed = 'alpha\nBETA\n'
+    const documentPath = writeScratch('note.md', baseline)
+    const patchPath = writeScratch('note.diff', createTwoFilesPatch('a/note.md', 'b/note.md', baseline, proposed))
+
+    assert.throws(
+      () => buildReviewDiffSession({ documentPath, patchPath }),
+      /patch headers do not match/
+    )
+    assert.equal(readFileSync(documentPath, 'utf8'), baseline)
+  })
+
   it('rejects malformed, multi-file, and create/delete patch shapes', function () {
     const baseline = 'alpha\nbeta\n'
     const proposed = 'alpha\nBETA\n'
@@ -130,8 +146,8 @@ describe('review-diff CLI request boundary', function () {
     const malformed = writeScratch('malformed.diff', 'not a unified patch\n')
     const multiFile = writeScratch(
       'multi.diff',
-      createTwoFilesPatch('a/note.md', 'b/note.md', baseline, proposed) +
-        createTwoFilesPatch('a/other.md', 'b/other.md', 'x\n', 'y\n')
+      createTwoFilesPatch(documentPath, documentPath, baseline, proposed) +
+        createTwoFilesPatch(path.join(scratch, 'other.md'), path.join(scratch, 'other.md'), 'x\n', 'y\n')
     )
     const createPatch = writeScratch(
       'create.diff',

@@ -1,9 +1,9 @@
 import { unifiedMergeView } from '@codemirror/merge'
 import type { Extension } from '@codemirror/state'
 
-export function reviewDiffMergeExtension (baselineText: string): Extension[] {
+export function reviewDiffMergeExtension (originalText: string): Extension[] {
   return unifiedMergeView({
-    original: baselineText,
+    original: originalText,
     gutter: true,
     highlightChanges: true,
     syntaxHighlightDeletions: true,

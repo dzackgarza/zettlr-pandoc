@@ -73,11 +73,35 @@ export function parseReviewDiffCliRequest (argv: string[], cwd: string = process
 }
 
 export function buildReviewDiffSession (request: ReviewDiffCliRequest): ReviewDiffSession {
+  const baselineText = readNormalizedTextFile(request.documentPath)
+
+  return buildReviewDiffSessionFromBaseline({
+    documentPath: request.documentPath,
+    patchPath: request.patchPath,
+    baselineSha256: request.baselineSha256,
+    diskBaselineSha256: sha256Text(baselineText),
+    baselineText,
+    description: request.description
+  })
+}
+
+export interface ReviewDiffSessionFromBaselineRequest {
+  documentPath: string
+  baselineText: string
+  baselineSha256?: string
+  diskBaselineSha256?: string
+  patchPath?: string
+  patchText?: string
+  proposedText?: string
+  description?: string
+}
+
+export function buildReviewDiffSessionFromBaseline (request: ReviewDiffSessionFromBaselineRequest): ReviewDiffSession {
   if (!hasMdOrCodeExt(request.documentPath)) {
     throw new Error('review-diff only supports Markdown and code text documents')
   }
 
-  const baselineText = readNormalizedTextFile(request.documentPath)
+  const baselineText = normalizeText(request.baselineText)
   const baselineSha256 = sha256Text(baselineText)
 
   if (request.baselineSha256 !== undefined) {
@@ -90,12 +114,7 @@ export function buildReviewDiffSession (request: ReviewDiffCliRequest): ReviewDi
     }
   }
 
-  const patchText = fs.readFileSync(request.patchPath, { encoding: 'utf8' })
-  const patch = getSingleSupportedPatch(parsePatch(patchText), request.documentPath)
-  const proposedText = applyPatch(baselineText, patch, {
-    autoConvertLineEndings: true,
-    fuzzFactor: 0
-  })
+  const proposedText = buildProposedText(request, baselineText)
 
   if (proposedText === false) {
     throw new Error('review-diff patch does not apply to the target document baseline')
@@ -110,8 +129,11 @@ export function buildReviewDiffSession (request: ReviewDiffCliRequest): ReviewDi
     documentPath: request.documentPath,
     patchPath: request.patchPath,
     baselineSha256,
+    diskBaselineSha256: request.diskBaselineSha256 ?? baselineSha256,
     baselineText,
+    originalText: baselineText,
     proposedText,
+    currentText: proposedText,
     description: request.description
   }
 }
@@ -128,10 +150,38 @@ export function sha256Text (content: string): string {
 }
 
 export function readNormalizedTextFile (filePath: string): string {
-  return fs.readFileSync(filePath, { encoding: 'utf8' })
+  return normalizeText(fs.readFileSync(filePath, { encoding: 'utf8' }))
+}
+
+export function normalizeText (content: string): string {
+  return content
     .replace(/^\uFEFF/, '')
     .split(/\r\n|\n\r|\n|\r/g)
     .join('\n')
+}
+
+function buildProposedText (request: ReviewDiffSessionFromBaselineRequest, baselineText: string): string|false {
+  if (request.proposedText !== undefined) {
+    if (request.patchPath !== undefined || request.patchText !== undefined) {
+      throw new Error('review-diff accepts either proposed text or a patch, not both')
+    }
+
+    return normalizeText(request.proposedText)
+  }
+
+  const patchText = request.patchText ?? (
+    request.patchPath !== undefined ? fs.readFileSync(request.patchPath, { encoding: 'utf8' }) : undefined
+  )
+
+  if (patchText === undefined) {
+    throw new Error('review-diff requires either proposed text or a patch')
+  }
+
+  const patch = getSingleSupportedPatch(parsePatch(patchText), request.documentPath)
+  return applyPatch(baselineText, patch, {
+    autoConvertLineEndings: true,
+    fuzzFactor: 0
+  })
 }
 
 function getSingleSupportedPatch (patches: StructuredPatch[], documentPath: string): StructuredPatch {
@@ -173,13 +223,13 @@ function isDevNull (fileName: string|undefined): boolean {
 
 function patchHeaderMatchesDocument (fileName: string|undefined, documentPath: string): boolean {
   if (fileName === undefined) {
-    return true
+    return false
   }
 
   const normalizedName = fileName.replace(/\\/g, '/').replace(/^(a|b)\//, '')
-  if (path.isAbsolute(normalizedName)) {
-    return path.resolve(normalizedName) === documentPath
+  if (!path.isAbsolute(normalizedName)) {
+    return false
   }
 
-  return path.basename(normalizedName) === path.basename(documentPath)
+  return path.resolve(normalizedName) === path.resolve(documentPath)
 }
