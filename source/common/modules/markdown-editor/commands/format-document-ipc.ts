@@ -10,19 +10,18 @@
  * Description:     The renderer half of the flowmark "Format document"
  *                  command: the production MarkdownFormatter routes buffer text
  *                  through the main-process flowmark service over the
- *                  'application' IPC channel, and a helper surfaces a typed
- *                  absence or error as a toast (never a silent no-op). This
- *                  module imports `electron`, so it must ONLY be imported from
- *                  the renderer (MainEditor.vue) — never from the shared editor
- *                  core that browser test bundles reach. The keystroke path
- *                  runs through the pure formatDocumentEffect instead.
+ *                  'application' IPC channel over the preload `window.ipc`
+ *                  bridge, and a helper surfaces a typed absence or error as a
+ *                  toast (never a silent no-op). The keystroke path runs
+ *                  through the pure formatDocumentEffect instead.
  *
  * END HEADER
  */
 
-import { ipcRenderer } from 'electron'
 import showToast from '@common/util/show-toast'
 import { type FormatResult, type MarkdownFormatter } from './format-document'
+
+const ipcRenderer = window.ipc
 
 /**
  * The production formatter: sends the buffer text to the main-process flowmark
