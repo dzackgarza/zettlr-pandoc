@@ -105,8 +105,8 @@ describe('TikZ render service (issue #14)', function () {
         { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: { ...process.env, PATH: emptyBin } }
       )
       assert.strictEqual(result.ok, false)
-      assert.ok(result.ok === false && result.kind === 'missing-tools', `expected missing-tools, got ${JSON.stringify(result).slice(0, 200)}`)
-      if (result.ok === false && result.kind === 'missing-tools') {
+      assert.ok(!result.ok && result.kind === 'missing-tools', `expected missing-tools, got ${JSON.stringify(result).slice(0, 200)}`)
+      if (!result.ok && result.kind === 'missing-tools') {
         assert.ok(result.missing.includes('pdflatex'), 'pdflatex must be named missing')
         assert.ok(result.missing.includes('pdf2svg'), 'pdf2svg must be named missing')
       }
@@ -128,7 +128,7 @@ describe('TikZ render service (issue #14)', function () {
         { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
         { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: { ...process.env, PATH: binDir } }
       )
-      assert.ok(result.ok === false, 'a render whose toolchain could not be checked did not produce a figure')
+      assert.ok(!result.ok, 'a render whose toolchain could not be checked did not produce a figure')
       assert.strictEqual(
         result.kind,
         'toolchain-probe-failed',
@@ -151,7 +151,7 @@ describe('TikZ render service (issue #14)', function () {
     )
 
     if (!toolchainPresent) {
-      assert.ok(result.ok === false && result.kind === 'missing-tools', 'without the toolchain the typed missing-tools result is required')
+      assert.ok(!result.ok && result.kind === 'missing-tools', 'without the toolchain the typed missing-tools result is required')
       return
     }
 
@@ -173,7 +173,7 @@ describe('TikZ render service (issue #14)', function () {
     this.timeout(120000)
     const first = await renderTikz({ source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH }, { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env })
     if (!toolchainPresent) {
-      assert.ok(first.ok === false && first.kind === 'missing-tools')
+      assert.ok(!first.ok && first.kind === 'missing-tools')
       return
     }
     const started = Date.now()
@@ -190,11 +190,11 @@ describe('TikZ render service (issue #14)', function () {
       { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
     )
     if (!toolchainPresent) {
-      assert.ok(result.ok === false && result.kind === 'missing-tools')
+      assert.ok(!result.ok && result.kind === 'missing-tools')
       return
     }
-    assert.ok(result.ok === false, 'a broken figure must not report success')
-    if (result.ok === false) {
+    assert.ok(!result.ok, 'a broken figure must not report success')
+    if (!result.ok) {
       assert.strictEqual(result.kind, 'compile-error', `expected compile-error, got ${JSON.stringify(result).slice(0, 400)}`)
       if (result.kind === 'compile-error') {
         assert.ok(result.errors.length > 0, 'the bang-error diagnostic is surfaced')
@@ -232,8 +232,8 @@ describe('TikZ render service (issue #14)', function () {
     await rm(secondDir, { recursive: true, force: true })
 
     if (!toolchainPresent) {
-      assert.ok(fromFirst.ok === false && fromFirst.kind === 'missing-tools')
-      assert.ok(fromSecond.ok === false && fromSecond.kind === 'missing-tools')
+      assert.ok(!fromFirst.ok && fromFirst.kind === 'missing-tools')
+      assert.ok(!fromSecond.ok && fromSecond.kind === 'missing-tools')
       return
     }
 
@@ -260,7 +260,7 @@ describe('TikZ render service (issue #14)', function () {
         { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
         { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
       )
-      assert.ok(result.ok === false && result.kind === 'missing-tools', 'without the toolchain the typed missing-tools result is required')
+      assert.ok(!result.ok && result.kind === 'missing-tools', 'without the toolchain the typed missing-tools result is required')
       return
     }
 
@@ -297,8 +297,8 @@ describe('TikZ render service (issue #14)', function () {
       }
     }
 
-    assert.ok(result.ok === false, 'a killed render never produced a figure')
-    if (result.ok === false) {
+    assert.ok(!result.ok, 'a killed render never produced a figure')
+    if (!result.ok) {
       assert.strictEqual(result.kind, 'render-terminated', `a signal kill is its own outcome, got ${JSON.stringify(result).slice(0, 400)}`)
       if (result.kind === 'render-terminated') {
         assert.strictEqual(result.signal, 'SIGTERM', 'the signal that ended the render is carried, not discarded')
