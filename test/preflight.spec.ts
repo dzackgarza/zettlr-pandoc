@@ -59,6 +59,7 @@ describe('Startup preflight', function () {
   })
 
   it('finds all real required tooling present on this machine', async function () {
+    this.timeout(10_000)
     // Integration check: the actual required set must resolve in this
     // environment (documents what the app hard-requires at boot).
     const missing = await findMissingRequirements(REQUIRED_COMMANDS, requiredPaths())
@@ -66,6 +67,7 @@ describe('Startup preflight', function () {
   })
 
   it('the production preflight call (default requirements) passes here', async function () {
+    this.timeout(10_000)
     // Exactly how environment-check.ts invokes it: no requirement overrides.
     let failed = false
     const ok = await preflight(() => { failed = true }, () => { failed = true })

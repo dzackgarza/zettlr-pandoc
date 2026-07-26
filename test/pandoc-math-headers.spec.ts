@@ -138,7 +138,7 @@ describe('Pandoc math export headers', function () {
       path.join(process.cwd(), 'node_modules/.bin/electron'),
       '--ozone-platform=x11',
       '--disable-gpu',
-      // A fresh yarn install leaves electron's chrome-sandbox without its
+      // A fresh package-manager install leaves electron's chrome-sandbox without its
       // root-owned SUID bits, which aborts Chromium under xvfb. The probe
       // renders local test content only, so run unsandboxed rather than
       // requiring sudo provisioning for the test suite.

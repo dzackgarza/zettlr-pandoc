@@ -12,15 +12,15 @@
  *                  through the main-process flowmark service over the
  *                  'application' IPC channel, and a helper surfaces a typed
  *                  absence or error as a toast (never a silent no-op). This
- *                  module imports `electron`, so it must ONLY be imported from
- *                  the renderer (MainEditor.vue) — never from the shared editor
- *                  core that browser test bundles reach. The keystroke path
- *                  runs through the pure formatDocumentEffect instead.
+ *                  module reaches `window.ipc` (the contextBridge bridge), so it
+ *                  must ONLY be imported from the renderer (MainEditor.vue) —
+ *                  never from the shared editor core that browser test bundles
+ *                  reach. The keystroke path runs through the pure
+ *                  formatDocumentEffect instead.
  *
  * END HEADER
  */
 
-import { ipcRenderer } from 'electron'
 import showToast from '@common/util/show-toast'
 import { type FormatResult, type MarkdownFormatter } from './format-document'
 
@@ -29,7 +29,7 @@ import { type FormatResult, type MarkdownFormatter } from './format-document'
  * service and returns its typed result.
  */
 export const ipcMarkdownFormatter: MarkdownFormatter = async (text) => {
-  return await ipcRenderer.invoke('application', {
+  return await window.ipc.invoke('application', {
     command: 'format-document',
     payload: text
   }) as FormatResult

@@ -25,8 +25,55 @@
 
 import { spawn } from 'child_process'
 import { createHash } from 'crypto'
+import { existsSync } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
 import path from 'path'
+
+const REQUIRED_TIKZ_DATA_FILES = [
+  'filters/tikzcd.lua',
+  'filters/utilities.lua',
+  'templates/standalone-tikz.tex'
+] as const
+
+function hasTikzDataFiles (dataDir: string): boolean {
+  return REQUIRED_TIKZ_DATA_FILES.every(relativePath => existsSync(path.join(dataDir, relativePath)))
+}
+
+/**
+ * Resolves the single Pandoc data tree used by editor TikZ rendering.
+ *
+ * An explicit setting is authoritative and must be complete. Without one, a
+ * maintained user checkout at ~/.pandoc wins; users without that checkout use
+ * the small app-owned fallback shipped beside the bundle.
+ */
+export function resolveTikzDataDir (
+  configuredDir: string,
+  homeDir: string,
+  bundledDir: string
+): string {
+  if (configuredDir !== '') {
+    if (!hasTikzDataFiles(configuredDir)) {
+      throw new Error(
+        `Configured TikZ data directory ${configuredDir} must contain ` +
+        REQUIRED_TIKZ_DATA_FILES.join(' and ')
+      )
+    }
+    return configuredDir
+  }
+
+  const userPandocDir = path.join(homeDir, '.pandoc')
+  if (hasTikzDataFiles(userPandocDir)) {
+    return userPandocDir
+  }
+
+  if (!hasTikzDataFiles(bundledDir)) {
+    throw new Error(
+      `Bundled TikZ data directory ${bundledDir} must contain ` +
+      REQUIRED_TIKZ_DATA_FILES.join(' and ')
+    )
+  }
+  return bundledDir
+}
 
 export interface TikzRenderRequest {
   /**
@@ -52,7 +99,7 @@ export interface TikzRenderRequest {
 }
 
 export interface TikzRenderConfig {
-  /** The app-owned vendored asset tree (filters/, templates/, styles/). */
+  /** The resolved user-owned or app-owned Pandoc data tree. */
   tikzAssetDir: string
   /** The app-owned render cache; SVGs land and persist here. */
   cacheDir: string
@@ -145,7 +192,6 @@ async function probeTool (tool: string, env: NodeJS.ProcessEnv): Promise<ToolPro
       resolve(error.code === 'ENOENT' ? { status: 'absent' } : { status: 'probe-failed', code: error.code })
     })
     probe.once('spawn', () => {
-      probe.once('close', () => resolve({ status: 'available' }))
       // --version variants that wait on stdin must not hang the probe.
       probe.kill()
       resolve({ status: 'available' })
