@@ -1,7 +1,7 @@
 schema_version = 1
 fallback_kind = "minimal-generic"
 source_repository = "https://github.com/dzackgarza/pandoc-config"
-source_commit = "4404f6746dfbfd7e51f7b38dcd6659a63156ebd6"
+source_commit = "1871f489b6ca915e70174925ec67fc8b2818206b"
 source_paths = [
   "filters/tikzcd.lua",
   "filters/utilities.lua",
