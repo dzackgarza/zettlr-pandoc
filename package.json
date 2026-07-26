@@ -32,7 +32,7 @@
     "release:linux-arm": "cross-env NODE_ENV=production npm_config_arch=arm64 electron-forge make --platform=linux --arch=arm64 && electron-builder --linux AppImage --arm64 --publish never --prepackaged out/Zettlr-linux-arm64",
     "update:csl": "node scripts/update-csl.mjs",
     "update:citation": "node scripts/update-citation.mjs",
-    "coverage": "nyc mocha --check-coverage",
+    "coverage": "nyc --reporter=lcov mocha --check-coverage",
     "test": "mocha --inline-diffs",
     "test-gui": "cross-env NODE_ENV=develop node scripts/test-gui/index.mjs",
     "lint:po": "node scripts/lint-po.mjs",
