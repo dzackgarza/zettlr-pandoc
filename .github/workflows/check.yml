@@ -8,7 +8,7 @@ env:
   PANDOC_VERSION: '3.9.0.2'
   PANDOC_CROSSREF_RELEASE: '0.3.24a'
   PANDOC_CROSSREF_SHA256: 'afaa8867ab8d908b7e5ad1b96f62eedea6a5d3e89ee14e152cd72e67f535a728'
-  PANDOC_CONFIG_COMMIT: '4404f6746dfbfd7e51f7b38dcd6659a63156ebd6'
+  PANDOC_CONFIG_COMMIT: '1871f489b6ca915e70174925ec67fc8b2818206b'
 # Ensure only a single unit test workflow runs at any one time for any event and
 # ref. This allows multiple unit tests/linters to run, but at most one per ref.
 # NOTE: Changed `ref` to `sha`, since even for PRs, `ref` will be `develop`.
