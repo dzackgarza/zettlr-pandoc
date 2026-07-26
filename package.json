@@ -15,6 +15,9 @@
   "description": "Your One-Stop Publication Workbench",
   "main": ".webpack/main",
   "type": "commonjs",
+  "bin": {
+    "zettlr-agent": "./source/agent-cli/main.ts"
+  },
   "scripts": {
     "start": "cross-env NODE_ENV=develop node scripts/test-gui/index.mjs",
     "package": "cross-env NODE_ENV=production electron-forge package",
