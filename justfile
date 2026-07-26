@@ -74,6 +74,9 @@ test:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --timeout 120000 --inline-diffs
 
+# Git event hooks are installed globally by ai-review-ci via core.hooksPath
+# (`pre-commit` -> this repo's test-commit, `pre-push` -> test-push).
+# This repo owns only the delegated recipe contract, not hook installation.
 [private]
 test-commit:
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-commit
