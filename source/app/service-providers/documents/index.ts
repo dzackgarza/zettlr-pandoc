@@ -2594,6 +2594,30 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     }
     const { documentId, version, sha256 } = parsed
+
+    // Idempotency check: if a packet with this clientRequestId already
+    // exists in an active review, return the cached result before the
+    // revision check (spec section 6.2).
+    const existingReview = this._reviewStore.getReview(documentId)
+    if (existingReview !== undefined) {
+      const existingPacket = existingReview.packets.find(
+        (p) => p.clientRequestId === clientRequestId,
+      )
+      if (existingPacket !== undefined) {
+        const status = this._reviewStore.getReviewStatus(documentId)!
+        return {
+          ok: true,
+          packetId: existingPacket.packetId,
+          reviewId: existingReview.reviewId,
+          documentId,
+          documentRevision: { version, sha256 },
+          reviewGeneration: status.generation,
+          unresolvedChunks: status.unresolvedChunks,
+          state: status.state,
+        }
+      }
+    }
+
     const filePath = this.getDocumentPath(documentId)
     if (filePath === undefined) {
       return {
@@ -2622,8 +2646,8 @@ current contents from the editor somewhere else, and restart the application.`,
     }
 
     // Check if a review is already active; if not, open one
-    const existingReview = this._reviewStore.getReview(documentId)
-    if (existingReview === undefined) {
+    const activeReview = this._reviewStore.getReview(documentId)
+    if (activeReview === undefined) {
       // Open a new review with the patch as the initial packet
       try {
         const diskContent = normalizeText(
