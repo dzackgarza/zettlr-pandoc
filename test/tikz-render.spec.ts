@@ -35,10 +35,14 @@ import { strict as assert } from 'assert'
 import { spawnSync } from 'child_process'
 import { randomBytes } from 'crypto'
 import { existsSync, readdirSync, readFileSync } from 'fs'
-import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
-import { renderTikz, type TikzRenderResult } from 'source/app/util/tikz-render'
+import {
+  renderTikz,
+  resolveTikzDataDir,
+  type TikzRenderResult
+} from 'source/app/util/tikz-render'
 
 const TIKZ_ASSET_DIR = path.join(process.cwd(), 'static/tikz')
 
@@ -302,8 +306,40 @@ describe('TikZ render service (issue #14)', function () {
     }
   })
 
-  it('never reads from ~/.pandoc: the vendored tree is the only asset source', function () {
-    const filter = readFileSync(path.join(TIKZ_ASSET_DIR, 'filters/tikzcd.lua'), 'utf8')
-    assert.ok(!filter.includes("home .. '/.pandoc"), 'the vendored filter must not resolve modules from ~/.pandoc')
+  it('uses an explicitly configured TikZ data directory', async function () {
+    const configuredDir = path.join(cacheDir, 'configured-pandoc')
+    await mkdir(path.join(configuredDir, 'filters'), { recursive: true })
+    await mkdir(path.join(configuredDir, 'templates'), { recursive: true })
+    await writeFile(path.join(configuredDir, 'filters/tikzcd.lua'), '-- configured filter\n')
+    await writeFile(path.join(configuredDir, 'templates/standalone-tikz.tex'), '% configured template\n')
+
+    assert.strictEqual(
+      resolveTikzDataDir(configuredDir, path.join(cacheDir, 'home'), TIKZ_ASSET_DIR),
+      configuredDir,
+      'an explicit user setting is the render dependency'
+    )
+  })
+
+  it('defaults to the live ~/.pandoc tree when it carries the TikZ assets', async function () {
+    const homeDir = path.join(cacheDir, 'home')
+    const userPandocDir = path.join(homeDir, '.pandoc')
+    await mkdir(path.join(userPandocDir, 'filters'), { recursive: true })
+    await mkdir(path.join(userPandocDir, 'templates'), { recursive: true })
+    await writeFile(path.join(userPandocDir, 'filters/tikzcd.lua'), '-- live user filter\n')
+    await writeFile(path.join(userPandocDir, 'templates/standalone-tikz.tex'), '% live user template\n')
+
+    assert.strictEqual(
+      resolveTikzDataDir('', homeDir, TIKZ_ASSET_DIR),
+      userPandocDir,
+      'the maintained user checkout wins without copying it into the application'
+    )
+  })
+
+  it('uses the shipped pinned assets when the user has no TikZ data tree', function () {
+    assert.strictEqual(
+      resolveTikzDataDir('', path.join(cacheDir, 'home-without-pandoc'), TIKZ_ASSET_DIR),
+      TIKZ_ASSET_DIR,
+      'a user without pandoc-config receives the tracked generic fallback'
+    )
   })
 })
