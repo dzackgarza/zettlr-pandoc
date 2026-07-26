@@ -39,8 +39,26 @@ jobs:
       - name: Audit
         run: |-
           audit_status=0
-          bun audit --audit-level moderate --json > audit_result.json || audit_status=$?
-          jq -e 'type == "object" and has("vulnerabilities") and has("metadata")' audit_result.json > /dev/null
+          bun audit --audit-level moderate --json > audit_result.raw || audit_status=$?
+          if [[ $(od -An -tx1 -N2 audit_result.raw | tr -d ' ') == 1f8b ]]; then
+            gzip -dc audit_result.raw > audit_result.json || true
+          else
+            mv audit_result.raw audit_result.json
+          fi
+          jq -e '
+            type == "object"
+            and all(
+              to_entries[];
+              (.value | type == "array")
+              and all(
+                .value[];
+                (.title | type == "string")
+                and (.severity | type == "string")
+                and (.vulnerable_versions | type == "string")
+                and (.url | type == "string")
+              )
+            )
+          ' audit_result.json > /dev/null
           test "${audit_status}" -eq 0 || test "${audit_status}" -eq 1
       - name: Format results
         run: ./scripts/audit-report.sh format

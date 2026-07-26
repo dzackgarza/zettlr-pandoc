@@ -65,7 +65,7 @@ def kill_dev_processes() -> int:
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
-            pass
+            print(f"Dev process {pid} exited before SIGTERM was delivered.", file=sys.stderr)
 
     # Give them a moment to exit, then SIGKILL whatever ignored SIGTERM.
     time.sleep(1)
@@ -73,7 +73,7 @@ def kill_dev_processes() -> int:
         try:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
-            pass
+            print(f"Dev process {pid} exited before SIGKILL was delivered.", file=sys.stderr)
     return 0
 
 

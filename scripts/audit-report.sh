@@ -11,7 +11,7 @@ AUDIT_FILE=audit_result.txt
 load_audit_content() {
   AUDIT_CONTENT=$(<"$AUDIT_FILE")
   AUDIT_CHARS=${#AUDIT_CONTENT}
-  AUDIT_COUNT=$(jq '.metadata.vulnerabilities.total' "$AUDIT_JSON")
+  AUDIT_COUNT=$(jq '[.[] | length] | add // 0' "$AUDIT_JSON")
 }
 
 # NOTE: The jq filter below condenses the most important info into a human-readable
@@ -19,24 +19,15 @@ load_audit_content() {
 # locally once informed to get all information if necessary.
 format_results() {
   jq -r '
-    .vulnerabilities
-    | to_entries[]
+    to_entries[]
     | .key as $package
-    | .value as $vulnerability
+    | .value[]
+    | . as $vulnerability
     | (
         "Package: \($package)",
-        "  Version(s): \($vulnerability.range)",
+        "  Version(s): \($vulnerability.vulnerable_versions)",
         "  Severity: \($vulnerability.severity)",
-        "  Via: \(
-          [
-            $vulnerability.via[]
-            | if type == "string"
-              then .
-              else "\(.title) (\(.url))"
-              end
-          ]
-          | join("; ")
-        )"
+        "  Via: \($vulnerability.title) (\($vulnerability.url))"
       )
   ' "$AUDIT_JSON" > "$AUDIT_FILE"
 }
