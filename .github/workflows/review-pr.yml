@@ -10,6 +10,7 @@ jobs:
     with:
       tier: test-ci
       profile: 'bun'
+      setup_recipe: 'setup-ci'
       infra_ref: 'main'
   deterministic-diff:
     uses: dzackgarza/ai-review-ci/.github/workflows/_gates.yml@main

@@ -5,10 +5,6 @@ permissions:
   contents: read
 env:
   NODE_VERSION: '22'
-  PANDOC_VERSION: '3.9.0.2'
-  PANDOC_CROSSREF_RELEASE: '0.3.24a'
-  PANDOC_CROSSREF_SHA256: 'afaa8867ab8d908b7e5ad1b96f62eedea6a5d3e89ee14e152cd72e67f535a728'
-  PANDOC_CONFIG_COMMIT: '1871f489b6ca915e70174925ec67fc8b2818206b'
 # Ensure only a single unit test workflow runs at any one time for any event and
 # ref. This allows multiple unit tests/linters to run, but at most one per ref.
 # NOTE: Changed `ref` to `sha`, since even for PRs, `ref` will be `develop`.
@@ -32,44 +28,10 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - name: Setup Pandoc ${{ env.PANDOC_VERSION }}
-        uses: r-lib/actions/setup-pandoc@v2
-        with:
-          pandoc-version: ${{ env.PANDOC_VERSION }}
       - name: Setup just
         uses: extractions/setup-just@v3
-      - name: Install TeX and pandoc-crossref toolchain
-        shell: bash
-        run: |-
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install --yes biber latexmk pdf2svg texlive-latex-extra texlive-pictures
-          archive="${RUNNER_TEMP}/pandoc-crossref.tar.xz"
-          curl --fail --location --silent --show-error \
-            "https://github.com/lierdakil/pandoc-crossref/releases/download/v${PANDOC_CROSSREF_RELEASE}/pandoc-crossref-Linux-X64.tar.xz" \
-            --output "${archive}"
-          echo "${PANDOC_CROSSREF_SHA256}  ${archive}" | sha256sum --check
-          sudo tar --extract --xz --file "${archive}" --directory /usr/local/bin pandoc-crossref
-      - name: Install pinned Pandoc configuration
-        shell: bash
-        run: |-
-          set -euo pipefail
-          git clone --no-checkout https://github.com/dzackgarza/pandoc-config.git "${HOME}/.pandoc"
-          git -C "${HOME}/.pandoc" checkout --detach "${PANDOC_CONFIG_COMMIT}"
-      - name: Verify real toolchain contract
-        shell: bash
-        run: |-
-          set -euo pipefail
-          pandoc_version="$(pandoc --version | head -1 | cut -d ' ' -f2)"
-          crossref_pandoc_version="$(pandoc-crossref --version | sed -nE 's/.*built with Pandoc v([^,]+),.*/\1/p')"
-          test "${pandoc_version}" = "${PANDOC_VERSION}"
-          test "${crossref_pandoc_version}" = "${pandoc_version}"
-          command -v just
-          command -v latexmk
-          command -v pdflatex
-          command -v biber
-          command -v pdf2svg
-          test -f "${HOME}/.pandoc/justfile"
+      - name: Provision real export toolchain
+        run: just setup-ci
       - name: Install packages
         run: bun ci
       - name: Run unit tests
