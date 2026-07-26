@@ -192,7 +192,6 @@ async function probeTool (tool: string, env: NodeJS.ProcessEnv): Promise<ToolPro
       resolve(error.code === 'ENOENT' ? { status: 'absent' } : { status: 'probe-failed', code: error.code })
     })
     probe.once('spawn', () => {
-      probe.once('close', () => resolve({ status: 'available' }))
       // --version variants that wait on stdin must not hang the probe.
       probe.kill()
       resolve({ status: 'available' })
