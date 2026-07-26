@@ -38,6 +38,14 @@ jobs:
       run: yarn lint
     - name: Run unit tests
       run: yarn test
+    # Compile the real webpack bundles (main + renderer + preload). tsc/eslint
+    # type-check but never bundle, so a renderer file importing a main-only
+    # module (e.g. `from 'electron'`, which drags in `child_process`) passes
+    # lint yet breaks `yarn start`. `package` runs the same webpack compile as
+    # launching the app, minus the installer makers — so this fails in CI
+    # instead of being discovered by whoever next runs the app.
+    - name: Build app bundle
+      run: yarn package:linux-x64
     - name: Test CSL update
       run: yarn update:csl
     - name: Test Citation update
