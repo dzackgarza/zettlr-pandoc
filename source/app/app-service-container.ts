@@ -31,6 +31,7 @@ import RecentDocumentsProvider from '@providers/recent-docs'
 import ReferenceProvider from '@providers/references'
 import ReviewDiffAPIProvider from '@providers/review-diff-api'
 import AgentAPIProvider from '@providers/agent-api'
+import AgentHTTPProvider from '@providers/agent-api/http-server'
 import StatsProvider from '@providers/stats'
 import TagProvider from '@providers/tags'
 import TargetProvider from '@providers/targets'
@@ -102,6 +103,7 @@ export class AppServiceContainer {
   private readonly _documentManager: DocumentManager
   private readonly _reviewDiffAPIProvider: ReviewDiffAPIProvider
   private readonly _agentAPIProvider: AgentAPIProvider
+  private readonly _agentHTTPProvider: AgentHTTPProvider
   private readonly _lrtProvider: LongRunningTaskProvider
   private readonly _searchProvider: SearchProvider
   private _isBooted: boolean
@@ -161,6 +163,11 @@ export class AppServiceContainer {
     this._agentAPIProvider = new AgentAPIProvider(
       this._logProvider,
       this._documentManager,
+    )
+    this._agentHTTPProvider = new AgentHTTPProvider(
+      this._logProvider,
+      this._documentManager,
+      this,
     )
     this._tagProvider = new TagProvider(
       this._logProvider,
@@ -272,6 +279,7 @@ export class AppServiceContainer {
       'ReviewDiffAPIProvider',
     )
     await this._informativeBoot(this._agentAPIProvider, 'AgentAPIProvider')
+    await this._informativeBoot(this._agentHTTPProvider, 'AgentHTTPProvider')
     await this._informativeBoot(this._menuProvider, 'MenuProvider')
     await this._informativeBoot(this._updateProvider, 'UpdateProvider')
 
@@ -373,6 +381,9 @@ export class AppServiceContainer {
   public get agentAPI (): AgentAPIProvider {
     return this._agentAPIProvider
   }
+  public get agentHTTP (): AgentHTTPProvider {
+    return this._agentHTTPProvider
+  }
   public get commands (): CommandProvider {
     return this._commandProvider
   }
@@ -391,6 +402,7 @@ export class AppServiceContainer {
       'ReviewDiffAPIProvider',
     )
     await this._safeShutdown(this._agentAPIProvider, 'AgentAPIProvider')
+    await this._safeShutdown(this._agentHTTPProvider, 'AgentHTTPProvider')
     await this._safeShutdown(this._documentManager, 'DocumentManager')
     await this._safeShutdown(this._fsal, 'FSAL')
 

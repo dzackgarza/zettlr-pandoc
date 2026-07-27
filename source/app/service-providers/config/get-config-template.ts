@@ -18,7 +18,12 @@ import { v4 as uuid4 } from 'uuid'
 import getLanguageFile from '@common/util/get-language-file'
 import { NAVIGATION_SHORTCUT_DEFAULTS } from '@common/util/navigation-shortcuts'
 
-export type MarkdownTheme = 'berlin'|'frankfurt'|'bielefeld'|'karl-marx-stadt'|'bordeaux'
+export type MarkdownTheme =
+  | 'berlin'
+  | 'frankfurt'
+  | 'bielefeld'
+  | 'karl-marx-stadt'
+  | 'bordeaux'
 
 // This is a handy interface to add groups of file types to the settings in
 // order to allow users to display them in filemanager and/or sidebar, and open
@@ -26,10 +31,10 @@ export type MarkdownTheme = 'berlin'|'frankfurt'|'bielefeld'|'karl-marx-stadt'|'
 // NOTE: The generics are meant so that you can restrict certain groupings.
 // E.g., FileTypeSettings<true, false, 'zettlr'> enforces these values for the
 // three properties.
-interface FileTypeSettings<F = boolean, S = boolean, O = 'zettlr'|'system'> {
-  showInFilemanager: F
-  showInSidebar: S
-  openWith: O
+interface FileTypeSettings<F = boolean, S = boolean, O = 'zettlr' | 'system'> {
+  showInFilemanager: F;
+  showInSidebar: S;
+  openWith: O;
 }
 
 /**
@@ -43,246 +48,272 @@ export interface LanguageToolIgnoredRuleEntry {
   /**
    * The description of the rule (usually localized).
    */
-  description: string
+  description: string;
   /**
    * The unique ID of this rule.
    */
-  id: string
+  id: string;
   /**
    * The category for this rule.
    */
-  category: string
+  category: string;
+}
+
+export interface AgentApiConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  remoteAccess: boolean;
+  tls: {
+    enabled: boolean;
+    certPath?: string;
+    keyPath?: string;
+  };
+  cors: {
+    allowedOrigins: string[];
+  };
 }
 
 export interface ConfigOptions {
-  version: string
-  buildDate: string
-  uuid: string
-  appLang: string
+  version: string;
+  buildDate: string;
+  uuid: string;
+  appLang: string;
+  /** Agent API HTTP server configuration (OpenAPI / REST). */
+  agentApi: AgentApiConfig;
 
-  darkMode: boolean
-  darkModeEditor: 'match'|'light'|'dark'
-  autoDarkMode: 'off'|'system'|'schedule'
-  autoDarkModeStart: string
-  autoDarkModeEnd: string
+  darkMode: boolean;
+  darkModeEditor: 'match' | 'light' | 'dark';
+  autoDarkMode: 'off' | 'system' | 'schedule';
+  autoDarkModeStart: string;
+  autoDarkModeEnd: string;
 
-  openDirectory: string|null
-  attachmentExtensions: string[]
-  alwaysReloadFiles: boolean
-  muteLines: boolean
+  openDirectory: string | null;
+  attachmentExtensions: string[];
+  alwaysReloadFiles: boolean;
+  muteLines: boolean;
 
   // NOTE to everyone: These options (and possibly others) that pertain to the
   // file manager should slowly be migrated into the fileManager group below.
-  fileManagerMode: 'thin'|'combined'|'expanded'
-  fileManagerShowFiles: boolean
-  fileManagerShowWorkspaces: boolean
-  fileMeta: boolean
-  fileMetaTime: 'modtime'|'creationtime'
-  sorting: 'natural'|'ascii'
-  sortFoldersFirst: boolean
-  fileNameDisplay: 'filename'|'title'|'heading'|'title+heading'
+  fileManagerMode: 'thin' | 'combined' | 'expanded';
+  fileManagerShowFiles: boolean;
+  fileManagerShowWorkspaces: boolean;
+  fileMeta: boolean;
+  fileMetaTime: 'modtime' | 'creationtime';
+  sorting: 'natural' | 'ascii';
+  sortFoldersFirst: boolean;
+  fileNameDisplay: 'filename' | 'title' | 'heading' | 'title+heading';
 
   // NOTE to everyone: The various filemanager options (see above) should over
   // time be migrated into this group.
   fileManager: {
-    twoStepCollapseWorkspaces: boolean
+    twoStepCollapseWorkspaces: boolean;
     // If this is true, the config will never attempt to auto-sort workspaces.
-    sortWorkspacesManually: boolean
-  }
+    sortWorkspacesManually: boolean;
+  };
 
-  newFileNamePattern: string
-  newFileDontPrompt: boolean
-  selectedDicts: string[]
+  newFileNamePattern: string;
+  newFileDontPrompt: boolean;
+  selectedDicts: string[];
 
-  debug: boolean
-  checkForBeta: boolean
+  debug: boolean;
+  checkForBeta: boolean;
 
   app: {
-    openFiles: string[]
-    openWorkspaces: string[]
-  }
+    openFiles: string[];
+    openWorkspaces: string[];
+  };
 
   dialogPaths: {
-    askFileDialog: string
-    askDirDialog: string
-    askLangFileDialog: string
-  }
+    askFileDialog: string;
+    askDirDialog: string;
+    askLangFileDialog: string;
+  };
   export: {
-    dir: 'temp'|'cwd'|'ask'
-    stripTags: boolean
-    autoOpenExportedFiles: boolean
-    enforceMarkSupport: boolean
-    stripLinks: 'full'|'unlink'|'no'
-    cslLibrary: string
-    cslStyle: string
-    useBundledPandoc: boolean
-    exportQmdWithQuarto: boolean
-    customCommands: Array<{ displayName: string, command: string }>
+    dir: 'temp' | 'cwd' | 'ask';
+    stripTags: boolean;
+    autoOpenExportedFiles: boolean;
+    enforceMarkSupport: boolean;
+    stripLinks: 'full' | 'unlink' | 'no';
+    cslLibrary: string;
+    cslStyle: string;
+    useBundledPandoc: boolean;
+    exportQmdWithQuarto: boolean;
+    customCommands: Array<{ displayName: string; command: string }>;
     // Ordered list of Pandoc filters applied to every export before the
     // profile's own filters. Names resolve from Pandoc's data directory
     // (~/.pandoc/filters) or an absolute path. Ordered and declared, unlike the
     // former implicit fs.readdir sweep of the lua-filter directory.
-    filters: string[]
+    filters: string[];
     // Whether the exporter injects its own local MathJax config/preamble into
     // HTML and TeX exports (self-contained, offline). Turn off to defer math to
     // the profile's template (e.g. a ~/.pandoc template that owns MathJax).
-    injectMathHeaders: boolean
+    injectMathHeaders: boolean;
     // Default Pandoc templates applied per writer family when the export profile
     // declares none. A path (absolute, or a name resolved from ~/.pandoc/templates).
     // htmlTemplate covers html/revealjs; latexTemplate covers latex/pdf/beamer.
-    htmlTemplate: string
-    latexTemplate: string
+    htmlTemplate: string;
+    latexTemplate: string;
     // Declarative, pipeline-integrated export scripts. Each becomes a first-class
     // Format item: export the source through the named base Pandoc `profile` to
     // an intermediate, then run `command "<intermediate>" "<output>"`, producing
     // an `extension` file. Unlike customCommands (raw source), the script
     // receives the Pandoc-processed output.
-    scripts: Array<{ name: string, profile: string, command: string, extension: string }>
-    selectedProfiles: Array<{ filePath: string, profile: string }>
-    lastUsedProfile: string
-  }
+    scripts: Array<{
+      name: string;
+      profile: string;
+      command: string;
+      extension: string;
+    }>;
+    selectedProfiles: Array<{ filePath: string; profile: string }>;
+    lastUsedProfile: string;
+  };
   zkn: {
-    idRE: string
-    idGen: string
-    linkAddFileTitle: boolean
-    linkWithIDIfPossible: boolean
-    linkFormat: 'link|title'|'title|link'
-    autoSearch: boolean
-    customDirectory: string
-  }
+    idRE: string;
+    idGen: string;
+    linkAddFileTitle: boolean;
+    linkWithIDIfPossible: boolean;
+    linkFormat: 'link|title' | 'title|link';
+    autoSearch: boolean;
+    customDirectory: string;
+  };
   editor: {
-    autocompleteSuggestEmojis: boolean
-    snippetAutocompleteTriggerCharacter: ':'
-    autoSave: 'off'|'immediately'|'delayed'
+    autocompleteSuggestEmojis: boolean;
+    snippetAutocompleteTriggerCharacter: ':';
+    autoSave: 'off' | 'immediately' | 'delayed';
     // Run flowmark over the document on every save (issue #26). Off by default.
-    formatOnSave: boolean
-    citeStyle: 'in-text'|'in-text-suffix'|'regular'
-    autoCloseBrackets: boolean
-    showLinkPreviews: boolean
-    showStatusbar: boolean
-    showFormattingToolbar: boolean
-    showWhitespace: boolean
-    showMarkdownLineNumbers: boolean
-    defaultSaveImagePath: string
-    enableTableHelper: boolean
-    indentUnit: number
-    indentWithTabs: boolean
-    alwaysIndentLineOnTab: boolean
-    fontSize: number
-    countChars: boolean
+    formatOnSave: boolean;
+    citeStyle: 'in-text' | 'in-text-suffix' | 'regular';
+    autoCloseBrackets: boolean;
+    showLinkPreviews: boolean;
+    showStatusbar: boolean;
+    showFormattingToolbar: boolean;
+    showWhitespace: boolean;
+    showMarkdownLineNumbers: boolean;
+    defaultSaveImagePath: string;
+    enableTableHelper: boolean;
+    indentUnit: number;
+    indentWithTabs: boolean;
+    alwaysIndentLineOnTab: boolean;
+    fontSize: number;
+    countChars: boolean;
     // The per-pane history Back/Forward combos (issue #1 workstream 4), in
     // CodeMirror keybinding syntax. Defaults come from the shared
     // NAVIGATION_SHORTCUT_DEFAULTS registry.
     navigationShortcuts: {
-      back: string
-      forward: string
-    }
-    inputMode: 'default'|'vim'|'emacs'
-    boldFormatting: '**'|'__'
-    italicFormatting: '_'|'*'
-    highlightFormatting: 'span'|'=='
-    readabilityAlgorithm: 'dale-chall'|'gunning-fog'|'coleman-liau'|'automated-readability'
+      back: string;
+      forward: string;
+    };
+    inputMode: 'default' | 'vim' | 'emacs';
+    boldFormatting: '**' | '__';
+    italicFormatting: '_' | '*';
+    highlightFormatting: 'span' | '==';
+    readabilityAlgorithm:
+      | 'dale-chall'
+      | 'gunning-fog'
+      | 'coleman-liau'
+      | 'automated-readability';
     lint: {
-      markdown: boolean
+      markdown: boolean;
       languageTool: {
-        active: boolean
-        level: 'picky'|'default'
-        motherTongue: string // e.g., en-US, de-DE
+        active: boolean;
+        level: 'picky' | 'default';
+        motherTongue: string; // e.g., en-US, de-DE
         variants: {
-          en: string
-          de: string
-          pt: string
-          ca: string
-        }
-        ignoredRules: LanguageToolIgnoredRuleEntry[]
-        provider: 'official'|'custom'
-        customServer: string
-        username: string
-        apiKey: string
-      }
-    }
+          en: string;
+          de: string;
+          pt: string;
+          ca: string;
+        };
+        ignoredRules: LanguageToolIgnoredRuleEntry[];
+        provider: 'official' | 'custom';
+        customServer: string;
+        username: string;
+        apiKey: string;
+      };
+    };
     autoCorrect: {
-      active: boolean
+      active: boolean;
       magicQuotes: {
-        primary: string
-        secondary: string
-      }
-      replacements: Array<{ key: string, value: string }>
-      matchWholeWords: boolean
-    }
-  }
+        primary: string;
+        secondary: string;
+      };
+      replacements: Array<{ key: string; value: string }>;
+      matchWholeWords: boolean;
+    };
+  };
   display: {
-    theme: MarkdownTheme
-    hideToolbarInDistractionFree: boolean
-    markdownFileExtensions: boolean
-    previewModeShowSyntaxWhenCursorIsAdjacent: boolean
-    imageWidth: number
-    imageHeight: number
-    renderingMode: 'preview'|'raw'
-    renderCitations: boolean
-    renderIframes: boolean
-    renderImages: boolean
-    renderLinks: boolean
-    renderMath: boolean
-    renderTasks: boolean
-    renderHTags: boolean
-    renderEmphasis: boolean
-    renderPandoc: boolean
-    renderHorizontalRules: boolean
-  }
+    theme: MarkdownTheme;
+    hideToolbarInDistractionFree: boolean;
+    markdownFileExtensions: boolean;
+    previewModeShowSyntaxWhenCursorIsAdjacent: boolean;
+    imageWidth: number;
+    imageHeight: number;
+    renderingMode: 'preview' | 'raw';
+    renderCitations: boolean;
+    renderIframes: boolean;
+    renderImages: boolean;
+    renderLinks: boolean;
+    renderMath: boolean;
+    renderTasks: boolean;
+    renderHTags: boolean;
+    renderEmphasis: boolean;
+    renderPandoc: boolean;
+    renderHorizontalRules: boolean;
+  };
   files: {
     // Built-in files cannot be shown in the sidebar, will always be shown in
     // the file manager, and will always be opened with Zettlr.
-    builtin: FileTypeSettings<true, false, 'zettlr'>
+    builtin: FileTypeSettings<true, false, 'zettlr'>;
     // Images and PDFs can be entirely hidden or shown everywhere, and opened
     // with the system default, or in Zettlr
-    images: FileTypeSettings
-    pdf: FileTypeSettings
+    images: FileTypeSettings;
+    pdf: FileTypeSettings;
     // These file types can be shown anywhere, but are not open-able by Zettlr.
-    msoffice: FileTypeSettings<boolean, boolean, 'system'>
-    openOffice: FileTypeSettings<boolean, boolean, 'system'>
-    dataFiles: FileTypeSettings<boolean, boolean, 'system'>
-    dotFiles: FileTypeSettings<boolean, boolean>
-  }
+    msoffice: FileTypeSettings<boolean, boolean, 'system'>;
+    openOffice: FileTypeSettings<boolean, boolean, 'system'>;
+    dataFiles: FileTypeSettings<boolean, boolean, 'system'>;
+    dotFiles: FileTypeSettings<boolean, boolean>;
+  };
   watchdog: {
-    activatePolling: boolean
-    stabilityThreshold: number
-  }
+    activatePolling: boolean;
+    stabilityThreshold: number;
+  };
   window: {
-    nativeAppearance: boolean
-    vibrancy: boolean
-    sidebarVisible: boolean
-    fileManagerVisible: boolean
-    currentSidebarTab: 'toc'|'references'|'relatedFiles'|'attachments'
-    recentGlobalSearches: string[]
-  }
+    nativeAppearance: boolean;
+    vibrancy: boolean;
+    sidebarVisible: boolean;
+    fileManagerVisible: boolean;
+    currentSidebarTab: 'toc' | 'references' | 'relatedFiles' | 'attachments';
+    recentGlobalSearches: string[];
+  };
   ui: {
-    fileManagerSplitSize: [number, number]
-    editorSidebarSplitSize: [number, number]
-  }
+    fileManagerSplitSize: [number, number];
+    editorSidebarSplitSize: [number, number];
+  };
   system: {
-    deleteOnFail: boolean
-    leaveAppRunning: boolean
-    avoidNewTabs: boolean
-    iframeWhitelist: string[]
-    checkForUpdates: boolean
-    zoomBehavior: 'gui'|'editor'
-  }
+    deleteOnFail: boolean;
+    leaveAppRunning: boolean;
+    avoidNewTabs: boolean;
+    iframeWhitelist: string[];
+    checkForUpdates: boolean;
+    zoomBehavior: 'gui' | 'editor';
+  };
   displayToolbarButtons: {
-    showOpenPreferencesButton: boolean
-    showNewFileButton: boolean
-    showPreviousFileButton: boolean
-    showNextFileButton: boolean
-    showPandocDivSpanButton: boolean
-    showMarkdownCommentButton: boolean
-    showMarkdownLinkButton: boolean
-    showMarkdownImageButton: boolean
-    showMarkdownMakeTaskListButton: boolean
-    showInsertTableButton: boolean
-    showInsertFootnoteButton: boolean
-    showDocumentInfoText: boolean
-    showPomodoroButton: boolean
-  }
+    showOpenPreferencesButton: boolean;
+    showNewFileButton: boolean;
+    showPreviousFileButton: boolean;
+    showNextFileButton: boolean;
+    showPandocDivSpanButton: boolean;
+    showMarkdownCommentButton: boolean;
+    showMarkdownLinkButton: boolean;
+    showMarkdownImageButton: boolean;
+    showMarkdownMakeTaskListButton: boolean;
+    showInsertTableButton: boolean;
+    showInsertFootnoteButton: boolean;
+    showDocumentInfoText: boolean;
+    showPomodoroButton: boolean;
+  };
 }
 
 export function getConfigTemplate (): ConfigOptions {
@@ -305,13 +336,13 @@ export function getConfigTemplate (): ConfigOptions {
     buildDate: __BUILD_DATE__,
     app: {
       openFiles: [],
-      openWorkspaces: []
+      openWorkspaces: [],
     },
     openDirectory: null, // Save last opened dir path here
     dialogPaths: {
       askFileDialog: '',
       askDirDialog: '',
-      askLangFileDialog: ''
+      askLangFileDialog: '',
     },
     window: {
       // Only use native window appearance by default on macOS. If this value
@@ -323,11 +354,11 @@ export function getConfigTemplate (): ConfigOptions {
       fileManagerVisible: true,
       sidebarVisible: false,
       currentSidebarTab: 'toc',
-      recentGlobalSearches: []
+      recentGlobalSearches: [],
     },
     ui: {
       fileManagerSplitSize: [ 20, 80 ],
-      editorSidebarSplitSize: [ 80, 20 ]
+      editorSidebarSplitSize: [ 80, 20 ],
     },
     // Visible attachment filetypes
     attachmentExtensions: [],
@@ -349,7 +380,7 @@ export function getConfigTemplate (): ConfigOptions {
     fileNameDisplay: 'title+heading', // Controls what info is displayed as filenames
     fileManager: {
       twoStepCollapseWorkspaces: false,
-      sortWorkspacesManually: false // By default, let Zettlr sort workspaces
+      sortWorkspacesManually: false, // By default, let Zettlr sort workspaces
     },
     newFileNamePattern: '%id.md',
     newFileDontPrompt: false, // If true immediately creates files
@@ -370,7 +401,7 @@ export function getConfigTemplate (): ConfigOptions {
       latexTemplate: '', // Default Pandoc template for latex/pdf/beamer exports (when the profile declares none)
       scripts: [], // Pipeline-integrated export scripts (base profile -> command -> output); see interface above
       selectedProfiles: [], // Remembers the last chosen exporter per file for easy re-exporting
-      lastUsedProfile: 'HTML.yaml' // Remembers the last chosen exporter for easy re-exporting
+      lastUsedProfile: 'HTML.yaml', // Remembers the last chosen exporter for easy re-exporting
     },
     // Zettelkasten stuff (IDs, as well as link matchers)
     zkn: {
@@ -380,7 +411,7 @@ export function getConfigTemplate (): ConfigOptions {
       linkWithIDIfPossible: false,
       linkFormat: 'link|title', // Determines what internal links ([[link|title]]) look like
       autoSearch: true, // Automatically start a search upon following a link?
-      customDirectory: '' // If present, saves auto-created files here
+      customDirectory: '', // If present, saves auto-created files here
     },
     // Editor related stuff
     editor: {
@@ -419,7 +450,7 @@ export function getConfigTemplate (): ConfigOptions {
             en: 'en-US',
             de: 'de-DE',
             pt: 'pt-PT',
-            ca: 'ca-ES'
+            ca: 'ca-ES',
           },
           // This is an (initially empty) array of rules the user chose to
           // ignore globally.
@@ -427,8 +458,8 @@ export function getConfigTemplate (): ConfigOptions {
           provider: 'official',
           customServer: '',
           username: '',
-          apiKey: ''
-        }
+          apiKey: '',
+        },
       },
       autoCorrect: {
         active: true, // AutoCorrect is on by default
@@ -436,7 +467,7 @@ export function getConfigTemplate (): ConfigOptions {
           // Can be various quote pairs. The default characters (" and ')
           // will disable magic quotes.
           primary: '"…"',
-          secondary: "'…'"
+          secondary: "'…'",
         },
         replacements: [
           // Arrows
@@ -492,10 +523,10 @@ export function getConfigTemplate (): ConfigOptions {
           // Interpunctation
           { key: '...', value: '…' },
           { key: '--', value: '–' },
-          { key: '---', value: '—' }
+          { key: '---', value: '—' },
         ],
-        matchWholeWords: false // Whether to only autocorrect entire words, not parts
-      } // END autoCorrect options
+        matchWholeWords: false, // Whether to only autocorrect entire words, not parts
+      }, // END autoCorrect options
     },
     display: {
       theme: 'berlin', // The theme, can be berlin|frankfurt|bielefeld|karl-marx-stadt|bordeaux
@@ -514,16 +545,44 @@ export function getConfigTemplate (): ConfigOptions {
       renderHTags: true,
       renderEmphasis: true,
       renderPandoc: true,
-      renderHorizontalRules: true
+      renderHorizontalRules: true,
     },
     files: {
-      builtin: { showInFilemanager: true, showInSidebar: false, openWith: 'zettlr' },
-      images: { showInFilemanager: false, showInSidebar: true, openWith: 'system' },
-      pdf: { showInFilemanager: false, showInSidebar: true, openWith: 'system' },
-      msoffice: { showInFilemanager: false, showInSidebar: true, openWith: 'system' },
-      openOffice: { showInFilemanager: false, showInSidebar: true, openWith: 'system' },
-      dataFiles: { showInFilemanager: false, showInSidebar: true, openWith: 'system' },
-      dotFiles: { showInFilemanager: false, showInSidebar: false, openWith: 'system' }
+      builtin: {
+        showInFilemanager: true,
+        showInSidebar: false,
+        openWith: 'zettlr',
+      },
+      images: {
+        showInFilemanager: false,
+        showInSidebar: true,
+        openWith: 'system',
+      },
+      pdf: {
+        showInFilemanager: false,
+        showInSidebar: true,
+        openWith: 'system',
+      },
+      msoffice: {
+        showInFilemanager: false,
+        showInSidebar: true,
+        openWith: 'system',
+      },
+      openOffice: {
+        showInFilemanager: false,
+        showInSidebar: true,
+        openWith: 'system',
+      },
+      dataFiles: {
+        showInFilemanager: false,
+        showInSidebar: true,
+        openWith: 'system',
+      },
+      dotFiles: {
+        showInFilemanager: false,
+        showInSidebar: false,
+        openWith: 'system',
+      },
     },
     // Language
     selectedDicts: [], // By default no spell checking is active to speed up first start.
@@ -531,7 +590,7 @@ export function getConfigTemplate (): ConfigOptions {
     debug: false,
     watchdog: {
       activatePolling: false, // Set to true to enable polling in chokidar
-      stabilityThreshold: 1000 // Positive int in milliseconds
+      stabilityThreshold: 1000, // Positive int in milliseconds
     },
     system: {
       deleteOnFail: false, // Whether to delete files if trashing them fails
@@ -539,7 +598,7 @@ export function getConfigTemplate (): ConfigOptions {
       avoidNewTabs: false, // Whether to avoid opening new tabs for documents if possible
       iframeWhitelist: [ 'www.youtube.com', 'player.vimeo.com' ], // Contains a list of whitelisted iFrame prerendering domains
       checkForUpdates: true,
-      zoomBehavior: 'gui' // Used to determine what gets zoomed: The GUI or the editor
+      zoomBehavior: 'gui', // Used to determine what gets zoomed: The GUI or the editor
     },
     checkForBeta: false, // Should the user be notified of beta releases?
     displayToolbarButtons: {
@@ -555,8 +614,21 @@ export function getConfigTemplate (): ConfigOptions {
       showInsertTableButton: true,
       showInsertFootnoteButton: true,
       showDocumentInfoText: true,
-      showPomodoroButton: true
+      showPomodoroButton: true,
     },
-    uuid: uuid4() // The app's unique anonymous identifier
+    uuid: uuid4(), // The app's unique anonymous identifier
+    // Agent API HTTP server (OpenAPI / REST) — spec: Zettlr-Pandoc Editor Agent API
+    agentApi: {
+      enabled: false, // Off by default; must be explicitly enabled
+      host: '127.0.0.1', // Loopback only by default
+      port: 23119, // Default port
+      remoteAccess: false, // Non-loopback bind requires explicit config
+      tls: {
+        enabled: false, // TLS off by default; required for remoteAccess
+      },
+      cors: {
+        allowedOrigins: [], // Empty = no CORS headers
+      },
+    },
   }
 }
