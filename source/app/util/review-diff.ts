@@ -3,87 +3,9 @@ import path from 'path'
 import { createHash, randomUUID } from 'crypto'
 import { applyPatch, parsePatch, type StructuredPatch } from 'diff'
 import { hasMdOrCodeExt } from '@common/util/file-extention-checks'
-import type { ReviewDiffCliRequest, ReviewDiffSession } from '@dts/common/review-diff'
+import type { ReviewDiffSession } from '@dts/common/review-diff'
 
-const REVIEW_DIFF_COMMAND = 'review-diff'
 const BASELINE_HASH_PATTERN = /^[a-f0-9]{64}$/i
-
-export function isReviewDiffInvocation (argv: string[]): boolean {
-  return argv.includes(REVIEW_DIFF_COMMAND)
-}
-
-export function parseReviewDiffCliRequest (argv: string[], cwd: string = process.cwd()): ReviewDiffCliRequest|null {
-  const commandIndex = argv.indexOf(REVIEW_DIFF_COMMAND)
-  if (commandIndex === -1) {
-    return null
-  }
-
-  let documentPath: string|undefined
-  let patchPath: string|undefined
-  let baselineSha256: string|undefined
-  let description: string|undefined
-
-  for (let idx = commandIndex + 1; idx < argv.length; idx++) {
-    const arg = argv[idx]
-    const readValue = (name: string): string => {
-      if (idx + 1 >= argv.length) {
-        throw new Error(`Missing value for ${name}`)
-      }
-      idx += 1
-      return argv[idx]
-    }
-
-    if (arg === '--document') {
-      documentPath = readValue('--document')
-    } else if (arg.startsWith('--document=')) {
-      documentPath = arg.slice('--document='.length)
-    } else if (arg === '--patch') {
-      patchPath = readValue('--patch')
-    } else if (arg.startsWith('--patch=')) {
-      patchPath = arg.slice('--patch='.length)
-    } else if (arg === '--baseline-sha256' || arg === '--baseline-hash') {
-      baselineSha256 = readValue(arg)
-    } else if (arg.startsWith('--baseline-sha256=')) {
-      baselineSha256 = arg.slice('--baseline-sha256='.length)
-    } else if (arg.startsWith('--baseline-hash=')) {
-      baselineSha256 = arg.slice('--baseline-hash='.length)
-    } else if (arg === '--description') {
-      description = readValue('--description')
-    } else if (arg.startsWith('--description=')) {
-      description = arg.slice('--description='.length)
-    } else {
-      throw new Error(`Unsupported review-diff argument: ${arg}`)
-    }
-  }
-
-  if (documentPath === undefined) {
-    throw new Error('review-diff requires --document')
-  }
-
-  if (patchPath === undefined) {
-    throw new Error('review-diff requires --patch')
-  }
-
-  return {
-    documentPath: path.resolve(cwd, documentPath),
-    patchPath: path.resolve(cwd, patchPath),
-    baselineSha256,
-    description
-  }
-}
-
-export function buildReviewDiffSession (request: ReviewDiffCliRequest): ReviewDiffSession {
-  const baselineText = readNormalizedTextFile(request.documentPath)
-
-  return buildReviewDiffSessionFromBaseline({
-    documentPath: request.documentPath,
-    patchPath: request.patchPath,
-    baselineSha256: request.baselineSha256,
-    diskBaselineSha256: sha256Text(baselineText),
-    baselineText,
-    description: request.description
-  })
-}
 
 export interface ReviewDiffSessionFromBaselineRequest {
   documentPath: string
@@ -135,13 +57,6 @@ export function buildReviewDiffSessionFromBaseline (request: ReviewDiffSessionFr
     proposedText,
     currentText: proposedText,
     description: request.description
-  }
-}
-
-export function validateReviewDiffInvocation (argv: string[], cwd: string = process.cwd()): void {
-  const request = parseReviewDiffCliRequest(argv, cwd)
-  if (request !== null) {
-    buildReviewDiffSession(request)
   }
 }
 

@@ -1,17 +1,10 @@
-export interface ReviewDiffCliRequest {
-  documentPath: string;
-  patchPath: string;
-  baselineSha256?: string;
-  description?: string;
-}
-
 export interface ReviewDiffSession {
   id: string;
   documentPath: string;
   patchPath?: string;
   /**
    * SHA-256 of the live document content the proposition was built against.
-   * For the legacy disk-backed command this equals diskBaselineSha256.
+   * This also powers idempotent proposal application and replays.
    */
   baselineSha256: string;
   /**
@@ -71,31 +64,4 @@ export type ReviewDiffOpenResult =
     accepted: false;
     reason: 'stale-baseline' | 'invalid-request' | 'open-failed';
     message: string;
-  }
-
-export type ReviewDiffApiRequest =
-  | {
-    id?: string | number;
-    method: 'readDocument';
-    params: { path: string };
-  }
-  | {
-    id?: string | number;
-    method: 'openReview';
-    params: ReviewDiffOpenRequest;
-  }
-
-export type ReviewDiffApiResponse =
-  | {
-    id?: string | number;
-    ok: true;
-    result: ReviewDiffDocumentSnapshot | ReviewDiffOpenResult;
-  }
-  | {
-    id?: string | number;
-    ok: false;
-    error: {
-      code: string;
-      message: string;
-    };
   }

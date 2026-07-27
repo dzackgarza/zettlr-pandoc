@@ -53,7 +53,6 @@ import enumLangFiles from '@common/util/enum-lang-files'
 import enumDictFiles from '@common/util/enum-dict-files'
 import RenameTag from './rename-tag'
 import RenameReference from './rename-reference'
-import ReviewDiff from './review-diff'
 import TikzRender from './tikz-render'
 import FormatDocument from './format-document'
 import WorkspaceSort from './ws-sort'
@@ -85,7 +84,6 @@ export const commands = [
   OpenAuxWindow,
   Print,
   RenameReference,
-  ReviewDiff,
   RenameTag,
   FormatDocument,
   RequestMove,

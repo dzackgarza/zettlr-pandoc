@@ -29,8 +29,6 @@ import MenuProvider from '@providers/menu'
 import type ProviderContract from '@providers/provider-contract'
 import RecentDocumentsProvider from '@providers/recent-docs'
 import ReferenceProvider from '@providers/references'
-import ReviewDiffAPIProvider from '@providers/review-diff-api'
-import AgentAPIProvider from '@providers/agent-api'
 import AgentHTTPProvider from '@providers/agent-api/http-server'
 import StatsProvider from '@providers/stats'
 import TagProvider from '@providers/tags'
@@ -101,8 +99,6 @@ export class AppServiceContainer {
   private readonly _windowProvider: WindowProvider
   private readonly _fsal: FSAL
   private readonly _documentManager: DocumentManager
-  private readonly _reviewDiffAPIProvider: ReviewDiffAPIProvider
-  private readonly _agentAPIProvider: AgentAPIProvider
   private readonly _agentHTTPProvider: AgentHTTPProvider
   private readonly _lrtProvider: LongRunningTaskProvider
   private readonly _searchProvider: SearchProvider
@@ -156,14 +152,6 @@ export class AppServiceContainer {
 
     // The document provider accesses only the FSAL in its constructor
     this._documentManager = new DocumentManager(this)
-    this._reviewDiffAPIProvider = new ReviewDiffAPIProvider(
-      this._logProvider,
-      this._documentManager,
-    )
-    this._agentAPIProvider = new AgentAPIProvider(
-      this._logProvider,
-      this._documentManager,
-    )
     this._agentHTTPProvider = new AgentHTTPProvider(
       this._logProvider,
       this._documentManager,
@@ -274,11 +262,6 @@ export class AppServiceContainer {
     await this._informativeBoot(this._citeprocProvider, 'CiteprocProvider')
 
     await this._informativeBoot(this._documentManager, 'DocumentManager')
-    await this._informativeBoot(
-      this._reviewDiffAPIProvider,
-      'ReviewDiffAPIProvider',
-    )
-    await this._informativeBoot(this._agentAPIProvider, 'AgentAPIProvider')
     await this._informativeBoot(this._agentHTTPProvider, 'AgentHTTPProvider')
     await this._informativeBoot(this._menuProvider, 'MenuProvider')
     await this._informativeBoot(this._updateProvider, 'UpdateProvider')
@@ -375,12 +358,6 @@ export class AppServiceContainer {
   public get documents (): DocumentManager {
     return this._documentManager
   }
-  public get reviewDiffAPI (): ReviewDiffAPIProvider {
-    return this._reviewDiffAPIProvider
-  }
-  public get agentAPI (): AgentAPIProvider {
-    return this._agentAPIProvider
-  }
   public get agentHTTP (): AgentHTTPProvider {
     return this._agentHTTPProvider
   }
@@ -397,11 +374,6 @@ export class AppServiceContainer {
   async shutdown (): Promise<void> {
     await this._safeShutdown(this._lrtProvider, 'Long-running Task Provider')
     await this._safeShutdown(this._commandProvider, 'CommandProvider')
-    await this._safeShutdown(
-      this._reviewDiffAPIProvider,
-      'ReviewDiffAPIProvider',
-    )
-    await this._safeShutdown(this._agentAPIProvider, 'AgentAPIProvider')
     await this._safeShutdown(this._agentHTTPProvider, 'AgentHTTPProvider')
     await this._safeShutdown(this._documentManager, 'DocumentManager')
     await this._safeShutdown(this._fsal, 'FSAL')

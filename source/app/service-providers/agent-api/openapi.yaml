@@ -2,25 +2,39 @@ openapi: 3.1.1
 info:
   title: Zettlr-Pandoc Editor Agent API
   version: 1.0.0
-  description: >
-    HTTP REST API for the Zettlr-Pandoc editor agent. Provides live document
-    reads, proposal submission, review inspection, and Server-Sent Events.
-    The Electron main process owns all agent-visible state.
+  description: 'HTTP REST API for the Zettlr-Pandoc editor agent. Provides live document
+    reads, proposal submission, review inspection, and Server-Sent Events. The Electron
+    main process owns all agent-visible state.
+
+    '
   license:
     name: GPL-3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
 servers:
-  - url: http://127.0.0.1:23119
-    description: Default loopback endpoint
+- url: http://127.0.0.1:23119
+  description: Default loopback endpoint
 components:
   securitySchemes:
-    bearerAuth:
+    AppBearer:
       type: http
       scheme: bearer
+      description: Application API token
+    CloudflareAccessClientId:
+      type: apiKey
+      in: header
+      name: CF-Access-Client-Id
+      description: Cloudflare Access service token client id
+    CloudflareAccessClientSecret:
+      type: apiKey
+      in: header
+      name: CF-Access-Client-Secret
+      description: Cloudflare Access service token secret
   schemas:
     DocumentRevision:
       type: object
-      required: [version, sha256]
+      required:
+      - version
+      - sha256
       properties:
         version:
           type: integer
@@ -28,14 +42,23 @@ components:
           type: string
     ReviewSummary:
       type: object
-      required: [reviewId, state, generation, unresolvedChunks, packetCount]
+      required:
+      - reviewId
+      - state
+      - generation
+      - unresolvedChunks
+      - packetCount
       properties:
         reviewId:
           type: string
         state:
           type: string
           enum:
-            [active, resolved-awaiting-save, completed, cleared, invalidated]
+          - active
+          - resolved-awaiting-save
+          - completed
+          - cleared
+          - invalidated
         generation:
           type: integer
         unresolvedChunks:
@@ -45,18 +68,16 @@ components:
     DocumentSummary:
       type: object
       required:
-        [
-          documentId,
-          uri,
-          path,
-          name,
-          type,
-          dirty,
-          revision,
-          lineCount,
-          byteLength,
-          views,
-        ]
+      - documentId
+      - uri
+      - path
+      - name
+      - type
+      - dirty
+      - revision
+      - lineCount
+      - byteLength
+      - views
       properties:
         documentId:
           type: string
@@ -68,11 +89,13 @@ components:
           type: string
         type:
           type: string
-          enum: [markdown, code]
+          enum:
+          - markdown
+          - code
         dirty:
           type: boolean
         revision:
-          $ref: "#/components/schemas/DocumentRevision"
+          $ref: '#/components/schemas/DocumentRevision'
         lineCount:
           type: integer
         byteLength:
@@ -82,32 +105,42 @@ components:
           items:
             type: object
         review:
-          $ref: "#/components/schemas/ReviewSummary"
+          $ref: '#/components/schemas/ReviewSummary'
     EditorContext:
       type: object
       properties:
         focusedView:
-          type: object
+          $ref: '#/components/schemas/FocusedViewSummary'
         focusedDocument:
-          $ref: "#/components/schemas/DocumentSummary"
+          $ref: '#/components/schemas/DocumentSummary'
         openDocuments:
           type: array
           items:
-            $ref: "#/components/schemas/DocumentSummary"
+            $ref: '#/components/schemas/DocumentSummary'
+      required:
+      - openDocuments
     ReadDocumentResponse:
       type: object
       required:
-        [documentId, side, snapshot, revision, range, content, truncated]
+      - documentId
+      - side
+      - snapshot
+      - revision
+      - range
+      - content
+      - truncated
       properties:
         documentId:
           type: string
         side:
           type: string
-          enum: [working, reference]
+          enum:
+          - working
+          - reference
         snapshot:
           type: string
         revision:
-          $ref: "#/components/schemas/DocumentRevision"
+          $ref: '#/components/schemas/DocumentRevision'
         reviewGeneration:
           type: integer
         range:
@@ -118,34 +151,33 @@ components:
           type: boolean
     SubmitProposalRequest:
       type: object
-      required: [snapshot, patchFormat, patch, clientRequestId]
+      required:
+      - snapshot
+      - patchFormat
+      - patch
       properties:
         snapshot:
           type: string
         patchFormat:
           type: string
-          enum: [unified-diff]
+          enum:
+          - unified-diff
         patch:
           type: string
         description:
           type: string
-        clientRequestId:
-          type: string
-          description: Idempotency key
         expectedReviewGeneration:
           type: integer
     SubmitProposalResponse:
       type: object
       required:
-        [
-          packetId,
-          reviewId,
-          documentId,
-          documentRevision,
-          reviewGeneration,
-          unresolvedChunks,
-          state,
-        ]
+      - packetId
+      - reviewId
+      - documentId
+      - documentRevision
+      - reviewGeneration
+      - unresolvedChunks
+      - state
       properties:
         packetId:
           type: string
@@ -154,7 +186,7 @@ components:
         documentId:
           type: string
         documentRevision:
-          $ref: "#/components/schemas/DocumentRevision"
+          $ref: '#/components/schemas/DocumentRevision'
         reviewGeneration:
           type: integer
         unresolvedChunks:
@@ -163,7 +195,9 @@ components:
           type: string
     AgentError:
       type: object
-      required: [code, message]
+      required:
+      - code
+      - message
       properties:
         code:
           type: string
@@ -171,7 +205,9 @@ components:
           type: string
     AgentEvent:
       type: object
-      required: [event, timestamp]
+      required:
+      - event
+      - timestamp
       properties:
         event:
           type: string
@@ -182,13 +218,202 @@ components:
         documentId:
           type: string
         documentRevision:
-          $ref: "#/components/schemas/DocumentRevision"
+          $ref: '#/components/schemas/DocumentRevision'
         reviewGeneration:
           type: integer
         unresolvedChunks:
           type: integer
+        id:
+          type: string
+          description: Server-generated event sequence identifier.
+    ReviewEventsResponse:
+      type: object
+      required:
+      - reviewId
+      - status
+      properties:
+        reviewId:
+          type: string
+        status:
+          type: object
+          properties:
+            reviewId:
+              type: string
+            state:
+              type: string
+            generation:
+              type: integer
+            unresolvedChunks:
+              type: integer
+            packetCount:
+              type: integer
+            documentRevision:
+              $ref: '#/components/schemas/DocumentRevision'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentEvent'
+        timedOut:
+          type: boolean
+          description: True if the request reached its timeout before a status change.
+    FocusedViewSummary:
+      type: object
+      required:
+      - viewId
+      - windowId
+      - leafId
+      - documentId
+      - focused
+      - active
+      properties:
+        viewId:
+          type: string
+        windowId:
+          type: string
+        leafId:
+          type: string
+        documentId:
+          type: string
+        focused:
+          type: boolean
+        active:
+          type: boolean
+        documentPath:
+          type: string
+        focusedAt:
+          type: string
+    ViewSummary:
+      type: object
+      required:
+      - viewId
+      - windowId
+      - leafId
+      - focused
+      - active
+      properties:
+        viewId:
+          type: string
+        windowId:
+          type: string
+        leafId:
+          type: string
+        documentId:
+          type: string
+        focused:
+          type: boolean
+        active:
+          type: boolean
+        documents:
+          type: array
+          items:
+            type: object
+            required:
+            - documentId
+            - path
+            properties:
+              documentId:
+                type: string
+              path:
+                type: string
+    ViewsResponse:
+      type: object
+      required:
+      - views
+      properties:
+        views:
+          type: array
+          items:
+            $ref: '#/components/schemas/ViewSummary'
+    WorkspaceSummary:
+      type: object
+      required:
+      - workspaceId
+      - path
+      properties:
+        workspaceId:
+          type: string
+        path:
+          type: string
+    WorkspacesResponse:
+      type: object
+      required:
+      - workspaces
+      properties:
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceSummary'
+    WorkspaceDocumentSummary:
+      type: object
+      required:
+      - documentId
+      - workspaceId
+      - uri
+      - path
+      - name
+      - type
+      - dirty
+      - revision
+      - lineCount
+      - byteLength
+      - views
+      properties:
+        documentId:
+          type: string
+        workspaceId:
+          type: string
+        uri:
+          type: string
+        path:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+          - markdown
+          - code
+        dirty:
+          type: boolean
+        revision:
+          $ref: '#/components/schemas/DocumentRevision'
+        lineCount:
+          type: integer
+        byteLength:
+          type: integer
+        views:
+          type: array
+          items:
+            $ref: '#/components/schemas/ViewSummary'
+        review:
+          $ref: '#/components/schemas/ReviewSummary'
+    WorkspaceOpenDocumentResponse:
+      type: object
+      required:
+      - focused
+      - documentId
+      properties:
+        focused:
+          type: boolean
+        documentId:
+          type: string
+    WorkspaceDocumentsResponse:
+      type: object
+      required:
+      - workspaceId
+      - documents
+      properties:
+        workspaceId:
+          type: string
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceDocumentSummary'
 security:
-  - bearerAuth: []
+- AppBearer: []
+- AppBearer: []
+  CloudflareAccessClientId: []
+  CloudflareAccessClientSecret: []
 paths:
   /openapi.yaml:
     get:
@@ -196,18 +421,29 @@ paths:
       summary: Serve the OpenAPI specification
       security: []
       responses:
-        "200":
+        '200':
           description: OpenAPI YAML document
           content:
             application/yaml:
               schema:
                 type: string
+  /health:
+    get:
+      operationId: health
+      summary: Protocol version, instance ID, and PID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
   /v1/ping:
     get:
       operationId: ping
       summary: Protocol version, instance ID, and PID
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
@@ -218,7 +454,7 @@ paths:
       operationId: getCapabilities
       summary: Supported features and limits
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
@@ -229,18 +465,18 @@ paths:
       operationId: getContext
       summary: Focused view, focused document, and all open documents
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EditorContext"
+                $ref: '#/components/schemas/EditorContext'
   /v1/documents:
     get:
       operationId: listDocuments
       summary: List open or loaded documents
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
@@ -250,7 +486,18 @@ paths:
                   documents:
                     type: array
                     items:
-                      $ref: "#/components/schemas/DocumentSummary"
+                      $ref: '#/components/schemas/DocumentSummary'
+      parameters:
+      - name: state
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - open
+          default: open
+        description: Reserved document-state filter for clients. Only open is currently
+          supported.
     post:
       operationId: openDocument
       summary: Open a server-local file URI
@@ -260,77 +507,104 @@ paths:
           application/json:
             schema:
               type: object
-              required: [uri]
+              required:
+              - uri
               properties:
                 uri:
                   type: string
       responses:
-        "201":
+        '201':
           description: Document opened
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DocumentSummary"
-        "404":
+                $ref: '#/components/schemas/DocumentSummary'
+        '404':
+          description: File not found
+  /v1/documents/open:
+    post:
+      operationId: openDocumentByUri
+      summary: Open a server-local file URI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - uri
+              properties:
+                uri:
+                  type: string
+      responses:
+        '201':
+          description: Document opened
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentSummary'
+        '404':
           description: File not found
   /v1/documents/{documentId}:
     get:
       operationId: getDocument
       summary: Document metadata and review status
       parameters:
-        - name: documentId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: documentId
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DocumentSummary"
-        "404":
+                $ref: '#/components/schemas/DocumentSummary'
+        '404':
           description: Document not found
   /v1/documents/{documentId}/focus:
     post:
       operationId: focusDocument
       summary: Focus or create an editor view for the document
       parameters:
-        - name: documentId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: documentId
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
-        "200":
+        '200':
           description: OK
   /v1/documents/{documentId}/content:
     get:
       operationId: readDocumentContent
       summary: Read live working or reference text by line slice
       parameters:
-        - name: documentId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: side
-          in: query
-          schema:
-            type: string
-            enum: [working, reference]
-            default: working
-        - name: startLine
-          in: query
-          schema:
-            type: integer
-        - name: endLine
-          in: query
-          schema:
-            type: integer
+      - name: documentId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: side
+        in: query
+        schema:
+          type: string
+          enum:
+          - working
+          - reference
+          default: working
+      - name: startLine
+        in: query
+        schema:
+          type: integer
+      - name: endLine
+        in: query
+        schema:
+          type: integer
       responses:
-        "200":
+        '200':
           description: OK
           headers:
             ETag:
@@ -339,26 +613,27 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ReadDocumentResponse"
-        "404":
+                $ref: '#/components/schemas/ReadDocumentResponse'
+        '404':
           description: Document not found
   /v1/documents/{documentId}/search:
     post:
       operationId: searchDocument
       summary: Literal or regex search against the live buffer
       parameters:
-        - name: documentId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: documentId
+        in: path
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [literal]
+              required:
+              - literal
               properties:
                 literal:
                   type: string
@@ -366,7 +641,7 @@ paths:
                   type: integer
                   default: 3
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
@@ -377,47 +652,47 @@ paths:
       operationId: submitProposal
       summary: Submit an exact unified-diff packet
       parameters:
-        - name: documentId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: If-Match
-          in: header
-          required: true
-          schema:
-            type: string
-          description: ETag from the document read
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema:
-            type: string
+      - name: documentId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+        description: ETag from the document read
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SubmitProposalRequest"
+              $ref: '#/components/schemas/SubmitProposalRequest'
       responses:
-        "200":
+        '200':
           description: Proposal applied
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SubmitProposalResponse"
-        "412":
+                $ref: '#/components/schemas/SubmitProposalResponse'
+        '412':
           description: Stale revision (ETag mismatch)
-        "409":
+        '409':
           description: Review generation conflict
-        "400":
+        '400':
           description: Invalid or non-applicable patch
   /v1/reviews:
     get:
       operationId: listReviews
       summary: List all active reviews
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
@@ -427,129 +702,256 @@ paths:
                   reviews:
                     type: array
                     items:
-                      $ref: "#/components/schemas/ReviewSummary"
+                      $ref: '#/components/schemas/ReviewSummary'
   /v1/reviews/{reviewId}:
     get:
       operationId: getReview
       summary: Inspect a review
       parameters:
-        - name: reviewId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: reviewId
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
                 type: object
-        "404":
+        '404':
           description: Review not found
   /v1/reviews/{reviewId}/diff:
     get:
       operationId: getReviewDiff
       summary: Retrieve the complete unresolved composite diff
       parameters:
-        - name: reviewId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: reviewId
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
                 type: object
-        "404":
+        '404':
           description: Review not found
   /v1/reviews/{reviewId}/chunks:
     get:
       operationId: getReviewChunks
       summary: Inspect current unresolved chunks
       parameters:
-        - name: reviewId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: reviewId
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
                 type: object
-        "404":
+        '404':
           description: Review not found
   /v1/reviews/{reviewId}/packets:
     get:
       operationId: getReviewPackets
       summary: Inspect the proposal-packet ledger
       parameters:
-        - name: reviewId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: reviewId
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
                 type: object
-        "404":
+        '404':
           description: Review not found
   /v1/reviews/{reviewId}/clear:
     post:
       operationId: clearReview
       summary: Discard unresolved suggestions while preserving accepted changes
       parameters:
-        - name: reviewId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: reviewId
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
                 type: object
-        "404":
+        '404':
           description: Review not found
   /v1/proposals/{packetId}/retract:
     post:
       operationId: retractProposal
       summary: Retract an untouched, most-recent packet
       parameters:
-        - name: packetId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: packetId
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
                 type: object
-        "409":
+        '409':
           description: Packet not retractable
   /v1/events:
     get:
       operationId: subscribeEvents
       summary: Subscribe to focus, document, proposal, and review events via SSE
       responses:
-        "200":
+        '200':
           description: SSE stream
           content:
             text/event-stream:
               schema:
                 type: string
+          headers:
+            Cache-Control:
+              description: SSE transport must not be cached by intermediaries.
+              schema:
+                type: string
+              example: no-cache
+      parameters:
+      - name: Last-Event-ID
+        in: header
+        required: false
+        schema:
+          type: string
+        description: Resumes from the next server event after this id.
+  /v1/reviews/{reviewId}/events:
+    get:
+      operationId: waitForReviewEvents
+      summary: Long-poll review events and status after a generation advance
+      parameters:
+      - name: reviewId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: afterGeneration
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: waitSeconds
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 120
+          default: 30
+      - name: wait
+        in: query
+        deprecated: true
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 120
+          default: 30
+        description: Deprecated alias for waitSeconds.
+      responses:
+        '200':
+          description: Review state and matching event history (or timed out)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewEventsResponse'
+        '404':
+          description: Review not found
+  /v1/views:
+    get:
+      operationId: listViews
+      summary: List active editor views
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ViewsResponse'
+  /v1/workspaces:
+    get:
+      operationId: listWorkspaces
+      summary: List configured workspaces
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacesResponse'
+  /v1/workspaces/{workspaceId}/documents:
+    get:
+      operationId: listWorkspaceDocuments
+      summary: List documents known to a workspace
+      parameters:
+      - name: workspaceId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: query
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Optional case-insensitive substring filter over file path.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceDocumentsResponse'
+        '404':
+          description: Workspace not found
+  /v1/workspaces/{workspaceId}/documents/{documentId}/open:
+    post:
+      operationId: openWorkspaceDocument
+      summary: Open or focus a document in a workspace
+      parameters:
+      - name: workspaceId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: documentId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceOpenDocumentResponse'
+        '401':
+          description: Unauthorized workspace access
+        '404':
+          description: Workspace not found or document unavailable in workspace

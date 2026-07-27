@@ -14,7 +14,7 @@
  *
  *                  All handlers delegate to the existing DocumentManager,
  *                  ReviewDiffStore, and event sources — the same state
- *                  model used by the JSON-RPC provider.
+ *                  model used by the HTTP API surface.
  *
  *                  Defaults: loopback only, TLS off, disabled unless
  *                  explicitly enabled in config.
@@ -29,10 +29,11 @@ import path from 'path'
 import crypto from 'crypto'
 import { app } from 'electron'
 import ProviderContract from '@providers/provider-contract'
-import type DocumentManager from '@providers/documents'
+import DocumentManager from '@providers/documents'
 import type LogProvider from '@providers/log'
 import type { AppServiceContainer } from 'source/app/app-service-container'
 import type { AgentApiConfig } from 'source/app/service-providers/config/get-config-template'
+import makeSearchRegex from 'source/common/util/make-search-regex'
 import {
   AGENT_API_PROTOCOL_VERSION,
   type AgentEvent,
@@ -41,6 +42,9 @@ import { DP_EVENTS } from '@dts/common/documents'
 import { sha256Text } from 'source/app/util/review-diff'
 
 const SSE_REPLAY_BUFFER_SIZE = 100
+const SSE_HEARTBEAT_MS = 15000
+
+type BufferedAgentEvent = AgentEvent & { id: string }
 
 // ============================================================================
 // AgentHTTPProvider
@@ -52,7 +56,9 @@ export default class AgentHTTPProvider extends ProviderContract {
   private _instanceId: string
   private _config: AgentApiConfig
   private _sseClients: Set<http.ServerResponse> = new Set()
-  private _eventReplayBuffer: AgentEvent[] = []
+  private _eventReplayBuffer: BufferedAgentEvent[] = []
+  private _eventSequence = 1
+  private _sseHeartbeat: NodeJS.Timeout | undefined
   private _openApiYaml: string
 
   constructor (
@@ -94,6 +100,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       this._config.host === '127.0.0.1' ||
       this._config.host === '::1' ||
       this._config.host === 'localhost'
+    if (!this._config.remoteAccess && !isLoopback) {
+      this._log.error(
+        '[AgentHTTPProvider] Refusing to bind non-loopback without explicit remote-access override. Set agentApi.remoteAccess = true.',
+      )
+      return
+    }
     if (this._config.remoteAccess && !isLoopback) {
       if (!this._config.tls.enabled) {
         this._log.error(
@@ -187,6 +199,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       res.end()
     }
     this._sseClients.clear()
+    if (this._sseHeartbeat !== undefined) {
+      clearInterval(this._sseHeartbeat)
+      this._sseHeartbeat = undefined
+    }
 
     if (this._server !== undefined) {
       await new Promise<void>((resolve) => {
@@ -263,6 +279,13 @@ export default class AgentHTTPProvider extends ProviderContract {
     url: URL,
   ): Promise<void> {
     // Health/system routes
+    if (pathname === '/health' && method === 'GET') {
+      return this.sendJson(res, 200, {
+        protocolVersion: AGENT_API_PROTOCOL_VERSION,
+        instanceId: this._instanceId,
+        pid: process.pid,
+      })
+    }
     if (pathname === '/v1/ping' && method === 'GET') {
       return this.sendJson(res, 200, {
         protocolVersion: AGENT_API_PROTOCOL_VERSION,
@@ -278,6 +301,9 @@ export default class AgentHTTPProvider extends ProviderContract {
         retractionSupport: true,
         maxRequestSize: 25 * 1024 * 1024,
         eventStreamSupport: true,
+        remoteAccess: this._config.remoteAccess,
+        tlsEnabled: this._config.tls.enabled,
+        eventReplayBufferSize: SSE_REPLAY_BUFFER_SIZE,
         applicationVersion: app.getVersion(),
         instanceId: this._instanceId,
       })
@@ -285,14 +311,51 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (pathname === '/v1/context' && method === 'GET') {
       return this.handleGetContext(res)
     }
+    if (pathname === '/v1/views' && method === 'GET') {
+      return this.handleGetViews(res)
+    }
+    if (pathname === '/v1/workspaces' && method === 'GET') {
+      return this.handleGetWorkspaces(res)
+    }
     if (pathname === '/v1/documents' && method === 'GET') {
-      return this.handleListDocuments(res)
+      return this.handleListDocuments(res, url)
     }
     if (pathname === '/v1/documents' && method === 'POST') {
       return this.handleOpenDocument(req, res)
     }
+    if (pathname === '/v1/documents/open' && method === 'POST') {
+      return this.handleOpenDocument(req, res)
+    }
     if (pathname === '/v1/events' && method === 'GET') {
-      return this.handleSseSubscription(res)
+      return this.handleSseSubscription(req, res)
+    }
+
+    const workspaceOpenMatch = pathname.match(
+      /^\/v1\/workspaces\/([^/]+)\/documents\/([^/]+)\/open$/,
+    )
+    if (workspaceOpenMatch !== null && method === 'POST') {
+      return this.handleOpenDocumentInWorkspace(
+        res,
+        decodeURIComponent(workspaceOpenMatch[1]),
+        decodeURIComponent(workspaceOpenMatch[2]),
+      )
+    }
+    const workspaceDocumentsMatch = pathname.match(
+      /^\/v1\/workspaces\/([^/]+)\/documents(\/.*)?$/,
+    )
+    if (workspaceDocumentsMatch !== null) {
+      const workspaceId = decodeURIComponent(workspaceDocumentsMatch[1])
+      const workspaceSubPath = workspaceDocumentsMatch[2]
+      if (
+        (workspaceSubPath === undefined || workspaceSubPath === '/') &&
+        method === 'GET'
+      ) {
+        return this.handleListWorkspaceDocuments(
+          res,
+          url,
+          workspaceId,
+        )
+      }
     }
 
     // Document-scoped routes: /v1/documents/{documentId}...
@@ -338,6 +401,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       }
       if (subPath === '/clear' && method === 'POST') {
         return this.handleClearReview(res, reviewId)
+      }
+      if (subPath === '/events' && method === 'GET') {
+        return this.handleWaitForReviewEvents(res, reviewId, url)
       }
     }
 
@@ -388,7 +454,16 @@ export default class AgentHTTPProvider extends ProviderContract {
     })
   }
 
-  private handleListDocuments (res: http.ServerResponse): void {
+  private handleListDocuments (
+    res: http.ServerResponse,
+    url: URL,
+  ): void {
+    const state = url.searchParams.get('state')
+    if (state !== null && state !== 'open') {
+      this.sendError(res, 400, 'INVALID_PARAMS', 'Unsupported state filter')
+      return
+    }
+
     const documents: unknown[] = []
     for (const doc of this._documents.loadedDocuments) {
       const summary = this.getDocumentSummary(doc.documentId)
@@ -397,6 +472,109 @@ export default class AgentHTTPProvider extends ProviderContract {
       }
     }
     this.sendJson(res, 200, { documents })
+  }
+
+  private async handleGetViews (res: http.ServerResponse): Promise<void> {
+    const focusedView = this._documents.getFocusedView()
+    const views: unknown[] = []
+    await this._documents.forEachLeaf(async (tabMan, windowId, leafId) => {
+      const activePath = tabMan.activeFile?.path
+      const isFocused = focusedView !== undefined
+        && focusedView.windowId === windowId
+        && focusedView.leafId === leafId
+      views.push({
+        viewId: `view-${windowId}-${leafId}`,
+        windowId,
+        leafId,
+        documentId: activePath !== undefined
+          ? this._documents.getDocumentId(activePath)
+          : undefined,
+        focused: isFocused,
+        active: isFocused,
+        documents: tabMan.openFiles.map((openFile) => ({
+          documentId: this._documents.getDocumentId(openFile.path),
+          path: openFile.path,
+        })),
+      })
+      return false
+    })
+    this.sendJson(res, 200, { views })
+  }
+
+  private handleGetWorkspaces (res: http.ServerResponse): void {
+    const workspaces = this._app.config.get().app.openWorkspaces.map(
+      (workspacePath) => ({
+        workspaceId: workspacePath,
+        path: workspacePath,
+      }),
+    )
+    this.sendJson(res, 200, { workspaces })
+  }
+
+  private handleListWorkspaceDocuments (
+    res: http.ServerResponse,
+    url: URL,
+    workspaceId: string,
+  ): void {
+    const workspacePath = decodeURIComponent(workspaceId)
+    const knownWorkspaces = this._app.config.get().app.openWorkspaces
+    if (!knownWorkspaces.includes(workspacePath)) {
+      this.sendError(res, 404, 'DOCUMENT_NOT_FOUND', 'Workspace not found')
+      return
+    }
+
+    const query = url.searchParams.get('query')
+    const normalizedQuery = query === null ? '' : query.toLowerCase().trim()
+    const documents: unknown[] = []
+
+    this._documents.getOpenFilesForWorkspace(workspacePath)
+      .then((paths) => {
+        for (const documentPath of paths) {
+          const documentId = this._documents.getDocumentId(documentPath)
+          if (documentId === undefined) {
+            continue
+          }
+          if (normalizedQuery.length > 0) {
+            const haystack = documentPath.toLowerCase()
+            if (!haystack.includes(normalizedQuery)) {
+              continue
+            }
+          }
+          const summary = this.getDocumentSummary(documentId)
+          if (summary !== undefined) {
+            documents.push({ ...(summary as Record<string, unknown>), workspaceId })
+          }
+        }
+        this.sendJson(res, 200, { workspaceId, documents })
+      })
+      .catch(() => {
+        this.sendError(res, 500, 'INTERNAL_ERROR', 'Unable to list workspace documents')
+      })
+  }
+
+  private async handleOpenDocumentInWorkspace (
+    res: http.ServerResponse,
+    workspaceId: string,
+    documentId: string,
+  ): Promise<void> {
+    const workspacePath = decodeURIComponent(workspaceId)
+    const knownWorkspaces = this._app.config.get().app.openWorkspaces
+    if (!knownWorkspaces.includes(workspacePath)) {
+      this.sendError(res, 404, 'DOCUMENT_NOT_FOUND', 'Workspace not found')
+      return
+    }
+    const filePath = this._documents.getDocumentPath(documentId)
+    if (filePath === undefined || !filePath.startsWith(workspacePath)) {
+      this.sendError(
+        res,
+        404,
+        'DOCUMENT_NOT_FOUND',
+        'Document is not part of workspace',
+      )
+      return
+    }
+    await this._documents.openFile(undefined, undefined, filePath, true)
+    this.sendJson(res, 200, { focused: true, documentId })
   }
 
   private async handleOpenDocument (
@@ -415,18 +593,37 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 400, 'INVALID_PARAMS', 'uri is required')
       return
     }
-    // Convert URI to file path
-    let filePath: string
-    try {
-      const uri = new URL(parsed.uri)
-      filePath = uri.pathname
-    } catch {
-      filePath = parsed.uri
+    const resolveOpenPath = (uri: string): string => {
+      try {
+        const parsedUri = new URL(uri)
+        if (parsedUri.protocol !== 'safe-file:' && parsedUri.protocol !== 'file:') {
+          throw new Error('Unsupported protocol')
+        }
+
+        let filePath = decodeURIComponent(parsedUri.pathname)
+        if (process.platform === 'win32' && /^\/[A-Za-z]:/.test(filePath)) {
+          filePath = filePath.slice(1)
+        }
+        return filePath
+      } catch {
+        return uri
+      }
     }
+
+    const filePath = resolveOpenPath(parsed.uri)
     try {
       await this._documents.getDocument(filePath)
     } catch {
       this.sendError(res, 404, 'DOCUMENT_NOT_FOUND', 'File not found')
+      return
+    }
+    if (!this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
+      this.sendError(
+        res,
+        401,
+        'UNAUTHORIZED',
+        'Path is outside configured workspace scope',
+      )
       return
     }
     const docId = this._documents.getDocumentId(filePath)
@@ -459,6 +656,15 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 404, 'DOCUMENT_NOT_FOUND', 'Document not found')
       return
     }
+    if (!this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
+      this.sendError(
+        res,
+        401,
+        'UNAUTHORIZED',
+        'Document is outside configured workspace scope',
+      )
+      return
+    }
     // Focus is a renderer-side action; the provider can open the file
     await this._documents.openFile(undefined, undefined, filePath, true)
     this.sendJson(res, 200, { focused: true, documentId })
@@ -469,6 +675,34 @@ export default class AgentHTTPProvider extends ProviderContract {
     documentId: string,
     url: URL,
   ): void {
+    const parseLine = (input: string | null): number | undefined => {
+      if (input === null) {
+        return undefined
+      }
+      const parsed = parseInt(input, 10)
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        return undefined
+      }
+      return parsed
+    }
+
+    const applyRange = (
+      text: string,
+      lineCount: number,
+      startLine: number,
+      endLine: number,
+    ): { content: string, startLine: number, endLine: number, truncated: boolean } => {
+      const safeStartLine = Math.max(1, Math.min(startLine, lineCount))
+      const safeEndLine = Math.max(safeStartLine, Math.min(endLine, lineCount))
+      const lines = text.split('\n')
+      return {
+        content: lines.slice(safeStartLine - 1, safeEndLine).join('\n'),
+        startLine: safeStartLine,
+        endLine: safeEndLine,
+        truncated: safeEndLine < lineCount,
+      }
+    }
+
     const side = (url.searchParams.get('side') ?? 'working') as
       | 'working'
       | 'reference'
@@ -477,23 +711,48 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     const result = this._documents.readLiveBuffer(
       documentId,
-      startLine !== null ? parseInt(startLine, 10) : undefined,
-      endLine !== null ? parseInt(endLine, 10) : undefined,
+      undefined,
+      undefined,
     )
     if (result === undefined) {
       this.sendError(res, 404, 'DOCUMENT_NOT_FOUND', 'Document not found')
       return
     }
 
+    const requestedStartLine = parseLine(startLine) ?? 1
+    const requestedEndLine = parseLine(endLine) ?? result.lineCount
+
     let content = result.content
+    let rangeLineCount = result.lineCount
     let reviewGeneration: number | undefined
+    const review = this._documents.reviewStore.getReview(documentId)
+    if (review !== undefined) {
+      reviewGeneration = review.generation
+    }
+
+    let range = applyRange(
+      result.content,
+      result.lineCount,
+      requestedStartLine,
+      requestedEndLine,
+    )
+
     if (side === 'reference') {
-      const review = this._documents.reviewStore.getReview(documentId)
       if (review !== undefined) {
-        content = review.referenceText
+        const referenceLines = review.referenceText.split('\n')
+        rangeLineCount = referenceLines.length
+        const referenceRangeEnd = Math.min(requestedEndLine, rangeLineCount)
+        range = applyRange(
+          review.referenceText,
+          rangeLineCount,
+          requestedStartLine,
+          referenceRangeEnd,
+        )
         reviewGeneration = review.generation
       }
     }
+
+    content = range.content
 
     const etag = `"sha256:${result.sha256}"`
     res.setHeader('ETag', etag)
@@ -504,13 +763,101 @@ export default class AgentHTTPProvider extends ProviderContract {
       revision: { version: result.version, sha256: result.sha256 },
       reviewGeneration,
       range: {
-        startLine: startLine !== null ? parseInt(startLine, 10) : 1,
-        endLine: endLine !== null ? parseInt(endLine, 10) : result.lineCount,
-        totalLines: result.lineCount,
+        startLine: range.startLine,
+        endLine: range.endLine,
+        totalLines: rangeLineCount,
       },
       content,
-      truncated: result.truncated,
+      truncated: range.truncated,
     })
+  }
+
+  private handleWaitForReviewEvents (
+    res: http.ServerResponse,
+    reviewId: string,
+    url: URL,
+  ): void {
+    const parseNumber = (
+      value: string | null,
+      fallback: number,
+      min: number,
+      max: number,
+    ): number => {
+      if (value === null) {
+        return fallback
+      }
+      const parsed = parseInt(value, 10)
+      if (!Number.isInteger(parsed)) {
+        return fallback
+      }
+      return Math.max(min, Math.min(max, parsed))
+    }
+
+    const waitSeconds = parseNumber(
+      url.searchParams.get('waitSeconds') ?? url.searchParams.get('wait'),
+      30,
+      0,
+      120,
+    )
+    const afterGeneration = Math.max(
+      0,
+      parseNumber(url.searchParams.get('afterGeneration'), 0, 0, 2 ** 31),
+    )
+
+    const documentId = this.findDocumentIdByReviewId(reviewId)
+    if (documentId === undefined) {
+      this.sendError(res, 404, 'REVIEW_NOT_FOUND', 'Review not found')
+      return
+    }
+
+    const current = this._documents.reviewStore.getReviewStatus(documentId)
+    if (current !== undefined && current.generation > afterGeneration) {
+      this.sendJson(res, 200, {
+        reviewId,
+        status: current,
+        events: [],
+      })
+      return
+    }
+
+    let timeout: NodeJS.Timeout
+    const finish = (status: unknown): void => {
+      clearTimeout(timeout)
+      if ((res as { writableEnded?: boolean }).writableEnded === true) {
+        return
+      }
+      this.sendJson(res, 200, status)
+    }
+
+    const listener = (event: AgentEvent): void => {
+      const eventDocumentId = event.documentId
+      if (eventDocumentId !== documentId || event.reviewId !== reviewId) {
+        return
+      }
+      if (
+        event.reviewGeneration !== undefined &&
+        event.reviewGeneration > afterGeneration
+      ) {
+        this._documents.reviewStore.removeListener('*', listener)
+        const status = this._documents.reviewStore.getReviewStatus(documentId)
+        finish({
+          reviewId,
+          status,
+          events: [event],
+        })
+      }
+    }
+
+    this._documents.reviewStore.on('*', listener)
+    timeout = setTimeout(() => {
+      this._documents.reviewStore.removeListener('*', listener)
+      const status = this._documents.reviewStore.getReviewStatus(documentId)
+      finish({
+        reviewId,
+        status,
+        timedOut: true,
+      })
+    }, waitSeconds * 1000)
   }
 
   private async handleSearch (
@@ -538,19 +885,27 @@ export default class AgentHTTPProvider extends ProviderContract {
     const lines = result.content.split('\n')
     const contextSize = parsed.context ?? 3
     const hits: unknown[] = []
-    const lowerLiteral = parsed.literal.toLowerCase()
+    let searchRegex: RegExp
+    try {
+      searchRegex = makeSearchRegex(parsed.literal, 'g')
+    } catch {
+      this.sendError(res, 400, 'INVALID_PARAMS', 'Invalid search pattern')
+      return
+    }
     for (let i = 0; i < lines.length; i++) {
-      const lower = lines[i].toLowerCase()
-      let col = 0
-      while (col < lower.length) {
-        const found = lower.indexOf(lowerLiteral, col)
-        if (found < 0) {
-          break
+      searchRegex.lastIndex = 0
+      let match: RegExpExecArray | null = null
+      while ((match = searchRegex.exec(lines[i])) !== null) {
+        const found = match.index
+        const hitLength = match[0].length
+        if (hitLength === 0) {
+          searchRegex.lastIndex += 1
+          continue
         }
         hits.push({
           line: i + 1,
           column: found + 1,
-          length: parsed.literal.length,
+          length: hitLength,
           contextBefore: lines
             .slice(Math.max(0, i - contextSize), i)
             .join('\n'),
@@ -558,7 +913,9 @@ export default class AgentHTTPProvider extends ProviderContract {
             .slice(i + 1, Math.min(lines.length, i + 1 + contextSize))
             .join('\n'),
         })
-        col = found + parsed.literal.length
+        if (searchRegex.lastIndex >= lines[i].length) {
+          break
+        }
       }
     }
     this.sendJson(res, 200, {
@@ -649,6 +1006,68 @@ export default class AgentHTTPProvider extends ProviderContract {
     } catch {
       this.sendError(res, 400, 'INVALID_PARAMS', 'Invalid JSON body')
       return
+    }
+    if (typeof parsed.patchFormat !== 'string') {
+      this.sendError(
+        res,
+        400,
+        'INVALID_PARAMS',
+        'patchFormat is required and must be unified-diff',
+      )
+      return
+    }
+    if (parsed.patchFormat !== 'unified-diff') {
+      this.sendError(res, 400, 'INVALID_PARAMS', 'Unsupported patch format')
+      return
+    }
+    if (typeof parsed.snapshot !== 'string' || typeof parsed.patch !== 'string') {
+      this.sendError(res, 400, 'INVALID_PARAMS', 'snapshot and patch are required')
+      return
+    }
+    const parsedSnapshot = DocumentManager.parseSnapshotToken(parsed.snapshot)
+    if (parsedSnapshot === undefined) {
+      this.sendError(res, 400, 'INVALID_PARAMS', 'Invalid snapshot token')
+      return
+    }
+    if (parsedSnapshot.documentId !== documentId) {
+      this.sendError(
+        res,
+        400,
+        'INVALID_PARAMS',
+        'Snapshot belongs to a different document',
+      )
+      return
+    }
+    if (parsed.expectedReviewGeneration !== undefined) {
+      if (
+        typeof parsed.expectedReviewGeneration !== 'number' ||
+        !Number.isInteger(parsed.expectedReviewGeneration)
+      ) {
+        this.sendError(
+          res,
+          400,
+          'INVALID_PARAMS',
+          'expectedReviewGeneration must be an integer',
+        )
+        return
+      }
+      const review = this._documents.reviewStore.getReview(documentId)
+      if (
+        review === undefined ||
+        review.generation !== parsed.expectedReviewGeneration
+      ) {
+        this.sendError(
+          res,
+          409,
+          'REVIEW_GENERATION_MISMATCH',
+          'The review generation no longer matches.',
+          {
+            expectedReviewGeneration: parsed.expectedReviewGeneration,
+            currentReviewGeneration: review?.generation ?? null,
+          },
+        )
+        return
+      }
     }
 
     // Submit through the same DocumentManager.submitProposal path
@@ -847,35 +1266,96 @@ export default class AgentHTTPProvider extends ProviderContract {
   // SSE event streaming
   // ==========================================================================
 
-  private handleSseSubscription (res: http.ServerResponse): void {
+  private handleSseSubscription (
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
     })
-    // Send an initial comment to flush the response headers
-    res.write(': connected\n\n')
-    // Replay buffered events
-    for (const event of this._eventReplayBuffer) {
-      res.write(`data: ${JSON.stringify(event)}\n\n`)
+    const afterEventId = this.parseLastEventId(req.headers['last-event-id'])
+    const start = this.eventReplayStartIndex(afterEventId)
+    if (start < this._eventReplayBuffer.length) {
+      for (const event of this._eventReplayBuffer.slice(start)) {
+        this.writeSseEnvelope(res, event)
+      }
+    } else {
+      res.write(': connected\n\n')
     }
     this._sseClients.add(res)
+
+    if (this._sseHeartbeat === undefined) {
+      this._sseHeartbeat = setInterval(() => {
+        for (const client of this._sseClients) {
+          if (!client.writableEnded) {
+            client.write(': heartbeat\n\n')
+          }
+        }
+      }, SSE_HEARTBEAT_MS)
+    }
     res.on('close', () => {
       this._sseClients.delete(res)
+      if (this._sseClients.size === 0 && this._sseHeartbeat !== undefined) {
+        clearInterval(this._sseHeartbeat)
+        this._sseHeartbeat = undefined
+      }
     })
   }
 
   private broadcastSseEvent (event: AgentEvent): void {
+    const stampedEvent = this.buildSseEvent(event)
     // Add to replay buffer
-    this._eventReplayBuffer.push(event)
+    this._eventReplayBuffer.push(stampedEvent)
     if (this._eventReplayBuffer.length > SSE_REPLAY_BUFFER_SIZE) {
       this._eventReplayBuffer.shift()
     }
-    const data = `data: ${JSON.stringify(event)}\n\n`
     for (const res of this._sseClients) {
       if (!res.writableEnded) {
-        res.write(data)
+        this.writeSseEnvelope(res, stampedEvent)
       }
+    }
+  }
+
+  private parseLastEventId (
+    header: string | string[] | undefined,
+  ): number | undefined {
+    if (header === undefined) {
+      return undefined
+    }
+    const candidate = Array.isArray(header) ? header[0] : header
+    const parsed = parseInt(candidate, 10)
+    return Number.isInteger(parsed) ? parsed : undefined
+  }
+
+  private eventReplayStartIndex (afterEventId: number | undefined): number {
+    if (afterEventId === undefined || this._eventReplayBuffer.length === 0) {
+      return 0
+    }
+    for (let i = 0; i < this._eventReplayBuffer.length; i++) {
+      if (parseInt(this._eventReplayBuffer[i].id, 10) > afterEventId) {
+        return i
+      }
+    }
+    return this._eventReplayBuffer.length
+  }
+
+  private writeSseEnvelope (res: http.ServerResponse, event: BufferedAgentEvent): void {
+    const data = JSON.stringify(event)
+    res.write(`id: ${event.id}\n`)
+    if (event.event !== undefined) {
+      res.write(`event: ${event.event}\n`)
+    }
+    res.write(`data: ${data}\n\n`)
+  }
+
+  private buildSseEvent (event: AgentEvent): BufferedAgentEvent {
+    const id = `${this._eventSequence}`
+    this._eventSequence += 1
+    return {
+      ...event,
+      id,
     }
   }
 
@@ -914,6 +1394,14 @@ export default class AgentHTTPProvider extends ProviderContract {
       views: [],
       review: reviewStatus ?? undefined,
     }
+  }
+
+  private isDocumentOpenableInCurrentWorkspaces (filePath: string): boolean {
+    const workspaces = this._app.config.get().app.openWorkspaces
+    if (workspaces.length === 0) {
+      return true
+    }
+    return workspaces.some((workspacePath) => filePath.startsWith(workspacePath))
   }
 
   private findDocumentIdByReviewId (reviewId: string): string | undefined {

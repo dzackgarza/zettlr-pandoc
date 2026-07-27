@@ -87,8 +87,6 @@ function showHelp (): void {
   console.log('    --disable-hardware-acceleration   Disables hardware acceleration')
   console.log('    --data-dir=FILEPATH               Use FILEPATH as the appData directory')
   console.log('-m  --launch-minimized                Start Zettlr mimimized to the tray/menu bar')
-  console.log('    review-diff --document FILE --patch PATCH [--baseline-sha256 HASH]')
-  console.log('                                        Open FILE in granular accept/reject review mode')
 }
 
 /**

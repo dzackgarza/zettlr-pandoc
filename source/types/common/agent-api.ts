@@ -7,14 +7,10 @@
  * Maintainer:       D. Zack Garza
  * License:          GNU GPL v3
  *
- * Description:     JSON-RPC 2.0 protocol types for the Zettlr-Pandoc agent
+ * Description:     OpenAPI/HTTP protocol types for the Zettlr-Pandoc agent
  *                  API. These types are shared between the Electron main
- *                  process service provider, the standalone zettlr-agent CLI,
- *                  and any external agent consumers (MCP servers, SSH bridges).
- *
- *                  The main process owns all agent-visible state. The CLI is
- *                  a thin client that forwards requests over a local
- *                  Unix-domain socket (or named pipe on Windows).
+ *                  process service provider and external clients that consume
+ *                  the OpenAPI contract.
  *
  * END HEADER
  */
@@ -161,8 +157,6 @@ export interface SubmitProposalRequest {
   patchFormat: PatchFormat;
   patch: string;
   description?: string;
-  /** Idempotency key. Repeating the same request returns the original result. */
-  clientRequestId: string;
   /**
    * If set, the request is refused when the current review generation does
    * not match. Guards against applying a packet built against a stale
@@ -312,6 +306,9 @@ export interface CapabilitiesResponse {
   retractionSupport: true;
   maxRequestSize: number;
   eventStreamSupport: true;
+  remoteAccess: boolean;
+  tlsEnabled: boolean;
+  eventReplayBufferSize: number;
   applicationVersion: string;
   instanceId: string;
 }
@@ -355,6 +352,7 @@ export type AgentEventType =
 export interface AgentEvent {
   event: AgentEventType;
   timestamp: string;
+  id?: string;
   reviewId?: string;
   documentId?: string;
   documentRevision?: DocumentRevision;
@@ -393,102 +391,5 @@ export interface AgentError {
   reviewId?: string;
   canClearUnresolved?: boolean;
 }
-
-// ============================================================================
-// JSON-RPC 2.0 envelope
-// ============================================================================
-
-export interface JsonRpcRequest {
-  jsonrpc: '2.0';
-  id: string | number;
-  method: string;
-  params?: unknown;
-}
-
-export interface JsonRpcResponse {
-  jsonrpc: '2.0';
-  id: string | number;
-  result?: unknown;
-  error?: JsonRpcError;
-}
-
-export interface JsonRpcError {
-  code: number;
-  message: string;
-  data?: AgentError;
-}
-
-export interface JsonRpcNotification {
-  jsonrpc: '2.0';
-  method: string;
-  params?: unknown;
-}
-
-// ============================================================================
-// JSON-RPC method names
-// ============================================================================
-
-export type AgentRequestMethod =
-  // Section 5.1: System
-  | 'ping'
-  | 'capabilities'
-  // Section 5.2: Context
-  | 'context'
-  // Section 5.3: Documents
-  | 'documents/list'
-  | 'document/read'
-  | 'document/search'
-  // Section 6: Proposals
-  | 'proposal/submit'
-  | 'proposal/retract'
-  // Section 8: Reviews
-  | 'reviews/list'
-  | 'review/status'
-  | 'review/diff'
-  | 'review/chunks'
-  | 'review/packets'
-  // Section 9: Clearing
-  | 'review/clear'
-  // Section 11: Events
-  | 'events/subscribe'
-  | 'events/unsubscribe'
-
-// JSON-RPC error codes (Section 12 maps to these standard ranges)
-export const RPC_ERROR_CODES = {
-  PARSE_ERROR: -32700,
-  INVALID_REQUEST: -32600,
-  METHOD_NOT_FOUND: -32601,
-  INVALID_PARAMS: -32602,
-  INTERNAL_ERROR: -32603,
-  // Application errors in the -32000 to -32099 range
-  APP_NOT_RUNNING: -32001,
-  UNAUTHORIZED: -32002,
-  PROTOCOL_MISMATCH: -32003,
-  NO_FOCUSED_DOCUMENT: -32004,
-  DOCUMENT_NOT_FOUND: -32005,
-  DOCUMENT_CLOSED: -32006,
-  REVISION_MISMATCH: -32007,
-  REVIEW_NOT_FOUND: -32008,
-  REVIEW_INVALIDATED: -32009,
-  PATCH_INVALID: -32010,
-  PATCH_NOT_APPLICABLE: -32011,
-  PACKET_NOT_RETRACTABLE: -32012,
-  REQUEST_TOO_LARGE: -32013,
-} as const
-
-// CLI exit codes (Section 12)
-export const CLI_EXIT_CODES = {
-  SUCCESS: 0,
-  INVALID_INVOCATION: 2,
-  APP_UNAVAILABLE: 3,
-  STALE_REVISION: 4,
-  MALFORMED_PATCH: 5,
-  REFUSED_BY_REVIEW: 6,
-  INTERNAL_ERROR: 7,
-} as const
-
-// ============================================================================
-// Protocol version
-// ============================================================================
 
 export const AGENT_API_PROTOCOL_VERSION = '1.0'
