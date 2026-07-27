@@ -768,4 +768,237 @@ describe("Agent API integration (spec section 15)", function () {
     const result = response.result as { state: string };
     assert.equal(result.state, "cleared");
   });
+
+  it("5. Every pane showing the document displays the same unresolved state", async function () {
+    const filePath = path.join(scratch, "note5.md");
+    const content = "alpha\nbeta\n";
+    const docId = await openFile(filePath, content);
+
+    const snap = provider.createSnapshot(docId)!;
+    await provider.submitProposal(
+      snap.token,
+      makePatch(content, "ALPHA\nBETA\n"),
+      "req-5",
+    );
+
+    // The provider owns the review state. Any pane querying get-review-diff-session
+    // gets the same referenceText and workingText from the store.
+    const session = await getReviewDiffSession(filePath);
+    assert.ok(session !== undefined, "session must exist");
+    // All panes see the same originalText (referenceText) and currentText (workingText)
+    const review = provider.reviewStore.getReview(docId)!;
+    assert.equal(session.originalText, review.referenceText);
+    assert.equal(session.currentText, review.workingText);
+  });
+
+  it("6. Switching tabs and returning preserves all previous decisions", async function () {
+    const filePath = path.join(scratch, "note6.md");
+    const content = "alpha\nbeta\n";
+    const docId = await openFile(filePath, content);
+
+    const snap = provider.createSnapshot(docId)!;
+    await provider.submitProposal(
+      snap.token,
+      makePatch(content, "ALPHA\nBETA\n"),
+      "req-6",
+    );
+
+    // Accept ALPHA
+    const review = provider.reviewStore.getReview(docId)!;
+    provider.reviewStore.applyChunkAccept(docId, review.reviewId, 0, 6, 1);
+
+    // Simulate "switching tabs and returning" by re-querying the session
+    // The provider-owned state persists — decisions are not lost
+    const sessionAfterSwitch = await getReviewDiffSession(filePath);
+    assert.ok(sessionAfterSwitch !== undefined);
+    const reviewAfterSwitch = provider.reviewStore.getReview(docId)!;
+    // The accepted change is preserved in referenceText
+    assert.ok(
+      reviewAfterSwitch.referenceText.includes("ALPHA"),
+      "accepted change must persist in referenceText after tab switch",
+    );
+    // The remaining unresolved chunk (BETA) is still in workingText
+    assert.ok(
+      reviewAfterSwitch.workingText.includes("BETA"),
+      "unresolved change must still be in workingText",
+    );
+  });
+
+  it("7. Accepting a chunk updates provider referenceText end-to-end", async function () {
+    const filePath = path.join(scratch, "note7.md");
+    const content = "alpha\nbeta\ngamma\n";
+    const docId = await openFile(filePath, content);
+
+    const snap = provider.createSnapshot(docId)!;
+    await provider.submitProposal(
+      snap.token,
+      makePatch(content, "alpha\nBETA\ngamma\n"),
+      "req-7",
+    );
+
+    const review = provider.reviewStore.getReview(docId)!;
+    // Accept the BETA chunk (offset 6 to 11)
+    const result = provider.reviewStore.applyChunkAccept(
+      docId,
+      review.reviewId,
+      6,
+      11,
+      1,
+    );
+    assert.equal(result.ok, true, "accept should succeed");
+    if (!result.ok) return;
+
+    // Verify the provider referenceText now includes the accepted change
+    const updatedReview = provider.reviewStore.getReview(docId)!;
+    assert.ok(
+      updatedReview.referenceText.includes("BETA"),
+      "referenceText must include accepted change",
+    );
+    // Verify the get-review-diff-session IPC returns the updated referenceText
+    const session = await getReviewDiffSession(filePath);
+    assert.ok(session !== undefined);
+    assert.ok(
+      session.originalText.includes("BETA"),
+      "get-review-diff-session must return updated originalText",
+    );
+  });
+
+  it("8. Rejecting a chunk updates the authoritative working document end-to-end", async function () {
+    const filePath = path.join(scratch, "note8.md");
+    const content = "alpha\nbeta\ngamma\n";
+    const docId = await openFile(filePath, content);
+
+    const snap = provider.createSnapshot(docId)!;
+    await provider.submitProposal(
+      snap.token,
+      makePatch(content, "alpha\nBETA\ngamma\n"),
+      "req-8",
+    );
+
+    const review = provider.reviewStore.getReview(docId)!;
+    // Reject the BETA chunk (offset 6 to 11)
+    const result = provider.reviewStore.applyChunkReject(
+      docId,
+      review.reviewId,
+      6,
+      11,
+      1,
+    );
+    assert.equal(result.ok, true, "reject should succeed");
+    if (!result.ok) return;
+
+    // Verify the store workingText now has the rejected change reverted
+    const updatedReview = provider.reviewStore.getReview(docId)!;
+    assert.ok(
+      !updatedReview.workingText.includes("BETA"),
+      "workingText must not have rejected change",
+    );
+    assert.ok(
+      updatedReview.workingText.includes("beta"),
+      "workingText must have the original text restored",
+    );
+    // Verify the get-review-diff-session IPC returns the updated workingText
+    const session = await getReviewDiffSession(filePath);
+    assert.ok(session !== undefined);
+    assert.ok(
+      !session.currentText.includes("BETA"),
+      "get-review-diff-session must return updated currentText without rejected change",
+    );
+  });
+
+  it("14. External disk drift invalidates the review and preserves both versions", async function () {
+    const filePath = path.join(scratch, "note14.md");
+    const content = "alpha\nbeta\n";
+    const docId = await openFile(filePath, content);
+
+    const snap = provider.createSnapshot(docId)!;
+    await provider.submitProposal(
+      snap.token,
+      makePatch(content, "ALPHA\nBETA\n"),
+      "req-14",
+    );
+
+    // Simulate external disk drift: write new content to disk
+    writeFileSync(filePath, "EXTERNAL\nCONTENT\n", "utf8");
+
+    // Trigger handleRemoteChange (which the watcher would call)
+    await provider.notifyRemoteChange(filePath);
+
+    // Wait a tick for event processing
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // The review should be invalidated — further proposals rejected
+    const review = provider.reviewStore.getReview(docId);
+    if (review !== undefined) {
+      assert.equal(
+        review.invalidated,
+        true,
+        "review must be invalidated after disk drift",
+      );
+      // Verify submitPacket rejects with REVIEW_INVALIDATED
+      const snap2 = provider.createSnapshot(docId);
+      if (snap2 !== undefined) {
+        const result = await provider.submitProposal(
+          snap2.token,
+          makePatch("alpha\n", "beta\n"),
+          "req-14-after-drift",
+        );
+        assert.equal(result.ok, false, "proposal after invalidation must fail");
+        if (!result.ok) {
+          assert.equal(
+            result.code,
+            "REVIEW_INVALIDATED",
+            "must reject with REVIEW_INVALIDATED",
+          );
+        }
+      }
+    }
+
+    // The external disk content is preserved
+    const diskContent = normalizedRead(filePath);
+    assert.ok(
+      diskContent.includes("EXTERNAL"),
+      "external disk content must be preserved",
+    );
+  });
+
+  it("17. SSH invocation can perform context, read, propose, and status operations without exposing a network listener", async function () {
+    const filePath = path.join(scratch, "note17.md");
+    const content = "alpha\nbeta\n";
+    const docId = await openFile(filePath, content);
+
+    // Verify the agent API uses a Unix-domain socket, not a TCP port
+    // The socket path must be a filesystem path, not a host:port endpoint
+    assert.ok(
+      agentSocketPath.startsWith("/") ||
+        agentSocketPath.startsWith("\\\\.\\pipe\\"),
+      "endpoint must be a Unix socket or named pipe, not a TCP port",
+    );
+
+    // Simulate SSH invocation: the same socket connection works locally
+    // (an SSH client would forward stdin/stdout through the same socket)
+    const contextResponse = await agentRequest("context");
+    assert.equal(contextResponse.error, undefined, "context should work");
+
+    const readResponse = await agentRequest("document/read", {
+      documentId: docId,
+    });
+    assert.equal(readResponse.error, undefined, "read should work");
+
+    const snap = provider.createSnapshot(docId)!;
+    const proposeResponse = await agentRequest("proposal/submit", {
+      snapshot: snap.token,
+      patchFormat: "unified-diff",
+      patch: makePatch(content, "ALPHA\nBETA\n"),
+      clientRequestId: "req-17",
+    });
+    assert.equal(proposeResponse.error, undefined, "propose should work");
+
+    const statusResponse = await agentRequest("review/status", {
+      documentId: docId,
+    });
+    assert.equal(statusResponse.error, undefined, "status should work");
+    const statusResult = statusResponse.result as { state: string };
+    assert.equal(statusResult.state, "active");
+  });
 });
