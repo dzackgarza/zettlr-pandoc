@@ -330,6 +330,7 @@ export class ReviewDiffStore extends EventEmitter {
       generation,
       packets,
       diskFenceSha256: options.diskBaselineSha256,
+      invalidated: false,
     }
     this.reviews.set(options.documentId, state)
     if (initialPacketId !== undefined) {
@@ -697,13 +698,11 @@ export class ReviewDiffStore extends EventEmitter {
     if (review === undefined) {
       return
     }
+    review.invalidated = true
     this.emitEvent('review.invalidated', {
       reviewId: review.reviewId,
       documentId,
     })
-    // Keep the state in the map so status queries can report 'invalidated'
-    // but mark it. We store this by emitting the event; the DocumentManager
-    // will remove the review and trigger external-change resolution.
   }
 
   /**
@@ -888,11 +887,8 @@ export class ReviewDiffStore extends EventEmitter {
     return count
   }
 
-  private isInvalidated (_review: ActiveReviewState): boolean {
-    // For the initial implementation, invalidated reviews are removed from
-    // the store by the DocumentManager when it detects external drift.
-    // If present in the map, it is active or resolved-awaiting-save.
-    return false
+  private isInvalidated (review: ActiveReviewState): boolean {
+    return review.invalidated
   }
 
   private emitEvent (event: string, payload: Record<string, unknown>): void {

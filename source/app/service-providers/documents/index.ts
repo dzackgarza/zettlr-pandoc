@@ -1472,6 +1472,20 @@ current contents from the editor somewhere else, and restart the application.`,
       return
     }
 
+    // Spec section 10: if there is an active review for this document,
+    // invalidate it before proceeding with external-change resolution.
+    // The review rejects further proposals; both the live editor content
+    // and external disk content are preserved; the existing external-change
+    // resolution dialog proceeds as normal.
+    const _docId = this.getDocumentId(filePath)
+    if (_docId !== undefined) {
+      const _review = this._reviewStore.getReview(_docId)
+      if (_review !== undefined && !_review.invalidated) {
+        this._reviewStore.invalidateReview(_docId)
+        this._broadcastReviewCleared(filePath, _review.reviewId)
+      }
+    }
+
     const isModified = doc.lastSavedVersion !== doc.currentVersion
     const { alwaysReloadFiles } = this._app.config.get()
     if (isModified || !alwaysReloadFiles) {
@@ -2131,6 +2145,18 @@ current contents from the editor somewhere else, and restart the application.`,
     }
     const review = this._reviewStore.getReview(docId)
     if (review === undefined || review.reviewId !== status.sessionId) {
+      return false
+    }
+
+    // Spec section 13: guard against stale pane decisions by checking
+    // the review generation the pane observed when reporting.
+    if (
+      status.reviewGeneration !== undefined &&
+      status.reviewGeneration !== review.generation
+    ) {
+      // The pane's report is stale — re-broadcast the current state so the
+      // pane can update its merge reference.
+      this._broadcastReviewState(status.filePath, review)
       return false
     }
 

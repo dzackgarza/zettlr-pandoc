@@ -212,7 +212,7 @@ function applyPendingNavigation (): void {
   }
 }
 
-function applyReviewDiffSession (session: ReviewDiffSession): void {
+function applyReviewDiffSession (session: ReviewDiffSession, reviewGeneration?: number): void {
   if (session.documentPath !== props.file.path) {
     return
   }
@@ -223,7 +223,7 @@ function applyReviewDiffSession (session: ReviewDiffSession): void {
   }
 
   pendingReviewDiffSession = null
-  currentEditor.startReviewDiffSession(session)
+  currentEditor.startReviewDiffSession(session, reviewGeneration)
 }
 
 function fetchActiveReviewDiffSession (): void {
@@ -379,7 +379,10 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     context.reviewDiffSession !== undefined &&
     !(context.windowId === props.windowId && context.leafId === props.leafId)
   ) {
-    applyReviewDiffSession(context.reviewDiffSession)
+    applyReviewDiffSession(
+      context.reviewDiffSession,
+      context.reviewState?.generation,
+    )
   }
 })
 

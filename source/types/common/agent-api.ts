@@ -209,6 +209,8 @@ export interface ActiveReviewState {
   generation: number;
   packets: ProposalPacket[];
   diskFenceSha256: string;
+  /** True after external disk drift invalidated the review (spec section 10). */
+  invalidated: boolean;
 }
 
 // ============================================================================

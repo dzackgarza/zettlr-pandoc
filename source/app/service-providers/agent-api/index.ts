@@ -57,6 +57,7 @@ import {
   type SubmitProposalRequest,
   type SubmitProposalResponse,
 } from '@dts/common/agent-api'
+import { DP_EVENTS } from '@dts/common/documents'
 import { sha256Text } from 'source/app/util/review-diff'
 
 const MAX_REQUEST_BYTES = 25 * 1024 * 1024
@@ -169,6 +170,45 @@ export default class AgentAPIProvider extends ProviderContract {
     // Subscribe to review store events for event streaming
     this._documents.reviewStore.on('*', (event: AgentEvent) => {
       this.broadcastEvent(event)
+    })
+
+    // Subscribe to document-level events (spec section 11)
+    this._documents.on(DP_EVENTS.ACTIVE_FILE, (context: unknown) => {
+      const ctx = context as {
+        filePath?: string;
+        windowId?: string;
+        leafId?: string;
+      }
+      this.broadcastEvent({
+        event: 'focus.changed',
+        timestamp: new Date().toISOString(),
+        documentId:
+          ctx.filePath !== undefined
+            ? this._documents.getDocumentId(ctx.filePath)
+            : undefined,
+      })
+    })
+    this._documents.on(DP_EVENTS.CHANGE_FILE_STATUS, (context: unknown) => {
+      const ctx = context as { filePath?: string; status?: string }
+      this.broadcastEvent({
+        event: 'document.changed',
+        timestamp: new Date().toISOString(),
+        documentId:
+          ctx.filePath !== undefined
+            ? this._documents.getDocumentId(ctx.filePath)
+            : undefined,
+      })
+    })
+    this._documents.on(DP_EVENTS.CLOSE_FILE, (context: unknown) => {
+      const ctx = context as { filePath?: string }
+      this.broadcastEvent({
+        event: 'document.closed',
+        timestamp: new Date().toISOString(),
+        documentId:
+          ctx.filePath !== undefined
+            ? this._documents.getDocumentId(ctx.filePath)
+            : undefined,
+      })
     })
   }
 
