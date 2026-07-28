@@ -314,18 +314,6 @@ export interface PingResponse {
 }
 
 // ============================================================================
-// Section 3: Discovery
-// ============================================================================
-
-export interface DiscoveryRecord {
-  protocolVersion: string;
-  instanceId: string;
-  pid: number;
-  endpoint: string;
-  tokenFile: string;
-}
-
-// ============================================================================
 // Section 11: Events
 // ============================================================================
 
