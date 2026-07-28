@@ -1132,8 +1132,34 @@ export default class AgentHTTPProvider extends ProviderContract {
   private buildSseEvent(event: AgentEvent): BufferedAgentEvent {
     const id = `${this._eventSequence}`;
     this._eventSequence += 1;
+    const enriched: AgentEvent = { ...event };
+    if (enriched.documentId !== undefined) {
+      const filePath = this._documents.getDocumentPath(enriched.documentId);
+      const document =
+        filePath === undefined
+          ? undefined
+          : this._documents.loadedDocuments.find((candidate) => candidate.filePath === filePath);
+      if (document !== undefined && enriched.documentRevision === undefined) {
+        enriched.documentRevision = {
+          version: document.currentVersion,
+          sha256: sha256Text(document.document.toString()),
+        };
+      }
+      const review = this._documents.reviewStore.getReview(enriched.documentId);
+      if (review !== undefined) {
+        if (enriched.reviewId === undefined) {
+          enriched.reviewId = review.reviewId;
+        }
+        if (enriched.reviewGeneration === undefined) {
+          enriched.reviewGeneration = review.generation;
+        }
+        if (enriched.unresolvedChunks === undefined) {
+          enriched.unresolvedChunks = this._documents.reviewStore.countUnresolvedChunks(review);
+        }
+      }
+    }
     return {
-      ...event,
+      ...enriched,
       id,
     };
   }
