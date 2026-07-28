@@ -37,7 +37,11 @@ export interface EditorViewSummary {
 }
 
 export type ReviewState =
-  "active" | "resolved-awaiting-save" | "completed" | "cleared" | "invalidated";
+  | "active"
+  | "resolved-awaiting-save"
+  | "completed"
+  | "cleared"
+  | "invalidated";
 
 export interface ReviewSummary {
   reviewId: string;
@@ -118,7 +122,7 @@ export interface ReadRange {
 export interface ReadDocumentResponse {
   documentId: string;
   side: ReadSide;
-  snapshot: string;
+  snapshot?: string;
   revision: DocumentRevision;
   reviewGeneration?: number;
   range: ReadRange;
@@ -183,6 +187,7 @@ export interface ProposalPacket {
   appliedAt: string; // ISO 8601 timestamp
   patchFormat: PatchFormat;
   patch: string;
+  applicationGeneration: number;
 }
 
 export interface ActiveReviewState {

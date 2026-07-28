@@ -21,22 +21,19 @@
  * END HEADER
  */
 
-import http from "http";
-import fs from "fs";
-import path from "path";
-import crypto from "crypto";
-import { app } from "electron";
-import ProviderContract from "@providers/provider-contract";
+import { AGENT_API_PROTOCOL_VERSION, type AgentEvent } from "@dts/common/agent-api";
+import { DP_EVENTS } from "@dts/common/documents";
 import DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
+import ProviderContract from "@providers/provider-contract";
+import crypto from "crypto";
+import { app } from "electron";
+import fs from "fs";
+import http from "http";
+import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
-import makeSearchRegex from "source/common/util/make-search-regex";
-import {
-  AGENT_API_PROTOCOL_VERSION,
-  type AgentEvent,
-} from "@dts/common/agent-api";
-import { DP_EVENTS } from "@dts/common/documents";
 import { sha256Text } from "source/app/util/review-diff";
+import makeSearchRegex from "source/common/util/make-search-regex";
 
 const SSE_REPLAY_BUFFER_SIZE = 100;
 const SSE_HEARTBEAT_MS = 15000;
@@ -117,9 +114,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         event: "focus.changed",
         timestamp: new Date().toISOString(),
         documentId:
-          ctx.filePath !== undefined
-            ? this._documents.getDocumentId(ctx.filePath)
-            : undefined,
+          ctx.filePath !== undefined ? this._documents.getDocumentId(ctx.filePath) : undefined,
       });
     });
     this._documents.on(DP_EVENTS.CHANGE_FILE_STATUS, (context: unknown) => {
@@ -128,9 +123,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         event: "document.changed",
         timestamp: new Date().toISOString(),
         documentId:
-          ctx.filePath !== undefined
-            ? this._documents.getDocumentId(ctx.filePath)
-            : undefined,
+          ctx.filePath !== undefined ? this._documents.getDocumentId(ctx.filePath) : undefined,
       });
     });
     this._documents.on(DP_EVENTS.CLOSE_FILE, (context: unknown) => {
@@ -139,9 +132,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         event: "document.closed",
         timestamp: new Date().toISOString(),
         documentId:
-          ctx.filePath !== undefined
-            ? this._documents.getDocumentId(ctx.filePath)
-            : undefined,
+          ctx.filePath !== undefined ? this._documents.getDocumentId(ctx.filePath) : undefined,
       });
     });
   }
@@ -169,10 +160,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   // Request handling
   // ==========================================================================
 
-  private handleRequest(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): void {
+  private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
     // Serve the OpenAPI spec
     if (req.url === "/openapi.yaml" && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "application/yaml" });
@@ -255,16 +243,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         decodeURIComponent(workspaceOpenMatch[2]),
       );
     }
-    const workspaceDocumentsMatch = pathname.match(
-      /^\/v1\/workspaces\/([^/]+)\/documents(\/.*)?$/,
-    );
+    const workspaceDocumentsMatch = pathname.match(/^\/v1\/workspaces\/([^/]+)\/documents(\/.*)?$/);
     if (workspaceDocumentsMatch !== null) {
       const workspaceId = decodeURIComponent(workspaceDocumentsMatch[1]);
       const workspaceSubPath = workspaceDocumentsMatch[2];
-      if (
-        (workspaceSubPath === undefined || workspaceSubPath === "/") &&
-        method === "GET"
-      ) {
+      if ((workspaceSubPath === undefined || workspaceSubPath === "/") && method === "GET") {
         return this.handleListWorkspaceDocuments(res, url, workspaceId);
       }
     }
@@ -325,10 +308,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     // Proposal retraction: /v1/proposals/{packetId}/retract
     const retractMatch = pathname.match(/^\/v1\/proposals\/([^/]+)\/retract$/);
     if (retractMatch !== null && method === "POST") {
-      return this.handleRetractProposal(
-        res,
-        decodeURIComponent(retractMatch[1]),
-      );
+      return this.handleRetractProposal(res, decodeURIComponent(retractMatch[1]));
     }
 
     this.sendError(res, 404, "NOT_FOUND", `No route for ${method} ${pathname}`);
@@ -396,9 +376,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         windowId,
         leafId,
         documentId:
-          activePath !== undefined
-            ? this._documents.getDocumentId(activePath)
-            : undefined,
+          activePath !== undefined ? this._documents.getDocumentId(activePath) : undefined,
         focused: isFocused,
         active: isFocused,
         documents: tabMan.openFiles.map((openFile) => ({
@@ -412,12 +390,10 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private handleGetWorkspaces(res: http.ServerResponse): void {
-    const workspaces = this._app.config
-      .get()
-      .app.openWorkspaces.map((workspacePath) => ({
-        workspaceId: workspacePath,
-        path: workspacePath,
-      }));
+    const workspaces = this._app.config.get().app.openWorkspaces.map((workspacePath) => ({
+      workspaceId: workspacePath,
+      path: workspacePath,
+    }));
     this.sendJson(res, 200, { workspaces });
   }
 
@@ -441,10 +417,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       .getFilesForWorkspace(workspacePath)
       .then((paths) => {
         for (const documentPath of paths) {
-          const documentId = this._documents.getDocumentId(documentPath);
-          if (documentId === undefined) {
-            continue;
-          }
+          const documentId = this._documents.ensureDocumentId(documentPath);
           if (normalizedQuery.length > 0) {
             const haystack = documentPath.toLowerCase();
             if (!haystack.includes(normalizedQuery)) {
@@ -452,22 +425,23 @@ export default class AgentHTTPProvider extends ProviderContract {
             }
           }
           const summary = this.getDocumentSummary(documentId);
-          if (summary !== undefined) {
-            documents.push({
-              ...(summary as Record<string, unknown>),
-              workspaceId,
-            });
-          }
+          documents.push(
+            summary === undefined
+              ? {
+                  documentId,
+                  uri: `safe-file://${documentPath}`,
+                  path: documentPath,
+                  name: path.basename(documentPath),
+                  workspaceId,
+                  loaded: false,
+                }
+              : { ...(summary as Record<string, unknown>), workspaceId, loaded: true },
+          );
         }
         this.sendJson(res, 200, { workspaceId, documents });
       })
       .catch(() => {
-        this.sendError(
-          res,
-          500,
-          "INTERNAL_ERROR",
-          "Unable to list workspace documents",
-        );
+        this.sendError(res, 500, "INTERNAL_ERROR", "Unable to list workspace documents");
       });
   }
 
@@ -483,13 +457,8 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     const filePath = this._documents.getDocumentPath(documentId);
-    if (filePath === undefined || !filePath.startsWith(workspacePath)) {
-      this.sendError(
-        res,
-        404,
-        "DOCUMENT_NOT_FOUND",
-        "Document is not part of workspace",
-      );
+    if (filePath === undefined || !this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
+      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document is not part of workspace");
       return;
     }
     await this._documents.openFile(undefined, undefined, filePath, true);
@@ -515,10 +484,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     const resolveOpenPath = (uri: string): string => {
       try {
         const parsedUri = new URL(uri);
-        if (
-          parsedUri.protocol !== "safe-file:" &&
-          parsedUri.protocol !== "file:"
-        ) {
+        if (parsedUri.protocol !== "safe-file:" && parsedUri.protocol !== "file:") {
           throw new Error("Unsupported protocol");
         }
 
@@ -533,19 +499,14 @@ export default class AgentHTTPProvider extends ProviderContract {
     };
 
     const filePath = resolveOpenPath(parsed.uri);
+    if (!this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
+      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Path is outside configured workspace scope");
+      return;
+    }
     try {
       await this._documents.getDocument(filePath);
     } catch {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "File not found");
-      return;
-    }
-    if (!this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
-      this.sendError(
-        res,
-        404,
-        "DOCUMENT_NOT_FOUND",
-        "Path is outside configured workspace scope",
-      );
       return;
     }
     const docId = this._documents.getDocumentId(filePath);
@@ -557,10 +518,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 201, summary);
   }
 
-  private handleGetDocument(
-    res: http.ServerResponse,
-    documentId: string,
-  ): void {
+  private handleGetDocument(res: http.ServerResponse, documentId: string): void {
     const summary = this.getDocumentSummary(documentId);
     if (summary === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
@@ -569,10 +527,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, summary);
   }
 
-  private async handleFocusDocument(
-    res: http.ServerResponse,
-    documentId: string,
-  ): Promise<void> {
+  private async handleFocusDocument(res: http.ServerResponse, documentId: string): Promise<void> {
     const filePath = this._documents.getDocumentPath(documentId);
     if (filePath === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
@@ -592,11 +547,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, { focused: true, documentId });
   }
 
-  private handleReadContent(
-    res: http.ServerResponse,
-    documentId: string,
-    url: URL,
-  ): void {
+  private handleReadContent(res: http.ServerResponse, documentId: string, url: URL): void {
     const parseLine = (input: string | null): number | undefined => {
       if (input === null) {
         return undefined;
@@ -630,16 +581,16 @@ export default class AgentHTTPProvider extends ProviderContract {
       };
     };
 
-    const side = (url.searchParams.get("side") ?? "working") as
-      "working" | "reference";
+    const requestedSide = url.searchParams.get("side");
+    const side = requestedSide === null ? "working" : requestedSide;
+    if (side !== "working" && side !== "reference") {
+      this.sendError(res, 400, "INVALID_PARAMS", "side must be working or reference");
+      return;
+    }
     const startLine = url.searchParams.get("startLine");
     const endLine = url.searchParams.get("endLine");
 
-    const result = this._documents.readLiveBuffer(
-      documentId,
-      undefined,
-      undefined,
-    );
+    const result = this._documents.readLiveBuffer(documentId, undefined, undefined);
     if (result === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
@@ -656,12 +607,8 @@ export default class AgentHTTPProvider extends ProviderContract {
       reviewGeneration = review.generation;
     }
 
-    let range = applyRange(
-      result.content,
-      result.lineCount,
-      requestedStartLine,
-      requestedEndLine,
-    );
+    let range = applyRange(result.content, result.lineCount, requestedStartLine, requestedEndLine);
+    let revision = { version: result.version, sha256: result.sha256 };
 
     if (side === "reference") {
       if (review !== undefined) {
@@ -675,18 +622,16 @@ export default class AgentHTTPProvider extends ProviderContract {
           referenceRangeEnd,
         );
         reviewGeneration = review.generation;
+        revision = { version: review.generation, sha256: sha256Text(review.referenceText) };
       }
     }
 
     content = range.content;
 
-    const etag = `"sha256:${result.sha256}"`;
-    res.setHeader("ETag", etag);
-    this.sendJson(res, 200, {
+    const response = {
       documentId,
       side,
-      snapshot: result.snapshot,
-      revision: { version: result.version, sha256: result.sha256 },
+      revision,
       reviewGeneration,
       range: {
         startLine: range.startLine,
@@ -695,14 +640,16 @@ export default class AgentHTTPProvider extends ProviderContract {
       },
       content,
       truncated: range.truncated,
-    });
+    };
+    if (side === "working") {
+      res.setHeader("ETag", `"sha256:${result.sha256}"`);
+      this.sendJson(res, 200, { ...response, snapshot: result.snapshot });
+      return;
+    }
+    this.sendJson(res, 200, response);
   }
 
-  private handleWaitForReviewEvents(
-    res: http.ServerResponse,
-    reviewId: string,
-    url: URL,
-  ): void {
+  private handleWaitForReviewEvents(res: http.ServerResponse, reviewId: string, url: URL): void {
     const parseNumber = (
       value: string | null,
       fallback: number,
@@ -760,10 +707,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       if (eventDocumentId !== documentId || event.reviewId !== reviewId) {
         return;
       }
-      if (
-        event.reviewGeneration !== undefined &&
-        event.reviewGeneration > afterGeneration
-      ) {
+      if (event.reviewGeneration !== undefined && event.reviewGeneration > afterGeneration) {
         this._documents.reviewStore.removeListener("*", listener);
         const status = this._documents.reviewStore.getReviewStatus(documentId);
         finish({
@@ -833,12 +777,8 @@ export default class AgentHTTPProvider extends ProviderContract {
           line: i + 1,
           column: found + 1,
           length: hitLength,
-          contextBefore: lines
-            .slice(Math.max(0, i - contextSize), i)
-            .join("\n"),
-          contextAfter: lines
-            .slice(i + 1, Math.min(lines.length, i + 1 + contextSize))
-            .join("\n"),
+          contextBefore: lines.slice(Math.max(0, i - contextSize), i).join("\n"),
+          contextAfter: lines.slice(i + 1, Math.min(lines.length, i + 1 + contextSize)).join("\n"),
         });
         if (searchRegex.lastIndex >= lines[i].length) {
           break;
@@ -860,7 +800,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     documentId: string,
   ): Promise<void> {
     // Extract concurrency headers
-    const ifMatch = req.headers["if-match"] as string | undefined;
+    const ifMatch = req.headers["if-match"];
     const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
 
     if (ifMatch === undefined) {
@@ -868,60 +808,15 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     if (idempotencyKey === undefined) {
-      this.sendError(
-        res,
-        400,
-        "INVALID_PARAMS",
-        "Idempotency-Key header is required",
-      );
+      this.sendError(res, 400, "INVALID_PARAMS", "Idempotency-Key header is required");
       return;
     }
 
     // Verify the ETag format first
     const etagMatch = ifMatch.match(/^"sha256:([a-f0-9]{64})"$/i);
     if (etagMatch === null) {
-      this.sendError(
-        res,
-        400,
-        "INVALID_PARAMS",
-        "Invalid If-Match ETag format",
-      );
+      this.sendError(res, 400, "INVALID_PARAMS", "Invalid If-Match ETag format");
       return;
-    }
-
-    // Idempotency lookup BEFORE ETag content validation (spec section 6.2).
-    // A retry must return the cached result even if the document changed.
-    const existingReview = this._documents.reviewStore.getReview(documentId);
-    if (existingReview !== undefined) {
-      const existingPacket = existingReview.packets.find(
-        (p) => p.clientRequestId === idempotencyKey,
-      );
-      if (existingPacket !== undefined) {
-        const status = this._documents.reviewStore.getReviewStatus(documentId)!;
-        const filePath = this._documents.getDocumentPath(documentId);
-        const doc =
-          filePath !== undefined
-            ? this._documents.loadedDocuments.find(
-                (d) => d.filePath === filePath,
-              )
-            : undefined;
-        const currentContent = doc?.document.toString() ?? "";
-        const currentSha = sha256Text(currentContent);
-        res.setHeader("ETag", `"sha256:${currentSha}"`);
-        this.sendJson(res, 200, {
-          packetId: existingPacket.packetId,
-          reviewId: existingReview.reviewId,
-          documentId,
-          documentRevision: {
-            version: doc?.currentVersion ?? 0,
-            sha256: currentSha,
-          },
-          reviewGeneration: status.generation,
-          unresolvedChunks: status.unresolvedChunks,
-          state: status.state,
-        });
-        return;
-      }
     }
 
     // Read and parse the request body
@@ -952,16 +847,8 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 400, "INVALID_PARAMS", "Unsupported patch format");
       return;
     }
-    if (
-      typeof parsed.snapshot !== "string" ||
-      typeof parsed.patch !== "string"
-    ) {
-      this.sendError(
-        res,
-        400,
-        "INVALID_PARAMS",
-        "snapshot and patch are required",
-      );
+    if (typeof parsed.snapshot !== "string" || typeof parsed.patch !== "string") {
+      this.sendError(res, 400, "INVALID_PARAMS", "snapshot and patch are required");
       return;
     }
     const parsedSnapshot = DocumentManager.parseSnapshotToken(parsed.snapshot);
@@ -970,74 +857,26 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     if (parsedSnapshot.documentId !== documentId) {
-      this.sendError(
-        res,
-        400,
-        "INVALID_PARAMS",
-        "Snapshot belongs to a different document",
-      );
+      this.sendError(res, 400, "INVALID_PARAMS", "Snapshot belongs to a different document");
       return;
     }
-
-    const expectedSha = etagMatch[1];
 
     const filePath = this._documents.getDocumentPath(documentId);
     if (filePath === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    const doc = this._documents.loadedDocuments.find(
-      (d) => d.filePath === filePath,
-    );
+    const doc = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
     if (doc === undefined) {
       this.sendError(res, 404, "DOCUMENT_CLOSED", "Document is no longer open");
       return;
     }
-    const currentContent = doc.document.toString();
-    const currentSha = sha256Text(currentContent);
-    if (currentSha !== expectedSha) {
-      res.setHeader("ETag", `"sha256:${currentSha}"`);
-      this.sendError(
-        res,
-        412,
-        "REVISION_MISMATCH",
-        "The document changed after the read. The current ETag is in the response header.",
-        {
-          expected: { version: doc.currentVersion, sha256: expectedSha },
-          actual: { version: doc.currentVersion, sha256: currentSha },
-        },
-      );
-      return;
-    }
-
     if (parsed.expectedReviewGeneration !== undefined) {
       if (
         typeof parsed.expectedReviewGeneration !== "number" ||
         !Number.isInteger(parsed.expectedReviewGeneration)
       ) {
-        this.sendError(
-          res,
-          400,
-          "INVALID_PARAMS",
-          "expectedReviewGeneration must be an integer",
-        );
-        return;
-      }
-      const review = this._documents.reviewStore.getReview(documentId);
-      if (
-        review === undefined ||
-        review.generation !== parsed.expectedReviewGeneration
-      ) {
-        this.sendError(
-          res,
-          409,
-          "REVIEW_GENERATION_MISMATCH",
-          "The review generation no longer matches.",
-          {
-            expectedReviewGeneration: parsed.expectedReviewGeneration,
-            currentReviewGeneration: review?.generation ?? null,
-          },
-        );
+        this.sendError(res, 400, "INVALID_PARAMS", "expectedReviewGeneration must be an integer");
         return;
       }
     }
@@ -1048,19 +887,23 @@ export default class AgentHTTPProvider extends ProviderContract {
       parsed.patch,
       idempotencyKey,
       parsed.description,
+      parsed.expectedReviewGeneration,
+      ifMatch,
     );
 
     if (!result.ok) {
       if (result.code === "REVISION_MISMATCH") {
-        res.setHeader("ETag", `"sha256:${currentSha}"`);
+        res.setHeader("ETag", `"sha256:${sha256Text(doc.document.toString())}"`);
         this.sendError(res, 412, "REVISION_MISMATCH", result.message);
-      } else if (
-        result.code === "PATCH_INVALID" ||
-        result.code === "PATCH_NOT_APPLICABLE"
-      ) {
+      } else if (result.code === "PATCH_INVALID" || result.code === "PATCH_NOT_APPLICABLE") {
         this.sendError(res, 400, result.code, result.message);
       } else if (result.code === "REVIEW_INVALIDATED") {
         this.sendError(res, 409, "REVIEW_INVALIDATED", result.message);
+      } else if (
+        result.code === "IDEMPOTENCY_CONFLICT" ||
+        result.code === "REVIEW_GENERATION_MISMATCH"
+      ) {
+        this.sendError(res, 409, result.code, result.message);
       } else {
         this.sendError(res, 500, "INTERNAL_ERROR", result.message);
       }
@@ -1069,9 +912,8 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     // Set the new ETag on the response
     const newSha = sha256Text(
-      this._documents.loadedDocuments
-        .find((d) => d.filePath === filePath)
-        ?.document.toString() ?? currentContent,
+      this._documents.loadedDocuments.find((d) => d.filePath === filePath)?.document.toString() ??
+        doc.document.toString(),
     );
     res.setHeader("ETag", `"sha256:${newSha}"`);
     this.sendJson(res, 200, {
@@ -1117,10 +959,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private handleGetReviewDiff(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): void {
+  private handleGetReviewDiff(res: http.ServerResponse, reviewId: string): void {
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1140,10 +979,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private handleGetReviewChunks(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): void {
+  private handleGetReviewChunks(res: http.ServerResponse, reviewId: string): void {
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1163,10 +999,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private handleGetReviewPackets(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): void {
+  private handleGetReviewPackets(res: http.ServerResponse, reviewId: string): void {
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1198,10 +1031,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private handleRetractProposal(
-    res: http.ServerResponse,
-    packetId: string,
-  ): void {
+  private handleRetractProposal(res: http.ServerResponse, packetId: string): void {
     const result = this._documents.retractProposal(packetId);
     if (result.ok) {
       this.sendJson(res, 200, {
@@ -1225,10 +1055,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   // SSE event streaming
   // ==========================================================================
 
-  private handleSseSubscription(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): void {
+  private handleSseSubscription(req: http.IncomingMessage, res: http.ServerResponse): void {
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -1277,9 +1104,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
   }
 
-  private parseLastEventId(
-    header: string | string[] | undefined,
-  ): number | undefined {
+  private parseLastEventId(header: string | string[] | undefined): number | undefined {
     if (header === undefined) {
       return undefined;
     }
@@ -1300,10 +1125,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     return this._eventReplayBuffer.length;
   }
 
-  private writeSseEnvelope(
-    res: http.ServerResponse,
-    event: BufferedAgentEvent,
-  ): void {
+  private writeSseEnvelope(res: http.ServerResponse, event: BufferedAgentEvent): void {
     const data = JSON.stringify(event);
     res.write(`id: ${event.id}\n`);
     if (event.event !== undefined) {
@@ -1330,16 +1152,13 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (filePath === undefined) {
       return undefined;
     }
-    const doc = this._documents.loadedDocuments.find(
-      (d) => d.filePath === filePath,
-    );
+    const doc = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
     if (doc === undefined) {
       return undefined;
     }
     const content = doc.document.toString();
     const lines = content.split("\n");
-    const reviewStatus =
-      this._documents.reviewStore.getReviewStatus(documentId);
+    const reviewStatus = this._documents.reviewStore.getReviewStatus(documentId);
     return {
       documentId,
       uri: `safe-file://${filePath}`,
@@ -1363,9 +1182,21 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (workspaces.length === 0) {
       return true;
     }
-    return workspaces.some((workspacePath) =>
-      filePath.startsWith(workspacePath),
-    );
+    try {
+      const canonicalFilePath = fs.realpathSync(filePath);
+      return workspaces.some((workspacePath) => {
+        const canonicalWorkspacePath = fs.realpathSync(workspacePath);
+        const relativePath = path.relative(canonicalWorkspacePath, canonicalFilePath);
+        return (
+          relativePath === "" ||
+          (!relativePath.startsWith(`..${path.sep}`) &&
+            relativePath !== ".." &&
+            !path.isAbsolute(relativePath))
+        );
+      });
+    } catch {
+      return false;
+    }
   }
 
   private findDocumentIdByReviewId(reviewId: string): string | undefined {
@@ -1392,11 +1223,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private sendJson(
-    res: http.ServerResponse,
-    status: number,
-    body: unknown,
-  ): void {
+  private sendJson(res: http.ServerResponse, status: number, body: unknown): void {
     const json = JSON.stringify(body);
     res.writeHead(status, {
       "Content-Type": "application/json",

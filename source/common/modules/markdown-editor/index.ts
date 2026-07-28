@@ -21,123 +21,106 @@
 // component for the editor itself.
 import "./editor.css";
 
-/**
- * APIs
- */
-import EventEmitter from "events";
-
-// CodeMirror imports
-import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
+import { getSyncedVersion, sendableUpdates } from "@codemirror/collab";
+import { foldEffect, foldState, syntaxTree } from "@codemirror/language";
+import { getChunks, getOriginalDoc } from "@codemirror/merge";
+import { closeSearchPanel, openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import {
-  type EditorSelection,
   Compartment,
+  type EditorSelection,
   EditorState,
-  Text,
-  type StateEffect,
   type Extension,
   type SelectionRange,
+  type StateEffect,
+  Text,
 } from "@codemirror/state";
-import { getChunks, getOriginalDoc } from "@codemirror/merge";
-import { foldEffect, foldState, syntaxTree } from "@codemirror/language";
-import { getSyncedVersion, sendableUpdates } from "@codemirror/collab";
-import {
-  formatDocument,
-  type FormatResult,
-  type MarkdownFormatter,
-} from "./commands/format-document";
-import { formatDocumentEffect } from "./plugins/format-document-effect";
-
-// Keymaps/Input modes
-import { emacs } from "@replit/codemirror-emacs";
-import { vimPlugin } from "./plugins/vim-mode";
-
-import { type ToCEntry, tocField } from "./plugins/toc-field";
-import {
-  citekeyUpdate,
-  filesUpdate,
-  tagsUpdate,
-  snippetsUpdate,
-  referencesUpdate,
-} from "./autocomplete";
+// CodeMirror imports
+import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
+import { countAll } from "@common/util/counter";
+import safeAssign from "@common/util/safe-assign";
+import { DocumentType } from "@dts/common/documents";
 import {
   type DocumentLocation,
   type ReferenceCompletionEntry,
   type SourceRange,
 } from "@dts/common/references";
+import type { ReviewDiffSession, ReviewDiffStatus } from "@dts/common/review-diff";
+import { type TagRecord } from "@providers/tags";
+// Keymaps/Input modes
+import { emacs } from "@replit/codemirror-emacs";
+/**
+ * APIs
+ */
+import EventEmitter from "events";
+import { parsePandocAttributes } from "source/common/pandoc-util/parse-pandoc-attributes";
+import { markdownToAST } from "../markdown-utils";
+import type { ASTNode, Document as MarkdownDocument } from "../markdown-utils/markdown-ast";
 import {
-  workspaceReferencesUpdate,
-  type EditorWorkspaceReferences,
-} from "./plugins/workspace-references-field";
-
+  citekeyUpdate,
+  filesUpdate,
+  referencesUpdate,
+  snippetsUpdate,
+  tagsUpdate,
+} from "./autocomplete";
+import { addNewFootnote } from "./commands/footnotes";
+import {
+  type FormatResult,
+  formatDocument,
+  type MarkdownFormatter,
+} from "./commands/format-document";
+// Custom commands
+import {
+  applyComment,
+  applyPandocDivOrSpan,
+  applyTaskList,
+  insertImage,
+  insertLink,
+} from "./commands/markdown";
+import { moveSection } from "./commands/move-section";
 // Main configuration
 import {
   type CoreExtensionOptions,
   getJSONExtensions,
+  getMainEditorThemes,
   getMarkdownExtensions,
   getTexExtensions,
   getYAMLExtensions,
   inputModeCompartment,
-  getMainEditorThemes,
 } from "./editor-extension-sets";
-
-import {
-  configField,
-  configUpdateEffect,
-  getDefaultConfig,
-  type EditorConfigOptions,
-  type EditorConfiguration,
-} from "./util/configuration";
-
-// Custom commands
-import {
-  applyComment,
-  applyTaskList,
-  insertImage,
-  insertLink,
-  applyPandocDivOrSpan,
-} from "./commands/markdown";
-import { addNewFootnote } from "./commands/footnotes";
-
-// Utilities
-import { copyAsHTML, pasteAsPlain } from "./util/copy-paste-cut";
-import { highlightRangesEffect } from "./plugins/highlight-ranges";
-
-import safeAssign from "@common/util/safe-assign";
-import { countAll } from "@common/util/counter";
-import { DocumentType } from "@dts/common/documents";
-import { type TagRecord } from "@providers/tags";
-import {
-  reloadStateEffect,
-  type PullUpdateCallback,
-  type PushUpdateCallback,
-} from "./plugins/remote-doc";
-import { markdownToAST } from "../markdown-utils";
-import { countField, updateWordCountEffect } from "./plugins/statistics-fields";
-import { openReferenceSearchEffect } from "./plugins/reference-search-effect";
-import { openPandocQuickHelpEffect } from "./plugins/pandoc-quick-help-effect";
+import { clickListeners } from "./plugins/click-listeners";
 import {
   createReferenceLabel,
   openCreateReferenceLabelEffect,
 } from "./plugins/create-reference-label";
-import { useDarkModeEditor, darkModeEffect } from "./theme/dark-mode";
 import { editorMetadataFacet } from "./plugins/editor-metadata";
+import { formatDocumentEffect } from "./plugins/format-document-effect";
+import { highlightRangesEffect } from "./plugins/highlight-ranges";
+import { openPandocQuickHelpEffect } from "./plugins/pandoc-quick-help-effect";
+import { type ProjectInfo, projectInfoUpdateEffect } from "./plugins/project-info-field";
+import { openReferenceSearchEffect } from "./plugins/reference-search-effect";
 import {
-  projectInfoUpdateEffect,
-  type ProjectInfo,
-} from "./plugins/project-info-field";
-import { moveSection } from "./commands/move-section";
-import { parsePandocAttributes } from "source/common/pandoc-util/parse-pandoc-attributes";
-import {
-  closeSearchPanel,
-  openSearchPanel,
-  searchPanelOpen,
-} from "@codemirror/search";
-import { clickListeners } from "./plugins/click-listeners";
-import type {
-  ReviewDiffSession,
-  ReviewDiffStatus,
-} from "@dts/common/review-diff";
+  type PullUpdateCallback,
+  type PushUpdateCallback,
+  reloadStateEffect,
+} from "./plugins/remote-doc";
 import { reviewDiffMergeExtension } from "./plugins/review-diff";
+import { countField, updateWordCountEffect } from "./plugins/statistics-fields";
+import { type ToCEntry, tocField } from "./plugins/toc-field";
+import { vimPlugin } from "./plugins/vim-mode";
+import {
+  type EditorWorkspaceReferences,
+  workspaceReferencesUpdate,
+} from "./plugins/workspace-references-field";
+import { darkModeEffect, useDarkModeEditor } from "./theme/dark-mode";
+import {
+  configField,
+  configUpdateEffect,
+  type EditorConfigOptions,
+  type EditorConfiguration,
+  getDefaultConfig,
+} from "./util/configuration";
+// Utilities
+import { copyAsHTML, pasteAsPlain } from "./util/copy-paste-cut";
 
 export interface DocumentWrapper {
   path: string;
@@ -207,7 +190,7 @@ export interface EditorViewPersistentState {
    * A scroll snapshot from the editor. Used to properly restore the scroll
    * position.
    */
-  scrollSnapshot: StateEffect<any>;
+  scrollSnapshot: StateEffect<unknown>;
   /**
    * A selection object. Used to properly restore the cursor position and any
    * selections within the editor.
@@ -354,16 +337,11 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {Extension[]}                 The extension set
    */
-  private _getExtensions(
-    filePath: string,
-    type: DocumentType,
-    startVersion: number,
-  ): Extension[] {
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
+  private _getExtensions(filePath: string, type: DocumentType, startVersion: number): Extension[] {
     const editorInstance = this;
 
     const options: CoreExtensionOptions = {
-      initialConfig: JSON.parse(JSON.stringify(this.config)),
+      initialConfig: structuredClone(this.config),
       remoteConfig: {
         filePath,
         startVersion,
@@ -376,8 +354,7 @@ export default class MarkdownEditor extends EventEmitter {
           (update.docChanged ||
             update.transactions.some(
               (transaction) =>
-                transaction.isUserEvent("accept") ||
-                transaction.isUserEvent("revert"),
+                transaction.isUserEvent("accept") || transaction.isUserEvent("revert"),
             ));
 
         // Listen for changes and emit events appropriately
@@ -441,9 +418,7 @@ export default class MarkdownEditor extends EventEmitter {
               // ATTENTION: The document state is out of sync with the document
               // authority, so we must reload it.
               this.clearReviewDiffSession();
-              this.reload().catch((err) =>
-                console.error("Could not reload document state", err),
-              );
+              this.reload().catch((err) => console.error("Could not reload document state", err));
               return;
             }
           }
@@ -493,23 +468,13 @@ export default class MarkdownEditor extends EventEmitter {
    * Loads the document from main and sets up everything required to display and
    * edit it.
    */
-  async loadDocument(
-    persistentState?: EditorViewPersistentState,
-  ): Promise<void> {
-    const { content, type, startVersion } = await this.authority.fetchDoc(
-      this.representedDocument,
-    );
+  async loadDocument(persistentState?: EditorViewPersistentState): Promise<void> {
+    const { content, type, startVersion } = await this.authority.fetchDoc(this.representedDocument);
 
     // The documents contents have changed, so we must recreate the state
-    const extensions = this._getExtensions(
-      this.representedDocument,
-      type,
-      startVersion,
-    );
+    const extensions = this._getExtensions(this.representedDocument, type, startVersion);
     // This particular editor type needs access to the window and leaf IDs
-    extensions.push(
-      editorMetadataFacet.of({ windowId: this.windowId, leafId: this.leafId }),
-    );
+    extensions.push(editorMetadataFacet.of({ windowId: this.windowId, leafId: this.leafId }));
 
     const state = EditorState.create({
       doc: Text.of(content.split("\n")),
@@ -523,7 +488,7 @@ export default class MarkdownEditor extends EventEmitter {
       // and we can restore the persisted information.
       const { scrollSnapshot, selection, foldedRanges } = persistentState;
 
-      const effects: StateEffect<any>[] = [scrollSnapshot];
+      const effects: StateEffect<unknown>[] = [scrollSnapshot];
 
       const cursor = foldedRanges.iter();
       while (cursor.value) {
@@ -584,8 +549,7 @@ export default class MarkdownEditor extends EventEmitter {
     return {
       scrollSnapshot: this._instance.scrollSnapshot(),
       selection: this._instance.state.selection,
-      foldedRanges:
-        this._instance.state.field(foldState, false) ?? Decoration.set([]),
+      foldedRanges: this._instance.state.field(foldState, false) ?? Decoration.set([]),
     };
   }
 
@@ -657,9 +621,7 @@ export default class MarkdownEditor extends EventEmitter {
     const docLength = this._instance.state.doc.length;
     const { anchor, head } = location.selection;
     const effects = location.folds
-      .filter(
-        (fold) => fold.from >= 0 && fold.to <= docLength && fold.from < fold.to,
-      )
+      .filter((fold) => fold.from >= 0 && fold.to <= docLength && fold.from < fold.to)
       .map((fold) => foldEffect.of({ from: fold.from, to: fold.to }));
 
     if (anchor >= 0 && anchor <= docLength && head >= 0 && head <= docLength) {
@@ -746,26 +708,33 @@ export default class MarkdownEditor extends EventEmitter {
    */
   private onConfigUpdate(newOptions: Partial<EditorConfiguration>): void {
     const inputModeChanged =
-      newOptions.inputMode !== undefined &&
-      newOptions.inputMode !== this.config.inputMode;
+      newOptions.inputMode !== undefined && newOptions.inputMode !== this.config.inputMode;
     const darkModeChanged =
-      newOptions.darkMode !== undefined &&
-      newOptions.darkMode !== this.config.darkMode;
+      newOptions.darkMode !== undefined && newOptions.darkMode !== this.config.darkMode;
     const editorModeChanged =
       newOptions.darkModeEditor !== undefined &&
       newOptions.darkModeEditor !== this.config.darkModeEditor;
-    const themeChanged =
-      newOptions.theme !== undefined && newOptions.theme !== this.config.theme;
+    const themeChanged = newOptions.theme !== undefined && newOptions.theme !== this.config.theme;
 
     // Third: The input mode, if applicable
     if (inputModeChanged) {
       if (newOptions.inputMode === "emacs") {
+        const emacsFactory: unknown = emacs;
+        if (typeof emacsFactory !== "function") {
+          throw new TypeError("The Emacs editor extension factory is unavailable.");
+        }
+        const createEmacsExtension = emacsFactory as () => Extension;
         this._instance.dispatch({
-          effects: inputModeCompartment.reconfigure(emacs()),
+          effects: inputModeCompartment.reconfigure(createEmacsExtension()),
         });
       } else if (newOptions.inputMode === "vim") {
+        const vimFactory: unknown = vimPlugin;
+        if (typeof vimFactory !== "function") {
+          throw new TypeError("The Vim editor extension factory is unavailable.");
+        }
+        const createVimExtension = vimFactory as () => Extension;
         this._instance.dispatch({
-          effects: inputModeCompartment.reconfigure(vimPlugin()),
+          effects: inputModeCompartment.reconfigure(createVimExtension()),
         });
       } else {
         this._instance.dispatch({
@@ -779,8 +748,7 @@ export default class MarkdownEditor extends EventEmitter {
       const themes = getMainEditorThemes();
 
       const darkMode = newOptions.darkMode ?? this.config.darkMode;
-      const darkModeEditor =
-        newOptions.darkModeEditor ?? this.config.darkModeEditor;
+      const darkModeEditor = newOptions.darkModeEditor ?? this.config.darkModeEditor;
 
       this._instance.dispatch({
         effects: darkModeEffect.of({
@@ -857,11 +825,7 @@ export default class MarkdownEditor extends EventEmitter {
    * @param   {string}  attributes  Key=Value attributes.
    */
   insertPandocDivOrSpan(type: "div" | "span", attributes: string): void {
-    applyPandocDivOrSpan(
-      this._instance,
-      type,
-      parsePandocAttributes(attributes),
-    );
+    applyPandocDivOrSpan(this._instance, type, parsePandocAttributes(attributes));
   }
 
   /**
@@ -909,61 +873,53 @@ export default class MarkdownEditor extends EventEmitter {
     type: "citations",
     database: Array<{ citekey: string; displayText: string }>,
   ): void;
-  setCompletionDatabase(
-    type: "snippets",
-    database: Array<{ name: string; content: string }>,
-  ): void;
+  setCompletionDatabase(type: "snippets", database: Array<{ name: string; content: string }>): void;
   setCompletionDatabase(
     type: "files",
     database: Array<{ filename: string; displayName: string; id: string }>,
   ): void;
-  setCompletionDatabase(
-    type: "references",
-    database: ReferenceCompletionEntry[],
-  ): void;
-  setCompletionDatabase(type: string, database: any): void {
+  setCompletionDatabase(type: "references", database: ReferenceCompletionEntry[]): void;
+  setCompletionDatabase(type: string, database: unknown): void {
+    if (!Array.isArray(database)) {
+      throw new TypeError(`Completion database for ${type} must be an array.`);
+    }
+
     switch (type) {
       case "tags":
-        this.databaseCache.tags = database;
+        this.databaseCache.tags = database as TagRecord[];
         this._instance.dispatch({
-          effects: tagsUpdate.of(database as TagRecord[]),
+          effects: tagsUpdate.of(this.databaseCache.tags),
         });
         break;
       case "citations":
-        this.databaseCache.citations = database;
+        this.databaseCache.citations = database as Array<{ citekey: string; displayText: string }>;
         this._instance.dispatch({
-          effects: citekeyUpdate.of(
-            database as Array<{ citekey: string; displayText: string }>,
-          ),
+          effects: citekeyUpdate.of(this.databaseCache.citations),
         });
         break;
       case "snippets":
-        this.databaseCache.snippets = database;
+        this.databaseCache.snippets = database as Array<{ name: string; content: string }>;
         this._instance.dispatch({
-          effects: snippetsUpdate.of(
-            database as Array<{ name: string; content: string }>,
-          ),
+          effects: snippetsUpdate.of(this.databaseCache.snippets),
         });
         break;
       case "files":
-        this.databaseCache.files = database;
+        this.databaseCache.files = database as Array<{
+          filename: string;
+          displayName: string;
+          id: string;
+        }>;
         this._instance.dispatch({
-          effects: filesUpdate.of(
-            database as Array<{
-              filename: string;
-              displayName: string;
-              id: string;
-            }>,
-          ),
+          effects: filesUpdate.of(this.databaseCache.files),
         });
         break;
       case "references":
         // No-op wiring until the combined at-symbols provider joins the
         // dispatcher (issue #1 Phase 3 green step): the dispatched effect has
         // no consuming state field in the production extension set yet.
-        this.databaseCache.references = database;
+        this.databaseCache.references = database as ReferenceCompletionEntry[];
         this._instance.dispatch({
-          effects: referencesUpdate.of(database as ReferenceCompletionEntry[]),
+          effects: referencesUpdate.of(this.databaseCache.references),
         });
         break;
     }
@@ -983,10 +939,7 @@ export default class MarkdownEditor extends EventEmitter {
     });
   }
 
-  startReviewDiffSession(
-    session: ReviewDiffSession,
-    reviewGeneration?: number,
-  ): void {
+  startReviewDiffSession(session: ReviewDiffSession, reviewGeneration?: number): void {
     if (session.documentPath !== this.representedDocument) {
       return;
     }
@@ -1000,7 +953,7 @@ export default class MarkdownEditor extends EventEmitter {
       this.reload()
         .then(() => {
           if (this.value === session.currentText) {
-            this.startReviewDiffSession(session);
+            this.startReviewDiffSession(session, reviewGeneration);
           } else {
             this.emit(
               "review-diff-error",
@@ -1008,15 +961,12 @@ export default class MarkdownEditor extends EventEmitter {
             );
           }
         })
-        .catch((err) =>
-          console.error("Could not reload editor for review-diff session", err),
-        );
+        .catch((err) => console.error("Could not reload editor for review-diff session", err));
       return;
     }
 
-    if (reviewGeneration !== undefined) {
-      this.reviewDiffGeneration = reviewGeneration;
-    }
+    this.reviewDiffGeneration =
+      reviewGeneration === undefined ? session.reviewGeneration : reviewGeneration;
 
     if (
       this.activeReviewDiffSession?.id === session.id &&
@@ -1030,9 +980,7 @@ export default class MarkdownEditor extends EventEmitter {
     this._instance.dom.classList.add("review-diff-active");
 
     const effects = [
-      this.reviewDiffCompartment.reconfigure(
-        reviewDiffMergeExtension(session.originalText),
-      ),
+      this.reviewDiffCompartment.reconfigure(reviewDiffMergeExtension(session.originalText)),
     ];
 
     if (!shouldApplyInitialProposal) {
@@ -1057,10 +1005,7 @@ export default class MarkdownEditor extends EventEmitter {
       return;
     }
 
-    if (
-      sessionId !== undefined &&
-      this.activeReviewDiffSession.id !== sessionId
-    ) {
+    if (sessionId !== undefined && this.activeReviewDiffSession.id !== sessionId) {
       return;
     }
 
@@ -1138,11 +1083,20 @@ export default class MarkdownEditor extends EventEmitter {
     // a cursor position.
     const mainOffset = this._instance.state.selection.main.head;
     const line = this._instance.state.doc.lineAt(mainOffset);
-    const ast = markdownToAST(
-      this._instance.state.sliceDoc(),
-      syntaxTree(this._instance.state),
-    );
-    const locale: string = window.config.get("appLang");
+    const markdownAstFactory: unknown = markdownToAST;
+    if (typeof markdownAstFactory !== "function") {
+      throw new TypeError("The Markdown AST factory is unavailable.");
+    }
+    const ast = markdownAstFactory as (
+      markdown: string,
+      tree: ReturnType<typeof syntaxTree>,
+    ) => MarkdownDocument | ASTNode;
+    const documentAst = ast(this._instance.state.sliceDoc(), syntaxTree(this._instance.state));
+    const configuredLocale: unknown = window.config.get("appLang");
+    if (typeof configuredLocale !== "string") {
+      throw new TypeError("The application language configuration must be a string.");
+    }
+    const locale = configuredLocale;
     return {
       words: this.wordCount ?? 0,
       chars: this.charCount ?? 0,
@@ -1156,7 +1110,7 @@ export default class MarkdownEditor extends EventEmitter {
           // each selection present.
           const anchorLine = this._instance.state.doc.lineAt(sel.anchor);
           const headLine = this._instance.state.doc.lineAt(sel.head);
-          const { words, chars } = countAll(ast, locale, sel.from, sel.to);
+          const { words, chars } = countAll(documentAst, locale, sel.from, sel.to);
           return {
             anchor: {
               line: anchorLine.number,
@@ -1197,9 +1151,7 @@ export default class MarkdownEditor extends EventEmitter {
    * @return  {boolean}  True or false
    */
   get distractionFree(): boolean {
-    return (
-      this._instance.state.field(configField, false)?.distractionFree ?? false
-    );
+    return this._instance.state.field(configField, false)?.distractionFree ?? false;
   }
 
   /**

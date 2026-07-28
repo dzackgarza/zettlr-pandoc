@@ -15,39 +15,32 @@
  * END HEADER
  */
 
-import EventEmitter from "events";
-import path from "path";
-import { constants as FSConstants } from "fs";
-import ProviderContract, { type IPCAPI } from "@providers/provider-contract";
-import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
-import { type AppServiceContainer } from "../../app-service-container";
-import {
-  ipcMain,
-  app,
-  dialog,
-  type BrowserWindow,
-  type MessageBoxOptions,
-  shell,
-} from "electron";
-import { DocumentTree, type DTLeaf } from "./document-tree";
-import PersistentDataContainer from "@common/modules/persistent-data-container";
-import { type TabManager } from "@providers/documents/document-tree/tab-manager";
-import {
-  DP_EVENTS,
-  type OpenDocument,
-  DocumentType,
-  type BranchNodeJSON,
-  type LeafNodeJSON,
-} from "@dts/common/documents";
-import { v4 as uuid4 } from "uuid";
 import { type Update } from "@codemirror/collab";
 import { ChangeSet, Text } from "@codemirror/state";
-import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
-import { countAll } from "@common/util/counter";
-import { markdownToAST } from "@common/modules/markdown-utils";
-import isFile from "@common/util/is-file";
 import { trans } from "@common/i18n-main";
-import type FSALWatchdog from "@providers/fsal/fsal-watchdog";
+import { markdownToAST } from "@common/modules/markdown-utils";
+import PersistentDataContainer from "@common/modules/persistent-data-container";
+import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
+import { countAll } from "@common/util/counter";
+import isFile from "@common/util/is-file";
+import {
+  type BranchNodeJSON,
+  DocumentType,
+  DP_EVENTS,
+  type LeafNodeJSON,
+  type OpenDocument,
+} from "@dts/common/documents";
+import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
+import type { DocumentLocation, SourceRange } from "@dts/common/references";
+import type { ReviewDiffSession, ReviewDiffStatus } from "@dts/common/review-diff";
+import { type TabManager } from "@providers/documents/document-tree/tab-manager";
+import ProviderContract, { type IPCAPI } from "@providers/provider-contract";
+import { randomUUID } from "crypto";
+import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions, shell } from "electron";
+import EventEmitter from "events";
+import { constants as FSConstants } from "fs";
+import path from "path";
+import { normalizeText, sha256Text } from "source/app/util/review-diff";
 import {
   getDocumentTypeForExtension,
   hasImageExt,
@@ -55,17 +48,64 @@ import {
   hasPDFExt,
 } from "source/common/util/file-extention-checks";
 import isDir from "source/common/util/is-dir";
-import type { DocumentLocation, SourceRange } from "@dts/common/references";
-import type {
-  ReviewDiffSession,
-  ReviewDiffStatus,
-} from "@dts/common/review-diff";
-import { normalizeText, sha256Text } from "source/app/util/review-diff";
+import { v4 as uuid4 } from "uuid";
+import { type AppServiceContainer } from "../../app-service-container";
+import { DocumentTree, type DTLeaf } from "./document-tree";
 import { ReviewDiffStore } from "./review-diff-store";
-import { randomUUID } from "crypto";
 
 type DocumentWindows = Record<string, DocumentTree>;
 type DocumentWindowsJSON = Record<string, BranchNodeJSON | LeafNodeJSON>;
+
+interface DocumentWatchdog {
+  on(event: "change", listener: (event: unknown, filePath: unknown) => void): void;
+  getWatched(): Record<string, string[]>;
+  watchPath(filePath: string): void;
+  unwatchPath(filePath: string): void;
+  shutdown(): Promise<void>;
+}
+
+type DocumentManagerConfig = {
+  get(): {
+    app: {
+      openFiles: string[];
+      openWorkspaces: string[];
+    };
+    editor: { autoSave: "off" | "immediately" | "delayed" };
+    files: {
+      images: { openWith: string };
+      pdf: { openWith: string };
+    };
+    system: { avoidNewTabs: boolean };
+    appLang: string;
+    alwaysReloadFiles: boolean;
+  };
+  addPath(path: string): boolean;
+  set(key: string, value: unknown): void;
+};
+
+type DocumentManagerApp = {
+  citeproc: Pick<AppServiceContainer["citeproc"], "synchronizeDatabases">;
+  config: DocumentManagerConfig;
+  fsal: {
+    getWatchdog(): DocumentWatchdog;
+    getFilesystemMetadata(filePath: string): Promise<{ modtime: number }>;
+  } & Pick<
+    AppServiceContainer["fsal"],
+    | "getDescriptorFor"
+    | "getDescriptorForAnySupportedFile"
+    | "loadAnySupportedFile"
+    | "readDirectoryRecursively"
+    | "testAccess"
+    | "writeTextFile"
+  >;
+  log: Pick<AppServiceContainer["log"], "error" | "info" | "verbose" | "warning">;
+  recentDocs: Pick<AppServiceContainer["recentDocs"], "add">;
+  stats: Pick<AppServiceContainer["stats"], "updateCounts">;
+  windows: Pick<
+    AppServiceContainer["windows"],
+    "askSaveChanges" | "getFirstMainWindow" | "getMainWindowKey"
+  >;
+};
 
 // Keep no more than this many updates.
 const MAX_VERSION_HISTORY = 100;
@@ -185,6 +225,22 @@ interface Document {
   saveTimeout: undefined | NodeJS.Timeout;
 }
 
+interface SubmittedProposalResponse {
+  ok: true;
+  packetId: string;
+  reviewId: string;
+  documentId: string;
+  documentRevision: { version: number; sha256: string };
+  reviewGeneration: number;
+  unresolvedChunks: number;
+  state: string;
+}
+
+interface ProposalIdempotencyRecord {
+  fingerprint: string;
+  response: SubmittedProposalResponse;
+}
+
 export type DocumentAuthorityIPCAPI = IPCAPI<{
   "get-document": { filePath: string };
   "pull-updates": { filePath: string; version: number };
@@ -272,7 +328,7 @@ export default class DocumentManager extends ProviderContract {
    *
    * @var {chokidar.FSWatcher}
    */
-  private readonly _watcher: FSALWatchdog;
+  private readonly _watcher: DocumentWatchdog;
 
   /**
    * Holds a list of strings for files that have recently been saved by the
@@ -301,6 +357,9 @@ export default class DocumentManager extends ProviderContract {
   /** Path → documentId mapping for agent API lookups. */
   private readonly _documentIdByPath: Map<string, string>;
 
+  /** Successful proposal responses, keyed by document and client idempotency key. */
+  private readonly _proposalIdempotency: Map<string, ProposalIdempotencyRecord>;
+
   /**
    * This holds all currently opened documents somewhere across the app.
    *
@@ -315,7 +374,7 @@ export default class DocumentManager extends ProviderContract {
     leafId: string | undefined;
   };
 
-  constructor(private readonly _app: AppServiceContainer) {
+  constructor(private readonly _app: DocumentManagerApp) {
     super();
 
     const containerPath = path.join(app.getPath("userData"), "documents.yaml");
@@ -327,6 +386,7 @@ export default class DocumentManager extends ProviderContract {
     this._remoteChangeDialogShownFor = [];
     this._reviewStore = new ReviewDiffStore();
     this._documentIdByPath = new Map();
+    this._proposalIdempotency = new Map();
     this.documents = [];
     this._shuttingDown = false;
     this._lastEditor = {
@@ -338,28 +398,34 @@ export default class DocumentManager extends ProviderContract {
     this._watcher = this._app.fsal.getWatchdog();
 
     this._watcher.on("change", (event, filePath) => {
-      if (this._ignoreChanges.includes(filePath) && event === "change") {
-        this._app.log.info(`[DocumentManager] Ignoring change for ${filePath}`);
-        this._ignoreChanges.splice(this._ignoreChanges.indexOf(filePath), 1);
+      const changeEvent: unknown = event;
+      const changedPath: unknown = filePath;
+      if (typeof changedPath !== "string") {
+        this._app.log.warning("[DocumentManager] Ignoring watchdog change with a non-string path.");
+        return;
+      }
+      if (changeEvent !== "unlink" && changeEvent !== "change") {
+        this._app.log.warning(
+          `[DocumentManager] Received unexpected event ${String(changeEvent)} for ${changedPath}.`,
+        );
+        return;
+      }
+      if (this._ignoreChanges.includes(changedPath) && changeEvent === "change") {
+        this._app.log.info(`[DocumentManager] Ignoring change for ${changedPath}`);
+        this._ignoreChanges.splice(this._ignoreChanges.indexOf(changedPath), 1);
         return;
       } else {
-        this._app.log.info(
-          `[DocumentManager] Processing ${event} for ${filePath}`,
-        );
+        this._app.log.info(`[DocumentManager] Processing ${changeEvent} for ${changedPath}`);
       }
 
-      if (event === "unlink") {
+      if (changeEvent === "unlink") {
         // Close the file everywhere
-        this.closeFileEverywhere(filePath).catch((err) =>
-          this._app.log.error(err),
-        );
-      } else if (event === "change") {
-        this.handleRemoteChange(filePath).catch((err) =>
-          this._app.log.error(err),
+        this.closeFileEverywhere(changedPath).catch((err: unknown) =>
+          this._app.log.error(err instanceof Error ? err.message : String(err)),
         );
       } else {
-        this._app.log.warning(
-          `[DocumentManager] Received unexpected event ${event} for ${filePath}.`,
+        this.handleRemoteChange(changedPath).catch((err: unknown) =>
+          this._app.log.error(err instanceof Error ? err.message : String(err)),
         );
       }
     });
@@ -367,197 +433,157 @@ export default class DocumentManager extends ProviderContract {
     /**
      * Hook the event listener that directly communicates with the editors
      */
-    ipcMain.handle(
-      "documents-authority",
-      async (event, message: DocumentAuthorityIPCAPI) => {
-        const { command, payload } = message;
-        switch (command) {
-          case "pull-updates":
-            return await this.pullUpdates(payload.filePath, payload.version);
-          case "push-updates":
-            return await this.pushUpdates(
-              payload.filePath,
-              payload.version,
-              payload.updates,
-            );
-          case "get-document":
-            return await this.getDocument(payload.filePath);
-        }
-      },
-    );
+    ipcMain.handle("documents-authority", async (event, message: DocumentAuthorityIPCAPI) => {
+      const { command, payload } = message;
+      switch (command) {
+        case "pull-updates":
+          return await this.pullUpdates(payload.filePath, payload.version);
+        case "push-updates":
+          return await this.pushUpdates(payload.filePath, payload.version, payload.updates);
+        case "get-document":
+          return await this.getDocument(payload.filePath);
+      }
+    });
 
     // Finally, listen to events from the renderer
-    ipcMain.handle(
-      "documents-provider",
-      async (event, message: DocumentManagerIPCAPI) => {
-        const { command, payload } = message;
-        switch (command) {
-          // A given tab should be set as pinned
-          case "set-pinned": {
-            const { windowId, leafId, path, pinned } = payload;
-            this.setPinnedStatus(windowId, leafId, path, pinned);
-            return;
-          }
-          // Some main window has requested its tab/split view state
-          case "retrieve-tab-config": {
-            return this._windows[payload.windowId].toJSON();
-          }
-          case "save-file": {
-            return await this.saveFile(payload.path);
-          }
-          case "open-file": {
-            const {
-              windowId,
-              leafId,
-              path,
-              newTab,
-              targetRange,
-              sourceLocation,
-            } = payload;
-            return await this.openFile(windowId, leafId, path, newTab, {
-              targetRange,
-              sourceLocation,
-            });
-          }
-          case "close-file": {
-            const { windowId, leafId, path } = payload;
-            return await this.closeFile(windowId, leafId, path);
-          }
-          case "close-file-everywhere": {
-            const { path } = payload;
-            return this.closeFileEverywhere(path);
-          }
-          case "get-open-workspace-files": {
-            const { path } = payload;
-            return this.getFilesForWorkspace(path);
-          }
-          case "sort-open-files": {
-            const { windowId, leafId, newOrder } = payload;
-            this.sortOpenFiles(windowId, leafId, newOrder);
-            return;
-          }
-          case "get-file-modification-status": {
-            return this.documents
-              .filter((x) => this.isModified(x.filePath))
-              .map((x) => x.filePath);
-          }
-          case "get-review-diff-session": {
-            const docId = this.getDocumentId(payload.path);
-            if (docId === undefined) {
-              return undefined;
-            }
-            const review = this._reviewStore.getReview(docId);
-            if (review === undefined) {
-              return undefined;
-            }
-            // Construct legacy ReviewDiffSession for renderer compat
-            return {
-              id: review.reviewId,
-              documentPath: payload.path,
-              baselineSha256: sha256Text(review.baselineText),
-              diskBaselineSha256: review.diskFenceSha256,
-              baselineText: review.baselineText,
-              originalText: review.referenceText,
-              proposedText: review.workingText,
-              currentText: review.workingText,
-            } as ReviewDiffSession;
-          }
-          case "set-review-diff-status": {
-            const {
-              path,
-              sessionId,
-              unresolvedChunks,
-              originalText,
-              currentText,
-              documentVersion,
-              sourceWindowId,
-              sourceLeafId,
-            } = payload;
-            return this.setReviewDiffStatus({
-              filePath: path,
-              sessionId,
-              unresolvedChunks,
-              originalText,
-              currentText,
-              documentVersion,
-              sourceWindowId,
-              sourceLeafId,
-            });
-          }
-          case "move-file": {
-            const { originWindow, originLeaf, targetWindow, targetLeaf, path } =
-              payload;
-            return await this.moveFile(
-              originWindow,
-              targetWindow,
-              originLeaf,
-              targetLeaf,
-              path,
-            );
-          }
-          case "split-leaf": {
-            const {
-              originWindow,
-              originLeaf,
-              direction,
-              insertion,
-              path,
-              fromWindow,
-              fromLeaf,
-            } = payload;
-
-            return await this.splitLeaf(
-              originWindow,
-              originLeaf,
-              direction,
-              insertion,
-              path,
-              fromWindow,
-              fromLeaf,
-            );
-          }
-          case "close-leaf": {
-            return this.closeLeaf(payload.windowId, payload.leafId);
-          }
-          case "focus-leaf": {
-            return this._updateFocusLeaf(payload.windowId, payload.leafId);
-          }
-          case "set-branch-sizes": {
-            // NOTE that in this particular instance we do not emit an event. The
-            // reason is that we need to prevent frequent reloads during resizing.
-            // For as long as the window is open, the window will have the correct
-            // sizes, and will only update those sizes here in the main process.
-            // As soon as the window is closed, however, it will automatically
-            // grab the correct sizes again.
-            const branch = this._windows[payload.windowId].findBranch(
-              payload.branchId,
-            );
-            if (branch !== undefined) {
-              branch.sizes = payload.sizes;
-              this.syncToConfig();
-            }
-            return;
-          }
-          case "navigate-forward": {
-            return await this.navigateForward(
-              payload.windowId,
-              payload.leafId,
-              payload.location,
-            );
-          }
-          case "navigate-back": {
-            return await this.navigateBack(
-              payload.windowId,
-              payload.leafId,
-              payload.location,
-            );
-          }
-          case "get-navigation-state": {
-            return this.getNavigationState(payload.windowId, payload.leafId);
-          }
+    ipcMain.handle("documents-provider", async (event, message: DocumentManagerIPCAPI) => {
+      const { command, payload } = message;
+      switch (command) {
+        // A given tab should be set as pinned
+        case "set-pinned": {
+          const { windowId, leafId, path, pinned } = payload;
+          this.setPinnedStatus(windowId, leafId, path, pinned);
+          return;
         }
-      },
-    );
+        // Some main window has requested its tab/split view state
+        case "retrieve-tab-config": {
+          return this._windows[payload.windowId].toJSON();
+        }
+        case "save-file": {
+          return await this.saveFile(payload.path);
+        }
+        case "open-file": {
+          const { windowId, leafId, path, newTab, targetRange, sourceLocation } = payload;
+          return await this.openFile(windowId, leafId, path, newTab, {
+            targetRange,
+            sourceLocation,
+          });
+        }
+        case "close-file": {
+          const { windowId, leafId, path } = payload;
+          return await this.closeFile(windowId, leafId, path);
+        }
+        case "close-file-everywhere": {
+          const { path } = payload;
+          return this.closeFileEverywhere(path);
+        }
+        case "get-open-workspace-files": {
+          const { path } = payload;
+          return this.getFilesForWorkspace(path);
+        }
+        case "sort-open-files": {
+          const { windowId, leafId, newOrder } = payload;
+          this.sortOpenFiles(windowId, leafId, newOrder);
+          return;
+        }
+        case "get-file-modification-status": {
+          return this.documents.filter((x) => this.isModified(x.filePath)).map((x) => x.filePath);
+        }
+        case "get-review-diff-session": {
+          const docId = this.getDocumentId(payload.path);
+          if (docId === undefined) {
+            return undefined;
+          }
+          const review = this._reviewStore.getReview(docId);
+          if (review === undefined) {
+            return undefined;
+          }
+          // Construct legacy ReviewDiffSession for renderer compat
+          return {
+            id: review.reviewId,
+            reviewGeneration: review.generation,
+            documentPath: payload.path,
+            baselineSha256: sha256Text(review.baselineText),
+            diskBaselineSha256: review.diskFenceSha256,
+            baselineText: review.baselineText,
+            originalText: review.referenceText,
+            proposedText: review.workingText,
+            currentText: review.workingText,
+          } as ReviewDiffSession;
+        }
+        case "set-review-diff-status": {
+          const {
+            path,
+            sessionId,
+            unresolvedChunks,
+            originalText,
+            currentText,
+            documentVersion,
+            sourceWindowId,
+            sourceLeafId,
+            reviewGeneration,
+          } = payload;
+          return this.setReviewDiffStatus({
+            filePath: path,
+            sessionId,
+            unresolvedChunks,
+            originalText,
+            currentText,
+            documentVersion,
+            sourceWindowId,
+            sourceLeafId,
+            reviewGeneration,
+          });
+        }
+        case "move-file": {
+          const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;
+          return await this.moveFile(originWindow, targetWindow, originLeaf, targetLeaf, path);
+        }
+        case "split-leaf": {
+          const { originWindow, originLeaf, direction, insertion, path, fromWindow, fromLeaf } =
+            payload;
+
+          return await this.splitLeaf(
+            originWindow,
+            originLeaf,
+            direction,
+            insertion,
+            path,
+            fromWindow,
+            fromLeaf,
+          );
+        }
+        case "close-leaf": {
+          return this.closeLeaf(payload.windowId, payload.leafId);
+        }
+        case "focus-leaf": {
+          return this._updateFocusLeaf(payload.windowId, payload.leafId);
+        }
+        case "set-branch-sizes": {
+          // NOTE that in this particular instance we do not emit an event. The
+          // reason is that we need to prevent frequent reloads during resizing.
+          // For as long as the window is open, the window will have the correct
+          // sizes, and will only update those sizes here in the main process.
+          // As soon as the window is closed, however, it will automatically
+          // grab the correct sizes again.
+          const branch = this._windows[payload.windowId].findBranch(payload.branchId);
+          if (branch !== undefined) {
+            branch.sizes = payload.sizes;
+            this.syncToConfig();
+          }
+          return;
+        }
+        case "navigate-forward": {
+          return await this.navigateForward(payload.windowId, payload.leafId, payload.location);
+        }
+        case "navigate-back": {
+          return await this.navigateBack(payload.windowId, payload.leafId, payload.location);
+        }
+        case "get-navigation-state": {
+          return this.getNavigationState(payload.windowId, payload.leafId);
+        }
+      }
+    });
 
     // Listen to the before-quit event by which we make sure to only quit the
     // application if the status of possibly modified files has been cleared.
@@ -578,17 +604,11 @@ export default class DocumentManager extends ProviderContract {
         // window is being closed.
         const opt: MessageBoxOptions = {
           type: "question",
-          buttons: [
-            trans("Save changes"),
-            trans("Discard changes"),
-            trans("Cancel"),
-          ],
+          buttons: [trans("Save changes"), trans("Discard changes"), trans("Cancel")],
           defaultId: 0,
           cancelId: 2,
           title: trans("Unsaved changes"),
-          message: trans(
-            "There are unsaved changes. Do you want to save or discard them?",
-          ),
+          message: trans("There are unsaved changes. Do you want to save or discard them?"),
         };
 
         dialog
@@ -596,9 +616,7 @@ export default class DocumentManager extends ProviderContract {
           .then(async ({ response }) => {
             // 0 = Save, 1 = Don't save, 2 = Cancel
             if (response === 2) {
-              this._app.log.verbose(
-                "User cancelled save-dialog; not quitting.",
-              );
+              this._app.log.verbose("User cancelled save-dialog; not quitting.");
               return; // Do nothing
             }
 
@@ -618,10 +636,7 @@ export default class DocumentManager extends ProviderContract {
             app.quit();
           })
           .catch((err) => {
-            this._app.log.error(
-              "[DocumentManager] Cannot ask user to save or omit changes!",
-              err,
-            );
+            this._app.log.error("[DocumentManager] Cannot ask user to save or omit changes!", err);
           });
       } else {
         this._shuttingDown = true;
@@ -691,9 +706,7 @@ export default class DocumentManager extends ProviderContract {
 
     // Check if the data store is initialized
     if (!(await this._config.isInitialized())) {
-      this._app.log.info(
-        "[Document Manager] Initializing document storage ...",
-      );
+      this._app.log.info("[Document Manager] Initializing document storage ...");
       const tree = new DocumentTree();
       const key = uuid4();
       await this._config.init({ [key]: tree.toJSON() });
@@ -737,9 +750,7 @@ export default class DocumentManager extends ProviderContract {
     }
 
     if (Object.keys(treedata).length === 0) {
-      this._app.log.warning(
-        "[Document Manager] Creating new window since all are closed.",
-      );
+      this._app.log.warning("[Document Manager] Creating new window since all are closed.");
       const key = uuid4();
       this._windows[key] = new DocumentTree();
       this.broadcastEvent(DP_EVENTS.NEW_WINDOW, { key });
@@ -750,9 +761,7 @@ export default class DocumentManager extends ProviderContract {
     await this.synchronizeDatabases();
     this.syncToConfig();
 
-    this._app.log.info(
-      `[Document Manager] Restored ${this.windowCount()} open windows.`,
-    );
+    this._app.log.info(`[Document Manager] Restored ${this.windowCount()} open windows.`);
   }
 
   public windowCount(): number {
@@ -828,10 +837,7 @@ export default class DocumentManager extends ProviderContract {
     this._config.shutdown();
   }
 
-  private broadcastEvent(
-    event: DP_EVENTS,
-    context?: DocumentsUpdateContext,
-  ): void {
+  private broadcastEvent(event: DP_EVENTS, context?: DocumentsUpdateContext): void {
     // Here we blast an event notification across every line of code of the app
     broadcastIpcMessage("documents-update", { event, context });
     this._emitter.emit(event, context);
@@ -842,9 +848,7 @@ export default class DocumentManager extends ProviderContract {
   public async getDocument(
     filePath: string,
   ): Promise<{ content: string; type: DocumentType; startVersion: number }> {
-    const existingDocument = this.documents.find(
-      (doc) => doc.filePath === filePath,
-    );
+    const existingDocument = this.documents.find((doc) => doc.filePath === filePath);
     if (existingDocument !== undefined) {
       return {
         content: existingDocument.document.toString(),
@@ -854,8 +858,7 @@ export default class DocumentManager extends ProviderContract {
     }
 
     // TODO: We also need to be able to load files not present in the file tree!
-    const descriptor =
-      await this._app.fsal.getDescriptorForAnySupportedFile(filePath);
+    const descriptor = await this._app.fsal.getDescriptorForAnySupportedFile(filePath);
     if (descriptor === undefined || descriptor.type === "other") {
       throw new Error(`Cannot load file ${filePath}`); // TODO: Proper error handling & state recovery!
     }
@@ -893,10 +896,7 @@ export default class DocumentManager extends ProviderContract {
     return { content, type, startVersion: 0 };
   }
 
-  private async pullUpdates(
-    filePath: string,
-    clientVersion: number,
-  ): Promise<Update[] | false> {
+  private async pullUpdates(filePath: string, clientVersion: number): Promise<Update[] | false> {
     const doc = this.documents.find((doc) => doc.filePath === filePath);
     if (doc === undefined) {
       // Indicate to the editor that they should get the document (again). This
@@ -905,10 +905,7 @@ export default class DocumentManager extends ProviderContract {
       return false;
     }
 
-    if (
-      clientVersion < doc.minimumVersion ||
-      clientVersion > doc.currentVersion
-    ) {
+    if (clientVersion < doc.minimumVersion || clientVersion > doc.currentVersion) {
       // The client is completely out of sync and has to reload the document.
       // If this happens because clientVersion < doc.minimumVersion, this means
       // that the lost connection somehow. If it happens because clientVersion
@@ -930,9 +927,7 @@ export default class DocumentManager extends ProviderContract {
     // clientUpdates must be produced via "toJSON"
     const doc = this.documents.find((doc) => doc.filePath === filePath);
     if (doc === undefined) {
-      throw new Error(
-        `Could not receive updates for file ${filePath}: Not found.`,
-      );
+      throw new Error(`Could not receive updates for file ${filePath}: Not found.`);
     }
 
     if (clientVersion !== doc.currentVersion) {
@@ -967,9 +962,7 @@ current contents from the editor somewhere else, and restart the application.`,
       // open to simply re-load it. That will cause a screen-flicker, but
       // honestly better like this than otherwise.
       if (doc.currentVersion === Number.MAX_SAFE_INTEGER - 1) {
-        console.warn(
-          `Document ${filePath} has reached MAX_SAFE_INTEGER. Performing rollback ...`,
-        );
+        console.warn(`Document ${filePath} has reached MAX_SAFE_INTEGER. Performing rollback ...`);
         doc.minimumVersion = 0;
         doc.currentVersion = doc.updates.length;
         // TODO: Broadcast a message so that all editor instances can reload the
@@ -990,10 +983,7 @@ current contents from the editor somewhere else, and restart the application.`,
     }
 
     const _docId = this.getDocumentId(filePath);
-    if (
-      _docId !== undefined &&
-      this._reviewStore.getReview(_docId) !== undefined
-    ) {
+    if (_docId !== undefined && this._reviewStore.getReview(_docId) !== undefined) {
       return true;
     }
 
@@ -1006,12 +996,13 @@ current contents from the editor somewhere else, and restart the application.`,
 
     doc.saveTimeout = setTimeout(
       () => {
-        this.saveFile(doc.filePath).catch((err) =>
+        this.saveFile(doc.filePath).catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
           this._app.log.error(
-            `[Document Provider] Could not save file ${doc.filePath}: ${err.message as string}`,
+            `[Document Provider] Could not save file ${doc.filePath}: ${message}`,
             err,
-          ),
-        );
+          );
+        });
       },
       autoSave === "delayed" ? DELAYED_SAVE_TIMEOUT : IMMEDIATE_SAVE_TIMEOUT,
     );
@@ -1035,11 +1026,13 @@ current contents from the editor somewhere else, and restart the application.`,
         continue;
       }
 
+      const frontmatter: unknown = doc.descriptor.frontmatter;
       if (
-        doc.descriptor.frontmatter !== null &&
-        "bibliography" in doc.descriptor.frontmatter
+        frontmatter !== null &&
+        typeof frontmatter === "object" &&
+        "bibliography" in frontmatter
       ) {
-        const bib = doc.descriptor.frontmatter.bibliography;
+        const bib = frontmatter.bibliography;
         if (typeof bib === "string" && path.isAbsolute(bib)) {
           libraries.push(bib);
         }
@@ -1108,21 +1101,16 @@ current contents from the editor somewhere else, and restart the application.`,
 
     // If windowId is not provided, then use the last focused window
     if (windowId === undefined) {
-      const mainWindow: BrowserWindow | undefined =
-        this._app.windows.getFirstMainWindow();
+      const mainWindow: BrowserWindow | undefined = this._app.windows.getFirstMainWindow();
       const key =
-        mainWindow !== undefined
-          ? this._app.windows.getMainWindowKey(mainWindow)
-          : undefined;
+        mainWindow !== undefined ? this._app.windows.getMainWindowKey(mainWindow) : undefined;
       if (key !== undefined) {
         windowId = key;
       }
     }
 
     if (windowId === undefined) {
-      this._app.log.warning(
-        `Could not open file ${filePath}: windowId was undefined.`,
-      );
+      this._app.log.warning(`Could not open file ${filePath}: windowId was undefined.`);
       return false;
     }
 
@@ -1139,9 +1127,7 @@ current contents from the editor somewhere else, and restart the application.`,
     }
 
     if (leaf === undefined) {
-      this._app.log.warning(
-        `Could not open file ${filePath}: leaf was undefined.`,
-      );
+      this._app.log.warning(`Could not open file ${filePath}: leaf was undefined.`);
       return false;
     }
 
@@ -1167,10 +1153,7 @@ current contents from the editor somewhere else, and restart the application.`,
     this._app.recentDocs.add(filePath);
 
     const { openFiles, openWorkspaces } = this._app.config.get().app;
-    if (
-      !openFiles.includes(filePath) &&
-      openWorkspaces.every((p) => !filePath.startsWith(p))
-    ) {
+    if (!openFiles.includes(filePath) && openWorkspaces.every((p) => !filePath.startsWith(p))) {
       // The file just opened is outside the current opened roots -> add as a
       // standalone root file.
       this._app.config.addPath(filePath);
@@ -1237,11 +1220,7 @@ current contents from the editor somewhere else, and restart the application.`,
    *
    * @return  {boolean}                                    Whether or not the file was closed
    */
-  public async closeFile(
-    windowId: string,
-    leafId: string,
-    filePath: string,
-  ): Promise<boolean> {
+  public async closeFile(windowId: string, leafId: string, filePath: string): Promise<boolean> {
     const leaf = this._windows[windowId].findLeaf(leafId);
     if (leaf === undefined) {
       this._app.log.error(
@@ -1265,11 +1244,7 @@ current contents from the editor somewhere else, and restart the application.`,
     // opened in this session of Zettlr, hence it will not be modified, hence we
     // don't have to do anything.
     const openFile = this.documents.find((doc) => doc.filePath === filePath);
-    if (
-      openFile !== undefined &&
-      this.isModified(filePath) &&
-      numOpenInstances === 1
-    ) {
+    if (openFile !== undefined && this.isModified(filePath) && numOpenInstances === 1) {
       const detail = trans("File: %s", openFile.descriptor.name);
       const result = await this._app.windows.askSaveChanges(detail);
       // 0 = Save, 1 = Don't save, 2 = Cancel
@@ -1293,9 +1268,7 @@ current contents from the editor somewhere else, and restart the application.`,
         }
       } else {
         // Don't close the file
-        this._app.log.info(
-          "[Document Manager] Not closing file, as the user did not want that.",
-        );
+        this._app.log.info("[Document Manager] Not closing file, as the user did not want that.");
         return false;
       }
 
@@ -1368,16 +1341,13 @@ current contents from the editor somewhere else, and restart the application.`,
     });
 
     // We also must splice the document out of our provider
+    const documentId = this.getDocumentId(filePath);
     const idx = this.documents.findIndex((doc) => doc.filePath === filePath);
     if (idx > -1) {
-      const removed = this.documents.splice(idx, 1)[0];
-      this._documentIdByPath.delete(removed.filePath);
+      this.documents.splice(idx, 1);
     }
-    {
-      const _id = this.getDocumentId(filePath);
-      if (_id !== undefined) {
-        this._reviewStore.closeReview(_id);
-      }
+    if (documentId !== undefined) {
+      this._reviewStore.closeReview(documentId);
     }
 
     this.syncWatchedFilePaths();
@@ -1400,12 +1370,9 @@ current contents from the editor somewhere else, and restart the application.`,
    */
   public async getFilesForWorkspace(workspacePath: string): Promise<string[]> {
     try {
-      const allPaths =
-        await this._app.fsal.readDirectoryRecursively(workspacePath);
+      const allPaths = await this._app.fsal.readDirectoryRecursively(workspacePath);
       // Filter: supported file extensions, and exclude the workspace directory itself
-      return allPaths.filter(
-        (p) => p !== workspacePath && hasMdOrCodeExt(p) && !isDir(p),
-      );
+      return allPaths.filter((p) => p !== workspacePath && hasMdOrCodeExt(p) && !isDir(p));
     } catch {
       return [];
     }
@@ -1424,9 +1391,7 @@ current contents from the editor somewhere else, and restart the application.`,
     for (const key in this._windows) {
       const allLeafs = this._windows[key].getAllLeafs();
       for (const leaf of allLeafs) {
-        openFiles.push(
-          ...leaf.tabMan.openFiles.filter((x) => x.path === filePath),
-        );
+        openFiles.push(...leaf.tabMan.openFiles.filter((x) => x.path === filePath));
       }
     }
 
@@ -1452,9 +1417,7 @@ current contents from the editor somewhere else, and restart the application.`,
     // ... however, some cloud services may still emit additional change events
     // that merely change attributes, but not the content. We handle this case
     // next
-    const diskContents = await this._app.fsal.loadAnySupportedFile(
-      doc.descriptor.path,
-    );
+    const diskContents = await this._app.fsal.loadAnySupportedFile(doc.descriptor.path);
 
     if (diskContents === doc.lastSavedContent) {
       return;
@@ -1497,14 +1460,9 @@ current contents from the editor somewhere else, and restart the application.`,
               "%s has changed on disk, but the editor contains unsaved changes. Do you want to keep the current editor contents or load the file from disk?",
               filename,
             )
-          : trans(
-              "Do you want to keep the current editor contents or load the file from disk?",
-            ),
+          : trans("Do you want to keep the current editor contents or load the file from disk?"),
         type: "question",
-        buttons: [
-          trans("Keep editor contents"),
-          trans("Load changes from disk"),
-        ],
+        buttons: [trans("Keep editor contents"), trans("Load changes from disk")],
         defaultId: 0,
         checkboxLabel: trans(
           "Always load changes from disk if there are no unsaved changes in the editor",
@@ -1597,9 +1555,7 @@ current contents from the editor somewhere else, and restart the application.`,
    */
   public async hasMovedDir(oldPath: string, newPath: string): Promise<void> {
     // Similar as hasMovedFile, but triggers the command for every affected file
-    const docs = this.documents.filter((doc) =>
-      doc.filePath.startsWith(oldPath),
-    );
+    const docs = this.documents.filter((doc) => doc.filePath.startsWith(oldPath));
 
     for (const doc of docs) {
       this._app.log.info(
@@ -1608,10 +1564,7 @@ current contents from the editor somewhere else, and restart the application.`,
           " with " +
           doc.filePath.replace(oldPath, newPath),
       );
-      await this.hasMovedFile(
-        doc.filePath,
-        doc.filePath.replace(oldPath, newPath),
-      );
+      await this.hasMovedFile(doc.filePath, doc.filePath.replace(oldPath, newPath));
     }
   }
 
@@ -1670,11 +1623,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * @param   {(tabMan: TabManager) => Promise<boolean>}  callback  The callback
    */
   public async forEachLeaf(
-    callback: (
-      tabMan: TabManager,
-      windowId: string,
-      leafId: string,
-    ) => Promise<boolean>,
+    callback: (tabMan: TabManager, windowId: string, leafId: string) => Promise<boolean>,
   ): Promise<void> {
     for (const windowId in this._windows) {
       for (const leaf of this._windows[windowId].getAllLeafs()) {
@@ -1748,11 +1697,7 @@ current contents from the editor somewhere else, and restart the application.`,
     this.broadcastEvent(DP_EVENTS.FILE_REMOTELY_CHANGED, { filePath });
   }
 
-  public sortOpenFiles(
-    windowId: string,
-    leafId: string,
-    newOrder: string[],
-  ): void {
+  public sortOpenFiles(windowId: string, leafId: string, newOrder: string[]): void {
     const leaf = this._windows[windowId].findLeaf(leafId);
     if (leaf === undefined) {
       return;
@@ -1893,10 +1838,7 @@ current contents from the editor somewhere else, and restart the application.`,
     if (leaf !== undefined) {
       leaf.parent.removeNode(leaf);
       this.broadcastEvent(DP_EVENTS.LEAF_CLOSED, { windowId, leafId });
-      this._updateFocusLeaf(
-        windowId,
-        this._windows[windowId].getAllLeafs()[0].id,
-      );
+      this._updateFocusLeaf(windowId, this._windows[windowId].getAllLeafs()[0].id);
     }
   }
 
@@ -2017,14 +1959,8 @@ current contents from the editor somewhere else, and restart the application.`,
    * @param   {TabManager}        tabMan    The pane's tab manager
    * @param   {DocumentLocation}  location  The location sent by the renderer
    */
-  private _stampCurrentHistoryLocation(
-    tabMan: TabManager,
-    location?: DocumentLocation,
-  ): void {
-    if (
-      location !== undefined &&
-      tabMan.activeFile?.path === location.documentPath
-    ) {
+  private _stampCurrentHistoryLocation(tabMan: TabManager, location?: DocumentLocation): void {
+    if (location !== undefined && tabMan.activeFile?.path === location.documentPath) {
       tabMan.updateCurrentHistoryLocation(location);
     }
   }
@@ -2043,10 +1979,7 @@ current contents from the editor somewhere else, and restart the application.`,
     windowId: string,
     leafId: string,
   ): { canGoBack: boolean; canGoForward: boolean } {
-    const leaf =
-      windowId in this._windows
-        ? this._windows[windowId].findLeaf(leafId)
-        : undefined;
+    const leaf = windowId in this._windows ? this._windows[windowId].findLeaf(leafId) : undefined;
     if (leaf === undefined) {
       return { canGoBack: false, canGoForward: false };
     }
@@ -2069,19 +2002,14 @@ current contents from the editor somewhere else, and restart the application.`,
 
     // Spec section 13: guard against stale pane decisions by checking
     // the review generation the pane observed when reporting.
-    if (
-      status.reviewGeneration !== undefined &&
-      status.reviewGeneration !== review.generation
-    ) {
+    if (status.reviewGeneration !== undefined && status.reviewGeneration !== review.generation) {
       // The pane's report is stale — re-broadcast the current state so the
       // pane can update its merge reference.
       this._broadcastReviewState(status.filePath, review);
       return false;
     }
 
-    const document = this.documents.find(
-      (doc) => doc.filePath === status.filePath,
-    );
+    const document = this.documents.find((doc) => doc.filePath === status.filePath);
     if (
       document === undefined ||
       document.currentVersion !== status.documentVersion ||
@@ -2096,8 +2024,7 @@ current contents from the editor somewhere else, and restart the application.`,
     // renderer's evolved merge reference — this is the provider-owned state
     // synchronization point (spec section 7).
     const changed =
-      review.referenceText !== status.originalText ||
-      review.workingText !== status.currentText;
+      review.referenceText !== status.originalText || review.workingText !== status.currentText;
     if (changed) {
       review.referenceText = status.originalText;
       review.workingText = status.currentText;
@@ -2219,9 +2146,7 @@ current contents from the editor somewhere else, and restart the application.`,
 
     try {
       if (doc.descriptor.type === "file") {
-        const fileContents =
-          doc.descriptor.bom +
-          content.split("\n").join(doc.descriptor.linefeed);
+        const fileContents = doc.descriptor.bom + content.split("\n").join(doc.descriptor.linefeed);
         await this._app.fsal.writeTextFile(doc.descriptor.path, fileContents);
         doc.descriptor = (await this._app.fsal.getDescriptorFor(
           doc.descriptor.path,
@@ -2289,6 +2214,10 @@ current contents from the editor somewhere else, and restart the application.`,
     return this._documentIdByPath.get(filePath);
   }
 
+  public ensureDocumentId(filePath: string): string {
+    return this._assignDocumentId(filePath);
+  }
+
   /**
    * Get the file path for a documentId.
    */
@@ -2327,10 +2256,7 @@ current contents from the editor somewhere else, and restart the application.`,
         documentId: string | undefined;
       }
     | undefined {
-    if (
-      this._lastEditor.windowId === undefined ||
-      this._lastEditor.leafId === undefined
-    ) {
+    if (this._lastEditor.windowId === undefined || this._lastEditor.leafId === undefined) {
       return undefined;
     }
     const activePath = this.getActiveFile(this._lastEditor.leafId);
@@ -2469,17 +2395,10 @@ current contents from the editor somewhere else, and restart the application.`,
     patch: string,
     clientRequestId: string,
     description?: string,
+    expectedReviewGeneration?: number,
+    ifMatch?: string,
   ): Promise<
-    | {
-        ok: true;
-        packetId: string;
-        reviewId: string;
-        documentId: string;
-        documentRevision: { version: number; sha256: string };
-        reviewGeneration: number;
-        unresolvedChunks: number;
-        state: string;
-      }
+    | SubmittedProposalResponse
     | {
         ok: false;
         code: string;
@@ -2496,35 +2415,26 @@ current contents from the editor somewhere else, and restart the application.`,
     }
     const { documentId, version, sha256 } = parsed;
 
-    // Idempotency check: if a packet with this clientRequestId already
-    // exists in an active review for this document, return the cached
-    // result. This is intentionally checked before the revision gate
-    // (spec section 6.2).
-    const existingReview = this._reviewStore.getReview(documentId);
-    if (existingReview !== undefined) {
-      const existingPacket = existingReview.packets.find(
-        (p) => p.clientRequestId === clientRequestId,
-      );
-      if (existingPacket !== undefined) {
-        const status = this._reviewStore.getReviewStatus(documentId)!;
-        const doc = this.documents.find(
-          (d) => d.filePath === this.getDocumentPath(documentId),
-        );
-        const currentContent = doc?.document.toString() ?? "";
+    const idempotencyKey = `${documentId}:${clientRequestId}`;
+    const fingerprint = sha256Text(
+      JSON.stringify({
+        documentId,
+        snapshot,
+        patch,
+        description,
+        expectedReviewGeneration,
+      }),
+    );
+    const idempotent = this._proposalIdempotency.get(idempotencyKey);
+    if (idempotent !== undefined) {
+      if (idempotent.fingerprint !== fingerprint) {
         return {
-          ok: true,
-          packetId: existingPacket.packetId,
-          reviewId: existingReview.reviewId,
-          documentId,
-          documentRevision: {
-            version: doc?.currentVersion ?? version,
-            sha256: sha256Text(currentContent),
-          },
-          reviewGeneration: status.generation,
-          unresolvedChunks: status.unresolvedChunks,
-          state: status.state,
+          ok: false,
+          code: "IDEMPOTENCY_CONFLICT",
+          message: "Idempotency-Key was already used for a different proposal request.",
         };
       }
+      return idempotent.response;
     }
 
     const filePath = this.getDocumentPath(documentId);
@@ -2546,6 +2456,13 @@ current contents from the editor somewhere else, and restart the application.`,
     // Verify version and hash
     const currentContent = doc.document.toString();
     const currentSha256 = sha256Text(currentContent);
+    if (ifMatch !== undefined && ifMatch !== `"sha256:${currentSha256}"`) {
+      return {
+        ok: false,
+        code: "REVISION_MISMATCH",
+        message: "If-Match does not match the current document revision.",
+      };
+    }
     if (doc.currentVersion !== version || currentSha256 !== sha256) {
       return {
         ok: false,
@@ -2556,12 +2473,18 @@ current contents from the editor somewhere else, and restart the application.`,
 
     // Check if a review is already active; if not, open one
     const activeReview = this._reviewStore.getReview(documentId);
+    const currentGeneration = activeReview === undefined ? 0 : activeReview.generation;
+    if (expectedReviewGeneration !== undefined && expectedReviewGeneration !== currentGeneration) {
+      return {
+        ok: false,
+        code: "REVIEW_GENERATION_MISMATCH",
+        message: "The review generation no longer matches.",
+      };
+    }
     if (activeReview === undefined) {
       // Open a new review with the patch as the initial packet
       try {
-        const diskContent = normalizeText(
-          await this._app.fsal.loadAnySupportedFile(filePath),
-        );
+        const diskContent = normalizeText(await this._app.fsal.loadAnySupportedFile(filePath));
         const diskSha = sha256Text(diskContent);
         this._reviewStore.openReview({
           documentId,
@@ -2589,7 +2512,7 @@ current contents from the editor somewhere else, and restart the application.`,
       const newContent = doc.document.toString();
       const newSha256 = sha256Text(newContent);
       const status = this._reviewStore.getReviewStatus(documentId)!;
-      return {
+      const response: SubmittedProposalResponse = {
         ok: true,
         packetId: review.packets[0].packetId,
         reviewId: review.reviewId,
@@ -2602,6 +2525,8 @@ current contents from the editor somewhere else, and restart the application.`,
         unresolvedChunks: status.unresolvedChunks,
         state: status.state,
       };
+      this._proposalIdempotency.set(idempotencyKey, { fingerprint, response });
+      return response;
     }
 
     // Submit as an additional packet
@@ -2624,7 +2549,7 @@ current contents from the editor somewhere else, and restart the application.`,
     this._broadcastReviewState(filePath, review);
     const newContent = doc.document.toString();
     const newSha256 = sha256Text(newContent);
-    return {
+    const response: SubmittedProposalResponse = {
       ok: true,
       packetId: result.packetId,
       reviewId: result.reviewId,
@@ -2634,6 +2559,8 @@ current contents from the editor somewhere else, and restart the application.`,
       unresolvedChunks: result.unresolvedChunks,
       state: result.state,
     };
+    this._proposalIdempotency.set(idempotencyKey, { fingerprint, response });
+    return response;
   }
 
   /**
@@ -2677,9 +2604,7 @@ current contents from the editor somewhere else, and restart the application.`,
       this._broadcastReviewCleared(filePath, reviewId);
     }
     const doc =
-      filePath !== undefined
-        ? this.documents.find((d) => d.filePath === filePath)
-        : undefined;
+      filePath !== undefined ? this.documents.find((d) => d.filePath === filePath) : undefined;
     return {
       ok: true,
       reviewId: result.reviewId,
@@ -2737,9 +2662,7 @@ current contents from the editor somewhere else, and restart the application.`,
       this._broadcastReviewState(filePath, review);
     }
     const doc =
-      filePath !== undefined
-        ? this.documents.find((d) => d.filePath === filePath)
-        : undefined;
+      filePath !== undefined ? this.documents.find((d) => d.filePath === filePath) : undefined;
     return {
       ok: true,
       retracted: true,
@@ -2786,6 +2709,7 @@ current contents from the editor somewhere else, and restart the application.`,
     // Construct a legacy ReviewDiffSession for renderer compat
     const legacySession: ReviewDiffSession = {
       id: review.reviewId,
+      reviewGeneration: review.generation,
       documentPath: filePath,
       baselineSha256: sha256Text(review.baselineText),
       diskBaselineSha256: review.diskFenceSha256,
@@ -2803,8 +2727,7 @@ current contents from the editor somewhere else, and restart the application.`,
         referenceText: review.referenceText,
         workingText: review.workingText,
         unresolvedChunks:
-          this._reviewStore.getReviewStatus(review.documentId)
-            ?.unresolvedChunks ?? 0,
+          this._reviewStore.getReviewStatus(review.documentId)?.unresolvedChunks ?? 0,
       },
     });
   }
@@ -2828,10 +2751,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * This updates the CodeMirror Text without going through the collab update
    * path — the provider is the authority.
    */
-  private _applyWorkingTextToDocument(
-    filePath: string,
-    workingText: string,
-  ): void {
+  private _applyWorkingTextToDocument(filePath: string, workingText: string): void {
     const doc = this.documents.find((d) => d.filePath === filePath);
     if (doc === undefined) {
       return;

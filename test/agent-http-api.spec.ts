@@ -15,25 +15,18 @@
  */
 
 import "./headless-electron-harness.cjs";
+import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
-import {
-  mkdtempSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "fs";
+import { createPatch } from "diff";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
+import http from "http";
 import net from "net";
 import os from "os";
 import path from "path";
-import http from "http";
-import { createPatch } from "diff";
+import type { AppServiceContainer } from "source/app/app-service-container";
+import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
-import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
-import type { AppServiceContainer } from "source/app/app-service-container";
-import type { CodeFileDescriptor } from "@dts/common/fsal";
 
 describe("Agent HTTP API (OpenAPI / REST)", function () {
   let scratch: string;
@@ -84,14 +77,19 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           app: {
             openFiles: [],
             openWorkspaces: [scratch],
-            appLang: "en-US",
           },
           system: {
             avoidNewTabs: false,
           },
           editor: {
-            autoSave: "off",
+            autoSave: "off" as const,
           },
+          files: {
+            images: { openWith: "zettlr" },
+            pdf: { openWith: "zettlr" },
+          },
+          appLang: "en-US",
+          alwaysReloadFiles: false,
           agentApi: {
             enabled: true,
             port: httpPort,
@@ -103,14 +101,16 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       fsal: {
         getWatchdog: () => watcherSeam,
         testAccess: async () => true,
-        getDescriptorForAnySupportedFile: async (filePath: string) =>
-          descriptorFor(filePath),
-        loadAnySupportedFile: async (filePath: string) =>
-          normalizedRead(filePath),
+        getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
+        loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),
         writeTextFile: async (filePath: string, content: string) => {
           writeFileSync(filePath, content, "utf8");
         },
         getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
+        getFilesystemMetadata: async (_filePath: string) => ({ modtime: 0 }),
+        readDirectoryRecursively: async (workspacePath: string) => [
+          path.join(workspacePath, "unopened.md"),
+        ],
       },
       citeproc: {
         synchronizeDatabases: async (_libraries: string[]) => {},
@@ -118,16 +118,17 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       recentDocs: {
         add: (_path: string) => {},
       },
+      stats: {
+        updateCounts: (_words: number, _chars: number) => {},
+      },
       windows: {
-        showAnyWindow: () => {},
-        getFirstMainWindow: () => ({}),
+        askSaveChanges: async (_detail?: string) => ({ checkboxChecked: false, response: 2 }),
+        getFirstMainWindow: () => undefined,
         getMainWindowKey: (_window: unknown) => activeWindowId,
       },
     };
 
-    const manager = new DocumentManager(
-      appSeam as unknown as AppServiceContainer,
-    );
+    const manager = new DocumentManager(appSeam);
     await manager.boot();
     activeWindowId = manager.windowKeys()[0];
     return manager;
@@ -138,7 +139,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     await provider.getDocument(filePath);
     const docId = provider.getDocumentId(filePath);
     assert.ok(docId !== undefined, "documentId must be assigned");
-    return docId!;
+    return docId;
   }
 
   // HTTP client helper
@@ -195,9 +196,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     scratch = mkdtempSync(path.join(os.tmpdir(), "zettlr-http-api-"));
     // Find a free port
     const server = net.createServer();
-    await new Promise<void>((resolve) =>
-      server.listen(0, "127.0.0.1", resolve),
-    );
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     httpPort = (server.address() as net.AddressInfo).port;
     server.close();
 
@@ -205,6 +204,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     httpProvider = new AgentHTTPProvider(new LogProvider(), provider, {
       config: {
         get: () => ({
+          app: {
+            openWorkspaces: [scratch],
+          },
           agentApi: {
             enabled: true,
             port: httpPort,
@@ -263,9 +265,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       documents: Array<{ path: string }>;
     };
     assert.ok(body.documents.length > 0);
-    assert.ok(
-      body.documents.some((d: { path: string }) => d.path === filePath),
-    );
+    assert.ok(body.documents.some((d: { path: string }) => d.path === filePath));
   });
 
   it("GET /v1/documents/{id} returns document metadata", async function () {
@@ -300,35 +300,96 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const docId = await openFile(filePath, "alpha\n");
 
     // Read to get the ETag
-    const readResponse = await httpRequest(
-      "GET",
-      `/v1/documents/${docId}/content`,
-    );
+    const readResponse = await httpRequest("GET", `/v1/documents/${docId}/content`);
     const etag = readResponse.headers["etag"] as string;
     const snapshot = JSON.parse(readResponse.body).snapshot;
 
     // Submit proposal
-    const response = await httpRequest(
-      "POST",
-      `/v1/documents/${docId}/proposals`,
-      {
-        body: JSON.stringify({
-          snapshot,
-          patchFormat: "unified-diff",
-          patch: makePatch("alpha\n", "ALPHA\n"),
-          clientRequestId: "http-req-1",
-        }),
-        headers: {
-          "If-Match": etag,
-          "Idempotency-Key": "http-idem-1",
-        },
+    const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      body: JSON.stringify({
+        snapshot,
+        patchFormat: "unified-diff",
+        patch: makePatch("alpha\n", "ALPHA\n"),
+        clientRequestId: "http-req-1",
+      }),
+      headers: {
+        "If-Match": etag,
+        "Idempotency-Key": "http-idem-1",
       },
-    );
+    });
     assert.equal(response.status, 200);
     const body = JSON.parse(response.body);
     assert.ok(body.packetId !== undefined);
     assert.ok(body.reviewId !== undefined);
     assert.equal(body.state, "active");
+  });
+
+  it("rejects reuse of an idempotency key for a different proposal", async function () {
+    const filePath = path.join(scratch, "idempotency.md");
+    const docId = await openFile(filePath, "alpha\n");
+    const readResponse = await httpRequest("GET", `/v1/documents/${docId}/content`);
+    const etag = readResponse.headers["etag"] as string;
+    const snapshot = JSON.parse(readResponse.body).snapshot;
+    const headers = { "If-Match": etag, "Idempotency-Key": "one-key" };
+    const first = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      headers,
+      body: JSON.stringify({
+        snapshot,
+        patchFormat: "unified-diff",
+        patch: makePatch("alpha\n", "ALPHA\n"),
+      }),
+    });
+    assert.equal(first.status, 200);
+    const conflicting = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      headers,
+      body: JSON.stringify({
+        snapshot,
+        patchFormat: "unified-diff",
+        patch: makePatch("alpha\n", "BETA\n"),
+      }),
+    });
+    assert.equal(conflicting.status, 409);
+    assert.equal(JSON.parse(conflicting.body).error.code, "IDEMPOTENCY_CONFLICT");
+  });
+
+  it("does not expose a working snapshot or ETag for reference reads", async function () {
+    const filePath = path.join(scratch, "reference.md");
+    const docId = await openFile(filePath, "alpha\n");
+    const snapshot = provider.createSnapshot(docId)!;
+    await provider.submitProposal(
+      snapshot.token,
+      makePatch("alpha\n", "ALPHA\n"),
+      "reference-read",
+    );
+    const response = await httpRequest("GET", `/v1/documents/${docId}/content?side=reference`);
+    const body = JSON.parse(response.body);
+    assert.equal(response.headers.etag, undefined);
+    assert.equal(body.snapshot, undefined);
+    assert.equal(body.content, "alpha\n");
+  });
+
+  it("lists and opens an unopened workspace document by its assigned resource id", async function () {
+    const unopenedPath = path.join(scratch, "unopened.md");
+    writeFileSync(unopenedPath, "unopened\n", "utf8");
+    const response = await httpRequest(
+      "GET",
+      `/v1/workspaces/${encodeURIComponent(scratch)}/documents`,
+    );
+    assert.equal(response.status, 200);
+    const documents = JSON.parse(response.body).documents as Array<{
+      documentId: string;
+      loaded: boolean;
+      path: string;
+    }>;
+    const document = documents.find((item) => item.path === unopenedPath);
+    assert.ok(document !== undefined);
+    assert.equal(document.loaded, false);
+    const opened = await httpRequest(
+      "POST",
+      `/v1/workspaces/${encodeURIComponent(scratch)}/documents/${document.documentId}/open`,
+    );
+    assert.equal(opened.status, 200);
+    assert.equal(JSON.parse(opened.body).documentId, document.documentId);
   });
 
   it("POST /v1/documents/{id}/proposals returns 412 on stale ETag", async function () {
@@ -337,8 +398,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     // Use a valid snapshot token format but with a mismatched hash
     // snap_v1_ prefix + base64url of {"documentId":"<docId>","version":1,"sha256":"<wrong>"}
-    const wrongSha =
-      "0000000000000000000000000000000000000000000000000000000000000000";
+    const wrongSha = "0000000000000000000000000000000000000000000000000000000000000000";
     const snapPayload = Buffer.from(
       JSON.stringify({
         documentId: docId,
@@ -347,22 +407,18 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }),
     ).toString("base64url");
 
-    const response = await httpRequest(
-      "POST",
-      `/v1/documents/${docId}/proposals`,
-      {
-        body: JSON.stringify({
-          snapshot: `snap_v1_${snapPayload}`,
-          patchFormat: "unified-diff",
-          patch: makePatch("alpha\n", "ALPHA\n"),
-          clientRequestId: "http-req-stale",
-        }),
-        headers: {
-          "If-Match": `"sha256:${wrongSha}"`,
-          "Idempotency-Key": "http-idem-stale",
-        },
+    const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      body: JSON.stringify({
+        snapshot: `snap_v1_${snapPayload}`,
+        patchFormat: "unified-diff",
+        patch: makePatch("alpha\n", "ALPHA\n"),
+        clientRequestId: "http-req-stale",
+      }),
+      headers: {
+        "If-Match": `"sha256:${wrongSha}"`,
+        "Idempotency-Key": "http-idem-stale",
       },
-    );
+    });
     assert.equal(response.status, 412);
   });
 
@@ -372,11 +428,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     // Create a review
     const snap = provider.createSnapshot(docId)!;
-    await provider.submitProposal(
-      snap.token,
-      makePatch("alpha\n", "ALPHA\n"),
-      "http-reviews-req",
-    );
+    await provider.submitProposal(snap.token, makePatch("alpha\n", "ALPHA\n"), "http-reviews-req");
 
     const response = await httpRequest("GET", "/v1/reviews");
     assert.equal(response.status, 200);
@@ -389,11 +441,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const docId = await openFile(filePath, "alpha\n");
 
     const snap = provider.createSnapshot(docId)!;
-    await provider.submitProposal(
-      snap.token,
-      makePatch("alpha\n", "ALPHA\n"),
-      "http-rdiff-req",
-    );
+    await provider.submitProposal(snap.token, makePatch("alpha\n", "ALPHA\n"), "http-rdiff-req");
 
     const reviewsResponse = await httpRequest("GET", "/v1/reviews");
     const reviewId = JSON.parse(reviewsResponse.body).reviews[0].reviewId;
@@ -420,10 +468,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const review = provider.reviewStore.getReview(docId)!;
     provider.reviewStore.applyChunkAccept(docId, review.reviewId, 0, 6, 1);
 
-    const response = await httpRequest(
-      "POST",
-      `/v1/reviews/${review.reviewId}/clear`,
-    );
+    const response = await httpRequest("POST", `/v1/reviews/${review.reviewId}/clear`);
     assert.equal(response.status, 200);
     const body = JSON.parse(response.body);
     assert.equal(body.state, "cleared");
@@ -440,12 +485,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       "http-retract-1",
     );
     assert.equal(first.ok, true);
-    if (!first.ok) return;
+    if (!first.ok) {
+      return;
+    }
 
-    const response = await httpRequest(
-      "POST",
-      `/v1/proposals/${first.packetId}/retract`,
-    );
+    const response = await httpRequest("POST", `/v1/proposals/${first.packetId}/retract`);
     assert.equal(response.status, 200);
     const body = JSON.parse(response.body);
     assert.equal(body.retracted, true);
@@ -493,7 +537,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         },
       );
       req.on("error", () => {
-        if (!resolved) resolve("");
+        if (!resolved) {
+          resolve("");
+        }
       });
       req.setTimeout(5000, () => {
         if (!resolved) {
