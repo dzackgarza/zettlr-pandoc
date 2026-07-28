@@ -36,7 +36,9 @@ jobs:
         run: bun ci
       - name: Configure Electron SUID sandbox
         run: |
-          sandbox=node_modules/electron/dist/chrome-sandbox
+          launcher=$(readlink -f node_modules/.bin/electron)
+          sandbox=$(dirname "$launcher")/dist/chrome-sandbox
+          test -f "$sandbox"
           sudo chown root:root "$sandbox"
           sudo chmod 4755 "$sandbox"
           test "$(stat -c %U:%G "$sandbox")" = root:root
