@@ -93,6 +93,8 @@ test-push:
 
 [private]
 test-ci:
+    {{bun}} install --frozen-lockfile
+    bash "{{justfile_directory()}}/scripts/configure-electron-sandbox-ci.sh"
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-ci
 
 [private]

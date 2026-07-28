@@ -14,7 +14,11 @@ export default function errorToString(error: unknown): string {
   try {
     const serialized = JSON.stringify(error)
     return serialized === undefined ? String(error) : serialized
-  } catch {
-    return String(error)
+  } catch (serializationError) {
+    const failure =
+      serializationError instanceof Error
+        ? `${serializationError.name}: ${serializationError.message}`
+        : String(serializationError)
+    return `${String(error)} (JSON serialization failed: ${failure})`
   }
 }

@@ -83,8 +83,13 @@ async function findEditorPage(
           if ((await page.locator('.cm-content').count()) > 0) {
             return page
           }
-        } catch {
-          // The window can be replaced while the application is starting.
+        } catch (error) {
+          if (page.isClosed()) {
+            continue
+          }
+          throw new Error(`Could not inspect editor page ${page.url()}`, {
+            cause: error
+          })
         }
       }
     }
@@ -105,8 +110,15 @@ function processGroupIsAlive(pid: number): boolean {
   try {
     process.kill(-pid, 0)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'ESRCH'
+    ) {
+      return false
+    }
+    throw error
   }
 }
 
@@ -318,7 +330,9 @@ describe('opening a Markdown document', function () {
       })
       page.on('dialog', dialog => {
         rendererEvents.push(`dialog.${dialog.type()}: ${dialog.message()}`)
-        dialog.dismiss().catch(() => undefined)
+        void dialog.dismiss().catch(error => {
+          rendererEvents.push(`dialog-dismiss-error: ${String(error)}`)
+        })
       })
     }
     for (const context of browser.contexts()) {
@@ -332,9 +346,9 @@ describe('opening a Markdown document', function () {
       ?.contexts()
       .flatMap(context => context.pages())
       .find(page => page.url().includes('/main_window/'))
-    await mainWindow?.close({ runBeforeUnload: true }).catch(() => undefined)
+    await mainWindow?.close({ runBeforeUnload: true })
     await stopProcess(appProcess)
-    await browser?.close().catch(() => undefined)
+    await browser?.close()
     if (documentPath !== undefined) {
       await chmod(documentPath, 0o600)
     }
@@ -371,7 +385,32 @@ describe('opening a Markdown document', function () {
       timeout: this.timeout(),
     })
     const renderedText = await editor.innerText()
+    const editorDocument = await editor.evaluate(content => {
+      const tile = (
+        content as HTMLElement & {
+          cmTile?: {
+            root?: {
+              view?: {
+                state?: { doc?: { toString(): string } }
+              }
+            }
+          }
+        }
+      ).cmTile
+      const documentText = tile?.root?.view?.state?.doc?.toString()
+      if (documentText === undefined) {
+        throw new Error('Could not read the active CodeMirror document state')
+      }
+      return documentText
+    })
+    assert.ok(documentPath, 'The document path must be initialized')
+    const diskDocument = await readFile(documentPath, 'utf8')
 
+    assert.equal(
+      editorDocument,
+      diskDocument,
+      'The active CodeMirror document must exactly equal the bytes read from disk.'
+    )
     assert.ok(
       renderedText.includes(MARKER),
       `The opened nonempty document rendered as an empty or incorrect buffer.\n` +
