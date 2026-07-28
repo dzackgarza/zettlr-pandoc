@@ -29,6 +29,21 @@ import {
   getAppServiceContainer,
   isAppServiceContainerReady,
 } from "./app/app-service-container";
+import errorToString from "@common/util/error-to-string";
+
+function logUnhandledProcessError(message: string): void {
+  if (isAppServiceContainerReady()) {
+    getAppServiceContainer().log.error(message);
+  } else {
+    console.error(message);
+  }
+}
+
+process.on("uncaughtExceptionMonitor", (error, origin) => {
+  logUnhandledProcessError(
+    `[Application] Uncaught exception (${origin})\n${errorToString(error)}`,
+  );
+});
 
 handleExitArguments();
 
@@ -253,11 +268,7 @@ app.on("activate", function () {
  * a Promise is rejected somewhere.
  */
 process.on("unhandledRejection", (err: unknown) => {
-  // Just log to console.
-  if (isAppServiceContainerReady()) {
-    getAppServiceContainer().log.error(
-      "[Application] Unhandled rejection received",
-      err,
-    );
-  }
+  logUnhandledProcessError(
+    `[Application] Unhandled rejection received\n${errorToString(err)}`,
+  );
 });

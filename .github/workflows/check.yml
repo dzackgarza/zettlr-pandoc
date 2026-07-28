@@ -36,6 +36,15 @@ jobs:
         run: bun ci
       - name: Run unit tests
         run: bun run test
+      - name: Run assembled-app E2E
+        run: bun run test:e2e
+      - name: Upload assembled-app E2E logs
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: document-open-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/zettlr-document-open-e2e-latest
+          retention-days: 7
       # Compile the real webpack bundles (main + renderer + preload). tsc/eslint
       # type-check but never bundle, so a renderer file importing a main-only
       # module (e.g. `from 'electron'`, which drags in `child_process`) passes

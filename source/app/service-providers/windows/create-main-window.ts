@@ -64,11 +64,19 @@ export default function createMainWindow (
 
   // Load the index.html of the app.
   // The variable MAIN_WINDOW_WEBPACK_ENTRY is automatically resolved by electron forge / webpack
-  window.loadURL(effectiveUrl.toString())
-    .catch(e => {
-      logger.error(`Could not load URL ${MAIN_WINDOW_WEBPACK_ENTRY}: ${e.message as string}`, e)
-      dialog.showErrorBox('Could not open window', `Could not open main Window: ${e.message as string}`)
-    })
+  window.loadURL(effectiveUrl.toString()).catch(e => {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) {
+      return
+    }
+    logger.error(
+      `Could not load URL ${MAIN_WINDOW_WEBPACK_ENTRY}: ${e.message as string}`,
+      e
+    )
+    dialog.showErrorBox(
+      'Could not open window',
+      `Could not open main Window: ${e.message as string}`
+    )
+  })
 
   // EVENT LISTENERS
 

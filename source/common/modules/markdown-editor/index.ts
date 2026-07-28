@@ -115,6 +115,7 @@ import { darkModeEffect, useDarkModeEditor } from "./theme/dark-mode";
 import {
   configField,
   configUpdateEffect,
+  cloneEditorConfiguration,
   type EditorConfigOptions,
   type EditorConfiguration,
   getDefaultConfig,
@@ -230,6 +231,12 @@ export default class MarkdownEditor extends EventEmitter {
   private config: EditorConfiguration;
 
   /**
+   * Resolves when the initial document has been installed into CodeMirror.
+   * Consumers must handle rejection and surface it to the user.
+   */
+  public readonly ready: Promise<void>;
+
+  /**
    * The database cache for the various autocompletes.
    *
    * @var {any}
@@ -324,8 +331,10 @@ export default class MarkdownEditor extends EventEmitter {
       parent: undefined,
     });
 
-    // ... and immediately begin loading the document
-    this.loadDocument(persistentState).catch((err) => console.error(err));
+    // ... and immediately begin loading the document. The owning renderer
+    // awaits this promise so initialization failures cannot disappear into a
+    // console-only catch while an empty EditorView remains visible.
+    this.ready = this.loadDocument(persistentState);
   }
 
   /**
@@ -341,7 +350,7 @@ export default class MarkdownEditor extends EventEmitter {
     const editorInstance = this;
 
     const options: CoreExtensionOptions = {
-      initialConfig: structuredClone(this.config),
+      initialConfig: cloneEditorConfiguration(this.config),
       remoteConfig: {
         filePath,
         startVersion,
@@ -418,7 +427,9 @@ export default class MarkdownEditor extends EventEmitter {
               // ATTENTION: The document state is out of sync with the document
               // authority, so we must reload it.
               this.clearReviewDiffSession();
-              this.reload().catch((err) => console.error("Could not reload document state", err));
+              this.reload().catch((error) =>
+                this.emit("document-load-error", error),
+              );
               return;
             }
           }

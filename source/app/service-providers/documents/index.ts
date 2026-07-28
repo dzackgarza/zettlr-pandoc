@@ -34,6 +34,7 @@ import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type { DocumentLocation, SourceRange } from "@dts/common/references";
 import type { ReviewDiffSession, ReviewDiffStatus } from "@dts/common/review-diff";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
+import type { ConfigOptions } from "@providers/config/get-config-template";
 import ProviderContract, { type IPCAPI } from "@providers/provider-contract";
 import { randomUUID } from "crypto";
 import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions, shell } from "electron";
@@ -66,13 +67,15 @@ interface DocumentWatchdog {
 
 type DocumentManagerConfig = {
   get(): {
-    app: {
-      openFiles: OpenDocument[];
-      openWorkspaces: string[];
+    app: Pick<ConfigOptions["app"], "openFiles" | "openWorkspaces">;
+    editor: Pick<ConfigOptions["editor"], "autoSave">;
+    system: Pick<ConfigOptions["system"], "avoidNewTabs">;
+    appLang: ConfigOptions["appLang"];
+    files: {
+      images: Pick<ConfigOptions["files"]["images"], "openWith">;
+      pdf: Pick<ConfigOptions["files"]["pdf"], "openWith">;
     };
-    editor: { autoSave: "off" | "immediate" | "delayed" };
-    system: { avoidNewTabs: boolean };
-    appLang: string;
+    alwaysReloadFiles: ConfigOptions["alwaysReloadFiles"];
   };
   addPath: AppServiceContainer["config"]["addPath"];
   set: AppServiceContainer["config"]["set"];

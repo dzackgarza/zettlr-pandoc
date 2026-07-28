@@ -160,6 +160,28 @@ export function getDefaultConfig (): EditorConfiguration {
   }
 }
 
+/**
+ * Detaches the editor configuration from renderer-owned reactive state before
+ * CodeMirror extensions retain it.
+ */
+export function cloneEditorConfiguration(
+  config: EditorConfiguration
+): EditorConfiguration {
+  return {
+    ...config,
+    autocorrect: {
+      ...config.autocorrect,
+      magicQuotes: { ...config.autocorrect.magicQuotes },
+      replacements: config.autocorrect.replacements.map(({ key, value }) => ({
+        key,
+        value
+      }))
+    },
+    metadata: { ...config.metadata },
+    navigationShortcuts: { ...config.navigationShortcuts }
+  }
+}
+
 export type EditorConfigOptions = Partial<EditorConfiguration>
 
 export const configUpdateEffect = StateEffect.define<EditorConfigOptions>()
