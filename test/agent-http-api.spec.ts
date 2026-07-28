@@ -82,7 +82,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             avoidNewTabs: false,
           },
           editor: {
-            autoSave: "off" as const,
+            autoSave: "off",
           },
           files: {
             images: { openWith: "zettlr" },
@@ -122,7 +122,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         updateCounts: (_words: number, _chars: number) => {},
       },
       windows: {
-        askSaveChanges: async (_detail?: string) => ({ checkboxChecked: false, response: 2 }),
+        askSaveChanges: async (_detail?: string) => ({ response: 2 }),
         getFirstMainWindow: () => undefined,
         getMainWindowKey: (_window: unknown) => activeWindowId,
       },

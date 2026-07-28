@@ -67,20 +67,15 @@ interface DocumentWatchdog {
 type DocumentManagerConfig = {
   get(): {
     app: {
-      openFiles: string[];
+      openFiles: OpenDocument[];
       openWorkspaces: string[];
     };
-    editor: { autoSave: "off" | "immediately" | "delayed" };
-    files: {
-      images: { openWith: string };
-      pdf: { openWith: string };
-    };
+    editor: { autoSave: "off" | "immediate" | "delayed" };
     system: { avoidNewTabs: boolean };
     appLang: string;
-    alwaysReloadFiles: boolean;
   };
-  addPath(path: string): boolean;
-  set(key: string, value: unknown): void;
+  addPath: AppServiceContainer["config"]["addPath"];
+  set: AppServiceContainer["config"]["set"];
 };
 
 type DocumentManagerApp = {

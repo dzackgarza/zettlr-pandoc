@@ -30,24 +30,24 @@
  * END HEADER
  */
 
-import type {
-  ActiveReviewState,
-  AgentEvent,
-  OutstandingChunk,
-  ProposalPacket,
-  ReviewState,
-} from "@dts/common/agent-api";
 import { createHash, randomUUID } from "crypto";
+import EventEmitter from "events";
 import {
   applyPatch,
-  createPatch,
-  diffLines,
   parsePatch,
   reversePatch,
+  diffLines,
+  createPatch,
   type StructuredPatch,
 } from "diff";
-import EventEmitter from "events";
 import path from "path";
+import type {
+  ActiveReviewState,
+  ProposalPacket,
+  ReviewState,
+  OutstandingChunk,
+  AgentEvent,
+} from "@dts/common/agent-api";
 
 // ============================================================================
 // Types
@@ -163,7 +163,10 @@ function normalizeText(content: string): string {
  * Parse exactly one text-file patch and validate it. Reject binary, create,
  * delete, rename, copy, and mode changes.
  */
-export function validateAndParsePatch(patchText: string, documentPath: string): StructuredPatch {
+export function validateAndParsePatch(
+  patchText: string,
+  documentPath: string,
+): StructuredPatch {
   // Detect git binary patches before parsePatch (which doesn't parse them)
   if (patchText.includes("GIT binary patch")) {
     throw new Error("review-diff does not support binary patches");
@@ -185,7 +188,9 @@ export function validateAndParsePatch(patchText: string, documentPath: string): 
     patch.isCreate === true ||
     patch.isDelete === true
   ) {
-    throw new Error("review-diff does not support rename, copy, create, or delete patches");
+    throw new Error(
+      "review-diff does not support rename, copy, create, or delete patches",
+    );
   }
   if (patch.oldMode !== undefined || patch.newMode !== undefined) {
     throw new Error("review-diff does not support mode-change patches");
@@ -199,18 +204,27 @@ export function validateAndParsePatch(patchText: string, documentPath: string): 
     !isAcceptableHeader(patch.oldFileName, documentPath) ||
     !isAcceptableHeader(patch.newFileName, documentPath)
   ) {
-    throw new Error("review-diff patch headers do not match the target document");
+    throw new Error(
+      "review-diff patch headers do not match the target document",
+    );
   }
   return patch;
 }
 
-function isAcceptableHeader(fileName: string | undefined, documentPath: string): boolean {
+function isAcceptableHeader(
+  fileName: string | undefined,
+  documentPath: string,
+): boolean {
   if (fileName === undefined) {
     return false;
   }
   // Generic headers
   const normalized = fileName.replace(/\\/g, "/");
-  if (normalized === "document" || normalized === "a/document" || normalized === "b/document") {
+  if (
+    normalized === "document" ||
+    normalized === "a/document" ||
+    normalized === "b/document"
+  ) {
     return true;
   }
   // Exact canonical path
@@ -243,7 +257,8 @@ function isAcceptableHeader(fileName: string | undefined, documentPath: string):
 export class ReviewDiffStore extends EventEmitter {
   private readonly reviews: Map<string, ActiveReviewState> = new Map();
   /** Index from clientRequestId → packetId for idempotency */
-  private readonly idempotencyIndex: Map<string, SubmitPacketResult> = new Map();
+  private readonly idempotencyIndex: Map<string, SubmitPacketResult> =
+    new Map();
   /** Index from packetId → reviewId for retraction lookup */
   private readonly packetIndex: Map<string, string> = new Map();
 
@@ -253,7 +268,9 @@ export class ReviewDiffStore extends EventEmitter {
    */
   openReview(options: OpenReviewOptions): ActiveReviewState {
     if (this.reviews.has(options.documentId)) {
-      throw new Error(`A review is already active for document ${options.documentId}`);
+      throw new Error(
+        `A review is already active for document ${options.documentId}`,
+      );
     }
 
     const baselineText = normalizeText(options.baselineText);
@@ -266,17 +283,24 @@ export class ReviewDiffStore extends EventEmitter {
     let initialReviewId: string | undefined;
 
     if (options.initialPatch !== undefined) {
-      const patch = validateAndParsePatch(options.initialPatch.patch, options.documentPath);
+      const patch = validateAndParsePatch(
+        options.initialPatch.patch,
+        options.documentPath,
+      );
       const proposed = applyPatch(referenceText, patch, {
         autoConvertLineEndings: true,
         fuzzFactor: 0,
       });
       if (proposed === false) {
-        throw new Error("review-diff initial patch does not apply to the baseline");
+        throw new Error(
+          "review-diff initial patch does not apply to the baseline",
+        );
       }
       const proposedText = normalizeText(proposed);
       if (proposedText === referenceText) {
-        throw new Error("review-diff patch does not change the target document");
+        throw new Error(
+          "review-diff patch does not change the target document",
+        );
       }
       workingText = proposedText;
       const packetId = randomUUID();
@@ -386,7 +410,8 @@ export class ReviewDiffStore extends EventEmitter {
       return {
         ok: false,
         code: "PATCH_NOT_APPLICABLE",
-        message: "The patch does not apply with zero fuzz to the current working text.",
+        message:
+          "The patch does not apply with zero fuzz to the current working text.",
       };
     }
 
@@ -519,7 +544,9 @@ export class ReviewDiffStore extends EventEmitter {
     // Reject: workingText agrees with referenceText on [fromOffset, toOffset)
     const referenceSlice = review.referenceText.slice(fromOffset, toOffset);
     review.workingText =
-      review.workingText.slice(0, fromOffset) + referenceSlice + review.workingText.slice(toOffset);
+      review.workingText.slice(0, fromOffset) +
+      referenceSlice +
+      review.workingText.slice(toOffset);
     review.generation += 1;
     const unresolvedChunks = this.countUnresolvedChunks(review);
     this.emitEvent("review.changed", {
@@ -549,7 +576,9 @@ export class ReviewDiffStore extends EventEmitter {
    * Clear all unresolved suggestions. workingText := referenceText.
    * Preserves accepted changes; discards only currently unresolved material.
    */
-  clearUnresolved(documentId: string): ClearUnresolvedResult | SubmitPacketError {
+  clearUnresolved(
+    documentId: string,
+  ): ClearUnresolvedResult | SubmitPacketError {
     const review = this.reviews.get(documentId);
     if (review === undefined) {
       return {
@@ -607,7 +636,9 @@ export class ReviewDiffStore extends EventEmitter {
       };
     }
 
-    const packetIndex = review.packets.findIndex((p) => p.packetId === packetId);
+    const packetIndex = review.packets.findIndex(
+      (p) => p.packetId === packetId,
+    );
     if (packetIndex === -1) {
       return {
         ok: false,
@@ -649,7 +680,8 @@ export class ReviewDiffStore extends EventEmitter {
       return {
         ok: false,
         code: "PACKET_NOT_RETRACTABLE",
-        message: "The proposal has been modified or overlapped by later review activity.",
+        message:
+          "The proposal has been modified or overlapped by later review activity.",
         reviewId: review.reviewId,
         canClearUnresolved: true,
       };
@@ -778,7 +810,10 @@ export class ReviewDiffStore extends EventEmitter {
     return [...this.reviews.values()].map((r) => ({
       reviewId: r.reviewId,
       documentId: r.documentId,
-      state: this.countUnresolvedChunks(r) === 0 ? "resolved-awaiting-save" : "active",
+      state:
+        this.countUnresolvedChunks(r) === 0
+          ? "resolved-awaiting-save"
+          : "active",
       generation: r.generation,
       unresolvedChunks: this.countUnresolvedChunks(r),
       packetCount: r.packets.length,
@@ -841,7 +876,10 @@ export class ReviewDiffStore extends EventEmitter {
         // Include surrounding context: one unchanged part before and after
         let contextBefore = 0;
         let contextAfter = 0;
-        if (startIdx > 0 && !(parts[startIdx - 1].added || parts[startIdx - 1].removed)) {
+        if (
+          startIdx > 0 &&
+          !(parts[startIdx - 1].added || parts[startIdx - 1].removed)
+        ) {
           contextBefore = parts[startIdx - 1].count ?? 0;
         }
         if (i < parts.length && !(parts[i].added || parts[i].removed)) {
@@ -878,7 +916,9 @@ export class ReviewDiffStore extends EventEmitter {
       const workEndLine = Math.min(group.workEnd, workLines.length);
 
       const refSlice = refLines.slice(refStartLine - 1, refEndLine).join("\n");
-      const workSlice = workLines.slice(workStartLine - 1, workEndLine).join("\n");
+      const workSlice = workLines
+        .slice(workStartLine - 1, workEndLine)
+        .join("\n");
 
       const patch = createPatch("document", refSlice, workSlice, "", "", {
         context: 0,
@@ -904,9 +944,14 @@ export class ReviewDiffStore extends EventEmitter {
     if (review === undefined) {
       return undefined;
     }
-    return createPatch("document", review.referenceText, review.workingText, "", "", {
-      context: 3,
-    });
+    return createPatch(
+      "document",
+      review.referenceText,
+      review.workingText,
+      "",
+      "",
+      { context: 3 },
+    );
   }
 
   // ========================================================================
@@ -924,7 +969,10 @@ export class ReviewDiffStore extends EventEmitter {
       if (parts[i].added || parts[i].removed) {
         count += 1;
         // Coalesce adjacent added+removed
-        while (i + 1 < parts.length && (parts[i + 1].added || parts[i + 1].removed)) {
+        while (
+          i + 1 < parts.length &&
+          (parts[i + 1].added || parts[i + 1].removed)
+        ) {
           i += 1;
         }
       }
@@ -976,7 +1024,9 @@ function formatPatch(patch: StructuredPatch): string {
   lines.push(`--- ${patch.oldFileName ?? "document"}`);
   lines.push(`+++ ${patch.newFileName ?? "document"}`);
   for (const hunk of patch.hunks) {
-    lines.push(`@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`);
+    lines.push(
+      `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
+    );
     for (const line of hunk.lines) {
       lines.push(line);
     }

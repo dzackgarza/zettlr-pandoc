@@ -719,13 +719,8 @@ export default class MarkdownEditor extends EventEmitter {
     // Third: The input mode, if applicable
     if (inputModeChanged) {
       if (newOptions.inputMode === "emacs") {
-        const emacsFactory: unknown = emacs;
-        if (typeof emacsFactory !== "function") {
-          throw new TypeError("The Emacs editor extension factory is unavailable.");
-        }
-        const createEmacsExtension = emacsFactory as () => Extension;
         this._instance.dispatch({
-          effects: inputModeCompartment.reconfigure(createEmacsExtension()),
+          effects: inputModeCompartment.reconfigure(emacs()),
         });
       } else if (newOptions.inputMode === "vim") {
         const vimFactory: unknown = vimPlugin;
@@ -1092,11 +1087,7 @@ export default class MarkdownEditor extends EventEmitter {
       tree: ReturnType<typeof syntaxTree>,
     ) => MarkdownDocument | ASTNode;
     const documentAst = ast(this._instance.state.sliceDoc(), syntaxTree(this._instance.state));
-    const configuredLocale: unknown = window.config.get("appLang");
-    if (typeof configuredLocale !== "string") {
-      throw new TypeError("The application language configuration must be a string.");
-    }
-    const locale = configuredLocale;
+    const locale: string = window.config.get("appLang");
     return {
       words: this.wordCount ?? 0,
       chars: this.charCount ?? 0,

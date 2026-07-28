@@ -425,18 +425,16 @@ export default class AgentHTTPProvider extends ProviderContract {
             }
           }
           const summary = this.getDocumentSummary(documentId);
-          documents.push(
-            summary === undefined
-              ? {
-                  documentId,
-                  uri: `safe-file://${documentPath}`,
-                  path: documentPath,
-                  name: path.basename(documentPath),
-                  workspaceId,
-                  loaded: false,
-                }
-              : { ...(summary as Record<string, unknown>), workspaceId, loaded: true },
-          );
+          documents.push(summary === undefined
+            ? {
+                documentId,
+                uri: `safe-file://${documentPath}`,
+                path: documentPath,
+                name: path.basename(documentPath),
+                workspaceId,
+                loaded: false,
+              }
+            : { ...(summary as Record<string, unknown>), workspaceId, loaded: true });
         }
         this.sendJson(res, 200, { workspaceId, documents });
       })
@@ -899,10 +897,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 400, result.code, result.message);
       } else if (result.code === "REVIEW_INVALIDATED") {
         this.sendError(res, 409, "REVIEW_INVALIDATED", result.message);
-      } else if (
-        result.code === "IDEMPOTENCY_CONFLICT" ||
-        result.code === "REVIEW_GENERATION_MISMATCH"
-      ) {
+      } else if (result.code === "IDEMPOTENCY_CONFLICT" || result.code === "REVIEW_GENERATION_MISMATCH") {
         this.sendError(res, 409, result.code, result.message);
       } else {
         this.sendError(res, 500, "INTERNAL_ERROR", result.message);
@@ -1187,12 +1182,8 @@ export default class AgentHTTPProvider extends ProviderContract {
       return workspaces.some((workspacePath) => {
         const canonicalWorkspacePath = fs.realpathSync(workspacePath);
         const relativePath = path.relative(canonicalWorkspacePath, canonicalFilePath);
-        return (
-          relativePath === "" ||
-          (!relativePath.startsWith(`..${path.sep}`) &&
-            relativePath !== ".." &&
-            !path.isAbsolute(relativePath))
-        );
+        return relativePath === "" ||
+          (!relativePath.startsWith(`..${path.sep}`) && relativePath !== ".." && !path.isAbsolute(relativePath));
       });
     } catch {
       return false;

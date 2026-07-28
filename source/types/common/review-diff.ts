@@ -62,7 +62,7 @@ export interface ReviewDiffOpenRequest {
 export type ReviewDiffOpenResult =
   | { accepted: true; sessionId: string }
   | {
-      accepted: false;
-      reason: "stale-baseline" | "invalid-request" | "open-failed";
-      message: string;
-    };
+    accepted: false;
+    reason: 'stale-baseline' | 'invalid-request' | 'open-failed';
+    message: string;
+  }

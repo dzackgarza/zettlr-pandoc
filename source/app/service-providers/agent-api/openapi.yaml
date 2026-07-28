@@ -76,7 +76,7 @@ components:
         dirty:
           type: boolean
         revision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         lineCount:
           type: integer
         byteLength:
@@ -86,18 +86,18 @@ components:
           items:
             type: object
         review:
-          $ref: '#/components/schemas/ReviewSummary'
+          $ref: "#/components/schemas/ReviewSummary"
     EditorContext:
       type: object
       properties:
         focusedView:
-          $ref: '#/components/schemas/FocusedViewSummary'
+          $ref: "#/components/schemas/FocusedViewSummary"
         focusedDocument:
-          $ref: '#/components/schemas/DocumentSummary'
+          $ref: "#/components/schemas/DocumentSummary"
         openDocuments:
           type: array
           items:
-            $ref: '#/components/schemas/DocumentSummary'
+            $ref: "#/components/schemas/DocumentSummary"
       required:
         - openDocuments
     ReadDocumentResponse:
@@ -120,7 +120,7 @@ components:
         snapshot:
           type: string
         revision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         reviewGeneration:
           type: integer
         range:
@@ -177,7 +177,7 @@ components:
         documentId:
           type: string
         documentRevision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         reviewGeneration:
           type: integer
         unresolvedChunks:
@@ -209,7 +209,7 @@ components:
         documentId:
           type: string
         documentRevision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         reviewGeneration:
           type: integer
         unresolvedChunks:
@@ -239,11 +239,11 @@ components:
             packetCount:
               type: integer
             documentRevision:
-              $ref: '#/components/schemas/DocumentRevision'
+              $ref: "#/components/schemas/DocumentRevision"
         events:
           type: array
           items:
-            $ref: '#/components/schemas/AgentEvent'
+            $ref: "#/components/schemas/AgentEvent"
         timedOut:
           type: boolean
           description: True if the request reached its timeout before a status change.
@@ -314,7 +314,7 @@ components:
         views:
           type: array
           items:
-            $ref: '#/components/schemas/ViewSummary'
+            $ref: "#/components/schemas/ViewSummary"
     WorkspaceSummary:
       type: object
       required:
@@ -333,7 +333,7 @@ components:
         workspaces:
           type: array
           items:
-            $ref: '#/components/schemas/WorkspaceSummary'
+            $ref: "#/components/schemas/WorkspaceSummary"
     WorkspaceDocumentSummary:
       type: object
       required:
@@ -367,7 +367,7 @@ components:
         dirty:
           type: boolean
         revision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         lineCount:
           type: integer
         byteLength:
@@ -375,9 +375,9 @@ components:
         views:
           type: array
           items:
-            $ref: '#/components/schemas/ViewSummary'
+            $ref: "#/components/schemas/ViewSummary"
         review:
-          $ref: '#/components/schemas/ReviewSummary'
+          $ref: "#/components/schemas/ReviewSummary"
     WorkspaceOpenDocumentResponse:
       type: object
       required:
@@ -399,7 +399,7 @@ components:
         documents:
           type: array
           items:
-            $ref: '#/components/schemas/WorkspaceDocumentSummary'
+            $ref: "#/components/schemas/WorkspaceDocumentSummary"
     SearchDocumentResponse:
       type: object
       required:
@@ -414,7 +414,7 @@ components:
         snapshot:
           type: string
         revision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         hits:
           type: array
           items:
@@ -459,7 +459,7 @@ components:
         packetCount:
           type: integer
         documentRevision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
     ReviewDiffResponse:
       type: object
       required:
@@ -493,7 +493,7 @@ components:
         chunks:
           type: array
           items:
-            $ref: '#/components/schemas/OutstandingChunk'
+            $ref: "#/components/schemas/OutstandingChunk"
     ReviewPacketsResponse:
       type: object
       required:
@@ -508,7 +508,7 @@ components:
         packets:
           type: array
           items:
-            $ref: '#/components/schemas/ProposalPacket'
+            $ref: "#/components/schemas/ProposalPacket"
     ClearReviewResponse:
       type: object
       required:
@@ -524,7 +524,7 @@ components:
         state:
           type: string
         documentRevision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
     RetractProposalResponse:
       type: object
       required:
@@ -549,7 +549,7 @@ components:
         unresolvedChunks:
           type: integer
         documentRevision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
     OutstandingChunk:
       type: object
       required:
@@ -616,7 +616,7 @@ paths:
       summary: Serve the OpenAPI specification
       security: []
       responses:
-        '200':
+        "200":
           description: OpenAPI YAML document
           content:
             application/yaml:
@@ -627,51 +627,51 @@ paths:
       operationId: health
       summary: Protocol version, instance ID, and PID
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PingResponse'
+                $ref: "#/components/schemas/PingResponse"
   /v1/ping:
     get:
       operationId: ping
       summary: Protocol version, instance ID, and PID
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PingResponse'
+                $ref: "#/components/schemas/PingResponse"
   /v1/capabilities:
     get:
       operationId: getCapabilities
       summary: Supported features and limits
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CapabilitiesResponse'
+                $ref: "#/components/schemas/CapabilitiesResponse"
   /v1/context:
     get:
       operationId: getContext
       summary: Focused view, focused document, and all open documents
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EditorContext'
+                $ref: "#/components/schemas/EditorContext"
   /v1/documents:
     get:
       operationId: listDocuments
       summary: List open or loaded documents
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
@@ -681,7 +681,7 @@ paths:
                   documents:
                     type: array
                     items:
-                      $ref: '#/components/schemas/DocumentSummary'
+                      $ref: "#/components/schemas/DocumentSummary"
       parameters:
         - name: state
           in: query
@@ -707,13 +707,13 @@ paths:
                 uri:
                   type: string
       responses:
-        '201':
+        "201":
           description: Document opened
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DocumentSummary'
-        '404':
+                $ref: "#/components/schemas/DocumentSummary"
+        "404":
           description: File not found
   /v1/documents/{documentId}:
     get:
@@ -726,13 +726,13 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DocumentSummary'
-        '404':
+                $ref: "#/components/schemas/DocumentSummary"
+        "404":
           description: Document not found
   /v1/documents/{documentId}/focus:
     post:
@@ -745,7 +745,7 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: OK
   /v1/documents/{documentId}/content:
     get:
@@ -774,7 +774,7 @@ paths:
           schema:
             type: integer
       responses:
-        '200':
+        "200":
           description: OK
           headers:
             ETag:
@@ -783,8 +783,8 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReadDocumentResponse'
-        '404':
+                $ref: "#/components/schemas/ReadDocumentResponse"
+        "404":
           description: Document not found
   /v1/documents/{documentId}/search:
     post:
@@ -811,12 +811,12 @@ paths:
                   type: integer
                   default: 3
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SearchDocumentResponse'
+                $ref: "#/components/schemas/SearchDocumentResponse"
   /v1/documents/{documentId}/proposals:
     post:
       operationId: submitProposal
@@ -843,26 +843,26 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SubmitProposalRequest'
+              $ref: "#/components/schemas/SubmitProposalRequest"
       responses:
-        '200':
+        "200":
           description: Proposal applied
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SubmitProposalResponse'
-        '412':
+                $ref: "#/components/schemas/SubmitProposalResponse"
+        "412":
           description: Stale revision (ETag mismatch)
-        '409':
+        "409":
           description: Review generation conflict
-        '400':
+        "400":
           description: Invalid or non-applicable patch
   /v1/reviews:
     get:
       operationId: listReviews
       summary: List all active reviews
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
@@ -872,7 +872,7 @@ paths:
                   reviews:
                     type: array
                     items:
-                      $ref: '#/components/schemas/ReviewSummary'
+                      $ref: "#/components/schemas/ReviewSummary"
   /v1/reviews/{reviewId}:
     get:
       operationId: getReview
@@ -884,13 +884,13 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewDetailResponse'
-        '404':
+                $ref: "#/components/schemas/ReviewDetailResponse"
+        "404":
           description: Review not found
   /v1/reviews/{reviewId}/diff:
     get:
@@ -903,13 +903,13 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewDiffResponse'
-        '404':
+                $ref: "#/components/schemas/ReviewDiffResponse"
+        "404":
           description: Review not found
   /v1/reviews/{reviewId}/chunks:
     get:
@@ -922,13 +922,13 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewChunksResponse'
-        '404':
+                $ref: "#/components/schemas/ReviewChunksResponse"
+        "404":
           description: Review not found
   /v1/reviews/{reviewId}/packets:
     get:
@@ -941,13 +941,13 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewPacketsResponse'
-        '404':
+                $ref: "#/components/schemas/ReviewPacketsResponse"
+        "404":
           description: Review not found
   /v1/reviews/{reviewId}/clear:
     post:
@@ -960,13 +960,13 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ClearReviewResponse'
-        '404':
+                $ref: "#/components/schemas/ClearReviewResponse"
+        "404":
           description: Review not found
   /v1/proposals/{packetId}/retract:
     post:
@@ -979,20 +979,20 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RetractProposalResponse'
-        '409':
+                $ref: "#/components/schemas/RetractProposalResponse"
+        "409":
           description: Packet not retractable
   /v1/events:
     get:
       operationId: subscribeEvents
       summary: Subscribe to focus, document, proposal, and review events via SSE
       responses:
-        '200':
+        "200":
           description: SSE stream
           content:
             text/event-stream:
@@ -1044,36 +1044,36 @@ paths:
             default: 30
           description: Deprecated alias for waitSeconds.
       responses:
-        '200':
+        "200":
           description: Review state and matching event history (or timed out)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewEventsResponse'
-        '404':
+                $ref: "#/components/schemas/ReviewEventsResponse"
+        "404":
           description: Review not found
   /v1/views:
     get:
       operationId: listViews
       summary: List active editor views
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ViewsResponse'
+                $ref: "#/components/schemas/ViewsResponse"
   /v1/workspaces:
     get:
       operationId: listWorkspaces
       summary: List configured workspaces
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkspacesResponse'
+                $ref: "#/components/schemas/WorkspacesResponse"
   /v1/workspaces/{workspaceId}/documents:
     get:
       operationId: listWorkspaceDocuments
@@ -1091,13 +1091,13 @@ paths:
             type: string
           description: Optional case-insensitive substring filter over file path.
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkspaceDocumentsResponse'
-        '404':
+                $ref: "#/components/schemas/WorkspaceDocumentsResponse"
+        "404":
           description: Workspace not found
   /v1/workspaces/{workspaceId}/documents/{documentId}/open:
     post:
@@ -1115,13 +1115,13 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkspaceOpenDocumentResponse'
-        '401':
+                $ref: "#/components/schemas/WorkspaceOpenDocumentResponse"
+        "401":
           description: Unauthorized workspace access
-        '404':
+        "404":
           description: Workspace not found or document unavailable in workspace
