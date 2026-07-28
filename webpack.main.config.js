@@ -1,64 +1,92 @@
-const CopyWebpackPlugin = require('copy-webpack-plugin')
-const { DefinePlugin } = require('webpack')
-const path = require('path')
-const rules = require('./webpack.rules')
+const CopyWebpackPlugin = require("copy-webpack-plugin");
+const { DefinePlugin } = require("webpack");
+const path = require("path");
+const rules = require("./webpack.rules");
 
-const externals = {}
+const externals = {};
 
-if (process.env.BUNDLE_FSEVENTS !== '1') {
+if (process.env.BUNDLE_FSEVENTS !== "1") {
   // Do not embed fsevents (otherwise this leads to problems on Linux and
   // Windows, see https://github.com/paulmillr/chokidar/issues/618#issuecomment-392618390)
   // NOTE: The environment variable is set in the generateAssets hook of electron
   // forge since that runs before this module is required and has access to the
   // *target* platform (rather than process.platform)
-  externals.fsevents = "require('fsevents')"
+  externals.fsevents = "require('fsevents')";
 }
 
 module.exports = {
   // Main entry point: the file that runs in the main process
-  entry: './source/main.ts',
-  mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
+  entry: "./source/main.ts",
+  mode: process.env.NODE_ENV === "production" ? "production" : "development",
   module: { rules },
   plugins: [
     new CopyWebpackPlugin({
       patterns: [
         // These are all static files that simply need to be bundled with the
         // application; we'll just copy them over from the static folder.
-        { from: 'static/tutorial', to: 'tutorial' },
-        { from: 'static/dict', to: 'dict' },
-        { from: 'static/lang', to: 'lang' },
-        { from: 'static/csl-locales', to: 'assets/csl-locales' },
-        { from: 'static/csl-styles', to: 'assets/csl-styles' },
-        { from: 'static/defaults', to: 'assets/defaults' },
-        { from: 'static/mathjax-macros.json', to: 'assets/mathjax-macros.json' },
-        { from: 'node_modules/@mathjax/src/bundle/tex-chtml.js', to: 'assets/defaults/mathjax-tex-chtml.js' },
-        { from: 'node_modules/@mathjax/src/bundle/input/tex/extensions', to: 'assets/defaults/mathjax-tex-extensions' },
-        { from: 'node_modules/@mathjax/mathjax-mhchem-font-extension', to: 'assets/defaults/mathjax-mhchem-font-extension' },
-        { from: 'node_modules/@mathjax/mathjax-newcm-font/chtml', to: 'assets/defaults/mathjax-font' },
-        { from: 'node_modules/@mathjax/src/bundle/sre', to: 'assets/defaults/mathjax-sre' },
-        { from: 'static/lua-filter', to: 'assets/lua-filter' },
+        { from: "static/tutorial", to: "tutorial" },
+        { from: "static/dict", to: "dict" },
+        { from: "static/lang", to: "lang" },
+        { from: "static/csl-locales", to: "assets/csl-locales" },
+        { from: "static/csl-styles", to: "assets/csl-styles" },
+        { from: "static/defaults", to: "assets/defaults" },
+        {
+          from: "static/mathjax-macros.json",
+          to: "assets/mathjax-macros.json",
+        },
+        {
+          from: "node_modules/@mathjax/src/bundle/tex-chtml.js",
+          to: "assets/defaults/mathjax-tex-chtml.js",
+        },
+        {
+          from: "node_modules/@mathjax/src/bundle/input/tex/extensions",
+          to: "assets/defaults/mathjax-tex-extensions",
+        },
+        {
+          from: "node_modules/@mathjax/mathjax-mhchem-font-extension",
+          to: "assets/defaults/mathjax-mhchem-font-extension",
+        },
+        {
+          from: "node_modules/@mathjax/mathjax-newcm-font/chtml",
+          to: "assets/defaults/mathjax-font",
+        },
+        {
+          from: "node_modules/@mathjax/src/bundle/sre",
+          to: "assets/defaults/mathjax-sre",
+        },
+        { from: "static/lua-filter", to: "assets/lua-filter" },
         // The vendored TikZ pipeline (issue #14): filter, per-figure
         // template, and the styles tree the template \usepackage's.
-        { from: 'static/tikz', to: 'assets/tikz' },
-        { from: 'resources/icons/icon.ico', to: 'assets/icons' },
-        { from: 'resources/icons/png', to: 'assets/icons/png' },
-        { from: 'resources/icons/macOS-menubar', to: 'assets/icons/macOS-menubar' }
-      ]
+        { from: "static/tikz", to: "assets/tikz" },
+        { from: "resources/icons/icon.ico", to: "assets/icons" },
+        { from: "resources/icons/png", to: "assets/icons/png" },
+        {
+          from: "resources/icons/macOS-menubar",
+          to: "assets/icons/macOS-menubar",
+        },
+        // Agent API OpenAPI spec (Task 11)
+        {
+          from: "source/app/service-providers/agent-api/openapi.yaml",
+          to: "assets/openapi.yaml",
+        },
+      ],
     }),
     new DefinePlugin({
       __GIT_COMMIT_HASH__: JSON.stringify(process.env.GIT_COMMIT_HASH),
-      __BUILD_DATE__: JSON.stringify((new Date()).toISOString()),
-      __UPDATES_DISABLED__: JSON.stringify(process.env.ZETTLR_DISABLE_UPDATE_CHECK !== undefined ? '1' : '0')
-    })
+      __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
+      __UPDATES_DISABLED__: JSON.stringify(
+        process.env.ZETTLR_DISABLE_UPDATE_CHECK !== undefined ? "1" : "0",
+      ),
+    }),
   ],
   resolve: {
-    extensions: [ '.js', '.ts', '.jsx', '.tsx', '.css', '.json' ],
+    extensions: [".js", ".ts", ".jsx", ".tsx", ".css", ".json"],
     alias: {
-      source: [path.resolve(__dirname, 'source')],
-      '@common': [path.resolve(__dirname, 'source/common')],
-      '@providers': [path.resolve(__dirname, 'source/app/service-providers')],
-      '@dts': [path.resolve(__dirname, 'source/types')]
-    }
+      source: [path.resolve(__dirname, "source")],
+      "@common": [path.resolve(__dirname, "source/common")],
+      "@providers": [path.resolve(__dirname, "source/app/service-providers")],
+      "@dts": [path.resolve(__dirname, "source/types")],
+    },
   },
-  externals
-}
+  externals,
+};

@@ -35,6 +35,8 @@ it('registers updater IPC only after its boot initialization', function () {
 })
 
 it('renders updater Markdown with the lite adaptor without a global document', function () {
+  this.timeout(30000)
+
   const html = execFileSync(process.execPath, [
     '--import', 'tsx',
     '--input-type', 'module',

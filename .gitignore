@@ -23,6 +23,10 @@ test-config.yml
 # Hidden files and stuff
 /**/.DS_Store
 
+# Agent-memory vault symlinks — point outside the repo; must never be linted.
+.agents/
+.hermes/
+
 # Don't commit these pesky yarn logs
 yarn-error.log
 yarn.log

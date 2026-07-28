@@ -199,6 +199,44 @@
     font-size: 13px;
   }
 
+  &.review-diff-active {
+    .cm-deletedChunk {
+      box-sizing: border-box;
+      padding-inline-end: 150px;
+    }
+
+    .cm-chunkButtons {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      justify-content: flex-end;
+      max-width: min(220px, 45vw);
+    }
+
+    button.cm-review-diff-control {
+      min-width: 64px;
+      height: 24px;
+      padding: 0 8px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: #ffffff;
+      font: inherit;
+      font-size: 12px;
+      line-height: 22px;
+      cursor: pointer;
+    }
+
+    button.cm-review-diff-control.accept {
+      background-color: #1f7a45;
+      border-color: #176238;
+    }
+
+    button.cm-review-diff-control.reject {
+      background-color: #b33a3a;
+      border-color: #8e2f2f;
+    }
+  }
+
   .cm-formatting-bar {
     background-color: #f5f5f5;
     border-color: #f5f5f5;

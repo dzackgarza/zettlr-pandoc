@@ -23,8 +23,12 @@
  */
 
 const Module = require('module')
+const fs = require('fs')
 const os = require('os')
 const path = require('path')
+
+const userData = path.join(os.tmpdir(), 'zettlr-pandoc-headless-test')
+fs.mkdirSync(path.join(userData, 'logs'), { recursive: true })
 
 /**
  * Records every ipcMain.handle registration made by main-process modules
@@ -40,7 +44,6 @@ const ipcMainHandlers = new Map()
 const orig = Module._load
 Module._load = function (request, ...rest) {
   if (request === 'electron') {
-    const userData = path.join(os.tmpdir(), 'zettlr-pandoc-headless-test')
     return {
       app: {
         getPath: (key) => key === 'userData' ? userData : os.tmpdir(),
