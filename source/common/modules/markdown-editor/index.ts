@@ -1014,6 +1014,10 @@ export default class MarkdownEditor extends EventEmitter {
       return;
     }
 
+    if (reviewGeneration !== undefined) {
+      this.reviewDiffGeneration = reviewGeneration;
+    }
+
     if (
       this.activeReviewDiffSession?.id === session.id &&
       currentContent === session.currentText &&
@@ -1023,9 +1027,6 @@ export default class MarkdownEditor extends EventEmitter {
     }
 
     this.activeReviewDiffSession = session;
-    if (reviewGeneration !== undefined) {
-      this.reviewDiffGeneration = reviewGeneration;
-    }
     this._instance.dom.classList.add("review-diff-active");
 
     const effects = [

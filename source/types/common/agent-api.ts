@@ -37,11 +37,7 @@ export interface EditorViewSummary {
 }
 
 export type ReviewState =
-  | 'active'
-  | 'resolved-awaiting-save'
-  | 'completed'
-  | 'cleared'
-  | 'invalidated'
+  "active" | "resolved-awaiting-save" | "completed" | "cleared" | "invalidated";
 
 export interface ReviewSummary {
   reviewId: string;
@@ -51,7 +47,7 @@ export interface ReviewSummary {
   packetCount: number;
 }
 
-export type DocumentType = 'markdown' | 'code'
+export type DocumentType = "markdown" | "code";
 
 export interface DocumentSummary {
   documentId: string;
@@ -111,7 +107,7 @@ export interface EditorContext {
 // Section 5.3: Document read responses
 // ============================================================================
 
-export type ReadSide = 'working' | 'reference'
+export type ReadSide = "working" | "reference";
 
 export interface ReadRange {
   startLine: number;
@@ -150,7 +146,7 @@ export interface SearchResponse {
 // Section 6: Proposal submission
 // ============================================================================
 
-export type PatchFormat = 'unified-diff'
+export type PatchFormat = "unified-diff";
 
 export interface SubmitProposalRequest {
   snapshot: string;
@@ -269,19 +265,19 @@ export interface RetractProposalRequest {
 
 export type RetractProposalResponse =
   | {
-    retracted: true;
-    packetId: string;
-    reviewId: string;
-    reviewGeneration: number;
-    unresolvedChunks: number;
-  }
+      retracted: true;
+      packetId: string;
+      reviewId: string;
+      reviewGeneration: number;
+      unresolvedChunks: number;
+    }
   | {
-    retracted: false;
-    code: 'PACKET_NOT_RETRACTABLE';
-    message: string;
-    reviewId: string;
-    canClearUnresolved: true;
-  }
+      retracted: false;
+      code: "PACKET_NOT_RETRACTABLE";
+      message: string;
+      reviewId: string;
+      canClearUnresolved: true;
+    };
 
 export interface ClearReviewRequest {
   reviewId: string;
@@ -306,8 +302,6 @@ export interface CapabilitiesResponse {
   retractionSupport: true;
   maxRequestSize: number;
   eventStreamSupport: true;
-  remoteAccess: boolean;
-  tlsEnabled: boolean;
   eventReplayBufferSize: number;
   applicationVersion: string;
   instanceId: string;
@@ -336,18 +330,18 @@ export interface DiscoveryRecord {
 // ============================================================================
 
 export type AgentEventType =
-  | 'focus.changed'
-  | 'document.changed'
-  | 'document.closed'
-  | 'review.started'
-  | 'proposal.applied'
-  | 'proposal.retracted'
-  | 'review.changed'
-  | 'review.resolved'
-  | 'review.completed'
-  | 'review.cleared'
-  | 'review.invalidated'
-  | 'app.shutting-down'
+  | "focus.changed"
+  | "document.changed"
+  | "document.closed"
+  | "review.started"
+  | "proposal.applied"
+  | "proposal.retracted"
+  | "review.changed"
+  | "review.resolved"
+  | "review.completed"
+  | "review.cleared"
+  | "review.invalidated"
+  | "app.shutting-down";
 
 export interface AgentEvent {
   event: AgentEventType;
@@ -365,22 +359,21 @@ export interface AgentEvent {
 // ============================================================================
 
 export type AgentErrorCode =
-  | 'APP_NOT_RUNNING'
-  | 'UNAUTHORIZED'
-  | 'PROTOCOL_MISMATCH'
-  | 'NO_FOCUSED_DOCUMENT'
-  | 'DOCUMENT_NOT_FOUND'
-  | 'DOCUMENT_CLOSED'
-  | 'REVISION_MISMATCH'
-  | 'REVIEW_NOT_FOUND'
-  | 'REVIEW_INVALIDATED'
-  | 'PATCH_INVALID'
-  | 'PATCH_NOT_APPLICABLE'
-  | 'PACKET_NOT_RETRACTABLE'
-  | 'REQUEST_TOO_LARGE'
-  | 'METHOD_NOT_FOUND'
-  | 'INVALID_PARAMS'
-  | 'INTERNAL_ERROR'
+  | "APP_NOT_RUNNING"
+  | "PROTOCOL_MISMATCH"
+  | "NO_FOCUSED_DOCUMENT"
+  | "DOCUMENT_NOT_FOUND"
+  | "DOCUMENT_CLOSED"
+  | "REVISION_MISMATCH"
+  | "REVIEW_NOT_FOUND"
+  | "REVIEW_INVALIDATED"
+  | "PATCH_INVALID"
+  | "PATCH_NOT_APPLICABLE"
+  | "PACKET_NOT_RETRACTABLE"
+  | "REQUEST_TOO_LARGE"
+  | "METHOD_NOT_FOUND"
+  | "INVALID_PARAMS"
+  | "INTERNAL_ERROR";
 
 export interface AgentError {
   code: AgentErrorCode;
@@ -392,4 +385,4 @@ export interface AgentError {
   canClearUnresolved?: boolean;
 }
 
-export const AGENT_API_PROTOCOL_VERSION = '1.0'
+export const AGENT_API_PROTOCOL_VERSION = "1.0";

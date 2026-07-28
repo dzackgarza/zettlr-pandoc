@@ -2,39 +2,25 @@ openapi: 3.1.1
 info:
   title: Zettlr-Pandoc Editor Agent API
   version: 1.0.0
-  description: 'HTTP REST API for the Zettlr-Pandoc editor agent. Provides live document
+  description:
+    "HTTP REST API for the Zettlr-Pandoc editor agent. Provides live document
     reads, proposal submission, review inspection, and Server-Sent Events. The Electron
     main process owns all agent-visible state.
 
-    '
+    "
   license:
     name: GPL-3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
 servers:
-- url: http://127.0.0.1:23119
-  description: Default loopback endpoint
+  - url: http://127.0.0.1:23119
+    description: Default loopback endpoint
 components:
-  securitySchemes:
-    AppBearer:
-      type: http
-      scheme: bearer
-      description: Application API token
-    CloudflareAccessClientId:
-      type: apiKey
-      in: header
-      name: CF-Access-Client-Id
-      description: Cloudflare Access service token client id
-    CloudflareAccessClientSecret:
-      type: apiKey
-      in: header
-      name: CF-Access-Client-Secret
-      description: Cloudflare Access service token secret
   schemas:
     DocumentRevision:
       type: object
       required:
-      - version
-      - sha256
+        - version
+        - sha256
       properties:
         version:
           type: integer
@@ -43,22 +29,22 @@ components:
     ReviewSummary:
       type: object
       required:
-      - reviewId
-      - state
-      - generation
-      - unresolvedChunks
-      - packetCount
+        - reviewId
+        - state
+        - generation
+        - unresolvedChunks
+        - packetCount
       properties:
         reviewId:
           type: string
         state:
           type: string
           enum:
-          - active
-          - resolved-awaiting-save
-          - completed
-          - cleared
-          - invalidated
+            - active
+            - resolved-awaiting-save
+            - completed
+            - cleared
+            - invalidated
         generation:
           type: integer
         unresolvedChunks:
@@ -68,16 +54,16 @@ components:
     DocumentSummary:
       type: object
       required:
-      - documentId
-      - uri
-      - path
-      - name
-      - type
-      - dirty
-      - revision
-      - lineCount
-      - byteLength
-      - views
+        - documentId
+        - uri
+        - path
+        - name
+        - type
+        - dirty
+        - revision
+        - lineCount
+        - byteLength
+        - views
       properties:
         documentId:
           type: string
@@ -90,12 +76,12 @@ components:
         type:
           type: string
           enum:
-          - markdown
-          - code
+            - markdown
+            - code
         dirty:
           type: boolean
         revision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         lineCount:
           type: integer
         byteLength:
@@ -105,46 +91,57 @@ components:
           items:
             type: object
         review:
-          $ref: '#/components/schemas/ReviewSummary'
+          $ref: "#/components/schemas/ReviewSummary"
     EditorContext:
       type: object
       properties:
         focusedView:
-          $ref: '#/components/schemas/FocusedViewSummary'
+          $ref: "#/components/schemas/FocusedViewSummary"
         focusedDocument:
-          $ref: '#/components/schemas/DocumentSummary'
+          $ref: "#/components/schemas/DocumentSummary"
         openDocuments:
           type: array
           items:
-            $ref: '#/components/schemas/DocumentSummary'
+            $ref: "#/components/schemas/DocumentSummary"
       required:
-      - openDocuments
+        - openDocuments
     ReadDocumentResponse:
       type: object
       required:
-      - documentId
-      - side
-      - snapshot
-      - revision
-      - range
-      - content
-      - truncated
+        - documentId
+        - side
+        - snapshot
+        - revision
+        - range
+        - content
+        - truncated
       properties:
         documentId:
           type: string
         side:
           type: string
           enum:
-          - working
-          - reference
+            - working
+            - reference
         snapshot:
           type: string
         revision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         reviewGeneration:
           type: integer
         range:
           type: object
+          required:
+            - startLine
+            - endLine
+            - totalLines
+          properties:
+            startLine:
+              type: integer
+            endLine:
+              type: integer
+            totalLines:
+              type: integer
         content:
           type: string
         truncated:
@@ -152,16 +149,16 @@ components:
     SubmitProposalRequest:
       type: object
       required:
-      - snapshot
-      - patchFormat
-      - patch
+        - snapshot
+        - patchFormat
+        - patch
       properties:
         snapshot:
           type: string
         patchFormat:
           type: string
           enum:
-          - unified-diff
+            - unified-diff
         patch:
           type: string
         description:
@@ -171,13 +168,13 @@ components:
     SubmitProposalResponse:
       type: object
       required:
-      - packetId
-      - reviewId
-      - documentId
-      - documentRevision
-      - reviewGeneration
-      - unresolvedChunks
-      - state
+        - packetId
+        - reviewId
+        - documentId
+        - documentRevision
+        - reviewGeneration
+        - unresolvedChunks
+        - state
       properties:
         packetId:
           type: string
@@ -186,7 +183,7 @@ components:
         documentId:
           type: string
         documentRevision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         reviewGeneration:
           type: integer
         unresolvedChunks:
@@ -196,8 +193,8 @@ components:
     AgentError:
       type: object
       required:
-      - code
-      - message
+        - code
+        - message
       properties:
         code:
           type: string
@@ -206,8 +203,8 @@ components:
     AgentEvent:
       type: object
       required:
-      - event
-      - timestamp
+        - event
+        - timestamp
       properties:
         event:
           type: string
@@ -218,7 +215,7 @@ components:
         documentId:
           type: string
         documentRevision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         reviewGeneration:
           type: integer
         unresolvedChunks:
@@ -229,8 +226,8 @@ components:
     ReviewEventsResponse:
       type: object
       required:
-      - reviewId
-      - status
+        - reviewId
+        - status
       properties:
         reviewId:
           type: string
@@ -248,23 +245,23 @@ components:
             packetCount:
               type: integer
             documentRevision:
-              $ref: '#/components/schemas/DocumentRevision'
+              $ref: "#/components/schemas/DocumentRevision"
         events:
           type: array
           items:
-            $ref: '#/components/schemas/AgentEvent'
+            $ref: "#/components/schemas/AgentEvent"
         timedOut:
           type: boolean
           description: True if the request reached its timeout before a status change.
     FocusedViewSummary:
       type: object
       required:
-      - viewId
-      - windowId
-      - leafId
-      - documentId
-      - focused
-      - active
+        - viewId
+        - windowId
+        - leafId
+        - documentId
+        - focused
+        - active
       properties:
         viewId:
           type: string
@@ -285,11 +282,11 @@ components:
     ViewSummary:
       type: object
       required:
-      - viewId
-      - windowId
-      - leafId
-      - focused
-      - active
+        - viewId
+        - windowId
+        - leafId
+        - focused
+        - active
       properties:
         viewId:
           type: string
@@ -308,8 +305,8 @@ components:
           items:
             type: object
             required:
-            - documentId
-            - path
+              - documentId
+              - path
             properties:
               documentId:
                 type: string
@@ -318,17 +315,17 @@ components:
     ViewsResponse:
       type: object
       required:
-      - views
+        - views
       properties:
         views:
           type: array
           items:
-            $ref: '#/components/schemas/ViewSummary'
+            $ref: "#/components/schemas/ViewSummary"
     WorkspaceSummary:
       type: object
       required:
-      - workspaceId
-      - path
+        - workspaceId
+        - path
       properties:
         workspaceId:
           type: string
@@ -337,26 +334,26 @@ components:
     WorkspacesResponse:
       type: object
       required:
-      - workspaces
+        - workspaces
       properties:
         workspaces:
           type: array
           items:
-            $ref: '#/components/schemas/WorkspaceSummary'
+            $ref: "#/components/schemas/WorkspaceSummary"
     WorkspaceDocumentSummary:
       type: object
       required:
-      - documentId
-      - workspaceId
-      - uri
-      - path
-      - name
-      - type
-      - dirty
-      - revision
-      - lineCount
-      - byteLength
-      - views
+        - documentId
+        - workspaceId
+        - uri
+        - path
+        - name
+        - type
+        - dirty
+        - revision
+        - lineCount
+        - byteLength
+        - views
       properties:
         documentId:
           type: string
@@ -371,12 +368,12 @@ components:
         type:
           type: string
           enum:
-          - markdown
-          - code
+            - markdown
+            - code
         dirty:
           type: boolean
         revision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         lineCount:
           type: integer
         byteLength:
@@ -384,14 +381,14 @@ components:
         views:
           type: array
           items:
-            $ref: '#/components/schemas/ViewSummary'
+            $ref: "#/components/schemas/ViewSummary"
         review:
-          $ref: '#/components/schemas/ReviewSummary'
+          $ref: "#/components/schemas/ReviewSummary"
     WorkspaceOpenDocumentResponse:
       type: object
       required:
-      - focused
-      - documentId
+        - focused
+        - documentId
       properties:
         focused:
           type: boolean
@@ -400,20 +397,224 @@ components:
     WorkspaceDocumentsResponse:
       type: object
       required:
-      - workspaceId
-      - documents
+        - workspaceId
+        - documents
       properties:
         workspaceId:
           type: string
         documents:
           type: array
           items:
-            $ref: '#/components/schemas/WorkspaceDocumentSummary'
-security:
-- AppBearer: []
-- AppBearer: []
-  CloudflareAccessClientId: []
-  CloudflareAccessClientSecret: []
+            $ref: "#/components/schemas/WorkspaceDocumentSummary"
+    SearchDocumentResponse:
+      type: object
+      required:
+        - documentId
+        - snapshot
+        - revision
+        - hits
+        - truncated
+      properties:
+        documentId:
+          type: string
+        snapshot:
+          type: string
+        revision:
+          $ref: "#/components/schemas/DocumentRevision"
+        hits:
+          type: array
+          items:
+            type: object
+            required:
+              - line
+              - column
+              - length
+              - contextBefore
+              - contextAfter
+            properties:
+              line:
+                type: integer
+              column:
+                type: integer
+              length:
+                type: integer
+              contextBefore:
+                type: string
+              contextAfter:
+                type: string
+        truncated:
+          type: boolean
+    ReviewDetailResponse:
+      type: object
+      required:
+        - reviewId
+        - state
+        - generation
+        - unresolvedChunks
+        - packetCount
+        - documentRevision
+      properties:
+        reviewId:
+          type: string
+        state:
+          type: string
+        generation:
+          type: integer
+        unresolvedChunks:
+          type: integer
+        packetCount:
+          type: integer
+        documentRevision:
+          $ref: "#/components/schemas/DocumentRevision"
+    ReviewDiffResponse:
+      type: object
+      required:
+        - reviewId
+        - documentId
+        - patch
+        - generation
+      properties:
+        reviewId:
+          type: string
+        documentId:
+          type: string
+        patch:
+          type: string
+        generation:
+          type: integer
+    ReviewChunksResponse:
+      type: object
+      required:
+        - reviewId
+        - documentId
+        - generation
+        - chunks
+      properties:
+        reviewId:
+          type: string
+        documentId:
+          type: string
+        generation:
+          type: integer
+        chunks:
+          type: array
+          items:
+            $ref: "#/components/schemas/OutstandingChunk"
+    ReviewPacketsResponse:
+      type: object
+      required:
+        - reviewId
+        - documentId
+        - packets
+      properties:
+        reviewId:
+          type: string
+        documentId:
+          type: string
+        packets:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProposalPacket"
+    ClearReviewResponse:
+      type: object
+      required:
+        - reviewId
+        - documentId
+        - state
+        - documentRevision
+      properties:
+        reviewId:
+          type: string
+        documentId:
+          type: string
+        state:
+          type: string
+        documentRevision:
+          $ref: "#/components/schemas/DocumentRevision"
+    RetractProposalResponse:
+      type: object
+      required:
+        - retracted
+        - packetId
+        - reviewId
+        - documentId
+        - reviewGeneration
+        - unresolvedChunks
+        - documentRevision
+      properties:
+        retracted:
+          type: boolean
+        packetId:
+          type: string
+        reviewId:
+          type: string
+        documentId:
+          type: string
+        reviewGeneration:
+          type: integer
+        unresolvedChunks:
+          type: integer
+        documentRevision:
+          $ref: "#/components/schemas/DocumentRevision"
+    OutstandingChunk:
+      type: object
+      required:
+        - chunkId
+        - generation
+        - referenceRange
+        - workingRange
+        - patch
+      properties:
+        chunkId:
+          type: string
+        generation:
+          type: integer
+        referenceRange:
+          type: object
+          required:
+            - fromLine
+            - toLine
+          properties:
+            fromLine:
+              type: integer
+            toLine:
+              type: integer
+        workingRange:
+          type: object
+          required:
+            - fromLine
+            - toLine
+          properties:
+            fromLine:
+              type: integer
+            toLine:
+              type: integer
+        patch:
+          type: string
+    ProposalPacket:
+      type: object
+      required:
+        - packetId
+        - reviewId
+        - clientRequestId
+        - appliedAt
+        - patchFormat
+        - patch
+      properties:
+        packetId:
+          type: string
+        reviewId:
+          type: string
+        clientRequestId:
+          type: string
+        description:
+          type: string
+        appliedAt:
+          type: string
+        patchFormat:
+          type: string
+        patch:
+          type: string
 paths:
   /openapi.yaml:
     get:
@@ -421,7 +622,7 @@ paths:
       summary: Serve the OpenAPI specification
       security: []
       responses:
-        '200':
+        "200":
           description: OpenAPI YAML document
           content:
             application/yaml:
@@ -432,51 +633,51 @@ paths:
       operationId: health
       summary: Protocol version, instance ID, and PID
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
+                $ref: "#/components/schemas/PingResponse"
   /v1/ping:
     get:
       operationId: ping
       summary: Protocol version, instance ID, and PID
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
+                $ref: "#/components/schemas/PingResponse"
   /v1/capabilities:
     get:
       operationId: getCapabilities
       summary: Supported features and limits
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
+                $ref: "#/components/schemas/CapabilitiesResponse"
   /v1/context:
     get:
       operationId: getContext
       summary: Focused view, focused document, and all open documents
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EditorContext'
+                $ref: "#/components/schemas/EditorContext"
   /v1/documents:
     get:
       operationId: listDocuments
       summary: List open or loaded documents
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
@@ -486,18 +687,19 @@ paths:
                   documents:
                     type: array
                     items:
-                      $ref: '#/components/schemas/DocumentSummary'
+                      $ref: "#/components/schemas/DocumentSummary"
       parameters:
-      - name: state
-        in: query
-        required: false
-        schema:
-          type: string
-          enum:
-          - open
-          default: open
-        description: Reserved document-state filter for clients. Only open is currently
-          supported.
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - open
+            default: open
+          description:
+            Reserved document-state filter for clients. Only open is currently
+            supported.
     post:
       operationId: openDocument
       summary: Open a server-local file URI
@@ -508,103 +710,79 @@ paths:
             schema:
               type: object
               required:
-              - uri
+                - uri
               properties:
                 uri:
                   type: string
       responses:
-        '201':
+        "201":
           description: Document opened
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DocumentSummary'
-        '404':
-          description: File not found
-  /v1/documents/open:
-    post:
-      operationId: openDocumentByUri
-      summary: Open a server-local file URI
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-              - uri
-              properties:
-                uri:
-                  type: string
-      responses:
-        '201':
-          description: Document opened
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DocumentSummary'
-        '404':
+                $ref: "#/components/schemas/DocumentSummary"
+        "404":
           description: File not found
   /v1/documents/{documentId}:
     get:
       operationId: getDocument
       summary: Document metadata and review status
       parameters:
-      - name: documentId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DocumentSummary'
-        '404':
+                $ref: "#/components/schemas/DocumentSummary"
+        "404":
           description: Document not found
   /v1/documents/{documentId}/focus:
     post:
       operationId: focusDocument
       summary: Focus or create an editor view for the document
       parameters:
-      - name: documentId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: OK
   /v1/documents/{documentId}/content:
     get:
       operationId: readDocumentContent
       summary: Read live working or reference text by line slice
       parameters:
-      - name: documentId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: side
-        in: query
-        schema:
-          type: string
-          enum:
-          - working
-          - reference
-          default: working
-      - name: startLine
-        in: query
-        schema:
-          type: integer
-      - name: endLine
-        in: query
-        schema:
-          type: integer
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: side
+          in: query
+          schema:
+            type: string
+            enum:
+              - working
+              - reference
+            default: working
+        - name: startLine
+          in: query
+          schema:
+            type: integer
+        - name: endLine
+          in: query
+          schema:
+            type: integer
       responses:
-        '200':
+        "200":
           description: OK
           headers:
             ETag:
@@ -613,19 +791,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReadDocumentResponse'
-        '404':
+                $ref: "#/components/schemas/ReadDocumentResponse"
+        "404":
           description: Document not found
   /v1/documents/{documentId}/search:
     post:
       operationId: searchDocument
       summary: Literal or regex search against the live buffer
       parameters:
-      - name: documentId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -633,7 +811,7 @@ paths:
             schema:
               type: object
               required:
-              - literal
+                - literal
               properties:
                 literal:
                   type: string
@@ -641,58 +819,58 @@ paths:
                   type: integer
                   default: 3
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
+                $ref: "#/components/schemas/SearchDocumentResponse"
   /v1/documents/{documentId}/proposals:
     post:
       operationId: submitProposal
       summary: Submit an exact unified-diff packet
       parameters:
-      - name: documentId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: If-Match
-        in: header
-        required: true
-        schema:
-          type: string
-        description: ETag from the document read
-      - name: Idempotency-Key
-        in: header
-        required: true
-        schema:
-          type: string
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: string
+          description: ETag from the document read
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SubmitProposalRequest'
+              $ref: "#/components/schemas/SubmitProposalRequest"
       responses:
-        '200':
+        "200":
           description: Proposal applied
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SubmitProposalResponse'
-        '412':
+                $ref: "#/components/schemas/SubmitProposalResponse"
+        "412":
           description: Stale revision (ETag mismatch)
-        '409':
+        "409":
           description: Review generation conflict
-        '400':
+        "400":
           description: Invalid or non-applicable patch
   /v1/reviews:
     get:
       operationId: listReviews
       summary: List all active reviews
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
@@ -702,127 +880,127 @@ paths:
                   reviews:
                     type: array
                     items:
-                      $ref: '#/components/schemas/ReviewSummary'
+                      $ref: "#/components/schemas/ReviewSummary"
   /v1/reviews/{reviewId}:
     get:
       operationId: getReview
       summary: Inspect a review
       parameters:
-      - name: reviewId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
-        '404':
+                $ref: "#/components/schemas/ReviewDetailResponse"
+        "404":
           description: Review not found
   /v1/reviews/{reviewId}/diff:
     get:
       operationId: getReviewDiff
       summary: Retrieve the complete unresolved composite diff
       parameters:
-      - name: reviewId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
-        '404':
+                $ref: "#/components/schemas/ReviewDiffResponse"
+        "404":
           description: Review not found
   /v1/reviews/{reviewId}/chunks:
     get:
       operationId: getReviewChunks
       summary: Inspect current unresolved chunks
       parameters:
-      - name: reviewId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
-        '404':
+                $ref: "#/components/schemas/ReviewChunksResponse"
+        "404":
           description: Review not found
   /v1/reviews/{reviewId}/packets:
     get:
       operationId: getReviewPackets
       summary: Inspect the proposal-packet ledger
       parameters:
-      - name: reviewId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
-        '404':
+                $ref: "#/components/schemas/ReviewPacketsResponse"
+        "404":
           description: Review not found
   /v1/reviews/{reviewId}/clear:
     post:
       operationId: clearReview
       summary: Discard unresolved suggestions while preserving accepted changes
       parameters:
-      - name: reviewId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
-        '404':
+                $ref: "#/components/schemas/ClearReviewResponse"
+        "404":
           description: Review not found
   /v1/proposals/{packetId}/retract:
     post:
       operationId: retractProposal
       summary: Retract an untouched, most-recent packet
       parameters:
-      - name: packetId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: packetId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
-        '409':
+                $ref: "#/components/schemas/RetractProposalResponse"
+        "409":
           description: Packet not retractable
   /v1/events:
     get:
       operationId: subscribeEvents
       summary: Subscribe to focus, document, proposal, and review events via SSE
       responses:
-        '200':
+        "200":
           description: SSE stream
           content:
             text/event-stream:
@@ -835,123 +1013,123 @@ paths:
                 type: string
               example: no-cache
       parameters:
-      - name: Last-Event-ID
-        in: header
-        required: false
-        schema:
-          type: string
-        description: Resumes from the next server event after this id.
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Resumes from the next server event after this id.
   /v1/reviews/{reviewId}/events:
     get:
       operationId: waitForReviewEvents
       summary: Long-poll review events and status after a generation advance
       parameters:
-      - name: reviewId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: afterGeneration
-        in: query
-        schema:
-          type: integer
-          minimum: 0
-          default: 0
-      - name: waitSeconds
-        in: query
-        schema:
-          type: integer
-          minimum: 0
-          maximum: 120
-          default: 30
-      - name: wait
-        in: query
-        deprecated: true
-        schema:
-          type: integer
-          minimum: 0
-          maximum: 120
-          default: 30
-        description: Deprecated alias for waitSeconds.
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: afterGeneration
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: waitSeconds
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 120
+            default: 30
+        - name: wait
+          in: query
+          deprecated: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 120
+            default: 30
+          description: Deprecated alias for waitSeconds.
       responses:
-        '200':
+        "200":
           description: Review state and matching event history (or timed out)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewEventsResponse'
-        '404':
+                $ref: "#/components/schemas/ReviewEventsResponse"
+        "404":
           description: Review not found
   /v1/views:
     get:
       operationId: listViews
       summary: List active editor views
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ViewsResponse'
+                $ref: "#/components/schemas/ViewsResponse"
   /v1/workspaces:
     get:
       operationId: listWorkspaces
       summary: List configured workspaces
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkspacesResponse'
+                $ref: "#/components/schemas/WorkspacesResponse"
   /v1/workspaces/{workspaceId}/documents:
     get:
       operationId: listWorkspaceDocuments
       summary: List documents known to a workspace
       parameters:
-      - name: workspaceId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: query
-        in: query
-        required: false
-        schema:
-          type: string
-        description: Optional case-insensitive substring filter over file path.
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional case-insensitive substring filter over file path.
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkspaceDocumentsResponse'
-        '404':
+                $ref: "#/components/schemas/WorkspaceDocumentsResponse"
+        "404":
           description: Workspace not found
   /v1/workspaces/{workspaceId}/documents/{documentId}/open:
     post:
       operationId: openWorkspaceDocument
       summary: Open or focus a document in a workspace
       parameters:
-      - name: workspaceId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: documentId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkspaceOpenDocumentResponse'
-        '401':
+                $ref: "#/components/schemas/WorkspaceOpenDocumentResponse"
+        "401":
           description: Unauthorized workspace access
-        '404':
+        "404":
           description: Workspace not found or document unavailable in workspace

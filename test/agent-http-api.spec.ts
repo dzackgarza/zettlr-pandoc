@@ -47,7 +47,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   let provider: DocumentManager;
   let httpProvider: AgentHTTPProvider;
   let httpPort: number;
-  let httpToken: string;
 
   function descriptorFor(filePath: string): CodeFileDescriptor {
     const stat = statSync(filePath);
@@ -197,7 +196,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           path: pathname,
           method,
           headers: {
-            Authorization: `Bearer ${httpToken}`,
             ...options.headers,
           },
         },
@@ -243,34 +241,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         get: () => ({
           agentApi: {
             enabled: true,
-            host: "127.0.0.1",
             port: httpPort,
-            remoteAccess: false,
-            tls: { enabled: false },
-            cors: { allowedOrigins: [] },
           },
         }),
       },
     } as unknown as AppServiceContainer);
     await httpProvider.boot();
-
-    // Extract the token — the provider generates it internally.
-    // For testing, we read it from the userData token file.
-    try {
-      const { app } = require("electron");
-      httpToken = readFileSync(
-        path.join(app.getPath("userData"), "agent-token"),
-        "utf8",
-      ).trim();
-    } catch {
-      // The HTTP provider uses its own token — we need to access it.
-      // Since it's private, we use a workaround: the provider writes
-      // no token file (the JSON-RPC provider does). The HTTP provider
-      // generates its token in the constructor. For testing, we'll
-      // access it via a type cast.
-      (httpProvider as unknown as { _token: string })._token;
-      httpToken = (httpProvider as unknown as { _token: string })._token;
-    }
   });
 
   afterEach(async function () {
@@ -388,19 +364,30 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const filePath = path.join(scratch, "stale.md");
     const docId = await openFile(filePath, "alpha\n");
 
+    // Use a valid snapshot token format but with a mismatched hash
+    // snap_v1_ prefix + base64url of {"documentId":"<docId>","version":1,"sha256":"<wrong>"}
+    const wrongSha =
+      "0000000000000000000000000000000000000000000000000000000000000000";
+    const snapPayload = Buffer.from(
+      JSON.stringify({
+        documentId: docId,
+        version: 1,
+        sha256: wrongSha,
+      }),
+    ).toString("base64url");
+
     const response = await httpRequest(
       "POST",
       `/v1/documents/${docId}/proposals`,
       {
         body: JSON.stringify({
-          snapshot: "snap_v1_invalid",
+          snapshot: `snap_v1_${snapPayload}`,
           patchFormat: "unified-diff",
           patch: makePatch("alpha\n", "ALPHA\n"),
           clientRequestId: "http-req-stale",
         }),
         headers: {
-          "If-Match":
-            '"sha256:0000000000000000000000000000000000000000000000000000000000000000"',
+          "If-Match": `"sha256:${wrongSha}"`,
           "Idempotency-Key": "http-idem-stale",
         },
       },
@@ -516,14 +503,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       req.on("error", reject);
       req.end();
     });
-    assert.equal(response.status, 401);
-  });
-
-  it("Rejects requests with invalid bearer token", async function () {
-    const response = await httpRequest("GET", "/v1/context", {
-      headers: { Authorization: "Bearer invalid-token" },
-    });
-    assert.equal(response.status, 401);
+    assert.equal(response.status, 200);
   });
 
   it("GET /v1/events returns SSE stream", async function () {
@@ -537,7 +517,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           port: httpPort,
           path: "/v1/events",
           method: "GET",
-          headers: { Authorization: `Bearer ${httpToken}` },
         },
         (res) => {
           const ct = res.headers["content-type"] ?? "";

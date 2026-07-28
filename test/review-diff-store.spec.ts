@@ -495,7 +495,9 @@ describe("ReviewDiffStore", function () {
       });
       const chunks = store.getOutstandingChunks(DOC_ID);
       assert.notEqual(chunks, undefined);
-      assert.equal(chunks!.length, 2); // two changed lines
+      // After coalescing adjacent added+removed parts, contiguous changes
+      // are grouped into a single chunk.
+      assert.equal(chunks!.length, 1);
     });
 
     it("returns zero chunks after all are resolved", function () {
