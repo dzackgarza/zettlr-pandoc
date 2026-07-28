@@ -34,6 +34,13 @@ jobs:
         run: just setup-ci
       - name: Install packages
         run: bun ci
+      - name: Configure Electron SUID sandbox
+        run: |
+          sandbox=node_modules/electron/dist/chrome-sandbox
+          sudo chown root:root "$sandbox"
+          sudo chmod 4755 "$sandbox"
+          test "$(stat -c %U:%G "$sandbox")" = root:root
+          test "$(stat -c %a "$sandbox")" = 4755
       - name: Run unit tests
         run: bun run test
       - name: Run assembled-app E2E
