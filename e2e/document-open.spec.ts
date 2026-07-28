@@ -4,7 +4,7 @@ import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chromium, type Browser, type Page } from 'playwright'
-import { parse, stringify } from 'yaml'
+import { stringify } from 'yaml'
 
 const MARKER = 'ZETTLR_E2E_VISIBLE_DOCUMENT_MARKER_4E8C8D8A'
 const REPO_ROOT = path.resolve(process.cwd())
@@ -175,13 +175,7 @@ describe('opening a Markdown document', function () {
     const workspaceDirectory = path.join(fixtureRoot, 'workspace')
     const documentPath = path.join(workspaceDirectory, 'opened-document.md')
 
-    await cp(path.join(REPO_ROOT, 'resources', 'test-cfg'), configDirectory, {
-      recursive: true,
-    })
-    await rm(path.join(configDirectory, 'logs'), {
-      recursive: true,
-      force: true
-    })
+    await mkdir(configDirectory)
     await mkdir(workspaceDirectory)
     await writeFile(
       documentPath,
@@ -189,22 +183,42 @@ describe('opening a Markdown document', function () {
       'utf8'
     )
 
+    const packageMetadata: unknown = JSON.parse(
+      await readFile(path.join(REPO_ROOT, 'package.json'), 'utf8')
+    )
+    assert.ok(
+      packageMetadata !== null &&
+        typeof packageMetadata === 'object' &&
+        'version' in packageMetadata &&
+        typeof packageMetadata.version === 'string',
+      'package.json must declare the application version'
+    )
     const configPath = path.join(configDirectory, 'config.json')
-    const config = JSON.parse(await readFile(configPath, 'utf8'))
-    config.app.openFiles = []
-    config.app.openWorkspaces = [workspaceDirectory]
-    config.system.checkForUpdates = false
-    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8')
+    await writeFile(
+      configPath,
+      `${JSON.stringify(
+        {
+          version: packageMetadata.version,
+          app: {
+            openFiles: [],
+            openWorkspaces: [workspaceDirectory]
+          },
+          system: { checkForUpdates: false }
+        },
+        null,
+        2
+      )}\n`,
+      'utf8'
+    )
 
     const documentsPath = path.join(configDirectory, 'documents.yaml')
-    const documents = parse(await readFile(documentsPath, 'utf8'))
-    const windowId = Object.keys(documents)[0]
-    assert.ok(windowId, 'The test configuration must contain a main window')
-    documents[windowId] = {
-      type: 'leaf',
-      id: '7b4dd4f2-48a2-4279-b6c9-577132e64480',
-      openFiles: [{ path: documentPath, pinned: false }],
-      activeFile: { path: documentPath, pinned: false },
+    const documents = {
+      '56b44854-b144-4a6f-8061-dcfeb6e512e8': {
+        type: 'leaf',
+        id: '7b4dd4f2-48a2-4279-b6c9-577132e64480',
+        openFiles: [{ path: documentPath, pinned: false }],
+        activeFile: { path: documentPath, pinned: false }
+      }
     }
     await writeFile(documentsPath, stringify(documents), 'utf8')
 
