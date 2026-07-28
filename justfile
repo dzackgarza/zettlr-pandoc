@@ -75,7 +75,8 @@ test:
     "{{justfile_directory()}}/node_modules/.bin/mocha" --timeout 120000 --inline-diffs
 
 # Run the assembled Electron app against its isolated document workspace.
-test-e2e: sync-dependencies
+test-e2e:
+    {{bun}} install --frozen-lockfile
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     {{bun}} run test:e2e
 
