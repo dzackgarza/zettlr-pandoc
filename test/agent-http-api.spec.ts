@@ -9,12 +9,11 @@
  *
  * Description:     Drives the embedded HTTP server against the OpenAPI
  *                  specification. Tests REST routes, ETag concurrency,
- *                  bearer auth, SSE, and CORS.
+ *                  unauthenticated loopback access and SSE.
  *
  * END HEADER
  */
 
-import { ipcMainHandlers } from "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import {
   mkdtempSync,
@@ -27,20 +26,13 @@ import {
 import net from "net";
 import os from "os";
 import path from "path";
-import { randomUUID } from "crypto";
 import http from "http";
-import { ChangeSet, Text } from "@codemirror/state";
 import { createPatch } from "diff";
 import DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
-
-type IpcHandler = (
-  event: unknown,
-  message: { command: string; payload?: unknown },
-) => Promise<unknown> | unknown;
 
 describe("Agent HTTP API (OpenAPI / REST)", function () {
   let scratch: string;
@@ -101,11 +93,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           },
           agentApi: {
             enabled: true,
-            host: "127.0.0.1",
             port: httpPort,
-            remoteAccess: false,
-            tls: { enabled: false },
-            cors: { allowedOrigins: [] },
           },
         }),
         addPath: (_path: string) => false,
@@ -142,29 +130,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     await manager.boot();
     activeWindowId = manager.windowKeys()[0];
     return manager;
-  }
-
-  async function pushTextUpdate(
-    filePath: string,
-    fromContent: string,
-    toContent: string,
-    version = 0,
-  ): Promise<void> {
-    const baselineDoc = Text.of(fromContent.split("\n"));
-    const changes = ChangeSet.of(
-      [{ from: 0, to: baselineDoc.length, insert: toContent }],
-      baselineDoc.length,
-    );
-    const handler = ipcMainHandlers.get("documents-authority") as IpcHandler;
-    const accepted = await handler(undefined, {
-      command: "push-updates",
-      payload: {
-        filePath,
-        version,
-        updates: [{ changes: changes.toJSON(), clientID: "http-test" }],
-      },
-    });
-    assert.equal(accepted, true, "push-updates must succeed");
   }
 
   async function openFile(filePath: string, content: string): Promise<string> {
@@ -293,7 +258,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     await openFile(filePath, "content\n");
     const response = await httpRequest("GET", "/v1/documents");
     assert.equal(response.status, 200);
-    const body = JSON.parse(response.body);
+    const body = JSON.parse(response.body) as {
+      documents: Array<{ path: string }>;
+    };
     assert.ok(body.documents.length > 0);
     assert.ok(
       body.documents.some((d: { path: string }) => d.path === filePath),
@@ -315,7 +282,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const docId = await openFile(filePath, "alpha\nbeta\n");
     const response = await httpRequest("GET", `/v1/documents/${docId}/content`);
     assert.equal(response.status, 200);
-    const body = JSON.parse(response.body);
+    const body = JSON.parse(response.body) as {
+      content: string;
+      snapshot: string;
+    };
     assert.ok(body.content.includes("alpha"));
     assert.ok(body.snapshot.startsWith("snap_v1_"));
     // ETag must be present
@@ -429,7 +399,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const response = await httpRequest("GET", `/v1/reviews/${reviewId}/diff`);
     assert.equal(response.status, 200);
-    const body = JSON.parse(response.body);
+    const body = JSON.parse(response.body) as { patch: string };
     assert.ok(body.patch.includes("-alpha"));
     assert.ok(body.patch.includes("+ALPHA"));
   });
@@ -480,7 +450,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(body.retracted, true);
   });
 
-  it("Rejects requests without bearer auth", async function () {
+  it("accepts unauthenticated loopback requests", async function () {
     const response = await new Promise<{
       status: number;
     }>((resolve, reject) => {
@@ -490,13 +460,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           port: httpPort,
           path: "/v1/context",
           method: "GET",
-          // No Authorization header
+          // The application API intentionally has no authentication layer.
         },
         (res) => {
-          let data = "";
-          res.on("data", (chunk: Buffer) => {
-            data += chunk.toString("utf8");
-          });
+          res.resume();
           res.on("end", () => resolve({ status: res.statusCode ?? 0 }));
         },
       );

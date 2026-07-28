@@ -1,52 +1,31 @@
 # Claim
 
-Implement the granular accept/reject review interface specified by issue #34.
-
-## GitHub Tracking
-
-- Target issue set: #34
-- Milestone: none assigned
-- Closes on merge: Closes #34
-- References only: none
+Implement Zettlr's embedded, unauthenticated OpenAPI API for a remote-first document review workflow.
 
 # Delivery Boundary
 
-This PR owns the Zettlr-Pandoc side of document-diff review:
+- The server binds only to `127.0.0.1`; tunnel deployment is external infrastructure.
 
-- a `review-diff` CLI route that accepts a target document and a unified patch;
-- strict parsing and validation for a single text-file proposition;
-- optional SHA-256 baseline fencing before a review session starts;
-- a CodeMirror 6 unified diff review view for Markdown documents;
-- per-chunk accept/reject controls backed by CodeMirror merge chunks;
-- unresolved-chunk state tracked by the document provider;
-- save refusal while chunks remain unresolved;
-- save refusal when the on-disk document has drifted from the review baseline;
-- focused tests and rendered screenshots for the review UI.
+- The application has no bearer authentication, TLS listener, remote-bind mode, CORS policy, or Cloudflare-specific request handling.
 
-# Product Boundaries
+- Remote clients use opaque document IDs to discover focused/open context, read live buffers and slices, search, submit unified-diff proposals, inspect reviews, and clear or retract unresolved work.
 
-- This is not a Git repository review feature.
-- This does not support multi-file, binary, rename, copy, create, delete, mode-change, or directory patches.
-- The app reviews one already-supported Markdown/code text document at a time.
-- Accepting a chunk keeps the proposed text for that chunk.
-- Rejecting a chunk restores the baseline text for that chunk.
-- The document provider remains the authority for dirty state and final disk writes.
-- Unsupported inputs fail before opening or modifying the target document.
+- Proposal, clear, retract, and renderer-decision transitions update the authoritative provider buffer, review generation, and review events.
 
-# Acceptance and Proof Obligations
+- The API exposes SSE and long-poll review observation with canonical event fields.
 
-- [x] #34: Baseline plus valid multi-chunk proposition opens review mode; accepting the first chunk and rejecting the second saves exactly the expected mixed result. — `test/editor-review-diff.spec.ts` drives the real merge controls; `test/review-diff-save-gate.spec.ts` proves the provider writes the exact mixed buffer once chunks are resolved.
-- [x] #34: Baseline plus proposition plus external disk edit before resolution refuses the resolution/write and leaves the external edit intact. — `test/review-diff-save-gate.spec.ts`.
-- [x] #34: Malformed or non-applicable patch exits nonzero through the CLI route and does not open or modify the document. — `source/main.ts` preflight exits before the single-instance handoff; `test/review-diff-request.spec.ts`.
-- [x] #34: The rendered review interface has visible independently actionable chunks at desktop and narrow widths. — `just capture-review-diff /tmp/zettlr-review-diff-captures`, screenshots inspected.
-- [x] #34: The branch uses maintained CodeMirror/jsdiff dependencies and does not introduce a bespoke patch parser. — `@codemirror/merge@^6.12.2`, `diff@^9.0.0`.
+- The OpenAPI specification is bundled with the application and served at `/openapi.yaml`.
 
-# Known External State
+# Evidence
 
-Repository CI/QC infrastructure remains outside this PR.
+- `bun ci` passes after the lockfile records the declared `@codemirror/merge` and `diff` dependencies.
 
-- Issue #4 tracks the repository QC wiring/toolchain gap.
-- PR #35 is closed and did not clear the current branch gates.
-- Current GitHub checks for this branch fail in existing CI surfaces that this PR does not edit: the hosted runner lacks the Pandoc/export toolchain required by the repository tests, and the `PR Review` workflow returned a startup failure with no jobs.
+- `just test-file test/agent-http-api.spec.ts` passes: 15 focused HTTP API tests.
 
-This PR does not claim to repair those project-wide gates.
+- `just test-file test/agent-http-api-e2e-cross-process.spec.ts` passes: 4 separate-process loopback API tests.
+
+# Completion Boundary
+
+This branch is not yet certified for merge.
+The remaining required proof is a real remote-client run through a named Cloudflare Tunnel hostname, from a process without access to the editor machine's filesystem or local sockets.
+Localhost and cross-process harness results do not substitute for that boundary.
