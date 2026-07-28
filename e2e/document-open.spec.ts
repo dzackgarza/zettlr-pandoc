@@ -27,6 +27,16 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
+function requireInitialized<T>(
+  value: T | undefined,
+  message: string
+): T {
+  if (value === undefined) {
+    throw new Error(message)
+  }
+  return value
+}
+
 function outputTail(output: string): string {
   return output.split('\n').slice(-100).join('\n')
 }
@@ -217,6 +227,114 @@ async function waitForAppDiagnostic(
   )
 }
 
+interface Fixture {
+  root: string
+  configDirectory: string
+  documentPath: string
+}
+
+async function createFixture(): Promise<Fixture> {
+  const root = await mkdtemp(path.join(tmpdir(), 'zettlr-document-open-e2e-'))
+  const configDirectory = path.join(root, 'config')
+  const workspaceDirectory = path.join(root, 'workspace')
+  const documentPath = path.join(workspaceDirectory, 'opened-document.md')
+
+  await mkdir(configDirectory)
+  await mkdir(workspaceDirectory)
+  await writeFile(documentPath, `# Opened document\n\n${MARKER}\n`, 'utf8')
+
+  const packageMetadata: unknown = JSON.parse(
+    await readFile(path.join(REPO_ROOT, 'package.json'), 'utf8')
+  )
+  assert.ok(
+    packageMetadata !== null &&
+      typeof packageMetadata === 'object' &&
+      'version' in packageMetadata &&
+      typeof packageMetadata.version === 'string',
+    'package.json must declare the application version'
+  )
+  await writeFile(
+    path.join(configDirectory, 'config.json'),
+    `${JSON.stringify(
+      {
+        version: packageMetadata.version,
+        app: {
+          openFiles: [],
+          openWorkspaces: [workspaceDirectory]
+        },
+        system: { checkForUpdates: false }
+      },
+      null,
+      2
+    )}\n`,
+    'utf8'
+  )
+
+  const documents = {
+    '56b44854-b144-4a6f-8061-dcfeb6e512e8': {
+      type: 'leaf',
+      id: '7b4dd4f2-48a2-4279-b6c9-577132e64480',
+      openFiles: [{ path: documentPath, pinned: false }],
+      activeFile: { path: documentPath, pinned: false }
+    }
+  }
+  await writeFile(
+    path.join(configDirectory, 'documents.yaml'),
+    stringify(documents),
+    'utf8'
+  )
+
+  return { root, configDirectory, documentPath }
+}
+
+function launchElectron(configDirectory: string): ChildProcess {
+  const forgeExecutable = path.join(
+    REPO_ROOT,
+    'node_modules',
+    '.bin',
+    'electron-forge'
+  )
+  const forgeArguments = [
+    'start',
+    '--',
+    `--data-dir=${configDirectory}`,
+    '--remote-debugging-port=0',
+    '--disable-hardware-acceleration'
+  ]
+  const needsVirtualDisplay =
+    process.platform === 'linux' &&
+    process.env.DISPLAY === undefined &&
+    process.env.WAYLAND_DISPLAY === undefined
+  const executable = needsVirtualDisplay ? 'xvfb-run' : forgeExecutable
+  const args = needsVirtualDisplay
+    ? ['--auto-servernum', forgeExecutable, ...forgeArguments]
+    : forgeArguments
+
+  return spawn(executable, args, {
+    cwd: REPO_ROOT,
+    detached: true,
+    env: { ...process.env, NODE_ENV: 'develop' },
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
+}
+
+function observeRenderer(page: Page, rendererEvents: string[]): void {
+  page.on('console', message => {
+    if (message.type() === 'error') {
+      rendererEvents.push(`console.error: ${message.text()}`)
+    }
+  })
+  page.on('pageerror', error => {
+    rendererEvents.push(`pageerror: ${error.stack ?? error.message}`)
+  })
+  page.on('dialog', dialog => {
+    rendererEvents.push(`dialog.${dialog.type()}: ${dialog.message()}`)
+    void dialog.dismiss().catch(error => {
+      rendererEvents.push(`dialog-dismiss-error: ${String(error)}`)
+    })
+  })
+}
+
 describe('opening a Markdown document', function () {
   let appProcess: ChildProcess | undefined
   let browser: Browser | undefined
@@ -227,86 +345,10 @@ describe('opening a Markdown document', function () {
   const screenshots = new Map<string, Buffer>()
 
   before(async function () {
-    fixtureRoot = await mkdtemp(path.join(tmpdir(), 'zettlr-document-open-e2e-'))
-    const configDirectory = path.join(fixtureRoot, 'config')
-    const workspaceDirectory = path.join(fixtureRoot, 'workspace')
-    documentPath = path.join(workspaceDirectory, 'opened-document.md')
-
-    await mkdir(configDirectory)
-    await mkdir(workspaceDirectory)
-    await writeFile(
-      documentPath,
-      `# Opened document\n\n${MARKER}\n`,
-      'utf8'
-    )
-
-    const packageMetadata: unknown = JSON.parse(
-      await readFile(path.join(REPO_ROOT, 'package.json'), 'utf8')
-    )
-    assert.ok(
-      packageMetadata !== null &&
-        typeof packageMetadata === 'object' &&
-        'version' in packageMetadata &&
-        typeof packageMetadata.version === 'string',
-      'package.json must declare the application version'
-    )
-    const configPath = path.join(configDirectory, 'config.json')
-    await writeFile(
-      configPath,
-      `${JSON.stringify(
-        {
-          version: packageMetadata.version,
-          app: {
-            openFiles: [],
-            openWorkspaces: [workspaceDirectory]
-          },
-          system: { checkForUpdates: false }
-        },
-        null,
-        2
-      )}\n`,
-      'utf8'
-    )
-
-    const documentsPath = path.join(configDirectory, 'documents.yaml')
-    const documents = {
-      '56b44854-b144-4a6f-8061-dcfeb6e512e8': {
-        type: 'leaf',
-        id: '7b4dd4f2-48a2-4279-b6c9-577132e64480',
-        openFiles: [{ path: documentPath, pinned: false }],
-        activeFile: { path: documentPath, pinned: false }
-      }
-    }
-    await writeFile(documentsPath, stringify(documents), 'utf8')
-
-    const forgeExecutable = path.join(
-      REPO_ROOT,
-      'node_modules',
-      '.bin',
-      'electron-forge'
-    )
-    const forgeArguments = [
-      'start',
-      '--',
-      `--data-dir=${configDirectory}`,
-      '--remote-debugging-port=0',
-      '--disable-hardware-acceleration'
-    ]
-    const needsVirtualDisplay =
-      process.platform === 'linux' &&
-      process.env.DISPLAY === undefined &&
-      process.env.WAYLAND_DISPLAY === undefined
-    const executable = needsVirtualDisplay ? 'xvfb-run' : forgeExecutable
-    const args = needsVirtualDisplay
-      ? ['--auto-servernum', forgeExecutable, ...forgeArguments]
-      : forgeArguments
-
-    appProcess = spawn(executable, args, {
-      cwd: REPO_ROOT,
-      detached: true,
-      env: { ...process.env, NODE_ENV: 'develop' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+    const fixture = await createFixture()
+    fixtureRoot = fixture.root
+    documentPath = fixture.documentPath
+    appProcess = launchElectron(fixture.configDirectory)
     const appendOutput = (chunk: Buffer): void => {
       processOutput = `${processOutput}${chunk.toString()}`.slice(-200_000)
     }
@@ -319,25 +361,9 @@ describe('opening a Markdown document', function () {
       this.timeout()
     )
     browser = await chromium.connectOverCDP(devToolsUrl)
-    const observePage = (page: Page): void => {
-      page.on('console', message => {
-        if (message.type() === 'error') {
-          rendererEvents.push(`console.error: ${message.text()}`)
-        }
-      })
-      page.on('pageerror', error => {
-        rendererEvents.push(`pageerror: ${error.stack ?? error.message}`)
-      })
-      page.on('dialog', dialog => {
-        rendererEvents.push(`dialog.${dialog.type()}: ${dialog.message()}`)
-        void dialog.dismiss().catch(error => {
-          rendererEvents.push(`dialog-dismiss-error: ${String(error)}`)
-        })
-      })
-    }
     for (const context of browser.contexts()) {
-      context.pages().forEach(observePage)
-      context.on('page', observePage)
+      context.pages().forEach(page => observeRenderer(page, rendererEvents))
+      context.on('page', page => observeRenderer(page, rendererEvents))
     }
   })
 
@@ -403,10 +429,10 @@ describe('opening a Markdown document', function () {
       }
       return documentText
     })
-    if (documentPath === undefined) {
-      throw new Error('The document path must be initialized')
-    }
-    const diskDocument = await readFile(documentPath, 'utf8')
+    const diskDocument = await readFile(
+      requireInitialized(documentPath, 'The document path must be initialized'),
+      'utf8'
+    )
 
     assert.equal(
       editorDocument,
@@ -430,13 +456,14 @@ describe('opening a Markdown document', function () {
 
   it('attributes a remote reload failure to the active document', async function () {
     assert.ok(browser, 'The application must be running')
-    if (fixtureRoot === undefined) {
-      throw new Error('The fixture root must be initialized')
-    }
-    if (documentPath === undefined) {
-      throw new Error('The document path must be initialized')
-    }
-    const activeDocumentPath = documentPath
+    const activeFixtureRoot = requireInitialized(
+      fixtureRoot,
+      'The fixture root must be initialized'
+    )
+    const activeDocumentPath = requireInitialized(
+      documentPath,
+      'The document path must be initialized'
+    )
     const page = await findEditorPage(browser, this.timeout())
 
     await chmod(activeDocumentPath, 0o000)
@@ -474,6 +501,6 @@ describe('opening a Markdown document', function () {
       `Renderer diagnostics did not identify the failed document.\n` +
         rendererEvents.join('\n')
     )
-    await waitForAppDiagnostic(fixtureRoot, activeDocumentPath, 20_000)
+    await waitForAppDiagnostic(activeFixtureRoot, activeDocumentPath, 20_000)
   })
 })
