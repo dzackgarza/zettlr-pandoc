@@ -36,6 +36,7 @@ jobs:
         run: bun ci
       - name: Configure Electron SUID sandbox
         run: |
+          node -e "require('electron')"
           electron_binary=$(node -p "require('electron')")
           sandbox="$(dirname "$electron_binary")/chrome-sandbox"
           test -f "$sandbox"
