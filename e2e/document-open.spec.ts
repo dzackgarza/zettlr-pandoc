@@ -403,7 +403,9 @@ describe('opening a Markdown document', function () {
       }
       return documentText
     })
-    assert.ok(documentPath, 'The document path must be initialized')
+    if (documentPath === undefined) {
+      throw new Error('The document path must be initialized')
+    }
     const diskDocument = await readFile(documentPath, 'utf8')
 
     assert.equal(
@@ -428,8 +430,12 @@ describe('opening a Markdown document', function () {
 
   it('attributes a remote reload failure to the active document', async function () {
     assert.ok(browser, 'The application must be running')
-    assert.ok(fixtureRoot, 'The fixture root must be initialized')
-    assert.ok(documentPath, 'The document path must be initialized')
+    if (fixtureRoot === undefined) {
+      throw new Error('The fixture root must be initialized')
+    }
+    if (documentPath === undefined) {
+      throw new Error('The document path must be initialized')
+    }
     const activeDocumentPath = documentPath
     const page = await findEditorPage(browser, this.timeout())
 
