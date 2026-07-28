@@ -273,6 +273,8 @@ export type RetractProposalResponse =
       retracted: true;
       packetId: string;
       reviewId: string;
+      documentId: string;
+      documentRevision: DocumentRevision;
       reviewGeneration: number;
       unresolvedChunks: number;
     }
@@ -358,6 +360,7 @@ export type AgentErrorCode =
   | "DOCUMENT_NOT_FOUND"
   | "DOCUMENT_CLOSED"
   | "REVISION_MISMATCH"
+  | "REVIEW_GENERATION_MISMATCH"
   | "REVIEW_NOT_FOUND"
   | "REVIEW_INVALIDATED"
   | "PATCH_INVALID"

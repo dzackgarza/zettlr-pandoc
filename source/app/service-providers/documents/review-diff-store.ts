@@ -811,9 +811,11 @@ export class ReviewDiffStore extends EventEmitter {
       reviewId: r.reviewId,
       documentId: r.documentId,
       state:
-        this.countUnresolvedChunks(r) === 0
-          ? "resolved-awaiting-save"
-          : "active",
+        this.isInvalidated(r)
+          ? "invalidated"
+          : this.countUnresolvedChunks(r) === 0
+            ? "resolved-awaiting-save"
+            : "active",
       generation: r.generation,
       unresolvedChunks: this.countUnresolvedChunks(r),
       packetCount: r.packets.length,

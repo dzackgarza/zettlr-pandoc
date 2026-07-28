@@ -624,7 +624,7 @@ export default class DocumentManager extends ProviderContract {
                 }
               } else {
                 document.lastSavedVersion = document.currentVersion;
-                this._reviewStore.closeReview(document.documentId);
+                this._closeReview(document.documentId);
               }
             }
 
@@ -1249,7 +1249,7 @@ current contents from the editor somewhere else, and restart the application.`,
         {
           const _id = this.getDocumentId(filePath);
           if (_id !== undefined) {
-            this._reviewStore.closeReview(_id);
+            this._closeReview(_id);
           }
         }
         this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
@@ -1276,7 +1276,7 @@ current contents from the editor somewhere else, and restart the application.`,
       {
         const _id = this.getDocumentId(filePath);
         if (_id !== undefined) {
-          this._reviewStore.closeReview(_id);
+          this._closeReview(_id);
         }
       }
     }
@@ -1342,7 +1342,7 @@ current contents from the editor somewhere else, and restart the application.`,
       this.documents.splice(idx, 1);
     }
     if (documentId !== undefined) {
-      this._reviewStore.closeReview(documentId);
+      this._closeReview(documentId);
     }
 
     this.syncWatchedFilePaths();
@@ -1685,7 +1685,7 @@ current contents from the editor somewhere else, and restart the application.`,
     {
       const _id = this.getDocumentId(filePath);
       if (_id !== undefined) {
-        this._reviewStore.closeReview(_id);
+        this._closeReview(_id);
       }
     }
     // Indicate to all affected editors that they should reload the file
@@ -2175,6 +2175,7 @@ current contents from the editor somewhere else, and restart the application.`,
           this._broadcastReviewCleared(filePath, _review.reviewId);
         }
         this._reviewStore.completeReview(_id);
+        this._clearProposalIdempotency(_id);
       }
     }
     this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
@@ -2211,6 +2212,20 @@ current contents from the editor somewhere else, and restart the application.`,
 
   public ensureDocumentId(filePath: string): string {
     return this._assignDocumentId(filePath);
+  }
+
+  private _closeReview(documentId: string): void {
+    this._reviewStore.closeReview(documentId);
+    this._clearProposalIdempotency(documentId);
+  }
+
+  private _clearProposalIdempotency(documentId: string): void {
+    const prefix = `${documentId}:`;
+    for (const key of this._proposalIdempotency.keys()) {
+      if (key.startsWith(prefix)) {
+        this._proposalIdempotency.delete(key);
+      }
+    }
   }
 
   /**

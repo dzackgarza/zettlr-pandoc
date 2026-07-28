@@ -10,7 +10,6 @@
  * Description:     The renderer half of the flowmark "Format document"
  *                  command: the production MarkdownFormatter routes buffer text
  *                  through the main-process flowmark service over the
-<<<<<<< HEAD
  *                  'application' IPC channel, and a helper surfaces a typed
  *                  absence or error as a toast (never a silent no-op). This
  *                  module reaches `window.ipc` (the contextBridge bridge), so it

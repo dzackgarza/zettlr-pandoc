@@ -143,6 +143,9 @@ function patchHeaderMatchesDocument (fileName: string|undefined, documentPath: s
   }
 
   const normalizedName = fileName.replace(/\\/g, '/').replace(/^(a|b)\//, '')
+  if (normalizedName === 'document') {
+    return true
+  }
   if (!path.isAbsolute(normalizedName)) {
     return false
   }

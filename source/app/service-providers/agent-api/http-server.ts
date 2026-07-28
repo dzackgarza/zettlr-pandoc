@@ -37,8 +37,15 @@ import makeSearchRegex from "source/common/util/make-search-regex";
 
 const SSE_REPLAY_BUFFER_SIZE = 100;
 const SSE_HEARTBEAT_MS = 15000;
+const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
 
 type BufferedAgentEvent = AgentEvent & { id: string };
+
+class RequestTooLargeError extends Error {
+  constructor() {
+    super("Request body exceeds the API limit");
+  }
+}
 
 // ============================================================================
 // AgentHTTPProvider
@@ -174,6 +181,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     const method = req.method ?? "GET";
 
     this.dispatch(req, res, method, pathname, url).catch((err) => {
+      if (err instanceof RequestTooLargeError) {
+        this.sendError(res, 413, "REQUEST_TOO_LARGE", "Request body exceeds the API limit");
+        return;
+      }
       this._log.error(`[AgentHTTPProvider] Unhandled error: ${err}`);
       this.sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
     });
@@ -468,18 +479,16 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: http.ServerResponse,
   ): Promise<void> {
     const body = await this.readBody(req);
-    let parsed: { uri?: string };
-    try {
-      parsed = JSON.parse(body) as { uri?: string };
-    } catch {
+    const parsed = this.parseJsonObject(body);
+    if (parsed === undefined) {
       this.sendError(res, 400, "INVALID_PARAMS", "Invalid JSON body");
       return;
     }
-    if (parsed.uri === undefined) {
-      this.sendError(res, 400, "INVALID_PARAMS", "uri is required");
+    if (typeof parsed.uri !== "string") {
+      this.sendError(res, 400, "INVALID_PARAMS", "uri is required and must be a string");
       return;
     }
-    const resolveOpenPath = (uri: string): string => {
+    const resolveOpenPath = (uri: string): string | undefined => {
       try {
         const parsedUri = new URL(uri);
         if (parsedUri.protocol !== "safe-file:" && parsedUri.protocol !== "file:") {
@@ -490,14 +499,14 @@ export default class AgentHTTPProvider extends ProviderContract {
         if (process.platform === "win32" && /^\/[A-Za-z]:/.test(filePath)) {
           filePath = filePath.slice(1);
         }
-        return filePath;
+        return path.resolve(filePath);
       } catch {
-        return uri;
+        return path.isAbsolute(uri) ? path.resolve(uri) : undefined;
       }
     };
 
     const filePath = resolveOpenPath(parsed.uri);
-    if (!this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
+    if (filePath === undefined || !this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Path is outside configured workspace scope");
       return;
     }
@@ -691,9 +700,16 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
 
-    let timeout: NodeJS.Timeout;
+    let timeout: NodeJS.Timeout | undefined;
+    const cleanup = (): void => {
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+      }
+      this._documents.reviewStore.removeListener("*", listener);
+      res.removeListener("close", cleanup);
+    };
     const finish = (status: unknown): void => {
-      clearTimeout(timeout);
+      cleanup();
       if ((res as { writableEnded?: boolean }).writableEnded === true) {
         return;
       }
@@ -706,7 +722,6 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
       if (event.reviewGeneration !== undefined && event.reviewGeneration > afterGeneration) {
-        this._documents.reviewStore.removeListener("*", listener);
         const status = this._documents.reviewStore.getReviewStatus(documentId);
         finish({
           reviewId,
@@ -717,8 +732,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     };
 
     this._documents.reviewStore.on("*", listener);
+    res.on("close", cleanup);
     timeout = setTimeout(() => {
-      this._documents.reviewStore.removeListener("*", listener);
       const status = this._documents.reviewStore.getReviewStatus(documentId);
       finish({
         reviewId,
@@ -734,15 +749,17 @@ export default class AgentHTTPProvider extends ProviderContract {
     documentId: string,
   ): Promise<void> {
     const body = await this.readBody(req);
-    let parsed: { literal?: string; context?: number };
-    try {
-      parsed = JSON.parse(body) as { literal?: string; context?: number };
-    } catch {
+    const parsed = this.parseJsonObject(body);
+    if (parsed === undefined) {
       this.sendError(res, 400, "INVALID_PARAMS", "Invalid JSON body");
       return;
     }
-    if (parsed.literal === undefined) {
-      this.sendError(res, 400, "INVALID_PARAMS", "literal is required");
+    if (typeof parsed.literal !== "string") {
+      this.sendError(res, 400, "INVALID_PARAMS", "literal is required and must be a string");
+      return;
+    }
+    if (parsed.context !== undefined && (!Number.isInteger(parsed.context) || parsed.context < 0)) {
+      this.sendError(res, 400, "INVALID_PARAMS", "context must be a non-negative integer");
       return;
     }
     const result = this._documents.readLiveBuffer(documentId);
@@ -819,16 +836,8 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     // Read and parse the request body
     const body = await this.readBody(req);
-    let parsed: {
-      snapshot: string;
-      patchFormat: "unified-diff";
-      patch: string;
-      description?: string;
-      expectedReviewGeneration?: number;
-    };
-    try {
-      parsed = JSON.parse(body) as typeof parsed;
-    } catch {
+    const parsed = this.parseJsonObject(body);
+    if (parsed === undefined) {
       this.sendError(res, 400, "INVALID_PARAMS", "Invalid JSON body");
       return;
     }
@@ -847,6 +856,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
     if (typeof parsed.snapshot !== "string" || typeof parsed.patch !== "string") {
       this.sendError(res, 400, "INVALID_PARAMS", "snapshot and patch are required");
+      return;
+    }
+    if (parsed.description !== undefined && typeof parsed.description !== "string") {
+      this.sendError(res, 400, "INVALID_PARAMS", "description must be a string");
       return;
     }
     const parsedSnapshot = DocumentManager.parseSnapshotToken(parsed.snapshot);
@@ -1225,18 +1238,43 @@ export default class AgentHTTPProvider extends ProviderContract {
     return undefined;
   }
 
+  private parseJsonObject(body: string): Record<string, unknown> | undefined {
+    try {
+      const parsed: unknown = JSON.parse(body);
+      if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
+        return undefined;
+      }
+      return parsed as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async readBody(req: http.IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
       let data = "";
+      let settled = false;
       req.on("data", (chunk: Buffer) => {
+        if (settled) {
+          return;
+        }
         data += chunk.toString("utf8");
-        if (data.length > 25 * 1024 * 1024) {
-          reject(new Error("Request too large"));
+        if (Buffer.byteLength(data, "utf8") > MAX_REQUEST_BODY_BYTES) {
+          settled = true;
+          reject(new RequestTooLargeError());
           req.destroy();
         }
       });
-      req.on("end", () => resolve(data));
-      req.on("error", reject);
+      req.on("end", () => {
+        if (!settled) {
+          resolve(data);
+        }
+      });
+      req.on("error", (err) => {
+        if (!settled) {
+          reject(err);
+        }
+      });
     });
   }
 
