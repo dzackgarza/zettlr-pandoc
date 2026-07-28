@@ -6,8 +6,6 @@ import path from 'node:path'
 import { chromium, type Browser, type Page } from 'playwright'
 import { parse, stringify } from 'yaml'
 
-const APP_START_TIMEOUT_MS = 120_000
-const DOCUMENT_RENDER_TIMEOUT_MS = 30_000
 const MARKER = 'ZETTLR_E2E_VISIBLE_DOCUMENT_MARKER_4E8C8D8A'
 const REPO_ROOT = path.resolve(process.cwd())
 const ARTIFACT_DIRECTORY = path.join(
@@ -25,16 +23,17 @@ function outputTail(output: string): string {
 
 async function waitForDevTools(
   appProcess: ChildProcess,
-  getOutput: () => string
+  getOutput: () => string,
+  timeoutMs: number
 ): Promise<string> {
   return await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(
         new Error(
-          `Electron did not expose DevTools within ${APP_START_TIMEOUT_MS}ms.\n${outputTail(getOutput())}`
+          `Electron did not expose DevTools within ${timeoutMs}ms.\n${outputTail(getOutput())}`
         )
       )
-    }, APP_START_TIMEOUT_MS)
+    }, timeoutMs)
 
     const inspectOutput = (): void => {
       const match = getOutput().match(/DevTools listening on (ws:\/\/\S+)/)
@@ -61,8 +60,11 @@ async function waitForDevTools(
   })
 }
 
-async function findEditorPage(browser: Browser): Promise<Page> {
-  const deadline = Date.now() + DOCUMENT_RENDER_TIMEOUT_MS
+async function findEditorPage(
+  browser: Browser,
+  timeoutMs: number
+): Promise<Page> {
+  const deadline = Date.now() + timeoutMs
 
   while (Date.now() < deadline) {
     for (const context of browser.contexts()) {
@@ -85,7 +87,7 @@ async function findEditorPage(browser: Browser): Promise<Page> {
     .flatMap((context) => context.pages())
     .map((page) => page.url())
   throw new Error(
-    `No editor window appeared within ${DOCUMENT_RENDER_TIMEOUT_MS}ms. Open pages: ${JSON.stringify(openPages)}`
+    `No editor window appeared within ${timeoutMs}ms. Open pages: ${JSON.stringify(openPages)}`
   )
 }
 
@@ -161,8 +163,6 @@ async function preserveArtifacts(
 }
 
 describe('opening a Markdown document', function () {
-  this.timeout(APP_START_TIMEOUT_MS + DOCUMENT_RENDER_TIMEOUT_MS + 30_000)
-
   let appProcess: ChildProcess | undefined
   let browser: Browser | undefined
   let fixtureRoot: string | undefined
@@ -242,7 +242,11 @@ describe('opening a Markdown document', function () {
     appProcess.stdout?.on('data', appendOutput)
     appProcess.stderr?.on('data', appendOutput)
 
-    const devToolsUrl = await waitForDevTools(appProcess, () => processOutput)
+    const devToolsUrl = await waitForDevTools(
+      appProcess,
+      () => processOutput,
+      this.timeout()
+    )
     browser = await chromium.connectOverCDP(devToolsUrl)
     const observePage = (page: Page): void => {
       page.on('console', message => {
@@ -293,11 +297,11 @@ describe('opening a Markdown document', function () {
 
   it('renders the contents of the active nonempty document', async function () {
     assert.ok(browser, 'The application must be running')
-    const page = await findEditorPage(browser)
+    const page = await findEditorPage(browser, this.timeout())
     const editor = page.locator('.cm-content')
     await editor.waitFor({
       state: 'visible',
-      timeout: DOCUMENT_RENDER_TIMEOUT_MS,
+      timeout: this.timeout(),
     })
     const renderedText = await editor.innerText()
 

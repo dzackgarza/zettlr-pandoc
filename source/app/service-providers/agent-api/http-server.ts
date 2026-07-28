@@ -758,10 +758,11 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 400, "INVALID_PARAMS", "literal is required and must be a string");
       return;
     }
-    const context = parsed.context;
     if (
-      context !== undefined &&
-      (typeof context !== "number" || !Number.isInteger(context) || context < 0)
+      parsed.context !== undefined &&
+      (typeof parsed.context !== "number" ||
+        !Number.isInteger(parsed.context) ||
+        parsed.context < 0)
     ) {
       this.sendError(res, 400, "INVALID_PARAMS", "context must be a non-negative integer");
       return;
@@ -772,7 +773,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     const lines = result.content.split("\n");
-    const contextSize = context ?? 3;
+    const contextSize = parsed.context ?? 3;
     const hits: unknown[] = [];
     let searchRegex: RegExp;
     try {
