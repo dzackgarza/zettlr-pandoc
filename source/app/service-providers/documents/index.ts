@@ -1388,13 +1388,9 @@ current contents from the editor somewhere else, and restart the application.`,
    * within the workspace, using FSAL as the source of truth.
    */
   public async getFilesForWorkspace(workspacePath: string): Promise<string[]> {
-    try {
-      const allPaths = await this._app.fsal.readDirectoryRecursively(workspacePath);
-      // Filter: supported file extensions, and exclude the workspace directory itself
-      return allPaths.filter((p) => p !== workspacePath && hasMdOrCodeExt(p) && !isDir(p));
-    } catch {
-      return [];
-    }
+    const allPaths = await this._app.fsal.readDirectoryRecursively(workspacePath);
+    // Filter: supported file extensions, and exclude the workspace directory itself
+    return allPaths.filter((p) => p !== workspacePath && hasMdOrCodeExt(p) && !isDir(p));
   }
 
   /**

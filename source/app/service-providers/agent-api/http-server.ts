@@ -72,16 +72,19 @@ export default class AgentHTTPProvider extends ProviderContract {
       path.join(__dirname, "openapi.yaml"),
       path.join(__dirname, "assets", "openapi.yaml"),
     ];
+    let lastReadError: unknown;
     for (const p of candidatePaths) {
       try {
         this._openApiYaml = fs.readFileSync(p, "utf8");
         break;
-      } catch {
-        // try next candidate
+      } catch (error) {
+        lastReadError = error;
       }
     }
     if (this._openApiYaml.length === 0) {
-      throw new Error("Agent API OpenAPI specification is required");
+      throw new Error("Agent API OpenAPI specification is required", {
+        cause: lastReadError,
+      });
     }
   }
 
@@ -1221,17 +1224,16 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (workspaces.length === 0) {
       return true;
     }
-    try {
-      const canonicalFilePath = fs.realpathSync(filePath);
-      return workspaces.some((workspacePath) => {
-        const canonicalWorkspacePath = fs.realpathSync(workspacePath);
-        const relativePath = path.relative(canonicalWorkspacePath, canonicalFilePath);
-        return relativePath === "" ||
-          (!relativePath.startsWith(`..${path.sep}`) && relativePath !== ".." && !path.isAbsolute(relativePath));
-      });
-    } catch {
+    if (!fs.existsSync(filePath)) {
       return false;
     }
+    const canonicalFilePath = fs.realpathSync(filePath);
+    return workspaces.some((workspacePath) => {
+      const canonicalWorkspacePath = fs.realpathSync(workspacePath);
+      const relativePath = path.relative(canonicalWorkspacePath, canonicalFilePath);
+      return relativePath === "" ||
+        (!relativePath.startsWith(`..${path.sep}`) && relativePath !== ".." && !path.isAbsolute(relativePath));
+    });
   }
 
   private findDocumentIdByReviewId(reviewId: string): string | undefined {

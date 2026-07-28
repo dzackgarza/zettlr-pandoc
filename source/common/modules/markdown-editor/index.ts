@@ -1203,7 +1203,7 @@ export default class MarkdownEditor extends EventEmitter {
    * @return  {Promise<FormatResult>}             The typed format result.
    */
   async runFormatter(formatter: MarkdownFormatter): Promise<FormatResult> {
-    return await formatDocument(this._instance, formatter);
+    return formatDocument(this._instance, formatter);
   }
 
   /**
