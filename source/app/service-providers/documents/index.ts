@@ -22,6 +22,7 @@ import { markdownToAST } from "@common/modules/markdown-utils";
 import PersistentDataContainer from "@common/modules/persistent-data-container";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import { countAll } from "@common/util/counter";
+import errorToString from "@common/util/error-to-string";
 import isFile from "@common/util/is-file";
 import {
   type BranchNodeJSON,
@@ -150,6 +151,15 @@ export interface DocumentsUpdateContext {
     referenceText: string;
     workingText: string;
     unresolvedChunks: number;
+  };
+  /**
+   * The renderer-ready failure payload for FILE_REMOTE_CHANGE_ERROR events.
+   * The message is suitable for the visible error surface; diagnostic retains
+   * the complete stack or serialized rejection for renderer diagnostics.
+   */
+  documentLoadError?: {
+    message: string;
+    diagnostic: string;
   };
 }
 
@@ -422,9 +432,20 @@ export default class DocumentManager extends ProviderContract {
           this._app.log.error(err instanceof Error ? err.message : String(err)),
         );
       } else {
-        this.handleRemoteChange(changedPath).catch((err: unknown) =>
-          this._app.log.error(err instanceof Error ? err.message : String(err)),
-        );
+        this.handleRemoteChange(changedPath).catch((err: unknown) => {
+          const diagnostic = errorToString(err);
+          this._app.log.error(
+            `[DocumentManager] Could not reload changed file ${changedPath}`,
+            err,
+          );
+          this.broadcastEvent(DP_EVENTS.FILE_REMOTE_CHANGE_ERROR, {
+            filePath: changedPath,
+            documentLoadError: {
+              message: err instanceof Error ? err.message : diagnostic,
+              diagnostic,
+            },
+          });
+        });
       }
     });
 

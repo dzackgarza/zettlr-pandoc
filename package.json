@@ -40,7 +40,7 @@
     "shortcut:uninstall": "node scripts/develop-shortcut.mjs uninstall",
     "typecheck": "vue-tsc --noEmit",
     "test:e2e": "mocha --no-config --node-option import=tsx --timeout 180000 \"e2e/**/*.spec.ts\"",
-    "test:push": "bun run test && bun run test:e2e"
+    "test:push": "bun run test && just test-e2e"
   },
   "config": {
     "forge": "./forge.config.js"

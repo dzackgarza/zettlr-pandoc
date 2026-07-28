@@ -1,6 +1,16 @@
 import { strict as assert } from 'node:assert'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  cp,
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  utimes,
+  writeFile
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chromium, type Browser, type Page } from 'playwright'
@@ -135,7 +145,8 @@ async function stopProcess(
 async function preserveArtifacts(
   fixtureRoot: string | undefined,
   processOutput: string,
-  rendererEvents: string[]
+  rendererEvents: string[],
+  screenshots: ReadonlyMap<string, Buffer>
 ): Promise<void> {
   await rm(ARTIFACT_DIRECTORY, { recursive: true, force: true })
   await mkdir(ARTIFACT_DIRECTORY, { recursive: true })
@@ -149,6 +160,9 @@ async function preserveArtifacts(
     `${rendererEvents.join('\n')}\n`,
     'utf8'
   )
+  for (const [filename, screenshot] of screenshots) {
+    await writeFile(path.join(ARTIFACT_DIRECTORY, filename), screenshot)
+  }
 
   if (fixtureRoot !== undefined) {
     const appLogs = path.join(fixtureRoot, 'config', 'logs')
@@ -162,18 +176,49 @@ async function preserveArtifacts(
   }
 }
 
+async function waitForAppDiagnostic(
+  fixtureRoot: string,
+  documentPath: string,
+  timeoutMs: number
+): Promise<void> {
+  const logDirectory = path.join(fixtureRoot, 'config', 'logs')
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    const diagnostic = (
+      await Promise.all(
+        (await readdir(logDirectory))
+          .filter(filename => filename.endsWith('.log'))
+          .map(async filename =>
+            await readFile(path.join(logDirectory, filename), 'utf8')
+          )
+      )
+    ).join('\n')
+    if (diagnostic.includes(documentPath) && diagnostic.includes('EACCES')) {
+      return
+    }
+    await delay(100)
+  }
+
+  throw new Error(
+    `No app diagnostic identified ${documentPath} and EACCES within ${timeoutMs}ms.`
+  )
+}
+
 describe('opening a Markdown document', function () {
   let appProcess: ChildProcess | undefined
   let browser: Browser | undefined
   let fixtureRoot: string | undefined
+  let documentPath: string | undefined
   let processOutput = ''
   const rendererEvents: string[] = []
+  const screenshots = new Map<string, Buffer>()
 
   before(async function () {
     fixtureRoot = await mkdtemp(path.join(tmpdir(), 'zettlr-document-open-e2e-'))
     const configDirectory = path.join(fixtureRoot, 'config')
     const workspaceDirectory = path.join(fixtureRoot, 'workspace')
-    const documentPath = path.join(workspaceDirectory, 'opened-document.md')
+    documentPath = path.join(workspaceDirectory, 'opened-document.md')
 
     await mkdir(configDirectory)
     await mkdir(workspaceDirectory)
@@ -290,7 +335,15 @@ describe('opening a Markdown document', function () {
     await mainWindow?.close({ runBeforeUnload: true }).catch(() => undefined)
     await stopProcess(appProcess)
     await browser?.close().catch(() => undefined)
-    await preserveArtifacts(fixtureRoot, processOutput, rendererEvents)
+    if (documentPath !== undefined) {
+      await chmod(documentPath, 0o600)
+    }
+    await preserveArtifacts(
+      fixtureRoot,
+      processOutput,
+      rendererEvents,
+      screenshots
+    )
     if (fixtureRoot !== undefined) {
       await rm(fixtureRoot, { recursive: true, force: true })
     }
@@ -331,5 +384,51 @@ describe('opening a Markdown document', function () {
       [],
       `The renderer reported unexpected errors or dialogs:\n${rendererEvents.join('\n')}`
     )
+    screenshots.set('visible-document.png', await page.screenshot())
+  })
+
+  it('attributes a remote reload failure to the active document', async function () {
+    assert.ok(browser, 'The application must be running')
+    assert.ok(fixtureRoot, 'The fixture root must be initialized')
+    assert.ok(documentPath, 'The document path must be initialized')
+    const activeDocumentPath = documentPath
+    const page = await findEditorPage(browser, this.timeout())
+
+    await chmod(activeDocumentPath, 0o000)
+    const changedAt = new Date(Date.now() + 60_000)
+    await utimes(activeDocumentPath, changedAt, changedAt)
+
+    const toast = page.locator('#zettlr-toast-container .zettlr-toast.error')
+    await toast.waitFor({ state: 'visible', timeout: 20_000 })
+    assert.equal(
+      await toast.count(),
+      1,
+      'The remote reload failure must produce exactly one in-app error toast.'
+    )
+    assert.equal(
+      await toast.getAttribute('role'),
+      'status',
+      'The reload failure must use the app toast status surface.'
+    )
+    const toastText = await toast.innerText()
+    assert.ok(
+      toastText.includes(path.basename(activeDocumentPath)) &&
+        toastText.includes('EACCES'),
+      `The error toast did not attribute the reload failure to the active document.\n` +
+        `Toast text: ${JSON.stringify(toastText)}`
+    )
+    screenshots.set('document-reload-error-toast.png', await page.screenshot())
+
+    const matchingDiagnostics = rendererEvents.filter(
+      event =>
+        event.includes(activeDocumentPath) && event.includes('EACCES')
+    )
+    assert.equal(
+      matchingDiagnostics.length,
+      1,
+      `Renderer diagnostics did not identify the failed document.\n` +
+        rendererEvents.join('\n')
+    )
+    await waitForAppDiagnostic(fixtureRoot, activeDocumentPath, 20_000)
   })
 })

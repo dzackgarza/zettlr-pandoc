@@ -83,7 +83,9 @@ import {
 } from '@common/modules/markdown-editor/util/live-buffer-reporter'
 import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
 import { runRecoverably } from '@common/util/run-recoverably'
-import surfaceDocumentLoadError from './util/surface-document-load-error'
+import surfaceDocumentLoadError, {
+  surfaceDocumentLoadFailure
+} from './util/surface-document-load-error'
 import RenameReferencePreviewDialog from './RenameReferencePreviewDialog.vue'
 import {
   buildRenamePreviewSummary,
@@ -340,7 +342,14 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     applyPendingNavigation()
   }
 
-  if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
+  if (event === DP_EVENTS.FILE_REMOTE_CHANGE_ERROR && context.filePath === props.file.path) {
+    if (context.documentLoadError === undefined) {
+      throw new Error(
+        `Received ${DP_EVENTS.FILE_REMOTE_CHANGE_ERROR} without a diagnostic for ${context.filePath}`
+      )
+    }
+    surfaceDocumentLoadFailure(context.filePath, context.documentLoadError)
+  } else if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
     // The currently loaded document has been changed remotely. This event indicates
     // that the document provider has already reloaded the document and we only
     // need to tell the main editor to reload it as well.

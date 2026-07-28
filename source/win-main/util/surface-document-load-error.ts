@@ -3,6 +3,11 @@ import errorToString from '@common/util/error-to-string'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
 import showToast from '@common/util/show-toast'
 
+export interface DocumentLoadFailure {
+  message: string
+  diagnostic: string
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim() !== '') {
     return error.message
@@ -15,20 +20,30 @@ function errorMessage(error: unknown): string {
  * Reports a recoverable document-load failure to both durable renderer logs
  * and the visible in-window error surface.
  */
-export default function surfaceDocumentLoadError(
+export function surfaceDocumentLoadFailure(
   filePath: string,
-  error: unknown
+  failure: DocumentLoadFailure
 ): void {
   console.error(
-    `[MainEditor] Could not load document ${filePath}\n${errorToString(error)}`
+    `[MainEditor] Could not load document ${filePath}\n${failure.diagnostic}`
   )
   showToast(
     trans(
       'Could not load "%s": %s',
       pathBasename(filePath),
-      errorMessage(error)
+      failure.message
     ),
     'error',
     12000
   )
+}
+
+export default function surfaceDocumentLoadError(
+  filePath: string,
+  error: unknown
+): void {
+  surfaceDocumentLoadFailure(filePath, {
+    message: errorMessage(error),
+    diagnostic: errorToString(error)
+  })
 }

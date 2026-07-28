@@ -47,7 +47,7 @@ jobs:
       - name: Run unit tests
         run: bun run test
       - name: Run assembled-app E2E
-        run: bun run test:e2e
+        run: just test-e2e
       - name: Upload assembled-app E2E logs
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f

@@ -79,6 +79,7 @@ export enum DP_EVENTS {
   OPEN_FILE = 'file-opened',
   CLOSE_FILE = 'file-closed',
   FILE_REMOTELY_CHANGED = 'file-remotely-changed',
+  FILE_REMOTE_CHANGE_ERROR = 'file-remote-change-error',
   FILES_SORTED = 'files-sorted',
   // File status (pinned, modified, ...)
   CHANGE_FILE_STATUS = 'file-status-changed',
