@@ -14,6 +14,7 @@
  * END HEADER
  */
 
+import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import {
   mkdtempSync,
