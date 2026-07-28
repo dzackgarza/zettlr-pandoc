@@ -66,10 +66,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     super();
     this._instanceId = crypto.randomUUID();
     const fullConfig = _app.config.get();
-    this._config = fullConfig.agentApi ?? {
-      enabled: false,
-      port: 23119,
-    };
+    if (fullConfig.agentApi === undefined) {
+      throw new Error("Agent API configuration is required");
+    }
+    this._config = fullConfig.agentApi;
     // Load the OpenAPI YAML spec (dev: sibling to this file; packaged: assets/openapi.yaml)
     const candidatePaths = [
       path.join(__dirname, "openapi.yaml"),
@@ -83,8 +83,8 @@ export default class AgentHTTPProvider extends ProviderContract {
         // try next candidate
       }
     }
-    if (this._openApiYaml === undefined) {
-      this._openApiYaml = "";
+    if (this._openApiYaml.length === 0) {
+      throw new Error("Agent API OpenAPI specification is required");
     }
   }
 

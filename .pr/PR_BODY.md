@@ -24,6 +24,13 @@ Implement Zettlr's embedded, unauthenticated OpenAPI API for a remote-first docu
 
 - `just test-file test/agent-http-api-e2e-cross-process.spec.ts` passes: 4 separate-process loopback API tests.
 
+## Policy alignment gate — required
+
+<!-- policy-alignment-gate -->
+
+- [x] The PR removes application authentication, transport fallbacks, and legacy discovery state rather than preserving compatibility paths.
+- [x] The PR does not modify QC tooling.
+
 # Completion Boundary
 
 This branch is not yet certified for merge.
