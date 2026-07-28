@@ -181,9 +181,36 @@ const tagStore = useTagsStore()
 
 // UNREFFED STUFF
 let currentEditor: MarkdownEditor|null = null
+let documentLoadGeneration = 0
+let pendingDocumentLoad: { path: string, generation: number }|null = null
 
-function reportDocumentLoadError (error: unknown): void {
-  surfaceDocumentLoadError(props.file.path, error)
+function reportDocumentLoadError (documentPath: string, error: unknown): void {
+  surfaceDocumentLoadError(documentPath, error)
+}
+
+function reloadEditor (editor: MarkdownEditor): void {
+  editor.reload().catch(error => {
+    reportDocumentLoadError(editor.documentPath, error)
+  })
+}
+
+function requestDocumentLoad (): void {
+  const documentPath = props.file.path
+  if (pendingDocumentLoad?.path === documentPath) {
+    return
+  }
+
+  const generation = ++documentLoadGeneration
+  pendingDocumentLoad = { path: documentPath, generation }
+  loadDocument(documentPath, generation)
+    .catch(error => {
+      reportDocumentLoadError(documentPath, error)
+    })
+    .finally(() => {
+      if (pendingDocumentLoad?.generation === generation) {
+        pendingDocumentLoad = null
+      }
+    })
 }
 
 /**
@@ -342,7 +369,11 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     applyPendingNavigation()
   }
 
-  if (event === DP_EVENTS.FILE_REMOTE_CHANGE_ERROR && context.filePath === props.file.path) {
+  if (
+    event === DP_EVENTS.FILE_REMOTE_CHANGE_ERROR &&
+    context.filePath === props.file.path &&
+    documentTreeStore.lastLeafId === props.leafId
+  ) {
     if (context.documentLoadError === undefined) {
       throw new Error(
         `Received ${DP_EVENTS.FILE_REMOTE_CHANGE_ERROR} without a diagnostic for ${context.filePath}`
@@ -353,7 +384,9 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     // The currently loaded document has been changed remotely. This event indicates
     // that the document provider has already reloaded the document and we only
     // need to tell the main editor to reload it as well.
-    currentEditor?.reload().catch(reportDocumentLoadError)
+    if (currentEditor !== null) {
+      reloadEditor(currentEditor)
+    }
   } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
     currentEditor?.clearReviewDiffSession()
     // The file has been saved to disk. This means we should probably update the
@@ -401,7 +434,9 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
 })
 
 ipcRenderer.on('reload-editors', _e => {
-  currentEditor?.reload().catch(reportDocumentLoadError)
+  if (currentEditor !== null) {
+    reloadEditor(currentEditor)
+  }
 })
 
 // Update the file database whenever links have been updated
@@ -411,10 +446,12 @@ ipcRenderer.on('links', _e => {
 
 // MOUNTED HOOK
 onMounted(() => {
-  loadDocument().catch(reportDocumentLoadError)
+  requestDocumentLoad()
 })
 
 onBeforeUnmount(() => {
+  documentLoadGeneration++
+  pendingDocumentLoad = null
   if (currentEditor !== null) {
     props.persistentStateMap.set(props.file.path, currentEditor.persistentState)
     // Clear out the table of contents before unmounting the component.
@@ -423,6 +460,7 @@ onBeforeUnmount(() => {
     // to the saved FSAL snapshot immediately (issue #1 Phase 8).
     liveBufferReporter.dropDocument(currentEditor.documentPath)
     currentEditor.unmount()
+    currentEditor = null
   }
 })
 
@@ -432,6 +470,7 @@ onUpdated(() => {
   // directive. In case that the editor component is mounted and non-hidden, we
   // will fire
   if (currentEditor === null) {
+    requestDocumentLoad()
     return
   }
 
@@ -443,7 +482,9 @@ onUpdated(() => {
     props.persistentStateMap.set(currentFilePath, currentEditor.persistentState)
     liveBufferReporter.dropDocument(currentFilePath)
     currentEditor.unmount()
-    loadDocument().catch(reportDocumentLoadError)
+    currentEditor = null
+    requestDocumentLoad()
+    return
   }
 
   if (!currentEditor.hasFocus()) {
@@ -702,7 +743,9 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   const persistentState = props.persistentStateMap.get(doc)
   const editor = new MarkdownEditor(props.leafId, props.windowId, doc, documentAuthorityIPCAPI, undefined, persistentState)
 
-  editor.on('document-load-error', reportDocumentLoadError)
+  editor.on('document-load-error', error => {
+    reportDocumentLoadError(doc, error)
+  })
 
   // Update the document info on corresponding events
   editor.on('loaded', () => {
@@ -867,8 +910,13 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
 /**
  * Loads the document for this editor instance.
  */
-async function loadDocument (): Promise<void> {
-  const newEditor = await getEditorFor(props.file.path)
+async function loadDocument (documentPath: string, generation: number): Promise<void> {
+  const newEditor = await getEditorFor(documentPath)
+
+  if (generation !== documentLoadGeneration || props.file.path !== documentPath) {
+    newEditor.unmount()
+    return
+  }
 
   mainEditorWrapper.value?.appendChild(newEditor.dom)
   currentEditor = newEditor
@@ -882,14 +930,30 @@ async function loadDocument (): Promise<void> {
     throw error
   }
 
-  currentEditor.setCompletionDatabase('tags', tags.value)
-  currentEditor.setCompletionDatabase('snippets', snippets.value)
+  if (generation !== documentLoadGeneration || props.file.path !== documentPath) {
+    newEditor.unmount()
+    if (currentEditor === newEditor) {
+      currentEditor = null
+    }
+    return
+  }
+
+  newEditor.setCompletionDatabase('tags', tags.value)
+  newEditor.setCompletionDatabase('snippets', snippets.value)
 
   maybeHighlightSearchResults()
 
-  const descriptor: MDFileDescriptor|CodeFileDescriptor|undefined = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: props.file.path })
+  const descriptor: MDFileDescriptor|CodeFileDescriptor|undefined = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: documentPath })
   if (descriptor === undefined) {
-    throw new Error(`Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`)
+    throw new Error(`Could not swap document: Could not retrieve descriptor for path ${documentPath}!`)
+  }
+
+  if (generation !== documentLoadGeneration || props.file.path !== documentPath) {
+    newEditor.unmount()
+    if (currentEditor === newEditor) {
+      currentEditor = null
+    }
+    return
   }
 
   activeFileDescriptor.value = descriptor
@@ -902,14 +966,14 @@ async function loadDocument (): Promise<void> {
   updateFileDatabase().catch(err => console.error('Could not update file database', err))
 
   // Provide the editor instance with metadata for the new file
-  currentEditor.setOptions({
+  newEditor.setOptions({
     metadata: {
-      path: props.file.path,
+      path: documentPath,
       id: descriptor.type === 'file' ? descriptor.id : '',
       library: library ?? CITEPROC_MAIN_DB
     }
   })
-  currentEditor.projectInfo = updateProjectInfo()
+  newEditor.projectInfo = updateProjectInfo()
 
   if (pendingReviewDiffSession !== null) {
     applyReviewDiffSession(pendingReviewDiffSession)
