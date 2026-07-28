@@ -33,7 +33,7 @@
     "update:csl": "node scripts/update-csl.mjs",
     "update:citation": "node scripts/update-citation.mjs",
     "coverage": "nyc --reporter=lcov mocha --check-coverage",
-    "test": "mocha --inline-diffs",
+    "test": "mocha --inline-diffs --require ./test/setup.js",
     "test-gui": "cross-env NODE_ENV=develop node scripts/test-gui/index.mjs",
     "lint:po": "node scripts/lint-po.mjs",
     "shortcut:install": "node scripts/develop-shortcut.mjs install",
