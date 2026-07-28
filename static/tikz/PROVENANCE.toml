@@ -1,0 +1,10 @@
+schema_version = 1
+fallback_kind = "minimal-generic"
+source_repository = "https://github.com/dzackgarza/pandoc-config"
+source_commit = "1871f489b6ca915e70174925ec67fc8b2818206b"
+source_paths = [
+  "filters/tikzcd.lua",
+  "filters/utilities.lua",
+  "templates/standalone-tikz.tex",
+]
+maintenance = "App-owned fallback fork. A configured or complete user Pandoc data tree takes precedence."

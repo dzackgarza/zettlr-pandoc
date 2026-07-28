@@ -1,41 +1,37 @@
 name: i18n
-
 on:
   workflow_dispatch: {} # Enable manual triggers
   schedule: # Run every Tuesday night at 02:17 (random minute to avoid high loads)
     - cron: '17 2 * * TUE'
-
 permissions:
   contents: write
   pull-requests: write
-
 env:
   NODE_VERSION: '22'
-
 # Ensure only a single build workflow runs at any one time
 concurrency:
   group: ${{ github.workflow }}
-
 jobs:
   refresh:
     name: i18n
     runs-on: ubuntu-latest
     steps:
       - name: Clone repository (develop branch)
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: develop
           fetch-depth: 0
-      - name: Enable Yarn 4.x
-        run: corepack enable
+      - name: Setup Bun 1.3.11
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.11
       - name: Setup NodeJS ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'yarn'
       # The scripts require some modules that we need to install.
       - name: Install dependencies
-        run: yarn install --immutable
+        run: bun ci
       # Gettext is not installed on Ubuntu by default, so we have to do it here
       - name: Install gettext
         run: |
@@ -45,7 +41,7 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-      - name: "[Optional] Create new branch `i18n-update-${{ github.run_id }}`"
+      - name: '[Optional] Create new branch `i18n-update-${{ github.run_id }}`'
         run: |
           git checkout -b i18n-update-${{ github.run_id }}
       # Update translations
@@ -55,7 +51,7 @@ jobs:
           git add -A
           git diff-index --quiet HEAD || git commit -m "chore(i18n): Update translations ($(date))"
           git diff-index --quiet HEAD || git push -u origin i18n-update-${{ github.run_id }}
-      - name: "[Optional] Open PR"
+      - name: '[Optional] Open PR'
         run: |
           git diff-index --quiet HEAD || gh pr create -B develop -H i18n-update-${{ github.run_id }} --title "chore(i18n): Update translations ($(date))" --body "This PR updates all translation PO-files. CAUTION: Do not merge this PR if there are unmerged translation updates, since those will otherwise become unmergeable. This PR will be recreated every week, so it's better to close it rather than have contributors rebase their changes."
         env:

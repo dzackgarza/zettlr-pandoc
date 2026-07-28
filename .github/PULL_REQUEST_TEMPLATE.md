@@ -8,9 +8,9 @@
   0. I have read and agree with the CONTRIBUTING.md file and the Code of Conduct.
   1. I documented the code extensively.
   2. This PR targets the develop branch, *not* the master branch.
-  3. I have tested all changes by running `yarn start`, and added unit tests
+  3. I have tested all changes by running `bun run start`, and added unit tests
      where applicable. I have paid attention to cross-platform issues.
-  4. `yarn lint` and `yarn test` run successfully.
+  4. `just test-commit` and `bun run test` run successfully.
   5. I followed the code-style of the repository.
   6. I agree that my code will be published under the GNU GPL v3 license.
   7. All new files have the correct license/description header (see existing

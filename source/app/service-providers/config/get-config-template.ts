@@ -115,6 +115,10 @@ export interface ConfigOptions {
     askDirDialog: string;
     askLangFileDialog: string;
   };
+  tikz: {
+    /** Optional Pandoc data tree for editor TikZ rendering. */
+    dataDir: string;
+  };
   export: {
     dir: "temp" | "cwd" | "ask";
     stripTags: boolean;
@@ -326,6 +330,9 @@ export function getConfigTemplate(): ConfigOptions {
       askFileDialog: "",
       askDirDialog: "",
       askLangFileDialog: "",
+    },
+    tikz: {
+      dataDir: "",
     },
     window: {
       // Only use native window appearance by default on macOS. If this value

@@ -1,19 +1,31 @@
 # Launch the MathJax-rendering fork spike.
-# Yarn 4.11.0 is pinned via packageManager; route through the pinned CLI so a
-# global Yarn 1 install can't shadow it.
-yarn := "npx -y @yarnpkg/cli-dist@4.11.0"
+bun := "bun"
+
+# ai-review-ci contract consumed by doctor and the shared workflow triggers.
+ai_review_ci_schema_version := "1"
+ai_review_ci_profile := "bun"
+ai_review_ci_ref := "main"
+ai_review_ci_release_channel := "main"
+ai_review_ci_workflow_template_version := "1"
+ai_review_ci_local_delegation := "global-justfile"
+ai_review_ci_default_branch := "develop"
 
 # Show available recipes.
 default:
     @just --list
 
 # Launch the app in develop mode (webpack dev server + Electron).
+# Free the dev ports first: a launch that was killed (or whose app was never
+# quit) leaves a forge-start/Electron holding :9001, and the next launch dies
+# on EADDRINUSE with the cause swallowed. --kill reaps only this project's
+# stale dev processes.
 launch:
-    {{yarn}} start
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py" --kill
+    {{bun}} run start
 
 # Build a packaged Linux x64 app into out/Zettlr-Pandoc-linux-x64/.
 package:
-    {{yarn}} package:linux-x64
+    {{bun}} run package:linux-x64
 
 # Run the packaged binary (build it first with `just package`).
 run-packaged:
@@ -62,20 +74,28 @@ test:
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --timeout 120000 --inline-diffs
 
+# Git event hooks are installed globally by ai-review-ci via core.hooksPath
+# (`pre-commit` -> this repo's test-commit, `pre-push` -> test-push).
+# This repo owns only the delegated recipe contract, not hook installation.
 [private]
-test-commit: test
+test-commit:
+    @just -f ~/ai-review-ci/justfiles/bun.just -d . test-commit
 
 [private]
-test-push: test
+test-push:
+    @just -f ~/ai-review-ci/justfiles/bun.just -d . test-push
 
-# Lint exactly one source file after the same development-server safety check.
-lint-file file:
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/eslint" "{{file}}"
+[private]
+test-ci:
+    @just -f ~/ai-review-ci/justfiles/bun.just -d . test-ci
+
+[private]
+setup-ci:
+    bash "{{justfile_directory()}}/scripts/setup-ci-toolchain.sh"
 
 # Capture the real editor renderer in an isolated offscreen Electron process.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
-# A fresh yarn install leaves electron's chrome-sandbox without its
+# A fresh package-manager install leaves electron's chrome-sandbox without its
 # root-owned SUID bits, which aborts Chromium under xvfb. The probe renders
 # local test content only, so run unsandboxed rather than requiring sudo
 # provisioning for the test suite.
@@ -129,7 +149,7 @@ capture-reference-search output:
 # capture files land with the green implementation, and the recipe fails
 # loudly until they exist. This never starts Forge, a dev server, xdg-open,
 # or the system browser.
-# A fresh yarn install leaves electron's chrome-sandbox without its
+# A fresh package-manager install leaves electron's chrome-sandbox without its
 # root-owned SUID bits, which aborts Chromium under xvfb. The probe renders
 # local test content only, so run unsandboxed rather than requiring sudo
 # provisioning for the test suite.
@@ -157,7 +177,7 @@ capture-reference-completion output:
 # entry and capture files land with the green implementation, and the recipe
 # fails loudly until they exist. This never starts Forge, a dev server,
 # xdg-open, or the system browser.
-# A fresh yarn install leaves electron's chrome-sandbox without its
+# A fresh package-manager install leaves electron's chrome-sandbox without its
 # root-owned SUID bits, which aborts Chromium under xvfb. The probe renders
 # local test content only, so run unsandboxed rather than requiring sudo
 # provisioning for the test suite.

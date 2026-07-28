@@ -35,10 +35,14 @@ import { strict as assert } from 'assert'
 import { spawnSync } from 'child_process'
 import { randomBytes } from 'crypto'
 import { existsSync, readdirSync, readFileSync } from 'fs'
-import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
-import { renderTikz, type TikzRenderResult } from 'source/app/util/tikz-render'
+import {
+  renderTikz,
+  resolveTikzDataDir,
+  type TikzRenderResult
+} from 'source/app/util/tikz-render'
 
 const TIKZ_ASSET_DIR = path.join(process.cwd(), 'static/tikz')
 
@@ -101,8 +105,8 @@ describe('TikZ render service (issue #14)', function () {
         { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: { ...process.env, PATH: emptyBin } }
       )
       assert.strictEqual(result.ok, false)
-      assert.ok(result.ok === false && result.kind === 'missing-tools', `expected missing-tools, got ${JSON.stringify(result).slice(0, 200)}`)
-      if (result.ok === false && result.kind === 'missing-tools') {
+      assert.ok(!result.ok && result.kind === 'missing-tools', `expected missing-tools, got ${JSON.stringify(result).slice(0, 200)}`)
+      if (!result.ok && result.kind === 'missing-tools') {
         assert.ok(result.missing.includes('pdflatex'), 'pdflatex must be named missing')
         assert.ok(result.missing.includes('pdf2svg'), 'pdf2svg must be named missing')
       }
@@ -124,7 +128,7 @@ describe('TikZ render service (issue #14)', function () {
         { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
         { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: { ...process.env, PATH: binDir } }
       )
-      assert.ok(result.ok === false, 'a render whose toolchain could not be checked did not produce a figure')
+      assert.ok(!result.ok, 'a render whose toolchain could not be checked did not produce a figure')
       assert.strictEqual(
         result.kind,
         'toolchain-probe-failed',
@@ -147,7 +151,7 @@ describe('TikZ render service (issue #14)', function () {
     )
 
     if (!toolchainPresent) {
-      assert.ok(result.ok === false && result.kind === 'missing-tools', 'without the toolchain the typed missing-tools result is required')
+      assert.ok(!result.ok && result.kind === 'missing-tools', 'without the toolchain the typed missing-tools result is required')
       return
     }
 
@@ -169,7 +173,7 @@ describe('TikZ render service (issue #14)', function () {
     this.timeout(120000)
     const first = await renderTikz({ source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH }, { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env })
     if (!toolchainPresent) {
-      assert.ok(first.ok === false && first.kind === 'missing-tools')
+      assert.ok(!first.ok && first.kind === 'missing-tools')
       return
     }
     const started = Date.now()
@@ -186,11 +190,11 @@ describe('TikZ render service (issue #14)', function () {
       { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
     )
     if (!toolchainPresent) {
-      assert.ok(result.ok === false && result.kind === 'missing-tools')
+      assert.ok(!result.ok && result.kind === 'missing-tools')
       return
     }
-    assert.ok(result.ok === false, 'a broken figure must not report success')
-    if (result.ok === false) {
+    assert.ok(!result.ok, 'a broken figure must not report success')
+    if (!result.ok) {
       assert.strictEqual(result.kind, 'compile-error', `expected compile-error, got ${JSON.stringify(result).slice(0, 400)}`)
       if (result.kind === 'compile-error') {
         assert.ok(result.errors.length > 0, 'the bang-error diagnostic is surfaced')
@@ -228,8 +232,8 @@ describe('TikZ render service (issue #14)', function () {
     await rm(secondDir, { recursive: true, force: true })
 
     if (!toolchainPresent) {
-      assert.ok(fromFirst.ok === false && fromFirst.kind === 'missing-tools')
-      assert.ok(fromSecond.ok === false && fromSecond.kind === 'missing-tools')
+      assert.ok(!fromFirst.ok && fromFirst.kind === 'missing-tools')
+      assert.ok(!fromSecond.ok && fromSecond.kind === 'missing-tools')
       return
     }
 
@@ -256,7 +260,7 @@ describe('TikZ render service (issue #14)', function () {
         { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
         { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
       )
-      assert.ok(result.ok === false && result.kind === 'missing-tools', 'without the toolchain the typed missing-tools result is required')
+      assert.ok(!result.ok && result.kind === 'missing-tools', 'without the toolchain the typed missing-tools result is required')
       return
     }
 
@@ -293,8 +297,8 @@ describe('TikZ render service (issue #14)', function () {
       }
     }
 
-    assert.ok(result.ok === false, 'a killed render never produced a figure')
-    if (result.ok === false) {
+    assert.ok(!result.ok, 'a killed render never produced a figure')
+    if (!result.ok) {
       assert.strictEqual(result.kind, 'render-terminated', `a signal kill is its own outcome, got ${JSON.stringify(result).slice(0, 400)}`)
       if (result.kind === 'render-terminated') {
         assert.strictEqual(result.signal, 'SIGTERM', 'the signal that ended the render is carried, not discarded')
@@ -302,8 +306,42 @@ describe('TikZ render service (issue #14)', function () {
     }
   })
 
-  it('never reads from ~/.pandoc: the vendored tree is the only asset source', function () {
-    const filter = readFileSync(path.join(TIKZ_ASSET_DIR, 'filters/tikzcd.lua'), 'utf8')
-    assert.ok(!filter.includes("home .. '/.pandoc"), 'the vendored filter must not resolve modules from ~/.pandoc')
+  it('uses an explicitly configured TikZ data directory', async function () {
+    const configuredDir = path.join(cacheDir, 'configured-pandoc')
+    await mkdir(path.join(configuredDir, 'filters'), { recursive: true })
+    await mkdir(path.join(configuredDir, 'templates'), { recursive: true })
+    await writeFile(path.join(configuredDir, 'filters/tikzcd.lua'), '-- configured filter\n')
+    await writeFile(path.join(configuredDir, 'filters/utilities.lua'), '-- configured utilities\n')
+    await writeFile(path.join(configuredDir, 'templates/standalone-tikz.tex'), '% configured template\n')
+
+    assert.strictEqual(
+      resolveTikzDataDir(configuredDir, path.join(cacheDir, 'home'), TIKZ_ASSET_DIR),
+      configuredDir,
+      'an explicit user setting is the render dependency'
+    )
+  })
+
+  it('defaults to the live ~/.pandoc tree when it carries the TikZ assets', async function () {
+    const homeDir = path.join(cacheDir, 'home')
+    const userPandocDir = path.join(homeDir, '.pandoc')
+    await mkdir(path.join(userPandocDir, 'filters'), { recursive: true })
+    await mkdir(path.join(userPandocDir, 'templates'), { recursive: true })
+    await writeFile(path.join(userPandocDir, 'filters/tikzcd.lua'), '-- live user filter\n')
+    await writeFile(path.join(userPandocDir, 'filters/utilities.lua'), '-- live user utilities\n')
+    await writeFile(path.join(userPandocDir, 'templates/standalone-tikz.tex'), '% live user template\n')
+
+    assert.strictEqual(
+      resolveTikzDataDir('', homeDir, TIKZ_ASSET_DIR),
+      userPandocDir,
+      'the maintained user checkout wins without copying it into the application'
+    )
+  })
+
+  it('uses the shipped pinned assets when the user has no TikZ data tree', function () {
+    assert.strictEqual(
+      resolveTikzDataDir('', path.join(cacheDir, 'home-without-pandoc'), TIKZ_ASSET_DIR),
+      TIKZ_ASSET_DIR,
+      'a user without pandoc-config receives the tracked generic fallback'
+    )
   })
 })

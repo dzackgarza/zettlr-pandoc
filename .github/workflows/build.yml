@@ -1,5 +1,4 @@
 name: Build
-
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 #                                                                             #
 #                    ZETTLR MAIN BUILD GITHUB ACTIONS FILE                    #
@@ -51,18 +50,15 @@ name: Build
 #   way all steps are within one language, making it easier to maintain.      #
 #                                                                             #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
 on:
   # Releases must be manually started.
   workflow_dispatch: {}
   schedule: # Every Monday at noon (UTC) we run a scheduled nightly build
     - cron: '0 12 * * 1'
-
 # Defaults for every job and step in this workflow
 defaults:
   run:
     shell: bash # Run everything using bash
-
 # Global environment variables
 env:
   NODE_VERSION: '22'
@@ -73,12 +69,10 @@ env:
   # Specify the branch name which will cause release drafts to be published
   RELEASE_BRANCH: 'master'
   # DEBUG: '*' # Uncomment to debug Electron building packages
-
 # Ensure only a single build workflow runs at any one time
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: true
-
 # This workflow file contains four jobs, three to build the corresponding
 # releases on all three supported platforms, and a last one, which will
 # create the release draft.
@@ -97,17 +91,18 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Clone repository (${{ github.ref_name }} branch)
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0 # Required for the tag verification step.
-      - name: Enable Yarn 4.x
-        run: corepack enable
+      - name: Setup Bun 1.3.11
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.11
       - name: Setup NodeJS ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'yarn'
       - name: Retrieve tag version
         id: ref
         run: echo "version=$(cat package.json | jq -r '.version')" >> $GITHUB_ENV
@@ -115,10 +110,6 @@ jobs:
         if: ${{ github.ref_name == env.RELEASE_BRANCH || github.ref_name == env.RC_BRANCH }}
         # NOTE: the ! will return 0 if the command fails, and 1 otherwise
         run: '! git rev-parse "v${{env.version}}"'
-
-
-
-
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #                                                                           #
   #                              WINDOWS BUILDS                               #
@@ -132,20 +123,19 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout branch ${{ github.ref_name }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.ref_name }}
       - name: Setup NodeJS ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: ${{ env.NODE_VERSION }}
-          # cache: 'yarn' Disable to enable Windows builds, context: https://github.com/actions/setup-node/issues/1027
-      - name: Enable Yarn 4.x
-        run: corepack enable
-      - name: Activate Yarn from package.json (Windows)
-        run: corepack prepare "$(jq -r '.packageManager' package.json)" --activate
+      - name: Setup Bun 1.3.11
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.11
       - name: Set up build environment
-        run: yarn install --immutable
+        run: bun ci
       - name: Set tag version to nightly
         if: ${{ github.ref_name == env.NIGHTLY_BRANCH }}
         run: |
@@ -155,7 +145,7 @@ jobs:
         id: ref
         run: echo "version=$(cat package.json | jq -r '.version')" >> $GITHUB_ENV
       - name: Package & Release
-        run: yarn package:win-x64 && yarn release:win-x64
+        run: bun run package:win-x64 && bun run release:win-x64
         shell: pwsh # Run this using Powershell because it requires that for CodeSigning
         env:
           # Use OpenID Authentication flow
@@ -171,12 +161,11 @@ jobs:
         if: ${{ github.ref_name == env.NIGHTLY_BRANCH }}
         run: mv ./release/Zettlr-${{ env.old_version }}-x64.exe ./release/Zettlr-${{ env.version }}-x64.exe
       - name: Cache installer
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: win32_x64
           path: |
             ./release/Zettlr-${{ env.version }}-x64.exe
-
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #                                                                           #
   #                               MACOS BUILDS                                #
@@ -191,18 +180,19 @@ jobs:
     steps:
       # Check out master for a regular release, or develop branch for a nightly
       - name: Checkout branch ${{ github.ref_name }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.ref_name }}
-      - name: Enable Yarn 4.x
-        run: corepack enable
+      - name: Setup Bun 1.3.11
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.11
       - name: Setup NodeJS ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'yarn'
       - name: Set up build environment
-        run: yarn install --immutable
+        run: bun ci
       - name: Set tag version to nightly
         if: ${{ github.ref_name == env.NIGHTLY_BRANCH }}
         run: |
@@ -219,23 +209,22 @@ jobs:
           MACOS_CERT: ${{ secrets.MACOS_CERT_2030_01_14 }}
           MACOS_CERT_PASS: ${{ secrets.MACOS_CERT_PASS_2030_01_14 }}
       - name: Package
-        run: yarn package:mac-x64
+        run: bun run package:mac-x64
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       - name: Release
-        run: yarn release:mac-x64
+        run: bun run release:mac-x64
       - name: Rename image file
         if: ${{ github.ref_name == env.NIGHTLY_BRANCH }}
         run: mv ./release/Zettlr-${{ env.old_version }}-x64.dmg ./release/Zettlr-${{ env.version }}-x64.dmg
       - name: Cache image file
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: darwin_x64
           path: |
             ./release/Zettlr-${{ env.version }}-x64.dmg
-
   build_macos_arm64:
     name: macOS (arm64)
     env:
@@ -244,18 +233,19 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout branch ${{ github.ref_name }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.ref_name }}
-      - name: Enable Yarn 4.x
-        run: corepack enable
+      - name: Setup Bun 1.3.11
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.11
       - name: Setup NodeJS ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'yarn'
       - name: Set up build environment
-        run: yarn install --immutable
+        run: bun ci
       - name: Set tag version to nightly
         if: ${{ github.ref_name == env.NIGHTLY_BRANCH }}
         run: |
@@ -272,23 +262,22 @@ jobs:
           MACOS_CERT: ${{ secrets.MACOS_CERT_2030_01_14 }}
           MACOS_CERT_PASS: ${{ secrets.MACOS_CERT_PASS_2030_01_14 }}
       - name: Package
-        run: yarn package:mac-arm
+        run: bun run package:mac-arm
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       - name: Release
-        run: yarn release:mac-arm
+        run: bun run release:mac-arm
       - name: Rename image file
         if: ${{ github.ref_name == env.NIGHTLY_BRANCH }}
         run: mv ./release/Zettlr-${{ env.old_version }}-arm64.dmg ./release/Zettlr-${{ env.version }}-arm64.dmg
       - name: Cache image file
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: darwin_arm64
           path: |
             ./release/Zettlr-${{ env.version }}-arm64.dmg
-
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #                                                                           #
   #                               LINUX BUILDS                                #
@@ -305,24 +294,25 @@ jobs:
     steps:
       # Check out master for a regular release, or develop branch for a nightly
       - name: Checkout branch ${{ github.ref_name }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.ref_name }}
-      - name: Enable Yarn 4.x
-        run: corepack enable
+      - name: Setup Bun 1.3.11
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.11
       - name: Setup NodeJS ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'yarn'
       # Replicate PR #4910 on the x86_64 runner as this compiler appears
       # still to be supported by node-gyp even after the most recent update.
       # (NOTE: See added CC/CCX variables, found from output under 'zig targets'
       # here: https://andrewkelley.me/post/zig-cc-powerful-drop-in-replacement-gcc-clang.html)
       - name: Install Zig
-        uses: goto-bus-stop/setup-zig@v2
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406
       - name: Set up build environment
-        run: yarn install --immutable
+        run: bun ci
       - name: Set tag version to nightly
         if: ${{ github.ref_name == env.NIGHTLY_BRANCH }}
         run: |
@@ -333,21 +323,20 @@ jobs:
         run: echo "version=$(cat package.json | jq -r '.version')" >> $GITHUB_ENV
       - name: Package & Release
         run: |
-          yarn package:linux-x64
-          yarn release:linux-x64
+          bun run package:linux-x64
+          bun run release:linux-x64
       - name: Rename installers
         if: ${{ github.ref_name == env.NIGHTLY_BRANCH }}
         run: |
           mv ./release/Zettlr-${{ env.old_version }}-x86_64.AppImage ./release/Zettlr-${{ env.version }}-x86_64.AppImage
       - name: Cache installers
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: linux_x64
           path: |
             ./release/Zettlr-${{ env.version }}-amd64.deb
             ./release/Zettlr-${{ env.version }}-x86_64.rpm
             ./release/Zettlr-${{ env.version }}-x86_64.AppImage
-
   build_linux_arm64:
     name: Linux (arm64)
     env:
@@ -358,20 +347,21 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout branch ${{ github.ref_name }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.ref_name }}
-      - name: Enable Yarn 4.x
-        run: corepack enable
+      - name: Setup Bun 1.3.11
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.11
       - name: Setup NodeJS ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'yarn'
       - name: Install Zig
-        uses: goto-bus-stop/setup-zig@v2
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406
       - name: Set up build environment
-        run: yarn install --immutable
+        run: bun ci
       - name: Set tag version to nightly
         if: ${{ github.ref_name == env.NIGHTLY_BRANCH }}
         run: |
@@ -382,21 +372,20 @@ jobs:
         run: echo "version=$(cat package.json | jq -r '.version')" >> $GITHUB_ENV
       - name: Package & Release
         run: |
-          yarn package:linux-arm
-          yarn release:linux-arm
+          bun run package:linux-arm
+          bun run release:linux-arm
       - name: Rename installers
         if: ${{ github.ref_name == env.NIGHTLY_BRANCH }}
         run: |
           mv ./release/Zettlr-${{ env.old_version }}-arm64.AppImage ./release/Zettlr-${{ env.version }}-arm64.AppImage
       - name: Cache installers
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: linux_arm64
           path: |
             ./release/Zettlr-${{ env.version }}-arm64.deb
             ./release/Zettlr-${{ env.version }}-aarch64.rpm
             ./release/Zettlr-${{ env.version }}-arm64.AppImage
-
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #                                                                           #
   #                          PREPARE RELEASE DRAFT                            #
@@ -420,16 +409,17 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout branch ${{ github.ref_name }}
-        uses: actions/checkout@v6
-      - name: Enable Yarn 4.x
-        run: corepack enable
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Setup Bun 1.3.11
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.11
       - name: Setup NodeJS ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'yarn'
       - name: Set up build environment
-        run: yarn install --immutable
+        run: bun ci
       - name: Set tag version to nightly
         if: ${{ github.ref_name == env.NIGHTLY_BRANCH }}
         run: echo "$(cat package.json | jq '.version = .version + "+nightly"')" > package.json
@@ -440,27 +430,27 @@ jobs:
         run: mkdir ./release
       # Download all resulting assets from the previous steps.
       - name: Retrieve installers (Windows x86_64)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: win32_x64
           path: ./release
       - name: Retrieve installers (macOS x86_64)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: darwin_x64
           path: ./release
       - name: Retrieve installers (macOS arm64)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: darwin_arm64
           path: ./release
       - name: Retrieve installers (Linux x86_64)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: linux_x64
           path: ./release
       - name: Retrieve installers (Linux arm64)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: linux_arm64
           path: ./release
@@ -495,19 +485,19 @@ jobs:
           cp ./resources/icons/png/512x512.png ./release/logo.png
       - name: Upload nightlies to the server
         if: ${{ github.ref_name == env.NIGHTLY_BRANCH }}
-        uses: easingthemes/ssh-deploy@v5.1.0
+        uses: easingthemes/ssh-deploy@ece05a22752e524363164bfb2f69a5ba4f8ded0d
         env:
           SSH_PRIVATE_KEY: ${{ secrets.NIGHTLY_SSH_PRIVATE_KEY }}
           # --delete so that no old releases remain on the server. Each iteration is approx. 1GB in size.
-          ARGS: "-vzhr --delete" # verbose, compress, human-readble, recursive, delete
-          SOURCE: "release/"
+          ARGS: '-vzhr --delete' # verbose, compress, human-readble, recursive, delete
+          SOURCE: 'release/'
           REMOTE_HOST: ${{ secrets.NIGHTLY_REMOTE_HOST }}
           REMOTE_USER: ${{ secrets.NIGHTLY_REMOTE_USER }}
           TARGET: ${{ secrets.NIGHTLY_TARGET }}
       # OTHERWISE: Create a new release draft
       - name: Create release draft
         if: ${{ github.ref_name == env.RELEASE_BRANCH || github.ref_name == env.RC_BRANCH }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -530,4 +520,4 @@ jobs:
             ./release/Zettlr-${{ env.version }}-x86_64.AppImage
             ./release/Zettlr-${{ env.version }}-arm64.AppImage
             ./release/SHA256SUMS.txt
-      # Else: Do nothing -> keep the artifacts, but do not do anything with them.
+    # Else: Do nothing -> keep the artifacts, but do not do anything with them.

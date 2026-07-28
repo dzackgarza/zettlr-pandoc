@@ -10,7 +10,7 @@
  * ./source/main/assets/csl-styles
  */
 
-// This script requires a previous yarn/npm install.
+// This script requires a previous Bun install.
 import got from 'got'
 import { promises as fs } from 'fs'
 import path from 'path'
