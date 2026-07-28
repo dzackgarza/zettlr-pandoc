@@ -995,6 +995,18 @@ export class ReviewDiffStore extends EventEmitter {
       mapped.reviewGeneration = mapped.generation;
       delete mapped.generation;
     }
+    const documentId = typeof mapped.documentId === "string" ? mapped.documentId : undefined;
+    if (documentId !== undefined) {
+      const review = this.reviews.get(documentId);
+      if (review !== undefined) {
+        if (!("reviewGeneration" in mapped)) {
+          mapped.reviewGeneration = review.generation;
+        }
+        if (!("unresolvedChunks" in mapped)) {
+          mapped.unresolvedChunks = this.countUnresolvedChunks(review);
+        }
+      }
+    }
     const agentEvent: AgentEvent = {
       event: event as AgentEvent["event"],
       timestamp: new Date().toISOString(),
