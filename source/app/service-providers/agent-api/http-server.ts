@@ -30,7 +30,6 @@ import ProviderContract from "@providers/provider-contract";
 import DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
 import type { AppServiceContainer } from "source/app/app-service-container";
-import type { AgentApiConfig } from "source/app/service-providers/config/get-config-template";
 import makeSearchRegex from "source/common/util/make-search-regex";
 import {
   AGENT_API_PROTOCOL_VERSION,
@@ -51,7 +50,6 @@ type BufferedAgentEvent = AgentEvent & { id: string };
 export default class AgentHTTPProvider extends ProviderContract {
   private _server: http.Server | undefined;
   private _instanceId: string;
-  private _config: AgentApiConfig;
   private _sseClients: Set<http.ServerResponse> = new Set();
   private _eventReplayBuffer: BufferedAgentEvent[] = [];
   private _eventSequence = 1;
@@ -65,11 +63,6 @@ export default class AgentHTTPProvider extends ProviderContract {
   ) {
     super();
     this._instanceId = crypto.randomUUID();
-    const fullConfig = _app.config.get();
-    if (fullConfig.agentApi === undefined) {
-      throw new Error("Agent API configuration is required");
-    }
-    this._config = fullConfig.agentApi;
     // Load the OpenAPI YAML spec (dev: sibling to this file; packaged: assets/openapi.yaml)
     const candidatePaths = [
       path.join(__dirname, "openapi.yaml"),
@@ -89,7 +82,11 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   async boot(): Promise<void> {
-    if (!this._config.enabled) {
+    const config = this._app.config.get().agentApi;
+    if (config === undefined) {
+      throw new Error("Agent API configuration is required");
+    }
+    if (!config.enabled) {
       this._log.info("[AgentHTTPProvider] Disabled by config, skipping boot");
       return;
     }
@@ -101,10 +98,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     this._server = http.createServer(handler);
 
     await new Promise<void>((resolve, reject) => {
-      this._server!.listen(this._config.port, "127.0.0.1", () => {
-        this._log.info(
-          `[AgentHTTPProvider] Listening on http://127.0.0.1:${this._config.port}`,
-        );
+      this._server!.listen(config.port, "127.0.0.1", () => {
+        this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${config.port}`);
         resolve();
       });
       this._server!.on("error", reject);
