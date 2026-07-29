@@ -20,6 +20,7 @@
 
 import type LogProvider from '@providers/log'
 import { BrowserWindow } from 'electron'
+import errorToString from '@common/util/error-to-string'
 
 let splashScreen: BrowserWindow|undefined
 
@@ -67,10 +68,16 @@ export function showSplashScreen (logger: LogProvider): void {
     }
   })
 
-  splashScreen.loadURL(SPLASH_SCREEN_WEBPACK_ENTRY)
-    .catch(e => {
-      logger.error(`Could not load URL ${SPLASH_SCREEN_WEBPACK_ENTRY}: ${e.message as string}`, e)
-    })
+  const window = splashScreen
+  window.loadURL(SPLASH_SCREEN_WEBPACK_ENTRY).catch((error: unknown) => {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) {
+      return
+    }
+    logger.error(
+      `Could not load URL ${SPLASH_SCREEN_WEBPACK_ENTRY}: ${errorToString(error)}`,
+      error
+    )
+  })
 
   splashScreen.once('ready-to-show', () => {
     splashScreen?.show()

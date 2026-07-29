@@ -25,6 +25,7 @@ import attachLogger from './attach-logger'
 import type LogProvider from '@providers/log'
 import type ConfigProvider from '@providers/config'
 import type DocumentManager from '@providers/documents'
+import errorToString from '@common/util/error-to-string'
 
 /**
  * Creates a BrowserWindow with main window configuration and loads the main
@@ -64,11 +65,20 @@ export default function createMainWindow (
 
   // Load the index.html of the app.
   // The variable MAIN_WINDOW_WEBPACK_ENTRY is automatically resolved by electron forge / webpack
-  window.loadURL(effectiveUrl.toString())
-    .catch(e => {
-      logger.error(`Could not load URL ${MAIN_WINDOW_WEBPACK_ENTRY}: ${e.message as string}`, e)
-      dialog.showErrorBox('Could not open window', `Could not open main Window: ${e.message as string}`)
-    })
+  window.loadURL(effectiveUrl.toString()).catch((error: unknown) => {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) {
+      return
+    }
+    const diagnostic = errorToString(error)
+    logger.error(
+      `Could not load URL ${MAIN_WINDOW_WEBPACK_ENTRY}: ${diagnostic}`,
+      error
+    )
+    dialog.showErrorBox(
+      'Could not open window',
+      `Could not open main Window: ${diagnostic}`
+    )
+  })
 
   // EVENT LISTENERS
 

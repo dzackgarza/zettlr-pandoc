@@ -26,7 +26,9 @@
   },
   "include": [
     // The source files need to be compiled and linted; as do the test files.
-    "source/**/*", "test/**/*"
+    "source/**/*",
+    "test/**/*",
+    "e2e/**/*"
   ],
   "ts-node": {
     "require": ["tsconfig-paths/register"]

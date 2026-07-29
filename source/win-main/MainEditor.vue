@@ -83,6 +83,9 @@ import {
 } from '@common/modules/markdown-editor/util/live-buffer-reporter'
 import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
 import { runRecoverably } from '@common/util/run-recoverably'
+import surfaceDocumentLoadError, {
+  surfaceDocumentLoadFailure
+} from './util/surface-document-load-error'
 import RenameReferencePreviewDialog from './RenameReferencePreviewDialog.vue'
 import {
   buildRenamePreviewSummary,
@@ -178,6 +181,10 @@ const tagStore = useTagsStore()
 
 // UNREFFED STUFF
 let currentEditor: MarkdownEditor|null = null
+
+function reportDocumentLoadError (error: unknown): void {
+  surfaceDocumentLoadError(props.file.path, error)
+}
 
 /**
  * The navigation payload of the last ACTIVE_FILE event for this leaf
@@ -335,11 +342,18 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     applyPendingNavigation()
   }
 
-  if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
+  if (event === DP_EVENTS.FILE_REMOTE_CHANGE_ERROR && context.filePath === props.file.path) {
+    if (context.documentLoadError === undefined) {
+      throw new Error(
+        `Received ${DP_EVENTS.FILE_REMOTE_CHANGE_ERROR} without a diagnostic for ${context.filePath}`
+      )
+    }
+    surfaceDocumentLoadFailure(context.filePath, context.documentLoadError)
+  } else if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
     // The currently loaded document has been changed remotely. This event indicates
     // that the document provider has already reloaded the document and we only
     // need to tell the main editor to reload it as well.
-    currentEditor?.reload().catch(e => console.error(e))
+    currentEditor?.reload().catch(reportDocumentLoadError)
   } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
     currentEditor?.clearReviewDiffSession()
     // The file has been saved to disk. This means we should probably update the
@@ -387,7 +401,7 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
 })
 
 ipcRenderer.on('reload-editors', _e => {
-  currentEditor?.reload().catch(err => console.error('Failed to reload editor after `reload-editors` event', err))
+  currentEditor?.reload().catch(reportDocumentLoadError)
 })
 
 // Update the file database whenever links have been updated
@@ -397,7 +411,7 @@ ipcRenderer.on('links', _e => {
 
 // MOUNTED HOOK
 onMounted(() => {
-  loadDocument().catch(err => console.error(err))
+  loadDocument().catch(reportDocumentLoadError)
 })
 
 onBeforeUnmount(() => {
@@ -429,7 +443,7 @@ onUpdated(() => {
     props.persistentStateMap.set(currentFilePath, currentEditor.persistentState)
     liveBufferReporter.dropDocument(currentFilePath)
     currentEditor.unmount()
-    loadDocument().catch(err => console.error(err))
+    loadDocument().catch(reportDocumentLoadError)
   }
 
   if (!currentEditor.hasFocus()) {
@@ -688,6 +702,8 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   const persistentState = props.persistentStateMap.get(doc)
   const editor = new MarkdownEditor(props.leafId, props.windowId, doc, documentAuthorityIPCAPI, undefined, persistentState)
 
+  editor.on('document-load-error', reportDocumentLoadError)
+
   // Update the document info on corresponding events
   editor.on('loaded', () => {
     if (currentEditor === editor) {
@@ -856,6 +872,15 @@ async function loadDocument (): Promise<void> {
 
   mainEditorWrapper.value?.appendChild(newEditor.dom)
   currentEditor = newEditor
+  try {
+    await newEditor.ready
+  } catch (error) {
+    newEditor.unmount()
+    if (currentEditor === newEditor) {
+      currentEditor = null
+    }
+    throw error
+  }
 
   currentEditor.setCompletionDatabase('tags', tags.value)
   currentEditor.setCompletionDatabase('snippets', snippets.value)

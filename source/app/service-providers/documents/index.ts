@@ -22,6 +22,7 @@ import { markdownToAST } from "@common/modules/markdown-utils";
 import PersistentDataContainer from "@common/modules/persistent-data-container";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import { countAll } from "@common/util/counter";
+import errorToString from "@common/util/error-to-string";
 import isFile from "@common/util/is-file";
 import {
   type BranchNodeJSON,
@@ -34,6 +35,7 @@ import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type { DocumentLocation, SourceRange } from "@dts/common/references";
 import type { ReviewDiffSession, ReviewDiffStatus } from "@dts/common/review-diff";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
+import type { ConfigOptions } from "@providers/config/get-config-template";
 import ProviderContract, { type IPCAPI } from "@providers/provider-contract";
 import { randomUUID } from "crypto";
 import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions, shell } from "electron";
@@ -66,13 +68,15 @@ interface DocumentWatchdog {
 
 type DocumentManagerConfig = {
   get(): {
-    app: {
-      openFiles: OpenDocument[];
-      openWorkspaces: string[];
+    app: Pick<ConfigOptions["app"], "openFiles" | "openWorkspaces">;
+    editor: Pick<ConfigOptions["editor"], "autoSave">;
+    system: Pick<ConfigOptions["system"], "avoidNewTabs">;
+    appLang: ConfigOptions["appLang"];
+    files: {
+      images: Pick<ConfigOptions["files"]["images"], "openWith">;
+      pdf: Pick<ConfigOptions["files"]["pdf"], "openWith">;
     };
-    editor: { autoSave: "off" | "immediate" | "delayed" };
-    system: { avoidNewTabs: boolean };
-    appLang: string;
+    alwaysReloadFiles: ConfigOptions["alwaysReloadFiles"];
   };
   addPath: AppServiceContainer["config"]["addPath"];
   set: AppServiceContainer["config"]["set"];
@@ -147,6 +151,15 @@ export interface DocumentsUpdateContext {
     referenceText: string;
     workingText: string;
     unresolvedChunks: number;
+  };
+  /**
+   * The renderer-ready failure payload for FILE_REMOTE_CHANGE_ERROR events.
+   * The message is suitable for the visible error surface; diagnostic retains
+   * the complete stack or serialized rejection for renderer diagnostics.
+   */
+  documentLoadError?: {
+    message: string;
+    diagnostic: string;
   };
 }
 
@@ -419,9 +432,20 @@ export default class DocumentManager extends ProviderContract {
           this._app.log.error(err instanceof Error ? err.message : String(err)),
         );
       } else {
-        this.handleRemoteChange(changedPath).catch((err: unknown) =>
-          this._app.log.error(err instanceof Error ? err.message : String(err)),
-        );
+        this.handleRemoteChange(changedPath).catch((err: unknown) => {
+          const diagnostic = errorToString(err);
+          this._app.log.error(
+            `[DocumentManager] Could not reload changed file ${changedPath}`,
+            err,
+          );
+          this.broadcastEvent(DP_EVENTS.FILE_REMOTE_CHANGE_ERROR, {
+            filePath: changedPath,
+            documentLoadError: {
+              message: err instanceof Error ? err.message : diagnostic,
+              diagnostic,
+            },
+          });
+        });
       }
     });
 
@@ -1364,13 +1388,9 @@ current contents from the editor somewhere else, and restart the application.`,
    * within the workspace, using FSAL as the source of truth.
    */
   public async getFilesForWorkspace(workspacePath: string): Promise<string[]> {
-    try {
-      const allPaths = await this._app.fsal.readDirectoryRecursively(workspacePath);
-      // Filter: supported file extensions, and exclude the workspace directory itself
-      return allPaths.filter((p) => p !== workspacePath && hasMdOrCodeExt(p) && !isDir(p));
-    } catch {
-      return [];
-    }
+    const allPaths = await this._app.fsal.readDirectoryRecursively(workspacePath);
+    // Filter: supported file extensions, and exclude the workspace directory itself
+    return allPaths.filter((p) => p !== workspacePath && hasMdOrCodeExt(p) && !isDir(p));
   }
 
   /**
