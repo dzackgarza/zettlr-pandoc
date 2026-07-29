@@ -5,6 +5,13 @@ const { FusesPlugin } = require('@electron-forge/plugin-fuses')
 const { FuseV1Options, FuseVersion } = require('@electron/fuses')
 const { getGitHash } = require('./scripts/get-git-hash.js')
 
+const forgeRendererPort = process.env.ZETTLR_FORGE_RENDERER_PORT === undefined
+  ? 3100
+  : Number.parseInt(process.env.ZETTLR_FORGE_RENDERER_PORT, 10)
+const forgeLoggerPort = process.env.ZETTLR_FORGE_LOGGER_PORT === undefined
+  ? 9001
+  : Number.parseInt(process.env.ZETTLR_FORGE_LOGGER_PORT, 10)
+
 /**
  * This function runs the get-pandoc script in order to download the requested
  * version of Pandoc. This way we can guarantee that the correct Pandoc version
@@ -263,8 +270,8 @@ module.exports = {
         // both ports, because changing only one doesn't solve the issue.
         // ponytail: upstream default 3000 collides with a persistent local
         // dev server on this machine; moved to a free port for the fork spike.
-        port: 3100,
-        loggerPort: 9001,
+        port: forgeRendererPort,
+        loggerPort: forgeLoggerPort,
         renderer: {
           config: './webpack.renderer.config.js',
           entryPoints: [
