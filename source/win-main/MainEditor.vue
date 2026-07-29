@@ -910,6 +910,7 @@ async function loadDocument (): Promise<void> {
     }
   })
   currentEditor.projectInfo = updateProjectInfo()
+  await updateReferenceEntries()
 
   if (pendingReviewDiffSession !== null) {
     applyReviewDiffSession(pendingReviewDiffSession)

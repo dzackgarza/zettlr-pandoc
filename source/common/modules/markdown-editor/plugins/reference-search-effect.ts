@@ -19,6 +19,7 @@
 
 import { StateEffect } from '@codemirror/state'
 import { type Command } from '@codemirror/view'
+import type { ReferenceOccurrence } from '@dts/common/references'
 
 /**
  * The intent carried by a reference search request: null is the plain Mod-P
@@ -26,7 +27,10 @@ import { type Command } from '@codemirror/view'
  * `N references` count badge, issue #1 Phase 4) asks the overlay to present
  * the workspace citing locations of exactly that definition key.
  */
-export type ReferenceSearchRequest = null | { key: string }
+export type ReferenceSearchRequest = null | {
+  key: string
+  occurrences: ReferenceOccurrence[]
+}
 
 /**
  * Signals that the user requested the workspace reference search overlay.

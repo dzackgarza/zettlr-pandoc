@@ -517,6 +517,35 @@ describe('opening a Markdown document', function () {
       'reference-badge-citing-location.png',
       await page.screenshot()
     )
+    await locations.first().click()
+    await overlay.waitFor({ state: 'hidden', timeout: 20_000 })
+    const selectedSource = await page.locator('.cm-content').evaluate(content => {
+      const tile = (
+        content as HTMLElement & {
+          cmTile?: {
+            root?: {
+              view?: {
+                state?: {
+                  doc?: { sliceString(from: number, to: number): string }
+                  selection?: { main?: { from: number, to: number } }
+                }
+              }
+            }
+          }
+        }
+      ).cmTile
+      const state = tile?.root?.view?.state
+      const selection = state?.selection?.main
+      if (state?.doc === undefined || selection === undefined) {
+        throw new Error('Could not read the active CodeMirror selection')
+      }
+      return state.doc.sliceString(selection.from, selection.to)
+    })
+    assert.equal(
+      selectedSource,
+      '@sec:terminology',
+      'Selecting the citing location must navigate to the exact authored occurrence.'
+    )
   })
 
   it('attributes a remote reload failure to the active document', async function () {
