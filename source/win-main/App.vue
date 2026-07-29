@@ -352,7 +352,9 @@ function openReferenceSearch (request: ReferenceSearchRequest = null): void {
         return // The boundary surfaced the closable toast; nothing to open.
       }
       referenceSearchDefinitions.value = outcome.value.snapshots.flatMap(snapshot => snapshot.definitions)
-      referenceSearchOccurrences.value = outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
+      referenceSearchOccurrences.value = request === null
+        ? outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
+        : request.occurrences
       referenceSearchRequest.value = request
       referenceSearchProjectRoots.value = collectProjectRoots()
       referenceSearchActiveDocumentPath.value = documentTreeStore.lastLeafActiveFile?.path
