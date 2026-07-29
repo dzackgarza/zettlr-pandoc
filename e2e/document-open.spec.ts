@@ -241,7 +241,13 @@ async function createFixture(): Promise<Fixture> {
 
   await mkdir(configDirectory)
   await mkdir(workspaceDirectory)
-  await writeFile(documentPath, `# Opened document\n\n${MARKER}\n`, 'utf8')
+  await writeFile(
+    documentPath,
+    `# Opened document\n\n${MARKER}\n\n` +
+      `Standard terminology: see @sec:terminology.\n\n` +
+      `# Terminology, notation, and standard background {#sec:terminology}\n`,
+    'utf8'
+  )
 
   const packageMetadata: unknown = JSON.parse(
     await readFile(path.join(REPO_ROOT, 'package.json'), 'utf8')
@@ -309,11 +315,18 @@ function launchElectron(configDirectory: string): ChildProcess {
   const args = needsVirtualDisplay
     ? ['--auto-servernum', forgeExecutable, ...forgeArguments]
     : forgeArguments
+  const rendererPort = 20_000 + (process.pid % 10_000)
+  const loggerPort = 40_000 + (process.pid % 10_000)
 
   return spawn(executable, args, {
     cwd: REPO_ROOT,
     detached: true,
-    env: { ...process.env, NODE_ENV: 'develop' },
+    env: {
+      ...process.env,
+      NODE_ENV: 'develop',
+      ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
+      ZETTLR_FORGE_LOGGER_PORT: String(loggerPort)
+    },
     stdio: ['ignore', 'pipe', 'pipe']
   })
 }
@@ -452,6 +465,58 @@ describe('opening a Markdown document', function () {
       `The renderer reported unexpected errors or dialogs:\n${rendererEvents.join('\n')}`
     )
     screenshots.set('visible-document.png', await page.screenshot())
+  })
+
+  it('renders reference UI and opens a badge citing location on first load', async function () {
+    assert.ok(browser, 'The application must be running')
+    const activeDocumentPath = requireInitialized(
+      documentPath,
+      'The document path must be initialized'
+    )
+    const page = await findEditorPage(browser, this.timeout())
+    const countBadge = page.locator(
+      '.reference-count-badge[data-reference-key="sec:terminology"]'
+    )
+
+    await delay(5_000)
+    screenshots.set('reference-badge-before-click.png', await page.screenshot())
+    assert.equal(
+      await countBadge.count(),
+      1,
+      `The real editor did not render the expected reference count badge.\n` +
+        `Rendered editor text: ${JSON.stringify(await page.locator('.cm-content').innerText())}\n` +
+        `Rendered badge keys: ${JSON.stringify(
+          await page.locator('.reference-count-badge').evaluateAll(
+            badges => badges.map(badge => (badge as HTMLElement).dataset.referenceKey)
+          )
+        )}`
+    )
+    await countBadge.waitFor({ state: 'visible', timeout: 20_000 })
+    assert.equal(await countBadge.innerText(), '1 reference')
+    await countBadge.click()
+
+    const overlay = page.locator(
+      '.reference-search-overlay[data-search-mode="citing-locations"]'
+    )
+    await overlay.waitFor({ state: 'visible', timeout: 20_000 })
+    const locations = overlay.locator('[data-occurrence-path]')
+    assert.equal(
+      await locations.count(),
+      1,
+      'The badge must open the one citing location counted by its label.'
+    )
+    assert.equal(
+      await locations.first().getAttribute('data-occurrence-path'),
+      activeDocumentPath
+    )
+    assert.match(
+      await locations.first().innerText(),
+      /@sec:terminology/
+    )
+    screenshots.set(
+      'reference-badge-citing-location.png',
+      await page.screenshot()
+    )
   })
 
   it('attributes a remote reload failure to the active document', async function () {
