@@ -1059,11 +1059,20 @@ export default class MarkdownEditor extends EventEmitter {
       return;
     }
 
+    // Accept/reject mutate CodeMirror's original document directly, not the
+    // cached session — and the cached session is what a rebuild reconstructs
+    // the merge view from. Left at the pre-decision reference it resurrects
+    // chunks the user already resolved, and the next status report sends that
+    // reverted reference back to main. Sync it here, where the live value is
+    // already being read, so the cache never trails a decision.
+    const originalText = getOriginalDoc(this._instance.state).toString();
+    this.activeReviewDiffSession = { ...session, originalText };
+
     this.emit("review-diff-status", {
       filePath: session.documentPath,
       sessionId: session.id,
       unresolvedChunks: chunks.chunks.length,
-      originalText: getOriginalDoc(this._instance.state).toString(),
+      originalText,
       currentText: this.value,
       documentVersion: getSyncedVersion(this._instance.state),
       sourceWindowId: this.windowId,
