@@ -50,7 +50,6 @@ import { app } from "electron";
 import fs from "fs";
 import http from "http";
 import path from "path";
-import type { AppServiceContainer } from "source/app/app-service-container";
 import { sha256Text } from "@providers/documents/review-diff-store";
 import makeSearchRegex from "source/common/util/make-search-regex";
 
@@ -1433,7 +1432,28 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
     const canonicalFilePath = fs.realpathSync(filePath);
     return workspaces.some((workspacePath) => {
-      const canonicalWorkspacePath = fs.realpathSync(workspacePath);
+      // A configured workspace can be deleted or unmounted while the editor
+      // runs, and realpathSync then throws ENOENT. Letting that escape turned
+      // every openability check into a bare 500 whose message named neither the
+      // path nor the reason, so the only diagnosis was reading the app log and
+      // guessing which of several workspaces was gone. A vanished workspace
+      // cannot contain the file, which is the answer this predicate owes its
+      // caller; anything else is a real fault and still propagates.
+      let canonicalWorkspacePath: string;
+      try {
+        canonicalWorkspacePath = fs.realpathSync(workspacePath);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT" && code !== "ENOTDIR") {
+          throw error;
+        }
+        this._log.warning(
+          `[AgentHTTPProvider] Configured workspace ${workspacePath} could not be resolved ` +
+            `(${code}); treating it as not containing ${filePath}. The workspace is ` +
+            "probably deleted or unmounted.",
+        );
+        return false;
+      }
       const relativePath = path.relative(canonicalWorkspacePath, canonicalFilePath);
       return relativePath === "" ||
         (!relativePath.startsWith(`..${path.sep}`) && relativePath !== ".." && !path.isAbsolute(relativePath));

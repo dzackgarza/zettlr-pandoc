@@ -364,6 +364,15 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     // The currently loaded document has been changed remotely. This event indicates
     // that the document provider has already reloaded the document and we only
     // need to tell the main editor to reload it as well.
+    //
+    // Drop the review first. notifyRemoteChange closed the provider-owned review
+    // when it accepted the external edit, so this pane's session is already dead;
+    // leaving it set would let the reload restore accept/reject controls over the
+    // externally reloaded text. Rejecting one of those phantom chunks would
+    // reinstate the stale review reference, and with the provider's review gone
+    // the save gate would not stop that text being written over the external
+    // edit.
+    currentEditor?.clearReviewDiffSession()
     currentEditor?.reload().catch(reportDocumentLoadError)
   } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
     currentEditor?.clearReviewDiffSession()
