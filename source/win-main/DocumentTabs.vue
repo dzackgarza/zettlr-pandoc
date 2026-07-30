@@ -1,74 +1,100 @@
 <template>
   <div
-    v-bind:class="{
+    :class="{
       'document-tablist-wrapper': true,
       'scrollers-active': showScrollers
     }"
   >
     <!-- Left scroller arrow -->
-    <div v-if="showScrollers" class="scroller left" v-on:click="scrollLeft()">
-      <cds-icon shape="angle" direction="left"></cds-icon>
+    <div
+      v-if="showScrollers"
+      class="scroller left"
+      @click="scrollLeft()"
+    >
+      <cds-icon
+        shape="angle"
+        direction="left"
+      />
     </div>
     <!-- Right scroller arrow -->
-    <div v-if="showScrollers" class="scroller right" v-on:click="scrollRight()">
-      <cds-icon shape="angle" direction="right"></cds-icon>
+    <div
+      v-if="showScrollers"
+      class="scroller right"
+      @click="scrollRight()"
+    >
+      <cds-icon
+        shape="angle"
+        direction="right"
+      />
     </div>
 
     <div
       ref="container"
       role="tablist"
-      v-bind:class="{ 'tab-container': true }"
-      v-on:contextmenu="handleTabbarContext($event)"
-      v-on:dragover="handleExternalDragover"
-      v-on:dragend="handleExternalDragleave"
+      :class="{ 'tab-container': true }"
+      @contextmenu="handleTabbarContext($event)"
+      @dragover="handleExternalDragover"
+      @dragend="handleExternalDragleave"
     >
       <div
         v-for="file in openFiles"
-        v-bind:key="file.path"
-        v-bind:class="{
+        :key="file.path"
+        :class="{
           active: activeFile !== null && file.path === activeFile.path,
           modified: modifiedPaths.includes(file.path),
           pinned: file.pinned
         }"
-        v-bind:title="file.path"
-        v-bind:data-path="file.path"
-        v-bind:draggable="true"
+        :title="file.path"
+        :data-path="file.path"
+        :draggable="true"
         role="tab"
-        v-on:dragstart="handleDragStart($event, file.path)"
-        v-on:drag="handleDrag"
-        v-on:dragend="handleDragEnd"
-        v-on:contextmenu.stop="handleContextMenu($event, file)"
-        v-on:mouseup="handleMiddleMouseClick($event, file)"
-        v-on:mousedown="handleClickFilename($event, file)"
+        @dragstart="handleDragStart($event, file.path)"
+        @drag="handleDrag"
+        @dragend="handleDragEnd"
+        @contextmenu.stop="handleContextMenu($event, file)"
+        @mouseup="handleMiddleMouseClick($event, file)"
+        @mousedown="handleClickFilename($event, file)"
       >
         <span
           class="filename"
           role="button"
         >
-          <cds-icon v-if="file.pinned" shape="pin"></cds-icon>
+          <cds-icon
+            v-if="file.pinned"
+            shape="pin"
+          />
           {{ getDocumentTitle(file) }}
         </span>
-        <span v-if="hasDuplicate(file)" class="deduplicate">{{ getDirBasename(file) }}</span>
+        <span
+          v-if="hasDuplicate(file)"
+          class="deduplicate"
+        >{{ getDirBasename(file) }}</span>
+        <span
+          v-if="modifiedPaths.includes(file.path)"
+          class="modification-indicator"
+          role="img"
+          :title="unsavedChangesLabel"
+          :aria-label="unsavedChangesLabel"
+        />
         <span
           v-if="!file.pinned"
           class="close"
           aria-hidden="true"
-          v-on:mousedown.stop.prevent="handleClickClose($event, file)"
+          @mousedown.stop.prevent="handleClickClose($event, file)"
         >&times;</span>
       </div>
 
       <div
         v-if="documentTabDragOver"
-        v-bind:class="{
+        :class="{
           dropzone: true,
           dragover: true
         }"
-        v-on:drop="handleExternalDrop"
-        v-on:dragover="handleExternalDragover"
-        v-on:dragleave="handleExternalDragleave"
-        v-on:dragend="handleExternalDragleave"
-      >
-      </div>
+        @drop="handleExternalDrop"
+        @dragover="handleExternalDragover"
+        @dragleave="handleExternalDragleave"
+        @dragend="handleExternalDragleave"
+      />
     </div>
   </div>
 </template>
@@ -131,6 +157,7 @@ const node = computed<LeafNodeJSON|undefined>(() => documentTreeStore.paneData.f
 const openFiles = computed(() => node.value?.openFiles ?? [])
 const activeFile = computed(() => node.value?.activeFile ?? null)
 const modifiedPaths = computed(() => documentTreeStore.modifiedDocuments)
+const unsavedChangesLabel = trans('Unsaved changes')
 
 watch(activeFile, () => {
   // Make sure the activeFile is in view
@@ -893,15 +920,20 @@ function handleExternalDragover (event: DragEvent): void {
  * This is being called on dragleave and some other, related external events
  * to reset the internal state so that the dropzone disappears.
  *
- * @param   {DragEvent}  event  The drag event
+ * @param   {DragEvent}  _event  The drag event, which this handler ignores
  */
-function handleExternalDragleave (event: DragEvent): void {
+function handleExternalDragleave (_event: DragEvent): void {
   documentTabDragOver.value = false
 }
 </script>
 
 <style lang="less">
 @tabbar-height: 30px;
+// Unsaved work gets its own hue rather than the theme's own accent, which
+// already means "this is the active tab". Amber reads as attention on both the
+// light tab bar and the dark one, so one value serves every platform and theme
+// block instead of each restating its own.
+@unsaved-accent: rgb(224, 122, 26);
 
 body div.document-tablist-wrapper {
   position: relative;
@@ -969,9 +1001,62 @@ body div.tab-container {
       opacity: 0.8;
     }
 
-    // Mark modification status classically
-    &.modified .filename::before {
-      content: '* '
+    // Unsaved changes read as an amber dot in the close control's own slot,
+    // which the close cross takes back the moment the pointer arrives. The
+    // previous indicator was a '* ' prefix on the filename: it shifted the
+    // title sideways, competed with the text, and was easy to miss.
+    //
+    // Positioned over the close control's box rather than beside it, so an
+    // unsaved tab is no wider than a saved one and the row does not twitch as
+    // the pointer travels along it.
+    .modification-indicator {
+      position: absolute;
+      right: 10px; // matches the tab's own horizontal padding
+      top: 0;
+      width: 10px;
+      height: @tabbar-height;
+
+      &::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 8px;
+        height: 8px;
+        margin: -4px 0 0 -4px;
+        border-radius: 50%;
+        background-color: @unsaved-accent;
+      }
+    }
+
+    // The close cross is a pointer affordance, shown on the tab under the
+    // cursor. It used to sit on every tab at once, which is what made the dot
+    // fail its job: with a glyph already in that slot on all four tabs, an
+    // unsaved one had to be picked out by telling a 7px circle from a 7px
+    // cross. Hidden rather than removed, so the tab keeps its width and the
+    // row does not reflow as the pointer travels.
+    .close { visibility: hidden; }
+    &:hover .close { visibility: visible; }
+    &:hover .modification-indicator { display: none; }
+
+    // A dot alone is a fair signal for an unsaved shopping list and a poor one
+    // for unsaved research. The top edge carries the same amber, so the state
+    // registers from the row's silhouette before any glyph is resolved — and it
+    // stays put under the pointer, when the dot has yielded its slot.
+    //
+    // A pseudo-element, not a box-shadow: the darwin and win32 blocks
+    // both set `box-shadow` on `div[role="tab"]:not(.active)` for their inset
+    // top shading, and that rule lands later in the sheet — an unsaved tab that
+    // was not the active one lost its bar entirely, which is exactly the tab
+    // whose state the author most needs to see.
+    &.modified::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background-color: @unsaved-accent;
     }
 
     .close {
