@@ -227,12 +227,24 @@ function isAcceptableHeader(
   ) {
     return true;
   }
-  // Exact canonical path. `git diff` drops the leading slash when it prefixes
-  // an absolute path with a/ or b/, so `a//home/x.md` arrives as `home/x.md`;
-  // restore the root so generator-produced diffs validate too.
-  const stripped = normalized.replace(/^(a|b)\//, "");
-  const candidate = path.isAbsolute(stripped) ? stripped : `/${stripped}`;
-  return path.resolve(candidate) === path.resolve(documentPath);
+  // Exact canonical path. The contract accepts `document`, an absolute path, or
+  // an absolute path behind a git-style a/ or b/ prefix — nothing relative.
+  //
+  // `git diff` drops the leading slash when it prefixes an absolute path, so
+  // `a//home/x.md` arrives as `a/home/x.md`; the root is restored ONLY for a
+  // header that actually carried that prefix. Restoring it unconditionally
+  // would accept a bare relative header like `home/x.md` as `/home/x.md`,
+  // which is precisely the target check this function exists to perform.
+  const gitPrefix = /^(a|b)\//;
+  const carriedPrefix = gitPrefix.test(normalized);
+  const stripped = normalized.replace(gitPrefix, "");
+  if (path.isAbsolute(stripped)) {
+    return path.resolve(stripped) === path.resolve(documentPath);
+  }
+  if (!carriedPrefix) {
+    return false;
+  }
+  return path.resolve(`/${stripped}`) === path.resolve(documentPath);
 }
 
 // ============================================================================

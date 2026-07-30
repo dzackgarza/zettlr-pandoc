@@ -630,6 +630,22 @@ describe("ReviewDiffStore", function () {
       assert.equal(parsed.hunks.length, 1);
     });
 
+    it("rejects a relative header that merely looks like the target", function () {
+      const baseline = "alpha\n";
+      const proposed = "beta\n";
+      // `home/user/note.md` is NOT `/home/user/note.md`. Restoring the leading
+      // slash is only correct for a header that carried a git a/ or b/ prefix;
+      // doing it unconditionally would let any relative path pass the target
+      // check by accident.
+      const relative = DOC_PATH.replace(/^\//, "");
+      const patch = createPatch(relative, baseline, proposed, "", "", {
+        context: 3,
+      });
+      assert.throws(() => {
+        validateAndParsePatch(patch, DOC_PATH);
+      }, /do not match/);
+    });
+
     it("rejects basename-only headers", function () {
       const baseline = "alpha\n";
       const proposed = "beta\n";
