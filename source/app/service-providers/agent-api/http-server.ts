@@ -1431,7 +1431,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       // What is legitimately in scope with no workspace configured is what the
       // editor already holds — the user opened those documents itself. A path
       // nobody has opened stays out of reach.
-      return this._documents.getDocumentId(filePath) !== undefined;
+      //
+      // `getDocumentId` is not that test: `_documentIdByPath` is a permanent
+      // assignment cache that closing a document never clears, and listing a
+      // workspace assigns an id to every file in it. Asking what is loaded
+      // right now is the question this predicate actually has.
+      return this._documents.loadedDocuments.some((doc) => doc.filePath === filePath);
     }
     if (!fs.existsSync(filePath)) {
       return false;

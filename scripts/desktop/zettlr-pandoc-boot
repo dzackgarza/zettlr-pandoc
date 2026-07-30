@@ -46,7 +46,10 @@ process_alive() {
   local pid="$1"
   local probe
 
-  if probe=$(kill -0 "$pid" 2>&1); then
+  # LC_ALL=C pins strerror to the English text matched below; without it a
+  # localized "Kein Prozess vorhanden" falls through to the fatal branch and
+  # aborts the launch over a process that simply exited.
+  if probe=$(LC_ALL=C kill -0 "$pid" 2>&1); then
     return 0
   fi
   if [[ "$probe" == *"No such process"* ]]; then

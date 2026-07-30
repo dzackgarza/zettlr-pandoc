@@ -531,6 +531,18 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // not the thing that made those documents legitimate.
     const focused = await httpRequest("POST", `/v1/documents/${openDocId}/focus`);
     assert.equal(focused.status, 200);
+
+    // An id assigned earlier is not standing authorization. Document ids are
+    // cached permanently and handed out to every file a workspace listing
+    // enumerates, so closing a document has to take its path back out of
+    // scope — otherwise closing the last workspace leaves every path the
+    // editor ever touched reloadable through the API.
+    await provider.closeFileEverywhere(alreadyOpen);
+    const reopened = await httpRequest("POST", "/v1/documents", {
+      body: JSON.stringify({ uri: `file://${alreadyOpen}` }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(reopened.status, 404);
   });
 
   it("POST /v1/documents/{id}/proposals returns 412 on stale ETag", async function () {
