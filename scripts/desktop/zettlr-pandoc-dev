@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Open and position the boot splash used by the desktop entry.
+set -euo pipefail
+
+: "${HOME:?HOME must be set}"
+
+for required_command in hyprctl jq kill kitty sleep; do
+  if ! command -v "$required_command" >/dev/null 2>&1; then
+    printf 'Required command is unavailable: %s\n' "$required_command" >&2
+    exit 1
+  fi
+done
+
+splash_class="zpandoc-boot"
+boot="$HOME/.local/bin/zettlr-pandoc-boot"
+
+if [[ ! -x "$boot" ]]; then
+  printf 'Installed boot launcher is unavailable: %s\n' "$boot" >&2
+  exit 1
+fi
+
+kitty \
+  --class "$splash_class" \
+  --title "Loading" \
+  -o font_size=11 \
+  -o background_opacity=0.96 \
+  -o cursor_blink_interval=0 \
+  -o confirm_os_window_close=0 \
+  "$boot" &
+kitty_pid=$!
+
+address=
+for (( attempt = 0; attempt < 60; attempt++ )); do
+  if ! kill -0 "$kitty_pid" 2>/dev/null; then
+    wait "$kitty_pid"
+    exit $?
+  fi
+
+  address=$(
+    hyprctl clients -j |
+      jq -r --arg splash_class "$splash_class" \
+        'first(.[] | select(.class == $splash_class) | .address) // ""'
+  )
+  if [[ -n "$address" ]]; then
+    break
+  fi
+  sleep 0.1
+done
+
+if [[ -z "$address" ]]; then
+  if kill -0 "$kitty_pid" 2>/dev/null; then
+    kill "$kitty_pid"
+  fi
+  status=0
+  wait "$kitty_pid" || status=$?
+  printf 'Boot splash did not map in Hyprland (kitty status %s).\n' "$status" >&2
+  exit 1
+fi
+
+hyprctl --batch \
+  "dispatch setfloating address:$address ; dispatch resizewindowpixel exact 760 240,address:$address ; dispatch centerwindow" \
+  >/dev/null
+
+wait "$kitty_pid"

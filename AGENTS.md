@@ -57,7 +57,9 @@ recipe exists. Key recipes (see the `justfile` for the exact commands):
 
 | Recipe | What it does |
 |---|---|
-| `just launch` | Dev mode (`electron-forge start`) — builds from source and runs. **This is the path that works.** |
+| `just launch` | Dev mode through `scripts/test-gui/index.mjs`; uses the isolated `resources/test-cfg` profile. |
+| `just launch-desktop` | Dev mode (`electron-forge start`) with the normal user configuration. **This is the desktop path that works.** |
+| `just install-desktop-launcher` | Install the repo-owned Hyprland launcher and desktop entry under `~/.local`. |
 | `just package` | Production build (`electron-forge package`) → `app.asar`. **Currently broken** (see Build). |
 | `just verify-build` | Build, then prove the asar is fresh + built from HEAD (observability). |
 | `just verify-build-only` | Fast staleness check of the existing artifact (no rebuild). |
@@ -65,9 +67,10 @@ recipe exists. Key recipes (see the `justfile` for the exact commands):
 
 ## Build process
 
-- **Dev mode** — `electron-forge start` (`just launch`). Webpack dev build from
-  source on every start; reflects the working tree. **Works.** The launcher uses
-  this.
+- **Dev mode** — `electron-forge start` (`just launch-desktop`). Webpack dev
+  build from source on every start; reflects the working tree. **Works.** The
+  desktop launcher uses this. `just launch` instead routes through the
+  repository's isolated GUI-test profile.
 - **Production** — `electron-forge package` (`just package`) → `out/Zettlr-Pandoc-linux-x64/resources/app.asar`.
   webpack configs: `webpack.main.config.js` (Node/main target), `webpack.renderer.config.js`
   (browser/renderer), assembled by `forge.config.js`. **Known-broken:** the webpack
@@ -84,11 +87,17 @@ recipe exists. Key recipes (see the `justfile` for the exact commands):
 
 Desktop entry → wrapper → splash → boot script:
 
-- `~/.local/share/applications/zettlr-pandoc.desktop` (`StartupWMClass=zettlr-pandoc`)
-- `~/.local/bin/zettlr-pandoc-dev` — opens the floating kitty boot splash (Hyprland
-  float/center via `hyprctl dispatch`).
-- `~/.local/bin/zettlr-pandoc-boot` — the actual launcher. **Dev mode**
-  (`electron-forge start`), focus-if-running (intentional — do not "fix"),
+- **Source of truth:** `scripts/desktop/`, installed by
+  `scripts/install-desktop-launcher.sh` (`just install-desktop-launcher`).
+- `~/.local/share/applications/zettlr-pandoc.desktop` is rendered from the
+  repo-owned template (`StartupWMClass=zettlr-pandoc`).
+- `~/.local/bin/zettlr-pandoc-dev` and `zettlr-pandoc-boot` are symlinks to the
+  repo-owned scripts. The wrapper opens the floating kitty boot splash
+  (Hyprland float/center via `hyprctl dispatch`).
+- `zettlr-pandoc-boot` is the actual launcher. It delegates to
+  `just launch-desktop`,
+  so lockfile synchronization and all other recipe prerequisites run before
+  Electron Forge. It retains focus-if-running (intentional — do not "fix"),
   MathJax-macro refresh (below), Hyprland window-class detection (`class == zettlr-pandoc`),
   fail-loud on timeout. It deliberately does **not** use the packaged build.
 - Launcher log: `~/.cache/zettlr-pandoc-dev.log`.
@@ -295,3 +304,5 @@ Do not make the reader excavate the missing work from beneath praise, context-se
 
 Nuance belongs in the evidence and blocker analysis, not in softening the completion standard.
 The review should make it easy to finish the work, not easy to feel satisfied with less than the original contract required.
+
+> Optimized tool-use workflow for agents: see [SDL.md](./SDL.md).
