@@ -154,33 +154,69 @@ function decodeSearchDocumentRequest(
   return { ok: true, value: { literal, context } };
 }
 
+/**
+ * One field's verdict. Field checks are written as small named predicates and
+ * then evaluated as a list, so a decoder's own complexity does not grow with
+ * the number of fields it accepts.
+ */
+type FieldVerdict = undefined | string;
+
+function requiredString(value: unknown, field: string): FieldVerdict {
+  return typeof value === "string" ? undefined : `${field} is required and must be a string`;
+}
+
+function optionalString(value: unknown, field: string): FieldVerdict {
+  if (value === undefined || typeof value === "string") {
+    return undefined;
+  }
+  return `${field} must be a string`;
+}
+
+function optionalInteger(value: unknown, field: string): FieldVerdict {
+  if (value === undefined || (typeof value === "number" && Number.isInteger(value))) {
+    return undefined;
+  }
+  return `${field} must be an integer`;
+}
+
+function supportedPatchFormat(value: unknown): FieldVerdict {
+  if (value === "unified-diff") {
+    return undefined;
+  }
+  return typeof value === "string"
+    ? "Unsupported patch format"
+    : "patchFormat is required and must be unified-diff";
+}
+
+function firstProblem(verdicts: FieldVerdict[]): string | undefined {
+  return verdicts.find((verdict) => verdict !== undefined);
+}
+
 function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalRequest> {
   const raw = decodeJsonObject(body);
   if (!raw.ok) {
     return raw;
   }
   const { snapshot, patchFormat, patch, description, expectedReviewGeneration } = raw.value;
-  if (typeof patchFormat !== "string") {
-    return { ok: false, message: "patchFormat is required and must be unified-diff" };
-  }
-  if (patchFormat !== "unified-diff") {
-    return { ok: false, message: "Unsupported patch format" };
-  }
-  if (typeof snapshot !== "string" || typeof patch !== "string") {
-    return { ok: false, message: "snapshot and patch are required" };
-  }
-  if (description !== undefined && typeof description !== "string") {
-    return { ok: false, message: "description must be a string" };
-  }
-  if (
-    expectedReviewGeneration !== undefined &&
-    (typeof expectedReviewGeneration !== "number" || !Number.isInteger(expectedReviewGeneration))
-  ) {
-    return { ok: false, message: "expectedReviewGeneration must be an integer" };
+  const problem = firstProblem([
+    supportedPatchFormat(patchFormat),
+    requiredString(snapshot, "snapshot"),
+    requiredString(patch, "patch"),
+    optionalString(description, "description"),
+    optionalInteger(expectedReviewGeneration, "expectedReviewGeneration"),
+  ]);
+  if (problem !== undefined) {
+    return { ok: false, message: problem };
   }
   return {
     ok: true,
-    value: { snapshot, patchFormat, patch, description, expectedReviewGeneration },
+    value: {
+      snapshot: snapshot as string,
+      patchFormat: "unified-diff",
+      patch: patch as string,
+      description: description as string | undefined,
+      expectedReviewGeneration: expectedReviewGeneration as number | undefined,
+    },
   };
 }
 

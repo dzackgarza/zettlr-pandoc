@@ -108,6 +108,42 @@ export enum DP_EVENTS {
  * `Update[]` type-checked while being wrong in both directions — and allowed a
  * real `ChangeSet` to be pushed into the history undetected.
  */
+/**
+ * Why the provider refused to write a file. These live here, not in the
+ * documents provider, because they cross IPC in both directions and the
+ * renderer must be able to name them: importing a runtime value from the
+ * provider module drags i18n-main (and gettext-parser's Node code) into the
+ * renderer bundle, which fails the webpack build outright.
+ */
+export type SaveRefusalReason = 'unresolved-chunks' | 'review-out-of-sync' | 'disk-changed'
+
+export interface SaveRefusal {
+  reason: SaveRefusalReason
+  message: string
+}
+
+/**
+ * A save either wrote the file or refused with a reason. Deliberately not a bare
+ * boolean: `false` is what let the save gate fail silently at the IPC boundary,
+ * leaving the renderer to log "falsy result" with no cause.
+ */
+export type SaveFileResult =
+  | { ok: true }
+  | { ok: false, refusal?: SaveRefusal }
+
+/**
+ * Broadcast on SAVE_REFUSED_CHANNEL when a save the user did not initiate from
+ * the editor is refused — the close-and-save prompts, which run in main and have
+ * no renderer promise to hand the result back to. Without this the prompt simply
+ * closes and the window stays open with nothing explaining why.
+ */
+export interface SaveRefusedBroadcast {
+  filePath: string
+  refusal?: SaveRefusal
+}
+
+export const SAVE_REFUSED_CHANNEL = 'save-refused'
+
 /** Opaque `ChangeSet.toJSON()` payload; only `ChangeSet.fromJSON` reads it. */
 export type SerializedChanges = readonly (number | readonly (number | string)[])[]
 

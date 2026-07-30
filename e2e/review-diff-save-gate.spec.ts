@@ -301,65 +301,84 @@ async function acceptEveryChunk (page: Page, timeoutMs: number): Promise<number>
   return accepted
 }
 
+/** Everything the tests reach for, assembled once by boot() below. */
+interface RunningFixture {
+  appProcess: ChildProcess | undefined
+  browser: Browser | undefined
+  fixtureRoot: string | undefined
+  documentPath: string | undefined
+  getOutput: () => string
+  client: AgentClient | undefined
+  rendererEvents: string[]
+  screenshots: Map<string, Buffer>
+}
+
+async function boot (fixture: RunningFixture, timeoutMs: number): Promise<void> {
+  const port = await reserveFreePort()
+  const created = await createFixture('zettlr-review-diff-save-gate-e2e-', {
+    documentName: 'reviewed-document.md',
+    documentContents: DOCUMENT_CONTENTS,
+    // Vim input mode gives this spec a save gesture it can actually perform:
+    // `:w` is a CodeMirror Ex command handled in the renderer, whereas Ctrl+S
+    // is a main-process menu accelerator that CDP-injected keys cannot fire.
+    config: {
+      agentApi: { enabled: true, port },
+      editor: { inputMode: 'vim' }
+    }
+  })
+  fixture.fixtureRoot = created.root
+  fixture.documentPath = created.documentPath
+  const app = await attach(created.configDirectory, fixture.rendererEvents, timeoutMs)
+  fixture.appProcess = app.appProcess
+  fixture.browser = app.browser
+  fixture.getOutput = app.getOutput
+  fixture.client = agentClient(port)
+  await waitForAgentApi(fixture.client, 60_000)
+}
+
+async function teardown (fixture: RunningFixture): Promise<void> {
+  await shutdown(fixture.browser, fixture.appProcess)
+  await preserveArtifacts(
+    ARTIFACT_DIRECTORY,
+    fixture.fixtureRoot,
+    fixture.getOutput(),
+    fixture.rendererEvents,
+    fixture.screenshots
+  )
+  if (fixture.fixtureRoot !== undefined) {
+    await rm(fixture.fixtureRoot, { recursive: true, force: true })
+  }
+  console.log(`E2E artifacts: ${ARTIFACT_DIRECTORY}`)
+  assertCleanExit(fixture.getOutput())
+}
+
 describe('saving after accepting a reviewed change', function () {
-  let appProcess: ChildProcess | undefined
-  let browser: Browser | undefined
-  let fixtureRoot: string | undefined
-  let documentPath: string | undefined
-  let getOutput: () => string = () => ''
-  let client: AgentClient | undefined
-  const rendererEvents: string[] = []
-  const screenshots = new Map<string, Buffer>()
+  const running: RunningFixture = {
+    appProcess: undefined,
+    browser: undefined,
+    fixtureRoot: undefined,
+    documentPath: undefined,
+    getOutput: () => '',
+    client: undefined,
+    rendererEvents: [],
+    screenshots: new Map<string, Buffer>()
+  }
+  const { rendererEvents, screenshots } = running
 
   before(async function () {
-    const port = await reserveFreePort()
-    const fixture = await createFixture('zettlr-review-diff-save-gate-e2e-', {
-      documentName: 'reviewed-document.md',
-      documentContents: DOCUMENT_CONTENTS,
-      // Vim input mode gives this spec a save gesture it can actually perform:
-      // `:w` is a CodeMirror Ex command handled in the renderer, whereas Ctrl+S
-      // is a main-process menu accelerator that CDP-injected keys cannot fire.
-      config: {
-        agentApi: { enabled: true, port },
-        editor: { inputMode: 'vim' }
-      }
-    })
-    fixtureRoot = fixture.root
-    documentPath = fixture.documentPath
-    const app = await attach(
-      fixture.configDirectory,
-      rendererEvents,
-      this.timeout()
-    )
-    appProcess = app.appProcess
-    browser = app.browser
-    getOutput = app.getOutput
-    client = agentClient(port)
-    await waitForAgentApi(client, 60_000)
+    await boot(running, this.timeout())
   })
 
   after(async function () {
-    await shutdown(browser, appProcess)
-    await preserveArtifacts(
-      ARTIFACT_DIRECTORY,
-      fixtureRoot,
-      getOutput(),
-      rendererEvents,
-      screenshots
-    )
-    if (fixtureRoot !== undefined) {
-      await rm(fixtureRoot, { recursive: true, force: true })
-    }
-    console.log(`E2E artifacts: ${ARTIFACT_DIRECTORY}`)
-    assertCleanExit(getOutput())
+    await teardown(running)
   })
 
   it('writes the accepted text to disk instead of refusing the save', async function () {
-    const activeClient = requireInitialized(client, 'The Agent API client must be initialized')
-    const activeFixtureRoot = requireInitialized(fixtureRoot, 'The fixture root must be initialized')
-    const activeDocumentPath = requireInitialized(documentPath, 'The document path must be initialized')
-    assert.ok(browser, 'The application must be running')
-    const page = await findEditorPage(browser, this.timeout())
+    const activeClient = requireInitialized(running.client, 'The Agent API client must be initialized')
+    const activeFixtureRoot = requireInitialized(running.fixtureRoot, 'The fixture root must be initialized')
+    const activeDocumentPath = requireInitialized(running.documentPath, 'The document path must be initialized')
+    assert.ok(running.browser, 'The application must be running')
+    const page = await findEditorPage(running.browser, this.timeout())
     await page.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
 
     const documentId = documentIdOf(await activeClient.get('/v1/documents'))
@@ -406,7 +425,7 @@ describe('saving after accepting a reviewed change', function () {
       { ok: true },
       'The provider refused to save an accepted review. Gate closures logged:\n' +
         `${saveGateClosures(await readAppLog(activeFixtureRoot))}\n` +
-        outputTail(getOutput())
+        outputTail(running.getOutput())
     )
     assert.equal(
       await readFile(activeDocumentPath, 'utf8'),
@@ -428,10 +447,10 @@ describe('saving after accepting a reviewed change', function () {
   })
 
   it('refuses an unresolved review with a typed reason, not a modal', async function () {
-    const activeClient = requireInitialized(client, 'The Agent API client must be initialized')
-    const activeDocumentPath = requireInitialized(documentPath, 'The document path must be initialized')
-    assert.ok(browser, 'The application must be running')
-    const page = await findEditorPage(browser, this.timeout())
+    const activeClient = requireInitialized(running.client, 'The Agent API client must be initialized')
+    const activeDocumentPath = requireInitialized(running.documentPath, 'The document path must be initialized')
+    assert.ok(running.browser, 'The application must be running')
+    const page = await findEditorPage(running.browser, this.timeout())
 
     // The previous test completed its review, so this opens a fresh one and
     // deliberately leaves the chunk unresolved.
@@ -473,10 +492,10 @@ describe('saving after accepting a reviewed change', function () {
   })
 
   it('shows the refusal on a dismissable toast when the user saves with :w', async function () {
-    const activeClient = requireInitialized(client, 'The Agent API client must be initialized')
-    const activeDocumentPath = requireInitialized(documentPath, 'The document path must be initialized')
-    assert.ok(browser, 'The application must be running')
-    const page = await findEditorPage(browser, this.timeout())
+    const activeClient = requireInitialized(running.client, 'The Agent API client must be initialized')
+    const activeDocumentPath = requireInitialized(running.documentPath, 'The document path must be initialized')
+    assert.ok(running.browser, 'The application must be running')
+    const page = await findEditorPage(running.browser, this.timeout())
 
     const reviewId = await openReview(
       activeClient,

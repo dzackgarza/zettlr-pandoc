@@ -228,6 +228,8 @@ import { type AnyDescriptor } from 'source/types/common/fsal'
 import type { ProjectRootSpec, ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
+import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from '@dts/common/documents'
+import { pathBasename } from '@common/util/renderer-path-polyfill'
 import { TaskStatus } from 'source/pinia/lrt-store'
 import PopoverLRT from './PopoverLRT.vue'
 
@@ -941,6 +943,18 @@ onMounted(() => {
   pomodoroButton.value = document.querySelector('#toolbar-pomodoro')
   tasksButton.value = document.querySelector('#toolbar-long-running-tasks')
   pandocButton.value = document.querySelector('#toolbar-pandocDivOrSpan')
+
+  // Saves that main initiated — the close-and-save prompts — have no renderer
+  // promise to carry their result, so the provider broadcasts refusals here.
+  // Without this the prompt closes and the window stays open with no reason
+  // given anywhere the user can see.
+  ipcRenderer.on(SAVE_REFUSED_CHANNEL, (event, payload: SaveRefusedBroadcast) => {
+    const name = pathBasename(payload.filePath)
+    const message = payload.refusal === undefined
+      ? trans('Could not save "%s".', name)
+      : `${name}: ${payload.refusal.message}`
+    showToast(message, 'error', 12000)
+  })
 
   ipcRenderer.on('shortcut', (event, shortcut) => {
     if (shortcut === 'toggle-sidebar') {

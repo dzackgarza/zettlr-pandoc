@@ -32,6 +32,12 @@ import {
   type OpenDocument,
   type SerializedUpdate,
 } from "@dts/common/documents";
+import {
+  SAVE_REFUSED_CHANNEL,
+  type SaveFileResult,
+  type SaveRefusal,
+  type SaveRefusedBroadcast,
+} from "@dts/common/documents";
 import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type { DocumentLocation, SourceRange } from "@dts/common/references";
 import type { ReviewState } from "@dts/common/agent-api";
@@ -264,25 +270,15 @@ export type DocumentAuthorityIPCAPI = IPCAPI<{
  * renderer owns presentation and surfaces these as closable toasts, matching
  * the rule recorded in win-main/util/recoverable-reference-errors.ts.
  */
-export type SaveRefusalReason =
-  | "unresolved-chunks"
-  | "review-out-of-sync"
-  | "disk-changed";
-
-export interface SaveRefusal {
-  reason: SaveRefusalReason;
-  /** Already translated; the renderer shows this verbatim. */
-  message: string;
-}
-
-/**
- * A save either wrote the file or refused with a reason. This is deliberately
- * not a bare boolean: `false` is what let the save gate fail silently at the
- * IPC boundary, leaving the renderer to log "falsy result" with no cause.
- */
-export type SaveFileResult =
-  | { ok: true }
-  | { ok: false; refusal?: SaveRefusal };
+// These cross IPC, so @dts/common/documents owns them; re-exported here
+// because callers throughout main import them from the provider.
+export type {
+  SaveFileResult,
+  SaveRefusal,
+  SaveRefusalReason,
+  SaveRefusedBroadcast,
+} from "@dts/common/documents";
+export { SAVE_REFUSED_CHANNEL } from "@dts/common/documents";
 
 // Most document manager commands require a leaf location, described by the
 // window and leaf IDs.
@@ -673,6 +669,7 @@ export default class DocumentManager extends ProviderContract {
               if (response === 0) {
                 const saved = await this.saveFile(document.filePath);
                 if (!saved.ok) {
+                  this._announceSaveRefusal(document.filePath, saved);
                   return;
                 }
               } else {
@@ -732,6 +729,7 @@ export default class DocumentManager extends ProviderContract {
       for (const document of this.documents) {
         const saved = await this.saveFile(document.filePath);
         if (!saved.ok) {
+          this._announceSaveRefusal(document.filePath, saved);
           return false;
         }
       }
@@ -1333,6 +1331,7 @@ current contents from the editor somewhere else, and restart the application.`,
       } else if (result.response === 0) {
         const saved = await this.saveFile(filePath);
         if (!saved.ok) {
+          this._announceSaveRefusal(filePath, saved);
           return false;
         }
       } else {
@@ -2365,6 +2364,32 @@ current contents from the editor somewhere else, and restart the application.`,
 
   public ensureDocumentId(filePath: string): string {
     return this._assignDocumentId(filePath);
+  }
+
+  /**
+   * Makes a refused save visible when main, not the editor, asked for it.
+   *
+   * The close-and-save prompts run here and abort the close on a refusal. The
+   * gate deliberately no longer presents its own dialog (a blocking modal in
+   * main is what made the original deadlock unrecoverable), and the renderer
+   * only surfaces refusals for saves it requested itself — so without this the
+   * prompt closes, the window stays open, and the reason is only in the log.
+   */
+  private _announceSaveRefusal(filePath: string, result: SaveFileResult): void {
+    if (result.ok) {
+      return;
+    }
+    this._app.log.warning(
+      `[DocumentManager] Close aborted: ${filePath} could not be saved` +
+        (result.refusal === undefined
+          ? " and reported no reason."
+          : ` (${result.refusal.reason}): ${result.refusal.message}`),
+    );
+    const payload: SaveRefusedBroadcast = {
+      filePath,
+      refusal: result.refusal,
+    };
+    broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
   }
 
   private _closeReview(documentId: string): void {
