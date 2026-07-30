@@ -27,6 +27,7 @@ import { ChangeSet, StateEffect, type Extension } from '@codemirror/state'
 import { ViewPlugin, type EditorView, type ViewUpdate } from '@codemirror/view'
 import { configField } from '../util/configuration'
 import type { SerializedUpdate } from '@dts/common/documents'
+import serializeChangeSet from '@common/util/serialize-change-set'
 
 export type PullUpdateCallback = (filePath: string, version: number) => Promise<SerializedUpdate[]|false>
 export type PushUpdateCallback = (filePath: string, version: number, updates: SerializedUpdate[]) => Promise<boolean>
@@ -93,7 +94,7 @@ export function hookDocumentAuthority (
       this.isCurrentlyPushing = true
       const version = getSyncedVersion(this.view.state)
       const serializedUpdates: SerializedUpdate[] = updates.map(u => {
-        return { clientID: u.clientID, changes: u.changes.toJSON() }
+        return { clientID: u.clientID, changes: serializeChangeSet(u.changes) }
       })
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars

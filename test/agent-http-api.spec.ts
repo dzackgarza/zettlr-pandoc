@@ -17,6 +17,7 @@
 import "./headless-electron-harness.cjs";
 import Ajv2020 from "ajv/dist/2020";
 import { parse as parseYaml } from "yaml";
+import { AGENT_ERROR_CODES } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
@@ -259,6 +260,28 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   afterEach(async function () {
     await httpProvider.shutdown();
     rmSync(scratch, { recursive: true, force: true });
+  });
+
+  it("publishes exactly the error codes the server can emit", function () {
+    // The enum was written out by hand and drifted: it omitted INTERNAL_ERROR
+    // while four 500 paths emitted it, so those responses failed validation
+    // against the spec the server itself serves. Compare the sets rather than
+    // spot-checking one code, and compare against the runtime constant the
+    // AgentErrorCode type is derived from, so neither side can drift alone.
+    const declared = (
+      openApiDocument.components.schemas.AgentError as {
+        properties: { code: { enum?: string[] } };
+      }
+    ).properties.code.enum;
+    assert.ok(
+      declared !== undefined,
+      "openapi.yaml must constrain AgentError.code to an enum",
+    );
+    assert.deepEqual(
+      [...declared].sort(),
+      [...AGENT_ERROR_CODES].sort(),
+      "openapi.yaml's AgentError.code enum and AGENT_ERROR_CODES must agree",
+    );
   });
 
   it("GET /openapi.yaml serves the OpenAPI specification without auth", async function () {

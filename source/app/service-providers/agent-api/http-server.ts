@@ -37,7 +37,6 @@ import {
   type ReadSide,
   type ReviewEventsResponse,
   type OpenDocumentRequest,
-  type SearchDocumentRequest,
   type SearchHit,
   type WorkspaceDocumentEntry,
   type ViewSummary,
@@ -106,7 +105,38 @@ function decodeOpenDocumentRequest(body: string): Decoded<OpenDocumentRequest> {
   return { ok: true, value: { uri } };
 }
 
-function decodeSearchDocumentRequest(body: string): Decoded<SearchDocumentRequest> {
+/**
+ * Decodes the `side` query parameter into a total ReadSide. The spec declares it
+ * optional with `default: working`, so an absent parameter is the contract's
+ * value rather than a runtime guess, and an unrecognized one is refused here
+ * instead of being silently read as `working`.
+ */
+function decodeReadSide(raw: string | null): Decoded<ReadSide> {
+  if (raw === null) {
+    return { ok: true, value: "working" };
+  }
+  if (raw !== "working" && raw !== "reference") {
+    return { ok: false, message: "side must be working or reference" };
+  }
+  return { ok: true, value: raw };
+}
+
+/**
+ * The spec declares `context` optional with `default: 3`. That default is part
+ * of the published contract, so it is applied here, once, at the boundary that
+ * owns request decoding — and the decoded type carries a total `context`, so no
+ * handler downstream can substitute a different value for a missing one.
+ */
+export interface DecodedSearchDocumentRequest {
+  literal: string;
+  context: number;
+}
+
+const SEARCH_CONTEXT_DEFAULT = 3;
+
+function decodeSearchDocumentRequest(
+  body: string,
+): Decoded<DecodedSearchDocumentRequest> {
   const raw = decodeJsonObject(body);
   if (!raw.ok) {
     return raw;
@@ -115,7 +145,10 @@ function decodeSearchDocumentRequest(body: string): Decoded<SearchDocumentReques
   if (typeof literal !== "string") {
     return { ok: false, message: "literal is required and must be a string" };
   }
-  if (context !== undefined && (typeof context !== "number" || !Number.isInteger(context) || context < 0)) {
+  if (context === undefined) {
+    return { ok: true, value: { literal, context: SEARCH_CONTEXT_DEFAULT } };
+  }
+  if (typeof context !== "number" || !Number.isInteger(context) || context < 0) {
     return { ok: false, message: "context must be a non-negative integer" };
   }
   return { ok: true, value: { literal, context } };
@@ -706,12 +739,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       };
     };
 
-    const requestedSide = url.searchParams.get("side");
-    if (requestedSide !== null && requestedSide !== "working" && requestedSide !== "reference") {
-      this.sendError(res, 400, "INVALID_PARAMS", "side must be working or reference");
+    const decodedSide = decodeReadSide(url.searchParams.get("side"));
+    if (!decodedSide.ok) {
+      this.sendError(res, 400, "INVALID_PARAMS", decodedSide.message);
       return;
     }
-    const side: ReadSide = requestedSide ?? "working";
+    const side = decodedSide.value;
     const startLine = url.searchParams.get("startLine");
     const endLine = url.searchParams.get("endLine");
 
@@ -879,7 +912,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     const lines = result.content.split("\n");
-    const contextSize = searchRequest.context ?? 3;
+    const contextSize = searchRequest.context;
     const hits: SearchHit[] = [];
     let searchRegex: RegExp;
     try {

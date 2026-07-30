@@ -463,7 +463,7 @@ function handleReferenceJump (intent: ReferenceJumpIntent): void {
       newTab: false,
       targetRange: intent.range
     }
-  })
+  } as DocumentManagerIPCAPI)
     .catch(err => console.error(err))
 }
 
@@ -867,7 +867,7 @@ function refreshNavigationState (): void {
   ipcRenderer.invoke('documents-provider', {
     command: 'get-navigation-state',
     payload: { windowId, leafId }
-  })
+  } as DocumentManagerIPCAPI)
     .then((state: { canGoBack: boolean, canGoForward: boolean }) => {
       canGoBack.value = state.canGoBack
       canGoForward.value = state.canGoForward
@@ -996,7 +996,7 @@ onMounted(() => {
           windowId,
           leafId: lastLeafId.value
         }
-      }).catch(err => console.error(err))
+      } as DocumentManagerIPCAPI).catch(err => console.error(err))
     } else if (shortcut === 'navigate-forward') {
       ipcRenderer.invoke('documents-provider', {
         command: 'navigate-forward',
@@ -1004,7 +1004,7 @@ onMounted(() => {
           windowId,
           leafId: lastLeafId.value
         }
-      }).catch(err => console.error(err))
+      } as DocumentManagerIPCAPI).catch(err => console.error(err))
     }
   })
 
@@ -1095,7 +1095,7 @@ function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
     ipcRenderer.invoke('documents-provider', {
       command: 'open-file',
       payload: { path: filePath, windowId, leafId: containingLeaf.id }
-    })
+    } as DocumentManagerIPCAPI)
       .then(() => {
         // Re-execute the jtl command
         setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME)
@@ -1115,7 +1115,7 @@ function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
       leafId: lastLeafId.value,
       newTab
     }
-  })
+  } as DocumentManagerIPCAPI)
     .then(() => {
       // Re-execute the jtl command
       setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME)
@@ -1165,7 +1165,7 @@ function handleClick (clickedID?: string): void {
         windowId,
         leafId: lastLeafId.value
       }
-    }).catch(err => console.error(err))
+    } as DocumentManagerIPCAPI).catch(err => console.error(err))
   } else if (clickedID === 'next-file') {
     if (!canGoForward.value) {
       return // The control renders disabled; never navigate past the boundary
@@ -1176,7 +1176,7 @@ function handleClick (clickedID?: string): void {
         windowId,
         leafId: lastLeafId.value
       }
-    }).catch(err => console.error(err))
+    } as DocumentManagerIPCAPI).catch(err => console.error(err))
   } else if (clickedID === 'export') {
     showExportPopover.value = !showExportPopover.value
   } else if (clickedID === 'show-stats') {

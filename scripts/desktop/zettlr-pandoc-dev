@@ -11,6 +11,24 @@ for required_command in hyprctl jq kill kitty sleep; do
   fi
 done
 
+# True while the pid is alive. A signal-0 probe fails both when the process is
+# gone and when the probe is refused (EPERM); discarding stderr read the second
+# as the first, which would silently abandon a live splash.
+process_alive() {
+  local pid="$1"
+  local probe
+
+  if probe=$(kill -0 "$pid" 2>&1); then
+    return 0
+  fi
+  if [[ "$probe" == *"No such process"* ]]; then
+    return 1
+  fi
+
+  printf 'Could not probe boot splash process %s: %s\n' "$pid" "$probe" >&2
+  exit 1
+}
+
 splash_class="zpandoc-boot"
 boot="$HOME/.local/bin/zettlr-pandoc-boot"
 
@@ -31,7 +49,7 @@ kitty_pid=$!
 
 address=
 for (( attempt = 0; attempt < 60; attempt++ )); do
-  if ! kill -0 "$kitty_pid" 2>/dev/null; then
+  if ! process_alive "$kitty_pid"; then
     wait "$kitty_pid"
     exit $?
   fi
@@ -48,7 +66,7 @@ for (( attempt = 0; attempt < 60; attempt++ )); do
 done
 
 if [[ -z "$address" ]]; then
-  if kill -0 "$kitty_pid" 2>/dev/null; then
+  if process_alive "$kitty_pid"; then
     kill "$kitty_pid"
   fi
   status=0

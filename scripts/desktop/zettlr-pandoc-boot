@@ -23,10 +23,38 @@ if [[ ! -f "$repo/justfile" ]]; then
   exit 1
 fi
 
+# True once Hyprland reports a window of the app's class. A hyprctl failure is
+# not "the app is not up yet" — it means the compositor cannot be queried at all,
+# and silently reading that as "keep waiting" would spin until the launch timeout
+# and then blame the app. Report it and stop.
 app_up() {
-  hyprctl clients -j 2>/dev/null |
-    jq -e --arg app_class "$app_class" \
-      'any(.[]; .class == $app_class)' >/dev/null
+  local clients
+  if ! clients=$(hyprctl clients -j 2>&1); then
+    printf 'Could not query Hyprland for open windows: %s\n' "$clients" >&2
+    exit 1
+  fi
+
+  jq -e --arg app_class "$app_class" \
+    'any(.[]; .class == $app_class)' >/dev/null <<<"$clients"
+}
+
+# True while the pid is alive. A signal-0 probe fails for two very different
+# reasons: the process is gone (the answer this function exists to give) or the
+# probe itself was refused, e.g. EPERM. Discarding stderr collapsed both into
+# "dead", which would report a spurious launch failure.
+process_alive() {
+  local pid="$1"
+  local probe
+
+  if probe=$(kill -0 "$pid" 2>&1); then
+    return 0
+  fi
+  if [[ "$probe" == *"No such process"* ]]; then
+    return 1
+  fi
+
+  printf 'Could not probe launch process %s: %s\n' "$pid" "$probe" >&2
+  exit 1
 }
 
 restore_cursor() {
@@ -52,7 +80,7 @@ spin_until_app_up() {
   local status
 
   while ! app_up; do
-    if ! kill -0 "$launch_pid" 2>/dev/null; then
+    if ! process_alive "$launch_pid"; then
       status=0
       wait "$launch_pid" || status=$?
       fail "Launch exited with status $status before the app window appeared."

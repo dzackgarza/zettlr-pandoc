@@ -23,6 +23,7 @@ import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import { countAll } from "@common/util/counter";
 import errorToString from "@common/util/error-to-string";
 import isFile from "@common/util/is-file";
+import serializeChangeSet from "@common/util/serialize-change-set";
 import {
   type BranchNodeJSON,
   DocumentType,
@@ -1043,13 +1044,34 @@ current contents from the editor somewhere else, and restart the application.`,
 
     doc.saveTimeout = setTimeout(
       () => {
-        this.saveFile(doc.filePath).catch((err: unknown) => {
-          const message = err instanceof Error ? err.message : String(err);
-          this._app.log.error(
-            `[Document Provider] Could not save file ${doc.filePath}: ${message}`,
-            err,
-          );
-        });
+        this.saveFile(doc.filePath)
+          .then((result) => {
+            if (result.ok) {
+              return;
+            }
+            // A refusal resolves; only disk errors reject. Without this branch
+            // the autosave timer swallowed refusals entirely: the review gate
+            // above returns early for an open review, but a disk-changed
+            // refusal reaches here, and the document stayed dirty with nothing
+            // recorded anywhere. The buffer is preserved either way — this
+            // makes the reason findable instead of inventing a silent success.
+            const reason =
+              result.refusal === undefined
+                ? "no reason reported"
+                : `${result.refusal.reason}: ${result.refusal.message}`;
+            this._app.log.warning(
+              `[Document Provider] Autosave refused for ${doc.filePath} (${reason}). ` +
+                "The buffer is unchanged and still unsaved; the next explicit save will " +
+                "surface this to the user.",
+            );
+          })
+          .catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            this._app.log.error(
+              `[Document Provider] Could not save file ${doc.filePath}: ${message}`,
+              err,
+            );
+          });
       },
       autoSave === "delayed" ? DELAYED_SAVE_TIMEOUT : IMMEDIATE_SAVE_TIMEOUT,
     );
@@ -2145,14 +2167,30 @@ current contents from the editor somewhere else, and restart the application.`,
     }
 
     const status = this._reviewStore.getReviewStatus(docId);
-    // The gate closes for two distinct reasons and the user needs to know
-    // which: unresolved chunks are their own to resolve, but a reference/working
-    // divergence means the provider never received a pane decision — the user
-    // can accept every chunk in the editor and still be refused.
-    if (status === undefined || status.unresolvedChunks > 0) {
+    // The gate closes for distinct reasons and the user needs to know which:
+    // unresolved chunks are their own to resolve, but a missing report or a
+    // reference/working divergence means the provider never received a pane
+    // decision — the user can accept every chunk in the editor and still be
+    // refused. A missing status is not zero chunks and not an unknown count of
+    // them; it is a review the pane has never reported on at all.
+    if (status === undefined) {
+      this._app.log.error(
+        `[DocumentManager] Save gate closed for ${filePath}: the review store holds ` +
+          `review generation ${review.generation} but no status for document ${docId}, ` +
+          "so the pane has never reported on it. Expect a missing or failed " +
+          "setReviewDiffStatus round trip.",
+      );
+      return {
+        reason: "review-out-of-sync",
+        message: trans(
+          "This review is out of sync with the editor and cannot be saved. See the log for the reason.",
+        ),
+      };
+    }
+    if (status.unresolvedChunks > 0) {
       this._app.log.warning(
         `[DocumentManager] Save gate closed for ${filePath}: ` +
-          `${status?.unresolvedChunks ?? "unknown"} unresolved chunk(s) at generation ` +
+          `${status.unresolvedChunks} unresolved chunk(s) at generation ` +
           `${review.generation}`,
       );
       return {
@@ -2893,7 +2931,10 @@ current contents from the editor somewhere else, and restart the application.`,
     );
     doc.document = newText;
     doc.currentVersion += 1;
-    doc.updates.push({ changes: changes.toJSON(), clientID: "review-diff-store" });
+    doc.updates.push({
+      changes: serializeChangeSet(changes),
+      clientID: "review-diff-store",
+    });
     while (doc.updates.length > MAX_VERSION_HISTORY) {
       doc.updates.shift();
       doc.minimumVersion += 1;

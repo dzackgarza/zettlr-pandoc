@@ -108,8 +108,10 @@ export enum DP_EVENTS {
  * `Update[]` type-checked while being wrong in both directions — and allowed a
  * real `ChangeSet` to be pushed into the history undetected.
  */
+/** Opaque `ChangeSet.toJSON()` payload; only `ChangeSet.fromJSON` reads it. */
+export type SerializedChanges = readonly (number | readonly (number | string)[])[]
+
 export interface SerializedUpdate {
-  /** Opaque `ChangeSet.toJSON()` payload; only `ChangeSet.fromJSON` reads it. */
-  changes: readonly (number | readonly (number | string)[])[]
+  changes: SerializedChanges
   clientID: string
 }
