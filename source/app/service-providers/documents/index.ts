@@ -2584,7 +2584,6 @@ current contents from the editor somewhere else, and restart the application.`,
     clientRequestId: string,
     description?: string,
     expectedReviewGeneration?: number,
-    ifMatch?: string,
   ): Promise<
     | SubmittedProposalResponse
     | {
@@ -2619,7 +2618,7 @@ current contents from the editor somewhere else, and restart the application.`,
         return {
           ok: false,
           code: "IDEMPOTENCY_CONFLICT",
-          message: "Idempotency-Key was already used for a different proposal request.",
+          message: "clientRequestId was already used for a different proposal request.",
         };
       }
       return idempotent.response;
@@ -2644,13 +2643,6 @@ current contents from the editor somewhere else, and restart the application.`,
     // Verify version and hash
     const currentContent = doc.document.toString();
     const currentSha256 = sha256Text(currentContent);
-    if (ifMatch !== undefined && ifMatch !== `"sha256:${currentSha256}"`) {
-      return {
-        ok: false,
-        code: "REVISION_MISMATCH",
-        message: "If-Match does not match the current document revision.",
-      };
-    }
     if (doc.currentVersion !== version || currentSha256 !== sha256) {
       return {
         ok: false,

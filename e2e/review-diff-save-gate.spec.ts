@@ -65,11 +65,7 @@ async function reserveFreePort (): Promise<number> {
 
 interface AgentClient {
   get: (route: string) => Promise<unknown>
-  post: (
-    route: string,
-    body: unknown,
-    headers: Record<string, string>
-  ) => Promise<unknown>
+  post: (route: string, body: unknown) => Promise<unknown>
 }
 
 function agentClient (port: number): AgentClient {
@@ -85,11 +81,11 @@ function agentClient (port: number): AgentClient {
   }
   return {
     get: async route => await readResponse(await fetch(`${base}${route}`)),
-    post: async (route, body, headers) =>
+    post: async (route, body) =>
       await readResponse(
         await fetch(`${base}${route}`, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', ...headers },
+          headers: { 'content-type': 'application/json' },
           body: JSON.stringify(body)
         })
       )
@@ -211,9 +207,9 @@ async function openReview (
       snapshot,
       patchFormat: 'unified-diff',
       patch: buildPatch(documentPath, from, to),
-      description: 'Left unresolved on purpose'
-    },
-    { 'if-match': `"sha256:${sha256}"`, 'idempotency-key': idempotencyKey }
+      description: 'Left unresolved on purpose',
+      clientRequestId: idempotencyKey
+    }
   ))
   await page
     .locator('button.cm-review-diff-control.accept')
@@ -233,7 +229,7 @@ async function clearReviewAndFlush (
   reviewId: string,
   documentPath: string
 ): Promise<void> {
-  await client.post(`/v1/reviews/${reviewId}/clear`, {}, {})
+  await client.post(`/v1/reviews/${reviewId}/clear`, {})
   await page
     .locator('button.cm-review-diff-control.accept')
     .first()
@@ -392,11 +388,8 @@ describe('saving after accepting a reviewed change', function () {
         snapshot,
         patchFormat: 'unified-diff',
         patch: buildPatch(activeDocumentPath, ORIGINAL_PHRASE, PROPOSED_PHRASE),
-        description: 'Abbreviate simple normal crossings'
-      },
-      {
-        'if-match': `"sha256:${sha256}"`,
-        'idempotency-key': 'e2e-review-diff-save-gate'
+        description: 'Abbreviate simple normal crossings',
+        clientRequestId: 'e2e-review-diff-save-gate'
       }
     )
 

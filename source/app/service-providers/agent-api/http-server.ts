@@ -185,7 +185,8 @@ function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalReques
   if (!raw.ok) {
     return raw;
   }
-  const { snapshot, patchFormat, patch, description, expectedReviewGeneration } = raw.value;
+  const { snapshot, patchFormat, patch, description, clientRequestId, expectedReviewGeneration } =
+    raw.value;
   if (patchFormat !== "unified-diff") {
     return {
       ok: false,
@@ -203,12 +204,15 @@ function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalReques
   if (!isOptionalString(description)) {
     return { ok: false, message: "description must be a string" };
   }
+  if (!isString(clientRequestId) || clientRequestId.length === 0) {
+    return { ok: false, message: "clientRequestId is required and must be a non-empty string" };
+  }
   if (!isOptionalInteger(expectedReviewGeneration)) {
     return { ok: false, message: "expectedReviewGeneration must be an integer" };
   }
   return {
     ok: true,
-    value: { snapshot, patchFormat, patch, description, expectedReviewGeneration },
+    value: { snapshot, patchFormat, patch, description, clientRequestId, expectedReviewGeneration },
   };
 }
 
@@ -1131,25 +1135,9 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: http.ServerResponse,
     documentId: string,
   ): Promise<void> {
-    // Extract concurrency headers
-    const ifMatch = req.headers["if-match"];
-    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
-
-    if (ifMatch === undefined) {
-      this.sendError(res, 400, "INVALID_PARAMS", "If-Match header is required");
-      return;
-    }
-    if (idempotencyKey === undefined) {
-      this.sendError(res, 400, "INVALID_PARAMS", "Idempotency-Key header is required");
-      return;
-    }
-
-    // Verify the ETag format first
-    const etagMatch = ifMatch.match(/^"sha256:([a-f0-9]{64})"$/i);
-    if (etagMatch === null) {
-      this.sendError(res, 400, "INVALID_PARAMS", "Invalid If-Match ETag format");
-      return;
-    }
+    // No request headers are read here. Concurrency rides in the body, because
+    // an OpenAPI consumer that generates calls from the published document
+    // drops header parameters and could never satisfy a header requirement.
 
     // Read and parse the request body
     const body = await this.readBody(req);
@@ -1183,10 +1171,9 @@ export default class AgentHTTPProvider extends ProviderContract {
     const result = await this._documents.submitProposal(
       proposal.snapshot,
       proposal.patch,
-      idempotencyKey,
+      proposal.clientRequestId,
       proposal.description,
       proposal.expectedReviewGeneration,
-      ifMatch,
     );
 
     if (!result.ok) {

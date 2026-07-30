@@ -229,11 +229,10 @@ describe("Agent HTTP API cross-process E2E", function () {
           snapshot,
           patch,
           patchFormat: "unified-diff",
+          clientRequestId: `e2e-${Date.now()}`,
         }),
         headers: {
           "Content-Type": "application/json",
-          "If-Match": eTag,
-          "Idempotency-Key": `e2e-${Date.now()}`,
         },
       },
     );

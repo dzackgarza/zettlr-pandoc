@@ -530,7 +530,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(etag.includes("sha256:"));
   });
 
-  it("POST /v1/documents/{id}/proposals submits a patch with If-Match and Idempotency-Key", async function () {
+  it("POST /v1/documents/{id}/proposals submits a patch carrying its own clientRequestId", async function () {
     const filePath = path.join(scratch, "propose.md");
     const docId = await openFile(filePath, "alpha\n");
 
@@ -547,10 +547,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         patch: makePatch("alpha\n", "ALPHA\n"),
         clientRequestId: "http-req-1",
       }),
-      headers: {
-        "If-Match": etag,
-        "Idempotency-Key": "http-idem-1",
-      },
     });
     assert.equal(response.status, 200);
     const body = JSON.parse(response.body);
@@ -563,24 +559,22 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const filePath = path.join(scratch, "idempotency.md");
     const docId = await openFile(filePath, "alpha\n");
     const readResponse = await httpRequest("GET", `/v1/documents/${docId}/content`);
-    const etag = readResponse.headers["etag"] as string;
     const snapshot = JSON.parse(readResponse.body).snapshot;
-    const headers = { "If-Match": etag, "Idempotency-Key": "one-key" };
     const first = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
-      headers,
       body: JSON.stringify({
         snapshot,
         patchFormat: "unified-diff",
         patch: makePatch("alpha\n", "ALPHA\n"),
+        clientRequestId: "one-key",
       }),
     });
     assert.equal(first.status, 200);
     const conflicting = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
-      headers,
       body: JSON.stringify({
         snapshot,
         patchFormat: "unified-diff",
         patch: makePatch("alpha\n", "BETA\n"),
+        clientRequestId: "one-key",
       }),
     });
     assert.equal(conflicting.status, 409);
@@ -668,7 +662,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(reopened.status, 404);
   });
 
-  it("POST /v1/documents/{id}/proposals returns 412 on stale ETag", async function () {
+  it("POST /v1/documents/{id}/proposals returns 412 on a stale snapshot", async function () {
     const filePath = path.join(scratch, "stale.md");
     const docId = await openFile(filePath, "alpha\n");
 
@@ -690,10 +684,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         patch: makePatch("alpha\n", "ALPHA\n"),
         clientRequestId: "http-req-stale",
       }),
-      headers: {
-        "If-Match": `"sha256:${wrongSha}"`,
-        "Idempotency-Key": "http-idem-stale",
-      },
     });
     assert.equal(response.status, 412);
   });

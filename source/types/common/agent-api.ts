@@ -153,14 +153,16 @@ export interface SearchResponse {
 export type PatchFormat = "unified-diff";
 
 /**
- * The body of POST /v1/documents/{documentId}/proposals. Two headers are
- * required alongside it and the request is refused without them:
+ * The body of POST /v1/documents/{documentId}/proposals. Everything the
+ * operation needs is in the body; it reads no request headers.
  *
- * - `If-Match: "sha256:<64 hex digits>"` — the document ETag, i.e. the
- *   `revision.sha256` returned by the read that produced `snapshot`. The
- *   quotes and the `sha256:` prefix are part of the value.
- * - `Idempotency-Key: <client-chosen unique string>` — replays of the same key
- *   return the original packet instead of applying twice.
+ * This used to require `If-Match` and `Idempotency-Key` as headers. Both moved
+ * here because a schema-driven client cannot send them — an OpenAPI consumer
+ * generating calls from this document (a Custom GPT Action, for one) drops
+ * header parameters and would be refused on every attempt. `If-Match` was
+ * redundant besides: it asserted the current content hash, which `snapshot`
+ * already pins along with the version, so it could only fail where the
+ * snapshot check failed anyway.
  *
  * The patch's `---`/`+++` headers must name the target document, either as the
  * literal `document` or as its absolute path (with or without a git-style
@@ -171,6 +173,12 @@ export interface SubmitProposalRequest {
   patchFormat: PatchFormat;
   patch: string;
   description?: string;
+  /**
+   * Client-chosen unique string. Replaying the same value returns the original
+   * packet instead of applying the patch twice; reusing it for a different
+   * request is refused as IDEMPOTENCY_CONFLICT.
+   */
+  clientRequestId: string;
   /**
    * If set, the request is refused when the current review generation does
    * not match. Guards against applying a packet built against a stale
