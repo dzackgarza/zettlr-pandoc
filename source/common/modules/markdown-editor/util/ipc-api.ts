@@ -47,17 +47,17 @@ async function pullUpdates (filePath: string, version: number): Promise<false|Se
   })
 }
 
-async function pushUpdates (filePath: string, version: number, updates: SerializedUpdate[]): Promise<boolean> {
+function pushUpdates (filePath: string, version: number, updates: SerializedUpdate[]): Promise<boolean> {
   // Submits new updates to the authority, returns true if successful
-  return await ipcRenderer.invoke('documents-authority', {
+  return ipcRenderer.invoke('documents-authority', {
     command: 'push-updates',
     payload: { filePath, version, updates }
   } as DocumentAuthorityIPCAPI)
 }
 
-async function fetchDoc (filePath: string): Promise<{ content: string, type: DocumentType, startVersion: number }> {
+function fetchDoc (filePath: string): Promise<{ content: string, type: DocumentType, startVersion: number }> {
   // Fetches a fresh document
-  return await ipcRenderer.invoke('documents-authority', {
+  return ipcRenderer.invoke('documents-authority', {
     command: 'get-document',
     payload: { filePath }
   } as DocumentAuthorityIPCAPI)

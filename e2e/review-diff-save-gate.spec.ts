@@ -249,8 +249,8 @@ async function clearReviewAndFlush (
  * The save-file IPC call MainEditor makes, issued from the page context.
  * `window.ipc` is the preload bridge, typed globally in source/global.d.ts.
  */
-async function invokeSave (page: Page, documentPath: string): Promise<unknown> {
-  return await page.evaluate(
+function invokeSave (page: Page, documentPath: string): Promise<unknown> {
+  return page.evaluate(
     async ([documentPathInPage]) =>
       await window.ipc.invoke('documents-provider', {
         command: 'save-file',

@@ -40,14 +40,10 @@ const ipcRenderer = window.ipc
  * @return  {Promise<boolean>}          Whether the save landed
  */
 async function write (cm: CodeMirror, _params: ExParams): Promise<boolean> {
-  try {
-    cm.cm6.state.field(configField)
-  } catch (err: any) {
-    console.error('Cannot execute write command: configField missing from EditorState')
-    return false
-  }
-
-  // Grab the required information from the editor state
+  // No probe around the field read: a missing configField means this editor was
+  // built without the MainEditor state fields, which is a wiring error, not a
+  // save outcome. Reporting it as "did not save" would let `:wq` treat a broken
+  // editor the same as a refused write. `quit` reads the field the same way.
   const filePath = cm.cm6.state.field(configField).metadata.path
 
   return await ipcRenderer.invoke('documents-provider', {
