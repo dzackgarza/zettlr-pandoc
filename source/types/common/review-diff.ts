@@ -37,8 +37,13 @@ export interface ReviewDiffStatus {
   documentVersion: number;
   sourceWindowId: string;
   sourceLeafId: string;
-  /** Spec section 13: the review generation the pane observed when reporting. */
-  reviewGeneration?: number;
+  /**
+   * Spec section 13: the review generation the pane observed when reporting.
+   * Required, not optional: the pane always knows its generation, and making it
+   * optional is what allowed the IPC payload to omit it silently and disable
+   * the staleness guard in DocumentManager.setReviewDiffStatus.
+   */
+  reviewGeneration: number;
 }
 
 export interface ReviewDiffDocumentSnapshot {

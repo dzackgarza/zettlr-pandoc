@@ -11,15 +11,15 @@ info:
     name: GPL-3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
 servers:
-- url: http://127.0.0.1:23119
-  description: Default loopback endpoint
+  - url: http://127.0.0.1:27412
+    description: Default loopback endpoint
 components:
   schemas:
     DocumentRevision:
       type: object
       required:
-      - version
-      - sha256
+        - version
+        - sha256
       properties:
         version:
           type: integer
@@ -28,22 +28,22 @@ components:
     ReviewSummary:
       type: object
       required:
-      - reviewId
-      - state
-      - generation
-      - unresolvedChunks
-      - packetCount
+        - reviewId
+        - state
+        - generation
+        - unresolvedChunks
+        - packetCount
       properties:
         reviewId:
           type: string
         state:
           type: string
           enum:
-          - active
-          - resolved-awaiting-save
-          - completed
-          - cleared
-          - invalidated
+            - active
+            - resolved-awaiting-save
+            - completed
+            - cleared
+            - invalidated
         generation:
           type: integer
         unresolvedChunks:
@@ -53,16 +53,16 @@ components:
     DocumentSummary:
       type: object
       required:
-      - documentId
-      - uri
-      - path
-      - name
-      - type
-      - dirty
-      - revision
-      - lineCount
-      - byteLength
-      - views
+        - documentId
+        - uri
+        - path
+        - name
+        - type
+        - dirty
+        - revision
+        - lineCount
+        - byteLength
+        - views
       properties:
         documentId:
           type: string
@@ -75,8 +75,8 @@ components:
         type:
           type: string
           enum:
-          - markdown
-          - code
+            - markdown
+            - code
         dirty:
           type: boolean
         revision:
@@ -103,24 +103,24 @@ components:
           items:
             $ref: '#/components/schemas/DocumentSummary'
       required:
-      - openDocuments
+        - openDocuments
     ReadDocumentResponse:
       type: object
       required:
-      - documentId
-      - side
-      - revision
-      - range
-      - content
-      - truncated
+        - documentId
+        - side
+        - revision
+        - range
+        - content
+        - truncated
       properties:
         documentId:
           type: string
         side:
           type: string
           enum:
-          - working
-          - reference
+            - working
+            - reference
         snapshot:
           type: string
         revision:
@@ -130,9 +130,9 @@ components:
         range:
           type: object
           required:
-          - startLine
-          - endLine
-          - totalLines
+            - startLine
+            - endLine
+            - totalLines
           properties:
             startLine:
               type: integer
@@ -147,16 +147,16 @@ components:
     SubmitProposalRequest:
       type: object
       required:
-      - snapshot
-      - patchFormat
-      - patch
+        - snapshot
+        - patchFormat
+        - patch
       properties:
         snapshot:
           type: string
         patchFormat:
           type: string
           enum:
-          - unified-diff
+            - unified-diff
         patch:
           type: string
         description:
@@ -166,13 +166,13 @@ components:
     SubmitProposalResponse:
       type: object
       required:
-      - packetId
-      - reviewId
-      - documentId
-      - documentRevision
-      - reviewGeneration
-      - unresolvedChunks
-      - state
+        - packetId
+        - reviewId
+        - documentId
+        - documentRevision
+        - reviewGeneration
+        - unresolvedChunks
+        - state
       properties:
         packetId:
           type: string
@@ -191,18 +191,36 @@ components:
     AgentError:
       type: object
       required:
-      - code
-      - message
+        - code
+        - message
       properties:
         code:
           type: string
+          enum:
+            - APP_NOT_RUNNING
+            - PROTOCOL_MISMATCH
+            - NO_FOCUSED_DOCUMENT
+            - DOCUMENT_NOT_FOUND
+            - DOCUMENT_CLOSED
+            - REVISION_MISMATCH
+            - REVIEW_GENERATION_MISMATCH
+            - REVIEW_NOT_FOUND
+            - REVIEW_INVALIDATED
+            - PATCH_INVALID
+            - PATCH_NOT_APPLICABLE
+            - PACKET_NOT_RETRACTABLE
+            - IDEMPOTENCY_CONFLICT
+            - REQUEST_TOO_LARGE
+            - METHOD_NOT_FOUND
+            - INVALID_PARAMS
+            - INTERNAL_ERROR
         message:
           type: string
     AgentEvent:
       type: object
       required:
-      - event
-      - timestamp
+        - event
+        - timestamp
       properties:
         event:
           type: string
@@ -224,8 +242,8 @@ components:
     ReviewEventsResponse:
       type: object
       required:
-      - reviewId
-      - status
+        - reviewId
+        - status
       properties:
         reviewId:
           type: string
@@ -254,12 +272,12 @@ components:
     FocusedViewSummary:
       type: object
       required:
-      - viewId
-      - windowId
-      - leafId
-      - documentId
-      - focused
-      - active
+        - viewId
+        - windowId
+        - leafId
+        - documentId
+        - focused
+        - active
       properties:
         viewId:
           type: string
@@ -280,11 +298,11 @@ components:
     ViewSummary:
       type: object
       required:
-      - viewId
-      - windowId
-      - leafId
-      - focused
-      - active
+        - viewId
+        - windowId
+        - leafId
+        - focused
+        - active
       properties:
         viewId:
           type: string
@@ -303,8 +321,8 @@ components:
           items:
             type: object
             required:
-            - documentId
-            - path
+              - documentId
+              - path
             properties:
               documentId:
                 type: string
@@ -313,7 +331,7 @@ components:
     ViewsResponse:
       type: object
       required:
-      - views
+        - views
       properties:
         views:
           type: array
@@ -322,8 +340,8 @@ components:
     WorkspaceSummary:
       type: object
       required:
-      - workspaceId
-      - path
+        - workspaceId
+        - path
       properties:
         workspaceId:
           type: string
@@ -332,26 +350,27 @@ components:
     WorkspacesResponse:
       type: object
       required:
-      - workspaces
+        - workspaces
       properties:
         workspaces:
           type: array
           items:
             $ref: '#/components/schemas/WorkspaceSummary'
-    WorkspaceDocumentSummary:
+    LoadedWorkspaceDocumentSummary:
       type: object
       required:
-      - documentId
-      - workspaceId
-      - uri
-      - path
-      - name
-      - type
-      - dirty
-      - revision
-      - lineCount
-      - byteLength
-      - views
+        - documentId
+        - workspaceId
+        - uri
+        - path
+        - name
+        - loaded
+        - type
+        - dirty
+        - revision
+        - lineCount
+        - byteLength
+        - views
       properties:
         documentId:
           type: string
@@ -363,11 +382,15 @@ components:
           type: string
         name:
           type: string
+        loaded:
+          type: boolean
+          enum:
+            - true
         type:
           type: string
           enum:
-          - markdown
-          - code
+            - markdown
+            - code
         dirty:
           type: boolean
         revision:
@@ -382,11 +405,40 @@ components:
             $ref: '#/components/schemas/ViewSummary'
         review:
           $ref: '#/components/schemas/ReviewSummary'
+    UnloadedWorkspaceDocumentSummary:
+      type: object
+      required:
+        - documentId
+        - workspaceId
+        - uri
+        - path
+        - name
+        - loaded
+      properties:
+        documentId:
+          type: string
+        workspaceId:
+          type: string
+        uri:
+          type: string
+        path:
+          type: string
+        name:
+          type: string
+        loaded:
+          type: boolean
+          enum:
+            - false
+      additionalProperties: false
+    WorkspaceDocumentSummary:
+      oneOf:
+        - $ref: '#/components/schemas/LoadedWorkspaceDocumentSummary'
+        - $ref: '#/components/schemas/UnloadedWorkspaceDocumentSummary'
     WorkspaceOpenDocumentResponse:
       type: object
       required:
-      - focused
-      - documentId
+        - focused
+        - documentId
       properties:
         focused:
           type: boolean
@@ -395,8 +447,8 @@ components:
     WorkspaceDocumentsResponse:
       type: object
       required:
-      - workspaceId
-      - documents
+        - workspaceId
+        - documents
       properties:
         workspaceId:
           type: string
@@ -407,11 +459,11 @@ components:
     SearchDocumentResponse:
       type: object
       required:
-      - documentId
-      - snapshot
-      - revision
-      - hits
-      - truncated
+        - documentId
+        - snapshot
+        - revision
+        - hits
+        - truncated
       properties:
         documentId:
           type: string
@@ -424,11 +476,11 @@ components:
           items:
             type: object
             required:
-            - line
-            - column
-            - length
-            - contextBefore
-            - contextAfter
+              - line
+              - column
+              - length
+              - contextBefore
+              - contextAfter
             properties:
               line:
                 type: integer
@@ -445,12 +497,12 @@ components:
     ReviewDetailResponse:
       type: object
       required:
-      - reviewId
-      - state
-      - generation
-      - unresolvedChunks
-      - packetCount
-      - documentRevision
+        - reviewId
+        - state
+        - generation
+        - unresolvedChunks
+        - packetCount
+        - documentRevision
       properties:
         reviewId:
           type: string
@@ -467,10 +519,10 @@ components:
     ReviewDiffResponse:
       type: object
       required:
-      - reviewId
-      - documentId
-      - patch
-      - generation
+        - reviewId
+        - documentId
+        - patch
+        - generation
       properties:
         reviewId:
           type: string
@@ -483,10 +535,10 @@ components:
     ReviewChunksResponse:
       type: object
       required:
-      - reviewId
-      - documentId
-      - generation
-      - chunks
+        - reviewId
+        - documentId
+        - generation
+        - chunks
       properties:
         reviewId:
           type: string
@@ -501,9 +553,9 @@ components:
     ReviewPacketsResponse:
       type: object
       required:
-      - reviewId
-      - documentId
-      - packets
+        - reviewId
+        - documentId
+        - packets
       properties:
         reviewId:
           type: string
@@ -516,10 +568,10 @@ components:
     ClearReviewResponse:
       type: object
       required:
-      - reviewId
-      - documentId
-      - state
-      - documentRevision
+        - reviewId
+        - documentId
+        - state
+        - documentRevision
       properties:
         reviewId:
           type: string
@@ -532,13 +584,13 @@ components:
     RetractProposalResponse:
       type: object
       required:
-      - retracted
-      - packetId
-      - reviewId
-      - documentId
-      - reviewGeneration
-      - unresolvedChunks
-      - documentRevision
+        - retracted
+        - packetId
+        - reviewId
+        - documentId
+        - reviewGeneration
+        - unresolvedChunks
+        - documentRevision
       properties:
         retracted:
           type: boolean
@@ -557,11 +609,11 @@ components:
     OutstandingChunk:
       type: object
       required:
-      - chunkId
-      - generation
-      - referenceRange
-      - workingRange
-      - patch
+        - chunkId
+        - generation
+        - referenceRange
+        - workingRange
+        - patch
       properties:
         chunkId:
           type: string
@@ -570,8 +622,8 @@ components:
         referenceRange:
           type: object
           required:
-          - fromLine
-          - toLine
+            - fromLine
+            - toLine
           properties:
             fromLine:
               type: integer
@@ -580,8 +632,8 @@ components:
         workingRange:
           type: object
           required:
-          - fromLine
-          - toLine
+            - fromLine
+            - toLine
           properties:
             fromLine:
               type: integer
@@ -592,12 +644,12 @@ components:
     ProposalPacket:
       type: object
       required:
-      - packetId
-      - reviewId
-      - clientRequestId
-      - appliedAt
-      - patchFormat
-      - patch
+        - packetId
+        - reviewId
+        - clientRequestId
+        - appliedAt
+        - patchFormat
+        - patch
       properties:
         packetId:
           type: string
@@ -616,9 +668,9 @@ components:
     PingResponse:
       type: object
       required:
-      - protocolVersion
-      - instanceId
-      - pid
+        - protocolVersion
+        - instanceId
+        - pid
       properties:
         protocolVersion:
           type: string
@@ -629,15 +681,15 @@ components:
     CapabilitiesResponse:
       type: object
       required:
-      - protocolVersion
-      - supportedPatchFormats
-      - reviewSupport
-      - retractionSupport
-      - maxRequestSize
-      - eventStreamSupport
-      - eventReplayBufferSize
-      - applicationVersion
-      - instanceId
+        - protocolVersion
+        - supportedPatchFormats
+        - reviewSupport
+        - retractionSupport
+        - maxRequestSize
+        - eventStreamSupport
+        - eventReplayBufferSize
+        - applicationVersion
+        - instanceId
       properties:
         protocolVersion:
           type: string
@@ -646,7 +698,7 @@ components:
           items:
             type: string
             enum:
-            - unified-diff
+              - unified-diff
         reviewSupport:
           type: boolean
           const: true
@@ -738,16 +790,16 @@ paths:
                     items:
                       $ref: '#/components/schemas/DocumentSummary'
       parameters:
-      - name: state
-        in: query
-        required: false
-        schema:
-          type: string
-          enum:
-          - open
-          default: open
-        description: Reserved document-state filter for clients. Only open is currently
-          supported.
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - open
+            default: open
+          description: Reserved document-state filter for clients. Only open is currently
+            supported.
     post:
       operationId: openDocument
       summary: Open a server-local file URI
@@ -758,7 +810,7 @@ paths:
             schema:
               type: object
               required:
-              - uri
+                - uri
               properties:
                 uri:
                   type: string
@@ -776,11 +828,11 @@ paths:
       operationId: getDocument
       summary: Document metadata and review status
       parameters:
-      - name: documentId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: OK
@@ -795,11 +847,11 @@ paths:
       operationId: focusDocument
       summary: Focus or create an editor view for the document
       parameters:
-      - name: documentId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: OK
@@ -808,27 +860,27 @@ paths:
       operationId: readDocumentContent
       summary: Read live working or reference text by line slice
       parameters:
-      - name: documentId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: side
-        in: query
-        schema:
-          type: string
-          enum:
-          - working
-          - reference
-          default: working
-      - name: startLine
-        in: query
-        schema:
-          type: integer
-      - name: endLine
-        in: query
-        schema:
-          type: integer
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: side
+          in: query
+          schema:
+            type: string
+            enum:
+              - working
+              - reference
+            default: working
+        - name: startLine
+          in: query
+          schema:
+            type: integer
+        - name: endLine
+          in: query
+          schema:
+            type: integer
       responses:
         '200':
           description: OK
@@ -847,11 +899,11 @@ paths:
       operationId: searchDocument
       summary: Literal or regex search against the live buffer
       parameters:
-      - name: documentId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -859,7 +911,7 @@ paths:
             schema:
               type: object
               required:
-              - literal
+                - literal
               properties:
                 literal:
                   type: string
@@ -878,22 +930,26 @@ paths:
       operationId: submitProposal
       summary: Submit an exact unified-diff packet
       parameters:
-      - name: documentId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: If-Match
-        in: header
-        required: true
-        schema:
-          type: string
-        description: ETag from the document read
-      - name: Idempotency-Key
-        in: header
-        required: true
-        schema:
-          type: string
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: '^"sha256:[a-f0-9]{64}"$'
+            example: '"sha256:eab7fc1cf8e249b7945b96314a70137425dd5cecc2ce84de93be0e4f493a7f20"'
+          description: >-
+            ETag from the document read: the revision.sha256 of the same read that
+            produced the snapshot, as the quoted string "sha256:<hex>".
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -934,11 +990,11 @@ paths:
       operationId: getReview
       summary: Inspect a review
       parameters:
-      - name: reviewId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: OK
@@ -953,11 +1009,11 @@ paths:
       operationId: getReviewDiff
       summary: Retrieve the complete unresolved composite diff
       parameters:
-      - name: reviewId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: OK
@@ -972,11 +1028,11 @@ paths:
       operationId: getReviewChunks
       summary: Inspect current unresolved chunks
       parameters:
-      - name: reviewId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: OK
@@ -991,11 +1047,11 @@ paths:
       operationId: getReviewPackets
       summary: Inspect the proposal-packet ledger
       parameters:
-      - name: reviewId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: OK
@@ -1010,11 +1066,11 @@ paths:
       operationId: clearReview
       summary: Discard unresolved suggestions while preserving accepted changes
       parameters:
-      - name: reviewId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: OK
@@ -1029,11 +1085,11 @@ paths:
       operationId: retractProposal
       summary: Retract an untouched, most-recent packet
       parameters:
-      - name: packetId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: packetId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: OK
@@ -1061,44 +1117,44 @@ paths:
                 type: string
               example: no-cache
       parameters:
-      - name: Last-Event-ID
-        in: header
-        required: false
-        schema:
-          type: string
-        description: Resumes from the next server event after this id.
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Resumes from the next server event after this id.
   /v1/reviews/{reviewId}/events:
     get:
       operationId: waitForReviewEvents
       summary: Long-poll review events and status after a generation advance
       parameters:
-      - name: reviewId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: afterGeneration
-        in: query
-        schema:
-          type: integer
-          minimum: 0
-          default: 0
-      - name: waitSeconds
-        in: query
-        schema:
-          type: integer
-          minimum: 0
-          maximum: 120
-          default: 30
-      - name: wait
-        in: query
-        deprecated: true
-        schema:
-          type: integer
-          minimum: 0
-          maximum: 120
-          default: 30
-        description: Deprecated alias for waitSeconds.
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: afterGeneration
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: waitSeconds
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 120
+            default: 30
+        - name: wait
+          in: query
+          deprecated: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 120
+            default: 30
+          description: Deprecated alias for waitSeconds.
       responses:
         '200':
           description: Review state and matching event history (or timed out)
@@ -1135,17 +1191,17 @@ paths:
       operationId: listWorkspaceDocuments
       summary: List documents known to a workspace
       parameters:
-      - name: workspaceId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: query
-        in: query
-        required: false
-        schema:
-          type: string
-        description: Optional case-insensitive substring filter over file path.
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional case-insensitive substring filter over file path.
       responses:
         '200':
           description: OK
@@ -1160,16 +1216,16 @@ paths:
       operationId: openWorkspaceDocument
       summary: Open or focus a document in a workspace
       parameters:
-      - name: workspaceId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: documentId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: OK

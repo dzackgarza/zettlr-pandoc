@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# Build and start Zettlr-Pandoc from the repository behind the installed
+# launcher symlink. The app is ready only when its Hyprland window is mapped.
+set -euo pipefail
+
+: "${HOME:?HOME must be set}"
+
+for required_command in awk date dirname hyprctl jq just kill mkdir python3 readlink sed setsid sh sleep tail timeout tput; do
+  if ! command -v "$required_command" >/dev/null 2>&1; then
+    printf 'Required command is unavailable: %s\n' "$required_command" >&2
+    exit 1
+  fi
+done
+
+script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
+repo=$(cd -- "$(dirname -- "$script_path")/../.." && pwd -P)
+log="$HOME/.cache/zettlr-pandoc-dev.log"
+app_class="zettlr-pandoc"
+launch_timeout=300
+
+if [[ ! -f "$repo/justfile" ]]; then
+  printf 'Repository justfile is unavailable: %s\n' "$repo/justfile" >&2
+  exit 1
+fi
+
+# True once Hyprland reports a window of the app's class. A hyprctl failure is
+# not "the app is not up yet" — it means the compositor cannot be queried at all,
+# and silently reading that as "keep waiting" would spin until the launch timeout
+# and then blame the app. Report it and stop.
+app_up() {
+  local clients
+  if ! clients=$(hyprctl clients -j 2>&1); then
+    printf 'Could not query Hyprland for open windows: %s\n' "$clients" >&2
+    exit 1
+  fi
+
+  jq -e --arg app_class "$app_class" \
+    'any(.[]; .class == $app_class)' >/dev/null <<<"$clients"
+}
+
+# True while the pid is alive. A signal-0 probe fails for two very different
+# reasons: the process is gone (the answer this function exists to give) or the
+# probe itself was refused, e.g. EPERM. Discarding stderr collapsed both into
+# "dead", which would report a spurious launch failure.
+process_alive() {
+  local pid="$1"
+  local probe
+
+  # LC_ALL=C pins strerror to the English text matched below; without it a
+  # localized "Kein Prozess vorhanden" falls through to the fatal branch and
+  # aborts the launch over a process that simply exited.
+  if probe=$(LC_ALL=C kill -0 "$pid" 2>&1); then
+    return 0
+  fi
+  if [[ "$probe" == *"No such process"* ]]; then
+    return 1
+  fi
+
+  printf 'Could not probe launch process %s: %s\n' "$pid" "$probe" >&2
+  exit 1
+}
+
+restore_cursor() {
+  tput cnorm >/dev/null 2>&1
+}
+
+fail() {
+  local message="$1"
+
+  printf '\r\033[K\n   %s\n   See %s for details. Closing...\n\n' "$message" "$log"
+  tail -n 20 "$log" | sed $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g'
+  sleep 8
+  exit 1
+}
+
+spin_until_app_up() {
+  local launch_pid="$1"
+  local start=$SECONDS
+  local frame_index=0
+  local frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  local frame
+  local line
+  local status
+
+  while ! app_up; do
+    if ! process_alive "$launch_pid"; then
+      status=0
+      wait "$launch_pid" || status=$?
+      fail "Launch exited with status $status before the app window appeared."
+    fi
+
+    if (( SECONDS - start > launch_timeout )); then
+      fail "Timed out after ${launch_timeout}s; the app window never appeared."
+    fi
+
+    frame=${frames:frame_index++%${#frames}:1}
+    line=$(
+      tail -n 60 "$log" |
+        sed $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g; s/\r//g' |
+        awk 'NF { line=$0 } END { print line }'
+    )
+    printf '\r\033[K   %s  Building & starting  %.48s' "$frame" "$line"
+    sleep 0.12
+  done
+}
+
+trap restore_cursor EXIT
+
+# Zettlr is single-instance. Focus the existing window instead of starting a
+# second build.
+if app_up; then
+  hyprctl dispatch focuswindow "class:^(${app_class})$" >/dev/null
+  exit 0
+fi
+
+mkdir -p "$HOME/.cache"
+printf '=== %s starting zettlr-pandoc from %s ===\n' "$(date)" "$repo" >"$log"
+
+macro_generator="$HOME/.pandoc/bin/generate-mathjax-config.py"
+macro_config="$HOME/.config/Zettlr-Pandoc/mathjax-macros.json"
+macro_tmp="$HOME/.cache/zettlr-pandoc-macrogen"
+
+if [[ ! -f "$macro_generator" ]]; then
+  fail "MathJax macro generator is unavailable: $macro_generator"
+fi
+
+mkdir -p "$macro_tmp"
+if ! timeout 15 python3 "$macro_generator" \
+  --out-dir "$macro_tmp" \
+  --json "$macro_config" >>"$log" 2>&1; then
+  fail "MathJax macro refresh failed."
+fi
+printf '[boot] refreshed MathJax macros -> %s\n' "$macro_config" >>"$log"
+
+printf '\n   Starting \033[1mZettlr-Pandoc\033[0m from source (dev build)\n\n'
+tput civis >/dev/null 2>&1
+
+# Detach the dev server and Electron into their own session so closing the
+# splash does not terminate the running app.
+setsid sh -c 'cd -- "$1" && exec just launch-desktop' sh "$repo" \
+  >>"$log" 2>&1 </dev/null &
+launch_pid=$!
+
+spin_until_app_up "$launch_pid"
+printf '\r\033[K'

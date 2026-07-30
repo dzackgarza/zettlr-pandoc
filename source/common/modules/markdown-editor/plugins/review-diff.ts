@@ -8,11 +8,13 @@ export function reviewDiffMergeExtension (originalText: string): Extension[] {
     highlightChanges: true,
     syntaxHighlightDeletions: true,
     allowInlineDiffs: false,
-    mergeControls: renderReviewDiffControl,
-    collapseUnchanged: {
-      margin: 4,
-      minSize: 8
-    }
+    mergeControls: renderReviewDiffControl
+    // No `collapseUnchanged`: a review packet is an annotation on the document
+    // the author is reading, not a diff view they navigated to. Folding the
+    // untouched lines away rewrites the whole viewport to show a one-line
+    // correction, which is what every other editor's inline accept/reject
+    // deliberately avoids. Deletions and controls are additive decorations on
+    // an otherwise untouched document.
   })
 }
 

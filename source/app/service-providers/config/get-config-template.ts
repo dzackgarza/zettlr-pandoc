@@ -609,8 +609,8 @@ export function getConfigTemplate(): ConfigOptions {
     uuid: uuid4(), // The app's unique anonymous identifier
     // Agent API HTTP server (OpenAPI / REST) — spec: Zettlr-Pandoc Editor Agent API
     agentApi: {
-      enabled: false,
-      port: 23119,
+      enabled: true,
+      port: 27412,
     },
   };
 }

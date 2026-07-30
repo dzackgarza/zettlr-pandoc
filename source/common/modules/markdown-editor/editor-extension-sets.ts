@@ -17,7 +17,6 @@
  */
 
 import { closeBrackets } from '@codemirror/autocomplete'
-import { type Update } from '@codemirror/collab'
 import { history } from '@codemirror/commands'
 import { bracketMatching, codeFolding, foldGutter, indentOnInput, indentUnit, StreamLanguage } from '@codemirror/language'
 import { stex } from '@codemirror/legacy-modes/mode/stex'
@@ -37,7 +36,7 @@ import { codeSyntaxHighlighter, markdownSyntaxHighlighter } from './theme/syntax
 import markdownParser from './parser/markdown-parser'
 import { defaultContextMenu } from './plugins/default-context-menu'
 import { readabilityMode } from './plugins/readability'
-import { hookDocumentAuthority } from './plugins/remote-doc'
+import { hookDocumentAuthority, type PullUpdateCallback, type PushUpdateCallback } from './plugins/remote-doc'
 import { lintGutter, linter } from '@codemirror/lint'
 import { spellcheck } from './linters/spellcheck'
 import { mdLint } from './linters/md-lint'
@@ -91,8 +90,8 @@ export interface CoreExtensionOptions {
   remoteConfig: {
     filePath: string
     startVersion: number
-    pullUpdates: (filePath: string, version: number) => Promise<Update[]|false>
-    pushUpdates: (filePath: string, version: number, updates: Update[]) => Promise<boolean>
+    pullUpdates: PullUpdateCallback
+    pushUpdates: PushUpdateCallback
   }
   updateListener: (update: ViewUpdate) => void
   domEventsListeners: DOMEventHandlers<unknown>

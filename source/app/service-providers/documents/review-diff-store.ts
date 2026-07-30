@@ -152,7 +152,7 @@ export function sha256Text(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
-function normalizeText(content: string): string {
+export function normalizeText(content: string): string {
   return content
     .replace(/^\uFEFF/, "")
     .split(/\r\n|\n\r|\n|\r/g)
@@ -227,12 +227,24 @@ function isAcceptableHeader(
   ) {
     return true;
   }
-  // Exact canonical path
-  const stripped = normalized.replace(/^(a|b)\//, "");
-  if (!path.isAbsolute(stripped)) {
+  // Exact canonical path. The contract accepts `document`, an absolute path, or
+  // an absolute path behind a git-style a/ or b/ prefix — nothing relative.
+  //
+  // `git diff` drops the leading slash when it prefixes an absolute path, so
+  // `a//home/x.md` arrives as `a/home/x.md`; the root is restored ONLY for a
+  // header that actually carried that prefix. Restoring it unconditionally
+  // would accept a bare relative header like `home/x.md` as `/home/x.md`,
+  // which is precisely the target check this function exists to perform.
+  const gitPrefix = /^(a|b)\//;
+  const carriedPrefix = gitPrefix.test(normalized);
+  const stripped = normalized.replace(gitPrefix, "");
+  if (path.isAbsolute(stripped)) {
+    return path.resolve(stripped) === path.resolve(documentPath);
+  }
+  if (!carriedPrefix) {
     return false;
   }
-  return path.resolve(stripped) === path.resolve(documentPath);
+  return path.resolve(`/${stripped}`) === path.resolve(documentPath);
 }
 
 // ============================================================================
@@ -416,6 +428,17 @@ export class ReviewDiffStore extends EventEmitter {
     }
 
     const newWorkingText = normalizeText(proposed);
+    // openReview rejects an initial patch that leaves the text unchanged; a
+    // later packet has to answer to the same invariant. A no-op that is allowed
+    // through still burns a generation and becomes the newest packet, which
+    // blocks retraction of the real one underneath it.
+    if (newWorkingText === review.workingText) {
+      return {
+        ok: false,
+        code: "PATCH_INVALID",
+        message: "The patch does not change the target document.",
+      };
+    }
     const packetId = randomUUID();
     review.packets.push({
       packetId,

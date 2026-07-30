@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Zettlr-Pandoc (dev)
+GenericName=Markdown Editor
+Comment=Zettlr-Pandoc from source - synchronizes dependencies and rebuilds on launch
+Exec=@HOME@/.local/bin/zettlr-pandoc-dev %U
+Icon=zettlr-pandoc
+Terminal=false
+Categories=Office;Publishing;
+MimeType=text/markdown;
+StartupWMClass=zettlr-pandoc
+StartupNotify=true

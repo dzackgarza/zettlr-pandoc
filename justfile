@@ -14,17 +14,30 @@ ai_review_ci_default_branch := "develop"
 default:
     @just --list
 
+[private]
+sync-dependencies:
+    {{bun}} install --frozen-lockfile
+
+# Install the repo-owned Hyprland desktop launcher into ~/.local.
+install-desktop-launcher:
+    bash "{{justfile_directory()}}/scripts/install-desktop-launcher.sh"
+
 # Launch the app in develop mode (webpack dev server + Electron).
 # Free the dev ports first: a launch that was killed (or whose app was never
 # quit) leaves a forge-start/Electron holding :9001, and the next launch dies
 # on EADDRINUSE with the cause swallowed. --kill reaps only this project's
 # stale dev processes.
-launch:
+launch: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py" --kill
     {{bun}} run start
 
+# Launch the desktop app in develop mode with the normal user configuration.
+launch-desktop: sync-dependencies
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py" --kill
+    "{{justfile_directory()}}/node_modules/.bin/electron-forge" start
+
 # Build a packaged Linux x64 app into out/Zettlr-Pandoc-linux-x64/.
-package:
+package: sync-dependencies
     {{bun}} run package:linux-x64
 
 # Run the packaged binary (build it first with `just package`).
@@ -33,12 +46,12 @@ run-packaged:
 
 # Run exactly one focused TypeScript test file without inheriting Mocha's
 # repository-wide spec glob. Usage: just test-file test/example.spec.ts
-test-file file:
+test-file file: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "{{file}}"
 
 # Run the focused workspace-reference test suite.
-test-references:
+test-references: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/extract-references-subfigures.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/editor-reference-completion-help.spec.ts" "test/reference-fzf-search.spec.ts" "test/reference-search-project-ranking.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/reference-lint.spec.ts" "test/tab-manager-history.spec.ts" "test/compute-reference-edits.spec.ts" "test/rename-preview-summary.spec.ts" "test/reference-rename-atomicity.spec.ts" "test/reference-rename-undo-route.spec.ts" "test/show-toast-action.spec.ts" "test/navigation-shortcut-config.spec.ts" "test/project-reference-status.spec.ts" "test/editor-reference-completion-project-status.spec.ts" "test/reference-hover-project-status.spec.ts" "test/export-ordered-inputs.spec.ts" "test/export-quoted-inputs.spec.ts" "test/documents-provider-navigation.spec.ts" "test/preflight-crossref.spec.ts" "test/live-buffer-reporter.spec.ts" "test/reference-create-label-confirm.spec.ts" "test/pandoc-quick-reference-lst.spec.ts" "test/pandoc-quick-help-references.spec.ts" "test/pandoc-quick-help-search.spec.ts"
 
@@ -47,7 +60,7 @@ test-references:
 # Phase 8 badge-keyed reverse lookup, Phase 5 navigation scenes, Phase 6
 # create-label dialog + key-edit prompt, Phase 8 recoverable-error surface).
 # Mirrors test-file's invocation with the longer timeout the xvfb probes need.
-test-reference-ui:
+test-reference-ui: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/reference-provider-shell.spec.ts" "test/reference-search-overlay.spec.ts" "test/reference-navigation.spec.ts" "test/reference-create-label.spec.ts" "test/reference-rename-preview.spec.ts" "test/reference-error-surface.spec.ts"
 
@@ -65,12 +78,12 @@ test-pandoc-config-integration:
 # uvx fetches flowmark from git (network), so this is deliberately NOT a
 # *.spec.ts file and is excluded from the default `just test` commit gate; run
 # it explicitly. Fails loudly (typed flowmark-absent) if flowmark can't launch.
-test-flowmark-integration:
+test-flowmark-integration: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 180000 "test/flowmark-format-integration.ts"
 
 # Run the repository test suite. The guard executes before Mocha can start.
-test:
+test: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --timeout 120000 --inline-diffs
 
@@ -107,7 +120,7 @@ setup-ci:
 # root-owned SUID bits, which aborts Chromium under xvfb. The probe renders
 # local test content only, so run unsandboxed rather than requiring sudo
 # provisioning for the test suite.
-capture-pandoc-divs output:
+capture-pandoc-divs output: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     mkdir -p "{{output}}"
     "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-pandoc-div-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/pandoc-div-visual-bundle.js"
@@ -117,7 +130,7 @@ capture-pandoc-divs output:
 # math widgets on visually indented list lines, plus the blockquote/div
 # regression scenes. Writes screenshots and per-scene diagnostics JSON.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
-capture-widget-indent output:
+capture-widget-indent output: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     mkdir -p "{{output}}"
     "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-widget-indent-visual-entry.ts" --bundle --platform=browser --format=iife --loader:.svg=dataurl --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/widget-indent-visual-bundle.js"
@@ -128,7 +141,7 @@ capture-widget-indent output:
 # through the vendored filter), the in-place compile diagnostic, and the
 # click-to-zoom lightbox reusing ImageViewer. Requires pdflatex and pdf2svg.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
-capture-tikz output:
+capture-tikz output: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     mkdir -p "{{output}}"
     node "{{justfile_directory()}}/test/editor-tikz-visual-build.cjs" "{{output}}"
@@ -136,7 +149,7 @@ capture-tikz output:
 
 # Capture the real Pandoc quick-reference Vue component in isolated Electron.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
-capture-pandoc-help output:
+capture-pandoc-help output: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     mkdir -p "{{output}}"
     node "{{justfile_directory()}}/test/pandoc-quick-help-visual-build.cjs" "{{output}}"
@@ -146,7 +159,7 @@ capture-pandoc-help output:
 # probe entry with the production renderer webpack config, drives the real
 # fixture-backed overlay, and writes screenshots plus the probe result JSON.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
-capture-reference-search output:
+capture-reference-search output: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     mkdir -p "{{output}}"
     node "{{justfile_directory()}}/test/reference-search-overlay-build.cjs" "{{output}}"
@@ -161,7 +174,7 @@ capture-reference-search output:
 # root-owned SUID bits, which aborts Chromium under xvfb. The probe renders
 # local test content only, so run unsandboxed rather than requiring sudo
 # provisioning for the test suite.
-capture-reference-chips output:
+capture-reference-chips output: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     test -f "{{justfile_directory()}}/test/editor-reference-chips-visual-entry.ts" || { echo "FATAL: test/editor-reference-chips-visual-entry.ts does not exist yet (Phase 4 green work)"; exit 1; }
     mkdir -p "{{output}}"
@@ -174,7 +187,7 @@ capture-reference-chips output:
 # another-Project entry (whose inert apply the driver proves). Follows the
 # capture-reference-chips esbuild pattern. This never starts Forge, a dev
 # server, xdg-open, or the system browser.
-capture-reference-completion output:
+capture-reference-completion output: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     mkdir -p "{{output}}"
     "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/reference-completion-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/reference-completion-visual-bundle.js"
@@ -189,7 +202,7 @@ capture-reference-completion output:
 # root-owned SUID bits, which aborts Chromium under xvfb. The probe renders
 # local test content only, so run unsandboxed rather than requiring sudo
 # provisioning for the test suite.
-capture-reference-hover output:
+capture-reference-hover output: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     test -f "{{justfile_directory()}}/test/reference-hover-visual-entry.ts" || { echo "FATAL: test/reference-hover-visual-entry.ts does not exist yet (Phase 4 green work)"; exit 1; }
     mkdir -p "{{output}}"
@@ -202,7 +215,7 @@ capture-reference-hover output:
 # capture-reference-search Electron sandbox flags; the probe writes the same
 # screenshots the test spec drives. This never starts Forge, a dev server,
 # xdg-open, or the system browser.
-capture-reference-navigation output:
+capture-reference-navigation output: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     mkdir -p "{{output}}"
     "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/reference-navigation-entry.ts" --bundle --platform=browser --format=iife --define:process.platform='"linux"' --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/reference-navigation-bundle.js"
@@ -214,7 +227,7 @@ capture-reference-navigation output:
 # .vue components and the Clarity icon loader) and screenshots them in
 # isolated offscreen Electron. This never starts Forge, a dev server,
 # xdg-open, or the system browser.
-capture-navigation-controls output:
+capture-navigation-controls output: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     mkdir -p "{{output}}"
     node "{{justfile_directory()}}/test/reference-navigation-controls-build.cjs" "{{output}}"
@@ -226,7 +239,7 @@ capture-navigation-controls output:
 # mounts the dialog over the previewed fixture rename, and writes the
 # preview/cancel/apply screenshots plus the probe result JSON. This never
 # starts Forge, a dev server, xdg-open, or the system browser.
-capture-rename-preview output:
+capture-rename-preview output: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     mkdir -p "{{output}}"
     node "{{justfile_directory()}}/test/reference-rename-preview-build.cjs" "{{output}}"
@@ -235,7 +248,7 @@ capture-rename-preview output:
 # Capture the issue #34 review-diff accept/reject interface in isolated
 # offscreen Electron at desktop and narrow widths, light and dark.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
-capture-review-diff output:
+capture-review-diff output: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     mkdir -p "{{output}}"
     "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-review-diff-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/review-diff-visual-bundle.js"
@@ -245,13 +258,13 @@ capture-review-diff output:
 # exact profile list the GUI sees (userData/defaults + custom profiles). Proves
 # an export end-to-end from the terminal. Usage:
 #   just export-headless PDF.yaml path/to/file.md
-export-headless profile file:
+export-headless profile file: sync-dependencies
     node --require "{{justfile_directory()}}/scripts/harness/electron-stub.cjs" --import tsx "{{justfile_directory()}}/scripts/harness/export-run.ts" "{{profile}}" "{{file}}"
 
 # Build observability: run the production package build and PROVE it produced a
 # fresh app.asar built from the current commit. Exits non-zero (loud) if the
 # build silently produced stale/no bytes -- the failure that shipped old code.
-verify-build:
+verify-build: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/verify-build.py"
 
 # Verify the EXISTING packaged artifact is built from the current commit, without

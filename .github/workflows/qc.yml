@@ -1,0 +1,31 @@
+name: QC
+# The structural QC tier (knip, biome, ast-grep, eslint, jscpd, lizard,
+# slop-scan, coverage, diff-cover) previously ran only from review-pr.yml,
+# which is `on: pull_request`. Nothing on develop ever executed it, so a
+# defect merged without a PR — or merged through a PR whose review job was
+# skipped — was never seen by any detector again.
+#
+# This runs the same tier on every push to the integration branches, and on a
+# schedule so long quiet periods still get audited. Scheduled runs use the
+# ambient tier: a full-repo debt audit rather than the diff-scoped acceptance
+# gate.
+on:
+  push:
+    branches: [develop, master]
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.sha }}
+  cancel-in-progress: true
+jobs:
+  qc:
+    uses: dzackgarza/ai-review-ci/.github/workflows/_qc.yml@main
+    permissions:
+      contents: read
+      issues: read
+    with:
+      tier: ${{ github.event_name == 'schedule' && 'ambient' || 'test-ci' }}
+      profile: 'bun'
+      setup_recipe: 'setup-ci'
+      infra_ref: 'main'

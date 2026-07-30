@@ -21,35 +21,27 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { reviewDiffMergeExtension } from 'source/common/modules/markdown-editor/plugins/review-diff'
 
+// jsdom does not ship the DOM APIs CodeMirror 6 uses for layout/scheduling.
+// Polyfill the minimal set so an EditorView can mount and build decorations.
 function polyfillJsdomForCodeMirror (): void {
-  const w = globalThis as any
-  if (typeof w.requestAnimationFrame !== 'function') {
-    w.requestAnimationFrame = (callback: (time: number) => void) => setTimeout(() => callback(Date.now()), 0)
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id)
+  if (typeof globalThis.requestAnimationFrame !== 'function') {
+    globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number =>
+      Number(setTimeout(() => callback(Date.now()), 0))
+    globalThis.cancelAnimationFrame = (id: number): void => { clearTimeout(id) }
   }
-  if (typeof w.window === 'object' && typeof w.window.requestAnimationFrame !== 'function') {
-    w.window.requestAnimationFrame = w.requestAnimationFrame
-    w.window.cancelAnimationFrame = w.cancelAnimationFrame
+  if (typeof globalThis.window === 'object' && typeof globalThis.window.requestAnimationFrame !== 'function') {
+    globalThis.window.requestAnimationFrame = globalThis.requestAnimationFrame
+    globalThis.window.cancelAnimationFrame = globalThis.cancelAnimationFrame
   }
-  if (typeof w.ResizeObserver !== 'function') {
-    w.ResizeObserver = class { observe () {} unobserve () {} disconnect () {} }
-    if (typeof w.window === 'object') {
-      w.window.ResizeObserver = w.ResizeObserver
+  if (typeof globalThis.ResizeObserver !== 'function') {
+    globalThis.ResizeObserver = class {
+      observe (): void {}
+      unobserve (): void {}
+      disconnect (): void {}
     }
-  }
-  if (typeof w.Range?.prototype.getClientRects !== 'function') {
-    w.Range.prototype.getClientRects = () => []
-    w.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    })
+    if (typeof globalThis.window === 'object') {
+      globalThis.window.ResizeObserver = globalThis.ResizeObserver
+    }
   }
 }
 
@@ -122,5 +114,23 @@ describe('Editor review-diff controls', function () {
 
     assert.equal(chunkCount(view), 0, 'rejecting the remaining chunk must finish the review')
     assert.equal(view.state.doc.toString(), expected)
+  })
+
+  it('leaves every unchanged line visible instead of folding them away', function () {
+    // A review packet annotates the document the author is already reading, so
+    // the surrounding text must survive untouched. `collapseUnchanged` replaces
+    // runs of unchanged lines with a fold widget, which hides the rest of the
+    // document to show a one-line correction.
+    const lines = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`)
+    const baseline = lines.join('\n')
+    const proposed = lines.map(line => line === 'line 30' ? 'line 30 corrected' : line).join('\n')
+
+    const view = createReviewView(baseline, proposed)
+
+    assert.equal(chunkCount(view), 1)
+    assert.equal(
+      view.dom.querySelectorAll('.cm-collapsedLines').length, 0,
+      'no run of unchanged lines may be folded into a widget'
+    )
   })
 })

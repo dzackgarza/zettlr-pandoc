@@ -145,7 +145,7 @@ describe("ReviewDiffStore", function () {
         clientRequestId: "req-2",
       });
       assert.equal(result.ok, true);
-      if (!result.ok) return;
+      if (!result.ok) {return;}
       assert.equal(result.workingText, second);
       // Both changes are on adjacent lines, so diffLines coalesces them
       // into a single chunk: alpha→ALPHA + beta→BETA
@@ -179,6 +179,47 @@ describe("ReviewDiffStore", function () {
       assert.deepEqual(first, second);
     });
 
+    it("rejects a packet that leaves the working text unchanged, as openReview does", function () {
+      const baseline = "alpha\nbeta\n";
+      const proposed = "alpha\nBETA\n";
+      store.openReview({
+        documentId: DOC_ID,
+        documentPath: DOC_PATH,
+        baselineText: baseline,
+        diskBaselineSha256: sha256Text(baseline),
+        initialPatch: {
+          patchFormat: "unified-diff",
+          patch: makePatch(baseline, proposed),
+          clientRequestId: "req-1",
+        },
+      });
+      // A hunk that replaces a line with itself. validateAndParsePatch only
+      // rejects a patch with no hunks at all, and this one applies cleanly at
+      // zero fuzz — so nothing upstream of submitPacket catches it.
+      const noOp = [
+        "--- document",
+        "+++ document",
+        "@@ -2,1 +2,1 @@",
+        "-BETA",
+        "+BETA",
+        "",
+      ].join("\n");
+      const result = store.submitPacket(DOC_ID, {
+        patchFormat: "unified-diff",
+        patch: noOp,
+        clientRequestId: "req-noop",
+      });
+      assert.equal(result.ok, false);
+      if (result.ok) {return;}
+      assert.equal(result.code, "PATCH_INVALID");
+      // A rejected no-op must not have advanced the review: a burnt generation
+      // makes the no-op the newest packet and blocks retracting the real one.
+      const review = store.getReview(DOC_ID);
+      assert.ok(review !== undefined);
+      assert.equal(review.generation, 1);
+      assert.equal(review.workingText, proposed);
+    });
+
     it("rejects with REVISION_MISMATCH when expectedReviewGeneration does not match", function () {
       const baseline = "alpha\n";
       store.openReview({
@@ -194,7 +235,7 @@ describe("ReviewDiffStore", function () {
         expectedReviewGeneration: 99,
       });
       assert.equal(result.ok, false);
-      if (result.ok) return;
+      if (result.ok) {return;}
       assert.equal(result.code, "REVISION_MISMATCH");
     });
 
@@ -205,7 +246,7 @@ describe("ReviewDiffStore", function () {
         clientRequestId: "req-1",
       });
       assert.equal(result.ok, false);
-      if (result.ok) return;
+      if (result.ok) {return;}
       assert.equal(result.code, "REVIEW_NOT_FOUND");
     });
 
@@ -224,7 +265,7 @@ describe("ReviewDiffStore", function () {
         clientRequestId: "req-1",
       });
       assert.equal(result.ok, false);
-      if (result.ok) return;
+      if (result.ok) {return;}
       assert.equal(result.code, "PATCH_NOT_APPLICABLE");
     });
   });
@@ -253,7 +294,7 @@ describe("ReviewDiffStore", function () {
         1,
       );
       assert.equal(result.ok, true);
-      if (!result.ok) return;
+      if (!result.ok) {return;}
       // referenceText should now agree with workingText on the accepted range
       assert.equal(result.referenceText, proposed);
       assert.equal(result.unresolvedChunks, 0);
@@ -270,7 +311,7 @@ describe("ReviewDiffStore", function () {
       const reviewId = store.getReview(DOC_ID)!.reviewId;
       const result = store.applyChunkAccept(DOC_ID, reviewId, 0, 0, 99);
       assert.equal(result.ok, false);
-      if (result.ok) return;
+      if (result.ok) {return;}
       assert.equal(result.code, "REVISION_MISMATCH");
     });
   });
@@ -299,7 +340,7 @@ describe("ReviewDiffStore", function () {
         1,
       );
       assert.equal(result.ok, true);
-      if (!result.ok) return;
+      if (!result.ok) {return;}
       // workingText should now agree with referenceText on the rejected range
       assert.equal(result.workingText, baseline);
       assert.equal(result.unresolvedChunks, 0);
@@ -330,7 +371,7 @@ describe("ReviewDiffStore", function () {
       // Now clear remaining unresolved
       const clearResult = store.clearUnresolved(DOC_ID);
       assert.equal(clearResult.ok, true);
-      if (!clearResult.ok) return;
+      if (!clearResult.ok) {return;}
       // workingText should now equal referenceText (which has ALPHA accepted)
       assert.equal(clearResult.workingText, "ALPHA\nbeta\ngamma\nomega\n");
       assert.equal(clearResult.unresolvedChunks, 0);
@@ -356,7 +397,7 @@ describe("ReviewDiffStore", function () {
       // Clear remaining (BETA is still unresolved)
       const result = store.clearUnresolved(DOC_ID);
       assert.equal(result.ok, true);
-      if (!result.ok) return;
+      if (!result.ok) {return;}
       // workingText has ALPHA accepted, BETA reverted to baseline
       assert.notEqual(result.workingText, baseline);
       assert.equal(result.workingText, "ALPHA\nbeta\n");
@@ -385,11 +426,11 @@ describe("ReviewDiffStore", function () {
         clientRequestId: "req-2",
       });
       assert.equal(submitResult.ok, true);
-      if (!submitResult.ok) return;
+      if (!submitResult.ok) {return;}
 
       const retractResult = store.retractPacket(submitResult.packetId);
       assert.equal(retractResult.ok, true);
-      if (!retractResult.ok) return;
+      if (!retractResult.ok) {return;}
       // workingText should be back to the state after the first packet
       const reviewState = store.getReview(DOC_ID);
       assert.equal(reviewState?.workingText, first);
@@ -416,7 +457,7 @@ describe("ReviewDiffStore", function () {
       const packetId = store.getReview(DOC_ID)!.packets[0].packetId;
       const result = store.retractPacket(packetId);
       assert.equal(result.ok, false);
-      if (result.ok) return;
+      if (result.ok) {return;}
       assert.equal(result.code, "PACKET_NOT_RETRACTABLE");
     });
 
@@ -438,7 +479,7 @@ describe("ReviewDiffStore", function () {
       store.applyChunkAccept(DOC_ID, review.reviewId, 0, 6, review.generation);
       const result = store.retractPacket(review.packets[0].packetId);
       assert.equal(result.ok, false);
-      if (result.ok) return;
+      if (result.ok) {return;}
       assert.equal(result.code, "PACKET_NOT_RETRACTABLE");
     });
 
@@ -463,12 +504,12 @@ describe("ReviewDiffStore", function () {
         clientRequestId: "req-2",
       });
       assert.equal(secondResult.ok, true);
-      if (!secondResult.ok) return;
+      if (!secondResult.ok) {return;}
       // Try to retract the first packet (not the newest)
       const firstPacketId = store.getReview(DOC_ID)!.packets[0].packetId;
       const result = store.retractPacket(firstPacketId);
       assert.equal(result.ok, false);
-      if (result.ok) return;
+      if (result.ok) {return;}
       assert.equal(result.code, "PACKET_NOT_RETRACTABLE");
     });
   });
@@ -616,6 +657,34 @@ describe("ReviewDiffStore", function () {
       const patch = makePatch(baseline, proposed);
       const parsed = validateAndParsePatch(patch, DOC_PATH);
       assert.equal(parsed.hunks.length, 1);
+    });
+
+    it("accepts git-style a/ and b/ prefixes on the absolute path", function () {
+      const baseline = "alpha\n";
+      const proposed = "beta\n";
+      // `git diff` drops the leading slash when prefixing an absolute path,
+      // producing headers such as `--- a/home/user/note.md`.
+      const patch = makePatch(baseline, proposed)
+        .replace(`--- ${DOC_PATH}`, `--- a${DOC_PATH}`)
+        .replace(`+++ ${DOC_PATH}`, `+++ b${DOC_PATH}`);
+      const parsed = validateAndParsePatch(patch, DOC_PATH);
+      assert.equal(parsed.hunks.length, 1);
+    });
+
+    it("rejects a relative header that merely looks like the target", function () {
+      const baseline = "alpha\n";
+      const proposed = "beta\n";
+      // `home/user/note.md` is NOT `/home/user/note.md`. Restoring the leading
+      // slash is only correct for a header that carried a git a/ or b/ prefix;
+      // doing it unconditionally would let any relative path pass the target
+      // check by accident.
+      const relative = DOC_PATH.replace(/^\//, "");
+      const patch = createPatch(relative, baseline, proposed, "", "", {
+        context: 3,
+      });
+      assert.throws(() => {
+        validateAndParsePatch(patch, DOC_PATH);
+      }, /do not match/);
     });
 
     it("rejects basename-only headers", function () {

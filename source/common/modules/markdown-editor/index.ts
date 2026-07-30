@@ -471,7 +471,20 @@ export default class MarkdownEditor extends EventEmitter {
         break;
     }
 
-    extensions.push(this.reviewDiffCompartment.of([]));
+    // Carry an open review across state rebuilds. Every reload builds a fresh
+    // EditorState, and configuring this compartment empty here used to drop the
+    // merge extension while `activeReviewDiffSession` stayed set — so the
+    // same-id early return in startReviewDiffSession decided there was nothing
+    // to install, the accept/reject controls vanished, and the unresolved packet
+    // could then be neither resolved nor saved. Rebuild it from the session
+    // instead, which also covers reloads triggered by a settings change.
+    extensions.push(
+      this.reviewDiffCompartment.of(
+        this.activeReviewDiffSession === null
+          ? []
+          : reviewDiffMergeExtension(this.activeReviewDiffSession.originalText),
+      ),
+    );
     return extensions;
   }
 
@@ -951,11 +964,16 @@ export default class MarkdownEditor extends EventEmitter {
     }
 
     const currentContent = this.value;
-    const shouldApplyInitialProposal =
-      currentContent === session.baselineText &&
-      session.currentText === session.proposedText &&
-      session.originalText === session.baselineText;
-    if (!shouldApplyInitialProposal && currentContent !== session.currentText) {
+    // The provider owns the document text: opening a review applies the working
+    // text authoritatively and publishes it as a collab update. This pane must
+    // therefore never write the proposed text itself. It used to, whenever the
+    // buffer still held the baseline (i.e. the provider's update had not been
+    // pulled yet) — and collab rebased that local replacement over the incoming
+    // remote one, mapping its [0, baselineLength) range onto the collapsed
+    // position while keeping its insertion. The proposal landed twice and the
+    // saved file contained the accepted text doubled. If the buffer is behind,
+    // catch up through the authority below instead of guessing locally.
+    if (currentContent !== session.currentText) {
       this.reload()
         .then(() => {
           if (this.value === session.currentText) {
@@ -989,18 +1007,7 @@ export default class MarkdownEditor extends EventEmitter {
       this.reviewDiffCompartment.reconfigure(reviewDiffMergeExtension(session.originalText)),
     ];
 
-    if (!shouldApplyInitialProposal) {
-      this._instance.dispatch({ effects });
-    } else {
-      this._instance.dispatch({
-        changes: {
-          from: 0,
-          to: this._instance.state.doc.length,
-          insert: session.proposedText,
-        },
-        effects,
-      });
-    }
+    this._instance.dispatch({ effects });
 
     this.queueReviewDiffStatusReport();
     this._instance.focus();
@@ -1052,11 +1059,20 @@ export default class MarkdownEditor extends EventEmitter {
       return;
     }
 
+    // Accept/reject mutate CodeMirror's original document directly, not the
+    // cached session — and the cached session is what a rebuild reconstructs
+    // the merge view from. Left at the pre-decision reference it resurrects
+    // chunks the user already resolved, and the next status report sends that
+    // reverted reference back to main. Sync it here, where the live value is
+    // already being read, so the cache never trails a decision.
+    const originalText = getOriginalDoc(this._instance.state).toString();
+    this.activeReviewDiffSession = { ...session, originalText };
+
     this.emit("review-diff-status", {
       filePath: session.documentPath,
       sessionId: session.id,
       unresolvedChunks: chunks.chunks.length,
-      originalText: getOriginalDoc(this._instance.state).toString(),
+      originalText,
       currentText: this.value,
       documentVersion: getSyncedVersion(this._instance.state),
       sourceWindowId: this.windowId,

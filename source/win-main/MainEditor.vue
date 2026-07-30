@@ -3,24 +3,24 @@
     ref="mainEditorWrapper"
     class="main-editor-wrapper"
     role="region"
-    v-bind:aria-label="`Markdown Editor: Currently editing file ${pathBasename(props.file.path)}`"
-    v-bind:style="{ 'font-size': `${fontSize}px` }"
-    v-bind:class="{
+    :aria-label="`Markdown Editor: Currently editing file ${pathBasename(props.file.path)}`"
+    :style="{ 'font-size': `${fontSize}px` }"
+    :class="{
       'code-file': !isMarkdown,
       fullscreen: distractionFree
     }"
   >
-    <div v-bind:id="`cm-text-${props.leafId}`">
+    <div :id="`cm-text-${props.leafId}`">
       <!-- This element will be replaced with Codemirror's wrapper element on mount -->
     </div>
     <RenameReferencePreviewDialog
       v-if="renamePreviewPrompt !== undefined"
-      v-bind:old-key="renamePreviewPrompt.intent.oldKey"
-      v-bind:new-key="renamePreviewPrompt.intent.newKey"
-      v-bind:files="renamePreviewPrompt.files"
-      v-on:apply="applyWorkspaceRename()"
-      v-on:close="cancelWorkspaceRename()"
-    ></RenameReferencePreviewDialog>
+      :old-key="renamePreviewPrompt.intent.oldKey"
+      :new-key="renamePreviewPrompt.intent.newKey"
+      :files="renamePreviewPrompt.files"
+      @apply="applyWorkspaceRename()"
+      @close="cancelWorkspaceRename()"
+    />
   </div>
 </template>
 
@@ -56,7 +56,7 @@ import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ip
 import { ipcMarkdownFormatter, surfaceFormatResult } from '@common/modules/markdown-editor/commands/format-document-ipc'
 import { useConfigStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { isAbsolutePath, pathBasename, pathDirname, resolvePath } from '@common/util/renderer-path-polyfill'
-import type { DocumentManagerIPCAPI, DocumentsUpdateContext } from 'source/app/service-providers/documents'
+import type { DocumentManagerIPCAPI, DocumentsUpdateContext, SaveFileResult } from 'source/app/service-providers/documents'
 import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
 import type { ProjectInfo } from 'source/common/modules/markdown-editor/plugins/project-info-field'
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
@@ -284,10 +284,21 @@ ipcRenderer.on('shortcut', (event, command) => {
         command: 'save-file',
         payload: { path: props.file.path }
       } as DocumentManagerIPCAPI)
-        .then(result => {
-          if (result !== true) {
-            console.error('Retrieved a falsy result from main, indicating an error with saving the file.')
+        .then((result: SaveFileResult) => {
+          if (result.ok) {
+            return
           }
+          // The provider refuses saves it cannot perform (an unresolved review,
+          // an external edit). It deliberately does not present this itself: a
+          // blocking main-process modal freezes the app until dismissed. Show
+          // the closable toast surface instead, and never swallow the reason.
+          const message = result.refusal?.message ??
+            trans('Could not save "%s".', pathBasename(props.file.path))
+          console.error(
+            `[MainEditor] Main refused to save ${props.file.path}` +
+            (result.refusal !== undefined ? ` (${result.refusal.reason}): ${result.refusal.message}` : '')
+          )
+          showToast(message, 'error', 12000)
         })
         .catch(e => console.error(e))
     }
@@ -353,6 +364,15 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     // The currently loaded document has been changed remotely. This event indicates
     // that the document provider has already reloaded the document and we only
     // need to tell the main editor to reload it as well.
+    //
+    // Drop the review first. notifyRemoteChange closed the provider-owned review
+    // when it accepted the external edit, so this pane's session is already dead;
+    // leaving it set would let the reload restore accept/reject controls over the
+    // externally reloaded text. Rejecting one of those phantom chunks would
+    // reinstate the stale review reference, and with the provider's review gone
+    // the save gate would not stop that text being written over the external
+    // edit.
+    currentEditor?.clearReviewDiffSession()
     currentEditor?.reload().catch(reportDocumentLoadError)
   } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
     currentEditor?.clearReviewDiffSession()
@@ -742,16 +762,9 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   editor.on('review-diff-status', (status: ReviewDiffStatus) => {
     ipcRenderer.invoke('documents-provider', {
       command: 'set-review-diff-status',
-      payload: {
-        path: status.filePath,
-        sessionId: status.sessionId,
-        unresolvedChunks: status.unresolvedChunks,
-        originalText: status.originalText,
-        currentText: status.currentText,
-        documentVersion: status.documentVersion,
-        sourceWindowId: status.sourceWindowId,
-        sourceLeafId: status.sourceLeafId
-      }
+      // Spread the whole status: hand-listing these fields is what silently
+      // dropped reviewGeneration and disabled the main-process staleness guard.
+      payload: { ...status, path: status.filePath }
     } as DocumentManagerIPCAPI)
       .then(accepted => {
         if (accepted !== true) {

@@ -20,40 +20,57 @@ import type { Extension } from '@codemirror/state'
 import { type ExParams, vim, Vim, type CodeMirror } from '@replit/codemirror-vim'
 import { configField } from '../util/configuration'
 import { editorMetadataFacet } from './editor-metadata'
-import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
+import type { DocumentManagerIPCAPI, SaveFileResult } from 'source/app/service-providers/documents'
+import { trans } from '@common/i18n-renderer'
+import { pathBasename } from '@common/util/renderer-path-polyfill'
+import showToast from '@common/util/show-toast'
 
 const ipcRenderer = window.ipc
 
 /**
  * Sends a save-request to the main process.
  *
+ * Resolves with whether the file is now on disk, so `:wq` can decide whether
+ * closing is safe. A refused save must not be reported as `true`: the provider
+ * refuses precisely in the states where closing would lose the buffer.
+ *
  * @param   {CodeMirror}       cm       Replit's CodeMirror object
  * @param   {ExParams}         _params  Any params to the command
  *
- * @return  {Promise<void>}             Returns the IPC promise
+ * @return  {Promise<boolean>}          Whether the save landed
  */
-function write (cm: CodeMirror, _params: ExParams): Promise<void> {
-  try {
-    cm.cm6.state.field(configField)
-  } catch (err: any) {
-    console.error('Cannot execute write command: configField missing from EditorState')
-    return new Promise((resolve, reject) => reject())
-  }
-
-  // Grab the required information from the editor state
+async function write (cm: CodeMirror, _params: ExParams): Promise<boolean> {
+  // No probe around the field read: a missing configField means this editor was
+  // built without the MainEditor state fields, which is a wiring error, not a
+  // save outcome. Reporting it as "did not save" would let `:wq` treat a broken
+  // editor the same as a refused write. `quit` reads the field the same way.
   const filePath = cm.cm6.state.field(configField).metadata.path
 
-  // Return the promise so that the chained wq command can catch it
-  return ipcRenderer.invoke('documents-provider', {
+  return await ipcRenderer.invoke('documents-provider', {
     command: 'save-file',
     payload: { path: filePath }
   } as DocumentManagerIPCAPI)
-    .then(result => {
-      if (result !== true) {
-        console.error('Retrieved a falsy result from main, indicating an error with saving the file.')
+    .then((result: SaveFileResult) => {
+      if (result.ok) {
+        return true
       }
+      // `:w` is a save request like any other, so it gets the same treatment as
+      // the Save shortcut in MainEditor: the provider hands back the reason it
+      // refused, and we surface it on the closable toast rather than dropping it
+      // into the console where nobody sees it.
+      const message = result.refusal?.message ??
+        trans('Could not save "%s".', pathBasename(filePath))
+      console.error(
+        `[vim :w] Main refused to save ${filePath}` +
+        (result.refusal !== undefined ? ` (${result.refusal.reason}): ${result.refusal.message}` : '')
+      )
+      showToast(message, 'error', 12000)
+      return false
     })
-    .catch(e => console.error(e))
+    .catch(e => {
+      console.error(e)
+      return false
+    })
 }
 
 /**
@@ -92,8 +109,15 @@ Vim.defineEx('write', 'w', write)
 Vim.defineEx('wq', 'wq', (cm: CodeMirror, params: ExParams) => {
   // To prevent closing a file before it is written (and, thus, risking a prompt
   // to the user), we wait until the invocation is done and only then request a
-  // close of the file.
-  write(cm, params).then(() => {
+  // close of the file. A refused save leaves the file open: the provider refuses
+  // when the buffer holds an unresolved review, a report the pane never
+  // delivered, or an external edit — in every one of those states, closing the
+  // file is how the unsaved buffer gets lost. `write` has already surfaced the
+  // reason on a toast, so the user sees why `:wq` stopped at `:w`.
+  write(cm, params).then(saved => {
+    if (!saved) {
+      return
+    }
     quit(cm, params).catch(err => console.error(err))
   }).catch(err => console.error(err))
 })
