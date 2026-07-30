@@ -262,6 +262,45 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     rmSync(scratch, { recursive: true, force: true });
   });
 
+  it("boots without a listener when the configured port is taken", async function () {
+    // The API is enabled by default, and AppServiceContainer._informativeBoot
+    // rethrows whatever boot() rejects with — so an unrelated process holding
+    // the port used to abort the entire editor launch. The API is optional; the
+    // editor is not. Occupy the port and assert boot resolves anyway.
+    const squatter = net.createServer();
+    const takenPort = await new Promise<number>((resolve) => {
+      squatter.listen(0, "127.0.0.1", () => {
+        resolve((squatter.address() as net.AddressInfo).port);
+      });
+    });
+
+    const collided = new AgentHTTPProvider(new LogProvider(), provider, {
+      config: {
+        get: () => ({
+          app: { openWorkspaces: [scratch] },
+          agentApi: { enabled: true, port: takenPort },
+        }),
+      },
+    } as unknown as AppServiceContainer);
+
+    try {
+      // The assertion is that this resolves at all: before the fix it rejected
+      // with EADDRINUSE, and AppServiceContainer rethrows that as a boot abort.
+      await collided.boot();
+      // And it must not have moved itself elsewhere — a silently relocated
+      // endpoint is worse than an absent one, because every configured agent
+      // keeps talking to whatever now answers on the expected port.
+      assert.equal(
+        (collided as unknown as { _server: unknown })._server,
+        undefined,
+        "a collided boot must leave no listener behind",
+      );
+    } finally {
+      await collided.shutdown();
+      await new Promise<void>((resolve) => squatter.close(() => resolve()));
+    }
+  });
+
   it("publishes exactly the error codes the server can emit", function () {
     // The enum was written out by hand and drifted: it omitted INTERNAL_ERROR
     // while four 500 paths emitted it, so those responses failed validation

@@ -471,7 +471,20 @@ export default class MarkdownEditor extends EventEmitter {
         break;
     }
 
-    extensions.push(this.reviewDiffCompartment.of([]));
+    // Carry an open review across state rebuilds. Every reload builds a fresh
+    // EditorState, and configuring this compartment empty here used to drop the
+    // merge extension while `activeReviewDiffSession` stayed set — so the
+    // same-id early return in startReviewDiffSession decided there was nothing
+    // to install, the accept/reject controls vanished, and the unresolved packet
+    // could then be neither resolved nor saved. Rebuild it from the session
+    // instead, which also covers reloads triggered by a settings change.
+    extensions.push(
+      this.reviewDiffCompartment.of(
+        this.activeReviewDiffSession === null
+          ? []
+          : reviewDiffMergeExtension(this.activeReviewDiffSession.originalText),
+      ),
+    );
     return extensions;
   }
 

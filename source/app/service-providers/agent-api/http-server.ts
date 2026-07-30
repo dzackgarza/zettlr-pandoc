@@ -155,41 +155,20 @@ function decodeSearchDocumentRequest(
 }
 
 /**
- * One field's verdict. Field checks are written as small named predicates and
- * then evaluated as a list, so a decoder's own complexity does not grow with
- * the number of fields it accepts.
+ * Field predicates written as type guards, so a decoder narrows its own values
+ * instead of asserting them afterwards: `snapshot as string` would compile even
+ * if the check above it were deleted.
  */
-type FieldVerdict = undefined | string;
-
-function requiredString(value: unknown, field: string): FieldVerdict {
-  return typeof value === "string" ? undefined : `${field} is required and must be a string`;
+function isString(value: unknown): value is string {
+  return typeof value === "string";
 }
 
-function optionalString(value: unknown, field: string): FieldVerdict {
-  if (value === undefined || typeof value === "string") {
-    return undefined;
-  }
-  return `${field} must be a string`;
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
 }
 
-function optionalInteger(value: unknown, field: string): FieldVerdict {
-  if (value === undefined || (typeof value === "number" && Number.isInteger(value))) {
-    return undefined;
-  }
-  return `${field} must be an integer`;
-}
-
-function supportedPatchFormat(value: unknown): FieldVerdict {
-  if (value === "unified-diff") {
-    return undefined;
-  }
-  return typeof value === "string"
-    ? "Unsupported patch format"
-    : "patchFormat is required and must be unified-diff";
-}
-
-function firstProblem(verdicts: FieldVerdict[]): string | undefined {
-  return verdicts.find((verdict) => verdict !== undefined);
+function isOptionalInteger(value: unknown): value is number | undefined {
+  return value === undefined || (typeof value === "number" && Number.isInteger(value));
 }
 
 function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalRequest> {
@@ -198,25 +177,29 @@ function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalReques
     return raw;
   }
   const { snapshot, patchFormat, patch, description, expectedReviewGeneration } = raw.value;
-  const problem = firstProblem([
-    supportedPatchFormat(patchFormat),
-    requiredString(snapshot, "snapshot"),
-    requiredString(patch, "patch"),
-    optionalString(description, "description"),
-    optionalInteger(expectedReviewGeneration, "expectedReviewGeneration"),
-  ]);
-  if (problem !== undefined) {
-    return { ok: false, message: problem };
+  if (patchFormat !== "unified-diff") {
+    return {
+      ok: false,
+      message: isString(patchFormat)
+        ? "Unsupported patch format"
+        : "patchFormat is required and must be unified-diff",
+    };
+  }
+  if (!isString(snapshot)) {
+    return { ok: false, message: "snapshot is required and must be a string" };
+  }
+  if (!isString(patch)) {
+    return { ok: false, message: "patch is required and must be a string" };
+  }
+  if (!isOptionalString(description)) {
+    return { ok: false, message: "description must be a string" };
+  }
+  if (!isOptionalInteger(expectedReviewGeneration)) {
+    return { ok: false, message: "expectedReviewGeneration must be an integer" };
   }
   return {
     ok: true,
-    value: {
-      snapshot: snapshot as string,
-      patchFormat: "unified-diff",
-      patch: patch as string,
-      description: description as string | undefined,
-      expectedReviewGeneration: expectedReviewGeneration as number | undefined,
-    },
+    value: { snapshot, patchFormat, patch, description, expectedReviewGeneration },
   };
 }
 
@@ -277,13 +260,38 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     this._server = http.createServer(handler);
 
-    await new Promise<void>((resolve, reject) => {
+    // A bind failure must not take the editor down with it. This provider is
+    // enabled by default, and AppServiceContainer._informativeBoot rethrows
+    // whatever boot rejects with — so before this, any unrelated process holding
+    // the port meant Zettlr itself refused to launch. The API is optional; the
+    // editor is not. Report the collision at error level, name the remedy, and
+    // continue without a listener rather than substituting a different port
+    // (a silently-moved endpoint is worse than an absent one: every configured
+    // agent would keep talking to whatever now answers on the expected port).
+    const listenError = await new Promise<NodeJS.ErrnoException | undefined>((resolve) => {
+      this._server!.once("error", (error: NodeJS.ErrnoException) => {
+        resolve(error);
+      });
       this._server!.listen(config.port, "127.0.0.1", () => {
         this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${config.port}`);
-        resolve();
+        resolve(undefined);
       });
-      this._server!.on("error", reject);
     });
+
+    if (listenError !== undefined) {
+      this._server = undefined;
+      if (listenError.code !== "EADDRINUSE") {
+        throw listenError;
+      }
+      this._log.error(
+        `[AgentHTTPProvider] Port ${config.port} on 127.0.0.1 is already in use, so the ` +
+          "Agent API is NOT running for this session. The editor started normally. " +
+          "Change agentApi.port in the configuration, or stop the process holding it " +
+          `(lsof -nP -iTCP:${config.port} -sTCP:LISTEN).`,
+        listenError,
+      );
+      return;
+    }
 
     // Subscribe to review store events
     this._documents.reviewStore.on("*", (event: AgentEvent) => {
@@ -897,7 +905,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     };
     const finish = (status: ReviewEventsResponse): void => {
       cleanup();
-      if ((res as { writableEnded?: boolean }).writableEnded === true) {
+      if (res.writableEnded) {
         return;
       }
       this.sendJson(res, 200, status);
