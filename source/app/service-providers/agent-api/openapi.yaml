@@ -356,7 +356,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WorkspaceSummary'
-    WorkspaceDocumentSummary:
+    LoadedWorkspaceDocumentSummary:
       type: object
       required:
         - documentId
@@ -364,6 +364,7 @@ components:
         - uri
         - path
         - name
+        - loaded
         - type
         - dirty
         - revision
@@ -381,6 +382,10 @@ components:
           type: string
         name:
           type: string
+        loaded:
+          type: boolean
+          enum:
+            - true
         type:
           type: string
           enum:
@@ -400,6 +405,35 @@ components:
             $ref: '#/components/schemas/ViewSummary'
         review:
           $ref: '#/components/schemas/ReviewSummary'
+    UnloadedWorkspaceDocumentSummary:
+      type: object
+      required:
+        - documentId
+        - workspaceId
+        - uri
+        - path
+        - name
+        - loaded
+      properties:
+        documentId:
+          type: string
+        workspaceId:
+          type: string
+        uri:
+          type: string
+        path:
+          type: string
+        name:
+          type: string
+        loaded:
+          type: boolean
+          enum:
+            - false
+      additionalProperties: false
+    WorkspaceDocumentSummary:
+      oneOf:
+        - $ref: '#/components/schemas/LoadedWorkspaceDocumentSummary'
+        - $ref: '#/components/schemas/UnloadedWorkspaceDocumentSummary'
     WorkspaceOpenDocumentResponse:
       type: object
       required:

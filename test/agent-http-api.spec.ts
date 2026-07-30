@@ -492,6 +492,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const document = documents.find((item) => item.path === unopenedPath);
     assert.ok(document !== undefined);
     assert.equal(document.loaded, false);
+    // A listing entry for a file the provider has never opened carries identity
+    // only: there is no revision, line count, or view to report without
+    // inventing one. The published schema has to admit that shape.
+    for (const entry of documents) {
+      assertMatchesSchema(entry, "WorkspaceDocumentSummary");
+    }
     const opened = await httpRequest(
       "POST",
       `/v1/workspaces/${encodeURIComponent(scratch)}/documents/${document.documentId}/open`,
