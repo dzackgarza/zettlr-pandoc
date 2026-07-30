@@ -325,16 +325,40 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(JSON.parse(response.body).instanceId.length > 0, true);
     });
 
-    it("refuses every route without the token, including health and the spec", async function () {
-      // The check sits ahead of the route table rather than on the handlers, so
-      // the endpoints that are deliberately unauthenticated in loopback mode are
-      // covered too. A published tunnel must not leak the instance id, the
-      // process id, or the shape of the API to an anonymous caller.
-      for (const pathname of ["/health", "/v1/ping", "/v1/context", "/openapi.yaml"]) {
+    it("refuses every route without the token", async function () {
+      // The check sits ahead of the route table rather than on the handlers.
+      // /health is included deliberately: it reports the instance id and the
+      // process id of a running editor, which a published tunnel must not hand
+      // to an anonymous caller.
+      for (const pathname of ["/health", "/v1/ping", "/v1/context"]) {
         const anonymous = await request(pathname);
         assert.equal(anonymous.status, 401, `${pathname} must refuse an anonymous caller`);
         assert.equal(JSON.parse(anonymous.body).error.code, "UNAUTHORIZED");
       }
+    });
+
+    it("serves the specification anonymously, with the origin it was asked on", async function () {
+      // The one deliberate exemption: the document describes the API rather
+      // than exposing it, and the identical file is in the public repository.
+      // Reading it grants nothing — every route it describes still needs the
+      // token. Serving it openly is what lets a consumer import by URL rather
+      // than carry a pasted copy that drifts.
+      const anonymous = await request("/openapi.yaml");
+      assert.equal(anonymous.status, 200);
+      assert.ok(anonymous.body.includes("openapi:"));
+
+      // And it must describe the endpoint the caller actually reached, or an
+      // importer behind a tunnel builds every call against its own loopback.
+      const forwarded = await request("/openapi.yaml", { host: "zettlr.example.com" });
+      assert.match(forwarded.body, /servers:\n {2}- url: https:\/\/zettlr\.example\.com\n/);
+      assert.equal(
+        forwarded.body.includes("127.0.0.1:27412"),
+        false,
+        "the loopback origin must not survive the rewrite",
+      );
+
+      // Asked on loopback it stays http, since nothing terminated TLS.
+      assert.match(anonymous.body, /servers:\n {2}- url: http:\/\/127\.0\.0\.1:\d+\n/);
     });
 
     it("refuses a wrong token, a wrong scheme, and a token that is merely a prefix", async function () {

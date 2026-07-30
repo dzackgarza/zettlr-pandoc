@@ -119,13 +119,20 @@ describe('agent API bearer token', function () {
     assert.equal(await ping({ authorization: TOKEN }), 401, 'a bare token is not a scheme')
   })
 
-  it('refuses the spec and health routes too, not just the data routes', async function () {
-    // These short-circuit ahead of the router; a tunnel must not leak the API's
-    // shape, instance id or pid to an anonymous caller.
-    for (const route of ['/health', '/openapi.yaml']) {
-      const response = await fetch(`http://127.0.0.1:${port}${route}`)
-      assert.equal(response.status, 401, `${route} must refuse an anonymous caller`)
-    }
+  it('refuses /health too, which reports the instance and process id', async function () {
+    const response = await fetch(`http://127.0.0.1:${port}/health`)
+    assert.equal(response.status, 401)
+  })
+
+  it('serves the specification anonymously so a schema consumer can import it', async function () {
+    // The one exemption, and the reason it is safe: the document describes the
+    // API, the identical file is in the public repository, and every route it
+    // describes still demands the token.
+    const response = await fetch(`http://127.0.0.1:${port}/openapi.yaml`)
+    assert.equal(response.status, 200)
+    const body = await response.text()
+    assert.ok(body.includes('openapi:'))
+    assert.match(body, new RegExp(`servers:\\n {2}- url: http://127\\.0\\.0\\.1:${port}\\n`))
   })
 
   it('records which auth mode it booted in', async function () {

@@ -404,12 +404,56 @@ export default class AgentHTTPProvider extends ProviderContract {
   // Request handling
   // ==========================================================================
 
+  /**
+   * The specification with `servers` rewritten to the origin the request
+   * arrived on.
+   *
+   * The committed document names the loopback endpoint, which is correct for
+   * the file and wrong for anyone who reached this server another way: a
+   * schema consumer builds its calls from `servers`, so an importer behind a
+   * tunnel would emit requests to its own 127.0.0.1. Answering with the Host it
+   * was asked on makes the document self-describing from either side, and
+   * removes the step where a copy is edited by hand and then drifts.
+   *
+   * The scheme is derived from the host rather than from X-Forwarded-Proto,
+   * which is a client-supplied header on a server that also answers loopback
+   * directly: anything that is not loopback reached this process through a
+   * proxy that terminates TLS.
+   */
+  private specificationForRequest(req: http.IncomingMessage): string {
+    const host = req.headers.host;
+    if (host === undefined) {
+      return this._openApiYaml;
+    }
+    const isLoopback = /^(127\.0\.0\.1|\[::1\]|localhost)(:\d+)?$/.test(host);
+    const origin = `${isLoopback ? "http" : "https"}://${host}`;
+    return this._openApiYaml.replace(
+      /^servers:\n(?:[ \t]+.*\n)+/m,
+      `servers:\n  - url: ${origin}\n    description: The endpoint this specification was fetched from\n`,
+    );
+  }
+
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
-    // The one place every request passes through, ahead of the spec route and
-    // the dispatcher both. Putting this inside dispatch() was not enough:
-    // /openapi.yaml short-circuits above it and was answering anonymously,
-    // which is exactly the kind of route that gets added in front of a check
-    // placed anywhere but the entry point.
+    // The specification is deliberately the one anonymous route. It describes
+    // the API rather than exposing it — the same document sits in the public
+    // repository — and a client that reads it still cannot call anything
+    // without the token. Serving it openly is what lets a schema consumer, the
+    // Custom GPT builder among them, import by URL instead of being handed a
+    // pasted copy that then drifts.
+    //
+    // This is a deliberate exemption for a static document, not a general
+    // pattern: /health next door stays behind the token because it reports the
+    // instance id and process id of a running editor.
+    if (req.url === "/openapi.yaml" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/yaml" });
+      res.end(this.specificationForRequest(req));
+      return;
+    }
+
+    // Every other route passes the check here, at the entry point. Inside
+    // dispatch() was not enough: routes that short-circuit above it — the spec
+    // route being exactly that — would answer anonymously by accident rather
+    // than by decision.
     if (!this.isAuthorized(req)) {
       this.sendError(
         res,
@@ -417,13 +461,6 @@ export default class AgentHTTPProvider extends ProviderContract {
         "UNAUTHORIZED",
         `A bearer token is required. Send "Authorization: Bearer <token>" with the value of ${AGENT_API_TOKEN_VARIABLE}.`,
       );
-      return;
-    }
-
-    // Serve the OpenAPI spec
-    if (req.url === "/openapi.yaml" && req.method === "GET") {
-      res.writeHead(200, { "Content-Type": "application/yaml" });
-      res.end(this._openApiYaml);
       return;
     }
 
