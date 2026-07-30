@@ -207,6 +207,22 @@ function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalReques
 // AgentHTTPProvider
 // ============================================================================
 
+/**
+ * The only slice of the service container this provider reads. Declaring the
+ * narrow structural type instead of AppServiceContainer lets a test hand over a
+ * plain object: asking for the whole container forced every caller that is not
+ * the real app into `as unknown as AppServiceContainer`, which is a type escape
+ * covering for an over-wide parameter.
+ */
+export interface AgentApiHost {
+  config: {
+    get: () => {
+      agentApi?: { enabled: boolean; port: number };
+      app: { openWorkspaces: string[] };
+    };
+  };
+}
+
 export default class AgentHTTPProvider extends ProviderContract {
   private _server: http.Server | undefined;
   private _instanceId: string;
@@ -219,7 +235,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   constructor(
     private readonly _log: LogProvider,
     private readonly _documents: DocumentManager,
-    private readonly _app: AppServiceContainer,
+    private readonly _app: AgentApiHost,
   ) {
     super();
     this._instanceId = crypto.randomUUID();
@@ -335,6 +351,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         documentId: filePath !== undefined ? this._documents.getDocumentId(filePath) : undefined,
       });
     });
+  }
+
+  /** Whether the HTTP listener is bound. False after a refused bind. */
+  public get isListening(): boolean {
+    return this._server !== undefined;
   }
 
   async shutdown(): Promise<void> {

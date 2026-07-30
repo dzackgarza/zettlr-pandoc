@@ -26,7 +26,6 @@ import http from "http";
 import net from "net";
 import os from "os";
 import path from "path";
-import type { AppServiceContainer } from "source/app/app-service-container";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
@@ -253,7 +252,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           },
         }),
       },
-    } as unknown as AppServiceContainer);
+    });
     await httpProvider.boot();
   });
 
@@ -281,7 +280,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           agentApi: { enabled: true, port: takenPort },
         }),
       },
-    } as unknown as AppServiceContainer);
+    });
 
     try {
       // The assertion is that this resolves at all: before the fix it rejected
@@ -291,8 +290,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       // endpoint is worse than an absent one, because every configured agent
       // keeps talking to whatever now answers on the expected port.
       assert.equal(
-        (collided as unknown as { _server: unknown })._server,
-        undefined,
+        collided.isListening,
+        false,
         "a collided boot must leave no listener behind",
       );
     } finally {
