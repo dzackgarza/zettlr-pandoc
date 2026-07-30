@@ -20,6 +20,7 @@ import { getChunks } from '@codemirror/merge'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { reviewDiffMergeExtension } from 'source/common/modules/markdown-editor/plugins/review-diff'
+import { rangeInPreviewSuppression } from 'source/common/modules/markdown-editor/util/range-in-preview-suppression'
 
 // jsdom does not ship the DOM APIs CodeMirror 6 uses for layout/scheduling.
 // Polyfill the minimal set so an EditorView can mount and build decorations.
@@ -114,6 +115,61 @@ describe('Editor review-diff controls', function () {
 
     assert.equal(chunkCount(view), 0, 'rejecting the remaining chunk must finish the review')
     assert.equal(view.state.doc.toString(), expected)
+  })
+
+  it('suppresses live-preview rendering over a range carrying a review chunk', function () {
+    // A renderer replaces its whole source range with a widget. A chunk landing
+    // under one — a correction inside a $$…$$ block, say — takes the changed
+    // line, the deleted text and the Accept/Reject controls out of the document
+    // with it, so the review is invisible until the author clicks in and
+    // un-renders the block by editing it.
+    const baseline = [
+      'intro paragraph',
+      '',
+      '$$',
+      'p_a(C) = 10',
+      '$$',
+      '',
+      'closing paragraph',
+      ''
+    ].join('\n')
+    const proposed = baseline.replace('p_a(C) = 10', 'g(C) = 10')
+
+    const view = createReviewView(baseline, proposed)
+    assert.equal(chunkCount(view), 1)
+
+    const mathFrom = view.state.doc.line(3).from
+    const mathTo = view.state.doc.line(5).to
+    assert.equal(
+      rangeInPreviewSuppression(view.state, mathFrom, mathTo),
+      true,
+      'a renderer must leave the block raw while it carries an unresolved chunk'
+    )
+
+    // Prose the review does not touch keeps its rendering: this suppresses the
+    // changed range, not the whole document.
+    const introLine = view.state.doc.line(1)
+    assert.equal(
+      rangeInPreviewSuppression(view.state, introLine.from, introLine.to),
+      false,
+      'an untouched range must still render'
+    )
+  })
+
+  it('renders normally once no review is active', function () {
+    const doc = ['intro paragraph', '', '$$', 'p_a(C) = 10', '$$', ''].join('\n')
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({ doc })
+    })
+    views.push(view)
+
+    // getChunks returns null outside merge mode; the seam must answer false
+    // rather than throw, or every renderer breaks when no review is open.
+    assert.equal(
+      rangeInPreviewSuppression(view.state, view.state.doc.line(3).from, view.state.doc.line(5).to),
+      false
+    )
   })
 
   it('leaves every unchanged line visible instead of folding them away', function () {
