@@ -47,28 +47,6 @@ process.on("uncaughtExceptionMonitor", (error, origin) => {
 
 handleExitArguments();
 
-// Immediately after launch, check if there is already another instance of
-// Zettlr running, and, if so, exit immediately. The arguments (including files)
-// from this instance will already be passed to the first instance.
-if (!app.requestSingleInstanceLock()) {
-  if (!app.isPackaged) {
-    // I always forget to close my system install before starting the
-    // development app, so let's just add a small reminder to myself.
-    console.log(
-      "There is another instance of Zettlr running. Did you forget to close that one?",
-    );
-  }
-  app.exit(0);
-}
-
-// If we reach this point, we are now booting the first instance of Zettlr.
-
-// To show notifications properly on Windows, we must manually set the appUserModelID
-// See https://www.electronjs.org/docs/tutorial/notifications#windows
-if (process.platform === "win32") {
-  app.setAppUserModelId("com.zettlr.app");
-}
-
 // Setting custom data dir for user configuration files.
 // Full path or relative path is OK. '~' does not work as expected.
 let dataDir = getCLIArgument(DATA_DIR);
@@ -92,6 +70,28 @@ if (typeof dataDir === "string") {
   }
   app.setPath("userData", dataDir);
   app.setAppLogsPath(path.join(dataDir, "logs"));
+}
+
+// Immediately after launch, check if there is already another instance of
+// Zettlr running, and, if so, exit immediately. The arguments (including files)
+// from this instance will already be passed to the first instance.
+if (!app.requestSingleInstanceLock()) {
+  if (!app.isPackaged) {
+    // I always forget to close my system install before starting the
+    // development app, so let's just add a small reminder to myself.
+    console.log(
+      "There is another instance of Zettlr running. Did you forget to close that one?",
+    );
+  }
+  app.exit(0);
+}
+
+// If we reach this point, we are now booting the first instance of Zettlr.
+
+// To show notifications properly on Windows, we must manually set the appUserModelID
+// See https://www.electronjs.org/docs/tutorial/notifications#windows
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.zettlr.app");
 }
 
 // On systems with virtual GPUs (i.e. VMs), it might be necessary to disable
@@ -168,7 +168,7 @@ app
  * @param {Array} argv The arguments the second instance had received
  * @param {String} cwd The current working directory
  */
-app.on("second-instance", (event, argv, cwd) => {
+app.on("second-instance", (event, argv, _cwd) => {
   if (!isAppServiceContainerReady()) {
     return;
   }

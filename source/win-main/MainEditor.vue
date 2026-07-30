@@ -3,24 +3,24 @@
     ref="mainEditorWrapper"
     class="main-editor-wrapper"
     role="region"
-    v-bind:aria-label="`Markdown Editor: Currently editing file ${pathBasename(props.file.path)}`"
-    v-bind:style="{ 'font-size': `${fontSize}px` }"
-    v-bind:class="{
+    :aria-label="`Markdown Editor: Currently editing file ${pathBasename(props.file.path)}`"
+    :style="{ 'font-size': `${fontSize}px` }"
+    :class="{
       'code-file': !isMarkdown,
       fullscreen: distractionFree
     }"
   >
-    <div v-bind:id="`cm-text-${props.leafId}`">
+    <div :id="`cm-text-${props.leafId}`">
       <!-- This element will be replaced with Codemirror's wrapper element on mount -->
     </div>
     <RenameReferencePreviewDialog
       v-if="renamePreviewPrompt !== undefined"
-      v-bind:old-key="renamePreviewPrompt.intent.oldKey"
-      v-bind:new-key="renamePreviewPrompt.intent.newKey"
-      v-bind:files="renamePreviewPrompt.files"
-      v-on:apply="applyWorkspaceRename()"
-      v-on:close="cancelWorkspaceRename()"
-    ></RenameReferencePreviewDialog>
+      :old-key="renamePreviewPrompt.intent.oldKey"
+      :new-key="renamePreviewPrompt.intent.newKey"
+      :files="renamePreviewPrompt.files"
+      @apply="applyWorkspaceRename()"
+      @close="cancelWorkspaceRename()"
+    />
   </div>
 </template>
 
@@ -237,7 +237,7 @@ function fetchActiveReviewDiffSession (): void {
   ipcRenderer.invoke('documents-provider', {
     command: 'get-review-diff-session',
     payload: { path: props.file.path }
-  } as DocumentManagerIPCAPI)
+  })
     .then((session: ReviewDiffSession|undefined) => {
       if (session !== undefined) {
         applyReviewDiffSession(session)
@@ -283,7 +283,7 @@ ipcRenderer.on('shortcut', (event, command) => {
       ipcRenderer.invoke('documents-provider', {
         command: 'save-file',
         payload: { path: props.file.path }
-      } as DocumentManagerIPCAPI)
+      })
         .then((result: SaveFileResult) => {
           if (result.ok) {
             return
@@ -756,7 +756,7 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
       // Spread the whole status: hand-listing these fields is what silently
       // dropped reviewGeneration and disabled the main-process staleness guard.
       payload: { ...status, path: status.filePath }
-    } as DocumentManagerIPCAPI)
+    })
       .then(accepted => {
         if (accepted !== true) {
           fetchActiveReviewDiffSession()
@@ -776,7 +776,7 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
         leafId: props.leafId,
         windowId: props.windowId
       }
-    } as DocumentManagerIPCAPI).catch(err => console.error(err))
+    }).catch(err => console.error(err))
 
     // NOTE: The lastLeafId will be changed in the documentTreeStore in response
     // to an event from main (DP_EVENTS.ACTIVE_FILE) which will be emitted as a
@@ -914,6 +914,7 @@ async function loadDocument (): Promise<void> {
     }
   })
   currentEditor.projectInfo = updateProjectInfo()
+  await updateReferenceEntries()
 
   if (pendingReviewDiffSession !== null) {
     applyReviewDiffSession(pendingReviewDiffSession)
@@ -930,7 +931,7 @@ async function updateCitationKeys (library: string): Promise<void> {
   const items: Array<{ citekey: string, displayText: string }> = (await ipcRenderer.invoke('citeproc-provider', {
     command: 'get-items',
     payload: { database: library }
-  } as CiteprocProviderIPCAPI))
+  }))
     .map((item: CSLItem) => {
       // Get a rudimentary author list. Precedence are authors, then editors.
       // Fallback: Container title.

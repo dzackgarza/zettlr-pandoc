@@ -1,80 +1,79 @@
 <template>
   <WindowChrome
-    v-bind:title="windowTitle"
-    v-bind:titlebar="shouldShowTitlebar"
-    v-bind:menubar="shouldShowMenubar"
-    v-bind:show-toolbar="shouldShowToolbar"
-    v-bind:toolbar-labels="false"
-    v-bind:toolbar-controls="toolbarControls"
-    v-bind:disable-vibrancy="!hasVibrancy"
-    v-on:toolbar-toggle="handleToggle($event)"
-    v-on:toolbar-click="handleClick($event)"
+    :title="windowTitle"
+    :titlebar="shouldShowTitlebar"
+    :menubar="shouldShowMenubar"
+    :show-toolbar="shouldShowToolbar"
+    :toolbar-labels="false"
+    :toolbar-controls="toolbarControls"
+    :disable-vibrancy="!hasVibrancy"
+    @toolbar-toggle="handleToggle($event)"
+    @toolbar-click="handleClick($event)"
   >
     <SplitView
       ref="fileManagerSplitComponent"
-      v-bind:initial-size-percent="fileManagerSplitComponentInitialSize"
-      v-bind:minimum-size-percent="[ 10, 50 ]"
-      v-bind:reset-size-percent="[ 20, 80 ]"
-      v-bind:split="'horizontal'"
-      v-on:views-resized="fileManagerSplitComponentResized($event)"
+      :initial-size-percent="fileManagerSplitComponentInitialSize"
+      :minimum-size-percent="[ 10, 50 ]"
+      :reset-size-percent="[ 20, 80 ]"
+      :split="'horizontal'"
+      @views-resized="fileManagerSplitComponentResized($event)"
     >
       <template #view1>
         <!-- File manager in the left side of the split view -->
         <FileManager
           v-show="mainSplitViewVisibleComponent === 'fileManager'"
           ref="file-manager"
-          v-bind:window-id="windowId"
-        ></FileManager>
+          :window-id="windowId"
+        />
         <!-- ... or the global search, if selected -->
         <GlobalSearch
           v-show="mainSplitViewVisibleComponent === 'globalSearch'"
           ref="globalSearchComponent"
-          v-bind:window-id="windowId"
-          v-on:jtl="(filePath, lineNumber, newTab) => jtl(filePath, lineNumber, newTab)"
-        >
-        </GlobalSearch>
+          :window-id="windowId"
+          @jtl="(filePath, lineNumber, newTab) => jtl(filePath, lineNumber, newTab)"
+        />
       </template>
       <template #view2>
         <!-- Another split view in the right side -->
         <SplitView
           ref="editorSidebarSplitComponent"
-          v-bind:initial-size-percent="editorSidebarSplitComponentInitialSize"
-          v-bind:minimum-size-percent="[ 50, 10 ]"
-          v-bind:reset-size-percent="[ 80, 20 ]"
-          v-bind:split="'horizontal'"
-          v-on:views-resized="editorSidebarSplitComponentResized($event)"
+          :initial-size-percent="editorSidebarSplitComponentInitialSize"
+          :minimum-size-percent="[ 50, 10 ]"
+          :reset-size-percent="[ 80, 20 ]"
+          :split="'horizontal'"
+          @views-resized="editorSidebarSplitComponentResized($event)"
         >
           <template #view1>
             <!-- First side: Editor -->
             <EditorPane
               v-if="paneConfiguration?.type === 'leaf'"
-              v-bind:node="paneConfiguration"
-              v-bind:leaf-id="paneConfiguration.id"
-              v-bind:editor-commands="editorCommands"
-              v-bind:window-id="windowId"
-              v-on:global-search="startGlobalSearch($event)"
-              v-on:reference-search="openReferenceSearch($event)"
-              v-on:create-reference-label="openCreateReferenceLabel($event)"
-              v-on:open-pandoc-quick-help="showPandocQuickHelp = true"
-            ></EditorPane>
+              :node="paneConfiguration"
+              :leaf-id="paneConfiguration.id"
+              :editor-commands="editorCommands"
+              :window-id="windowId"
+              @global-search="startGlobalSearch($event)"
+              @reference-search="openReferenceSearch($event)"
+              @create-reference-label="openCreateReferenceLabel($event)"
+              @open-pandoc-quick-help="showPandocQuickHelp = true"
+            />
             <EditorBranch
               v-else-if="paneConfiguration !== undefined"
-              v-bind:node="paneConfiguration"
-              v-bind:window-id="windowId"
-              v-bind:editor-commands="editorCommands"
-              v-bind:is-last="true"
-              v-on:global-search="startGlobalSearch($event)"
-              v-on:reference-search="openReferenceSearch($event)"
-              v-on:create-reference-label="openCreateReferenceLabel($event)"
-              v-on:open-pandoc-quick-help="showPandocQuickHelp = true"
-            ></EditorBranch>
+              :node="paneConfiguration"
+              :window-id="windowId"
+              :editor-commands="editorCommands"
+              :is-last="true"
+              @global-search="startGlobalSearch($event)"
+              @reference-search="openReferenceSearch($event)"
+              @create-reference-label="openCreateReferenceLabel($event)"
+              @open-pandoc-quick-help="showPandocQuickHelp = true"
+            />
           </template>
           <template #view2>
             <!-- Second side: Sidebar -->
             <MainSidebar
-              v-on:move-section="moveSection($event)"
-              v-on:jump-to-line="genericJtl($event)"
-            ></MainSidebar>
+              @move-section="moveSection($event)"
+              @jump-to-line="genericJtl($event)"
+            />
           </template>
         </SplitView>
       </template>
@@ -82,83 +81,83 @@
   </WindowChrome>
 
   <!-- Full-screen lightbox for rendered TikZ figures (issue #14) -->
-  <TikzLightbox></TikzLightbox>
+  <TikzLightbox />
 
   <!-- Popover area: these will be teleported to the body element anyhow -->
   <PopoverExport
     v-if="showExportPopover && exportButton !== null && activeFile !== undefined"
-    v-bind:target="exportButton"
-    v-bind:file-path="activeFile.path"
-    v-on:close="showExportPopover = false"
-  ></PopoverExport>
+    :target="exportButton"
+    :file-path="activeFile.path"
+    @close="showExportPopover = false"
+  />
   <PopoverStats
     v-if="showStatsPopover && statsButton !== null"
-    v-bind:target="statsButton"
-    v-on:close="showStatsPopover = false"
-  ></PopoverStats>
+    :target="statsButton"
+    @close="showStatsPopover = false"
+  />
   <PopoverTags
     v-if="showTagsPopover && tagsButton !== null"
-    v-bind:target="tagsButton"
-    v-on:close="showTagsPopover = false"
-    v-on:search-tag="startGlobalSearch($event)"
-  ></PopoverTags>
+    :target="tagsButton"
+    @close="showTagsPopover = false"
+    @search-tag="startGlobalSearch($event)"
+  />
   <PopoverTable
     v-if="showTablePopover && tableButton !== null"
-    v-bind:target="tableButton"
-    v-on:close="showTablePopover = false"
-    v-on:insert-table="insertTable($event)"
-  ></PopoverTable>
+    :target="tableButton"
+    @close="showTablePopover = false"
+    @insert-table="insertTable($event)"
+  />
   <PopoverDocInfo
     v-if="showDocInfoPopover && docInfoButton !== null && windowStateStore.activeDocumentInfo != null"
-    v-bind:target="docInfoButton"
-    v-bind:doc-info="windowStateStore.activeDocumentInfo"
-    v-bind:should-count-chars="shouldCountChars"
-    v-on:close="showDocInfoPopover = false"
-  ></PopoverDocInfo>
+    :target="docInfoButton"
+    :doc-info="windowStateStore.activeDocumentInfo"
+    :should-count-chars="shouldCountChars"
+    @close="showDocInfoPopover = false"
+  />
   <PopoverPomodoro
     v-if="showPomodoroPopover && pomodoroButton !== null"
-    v-bind:target="pomodoroButton"
-    v-bind:pomodoro="pomodoro"
-    v-bind:sound-effects="SOUND_EFFECTS"
-    v-on:close="showPomodoroPopover = false"
-    v-on:config="setPomodoroConfig($event)"
-    v-on:start="startPomodoro()"
-    v-on:stop="stopPomodoro()"
-  ></PopoverPomodoro>
+    :target="pomodoroButton"
+    :pomodoro="pomodoro"
+    :sound-effects="SOUND_EFFECTS"
+    @close="showPomodoroPopover = false"
+    @config="setPomodoroConfig($event)"
+    @start="startPomodoro()"
+    @stop="stopPomodoro()"
+  />
   <PopoverLRT
     v-if="showTasksPopover && tasksButton !== null"
-    v-bind:target="tasksButton"
-    v-on:close="showTasksPopover = false"
-  ></PopoverLRT>
+    :target="tasksButton"
+    @close="showTasksPopover = false"
+  />
   <PopoverPandoc
     v-if="showPandocPopover && pandocButton !== null"
-    v-bind:target="pandocButton"
-    v-on:close="showPandocPopover = false"
-    v-on:insert-pandoc="insertPandoc($event)"
-  ></PopoverPandoc>
+    :target="pandocButton"
+    @close="showPandocPopover = false"
+    @insert-pandoc="insertPandoc($event)"
+  />
   <PandocQuickHelp
     v-if="showPandocQuickHelp"
-    v-on:close="showPandocQuickHelp = false"
-  ></PandocQuickHelp>
+    @close="showPandocQuickHelp = false"
+  />
   <ReferenceSearchOverlay
     v-if="showReferenceSearch"
-    v-bind:definitions="referenceSearchDefinitions"
-    v-bind:occurrences="referenceSearchOccurrences"
-    v-bind:initial-request="referenceSearchRequest"
-    v-bind:project-roots="referenceSearchProjectRoots"
-    v-bind:active-document-path="referenceSearchActiveDocumentPath"
-    v-on:close="showReferenceSearch = false"
-    v-on:jump="handleReferenceJump($event)"
-    v-on:open-help="openQuickHelpFromOverlay()"
-  ></ReferenceSearchOverlay>
+    :definitions="referenceSearchDefinitions"
+    :occurrences="referenceSearchOccurrences"
+    :initial-request="referenceSearchRequest"
+    :project-roots="referenceSearchProjectRoots"
+    :active-document-path="referenceSearchActiveDocumentPath"
+    @close="showReferenceSearch = false"
+    @jump="handleReferenceJump($event)"
+    @open-help="openQuickHelpFromOverlay()"
+  />
   <CreateReferenceLabelDialog
     v-if="createLabelPrompt !== undefined"
-    v-bind:family="createLabelPrompt.family"
-    v-bind:proposed-slug="createLabelPrompt.proposedSlug"
-    v-bind:existing-keys="createLabelExistingKeys"
-    v-on:close="createLabelPrompt = undefined"
-    v-on:create="handleCreateReferenceLabel($event)"
-  ></CreateReferenceLabelDialog>
+    :family="createLabelPrompt.family"
+    :proposed-slug="createLabelPrompt.proposedSlug"
+    :existing-keys="createLabelExistingKeys"
+    @close="createLabelPrompt = undefined"
+    @create="handleCreateReferenceLabel($event)"
+  />
 </template>
 
 <script setup lang="ts">
@@ -352,7 +351,9 @@ function openReferenceSearch (request: ReferenceSearchRequest = null): void {
         return // The boundary surfaced the closable toast; nothing to open.
       }
       referenceSearchDefinitions.value = outcome.value.snapshots.flatMap(snapshot => snapshot.definitions)
-      referenceSearchOccurrences.value = outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
+      referenceSearchOccurrences.value = request === null
+        ? outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
+        : request.occurrences
       referenceSearchRequest.value = request
       referenceSearchProjectRoots.value = collectProjectRoots()
       referenceSearchActiveDocumentPath.value = documentTreeStore.lastLeafActiveFile?.path
@@ -462,7 +463,7 @@ function handleReferenceJump (intent: ReferenceJumpIntent): void {
       newTab: false,
       targetRange: intent.range
     }
-  } as DocumentManagerIPCAPI)
+  })
     .catch(err => console.error(err))
 }
 
@@ -866,7 +867,7 @@ function refreshNavigationState (): void {
   ipcRenderer.invoke('documents-provider', {
     command: 'get-navigation-state',
     payload: { windowId, leafId }
-  } as DocumentManagerIPCAPI)
+  })
     .then((state: { canGoBack: boolean, canGoForward: boolean }) => {
       canGoBack.value = state.canGoBack
       canGoForward.value = state.canGoForward
@@ -995,7 +996,7 @@ onMounted(() => {
           windowId,
           leafId: lastLeafId.value
         }
-      } as DocumentManagerIPCAPI).catch(err => console.error(err))
+      }).catch(err => console.error(err))
     } else if (shortcut === 'navigate-forward') {
       ipcRenderer.invoke('documents-provider', {
         command: 'navigate-forward',
@@ -1003,7 +1004,7 @@ onMounted(() => {
           windowId,
           leafId: lastLeafId.value
         }
-      } as DocumentManagerIPCAPI).catch(err => console.error(err))
+      }).catch(err => console.error(err))
     }
   })
 
@@ -1094,7 +1095,7 @@ function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
     ipcRenderer.invoke('documents-provider', {
       command: 'open-file',
       payload: { path: filePath, windowId, leafId: containingLeaf.id }
-    } as DocumentManagerIPCAPI)
+    })
       .then(() => {
         // Re-execute the jtl command
         setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME)
@@ -1114,7 +1115,7 @@ function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
       leafId: lastLeafId.value,
       newTab
     }
-  } as DocumentManagerIPCAPI)
+  })
     .then(() => {
       // Re-execute the jtl command
       setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME)
@@ -1164,7 +1165,7 @@ function handleClick (clickedID?: string): void {
         windowId,
         leafId: lastLeafId.value
       }
-    } as DocumentManagerIPCAPI).catch(err => console.error(err))
+    }).catch(err => console.error(err))
   } else if (clickedID === 'next-file') {
     if (!canGoForward.value) {
       return // The control renders disabled; never navigate past the boundary
@@ -1175,7 +1176,7 @@ function handleClick (clickedID?: string): void {
         windowId,
         leafId: lastLeafId.value
       }
-    } as DocumentManagerIPCAPI).catch(err => console.error(err))
+    }).catch(err => console.error(err))
   } else if (clickedID === 'export') {
     showExportPopover.value = !showExportPopover.value
   } else if (clickedID === 'show-stats') {

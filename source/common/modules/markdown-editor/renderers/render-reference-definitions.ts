@@ -55,7 +55,10 @@
 
 import { EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import { type EditorState } from '@codemirror/state'
-import { type SourceRange } from '@dts/common/references'
+import {
+  type ReferenceOccurrence,
+  type SourceRange
+} from '@dts/common/references'
 import { workspaceReferencesField, workspaceReferencesUpdate } from '../plugins/workspace-references-field'
 import { openReferenceSearchEffect } from '../plugins/reference-search-effect'
 
@@ -74,7 +77,12 @@ interface BadgeGroup {
  * Builds the DOM of one badge group: the subtle label badge showing the
  * authored key and the always-visible, clickable citing-count badge.
  */
-function buildBadgeGroup (view: EditorView, key: string, citingCount: number): HTMLElement {
+function buildBadgeGroup (
+  view: EditorView,
+  key: string,
+  occurrences: ReferenceOccurrence[]
+): HTMLElement {
+  const citingCount = occurrences.length
   const group = document.createElement('span')
   group.classList.add('reference-badge-group')
 
@@ -92,7 +100,9 @@ function buildBadgeGroup (view: EditorView, key: string, citingCount: number): H
   count.addEventListener('click', () => {
     // The same signal family as Mod-P, keyed to this definition: the shared
     // overlay opens populated with its workspace citing locations.
-    view.dispatch({ effects: openReferenceSearchEffect.of({ key }) })
+    view.dispatch({
+      effects: openReferenceSearchEffect.of({ key, occurrences })
+    })
   })
   group.appendChild(count)
 
@@ -169,8 +179,11 @@ class ReferenceDefinitionBadges {
     }
 
     for (const definition of references.snapshot.definitions) {
+      const occurrences = references.workspaceOccurrences.filter(
+        occurrence => occurrence.key === definition.key
+      )
       const citingCount = citingCounts.get(definition.key) ?? 0
-      const dom = buildBadgeGroup(this.view, definition.key, citingCount)
+      const dom = buildBadgeGroup(this.view, definition.key, occurrences)
       this.container.appendChild(dom)
       this.groups.push({ key: definition.key, citingCount, range: { ...definition.range }, dom })
     }

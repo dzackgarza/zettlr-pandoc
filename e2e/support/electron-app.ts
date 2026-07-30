@@ -314,11 +314,21 @@ export function launchElectron (configDirectory: string): ChildProcess {
   const args = needsVirtualDisplay
     ? ['--auto-servernum', forgeExecutable, ...forgeArguments]
     : forgeArguments
+  // Forge's dev server and logger bind fixed ports, so two E2E runs on one
+  // machine collide on EADDRINUSE. Derive both from the runner's pid, which is
+  // unique among concurrent runs.
+  const rendererPort = 20_000 + (process.pid % 10_000)
+  const loggerPort = 40_000 + (process.pid % 10_000)
 
   return spawn(executable, args, {
     cwd: REPO_ROOT,
     detached: true,
-    env: { ...process.env, NODE_ENV: 'develop' },
+    env: {
+      ...process.env,
+      NODE_ENV: 'develop',
+      ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
+      ZETTLR_FORGE_LOGGER_PORT: String(loggerPort)
+    },
     stdio: ['ignore', 'pipe', 'pipe']
   })
 }

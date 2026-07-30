@@ -55,7 +55,12 @@ describe('opening a Markdown document', function () {
   before(async function () {
     const fixture = await createFixture('zettlr-document-open-e2e-', {
       documentName: 'opened-document.md',
-      documentContents: `# Opened document\n\n${MARKER}\n`
+      // The reference-UI test needs a citing location and the section it cites,
+      // so the fixture document carries both.
+      documentContents:
+        `# Opened document\n\n${MARKER}\n\n` +
+        'Standard terminology: see @sec:terminology.\n\n' +
+        '# Terminology, notation, and standard background {#sec:terminology}\n'
     })
     fixtureRoot = fixture.root
     documentPath = fixture.documentPath
@@ -138,6 +143,87 @@ describe('opening a Markdown document', function () {
       `The renderer reported unexpected errors or dialogs:\n${rendererEvents.join('\n')}`
     )
     screenshots.set('visible-document.png', await page.screenshot())
+  })
+
+  it('renders reference UI and opens a badge citing location on first load', async function () {
+    assert.ok(browser, 'The application must be running')
+    const activeDocumentPath = requireInitialized(
+      documentPath,
+      'The document path must be initialized'
+    )
+    const page = await findEditorPage(browser, this.timeout())
+    const countBadge = page.locator(
+      '.reference-count-badge[data-reference-key="sec:terminology"]'
+    )
+
+    await delay(5_000)
+    screenshots.set('reference-badge-before-click.png', await page.screenshot())
+    assert.equal(
+      await countBadge.count(),
+      1,
+      `The real editor did not render the expected reference count badge.\n` +
+        `Rendered editor text: ${JSON.stringify(await page.locator('.cm-content').innerText())}\n` +
+        `Rendered badge keys: ${JSON.stringify(
+          await page.locator('.reference-count-badge').evaluateAll(
+            badges => badges.map(badge => (badge as HTMLElement).dataset.referenceKey)
+          )
+        )}`
+    )
+    await countBadge.waitFor({ state: 'visible', timeout: 20_000 })
+    assert.equal(await countBadge.innerText(), '1 reference')
+    await countBadge.click()
+
+    const overlay = page.locator(
+      '.reference-search-overlay[data-search-mode="citing-locations"]'
+    )
+    await overlay.waitFor({ state: 'visible', timeout: 20_000 })
+    const locations = overlay.locator('[data-occurrence-path]')
+    assert.equal(
+      await locations.count(),
+      1,
+      'The badge must open the one citing location counted by its label.'
+    )
+    assert.equal(
+      await locations.first().getAttribute('data-occurrence-path'),
+      activeDocumentPath
+    )
+    assert.match(
+      await locations.first().innerText(),
+      /@sec:terminology/
+    )
+    screenshots.set(
+      'reference-badge-citing-location.png',
+      await page.screenshot()
+    )
+    await locations.first().click()
+    await overlay.waitFor({ state: 'hidden', timeout: 20_000 })
+    const selectedSource = await page.locator('.cm-content').evaluate(content => {
+      const tile = (
+        content as HTMLElement & {
+          cmTile?: {
+            root?: {
+              view?: {
+                state?: {
+                  doc?: { sliceString(from: number, to: number): string }
+                  selection?: { main?: { from: number, to: number } }
+                }
+              }
+            }
+          }
+        }
+      ).cmTile
+      const state = tile?.root?.view?.state
+      const selection = state?.selection?.main
+      if (state?.doc === undefined || selection === undefined) {
+        throw new Error('Could not read the active CodeMirror selection')
+      }
+      return state.doc.sliceString(selection.from, selection.to)
+    })
+    assert.equal(
+      selectedSource,
+      '@sec:terminology',
+      'Selecting the citing location must navigate to the exact authored occurrence.'
+    )
   })
 
   it('attributes a remote reload failure to the active document', async function () {
