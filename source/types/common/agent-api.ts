@@ -152,6 +152,20 @@ export interface SearchResponse {
 
 export type PatchFormat = "unified-diff";
 
+/**
+ * The body of POST /v1/documents/{documentId}/proposals. Two headers are
+ * required alongside it and the request is refused without them:
+ *
+ * - `If-Match: "sha256:<64 hex digits>"` — the document ETag, i.e. the
+ *   `revision.sha256` returned by the read that produced `snapshot`. The
+ *   quotes and the `sha256:` prefix are part of the value.
+ * - `Idempotency-Key: <client-chosen unique string>` — replays of the same key
+ *   return the original packet instead of applying twice.
+ *
+ * The patch's `---`/`+++` headers must name the target document, either as the
+ * literal `document` or as its absolute path (with or without a git-style
+ * `a/`/`b/` prefix). Any other filename is rejected as PATCH_INVALID.
+ */
 export interface SubmitProposalRequest {
   snapshot: string;
   patchFormat: PatchFormat;
@@ -291,13 +305,6 @@ export interface ClearReviewRequest {
   discardUnresolved: true;
 }
 
-export interface ClearReviewResponse {
-  reviewId: string;
-  documentId: string;
-  state: ReviewState;
-  documentRevision: DocumentRevision;
-}
-
 // ============================================================================
 // Section 5.1: Capabilities
 // ============================================================================
@@ -349,6 +356,100 @@ export interface AgentEvent {
   unresolvedChunks?: number;
 }
 
+/**
+ * A single entry of GET /v1/views. Distinct from EditorViewSummary, which is
+ * the per-document projection embedded in DocumentSummary.views.
+ */
+export interface ViewSummary {
+  viewId: string;
+  windowId: string;
+  leafId: string;
+  documentId?: string;
+  focused: boolean;
+  active: boolean;
+  documents: Array<{ documentId?: string; path: string }>;
+}
+
+/**
+ * The body of the long-poll GET /v1/reviews/{reviewId}/events. `status` is a
+ * ReviewSummary, not a ReviewStatusResponse: the long-poll reports the review's
+ * own state and carries no documentId/documentRevision.
+ */
+export interface ReviewEventsResponse {
+  reviewId: string;
+  status?: ReviewSummary;
+  /** Present when a status change woke the poll. */
+  events?: AgentEvent[];
+  /** True if the request reached its timeout before a status change. */
+  timedOut?: boolean;
+}
+
+// ============================================================================
+// Request bodies (validated once at the HTTP boundary)
+// ============================================================================
+
+export interface OpenDocumentRequest {
+  uri: string;
+}
+
+export interface SearchDocumentRequest {
+  literal: string;
+  context?: number;
+}
+
+// ============================================================================
+// System and listing responses
+// ============================================================================
+
+export interface DocumentListResponse {
+  documents: DocumentSummary[];
+}
+
+export interface ViewListResponse {
+  views: ViewSummary[];
+}
+
+export interface WorkspaceSummary {
+  workspaceId: string;
+  path: string;
+}
+
+export interface WorkspacesResponse {
+  workspaces: WorkspaceSummary[];
+}
+
+/**
+ * A workspace listing entry: a loaded document's full summary, or — for a file
+ * the provider has not opened yet — its identity fields alone.
+ */
+export type WorkspaceDocumentEntry =
+  | (DocumentSummary & { workspaceId: string; loaded: true })
+  | {
+      documentId: string;
+      uri: string;
+      path: string;
+      name: string;
+      workspaceId: string;
+      loaded: false;
+    };
+
+export interface WorkspaceDocumentsResponse {
+  workspaceId: string;
+  documents: WorkspaceDocumentEntry[];
+}
+
+export interface FocusDocumentResponse {
+  focused: true;
+  documentId: string;
+}
+
+export interface ClearReviewResponse {
+  reviewId: string;
+  documentId: string;
+  state: ReviewState;
+  documentRevision: DocumentRevision;
+}
+
 // ============================================================================
 // Section 12: Error codes
 // ============================================================================
@@ -366,6 +467,7 @@ export type AgentErrorCode =
   | "PATCH_INVALID"
   | "PATCH_NOT_APPLICABLE"
   | "PACKET_NOT_RETRACTABLE"
+  | "IDEMPOTENCY_CONFLICT"
   | "REQUEST_TOO_LARGE"
   | "METHOD_NOT_FOUND"
   | "INVALID_PARAMS"
@@ -380,5 +482,37 @@ export interface AgentError {
   reviewId?: string;
   canClearUnresolved?: boolean;
 }
+
+export interface AgentErrorResponse {
+  error: AgentError;
+}
+
+/**
+ * Every body the HTTP server may serialize. Typing the send sink against this
+ * union is what makes an undeclared response shape a compile error rather than
+ * a surprise for a client written from the OpenAPI contract.
+ */
+export type AgentApiResponseBody =
+  | PingResponse
+  | CapabilitiesResponse
+  | EditorContext
+  | DocumentSummary
+  | DocumentListResponse
+  | ViewListResponse
+  | WorkspacesResponse
+  | WorkspaceDocumentsResponse
+  | FocusDocumentResponse
+  | ReadDocumentResponse
+  | SearchResponse
+  | SubmitProposalResponse
+  | ReviewListResponse
+  | ReviewStatusResponse
+  | ReviewDiffResponse
+  | ReviewChunksResponse
+  | ReviewPacketsResponse
+  | ReviewEventsResponse
+  | ClearReviewResponse
+  | RetractProposalResponse
+  | AgentErrorResponse;
 
 export const AGENT_API_PROTOCOL_VERSION = "1.0";

@@ -21,8 +21,28 @@
  * END HEADER
  */
 
-import { AGENT_API_PROTOCOL_VERSION, type AgentEvent } from "@dts/common/agent-api";
-import { DP_EVENTS } from "@dts/common/documents";
+import {
+  AGENT_API_PROTOCOL_VERSION,
+  type AgentEvent,
+  type AgentEventType,
+  type DocumentSummary,
+  type EditorContext,
+  type EditorViewSummary,
+  type AgentApiResponseBody,
+  type AgentError,
+  type AgentErrorCode,
+  type AgentErrorResponse,
+  type ReadDocumentResponse,
+  type SubmitProposalRequest,
+  type ReadSide,
+  type ReviewEventsResponse,
+  type OpenDocumentRequest,
+  type SearchDocumentRequest,
+  type SearchHit,
+  type WorkspaceDocumentEntry,
+  type ViewSummary,
+} from "@dts/common/agent-api";
+import { DocumentType, DP_EVENTS } from "@dts/common/documents";
 import DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
@@ -32,7 +52,7 @@ import fs from "fs";
 import http from "http";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
-import { sha256Text } from "source/app/util/review-diff";
+import { sha256Text } from "@providers/documents/review-diff-store";
 import makeSearchRegex from "source/common/util/make-search-regex";
 
 const SSE_REPLAY_BUFFER_SIZE = 100;
@@ -41,10 +61,94 @@ const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
 
 type BufferedAgentEvent = AgentEvent & { id: string };
 
+/** The payload shape the document-provider events this server subscribes to carry. */
+interface DocumentEventContext {
+  filePath?: string;
+}
+
 class RequestTooLargeError extends Error {
   constructor() {
     super("Request body exceeds the API limit");
   }
+}
+
+
+/**
+ * Request decoding happens exactly once, here, at the owned HTTP boundary.
+ * Handlers downstream receive declared types and never inspect raw JSON, so a
+ * missing or wrong-typed field is a 400 at the edge rather than an `unknown`
+ * threaded through the request path.
+ */
+type Decoded<T> = { ok: true; value: T } | { ok: false; message: string };
+
+function decodeJsonObject(body: string): Decoded<Record<string, unknown>> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return { ok: false, message: "Invalid JSON body" };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, message: "Invalid JSON body" };
+  }
+  return { ok: true, value: parsed as Record<string, unknown> };
+}
+
+function decodeOpenDocumentRequest(body: string): Decoded<OpenDocumentRequest> {
+  const raw = decodeJsonObject(body);
+  if (!raw.ok) {
+    return raw;
+  }
+  const { uri } = raw.value;
+  if (typeof uri !== "string") {
+    return { ok: false, message: "uri is required and must be a string" };
+  }
+  return { ok: true, value: { uri } };
+}
+
+function decodeSearchDocumentRequest(body: string): Decoded<SearchDocumentRequest> {
+  const raw = decodeJsonObject(body);
+  if (!raw.ok) {
+    return raw;
+  }
+  const { literal, context } = raw.value;
+  if (typeof literal !== "string") {
+    return { ok: false, message: "literal is required and must be a string" };
+  }
+  if (context !== undefined && (typeof context !== "number" || !Number.isInteger(context) || context < 0)) {
+    return { ok: false, message: "context must be a non-negative integer" };
+  }
+  return { ok: true, value: { literal, context } };
+}
+
+function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalRequest> {
+  const raw = decodeJsonObject(body);
+  if (!raw.ok) {
+    return raw;
+  }
+  const { snapshot, patchFormat, patch, description, expectedReviewGeneration } = raw.value;
+  if (typeof patchFormat !== "string") {
+    return { ok: false, message: "patchFormat is required and must be unified-diff" };
+  }
+  if (patchFormat !== "unified-diff") {
+    return { ok: false, message: "Unsupported patch format" };
+  }
+  if (typeof snapshot !== "string" || typeof patch !== "string") {
+    return { ok: false, message: "snapshot and patch are required" };
+  }
+  if (description !== undefined && typeof description !== "string") {
+    return { ok: false, message: "description must be a string" };
+  }
+  if (
+    expectedReviewGeneration !== undefined &&
+    (typeof expectedReviewGeneration !== "number" || !Number.isInteger(expectedReviewGeneration))
+  ) {
+    return { ok: false, message: "expectedReviewGeneration must be an integer" };
+  }
+  return {
+    ok: true,
+    value: { snapshot, patchFormat, patch, description, expectedReviewGeneration },
+  };
 }
 
 // ============================================================================
@@ -118,31 +222,40 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
 
     // Subscribe to document-level events
-    this._documents.on(DP_EVENTS.ACTIVE_FILE, (context: unknown) => {
-      const ctx = context as { filePath?: string };
+    this.onDocumentEvent(DP_EVENTS.ACTIVE_FILE, "focus.changed");
+    this.onDocumentEvent(DP_EVENTS.CHANGE_FILE_STATUS, "document.changed");
+    this.onDocumentEvent(DP_EVENTS.CLOSE_FILE, "document.closed");
+  }
+
+  /**
+   * The document provider's emitter is untyped (`(...args: unknown[]) => void`),
+   * so every subscription would otherwise carry `unknown` into this file. This
+   * is the single place that boundary is narrowed: the payload is checked once,
+   * and a shape that does not match is reported against the emitting provider
+   * rather than silently treated as an event with no document.
+   */
+  private onDocumentEvent(event: DP_EVENTS, agentEvent: AgentEventType): void {
+    this._documents.on(event, (...args: unknown[]) => {
+      const [context] = args;
+      if (typeof context !== "object" || context === null) {
+        this._log.error(
+          `[AgentHTTPProvider] ${event} payload is not an object (got ${typeof context}); ` +
+            "fix the emit site in service-providers/documents",
+        );
+        return;
+      }
+      const { filePath } = context as DocumentEventContext;
+      if (filePath !== undefined && typeof filePath !== "string") {
+        this._log.error(
+          `[AgentHTTPProvider] ${event} payload has a non-string filePath; ` +
+            "fix the emit site in service-providers/documents",
+        );
+        return;
+      }
       this.broadcastSseEvent({
-        event: "focus.changed",
+        event: agentEvent,
         timestamp: new Date().toISOString(),
-        documentId:
-          ctx.filePath !== undefined ? this._documents.getDocumentId(ctx.filePath) : undefined,
-      });
-    });
-    this._documents.on(DP_EVENTS.CHANGE_FILE_STATUS, (context: unknown) => {
-      const ctx = context as { filePath?: string };
-      this.broadcastSseEvent({
-        event: "document.changed",
-        timestamp: new Date().toISOString(),
-        documentId:
-          ctx.filePath !== undefined ? this._documents.getDocumentId(ctx.filePath) : undefined,
-      });
-    });
-    this._documents.on(DP_EVENTS.CLOSE_FILE, (context: unknown) => {
-      const ctx = context as { filePath?: string };
-      this.broadcastSseEvent({
-        event: "document.closed",
-        timestamp: new Date().toISOString(),
-        documentId:
-          ctx.filePath !== undefined ? this._documents.getDocumentId(ctx.filePath) : undefined,
+        documentId: filePath !== undefined ? this._documents.getDocumentId(filePath) : undefined,
       });
     });
   }
@@ -325,27 +438,27 @@ export default class AgentHTTPProvider extends ProviderContract {
       return this.handleRetractProposal(res, decodeURIComponent(retractMatch[1]));
     }
 
-    this.sendError(res, 404, "NOT_FOUND", `No route for ${method} ${pathname}`);
+    this.sendError(res, 404, "METHOD_NOT_FOUND", `No route for ${method} ${pathname}`);
   }
 
   // ==========================================================================
   // Route handlers
   // ==========================================================================
 
-  private handleGetContext(res: http.ServerResponse): void {
+  private async handleGetContext(res: http.ServerResponse): Promise<void> {
     const focusedView = this._documents.getFocusedView();
     const focusedDocSummary =
       focusedView?.documentId !== undefined
-        ? this.getDocumentSummary(focusedView.documentId)
+        ? await this.getDocumentSummary(focusedView.documentId)
         : undefined;
-    const openDocuments: unknown[] = [];
+    const openDocuments: DocumentSummary[] = [];
     for (const doc of this._documents.loadedDocuments) {
-      const summary = this.getDocumentSummary(doc.documentId);
+      const summary = await this.getDocumentSummary(doc.documentId);
       if (summary !== undefined) {
         openDocuments.push(summary);
       }
     }
-    this.sendJson(res, 200, {
+    const context: EditorContext = {
       focusedView: focusedView
         ? {
             viewId: focusedView.viewId,
@@ -356,19 +469,20 @@ export default class AgentHTTPProvider extends ProviderContract {
         : undefined,
       focusedDocument: focusedDocSummary,
       openDocuments,
-    });
+    };
+    this.sendJson(res, 200, context);
   }
 
-  private handleListDocuments(res: http.ServerResponse, url: URL): void {
+  private async handleListDocuments(res: http.ServerResponse, url: URL): Promise<void> {
     const state = url.searchParams.get("state");
     if (state !== null && state !== "open") {
       this.sendError(res, 400, "INVALID_PARAMS", "Unsupported state filter");
       return;
     }
 
-    const documents: unknown[] = [];
+    const documents: DocumentSummary[] = [];
     for (const doc of this._documents.loadedDocuments) {
-      const summary = this.getDocumentSummary(doc.documentId);
+      const summary = await this.getDocumentSummary(doc.documentId);
       if (summary !== undefined) {
         documents.push(summary);
       }
@@ -378,7 +492,7 @@ export default class AgentHTTPProvider extends ProviderContract {
 
   private async handleGetViews(res: http.ServerResponse): Promise<void> {
     const focusedView = this._documents.getFocusedView();
-    const views: unknown[] = [];
+    const views: ViewSummary[] = [];
     await this._documents.forEachLeaf(async (tabMan, windowId, leafId) => {
       const activePath = tabMan.activeFile?.path;
       const isFocused =
@@ -425,11 +539,11 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     const query = url.searchParams.get("query");
     const normalizedQuery = query === null ? "" : query.toLowerCase().trim();
-    const documents: unknown[] = [];
+    const documents: WorkspaceDocumentEntry[] = [];
 
     this._documents
       .getFilesForWorkspace(workspacePath)
-      .then((paths) => {
+      .then(async (paths) => {
         for (const documentPath of paths) {
           const documentId = this._documents.ensureDocumentId(documentPath);
           if (normalizedQuery.length > 0) {
@@ -438,7 +552,7 @@ export default class AgentHTTPProvider extends ProviderContract {
               continue;
             }
           }
-          const summary = this.getDocumentSummary(documentId);
+          const summary = await this.getDocumentSummary(documentId);
           documents.push(summary === undefined
             ? {
                 documentId,
@@ -448,7 +562,7 @@ export default class AgentHTTPProvider extends ProviderContract {
                 workspaceId,
                 loaded: false,
               }
-            : { ...(summary as Record<string, unknown>), workspaceId, loaded: true });
+            : { ...summary, workspaceId, loaded: true });
         }
         this.sendJson(res, 200, { workspaceId, documents });
       })
@@ -482,15 +596,12 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: http.ServerResponse,
   ): Promise<void> {
     const body = await this.readBody(req);
-    const parsed = this.parseJsonObject(body);
-    if (parsed === undefined) {
-      this.sendError(res, 400, "INVALID_PARAMS", "Invalid JSON body");
+    const decoded = decodeOpenDocumentRequest(body);
+    if (!decoded.ok) {
+      this.sendError(res, 400, "INVALID_PARAMS", decoded.message);
       return;
     }
-    if (typeof parsed.uri !== "string") {
-      this.sendError(res, 400, "INVALID_PARAMS", "uri is required and must be a string");
-      return;
-    }
+    const request = decoded.value;
     const resolveOpenPath = (uri: string): string | undefined => {
       try {
         const parsedUri = new URL(uri);
@@ -508,7 +619,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       }
     };
 
-    const filePath = resolveOpenPath(parsed.uri);
+    const filePath = resolveOpenPath(request.uri);
     if (filePath === undefined || !this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Path is outside configured workspace scope");
       return;
@@ -524,12 +635,16 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Could not open document");
       return;
     }
-    const summary = this.getDocumentSummary(docId);
+    const summary = await this.getDocumentSummary(docId);
+    if (summary === undefined) {
+      this.sendError(res, 500, "INTERNAL_ERROR", "Document opened but could not be summarized");
+      return;
+    }
     this.sendJson(res, 201, summary);
   }
 
-  private handleGetDocument(res: http.ServerResponse, documentId: string): void {
-    const summary = this.getDocumentSummary(documentId);
+  private async handleGetDocument(res: http.ServerResponse, documentId: string): Promise<void> {
+    const summary = await this.getDocumentSummary(documentId);
     if (summary === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
@@ -592,11 +707,11 @@ export default class AgentHTTPProvider extends ProviderContract {
     };
 
     const requestedSide = url.searchParams.get("side");
-    const side = requestedSide === null ? "working" : requestedSide;
-    if (side !== "working" && side !== "reference") {
+    if (requestedSide !== null && requestedSide !== "working" && requestedSide !== "reference") {
       this.sendError(res, 400, "INVALID_PARAMS", "side must be working or reference");
       return;
     }
+    const side: ReadSide = requestedSide ?? "working";
     const startLine = url.searchParams.get("startLine");
     const endLine = url.searchParams.get("endLine");
 
@@ -638,7 +753,7 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     content = range.content;
 
-    const response = {
+    const response: ReadDocumentResponse = {
       documentId,
       side,
       revision,
@@ -711,7 +826,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       this._documents.reviewStore.removeListener("*", listener);
       res.removeListener("close", cleanup);
     };
-    const finish = (status: unknown): void => {
+    const finish = (status: ReviewEventsResponse): void => {
       cleanup();
       if ((res as { writableEnded?: boolean }).writableEnded === true) {
         return;
@@ -752,35 +867,23 @@ export default class AgentHTTPProvider extends ProviderContract {
     documentId: string,
   ): Promise<void> {
     const body = await this.readBody(req);
-    const parsed = this.parseJsonObject(body);
-    if (parsed === undefined) {
-      this.sendError(res, 400, "INVALID_PARAMS", "Invalid JSON body");
+    const decodedSearch = decodeSearchDocumentRequest(body);
+    if (!decodedSearch.ok) {
+      this.sendError(res, 400, "INVALID_PARAMS", decodedSearch.message);
       return;
     }
-    if (typeof parsed.literal !== "string") {
-      this.sendError(res, 400, "INVALID_PARAMS", "literal is required and must be a string");
-      return;
-    }
-    if (
-      parsed.context !== undefined &&
-      (typeof parsed.context !== "number" ||
-        !Number.isInteger(parsed.context) ||
-        parsed.context < 0)
-    ) {
-      this.sendError(res, 400, "INVALID_PARAMS", "context must be a non-negative integer");
-      return;
-    }
+    const searchRequest = decodedSearch.value;
     const result = this._documents.readLiveBuffer(documentId);
     if (result === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
     const lines = result.content.split("\n");
-    const contextSize = parsed.context ?? 3;
-    const hits: unknown[] = [];
+    const contextSize = searchRequest.context ?? 3;
+    const hits: SearchHit[] = [];
     let searchRegex: RegExp;
     try {
-      searchRegex = makeSearchRegex(parsed.literal, "g");
+      searchRegex = makeSearchRegex(searchRequest.literal, "g");
     } catch {
       this.sendError(res, 400, "INVALID_PARAMS", "Invalid search pattern");
       return;
@@ -844,33 +947,13 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     // Read and parse the request body
     const body = await this.readBody(req);
-    const parsed = this.parseJsonObject(body);
-    if (parsed === undefined) {
-      this.sendError(res, 400, "INVALID_PARAMS", "Invalid JSON body");
+    const decodedProposal = decodeSubmitProposalRequest(body);
+    if (!decodedProposal.ok) {
+      this.sendError(res, 400, "INVALID_PARAMS", decodedProposal.message);
       return;
     }
-    if (typeof parsed.patchFormat !== "string") {
-      this.sendError(
-        res,
-        400,
-        "INVALID_PARAMS",
-        "patchFormat is required and must be unified-diff",
-      );
-      return;
-    }
-    if (parsed.patchFormat !== "unified-diff") {
-      this.sendError(res, 400, "INVALID_PARAMS", "Unsupported patch format");
-      return;
-    }
-    if (typeof parsed.snapshot !== "string" || typeof parsed.patch !== "string") {
-      this.sendError(res, 400, "INVALID_PARAMS", "snapshot and patch are required");
-      return;
-    }
-    if (parsed.description !== undefined && typeof parsed.description !== "string") {
-      this.sendError(res, 400, "INVALID_PARAMS", "description must be a string");
-      return;
-    }
-    const parsedSnapshot = DocumentManager.parseSnapshotToken(parsed.snapshot);
+    const proposal: SubmitProposalRequest = decodedProposal.value;
+    const parsedSnapshot = DocumentManager.parseSnapshotToken(proposal.snapshot);
     if (parsedSnapshot === undefined) {
       this.sendError(res, 400, "INVALID_PARAMS", "Invalid snapshot token");
       return;
@@ -890,23 +973,13 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 404, "DOCUMENT_CLOSED", "Document is no longer open");
       return;
     }
-    if (parsed.expectedReviewGeneration !== undefined) {
-      if (
-        typeof parsed.expectedReviewGeneration !== "number" ||
-        !Number.isInteger(parsed.expectedReviewGeneration)
-      ) {
-        this.sendError(res, 400, "INVALID_PARAMS", "expectedReviewGeneration must be an integer");
-        return;
-      }
-    }
-
     // Submit through the same DocumentManager.submitProposal path
     const result = await this._documents.submitProposal(
-      parsed.snapshot,
-      parsed.patch,
+      proposal.snapshot,
+      proposal.patch,
       idempotencyKey,
-      parsed.description,
-      parsed.expectedReviewGeneration,
+      proposal.description,
+      proposal.expectedReviewGeneration,
       ifMatch,
     );
 
@@ -1189,7 +1262,39 @@ export default class AgentHTTPProvider extends ProviderContract {
   // Helpers
   // ==========================================================================
 
-  private getDocumentSummary(documentId: string): unknown | undefined {
+  /**
+   * Collects the editor views a document is currently open in, keyed the same
+   * way as GET /v1/views.
+   */
+  private async getViewsForDocument(documentId: string): Promise<EditorViewSummary[]> {
+    const focusedView = this._documents.getFocusedView();
+    const views: EditorViewSummary[] = [];
+    await this._documents.forEachLeaf(async (tabMan, windowId, leafId) => {
+      const isOpenHere = tabMan.openFiles.some(
+        (openFile) => this._documents.getDocumentId(openFile.path) === documentId,
+      );
+      if (!isOpenHere) {
+        return false;
+      }
+      const isFocused =
+        focusedView !== undefined &&
+        focusedView.windowId === windowId &&
+        focusedView.leafId === leafId;
+      views.push({
+        viewId: `view-${windowId}-${leafId}`,
+        windowId,
+        leafId,
+        focused: isFocused,
+        active:
+          tabMan.activeFile !== null &&
+          this._documents.getDocumentId(tabMan.activeFile.path) === documentId,
+      });
+      return false;
+    });
+    return views;
+  }
+
+  private async getDocumentSummary(documentId: string): Promise<DocumentSummary | undefined> {
     const filePath = this._documents.getDocumentPath(documentId);
     if (filePath === undefined) {
       return undefined;
@@ -1206,7 +1311,8 @@ export default class AgentHTTPProvider extends ProviderContract {
       uri: `safe-file://${filePath}`,
       path: filePath,
       name: path.basename(filePath),
-      type: doc.type,
+      // The wire contract is "markdown" | "code", not the internal enum ordinal.
+      type: doc.type === DocumentType.Markdown ? "markdown" : "code",
       dirty: doc.currentVersion !== doc.lastSavedVersion,
       revision: {
         version: doc.currentVersion,
@@ -1214,7 +1320,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       },
       lineCount: lines.length,
       byteLength: Buffer.byteLength(content, "utf8"),
-      views: [],
+      views: await this.getViewsForDocument(documentId),
       review: reviewStatus ?? undefined,
     };
   }
@@ -1245,18 +1351,6 @@ export default class AgentHTTPProvider extends ProviderContract {
     return undefined;
   }
 
-  private parseJsonObject(body: string): Record<string, unknown> | undefined {
-    try {
-      const parsed: unknown = JSON.parse(body);
-      if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
-        return undefined;
-      }
-      return parsed as Record<string, unknown>;
-    } catch {
-      return undefined;
-    }
-  }
-
   private async readBody(req: http.IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
       let data = "";
@@ -1285,7 +1379,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private sendJson(res: http.ServerResponse, status: number, body: unknown): void {
+  private sendJson(res: http.ServerResponse, status: number, body: AgentApiResponseBody): void {
     const json = JSON.stringify(body);
     res.writeHead(status, {
       "Content-Type": "application/json",
@@ -1297,15 +1391,12 @@ export default class AgentHTTPProvider extends ProviderContract {
   private sendError(
     res: http.ServerResponse,
     status: number,
-    code: string,
+    code: AgentErrorCode,
     message: string,
-    data?: unknown,
+    detail?: Omit<AgentError, "code" | "message">,
   ): void {
-    const error: Record<string, unknown> = { code, message };
-    if (data !== undefined) {
-      error.data = data;
-    }
-    const json = JSON.stringify({ error });
+    const error: AgentError = { code, message, ...detail };
+    const json = JSON.stringify({ error } satisfies AgentErrorResponse);
     res.writeHead(status, {
       "Content-Type": "application/json",
       "Content-Length": Buffer.byteLength(json, "utf8"),

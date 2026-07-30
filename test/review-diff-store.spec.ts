@@ -618,6 +618,18 @@ describe("ReviewDiffStore", function () {
       assert.equal(parsed.hunks.length, 1);
     });
 
+    it("accepts git-style a/ and b/ prefixes on the absolute path", function () {
+      const baseline = "alpha\n";
+      const proposed = "beta\n";
+      // `git diff` drops the leading slash when prefixing an absolute path,
+      // producing headers such as `--- a/home/user/note.md`.
+      const patch = makePatch(baseline, proposed)
+        .replace(`--- ${DOC_PATH}`, `--- a${DOC_PATH}`)
+        .replace(`+++ ${DOC_PATH}`, `+++ b${DOC_PATH}`);
+      const parsed = validateAndParsePatch(patch, DOC_PATH);
+      assert.equal(parsed.hunks.length, 1);
+    });
+
     it("rejects basename-only headers", function () {
       const baseline = "alpha\n";
       const proposed = "beta\n";

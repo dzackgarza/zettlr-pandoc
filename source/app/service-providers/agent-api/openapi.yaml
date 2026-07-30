@@ -11,7 +11,7 @@ info:
     name: GPL-3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
 servers:
-- url: http://127.0.0.1:23119
+- url: http://127.0.0.1:27412
   description: Default loopback endpoint
 components:
   schemas:
@@ -196,6 +196,23 @@ components:
       properties:
         code:
           type: string
+          enum:
+          - APP_NOT_RUNNING
+          - PROTOCOL_MISMATCH
+          - NO_FOCUSED_DOCUMENT
+          - DOCUMENT_NOT_FOUND
+          - DOCUMENT_CLOSED
+          - REVISION_MISMATCH
+          - REVIEW_GENERATION_MISMATCH
+          - REVIEW_NOT_FOUND
+          - REVIEW_INVALIDATED
+          - PATCH_INVALID
+          - PATCH_NOT_APPLICABLE
+          - PACKET_NOT_RETRACTABLE
+          - IDEMPOTENCY_CONFLICT
+          - REQUEST_TOO_LARGE
+          - METHOD_NOT_FOUND
+          - INVALID_PARAMS
         message:
           type: string
     AgentEvent:
@@ -888,7 +905,11 @@ paths:
         required: true
         schema:
           type: string
-        description: ETag from the document read
+          pattern: '^"sha256:[a-f0-9]{64}"$'
+          example: '"sha256:eab7fc1cf8e249b7945b96314a70137425dd5cecc2ce84de93be0e4f493a7f20"'
+        description: >-
+          ETag from the document read: the revision.sha256 of the same read that
+          produced the snapshot, as the quoted string "sha256:<hex>".
       - name: Idempotency-Key
         in: header
         required: true

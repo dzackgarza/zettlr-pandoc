@@ -152,7 +152,7 @@ export function sha256Text(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
-function normalizeText(content: string): string {
+export function normalizeText(content: string): string {
   return content
     .replace(/^\uFEFF/, "")
     .split(/\r\n|\n\r|\n|\r/g)
@@ -227,12 +227,12 @@ function isAcceptableHeader(
   ) {
     return true;
   }
-  // Exact canonical path
+  // Exact canonical path. `git diff` drops the leading slash when it prefixes
+  // an absolute path with a/ or b/, so `a//home/x.md` arrives as `home/x.md`;
+  // restore the root so generator-produced diffs validate too.
   const stripped = normalized.replace(/^(a|b)\//, "");
-  if (!path.isAbsolute(stripped)) {
-    return false;
-  }
-  return path.resolve(stripped) === path.resolve(documentPath);
+  const candidate = path.isAbsolute(stripped) ? stripped : `/${stripped}`;
+  return path.resolve(candidate) === path.resolve(documentPath);
 }
 
 // ============================================================================

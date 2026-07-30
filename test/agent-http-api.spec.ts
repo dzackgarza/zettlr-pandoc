@@ -15,6 +15,8 @@
  */
 
 import "./headless-electron-harness.cjs";
+import Ajv2020 from "ajv/dist/2020";
+import { parse as parseYaml } from "yaml";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
@@ -27,6 +29,40 @@ import type { AppServiceContainer } from "source/app/app-service-container";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
+
+// ============================================================================
+// Contract conformance
+// ============================================================================
+
+/**
+ * Validates a response body against the schema the server itself publishes.
+ * Field-by-field assertions cannot catch drift in a field nobody thought to
+ * assert — `type` shipped as the internal enum ordinal (1) instead of the
+ * declared "markdown" | "code" through a fully green suite. Every response
+ * asserted here is checked against openapi.yaml as a whole.
+ */
+const openApiDocument = parseYaml(
+  readFileSync(
+    path.join(__dirname, "../source/app/service-providers/agent-api/openapi.yaml"),
+    "utf8",
+  ),
+) as { components: { schemas: Record<string, unknown> } };
+
+const ajv = new Ajv2020({ strict: false, allErrors: true });
+for (const [name, schema] of Object.entries(openApiDocument.components.schemas)) {
+  ajv.addSchema(schema as object, `#/components/schemas/${name}`);
+}
+
+function assertMatchesSchema(body: unknown, schemaName: string): void {
+  const validate = ajv.getSchema(`#/components/schemas/${schemaName}`);
+  assert.ok(validate !== undefined, `openapi.yaml declares no schema ${schemaName}`);
+  if (validate(body) !== true) {
+    assert.fail(
+      `Response does not conform to ${schemaName}: ${ajv.errorsText(validate.errors)}\n` +
+        JSON.stringify(body, null, 2),
+    );
+  }
+}
 
 describe("Agent HTTP API (OpenAPI / REST)", function () {
   let scratch: string;
@@ -240,6 +276,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const body = JSON.parse(response.body);
     assert.ok(body.protocolVersion !== undefined);
     assert.ok(body.instanceId !== undefined);
+    assertMatchesSchema(body, "PingResponse");
   });
 
   it("GET /v1/capabilities reports supported features", async function () {
@@ -248,6 +285,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const body = JSON.parse(response.body);
     assert.deepEqual(body.supportedPatchFormats, ["unified-diff"]);
     assert.equal(body.reviewSupport, true);
+    assertMatchesSchema(body, "CapabilitiesResponse");
   });
 
   it("GET /v1/context returns open documents", async function () {
@@ -257,6 +295,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(response.status, 200);
     const body = JSON.parse(response.body);
     assert.ok(body.openDocuments.length > 0);
+    assertMatchesSchema(body, "EditorContext");
   });
 
   it("GET /v1/documents lists open documents", async function () {
@@ -269,6 +308,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     };
     assert.ok(body.documents.length > 0);
     assert.ok(body.documents.some((d: { path: string }) => d.path === filePath));
+    for (const document of body.documents) {
+      assertMatchesSchema(document, "DocumentSummary");
+    }
   });
 
   it("GET /v1/documents/{id} returns document metadata", async function () {
@@ -279,6 +321,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const body = JSON.parse(response.body);
     assert.equal(body.documentId, docId);
     assert.equal(body.path, filePath);
+    assertMatchesSchema(body, "DocumentSummary");
   });
 
   it("GET /v1/documents/{id}/content returns live buffer with ETag", async function () {
@@ -292,6 +335,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     };
     assert.ok(body.content.includes("alpha"));
     assert.ok(body.snapshot.startsWith("snap_v1_"));
+    assertMatchesSchema(body, "ReadDocumentResponse");
     // ETag must be present
     const etag = response.headers["etag"];
     assert.ok(etag !== undefined, "ETag header must be present");
