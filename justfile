@@ -22,6 +22,22 @@ sync-dependencies:
 install-desktop-launcher:
     bash "{{justfile_directory()}}/scripts/install-desktop-launcher.sh"
 
+# Emit the agent API schema for a Custom GPT, with the origin pointed at ORIGIN.
+# Reads it from the running editor, so what you paste is what the server serves.
+# Two edits are unavoidable: the published spec names the loopback origin, which
+# on OpenAI's servers means their own loopback, and /v1/events is Server-Sent
+# Events, which an Action cannot consume and will wait on forever.
+agent-api-schema origin port="27412":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Fetched into a variable rather than piped: yq reads a failed fetch as an
+    # empty document, renders the servers assignment over it, and prints two
+    # lines that look like a schema. Piping makes that partial output land in
+    # whatever the caller redirected to, even though the recipe exits non-zero.
+    spec=$(curl -fsS -H "Authorization: Bearer ${ZETTLR_AGENT_API_TOKEN:?is unset; see ~/.envrc}" \
+        "http://127.0.0.1:{{port}}/openapi.yaml")
+    printf '%s' "$spec" | yq '.servers = [{"url": "{{origin}}"}] | del(.paths."/v1/events")'
+
 # Launch the app in develop mode (webpack dev server + Electron).
 # Free the dev ports first: a launch that was killed (or whose app was never
 # quit) leaves a forge-start/Electron holding :9001, and the next launch dies
