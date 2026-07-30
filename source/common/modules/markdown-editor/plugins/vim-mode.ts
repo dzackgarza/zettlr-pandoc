@@ -20,7 +20,10 @@ import type { Extension } from '@codemirror/state'
 import { type ExParams, vim, Vim, type CodeMirror } from '@replit/codemirror-vim'
 import { configField } from '../util/configuration'
 import { editorMetadataFacet } from './editor-metadata'
-import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
+import type { DocumentManagerIPCAPI, SaveFileResult } from 'source/app/service-providers/documents'
+import { trans } from '@common/i18n-renderer'
+import { pathBasename } from '@common/util/renderer-path-polyfill'
+import showToast from '@common/util/show-toast'
 
 const ipcRenderer = window.ipc
 
@@ -48,10 +51,21 @@ function write (cm: CodeMirror, _params: ExParams): Promise<void> {
     command: 'save-file',
     payload: { path: filePath }
   } as DocumentManagerIPCAPI)
-    .then(result => {
-      if (result !== true) {
-        console.error('Retrieved a falsy result from main, indicating an error with saving the file.')
+    .then((result: SaveFileResult) => {
+      if (result.ok) {
+        return
       }
+      // `:w` is a save request like any other, so it gets the same treatment as
+      // the Save shortcut in MainEditor: the provider hands back the reason it
+      // refused, and we surface it on the closable toast rather than dropping it
+      // into the console where nobody sees it.
+      const message = result.refusal?.message ??
+        trans('Could not save "%s".', pathBasename(filePath))
+      console.error(
+        `[vim :w] Main refused to save ${filePath}` +
+        (result.refusal !== undefined ? ` (${result.refusal.reason}): ${result.refusal.message}` : '')
+      )
+      showToast(message, 'error', 12000)
     })
     .catch(e => console.error(e))
 }

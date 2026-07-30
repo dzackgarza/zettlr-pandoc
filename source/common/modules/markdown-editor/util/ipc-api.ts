@@ -13,14 +13,13 @@
  * END HEADER
  */
 
-import { DP_EVENTS, type DocumentType } from '@dts/common/documents'
-import { type Update } from '@codemirror/collab'
+import { DP_EVENTS, type DocumentType, type SerializedUpdate } from '@dts/common/documents'
 import { type DocumentAuthorityAPI } from '..'
 import type { DocumentAuthorityIPCAPI } from 'source/app/service-providers/documents'
 
 const ipcRenderer = window.ipc
 
-async function pullUpdates (filePath: string, version: number): Promise<false|Update[]> {
+async function pullUpdates (filePath: string, version: number): Promise<false|SerializedUpdate[]> {
   // Requests new updates from the authority. It may be that the returned
   // promise pends for minutes or even hours -- until new changes are available.
   // Notice how we're not returning the promise from the IPC channel. The reason
@@ -38,7 +37,7 @@ async function pullUpdates (filePath: string, version: number): Promise<false|Up
         command: 'pull-updates',
         payload: { filePath, version }
       } as DocumentAuthorityIPCAPI)
-        .then((result: false|Update[]) => {
+        .then((result: false|SerializedUpdate[]) => {
           // Clean up to not pollute the event listener with millions of callbacks
           stopListening()
           resolve(result)
@@ -48,7 +47,7 @@ async function pullUpdates (filePath: string, version: number): Promise<false|Up
   })
 }
 
-async function pushUpdates (filePath: string, version: number, updates: any): Promise<boolean> {
+async function pushUpdates (filePath: string, version: number, updates: SerializedUpdate[]): Promise<boolean> {
   // Submits new updates to the authority, returns true if successful
   return await ipcRenderer.invoke('documents-authority', {
     command: 'push-updates',

@@ -951,11 +951,16 @@ export default class MarkdownEditor extends EventEmitter {
     }
 
     const currentContent = this.value;
-    const shouldApplyInitialProposal =
-      currentContent === session.baselineText &&
-      session.currentText === session.proposedText &&
-      session.originalText === session.baselineText;
-    if (!shouldApplyInitialProposal && currentContent !== session.currentText) {
+    // The provider owns the document text: opening a review applies the working
+    // text authoritatively and publishes it as a collab update. This pane must
+    // therefore never write the proposed text itself. It used to, whenever the
+    // buffer still held the baseline (i.e. the provider's update had not been
+    // pulled yet) — and collab rebased that local replacement over the incoming
+    // remote one, mapping its [0, baselineLength) range onto the collapsed
+    // position while keeping its insertion. The proposal landed twice and the
+    // saved file contained the accepted text doubled. If the buffer is behind,
+    // catch up through the authority below instead of guessing locally.
+    if (currentContent !== session.currentText) {
       this.reload()
         .then(() => {
           if (this.value === session.currentText) {
@@ -989,18 +994,7 @@ export default class MarkdownEditor extends EventEmitter {
       this.reviewDiffCompartment.reconfigure(reviewDiffMergeExtension(session.originalText)),
     ];
 
-    if (!shouldApplyInitialProposal) {
-      this._instance.dispatch({ effects });
-    } else {
-      this._instance.dispatch({
-        changes: {
-          from: 0,
-          to: this._instance.state.doc.length,
-          insert: session.proposedText,
-        },
-        effects,
-      });
-    }
+    this._instance.dispatch({ effects });
 
     this.queueReviewDiffStatusReport();
     this._instance.focus();

@@ -15,7 +15,6 @@
  * END HEADER
  */
 
-import { type Update } from "@codemirror/collab";
 import { ChangeSet, Text } from "@codemirror/state";
 import { trans } from "@common/i18n-main";
 import { markdownToAST } from "@common/modules/markdown-utils";
@@ -30,9 +29,11 @@ import {
   DP_EVENTS,
   type LeafNodeJSON,
   type OpenDocument,
+  type SerializedUpdate,
 } from "@dts/common/documents";
 import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type { DocumentLocation, SourceRange } from "@dts/common/references";
+import type { ReviewState } from "@dts/common/agent-api";
 import type { ReviewDiffSession, ReviewDiffStatus } from "@dts/common/review-diff";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
 import type { ConfigOptions } from "@providers/config/get-config-template";
@@ -42,7 +43,7 @@ import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions, shell
 import EventEmitter from "events";
 import { constants as FSConstants } from "fs";
 import path from "path";
-import { normalizeText, sha256Text } from "source/app/util/review-diff";
+import { normalizeText, sha256Text } from "./review-diff-store";
 import {
   getDocumentTypeForExtension,
   hasImageExt,
@@ -211,7 +212,7 @@ interface Document {
    * Holds all updates between minimumVersion and currentVersion in a granular
    * form.
    */
-  updates: Update[];
+  updates: SerializedUpdate[];
   /**
    * The actual document text in a CodeMirror format.
    */
@@ -241,7 +242,7 @@ interface SubmittedProposalResponse {
   documentRevision: { version: number; sha256: string };
   reviewGeneration: number;
   unresolvedChunks: number;
-  state: string;
+  state: ReviewState;
 }
 
 interface ProposalIdempotencyRecord {
@@ -252,8 +253,35 @@ interface ProposalIdempotencyRecord {
 export type DocumentAuthorityIPCAPI = IPCAPI<{
   "get-document": { filePath: string };
   "pull-updates": { filePath: string; version: number };
-  "push-updates": { filePath: string; version: number; updates: Update[] };
+  "push-updates": { filePath: string; version: number; updates: SerializedUpdate[] };
 }>;
+
+/**
+ * Why a save was refused. The provider never presents this itself: a blocking
+ * `dialog.showErrorBox` freezes the main process until it is dismissed, which
+ * is both hostile to the user and unobservable to any automated driver. The
+ * renderer owns presentation and surfaces these as closable toasts, matching
+ * the rule recorded in win-main/util/recoverable-reference-errors.ts.
+ */
+export type SaveRefusalReason =
+  | "unresolved-chunks"
+  | "review-out-of-sync"
+  | "disk-changed";
+
+export interface SaveRefusal {
+  reason: SaveRefusalReason;
+  /** Already translated; the renderer shows this verbatim. */
+  message: string;
+}
+
+/**
+ * A save either wrote the file or refused with a reason. This is deliberately
+ * not a bare boolean: `false` is what let the save gate fail silently at the
+ * IPC boundary, leaving the renderer to log "falsy result" with no cause.
+ */
+export type SaveFileResult =
+  | { ok: true }
+  | { ok: false; refusal?: SaveRefusal };
 
 // Most document manager commands require a leaf location, described by the
 // window and leaf IDs.
@@ -643,7 +671,7 @@ export default class DocumentManager extends ProviderContract {
             for (const document of this.documents) {
               if (response === 0) {
                 const saved = await this.saveFile(document.filePath);
-                if (!saved) {
+                if (!saved.ok) {
                   return;
                 }
               } else {
@@ -702,7 +730,7 @@ export default class DocumentManager extends ProviderContract {
       // Save all docs
       for (const document of this.documents) {
         const saved = await this.saveFile(document.filePath);
-        if (!saved) {
+        if (!saved.ok) {
           return false;
         }
       }
@@ -915,7 +943,7 @@ export default class DocumentManager extends ProviderContract {
     return { content, type, startVersion: 0 };
   }
 
-  private async pullUpdates(filePath: string, clientVersion: number): Promise<Update[] | false> {
+  private async pullUpdates(filePath: string, clientVersion: number): Promise<SerializedUpdate[] | false> {
     const doc = this.documents.find((doc) => doc.filePath === filePath);
     if (doc === undefined) {
       // Indicate to the editor that they should get the document (again). This
@@ -941,7 +969,7 @@ export default class DocumentManager extends ProviderContract {
   private async pushUpdates(
     filePath: string,
     clientVersion: number,
-    clientUpdates: Update[],
+    clientUpdates: SerializedUpdate[],
   ): Promise<boolean> {
     // clientUpdates must be produced via "toJSON"
     const doc = this.documents.find((doc) => doc.filePath === filePath);
@@ -1282,7 +1310,7 @@ current contents from the editor somewhere else, and restart the application.`,
         });
       } else if (result.response === 0) {
         const saved = await this.saveFile(filePath);
-        if (!saved) {
+        if (!saved.ok) {
           return false;
         }
       } else {
@@ -2005,31 +2033,68 @@ current contents from the editor somewhere else, and restart the application.`,
     };
   }
 
+  /**
+   * Reconciles a pane's accept/reject report into the provider-owned review
+   * state. Every rejection path logs why: a refused report leaves the review's
+   * unresolved count unchanged, which closes the save gate, and without a
+   * reason the resulting deadlock is invisible in the logs.
+   */
   private setReviewDiffStatus(status: ReviewDiffStatus): boolean {
     const docId = this.getDocumentId(status.filePath);
     if (docId === undefined) {
+      this._app.log.error(
+        `[DocumentManager] Review status refused: no documentId for ${status.filePath}`,
+      );
       return false;
     }
     const review = this._reviewStore.getReview(docId);
-    if (review === undefined || review.reviewId !== status.sessionId) {
+    if (review === undefined) {
+      this._app.log.error(
+        `[DocumentManager] Review status refused: no active review for ${status.filePath}`,
+      );
+      return false;
+    }
+    if (review.reviewId !== status.sessionId) {
+      this._app.log.error(
+        `[DocumentManager] Review status refused: session ${status.sessionId} does not match ` +
+          `active review ${review.reviewId} for ${status.filePath}`,
+      );
       return false;
     }
 
     // Spec section 13: guard against stale pane decisions by checking
     // the review generation the pane observed when reporting.
-    if (status.reviewGeneration !== undefined && status.reviewGeneration !== review.generation) {
+    if (status.reviewGeneration !== review.generation) {
       // The pane's report is stale — re-broadcast the current state so the
       // pane can update its merge reference.
+      this._app.log.warning(
+        `[DocumentManager] Review status stale: pane reported generation ` +
+          `${status.reviewGeneration}, provider is at ${review.generation}; re-broadcasting`,
+      );
       this._broadcastReviewState(status.filePath, review);
       return false;
     }
 
     const document = this.documents.find((doc) => doc.filePath === status.filePath);
-    if (
-      document === undefined ||
-      document.currentVersion !== status.documentVersion ||
-      document.document.toString() !== status.currentText
-    ) {
+    if (document === undefined) {
+      this._app.log.error(
+        `[DocumentManager] Review status refused: ${status.filePath} is not an open document`,
+      );
+      return false;
+    }
+    if (document.currentVersion !== status.documentVersion) {
+      this._app.log.warning(
+        `[DocumentManager] Review status refused: pane reported document version ` +
+          `${status.documentVersion}, provider is at ${document.currentVersion}; re-broadcasting`,
+      );
+      this._broadcastReviewState(status.filePath, review);
+      return false;
+    }
+    if (document.document.toString() !== status.currentText) {
+      this._app.log.warning(
+        "[DocumentManager] Review status refused: pane text does not match the provider buffer " +
+          `for ${status.filePath}; re-broadcasting`,
+      );
       this._broadcastReviewState(status.filePath, review);
       return false;
     }
@@ -2063,51 +2128,80 @@ current contents from the editor somewhere else, and restart the application.`,
     return true;
   }
 
-  private async checkReviewDiffSaveGate(filePath: string): Promise<boolean> {
+  /**
+   * Returns the reason a review blocks saving `filePath`, or undefined when the
+   * save may proceed. Presentation is the renderer's job — see SaveRefusal.
+   */
+  private async checkReviewDiffSaveGate(
+    filePath: string,
+  ): Promise<SaveRefusal | undefined> {
     const docId = this.getDocumentId(filePath);
     if (docId === undefined) {
-      return true;
+      return undefined;
     }
     const review = this._reviewStore.getReview(docId);
     if (review === undefined) {
-      return true;
+      return undefined;
     }
 
     const status = this._reviewStore.getReviewStatus(docId);
-    if (
-      status === undefined ||
-      status.unresolvedChunks > 0 ||
-      review.referenceText !== review.workingText
-    ) {
-      dialog.showErrorBox(
-        trans("Cannot save review"),
-        trans("Resolve every accept/reject chunk before saving this review."),
+    // The gate closes for two distinct reasons and the user needs to know
+    // which: unresolved chunks are their own to resolve, but a reference/working
+    // divergence means the provider never received a pane decision — the user
+    // can accept every chunk in the editor and still be refused.
+    if (status === undefined || status.unresolvedChunks > 0) {
+      this._app.log.warning(
+        `[DocumentManager] Save gate closed for ${filePath}: ` +
+          `${status?.unresolvedChunks ?? "unknown"} unresolved chunk(s) at generation ` +
+          `${review.generation}`,
       );
-      return false;
+      return {
+        reason: "unresolved-chunks",
+        message: trans(
+          "Resolve every accept/reject chunk before saving this review.",
+        ),
+      };
+    }
+    if (review.referenceText !== review.workingText) {
+      this._app.log.error(
+        `[DocumentManager] Save gate closed for ${filePath}: no unresolved chunks, but the ` +
+          `review reference and working text still differ at generation ${review.generation}. ` +
+          "The pane's accept/reject report never reached the provider — see the refusal reason " +
+          "logged by setReviewDiffStatus.",
+      );
+      return {
+        reason: "review-out-of-sync",
+        message: trans(
+          "This review is out of sync with the editor and cannot be saved. See the log for the reason.",
+        ),
+      };
     }
 
     const diskContents = await this._app.fsal.loadAnySupportedFile(filePath);
     if (sha256Text(normalizeText(diskContents)) !== review.diskFenceSha256) {
-      dialog.showErrorBox(
-        trans("Cannot save review"),
-        trans(
+      this._app.log.warning(
+        `[DocumentManager] Save gate closed for ${filePath}: the document changed on disk ` +
+          "after the review opened; the external edit was preserved.",
+      );
+      return {
+        reason: "disk-changed",
+        message: trans(
           "The document changed on disk after this review opened. The external edit was preserved.",
         ),
-      );
-      return false;
+      };
     }
 
-    return true;
+    return undefined;
   }
 
-  public async saveFile(filePath: string): Promise<boolean> {
+  public async saveFile(filePath: string): Promise<SaveFileResult> {
     const doc = this.documents.find((doc) => doc.filePath === filePath);
 
     if (doc === undefined) {
       this._app.log.error(
         `[Document Provider] Could not save file ${filePath}: Not found in loaded documents!`,
       );
-      return false;
+      return { ok: false };
     }
 
     // If saveFile was called from a timeout, clearTimeout does nothing but the
@@ -2119,8 +2213,9 @@ current contents from the editor somewhere else, and restart the application.`,
       doc.saveTimeout = undefined;
     }
 
-    if (!(await this.checkReviewDiffSaveGate(filePath))) {
-      return false;
+    const refusal = await this.checkReviewDiffSaveGate(filePath);
+    if (refusal !== undefined) {
+      return { ok: false, refusal };
     }
 
     // NOTE: Remember that we MUST under any circumstances adapt the document
@@ -2204,7 +2299,7 @@ current contents from the editor somewhere else, and restart the application.`,
     });
     this.broadcastEvent(DP_EVENTS.FILE_SAVED, { filePath });
 
-    return true;
+    return { ok: true };
   }
 
   private _updateFocusLeaf(windowId: string, leafId: string): void {
@@ -2603,7 +2698,7 @@ current contents from the editor somewhere else, and restart the application.`,
         ok: true;
         reviewId: string;
         documentId: string;
-        state: string;
+        state: ReviewState;
         documentRevision: { version: number; sha256: string };
         reviewGeneration: number;
         unresolvedChunks: number;
@@ -2798,7 +2893,7 @@ current contents from the editor somewhere else, and restart the application.`,
     );
     doc.document = newText;
     doc.currentVersion += 1;
-    doc.updates.push({ changes, clientID: "review-diff-store" });
+    doc.updates.push({ changes: changes.toJSON(), clientID: "review-diff-store" });
     while (doc.updates.length > MAX_VERSION_HISTORY) {
       doc.updates.shift();
       doc.minimumVersion += 1;

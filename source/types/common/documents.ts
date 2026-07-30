@@ -93,3 +93,23 @@ export enum DP_EVENTS {
   NEW_WINDOW = 'window-created',
   WINDOW_CLOSED = 'window-deleted'
 }
+
+/**
+ * A collab update in the form it actually crosses IPC.
+ *
+ * `changes` is the output of `ChangeSet.toJSON()`, not a `ChangeSet`. Both the
+ * provider's update history and the push/pull IPC payloads hold this form: a
+ * live `ChangeSet` sent through structured clone arrives as a plain object that
+ * `ChangeSet.fromJSON` rejects with "Invalid JSON representation of ChangeSet",
+ * which breaks the pull loop and strands the renderer at a stale version.
+ *
+ * This type exists because `@codemirror/collab`'s `Update.changes` is a
+ * `ChangeSet` and `ChangeSet.toJSON()` returns `any`, so annotating the wire as
+ * `Update[]` type-checked while being wrong in both directions — and allowed a
+ * real `ChangeSet` to be pushed into the history undetected.
+ */
+export interface SerializedUpdate {
+  /** Opaque `ChangeSet.toJSON()` payload; only `ChangeSet.fromJSON` reads it. */
+  changes: readonly (number | readonly (number | string)[])[]
+  clientID: string
+}
