@@ -14,6 +14,15 @@ servers:
   - url: http://127.0.0.1:27412
     description: Default loopback endpoint
 components:
+  securitySchemes:
+    bearerToken:
+      type: http
+      scheme: bearer
+      description: >-
+        The value of the ZETTLR_AGENT_API_TOKEN environment variable the
+        editor was started with. When that variable is unset the server
+        serves any loopback caller and this scheme is not enforced;
+        publishing the port in that state exposes every open document.
   schemas:
     DocumentRevision:
       type: object
@@ -213,6 +222,7 @@ components:
             - REQUEST_TOO_LARGE
             - METHOD_NOT_FOUND
             - INVALID_PARAMS
+            - UNAUTHORIZED
             - INTERNAL_ERROR
         message:
           type: string
@@ -716,6 +726,8 @@ components:
           type: string
         instanceId:
           type: string
+security:
+  - bearerToken: []
 paths:
   /openapi.yaml:
     get:

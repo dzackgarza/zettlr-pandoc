@@ -137,7 +137,20 @@ tput civis >/dev/null 2>&1
 
 # Detach the dev server and Electron into their own session so closing the
 # splash does not terminate the running app.
-setsid sh -c 'cd -- "$1" && exec just launch-desktop' sh "$repo" \
+#
+# Launched through `direnv exec`: a desktop entry starts this script from the
+# session manager, not from a shell with the direnv hook installed, so the app
+# inherited none of ~/.envrc. Anything the app reads from the environment —
+# ZETTLR_AGENT_API_TOKEN among them — was silently absent, and an absent token
+# is the agent API's unauthenticated mode. Fail loudly instead: direnv must be
+# present, because the alternative is launching with a security posture nobody
+# chose.
+if ! command -v direnv >/dev/null 2>&1; then
+  printf 'direnv is required to launch: the app reads its environment from ~/.envrc.\n' >&2
+  exit 1
+fi
+
+setsid sh -c 'cd -- "$1" && exec direnv exec "$1" just launch-desktop' sh "$repo" \
   >>"$log" 2>&1 </dev/null &
 launch_pid=$!
 

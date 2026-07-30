@@ -53,6 +53,16 @@ import path from "path";
 import { sha256Text } from "@providers/documents/review-diff-store";
 import makeSearchRegex from "source/common/util/make-search-regex";
 
+/**
+ * The environment variable carrying the shared secret. Present and non-empty
+ * means every request must prove it; absent means the server answers any
+ * loopback caller, which is the intended posture for personal hooks on a
+ * 127.0.0.1 bind. The mode in force is logged at boot, because the dangerous
+ * failure here is silent: a tunnel published in front of a server that never
+ * saw the variable would serve the author's documents to anyone.
+ */
+const AGENT_API_TOKEN_VARIABLE = "ZETTLR_AGENT_API_TOKEN";
+
 const SSE_REPLAY_BUFFER_SIZE = 100;
 const SSE_HEARTBEAT_MS = 15000;
 const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
@@ -230,6 +240,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   private _eventSequence = 1;
   private _sseHeartbeat: NodeJS.Timeout | undefined;
   private _openApiYaml = "";
+  private readonly _requiredToken: string | undefined;
 
   constructor(
     private readonly _log: LogProvider,
@@ -238,6 +249,13 @@ export default class AgentHTTPProvider extends ProviderContract {
   ) {
     super();
     this._instanceId = crypto.randomUUID();
+    // Read once, at construction: a token that appears or changes mid-run would
+    // mean the same server answered two different security postures.
+    const configuredToken = process.env[AGENT_API_TOKEN_VARIABLE];
+    this._requiredToken =
+      configuredToken === undefined || configuredToken.length === 0
+        ? undefined
+        : configuredToken;
     // Load the OpenAPI YAML spec (dev: sibling to this file; packaged: assets/openapi.yaml)
     const candidatePaths = [
       path.join(__dirname, "openapi.yaml"),
@@ -288,7 +306,13 @@ export default class AgentHTTPProvider extends ProviderContract {
         resolve(error);
       });
       this._server!.listen(config.port, "127.0.0.1", () => {
-        this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${config.port}`);
+        this._log.info(
+          `[AgentHTTPProvider] Listening on http://127.0.0.1:${config.port} ` +
+            (this._requiredToken === undefined
+              ? `(no ${AGENT_API_TOKEN_VARIABLE} set: any loopback caller is served without a token. ` +
+                "Do not expose this port through a tunnel or proxy in this mode.)"
+              : "(bearer token required)"),
+        );
         resolve(undefined);
       });
     });
@@ -381,6 +405,21 @@ export default class AgentHTTPProvider extends ProviderContract {
   // ==========================================================================
 
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+    // The one place every request passes through, ahead of the spec route and
+    // the dispatcher both. Putting this inside dispatch() was not enough:
+    // /openapi.yaml short-circuits above it and was answering anonymously,
+    // which is exactly the kind of route that gets added in front of a check
+    // placed anywhere but the entry point.
+    if (!this.isAuthorized(req)) {
+      this.sendError(
+        res,
+        401,
+        "UNAUTHORIZED",
+        `A bearer token is required. Send "Authorization: Bearer <token>" with the value of ${AGENT_API_TOKEN_VARIABLE}.`,
+      );
+      return;
+    }
+
     // Serve the OpenAPI spec
     if (req.url === "/openapi.yaml" && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "application/yaml" });
@@ -401,6 +440,39 @@ export default class AgentHTTPProvider extends ProviderContract {
       this._log.error(`[AgentHTTPProvider] Unhandled error: ${err}`);
       this.sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
     });
+  }
+
+  /**
+   * True when the request may proceed: either no token is configured, or the
+   * request carries exactly it.
+   *
+   * The comparison is constant-time. A `===` on the secret leaks its prefix
+   * through response timing, which matters precisely in the case this check
+   * exists for — a caller that reached the port from somewhere other than the
+   * author's own machine and can retry as often as it likes.
+   */
+  private isAuthorized(req: http.IncomingMessage): boolean {
+    if (this._requiredToken === undefined) {
+      return true;
+    }
+    const header = req.headers.authorization;
+    if (header === undefined) {
+      return false;
+    }
+    const match = header.match(/^Bearer (.+)$/);
+    if (match === null) {
+      return false;
+    }
+    const presented = Buffer.from(match[1], "utf8");
+    const expected = Buffer.from(this._requiredToken, "utf8");
+    // timingSafeEqual throws on a length mismatch, which would itself disclose
+    // the secret's length — so the lengths are compared first and the result is
+    // folded in, never short-circuited.
+    const sameLength = presented.length === expected.length;
+    return (
+      crypto.timingSafeEqual(sameLength ? presented : expected, expected) &&
+      sameLength
+    );
   }
 
   private async dispatch(

@@ -265,6 +265,105 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     rmSync(scratch, { recursive: true, force: true });
   });
 
+  describe("bearer token enforcement", function () {
+    const TOKEN = "s3cret-token-value";
+    let tokenPort: number;
+    let guarded: AgentHTTPProvider;
+    let previousToken: string | undefined;
+
+    async function request(
+      pathname: string,
+      headers: Record<string, string> = {},
+    ): Promise<{ status: number; body: string }> {
+      return await new Promise((resolve, reject) => {
+        const req = http.request(
+          { hostname: "127.0.0.1", port: tokenPort, path: pathname, method: "GET", headers },
+          (res) => {
+            let body = "";
+            res.on("data", (chunk) => (body += chunk));
+            res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+          },
+        );
+        req.on("error", reject);
+        req.end();
+      });
+    }
+
+    beforeEach(async function () {
+      const probe = net.createServer();
+      await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+      tokenPort = (probe.address() as net.AddressInfo).port;
+      await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+      // The provider reads the variable once, in its constructor, so it has to
+      // be in place before the instance exists.
+      previousToken = process.env.ZETTLR_AGENT_API_TOKEN;
+      process.env.ZETTLR_AGENT_API_TOKEN = TOKEN;
+      guarded = new AgentHTTPProvider(new LogProvider(), provider, {
+        config: {
+          get: () => ({
+            app: { openWorkspaces: [scratch] },
+            agentApi: { enabled: true, port: tokenPort },
+          }),
+        },
+      });
+      await guarded.boot();
+    });
+
+    afterEach(async function () {
+      await guarded.shutdown();
+      if (previousToken === undefined) {
+        delete process.env.ZETTLR_AGENT_API_TOKEN;
+      } else {
+        process.env.ZETTLR_AGENT_API_TOKEN = previousToken;
+      }
+    });
+
+    it("serves a request carrying the configured token", async function () {
+      const response = await request("/v1/ping", { authorization: `Bearer ${TOKEN}` });
+      assert.equal(response.status, 200);
+      assert.equal(JSON.parse(response.body).instanceId.length > 0, true);
+    });
+
+    it("refuses every route without the token, including health and the spec", async function () {
+      // The check sits ahead of the route table rather than on the handlers, so
+      // the endpoints that are deliberately unauthenticated in loopback mode are
+      // covered too. A published tunnel must not leak the instance id, the
+      // process id, or the shape of the API to an anonymous caller.
+      for (const pathname of ["/health", "/v1/ping", "/v1/context", "/openapi.yaml"]) {
+        const anonymous = await request(pathname);
+        assert.equal(anonymous.status, 401, `${pathname} must refuse an anonymous caller`);
+        assert.equal(JSON.parse(anonymous.body).error.code, "UNAUTHORIZED");
+      }
+    });
+
+    it("refuses a wrong token, a wrong scheme, and a token that is merely a prefix", async function () {
+      const rejected = [
+        `Bearer ${TOKEN}x`,
+        `Bearer ${TOKEN.slice(0, -1)}`,
+        // A prefix of the right length family: the comparison must not accept
+        // on an early match, and must not throw on a length mismatch either.
+        "Bearer s",
+        `Basic ${TOKEN}`,
+        TOKEN,
+        "Bearer",
+      ];
+      for (const authorization of rejected) {
+        const response = await request("/v1/ping", { authorization });
+        assert.equal(response.status, 401, `"${authorization}" must be refused`);
+      }
+    });
+  });
+
+  it("serves any loopback caller when no token is configured", async function () {
+    // The unauthenticated loopback posture is the intended default for personal
+    // hooks, and the rest of this suite depends on it. Assert it explicitly so
+    // adding the token check cannot quietly become mandatory.
+    assert.equal(process.env.ZETTLR_AGENT_API_TOKEN, undefined);
+    const response = await httpRequest("GET", "/v1/ping");
+    assert.equal(response.status, 200);
+  });
+
   it("boots without a listener when the configured port is taken", async function () {
     // The API is enabled by default, and AppServiceContainer._informativeBoot
     // rethrows whatever boot() rejects with — so an unrelated process holding
