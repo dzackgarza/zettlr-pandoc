@@ -2954,12 +2954,17 @@ current contents from the editor somewhere else, and restart the application.`,
       [{ from: 0, to: doc.document.length, insert: workingText }],
       doc.document.length,
     );
-    doc.document = newText;
-    doc.currentVersion += 1;
-    doc.updates.push({
+    // Serialize before mutating: serializeChangeSet throws on a shape it does
+    // not recognize, and a throw between the version bump and the push would
+    // consume a version number with no update for peers to pull — a dirty
+    // buffer that can never be saved, indistinguishable from a deadlock.
+    const update = {
       changes: serializeChangeSet(changes),
       clientID: "review-diff-store",
-    });
+    };
+    doc.document = newText;
+    doc.currentVersion += 1;
+    doc.updates.push(update);
     while (doc.updates.length > MAX_VERSION_HISTORY) {
       doc.updates.shift();
       doc.minimumVersion += 1;

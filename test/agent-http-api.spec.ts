@@ -69,6 +69,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   let provider: DocumentManager;
   let httpProvider: AgentHTTPProvider;
   let httpPort: number;
+  // The configured workspace set, read live by the config seam so a test can
+  // exercise the no-workspace-open profile the app ships with.
+  let openWorkspaces: string[] = [];
 
   function descriptorFor(filePath: string): CodeFileDescriptor {
     const stat = statSync(filePath);
@@ -112,7 +115,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         get: () => ({
           app: {
             openFiles: [],
-            openWorkspaces: [scratch],
+            openWorkspaces,
           },
           system: {
             avoidNewTabs: false,
@@ -233,6 +236,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
   beforeEach(async function () {
     scratch = mkdtempSync(path.join(os.tmpdir(), "zettlr-http-api-"));
+    openWorkspaces = [scratch];
     // Find a free port
     const server = net.createServer();
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -244,7 +248,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       config: {
         get: () => ({
           app: {
-            openWorkspaces: [scratch],
+            openWorkspaces,
           },
           agentApi: {
             enabled: true,
@@ -504,6 +508,29 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
     assert.equal(opened.status, 200);
     assert.equal(JSON.parse(opened.body).documentId, document.documentId);
+  });
+
+  it("refuses to open an unopened path when no workspace is configured", async function () {
+    // A fresh profile enables the agent API and opens no workspace. If an empty
+    // workspace set meant "unrestricted", any loopback client could POST an
+    // absolute path and read the file back through the content endpoint.
+    const secret = path.join(scratch, "outside.md");
+    writeFileSync(secret, "private\n", "utf8");
+    const alreadyOpen = path.join(scratch, "already-open.md");
+    const openDocId = await openFile(alreadyOpen, "visible\n");
+    openWorkspaces = [];
+
+    const denied = await httpRequest("POST", "/v1/documents", {
+      body: JSON.stringify({ uri: `file://${secret}` }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(denied.status, 404);
+    assert.equal(JSON.parse(denied.body).error.code, "DOCUMENT_NOT_FOUND");
+
+    // What the user already opened stays reachable: workspace containment is
+    // not the thing that made those documents legitimate.
+    const focused = await httpRequest("POST", `/v1/documents/${openDocId}/focus`);
+    assert.equal(focused.status, 200);
   });
 
   it("POST /v1/documents/{id}/proposals returns 412 on stale ETag", async function () {

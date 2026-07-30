@@ -1425,7 +1425,13 @@ export default class AgentHTTPProvider extends ProviderContract {
   private isDocumentOpenableInCurrentWorkspaces(filePath: string): boolean {
     const workspaces = this._app.config.get().app.openWorkspaces;
     if (workspaces.length === 0) {
-      return true;
+      // An empty workspace list is not "every file on disk is in scope". A
+      // fresh profile opens no workspace, so answering true here let any
+      // loopback client POST an absolute path and then read the file back.
+      // What is legitimately in scope with no workspace configured is what the
+      // editor already holds — the user opened those documents itself. A path
+      // nobody has opened stays out of reach.
+      return this._documents.getDocumentId(filePath) !== undefined;
     }
     if (!fs.existsSync(filePath)) {
       return false;

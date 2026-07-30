@@ -179,6 +179,47 @@ describe("ReviewDiffStore", function () {
       assert.deepEqual(first, second);
     });
 
+    it("rejects a packet that leaves the working text unchanged, as openReview does", function () {
+      const baseline = "alpha\nbeta\n";
+      const proposed = "alpha\nBETA\n";
+      store.openReview({
+        documentId: DOC_ID,
+        documentPath: DOC_PATH,
+        baselineText: baseline,
+        diskBaselineSha256: sha256Text(baseline),
+        initialPatch: {
+          patchFormat: "unified-diff",
+          patch: makePatch(baseline, proposed),
+          clientRequestId: "req-1",
+        },
+      });
+      // A hunk that replaces a line with itself. validateAndParsePatch only
+      // rejects a patch with no hunks at all, and this one applies cleanly at
+      // zero fuzz — so nothing upstream of submitPacket catches it.
+      const noOp = [
+        "--- document",
+        "+++ document",
+        "@@ -2,1 +2,1 @@",
+        "-BETA",
+        "+BETA",
+        "",
+      ].join("\n");
+      const result = store.submitPacket(DOC_ID, {
+        patchFormat: "unified-diff",
+        patch: noOp,
+        clientRequestId: "req-noop",
+      });
+      assert.equal(result.ok, false);
+      if (result.ok) return;
+      assert.equal(result.code, "PATCH_INVALID");
+      // A rejected no-op must not have advanced the review: a burnt generation
+      // makes the no-op the newest packet and blocks retracting the real one.
+      const review = store.getReview(DOC_ID);
+      assert.ok(review !== undefined);
+      assert.equal(review.generation, 1);
+      assert.equal(review.workingText, proposed);
+    });
+
     it("rejects with REVISION_MISMATCH when expectedReviewGeneration does not match", function () {
       const baseline = "alpha\n";
       store.openReview({

@@ -428,6 +428,17 @@ export class ReviewDiffStore extends EventEmitter {
     }
 
     const newWorkingText = normalizeText(proposed);
+    // openReview rejects an initial patch that leaves the text unchanged; a
+    // later packet has to answer to the same invariant. A no-op that is allowed
+    // through still burns a generation and becomes the newest packet, which
+    // blocks retraction of the real one underneath it.
+    if (newWorkingText === review.workingText) {
+      return {
+        ok: false,
+        code: "PATCH_INVALID",
+        message: "The patch does not change the target document.",
+      };
+    }
     const packetId = randomUUID();
     review.packets.push({
       packetId,
