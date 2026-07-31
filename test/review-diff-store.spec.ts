@@ -1321,6 +1321,55 @@ describe("ReviewDiffStore", function () {
         validateAndParsePatch(binaryPatch, DOC_PATH);
       }, /binary/);
     });
+
+    // The changes issue #34 puts out of scope: they must be refused by name,
+    // not applied for their hunks alone. Each patch below carries a valid
+    // hunk, so only the metadata check can be what refuses it.
+    it("rejects rename, create, and mode-change patches by their metadata", function () {
+      const renamePatch = [
+        `diff --git a${DOC_PATH} b/renamed.md`,
+        "similarity index 95%",
+        `rename from ${DOC_PATH}`,
+        "rename to renamed.md",
+        `--- a${DOC_PATH}`,
+        "+++ b/renamed.md",
+        "@@ -1,1 +1,1 @@",
+        "-alpha",
+        "+ALPHA",
+        "",
+      ].join("\n");
+      assert.throws(() => {
+        validateAndParsePatch(renamePatch, DOC_PATH);
+      }, /rename, copy, create, or delete/);
+
+      const createPatch = [
+        `diff --git a${DOC_PATH} b${DOC_PATH}`,
+        "new file mode 100644",
+        "--- /dev/null",
+        `+++ b${DOC_PATH}`,
+        "@@ -0,0 +1,1 @@",
+        "+alpha",
+        "",
+      ].join("\n");
+      assert.throws(() => {
+        validateAndParsePatch(createPatch, DOC_PATH);
+      }, /rename, copy, create, or delete/);
+
+      const modePatch = [
+        `diff --git a${DOC_PATH} b${DOC_PATH}`,
+        "old mode 100644",
+        "new mode 100755",
+        `--- a${DOC_PATH}`,
+        `+++ b${DOC_PATH}`,
+        "@@ -1,1 +1,1 @@",
+        "-alpha",
+        "+ALPHA",
+        "",
+      ].join("\n");
+      assert.throws(() => {
+        validateAndParsePatch(modePatch, DOC_PATH);
+      }, /mode-change/);
+    });
   });
 
   describe("listReviews", function () {
