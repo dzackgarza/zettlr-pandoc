@@ -43,6 +43,19 @@
         @click="cancelSearch()"
       />
     </p>
+    <!--
+      A dispatch that never reached the search provider ends the operation
+      here: the pane is where the user watches it run, so it is where the
+      failure has to say so. It appears after the user has already handed the
+      operation off and looked away, so it has to be announced, not just drawn.
+    -->
+    <p
+      v-if="searchError !== undefined"
+      class="search-error"
+      role="alert"
+    >
+      {{ searchError }}
+    </p>
     <!-- ... as well as two buttons to clear the results or toggle them. -->
     <template v-if="windowStateStore.searchResults.length > 0">
       <template v-if="!searchIsRunning">
@@ -255,6 +268,8 @@ const caseInsensitive = ref<boolean>(true)
 const searchProgress = ref(0)
 // Whether the last search had no result
 const hadNoResult = ref(false)
+// The failure of the last search-provider dispatch, shown in the pane
+const searchError = ref<string|undefined>(undefined)
 // A global trigger for the result set trigger. This will determine what
 // the toggle will do to all result sets -- either hide or display them.
 const toggleState = ref<boolean>(false)
@@ -345,8 +360,11 @@ const filteredSearchResults = computed<SearchResultWrapper[]>(() => {
     })
 })
 
-// Changing the query should reset the no-results message
-watch(query, () => { hadNoResult.value = false })
+// Changing the query should reset the no-results message and the last failure
+watch(query, () => {
+  hadNoResult.value = false
+  searchError.value = undefined
+})
 
 const stopListeningForSearchResults = ipcRenderer.on('search-provider', (event, message: SearchProviderBroadcast) => {
   if (message.type === 'search-end') {
@@ -398,6 +416,7 @@ function startSearch (overrideQuery?: string): void {
   // Now we're good to go!
   searchProgress.value = 0
   hadNoResult.value = false
+  searchError.value = undefined
   searchIsRunning.value = true
   toggleState.value = false
   emptySearchResults()
@@ -418,8 +437,28 @@ function startSearch (overrideQuery?: string): void {
     }
   } satisfies SearchProviderIPCAPI)
     .catch(err => {
-      console.error(err)
+      // A search that never started will never broadcast 'search-end', so the
+      // running state would stay on forever and the user would be watching a
+      // progress bar for a search nobody is running. Stop claiming the run,
+      // and report the failure where the run was displayed.
+      searchIsRunning.value = false
+      searchProgress.value = 0
+      reportSearchFailure(searchButtonLabel, err)
     })
+}
+
+/**
+ * Reports a failed search-provider dispatch in the search pane. The developer
+ * console is not a user surface: a dispatch that only logged would leave the
+ * user with no reachable signal that their search never started.
+ *
+ * @param  {string}   operationLabel  The user-facing name of the operation
+ * @param  {unknown}  err             The rejection reason
+ */
+function reportSearchFailure (operationLabel: string, err: unknown): void {
+  console.error(`Search operation failed (${operationLabel})`, err)
+  const detail = err instanceof Error ? err.message : String(err)
+  searchError.value = trans('%s failed: %s', operationLabel, detail)
 }
 
 /**
@@ -462,8 +501,11 @@ async function processSearchResult (progress: number, absPath: string, result: S
  * @param   {boolean}  startNewSearch  Whether to start a new search afterwards
  */
 function cancelSearch (startNewSearch: boolean = false): void {
+  // A refused cancellation leaves the search running in main — which still
+  // broadcasts 'search-end' — so the running state stays as it is and only the
+  // failure of the cancellation itself is reported.
   ipcRenderer.invoke('search-provider', { command: 'cancel-search', payload: undefined } satisfies SearchProviderIPCAPI)
-    .catch(err => console.error(err))
+    .catch(err => reportSearchFailure(cancelButtonLabel, err))
 
   shouldStartNewSearch.value = startNewSearch
   searchProgress.value = 0
@@ -579,6 +621,12 @@ body div#global-search-pane {
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
+  }
+
+  // The same red the selectable-list error strings use, legible on both themes.
+  p.search-error {
+    display: block;
+    color: rgb(200, 80, 100);
   }
 
   .form-control {
