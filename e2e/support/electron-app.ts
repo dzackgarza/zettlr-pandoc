@@ -335,11 +335,19 @@ export async function launchElectron (
     `--data-dir=${configDirectory}`,
     '--remote-debugging-port=0',
     '--disable-hardware-acceleration',
-    // A suite launches several windows in sequence, and a developer's desktop
-    // supplies more. Chromium throttles a renderer it considers occluded, which
-    // stalls style recalculation and repaint -- so a :hover state can go
-    // unapplied for the whole of a wait while the element sits there hidden.
-    // Whether a test passes must not depend on which window is on top.
+    // Kept for one property only: whether a test passes must not depend on
+    // which window happens to be on top. Chromium does throttle renderers it
+    // considers occluded, which would stall the style recalculation a :hover
+    // assertion waits on.
+    //
+    // These flags are NOT known to have fixed anything. They were added after
+    // a suite failure that occlusion would explain, but the green run cited as
+    // evidence changed two things at once -- the flags went in and the other
+    // agents sharing this checkout stopped -- so it discriminates nothing.
+    // Competing candidates for that failure remain open: concurrent runs
+    // corrupting each other through the repo-wide .webpack build directory,
+    // and a boot/shutdown-shaped failure seen with neither signature. Do not
+    // cite these flags as the fix for suite instability.
     '--disable-backgrounding-occluded-windows',
     '--disable-renderer-backgrounding'
   ]
