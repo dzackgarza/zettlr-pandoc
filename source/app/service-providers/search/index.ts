@@ -30,6 +30,15 @@ export type SearchProviderIPCAPI = IPCAPI<{
   'cancel-search': unknown
 }>
 
+/**
+ * The messages this provider broadcasts on the 'search-provider' channel
+ * while a full-text search runs. The provider is the single owner of this
+ * type; the renderer's search UI imports it to type its listener.
+ */
+export type SearchProviderBroadcast =
+  | { type: 'search-end' }
+  | { type: 'search-result', file: string, result: SearchResult|undefined, progress: number }
+
 export class SearchProvider implements ProviderContract {
   /**
    * Keeps a count of all files that will be searched during a search-in-

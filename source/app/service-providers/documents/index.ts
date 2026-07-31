@@ -290,9 +290,14 @@ export type DocumentManagerIPCAPI = IPCAPI<{
   // targetRange/sourceLocation are additive (issue #1 Phase 5): a reference
   // jump lands on targetRange in the opened document and stamps the origin
   // pane's current history entry with sourceLocation so Back can restore it.
-  "open-file": LeafLoc & {
+  // windowId/leafId/newTab are optional, exactly like the corresponding
+  // openFile() parameters: callers such as the sidebar and renderers open
+  // files without naming a pane and let the manager pick one.
+  "open-file": {
     path: string;
-    newTab: boolean;
+    windowId?: string;
+    leafId?: string;
+    newTab?: boolean;
     targetRange?: SourceRange;
     sourceLocation?: DocumentLocation;
   };

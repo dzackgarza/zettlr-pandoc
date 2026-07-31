@@ -56,6 +56,17 @@ import RenameReference from './rename-reference'
 import TikzRender from './tikz-render'
 import FormatDocument from './format-document'
 import WorkspaceSort from './ws-sort'
+import type { CustomExportIPCAPI, ExportIPCAPI } from './export'
+import type { ForceOpenAPI } from './force-open'
+import type { SaveImageFromClipboardAPI } from './save-image-from-clipboard'
+import type { DirSettingsCommandAPI } from './dir-settings'
+import type { TikzRenderRequest } from 'source/app/util/tikz-render'
+import type { LanguageToolLinterRequest } from './language-tool'
+import type { LanguageToolIgnoredRuleEntry } from '../config/get-config-template'
+import type { ProgrammaticallyOpenableWindows } from './open-aux-window'
+import type { DocumentType } from '@dts/common/documents'
+import type { WorkspaceReferenceEdit } from '@dts/common/references'
+import type { ProjectSettings } from '@dts/common/fsal'
 
 export const commands = [
   DirDelete,
@@ -96,6 +107,58 @@ export const commands = [
   UpdateUserDictionary,
   WorkspaceSort
 ]
+
+/**
+ * The wire contract of the 'application' ipc channel: every command the
+ * renderer may run through CommandProvider.run(), with its payload. This
+ * union is the single owner of the channel's request shape; the renderer
+ * bridge imports it so a wrong command or payload fails to compile at the
+ * call site. When a new command becomes renderer-invokable, add it here.
+ */
+export type ApplicationIPCAPI =
+  | { command: 'add-language-tool-ignore-rule', payload: LanguageToolIgnoredRuleEntry }
+  | { command: 'commit-reference-rename', payload: { edit: WorkspaceReferenceEdit } }
+  | { command: 'custom-export', payload: CustomExportIPCAPI }
+  | { command: 'dir-delete', payload: { path: string } }
+  | { command: 'dir-new', payload?: { path?: string, name?: string } }
+  | { command: 'dir-new-project', payload: { path: string } }
+  | { command: 'dir-project-export', payload: string }
+  | { command: 'dir-remove-project', payload: { path: string } }
+  | { command: 'dir-rename', payload: { path: string, name: string } }
+  | { command: 'dir-sort', payload: { path: string, sorting: string } }
+  | { command: 'export', payload: ExportIPCAPI }
+  | { command: 'fetch-link-preview', payload: string }
+  | { command: 'file-delete', payload: { path: string } }
+  | { command: 'file-duplicate', payload: { path: string, windowId?: string, leafId?: string|undefined } }
+  | { command: 'file-new', payload?: { path?: string, name?: string, type?: DocumentType } }
+  | { command: 'file-rename', payload: { path: string, name: string } }
+  | { command: 'find-exact', payload: string }
+  | { command: 'force-open', payload: ForceOpenAPI }
+  | { command: 'format-document', payload: string }
+  | { command: 'get-available-dictionaries', payload?: undefined }
+  | { command: 'get-available-languages', payload?: undefined }
+  | { command: 'get-file-contents', payload: string }
+  | { command: 'open-attachment', payload: { citekey: string, filePath?: string } }
+  | { command: 'open-aux-window', payload: { window: ProgrammaticallyOpenableWindows, hash?: string } }
+  | { command: 'open-preferences', payload?: undefined }
+  | { command: 'open-project-preferences', payload: string }
+  | { command: 'open-stats-window', payload?: undefined }
+  | { command: 'open-update-window', payload?: undefined }
+  | { command: 'preview-reference-rename', payload: { oldKey: string, newKey: string } }
+  | { command: 'print', payload?: string }
+  | { command: 'rename-tag', payload: { oldName: string, newName: string } }
+  | { command: 'request-move', payload: { from: string, to: string } }
+  | { command: 'root-close', payload: string }
+  | { command: 'root-open-workspaces', payload?: undefined }
+  | { command: 'root-open-files', payload?: undefined }
+  | { command: 'roots-add', payload: string[] }
+  | { command: 'run-language-tool', payload: LanguageToolLinterRequest }
+  | { command: 'save-image-from-clipboard', payload: SaveImageFromClipboardAPI | { startPath: string } }
+  | { command: 'set-directory-setting', payload: DirSettingsCommandAPI }
+  | { command: 'sort-workspaces', payload: string[] }
+  | { command: 'tikz-render', payload: TikzRenderRequest }
+  | { command: 'undo-reference-rename', payload?: undefined }
+  | { command: 'update-project-properties', payload: { path: string, properties: ProjectSettings } }
 
 export default class CommandProvider extends ProviderContract {
   private readonly _commands: ZettlrCommand[]

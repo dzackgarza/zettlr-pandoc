@@ -117,6 +117,16 @@ interface PendingUndo {
 }
 
 /**
+ * The wire contract of the 'reference-provider' ipc channel. The provider is
+ * the single owner of this type; the renderer bridge imports it so a wrong
+ * command or payload fails to compile at the call site.
+ */
+export type ReferenceProviderIPCAPI =
+  | { command: 'get-snapshot', payload?: undefined }
+  | { command: 'report-live-buffer', payload: { snapshot: DocumentReferenceSnapshot, generation: number } }
+  | { command: 'drop-live-buffer', payload: { documentPath: string } }
+
+/**
  * Serves the merged workspace reference view (saved FSAL snapshots overlaid
  * by renderer-reported live buffers) to every consumer over the
  * 'reference-provider' ipc channel.
@@ -149,7 +159,7 @@ export default class ReferenceProvider extends ProviderContract {
     super()
     this._index = new ReferenceIndex()
 
-    ipcMain.handle('reference-provider', (_event, message: { command: string, payload?: unknown }) => {
+    ipcMain.handle('reference-provider', (_event, message: ReferenceProviderIPCAPI) => {
       const { command } = message
 
       if (command === 'get-snapshot') {
