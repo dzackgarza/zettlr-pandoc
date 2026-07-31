@@ -171,6 +171,19 @@ export interface DecodedSearchDocumentRequest {
 
 const SEARCH_CONTEXT_DEFAULT = 3;
 
+/**
+ * Bounds on user-provided search patterns. The search endpoint accepts raw
+ * regular expressions, and this server runs on the Electron main process: a
+ * catastrophic pattern left unbounded does not slow one request down, it
+ * freezes the editor. The length cap refuses absurd patterns at the decode
+ * boundary; the deadline is checked between per-line executions inside the
+ * match loop. JavaScript regex evaluation cannot be interrupted mid-exec, so
+ * the honest ceiling is the deadline plus one line's worth of backtracking —
+ * bounded by line length in practice, not by this constant alone.
+ */
+export const MAX_SEARCH_PATTERN_LENGTH = 512;
+const SEARCH_DEADLINE_MS = 1000;
+
 function decodeSearchDocumentRequest(
   body: string,
 ): Decoded<DecodedSearchDocumentRequest> {
@@ -181,6 +194,12 @@ function decodeSearchDocumentRequest(
   const { literal, context } = raw.value;
   if (typeof literal !== "string") {
     return { ok: false, message: "literal is required and must be a string" };
+  }
+  if (literal.length > MAX_SEARCH_PATTERN_LENGTH) {
+    return {
+      ok: false,
+      message: `literal must be at most ${MAX_SEARCH_PATTERN_LENGTH} characters`,
+    };
   }
   if (context === undefined) {
     return { ok: true, value: { literal, context: SEARCH_CONTEXT_DEFAULT } };
@@ -874,7 +893,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     const filePath = this._documents.getDocumentPath(documentId);
-    if (filePath === undefined || !this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
+    if (filePath === undefined || !(await this.isDocumentOpenableInCurrentWorkspaces(filePath))) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document is not part of workspace");
       return;
     }
@@ -911,7 +930,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     };
 
     const filePath = resolveOpenPath(request.uri);
-    if (filePath === undefined || !this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
+    if (filePath === undefined || !(await this.isDocumentOpenableInCurrentWorkspaces(filePath))) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Path is outside configured workspace scope");
       return;
     }
@@ -949,7 +968,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    if (!this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
+    if (!(await this.isDocumentOpenableInCurrentWorkspaces(filePath))) {
       this.sendError(
         res,
         404,
@@ -1179,7 +1198,17 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 400, "INVALID_PARAMS", "Invalid search pattern");
       return;
     }
+    const deadline = Date.now() + SEARCH_DEADLINE_MS;
     for (let i = 0; i < lines.length; i++) {
+      if (Date.now() > deadline) {
+        this.sendError(
+          res,
+          422,
+          "SEARCH_TIMEOUT",
+          `Search did not finish within ${SEARCH_DEADLINE_MS} ms; simplify the pattern`,
+        );
+        return;
+      }
       searchRegex.lastIndex = 0;
       let match: RegExpExecArray | null = searchRegex.exec(lines[i]);
       while (match !== null) {
@@ -1630,7 +1659,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     };
   }
 
-  private isDocumentOpenableInCurrentWorkspaces(filePath: string): boolean {
+  private async isDocumentOpenableInCurrentWorkspaces(filePath: string): Promise<boolean> {
     const workspaces = this._app.config.get().app.openWorkspaces;
     if (workspaces.length === 0) {
       // An empty workspace list is not "every file on disk is in scope". A
@@ -1646,13 +1675,21 @@ export default class AgentHTTPProvider extends ProviderContract {
       // right now is the question this predicate actually has.
       return this._documents.loadedDocuments.some((doc) => doc.filePath === filePath);
     }
-    if (!fs.existsSync(filePath)) {
+    // Canonicalize the requested path so a symlink inside a workspace cannot
+    // point the containment check at a file outside it. A path realpath cannot
+    // resolve — nonexistent, a dangling link, a component that is not a
+    // directory, or one this process may not traverse — is a path this
+    // predicate cannot prove inside any workspace, and refusal is the only
+    // safe answer a containment check can give for it.
+    let canonicalFilePath: string;
+    try {
+      canonicalFilePath = await fs.promises.realpath(filePath);
+    } catch {
       return false;
     }
-    const canonicalFilePath = fs.realpathSync(filePath);
-    return workspaces.some((workspacePath) => {
+    for (const workspacePath of workspaces) {
       // A configured workspace can be deleted or unmounted while the editor
-      // runs, and realpathSync then throws ENOENT. Letting that escape turned
+      // runs, and realpath then rejects with ENOENT. Letting that escape turned
       // every openability check into a bare 500 whose message named neither the
       // path nor the reason, so the only diagnosis was reading the app log and
       // guessing which of several workspaces was gone. A vanished workspace
@@ -1660,7 +1697,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       // caller; anything else is a real fault and still propagates.
       let canonicalWorkspacePath: string;
       try {
-        canonicalWorkspacePath = fs.realpathSync(workspacePath);
+        canonicalWorkspacePath = await fs.promises.realpath(workspacePath);
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         if (code !== "ENOENT" && code !== "ENOTDIR") {
@@ -1671,12 +1708,19 @@ export default class AgentHTTPProvider extends ProviderContract {
             `(${code}); treating it as not containing ${filePath}. The workspace is ` +
             "probably deleted or unmounted.",
         );
-        return false;
+        continue;
       }
       const relativePath = path.relative(canonicalWorkspacePath, canonicalFilePath);
-      return relativePath === "" ||
-        (!relativePath.startsWith(`..${path.sep}`) && relativePath !== ".." && !path.isAbsolute(relativePath));
-    });
+      if (
+        relativePath === "" ||
+        (!relativePath.startsWith(`..${path.sep}`) &&
+          relativePath !== ".." &&
+          !path.isAbsolute(relativePath))
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private findDocumentIdByReviewId(reviewId: string): string | undefined {

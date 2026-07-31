@@ -228,6 +228,7 @@ components:
             - IDEMPOTENCY_CONFLICT
             - REQUEST_TOO_LARGE
             - REQUEST_BODY_TIMEOUT
+            - SEARCH_TIMEOUT
             - METHOD_NOT_FOUND
             - INVALID_PARAMS
             - UNAUTHORIZED
@@ -991,6 +992,7 @@ paths:
               properties:
                 literal:
                   type: string
+                  maxLength: 512
                 context:
                   type: integer
                   default: 3
@@ -1001,6 +1003,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SearchDocumentResponse'
+        '400':
+          description: Invalid, unparseable, or over-length search pattern
+        '422':
+          description: >-
+            Pattern evaluation exceeded the server's time budget
+            (SEARCH_TIMEOUT). The deadline is checked between per-line
+            executions, so simplify the pattern rather than retrying.
   /v1/documents/{documentId}/proposals:
     post:
       operationId: submitProposal

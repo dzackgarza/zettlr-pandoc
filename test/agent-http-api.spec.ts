@@ -21,12 +21,14 @@ import { AGENT_ERROR_CODES } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import http from "http";
 import net from "net";
 import os from "os";
 import path from "path";
-import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
+import AgentHTTPProvider, {
+  MAX_SEARCH_PATTERN_LENGTH,
+} from "source/app/service-providers/agent-api/http-server";
 import DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
 
@@ -717,6 +719,71 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       headers: { "content-type": "application/json" },
     });
     assert.equal(reopened.status, 404);
+  });
+
+  it("refuses paths that escape a configured workspace by traversal or symlink", async function () {
+    const wsDir = path.join(scratch, "ws");
+    mkdirSync(wsDir);
+    const secret = path.join(scratch, "secret.md");
+    writeFileSync(secret, "private\n", "utf8");
+    openWorkspaces = [wsDir];
+
+    // `..` traversal: the URI names a path inside the workspace textually,
+    // but it resolves outside it.
+    const traversed = await httpRequest("POST", "/v1/documents", {
+      body: JSON.stringify({ uri: `file://${wsDir}/inner/../../secret.md` }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(traversed.status, 404);
+    assert.equal(JSON.parse(traversed.body).error.code, "DOCUMENT_NOT_FOUND");
+
+    // Symlink escape: the path sits inside the workspace, its target does not.
+    // Containment must judge the canonical target, not the link's location.
+    symlinkSync(secret, path.join(wsDir, "inside.md"));
+    const linked = await httpRequest("POST", "/v1/documents", {
+      body: JSON.stringify({ uri: `file://${wsDir}/inside.md` }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(linked.status, 404);
+    assert.equal(JSON.parse(linked.body).error.code, "DOCUMENT_NOT_FOUND");
+
+    // Control: a genuine workspace file opens, so the refusals above are the
+    // containment check refusing — not a broken fixture refusing everything.
+    const real = path.join(wsDir, "real.md");
+    writeFileSync(real, "ok\n", "utf8");
+    const opened = await httpRequest("POST", "/v1/documents", {
+      body: JSON.stringify({ uri: `file://${real}` }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(opened.status, 201);
+  });
+
+  it("refuses an over-length search pattern with INVALID_PARAMS", async function () {
+    const filePath = path.join(scratch, "long-pattern.md");
+    const docId = await openFile(filePath, "alpha\n");
+    const response = await httpRequest("POST", `/v1/documents/${docId}/search`, {
+      body: JSON.stringify({ literal: "a".repeat(MAX_SEARCH_PATTERN_LENGTH + 1) }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(response.status, 400);
+    assert.equal(JSON.parse(response.body).error.code, "INVALID_PARAMS");
+  });
+
+  it("stops a catastrophic search pattern with SEARCH_TIMEOUT", async function () {
+    // (a+)+$ against a line of a's ending in a non-match backtracks
+    // exponentially — 2^24 steps per line here. Unbounded, these 200 lines
+    // hold the main process for tens of seconds; the deadline between
+    // per-line executions must cut that off with a declared error instead.
+    this.timeout(15000);
+    const filePath = path.join(scratch, "catastrophic.md");
+    const line = "a".repeat(24) + "!";
+    const docId = await openFile(filePath, Array(200).fill(line).join("\n") + "\n");
+    const response = await httpRequest("POST", `/v1/documents/${docId}/search`, {
+      body: JSON.stringify({ literal: "/(a+)+$/" }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(response.status, 422);
+    assert.equal(JSON.parse(response.body).error.code, "SEARCH_TIMEOUT");
   });
 
   it("POST /v1/documents/{id}/proposals returns 412 on a stale snapshot", async function () {
