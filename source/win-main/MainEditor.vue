@@ -61,7 +61,7 @@ import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citepr
 import type { ProjectInfo } from 'source/common/modules/markdown-editor/plugins/project-info-field'
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
 import type { DocumentLocation, ProjectRootSpec, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
-import type { ReviewDiffSession, ReviewDiffStatus } from '@dts/common/review-diff'
+import type { ReviewDiffSession } from '@dts/common/review-diff'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import { extractReferences } from '@common/pandoc-util/extract-references'
 import { annotateCompletionEntries } from '@common/pandoc-util/project-reference-status'
@@ -219,7 +219,7 @@ function applyPendingNavigation (): void {
   }
 }
 
-function applyReviewDiffSession (session: ReviewDiffSession, reviewGeneration?: number): void {
+function applyReviewDiffSession (session: ReviewDiffSession): void {
   if (session.documentPath !== props.file.path) {
     return
   }
@@ -230,7 +230,7 @@ function applyReviewDiffSession (session: ReviewDiffSession, reviewGeneration?: 
   }
 
   pendingReviewDiffSession = null
-  currentEditor.startReviewDiffSession(session, reviewGeneration)
+  currentEditor.startReviewDiffSession(session)
 }
 
 function fetchActiveReviewDiffSession (): void {
@@ -413,10 +413,7 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     context.reviewDiffSession !== undefined &&
     !(context.windowId === props.windowId && context.leafId === props.leafId)
   ) {
-    applyReviewDiffSession(
-      context.reviewDiffSession,
-      context.reviewState?.generation,
-    )
+    applyReviewDiffSession(context.reviewDiffSession)
   }
 })
 
@@ -759,23 +756,21 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     }
   })
 
-  editor.on('review-diff-status', (status: ReviewDiffStatus) => {
+  editor.on('review-chunk-decision', (decision: { reviewId: string, chunkId: string, decision: 'accept'|'reject' }) => {
+    // The pane only names the chunk; the provider is the one decision path.
+    // Whatever happens — applied, or refused because the region changed under
+    // the click — the provider broadcasts its state, and this pane redraws
+    // from that broadcast. A refusal needs no local handling beyond surfacing.
     ipcRenderer.invoke('documents-provider', {
-      command: 'set-review-diff-status',
-      // Spread the whole status: hand-listing these fields is what silently
-      // dropped reviewGeneration and disabled the main-process staleness guard.
-      payload: { ...status, path: status.filePath }
+      command: 'decide-review-chunk',
+      payload: decision
     } as DocumentManagerIPCAPI)
-      .then(accepted => {
-        if (accepted !== true) {
-          fetchActiveReviewDiffSession()
+      .then((result: { ok: boolean, message?: string }) => {
+        if (!result.ok) {
+          showToast(trans(result.message ?? 'The chunk decision was refused.'), 'error')
         }
       })
-      .catch(err => console.error('Could not update review-diff status', err))
-  })
-
-  editor.on('review-diff-error', (message: string) => {
-    showToast(trans(message), 'error')
+      .catch(err => console.error('Could not decide review chunk', err))
   })
 
   editor.on('focus', () => {

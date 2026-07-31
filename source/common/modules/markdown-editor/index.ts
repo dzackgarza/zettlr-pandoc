@@ -21,9 +21,8 @@
 // component for the editor itself.
 import "./editor.css";
 
-import { getSyncedVersion, sendableUpdates } from "@codemirror/collab";
+import { sendableUpdates } from "@codemirror/collab";
 import { foldEffect, foldState, syntaxTree } from "@codemirror/language";
-import { getChunks, getOriginalDoc } from "@codemirror/merge";
 import { closeSearchPanel, openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import {
   Compartment,
@@ -44,7 +43,7 @@ import {
   type ReferenceCompletionEntry,
   type SourceRange,
 } from "@dts/common/references";
-import type { ReviewDiffSession, ReviewDiffStatus } from "@dts/common/review-diff";
+import type { ReviewDiffSession } from "@dts/common/review-diff";
 import { type TagRecord } from "@providers/tags";
 // Keymaps/Input modes
 import { emacs } from "@replit/codemirror-emacs";
@@ -103,7 +102,7 @@ import {
   type PushUpdateCallback,
   reloadStateEffect,
 } from "./plugins/remote-doc";
-import { reviewDiffMergeExtension } from "./plugins/review-diff";
+import { reviewChunksExtension } from "./plugins/review-chunks";
 import { countField, updateWordCountEffect } from "./plugins/statistics-fields";
 import { type ToCEntry, tocField } from "./plugins/toc-field";
 import { vimPlugin } from "./plugins/vim-mode";
@@ -259,9 +258,6 @@ export default class MarkdownEditor extends EventEmitter {
 
   private readonly reviewDiffCompartment: Compartment;
   private activeReviewDiffSession: ReviewDiffSession | null;
-  private reviewDiffStatusReportInFlight: boolean;
-  /** Spec section 13: the review generation the pane last observed. */
-  private reviewDiffGeneration: number;
 
   /**
    * Creates a new MarkdownEditor instance associated with the given leafId and
@@ -314,8 +310,6 @@ export default class MarkdownEditor extends EventEmitter {
     this.workspaceReferencesCache = null;
     this.reviewDiffCompartment = new Compartment();
     this.activeReviewDiffSession = null;
-    this.reviewDiffStatusReportInFlight = false;
-    this.reviewDiffGeneration = 0;
 
     // Same goes for the config
     this.config = getDefaultConfig();
@@ -358,14 +352,6 @@ export default class MarkdownEditor extends EventEmitter {
         pushUpdates: this.authority.pushUpdates,
       },
       updateListener: (update) => {
-        const shouldReportReviewDiff =
-          this.activeReviewDiffSession !== null &&
-          (update.docChanged ||
-            update.transactions.some(
-              (transaction) =>
-                transaction.isUserEvent("accept") || transaction.isUserEvent("revert"),
-            ));
-
         // Listen for changes and emit events appropriately
         if (update.docChanged) {
           this.emit("change");
@@ -435,9 +421,6 @@ export default class MarkdownEditor extends EventEmitter {
           }
         }
 
-        if (shouldReportReviewDiff) {
-          this.queueReviewDiffStatusReport();
-        }
       },
       domEventsListeners: clickListeners({
         onWikiLink(url) {
@@ -482,7 +465,7 @@ export default class MarkdownEditor extends EventEmitter {
       this.reviewDiffCompartment.of(
         this.activeReviewDiffSession === null
           ? []
-          : reviewDiffMergeExtension(this.activeReviewDiffSession.originalText),
+          : this.buildReviewExtension(this.activeReviewDiffSession),
       ),
     );
     return extensions;
@@ -958,59 +941,49 @@ export default class MarkdownEditor extends EventEmitter {
     });
   }
 
-  startReviewDiffSession(session: ReviewDiffSession, reviewGeneration?: number): void {
+  startReviewDiffSession(session: ReviewDiffSession): void {
     if (session.documentPath !== this.representedDocument) {
       return;
     }
 
-    const currentContent = this.value;
-    // The provider owns the document text: opening a review applies the working
-    // text authoritatively and publishes it as a collab update. This pane must
-    // therefore never write the proposed text itself. It used to, whenever the
-    // buffer still held the baseline (i.e. the provider's update had not been
-    // pulled yet) — and collab rebased that local replacement over the incoming
-    // remote one, mapping its [0, baselineLength) range onto the collapsed
-    // position while keeping its insertion. The proposal landed twice and the
-    // saved file contained the accepted text doubled. If the buffer is behind,
-    // catch up through the authority below instead of guessing locally.
-    if (currentContent !== session.currentText) {
-      this.reload()
-        .then(() => {
-          if (this.value === session.currentText) {
-            this.startReviewDiffSession(session, reviewGeneration);
-          } else {
-            this.emit(
-              "review-diff-error",
-              "The editor buffer no longer matches the review baseline.",
-            );
-          }
-        })
-        .catch((err) => console.error("Could not reload editor for review-diff session", err));
-      return;
-    }
-
-    this.reviewDiffGeneration =
-      reviewGeneration === undefined ? session.reviewGeneration : reviewGeneration;
-
+    // The pane needs no buffer-catch-up choreography here: the chunk field
+    // recomputes against whatever this buffer currently shows, and when the
+    // provider's collab update arrives the field recomputes again. A briefly
+    // stale buffer means briefly stale widgets, never wrong state — the
+    // provider validates every decision against ITS partition.
     if (
       this.activeReviewDiffSession?.id === session.id &&
-      currentContent === session.currentText &&
-      this.activeReviewDiffSession.originalText === session.originalText
+      this.activeReviewDiffSession.referenceText === session.referenceText
     ) {
       return;
     }
 
     this.activeReviewDiffSession = session;
     this._instance.dom.classList.add("review-diff-active");
-
-    const effects = [
-      this.reviewDiffCompartment.reconfigure(reviewDiffMergeExtension(session.originalText)),
-    ];
-
-    this._instance.dispatch({ effects });
-
-    this.queueReviewDiffStatusReport();
+    this._instance.dispatch({
+      effects: this.reviewDiffCompartment.reconfigure(this.buildReviewExtension(session)),
+    });
     this._instance.focus();
+  }
+
+  /**
+   * The review extension for a session: chunk widgets computed from the
+   * provider's merge reference against this buffer, with decisions emitted
+   * upward. MainEditor forwards them to the provider, whose next broadcast is
+   * the only thing that changes review state here.
+   */
+  private buildReviewExtension(session: ReviewDiffSession): ReturnType<typeof reviewChunksExtension> {
+    return reviewChunksExtension({
+      reviewId: session.id,
+      referenceText: session.referenceText,
+      onDecide: (chunkId, decision) => {
+        this.emit("review-chunk-decision", {
+          reviewId: session.id,
+          chunkId,
+          decision,
+        });
+      },
+    });
   }
 
   clearReviewDiffSession(sessionId?: string): void {
@@ -1023,62 +996,10 @@ export default class MarkdownEditor extends EventEmitter {
     }
 
     this.activeReviewDiffSession = null;
-    this.reviewDiffStatusReportInFlight = false;
     this._instance.dom.classList.remove("review-diff-active");
     this._instance.dispatch({
       effects: this.reviewDiffCompartment.reconfigure([]),
     });
-  }
-
-  private queueReviewDiffStatusReport(): void {
-    if (this.reviewDiffStatusReportInFlight) {
-      return;
-    }
-
-    this.reviewDiffStatusReportInFlight = true;
-    this.whenSynced()
-      .then(() => {
-        this.reviewDiffStatusReportInFlight = false;
-        this.reportReviewDiffStatus();
-      })
-      .catch((err) => {
-        this.reviewDiffStatusReportInFlight = false;
-        console.error("Could not report review-diff status", err);
-      });
-  }
-
-  private reportReviewDiffStatus(): void {
-    const session = this.activeReviewDiffSession;
-    const chunks = getChunks(this._instance.state);
-    if (session === null || chunks === null) {
-      return;
-    }
-
-    if (sendableUpdates(this._instance.state).length > 0) {
-      this.queueReviewDiffStatusReport();
-      return;
-    }
-
-    // Accept/reject mutate CodeMirror's original document directly, not the
-    // cached session — and the cached session is what a rebuild reconstructs
-    // the merge view from. Left at the pre-decision reference it resurrects
-    // chunks the user already resolved, and the next status report sends that
-    // reverted reference back to main. Sync it here, where the live value is
-    // already being read, so the cache never trails a decision.
-    const originalText = getOriginalDoc(this._instance.state).toString();
-    this.activeReviewDiffSession = { ...session, originalText };
-
-    this.emit("review-diff-status", {
-      filePath: session.documentPath,
-      sessionId: session.id,
-      unresolvedChunks: chunks.chunks.length,
-      originalText,
-      currentText: this.value,
-      documentVersion: getSyncedVersion(this._instance.state),
-      sourceWindowId: this.windowId,
-      sourceLeafId: this.leafId,
-      reviewGeneration: this.reviewDiffGeneration,
-    } satisfies ReviewDiffStatus);
   }
 
   /* * * * * * * * * * * *

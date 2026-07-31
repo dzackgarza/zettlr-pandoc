@@ -12,8 +12,8 @@
  * END HEADER
  */
 
-import { getChunks } from '@codemirror/merge'
 import type { EditorState } from '@codemirror/state'
+import { getReviewChunks } from '../plugins/review-chunks'
 import { rangeInSelection } from './range-in-selection'
 
 /**
@@ -42,20 +42,19 @@ export function rangeInPreviewSuppression (
 /**
  * Whether an unresolved review chunk touches [rangeFrom, rangeTo].
  *
- * Chunk positions are read on the B side: a unified merge view keeps the
- * working text in the document and the reference on the A side. Bounds are
- * inclusive because a pure deletion is empty in B — its widget sits at a single
- * offset, and a renderer whose range merely reaches that offset still swallows
- * it.
+ * Chunk positions are read on the B side: the working text lives in the
+ * document, the reference on the A side. Bounds are inclusive because a pure
+ * deletion is empty in B — its widget sits at a single offset, and a renderer
+ * whose range merely reaches that offset still swallows it.
  */
 function rangeCarriesReviewChunk (
   state: EditorState,
   rangeFrom: number,
   rangeTo: number
 ): boolean {
-  const chunks = getChunks(state)
+  const chunks = getReviewChunks(state)
   if (chunks === null) {
     return false
   }
-  return chunks.chunks.some(chunk => chunk.fromB <= rangeTo && rangeFrom <= chunk.toB)
+  return chunks.some(chunk => chunk.fromB <= rangeTo && rangeFrom <= chunk.toB)
 }
