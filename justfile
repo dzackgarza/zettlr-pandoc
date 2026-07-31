@@ -26,9 +26,12 @@ install-desktop-launcher:
 #
 # Only needed to drop /v1/events, which is Server-Sent Events: an Action cannot
 # consume it and waits on it forever. Everything else is already right —
-# /openapi.yaml is served without a token and reports whichever origin the
-# request arrived on, so a consumer can usually import BASE/openapi.yaml by URL
+# /openapi.json is served without a token and reports whichever origin the
+# request arrived on, so a consumer can usually import BASE/openapi.json by URL
 # and skip this entirely.
+#
+# JSON, not YAML: the Custom GPT builder was handed BASE/openapi.yaml and
+# silently imported nothing.
 #
 # Fetch through the tunnel hostname, not the loopback default, or the schema
 # describes an endpoint only this machine can reach.
@@ -38,8 +41,8 @@ agent-api-schema base="http://127.0.0.1:27412":
     # Fetched into a variable rather than piped: yq reads a failed fetch as an
     # empty document and prints a plausible-looking stub, which lands in the
     # caller's redirect even though the recipe exits non-zero.
-    spec=$(curl -fsS "{{base}}/openapi.yaml")
-    printf '%s' "$spec" | yq 'del(.paths."/v1/events")'
+    spec=$(curl -fsS "{{base}}/openapi.json")
+    printf '%s' "$spec" | yq -o=json 'del(.paths."/v1/events")'
 
 # Launch the app in develop mode (webpack dev server + Electron).
 # Free the dev ports first: a launch that was killed (or whose app was never

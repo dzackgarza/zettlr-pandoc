@@ -361,6 +361,22 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.match(anonymous.body, /servers:\n {2}- url: http:\/\/127\.0\.0\.1:\d+\n/);
     });
 
+    it("serves the same specification as JSON, anonymously, at /openapi.json", async function () {
+      // The Custom GPT builder reads a URL and imports nothing when it is
+      // handed YAML. Offering JSON is what makes import-by-URL work at all;
+      // parsing the YAML per request is what keeps the two from drifting.
+      const asJson = await request("/openapi.json", { host: "zettlr.example.com" });
+      assert.equal(asJson.status, 200);
+      const parsed = JSON.parse(asJson.body);
+      const asYaml = await request("/openapi.yaml", { host: "zettlr.example.com" });
+      assert.deepEqual(parsed, parseYaml(asYaml.body), "the two encodings must agree");
+      assert.equal(parsed.servers[0].url, "https://zettlr.example.com");
+
+      // 3.1.1 is editorially identical to 3.1.0, and consumers key off the
+      // version string they were built against.
+      assert.equal(parsed.openapi, "3.1.0");
+    });
+
     it("refuses a wrong token, a wrong scheme, and a token that is merely a prefix", async function () {
       const rejected = [
         `Bearer ${TOKEN}x`,
@@ -534,9 +550,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const filePath = path.join(scratch, "propose.md");
     const docId = await openFile(filePath, "alpha\n");
 
-    // Read to get the ETag
+    // Read to get the snapshot token, which is the only concurrency check.
     const readResponse = await httpRequest("GET", `/v1/documents/${docId}/content`);
-    const etag = readResponse.headers["etag"] as string;
     const snapshot = JSON.parse(readResponse.body).snapshot;
 
     // Submit proposal

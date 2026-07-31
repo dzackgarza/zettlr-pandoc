@@ -50,6 +50,7 @@ import { app } from "electron";
 import fs from "fs";
 import http from "http";
 import path from "path";
+import { parse as parseYaml } from "yaml";
 import { sha256Text } from "@providers/documents/review-diff-store";
 import makeSearchRegex from "source/common/util/make-search-regex";
 
@@ -448,9 +449,20 @@ export default class AgentHTTPProvider extends ProviderContract {
     // This is a deliberate exemption for a static document, not a general
     // pattern: /health next door stays behind the token because it reports the
     // instance id and process id of a running editor.
-    if (req.url === "/openapi.yaml" && req.method === "GET") {
-      res.writeHead(200, { "Content-Type": "application/yaml" });
-      res.end(this.specificationForRequest(req));
+    //
+    // The same document is offered as JSON at /openapi.json because importers
+    // are not uniformly willing to read YAML: the Custom GPT builder fetched
+    // this URL and silently did nothing, while it accepted an otherwise
+    // equivalent JSON document served as application/json. YAML remains the
+    // committed source — the JSON is parsed from it per request, so the two
+    // cannot disagree.
+    if (req.method === "GET" && (req.url === "/openapi.yaml" || req.url === "/openapi.json")) {
+      const specification = this.specificationForRequest(req);
+      const asJson = req.url === "/openapi.json";
+      res.writeHead(200, {
+        "Content-Type": asJson ? "application/json" : "application/yaml",
+      });
+      res.end(asJson ? JSON.stringify(parseYaml(specification), null, 2) : specification);
       return;
     }
 
