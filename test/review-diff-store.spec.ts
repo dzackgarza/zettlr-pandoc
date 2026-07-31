@@ -515,6 +515,62 @@ describe("ReviewDiffStore", function () {
     });
   });
 
+  describe("tweak before accept", function () {
+    it("accepts the user's tweaked version of a proposed chunk", function () {
+      // The property pinned end to end: tweak-before-accept works by
+      // construction, not by feature code. The working text IS the live
+      // document, so a user edit inside a chunk needs no API; the partition
+      // recomputes under a new content-addressed id; and Accept means "the
+      // reference agrees with the working text as it stands" — tweak
+      // included.
+      const baseline = "alpha\nbeta\ngamma\n";
+      const proposed = "alpha\nBETA improved\ngamma\n";
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-tweak",
+        description: "Improve beta",
+      });
+      const before = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(before.length, 1);
+
+      // The user edits inside the chunk before deciding.
+      const tweaked = "alpha\nBETA improved (user tweak)\ngamma\n";
+      documents.set(DOC_ID, tweaked);
+
+      // The chunk recomputed under a new id — the stale one is refused —
+      // and it still attributes to the claim it grew from.
+      const after = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(after.length, 1);
+      assert.notEqual(after[0].chunkId, before[0].chunkId);
+      assert.equal(after[0].workingText, "BETA improved (user tweak)");
+      assert.deepEqual(after[0].descriptions, ["Improve beta"]);
+      const stale = store.decideChunk(
+        DOC_ID,
+        store.getReview(DOC_ID)!.reviewId,
+        before[0].chunkId,
+        "accept",
+      );
+      assert.equal(stale.ok, false);
+
+      // Accepting the recomputed chunk lands the TWEAKED version: the
+      // reference converges on the working text, and the document (which the
+      // save will write) still carries the user's wording.
+      const accepted = store.decideChunk(
+        DOC_ID,
+        store.getReview(DOC_ID)!.reviewId,
+        after[0].chunkId,
+        "accept",
+      );
+      assert.equal(accepted.ok, true);
+      if (!accepted.ok) {return;}
+      assert.equal(accepted.workingText, undefined);
+      assert.equal(store.getReview(DOC_ID)!.referenceText, tweaked);
+      assert.equal(documents.get(DOC_ID), tweaked);
+      assert.equal(accepted.unresolvedChunks, 0);
+      assert.equal(accepted.state, "resolved-awaiting-save");
+    });
+  });
+
   describe("clearUnresolved", function () {
     it("discards outstanding changes but preserves accepted changes", function () {
       const baseline = "alpha\nbeta\ngamma\nomega\n";

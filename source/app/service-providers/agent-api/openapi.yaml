@@ -1167,7 +1167,9 @@ paths:
         batch applies sequentially and atomically server-side: every claim
         applies with zero fuzz to its predecessor's text or the whole batch
         is refused with nothing applied, and each claim becomes its own
-        packet (packetIds maps them in claim order).
+        packet (packetIds maps them in claim order). The reviewer may edit a
+        proposed chunk before accepting it, so diff your proposal against the
+        final text if you care whether acceptance was verbatim.
       parameters:
         - name: documentId
           in: path
