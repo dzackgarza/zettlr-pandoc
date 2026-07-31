@@ -752,7 +752,7 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     }
   })
 
-  editor.on('review-chunk-decision', (decision: { reviewId: string, chunkId: string, decision: 'accept'|'reject' }) => {
+  editor.on('review-chunk-decision', (decision: { reviewId: string, chunkId: string, decision: 'accept'|'reject'|'hold', comment?: string }) => {
     // The pane only names the chunk; the provider is the one decision path.
     // Whatever happens — applied, or refused because the region changed under
     // the click — the provider broadcasts its state, and this pane redraws

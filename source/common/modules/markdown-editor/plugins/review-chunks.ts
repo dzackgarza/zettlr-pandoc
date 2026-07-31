@@ -36,7 +36,7 @@ import {
   computeReviewChunks,
   type ReviewChunk
 } from '@common/modules/review/review-chunks'
-import type { ReviewPacketAttribution } from '@dts/common/review-diff'
+import type { ReviewChunkHoldView, ReviewPacketAttribution } from '@dts/common/review-diff'
 
 export interface ReviewChunksConfig {
   reviewId: string
@@ -49,8 +49,18 @@ export interface ReviewChunksConfig {
    * here and the API's attribution agree by construction.
    */
   packets: ReviewPacketAttribution[]
-  /** Called with a chunk's content-addressed id when a control is clicked. */
-  onDecide: (chunkId: string, decision: 'accept'|'reject') => void
+  /**
+   * The held chunks, from the provider's broadcast. A held chunk renders
+   * visually distinct, shows its comment, and keeps all three controls — an
+   * edit inside it retires the content-addressed id, at which point it
+   * simply renders pending again (the provider orphans the hold's comment).
+   */
+  holds: ReviewChunkHoldView[]
+  /**
+   * Called with a chunk's content-addressed id when a control is clicked.
+   * Hold carries the optional comment typed into the chunk's note field.
+   */
+  onDecide: (chunkId: string, decision: 'accept'|'reject'|'hold', comment?: string) => void
 }
 
 const reviewChunksConfig = Facet.define<ReviewChunksConfig, ReviewChunksConfig|null>({
@@ -122,16 +132,19 @@ function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
       .map(packet => packet.description)
       .filter((description): description is string => description !== undefined)
 
+    const hold = config.holds.find(h => h.chunkId === chunk.chunkId)
+
     ranges.push(
       Decoration.widget({
-        widget: new DeletedLinesWidget(chunk, changes, descriptions, config),
+        widget: new DeletedLinesWidget(chunk, changes, descriptions, hold, config),
         block: true,
         side: -10
       }).range(anchor)
     )
 
+    const lineDecoration = hold === undefined ? changedLine : heldLine
     for (let line = chunk.workFromLine; line < chunk.workToLine && line <= doc.lines; line++) {
-      ranges.push(changedLine.range(doc.line(line).from))
+      ranges.push(lineDecoration.range(doc.line(line).from))
     }
     for (const change of changes) {
       if (change.toB > change.fromB) {
@@ -147,18 +160,23 @@ function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
 }
 
 const changedLine = Decoration.line({ class: 'cm-changedLine' })
+const heldLine = Decoration.line({ class: 'cm-heldLine' })
 const changedText = Decoration.mark({ class: 'cm-changedText' })
 
 /**
  * The block above a chunk: the reference lines this chunk replaces (empty for
- * a pure insertion), with the removed spans emphasised, and the Accept/Reject
- * controls. One widget per chunk — the controls sit in exactly one place.
+ * a pure insertion), with the removed spans emphasised, and the
+ * Accept/Reject/Hold controls. One widget per chunk — the controls sit in
+ * exactly one place. A held chunk renders visually distinct, shows the
+ * hold's comment, and keeps every control: holding is an annotation, not an
+ * adjudication.
  */
 class DeletedLinesWidget extends WidgetType {
   constructor (
     private readonly chunk: ReviewChunk,
     private readonly changes: ReturnType<typeof presentableDiff>,
     private readonly descriptions: readonly string[],
+    private readonly hold: ReviewChunkHoldView|undefined,
     private readonly config: ReviewChunksConfig
   ) {
     super()
@@ -168,12 +186,16 @@ class DeletedLinesWidget extends WidgetType {
     return other.chunk.chunkId === this.chunk.chunkId &&
       other.chunk.referenceText === this.chunk.referenceText &&
       other.chunk.workingText === this.chunk.workingText &&
-      JSON.stringify(other.descriptions) === JSON.stringify(this.descriptions)
+      JSON.stringify(other.descriptions) === JSON.stringify(this.descriptions) &&
+      (other.hold === undefined) === (this.hold === undefined) &&
+      other.hold?.comment === this.hold?.comment
   }
 
   toDOM (): HTMLElement {
     const container = document.createElement('div')
-    container.className = 'cm-deletedChunk'
+    container.className = this.hold === undefined
+      ? 'cm-deletedChunk'
+      : 'cm-deletedChunk held'
 
     if (this.chunk.referenceText !== '') {
       container.appendChild(this.renderDeletedText())
@@ -192,6 +214,13 @@ class DeletedLinesWidget extends WidgetType {
       container.appendChild(list)
     }
 
+    if (this.hold?.comment !== undefined) {
+      const note = document.createElement('div')
+      note.className = 'cm-holdComment'
+      note.textContent = `Held: ${this.hold.comment}`
+      container.appendChild(note)
+    }
+
     const buttons = document.createElement('div')
     buttons.className = 'cm-chunkButtons'
     for (const decision of ['accept', 'reject'] as const) {
@@ -207,6 +236,28 @@ class DeletedLinesWidget extends WidgetType {
       })
       buttons.appendChild(button)
     }
+
+    // Hold, with its minimal optional-comment affordance: one inline note
+    // field beside the button. Empty note = a bare hold; holding an already
+    // held chunk replaces the comment (the field is prefilled with it).
+    const holdButton = document.createElement('button')
+    holdButton.type = 'button'
+    holdButton.name = 'hold'
+    holdButton.className = 'cm-review-diff-control hold'
+    holdButton.textContent = this.hold === undefined ? 'Hold' : 'Update hold'
+    holdButton.title = 'Hold this change without deciding it; the note goes back to the agent'
+    const noteInput = document.createElement('input')
+    noteInput.type = 'text'
+    noteInput.className = 'cm-holdCommentInput'
+    noteInput.placeholder = 'Optional note…'
+    noteInput.value = this.hold?.comment ?? ''
+    holdButton.addEventListener('click', (event) => {
+      event.preventDefault()
+      const note = noteInput.value.trim()
+      this.config.onDecide(this.chunk.chunkId, 'hold', note === '' ? undefined : note)
+    })
+    buttons.appendChild(holdButton)
+    buttons.appendChild(noteInput)
     container.appendChild(buttons)
     return container
   }
@@ -244,6 +295,9 @@ const reviewChunksTheme = EditorView.baseTheme({
   '.cm-changedLine': {
     backgroundColor: 'rgba(80, 160, 80, 0.12)'
   },
+  '.cm-heldLine': {
+    backgroundColor: 'rgba(220, 170, 40, 0.12)'
+  },
   '.cm-changedText': {
     backgroundColor: 'rgba(80, 160, 80, 0.28)',
     borderRadius: '2px'
@@ -252,6 +306,24 @@ const reviewChunksTheme = EditorView.baseTheme({
     backgroundColor: 'rgba(200, 60, 60, 0.08)',
     borderLeft: '3px solid rgba(200, 60, 60, 0.55)',
     padding: '2px 6px'
+  },
+  '.cm-deletedChunk.held': {
+    backgroundColor: 'rgba(220, 170, 40, 0.10)',
+    borderLeft: '3px solid rgba(220, 170, 40, 0.65)'
+  },
+  '.cm-holdComment': {
+    fontSize: '0.85em',
+    fontStyle: 'italic',
+    color: 'rgba(150, 110, 20, 0.95)',
+    padding: '2px 0'
+  },
+  '&dark .cm-holdComment': {
+    color: 'rgba(240, 200, 110, 0.9)'
+  },
+  '.cm-holdCommentInput': {
+    fontSize: '0.85em',
+    marginLeft: '4px',
+    maxWidth: '18em'
   },
   '.cm-deletedLines': {
     whiteSpace: 'pre-wrap',

@@ -53,6 +53,7 @@ async function mount (): Promise<void> {
           reviewId: 'visual-capture',
           referenceText: baseline,
           packets: [],
+          holds: [],
           onDecide: () => { /* capture harness: decisions are not exercised */ }
         })
       ]

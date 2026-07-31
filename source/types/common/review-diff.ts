@@ -22,6 +22,19 @@ export interface ReviewDiffSession {
    * pick the descriptions shown at each chunk's controls.
    */
   packets: ReviewPacketAttribution[];
+  /**
+   * The held chunks, by content-addressed id, with their optional comments.
+   * The pane renders these visually distinct from pending chunks; a held id
+   * that no longer matches any chunk simply stops matching (the provider
+   * orphans the hold on its side — the pane never reports state back).
+   */
+  holds: ReviewChunkHoldView[];
+}
+
+/** One held chunk as a pane sees it: identity plus the optional comment. */
+export interface ReviewChunkHoldView {
+  chunkId: string;
+  comment?: string;
 }
 
 /**

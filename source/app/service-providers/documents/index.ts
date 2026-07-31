@@ -2917,6 +2917,7 @@ current contents from the editor somewhere else, and restart the application.`,
       documentPath: filePath,
       referenceText: review.referenceText,
       packets: this._reviewStore.getPacketAttributions(review.documentId)!,
+      holds: this._reviewStore.getHolds(review.documentId)!,
     };
   }
 

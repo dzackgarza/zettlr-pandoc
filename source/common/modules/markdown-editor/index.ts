@@ -981,11 +981,13 @@ export default class MarkdownEditor extends EventEmitter {
       reviewId: session.id,
       referenceText: session.referenceText,
       packets: session.packets,
-      onDecide: (chunkId, decision) => {
+      holds: session.holds,
+      onDecide: (chunkId, decision, comment) => {
         this.emit("review-chunk-decision", {
           reviewId: session.id,
           chunkId,
           decision,
+          comment,
         });
       },
     });

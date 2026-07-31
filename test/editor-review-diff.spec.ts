@@ -85,23 +85,31 @@ describe('Editor review-chunk controls', function () {
   ): EditorView {
     const compartment = new Compartment()
     let reference = baseline
+    let holds: Array<{ chunkId: string, comment?: string }> = []
     function makeExtension (): ReturnType<typeof reviewChunksExtension> {
       return reviewChunksExtension({
         reviewId: 'review-test',
         referenceText: reference,
         packets,
-        onDecide: (chunkId, decision) => {
+        holds,
+        onDecide: (chunkId, decision, comment) => {
           const partition = computeReviewChunks(reference, view.state.doc.toString())
           const chunk = partition.find(c => c.chunkId === chunkId)
           assert.ok(chunk !== undefined, `provider has no chunk ${chunkId} — pane and provider partitions diverged`)
+          // Deciding a held chunk releases its hold; holding upserts it —
+          // the same contract the real store discharges.
+          holds = holds.filter(h => h.chunkId !== chunkId)
           if (decision === 'accept') {
             reference = spliceChunk(reference, chunk, 'accept')
             view.dispatch({ effects: compartment.reconfigure(makeExtension()) })
-          } else {
+          } else if (decision === 'reject') {
             const restored = spliceChunk(view.state.doc.toString(), chunk, 'reject')
             view.dispatch({
               changes: { from: 0, to: view.state.doc.length, insert: restored }
             })
+          } else {
+            holds = [...holds, { chunkId, comment }]
+            view.dispatch({ effects: compartment.reconfigure(makeExtension()) })
           }
         }
       })
@@ -160,6 +168,58 @@ describe('Editor review-chunk controls', function () {
 
     assert.equal(chunkCount(view), 0, 'rejecting the remaining chunk must finish the review')
     assert.equal(view.state.doc.toString(), expected)
+  })
+
+  it('holds a chunk from its control, carrying the typed note, and renders it distinct', function () {
+    const baseline = [
+      '# Note',
+      '',
+      'first baseline',
+      '',
+      'middle unchanged',
+      '',
+      'second baseline',
+      ''
+    ].join('\n')
+    const proposed = baseline
+      .replace('first baseline', 'first proposed')
+      .replace('second baseline', 'second proposed')
+
+    const view = createReviewView(baseline, proposed)
+    assert.equal(chunkCount(view), 2)
+
+    // Every chunk renders the third control with its note affordance.
+    const holdButtons = view.dom.querySelectorAll<HTMLButtonElement>('button.cm-review-diff-control.hold')
+    const noteInputs = view.dom.querySelectorAll<HTMLInputElement>('input.cm-holdCommentInput')
+    assert.equal(holdButtons.length, 2, 'each chunk must render a Hold control')
+    assert.equal(noteInputs.length, 2, 'each Hold control must carry a note field')
+
+    noteInputs[0].value = '  check the constant  '
+    holdButtons[0].click()
+
+    // Holding adjudicates nothing: both chunks stay rendered, but the held
+    // one is visually distinct and shows its (trimmed) note.
+    assert.equal(chunkCount(view), 2, 'a held chunk must remain a rendered disagreement')
+    const heldWidget = view.dom.querySelector<HTMLElement>('.cm-deletedChunk.held')
+    assert.ok(heldWidget !== null, 'the held chunk must render visually distinct from pending')
+    assert.equal(view.dom.querySelectorAll('.cm-deletedChunk.held').length, 1)
+    assert.ok(
+      heldWidget.textContent!.includes('Held: check the constant'),
+      'the held chunk must show its note'
+    )
+    assert.ok(
+      view.dom.querySelector('.cm-heldLine') !== null,
+      'the held chunk lines must carry the held highlight, not the pending one'
+    )
+    const prefilled = heldWidget.querySelector<HTMLInputElement>('input.cm-holdCommentInput')
+    assert.equal(prefilled?.value, 'check the constant', 'the note field must prefill for updating the hold')
+
+    // A held chunk keeps all its controls: adjudicating it still works.
+    const acceptOnHeld = heldWidget.querySelector<HTMLButtonElement>('button.cm-review-diff-control.accept')
+    assert.ok(acceptOnHeld !== null, 'a held chunk must keep its Accept control')
+    acceptOnHeld.click()
+    assert.equal(chunkCount(view), 1, 'accepting the held chunk must resolve it')
+    assert.equal(view.dom.querySelector('.cm-deletedChunk.held'), null)
   })
 
   it('shows each claim description at its own chunk controls, surviving a tweak', function () {

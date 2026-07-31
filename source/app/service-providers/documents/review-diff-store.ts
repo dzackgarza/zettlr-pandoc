@@ -1330,6 +1330,21 @@ export class ReviewDiffStore extends EventEmitter {
   }
 
   /**
+   * The current holds, reconciled against the live partition — what a pane
+   * needs to render held chunks distinct and show their comments.
+   */
+  getHolds(
+    documentId: string,
+  ): Array<{ chunkId: string; comment?: string }> | undefined {
+    const review = this.reviews.get(documentId);
+    if (review === undefined) {
+      return undefined;
+    }
+    this.partitionOf(review);
+    return review.holds.map(({ chunkId, comment }) => ({ chunkId, comment }));
+  }
+
+  /**
    * Move the disk fence to freshly saved content. Used when a save retains
    * the review because held chunks survive it: the just-written file IS the
    * new fenced state, and leaving the old fence would refuse every later
