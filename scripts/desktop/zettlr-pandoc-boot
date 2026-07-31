@@ -106,22 +106,21 @@ spin_until_app_up() {
 
 trap restore_cursor EXIT
 
-# Zettlr is single-instance. Focus the existing window instead of starting a
-# second build. This launcher cannot deliver file arguments to the running
-# instance: relaunching the recipe would first reap the live dev server
-# (assert-dev-server-stopped.py --kill), tearing down the very app that should
-# receive the file. Refuse loudly instead of silently dropping the request;
-# delivery here needs a second Electron process sharing the singleton lock,
-# which the dev chain does not have.
+# Zettlr is single-instance, so never start a second build here. Files go to the
+# instance that already holds the singleton lock, through a short-lived Electron
+# process that only performs the handshake (see zettlr-pandoc-open-in-running);
+# then focus the window that received them.
 if app_up; then
   if (( $# > 0 )); then
-    # Dwell before exiting, as fail() does. This script runs inside the splash
-    # terminal, which closes the moment it returns: a refusal that exits
-    # immediately is one nobody can read, leaving the launch indistinguishable
-    # from the silent drop this refusal exists to replace.
-    printf '\n   Cannot open %s\n\n   The app is already running, and the dev launcher cannot hand files to\n   a running instance. Open the file from within the app, or quit it and\n   launch again with the file.\n\n' "$*" >&2
-    sleep 8
-    exit 1
+    if ! "$repo/scripts/desktop/zettlr-pandoc-open-in-running" "$@"; then
+      # Dwell before exiting, as fail() does. This script runs inside the splash
+      # terminal, which closes the moment it returns: a failure that exits
+      # immediately is one nobody can read, leaving the launch indistinguishable
+      # from the silent drop described in #52.
+      printf '\n   Could not open %s in the running Zettlr-Pandoc.\n\n' "$*" >&2
+      sleep 8
+      exit 1
+    fi
   fi
   hyprctl dispatch focuswindow "class:^(${app_class})$" >/dev/null
   exit 0

@@ -22,6 +22,7 @@ import extractFilesFromArgv from "./app/util/extract-files-from-argv";
 import {
   DATA_DIR,
   DISABLE_HARDWARE_ACCELERATION,
+  OPEN_IN_RUNNING_INSTANCE,
   getCLIArgument,
   handleExitArguments,
 } from "@providers/cli-provider";
@@ -84,6 +85,18 @@ if (!app.requestSingleInstanceLock()) {
     );
   }
   app.exit(0);
+}
+
+// Reaching this line means the lock was acquired, i.e. nothing was running to
+// hand the arguments to. A launcher that was only delivering files to a running
+// instance must not silently become that instance: it was started to add a tab
+// to a live window, and booting a whole second app instead is the wrong outcome
+// nobody asked for. Say so and stop.
+if (getCLIArgument(OPEN_IN_RUNNING_INSTANCE) === true) {
+  console.error(
+    "No running Zettlr instance accepted the arguments; nothing was opened.",
+  );
+  app.exit(1);
 }
 
 // If we reach this point, we are now booting the first instance of Zettlr.
