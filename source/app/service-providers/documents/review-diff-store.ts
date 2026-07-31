@@ -1241,6 +1241,27 @@ export class ReviewDiffStore extends EventEmitter {
   }
 
   /**
+   * The attribution surface a review pane needs: every packet's identity,
+   * prose description, and current reference spans, in application order.
+   * The pane matches its own chunk partition against these with the shared
+   * chunkAttributesTo rule — the same computation getOutstandingChunks
+   * serves the HTTP API, so the two surfaces agree by construction.
+   */
+  getPacketAttributions(documentId: string):
+    | Array<{ packetId: string; description?: string; refSpans: RefSpan[] }>
+    | undefined {
+    const review = this.reviews.get(documentId);
+    if (review === undefined) {
+      return undefined;
+    }
+    return review.packets.map((packet) => ({
+      packetId: packet.packetId,
+      description: packet.description,
+      refSpans: this.spansOf(packet.packetId),
+    }));
+  }
+
+  /**
    * Compute the composite unresolved patch: referenceText → working text.
    */
   getReviewDiff(documentId: string): string | undefined {

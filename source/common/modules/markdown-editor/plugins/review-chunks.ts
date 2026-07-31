@@ -32,14 +32,23 @@ import { presentableDiff } from '@codemirror/merge'
 import { Facet, StateField, type EditorState, type Extension } from '@codemirror/state'
 import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view'
 import {
+  chunkAttributesTo,
   computeReviewChunks,
   type ReviewChunk
 } from '@common/modules/review/review-chunks'
+import type { ReviewPacketAttribution } from '@dts/common/review-diff'
 
 export interface ReviewChunksConfig {
   reviewId: string
   /** The provider-owned merge reference the chunks are computed against. */
   referenceText: string
+  /**
+   * Every packet's attribution, from the provider's broadcast. A chunk shows
+   * the descriptions of the packets whose reference spans it touches — the
+   * same chunkAttributesTo rule the provider's chunk list uses, so the label
+   * here and the API's attribution agree by construction.
+   */
+  packets: ReviewPacketAttribution[]
   /** Called with a chunk's content-addressed id when a control is clicked. */
   onDecide: (chunkId: string, decision: 'accept'|'reject') => void
 }
@@ -107,9 +116,15 @@ function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
     // side is marked inside the document; the delete side inside the widget.
     const changes = presentableDiff(chunk.referenceText, chunk.workingText)
 
+    // The claims this chunk came from, in packet application order.
+    const descriptions = config.packets
+      .filter(packet => chunkAttributesTo(chunk, packet.refSpans))
+      .map(packet => packet.description)
+      .filter((description): description is string => description !== undefined)
+
     ranges.push(
       Decoration.widget({
-        widget: new DeletedLinesWidget(chunk, changes, config),
+        widget: new DeletedLinesWidget(chunk, changes, descriptions, config),
         block: true,
         side: -10
       }).range(anchor)
@@ -143,6 +158,7 @@ class DeletedLinesWidget extends WidgetType {
   constructor (
     private readonly chunk: ReviewChunk,
     private readonly changes: ReturnType<typeof presentableDiff>,
+    private readonly descriptions: readonly string[],
     private readonly config: ReviewChunksConfig
   ) {
     super()
@@ -151,7 +167,8 @@ class DeletedLinesWidget extends WidgetType {
   eq (other: DeletedLinesWidget): boolean {
     return other.chunk.chunkId === this.chunk.chunkId &&
       other.chunk.referenceText === this.chunk.referenceText &&
-      other.chunk.workingText === this.chunk.workingText
+      other.chunk.workingText === this.chunk.workingText &&
+      JSON.stringify(other.descriptions) === JSON.stringify(this.descriptions)
   }
 
   toDOM (): HTMLElement {
@@ -160,6 +177,19 @@ class DeletedLinesWidget extends WidgetType {
 
     if (this.chunk.referenceText !== '') {
       container.appendChild(this.renderDeletedText())
+    }
+
+    // The claims this chunk implements — present at the controls, muted.
+    if (this.descriptions.length > 0) {
+      const list = document.createElement('div')
+      list.className = 'cm-chunkDescriptions'
+      for (const description of this.descriptions) {
+        const entry = document.createElement('div')
+        entry.className = 'cm-chunkDescription'
+        entry.textContent = description
+        list.appendChild(entry)
+      }
+      container.appendChild(list)
     }
 
     const buttons = document.createElement('div')
@@ -234,5 +264,11 @@ const reviewChunksTheme = EditorView.baseTheme({
   '.cm-deletedText': {
     backgroundColor: 'rgba(200, 60, 60, 0.25)',
     textDecoration: 'line-through'
+  },
+  '.cm-chunkDescriptions': {
+    fontSize: '0.85em',
+    opacity: '0.75',
+    fontStyle: 'italic',
+    padding: '2px 0'
   }
 })

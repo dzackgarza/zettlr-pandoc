@@ -16,7 +16,25 @@ export interface ReviewDiffSession {
    * toward this text. Only the provider mutates either.
    */
   referenceText: string;
+  /**
+   * Every packet's attribution surface, in application order. The pane
+   * matches its chunks against the spans (shared chunkAttributesTo rule) to
+   * pick the descriptions shown at each chunk's controls.
+   */
+  packets: ReviewPacketAttribution[];
+}
+
+/**
+ * One packet's attribution: identity, the claim's prose, and its current
+ * reference-side edit spans (half-open, 1-based line intervals in the merge
+ * reference, empty interval = insertion boundary). The provider records the
+ * spans at packet application and remaps them across decisions; the pane
+ * only reads them.
+ */
+export interface ReviewPacketAttribution {
+  packetId: string;
   description?: string;
+  refSpans: Array<{ from: number, to: number }>;
 }
 
 export interface ReviewDiffDocumentSnapshot {

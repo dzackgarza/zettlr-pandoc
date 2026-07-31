@@ -50,7 +50,14 @@ declare module '*.css' {
 // Declare modules which don't offer types
 declare module '@joplin/turndown'
 declare module 'joplin-turndown-plugin-gfm'
-declare module '@replit/codemirror-emacs'
+// @replit/codemirror-emacs ships dist/index.d.ts, but its "exports" map has
+// no "types" condition, so resolvers running under node16/bundler semantics
+// (the typed lint, for one) cannot see it. Declare the one entry point we
+// use, typed — a bare declaration would erase the real types to `any`.
+declare module '@replit/codemirror-emacs' {
+  import { type Extension } from '@codemirror/state'
+  export function emacs (): Extension
+}
 declare module '@replit/codemirror-lang-nix'
 // Declare all legacy-modes plugins at once
 declare module '@codemirror/legacy-modes/*'

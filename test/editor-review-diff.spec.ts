@@ -78,13 +78,18 @@ describe('Editor review-chunk controls', function () {
    * ids ever diverged from the provider's, the lookup here would fail —
    * partition agreement is part of what these tests certify.
    */
-  function createReviewView (baseline: string, proposed: string): EditorView {
+  function createReviewView (
+    baseline: string,
+    proposed: string,
+    packets: Array<{ packetId: string, description?: string, refSpans: Array<{ from: number, to: number }> }> = []
+  ): EditorView {
     const compartment = new Compartment()
     let reference = baseline
     function makeExtension (): ReturnType<typeof reviewChunksExtension> {
       return reviewChunksExtension({
         reviewId: 'review-test',
         referenceText: reference,
+        packets,
         onDecide: (chunkId, decision) => {
           const partition = computeReviewChunks(reference, view.state.doc.toString())
           const chunk = partition.find(c => c.chunkId === chunkId)
@@ -155,6 +160,65 @@ describe('Editor review-chunk controls', function () {
 
     assert.equal(chunkCount(view), 0, 'rejecting the remaining chunk must finish the review')
     assert.equal(view.state.doc.toString(), expected)
+  })
+
+  it('shows each claim description at its own chunk controls, surviving a tweak', function () {
+    const baseline = [
+      '# Note',
+      '',
+      'first baseline',
+      '',
+      'middle unchanged',
+      '',
+      'second baseline',
+      ''
+    ].join('\n')
+    const proposed = baseline
+      .replace('first baseline', 'first proposed')
+      .replace('second baseline', 'second proposed')
+
+    // Attribution the way the provider records it: each claim's footprint is
+    // the reference range of the chunk it produced.
+    const partition = computeReviewChunks(baseline, proposed)
+    assert.equal(partition.length, 2)
+    const packets = [
+      {
+        packetId: 'packet-1',
+        description: 'Sharpen the opening claim',
+        refSpans: [{ from: partition[0].refFromLine, to: partition[0].refToLine }]
+      },
+      {
+        packetId: 'packet-2',
+        description: 'Fix the closing claim',
+        refSpans: [{ from: partition[1].refFromLine, to: partition[1].refToLine }]
+      }
+    ]
+
+    const view = createReviewView(baseline, proposed, packets)
+    const widgets = [...view.dom.querySelectorAll<HTMLElement>('.cm-deletedChunk')]
+    assert.equal(widgets.length, 2)
+    const shown = widgets.map(widget =>
+      [...widget.querySelectorAll('.cm-chunkDescription')].map(entry => entry.textContent)
+    )
+    assert.deepEqual(
+      shown,
+      [['Sharpen the opening claim'], ['Fix the closing claim']],
+      'each chunk must carry exactly the description of the claim that produced it'
+    )
+
+    // A user tweak inside the first chunk recomputes the partition under a
+    // new content-addressed id, but the label stays: user edits move working
+    // positions, not the reference frame the attribution lives in.
+    const firstChunk = getReviewChunks(view.state)![0]
+    const insertAt = view.state.doc.line(firstChunk.workFromLine).to
+    view.dispatch({ changes: { from: insertAt, to: insertAt, insert: ' (tweaked)' } })
+    assert.equal(chunkCount(view), 2)
+    const tweaked = view.dom.querySelector<HTMLElement>('.cm-deletedChunk .cm-chunkDescription')
+    assert.equal(
+      tweaked?.textContent,
+      'Sharpen the opening claim',
+      'the tweaked chunk must keep the description of the claim it grew from'
+    )
   })
 
   it('shows the replaced reference text with the removed spans emphasised', function () {

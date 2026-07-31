@@ -565,12 +565,7 @@ export default class DocumentManager extends ProviderContract {
           if (review === undefined) {
             return undefined;
           }
-          return {
-            id: review.reviewId,
-            reviewGeneration: review.generation,
-            documentPath: payload.path,
-            referenceText: review.referenceText,
-          } as ReviewDiffSession;
+          return this._reviewSessionFor(payload.path, review);
         }
         case "decide-review-chunk": {
           const { reviewId, chunkId, decision } = payload;
@@ -2886,16 +2881,29 @@ current contents from the editor somewhere else, and restart the application.`,
     if (review === undefined) {
       return;
     }
-    const session: ReviewDiffSession = {
+    this.broadcastEvent(DP_EVENTS.REVIEW_DIFF, {
+      filePath,
+      reviewDiffSession: this._reviewSessionFor(filePath, review),
+    });
+  }
+
+  /**
+   * The one constructor of the session shape a pane draws from: the merge
+   * reference plus every packet's attribution (description and current
+   * reference spans), so the widgets can label each chunk with the claims
+   * that produced it.
+   */
+  private _reviewSessionFor(
+    filePath: string,
+    review: NonNullable<ReturnType<ReviewDiffStore["getReview"]>>,
+  ): ReviewDiffSession {
+    return {
       id: review.reviewId,
       reviewGeneration: review.generation,
       documentPath: filePath,
       referenceText: review.referenceText,
+      packets: this._reviewStore.getPacketAttributions(review.documentId)!,
     };
-    this.broadcastEvent(DP_EVENTS.REVIEW_DIFF, {
-      filePath,
-      reviewDiffSession: session,
-    });
   }
 
   /**

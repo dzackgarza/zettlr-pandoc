@@ -950,9 +950,13 @@ export default class MarkdownEditor extends EventEmitter {
     // recomputes against whatever this buffer currently shows, and when the
     // provider's collab update arrives the field recomputes again. A briefly
     // stale buffer means briefly stale widgets, never wrong state — the
-    // provider validates every decision against ITS partition.
+    // provider validates every decision against ITS partition. The generation
+    // is part of the identity check because state the reference does not
+    // capture — packet attribution spans after a reject, say — still changes
+    // with every store mutation, and each mutation bumps the generation.
     if (
       this.activeReviewDiffSession?.id === session.id &&
+      this.activeReviewDiffSession.reviewGeneration === session.reviewGeneration &&
       this.activeReviewDiffSession.referenceText === session.referenceText
     ) {
       return;
@@ -976,6 +980,7 @@ export default class MarkdownEditor extends EventEmitter {
     return reviewChunksExtension({
       reviewId: session.id,
       referenceText: session.referenceText,
+      packets: session.packets,
       onDecide: (chunkId, decision) => {
         this.emit("review-chunk-decision", {
           reviewId: session.id,
