@@ -1286,6 +1286,47 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(provider.reviewStore.getReview(docId), undefined);
   });
 
+  it("refuses to save an unresolved review, and refuses again once the disk drifted", async function () {
+    const filePath = path.join(scratch, "save-gate.md");
+    const original = "alpha\nx\ny\nz\nbeta\n";
+    const proposed = "ALPHA\nx\ny\nz\nBETA\n";
+    const docId = await openFile(filePath, original);
+
+    const snap = provider.createSnapshot(docId)!;
+    await provider.submitProposal(snap.token, makePatch(original, proposed), "save-gate-1");
+    const review = provider.reviewStore.getReview(docId)!;
+    const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+    assert.equal(chunks.length, 2);
+
+    // An undecided chunk closes the gate: the buffer here is a mixture of
+    // baseline and proposed content, and that mixture must not reach the disk.
+    const refused = await provider.saveFile(filePath);
+    assert.ok(!refused.ok, "an unresolved review must refuse the save");
+    assert.equal(refused.refusal?.reason, "unresolved-chunks");
+    assert.equal(normalizedRead(filePath), original, "the baseline on disk must be untouched");
+
+    // Resolve every chunk, then let the file drift on disk underneath the
+    // review — the case where stored positions would otherwise overwrite
+    // content the review never saw.
+    assert.equal(provider.decideChunk(review.reviewId, chunks[0].chunkId, "accept").ok, true);
+    assert.equal(provider.decideChunk(review.reviewId, chunks[1].chunkId, "reject").ok, true);
+    assert.equal(provider.reviewStore.countUnresolved(docId), 0);
+    writeFileSync(filePath, "externally rewritten\n", "utf8");
+
+    const drifted = await provider.saveFile(filePath);
+    assert.ok(!drifted.ok, "a drifted disk fence must refuse the save");
+    assert.equal(drifted.refusal?.reason, "disk-changed");
+    assert.equal(
+      normalizedRead(filePath),
+      "externally rewritten\n",
+      "the external edit must survive the refused save",
+    );
+    assert.ok(
+      provider.reviewStore.getReview(docId) !== undefined,
+      "a refused save resolves nothing: the review stays open for an explicit path",
+    );
+  });
+
   it("POST /v1/proposals/{id}/retract retracts an untouched packet", async function () {
     const filePath = path.join(scratch, "retract.md");
     const docId = await openFile(filePath, "alpha\nbeta\n");
