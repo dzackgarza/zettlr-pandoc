@@ -21,6 +21,21 @@ import { spawn } from "child_process";
 import path from "path";
 import { createPatch } from "diff";
 
+/**
+ * The slices of the responses this suite reads. JSON.parse hands back `any`,
+ * which spreads through every expression it touches and costs the assertions
+ * their type checking; naming the two shapes is what keeps a renamed field a
+ * compile error here rather than an undefined at runtime.
+ */
+interface DocumentListBody {
+  documents: Array<{ path: string; documentId: string }>;
+}
+
+interface ContentBody {
+  content: string;
+  snapshot: string;
+}
+
 describe("Agent HTTP API cross-process E2E", function () {
   this.timeout(30000);
 
@@ -86,6 +101,15 @@ describe("Agent HTTP API cross-process E2E", function () {
       {
         cwd: path.join(__dirname, ".."),
         stdio: ["ignore", "pipe", "pipe", "ipc"],
+        // The child inherits this process's environment, and a developer whose
+        // ~/.envrc carries a real token would hand the server one — after
+        // which every request below, none of which authenticate, is refused.
+        // The unauthenticated loopback posture is what this suite exercises.
+        env: (() => {
+          const inherited = { ...process.env };
+          delete inherited.ZETTLR_AGENT_API_TOKEN;
+          return inherited;
+        })(),
       },
     );
 
@@ -163,19 +187,17 @@ describe("Agent HTTP API cross-process E2E", function () {
   it("lists the pre-opened document from a separate process", async function () {
     const response = await httpRequest("GET", "/v1/documents");
     assert.equal(response.status, 200);
-    const body = JSON.parse(response.body);
+    const body = JSON.parse(response.body) as DocumentListBody;
     assert.ok(
-      body.documents.some((d: { path: string }) => d.path === docPath),
+      body.documents.some((d) => d.path === docPath),
       `expected ${docPath} in ${JSON.stringify(body.documents)}`,
     );
   });
 
   it("reads live document content from a separate process", async function () {
     const listResponse = await httpRequest("GET", "/v1/documents");
-    const listBody = JSON.parse(listResponse.body);
-    const doc = listBody.documents.find(
-      (d: { path: string }) => d.path === docPath,
-    );
+    const listBody = JSON.parse(listResponse.body) as DocumentListBody;
+    const doc = listBody.documents.find((d) => d.path === docPath);
     assert.ok(doc !== undefined);
 
     const contentResponse = await httpRequest(
@@ -183,17 +205,15 @@ describe("Agent HTTP API cross-process E2E", function () {
       `/v1/documents/${doc.documentId}/content`,
     );
     assert.equal(contentResponse.status, 200);
-    const contentBody = JSON.parse(contentResponse.body);
+    const contentBody = JSON.parse(contentResponse.body) as ContentBody;
     assert.ok(contentBody.content.includes("Original content"));
     assert.ok(contentBody.snapshot !== undefined);
   });
 
   it("submits and clears a proposal from a separate process", async function () {
     const listResponse = await httpRequest("GET", "/v1/documents");
-    const listBody = JSON.parse(listResponse.body);
-    const doc = listBody.documents.find(
-      (d: { path: string }) => d.path === docPath,
-    );
+    const listBody = JSON.parse(listResponse.body) as DocumentListBody;
+    const doc = listBody.documents.find((d) => d.path === docPath);
     assert.ok(doc !== undefined);
 
     const contentResponse = await httpRequest(
@@ -205,8 +225,8 @@ describe("Agent HTTP API cross-process E2E", function () {
       200,
       `read content failed: ${contentResponse.body}`,
     );
-    const contentBody = JSON.parse(contentResponse.body);
-    const snapshot = contentBody.snapshot as string;
+    const contentBody = JSON.parse(contentResponse.body) as ContentBody;
+    const snapshot = contentBody.snapshot;
     assert.ok(snapshot !== undefined, "content response must include snapshot");
     const eTag = contentResponse.headers.etag as string;
     assert.ok(eTag !== undefined, "content response must include ETag header");

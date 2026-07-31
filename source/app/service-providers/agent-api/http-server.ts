@@ -471,12 +471,17 @@ export default class AgentHTTPProvider extends ProviderContract {
     // route being exactly that — would answer anonymously by accident rather
     // than by decision.
     if (!this.isAuthorized(req)) {
-      this.sendError(
-        res,
-        401,
-        "UNAUTHORIZED",
-        `A bearer token is required. Send "Authorization: Bearer <token>" with the value of ${AGENT_API_TOKEN_VARIABLE}.`,
+      // The body says nothing an anonymous caller did not already know. It
+      // named the environment variable carrying the secret, which told whoever
+      // reached the tunnel how this server is configured and what to probe for.
+      // The operator needs that sentence; a stranger does not, so it goes to
+      // the log the operator can read and nowhere else.
+      this._log.warning(
+        `[AgentHTTPProvider] Refused an unauthenticated ${req.method ?? "?"} ${req.url ?? "?"}. ` +
+          `Callers must send "Authorization: Bearer <token>" carrying the value of ` +
+          `${AGENT_API_TOKEN_VARIABLE} that this editor was started with.`,
       );
+      this.sendError(res, 401, "UNAUTHORIZED", "Authentication required.");
       return;
     }
 

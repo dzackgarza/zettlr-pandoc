@@ -73,6 +73,21 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   // exercise the no-workspace-open profile the app ships with.
   let openWorkspaces: string[] = [];
 
+  // The suite owns this variable outright. It is a real token on a developer
+  // machine that has it in ~/.envrc, and every test outside the enforcement
+  // block below is written for a server that requires nothing: inheriting it
+  // turned twenty-three unrelated tests red for a reason none of them named.
+  let ambientToken: string | undefined;
+  before(function () {
+    ambientToken = process.env.ZETTLR_AGENT_API_TOKEN;
+    delete process.env.ZETTLR_AGENT_API_TOKEN;
+  });
+  after(function () {
+    if (ambientToken !== undefined) {
+      process.env.ZETTLR_AGENT_API_TOKEN = ambientToken;
+    }
+  });
+
   function descriptorFor(filePath: string): CodeFileDescriptor {
     const stat = statSync(filePath);
     return {
@@ -335,6 +350,33 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         assert.equal(anonymous.status, 401, `${pathname} must refuse an anonymous caller`);
         assert.equal(JSON.parse(anonymous.body).error.code, "UNAUTHORIZED");
       }
+    });
+
+    it("tells an anonymous caller nothing about how this server is configured", async function () {
+      // The refusal used to name the environment variable carrying the secret,
+      // and so did the specification, which is served anonymously. Between them
+      // a stranger who reached a published tunnel learned the exact variable to
+      // ask about and the exact misconfiguration to probe for. Neither sentence
+      // helped anyone who was entitled to call the API: the operator already
+      // knows, and reads it in the log instead.
+      const surfaces = [
+        (await request("/v1/ping")).body,
+        (await request("/openapi.yaml")).body,
+        (await request("/openapi.json")).body,
+      ];
+      for (const body of surfaces) {
+        assert.equal(
+          /ZETTLR_AGENT_API_TOKEN/.test(body),
+          false,
+          "an anonymous response must not name the variable carrying the secret",
+        );
+        assert.equal(
+          /environment variable|is not enforced|loopback caller/i.test(body),
+          false,
+          "an anonymous response must not describe the server's auth posture",
+        );
+      }
+      assert.equal(JSON.parse(surfaces[0]).error.message, "Authentication required.");
     });
 
     it("serves the specification anonymously, with the origin it was asked on", async function () {

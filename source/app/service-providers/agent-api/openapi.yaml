@@ -19,10 +19,8 @@ components:
       type: http
       scheme: bearer
       description: >-
-        The value of the ZETTLR_AGENT_API_TOKEN environment variable the
-        editor was started with. When that variable is unset the server
-        serves any loopback caller and this scheme is not enforced;
-        publishing the port in that state exposes every open document.
+        The shared secret this editor instance was started with. Obtain it
+        from the operator of the instance; every route below requires it.
   schemas:
     DocumentRevision:
       type: object
