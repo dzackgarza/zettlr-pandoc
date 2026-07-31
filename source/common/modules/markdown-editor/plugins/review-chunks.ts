@@ -29,8 +29,16 @@
  */
 
 import { presentableDiff } from '@codemirror/merge'
-import { Facet, StateField, type EditorState, type Extension } from '@codemirror/state'
-import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view'
+import { Facet, StateField, type EditorState, type Extension, type Text } from '@codemirror/state'
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  keymap,
+  type Panel,
+  showPanel,
+  WidgetType
+} from '@codemirror/view'
 import {
   chunkAttributesTo,
   computeReviewChunks,
@@ -61,6 +69,12 @@ export interface ReviewChunksConfig {
    * Hold carries the optional comment typed into the chunk's note field.
    */
   onDecide: (chunkId: string, decision: 'accept'|'reject'|'hold', comment?: string) => void
+  /**
+   * Called when the status panel's Accept-all control is clicked. The
+   * provider sweeps the whole partition through its one decision path and
+   * broadcasts; this pane redraws from that broadcast, like any decision.
+   */
+  onAcceptAll: () => void
 }
 
 const reviewChunksConfig = Facet.define<ReviewChunksConfig, ReviewChunksConfig|null>({
@@ -95,10 +109,139 @@ export function getReviewChunks (state: EditorState): ReviewChunk[]|null {
   return value === undefined ? null : value.chunks
 }
 
+/**
+ * The most chunks this review has shown at once — the "total" of the status
+ * panel's resolved/total indicator; resolved = highWater − outstanding. The
+ * field survives the per-broadcast compartment reconfigure (same StateField
+ * identity) and resets when the review extension is dropped.
+ *
+ * ponytail: a high-water mark, not a ledger — a user edit that merges two
+ * chunks shrinks the outstanding count without a decision, which reads as
+ * one more "resolved". Exact accounting would need decision history the
+ * pane deliberately does not keep.
+ */
+const reviewChunkHighWater = StateField.define<number>({
+  create (state) {
+    return state.field(reviewChunksField).chunks.length
+  },
+  update (value, tr) {
+    return Math.max(value, tr.state.field(reviewChunksField).chunks.length)
+  }
+})
+
+/** The anchor position of a chunk: its first working line, or document end. */
+function chunkAnchor (doc: Text, chunk: ReviewChunk): number {
+  return chunk.workFromLine <= doc.lines ? doc.line(chunk.workFromLine).from : doc.length
+}
+
+function selectReviewChunk (view: EditorView, direction: 1|-1): boolean {
+  const value = view.state.field(reviewChunksField, false)
+  if (value === undefined || value.chunks.length === 0) {
+    return false
+  }
+  const doc = view.state.doc
+  const headLine = doc.lineAt(view.state.selection.main.head).number
+  const chunks = value.chunks
+  const target = direction === 1
+    ? chunks.find(chunk => chunk.workFromLine > headLine) ?? chunks[0]
+    : [...chunks].reverse().find(chunk => chunk.workFromLine < headLine) ?? chunks[chunks.length - 1]
+  const anchor = chunkAnchor(doc, target)
+  view.dispatch({
+    selection: { anchor },
+    effects: EditorView.scrollIntoView(anchor, { y: 'center' }),
+    userEvent: 'select'
+  })
+  return true
+}
+
+/** Move the cursor to the next review chunk, wrapping past the last one. */
+export function selectNextReviewChunk (view: EditorView): boolean {
+  return selectReviewChunk(view, 1)
+}
+
+/** Move the cursor to the previous review chunk, wrapping past the first. */
+export function selectPreviousReviewChunk (view: EditorView): boolean {
+  return selectReviewChunk(view, -1)
+}
+
+const reviewChunkKeymap = keymap.of([
+  { key: 'F8', run: selectNextReviewChunk },
+  { key: 'Shift-F8', run: selectPreviousReviewChunk }
+])
+
+/**
+ * The review status bar: resolved/total (plus held) at a glance, chunk
+ * navigation, and the mass-accept control. A module-level constructor keeps
+ * the panel alive across the per-broadcast reconfigure; everything it shows
+ * is re-read from the current state, and the click handlers resolve the
+ * facet at click time so a stale config can never act.
+ */
+function reviewStatusPanel (view: EditorView): Panel {
+  const dom = document.createElement('div')
+  dom.className = 'cm-reviewStatusPanel'
+
+  const makeButton = (className: string, text: string, title: string, onClick: () => void): HTMLButtonElement => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = className
+    button.textContent = text
+    button.title = title
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      onClick()
+    })
+    return button
+  }
+
+  const previous = makeButton('cm-reviewNav previous', '‹ Prev', 'Previous chunk (Shift-F8)', () => {
+    selectPreviousReviewChunk(view)
+  })
+  const next = makeButton('cm-reviewNav next', 'Next ›', 'Next chunk (F8)', () => {
+    selectNextReviewChunk(view)
+  })
+  const label = document.createElement('span')
+  label.className = 'cm-reviewStatusLabel'
+  const acceptAll = makeButton(
+    'cm-review-diff-control cm-reviewAcceptAll',
+    'Accept all',
+    'Accept every remaining chunk',
+    () => {
+      view.state.facet(reviewChunksConfig)?.onAcceptAll()
+    }
+  )
+  dom.append(previous, next, label, acceptAll)
+
+  const render = (state: EditorState): void => {
+    const chunks = state.field(reviewChunksField).chunks
+    const total = state.field(reviewChunkHighWater)
+    const liveIds = new Set(chunks.map(chunk => chunk.chunkId))
+    const held = (state.facet(reviewChunksConfig)?.holds ?? [])
+      .filter(hold => liveIds.has(hold.chunkId)).length
+    const resolved = Math.max(0, total - chunks.length)
+    label.textContent = `${resolved} of ${total} resolved` + (held > 0 ? ` · ${held} held` : '')
+    const done = chunks.length === 0
+    previous.disabled = done
+    next.disabled = done
+    acceptAll.disabled = done
+  }
+  render(view.state)
+
+  return {
+    dom,
+    top: true,
+    update (update) {
+      render(update.state)
+    }
+  }
+}
+
 export function reviewChunksExtension (config: ReviewChunksConfig): Extension[] {
   return [
     reviewChunksConfig.of(config),
     reviewChunksField,
+    reviewChunkHighWater,
+    showPanel.of(reviewStatusPanel),
+    reviewChunkKeymap,
     reviewChunksTheme
   ]
 }
@@ -342,5 +485,16 @@ const reviewChunksTheme = EditorView.baseTheme({
     opacity: '0.75',
     fontStyle: 'italic',
     padding: '2px 0'
+  },
+  '.cm-reviewStatusPanel': {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '4px 8px',
+    fontSize: '0.85em'
+  },
+  '.cm-reviewStatusLabel': {
+    opacity: '0.8',
+    marginLeft: 'auto'
   }
 })

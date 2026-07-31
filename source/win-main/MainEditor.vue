@@ -769,6 +769,21 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
       .catch(err => console.error('Could not decide review chunk', err))
   })
 
+  editor.on('review-accept-all', (payload: { reviewId: string }) => {
+    // Same contract as a single decision: the provider sweeps its partition
+    // and broadcasts; this pane redraws from the broadcast.
+    ipcRenderer.invoke('documents-provider', {
+      command: 'accept-all-review-chunks',
+      payload
+    })
+      .then(result => {
+        if (!result.ok) {
+          showToast(trans(result.message), 'error')
+        }
+      })
+      .catch(err => console.error('Could not accept all review chunks', err))
+  })
+
   editor.on('focus', () => {
     ipcRenderer.invoke('documents-provider', {
       command: 'focus-leaf',

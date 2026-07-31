@@ -54,7 +54,8 @@ async function mount (): Promise<void> {
           referenceText: baseline,
           packets: [],
           holds: [],
-          onDecide: () => { /* capture harness: decisions are not exercised */ }
+          onDecide: () => { /* capture harness: decisions are not exercised */ },
+          onAcceptAll: () => { /* capture harness: decisions are not exercised */ }
         })
       ]
     })

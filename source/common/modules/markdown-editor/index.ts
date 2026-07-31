@@ -990,6 +990,9 @@ export default class MarkdownEditor extends EventEmitter {
           comment,
         });
       },
+      onAcceptAll: () => {
+        this.emit("review-accept-all", { reviewId: session.id });
+      },
     });
   }
 

@@ -24,7 +24,9 @@ import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import {
   getReviewChunks,
-  reviewChunksExtension
+  reviewChunksExtension,
+  selectNextReviewChunk,
+  selectPreviousReviewChunk
 } from 'source/common/modules/markdown-editor/plugins/review-chunks'
 import {
   computeReviewChunks,
@@ -52,6 +54,22 @@ function polyfillJsdomForCodeMirror (): void {
     }
     if (typeof globalThis.window === 'object') {
       globalThis.window.ResizeObserver = globalThis.ResizeObserver
+    }
+  }
+  // jsdom Ranges carry no layout: CodeMirror's measure cycle (triggered by
+  // scroll-into-view requests) calls Range#getClientRects, which jsdom does
+  // not implement. An empty rect list makes the measure fall back gracefully.
+  if (typeof Range.prototype.getClientRects !== 'function') {
+    class EmptyDOMRectList extends Array<DOMRect> {
+      item (): DOMRect | null {
+        return null
+      }
+    }
+    Range.prototype.getClientRects = function (): DOMRectList {
+      return new EmptyDOMRectList()
+    }
+    Range.prototype.getBoundingClientRect = function (): DOMRect {
+      return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}) }
     }
   }
 }
@@ -111,6 +129,13 @@ describe('Editor review-chunk controls', function () {
             holds = [...holds, { chunkId, comment }]
             view.dispatch({ effects: compartment.reconfigure(makeExtension()) })
           }
+        },
+        onAcceptAll: () => {
+          // The provider's sweep: the reference becomes the working text —
+          // what accepting every chunk converges to — and the pane redraws.
+          reference = view.state.doc.toString()
+          holds = []
+          view.dispatch({ effects: compartment.reconfigure(makeExtension()) })
         }
       })
     }
@@ -336,6 +361,70 @@ describe('Editor review-chunk controls', function () {
       false,
       'an untouched range must still render'
     )
+  })
+
+  it('navigates between chunks with the next/previous commands, wrapping', function () {
+    const baseline = [
+      '# Note', '', 'first baseline', '', 'middle unchanged', '', 'second baseline', ''
+    ].join('\n')
+    const proposed = baseline
+      .replace('first baseline', 'first proposed')
+      .replace('second baseline', 'second proposed')
+    const view = createReviewView(baseline, proposed)
+    assert.equal(chunkCount(view), 2)
+
+    const chunks = getReviewChunks(view.state)!
+    const anchorOf = (index: number): number => view.state.doc.line(chunks[index].workFromLine).from
+
+    assert.equal(selectNextReviewChunk(view), true)
+    assert.equal(view.state.selection.main.head, anchorOf(0), 'next from the top must land on the first chunk')
+    assert.equal(selectNextReviewChunk(view), true)
+    assert.equal(view.state.selection.main.head, anchorOf(1), 'next must advance to the second chunk')
+    assert.equal(selectNextReviewChunk(view), true)
+    assert.equal(view.state.selection.main.head, anchorOf(0), 'next past the last chunk must wrap')
+
+    assert.equal(selectPreviousReviewChunk(view), true)
+    assert.equal(view.state.selection.main.head, anchorOf(1), 'previous before the first chunk must wrap')
+    assert.equal(selectPreviousReviewChunk(view), true)
+    assert.equal(view.state.selection.main.head, anchorOf(0))
+  })
+
+  it('the navigation commands answer false outside a review', function () {
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({ doc: 'plain text' })
+    })
+    views.push(view)
+    assert.equal(selectNextReviewChunk(view), false)
+    assert.equal(selectPreviousReviewChunk(view), false)
+  })
+
+  it('shows a live resolved/total indicator and a working Accept-all control', function () {
+    const baseline = [
+      '# Note', '', 'first baseline', '', 'middle unchanged', '', 'second baseline', ''
+    ].join('\n')
+    const proposed = baseline
+      .replace('first baseline', 'first proposed')
+      .replace('second baseline', 'second proposed')
+    const view = createReviewView(baseline, proposed)
+    assert.equal(chunkCount(view), 2)
+
+    const label = view.dom.querySelector<HTMLElement>('.cm-reviewStatusPanel .cm-reviewStatusLabel')
+    assert.ok(label !== null, 'a review must show its status panel')
+    assert.equal(label.textContent, '0 of 2 resolved')
+
+    // One decision moves the indicator.
+    view.dom.querySelector<HTMLButtonElement>('button.cm-review-diff-control.accept')!.click()
+    assert.equal(chunkCount(view), 1)
+    assert.equal(label.textContent, '1 of 2 resolved')
+
+    // Accept-all finishes the review through the provider sweep.
+    const acceptAll = view.dom.querySelector<HTMLButtonElement>('button.cm-reviewAcceptAll')
+    assert.ok(acceptAll !== null, 'the panel must carry the Accept-all control')
+    acceptAll.click()
+    assert.equal(chunkCount(view), 0, 'accept-all must resolve every remaining chunk')
+    assert.equal(label.textContent, '2 of 2 resolved')
+    assert.equal(acceptAll.disabled, true, 'a finished review has nothing left to mass-accept')
   })
 
   it('renders normally once no review is active', function () {
