@@ -198,7 +198,7 @@ async function openReview (
   idempotencyKey: string
 ): Promise<string> {
   const documentId = documentIdOf(await client.get('/v1/documents'))
-  const { snapshot, sha256 } = readSnapshot(
+  const { snapshot } = readSnapshot(
     await client.get(`/v1/documents/${documentId}/content?side=working`)
   )
   const reviewId = reviewIdOf(await client.post(
@@ -378,7 +378,7 @@ describe('saving after accepting a reviewed change', function () {
     await page.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
 
     const documentId = documentIdOf(await activeClient.get('/v1/documents'))
-    const { snapshot, sha256 } = readSnapshot(
+    const { snapshot } = readSnapshot(
       await activeClient.get(`/v1/documents/${documentId}/content?side=working`)
     )
 
@@ -468,7 +468,7 @@ describe('saving after accepting a reviewed change', function () {
         ok: false,
         refusal: {
           reason: 'unresolved-chunks',
-          message: 'Resolve every accept/reject chunk before saving this review.'
+          message: 'Accept, reject, or hold every chunk before saving this review.'
         }
       },
       'The provider must refuse an unresolved review with a typed reason.'
@@ -516,7 +516,7 @@ describe('saving after accepting a reviewed change', function () {
     // First span is the message; the second is the ✕ dismiss affordance.
     assert.equal(
       await toast.first().locator('span').first().innerText(),
-      'Resolve every accept/reject chunk before saving this review.',
+      'Accept, reject, or hold every chunk before saving this review.',
       'The toast must name the provider\'s reason, not a generic failure.'
     )
     assert.equal(
