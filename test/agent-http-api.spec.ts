@@ -48,7 +48,10 @@ const openApiDocument = parseYaml(
     path.join(__dirname, "../source/app/service-providers/agent-api/openapi.yaml"),
     "utf8",
   ),
-) as { components: { schemas: Record<string, unknown> } };
+) as {
+  components: { schemas: Record<string, unknown> };
+  paths: Record<string, Record<string, Record<string, unknown>>>;
+};
 
 const ajv = new Ajv2020({ strict: false, allErrors: true });
 for (const [name, schema] of Object.entries(openApiDocument.components.schemas)) {
@@ -556,6 +559,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     };
     assert.ok(body.documents.length > 0);
     assert.ok(body.documents.some((d: { path: string }) => d.path === filePath));
+    assertMatchesSchema(body, "DocumentListResponse");
     for (const document of body.documents) {
       assertMatchesSchema(document, "DocumentSummary");
     }
@@ -612,6 +616,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(body.packetId !== undefined);
     assert.ok(body.reviewId !== undefined);
     assert.equal(body.state, "active");
+    assertMatchesSchema(body, "SubmitProposalResponse");
   });
 
   it("rejects reuse of an idempotency key for a different proposal", async function () {
@@ -683,7 +688,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       `/v1/workspaces/${encodeURIComponent(scratch)}/documents/${document.documentId}/open`,
     );
     assert.equal(opened.status, 200);
-    assert.equal(JSON.parse(opened.body).documentId, document.documentId);
+    const openedBody = JSON.parse(opened.body);
+    assert.equal(openedBody.documentId, document.documentId);
+    assertMatchesSchema(openedBody, "FocusDocumentResponse");
   });
 
   it("refuses to open an unopened path when no workspace is configured", async function () {
@@ -707,6 +714,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // not the thing that made those documents legitimate.
     const focused = await httpRequest("POST", `/v1/documents/${openDocId}/focus`);
     assert.equal(focused.status, 200);
+    assertMatchesSchema(JSON.parse(focused.body), "FocusDocumentResponse");
 
     // An id assigned earlier is not standing authorization. Document ids are
     // cached permanently and handed out to every file a workspace listing
@@ -824,6 +832,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(response.status, 200);
     const body = JSON.parse(response.body);
     assert.ok(body.reviews.length > 0);
+    // Every entry carries the documentId that maps the review to its document.
+    assert.equal(body.reviews[0].documentId, docId);
+    assertMatchesSchema(body, "ReviewListResponse");
   });
 
   it("GET /v1/reviews/{id}/diff returns the composite unresolved diff", async function () {
@@ -841,6 +852,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const body = JSON.parse(response.body) as { patch: string };
     assert.ok(body.patch.includes("-alpha"));
     assert.ok(body.patch.includes("+ALPHA"));
+    assertMatchesSchema(body, "ReviewDiffResponse");
   });
 
   it("POST /v1/reviews/{id}/clear discards unresolved", async function () {
@@ -869,6 +881,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(response.status, 200);
     const body = JSON.parse(response.body);
     assert.equal(body.state, "cleared");
+    assertMatchesSchema(body, "ClearReviewResponse");
   });
 
   it("POST /v1/reviews/{id}/chunks/{chunkId}/accept and /reject decide through the provider", async function () {
@@ -890,6 +903,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const listedBody = JSON.parse(listed.body) as {
       chunks: Array<{ chunkId: string; referenceText: string; workingText: string }>;
     };
+    assertMatchesSchema(listedBody, "ReviewChunksResponse");
     assert.equal(listedBody.chunks.length, 2);
     assert.equal(listedBody.chunks[0].referenceText, "alpha");
     assert.equal(listedBody.chunks[0].workingText, "ALPHA");
@@ -904,6 +918,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       decision: string;
       unresolvedChunks: number;
     };
+    assertMatchesSchema(acceptBody, "ChunkDecisionResponse");
     assert.equal(acceptBody.decision, "accept");
     assert.equal(acceptBody.unresolvedChunks, 1);
 
@@ -948,6 +963,42 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(response.status, 200);
     const body = JSON.parse(response.body);
     assert.equal(body.retracted, true);
+    assertMatchesSchema(body, "RetractProposalResponse");
+  });
+
+  it("answers a refused retraction with the declared PACKET_NOT_RETRACTABLE envelope", async function () {
+    // Issue #43: the refusal is not a RetractProposalResponse — it is a 409
+    // AgentErrorResponse whose error carries the owning reviewId and the
+    // canClearUnresolved hint. AgentError declares additionalProperties: false,
+    // so an undeclared detail field sneaking into the refusal fails here.
+    const filePath = path.join(scratch, "retract-refused.md");
+    const original = "alpha\nx\ny\nz\nbeta\n";
+    const docId = await openFile(filePath, original);
+
+    const snap = provider.createSnapshot(docId)!;
+    const submitted = await provider.submitProposal(
+      snap.token,
+      makePatch(original, "ALPHA\nx\ny\nz\nBETA\n"),
+      "http-retract-refused",
+    );
+    assert.equal(submitted.ok, true);
+    if (!submitted.ok) {
+      return;
+    }
+
+    // Deciding a chunk advances the review generation past the packet's,
+    // which is exactly what makes the packet non-retractable.
+    const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+    const decided = provider.decideChunk(submitted.reviewId, chunks[0].chunkId, "accept");
+    assert.equal(decided.ok, true);
+
+    const refused = await httpRequest("POST", `/v1/proposals/${submitted.packetId}/retract`);
+    assert.equal(refused.status, 409);
+    const body = JSON.parse(refused.body);
+    assertMatchesSchema(body, "AgentErrorResponse");
+    assert.equal(body.error.code, "PACKET_NOT_RETRACTABLE");
+    assert.equal(body.error.reviewId, submitted.reviewId);
+    assert.equal(body.error.canClearUnresolved, true);
   });
 
   it("accepts unauthenticated loopback requests", async function () {
@@ -1116,6 +1167,338 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       check.write("GET /v1/ping HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
       const response = await readUntilClose(check);
       assert.match(response, /^HTTP\/1\.1 200 /);
+    });
+  });
+
+  // ==========================================================================
+  // OpenAPI conformance (issues #40/#43)
+  //
+  // The served specification, the shared TypeScript types, and the runtime
+  // route table are three statements of one contract. Everything below checks
+  // them against each other mechanically, so a change to any one of them that
+  // is not carried to the others fails here instead of shipping as drift.
+  // ==========================================================================
+
+  describe("OpenAPI conformance", function () {
+    const HTTP_METHODS = ["get", "put", "post", "delete", "options", "head", "patch", "trace"];
+
+    /** Every operation in the published document, as METHOD + template path. */
+    function specOperations(): Array<{
+      method: string;
+      path: string;
+      operation: Record<string, unknown>;
+    }> {
+      const out: Array<{ method: string; path: string; operation: Record<string, unknown> }> = [];
+      for (const [specPath, pathItem] of Object.entries(openApiDocument.paths)) {
+        for (const method of HTTP_METHODS) {
+          const operation = pathItem[method];
+          if (operation !== undefined) {
+            out.push({ method: method.toUpperCase(), path: specPath, operation });
+          }
+        }
+      }
+      return out;
+    }
+
+    it("resolves every $ref in the served specification", function () {
+      const refs: string[] = [];
+      (function collect(node: unknown): void {
+        if (Array.isArray(node)) {
+          node.forEach(collect);
+          return;
+        }
+        if (node === null || typeof node !== "object") {
+          return;
+        }
+        for (const [key, value] of Object.entries(node)) {
+          if (key === "$ref" && typeof value === "string") {
+            refs.push(value);
+          } else {
+            collect(value);
+          }
+        }
+      })(openApiDocument);
+      assert.ok(refs.length > 0, "the specification must contain component references");
+      for (const ref of refs) {
+        assert.match(ref, /^#\//, `only document-internal references are servable: ${ref}`);
+        let cursor: unknown = openApiDocument;
+        for (const part of ref.slice(2).split("/")) {
+          assert.ok(
+            cursor !== null && typeof cursor === "object" && part in (cursor as object),
+            `dangling reference: ${ref}`,
+          );
+          cursor = (cursor as Record<string, unknown>)[part];
+        }
+      }
+    });
+
+    it("compiles every published component schema", function () {
+      // ajv compiles lazily; forcing each one surfaces schemas that are
+      // structurally broken in ways a reference walk cannot see.
+      for (const name of Object.keys(openApiDocument.components.schemas)) {
+        assert.ok(
+          ajv.getSchema(`#/components/schemas/${name}`) !== undefined,
+          `schema ${name} must compile`,
+        );
+      }
+    });
+
+    it("declares responses on every operation, and the AgentError envelope on every declared error", function () {
+      for (const { method, path: specPath, operation } of specOperations()) {
+        const responses = operation.responses as
+          | Record<string, { content?: Record<string, { schema?: unknown }> }>
+          | undefined;
+        assert.ok(
+          responses !== undefined && Object.keys(responses).length > 0,
+          `${method} ${specPath} must declare its responses`,
+        );
+        for (const [status, response] of Object.entries(responses)) {
+          if (!/^[45]/.test(status)) {
+            continue;
+          }
+          const schema = response.content?.["application/json"]?.schema;
+          assert.deepEqual(
+            schema,
+            { $ref: "#/components/schemas/AgentErrorResponse" },
+            `${method} ${specPath} ${status} must declare the AgentError envelope`,
+          );
+        }
+      }
+    });
+
+    it("backs every declared success body with a named schema exported from the TS types", function () {
+      // The wire shapes live twice by design: as OpenAPI components for
+      // consumers and as TypeScript types for the implementation. This pins
+      // the correspondence at the name level so neither list can grow alone.
+      const typeSource = readFileSync(
+        path.join(__dirname, "../source/types/common/agent-api.ts"),
+        "utf8",
+      );
+      const exported = new Set(
+        [...typeSource.matchAll(/^export (?:interface|type|const) (\w+)/gm)].map((m) => m[1]),
+      );
+      for (const { method, path: specPath, operation } of specOperations()) {
+        if (specPath.startsWith("/openapi.")) {
+          continue; // The specification routes serve the document itself.
+        }
+        const responses = operation.responses as Record<
+          string,
+          { content?: Record<string, { schema?: { $ref?: string } }> }
+        >;
+        for (const [status, response] of Object.entries(responses)) {
+          if (!/^2/.test(status)) {
+            continue;
+          }
+          const schema = response.content?.["application/json"]?.schema;
+          if (schema === undefined) {
+            continue; // Not a JSON body (the SSE stream).
+          }
+          const ref = schema.$ref;
+          assert.ok(
+            ref !== undefined,
+            `${method} ${specPath} ${status} must reference a named component, not an inline schema`,
+          );
+          const name = ref.split("/").pop()!;
+          assert.ok(
+            exported.has(name),
+            `${method} ${specPath} ${status} references ${name}, which agent-api.ts does not export`,
+          );
+        }
+      }
+    });
+
+    it("publishes exactly the routes the runtime registers", function () {
+      // The dispatcher is stylized: literal `pathname === "..."` guards, and
+      // anchored `pathname.match(/^...$/)` patterns whose scoped variants
+      // branch on a captured sub-path. This extraction understands exactly
+      // those idioms; a route written another way surfaces as a set mismatch
+      // below rather than passing silently.
+      const source = readFileSync(
+        path.join(__dirname, "../source/app/service-providers/agent-api/http-server.ts"),
+        "utf8",
+      );
+      const runtimeRoutes = new Set<string>();
+
+      // The anonymous specification routes, served ahead of dispatch.
+      const specGate = source.match(
+        /req\.method === "GET" && \(req\.url === "([^"]+)" \|\| req\.url === "([^"]+)"\)/,
+      );
+      assert.ok(specGate !== null, "the anonymous specification gate must be extractable");
+      runtimeRoutes.add(`GET ${specGate[1]}`);
+      runtimeRoutes.add(`GET ${specGate[2]}`);
+
+      // Literal routes.
+      for (const m of source.matchAll(/pathname === "([^"]+)" && method === "([A-Z]+)"/g)) {
+        runtimeRoutes.add(`${m[2]} ${m[1]}`);
+      }
+
+      // Anchored patterns. `([^/]+)` is a path parameter; a trailing
+      // `(\/.*)?` marks a scope whose block branches on the sub-path.
+      const template = (regexBody: string): string =>
+        regexBody
+          .replace(/^\^/, "")
+          .replace(/\$$/, "")
+          .replace(/\(\[\^\/\]\+\)/g, "{}")
+          .replace(/\\\//g, "/");
+      const SCOPED_SUFFIX = "(\\/.*)?$";
+
+      const segments = source.split(/const \w+ = pathname\.match\(/).slice(1);
+      assert.ok(segments.length > 0, "dispatch must contain pattern routes");
+      for (const segment of segments) {
+        const literal = segment.match(/^\s*\/(.*)\/,?\s*\)/);
+        assert.ok(literal !== null, "every pathname.match must open with its regex literal");
+        const body = literal[1];
+
+        if (!body.endsWith(SCOPED_SUFFIX)) {
+          const method = segment.match(/!== null && method === "([A-Z]+)"/);
+          assert.ok(method !== null, `anchored route needs a method guard: ${body}`);
+          runtimeRoutes.add(`${method[1]} ${template(body)}`);
+          continue;
+        }
+
+        const base = template(body.slice(0, -SCOPED_SUFFIX.length));
+        // The bare scope (sub-path absent, optionally a lone trailing slash).
+        for (const m of segment.matchAll(
+          /\(?(\w*[sS]ubPath) === undefined(?: \|\| \1 === "\/"\))? && method === "([A-Z]+)"/g,
+        )) {
+          runtimeRoutes.add(`${m[2]} ${base}`);
+        }
+        // Named sub-paths.
+        for (const m of segment.matchAll(
+          /\w*[sS]ubPath === "(\/[^"]+)" && method === "([A-Z]+)"/g,
+        )) {
+          runtimeRoutes.add(`${m[2]} ${base}${m[1]}`);
+        }
+        // Nested sub-path patterns (the accept|reject decision pair).
+        for (const m of segment.matchAll(/const \w+ = \w+\?\.match\(\/(.*)\/\);/g)) {
+          const tail = segment.slice((m.index ?? 0) + m[0].length);
+          const method = tail.match(/method === "([A-Z]+)"/);
+          assert.ok(method !== null, `nested route needs a method guard: ${m[1]}`);
+          const sub = template(m[1]);
+          const alternation = sub.match(/^(.*)\((\w+(?:\|\w+)+)\)(.*)$/);
+          if (alternation !== null) {
+            for (const option of alternation[2].split("|")) {
+              runtimeRoutes.add(`${method[1]} ${base}${alternation[1]}${option}${alternation[3]}`);
+            }
+          } else {
+            runtimeRoutes.add(`${method[1]} ${base}${sub}`);
+          }
+        }
+      }
+
+      // Parameter names differ between the two statements; identity does not.
+      const declaredRoutes = specOperations().map(
+        ({ method, path: specPath }) => `${method} ${specPath.replace(/\{[^}]+\}/g, "{}")}`,
+      );
+      assert.deepEqual(
+        [...runtimeRoutes].sort(),
+        declaredRoutes.sort(),
+        "runtime route table and openapi.yaml paths must agree",
+      );
+    });
+
+    it("routes every declared operation (none falls through to METHOD_NOT_FOUND)", async function () {
+      this.timeout(10000);
+      // Negative control first: the discriminator this probe relies on.
+      const missing = await httpRequest("GET", "/v1/no-such-route");
+      assert.equal(JSON.parse(missing.body).error.code, "METHOD_NOT_FOUND");
+
+      for (const { method, path: specPath } of specOperations()) {
+        const probePath = specPath.replace(/\{[^}]+\}/g, "conformance-probe");
+        if (specPath === "/v1/events") {
+          // SSE holds the connection open; headers alone prove the route.
+          const observed = await new Promise<{ status: number; contentType: string }>(
+            (resolve) => {
+              const req = http.request(
+                { hostname: "127.0.0.1", port: httpPort, path: probePath, method },
+                (res) => {
+                  resolve({
+                    status: res.statusCode ?? 0,
+                    contentType: res.headers["content-type"] ?? "",
+                  });
+                  res.destroy();
+                },
+              );
+              req.on("error", () => resolve({ status: 0, contentType: "" }));
+              req.end();
+            },
+          );
+          assert.equal(observed.status, 200, `${method} ${specPath} must be routed`);
+          assert.equal(observed.contentType, "text/event-stream");
+          continue;
+        }
+        const response = await httpRequest(method, probePath);
+        if (response.status >= 400) {
+          const parsed = JSON.parse(response.body) as { error: { code: string } };
+          assert.notEqual(
+            parsed.error.code,
+            "METHOD_NOT_FOUND",
+            `${method} ${specPath} is declared but not routed`,
+          );
+        }
+      }
+    });
+
+    it("serves the remaining declared bodies matching their schemas", async function () {
+      // The response shapes not already pinned by a dedicated test above:
+      // health, views, workspaces, search, review detail, packets, and the
+      // long-poll. Together with those tests, every 2xx JSON component the
+      // specification names is validated against a live response.
+      const health = await httpRequest("GET", "/health");
+      assert.equal(health.status, 200);
+      assertMatchesSchema(JSON.parse(health.body), "PingResponse");
+
+      const views = await httpRequest("GET", "/v1/views");
+      assert.equal(views.status, 200);
+      assertMatchesSchema(JSON.parse(views.body), "ViewsResponse");
+
+      const workspaces = await httpRequest("GET", "/v1/workspaces");
+      assert.equal(workspaces.status, 200);
+      assertMatchesSchema(JSON.parse(workspaces.body), "WorkspacesResponse");
+
+      const filePath = path.join(scratch, "conformance-flow.md");
+      const docId = await openFile(filePath, "alpha\nbeta\n");
+
+      const search = await httpRequest("POST", `/v1/documents/${docId}/search`, {
+        body: JSON.stringify({ literal: "alpha" }),
+        headers: { "content-type": "application/json" },
+      });
+      assert.equal(search.status, 200);
+      const searchBody = JSON.parse(search.body);
+      assert.equal(searchBody.hits.length, 1);
+      assertMatchesSchema(searchBody, "SearchDocumentResponse");
+
+      const snap = provider.createSnapshot(docId)!;
+      const submitted = await provider.submitProposal(
+        snap.token,
+        makePatch("alpha\nbeta\n", "ALPHA\nbeta\n"),
+        "conformance-flow",
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+
+      const detail = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}`);
+      assert.equal(detail.status, 200);
+      assertMatchesSchema(JSON.parse(detail.body), "ReviewDetailResponse");
+
+      const packets = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}/packets`);
+      assert.equal(packets.status, 200);
+      const packetsBody = JSON.parse(packets.body);
+      // applicationGeneration is required: a packet ledger without it is the
+      // exact drift #43 exists to prevent.
+      assert.equal(packetsBody.packets[0].applicationGeneration, 1);
+      assertMatchesSchema(packetsBody, "ReviewPacketsResponse");
+
+      const events = await httpRequest(
+        "GET",
+        `/v1/reviews/${submitted.reviewId}/events?afterGeneration=0&waitSeconds=0`,
+      );
+      assert.equal(events.status, 200);
+      const eventsBody = JSON.parse(events.body);
+      assert.equal(eventsBody.status.generation, 1);
+      assertMatchesSchema(eventsBody, "ReviewEventsResponse");
     });
   });
 });
