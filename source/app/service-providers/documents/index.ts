@@ -40,7 +40,11 @@ import {
 } from "@dts/common/documents";
 import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type { DocumentLocation, SourceRange } from "@dts/common/references";
-import type { AgentErrorCode, ReviewState } from "@dts/common/agent-api";
+import type {
+  AgentErrorCode,
+  ChunkDecisionResponse,
+  ReviewState,
+} from "@dts/common/agent-api";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
 import type { ConfigOptions } from "@providers/config/get-config-template";
@@ -2058,19 +2062,7 @@ current contents from the editor somewhere else, and restart the application.`,
     reviewId: string,
     chunkId: string,
     decision: "accept" | "reject",
-  ):
-    | {
-        ok: true;
-        reviewId: string;
-        documentId: string;
-        chunkId: string;
-        decision: "accept" | "reject";
-        reviewGeneration: number;
-        unresolvedChunks: number;
-        state: ReviewState;
-        documentRevision: { version: number; sha256: string };
-      }
-    | { ok: false; code: AgentErrorCode; message: string } {
+  ): ChunkDecisionResponse | { ok: false; code: AgentErrorCode; message: string } {
     const review = this._reviewStore.findReviewByReviewId(reviewId);
     if (review === undefined) {
       return {

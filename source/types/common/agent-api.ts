@@ -138,7 +138,7 @@ export interface SearchHit {
   contextAfter: string;
 }
 
-export interface SearchResponse {
+export interface SearchDocumentResponse {
   documentId: string;
   snapshot: string;
   revision: DocumentRevision;
@@ -283,9 +283,14 @@ export interface ReviewPacketsResponse {
   packets: ProposalPacket[];
 }
 
-export interface ReviewStatusResponse {
+/**
+ * The body of GET /v1/reviews/{reviewId}: the review's own status plus the
+ * live document revision. The wire carries no documentId here — the review is
+ * addressed by reviewId, and /v1/reviews is the surface that maps reviews to
+ * documents.
+ */
+export interface ReviewDetailResponse {
   reviewId: string;
-  documentId: string;
   state: ReviewState;
   generation: number;
   unresolvedChunks: number;
@@ -293,8 +298,30 @@ export interface ReviewStatusResponse {
   documentRevision: DocumentRevision;
 }
 
+/** One entry of GET /v1/reviews: a ReviewSummary plus the document it reviews. */
+export interface ReviewListEntry extends ReviewSummary {
+  documentId: string;
+}
+
 export interface ReviewListResponse {
-  reviews: ReviewSummary[];
+  reviews: ReviewListEntry[];
+}
+
+/**
+ * The body of POST /v1/reviews/{reviewId}/chunks/{chunkId}/accept | /reject.
+ * The same shape DocumentManager.decideChunk returns on success — the HTTP
+ * layer serializes it unchanged.
+ */
+export interface ChunkDecisionResponse {
+  ok: true;
+  reviewId: string;
+  documentId: string;
+  chunkId: string;
+  decision: "accept" | "reject";
+  reviewGeneration: number;
+  unresolvedChunks: number;
+  state: ReviewState;
+  documentRevision: DocumentRevision;
 }
 
 // ============================================================================
@@ -305,23 +332,20 @@ export interface RetractProposalRequest {
   packetId: string;
 }
 
-export type RetractProposalResponse =
-  | {
-      retracted: true;
-      packetId: string;
-      reviewId: string;
-      documentId: string;
-      documentRevision: DocumentRevision;
-      reviewGeneration: number;
-      unresolvedChunks: number;
-    }
-  | {
-      retracted: false;
-      code: "PACKET_NOT_RETRACTABLE";
-      message: string;
-      reviewId: string;
-      canClearUnresolved: true;
-    };
+/**
+ * The 200 body of POST /v1/proposals/{packetId}/retract. A refused retraction
+ * is not this shape: it is a 409 AgentErrorResponse whose error carries
+ * PACKET_NOT_RETRACTABLE plus the reviewId and canClearUnresolved details.
+ */
+export interface RetractProposalResponse {
+  retracted: true;
+  packetId: string;
+  reviewId: string;
+  documentId: string;
+  documentRevision: DocumentRevision;
+  reviewGeneration: number;
+  unresolvedChunks: number;
+}
 
 export interface ClearReviewRequest {
   reviewId: string;
@@ -428,7 +452,7 @@ export interface DocumentListResponse {
   documents: DocumentSummary[];
 }
 
-export interface ViewListResponse {
+export interface ViewsResponse {
   views: ViewSummary[];
 }
 
@@ -537,17 +561,18 @@ export type AgentApiResponseBody =
   | EditorContext
   | DocumentSummary
   | DocumentListResponse
-  | ViewListResponse
+  | ViewsResponse
   | WorkspacesResponse
   | WorkspaceDocumentsResponse
   | FocusDocumentResponse
   | ReadDocumentResponse
-  | SearchResponse
+  | SearchDocumentResponse
   | SubmitProposalResponse
   | ReviewListResponse
-  | ReviewStatusResponse
+  | ReviewDetailResponse
   | ReviewDiffResponse
   | ReviewChunksResponse
+  | ChunkDecisionResponse
   | ReviewPacketsResponse
   | ReviewEventsResponse
   | ClearReviewResponse
