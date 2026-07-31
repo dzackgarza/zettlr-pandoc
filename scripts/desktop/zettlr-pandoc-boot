@@ -115,7 +115,12 @@ trap restore_cursor EXIT
 # which the dev chain does not have.
 if app_up; then
   if (( $# > 0 )); then
-    printf 'Cannot open %s: the app is already running and the dev launcher cannot pass files to it. Open the file from the app, or quit and relaunch with it.\n' "$*" >&2
+    # Dwell before exiting, as fail() does. This script runs inside the splash
+    # terminal, which closes the moment it returns: a refusal that exits
+    # immediately is one nobody can read, leaving the launch indistinguishable
+    # from the silent drop this refusal exists to replace.
+    printf '\n   Cannot open %s\n\n   The app is already running, and the dev launcher cannot hand files to\n   a running instance. Open the file from within the app, or quit it and\n   launch again with the file.\n\n' "$*" >&2
+    sleep 8
     exit 1
   fi
   hyprctl dispatch focuswindow "class:^(${app_class})$" >/dev/null
