@@ -12,6 +12,7 @@ import {
   rm,
   writeFile
 } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chromium, type Browser, type Page } from 'playwright'
@@ -35,6 +36,23 @@ export function requireInitialized<T> (
 
 export function outputTail (output: string): string {
   return output.split('\n').slice(-100).join('\n')
+}
+
+/** Bind port 0, read what the kernel gave, release it, hand it to the caller. */
+export async function reserveFreePort (): Promise<number> {
+  return await new Promise((resolve, reject) => {
+    const server = createServer()
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      if (address === null || typeof address === 'string') {
+        reject(new Error('Could not reserve a loopback port'))
+        return
+      }
+      const { port } = address
+      server.close(() => resolve(port))
+    })
+  })
 }
 
 export async function waitForDevTools (
@@ -292,7 +310,19 @@ export async function createFixture (
   return { root, configDirectory, documentPath }
 }
 
-export function launchElectron (configDirectory: string): ChildProcess {
+export interface LaunchOptions {
+  /**
+   * Bearer token the launched app must demand. Absent means it boots unguarded.
+   * There is no third state: an inherited token is always discarded, so the
+   * caller's choice here is the only thing that decides the app's auth mode.
+   */
+  agentApiToken?: string
+}
+
+export async function launchElectron (
+  configDirectory: string,
+  options: LaunchOptions = {}
+): Promise<ChildProcess> {
   const forgeExecutable = path.join(
     REPO_ROOT,
     'node_modules',
@@ -314,21 +344,31 @@ export function launchElectron (configDirectory: string): ChildProcess {
   const args = needsVirtualDisplay
     ? ['--auto-servernum', forgeExecutable, ...forgeArguments]
     : forgeArguments
-  // Forge's dev server and logger bind fixed ports, so two E2E runs on one
-  // machine collide on EADDRINUSE. Derive both from the runner's pid, which is
-  // unique among concurrent runs.
-  const rendererPort = 20_000 + (process.pid % 10_000)
-  const loggerPort = 40_000 + (process.pid % 10_000)
+  // Forge's dev server and logger bind fixed ports, so anything launching the
+  // app twice collides on EADDRINUSE. Asking the kernel per launch covers both
+  // shapes of that: concurrent runs on one machine, and the relaunch a suite
+  // performs while the previous app may still be releasing its ports.
+  const rendererPort = await reserveFreePort()
+  const loggerPort = await reserveFreePort()
+
+  const childEnvironment: NodeJS.ProcessEnv = {
+    ...process.env,
+    NODE_ENV: 'develop',
+    ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
+    ZETTLR_FORGE_LOGGER_PORT: String(loggerPort)
+  }
+  // An inherited token would boot the app in bearer-token mode and silently
+  // change what every unauthenticated spec is testing, so the developer's
+  // shell does not get a vote: only an explicit request supplies one.
+  delete childEnvironment.ZETTLR_AGENT_API_TOKEN
+  if (options.agentApiToken !== undefined) {
+    childEnvironment.ZETTLR_AGENT_API_TOKEN = options.agentApiToken
+  }
 
   return spawn(executable, args, {
     cwd: REPO_ROOT,
     detached: true,
-    env: {
-      ...process.env,
-      NODE_ENV: 'develop',
-      ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
-      ZETTLR_FORGE_LOGGER_PORT: String(loggerPort)
-    },
+    env: childEnvironment,
     stdio: ['ignore', 'pipe', 'pipe']
   })
 }
@@ -363,9 +403,10 @@ export interface RunningApp {
 export async function attach (
   configDirectory: string,
   rendererEvents: string[],
-  timeoutMs: number
+  timeoutMs: number,
+  options: LaunchOptions = {}
 ): Promise<RunningApp> {
-  const appProcess = launchElectron(configDirectory)
+  const appProcess = await launchElectron(configDirectory, options)
   let processOutput = ''
   const appendOutput = (chunk: Buffer): void => {
     processOutput = `${processOutput}${chunk.toString()}`.slice(-200_000)

@@ -5,30 +5,13 @@
 import { strict as assert } from 'node:assert'
 import type { ChildProcess } from 'node:child_process'
 import type { Browser } from 'playwright'
-import { createServer } from 'node:net'
 import {
   attach,
   createFixture,
   preserveArtifacts,
+  reserveFreePort,
   shutdown
 } from './support/electron-app'
-
-/** Bind port 0, read what the kernel gave, release it, hand it to the app. */
-async function reserveFreePort (): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      if (address === null || typeof address === 'string') {
-        reject(new Error('Could not reserve a loopback port for the Agent API'))
-        return
-      }
-      const { port } = address
-      server.close(() => resolve(port))
-    })
-  })
-}
 
 const ARTIFACTS = '/tmp/zettlr-agent-api-auth-e2e-latest'
 const TOKEN = 'e2e-bearer-token-3f9a1c'
@@ -52,7 +35,6 @@ describe('agent API bearer token', function () {
     rendererEvents: []
   }
   let port: number
-  let previousToken: string | undefined
 
   async function ping (headers: Record<string, string>): Promise<number> {
     const response = await fetch(`http://127.0.0.1:${port}/v1/ping`, { headers })
@@ -61,10 +43,6 @@ describe('agent API bearer token', function () {
 
   before(async function () {
     port = await reserveFreePort()
-    previousToken = process.env.ZETTLR_AGENT_API_TOKEN
-    // launchElectron spreads process.env into the child, so this is the same
-    // route ~/.envrc takes through `direnv exec` in the desktop launcher.
-    process.env.ZETTLR_AGENT_API_TOKEN = TOKEN
 
     const created = await createFixture('zettlr-agent-api-auth-e2e-', {
       documentName: 'guarded.md',
@@ -72,7 +50,14 @@ describe('agent API bearer token', function () {
       config: { agentApi: { enabled: true, port } }
     })
     fixture.fixtureRoot = created.root
-    const app = await attach(created.configDirectory, fixture.rendererEvents, 120_000)
+    // The harness plants the token in the child's environment, which is the
+    // same route ~/.envrc takes through `direnv exec` in the desktop launcher.
+    const app = await attach(
+      created.configDirectory,
+      fixture.rendererEvents,
+      120_000,
+      { agentApiToken: TOKEN }
+    )
     fixture.appProcess = app.appProcess
     fixture.browser = app.browser
     fixture.getOutput = app.getOutput
@@ -93,11 +78,6 @@ describe('agent API bearer token', function () {
   })
 
   after(async function () {
-    if (previousToken === undefined) {
-      delete process.env.ZETTLR_AGENT_API_TOKEN
-    } else {
-      process.env.ZETTLR_AGENT_API_TOKEN = previousToken
-    }
     await preserveArtifacts(
       ARTIFACTS,
       fixture.fixtureRoot,

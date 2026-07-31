@@ -18,7 +18,6 @@
 import { strict as assert } from 'node:assert'
 import { type ChildProcess } from 'node:child_process'
 import { readFile, rm } from 'node:fs/promises'
-import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { type Browser, type Page } from 'playwright'
@@ -32,6 +31,7 @@ import {
   preserveArtifacts,
   readAppLog,
   requireInitialized,
+  reserveFreePort,
   shutdown
 } from './support/electron-app'
 
@@ -46,22 +46,6 @@ const ARTIFACT_DIRECTORY = path.join(
   tmpdir(),
   'zettlr-review-diff-save-gate-e2e-latest'
 )
-
-async function reserveFreePort (): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      if (address === null || typeof address === 'string') {
-        reject(new Error('Could not reserve a loopback port for the Agent API'))
-        return
-      }
-      const { port } = address
-      server.close(() => resolve(port))
-    })
-  })
-}
 
 interface AgentClient {
   get: (route: string) => Promise<unknown>
