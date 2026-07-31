@@ -27,7 +27,15 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 
-const userData = path.join(os.tmpdir(), 'zettlr-pandoc-headless-test')
+// Per-process, because this path is a real app-data directory: the harness
+// writes documents.yaml here and the providers read it back on boot. A fixed
+// path made every concurrent mocha process share one file, so one run booted
+// against another's half-written state and tore with "Implicit keys need to be
+// on a single line" — a failure that belongs to neither run and reproduces
+// from leftover state alone. The pid keys it to the process that owns it.
+const userData = fs.mkdtempSync(
+  path.join(os.tmpdir(), `zettlr-pandoc-headless-test-${process.pid}-`)
+)
 fs.mkdirSync(path.join(userData, 'logs'), { recursive: true })
 
 /**
@@ -74,4 +82,7 @@ Module._load = function (request, ...rest) {
   return orig.call(this, request, ...rest)
 }
 
-module.exports = { ipcMainHandlers }
+// userData is exported because it is now per-process: a spec that needs the
+// directory must ask the harness that created it rather than recomputing the
+// path, which is what coupled the two to a fixed location in the first place.
+module.exports = { ipcMainHandlers, userData }

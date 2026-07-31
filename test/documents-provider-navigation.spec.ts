@@ -32,10 +32,9 @@
 
 // The harness must load before any provider module: the provider graph
 // imports 'electron' at module scope.
-import { ipcMainHandlers } from './headless-electron-harness.cjs'
+import { ipcMainHandlers, userData } from './headless-electron-harness.cjs'
 import { strict as assert } from 'assert'
 import { mkdirSync, readFileSync, rmSync } from 'fs'
-import os from 'os'
 import path from 'path'
 import DocumentManager, { type DocumentsUpdateContext } from 'source/app/service-providers/documents'
 import LogProvider from 'source/app/service-providers/log'
@@ -47,8 +46,12 @@ const FIXTURE_ROOT = path.resolve('test', 'fixtures', 'reference-workspace')
 const HALPHEN = path.join(FIXTURE_ROOT, 'ProjectA', 'Halphen_Surfaces.md')
 const THEOREMS = path.join(FIXTURE_ROOT, 'ProjectA', 'Theorems.md')
 
-/** The harness's Electron userData directory (headless-electron-harness.cjs). */
-const USER_DATA = path.join(os.tmpdir(), 'zettlr-pandoc-headless-test')
+/**
+ * The harness's Electron userData directory. Read from the harness rather than
+ * recomputed: it is created per process, and a second copy of the path here is
+ * how the two came to share one fixed directory across concurrent runs.
+ */
+const USER_DATA: string = userData
 
 type IpcHandler = (event: unknown, message: { command: string, payload?: unknown }) => Promise<unknown>|unknown
 
