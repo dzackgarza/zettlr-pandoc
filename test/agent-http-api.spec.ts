@@ -17,10 +17,11 @@
 import "./headless-electron-harness.cjs";
 import Ajv2020 from "ajv/dist/2020";
 import { parse as parseYaml } from "yaml";
-import { AGENT_ERROR_CODES } from "@dts/common/agent-api";
+import { AGENT_ERROR_CODES, type AgentEvent } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
+import { app } from "electron";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import http from "http";
 import net from "net";
@@ -30,6 +31,7 @@ import AgentHTTPProvider, {
   MAX_SEARCH_PATTERN_LENGTH,
 } from "source/app/service-providers/agent-api/http-server";
 import DocumentManager from "source/app/service-providers/documents";
+import { ReviewSidecarStore } from "source/app/service-providers/documents/review-sidecar-store";
 import LogProvider from "source/app/service-providers/log";
 
 // ============================================================================
@@ -254,9 +256,21 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     return createPatch("document", oldText, newText, "", "", { context: 3 });
   }
 
+  // The sidecar directory is app data shared by every DocumentManager this
+  // process constructs, so it is cleared per test: review write-through would
+  // otherwise leak one test's detached reviews into another's /v1/reviews.
+  const sidecarDirectory = path.join(app.getPath("userData"), "review-sidecars");
+  const sidecars = new ReviewSidecarStore(sidecarDirectory);
+
+  /** Sidecar write-through is deferred one microtask; run it to completion. */
+  async function flushSidecarWrites(): Promise<void> {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+
   beforeEach(async function () {
     scratch = mkdtempSync(path.join(os.tmpdir(), "zettlr-http-api-"));
     openWorkspaces = [scratch];
+    rmSync(sidecarDirectory, { recursive: true, force: true });
     // Find a free port
     const server = net.createServer();
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -1448,6 +1462,241 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const response = await readUntilClose(check);
       assert.match(response, /^HTTP\/1\.1 200 /);
     });
+  });
+
+  // ==========================================================================
+  // Review sidecars: detach on close, reattach on open (issue #54)
+  // ==========================================================================
+
+  describe("review sidecar persistence", function () {
+    it("writes the sidecar through on every review mutation", async function () {
+      const filePath = path.join(scratch, "sidecar-write.md");
+      const docId = await openFile(filePath, "alpha\nbeta\n");
+      const snap = provider.createSnapshot(docId)!;
+      const submitted = await provider.submitProposal(
+        snap.token,
+        makePatch("alpha\nbeta\n", "ALPHA\nbeta\n"),
+        "sidecar-write-1",
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+      await flushSidecarWrites();
+
+      const first = sidecars.read(filePath);
+      assert.ok(first !== undefined, "a review mutation must write its sidecar through");
+      assert.equal(first.reviewId, submitted.reviewId);
+      assert.equal(first.generation, 1);
+      assert.equal(first.referenceText, "alpha\nbeta\n");
+      assert.equal(first.workingText, "ALPHA\nbeta\n");
+      assert.equal(first.unresolvedChunks, 1);
+
+      // A decision is a mutation too: the hold and its comment reach disk.
+      const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+      const held = provider.decideChunk(
+        submitted.reviewId,
+        chunks[0].chunkId,
+        "hold",
+        "needs thought",
+      );
+      assert.equal(held.ok, true);
+      await flushSidecarWrites();
+      const second = sidecars.read(filePath)!;
+      assert.equal(second.generation, 2);
+      assert.deepEqual(
+        second.holds.map((hold) => hold.comment),
+        ["needs thought"],
+      );
+      assert.equal(second.unresolvedChunks, 0);
+      assert.equal(second.heldChunks, 1);
+    });
+
+    it("detaches on close and reattaches on open with identical review state", async function () {
+      const filePath = path.join(scratch, "sidecar-cycle.md");
+      const original = "alpha\nx\ny\nz\nbeta\n";
+      const docId = await openFile(filePath, original);
+      const snap = provider.createSnapshot(docId)!;
+      const submitted = await provider.submitProposalClaims(
+        snap.token,
+        [
+          {
+            description: "caps alpha",
+            patch: makePatch(original, "ALPHA\nx\ny\nz\nbeta\n"),
+          },
+          {
+            description: "caps beta",
+            patch: makePatch("ALPHA\nx\ny\nz\nbeta\n", "ALPHA\nx\ny\nz\nBETA\n"),
+          },
+        ],
+        "sidecar-cycle-1",
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+      const reviewId = submitted.reviewId;
+      const beforeChunks = provider.reviewStore.getOutstandingChunks(docId)!;
+      assert.equal(beforeChunks.length, 2);
+      const held = provider.decideChunk(reviewId, beforeChunks[1].chunkId, "hold", "revisit");
+      assert.equal(held.ok, true);
+      const commented = provider.reviewStore.addReviewComment(docId, "overall note");
+      assert.equal(commented.ok, true);
+
+      const review = provider.reviewStore.getReview(docId)!;
+      const generation = review.generation;
+      const referenceText = review.referenceText;
+      const workingText = provider.loadedDocuments
+        .find((d) => d.filePath === filePath)!
+        .document.toString();
+      const chunkStatesBefore = provider.reviewStore
+        .getOutstandingChunks(docId)!
+        .map((chunk) => [chunk.chunkId, chunk.state]);
+
+      await flushSidecarWrites();
+      await provider.closeFileEverywhere(filePath);
+      assert.equal(provider.reviewStore.getReview(docId), undefined);
+      assert.equal(
+        provider.loadedDocuments.some((d) => d.filePath === filePath),
+        false,
+      );
+
+      // The closed-file review is enumerable over the wire, distinguishable
+      // from open-document reviews.
+      const listed = await httpRequest("GET", "/v1/reviews");
+      assert.equal(listed.status, 200);
+      const body = JSON.parse(listed.body) as { reviews: Array<Record<string, unknown>> };
+      assertMatchesSchema(body, "ReviewListResponse");
+      const detached = body.reviews.find((entry) => entry.reviewId === reviewId);
+      assert.ok(detached !== undefined, "/v1/reviews must list the closed-file review");
+      assert.equal(detached.attached, false);
+      assert.equal(detached.documentPath, filePath);
+      assert.equal(detached.unresolvedChunks, 1);
+      assert.equal(detached.heldChunks, 1);
+      assert.equal(detached.packetCount, 2);
+
+      // Reattachment IS opening the file: no reattach API, no registry.
+      await provider.getDocument(filePath);
+      const reattached = provider.reviewStore.getReview(docId);
+      assert.ok(reattached !== undefined, "opening the file must reattach the review");
+      assert.equal(reattached.reviewId, reviewId);
+      assert.equal(reattached.generation, generation);
+      assert.equal(reattached.referenceText, referenceText);
+      assert.equal(
+        provider.loadedDocuments.find((d) => d.filePath === filePath)!.document.toString(),
+        workingText,
+        "the buffer must be restored to the working text",
+      );
+      const afterChunks = provider.reviewStore.getOutstandingChunks(docId)!;
+      assert.deepEqual(
+        afterChunks.map((chunk) => [chunk.chunkId, chunk.state]),
+        chunkStatesBefore,
+        "content-addressed chunk ids and held states must survive the gap",
+      );
+      assert.equal(afterChunks.find((chunk) => chunk.state === "held")!.holdComment, "revisit");
+      assert.deepEqual(
+        reattached.comments.map((comment) => comment.text),
+        ["overall note"],
+      );
+      // Attribution survives: the restored spans still bind claims to chunks.
+      assert.deepEqual(afterChunks[0].descriptions, ["caps alpha"]);
+    });
+
+    it("invalidates instead of reattaching when the disk changed while closed", async function () {
+      const filePath = path.join(scratch, "sidecar-fence.md");
+      const docId = await openFile(filePath, "alpha\n");
+      const snap = provider.createSnapshot(docId)!;
+      const submitted = await provider.submitProposal(
+        snap.token,
+        makePatch("alpha\n", "ALPHA\n"),
+        "sidecar-fence-1",
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+      await flushSidecarWrites();
+      await provider.closeFileEverywhere(filePath);
+      assert.ok(sidecars.read(filePath) !== undefined, "the close must have detached");
+
+      // The external edit that invalidates a review in-process, landing
+      // across the gap instead.
+      writeFileSync(filePath, "externally rewritten\n", "utf8");
+
+      const invalidated: AgentEvent[] = [];
+      provider.reviewStore.on("review.invalidated", (event: AgentEvent) =>
+        invalidated.push(event),
+      );
+      await provider.getDocument(filePath);
+
+      assert.equal(
+        provider.reviewStore.getReview(docId),
+        undefined,
+        "a drifted review must not reattach",
+      );
+      assert.equal(
+        provider.loadedDocuments.find((d) => d.filePath === filePath)!.document.toString(),
+        "externally rewritten\n",
+        "the external disk content must be preserved",
+      );
+      assert.equal(sidecars.read(filePath), undefined, "the drifted sidecar must be discarded");
+      assert.equal(invalidated.length, 1);
+      assert.equal(invalidated[0].reviewId, submitted.reviewId);
+    });
+
+    it("deletes the sidecar when saving completes the review", async function () {
+      const filePath = path.join(scratch, "sidecar-resolve.md");
+      const docId = await openFile(filePath, "alpha\n");
+      const snap = provider.createSnapshot(docId)!;
+      const submitted = await provider.submitProposal(
+        snap.token,
+        makePatch("alpha\n", "ALPHA\n"),
+        "sidecar-resolve-1",
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+      await flushSidecarWrites();
+      assert.ok(sidecars.read(filePath) !== undefined);
+
+      const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+      const accepted = provider.decideChunk(submitted.reviewId, chunks[0].chunkId, "accept");
+      assert.equal(accepted.ok, true);
+      const saved = await provider.saveFile(filePath);
+      assert.equal(saved.ok, true);
+      await flushSidecarWrites();
+
+      assert.equal(provider.reviewStore.getReview(docId), undefined);
+      assert.equal(
+        sidecars.read(filePath),
+        undefined,
+        "a resolved review must leave no residue",
+      );
+    });
+  });
+
+  it("GET /v1/workspace/files lists files across workspaces with open state", async function () {
+    const expected = path.join(scratch, "unopened.md"); // what the fsal seam reports
+    const first = await httpRequest("GET", "/v1/workspace/files");
+    assert.equal(first.status, 200);
+    const firstBody = JSON.parse(first.body) as {
+      files: Array<{ path: string; workspaceId: string; open: boolean }>;
+    };
+    assertMatchesSchema(firstBody, "WorkspaceFilesResponse");
+    assert.deepEqual(
+      firstBody.files.map((file) => [file.path, file.workspaceId, file.open]),
+      [[expected, scratch, false]],
+    );
+
+    await openFile(expected, "alpha\n");
+    const second = JSON.parse((await httpRequest("GET", "/v1/workspace/files")).body) as {
+      files: Array<{ open: boolean }>;
+    };
+    assert.deepEqual(
+      second.files.map((file) => file.open),
+      [true],
+    );
   });
 
   // ==========================================================================
