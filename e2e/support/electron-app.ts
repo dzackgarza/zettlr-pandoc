@@ -334,7 +334,14 @@ export async function launchElectron (
     '--',
     `--data-dir=${configDirectory}`,
     '--remote-debugging-port=0',
-    '--disable-hardware-acceleration'
+    '--disable-hardware-acceleration',
+    // A suite launches several windows in sequence, and a developer's desktop
+    // supplies more. Chromium throttles a renderer it considers occluded, which
+    // stalls style recalculation and repaint -- so a :hover state can go
+    // unapplied for the whole of a wait while the element sits there hidden.
+    // Whether a test passes must not depend on which window is on top.
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding'
   ]
   const needsVirtualDisplay =
     process.platform === 'linux' &&
