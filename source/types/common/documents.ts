@@ -115,7 +115,7 @@ export enum DP_EVENTS {
  * provider module drags i18n-main (and gettext-parser's Node code) into the
  * renderer bundle, which fails the webpack build outright.
  */
-export type SaveRefusalReason = 'unresolved-chunks' | 'review-out-of-sync' | 'disk-changed'
+export type SaveRefusalReason = 'unresolved-chunks' | 'disk-changed'
 
 export interface SaveRefusal {
   reason: SaveRefusalReason
