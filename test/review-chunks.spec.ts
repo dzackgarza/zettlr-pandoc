@@ -100,6 +100,121 @@ describe("computeReviewChunks", function () {
   });
 });
 
+describe("computeReviewChunks block-aware boundaries", function () {
+  it("splits an edit spanning two paragraphs into one decision per paragraph", function () {
+    // The raw kernel glues this rewrite into ONE chunk (the paragraph seam
+    // moves, so no unchanged line separates the two edits). The seam policy
+    // splits it: two paragraph-level claims, two decisions.
+    const reference = ["intro", "", "alpha one", "alpha two", "", "beta one", "", "tail"].join("\n");
+    const working = ["intro", "", "alpha ONE", "", "beta one EXTENDED", "beta two", "", "tail"].join("\n");
+    const chunks = computeReviewChunks(reference, working);
+    assert.equal(chunks.length, 2);
+    assert.equal(chunks[0].referenceText, "alpha one\nalpha two");
+    assert.equal(chunks[0].workingText, "alpha ONE");
+    assert.equal(chunks[1].referenceText, "\nbeta one");
+    assert.equal(chunks[1].workingText, "\nbeta one EXTENDED\nbeta two");
+  });
+
+  it("merges two edits inside one $$ environment into one chunk at its edges", function () {
+    const reference = [
+      "before", "",
+      "$$", "\\begin{aligned}", "a &= b \\\\", "mid one", "mid two", "c &= d", "\\end{aligned}", "$$",
+      "", "after",
+    ].join("\n");
+    const working = reference.replace("a &= b", "a &= B").replace("c &= d", "c &= D");
+    const chunks = computeReviewChunks(reference, working);
+    assert.equal(chunks.length, 1, "one environment, one decision");
+    // The chunk covers the whole environment, fences included: lines [3,11).
+    assert.equal(chunks[0].refFromLine, 3);
+    assert.equal(chunks[0].refToLine, 11);
+    assert.equal(chunks[0].workFromLine, 3);
+    assert.equal(chunks[0].workToLine, 11);
+    assert.ok(chunks[0].referenceText.startsWith("$$"));
+    assert.ok(chunks[0].referenceText.endsWith("$$"));
+  });
+
+  it("no longer splits mid-\\begin{aligned} when an environment is rewritten", function () {
+    // The motivating defect: the raw character diff matches the shared
+    // \begin{aligned} line and starts the chunk strictly inside the
+    // environment (raw ranges: ref [5,7), work [5,8)).
+    const reference = [
+      "para", "", "$$", "\\begin{aligned}", "x &= 1 \\\\", "y &= 2", "\\end{aligned}", "$$", "", "tail",
+    ].join("\n");
+    const working = [
+      "para", "", "$$", "\\begin{aligned}", "u &= 7 \\\\", "v &= 8 \\\\", "w &= 9", "\\end{aligned}", "$$", "", "tail",
+    ].join("\n");
+    const chunks = computeReviewChunks(reference, working);
+    assert.equal(chunks.length, 1);
+    assert.deepEqual(
+      [chunks[0].refFromLine, chunks[0].refToLine, chunks[0].workFromLine, chunks[0].workToLine],
+      [3, 9, 3, 10],
+      "the chunk must cover the environment edge to edge on both sides",
+    );
+  });
+
+  it("guards boundaries with a fence that exists only in the working text", function () {
+    // The edit INSERTS the $$ environment: the reference has no fences at
+    // all, yet no boundary may land inside the new environment. The raw
+    // kernel puts one at the closing $$ (work line 5).
+    const reference = ["p", "", "a + b", "more text", "", "q"].join("\n");
+    const working = ["p", "", "$$", "a + b", "$$", "more text edited", "", "q"].join("\n");
+    const chunks = computeReviewChunks(reference, working);
+    assert.equal(chunks.length, 1);
+    assert.equal(chunks[0].workFromLine, 3);
+    assert.equal(chunks[0].workToLine, 7);
+    assert.equal(chunks[0].workingText, "$$\na + b\n$$\nmore text edited");
+  });
+
+  it("converges under accept and reject with the policies active", function () {
+    const reference = [
+      "intro", "", "alpha one", "alpha two", "", "$$", "x &= 1", "$$", "", "tail",
+    ].join("\n");
+    const working = [
+      "intro", "", "alpha ONE", "", "beta inserted", "", "$$", "x &= 1 \\\\", "y &= 2", "$$", "", "tail",
+    ].join("\n");
+
+    let currentReference = reference;
+    for (let guard = 0; guard < 20; guard++) {
+      const chunks = computeReviewChunks(currentReference, working);
+      if (chunks.length === 0) {
+        break;
+      }
+      currentReference = spliceChunk(currentReference, chunks[0], "accept");
+    }
+    assert.equal(currentReference, working, "accepting every chunk must converge");
+
+    let currentWorking = working;
+    for (let guard = 0; guard < 20; guard++) {
+      const chunks = computeReviewChunks(reference, currentWorking);
+      if (chunks.length === 0) {
+        break;
+      }
+      currentWorking = spliceChunk(currentWorking, chunks[0], "reject");
+    }
+    assert.equal(currentWorking, reference, "rejecting every chunk must converge");
+  });
+
+  it("keeps block-shaped chunk ids stable while other chunks are decided", function () {
+    const reference = [
+      "intro", "", "alpha one", "alpha two", "", "$$", "x &= 1", "$$", "", "tail",
+    ].join("\n");
+    const working = [
+      "intro", "", "alpha ONE", "", "$$", "x &= 1 \\\\", "y &= 2", "$$", "", "tail",
+    ].join("\n");
+    const before = computeReviewChunks(reference, working);
+    assert.ok(before.length >= 2, `expected at least two chunks, got ${before.length}`);
+
+    const newReference = spliceChunk(reference, before[0], "accept");
+    const after = computeReviewChunks(newReference, working);
+    assert.equal(after.length, before.length - 1);
+    assert.deepEqual(
+      after.map((chunk) => chunk.chunkId),
+      before.slice(1).map((chunk) => chunk.chunkId),
+      "deciding one chunk must not retire the ids of the others",
+    );
+  });
+});
+
 describe("spliceChunk", function () {
   it("accepting every chunk converges the reference onto the working text", function () {
     const reference = [

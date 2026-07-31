@@ -516,6 +516,69 @@ describe("ReviewDiffStore", function () {
     });
   });
 
+  describe("decideChunk with block-aware boundaries", function () {
+    it("converges chunk by chunk when a mega-patch spans paragraphs and an environment", function () {
+      const baseline = [
+        "intro", "", "alpha one", "alpha two", "",
+        "$$", "\\begin{aligned}", "x &= 1 \\\\", "y &= 2", "\\end{aligned}", "$$",
+        "", "tail", "",
+      ].join("\n");
+      const proposed = [
+        "intro", "", "alpha ONE", "", "beta inserted", "",
+        "$$", "\\begin{aligned}", "u &= 7 \\\\", "v &= 8 \\\\", "w &= 9", "\\end{aligned}", "$$",
+        "", "tail", "",
+      ].join("\n");
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-1",
+      });
+
+      // The environment decides whole: exactly one chunk covers it, edge to
+      // edge, however the raw diff carved the rewrite.
+      const chunks = store.getOutstandingChunks(DOC_ID)!;
+      const envChunks = chunks.filter((chunk) => chunk.referenceText.startsWith("$$"));
+      assert.equal(envChunks.length, 1, "the $$ environment must be one decision");
+      assert.ok(envChunks[0].referenceText.endsWith("$$"));
+
+      // Reject the environment rewrite; the working text restores the
+      // baseline environment while the paragraph chunks stay pending.
+      const rejected = store.decideChunk(
+        DOC_ID,
+        store.getReview(DOC_ID)!.reviewId,
+        envChunks[0].chunkId,
+        "reject",
+      );
+      assert.equal(rejected.ok, true, `reject failed: ${JSON.stringify(rejected)}`);
+      if (rejected.ok && rejected.workingText !== undefined) {
+        documents.set(DOC_ID, rejected.workingText);
+      }
+      assert.ok(store.countUnresolved(DOC_ID) > 0, "paragraph chunks must remain");
+
+      // Accept the remaining chunks one at a time against the recomputed
+      // partition until the review resolves.
+      for (let guard = 0; guard < 20 && store.countUnresolved(DOC_ID) > 0; guard++) {
+        const remaining = store.getOutstandingChunks(DOC_ID)!;
+        const accepted = store.decideChunk(
+          DOC_ID,
+          store.getReview(DOC_ID)!.reviewId,
+          remaining[0].chunkId,
+          "accept",
+        );
+        assert.equal(accepted.ok, true, `accept failed: ${JSON.stringify(accepted)}`);
+      }
+      assert.equal(store.countUnresolved(DOC_ID), 0);
+
+      // The mixed outcome, exactly: proposed paragraphs, baseline environment.
+      const expected = [
+        "intro", "", "alpha ONE", "", "beta inserted", "",
+        "$$", "\\begin{aligned}", "x &= 1 \\\\", "y &= 2", "\\end{aligned}", "$$",
+        "", "tail", "",
+      ].join("\n");
+      assert.equal(documents.get(DOC_ID), expected);
+      assert.equal(store.getReview(DOC_ID)!.referenceText, expected);
+    });
+  });
+
   describe("tweak before accept", function () {
     it("accepts the user's tweaked version of a proposed chunk", function () {
       // The property pinned end to end: tweak-before-accept works by
