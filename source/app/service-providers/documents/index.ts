@@ -148,11 +148,11 @@ export interface DocumentsUpdateContext {
    * identify the source pane whose status update has already applied locally.
    */
   reviewDiffSession?: ReviewDiffSession;
-  /** Signal that a review was closed/completed/invalidated (spec section 13). */
+  /** Signal that a review was closed/completed/invalidated. */
   reviewCleared?: boolean;
   /** The reviewId that was cleared, for renderer session matching. */
   reviewId?: string;
-  /** Provider-owned review state (spec section 7). Replaces the old scalar. */
+  /** Provider-owned review state. */
   reviewState?: {
     reviewId: string;
     generation: number;
@@ -176,7 +176,7 @@ export interface DocumentsUpdateContext {
  */
 interface Document {
   /**
-   * Opaque document identifier (spec section 4). Stable for the lifetime of
+   * Opaque document identifier. Stable for the lifetime of
    * a loaded document; used as the key for all agent API operations.
    */
   documentId: string;
@@ -383,7 +383,7 @@ export default class DocumentManager extends ProviderContract {
   private readonly _remoteChangeDialogShownFor: string[];
 
   /**
-   * Provider-owned authoritative review state (spec section 7). Replaces the
+   * Provider-owned authoritative review state. Replaces the
    * old _reviewDiffSessions map. The store owns referenceText, workingText,
    * packet ledger, and review generation.
    */
@@ -2299,7 +2299,7 @@ current contents from the editor somewhere else, and restart the application.`,
 
   // ==========================================================================
   // Agent API: documentId, focused-view, snapshot tokens, proposal submission
-  // (spec sections 4-7, 10)
+  //
   // ==========================================================================
 
   /**
@@ -2381,7 +2381,7 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Resolve the currently focused view (spec section 5.2).
+   * Resolve the currently focused view.
    * Returns the viewId, windowId, leafId, and documentId of the active pane.
    */
   public getFocusedView():
@@ -2409,7 +2409,7 @@ current contents from the editor somewhere else, and restart the application.`,
 
   /**
    * Create a snapshot token bound to documentId + version + content hash
-   * (spec section 4). The snapshot identifies the target during proposal
+   * The snapshot identifies the target during proposal
    * submission, not the current focus.
    */
   public createSnapshot(
@@ -2470,7 +2470,7 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Read the live buffer for a document (spec section 5.3).
+   * Read the live buffer for a document.
    * Returns the current working text and a snapshot token.
    */
   public readLiveBuffer(
@@ -2501,7 +2501,7 @@ current contents from the editor somewhere else, and restart the application.`,
     let content = fullContent;
     let truncated = false;
     if (startLine !== undefined && endLine !== undefined) {
-      // CLI line ranges are one-based and inclusive (spec section 5.3)
+      // CLI line ranges are one-based and inclusive
       const start = Math.max(0, startLine - 1);
       const end = Math.min(totalLines, endLine);
       content = lines.slice(start, end).join("\n");
@@ -2522,7 +2522,7 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Submit a proposal patch against a snapshot (spec section 6).
+   * Submit a proposal patch against a snapshot.
    * Atomically: resolve snapshot → verify version+hash → parse patch →
    * apply with zero fuzz → update working text → return review state.
    */
@@ -2818,7 +2818,7 @@ current contents from the editor somewhere else, and restart the application.`,
 
   /**
    * Expose the loaded documents array for the agent API provider to enumerate
-   * open documents (spec section 5.2).
+   * open documents.
    */
   public get loadedDocuments(): readonly Document[] {
     return this.documents;
@@ -2851,7 +2851,7 @@ current contents from the editor somewhere else, and restart the application.`,
 
   /**
    * Broadcast a review-cleared signal to all renderers displaying a document.
-   * Tells the renderer to exit review mode (spec section 13: clear review mode
+   * Tells the renderer to exit review mode (clear review mode
    * when the provider closes or invalidates the session).
    */
   private _broadcastReviewCleared(filePath: string, reviewId: string): void {

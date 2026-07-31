@@ -1,8 +1,10 @@
-import { getChunks } from '@codemirror/merge'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
-import { reviewDiffMergeExtension } from 'source/common/modules/markdown-editor/plugins/review-diff'
+import {
+  getReviewChunks,
+  reviewChunksExtension
+} from 'source/common/modules/markdown-editor/plugins/review-chunks'
 
 declare global {
   interface Window {
@@ -47,7 +49,11 @@ async function mount (): Promise<void> {
         editorTheme,
         dark ? defaultDark : defaultLight,
         EditorView.lineWrapping,
-        reviewDiffMergeExtension(baseline)
+        reviewChunksExtension({
+          reviewId: 'visual-capture',
+          referenceText: baseline,
+          onDecide: () => { /* capture harness: decisions are not exercised */ }
+        })
       ]
     })
   })
@@ -55,10 +61,10 @@ async function mount (): Promise<void> {
   view.focus()
 
   window.reviewDiffVisualDiagnostics = () => {
-    const chunks = getChunks(view.state)
+    const chunks = getReviewChunks(view.state)
     const content = document.querySelector<HTMLElement>('.cm-content')
     return {
-      chunks: chunks?.chunks.length ?? -1,
+      chunks: chunks?.length ?? -1,
       accepts: document.querySelectorAll('button.cm-review-diff-control.accept').length,
       rejects: document.querySelectorAll('button.cm-review-diff-control.reject').length,
       contentClientWidth: content?.clientWidth,

@@ -2,24 +2,34 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Editor review-diff merge controls specs
+ * Contains:        Editor review-chunk controls specs
  * CVM-Role:        Test
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Drives the issue #34 CodeMirror unified merge extension
- *                  used by MarkdownEditor: each changed chunk renders its own
- *                  Accept/Reject controls; accepting one chunk and rejecting
- *                  another leaves the document in the exact mixed state.
+ * Description:     Drives the review-chunks plugin used by MarkdownEditor
+ *                  through the real decision loop: each chunk renders its own
+ *                  Accept/Reject controls; a click emits the chunk's
+ *                  content-addressed id upward, a simulated provider applies
+ *                  the decision with the same shared engine the real one
+ *                  uses, and the pane redraws from the resulting state.
+ *                  Accepting one chunk and rejecting another leaves the
+ *                  document in the exact mixed state.
  *
  * END HEADER
  */
 
 import { strict as assert } from 'assert'
-import { getChunks } from '@codemirror/merge'
-import { EditorState } from '@codemirror/state'
+import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { reviewDiffMergeExtension } from 'source/common/modules/markdown-editor/plugins/review-diff'
+import {
+  getReviewChunks,
+  reviewChunksExtension
+} from 'source/common/modules/markdown-editor/plugins/review-chunks'
+import {
+  computeReviewChunks,
+  spliceChunk
+} from 'source/common/modules/review/review-chunks'
 import { rangeInPreviewSuppression } from 'source/common/modules/markdown-editor/util/range-in-preview-suppression'
 
 // jsdom does not ship the DOM APIs CodeMirror 6 uses for layout/scheduling.
@@ -46,7 +56,7 @@ function polyfillJsdomForCodeMirror (): void {
   }
 }
 
-describe('Editor review-diff controls', function () {
+describe('Editor review-chunk controls', function () {
   const views: EditorView[] = []
 
   before(function () {
@@ -60,13 +70,43 @@ describe('Editor review-diff controls', function () {
     document.body.replaceChildren()
   })
 
+  /**
+   * Mount a review view wired to a simulated provider that discharges the
+   * production contract: resolve the clicked id against the shared engine's
+   * partition, accept by moving the reference (and "re-broadcast" via a
+   * compartment reconfigure), reject by editing the document. If the pane's
+   * ids ever diverged from the provider's, the lookup here would fail —
+   * partition agreement is part of what these tests certify.
+   */
   function createReviewView (baseline: string, proposed: string): EditorView {
-    const view = new EditorView({
+    const compartment = new Compartment()
+    let reference = baseline
+    function makeExtension (): ReturnType<typeof reviewChunksExtension> {
+      return reviewChunksExtension({
+        reviewId: 'review-test',
+        referenceText: reference,
+        onDecide: (chunkId, decision) => {
+          const partition = computeReviewChunks(reference, view.state.doc.toString())
+          const chunk = partition.find(c => c.chunkId === chunkId)
+          assert.ok(chunk !== undefined, `provider has no chunk ${chunkId} — pane and provider partitions diverged`)
+          if (decision === 'accept') {
+            reference = spliceChunk(reference, chunk, 'accept')
+            view.dispatch({ effects: compartment.reconfigure(makeExtension()) })
+          } else {
+            const restored = spliceChunk(view.state.doc.toString(), chunk, 'reject')
+            view.dispatch({
+              changes: { from: 0, to: view.state.doc.length, insert: restored }
+            })
+          }
+        }
+      })
+    }
+    const view: EditorView = new EditorView({
       parent: document.body,
       state: EditorState.create({
         doc: proposed,
         extensions: [
-          reviewDiffMergeExtension(baseline),
+          compartment.of(makeExtension()),
           EditorView.updateListener.of(() => {})
         ]
       })
@@ -76,9 +116,9 @@ describe('Editor review-diff controls', function () {
   }
 
   function chunkCount (view: EditorView): number {
-    const chunks = getChunks(view.state)
-    assert.ok(chunks !== null, 'the editor must be in unified merge mode')
-    return chunks.chunks.length
+    const chunks = getReviewChunks(view.state)
+    assert.ok(chunks !== null, 'the editor must be in review mode')
+    return chunks.length
   }
 
   it('accepts one chunk and rejects another into the exact mixed result', function () {
@@ -115,6 +155,24 @@ describe('Editor review-diff controls', function () {
 
     assert.equal(chunkCount(view), 0, 'rejecting the remaining chunk must finish the review')
     assert.equal(view.state.doc.toString(), expected)
+  })
+
+  it('shows the replaced reference text with the removed spans emphasised', function () {
+    const baseline = ['alpha', '', 'the original wording stays here', ''].join('\n')
+    const proposed = baseline.replace('original wording', 'revised wording')
+    const view = createReviewView(baseline, proposed)
+
+    const deleted = view.dom.querySelector<HTMLElement>('.cm-deletedChunk .cm-deletedLines')
+    assert.ok(deleted !== null, 'a replacement chunk must show the reference lines it replaces')
+    assert.ok(
+      deleted.textContent!.includes('the original wording stays here'),
+      'the widget must carry the full reference line'
+    )
+    // Word-level emphasis: the changed span is marked, unchanged words are not.
+    const emphasised = deleted.querySelector<HTMLElement>('del.cm-deletedText')
+    assert.ok(emphasised !== null, 'the removed span must be emphasised inside the reference line')
+    assert.ok(emphasised.textContent!.includes('original'))
+    assert.ok(!emphasised.textContent!.includes('stays'), 'unchanged words must not be emphasised')
   })
 
   it('suppresses live-preview rendering over a range carrying a review chunk', function () {
@@ -164,8 +222,8 @@ describe('Editor review-diff controls', function () {
     })
     views.push(view)
 
-    // getChunks returns null outside merge mode; the seam must answer false
-    // rather than throw, or every renderer breaks when no review is open.
+    // getReviewChunks returns null outside review mode; the seam must answer
+    // false rather than throw, or every renderer breaks when no review is open.
     assert.equal(
       rangeInPreviewSuppression(view.state, view.state.doc.line(3).from, view.state.doc.line(5).to),
       false
@@ -174,9 +232,8 @@ describe('Editor review-diff controls', function () {
 
   it('leaves every unchanged line visible instead of folding them away', function () {
     // A review packet annotates the document the author is already reading, so
-    // the surrounding text must survive untouched. `collapseUnchanged` replaces
-    // runs of unchanged lines with a fold widget, which hides the rest of the
-    // document to show a one-line correction.
+    // the surrounding text must survive untouched: no run of unchanged lines
+    // may be folded into a widget to showcase a one-line correction.
     const lines = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`)
     const baseline = lines.join('\n')
     const proposed = lines.map(line => line === 'line 30' ? 'line 30 corrected' : line).join('\n')

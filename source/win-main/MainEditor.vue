@@ -405,7 +405,7 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     context.filePath === props.file.path &&
     context.reviewCleared === true
   ) {
-    // Provider closed or completed the review — exit review mode (spec section 13)
+    // Provider closed or completed the review — exit review mode
     currentEditor?.clearReviewDiffSession(context.reviewId)
   } else if (
     event === DP_EVENTS.REVIEW_DIFF &&

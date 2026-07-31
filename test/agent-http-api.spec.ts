@@ -778,23 +778,88 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
   it("POST /v1/reviews/{id}/clear discards unresolved", async function () {
     const filePath = path.join(scratch, "rclear.md");
-    const docId = await openFile(filePath, "alpha\nbeta\n");
+    // Separated edits so the review carries two chunks: one to accept, one
+    // for /clear to discard.
+    const original = "alpha\nx\ny\nz\nbeta\n";
+    const proposed = "ALPHA\nx\ny\nz\nBETA\n";
+    const docId = await openFile(filePath, original);
 
     const snap = provider.createSnapshot(docId)!;
     await provider.submitProposal(
       snap.token,
-      makePatch("alpha\nbeta\n", "ALPHA\nBETA\n"),
+      makePatch(original, proposed),
       "http-rclear-req",
     );
 
-    // Accept ALPHA first
+    // Accept ALPHA first, through the one real decision path.
     const review = provider.reviewStore.getReview(docId)!;
-    provider.reviewStore.applyChunkAccept(docId, review.reviewId, 0, 6, 1);
+    const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+    assert.equal(chunks.length, 2);
+    const accepted = provider.decideChunk(review.reviewId, chunks[0].chunkId, "accept");
+    assert.equal(accepted.ok, true);
 
     const response = await httpRequest("POST", `/v1/reviews/${review.reviewId}/clear`);
     assert.equal(response.status, 200);
     const body = JSON.parse(response.body);
     assert.equal(body.state, "cleared");
+  });
+
+  it("POST /v1/reviews/{id}/chunks/{chunkId}/accept and /reject decide through the provider", async function () {
+    const filePath = path.join(scratch, "rdecide.md");
+    const original = "alpha\nx\ny\nz\nbeta\n";
+    const proposed = "ALPHA\nx\ny\nz\nBETA\n";
+    const docId = await openFile(filePath, original);
+
+    const snap = provider.createSnapshot(docId)!;
+    await provider.submitProposal(
+      snap.token,
+      makePatch(original, proposed),
+      "http-rdecide-req",
+    );
+    const review = provider.reviewStore.getReview(docId)!;
+
+    const listed = await httpRequest("GET", `/v1/reviews/${review.reviewId}/chunks`);
+    assert.equal(listed.status, 200);
+    const listedBody = JSON.parse(listed.body) as {
+      chunks: Array<{ chunkId: string; referenceText: string; workingText: string }>;
+    };
+    assert.equal(listedBody.chunks.length, 2);
+    assert.equal(listedBody.chunks[0].referenceText, "alpha");
+    assert.equal(listedBody.chunks[0].workingText, "ALPHA");
+
+    // Accept the first chunk: the reference moves, the document does not.
+    const accept = await httpRequest(
+      "POST",
+      `/v1/reviews/${review.reviewId}/chunks/${listedBody.chunks[0].chunkId}/accept`,
+    );
+    assert.equal(accept.status, 200, accept.body);
+    const acceptBody = JSON.parse(accept.body) as {
+      decision: string;
+      unresolvedChunks: number;
+    };
+    assert.equal(acceptBody.decision, "accept");
+    assert.equal(acceptBody.unresolvedChunks, 1);
+
+    // The second chunk's content-addressed id survived the first decision.
+    const reject = await httpRequest(
+      "POST",
+      `/v1/reviews/${review.reviewId}/chunks/${listedBody.chunks[1].chunkId}/reject`,
+    );
+    assert.equal(reject.status, 200, reject.body);
+    const rejectBody = JSON.parse(reject.body) as { unresolvedChunks: number };
+    assert.equal(rejectBody.unresolvedChunks, 0);
+
+    // Mixed outcome: ALPHA accepted, beta restored.
+    const doc = provider.loadedDocuments.find((d) => d.filePath === filePath)!;
+    assert.equal(doc.document.toString(), "ALPHA\nx\ny\nz\nbeta\n");
+
+    // A stale id — the chunk was already decided — fails loudly.
+    const stale = await httpRequest(
+      "POST",
+      `/v1/reviews/${review.reviewId}/chunks/${listedBody.chunks[0].chunkId}/accept`,
+    );
+    assert.equal(stale.status, 404);
+    assert.equal(JSON.parse(stale.body).error.code, "CHUNK_NOT_FOUND");
   });
 
   it("POST /v1/proposals/{id}/retract retracts an untouched packet", async function () {

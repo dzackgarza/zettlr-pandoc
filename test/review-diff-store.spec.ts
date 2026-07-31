@@ -7,11 +7,18 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Drives the provider-owned ReviewDiffStore against the
- *                  agent API spec section 15 behavioral requirements that
- *                  the store alone can prove: packet composition, chunk
- *                  decisions, clearing, retraction, idempotency, and
- *                  composite diff computation.
+ * Description:     Drives the provider-owned ReviewDiffStore: packet
+ *                  composition, chunk decisions by content-addressed id,
+ *                  clearing, retraction, idempotency, and composite diff
+ *                  computation.
+ *
+ *                  The store holds only the merge reference; the working text
+ *                  is the live document, read through the resolver the store
+ *                  is constructed with. This suite therefore plays the
+ *                  document authority: `documents` is the authoritative text
+ *                  per documentId, and every store result carrying a
+ *                  workingText is applied back to it — the same obligation
+ *                  DocumentManager discharges in production.
  *
  * END HEADER
  */
@@ -41,104 +48,112 @@ function makeGenericHeaderPatch(oldText: string, newText: string): string {
 
 describe("ReviewDiffStore", function () {
   let store: ReviewDiffStore;
+  /** The authoritative document text per documentId — the suite is the document owner. */
+  let documents: Map<string, string>;
 
   beforeEach(function () {
-    store = new ReviewDiffStore();
+    documents = new Map();
+    store = new ReviewDiffStore((documentId) => documents.get(documentId));
   });
 
+  /** Open a review the way DocumentManager does: text into the doc, then open. */
+  function openReview(
+    documentId: string,
+    baseline: string,
+    initialPatch?: { patch: string; clientRequestId: string },
+  ): void {
+    documents.set(documentId, baseline);
+    const opened = store.openReview({
+      documentId,
+      documentPath: DOC_PATH,
+      baselineText: baseline,
+      diskBaselineSha256: sha256Text(baseline),
+      initialPatch:
+        initialPatch === undefined
+          ? undefined
+          : { patchFormat: "unified-diff", ...initialPatch },
+    });
+    // The caller's obligation: the returned working text becomes the document.
+    documents.set(documentId, opened.workingText);
+  }
+
+  /** Decide the sole outstanding chunk, applying any returned working text. */
+  function decideOnlyChunk(decision: "accept" | "reject") {
+    const chunks = store.getOutstandingChunks(DOC_ID);
+    assert.ok(chunks !== undefined && chunks.length === 1, "expected exactly one chunk");
+    const result = store.decideChunk(
+      DOC_ID,
+      store.getReview(DOC_ID)!.reviewId,
+      chunks[0].chunkId,
+      decision,
+    );
+    assert.equal(result.ok, true, `decision failed: ${JSON.stringify(result)}`);
+    if (result.ok && result.workingText !== undefined) {
+      documents.set(DOC_ID, result.workingText);
+    }
+    return result;
+  }
+
   describe("openReview", function () {
-    it("opens a review with referenceText and workingText equal to the baseline", function () {
+    it("opens a review whose reference is the baseline", function () {
       const baseline = "alpha\nbeta\n";
-      const diskSha = sha256Text(baseline);
-      const review = store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: diskSha,
-      });
+      openReview(DOC_ID, baseline);
+      const review = store.getReview(DOC_ID)!;
       assert.equal(review.referenceText, baseline);
-      assert.equal(review.workingText, baseline);
       assert.equal(review.generation, 0);
       assert.equal(review.packets.length, 0);
-      assert.equal(review.diskFenceSha256, diskSha);
+      assert.equal(review.diskFenceSha256, sha256Text(baseline));
+      assert.equal(store.countUnresolved(DOC_ID), 0);
     });
 
     it("opens a review with an initial patch as the first packet", function () {
       const baseline = "alpha\nbeta\n";
       const proposed = "alpha\nBETA\n";
-      const patch = makePatch(baseline, proposed);
-      const review = store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch,
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-1",
       });
-      assert.equal(review.workingText, proposed);
+      const review = store.getReview(DOC_ID)!;
+      assert.equal(documents.get(DOC_ID), proposed);
       assert.equal(review.referenceText, baseline);
       assert.equal(review.generation, 1);
       assert.equal(review.packets.length, 1);
       assert.equal(review.packets[0].clientRequestId, "req-1");
+      assert.equal(store.countUnresolved(DOC_ID), 1);
     });
 
     it("throws if a review is already active for the document", function () {
-      const baseline = "alpha\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-      });
+      openReview(DOC_ID, "alpha\n");
       assert.throws(() => {
         store.openReview({
           documentId: DOC_ID,
           documentPath: DOC_PATH,
-          baselineText: baseline,
-          diskBaselineSha256: sha256Text(baseline),
+          baselineText: "alpha\n",
+          diskBaselineSha256: sha256Text("alpha\n"),
         });
       }, /already active/);
     });
 
     it("throws if the initial patch does not change the document", function () {
       const baseline = "alpha\n";
-      const patch = makePatch(baseline, baseline);
       assert.throws(() => {
-        store.openReview({
-          documentId: DOC_ID,
-          documentPath: DOC_PATH,
-          baselineText: baseline,
-          diskBaselineSha256: sha256Text(baseline),
-          initialPatch: {
-            patchFormat: "unified-diff",
-            patch,
-            clientRequestId: "req-1",
-          },
+        openReview(DOC_ID, baseline, {
+          patch: makePatch(baseline, baseline),
+          clientRequestId: "req-1",
         });
       }, /does not change/);
     });
   });
 
   describe("submitPacket", function () {
-    it("applies a second packet to the existing working text while preserving unresolved chunks", function () {
+    it("applies a second packet to the live document text while preserving unresolved chunks", function () {
       const baseline = "alpha\nbeta\ngamma\n";
       const first = "alpha\nBETA\ngamma\n";
       const second = "ALPHA\nBETA\ngamma\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, first),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, first),
+        clientRequestId: "req-1",
       });
-      // Second packet against the current working text
       const result = store.submitPacket(DOC_ID, {
         patchFormat: "unified-diff",
         patch: makePatch(first, second),
@@ -147,30 +162,28 @@ describe("ReviewDiffStore", function () {
       assert.equal(result.ok, true);
       if (!result.ok) {return;}
       assert.equal(result.workingText, second);
-      // Both changes are on adjacent lines, so diffLines coalesces them
-      // into a single chunk: alpha→ALPHA + beta→BETA
+      documents.set(DOC_ID, result.workingText);
+      // Both changes are on adjacent lines, so the engine reports one chunk:
+      // alpha→ALPHA + beta→BETA
       assert.equal(result.unresolvedChunks, 1);
     });
 
     it("is idempotent for a repeated clientRequestId", function () {
       const baseline = "alpha\nbeta\n";
       const proposed = "alpha\nBETA\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, proposed),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-1",
       });
       const first = store.submitPacket(DOC_ID, {
         patchFormat: "unified-diff",
         patch: makePatch(proposed, "alpha\nGAMMA\n"),
         clientRequestId: "req-2",
       });
+      assert.equal(first.ok, true);
+      if (first.ok) {
+        documents.set(DOC_ID, first.workingText);
+      }
       const second = store.submitPacket(DOC_ID, {
         patchFormat: "unified-diff",
         patch: makePatch(proposed, "alpha\nGAMMA\n"),
@@ -182,16 +195,9 @@ describe("ReviewDiffStore", function () {
     it("rejects a packet that leaves the working text unchanged, as openReview does", function () {
       const baseline = "alpha\nbeta\n";
       const proposed = "alpha\nBETA\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, proposed),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-1",
       });
       // A hunk that replaces a line with itself. validateAndParsePatch only
       // rejects a patch with no hunks at all, and this one applies cleanly at
@@ -217,17 +223,12 @@ describe("ReviewDiffStore", function () {
       const review = store.getReview(DOC_ID);
       assert.ok(review !== undefined);
       assert.equal(review.generation, 1);
-      assert.equal(review.workingText, proposed);
+      assert.equal(documents.get(DOC_ID), proposed);
     });
 
     it("rejects with REVISION_MISMATCH when expectedReviewGeneration does not match", function () {
       const baseline = "alpha\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-      });
+      openReview(DOC_ID, baseline);
       const result = store.submitPacket(DOC_ID, {
         patchFormat: "unified-diff",
         patch: makePatch(baseline, "beta\n"),
@@ -252,12 +253,7 @@ describe("ReviewDiffStore", function () {
 
     it("rejects with PATCH_NOT_APPLICABLE when the patch does not apply with zero fuzz", function () {
       const baseline = "alpha\nbeta\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-      });
+      openReview(DOC_ID, baseline);
       // A patch built against a completely different text
       const result = store.submitPacket(DOC_ID, {
         patchFormat: "unified-diff",
@@ -270,79 +266,87 @@ describe("ReviewDiffStore", function () {
     });
   });
 
-  describe("applyChunkAccept", function () {
-    it("updates referenceText to agree with workingText on the accepted range", function () {
+  describe("decideChunk (accept)", function () {
+    it("moves the reference to agree with the document and leaves the document alone", function () {
       const baseline = "alpha\nbeta\ngamma\n";
       const proposed = "alpha\nBETA\ngamma\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, proposed),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-1",
       });
-      // 'beta' is at offset 6, length 4 (including newline)
-      const result = store.applyChunkAccept(
-        DOC_ID,
-        store.getReview(DOC_ID)!.reviewId,
-        6,
-        11,
-        1,
-      );
-      assert.equal(result.ok, true);
-      if (!result.ok) {return;}
-      // referenceText should now agree with workingText on the accepted range
-      assert.equal(result.referenceText, proposed);
+      const result = decideOnlyChunk("accept");
+      // Accept touches the reference only — no working text comes back.
+      assert.equal(result.workingText, undefined);
+      assert.equal(store.getReview(DOC_ID)!.referenceText, proposed);
+      assert.equal(documents.get(DOC_ID), proposed);
       assert.equal(result.unresolvedChunks, 0);
+      assert.equal(result.state, "resolved-awaiting-save");
     });
 
-    it("rejects with REVISION_MISMATCH when the generation is stale", function () {
-      const baseline = "alpha\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
+    it("rejects a stale chunkId with CHUNK_NOT_FOUND", function () {
+      const baseline = "alpha\nbeta\n";
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, "alpha\nBETA\n"),
+        clientRequestId: "req-1",
       });
-      const reviewId = store.getReview(DOC_ID)!.reviewId;
-      const result = store.applyChunkAccept(DOC_ID, reviewId, 0, 0, 99);
+      const chunks = store.getOutstandingChunks(DOC_ID)!;
+      // The user edits the chunk's region before the decision arrives: the
+      // content-addressed id no longer names anything in the partition.
+      documents.set(DOC_ID, "alpha\nBETA-edited\n");
+      const result = store.decideChunk(
+        DOC_ID,
+        store.getReview(DOC_ID)!.reviewId,
+        chunks[0].chunkId,
+        "accept",
+      );
       assert.equal(result.ok, false);
       if (result.ok) {return;}
-      assert.equal(result.code, "REVISION_MISMATCH");
+      assert.equal(result.code, "CHUNK_NOT_FOUND");
+    });
+
+    it("keeps the other chunks' ids valid across a decision", function () {
+      const baseline = "alpha\nb\nc\nd\ne\nomega\n";
+      const proposed = "ALPHA\nb\nc\nd\ne\nOMEGA\n";
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-1",
+      });
+      const before = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(before.length, 2);
+      const acceptFirst = store.decideChunk(
+        DOC_ID,
+        store.getReview(DOC_ID)!.reviewId,
+        before[0].chunkId,
+        "accept",
+      );
+      assert.equal(acceptFirst.ok, true);
+      // The second chunk's id survives the first chunk's decision — the
+      // property the old positional chunk-<generation>-<index> ids lacked.
+      const after = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(after.length, 1);
+      assert.equal(after[0].chunkId, before[1].chunkId);
+      const acceptSecond = store.decideChunk(
+        DOC_ID,
+        store.getReview(DOC_ID)!.reviewId,
+        before[1].chunkId,
+        "accept",
+      );
+      assert.equal(acceptSecond.ok, true);
+      assert.equal(store.countUnresolved(DOC_ID), 0);
     });
   });
 
-  describe("applyChunkReject", function () {
-    it("updates workingText to agree with referenceText on the rejected range", function () {
+  describe("decideChunk (reject)", function () {
+    it("returns the working text restored to the reference for the caller to apply", function () {
       const baseline = "alpha\nbeta\ngamma\n";
       const proposed = "alpha\nBETA\ngamma\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, proposed),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-1",
       });
-      // 'BETA' is at offset 6, length 5 (including newline)
-      const result = store.applyChunkReject(
-        DOC_ID,
-        store.getReview(DOC_ID)!.reviewId,
-        6,
-        11,
-        1,
-      );
-      assert.equal(result.ok, true);
-      if (!result.ok) {return;}
-      // workingText should now agree with referenceText on the rejected range
+      const result = decideOnlyChunk("reject");
       assert.equal(result.workingText, baseline);
+      assert.equal(documents.get(DOC_ID), baseline);
       assert.equal(result.unresolvedChunks, 0);
     });
   });
@@ -351,74 +355,40 @@ describe("ReviewDiffStore", function () {
     it("discards outstanding changes but preserves accepted changes", function () {
       const baseline = "alpha\nbeta\ngamma\nomega\n";
       const proposed = "ALPHA\nbeta\nGAMMA\nOMEGA\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, proposed),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-1",
       });
-      const reviewId = store.getReview(DOC_ID)!.reviewId;
-      // Accept the first chunk: ALPHA is accepted
-      // 'ALPHA' is at offset 0, length 6 (including newline)
-      const acceptResult = store.applyChunkAccept(DOC_ID, reviewId, 0, 6, 1);
-      assert.equal(acceptResult.ok, true);
+      // Accept the first chunk (ALPHA)
+      const chunks = store.getOutstandingChunks(DOC_ID)!;
+      const accept = store.decideChunk(
+        DOC_ID,
+        store.getReview(DOC_ID)!.reviewId,
+        chunks[0].chunkId,
+        "accept",
+      );
+      assert.equal(accept.ok, true);
 
       // Now clear remaining unresolved
       const clearResult = store.clearUnresolved(DOC_ID);
       assert.equal(clearResult.ok, true);
       if (!clearResult.ok) {return;}
-      // workingText should now equal referenceText (which has ALPHA accepted)
+      documents.set(DOC_ID, clearResult.workingText);
+      // The document is now the reference: ALPHA accepted, the rest reverted.
       assert.equal(clearResult.workingText, "ALPHA\nbeta\ngamma\nomega\n");
       assert.equal(clearResult.unresolvedChunks, 0);
-    });
-
-    it("does NOT restore the document to the initial baseline (preserves accepted changes)", function () {
-      const baseline = "alpha\nbeta\n";
-      const proposed = "ALPHA\nBETA\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, proposed),
-          clientRequestId: "req-1",
-        },
-      });
-      const reviewId = store.getReview(DOC_ID)!.reviewId;
-      // Accept ALPHA
-      store.applyChunkAccept(DOC_ID, reviewId, 0, 6, 1);
-      // Clear remaining (BETA is still unresolved)
-      const result = store.clearUnresolved(DOC_ID);
-      assert.equal(result.ok, true);
-      if (!result.ok) {return;}
-      // workingText has ALPHA accepted, BETA reverted to baseline
-      assert.notEqual(result.workingText, baseline);
-      assert.equal(result.workingText, "ALPHA\nbeta\n");
+      assert.equal(store.countUnresolved(DOC_ID), 0);
     });
   });
 
   describe("retractPacket", function () {
-    it("succeeds for the newest untouched packet and reverts its changes", function () {
+    it("succeeds for the newest untouched packet and returns the reverted text", function () {
       const baseline = "alpha\nbeta\n";
       const first = "alpha\nBETA\n";
       const second = "ALPHA\nBETA\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, first),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, first),
+        clientRequestId: "req-1",
       });
       const submitResult = store.submitPacket(DOC_ID, {
         patchFormat: "unified-diff",
@@ -427,32 +397,25 @@ describe("ReviewDiffStore", function () {
       });
       assert.equal(submitResult.ok, true);
       if (!submitResult.ok) {return;}
+      documents.set(DOC_ID, submitResult.workingText);
 
       const retractResult = store.retractPacket(submitResult.packetId);
       assert.equal(retractResult.ok, true);
       if (!retractResult.ok) {return;}
-      // workingText should be back to the state after the first packet
-      const reviewState = store.getReview(DOC_ID);
-      assert.equal(reviewState?.workingText, first);
+      // The returned text is the state after the first packet.
+      assert.equal(retractResult.workingText, first);
+      documents.set(DOC_ID, retractResult.workingText);
     });
 
     it("fails safely after the packet has been modified by user decisions", function () {
       const baseline = "alpha\nbeta\n";
       const proposed = "ALPHA\nbeta\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, proposed),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-1",
       });
-      const reviewId = store.getReview(DOC_ID)!.reviewId;
-      // Reject the chunk, modifying workingText
-      store.applyChunkReject(DOC_ID, reviewId, 0, 6, 1);
+      // Reject the chunk, modifying the document
+      decideOnlyChunk("reject");
       // Now try to retract the initial packet
       const packetId = store.getReview(DOC_ID)!.packets[0].packetId;
       const result = store.retractPacket(packetId);
@@ -464,20 +427,12 @@ describe("ReviewDiffStore", function () {
     it("fails safely after accepting a packet", function () {
       const baseline = "alpha\nbeta\n";
       const proposed = "ALPHA\nbeta\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, proposed),
-          clientRequestId: "req-accept-before-retract",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-accept-before-retract",
       });
-      const review = store.getReview(DOC_ID)!;
-      store.applyChunkAccept(DOC_ID, review.reviewId, 0, 6, review.generation);
-      const result = store.retractPacket(review.packets[0].packetId);
+      decideOnlyChunk("accept");
+      const result = store.retractPacket(store.getReview(DOC_ID)!.packets[0].packetId);
       assert.equal(result.ok, false);
       if (result.ok) {return;}
       assert.equal(result.code, "PACKET_NOT_RETRACTABLE");
@@ -487,16 +442,9 @@ describe("ReviewDiffStore", function () {
       const baseline = "alpha\n";
       const first = "beta\n";
       const second = "gamma\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, first),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, first),
+        clientRequestId: "req-1",
       });
       const secondResult = store.submitPacket(DOC_ID, {
         patchFormat: "unified-diff",
@@ -505,6 +453,7 @@ describe("ReviewDiffStore", function () {
       });
       assert.equal(secondResult.ok, true);
       if (!secondResult.ok) {return;}
+      documents.set(DOC_ID, secondResult.workingText);
       // Try to retract the first packet (not the newest)
       const firstPacketId = store.getReview(DOC_ID)!.packets[0].packetId;
       const result = store.retractPacket(firstPacketId);
@@ -518,20 +467,28 @@ describe("ReviewDiffStore", function () {
     it("returns exactly the remaining unresolved proposition", function () {
       const baseline = "alpha\nbeta\ngamma\n";
       const proposed = "alpha\nBETA\nGAMMA\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, proposed),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-1",
       });
-      const reviewId = store.getReview(DOC_ID)!.reviewId;
-      // Accept the beta change
-      store.applyChunkAccept(DOC_ID, reviewId, 6, 11, 1);
+      // beta→BETA and gamma→GAMMA are adjacent lines — one chunk. Accepting
+      // requires distance, so rebuild with separated edits instead.
+      store.closeReview(DOC_ID);
+      const spacedBaseline = "alpha\nbeta\nx\ny\nz\ngamma\n";
+      const spacedProposed = "alpha\nBETA\nx\ny\nz\nGAMMA\n";
+      openReview(DOC_ID, spacedBaseline, {
+        patch: makePatch(spacedBaseline, spacedProposed),
+        clientRequestId: "req-2",
+      });
+      const chunks = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(chunks.length, 2);
+      const accept = store.decideChunk(
+        DOC_ID,
+        store.getReview(DOC_ID)!.reviewId,
+        chunks[0].chunkId,
+        "accept",
+      );
+      assert.equal(accept.ok, true);
       // The remaining diff should only show gamma → GAMMA
       const diff = store.getReviewDiff(DOC_ID);
       assert.notEqual(diff, undefined);
@@ -542,43 +499,29 @@ describe("ReviewDiffStore", function () {
   });
 
   describe("getOutstandingChunks", function () {
-    it("returns chunks for the current generation", function () {
+    it("returns one chunk for contiguous changes, with exact half-open ranges", function () {
       const baseline = "alpha\nbeta\n";
       const proposed = "ALPHA\nBETA\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, proposed),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-1",
       });
       const chunks = store.getOutstandingChunks(DOC_ID);
       assert.notEqual(chunks, undefined);
-      // After coalescing adjacent added+removed parts, contiguous changes
-      // are grouped into a single chunk.
       assert.equal(chunks!.length, 1);
+      assert.equal(chunks![0].referenceRange.fromLine, 1);
+      assert.equal(chunks![0].referenceRange.toLine, 3);
+      assert.equal(chunks![0].referenceText, "alpha\nbeta");
+      assert.equal(chunks![0].workingText, "ALPHA\nBETA");
     });
 
     it("returns zero chunks after all are resolved", function () {
       const baseline = "alpha\n";
-      const proposed = "ALPHA\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, proposed),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, "ALPHA\n"),
+        clientRequestId: "req-1",
       });
-      const reviewId = store.getReview(DOC_ID)!.reviewId;
-      store.applyChunkAccept(DOC_ID, reviewId, 0, 6, 1);
+      decideOnlyChunk("accept");
       const chunks = store.getOutstandingChunks(DOC_ID);
       assert.notEqual(chunks, undefined);
       assert.equal(chunks!.length, 0);
@@ -588,16 +531,9 @@ describe("ReviewDiffStore", function () {
   describe("getReviewStatus", function () {
     it("reports active when unresolved chunks remain", function () {
       const baseline = "alpha\nbeta\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, "alpha\nBETA\n"),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, "alpha\nBETA\n"),
+        clientRequestId: "req-1",
       });
       const status = store.getReviewStatus(DOC_ID);
       assert.notEqual(status, undefined);
@@ -608,19 +544,11 @@ describe("ReviewDiffStore", function () {
 
     it("reports resolved-awaiting-save when all chunks are resolved", function () {
       const baseline = "alpha\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, "ALPHA\n"),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, "ALPHA\n"),
+        clientRequestId: "req-1",
       });
-      const reviewId = store.getReview(DOC_ID)!.reviewId;
-      store.applyChunkAccept(DOC_ID, reviewId, 0, 6, 1);
+      decideOnlyChunk("accept");
       const status = store.getReviewStatus(DOC_ID);
       assert.notEqual(status, undefined);
       assert.equal(status!.state, "resolved-awaiting-save");
@@ -630,13 +558,7 @@ describe("ReviewDiffStore", function () {
 
   describe("completeReview", function () {
     it("removes the review from the store", function () {
-      const baseline = "alpha\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-      });
+      openReview(DOC_ID, "alpha\n");
       store.completeReview(DOC_ID);
       assert.equal(store.getReview(DOC_ID), undefined);
     });
@@ -719,6 +641,8 @@ describe("ReviewDiffStore", function () {
 
   describe("listReviews", function () {
     it("lists all active reviews", function () {
+      documents.set("doc-a", "a\n");
+      documents.set("doc-b", "b\n");
       store.openReview({
         documentId: "doc-a",
         documentPath: "/a.md",
@@ -739,16 +663,9 @@ describe("ReviewDiffStore", function () {
   describe("closeReview", function () {
     it("removes the review and cleans up packet indexes", function () {
       const baseline = "alpha\n";
-      store.openReview({
-        documentId: DOC_ID,
-        documentPath: DOC_PATH,
-        baselineText: baseline,
-        diskBaselineSha256: sha256Text(baseline),
-        initialPatch: {
-          patchFormat: "unified-diff",
-          patch: makePatch(baseline, "beta\n"),
-          clientRequestId: "req-1",
-        },
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, "beta\n"),
+        clientRequestId: "req-1",
       });
       const packetId = store.getReview(DOC_ID)!.packets[0].packetId;
       store.closeReview(DOC_ID);
