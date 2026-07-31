@@ -37,7 +37,7 @@ import { strict as assert } from 'assert'
 import { mkdirSync, readFileSync, rmSync } from 'fs'
 import os from 'os'
 import path from 'path'
-import DocumentManager from 'source/app/service-providers/documents'
+import DocumentManager, { type DocumentsUpdateContext } from 'source/app/service-providers/documents'
 import LogProvider from 'source/app/service-providers/log'
 import { DP_EVENTS } from '@dts/common/documents'
 import type { DocumentLocation } from '@dts/common/references'
@@ -57,7 +57,7 @@ describe('Documents-provider navigation join (review C6)', function () {
   let windowId: string
   let leafId: string
   /** Every ACTIVE_FILE broadcast context, in emission order. */
-  const activeFileEvents: any[] = []
+  const activeFileEvents: DocumentsUpdateContext[] = []
 
   /** The real registered 'documents-provider' handler. */
   function handler (): IpcHandler {
@@ -105,6 +105,13 @@ describe('Documents-provider navigation join (review C6)', function () {
       },
       recentDocs: {
         add: (_path: string) => {}
+      },
+      // The manager drives the references provider's live overlay at its
+      // mutation points (issue #53); this spec asserts navigation, not
+      // reference state, so the seam only has to exist.
+      references: {
+        reportAuthorityBuffer: (_filePath: string) => {},
+        dropAuthorityBuffer: (_filePath: string) => {}
       }
     }
 
@@ -118,7 +125,9 @@ describe('Documents-provider navigation join (review C6)', function () {
     assert.equal(leafs.length, 1, 'a fresh boot must restore exactly one pane')
     leafId = leafs[0]
 
-    provider.on(DP_EVENTS.ACTIVE_FILE, (context: any) => { activeFileEvents.push(context) })
+    provider.on(DP_EVENTS.ACTIVE_FILE, (...args: unknown[]) => {
+      activeFileEvents.push(args[0] as DocumentsUpdateContext)
+    })
   })
 
   after(async function () {

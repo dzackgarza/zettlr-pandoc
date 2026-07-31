@@ -8,27 +8,38 @@
  * License:         GNU GPL v3
  *
  * Description:     The Electron shell around the pure ReferenceIndex
- *                  (./reference-index.ts) for issue #1 Phase 3b.
+ *                  (./reference-index.ts) for issue #1 Phase 3b, reworked
+ *                  for issue #53: the live side of the merged view is
+ *                  derived in MAIN from the document authority — the
+ *                  renderer never reports document-derived state.
  *
  *                  CONTRACT (locked by test/reference-provider-shell.spec.ts):
  *
  *                  - The constructor follows the LinkProvider pattern
- *                    (../links/index.ts): it receives its LogProvider and
- *                    FSAL dependencies by injection and registers exactly one
- *                    ipcMain.handle('reference-provider', …) handler whose
- *                    commands delegate 1:1 to the ReferenceIndex per that
- *                    class's own delegation map:
+ *                    (../links/index.ts): it receives its LogProvider, FSAL,
+ *                    and document-authority dependencies by injection and
+ *                    registers exactly one ipcMain.handle('reference-provider',
+ *                    …) handler serving exactly one command:
  *
- *                      'get-snapshot'       -> index.getSnapshot()
- *                      'report-live-buffer' -> index.reportLiveBuffer(
- *                                                payload.snapshot,
- *                                                payload.generation)
- *                      'drop-live-buffer'   -> index.dropLiveBuffer(
- *                                                payload.documentPath)
+ *                      'get-snapshot' -> index.getSnapshot()
  *
  *                    A command outside that map THROWS (issue #5, B20):
  *                    the channel never answers an unknown command with a
- *                    silent undefined.
+ *                    silent undefined. The former renderer report channel
+ *                    ('report-live-buffer'/'drop-live-buffer') is gone by
+ *                    design (issue #53) and therefore throws.
+ *
+ *                  - The DOCUMENT AUTHORITY (the documents provider) drives
+ *                    the live side: it calls reportAuthorityBuffer() when it
+ *                    loads or mutates a markdown buffer and
+ *                    dropAuthorityBuffer() when it closes one. Reports are
+ *                    debounced per document through the injected scheduler;
+ *                    when a debounce fires, the provider reads the CURRENT
+ *                    buffer text through the injected authority seam and
+ *                    runs the shared extractor over it in main. Ordering is
+ *                    the authority's own call order — monotonic across
+ *                    windows by construction, so no generation counters
+ *                    exist anywhere.
  *
  *                    The rename protocol (previewRename/commitRename/
  *                    undoRename) is NOT part of this channel (review B7):
@@ -54,7 +65,8 @@
  *                    WorkspaceReferenceState the ipc handler serves, for
  *                    main-process consumers.
  *
- *                  - shutdown() unsubscribes the FSAL event listener.
+ *                  - shutdown() unsubscribes the FSAL event listener and
+ *                    cancels every pending debounced report.
  *
  * END HEADER
  */
@@ -66,10 +78,9 @@ import path from 'path'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
 import ProviderContract from '../provider-contract'
 import type LogProvider from '@providers/log'
-import type FSAL from '../fsal'
 import type { FSALEventPayload } from '../fsal'
-import type { DocumentReferenceSnapshot, WorkspaceReferenceEdit, WorkspaceTextEdit } from '@dts/common/references'
-import { hashDocumentSource } from '@common/pandoc-util/extract-references'
+import type { WorkspaceReferenceEdit, WorkspaceTextEdit } from '@dts/common/references'
+import { extractReferences, hashDocumentSource } from '@common/pandoc-util/extract-references'
 import {
   previewReferenceRename,
   type CommitRenameOutcome,
@@ -105,15 +116,15 @@ interface PendingUndo {
   edits: WorkspaceTextEdit[]
   /** Every fenced documentPath, in the committed edit's fence order */
   documentPaths: string[]
-  /** Expected post-commit sourceHash per documentPath */
-  expectedSourceHashes: Record<string, string>
   /**
-   * Open-buffer documents whose post-commit hash is not knowable at commit
-   * time (the provider never holds buffer text): the renderer applies the
-   * returned transactions and re-reports its live snapshot, and that first
-   * post-commit report establishes the undo fence for the document.
+   * Expected post-commit sourceHash per documentPath. Closed files fence on
+   * the just-written disk content; open buffers fence on the post-commit
+   * content COMPUTED AT COMMIT TIME from the authority's verified text plus
+   * the committed edits (issue #53) — the exact content the renderer's
+   * returned transactions produce, so a user edit between commit and undo
+   * changes the hash and surfaces as a conflict.
    */
-  awaitingLiveReport: Set<string>
+  expectedSourceHashes: Record<string, string>
 }
 
 /**
@@ -121,20 +132,64 @@ interface PendingUndo {
  * the single owner of this type; the renderer bridge imports it so a wrong
  * command or payload fails to compile at the call site.
  */
-export type ReferenceProviderIPCAPI =
-  | { command: 'get-snapshot', payload?: undefined }
-  | { command: 'report-live-buffer', payload: { snapshot: DocumentReferenceSnapshot, generation: number } }
-  | { command: 'drop-live-buffer', payload: { documentPath: string } }
+export type ReferenceProviderIPCAPI = { command: 'get-snapshot', payload?: undefined }
+
+/**
+ * The slice of the document authority (the documents provider) this provider
+ * reads live buffers through (issue #53). The authority owns every open
+ * buffer's text; this seam returns the CURRENT text of an open markdown
+ * document, or undefined when the path is not an open markdown buffer.
+ */
+export interface ReferenceDocumentAuthority {
+  readMarkdownBufferContent: (filePath: string) => string|undefined
+}
+
+/**
+ * The slice of FSAL this provider actually consumes: the 'fsal-event'
+ * subscription surface. The real FSAL satisfies it directly, and specs
+ * inject a plain EventEmitter — no type escapes anywhere.
+ */
+export interface ReferenceFSALEvents {
+  on: (evt: 'fsal-event', callback: (event: FSALEventPayload) => void) => void
+  off: (evt: 'fsal-event', callback: (event: FSALEventPayload) => void) => void
+}
+
+/** A scheduled deferred extraction that can be cancelled before it fires. */
+export interface AuthorityReportTask {
+  cancel: () => void
+}
+
+/**
+ * The injected deferred-execution seam. Production backs this with
+ * setTimeout/clearTimeout; specs fire the recorded callbacks manually so the
+ * debounce is proven headlessly without wall-clock waits.
+ */
+export interface AuthorityReportScheduler {
+  schedule: (callback: () => void, delayMs: number) => AuthorityReportTask
+}
+
+/** The debounce window between an authority change and its live extraction. */
+export const AUTHORITY_REPORT_DEBOUNCE_MS = 500
+
+/** The production scheduler: plain setTimeout/clearTimeout. */
+const setTimeoutScheduler: AuthorityReportScheduler = {
+  schedule: (callback, delayMs) => {
+    const handle = setTimeout(callback, delayMs)
+    return { cancel: () => { clearTimeout(handle) } }
+  }
+}
 
 /**
  * Serves the merged workspace reference view (saved FSAL snapshots overlaid
- * by renderer-reported live buffers) to every consumer over the
+ * by authority-derived live buffers) to every consumer over the
  * 'reference-provider' ipc channel.
  */
 export default class ReferenceProvider extends ProviderContract {
   private readonly _index: ReferenceIndex
   /** The one-shot pending workspace undo, if the last commit applied */
   private _pendingUndo: PendingUndo|undefined
+  /** Pending debounced extractions by documentPath */
+  private readonly _pendingReports: Map<string, AuthorityReportTask>
 
   /**
    * Applies FSAL state transitions to the index: 'add'/'change' events
@@ -154,43 +209,70 @@ export default class ReferenceProvider extends ProviderContract {
 
   constructor (
     private readonly _logger: LogProvider,
-    private readonly _fsal: FSAL
+    private readonly _fsal: ReferenceFSALEvents,
+    private readonly _authority: ReferenceDocumentAuthority,
+    private readonly _scheduler: AuthorityReportScheduler = setTimeoutScheduler
   ) {
     super()
     this._index = new ReferenceIndex()
+    this._pendingReports = new Map()
 
     ipcMain.handle('reference-provider', (_event, message: ReferenceProviderIPCAPI) => {
       const { command } = message
 
       if (command === 'get-snapshot') {
         return this._index.getSnapshot()
-      } else if (command === 'report-live-buffer') {
-        const { snapshot, generation } = message.payload as { snapshot: DocumentReferenceSnapshot, generation: number }
-        this._index.reportLiveBuffer(snapshot, generation)
-
-        // A pending undo may be waiting for this buffer's post-commit
-        // content: the first accepted report after the commit establishes
-        // the document's undo fence.
-        const pending = this._pendingUndo
-        if (pending !== undefined && pending.awaitingLiveReport.has(snapshot.documentPath)) {
-          const acceptedHash = this._index.liveBufferSourceHash(snapshot.documentPath)
-          if (acceptedHash !== undefined) {
-            pending.expectedSourceHashes[snapshot.documentPath] = acceptedHash
-            pending.awaitingLiveReport.delete(snapshot.documentPath)
-          }
-        }
-
-        broadcastIpcMessage('references')
-      } else if (command === 'drop-live-buffer') {
-        const { documentPath } = message.payload as { documentPath: string }
-        this._index.dropLiveBuffer(documentPath)
-        broadcastIpcMessage('references')
-      } else {
-        // Fail loud (issue #5, B20): a command outside the delegation map is
-        // a caller bug, never a silently-undefined response.
-        throw new Error(`reference-provider: unknown command ${command}`)
       }
+
+      // Fail loud (issue #5, B20): a command outside the delegation map is
+      // a caller bug, never a silently-undefined response. The renderer
+      // report channel of the pre-#53 architecture lands here by design.
+      throw new Error(`reference-provider: unknown command ${String(command)}`)
     })
+  }
+
+  /**
+   * The document authority loaded or mutated a markdown buffer: schedule
+   * (or reschedule) one debounced extraction of that buffer. When the
+   * debounce fires, the CURRENT authority text is extracted — a buffer
+   * closed in the meantime resolves to a drop, so the overlay is always a
+   * function of the authority's open set and text.
+   *
+   * @param   {string}  filePath  The changed document's path
+   */
+  public reportAuthorityBuffer (filePath: string): void {
+    this._pendingReports.get(filePath)?.cancel()
+    this._pendingReports.set(filePath, this._scheduler.schedule(() => {
+      this._pendingReports.delete(filePath)
+
+      const content = this._authority.readMarkdownBufferContent(filePath)
+      if (content === undefined) {
+        // The buffer closed between the change and the debounce firing:
+        // the overlay follows the authority's open set.
+        if (this._index.dropLiveBuffer(filePath)) {
+          broadcastIpcMessage('references')
+        }
+        return
+      }
+
+      this._index.reportLiveBuffer(extractReferences(filePath, content))
+      broadcastIpcMessage('references')
+    }, AUTHORITY_REPORT_DEBOUNCE_MS))
+  }
+
+  /**
+   * The document authority closed a buffer: cancel any pending extraction
+   * and drop its overlay immediately, reverting the document to its saved
+   * FSAL snapshot.
+   *
+   * @param   {string}  filePath  The closed document's path
+   */
+  public dropAuthorityBuffer (filePath: string): void {
+    this._pendingReports.get(filePath)?.cancel()
+    this._pendingReports.delete(filePath)
+    if (this._index.dropLiveBuffer(filePath)) {
+      broadcastIpcMessage('references')
+    }
   }
 
   /**
@@ -232,20 +314,24 @@ export default class ReferenceProvider extends ProviderContract {
    * CONTRACT (locked red by test/reference-rename-atomicity.spec.ts):
    *
    * - Re-verifies EVERY document named in edit.expectedSourceHashes against
-   *   current reality BEFORE applying anything: documents with a live
-   *   overlay are checked against the overlay's current sourceHash; all
-   *   other documents are RE-READ FROM DISK and re-hashed (a stale index
-   *   snapshot is not trusted). ANY mismatch aborts the ENTIRE operation
-   *   with a structured conflict naming the first mismatching document —
-   *   nothing is applied anywhere, no file and no buffer.
-   * - On success, partitions the edits by the live-overlay map: closed
+   *   current reality BEFORE applying anything: documents open in the
+   *   document authority are checked against the authority's CURRENT buffer
+   *   text (issue #53 — the open set and the text both come from the
+   *   authority, never from a reporter-fed overlay); all other documents are
+   *   RE-READ FROM DISK and re-hashed (a stale index snapshot is not
+   *   trusted). ANY mismatch aborts the ENTIRE operation with a structured
+   *   conflict naming the first mismatching document — nothing is applied
+   *   anywhere, no file and no buffer.
+   * - On success, partitions the edits by the authority's open set: closed
    *   files are rewritten atomically (write to a temp file in the same
    *   directory, then rename over the original); open-buffer edits are
    *   RETURNED as openBufferTransactions for the RENDERER to apply as
    *   CodeMirror transactions, leaving those buffers dirty/unsaved (the
    *   main process cannot reach live CodeMirror buffers).
    * - Records a one-shot inverse WorkspaceReferenceEdit as the pending
-   *   workspace undo consumed by undoRename().
+   *   workspace undo consumed by undoRename(). Open buffers fence on the
+   *   post-commit content computed here from the verified authority text
+   *   plus the committed edits.
    *
    * @param   {WorkspaceReferenceEdit}        edit  The previewed edit to apply
    *
@@ -255,19 +341,21 @@ export default class ReferenceProvider extends ProviderContract {
     const documentPaths = Object.keys(edit.expectedSourceHashes)
 
     // Phase 1 — verify EVERY fenced document against current reality before
-    // touching anything. Open buffers are checked through the live overlay;
-    // everything else is re-read from disk and re-hashed (the index's saved
-    // snapshot is never trusted here: a concurrent write without an FSAL
-    // event must still be caught).
+    // touching anything. Open buffers are checked through the document
+    // authority; everything else is re-read from disk and re-hashed (the
+    // index's saved snapshot is never trusted here: a concurrent write
+    // without an FSAL event must still be caught).
     const openBufferPaths: string[] = []
+    const openBufferContents = new Map<string, string>()
     const closedContents = new Map<string, string>()
     for (const documentPath of documentPaths) {
       const expected = edit.expectedSourceHashes[documentPath]
-      const liveHash = this._index.liveBufferSourceHash(documentPath)
+      const bufferContent = this._authority.readMarkdownBufferContent(documentPath)
       let actual: string
-      if (liveHash !== undefined) {
+      if (bufferContent !== undefined) {
         openBufferPaths.push(documentPath)
-        actual = liveHash
+        openBufferContents.set(documentPath, bufferContent)
+        actual = hashDocumentSource(bufferContent)
       } else {
         const content = await readFile(documentPath, 'utf-8')
         closedContents.set(documentPath, content)
@@ -300,16 +388,26 @@ export default class ReferenceProvider extends ProviderContract {
 
     // Phase 3 — record the one-shot inverse as the pending workspace undo.
     // Closed files fence against the just-written content; open buffers
-    // fence against the renderer's post-commit live report.
+    // fence against the post-commit content computed from the verified
+    // authority text plus the committed edits — exactly what the renderer's
+    // returned transactions produce.
     const undoHashes: Record<string, string> = {}
     for (const documentPath of closedFilePaths) {
       undoHashes[documentPath] = hashDocumentSource(rewritten.get(documentPath) ?? '')
     }
+    for (const documentPath of openBufferPaths) {
+      const content = openBufferContents.get(documentPath)
+      if (content === undefined) {
+        throw new Error(`commit-rename: no verified buffer content for ${documentPath}`)
+      }
+      undoHashes[documentPath] = hashDocumentSource(
+        applyTextEdits(content, edit.edits.filter(e => e.documentPath === documentPath))
+      )
+    }
     this._pendingUndo = {
       edits: edit.undo,
       documentPaths,
-      expectedSourceHashes: undoHashes,
-      awaitingLiveReport: new Set(openBufferPaths)
+      expectedSourceHashes: undoHashes
     }
 
     broadcastIpcMessage('references')
@@ -360,12 +458,12 @@ export default class ReferenceProvider extends ProviderContract {
    * CONTRACT (locked red by test/reference-rename-atomicity.spec.ts): the
    * undo is hash-fenced exactly like the commit — closed files are re-read
    * from disk and re-hashed against the post-commit content, open buffers
-   * are checked through the live overlay — and ANY mismatch aborts the
-   * whole undo with a structured conflict, leaving the pending undo record
-   * intact. An applied undo restores every touched document (closed files
-   * via atomic temp+rename writes, open buffers via returned
-   * openBufferTransactions the renderer applies) and CONSUMES the record:
-   * a subsequent undoRename() reports 'no-pending-undo'.
+   * are checked through the document authority's current text — and ANY
+   * mismatch aborts the whole undo with a structured conflict, leaving the
+   * pending undo record intact. An applied undo restores every touched
+   * document (closed files via atomic temp+rename writes, open buffers via
+   * returned openBufferTransactions the renderer applies) and CONSUMES the
+   * record: a subsequent undoRename() reports 'no-pending-undo'.
    *
    * @return  {Promise<UndoRenameOutcome>}  The typed undo outcome
    */
@@ -376,25 +474,18 @@ export default class ReferenceProvider extends ProviderContract {
     }
 
     // Verify every fenced document against current reality, partitioned by
-    // the CURRENT live-overlay map (a buffer closed since the commit is a
+    // the CURRENT authority open set (a buffer closed since the commit is a
     // closed file now). Any mismatch aborts the whole undo and leaves the
     // pending record intact for a retry once the interference is resolved.
     const openBufferPaths: string[] = []
     const closedContents = new Map<string, string>()
     for (const documentPath of pending.documentPaths) {
-      if (pending.awaitingLiveReport.has(documentPath)) {
-        // The renderer never reported the post-commit buffer, so no fence
-        // exists: undoing now could corrupt the buffer. This is a protocol
-        // violation, not a user-facing conflict — fail loudly.
-        throw new Error(`undo-rename: no post-commit live report received for open buffer ${documentPath}`)
-      }
-
       const expected = pending.expectedSourceHashes[documentPath]
-      const liveHash = this._index.liveBufferSourceHash(documentPath)
+      const bufferContent = this._authority.readMarkdownBufferContent(documentPath)
       let actual: string
-      if (liveHash !== undefined) {
+      if (bufferContent !== undefined) {
         openBufferPaths.push(documentPath)
-        actual = liveHash
+        actual = hashDocumentSource(bufferContent)
       } else {
         const content = await readFile(documentPath, 'utf-8')
         closedContents.set(documentPath, content)
@@ -435,10 +526,15 @@ export default class ReferenceProvider extends ProviderContract {
   }
 
   /**
-   * Shuts down the service provider, unsubscribing from FSAL events.
+   * Shuts down the service provider, unsubscribing from FSAL events and
+   * cancelling every pending debounced report.
    */
   public async shutdown (): Promise<void> {
     this._fsal.off('fsal-event', this._onFsalEvent)
+    for (const task of this._pendingReports.values()) {
+      task.cancel()
+    }
+    this._pendingReports.clear()
     this._logger.verbose('Reference provider shutting down ...')
   }
 }

@@ -24,16 +24,17 @@
  *                  BOUNDARY SPLIT (stated per the red-proof contract): the
  *                  main-process provider owns hash-fencing and CLOSED-FILE
  *                  atomic disk writes only. Open buffers live in renderer
- *                  CodeMirror instances the provider cannot reach, so an
- *                  applied commit RETURNS openBufferTransactions and the
- *                  RENDERER applies them (buffers stay dirty/unsaved) and
- *                  re-reports its live snapshot. This spec asserts the
- *                  returned transaction payload at the ipc seam and then
- *                  PLAYS the renderer half at that same seam (applying the
- *                  edits locally and reporting the new live buffer) — the
- *                  established reference-provider-shell.spec.ts pattern of
- *                  emitting real payloads at the real seam, never a mock of
- *                  provider behavior.
+ *                  CodeMirror instances the provider cannot reach directly,
+ *                  so an applied commit RETURNS openBufferTransactions and
+ *                  the RENDERER applies them (buffers stay dirty/unsaved);
+ *                  the resulting text flows back to the DOCUMENT AUTHORITY
+ *                  through collab push-updates (issue #53). This spec
+ *                  asserts the returned transaction payload and PLAYS both
+ *                  halves at their real seams: the renderer half applies
+ *                  the edits locally, and the authority half is a real
+ *                  mutable buffer map behind the injected
+ *                  readMarkdownBufferContent seam — the provider's open-set
+ *                  partition, hash fences, and live overlay all read it.
  *
  * END HEADER
  */
@@ -56,7 +57,6 @@ import type {
   ReferenceRenamePreview,
   UndoRenameOutcome
 } from 'source/common/pandoc-util/compute-reference-edits'
-import type FSAL from 'source/app/service-providers/fsal'
 import type { AppServiceContainer } from 'source/app/app-service-container'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import type { MDFileDescriptor } from 'source/types/common/fsal'
@@ -140,6 +140,14 @@ interface ScratchWorkspace {
   provider: ReferenceProvider
   /** The real 'application'-channel command chain over this provider (B7) */
   command: RenameReference
+  /**
+   * The document authority's open buffer map behind the injected
+   * readMarkdownBufferContent seam (issue #53): a path present here IS an
+   * open markdown buffer with exactly this text.
+   */
+  authorityBuffers: Map<string, string>
+  /** Fires every pending debounced authority extraction (injected scheduler). */
+  fireScheduled: () => void
   paths: {
     theorems: string
     halphen: string
@@ -170,7 +178,27 @@ async function setUpScratchWorkspace (): Promise<ScratchWorkspace> {
   }
 
   const seam = new EventEmitter()
-  const provider = new ReferenceProvider(new LogProvider(), seam as unknown as FSAL)
+  const authorityBuffers = new Map<string, string>()
+  const scheduled: Array<{ callback: () => void, cancelled: boolean }> = []
+  const provider = new ReferenceProvider(
+    new LogProvider(),
+    seam,
+    { readMarkdownBufferContent: (filePath: string) => authorityBuffers.get(filePath) },
+    {
+      schedule: (callback: () => void, _delayMs: number) => {
+        const task = { callback, cancelled: false }
+        scheduled.push(task)
+        return { cancel: () => { task.cancelled = true } }
+      }
+    }
+  )
+  const fireScheduled = (): void => {
+    for (const task of scheduled.splice(0)) {
+      if (!task.cancelled) {
+        task.callback()
+      }
+    }
+  }
   await provider.boot()
   for (const absolute of originals.keys()) {
     seam.emit('fsal-event', { event: 'change', descriptor: makeDescriptor(absolute) })
@@ -181,15 +209,15 @@ async function setUpScratchWorkspace (): Promise<ScratchWorkspace> {
   // (this._app.references) — the renderer-reachable production route.
   const command = new RenameReference({ references: provider } as unknown as AppServiceContainer)
 
-  // Halphen_Surfaces.md is OPEN: report its live buffer (content identical
-  // to disk, generation 1). The commit must route Halphen through
-  // openBufferTransactions, never through a disk write.
-  await invoke('report-live-buffer', {
-    snapshot: extractReferences(paths.halphen, originals.get(paths.halphen) ?? ''),
-    generation: 1
-  })
+  // Halphen_Surfaces.md is OPEN in the document authority (content identical
+  // to disk), and the authority reported the load (issue #53). The commit
+  // must route Halphen through openBufferTransactions, never through a disk
+  // write.
+  authorityBuffers.set(paths.halphen, originals.get(paths.halphen) ?? '')
+  provider.reportAuthorityBuffer(paths.halphen)
+  fireScheduled()
 
-  return { root, provider, command, paths, originals }
+  return { root, provider, command, authorityBuffers, fireScheduled, paths, originals }
 }
 
 /** Byte-compares every workspace file against the expected content map. */
@@ -280,8 +308,8 @@ describe('Workspace rename commit protocol', function () {
       assert.deepEqual(readdirSync(path.join(scratch.root, 'ProjectB')), ['Other_Paper.md'])
       assert.deepEqual(readdirSync(scratch.root).sort(), [ 'ProjectA', 'ProjectB', 'Standalone_Notes.md' ])
 
-      // The live overlay is untouched: Halphen still serves its
-      // generation-1 content, and no transaction reached any buffer.
+      // The live overlay is untouched: Halphen still serves the authority's
+      // load-time content, and no transaction reached any buffer.
       const state = await invoke('get-snapshot') as WorkspaceReferenceState
       const halphen = state.snapshots.find(s => s.documentPath === scratch.paths.halphen)
       assert.equal(
@@ -352,15 +380,14 @@ describe('Workspace rename commit protocol', function () {
       assert.deepEqual(readdirSync(scratch.root).sort(), [ 'ProjectA', 'ProjectB', 'Standalone_Notes.md' ])
 
       // Renderer half (played at the real seam): apply the transactions to
-      // the live buffer and re-report it, exactly as the editor does after
-      // any transaction.
+      // the live buffer; the text reaches the document authority through
+      // collab push-updates, which reports the change (issue #53).
       if (outcome.status === 'applied') {
         halphenBuffer = applyEdits(halphenBuffer, outcome.openBufferTransactions)
         assert.ok(halphenBuffer.includes('[@thm:torelli-enriques; @lem:embedding]'), 'the applied transaction renames the cluster occurrence')
-        await invoke('report-live-buffer', {
-          snapshot: extractReferences(scratch.paths.halphen, halphenBuffer),
-          generation: 2
-        })
+        scratch.authorityBuffers.set(scratch.paths.halphen, halphenBuffer)
+        scratch.provider.reportAuthorityBuffer(scratch.paths.halphen)
+        scratch.fireScheduled()
       }
     })
 
@@ -421,7 +448,8 @@ describe('Workspace rename commit protocol', function () {
       // Halphen buffer's disk file remains untouched throughout.
       assertWorkspaceBytes(scratch, scratch.originals, 'after applied undo')
 
-      // Renderer half again: the inverse transaction restores the buffer.
+      // Renderer half again: the inverse transaction restores the buffer,
+      // and the authority reports the restored text.
       if (applied.status === 'applied') {
         halphenBuffer = applyEdits(halphenBuffer, applied.openBufferTransactions)
         assert.equal(
@@ -429,10 +457,9 @@ describe('Workspace rename commit protocol', function () {
           scratch.originals.get(scratch.paths.halphen),
           'the inverse open-buffer transaction must restore the buffer byte-exactly'
         )
-        await invoke('report-live-buffer', {
-          snapshot: extractReferences(scratch.paths.halphen, halphenBuffer),
-          generation: 3
-        })
+        scratch.authorityBuffers.set(scratch.paths.halphen, halphenBuffer)
+        scratch.provider.reportAuthorityBuffer(scratch.paths.halphen)
+        scratch.fireScheduled()
       }
 
       // One-shot: the applied undo consumed the record.

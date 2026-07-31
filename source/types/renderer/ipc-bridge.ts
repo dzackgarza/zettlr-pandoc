@@ -211,8 +211,6 @@ interface IpcCommandResponseMap {
   }
   'reference-provider': {
     'get-snapshot': WorkspaceReferenceState
-    'report-live-buffer': undefined
-    'drop-live-buffer': undefined
   }
   'citeproc-provider': {
     'get-items': CSLItem[]

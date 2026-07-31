@@ -36,7 +36,6 @@ import ReferenceProvider from 'source/app/service-providers/references'
 import RenameReference from 'source/app/service-providers/commands/rename-reference'
 import LogProvider from 'source/app/service-providers/log'
 import { extractReferences } from 'source/common/pandoc-util/extract-references'
-import type FSAL from 'source/app/service-providers/fsal'
 import type { AppServiceContainer } from 'source/app/app-service-container'
 import type {
   CommitRenameOutcome,
@@ -95,7 +94,13 @@ describe('Renderer-reachable rename-undo command route (review A5)', function ()
     scratchRoot = await mkdtemp(path.join(tmpdir(), 'zettlr-rename-undo-route-'))
     await cp(FIXTURE_ROOT, scratchRoot, { recursive: true })
 
-    provider = new ReferenceProvider(new LogProvider(), fsalSeam as unknown as FSAL)
+    // No document is open in this scenario: the document authority seam
+    // (issue #53) reports every path as a closed file.
+    provider = new ReferenceProvider(
+      new LogProvider(),
+      fsalSeam,
+      { readMarkdownBufferContent: (_filePath: string) => undefined }
+    )
     await provider.boot()
 
     for (const relative of WORKSPACE_FILES) {

@@ -190,6 +190,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         getFirstMainWindow: () => undefined,
         getMainWindowKey: (_window: unknown) => activeWindowId,
       },
+      // The manager drives the references provider's live overlay at its
+      // mutation points (issue #53); this spec asserts the agent API, so
+      // the seam only has to exist.
+      references: {
+        reportAuthorityBuffer: (_filePath: string) => {},
+        dropAuthorityBuffer: (_filePath: string) => {},
+      },
     };
 
     const manager = new DocumentManager(appSeam);

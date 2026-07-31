@@ -120,6 +120,17 @@ type DocumentManagerApp = {
   >;
   log: Pick<AppServiceContainer["log"], "error" | "info" | "verbose" | "warning">;
   recentDocs: Pick<AppServiceContainer["recentDocs"], "add">;
+  /**
+   * The live-reference seam of the references provider (issue #53): this
+   * manager is the document authority and DRIVES the provider's live
+   * overlay at its own mutation points — load/change reports and
+   * close/move/reload drops. The provider reads the buffer text back
+   * through readMarkdownBufferContent().
+   */
+  references: {
+    reportAuthorityBuffer: (filePath: string) => void;
+    dropAuthorityBuffer: (filePath: string) => void;
+  };
   stats: Pick<AppServiceContainer["stats"], "updateCounts">;
   windows: Pick<
     AppServiceContainer["windows"],
@@ -990,6 +1001,14 @@ export default class DocumentManager extends ProviderContract {
     // text, so the content and version returned must be read AFTER it.
     this._reattachReviewSidecar(doc);
 
+    // The authority loaded a markdown buffer: feed the references provider's
+    // live overlay (issue #53). Reporting on LOAD — not only on the first
+    // edit — means an open document's occurrences are part of the merged
+    // reference view even when FSAL never indexed the file (issue #46).
+    if (doc.type === DocumentType.Markdown) {
+      this._app.references.reportAuthorityBuffer(filePath);
+    }
+
     return {
       content: doc.document.toString(),
       type,
@@ -1076,6 +1095,12 @@ current contents from the editor somewhere else, and restart the application.`,
       filePath,
       status: "modification",
     });
+
+    // The authority text changed: feed the references provider's live
+    // overlay (issue #53; debounced inside the provider).
+    if (doc.type === DocumentType.Markdown) {
+      this._app.references.reportAuthorityBuffer(filePath);
+    }
 
     // Drop all updates that exceed the amount of updates we allow.
     while (doc.updates.length > MAX_VERSION_HISTORY) {
@@ -1397,6 +1422,7 @@ current contents from the editor somewhere else, and restart the application.`,
 
       // Remove the file
       this.documents.splice(this.documents.indexOf(openFile), 1);
+      this._app.references.dropAuthorityBuffer(filePath);
     } else if (openFile !== undefined && numOpenInstances === 1) {
       // The file is not modified, but this is still the last instance, so we
       // can close it without having to ask. Detach before the splice: the
@@ -1408,6 +1434,7 @@ current contents from the editor somewhere else, and restart the application.`,
         }
       }
       this.documents.splice(this.documents.indexOf(openFile), 1);
+      this._app.references.dropAuthorityBuffer(filePath);
     }
 
     const ret = leaf.tabMan.closeFile(filePath);
@@ -1474,6 +1501,7 @@ current contents from the editor somewhere else, and restart the application.`,
     const idx = this.documents.findIndex((doc) => doc.filePath === filePath);
     if (idx > -1) {
       this.documents.splice(idx, 1);
+      this._app.references.dropAuthorityBuffer(filePath);
     }
 
     this.syncWatchedFilePaths();
@@ -1637,6 +1665,13 @@ current contents from the editor somewhere else, and restart the application.`,
     openDoc.descriptor.dir = path.dirname(newPath);
     openDoc.descriptor.name = path.basename(newPath);
     openDoc.descriptor.ext = path.extname(newPath);
+
+    // The buffer moved with the document: its live reference overlay moves
+    // too (issue #53) — the old path's overlay dies, the new path reports.
+    this._app.references.dropAuthorityBuffer(oldPath);
+    if (openDoc.type === DocumentType.Markdown) {
+      this._app.references.reportAuthorityBuffer(newPath);
+    }
 
     const leafsToNotify: Array<[string, string]> = [];
     await this.forEachLeaf(async (tabMan, windowId, leafId) => {
@@ -1819,6 +1854,9 @@ current contents from the editor somewhere else, and restart the application.`,
     }
     const idx = this.documents.findIndex((file) => file.filePath === filePath);
     this.documents.splice(idx, 1);
+    // The reloading renderers re-trigger getDocument, which reports the
+    // fresh buffer; until then the saved FSAL snapshot is the truth.
+    this._app.references.dropAuthorityBuffer(filePath);
     // Indicate to all affected editors that they should reload the file
     this.broadcastEvent(DP_EVENTS.FILE_REMOTELY_CHANGED, { filePath });
   }
@@ -3131,6 +3169,26 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * The references provider's read seam into the document authority
+   * (issue #53): returns the CURRENT text of an open markdown buffer, or
+   * undefined when the path is not an open markdown document. This is the
+   * single source the provider derives live reference state from — both the
+   * merged snapshot's live overlays and the rename protocol's open-buffer
+   * partition and hash fences.
+   *
+   * @param   {string}  filePath  The document's path
+   *
+   * @return  {string|undefined}  The buffer text, if an open markdown doc
+   */
+  public readMarkdownBufferContent(filePath: string): string | undefined {
+    const doc = this.documents.find((d) => d.filePath === filePath);
+    if (doc === undefined || doc.type !== DocumentType.Markdown) {
+      return undefined;
+    }
+    return doc.document.toString();
+  }
+
+  /**
    * Broadcast the current review state to all renderers displaying a document.
    * The session carries exactly what a pane needs to draw: the provider-owned
    * merge reference and the identifiers to send decisions back with. Panes
@@ -3245,5 +3303,11 @@ current contents from the editor somewhere else, and restart the application.`,
       filePath,
       status: "modification",
     });
+
+    // A review decision changed the authority text: feed the references
+    // provider's live overlay (issue #53).
+    if (doc.type === DocumentType.Markdown) {
+      this._app.references.reportAuthorityBuffer(filePath);
+    }
   }
 }

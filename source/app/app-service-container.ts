@@ -140,10 +140,6 @@ export class AppServiceContainer {
       this._configProvider,
       this._fsal,
     )
-    this._referenceProvider = new ReferenceProvider(
-      this._logProvider,
-      this._fsal,
-    )
     this._searchProvider = new SearchProvider(
       this._logProvider,
       this._fsal,
@@ -152,6 +148,15 @@ export class AppServiceContainer {
 
     // The document provider accesses only the FSAL in its constructor
     this._documentManager = new DocumentManager(this)
+    // The references provider reads live buffers through the document
+    // authority (issue #53), so it is constructed right after it; the
+    // manager reaches back through the container's references getter at
+    // runtime only, never during construction.
+    this._referenceProvider = new ReferenceProvider(
+      this._logProvider,
+      this._fsal,
+      this._documentManager,
+    )
     this._agentHTTPProvider = new AgentHTTPProvider(
       this._logProvider,
       this._documentManager,

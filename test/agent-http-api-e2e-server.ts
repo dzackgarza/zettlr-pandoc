@@ -24,8 +24,6 @@ import { mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from "fs";
 import net from "net";
 import os from "os";
 import path from "path";
-import { randomUUID } from "crypto";
-
 import DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
@@ -126,6 +124,13 @@ async function main(): Promise<void> {
       getFirstMainWindow: () => ({}),
       getMainWindowKey: (_window: unknown) => activeWindowId,
     },
+    // The manager drives the references provider's live overlay at its
+    // mutation points (issue #53); this harness exercises the agent API,
+    // so the seam only has to exist.
+    references: {
+      reportAuthorityBuffer: (_filePath: string) => {},
+      dropAuthorityBuffer: (_filePath: string) => {},
+    },
   };
 
   const provider = new DocumentManager(
@@ -156,7 +161,7 @@ async function main(): Promise<void> {
   await provider.getDocument(samplePath);
 
   // Signal readiness. The parent parses this exact line.
-  // eslint-disable-next-line no-console
+   
   console.log(
     `E2E_SERVER_READY port=${httpPort} docPath=${samplePath} scratch=${scratch}`,
   );
@@ -173,12 +178,12 @@ async function main(): Promise<void> {
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
   process.on("message", (msg: unknown) => {
-    if (msg === "shutdown") shutdown();
+    if (msg === "shutdown") {shutdown();}
   });
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error("E2E server failed:", err);
   process.exit(1);
 });

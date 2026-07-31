@@ -2,20 +2,24 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Reference index overlay-authority specs (issue #1, red)
+ * Contains:        Reference index overlay-authority specs (issues #1, #53)
  * CVM-Role:        TESTING
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
  * Description:     Proves the overlay authority rule of the workspace
- *                  reference index: a reported live buffer replaces the saved
- *                  FSAL snapshot for its document and stays authoritative
- *                  until FSAL reports a saved snapshot whose sourceHash
- *                  exactly equals the live one's with no newer generation
- *                  reported since. Stale FSAL events never evict, out-of-order
- *                  live reports are ignored, drops revert to saved, unlinks
- *                  remove saved state but never an open buffer's overlay, and
- *                  resolutions are always recomputed over the merged view.
+ *                  reference index under the issue #53 ownership model: the
+ *                  live side is fed exclusively by the main-process document
+ *                  authority, so reports arrive in document order and the
+ *                  LAST report wins — the API carries no generation counter,
+ *                  which makes the pre-#53 cross-window counter race
+ *                  inexpressible. A live buffer replaces the saved FSAL
+ *                  snapshot for its document, saved snapshots never evict an
+ *                  overlay (only the authority ends the live side, by
+ *                  dropping the buffer), drops revert to saved, unlinks
+ *                  remove saved state but never an open buffer's overlay,
+ *                  and resolutions are always recomputed over the merged
+ *                  view.
  *
  * END HEADER
  */
@@ -42,8 +46,8 @@ function savedSnapshot (documentPath: string): DocumentReferenceSnapshot {
 }
 
 /**
- * A live-buffer snapshot of a fixture document whose unsaved content is the
- * saved content transformed by `transform` (identity transform = the unsaved
+ * A live-buffer snapshot of a fixture document whose authority text is the
+ * saved content transformed by `transform` (identity transform = the open
  * buffer exactly matches the disk content, so both hashes agree).
  */
 function liveSnapshot (documentPath: string, transform: (content: string) => string = c => c): DocumentReferenceSnapshot {
@@ -89,7 +93,7 @@ describe('ReferenceIndex overlay authority', function () {
 
     const live = liveSnapshot(HALPHEN, content => content + '\nThe listing @lst:sage-run verifies the discriminant computation.\n')
     assert.notStrictEqual(live.sourceHash, savedHalphen.sourceHash)
-    index.reportLiveBuffer(live, 1)
+    index.reportLiveBuffer(live)
 
     const state = index.getSnapshot()
     assert.deepStrictEqual(servedSnapshot(state, HALPHEN), live)
@@ -97,79 +101,78 @@ describe('ReferenceIndex overlay authority', function () {
     assert.deepStrictEqual(state.resolutions, resolveWorkspace([ live, savedCoble ]))
   })
 
-  it('evicts the overlay when FSAL reports the exact live hash with no newer generation', function () {
+  it('always serves the LAST reported live buffer — the authority feed admits no counter to race (issue #53)', function () {
+    // The pre-#53 architecture guarded reports with per-window generation
+    // counters; a document open in two windows raced those counters and the
+    // guard silently discarded the newer window's content. The authority
+    // model removes the counter from the API entirely: whichever content
+    // the single in-order feeder reported LAST is served, always.
+    const index = new ReferenceIndex()
+    index.applySavedSnapshot(savedSnapshot(HALPHEN))
+
+    const windowA = liveSnapshot(HALPHEN, content => content + '\nWindow A draft citing @fig:root-diagram.\n')
+    const windowB = liveSnapshot(HALPHEN, content => content + '\nWindow B draft citing @def:lattice.\n')
+
+    index.reportLiveBuffer(windowA)
+    index.reportLiveBuffer(windowB)
+    assert.deepStrictEqual(servedSnapshot(index.getSnapshot(), HALPHEN), windowB)
+
+    // And back: a later report of A's content wins again — last write wins
+    // unconditionally, no ledger anywhere remembers a "newer" report.
+    index.reportLiveBuffer(windowA)
+    assert.deepStrictEqual(servedSnapshot(index.getSnapshot(), HALPHEN), windowA)
+  })
+
+  it('keeps the overlay authoritative across saved snapshots — only the authority ends the live side', function () {
     const index = new ReferenceIndex()
     index.applySavedSnapshot(savedSnapshot(HALPHEN))
 
     const edit = (content: string): string => content + '\nAppended unsaved paragraph citing @sec:moduli.\n'
-    index.reportLiveBuffer(liveSnapshot(HALPHEN, edit), 7)
+    const live = liveSnapshot(HALPHEN, edit)
+    index.reportLiveBuffer(live)
 
-    // The user saves: FSAL re-extracts the identical content, so the saved
-    // hash exactly equals the live one and the overlay hands authority back.
+    // The user saves: FSAL re-extracts the identical content. The overlay
+    // stays authoritative (it equals the saved content, so the merged view
+    // is unchanged) — eviction is not FSAL's decision under issue #53.
     index.applySavedSnapshot(liveSnapshot(HALPHEN, edit))
-
-    // Authority is back with FSAL: a later ordinary saved change (different
-    // hash, no live buffer in play) must take effect immediately.
-    const later = liveSnapshot(HALPHEN, content => content + '\nA later saved revision citing @tbl:coble-lattices.\n')
-    index.applySavedSnapshot(later)
-
-    assert.deepStrictEqual(servedSnapshot(index.getSnapshot(), HALPHEN), later)
-  })
-
-  it('keeps the overlay when a stale FSAL event reports a differing hash', function () {
-    const index = new ReferenceIndex()
-    const stale = savedSnapshot(HALPHEN)
-    index.applySavedSnapshot(stale)
-
-    const live = liveSnapshot(HALPHEN, content => content + '\nUnsaved sentence about @eq:intersection-form.\n')
-    index.reportLiveBuffer(live, 3)
-
-    // A stale watcher event re-reports the on-disk content, whose hash does
-    // not match the live buffer: the overlay must survive.
-    index.applySavedSnapshot(stale)
-
     assert.deepStrictEqual(servedSnapshot(index.getSnapshot(), HALPHEN), live)
-  })
 
-  it('ignores an out-of-order live report carrying an older generation', function () {
-    const index = new ReferenceIndex()
+    // A stale watcher event re-reports the old on-disk content: the open
+    // buffer's overlay must survive that too.
     index.applySavedSnapshot(savedSnapshot(HALPHEN))
+    assert.deepStrictEqual(servedSnapshot(index.getSnapshot(), HALPHEN), live)
 
-    const older = liveSnapshot(HALPHEN, content => content + '\nFirst unsaved draft citing @fig:root-diagram.\n')
-    const newer = liveSnapshot(HALPHEN, content => content + '\nSecond unsaved draft citing @def:lattice.\n')
-    index.reportLiveBuffer(newer, 12)
-    index.reportLiveBuffer(older, 11)
-
-    assert.deepStrictEqual(servedSnapshot(index.getSnapshot(), HALPHEN), newer)
+    // Only dropping the buffer (the authority closed it) hands authority
+    // back to the saved side — whatever FSAL reported last.
+    index.dropLiveBuffer(HALPHEN)
+    assert.deepStrictEqual(servedSnapshot(index.getSnapshot(), HALPHEN), savedSnapshot(HALPHEN))
   })
 
-  it('does not evict on an exact hash match for a superseded generation', function () {
-    const index = new ReferenceIndex()
-    index.applySavedSnapshot(savedSnapshot(HALPHEN))
-
-    const first = (content: string): string => content + '\nFirst draft citing @thm:torelli directly.\n'
-    const second = (content: string): string => content + '\nSecond draft citing @lem:kodaira:embedding instead.\n'
-    index.reportLiveBuffer(liveSnapshot(HALPHEN, first), 20)
-    const currentLive = liveSnapshot(HALPHEN, second)
-    index.reportLiveBuffer(currentLive, 21)
-
-    // The save of the generation-20 content lands late: its hash matches an
-    // outdated live report, not the current buffer, so the newer overlay
-    // must remain authoritative.
-    index.applySavedSnapshot(liveSnapshot(HALPHEN, first))
-
-    assert.deepStrictEqual(servedSnapshot(index.getSnapshot(), HALPHEN), currentLive)
-  })
-
-  it('reverts to the saved snapshot when the live buffer is dropped', function () {
+  it('reverts to the saved snapshot when the live buffer is dropped, and reports whether an overlay existed', function () {
     const index = new ReferenceIndex()
     const saved = savedSnapshot(HALPHEN)
     index.applySavedSnapshot(saved)
-    index.reportLiveBuffer(liveSnapshot(HALPHEN, content => content + '\nDiscarded draft citing @rmk:standalone-note.\n'), 5)
+    index.reportLiveBuffer(liveSnapshot(HALPHEN, content => content + '\nDiscarded draft citing @rmk:standalone-note.\n'))
 
-    index.dropLiveBuffer(HALPHEN)
-
+    assert.strictEqual(index.dropLiveBuffer(HALPHEN), true, 'dropping an existing overlay must report the state change')
     assert.deepStrictEqual(servedSnapshot(index.getSnapshot(), HALPHEN), saved)
+    assert.strictEqual(index.dropLiveBuffer(HALPHEN), false, 'a second drop has no overlay left to remove')
+  })
+
+  it('serves an open buffer FSAL has never indexed (issue #46: standalone first load)', function () {
+    // A document opened from outside every workspace root has no saved FSAL
+    // snapshot. The authority still loaded it, so its citing occurrences
+    // must be part of the merged view — this was the missing half of the
+    // "1 reference badge opens no citing locations" defect.
+    const index = new ReferenceIndex()
+    index.applySavedSnapshot(savedSnapshot(THEOREMS))
+
+    const live = liveSnapshot(STANDALONE)
+    index.reportLiveBuffer(live)
+
+    const state = index.getSnapshot()
+    assert.deepStrictEqual(servedSnapshot(state, STANDALONE), live)
+    assert.deepStrictEqual(state.resolutions, resolveWorkspace([ savedSnapshot(THEOREMS), live ]))
   })
 
   it('removes an unlinked document without an overlay entirely', function () {
@@ -217,7 +220,7 @@ describe('ReferenceIndex overlay authority', function () {
     const index = new ReferenceIndex()
     index.applySavedSnapshot(savedSnapshot(STANDALONE))
     const live = liveSnapshot(STANDALONE, content => content + '\nStill-open draft citing @thm:torelli again.\n')
-    index.reportLiveBuffer(live, 2)
+    index.reportLiveBuffer(live)
 
     index.removeSavedSnapshot(STANDALONE)
 
@@ -241,7 +244,7 @@ describe('ReferenceIndex overlay authority', function () {
     assert.strictEqual(servedResolution(index.getSnapshot(), 'fig:nonexistent-diagram').status, 'missing')
 
     const live = liveSnapshot(COBLE, content => content + '\n![Semistable limit of the double fiber](limit.png){#fig:nonexistent-diagram}\n')
-    index.reportLiveBuffer(live, 4)
+    index.reportLiveBuffer(live)
 
     const resolution = servedResolution(index.getSnapshot(), 'fig:nonexistent-diagram')
     assert.strictEqual(resolution.status, 'resolved')
@@ -260,7 +263,7 @@ describe('ReferenceIndex overlay authority', function () {
     assert.strictEqual(servedResolution(index.getSnapshot(), 'rmk:characteristic-two').status, 'resolved')
 
     const live = liveSnapshot(STANDALONE, content => content + '\n::: {.remark #rmk:characteristic-two}\nAn unsaved duplicate of the characteristic-two remark.\n:::\n')
-    index.reportLiveBuffer(live, 9)
+    index.reportLiveBuffer(live)
 
     const resolution = servedResolution(index.getSnapshot(), 'rmk:characteristic-two')
     assert.strictEqual(resolution.status, 'duplicate')

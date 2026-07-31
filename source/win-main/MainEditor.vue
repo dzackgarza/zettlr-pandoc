@@ -76,10 +76,6 @@ import {
   type CreateReferenceLabelIntent,
   type CreateReferenceLabelRequest
 } from '@common/modules/markdown-editor/plugins/create-reference-label'
-import {
-  createLiveBufferReporter,
-  type LiveBufferScheduler
-} from '@common/modules/markdown-editor/util/live-buffer-reporter'
 import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
 import { runRecoverably } from '@common/util/run-recoverably'
 import surfaceDocumentLoadError, {
@@ -98,32 +94,10 @@ import type { WorkspaceReferenceEdit } from '@dts/common/references'
 
 const ipcRenderer = window.ipc
 
-// ——— Live-buffer reporting (issue #1 Phase 8) ———
-// Module-owned so the state survives editor remounts and pane switches: one
-// reporter per window plus one monotonic generation counter per document.
-// The reporter debounces per document and delivers the shared-extractor
-// snapshot to the reference provider ('report-live-buffer'), so unsaved
-// buffers reach the merged workspace state; closing/switching a document
-// drops its overlay immediately ('drop-live-buffer').
-const liveBufferGenerations = new Map<string, number>()
-
-function nextLiveBufferGeneration (documentPath: string): number {
-  const next = (liveBufferGenerations.get(documentPath) ?? 0) + 1
-  liveBufferGenerations.set(documentPath, next)
-  return next
-}
-
-const liveBufferScheduler: LiveBufferScheduler = {
-  schedule: (callback, delayMs) => {
-    const handle = setTimeout(callback, delayMs)
-    return { cancel: () => { clearTimeout(handle) } }
-  }
-}
-
-const liveBufferReporter = createLiveBufferReporter(
-  async (channel, message) => await ipcRenderer.invoke(channel, message),
-  liveBufferScheduler
-)
+// Live-buffer reference state is owned by MAIN (issue #53): the document
+// authority already streams every edit in through collab push-updates, and
+// the references provider derives the live overlay from that authority
+// text. This window reports nothing and keeps no per-document counters.
 
 // This function overwrites the getBibliographyForDescriptor function to ensure
 // the library is always absolute. We have to do it this ridiculously since the
@@ -419,9 +393,6 @@ onBeforeUnmount(() => {
     props.persistentStateMap.set(props.file.path, currentEditor.persistentState)
     // Clear out the table of contents before unmounting the component.
     windowStateStore.tableOfContents = undefined
-    // The closed buffer's live overlay dies with it: the provider reverts
-    // to the saved FSAL snapshot immediately (issue #1 Phase 8).
-    liveBufferReporter.dropDocument(currentEditor.documentPath)
     currentEditor.unmount()
   }
 })
@@ -438,10 +409,8 @@ onUpdated(() => {
   const currentFilePath = currentEditor.documentPath
   if (currentFilePath !== props.activeFile?.path) {
     // File path has changed -> unmount and remount (duplicate code from
-    // onMounted and onBeforeUnmount hooks). The switched-away buffer's live
-    // overlay drops immediately (issue #1 Phase 8).
+    // onMounted and onBeforeUnmount hooks).
     props.persistentStateMap.set(currentFilePath, currentEditor.persistentState)
-    liveBufferReporter.dropDocument(currentFilePath)
     currentEditor.unmount()
     loadDocument().catch(reportDocumentLoadError)
   }
@@ -731,18 +700,6 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   editor.on('change', () => {
     if (currentEditor === editor) {
       windowStateStore.tableOfContents = currentEditor.tableOfContents
-
-      // Report the changed live buffer to the reference provider (issue #1
-      // Phase 8): debounced per document, monotonic generations, the same
-      // shared extractor FSAL uses. Markdown documents only — code files
-      // never contribute reference snapshots.
-      if (isMarkdown.value) {
-        liveBufferReporter.reportChange(
-          editor.documentPath,
-          editor.value,
-          nextLiveBufferGeneration(editor.documentPath)
-        )
-      }
     }
   })
 
