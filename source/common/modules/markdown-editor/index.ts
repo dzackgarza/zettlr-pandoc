@@ -21,7 +21,6 @@
 // component for the editor itself.
 import "./editor.css";
 
-import { sendableUpdates } from "@codemirror/collab";
 import { foldEffect, foldState, syntaxTree } from "@codemirror/language";
 import { closeSearchPanel, openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import {
@@ -121,6 +120,7 @@ import {
 } from "./util/configuration";
 // Utilities
 import { copyAsHTML, pasteAsPlain } from "./util/copy-paste-cut";
+import { whenAuthoritySynced } from "./util/when-authority-synced";
 
 export interface DocumentWrapper {
   path: string;
@@ -1155,23 +1155,18 @@ export default class MarkdownEditor extends EventEmitter {
 
   /**
    * Resolves once every pending change has been pushed to the document
-   * authority (there are no sendable collab updates left), or after `timeout`
-   * ms as a backstop. Callers use this to order a format-then-save: the on-disk
-   * write must see the formatted bytes, so the format's collab update has to
-   * reach main first.
+   * authority (there are no sendable collab updates left), and THROWS when
+   * `timeout` ms pass with updates still unsent. Callers use this to order a
+   * format-then-save: the on-disk write must see the formatted bytes, so the
+   * format's collab update has to reach main first, and a caller that cannot be
+   * given that ordering must hear about it instead of saving anyway.
    *
    * @param   {number}         timeout  Backstop in ms (default 2000).
    *
    * @return  {Promise<void>}
    */
   async whenSynced(timeout = 2000): Promise<void> {
-    const start = Date.now();
-    while (sendableUpdates(this._instance.state).length > 0) {
-      if (Date.now() - start > timeout) {
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+    await whenAuthoritySynced(() => this._instance.state, timeout);
   }
 
   /**

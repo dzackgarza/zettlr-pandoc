@@ -264,17 +264,33 @@ ipcRenderer.on('shortcut', (event, command) => {
     // over the buffer first and wait for the format's collab update to reach the
     // document authority, so the on-disk write sees the formatted bytes. The
     // format is a single undo step, so one undo reverts an unwanted auto-format.
+    //
+    // A formatter that reports a typed failure (flowmark absent, bad exit) left
+    // the buffer untouched, surfaceFormatResult tells the author why, and the
+    // save proceeds on the unchanged text. But if the format DID change the
+    // buffer and whenSynced cannot promise those bytes reached the authority,
+    // saving would write the pre-format text and report an ordinary success —
+    // the author would find out by diffing the file. Refuse the save and say so
+    // instead; the buffer keeps the formatted text and pressing save again
+    // retries the whole thing.
     if (configStore.config.editor.formatOnSave && isMarkdown.value && currentEditor !== undefined) {
       const editor = currentEditor
       editor.runFormatter(ipcMarkdownFormatter)
         .then(async result => {
           surfaceFormatResult(result)
           await editor.whenSynced()
-        })
-        .then(doSave)
-        .catch(e => {
-          console.error('Format-on-save failed; saving unformatted', e)
           doSave()
+        })
+        .catch(e => {
+          console.error(`[MainEditor] Format-on-save for ${props.file.path} did not complete; the file was NOT saved`, e)
+          showToast(
+            trans(
+              'Could not save "%s": format-on-save did not complete, so nothing was written. Press save again.',
+              pathBasename(props.file.path)
+            ),
+            'error',
+            12000
+          )
         })
     } else {
       doSave()
