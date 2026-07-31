@@ -107,8 +107,17 @@ spin_until_app_up() {
 trap restore_cursor EXIT
 
 # Zettlr is single-instance. Focus the existing window instead of starting a
-# second build.
+# second build. This launcher cannot deliver file arguments to the running
+# instance: relaunching the recipe would first reap the live dev server
+# (assert-dev-server-stopped.py --kill), tearing down the very app that should
+# receive the file. Refuse loudly instead of silently dropping the request;
+# delivery here needs a second Electron process sharing the singleton lock,
+# which the dev chain does not have.
 if app_up; then
+  if (( $# > 0 )); then
+    printf 'Cannot open %s: the app is already running and the dev launcher cannot pass files to it. Open the file from the app, or quit and relaunch with it.\n' "$*" >&2
+    exit 1
+  fi
   hyprctl dispatch focuswindow "class:^(${app_class})$" >/dev/null
   exit 0
 fi
@@ -150,7 +159,7 @@ if ! command -v direnv >/dev/null 2>&1; then
   exit 1
 fi
 
-setsid sh -c 'cd -- "$1" && exec direnv exec "$1" just launch-desktop' sh "$repo" \
+setsid sh -c 'repo="$1"; shift; cd -- "$repo" && exec direnv exec "$repo" just launch-desktop "$@"' sh "$repo" "$@" \
   >>"$log" 2>&1 </dev/null &
 launch_pid=$!
 

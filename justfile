@@ -54,9 +54,13 @@ launch: sync-dependencies
     {{bun}} run start
 
 # Launch the desktop app in develop mode with the normal user configuration.
-launch-desktop: sync-dependencies
+# Extra arguments are file paths handed to Electron (electron-forge forwards
+# app arguments after `--`). [positional-arguments] exposes them as "$@" so
+# paths containing spaces survive; bare {{args}} interpolation would word-split.
+[positional-arguments]
+launch-desktop *files: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py" --kill
-    "{{justfile_directory()}}/node_modules/.bin/electron-forge" start
+    "{{justfile_directory()}}/node_modules/.bin/electron-forge" start -- "$@"
 
 # Build a packaged Linux x64 app into out/Zettlr-Pandoc-linux-x64/.
 package: sync-dependencies

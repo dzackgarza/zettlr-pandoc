@@ -53,7 +53,7 @@ if [[ $(readlink -f -- "$bin_dir/zettlr-pandoc-boot") != "$source_dir/zettlr-pan
   exit 1
 fi
 
-grep -Fqx "Exec=$bin_dir/zettlr-pandoc-dev %U" "$desktop_file"
+grep -Fqx "Exec=$bin_dir/zettlr-pandoc-dev %F" "$desktop_file"
 grep -Fqx 'Icon=zettlr-pandoc' "$desktop_file"
 
 printf 'Installed Zettlr-Pandoc desktop launcher from %s\n' "$repo"
