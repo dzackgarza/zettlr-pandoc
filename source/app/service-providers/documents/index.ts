@@ -43,6 +43,7 @@ import type { DocumentLocation, SourceRange } from "@dts/common/references";
 import type {
   AgentErrorCode,
   ChunkDecisionResponse,
+  ProposalClaim,
   ReviewState,
 } from "@dts/common/agent-api";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
@@ -247,7 +248,10 @@ interface Document {
 
 interface SubmittedProposalResponse {
   ok: true;
+  /** The newest packet of this submission — the last element of packetIds. */
   packetId: string;
+  /** One packet per claim, in claim order; a single patch has exactly one. */
+  packetIds: string[];
   reviewId: string;
   documentId: string;
   documentRevision: { version: number; sha256: string };
@@ -2545,6 +2549,32 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * Submit an ordered claim sequence against a snapshot: applied sequentially
+   * and atomically (all-or-nothing), one packet per claim. submitProposal is
+   * the one-claim degenerate case of exactly this path.
+   */
+  public async submitProposalClaims(
+    snapshot: string,
+    claims: ProposalClaim[],
+    clientRequestId: string,
+    expectedReviewGeneration?: number,
+  ): Promise<
+    | SubmittedProposalResponse
+    | {
+        ok: false;
+        code: string;
+        message: string;
+      }
+  > {
+    return await this._submitClaimSequence(
+      snapshot,
+      claims,
+      clientRequestId,
+      expectedReviewGeneration,
+    );
+  }
+
+  /**
    * Apply an ordered claim sequence against a snapshot, atomically:
    * resolve snapshot → verify version+hash → open a review if none is active
    * → apply every claim with zero fuzz (all-or-nothing, one packet per
@@ -2696,6 +2726,7 @@ current contents from the editor somewhere else, and restart the application.`,
     const response: SubmittedProposalResponse = {
       ok: true,
       packetId: result.packetIds[result.packetIds.length - 1],
+      packetIds: result.packetIds,
       reviewId: result.reviewId,
       documentId,
       documentRevision: {

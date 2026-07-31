@@ -153,8 +153,25 @@ export interface SearchDocumentResponse {
 export type PatchFormat = "unified-diff";
 
 /**
+ * One claim of a proposal batch: a prose description of what the edit
+ * accomplishes, and the patch implementing exactly that. No basis enum, no
+ * intent field, no dependency schema — the description is prose.
+ */
+export interface ProposalClaim {
+  description: string;
+  patch: string;
+}
+
+/**
  * The body of POST /v1/documents/{documentId}/proposals. Everything the
  * operation needs is in the body; it reads no request headers.
+ *
+ * A proposal is either a single `patch` (with an optional `description`) or
+ * an ordered `claims` sequence — exactly one of the two shapes. Claims apply
+ * against the ONE snapshot, sequentially and atomically: claim k applies with
+ * zero fuzz to the text claim k-1 produced, all-or-nothing, and each claim
+ * becomes its own packet. The single-patch shape is the one-claim degenerate
+ * case.
  *
  * This used to require `If-Match` and `Idempotency-Key` as headers. Both moved
  * here because a schema-driven client cannot send them — an OpenAPI consumer
@@ -164,15 +181,16 @@ export type PatchFormat = "unified-diff";
  * already pins along with the version, so it could only fail where the
  * snapshot check failed anyway.
  *
- * The patch's `---`/`+++` headers must name the target document, either as the
- * literal `document` or as its absolute path (with or without a git-style
+ * Every patch's `---`/`+++` headers must name the target document, either as
+ * the literal `document` or as its absolute path (with or without a git-style
  * `a/`/`b/` prefix). Any other filename is rejected as PATCH_INVALID.
  */
 export interface SubmitProposalRequest {
   snapshot: string;
   patchFormat: PatchFormat;
-  patch: string;
+  patch?: string;
   description?: string;
+  claims?: ProposalClaim[];
   /**
    * Client-chosen unique string. Replaying the same value returns the original
    * packet instead of applying the patch twice; reusing it for a different
@@ -188,7 +206,10 @@ export interface SubmitProposalRequest {
 }
 
 export interface SubmitProposalResponse {
+  /** The newest packet of this submission — the last element of packetIds. */
   packetId: string;
+  /** One packet per claim, in claim order; a single patch has exactly one. */
+  packetIds: string[];
   reviewId: string;
   documentId: string;
   documentRevision: DocumentRevision;

@@ -619,6 +619,108 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assertMatchesSchema(body, "SubmitProposalResponse");
   });
 
+  it("POST /v1/documents/{id}/proposals applies an ordered claims batch atomically", async function () {
+    const filePath = path.join(scratch, "claims.md");
+    const original = "alpha\nx\ny\nz\nbeta\n";
+    const docId = await openFile(filePath, original);
+    const readResponse = await httpRequest("GET", `/v1/documents/${docId}/content`);
+    const snapshot = JSON.parse(readResponse.body).snapshot;
+
+    // Claim 2's patch is built against claim 1's output: it only applies if
+    // the server really applies the sequence in order.
+    const afterFirst = "ALPHA\nx\ny\nz\nbeta\n";
+    const afterSecond = "ALPHA\nx\ny\nz\nBETA\n";
+    const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      body: JSON.stringify({
+        snapshot,
+        patchFormat: "unified-diff",
+        claims: [
+          { description: "Capitalize the opening", patch: makePatch(original, afterFirst) },
+          { description: "Capitalize the closing", patch: makePatch(afterFirst, afterSecond) },
+        ],
+        clientRequestId: "http-claims-1",
+      }),
+    });
+    assert.equal(response.status, 200, response.body);
+    const body = JSON.parse(response.body) as {
+      packetId: string;
+      packetIds: string[];
+      reviewId: string;
+      unresolvedChunks: number;
+    };
+    assertMatchesSchema(body, "SubmitProposalResponse");
+    assert.equal(body.packetIds.length, 2);
+    assert.equal(body.packetId, body.packetIds[1]);
+    assert.equal(body.unresolvedChunks, 2);
+
+    // The ledger carries one packet per claim, in claim order, each with its
+    // own description.
+    const packets = await httpRequest("GET", `/v1/reviews/${body.reviewId}/packets`);
+    const packetsBody = JSON.parse(packets.body) as {
+      packets: Array<{ packetId: string; description?: string }>;
+    };
+    assert.deepEqual(
+      packetsBody.packets.map((p) => p.packetId),
+      body.packetIds,
+    );
+    assert.deepEqual(
+      packetsBody.packets.map((p) => p.description),
+      ["Capitalize the opening", "Capitalize the closing"],
+    );
+
+    // And the document shows the text after the whole sequence.
+    const doc = provider.loadedDocuments.find((d) => d.filePath === filePath)!;
+    assert.equal(doc.document.toString(), afterSecond);
+  });
+
+  it("refuses a claims batch whole when one claim fails, leaving no review behind", async function () {
+    const filePath = path.join(scratch, "claims-atomic.md");
+    const original = "alpha\nbeta\n";
+    const docId = await openFile(filePath, original);
+    const readResponse = await httpRequest("GET", `/v1/documents/${docId}/content`);
+    const snapshot = JSON.parse(readResponse.body).snapshot;
+
+    const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      body: JSON.stringify({
+        snapshot,
+        patchFormat: "unified-diff",
+        claims: [
+          { description: "applies", patch: makePatch(original, "ALPHA\nbeta\n") },
+          // Built against text the sequence never produces: zero fuzz refuses it.
+          { description: "does not", patch: makePatch("unrelated\ntext\n", "other\n") },
+        ],
+        clientRequestId: "http-claims-broken",
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal(JSON.parse(response.body).error.code, "PATCH_NOT_APPLICABLE");
+
+    // All-or-nothing: no review opened, no packet applied, text untouched.
+    const reviews = await httpRequest("GET", "/v1/reviews");
+    assert.deepEqual(JSON.parse(reviews.body).reviews, []);
+    const doc = provider.loadedDocuments.find((d) => d.filePath === filePath)!;
+    assert.equal(doc.document.toString(), original);
+  });
+
+  it("refuses a proposal carrying both the patch and the claims shape", async function () {
+    const filePath = path.join(scratch, "claims-shapes.md");
+    const docId = await openFile(filePath, "alpha\n");
+    const readResponse = await httpRequest("GET", `/v1/documents/${docId}/content`);
+    const snapshot = JSON.parse(readResponse.body).snapshot;
+    const patch = makePatch("alpha\n", "ALPHA\n");
+    const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      body: JSON.stringify({
+        snapshot,
+        patchFormat: "unified-diff",
+        patch,
+        claims: [{ description: "duplicate shape", patch }],
+        clientRequestId: "http-claims-shapes",
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal(JSON.parse(response.body).error.code, "INVALID_PARAMS");
+  });
+
   it("rejects reuse of an idempotency key for a different proposal", async function () {
     const filePath = path.join(scratch, "idempotency.md");
     const docId = await openFile(filePath, "alpha\n");

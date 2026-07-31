@@ -32,6 +32,7 @@ import {
   type AgentError,
   type AgentErrorCode,
   type AgentErrorResponse,
+  type ProposalClaim,
   type ReadDocumentResponse,
   type SubmitProposalRequest,
   type ReadSide,
@@ -232,8 +233,15 @@ function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalReques
   if (!raw.ok) {
     return raw;
   }
-  const { snapshot, patchFormat, patch, description, clientRequestId, expectedReviewGeneration } =
-    raw.value;
+  const {
+    snapshot,
+    patchFormat,
+    patch,
+    description,
+    claims,
+    clientRequestId,
+    expectedReviewGeneration,
+  } = raw.value;
   if (patchFormat !== "unified-diff") {
     return {
       ok: false,
@@ -245,17 +253,62 @@ function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalReques
   if (!isString(snapshot)) {
     return { ok: false, message: "snapshot is required and must be a string" };
   }
-  if (!isString(patch)) {
-    return { ok: false, message: "patch is required and must be a string" };
-  }
-  if (!isOptionalString(description)) {
-    return { ok: false, message: "description must be a string" };
-  }
   if (!isString(clientRequestId) || clientRequestId.length === 0) {
     return { ok: false, message: "clientRequestId is required and must be a non-empty string" };
   }
   if (!isOptionalInteger(expectedReviewGeneration)) {
     return { ok: false, message: "expectedReviewGeneration must be an integer" };
+  }
+
+  // Exactly one of the two shapes: a claims sequence, or a single patch.
+  if (claims !== undefined) {
+    if (patch !== undefined || description !== undefined) {
+      return {
+        ok: false,
+        message: "claims replaces patch and description; send one shape or the other",
+      };
+    }
+    if (!Array.isArray(claims) || claims.length === 0) {
+      return { ok: false, message: "claims must be a non-empty array" };
+    }
+    const decodedClaims: ProposalClaim[] = [];
+    for (let i = 0; i < claims.length; i++) {
+      const claim: unknown = claims[i];
+      if (typeof claim !== "object" || claim === null || Array.isArray(claim)) {
+        return { ok: false, message: `claims[${i}] must be an object` };
+      }
+      const { description: claimDescription, patch: claimPatch } = claim as Record<
+        string,
+        unknown
+      >;
+      if (!isString(claimDescription) || claimDescription.length === 0) {
+        return {
+          ok: false,
+          message: `claims[${i}].description is required and must be a non-empty string`,
+        };
+      }
+      if (!isString(claimPatch)) {
+        return { ok: false, message: `claims[${i}].patch is required and must be a string` };
+      }
+      decodedClaims.push({ description: claimDescription, patch: claimPatch });
+    }
+    return {
+      ok: true,
+      value: {
+        snapshot,
+        patchFormat,
+        claims: decodedClaims,
+        clientRequestId,
+        expectedReviewGeneration,
+      },
+    };
+  }
+
+  if (!isString(patch)) {
+    return { ok: false, message: "patch is required and must be a string" };
+  }
+  if (!isOptionalString(description)) {
+    return { ok: false, message: "description must be a string" };
   }
   return {
     ok: true,
@@ -1277,14 +1330,29 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 404, "DOCUMENT_CLOSED", "Document is no longer open");
       return;
     }
-    // Submit through the same DocumentManager.submitProposal path
-    const result = await this._documents.submitProposal(
-      proposal.snapshot,
-      proposal.patch,
-      proposal.clientRequestId,
-      proposal.description,
-      proposal.expectedReviewGeneration,
-    );
+    // Submit through the same DocumentManager claim-sequence path the
+    // single-patch shape travels — one application path, two wire shapes.
+    let result;
+    if (proposal.claims !== undefined) {
+      result = await this._documents.submitProposalClaims(
+        proposal.snapshot,
+        proposal.claims,
+        proposal.clientRequestId,
+        proposal.expectedReviewGeneration,
+      );
+    } else if (proposal.patch !== undefined) {
+      result = await this._documents.submitProposal(
+        proposal.snapshot,
+        proposal.patch,
+        proposal.clientRequestId,
+        proposal.description,
+        proposal.expectedReviewGeneration,
+      );
+    } else {
+      // The decoder admits exactly the two shapes above.
+      this.sendError(res, 400, "INVALID_PARAMS", "patch or claims is required");
+      return;
+    }
 
     if (!result.ok) {
       if (result.code === "REVISION_MISMATCH") {
@@ -1310,6 +1378,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     res.setHeader("ETag", `"sha256:${newSha}"`);
     this.sendJson(res, 200, {
       packetId: result.packetId,
+      packetIds: result.packetIds,
       reviewId: result.reviewId,
       documentId: result.documentId,
       documentRevision: result.documentRevision,

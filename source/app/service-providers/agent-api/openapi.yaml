@@ -172,13 +172,35 @@ components:
           type: string
         truncated:
           type: boolean
+    ProposalClaim:
+      type: object
+      required:
+        - description
+        - patch
+      properties:
+        description:
+          type: string
+          minLength: 1
+          description: >-
+            Prose: what this claim asserts its patch accomplishes. Shown to
+            the reviewer at the chunks the claim produced.
+        patch:
+          type: string
+          description: Unified diff implementing exactly this claim.
     SubmitProposalRequest:
       type: object
       required:
         - clientRequestId
         - snapshot
         - patchFormat
-        - patch
+      oneOf:
+        - required:
+            - patch
+        - required:
+            - claims
+          not:
+            required:
+              - description
       properties:
         clientRequestId:
           type: string
@@ -197,12 +219,25 @@ components:
           type: string
         description:
           type: string
+        claims:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ProposalClaim'
+          description: >-
+            Ordered claim sequence applied against the ONE snapshot,
+            sequentially and atomically: claim k applies with zero fuzz to
+            the text claim k-1 produced, all-or-nothing, and each claim
+            becomes its own packet. The patch/description pair remains as
+            the one-claim degenerate case; send exactly one of the two
+            shapes.
         expectedReviewGeneration:
           type: integer
     SubmitProposalResponse:
       type: object
       required:
         - packetId
+        - packetIds
         - reviewId
         - documentId
         - documentRevision
@@ -212,6 +247,16 @@ components:
       properties:
         packetId:
           type: string
+          description: >-
+            The newest packet of this submission (the retractable one) —
+            the last element of packetIds.
+        packetIds:
+          type: array
+          items:
+            type: string
+          description: >-
+            One packet per claim, in claim order; a single-patch submission
+            has exactly one.
         reviewId:
           type: string
         documentId:
@@ -1096,7 +1141,13 @@ paths:
   /v1/documents/{documentId}/proposals:
     post:
       operationId: submitProposal
-      summary: Submit an exact unified-diff packet
+      summary: Submit an exact unified-diff proposal — one patch or an ordered claims batch
+      description: >-
+        Both request shapes bind to the one snapshot in the body. A claims
+        batch applies sequentially and atomically server-side: every claim
+        applies with zero fuzz to its predecessor's text or the whole batch
+        is refused with nothing applied, and each claim becomes its own
+        packet (packetIds maps them in claim order).
       parameters:
         - name: documentId
           in: path
