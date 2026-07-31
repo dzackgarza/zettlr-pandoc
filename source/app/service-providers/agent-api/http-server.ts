@@ -40,9 +40,11 @@ import {
   type SubmitProposalRequest,
   type ReadSide,
   type ReviewEventsResponse,
+  type ReviewListEntry,
   type OpenDocumentRequest,
   type SearchHit,
   type WorkspaceDocumentEntry,
+  type WorkspaceFileEntry,
   type ViewSummary,
 } from "@dts/common/agent-api";
 import { DocumentType, DP_EVENTS } from "@dts/common/documents";
@@ -745,6 +747,9 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (pathname === "/v1/workspaces" && method === "GET") {
       return this.handleGetWorkspaces(res);
     }
+    if (pathname === "/v1/workspace/files" && method === "GET") {
+      return this.handleListWorkspaceFiles(res);
+    }
     if (pathname === "/v1/documents" && method === "GET") {
       return this.handleListDocuments(res, url);
     }
@@ -931,6 +936,28 @@ export default class AgentHTTPProvider extends ProviderContract {
       path: workspacePath,
     }));
     this.sendJson(res, 200, { workspaces });
+  }
+
+  /**
+   * GET /v1/workspace/files — the orientation loop's first question: what
+   * exists. Every file across the configured workspaces, flat, open or not.
+   * Main already walks directories for the workspace listings; this is a
+   * route over that walk, not a subsystem.
+   */
+  private async handleListWorkspaceFiles(res: http.ServerResponse): Promise<void> {
+    const files: WorkspaceFileEntry[] = [];
+    for (const workspacePath of this._app.config.get().app.openWorkspaces) {
+      for (const filePath of await this._documents.getFilesForWorkspace(workspacePath)) {
+        files.push({
+          documentId: this._documents.ensureDocumentId(filePath),
+          path: filePath,
+          name: path.basename(filePath),
+          workspaceId: workspacePath,
+          open: this._documents.loadedDocuments.some((doc) => doc.filePath === filePath),
+        });
+      }
+    }
+    this.sendJson(res, 200, { files });
   }
 
   private handleListWorkspaceDocuments(
@@ -1434,7 +1461,15 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private handleListReviews(res: http.ServerResponse): void {
-    const reviews = this._documents.reviewStore.listReviews();
+    // Open-document reviews, then the sidecar-backed reviews whose files
+    // are closed — one list, discriminated by `attached`.
+    const reviews: ReviewListEntry[] = [
+      ...this._documents.reviewStore.listReviews().map((review) => ({
+        ...review,
+        attached: true,
+      })),
+      ...this._documents.listDetachedReviews(),
+    ];
     this.sendJson(res, 200, { reviews });
   }
 

@@ -381,7 +381,20 @@ export interface ReviewDetailResponse {
 
 /** One entry of GET /v1/reviews: a ReviewSummary plus the document it reviews. */
 export interface ReviewListEntry extends ReviewSummary {
-  documentId: string;
+  /**
+   * Present for a review attached to an open document. A detached
+   * (sidecar-backed) review has no live documentId — it is addressed by
+   * documentPath, and reattaches by opening that file.
+   */
+  documentId?: string;
+  /** The absolute path of the reviewed file. */
+  documentPath: string;
+  /**
+   * True while the reviewed document is open; false for a review persisted
+   * in its sidecar after the file closed. There is no reattach API —
+   * opening the file is the reattachment.
+   */
+  attached: boolean;
 }
 
 export interface ReviewListResponse {
@@ -498,6 +511,7 @@ export type AgentEventType =
   | "review.invalidated"
   | "review.held"
   | "review.commented"
+  | "review.sidecar-error"
   | "app.shutting-down";
 
 export interface AgentEvent {
@@ -515,6 +529,8 @@ export interface AgentEvent {
   comment?: string;
   /** review.commented: set when the comment was salvaged from a dangling hold. */
   orphanedFromChunkId?: string;
+  /** review.sidecar-error: what failed and why. */
+  message?: string;
 }
 
 /**
@@ -599,6 +615,24 @@ export interface WorkspaceDocumentsResponse {
   documents: WorkspaceDocumentEntry[];
 }
 
+/** One file of GET /v1/workspace/files: identity plus whether it is loaded. */
+export interface WorkspaceFileEntry {
+  documentId: string;
+  path: string;
+  name: string;
+  workspaceId: string;
+  /** Whether the file is currently loaded in the editor. */
+  open: boolean;
+}
+
+/**
+ * The body of GET /v1/workspace/files: every file across the configured
+ * workspaces, flat — the agent's orientation entry point.
+ */
+export interface WorkspaceFilesResponse {
+  files: WorkspaceFileEntry[];
+}
+
 export interface FocusDocumentResponse {
   focused: true;
   documentId: string;
@@ -678,6 +712,7 @@ export type AgentApiResponseBody =
   | ViewsResponse
   | WorkspacesResponse
   | WorkspaceDocumentsResponse
+  | WorkspaceFilesResponse
   | FocusDocumentResponse
   | ReadDocumentResponse
   | SearchDocumentResponse

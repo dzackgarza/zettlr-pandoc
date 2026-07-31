@@ -42,8 +42,10 @@ import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type { DocumentLocation, SourceRange } from "@dts/common/references";
 import type {
   AgentErrorCode,
+  AgentEvent,
   ChunkDecisionResponse,
   ProposalClaim,
+  ReviewListEntry,
   ReviewState,
 } from "@dts/common/agent-api";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
@@ -66,7 +68,12 @@ import isDir from "source/common/util/is-dir";
 import { v4 as uuid4 } from "uuid";
 import { type AppServiceContainer } from "../../app-service-container";
 import { DocumentTree, type DTLeaf } from "./document-tree";
-import { ReviewDiffStore, applyClaimSequence } from "./review-diff-store";
+import {
+  ReviewDiffStore,
+  applyClaimSequence,
+  classifyReviewState,
+} from "./review-diff-store";
+import { ReviewSidecarStore } from "./review-sidecar-store";
 
 type DocumentWindows = Record<string, DocumentTree>;
 type DocumentWindowsJSON = Record<string, BranchNodeJSON | LeafNodeJSON>;
@@ -407,6 +414,16 @@ export default class DocumentManager extends ProviderContract {
   /** Path → documentId mapping for agent API lookups. */
   private readonly _documentIdByPath: Map<string, string>;
 
+  /**
+   * One persisted sidecar per reviewed file, in app data, keyed by canonical
+   * path. Written through on every review mutation, so closing a reviewed
+   * file (or crashing) destroys nothing; opening the file reattaches.
+   */
+  private readonly _reviewSidecars: ReviewSidecarStore;
+
+  /** documentIds with a sidecar write already scheduled this microtask turn. */
+  private readonly _pendingSidecarWrites: Set<string>;
+
   /** Successful proposal responses, keyed by document and client idempotency key. */
   private readonly _proposalIdempotency: Map<string, ProposalIdempotencyRecord>;
 
@@ -442,6 +459,35 @@ export default class DocumentManager extends ProviderContract {
         return undefined;
       }
       return this.documents.find((d) => d.filePath === filePath)?.document.toString();
+    });
+    this._reviewSidecars = new ReviewSidecarStore(
+      path.join(app.getPath("userData"), "review-sidecars"),
+    );
+    this._pendingSidecarWrites = new Set();
+    // Write-through persistence: every review mutation announces itself on
+    // the store's event bus, and the sidecar mirrors the post-mutation
+    // state. The write is deferred one microtask because mutation events
+    // fire before the caller applies the returned working text to the
+    // document — by the time the microtask runs, the synchronous mutation
+    // turn (store change plus document splice) has completed, so the export
+    // is consistent. Hooking the bus instead of each caller means a
+    // mutation added tomorrow persists without remembering to.
+    this._reviewStore.on("*", (...args: unknown[]) => {
+      const [event] = args as [AgentEvent];
+      const documentId = event.documentId;
+      // A failed sidecar write emits review.sidecar-error; re-persisting on
+      // it would retry the same failing write forever.
+      if (documentId === undefined || event.event === "review.sidecar-error") {
+        return;
+      }
+      if (this._pendingSidecarWrites.has(documentId)) {
+        return;
+      }
+      this._pendingSidecarWrites.add(documentId);
+      queueMicrotask(() => {
+        this._pendingSidecarWrites.delete(documentId);
+        this._persistReviewSidecar(documentId);
+      });
     });
     this._documentIdByPath = new Map();
     this._proposalIdempotency = new Map();
@@ -668,7 +714,7 @@ export default class DocumentManager extends ProviderContract {
                 }
               } else {
                 document.lastSavedVersion = document.currentVersion;
-                this._closeReview(document.documentId);
+                this._detachReview(document.documentId);
               }
             }
 
@@ -933,7 +979,16 @@ export default class DocumentManager extends ProviderContract {
     this.documents.push(doc);
     this.syncWatchedFilePaths();
 
-    return { content, type, startVersion: 0 };
+    // Reattachment: a sidecar for this path means a review detached here.
+    // On a verified fence this restores the buffer to the review's working
+    // text, so the content and version returned must be read AFTER it.
+    this._reattachReviewSidecar(doc);
+
+    return {
+      content: doc.document.toString(),
+      type,
+      startVersion: doc.currentVersion,
+    };
   }
 
   private async pullUpdates(filePath: string, clientVersion: number): Promise<SerializedUpdate[] | false> {
@@ -1315,7 +1370,7 @@ current contents from the editor somewhere else, and restart the application.`,
         {
           const _id = this.getDocumentId(filePath);
           if (_id !== undefined) {
-            this._closeReview(_id);
+            this._detachReview(_id);
           }
         }
         this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
@@ -1338,14 +1393,15 @@ current contents from the editor somewhere else, and restart the application.`,
       this.documents.splice(this.documents.indexOf(openFile), 1);
     } else if (openFile !== undefined && numOpenInstances === 1) {
       // The file is not modified, but this is still the last instance, so we
-      // can close it without having to ask.
-      this.documents.splice(this.documents.indexOf(openFile), 1);
+      // can close it without having to ask. Detach before the splice: the
+      // sidecar export reads the working text through the live document.
       {
         const _id = this.getDocumentId(filePath);
         if (_id !== undefined) {
-          this._closeReview(_id);
+          this._detachReview(_id);
         }
       }
+      this.documents.splice(this.documents.indexOf(openFile), 1);
     }
 
     const ret = leaf.tabMan.closeFile(filePath);
@@ -1402,14 +1458,16 @@ current contents from the editor somewhere else, and restart the application.`,
       return true;
     });
 
-    // We also must splice the document out of our provider
+    // We also must splice the document out of our provider. Detach before
+    // the splice: the sidecar export reads the working text through the
+    // live document.
     const documentId = this.getDocumentId(filePath);
+    if (documentId !== undefined) {
+      this._detachReview(documentId);
+    }
     const idx = this.documents.findIndex((doc) => doc.filePath === filePath);
     if (idx > -1) {
       this.documents.splice(idx, 1);
-    }
-    if (documentId !== undefined) {
-      this._closeReview(documentId);
     }
 
     this.syncWatchedFilePaths();
@@ -1743,14 +1801,18 @@ current contents from the editor somewhere else, and restart the application.`,
     // Here we basically only need to close the document and wait for the
     // renderers to reload themselves with getDocument, which will automatically
     // open the new document.
-    const idx = this.documents.findIndex((file) => file.filePath === filePath);
-    this.documents.splice(idx, 1);
+    // Detach before the splice: the sidecar export reads the working text
+    // through the live document. (After external drift the review arrives
+    // here invalidated, and detaching an invalidated review deletes its
+    // sidecar — reloading from disk remains the terminal resolution.)
     {
       const _id = this.getDocumentId(filePath);
       if (_id !== undefined) {
-        this._closeReview(_id);
+        this._detachReview(_id);
       }
     }
+    const idx = this.documents.findIndex((file) => file.filePath === filePath);
+    this.documents.splice(idx, 1);
     // Indicate to all affected editors that they should reload the file
     this.broadcastEvent(DP_EVENTS.FILE_REMOTELY_CHANGED, { filePath });
   }
@@ -2277,14 +2339,24 @@ current contents from the editor somewhere else, and restart the application.`,
           // reference retains its disagreement over the held spans, so the
           // panes keep rendering them. The disk fence moves to the content
           // just written — the file on disk IS this save — or every later
-          // save would be refused as external drift.
+          // save would be refused as external drift. The fence move emits
+          // no store event, so the sidecar is written through explicitly:
+          // a stale persisted fence would invalidate the review on its
+          // next reattachment.
           this._reviewStore.refreshDiskFence(_id, sha256Text(content));
+          this._persistReviewSidecar(_id);
         } else {
           if (_review !== undefined) {
             this._broadcastReviewCleared(filePath, _review.reviewId);
           }
           this._reviewStore.completeReview(_id);
           this._clearProposalIdempotency(_id);
+          // Explicit resolution: a completed review leaves no residue.
+          try {
+            this._reviewSidecars.delete(filePath);
+          } catch (err) {
+            this._surfaceReviewSidecarError(_id, "delete", err);
+          }
         }
       }
     }
@@ -2350,9 +2422,128 @@ current contents from the editor somewhere else, and restart the application.`,
     broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
   }
 
-  private _closeReview(documentId: string): void {
+  /**
+   * DETACH, not destroy: write the review through to its sidecar, then drop
+   * the in-memory state. Closing a reviewed file is free — reopening the
+   * file reattaches the review. Must run while the document is still in
+   * `documents`: the export reads the working text through the resolver.
+   *
+   * An invalidated review is the one exception. Its in-process resolution
+   * was always destruction (the disk moved underneath it, and reloading
+   * from disk closes it), so detaching would only preserve a review that
+   * can never be decided again — the sidecar is deleted instead.
+   */
+  private _detachReview(documentId: string): void {
+    const review = this._reviewStore.getReview(documentId);
+    if (review !== undefined) {
+      try {
+        if (review.invalidated) {
+          this._reviewSidecars.delete(review.documentPath);
+        } else {
+          this._reviewSidecars.write(this._reviewStore.exportReviewSidecar(documentId)!);
+        }
+      } catch (err) {
+        this._surfaceReviewSidecarError(documentId, "detach write", err);
+      }
+    }
     this._reviewStore.closeReview(documentId);
     this._clearProposalIdempotency(documentId);
+  }
+
+  /**
+   * The write-through target: mirror the review's current state to its
+   * sidecar. A review absent from the store is NOT a deletion signal here —
+   * completion and detachment own their own file lifecycle — so the mutation
+   * event that raced a close in the same turn simply has nothing to write.
+   */
+  private _persistReviewSidecar(documentId: string): void {
+    try {
+      const sidecar = this._reviewStore.exportReviewSidecar(documentId);
+      if (sidecar === undefined) {
+        return;
+      }
+      this._reviewSidecars.write(sidecar);
+    } catch (err) {
+      this._surfaceReviewSidecarError(documentId, "write-through", err);
+    }
+  }
+
+  /**
+   * A sidecar failure is never swallowed: it lands in the log for the
+   * operator and on the store's event bus for the API (SSE), because the
+   * mutation that triggered it already answered its caller.
+   */
+  private _surfaceReviewSidecarError(documentId: string, action: string, err: unknown): void {
+    const message =
+      `Review sidecar ${action} failed for document ${documentId}: ` +
+      (err instanceof Error ? err.message : String(err));
+    this._app.log.error(`[DocumentManager] ${message}`, err);
+    this._reviewStore.emitEvent("review.sidecar-error", { documentId, message });
+  }
+
+  /**
+   * Reattachment — the second half of detach, run when a document loads.
+   * Find the sidecar by canonical path, verify the disk fence, then restore
+   * the buffer to the working text and the review to its reference. A fence
+   * mismatch is external drift observed across a gap in time instead of
+   * within a process, and gets the same terminal treatment drift-then-reload
+   * gets in-process: the review is announced invalidated and destroyed (its
+   * sidecar deleted), and the file opens with the disk content preserved.
+   */
+  private _reattachReviewSidecar(doc: Document): void {
+    let sidecar;
+    try {
+      sidecar = this._reviewSidecars.read(doc.filePath);
+    } catch (err) {
+      // The document itself is fine — open it; the broken sidecar stays on
+      // disk as evidence and keeps failing loudly until it is dealt with.
+      this._surfaceReviewSidecarError(doc.documentId, "read", err);
+      return;
+    }
+    if (sidecar === undefined) {
+      return;
+    }
+    if (sha256Text(normalizeText(doc.lastSavedContent)) !== sidecar.diskFenceSha256) {
+      this._app.log.warning(
+        `[DocumentManager] Review ${sidecar.reviewId} for ${doc.filePath} is invalidated: ` +
+          "the file changed on disk while the review was detached. The disk content " +
+          "was preserved; the detached review was discarded.",
+      );
+      this._reviewSidecars.delete(doc.filePath);
+      this._reviewStore.emitEvent("review.invalidated", {
+        reviewId: sidecar.reviewId,
+        documentId: doc.documentId,
+      });
+      return;
+    }
+    this._reviewStore.restoreReview(doc.documentId, sidecar);
+    this._applyWorkingTextToDocument(doc.filePath, sidecar.workingText);
+    this._broadcastReviewState(doc.filePath, this._reviewStore.getReview(doc.documentId));
+  }
+
+  /**
+   * The sidecar-backed reviews whose files are currently closed, shaped for
+   * GET /v1/reviews. A loaded document's sidecar is excluded — its
+   * in-memory review is the live entry for the same fact.
+   */
+  public listDetachedReviews(): ReviewListEntry[] {
+    return this._reviewSidecars
+      .list()
+      .filter((sidecar) =>
+        this.documents.every(
+          (doc) => path.resolve(doc.filePath) !== path.resolve(sidecar.documentPath),
+        ),
+      )
+      .map((sidecar) => ({
+        reviewId: sidecar.reviewId,
+        state: classifyReviewState(sidecar.invalidated, sidecar.unresolvedChunks),
+        generation: sidecar.generation,
+        unresolvedChunks: sidecar.unresolvedChunks,
+        heldChunks: sidecar.heldChunks,
+        packetCount: sidecar.packets.length,
+        documentPath: sidecar.documentPath,
+        attached: false,
+      }));
   }
 
   private _clearProposalIdempotency(documentId: string): void {

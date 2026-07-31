@@ -373,6 +373,9 @@ components:
           description: >-
             review.commented: set when the comment was salvaged from a hold
             whose chunk id vanished from the partition.
+        message:
+          type: string
+          description: 'review.sidecar-error: what failed and why.'
         id:
           type: string
           description: Server-generated event sequence identifier.
@@ -569,6 +572,35 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WorkspaceDocumentSummary'
+    WorkspaceFileEntry:
+      type: object
+      required:
+        - documentId
+        - path
+        - name
+        - workspaceId
+        - open
+      properties:
+        documentId:
+          type: string
+        path:
+          type: string
+        name:
+          type: string
+        workspaceId:
+          type: string
+        open:
+          type: boolean
+          description: Whether the file is currently loaded in the editor.
+    WorkspaceFilesResponse:
+      type: object
+      required:
+        - files
+      properties:
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceFileEntry'
     SearchDocumentResponse:
       type: object
       required:
@@ -979,10 +1011,25 @@ components:
         - $ref: '#/components/schemas/ReviewSummary'
         - type: object
           required:
-            - documentId
+            - documentPath
+            - attached
           properties:
             documentId:
               type: string
+              description: >-
+                Present for a review attached to an open document; absent
+                for a detached (sidecar-backed) review whose file is
+                closed.
+            documentPath:
+              type: string
+              description: The absolute path of the reviewed file.
+            attached:
+              type: boolean
+              description: >-
+                True while the reviewed document is open; false for a
+                review persisted in its sidecar after the file closed.
+                There is no reattach API — opening the file is the
+                reattachment.
     ReviewListResponse:
       type: object
       required:
@@ -1304,7 +1351,11 @@ paths:
   /v1/reviews:
     get:
       operationId: listReviews
-      summary: List all active reviews
+      summary: List all reviews, attached and detached
+      description: >-
+        Reviews attached to open documents, plus detached (sidecar-backed)
+        reviews on files that are currently closed. A detached review
+        reattaches by opening its documentPath.
       responses:
         '200':
           description: OK
@@ -1686,6 +1737,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ViewsResponse'
+  /v1/workspace/files:
+    get:
+      operationId: listWorkspaceFiles
+      summary: List every file across the configured workspaces
+      description: >-
+        The agent's orientation entry point — all files the editor can see,
+        open or not, flat across every configured workspace.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceFilesResponse'
   /v1/workspaces:
     get:
       operationId: listWorkspaces
