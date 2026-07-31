@@ -833,6 +833,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       if (subPath === "/packets" && method === "GET") {
         return this.handleGetReviewPackets(res, reviewId);
       }
+      if (subPath === "/accept-all" && method === "POST") {
+        return this.handleAcceptAllChunks(res, reviewId);
+      }
       if (subPath === "/clear" && method === "POST") {
         return this.handleClearReview(res, reviewId);
       }
@@ -1636,6 +1639,26 @@ export default class AgentHTTPProvider extends ProviderContract {
       documentId,
       packets: review.packets,
     });
+  }
+
+  /**
+   * POST /v1/reviews/{reviewId}/accept-all — accept every chunk of the
+   * current partition in one sweep, the mirror of /clear (mass reject).
+   * Same decision authority as the editor's Accept-all control.
+   */
+  private handleAcceptAllChunks(res: http.ServerResponse, reviewId: string): void {
+    const result = this._documents.acceptAllChunks(reviewId);
+    if (!result.ok) {
+      const status =
+        result.code === "REVIEW_NOT_FOUND"
+          ? 404
+          : result.code === "DOCUMENT_CLOSED" || result.code === "REVIEW_INVALIDATED"
+            ? 409
+            : 400;
+      this.sendError(res, status, result.code, result.message);
+      return;
+    }
+    this.sendJson(res, 200, result);
   }
 
   private handleClearReview(res: http.ServerResponse, reviewId: string): void {

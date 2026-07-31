@@ -198,6 +198,7 @@ interface IpcCommandResponseMap {
     'save-file': SaveFileResult
     'get-review-diff-session': ReviewDiffSession|undefined
     'decide-review-chunk': ReturnType<DocumentManager['decideChunk']>
+    'accept-all-review-chunks': ReturnType<DocumentManager['acceptAllChunks']>
     'get-navigation-state': ReturnType<DocumentManager['getNavigationState']>
     'get-open-workspace-files': Awaited<ReturnType<DocumentManager['getFilesForWorkspace']>>
     'get-file-modification-status': string[]

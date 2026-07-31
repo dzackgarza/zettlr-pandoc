@@ -422,6 +422,25 @@ export interface ChunkDecisionResponse {
 }
 
 /**
+ * The 200 body of POST /v1/reviews/{reviewId}/accept-all: every chunk of the
+ * current partition accepted in one sweep — the mirror of clear, which is
+ * mass reject. The document does not change; the reference now agrees with
+ * it. Held chunks are accepted too, their comments preserved as orphaned
+ * review-level comments.
+ */
+export interface AcceptAllChunksResponse {
+  ok: true;
+  reviewId: string;
+  documentId: string;
+  /** How many chunks the sweep resolved (held ones included). */
+  acceptedChunks: number;
+  reviewGeneration: number;
+  unresolvedChunks: number;
+  state: ReviewState;
+  documentRevision: DocumentRevision;
+}
+
+/**
  * The body of POST /v1/reviews/{reviewId}/chunks/{chunkId}/hold. The whole
  * body is optional — a hold without text is legal. Re-holding a held chunk
  * replaces its comment.
@@ -722,6 +741,7 @@ export type AgentApiResponseBody =
   | ReviewDiffResponse
   | ReviewChunksResponse
   | ChunkDecisionResponse
+  | AcceptAllChunksResponse
   | ReviewCommentResponse
   | ReviewPacketsResponse
   | ReviewEventsResponse

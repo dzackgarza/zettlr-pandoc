@@ -665,6 +665,53 @@ describe("ReviewDiffStore", function () {
     });
   });
 
+  describe("acceptAllChunks", function () {
+    it("accepts the whole partition in one sweep, orphaning held comments", function () {
+      const baseline = "alpha\nx\ny\nz\nbeta\n";
+      const proposed = "ALPHA\nx\ny\nz\nBETA\n";
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-1",
+      });
+      const chunks = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(chunks.length, 2);
+      // Hold the second chunk with a note: the sweep must accept it anyway
+      // and keep the note as an orphaned review-level comment.
+      const held = store.decideChunk(
+        DOC_ID,
+        store.getReview(DOC_ID)!.reviewId,
+        chunks[1].chunkId,
+        "hold",
+        "still thinking",
+      );
+      assert.equal(held.ok, true);
+
+      const result = store.acceptAllChunks(DOC_ID);
+      assert.equal(result.ok, true, `accept-all failed: ${JSON.stringify(result)}`);
+      if (!result.ok) {return;}
+      assert.equal(result.acceptedChunks, 2);
+      assert.equal(result.unresolvedChunks, 0);
+      assert.equal(result.state, "resolved-awaiting-save");
+      // The reference moved; the document did not.
+      assert.equal(documents.get(DOC_ID), proposed);
+      assert.equal(store.getReview(DOC_ID)!.referenceText, proposed);
+      assert.equal(store.countUnresolved(DOC_ID), 0);
+      assert.equal(store.countHeld(DOC_ID), 0);
+      const orphans = store
+        .getReview(DOC_ID)!
+        .comments.filter((comment) => comment.orphanedFromChunkId === chunks[1].chunkId);
+      assert.equal(orphans.length, 1, "the held note must survive as an orphan");
+      assert.equal(orphans[0].text, "still thinking");
+    });
+
+    it("refuses without an active review", function () {
+      const result = store.acceptAllChunks("no-such-doc");
+      assert.equal(result.ok, false);
+      if (result.ok) {return;}
+      assert.equal(result.code, "REVIEW_NOT_FOUND");
+    });
+  });
+
   describe("retractPacket", function () {
     it("succeeds for the newest untouched packet and returns the reverted text", function () {
       const baseline = "alpha\nbeta\n";

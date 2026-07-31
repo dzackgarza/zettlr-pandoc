@@ -1015,6 +1015,47 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assertMatchesSchema(body, "ClearReviewResponse");
   });
 
+  it("POST /v1/reviews/{id}/accept-all accepts the whole partition without touching the document", async function () {
+    const filePath = path.join(scratch, "racceptall.md");
+    // Separated edits so the sweep has more than one chunk to resolve.
+    const original = "alpha\nx\ny\nz\nbeta\n";
+    const proposed = "ALPHA\nx\ny\nz\nBETA\n";
+    const docId = await openFile(filePath, original);
+
+    const snap = provider.createSnapshot(docId)!;
+    await provider.submitProposal(
+      snap.token,
+      makePatch(original, proposed),
+      "http-racceptall-req",
+    );
+    const review = provider.reviewStore.getReview(docId)!;
+    assert.equal(provider.reviewStore.countUnresolved(docId), 2);
+
+    const response = await httpRequest("POST", `/v1/reviews/${review.reviewId}/accept-all`);
+    assert.equal(response.status, 200, response.body);
+    const body = JSON.parse(response.body) as {
+      acceptedChunks: number;
+      unresolvedChunks: number;
+      state: string;
+    };
+    assertMatchesSchema(body, "AcceptAllChunksResponse");
+    assert.equal(body.acceptedChunks, 2);
+    assert.equal(body.unresolvedChunks, 0);
+    assert.equal(body.state, "resolved-awaiting-save");
+
+    // Accept moves the reference only: the document keeps the proposed text,
+    // and the reference now agrees with it.
+    const doc = provider.loadedDocuments.find((d) => d.filePath === filePath)!;
+    assert.equal(doc.document.toString(), proposed);
+    assert.equal(provider.reviewStore.getReview(docId)!.referenceText, proposed);
+    assert.equal(provider.reviewStore.countUnresolved(docId), 0);
+
+    // An unknown review fails loudly.
+    const missing = await httpRequest("POST", "/v1/reviews/no-such-review/accept-all");
+    assert.equal(missing.status, 404);
+    assert.equal(JSON.parse(missing.body).error.code, "REVIEW_NOT_FOUND");
+  });
+
   it("POST /v1/reviews/{id}/chunks/{chunkId}/accept and /reject decide through the provider", async function () {
     const filePath = path.join(scratch, "rdecide.md");
     const original = "alpha\nx\ny\nz\nbeta\n";

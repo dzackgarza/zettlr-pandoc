@@ -41,6 +41,7 @@ import {
 import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type { DocumentLocation, SourceRange } from "@dts/common/references";
 import type {
+  AcceptAllChunksResponse,
   AgentErrorCode,
   AgentEvent,
   ChunkDecisionResponse,
@@ -330,6 +331,7 @@ export type DocumentManagerIPCAPI = IPCAPI<{
     /** Hold only: the optional note attached without adjudicating. */
     comment?: string;
   };
+  "accept-all-review-chunks": { reviewId: string };
 
   "move-file": {
     originWindow: string;
@@ -618,6 +620,10 @@ export default class DocumentManager extends ProviderContract {
         case "decide-review-chunk": {
           const { reviewId, chunkId, decision, comment } = payload;
           return this.decideChunk(reviewId, chunkId, decision, comment);
+        }
+        case "accept-all-review-chunks": {
+          const { reviewId } = payload;
+          return this.acceptAllChunks(reviewId);
         }
         case "move-file": {
           const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;
@@ -2179,6 +2185,57 @@ current contents from the editor somewhere else, and restart the application.`,
       documentId: result.documentId,
       chunkId: result.chunkId,
       decision: result.decision,
+      reviewGeneration: result.generation,
+      unresolvedChunks: result.unresolvedChunks,
+      state: result.state,
+      documentRevision: {
+        version: doc.currentVersion,
+        sha256: sha256Text(doc.document.toString()),
+      },
+    };
+  }
+
+  /**
+   * Accept every outstanding chunk of a review at once — the mirror of
+   * clearReview, which is mass reject. Same decision authority, same
+   * broadcast; the document text does not change, so there is nothing to
+   * apply. The renderer's Accept-all control and the HTTP route both land
+   * here.
+   */
+  public acceptAllChunks(
+    reviewId: string,
+  ): AcceptAllChunksResponse | { ok: false; code: AgentErrorCode; message: string } {
+    const review = this._reviewStore.findReviewByReviewId(reviewId);
+    if (review === undefined) {
+      return {
+        ok: false,
+        code: "REVIEW_NOT_FOUND",
+        message: "Review not found.",
+      };
+    }
+    const filePath = this.getDocumentPath(review.documentId);
+    const doc =
+      filePath !== undefined
+        ? this.documents.find((d) => d.filePath === filePath)
+        : undefined;
+    if (filePath === undefined || doc === undefined) {
+      return {
+        ok: false,
+        code: "DOCUMENT_CLOSED",
+        message: "The reviewed document is no longer open.",
+      };
+    }
+
+    const result = this._reviewStore.acceptAllChunks(review.documentId);
+    if (!result.ok) {
+      return { ok: false, code: result.code, message: result.message };
+    }
+    this._broadcastReviewState(filePath, review);
+    return {
+      ok: true,
+      reviewId: result.reviewId,
+      documentId: result.documentId,
+      acceptedChunks: result.acceptedChunks,
       reviewGeneration: result.generation,
       unresolvedChunks: result.unresolvedChunks,
       state: result.state,

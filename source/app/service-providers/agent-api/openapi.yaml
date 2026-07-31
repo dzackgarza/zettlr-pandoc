@@ -884,6 +884,36 @@ components:
           $ref: '#/components/schemas/ReviewState'
         documentRevision:
           $ref: '#/components/schemas/DocumentRevision'
+    AcceptAllChunksResponse:
+      type: object
+      required:
+        - ok
+        - reviewId
+        - documentId
+        - acceptedChunks
+        - reviewGeneration
+        - unresolvedChunks
+        - state
+        - documentRevision
+      properties:
+        ok:
+          type: boolean
+          const: true
+        reviewId:
+          type: string
+        documentId:
+          type: string
+        acceptedChunks:
+          type: integer
+          description: How many chunks the sweep resolved (held ones included).
+        reviewGeneration:
+          type: integer
+        unresolvedChunks:
+          type: integer
+        state:
+          $ref: '#/components/schemas/ReviewState'
+        documentRevision:
+          $ref: '#/components/schemas/DocumentRevision'
     HoldChunkRequest:
       type: object
       properties:
@@ -1604,6 +1634,42 @@ paths:
                 $ref: '#/components/schemas/ReviewPacketsResponse'
         '404':
           description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/reviews/{reviewId}/accept-all:
+    post:
+      operationId: acceptAllReviewChunks
+      summary: Accept every outstanding chunk in one sweep
+      description: >-
+        Accepts the whole current partition at once — the mirror of /clear,
+        which is mass reject. The reference moves to agree with the working
+        document; the document itself does not change. Held chunks are
+        accepted too; a hold's comment is preserved as an orphaned
+        review-level comment. Same decision authority as the editor's
+        Accept-all control.
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptAllChunksResponse'
+        '404':
+          description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: The reviewed document is closed, or the review was invalidated
           content:
             application/json:
               schema:

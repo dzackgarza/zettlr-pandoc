@@ -193,6 +193,17 @@ export interface ChunkDecisionResult {
   state: ReviewState;
 }
 
+export interface AcceptAllChunksResult {
+  ok: true;
+  reviewId: string;
+  documentId: string;
+  /** How many chunks the sweep resolved (held ones included). */
+  acceptedChunks: number;
+  generation: number;
+  unresolvedChunks: 0;
+  state: ReviewState;
+}
+
 export interface AddReviewCommentResult {
   ok: true;
   reviewId: string;
@@ -1087,6 +1098,72 @@ export class ReviewDiffStore extends EventEmitter {
       workingText: newWorkingText,
       unresolvedChunks,
       state: this.classifyState(review, unresolvedChunks),
+    };
+  }
+
+  /**
+   * Accept every chunk of the current partition at once: the reference
+   * becomes the working text, exactly what accepting each chunk one at a
+   * time converges to — the mirror of clearUnresolved, which is mass
+   * reject. The document does not change. Held chunks are accepted too
+   * (clearUnresolved discards them too); their comments surface as orphans.
+   * One generation advance, however many chunks the sweep resolved.
+   */
+  acceptAllChunks(
+    documentId: string,
+  ): AcceptAllChunksResult | SubmitPacketError {
+    const review = this.reviews.get(documentId);
+    if (review === undefined) {
+      return {
+        ok: false,
+        code: "REVIEW_NOT_FOUND",
+        message: "No active review for this document.",
+      };
+    }
+    if (this.isInvalidated(review)) {
+      return {
+        ok: false,
+        code: "REVIEW_INVALIDATED",
+        message: "The review was invalidated by external disk drift.",
+      };
+    }
+    const workingText = this.workingTextOf(documentId);
+    const partition = computeReviewChunks(review.referenceText, workingText);
+    // Every chunk's reference region resolves at once. Remap spans across
+    // each accepted chunk, last to first so earlier reference coordinates
+    // stay valid while later splices shift the lines behind them.
+    for (const chunk of [...partition].reverse()) {
+      this.remapSpansAcrossDecision(
+        review,
+        chunk,
+        chunk.workToLine - chunk.workFromLine - (chunk.refToLine - chunk.refFromLine),
+      );
+    }
+    review.referenceText = workingText;
+    review.generation += 1;
+    // Every hold now dangles (its chunk is resolved); commented holds
+    // surface as orphaned review-level comments.
+    this.reconcileHolds(review, []);
+    this.emitEvent("review.changed", {
+      reviewId: review.reviewId,
+      documentId,
+      generation: review.generation,
+      unresolvedChunks: 0,
+    });
+    this.emitEvent("review.resolved", {
+      reviewId: review.reviewId,
+      documentId,
+      generation: review.generation,
+      unresolvedChunks: 0,
+    });
+    return {
+      ok: true,
+      reviewId: review.reviewId,
+      documentId,
+      acceptedChunks: partition.length,
+      generation: review.generation,
+      unresolvedChunks: 0,
+      state: this.classifyState(review, 0),
     };
   }
 
