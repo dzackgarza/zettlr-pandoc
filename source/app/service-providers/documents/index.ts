@@ -128,7 +128,7 @@ type DocumentManagerApp = {
    * through readMarkdownBufferContent().
    */
   references: {
-    reportAuthorityBuffer: (filePath: string) => void;
+    reportAuthorityBuffer: (filePath: string, immediate?: boolean) => void;
     dropAuthorityBuffer: (filePath: string) => void;
   };
   stats: Pick<AppServiceContainer["stats"], "updateCounts">;
@@ -1004,9 +1004,10 @@ export default class DocumentManager extends ProviderContract {
     // The authority loaded a markdown buffer: feed the references provider's
     // live overlay (issue #53). Reporting on LOAD — not only on the first
     // edit — means an open document's occurrences are part of the merged
-    // reference view even when FSAL never indexed the file (issue #46).
+    // reference view even when FSAL never indexed the file, and a load is
+    // a single event, so it skips the typing debounce (issue #46).
     if (doc.type === DocumentType.Markdown) {
-      this._app.references.reportAuthorityBuffer(filePath);
+      this._app.references.reportAuthorityBuffer(filePath, true);
     }
 
     return {
@@ -1667,10 +1668,11 @@ current contents from the editor somewhere else, and restart the application.`,
     openDoc.descriptor.ext = path.extname(newPath);
 
     // The buffer moved with the document: its live reference overlay moves
-    // too (issue #53) — the old path's overlay dies, the new path reports.
+    // too (issue #53) — the old path's overlay dies, the new path reports
+    // immediately (a move is a single event, not a typing storm).
     this._app.references.dropAuthorityBuffer(oldPath);
     if (openDoc.type === DocumentType.Markdown) {
-      this._app.references.reportAuthorityBuffer(newPath);
+      this._app.references.reportAuthorityBuffer(newPath, true);
     }
 
     const leafsToNotify: Array<[string, string]> = [];

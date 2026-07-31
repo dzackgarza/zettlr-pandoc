@@ -357,9 +357,11 @@ function openReferenceSearch (request: ReferenceSearchRequest = null): void {
         return // The boundary surfaced the closable toast; nothing to open.
       }
       referenceSearchDefinitions.value = outcome.value.snapshots.flatMap(snapshot => snapshot.definitions)
-      referenceSearchOccurrences.value = request === null
-        ? outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
-        : request.occurrences
+      // ONE owner for the citing-locations fact (issues #53, #46): both
+      // modes read the provider's freshly fetched merged snapshot, whose
+      // live overlays the document authority feeds on load and edit. The
+      // keyed request names only the key; the overlay filters these rows.
+      referenceSearchOccurrences.value = outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
       referenceSearchRequest.value = request
       referenceSearchProjectRoots.value = collectProjectRoots()
       referenceSearchActiveDocumentPath.value = documentTreeStore.lastLeafActiveFile?.path

@@ -19,17 +19,19 @@
 
 import { StateEffect } from '@codemirror/state'
 import { type Command } from '@codemirror/view'
-import type { ReferenceOccurrence } from '@dts/common/references'
 
 /**
  * The intent carried by a reference search request: null is the plain Mod-P
  * definition search; a keyed request (dispatched by a definition's
  * `N references` count badge, issue #1 Phase 4) asks the overlay to present
- * the workspace citing locations of exactly that definition key.
+ * the workspace citing locations of exactly that definition key. The
+ * request names ONLY the key: the citing occurrences themselves come from
+ * the reference provider's merged snapshot fetched at open time — the
+ * single owner of that fact (issues #53, #46) — never from a
+ * renderer-captured copy travelling with the click.
  */
 export type ReferenceSearchRequest = null | {
   key: string
-  occurrences: ReferenceOccurrence[]
 }
 
 /**

@@ -233,14 +233,18 @@ export default class ReferenceProvider extends ProviderContract {
 
   /**
    * The document authority loaded or mutated a markdown buffer: schedule
-   * (or reschedule) one debounced extraction of that buffer. When the
-   * debounce fires, the CURRENT authority text is extracted — a buffer
-   * closed in the meantime resolves to a drop, so the overlay is always a
-   * function of the authority's open set and text.
+   * (or reschedule) one extraction of that buffer. Edits debounce (typing
+   * storms coalesce); a LOAD is a single event and extracts immediately
+   * (issue #46: the merged view must serve a just-opened document's
+   * occurrences before the user can click its citing badge). When the task
+   * fires, the CURRENT authority text is extracted — a buffer closed in
+   * the meantime resolves to a drop, so the overlay is always a function
+   * of the authority's open set and text.
    *
-   * @param   {string}  filePath  The changed document's path
+   * @param   {string}   filePath   The changed document's path
+   * @param   {boolean}  immediate  True for single events (load/move)
    */
-  public reportAuthorityBuffer (filePath: string): void {
+  public reportAuthorityBuffer (filePath: string, immediate: boolean = false): void {
     this._pendingReports.get(filePath)?.cancel()
     this._pendingReports.set(filePath, this._scheduler.schedule(() => {
       this._pendingReports.delete(filePath)
@@ -257,7 +261,7 @@ export default class ReferenceProvider extends ProviderContract {
 
       this._index.reportLiveBuffer(extractReferences(filePath, content))
       broadcastIpcMessage('references')
-    }, AUTHORITY_REPORT_DEBOUNCE_MS))
+    }, immediate ? 0 : AUTHORITY_REPORT_DEBOUNCE_MS))
   }
 
   /**

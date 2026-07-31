@@ -286,7 +286,12 @@ describe('References provider Electron shell', function () {
       ''
     ].join('\n')
     authorityBuffers.set(STANDALONE_PATH, content)
-    provider.reportAuthorityBuffer(STANDALONE_PATH)
+    provider.reportAuthorityBuffer(STANDALONE_PATH, true)
+    assert.strictEqual(
+      scheduler.tasks[scheduler.tasks.length - 1].delayMs,
+      0,
+      'a load is a single event: it must not wait out the typing debounce (issue #46 first-load click)'
+    )
     firePending(scheduler.tasks)
 
     const state = await getSnapshotOverIpc()

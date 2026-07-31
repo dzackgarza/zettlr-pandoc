@@ -250,19 +250,17 @@ describe('Reference definition badges (issue #1 Phase 4)', function () {
 
   it('emits the Mod-P signal family keyed to the definition when the count badge is clicked', function () {
     const captured: ReferenceSearchRequest[] = []
-    const { view, payload } = createEditor(THEOREMS_PATH, captured)
+    const { view } = createEditor(THEOREMS_PATH, captured)
 
     const torelli = countBadgeFor(view, 'thm:torelli')
     torelli.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
+    // The request names ONLY the key (issues #53, #46): the citing
+    // occurrences come from the provider's merged snapshot App.vue fetches
+    // at open time, never from a renderer-captured copy in the click.
     assert.deepStrictEqual(
       captured,
-      [ {
-        key: 'thm:torelli',
-        occurrences: payload.workspaceOccurrences.filter(
-          occurrence => occurrence.key === 'thm:torelli'
-        )
-      } ],
+      [ { key: 'thm:torelli' } ],
       'clicking the count badge must dispatch exactly one openReferenceSearchEffect keyed to the definition'
     )
     assert.strictEqual(torelli.dataset.citingCount, '2', 'the emitted intent belongs to the badge that shows the citing count')
