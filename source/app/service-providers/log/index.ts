@@ -37,13 +37,21 @@ enum LogLevel {
 }
 
 /**
+ * Whatever a caller attaches to a log entry -- commonly a caught `unknown`, an
+ * Error, or a plain object. `unknown` rather than `any`, so both the log viewer
+ * and _toString below are forced to narrow by `instanceof`, `Array.isArray` and
+ * `typeof` before touching it, instead of silently trusting a shape.
+ */
+export type LogDetails = unknown
+
+/**
  * A single log message
  */
 export interface LogMessage {
   time: string
   level: LogLevel
   message: string
-  details?: Error|Record<string, any>|number|string|boolean|any[]
+  details?: LogDetails
 }
 
 const debugConsole = {
@@ -67,7 +75,7 @@ export default class LogProvider extends ProviderContract {
     this._fileLock = false // True while data is being appended to the log
 
     // Ensure message handling
-    ipcMain.handle('log-provider', (event, payload) => {
+    ipcMain.handle('log-provider', (event, payload: { command: string, nextIndex?: number|string }) => {
       const { command } = payload
 
       if (command === 'retrieve-log-chunk') {
@@ -81,19 +89,19 @@ export default class LogProvider extends ProviderContract {
     })
   }
 
-  public verbose (msg: string, details: any = null): void {
+  public verbose (msg: string, details: LogDetails = null): void {
     this.log(LogLevel.verbose, msg, details)
   }
 
-  public info (msg: string, details: any = null): void {
+  public info (msg: string, details: LogDetails = null): void {
     this.log(LogLevel.info, msg, details)
   }
 
-  public warning (msg: string, details: any = null): void {
+  public warning (msg: string, details: LogDetails = null): void {
     this.log(LogLevel.warning, msg, details)
   }
 
-  public error (msg: string, details: any = null): void {
+  public error (msg: string, details: LogDetails = null): void {
     this.log(LogLevel.error, msg, details)
   }
 
@@ -115,9 +123,9 @@ export default class LogProvider extends ProviderContract {
    * Logs one entry to the internal log.
    * @param {number} logLevel The log level (defined atop of this file)
    * @param {string} message A short, human-readable error message
-   * @param {any} details Optional details (completely customisable)
+   * @param {LogDetails} details Optional details (completely customisable)
    */
-  log (logLevel: LogLevel, message: string, details: any): void {
+  log (logLevel: LogLevel, message: string, details: LogDetails): void {
     if (details == null) {
       details = {} // No details -> empty object
     }
@@ -154,7 +162,7 @@ export default class LogProvider extends ProviderContract {
     }
 
     this._append()
-      .catch(err => this.error(`[Log Provider] Unexpected error during write: ${err.message as string}`, err))
+      .catch((err: Error) => this.error(`[Log Provider] Unexpected error during write: ${err.message}`, err))
   }
 
   /**
@@ -188,16 +196,15 @@ export default class LogProvider extends ProviderContract {
       return // Cannot write until the previous write has finished
     }
 
-    if (this._entryPointer >= this._log.length - 1) {
+    if (this._entryPointer >= this._log.length) {
       return // Nothing to write
     }
 
     // First slice the part of the log that is not yet written to file
     let logsToWrite = this._log.slice(this._entryPointer)
-    // Push forward the pointer to the end of the log.
-    // Attention: At the current state, it references a
-    // non-existing index, but this is checked in line 1
-    // of this function.
+    // The pointer counts entries already written, so it is the index of the
+    // first unwritten one -- equal to the length exactly when nothing is
+    // pending, which is what the guard above tests.
     this._entryPointer = this._log.length
 
     // Now, filter out all verbose entries
@@ -268,11 +275,22 @@ export default class LogProvider extends ProviderContract {
       details = ` | Native Error: ${name}; ${msg} Stack Trace: ${stack}`
     } else if (Array.isArray(message.details)) {
       details = ` | Details: ${message.details.join(', ')}`
-    } else if (typeof message.details !== 'object') {
-      details = ` | Details: ${String(message.details)}`
-    } else if (message.details !== undefined && Object.keys(message.details).length > 0) {
+    } else if (
+      typeof message.details === 'string' ||
+      typeof message.details === 'number' ||
+      typeof message.details === 'boolean'
+    ) {
+      details = ` | Details: ${message.details}`
+    } else if (
+      message.details != null &&
+      typeof message.details === 'object' &&
+      Object.keys(message.details).length > 0
+    ) {
       details = ` | Details: ${JSON.stringify(message.details)}`
     }
+    // Anything else -- null, undefined, a symbol, a function -- carries no
+    // detail worth a line, so it is left off rather than rendered as
+    // "undefined" or "[object Object]".
 
     let timestamp = ('time' in message) ? `[${message.time}] ` : ''
 
