@@ -2,31 +2,31 @@
   <Teleport to="body">
     <div
       class="reference-search-overlay-backdrop"
-      v-on:mousedown.self="emit('close')"
+      @mousedown.self="emit('close')"
     >
       <div
         class="reference-search-overlay"
         role="dialog"
         aria-modal="true"
-        v-bind:data-search-mode="mode"
-        v-bind:aria-label="mode === 'citing-locations' ? trans('Workspace citing locations') : trans('Search workspace definitions')"
+        :data-search-mode="mode"
+        :aria-label="mode === 'citing-locations' ? trans('Workspace citing locations') : trans('Search workspace definitions')"
       >
         <div class="query-row">
           <input
             ref="queryInput"
             v-model="query"
             type="text"
-            v-bind:placeholder="trans('Search workspace definitions…')"
-            v-bind:aria-label="trans('Definition search query')"
-            v-on:keydown="handleKeydown"
+            :placeholder="trans('Search workspace definitions…')"
+            :aria-label="trans('Definition search query')"
+            @keydown="handleKeydown"
           >
           <button
             class="open-help"
             data-open-help
             type="button"
-            v-bind:title="trans('Pandoc quick reference')"
-            v-bind:aria-label="trans('Open the Pandoc quick reference')"
-            v-on:click="emit('open-help')"
+            :title="trans('Pandoc quick reference')"
+            :aria-label="trans('Open the Pandoc quick reference')"
+            @click="emit('open-help')"
           >
             ?
           </button>
@@ -39,19 +39,22 @@
           >
             <li
               v-for="(occurrence, index) in citingLocations"
-              v-bind:key="`${occurrence.documentPath}:${occurrence.range.from}`"
-              v-bind:class="{ result: true, selected: index === selectedIndex }"
-              v-bind:data-occurrence-path="occurrence.documentPath"
-              v-bind:data-occurrence-from="occurrence.range.from"
+              :key="`${occurrence.documentPath}:${occurrence.range.from}`"
+              :class="{ result: true, selected: index === selectedIndex }"
+              :data-occurrence-path="occurrence.documentPath"
+              :data-occurrence-from="occurrence.range.from"
               role="option"
-              v-bind:aria-selected="index === selectedIndex"
-              v-on:click="emitOccurrenceJump(occurrence)"
+              :aria-selected="index === selectedIndex"
+              @click="emitOccurrenceJump(occurrence)"
             >
               <span class="key">{{ occurrence.clusterRaw }}</span>
               <span class="path">{{ occurrence.documentPath }}</span>
             </li>
           </ul>
-          <p v-else class="no-results">
+          <p
+            v-else
+            class="no-results"
+          >
             {{ trans('No citing locations in the workspace') }}
           </p>
         </template>
@@ -63,14 +66,14 @@
           >
             <li
               v-for="(definition, index) in matches"
-              v-bind:key="`${definition.documentPath}:${definition.key}:${definition.range.from}`"
-              v-bind:class="{ result: true, selected: index === selectedIndex }"
-              v-bind:data-reference-key="definition.key"
-              v-bind:data-reference-path="definition.documentPath"
-              v-bind:data-project-status="projectMarkerOf(definition)?.status"
+              :key="`${definition.documentPath}:${definition.key}:${definition.range.from}`"
+              :class="{ result: true, selected: index === selectedIndex }"
+              :data-reference-key="definition.key"
+              :data-reference-path="definition.documentPath"
+              :data-project-status="projectMarkerOf(definition)?.status"
               role="option"
-              v-bind:aria-selected="index === selectedIndex"
-              v-on:click="emitJump(definition)"
+              :aria-selected="index === selectedIndex"
+              @click="emitJump(definition)"
             >
               <span class="type-title">
                 {{ typeAndTitle(definition) }}
@@ -83,7 +86,10 @@
               <span class="path">{{ definition.documentPath }}</span>
             </li>
           </ul>
-          <p v-else class="no-results">
+          <p
+            v-else
+            class="no-results"
+          >
             {{ trans('No matching definitions') }}
           </p>
         </template>
@@ -92,7 +98,7 @@
   </Teleport>
 </template>
 
-<script lang="ts">
+<script setup lang="ts">
 /**
  * @ignore
  * BEGIN HEADER
@@ -126,19 +132,9 @@
  * END HEADER
  */
 
-/**
- * The navigation intent emitted for a chosen definition. The
- * documents-provider open-file + selection jump precision lands in Phase 5;
- * the intent object is the contract surface now.
- */
-export interface ReferenceJumpIntent {
-  key: string
-  documentPath: string
-  range: { from: number, to: number }
-}
-</script>
-
-<script setup lang="ts">
+// The emitted ReferenceJumpIntent contract lives in component-contracts.ts,
+// where both vue-tsc and the type-aware linter can resolve it (issue #50).
+import type { ReferenceJumpIntent } from './component-contracts'
 import { computed, onMounted, ref, watch } from 'vue'
 import { trans } from '@common/i18n-renderer'
 import {

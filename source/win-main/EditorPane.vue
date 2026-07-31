@@ -1,130 +1,146 @@
 <template>
   <div
     ref="paneElement"
-    v-bind:class="{
+    :class="{
       'editor-pane': true,
       'distraction-free': distractionFree
     }"
-    v-bind:style="elementStyles"
-    v-on:dragenter="handleDragEnter($event, 'editor')"
-    v-on:dragleave="handleDragLeave($event)"
+    :style="elementStyles"
+    @dragenter="handleDragEnter($event, 'editor')"
+    @dragleave="handleDragLeave($event)"
   >
     <!-- We have a leaf: Default DocumentTabs/Editor combo -->
     <DocumentTabs
       v-show="!distractionFree"
-      v-bind:leaf-id="leafId"
-      v-bind:window-id="windowId"
-    ></DocumentTabs>
+      :leaf-id="leafId"
+      :window-id="windowId"
+    />
     <div
       class="editor-container"
-      v-on:drop="handleDrop($event, 'editor')"
+      @drop="handleDrop($event, 'editor')"
     >
       <template v-if="activeFileDescriptor !== undefined">
         <!--
           Teleport the correct editor that needs to be in distraction free
           outside the DOM structure to have it render on top of everything else.
         -->
-        <Teleport to="div#window-content" v-bind:disabled="!distractionFree">
+        <Teleport
+          to="div#window-content"
+          :disabled="!distractionFree"
+        >
           <!-- The image viewer displays one file; it holds no leaf, window or
                editor-command state, so the pane hands it only the file. -->
           <ImageViewer
             v-if="hasImageExt(activeFileDescriptor.path)"
-            v-bind:file="activeFileDescriptor"
-          ></ImageViewer>
+            :file="activeFileDescriptor"
+          />
           <PDFViewer
             v-else-if="hasPDFExt(activeFileDescriptor.path)"
-            v-bind:file="activeFileDescriptor"
-            v-bind:leaf-id="leafId"
-            v-bind:active-file="activeFile"
-            v-bind:window-id="windowId"
-            v-bind:editor-commands="editorCommands"
-          ></PDFViewer>
+            :file="activeFileDescriptor"
+            :leaf-id="leafId"
+            :active-file="activeFile"
+            :window-id="windowId"
+            :editor-commands="editorCommands"
+          />
           <MainEditor
             v-else
-            v-bind:file="activeFileDescriptor"
-            v-bind:distraction-free="distractionFree"
-            v-bind:leaf-id="leafId"
-            v-bind:active-file="activeFile"
-            v-bind:window-id="windowId"
-            v-bind:editor-commands="editorCommands"
-            v-bind:persistent-state-map="persistentStateMap"
-            v-on:global-search="emit('globalSearch', $event)"
-            v-on:reference-search="emit('referenceSearch', $event)"
-            v-on:create-reference-label="emit('createReferenceLabel', $event)"
-            v-on:open-pandoc-quick-help="emit('openPandocQuickHelp')"
-          ></MainEditor>
+            :file="activeFileDescriptor"
+            :distraction-free="distractionFree"
+            :leaf-id="leafId"
+            :active-file="activeFile"
+            :window-id="windowId"
+            :editor-commands="editorCommands"
+            :persistent-state-map="persistentStateMap"
+            @global-search="emit('globalSearch', $event)"
+            @reference-search="emit('referenceSearch', $event)"
+            @create-reference-label="emit('createReferenceLabel', $event)"
+            @open-pandoc-quick-help="emit('openPandocQuickHelp')"
+          />
         </Teleport>
       </template>
-      <template v-for="file in openFiles" v-bind:key="file.path">
-      </template>
+      <template
+        v-for="file in openFiles"
+        :key="file.path"
+      />
 
       <!-- Show empty pane if there are no files -->
-      <div v-if="hasNoOpenFiles" class="empty-pane"></div>
+      <div
+        v-if="hasNoOpenFiles"
+        class="empty-pane"
+      />
 
       <!-- Implement dropzones for editor pane splitting -->
       <div
         v-if="documentTabDrag"
-        v-bind:class="{
+        :class="{
           dropzone: true,
           top: true,
           dragover: documentTabDragWhere === 'top'
         }"
-        v-on:drop="handleDrop($event, 'top')"
-        v-on:dragenter="handleDragEnter($event, 'top')"
-        v-on:dragleave="handleDragLeave($event)"
+        @drop="handleDrop($event, 'top')"
+        @dragenter="handleDragEnter($event, 'top')"
+        @dragleave="handleDragLeave($event)"
       >
         <cds-icon
           v-if="documentTabDragWhere === 'top'"
-          shape="angle" size="xl" direction="up"
-        ></cds-icon>
+          shape="angle"
+          size="xl"
+          direction="up"
+        />
       </div>
       <div
         v-if="documentTabDrag"
-        v-bind:class="{
+        :class="{
           dropzone: true,
           left: true,
           dragover: documentTabDragWhere === 'left'
         }"
-        v-on:drop="handleDrop($event, 'left')"
-        v-on:dragenter="handleDragEnter($event, 'left')"
-        v-on:dragleave="handleDragLeave($event)"
+        @drop="handleDrop($event, 'left')"
+        @dragenter="handleDragEnter($event, 'left')"
+        @dragleave="handleDragLeave($event)"
       >
         <cds-icon
           v-if="documentTabDragWhere === 'left'"
-          shape="angle" size="xl" direction="left"
-        ></cds-icon>
+          shape="angle"
+          size="xl"
+          direction="left"
+        />
       </div>
       <div
         v-if="documentTabDrag"
-        v-bind:class="{
+        :class="{
           dropzone: true,
           bottom: true,
           dragover: documentTabDragWhere === 'bottom'
         }"
-        v-on:drop="handleDrop($event, 'bottom')"
-        v-on:dragenter="handleDragEnter($event, 'bottom')"
-        v-on:dragleave="handleDragLeave($event)"
+        @drop="handleDrop($event, 'bottom')"
+        @dragenter="handleDragEnter($event, 'bottom')"
+        @dragleave="handleDragLeave($event)"
       >
         <cds-icon
           v-if="documentTabDragWhere === 'bottom'"
-          shape="angle" size="xl" direction="down"
-        ></cds-icon>
+          shape="angle"
+          size="xl"
+          direction="down"
+        />
       </div>
       <div
         v-if="documentTabDrag"
-        v-bind:class="{
+        :class="{
           dropzone: true,
           right: true,
           dragover: documentTabDragWhere === 'right'
         }"
-        v-on:drop="handleDrop($event, 'right')"
-        v-on:dragenter="handleDragEnter($event, 'right')"
-        v-on:dragleave="handleDragLeave($event)"
+        @drop="handleDrop($event, 'right')"
+        @dragenter="handleDragEnter($event, 'right')"
+        @dragleave="handleDragLeave($event)"
       >
         <cds-icon
           v-if="documentTabDragWhere === 'right'"
-          shape="angle" size="xl" direction="right"
-        ></cds-icon>
+          shape="angle"
+          size="xl"
+          direction="right"
+        />
       </div>
     </div>
   </div>
@@ -132,10 +148,10 @@
 
 <script setup lang="ts">
 import { type LeafNodeJSON, type OpenDocument } from '@dts/common/documents'
-import { type EditorCommands } from './App.vue'
+import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import DocumentTabs from './DocumentTabs.vue'
-import MainEditor, { type CreateReferenceLabelDialogPrompt } from './MainEditor.vue'
+import MainEditor from './MainEditor.vue'
 import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
 import { useDocumentTreeStore, useWindowStateStore } from 'source/pinia'
 import ImageViewer from './file-viewers/ImageViewer.vue'

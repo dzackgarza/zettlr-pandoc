@@ -187,7 +187,11 @@ async function runAppendAndContinue (plan: AppendAndContinuePlan): Promise<void>
     payload: plan.rootPath
   })
 
-  const settings: ProjectSettings|null = descriptor?.settings?.project ?? null
+  if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== 'directory') {
+    throw new Error(`Cannot append to the Project at ${plan.rootPath}: the path is not a workspace directory`)
+  }
+
+  const settings: ProjectSettings|null = descriptor.settings.project
   if (settings === null) {
     throw new Error(`Cannot append to the Project at ${plan.rootPath}: the directory carries no Project settings`)
   }

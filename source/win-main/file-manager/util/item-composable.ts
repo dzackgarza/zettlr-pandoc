@@ -71,13 +71,13 @@ export function closeWorkspace (path: string): void {
     payload: {
       path: path,
     }
-  } as DocumentManagerIPCAPI)
+  })
     .then(openFiles => {
       for (const file of openFiles) {
         ipcRenderer.invoke('documents-provider', {
           command: 'close-file-everywhere',
           payload: { path: file }
-        } as DocumentManagerIPCAPI)
+        })
           .catch(e => console.error(e))
       }
     })

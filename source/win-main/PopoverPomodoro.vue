@@ -1,5 +1,8 @@
 <template>
-  <PopoverWrapper v-bind:target="target" v-on:close="$emit('close')">
+  <PopoverWrapper
+    :target="target"
+    @close="$emit('close')"
+  >
     <template v-if="isRunning">
       <!-- Display running time -->
       <p class="pomodoro-big">
@@ -10,7 +13,7 @@
       </p>
       <hr>
       <div class="pomodoro-button">
-        <button v-on:click="stopPomodoro">
+        <button @click="stopPomodoro">
           {{ stopLabel }}
         </button>
       </div>
@@ -19,28 +22,28 @@
       <!-- Display set up -->
       <NumberControl
         v-model="internalTaskDuration"
-        v-bind:label="taskLabel"
-        v-bind:min="1"
-        v-bind:max="120"
-      ></NumberControl>
+        :label="taskLabel"
+        :min="1"
+        :max="120"
+      />
       <NumberControl
         v-model="internalShortDuration"
-        v-bind:label="shortLabel"
-        v-bind:min="1"
-        v-bind:max="120"
-      ></NumberControl>
+        :label="shortLabel"
+        :min="1"
+        :max="120"
+      />
       <NumberControl
         v-model="internalLongDuration"
-        v-bind:label="longLabel"
-        v-bind:min="1"
-        v-bind:max="120"
-      ></NumberControl>
+        :label="longLabel"
+        :min="1"
+        :max="120"
+      />
       <hr>
       <SelectControl
         v-model="internalEffect"
-        v-bind:label="soundEffectsLabel"
-        v-bind:options="optionizedEffects"
-      ></SelectControl>
+        :label="soundEffectsLabel"
+        :options="optionizedEffects"
+      />
       <!--
         NOTE: In below's component we are not using model, since we only want to
         report a change after the user has released the mouse to avoid audio
@@ -49,13 +52,13 @@
       -->
       <SliderControl
         v-model="internalVolume"
-        v-bind:label="volumeLabel"
-        v-bind:min="0"
-        v-bind:max="100"
-      ></SliderControl>
+        :label="volumeLabel"
+        :min="0"
+        :max="100"
+      />
       <hr>
       <div class="pomodoro-button">
-        <button v-on:click="startPomodoro">
+        <button @click="startPomodoro">
           {{ startLabel }}
         </button>
       </div>
@@ -84,7 +87,7 @@ import SliderControl from '@common/vue/form/elements/SliderControl.vue'
 import PopoverWrapper from '@common/vue/PopoverWrapper.vue'
 import { trans } from '@common/i18n-renderer'
 import { ref, computed, watch } from 'vue'
-import type { PomodoroConfig } from './App.vue'
+import type { PomodoroConfig } from './component-contracts'
 
 const startLabel = trans('Start')
 const stopLabel = trans('Stop')

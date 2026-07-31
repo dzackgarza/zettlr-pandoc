@@ -102,13 +102,15 @@ declare interface Window {
   config: {
     /**
      * Returns the config value associated with the provided key. If key is
-     * undefined, returns the full configuration.
+     * undefined, returns the full configuration. The caller knows which
+     * option it asked for and states the expected type through T (or handles
+     * the default unknown); the config template is the source of truth.
      *
      * @param   {string}  key  The key to retrieve
      *
-     * @return  {any}          The value associated with key
+     * @return  {T}            The value associated with key
      */
-    get: (key?: string) => any
+    get: <T = unknown>(key?: string) => T
     /**
      * Sets the configuration value associated with key to value.
      *
@@ -131,40 +133,43 @@ declare interface Window {
     /**
      * Sends a message to main (fire-and-forget)
      *
-     * @param   {string}  channel  The channel to send upon
-     * @param   {any[]}   args     Arguments to provide
+     * @param   {string}     channel  The channel to send upon
+     * @param   {unknown[]}  args     Arguments to provide
      *
      */
-    send: (channel: string, ...args: any[]) => void
+    send: (channel: string, ...args: unknown[]) => void
     /**
-     * Sends a synchronous message and returns the response immediately.
+     * Sends a synchronous message and returns the response immediately. The
+     * caller states the expected response type through T (or handles the
+     * default unknown).
      *
-     * @param   {string}  event  The channel to send upon
-     * @param   {any[]}   args   Arguments for that call
+     * @param   {string}     event  The channel to send upon
+     * @param   {unknown[]}  args   Arguments for that call
      *
-     * @return  {any}             Whichever this call returns from main
+     * @return  {T}                 Whichever this call returns from main
      */
-    sendSync: (event: string, ...args: any[]) => any
+    sendSync: <T = unknown>(event: string, ...args: unknown[]) => T
     /**
-     * Sens a message to main and returns a promise which fulfills with the
-     * response from main.
-     *
-     * @param   {string}        channel  The channel to send upon
-     * @param   {any[]}         args     Arguments for that call
-     *
-     * @return  {Promise<any>}           Whichever this call returns from main
+     * Sends a message to main and returns a promise which fulfills with the
+     * response from main. The channel set, each channel's request contract,
+     * and the recorded per-command response types live in
+     * source/types/renderer/ipc-bridge.ts (which contributes this global
+     * alias) — a wrong channel or payload is a compile error at the call
+     * site.
      */
-    invoke: (channel: string, ...args: any[]) => Promise<any>
+    invoke: ZettlrIpcInvoke
     /**
-     * Listens to broadcasted messages from main
+     * Listens to broadcasted messages from main. The listener's rest
+     * parameters are typed never[]: the bridge does not know a channel's
+     * broadcast payload, so the listener must annotate the payload it
+     * expects (never is assignable to every annotation).
      *
      * @param   {string}     channel   The channel on which to listen
      * @param   {undefined}  listener  An event. This will always be omitted and undefined.
-     * @param   {any}        args      Any payload that was sent from main
      *
      * @return {Function}  A function to stop listening (remove the listener)
      */
-    on: (channel: string, listener: (event: undefined, ...args: any) => void) => () => void
+    on: (channel: string, listener: (event: undefined, ...args: never[]) => void) => () => void
   }
   /**
    * Returns the absolute path to the file on disk which this File object is

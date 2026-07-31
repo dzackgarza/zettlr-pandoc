@@ -1,13 +1,13 @@
 <template>
   <WindowChrome
-    v-bind:title="windowTitle"
-    v-bind:titlebar="true"
-    v-bind:menubar="false"
-    v-bind:disable-vibrancy="!hasVibrancy"
-    v-bind:show-tabbar="true"
-    v-bind:tabbar-tabs="tabs"
-    v-bind:tabbar-label="'Properties'"
-    v-on:tab="currentTab = $event"
+    :title="windowTitle"
+    :titlebar="true"
+    :menubar="false"
+    :disable-vibrancy="!hasVibrancy"
+    :show-tabbar="true"
+    :tabbar-tabs="tabs"
+    :tabbar-label="'Properties'"
+    @tab="currentTab = $event"
   >
     <div
       v-show="currentTab === 0"
@@ -17,49 +17,52 @@
       <!-- Add the project title field -->
       <TextControl
         v-model="projectSettings.title"
-        v-bind:label="projectTitleLabel"
-      ></TextControl>
+        :label="projectTitleLabel"
+      />
 
       <!-- Then the CSL file -->
       <FileControl
         v-model="projectSettings.cslStyle"
-        v-bind:label="cslStyleLabel"
-        v-bind:reset="true"
-        v-bind:filter="[{ extensions: ['csl'], name: 'CSL Stylesheet' }]"
-      ></FileControl>
+        :label="cslStyleLabel"
+        :reset="true"
+        :filter="[{ extensions: ['csl'], name: 'CSL Stylesheet' }]"
+      />
       <!-- Also, the other possible files users can override -->
       <FileControl
         v-model="projectSettings.templates.tex"
-        v-bind:label="texTemplateLabel"
-        v-bind:reset="true"
-        v-bind:filter="[{ extensions: ['tex'], name: 'LaTeX Source' }]"
-      ></FileControl>
+        :label="texTemplateLabel"
+        :reset="true"
+        :filter="[{ extensions: ['tex'], name: 'LaTeX Source' }]"
+      />
       <FileControl
         v-model="projectSettings.templates.html"
-        v-bind:label="htmlTemplateLabel"
-        v-bind:reset="true"
-        v-bind:filter="[{ extensions: [ 'html', 'htm' ], name: 'HTML Template' }]"
-      ></FileControl>
+        :label="htmlTemplateLabel"
+        :reset="true"
+        :filter="[{ extensions: [ 'html', 'htm' ], name: 'HTML Template' }]"
+      />
     </div>
     <div
       v-show="currentTab === 1"
       id="profiles-panel"
       role="tabpanel"
     >
-      <ZtrAdmonition v-if="projectSettings.profiles.length === 0" style="margin: 10px 0">
+      <ZtrAdmonition
+        v-if="projectSettings.profiles.length === 0"
+        style="margin: 10px 0"
+      >
         {{ projectBuildWarning }}
       </ZtrAdmonition>
 
       <ListControl
-        v-bind:label="exportFormatLabel"
-        v-bind:value-type="'record'"
-        v-bind:model-value="(exportFormatList as any[])"
-        v-bind:column-labels="[exportFormatUseLabel, exportFormatNameLabel, conversionLabel]"
-        v-bind:key-names="['selected', 'name', 'conversion']"
-        v-bind:editable="[0]"
-        v-bind:striped="true"
-        v-on:update:model-value="selectExportProfile($event)"
-      ></ListControl>
+        :label="exportFormatLabel"
+        :value-type="'record'"
+        :model-value="(exportFormatList as any[])"
+        :column-labels="[exportFormatUseLabel, exportFormatNameLabel, conversionLabel]"
+        :key-names="['selected', 'name', 'conversion']"
+        :editable="[0]"
+        :striped="true"
+        @update:model-value="selectExportProfile($event)"
+      />
     </div>
     <div
       v-show="currentTab === 2"
@@ -69,14 +72,21 @@
       <!-- First, the files to be included in the export -->
       <p>{{ exportFilesLabel }}</p>
 
-      <div v-if="missingFiles.length > 0" class="export-file-list">
+      <div
+        v-if="missingFiles.length > 0"
+        class="export-file-list"
+      >
         <ZtrAdmonition>{{ missingFilesMessage }}</ZtrAdmonition>
-        <div v-for="file in missingFiles" v-bind:key="file" class="export-file-item">
+        <div
+          v-for="file in missingFiles"
+          :key="file"
+          class="export-file-item"
+        >
           <button
             class="remove-button"
-            v-bind:aria-label="removeButtonTitle"
-            v-bind:title="removeButtonTitle"
-            v-on:click="removeFileFromExportList(file)"
+            :aria-label="removeButtonTitle"
+            :title="removeButtonTitle"
+            @click="removeFileFromExportList(file)"
           >
             &nbsp;&ndash;&nbsp;
           </button>
@@ -86,37 +96,44 @@
         </div>
       </div>
 
-      <ZtrAdmonition v-if="projectSettings.files.length === 0" style="margin: 10px 0">
+      <ZtrAdmonition
+        v-if="projectSettings.files.length === 0"
+        style="margin: 10px 0"
+      >
         {{ noFilesSelectedMessage }}
       </ZtrAdmonition>
 
       <div class="export-file-list">
-        <div v-for="(file, i) in exportFileList" v-bind:key="file.displayName" v-bind:class="{ 'export-file-item': true, active: file.included }">
+        <div
+          v-for="(file, i) in exportFileList"
+          :key="file.displayName"
+          :class="{ 'export-file-item': true, active: file.included }"
+        >
           <div class="actions">
             <template v-if="file.included">
               <button
                 class="remove-button"
-                v-bind:aria-label="removeButtonTitle"
-                v-bind:title="removeButtonTitle"
-                v-on:click="removeFileFromExportList(file.relativePath)"
+                :aria-label="removeButtonTitle"
+                :title="removeButtonTitle"
+                @click="removeFileFromExportList(file.relativePath)"
               >
                 &nbsp;&ndash;&nbsp;
               </button>
               <button
                 v-if="i > 0"
                 class="up-button"
-                v-bind:aria-label="upButtonTitle"
-                v-bind:title="upButtonTitle"
-                v-on:click="moveFileUpInExportList(file.relativePath)"
+                :aria-label="upButtonTitle"
+                :title="upButtonTitle"
+                @click="moveFileUpInExportList(file.relativePath)"
               >
                 &nbsp;&uarr;&nbsp;
               </button>
               <button
                 v-if="i < projectSettings.files.length - 1"
                 class="down-button"
-                v-bind:aria-label="downButtonTitle"
-                v-bind:title="downButtonTitle"
-                v-on:click="moveFileDownInExportList(file.relativePath)"
+                :aria-label="downButtonTitle"
+                :title="downButtonTitle"
+                @click="moveFileDownInExportList(file.relativePath)"
               >
                 &nbsp;&darr;&nbsp;
               </button>
@@ -124,9 +141,9 @@
             <button
               v-else
               class="add-button"
-              v-bind:aria-label="addButtonTitle"
-              v-bind:title="addButtonTitle"
-              v-on:click="addFileToExportList(file.relativePath)"
+              :aria-label="addButtonTitle"
+              :title="addButtonTitle"
+              @click="addFileToExportList(file.relativePath)"
             >
               &nbsp;+&nbsp;
             </button>
@@ -167,7 +184,7 @@ import FileControl from '@common/vue/form/elements/FileControl.vue'
 import TextControl from '@common/vue/form/elements/TextControl.vue'
 import ZtrAdmonition from '@common/vue/ZtrAdmonition.vue'
 import { ref, computed, watch, onMounted } from 'vue'
-import type { ProjectSettings, DirDescriptor, MDFileDescriptor, CodeFileDescriptor } from '@dts/common/fsal'
+import type { ProjectSettings, MDFileDescriptor, CodeFileDescriptor } from '@dts/common/fsal'
 import type { AssetsProviderIPCAPI, PandocProfileMetadata } from '@providers/assets'
 import { PANDOC_READERS, PANDOC_WRITERS, SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import { type WindowTab } from '@common/vue/window/WindowTabbar.vue'
@@ -398,11 +415,16 @@ function updateProperties (): void {
     payload: dirPath
   })
     .then(descriptor => {
+      if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== 'directory') {
+        throw new Error('Could not update project settings: No directory descriptor received!')
+      }
+
       if (descriptor.settings.project == null) {
         throw new Error('Could not update project settings: Project was null!')
       }
 
-      const deproxiedSettings = JSON.parse(JSON.stringify(projectSettings.value))
+      // The JSON round trip de-proxies the reactive settings object.
+      const deproxiedSettings = JSON.parse(JSON.stringify(projectSettings.value)) as ProjectSettings
 
       ipcRenderer.invoke('application', {
         command: 'update-project-properties',
@@ -417,7 +439,10 @@ function updateProperties (): void {
 }
 
 async function fetchProperties (): Promise<void> {
-  const descriptor: DirDescriptor = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: dirPath })
+  const descriptor = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: dirPath })
+  if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== 'directory') {
+    throw new Error('Could not fetch project properties: No directory descriptor received!')
+  }
   // Save the actually used formats.
   if (descriptor.settings.project !== null) {
     projectSettings.value = descriptor.settings.project

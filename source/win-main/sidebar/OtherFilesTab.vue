@@ -5,36 +5,50 @@
       {{ otherFilesLabel }}
       <cds-icon
         id="open-dir-external"
-        v-bind:title="openDirLabel"
+        :title="openDirLabel"
         shape="folder"
         class="is-solid"
-      ></cds-icon>
+      />
     </h1>
 
     <!-- Render all attachments -->
     <p v-if="attachments.length === 0">
       {{ noAttachmentsMessage }}
     </p>
-    <template v-for="(folder, fIdx) in attachments" v-else v-bind:key="fIdx">
-      <h2 class="other-files-panel-folder-name" v-bind:title="folder.path">
+    <template
+      v-for="(folder, fIdx) in attachments"
+      v-else
+      :key="fIdx"
+    >
+      <h2
+        class="other-files-panel-folder-name"
+        :title="folder.path"
+      >
         {{ folder.path }}
       </h2>
 
       <template v-if="folder.files.length > 0">
         <a
           v-for="(attachment, idx) in folder.files"
-          v-bind:key="idx"
+          :key="idx"
           class="attachment"
           draggable="true"
           href="#"
-          v-bind:data-link="attachment.path"
-          v-bind:title="attachment.path"
-          v-on:click.prevent="handleClick(attachment.path)"
-          v-on:dragstart="handleDragStart($event, attachment.path)"
+          :data-link="attachment.path"
+          :title="attachment.path"
+          @click.prevent="handleClick(attachment.path)"
+          @dragstart="handleDragStart($event, attachment.path)"
         >
-          <img v-if="hasPreview(attachment.path)" v-bind:src="getPreviewImageData(attachment.path)">
-          <!-- eslint-disable-next-line vue/no-v-html We can disable this one error, since getIcon runs DOMPurify over the HTML -->
-          <span v-else v-html="getIcon(attachment.ext)"></span>
+          <img
+            v-if="hasPreview(attachment.path)"
+            :src="getPreviewImageData(attachment.path)"
+          >
+          <!-- eslint-disable vue/no-v-html -- getIcon runs DOMPurify over the HTML -->
+          <span
+            v-else
+            v-html="getIcon(attachment.ext)"
+          />
+          <!-- eslint-enable vue/no-v-html -->
 
           <span class="attachment-name">{{ attachment.name }}</span>
         </a>
@@ -49,51 +63,30 @@
 <script setup lang="ts">
 import { trans } from '@common/i18n-renderer'
 import makeValidUri from '@common/util/make-valid-uri'
-import { type AnyDescriptor } from '@dts/common/fsal'
 import { ClarityIcons } from '@cds/core/icon'
-import { computed, ref, toRef, watch } from 'vue'
-import { useConfigStore, useDocumentTreeStore } from 'source/pinia'
-import { pathDirname } from 'source/common/util/renderer-path-polyfill'
+import { computed } from 'vue'
+import { useConfigStore } from 'source/pinia'
 import { hasImageExt } from 'source/common/util/file-extention-checks'
 import { useWorkspaceStore } from 'source/pinia/workspace-store'
 
 const ipcRenderer = window.ipc
 
 const searchParams = new URLSearchParams(window.location.search)
-const windowId = searchParams.get('window_id')
+const windowIdParam = searchParams.get('window_id')
 
-if (windowId === null) {
+if (windowIdParam === null) {
   throw new Error('windowID was null')
 }
 
+// Re-binding after the guard keeps the narrowing visible inside closures.
+const windowId: string = windowIdParam
+
 const configStore = useConfigStore()
-const documentTreeStore = useDocumentTreeStore()
 const workspaceStore = useWorkspaceStore()
 
 const otherFilesLabel = trans('Other files')
 const openDirLabel = trans('Open directory')
 const noAttachmentsMessage = trans('No other files')
-
-const children = ref<AnyDescriptor[]>([])
-
-watch(toRef(documentTreeStore.lastLeafActiveFile), value => {
-  if (value === undefined) {
-    children.value = []
-    return
-  }
-
-  const descriptor = workspaceStore.descriptorMap.get(pathDirname(value.path))
-  if (descriptor === undefined) {
-    children.value = []
-    return
-  }
-
-  ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: descriptor.path })
-    .then(childDescriptors => {
-      children.value = childDescriptors
-    })
-    .catch(err => console.error(err))
-})
 
 const attachments = computed(() => workspaceStore.otherFiles)
 
@@ -110,10 +103,14 @@ function handleDragStart (event: DragEvent, attachmentPath: string): void {
 }
 
 function getIcon (ext: string): string {
-  // @ts-expect-error We know that this thing has an outline, because we assign it in load-icons.ts
-  const fileExtIcon = ClarityIcons.registry['file-ext'].outline!
-  if (typeof fileExtIcon === 'string') {
-    return fileExtIcon.replace('EXT', ext.slice(1, 4))
+  // The registry value type does not advertise the outline property, but
+  // load-icons.ts registers shapes that carry one; narrow structurally.
+  const fileExtIcon: unknown = ClarityIcons.registry['file-ext']
+  const outline = typeof fileExtIcon === 'object' && fileExtIcon !== null && 'outline' in fileExtIcon
+    ? (fileExtIcon as { outline?: unknown }).outline
+    : undefined
+  if (typeof outline === 'string') {
+    return outline.replace('EXT', ext.slice(1, 4))
   } else {
     return ''
   }

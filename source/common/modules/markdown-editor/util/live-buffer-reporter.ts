@@ -73,10 +73,11 @@
 import { trans } from '@common/i18n-renderer'
 import { extractReferences } from '@common/pandoc-util/extract-references'
 import { runRecoverably } from '@common/util/run-recoverably'
+import type { ReferenceProviderIPCAPI } from 'source/app/service-providers/references'
 
 /** The renderer ipc seam the reporter delivers through (ipcRenderer.invoke). */
 export type ReferenceProviderInvoker =
-  (channel: 'reference-provider', message: { command: string, payload?: unknown }) => Promise<unknown>
+  (channel: 'reference-provider', message: ReferenceProviderIPCAPI) => Promise<unknown>
 
 /** A scheduled deferred delivery that can be cancelled before it fires. */
 export interface LiveBufferScheduledTask {

@@ -9,9 +9,9 @@
     <select v-model="appLang">
       <option
         v-for="(valueLabel, key) in appLangOptions"
-        v-bind:key="key"
-        v-bind:value="key"
-        v-bind:selected="key === appLang"
+        :key="key"
+        :value="key"
+        :selected="key === appLang"
       >
         {{ valueLabel }}
       </option>
@@ -23,7 +23,7 @@
   </p>
 
   <div style="text-align: center; height: 20px">
-    <LoadingSpinner v-if="isLoading"></LoadingSpinner>
+    <LoadingSpinner v-if="isLoading" />
   </div>
 </template>
 
@@ -53,7 +53,7 @@ const caveatLabel = trans('The changes apply from the next slide.')
 
 const appLangOptions = ref<Record<string, string>>({})
 
-const originalLanguage = window.config.get('appLang')
+const originalLanguage = window.config.get<string>('appLang')
 
 const appLang = ref(originalLanguage)
 

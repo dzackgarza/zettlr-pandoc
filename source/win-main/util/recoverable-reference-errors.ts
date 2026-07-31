@@ -53,6 +53,7 @@
 
 import { runRecoverably, type RecoverableOutcome } from '@common/util/run-recoverably'
 import type { ReferenceProviderInvoker } from '@common/modules/markdown-editor/util/live-buffer-reporter'
+import type { ReferenceProviderIPCAPI } from 'source/app/service-providers/references'
 
 /** The typed outcome of a recoverable reference-provider invocation. */
 export type RecoverableReferenceOutcome<T> = RecoverableOutcome<T>
@@ -72,7 +73,7 @@ export type RecoverableReferenceOutcome<T> = RecoverableOutcome<T>
  */
 export async function invokeReferenceProviderRecoverably<T> (
   ipcInvoke: ReferenceProviderInvoker,
-  message: { command: string, payload?: unknown },
+  message: ReferenceProviderIPCAPI,
   operationLabel: string
 ): Promise<RecoverableReferenceOutcome<T>> {
   return await runRecoverably<T>(async () => await ipcInvoke('reference-provider', message) as T, operationLabel)

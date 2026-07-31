@@ -128,6 +128,7 @@ export type ApplicationIPCAPI =
   | { command: 'dir-sort', payload: { path: string, sorting: string } }
   | { command: 'export', payload: ExportIPCAPI }
   | { command: 'fetch-link-preview', payload: string }
+  | { command: 'file-find-and-return-meta-data', payload: string }
   | { command: 'file-delete', payload: { path: string } }
   | { command: 'file-duplicate', payload: { path: string, windowId?: string, leafId?: string|undefined } }
   | { command: 'file-new', payload?: { path?: string, name?: string, type?: DocumentType } }

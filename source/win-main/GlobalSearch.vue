@@ -6,42 +6,42 @@
       ref="queryInputElement"
       v-model="query"
       name="query-input"
-      v-bind:label="queryInputLabel"
-      v-bind:autocomplete-values="recentGlobalSearches"
-      v-bind:placeholder="queryInputPlaceholder"
-      v-on:keydown.enter="startSearch()"
-    ></AutocompleteText>
+      :label="queryInputLabel"
+      :autocomplete-values="recentGlobalSearches"
+      :placeholder="queryInputPlaceholder"
+      @keydown.enter="startSearch()"
+    />
 
     <CheckboxControl
       v-model="caseInsensitive"
-      v-bind:label="caseInsensitiveLabel"
-      v-bind:name="'full-text-search-case-toggle'"
+      :label="caseInsensitiveLabel"
+      :name="'full-text-search-case-toggle'"
       style="margin: 0px"
-    ></CheckboxControl>
+    />
 
     <AutocompleteText
       ref="restrict-to-dir-input"
       v-model="restrictToDir"
       name="restrict-to-dir-input"
-      v-bind:label="restrictDirLabel"
-      v-bind:autocomplete-values="directorySuggestions.map(s => s.displayValue)"
-      v-bind:placeholder="restrictDirPlaceholder"
-      v-on:keydown.enter="startSearch()"
-    ></AutocompleteText>
+      :label="restrictDirLabel"
+      :autocomplete-values="directorySuggestions.map(s => s.displayValue)"
+      :placeholder="restrictDirPlaceholder"
+      @keydown.enter="startSearch()"
+    />
     <!-- Then an always-visible search button ... -->
     <p>
       <ButtonControl
-        v-bind:label="searchButtonLabel"
-        v-bind:inline="true"
-        v-bind:disabled="searchIsRunning"
-        v-on:click="startSearch()"
-      ></ButtonControl>
+        :label="searchButtonLabel"
+        :inline="true"
+        :disabled="searchIsRunning"
+        @click="startSearch()"
+      />
       <ButtonControl
-        v-bind:label="cancelButtonLabel"
-        v-bind:inline="true"
-        v-bind:disabled="!searchIsRunning"
-        v-on:click="cancelSearch()"
-      ></ButtonControl>
+        :label="cancelButtonLabel"
+        :inline="true"
+        :disabled="!searchIsRunning"
+        @click="cancelSearch()"
+      />
     </p>
     <!-- ... as well as two buttons to clear the results or toggle them. -->
     <template v-if="windowStateStore.searchResults.length > 0">
@@ -49,15 +49,15 @@
         <hr>
         <p>
           <ButtonControl
-            v-bind:label="clearButtonLabel"
-            v-bind:inline="true"
-            v-on:click="emptySearchResults()"
-          ></ButtonControl>
+            :label="clearButtonLabel"
+            :inline="true"
+            @click="emptySearchResults()"
+          />
           <ButtonControl
-            v-bind:label="toggleButtonLabel"
-            v-bind:inline="true"
-            v-on:click="toggleIndividualResults()"
-          ></ButtonControl>
+            :label="toggleButtonLabel"
+            :inline="true"
+            @click="toggleIndividualResults()"
+          />
         </p>
       </template>
       <hr>
@@ -73,11 +73,11 @@
     <template v-if="searchIsRunning">
       <div>
         <ProgressControl
-          v-bind:max="1"
-          v-bind:value="searchProgress"
-          v-bind:interruptible="true"
-          v-on:interrupt="cancelSearch()"
-        ></ProgressControl>
+          :max="1"
+          :value="searchProgress"
+          :interruptible="true"
+          @interrupt="cancelSearch()"
+        />
       </div>
       <hr>
     </template>
@@ -86,45 +86,64 @@
       <!-- First, display a filter ... -->
       <TextControl
         v-model="filter"
-        v-bind:placeholder="filterPlaceholder"
-        v-bind:label="filterLabel"
-      ></TextControl>
+        :placeholder="filterPlaceholder"
+        :label="filterLabel"
+      />
       <!-- ... then the search results. NOTE: The 34px minimum size are purely empirical, and will be overridden with the actually measured size. -->
       <DynamicScroller
-        v-bind:items="filteredSearchResults"
-        v-bind:min-item-size="34"
-        v-bind:key-field="'key'"
-        v-bind:disable-transform="true"
-        v-bind:page-mode="true"
+        :items="filteredSearchResults"
+        :min-item-size="34"
+        :key-field="'key'"
+        :disable-transform="true"
+        :page-mode="true"
         class="search-result-container"
       >
         <template #default="{ item, index, active }">
           <DynamicScrollerItem
-            v-bind:item="item"
-            v-bind:active="active"
+            :item="item"
+            :active="active"
             class="single-search-result"
           >
-            <div class="result-header" v-on:click="item.hideResultSet = !item.hideResultSet">
-              <cds-icon shape="dot-circle" v-bind:style="`fill: ${getRelevancyColor(item)}`" class="relevancy-icon"></cds-icon>
+            <div
+              class="result-header"
+              @click="item.hideResultSet = !item.hideResultSet"
+            >
+              <cds-icon
+                shape="dot-circle"
+                :style="`fill: ${getRelevancyColor(item)}`"
+                class="relevancy-icon"
+              />
               <span class="filename">{{ item.file.displayName }}</span>
-              <cds-icon class="collapse-indicator" shape="angle" v-bind:direction="(item.hideResultSet) ? 'left' : 'down'"></cds-icon>
+              <cds-icon
+                class="collapse-indicator"
+                shape="angle"
+                :direction="(item.hideResultSet) ? 'left' : 'down'"
+              />
               <span class="filepath">{{ item.file.relativeDirectoryPath }}</span>
             </div>
 
-            <div v-if="!item.hideResultSet" class="results-container">
+            <div
+              v-if="!item.hideResultSet"
+              class="results-container"
+            >
               <template
                 v-for="singleRes, idx2 in item.result"
-                v-bind:key="idx2"
+                :key="idx2"
               >
                 <div
                   class="result-line"
-                  v-bind:class="{ active: index === activeFileIdx && idx2 === activeLineIdx }"
-                  v-on:contextmenu.stop.prevent="fileContextMenu($event, item.file.path, singleRes)"
-                  v-on:mousedown.stop.prevent="onResultClick($event, index, idx2, item.file.path, singleRes.type === 'content' ? singleRes.line : 1)"
+                  :class="{ active: index === activeFileIdx && idx2 === activeLineIdx }"
+                  @contextmenu.stop.prevent="fileContextMenu($event, item.file.path, singleRes)"
+                  @mousedown.stop.prevent="onResultClick($event, index, idx2, item.file.path, singleRes.type === 'content' ? singleRes.line : 1)"
                 >
                   <span class="line-number"><strong>{{ singleRes.type === 'content' ? singleRes.line : 1 }}</strong>: </span>
-                  <!-- eslint-disable-next-line vue/no-v-html NOTE: We can disable the v-html error here, since markText runs DOMPurify over the data, and we have to allow HTML tags to mark the elements. -->
-                  <span v-if="singleRes.type === 'content'" class="excerpt" v-html="markText(singleRes)"></span>
+                  <!-- eslint-disable vue/no-v-html -- markText runs DOMPurify over the data, and we have to allow HTML tags to mark the elements. -->
+                  <span
+                    v-if="singleRes.type === 'content'"
+                    class="excerpt"
+                    v-html="markText(singleRes)"
+                  />
+                  <!-- eslint-enable vue/no-v-html -->
                 </div>
               </template>
             </div>
@@ -165,32 +184,11 @@ import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import { useConfigStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { pathBasename, pathDirname, relativePath } from 'source/common/util/renderer-path-polyfill'
-import type { SearchProviderIPCAPI, SearchResult, FileContentSearchResult } from 'source/app/service-providers/search'
+import type { SearchProviderBroadcast, SearchProviderIPCAPI, SearchResult, FileContentSearchResult } from 'source/app/service-providers/search'
+import type { SearchResultWrapper } from 'source/pinia/window-state-store'
 import CheckboxControl from 'source/common/vue/form/elements/CheckboxControl.vue'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import type { MetadataSearchResult } from 'source/app/service-providers/search/util/boolean-search'
-
-/**
- * This interface describes a specific descriptor for use during file searches
- */
-interface FileSearchDescriptor {
-  path: string
-  relativeDirectoryPath: string
-  filename: string
-  displayName: string
-}
-
-/**
- * This interface describes a wrapper that combines search results with metadata
- * on the file the results describe
- */
-export interface SearchResultWrapper {
-  key: string
-  file: FileSearchDescriptor
-  result: SearchResult
-  hideResultSet: boolean
-  weight: number
-}
 
 const ipcRenderer = window.ipc
 
@@ -326,19 +324,19 @@ const filteredSearchResults = computed<SearchResultWrapper[]>(() => {
   return matchedResults
     .filter(result => {
       for (const r of result.result) {
-        if (r.type === 'content' && r.excerpt.toLowerCase().includes(lowercase) === true) {
+        if (r.type === 'content' && r.excerpt.toLowerCase().includes(lowercase)) {
           return true
         }
       }
 
       // Next, try the different variations on filename and displayName
-      if (result.file.filename.toLowerCase().includes(lowercase) === true) {
+      if (result.file.filename.toLowerCase().includes(lowercase)) {
         return true
       }
-      if (result.file.displayName.toLowerCase().includes(lowercase) === true) {
+      if (result.file.displayName.toLowerCase().includes(lowercase)) {
         return true
       }
-      if (result.file.path.toLowerCase().includes(lowercase) === true) {
+      if (result.file.path.toLowerCase().includes(lowercase)) {
         return true
       }
 
@@ -350,13 +348,13 @@ const filteredSearchResults = computed<SearchResultWrapper[]>(() => {
 // Changing the query should reset the no-results message
 watch(query, () => { hadNoResult.value = false })
 
-const stopListeningForSearchResults = ipcRenderer.on('search-provider', (event, message) => {
+const stopListeningForSearchResults = ipcRenderer.on('search-provider', (event, message: SearchProviderBroadcast) => {
   if (message.type === 'search-end') {
     searchIsRunning.value = false
     hadNoResult.value = filteredSearchResults.value.length === 0
     searchProgress.value = 0
   } else if (message.type === 'search-result') {
-    processSearchResult(message.progress as number, message.file as string, message.result as SearchResult|undefined)
+    processSearchResult(message.progress, message.file, message.result)
       .catch(err => console.error(err))
   }
 })

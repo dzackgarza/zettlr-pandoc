@@ -11,9 +11,9 @@
       v-model="referenceLibrary"
       reset=""
       placeholder="/path/to/library.json"
-      v-bind:filter="libraryFilters"
+      :filter="libraryFilters"
       name="library-input"
-    ></FileControl>
+    />
   </p>
 
   <p>
@@ -23,8 +23,8 @@
   <p class="box">
     <RadioControl
       v-model="citingStyle"
-      v-bind:options="citingOptions"
-    ></RadioControl>
+      :options="citingOptions"
+    />
   </p>
 </template>
 
@@ -51,7 +51,7 @@ const citingOptions = {
   'in-text-suffix': '@Author2015 [p. 123] → Author (2015, 123)'
 }
 
-const referenceLibrary = ref(window.config.get('export.cslLibrary'))
+const referenceLibrary = ref(window.config.get<string>('export.cslLibrary'))
 const citingStyle = ref(window.config.get('editor.citeStyle') as 'in-text'|'in-text-suffix'|'regular')
 
 watch(referenceLibrary, () => {

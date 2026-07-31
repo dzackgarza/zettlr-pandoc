@@ -44,7 +44,7 @@
 import MarkdownEditor, { type EditorViewPersistentState } from '@common/modules/markdown-editor'
 
 import { ref, computed, onMounted, onBeforeUnmount, watch, toRef, onUpdated } from 'vue'
-import { type EditorCommands } from './App.vue'
+import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
 import { hasMarkdownExt } from '@common/util/file-extention-checks'
 import { DP_EVENTS, type OpenDocument } from '@dts/common/documents'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
@@ -56,8 +56,7 @@ import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ip
 import { ipcMarkdownFormatter, surfaceFormatResult } from '@common/modules/markdown-editor/commands/format-document-ipc'
 import { useConfigStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { isAbsolutePath, pathBasename, pathDirname, resolvePath } from '@common/util/renderer-path-polyfill'
-import type { DocumentManagerIPCAPI, DocumentsUpdateContext, SaveFileResult } from 'source/app/service-providers/documents'
-import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
+import type { DocumentsUpdateContext } from 'source/app/service-providers/documents'
 import type { ProjectInfo } from 'source/common/modules/markdown-editor/plugins/project-info-field'
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
 import type { DocumentLocation, ProjectRootSpec, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
@@ -150,22 +149,6 @@ const props = defineProps<{
   persistentStateMap: Map<string, EditorViewPersistentState>
 }>()
 
-/**
- * The relayed create-label request App.vue mounts the dialog over: the
- * context-fixed family, the editable slug proposal, and the closure that
- * performs the insertion in the invoking editor once the dialog confirms a
- * key (clipboard write and toast are App.vue's half). The closure re-resolves
- * the target against the CURRENT document at confirm time (issue #1 Phase 8:
- * confirmReferenceLabelInsertion) and returns the typed outcome — a stale
- * outcome means NOTHING was inserted and App.vue surfaces it as a closable
- * toast.
- */
-export interface CreateReferenceLabelDialogPrompt {
-  family: CreateReferenceLabelRequest['family']
-  proposedSlug: string
-  applyCreate: (intent: CreateReferenceLabelIntent) => ConfirmReferenceLabelOutcome
-}
-
 const emit = defineEmits<{
   (e: 'globalSearch', query: string): void
   (e: 'referenceSearch', request: ReferenceSearchRequest): void
@@ -237,8 +220,8 @@ function fetchActiveReviewDiffSession (): void {
   ipcRenderer.invoke('documents-provider', {
     command: 'get-review-diff-session',
     payload: { path: props.file.path }
-  } as DocumentManagerIPCAPI)
-    .then((session: ReviewDiffSession|undefined) => {
+  })
+    .then(session => {
       if (session !== undefined) {
         applyReviewDiffSession(session)
       }
@@ -283,8 +266,8 @@ ipcRenderer.on('shortcut', (event, command) => {
       ipcRenderer.invoke('documents-provider', {
         command: 'save-file',
         payload: { path: props.file.path }
-      } as DocumentManagerIPCAPI)
-        .then((result: SaveFileResult) => {
+      })
+        .then(result => {
           if (result.ok) {
             return
           }
@@ -379,8 +362,8 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     // The file has been saved to disk. This means we should probably update the
     // descriptor to know of, e.g., library changes.
     ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: props.file.path })
-      .then((descriptor: MDFileDescriptor|CodeFileDescriptor|undefined) => {
-        if (descriptor === undefined) {
+      .then(descriptor => {
+        if (descriptor === undefined || Array.isArray(descriptor) || (descriptor.type !== 'file' && descriptor.type !== 'code')) {
           throw new Error(`Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`)
         }
 
@@ -608,10 +591,14 @@ workspaceStore.$subscribe(() => {
 
 // External commands/"event" system
 watch(toRef(props.editorCommands, 'jumpToLine'), () => {
-  const { filePath, lineNumber } = props.editorCommands.data
+  const data = props.editorCommands.data
+  if (typeof data !== 'object' || data === undefined || !('filePath' in data)) {
+    return // The toggled command carried no jump payload
+  }
+
   // Execute a jtl-command if the current displayed file is the correct one
-  if (filePath === props.file.path && typeof lineNumber === 'number') {
-    jtl(lineNumber)
+  if (data.filePath === props.file.path) {
+    jtl(data.lineNumber)
   }
 })
 
@@ -620,9 +607,9 @@ watch(toRef(props.editorCommands, 'moveSection'), () => {
     return
   }
 
-  const { from, to } = props.editorCommands.data
-  if (typeof from === 'number' && typeof to === 'number') {
-    currentEditor?.moveSection(from, to)
+  const data = props.editorCommands.data
+  if (typeof data === 'object' && data !== undefined && 'from' in data) {
+    currentEditor?.moveSection(data.from, data.to)
   }
 })
 
@@ -643,8 +630,11 @@ watch(toRef(props.editorCommands, 'executeCommand'), () => {
     return
   }
 
-  const command: string = props.editorCommands.data
-  currentEditor.runCommand(command)
+  const data = props.editorCommands.data
+  if (typeof data !== 'string') {
+    return // The toggled command carried no command identifier
+  }
+  currentEditor.runCommand(data)
   currentEditor.focus()
 })
 
@@ -659,8 +649,11 @@ watch(toRef(props.editorCommands, 'replaceSelection'), () => {
     return
   }
 
-  const textToInsert: string = props.editorCommands.data
-  currentEditor?.replaceSelection(textToInsert)
+  const data = props.editorCommands.data
+  if (typeof data !== 'string') {
+    return // The toggled command carried no text payload
+  }
+  currentEditor?.replaceSelection(data)
 })
 
 watch(toRef(props.editorCommands, 'insertPandoc'), () => {
@@ -674,9 +667,12 @@ watch(toRef(props.editorCommands, 'insertPandoc'), () => {
     return
   }
 
-  const { type, attributes } = props.editorCommands.data
-  if ((type === 'div' || type === 'span') && typeof attributes === 'string') {
-    currentEditor?.insertPandocDivOrSpan(type as 'div'|'span', attributes)
+  const data = props.editorCommands.data
+  if (
+    typeof data === 'object' && data !== undefined && 'type' in data &&
+    (data.type === 'div' || data.type === 'span')
+  ) {
+    currentEditor?.insertPandocDivOrSpan(data.type, data.attributes)
     currentEditor?.focus()
   }
 })
@@ -764,10 +760,10 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     ipcRenderer.invoke('documents-provider', {
       command: 'decide-review-chunk',
       payload: decision
-    } as DocumentManagerIPCAPI)
-      .then((result: { ok: boolean, message?: string }) => {
+    })
+      .then(result => {
         if (!result.ok) {
-          showToast(trans(result.message ?? 'The chunk decision was refused.'), 'error')
+          showToast(trans(result.message), 'error')
         }
       })
       .catch(err => console.error('Could not decide review chunk', err))
@@ -780,7 +776,7 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
         leafId: props.leafId,
         windowId: props.windowId
       }
-    } as DocumentManagerIPCAPI).catch(err => console.error(err))
+    }).catch(err => console.error(err))
 
     // NOTE: The lastLeafId will be changed in the documentTreeStore in response
     // to an event from main (DP_EVENTS.ACTIVE_FILE) which will be emitted as a
@@ -895,8 +891,8 @@ async function loadDocument (): Promise<void> {
 
   maybeHighlightSearchResults()
 
-  const descriptor: MDFileDescriptor|CodeFileDescriptor|undefined = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: props.file.path })
-  if (descriptor === undefined) {
+  const descriptor = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: props.file.path })
+  if (descriptor === undefined || Array.isArray(descriptor) || (descriptor.type !== 'file' && descriptor.type !== 'code')) {
     throw new Error(`Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`)
   }
 
@@ -931,49 +927,74 @@ function jtl (lineNumber: number): void {
   currentEditor?.jtl(lineNumber)
 }
 
+/** A CSL name field: persons carry family names, institutions a literal. */
+interface CSLNameField {
+  family?: unknown
+  literal?: unknown
+}
+
+/** Narrows a CSL item's author/editor field to a usable name list. */
+function isNameList (value: unknown): value is CSLNameField[] {
+  return Array.isArray(value) && value.every(entry => typeof entry === 'object' && entry !== null)
+}
+
+/** The year (or literal date) of a CSL item's issued field, if present. */
+function formatIssuedDate (issued: unknown): string {
+  if (typeof issued !== 'object' || issued === null) {
+    return ''
+  }
+
+  const dateParts = (issued as { 'date-parts'?: unknown })['date-parts']
+  if (Array.isArray(dateParts) && Array.isArray(dateParts[0])) {
+    const year: unknown = dateParts[0][0]
+    if (typeof year === 'number' || typeof year === 'string') {
+      return ` (${year})`
+    }
+  }
+
+  const literal = (issued as { literal?: unknown }).literal
+  if (typeof literal === 'string' || typeof literal === 'number') {
+    return ` (${literal})`
+  }
+
+  return ''
+}
+
 async function updateCitationKeys (library: string): Promise<void> {
-  const items: Array<{ citekey: string, displayText: string }> = (await ipcRenderer.invoke('citeproc-provider', {
+  const items = (await ipcRenderer.invoke('citeproc-provider', {
     command: 'get-items',
     payload: { database: library }
-  } as CiteprocProviderIPCAPI))
-    .map((item: CSLItem) => {
+  }))
+    .map(item => {
       // Get a rudimentary author list. Precedence are authors, then editors.
       // Fallback: Container title.
       let authors = ''
-      const authorSrc = item.author !== undefined && Array.isArray(item.author)
+      const authorSrc = isNameList(item.author)
         ? item.author
-        : item.editor !== undefined && Array.isArray(item.editor) ? item.editor : []
+        : isNameList(item.editor) ? item.editor : []
 
       if (authorSrc.length > 0) {
         authors = authorSrc.map(author => {
-          if (author.family !== undefined) {
+          if (typeof author.family === 'string') {
             return author.family
-          } else if (author.literal !== undefined) {
+          } else if (typeof author.literal === 'string') {
             return author.literal
           } else {
             return undefined
           }
         }).filter(elem => elem !== undefined).join(', ')
-      } else if (item['container-title'] !== undefined && typeof item['container-title'] === 'string') {
+      } else if (typeof item['container-title'] === 'string') {
         authors = item['container-title']
       }
 
       let title = ''
-      if (item.title !== undefined && typeof item.title === 'string') {
+      if (typeof item.title === 'string') {
         title = item.title
-      } else if (item['container-title'] !== undefined && typeof item['container-title'] === 'string') {
+      } else if (typeof item['container-title'] === 'string') {
         title = item['container-title']
       }
 
-      let date = ''
-      if (item.issued != undefined && typeof item.issued === 'object') {
-        if ('date-parts' in item.issued && Array.isArray(item.issued['date-parts'])) {
-          const year = item.issued['date-parts'][0][0]
-          date = ` (${year})`
-        } else if ('literal' in item.issued) {
-          date = ` (${item.issued.literal})`
-        }
-      }
+      const date = formatIssuedDate(item.issued)
 
       // This is just a very crude representation of the citations.
       return {
@@ -1275,8 +1296,7 @@ async function applyWorkspaceRename (): Promise<void> {
  */
 async function undoWorkspaceRename (documentPath: string): Promise<void> {
   const outcome: UndoRenameOutcome = await ipcRenderer.invoke('application', {
-    command: 'undo-reference-rename',
-    payload: {}
+    command: 'undo-reference-rename'
   })
 
   if (outcome.status === 'no-pending-undo') {

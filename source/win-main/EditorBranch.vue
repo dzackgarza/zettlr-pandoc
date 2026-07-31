@@ -1,54 +1,54 @@
 <template>
   <div
     ref="rootElement"
-    v-bind:class="{
+    :class="{
       'split-pane-container': true,
       'border-right': !props.isLast && props.node.direction === 'vertical',
       'border-bottom': !props.isLast && props.node.direction === 'horizontal'
     }"
-    v-bind:style="elementStyles"
+    :style="elementStyles"
   >
     <template
       v-for="(subNode, index) in node.nodes"
-      v-bind:key="JSON.stringify(subNode)"
+      :key="JSON.stringify(subNode)"
     >
       <EditorBranch
         v-if="subNode.type === 'branch'"
-        v-bind:key="`branch-${index}`"
-        v-bind:node="subNode"
-        v-bind:window-id="windowId"
-        v-bind:editor-commands="editorCommands"
-        v-bind:available-width="(node.direction === 'horizontal') ? sizes[index] : 100"
-        v-bind:available-height="(node.direction === 'vertical') ? sizes[index] : 100"
-        v-bind:is-last="index === node.nodes.length - 1 || node.nodes.length === 1"
-        v-on:global-search="emit('globalSearch', $event)"
-        v-on:reference-search="emit('referenceSearch', $event)"
-        v-on:create-reference-label="emit('createReferenceLabel', $event)"
-        v-on:open-pandoc-quick-help="emit('openPandocQuickHelp')"
-      ></EditorBranch>
+        :key="`branch-${index}`"
+        :node="subNode"
+        :window-id="windowId"
+        :editor-commands="editorCommands"
+        :available-width="(node.direction === 'horizontal') ? sizes[index] : 100"
+        :available-height="(node.direction === 'vertical') ? sizes[index] : 100"
+        :is-last="index === node.nodes.length - 1 || node.nodes.length === 1"
+        @global-search="emit('globalSearch', $event)"
+        @reference-search="emit('referenceSearch', $event)"
+        @create-reference-label="emit('createReferenceLabel', $event)"
+        @open-pandoc-quick-help="emit('openPandocQuickHelp')"
+      />
       <EditorPane
         v-else
-        v-bind:key="subNode.id"
-        v-bind:leaf-id="subNode.id"
-        v-bind:window-id="windowId"
-        v-bind:editor-commands="editorCommands"
-        v-bind:class="{
+        :key="subNode.id"
+        :leaf-id="subNode.id"
+        :window-id="windowId"
+        :editor-commands="editorCommands"
+        :class="{
           'border-right': paneShouldHaveBorderRight(index),
           'border-bottom': paneShouldHaveBorderBottom(index)
         }"
-        v-bind:available-width="(node.direction === 'horizontal') ? sizes[index] : 100"
-        v-bind:available-height="(node.direction === 'vertical') ? sizes[index] : 100"
-        v-on:global-search="emit('globalSearch', $event)"
-        v-on:reference-search="emit('referenceSearch', $event)"
-        v-on:create-reference-label="emit('createReferenceLabel', $event)"
-        v-on:open-pandoc-quick-help="emit('openPandocQuickHelp')"
-      ></EditorPane>
+        :available-width="(node.direction === 'horizontal') ? sizes[index] : 100"
+        :available-height="(node.direction === 'vertical') ? sizes[index] : 100"
+        @global-search="emit('globalSearch', $event)"
+        @reference-search="emit('referenceSearch', $event)"
+        @create-reference-label="emit('createReferenceLabel', $event)"
+        @open-pandoc-quick-help="emit('openPandocQuickHelp')"
+      />
       <!-- Here comes the resizing (for every but the last child) -->
       <div
         v-if="index < node.nodes.length - 1"
-        v-bind:class="`resizer ${node.direction}`"
-        v-on:mousedown="beginResizing($event, index)"
-      ></div>
+        :class="`resizer ${node.direction}`"
+        @mousedown="beginResizing($event, index)"
+      />
     </template>
   </div>
 </template>
@@ -57,8 +57,7 @@
 import EditorPane from './EditorPane.vue'
 import { type BranchNodeJSON } from '@dts/common/documents'
 import { ref, computed, watch, toRef } from 'vue'
-import { type EditorCommands } from './App.vue'
-import { type CreateReferenceLabelDialogPrompt } from './MainEditor.vue'
+import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
 import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
 import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
 
@@ -173,7 +172,7 @@ function onResizing (event: MouseEvent): void {
   lastOffset.value = offset
 }
 
-function onEndResizing (event: MouseEvent): void {
+function onEndResizing (_event: MouseEvent): void {
   currentResizerIndex.value = -1
   lastOffset.value = 0
   rootElement.value?.removeEventListener('mousemove', onResizing)

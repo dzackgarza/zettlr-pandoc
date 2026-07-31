@@ -3,12 +3,15 @@
     id="file-tree"
     role="region"
     aria-label="File Tree"
-    v-bind:class="{ 'hidden': !isVisible }"
-    v-bind:aria-hidden="!isVisible"
-    v-on:click="clickHandler"
+    :class="{ 'hidden': !isVisible }"
+    :aria-hidden="!isVisible"
+    @click="clickHandler"
   >
     <template v-if="rootDescriptors.length > 0">
-      <div v-if="filterQuery.trim() !== '' && filterResults.length === 0" class="empty-tree">
+      <div
+        v-if="filterQuery.trim() !== '' && filterResults.length === 0"
+        class="empty-tree"
+      >
         <div class="info">
           {{ noResultsMessage }}
         </div>
@@ -17,21 +20,21 @@
       <template v-if="getFiles.length > 0">
         <div
           id="directories-files-header"
-          v-bind:title="showFilesSection ? hideFilesLabel : showFilesLabel"
-          v-on:click="configStore.setConfigValue('fileManagerShowFiles', !showFilesSection)"
-          v-on:contextmenu="fileRootContextMenu"
+          :title="showFilesSection ? hideFilesLabel : showFilesLabel"
+          @click="configStore.setConfigValue('fileManagerShowFiles', !showFilesSection)"
+          @contextmenu="fileRootContextMenu"
         >
           <cds-icon
             role="presentation"
             shape="angle"
-            v-bind:direction="showFilesSection ? 'down' : 'right'"
-          ></cds-icon>
+            :direction="showFilesSection ? 'down' : 'right'"
+          />
 
           <cds-icon
             v-if="platform !== 'darwin'"
             shape="file"
             role="presentation"
-          ></cds-icon>
+          />
 
           {{ fileSectionHeading }}
 
@@ -39,44 +42,43 @@
             role="presentation"
             shape="ellipsis-horizontal"
             class="root-settings"
-            v-on:click.stop="fileRootContextMenu"
-          ></cds-icon>
+            @click.stop="fileRootContextMenu"
+          />
         </div>
 
         <template v-if="showFilesSection">
           <TreeItem
             v-for="item in getFiles"
-            v-bind:key="item.path"
-            v-bind:item="item"
-            v-bind:depth="0"
-            v-bind:active-item="activeTreeItem?.[0]"
-            v-bind:filter-results="filterResults"
-            v-bind:has-duplicate-name="getFiles.filter(i => i.name === item.name).length > 1"
-            v-bind:window-id="props.windowId"
-            v-on:toggle-file-list="emit('toggle-file-list')"
-          >
-          </TreeItem>
+            :key="item.path"
+            :item="item"
+            :depth="0"
+            :active-item="activeTreeItem?.[0]"
+            :filter-results="filterResults"
+            :has-duplicate-name="getFiles.filter(i => i.name === item.name).length > 1"
+            :window-id="props.windowId"
+            @toggle-file-list="emit('toggle-file-list')"
+          />
         </template>
       </template>
 
       <template v-if="getDirectories.length > 0">
         <div
           id="directories-dirs-header"
-          v-bind:title="showWorkspacesSection ? hideWorkspacesLabel : showWorkspacesLabel"
-          v-on:click="configStore.setConfigValue('fileManagerShowWorkspaces', !showWorkspacesSection)"
-          v-on:contextmenu="workspaceRootContextMenu"
+          :title="showWorkspacesSection ? hideWorkspacesLabel : showWorkspacesLabel"
+          @click="configStore.setConfigValue('fileManagerShowWorkspaces', !showWorkspacesSection)"
+          @contextmenu="workspaceRootContextMenu"
         >
           <cds-icon
             role="presentation"
             shape="angle"
-            v-bind:direction="showWorkspacesSection ? 'down' : 'right'"
-          ></cds-icon>
+            :direction="showWorkspacesSection ? 'down' : 'right'"
+          />
 
           <cds-icon
             v-if="platform !== 'darwin'"
             shape="tree-view"
             role="presentation"
-          ></cds-icon>
+          />
 
           {{ workspaceSectionHeading }}
 
@@ -85,28 +87,30 @@
             role="presentation"
             shape="ellipsis-horizontal"
             class="root-settings"
-            v-on:click.stop="workspaceRootContextMenu"
-          ></cds-icon>
+            @click.stop="workspaceRootContextMenu"
+          />
         </div>
 
         <template v-if="showWorkspacesSection">
           <TreeItem
             v-for="item in getDirectories"
-            v-bind:key="item.path"
-            v-bind:item="item"
-            v-bind:filter-results="filterResults"
-            v-bind:depth="0"
-            v-bind:active-item="activeTreeItem?.[0]"
-            v-bind:has-duplicate-name="getDirectories.filter(i => i.name === item.name).length > 1"
-            v-bind:window-id="props.windowId"
-            v-on:toggle-file-list="emit('toggle-file-list')"
-          >
-          </TreeItem>
+            :key="item.path"
+            :item="item"
+            :filter-results="filterResults"
+            :depth="0"
+            :active-item="activeTreeItem?.[0]"
+            :has-duplicate-name="getDirectories.filter(i => i.name === item.name).length > 1"
+            :window-id="props.windowId"
+            @toggle-file-list="emit('toggle-file-list')"
+          />
         </template>
       </template>
     </template>
     <template v-else>
-      <div class="empty-tree" v-on:click="requestOpenRoot">
+      <div
+        class="empty-tree"
+        @click="requestOpenRoot"
+      >
         <div class="info">
           {{ noRootsMessage }}
         </div>
@@ -116,28 +120,31 @@
 
   <PopoverWrapper
     v-if="workspacesContextMenuButton !== null && showSortingPopover"
-    v-bind:target="workspacesContextMenuButton"
-    v-bind:placement-priorities="[ 'right', 'below' ]"
-    v-on:close="showSortingPopover = false"
+    :target="workspacesContextMenuButton"
+    :placement-priorities="[ 'right', 'below' ]"
+    @close="showSortingPopover = false"
   >
     <h4>Sort workspaces</h4>
     <p>Drag and drop to sort workspaces manually.</p>
     <ul id="workspaces-drag-list">
       <li
         v-for="ws in getDirectories"
-        v-bind:key="ws.path"
-        v-bind:data-path="ws.path"
+        :key="ws.path"
+        :data-path="ws.path"
         draggable="true"
-        v-on:dragstart="startDragging"
-        v-on:dragover="dragOver"
-        v-on:drop="drop"
+        @dragstart="startDragging"
+        @dragover="dragOver"
+        @drop="drop"
       >
-        <cds-icon shape="bars"></cds-icon>
+        <cds-icon shape="bars" />
         {{ ws.name }}
       </li>
     </ul>
     <p v-if="configStore.config.fileManager.sortWorkspacesManually">
-      <ButtonControl v-bind:label="autoSortButtonLabel" v-on:click="configStore.setConfigValue('fileManager.sortWorkspacesManually', false)"></ButtonControl>
+      <ButtonControl
+        :label="autoSortButtonLabel"
+        @click="configStore.setConfigValue('fileManager.sortWorkspacesManually', false)"
+      />
     </p>
   </PopoverWrapper>
 </template>
@@ -311,10 +318,7 @@ const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, strin
  * @return {void}     Does not return.
  */
 function requestOpenRoot (event: MouseEvent): void {
-  let command = 'root-open-workspaces'
-  if (event.shiftKey) {
-    command = 'root-open-files'
-  }
+  const command = event.shiftKey ? 'root-open-files' : 'root-open-workspaces'
 
   ipcRenderer.invoke('application', { command })
     .catch(err => console.error(err))
@@ -553,7 +557,7 @@ function dragOver (event: DragEvent): void {
 
 function drop (event: DragEvent): void {
   const lis = document.querySelectorAll<HTMLLIElement>('ul#workspaces-drag-list li')
-  const targetLi = lis.entries().map(([ idx, li ]) => li).find(li => li.classList.contains('drag-over'))
+  const targetLi = lis.entries().map(([ _idx, li ]) => li).find(li => li.classList.contains('drag-over'))
   lis.forEach(li => li.classList.remove('drag-over'))
 
   if (
