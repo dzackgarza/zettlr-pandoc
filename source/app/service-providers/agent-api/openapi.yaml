@@ -2,11 +2,19 @@ openapi: 3.1.0
 info:
   title: Zettlr-Pandoc Editor Agent API
   version: 1.0.0
-  description: 'HTTP REST API for the Zettlr-Pandoc editor agent. Provides live document
-    reads, proposal submission, review inspection, and Server-Sent Events. The Electron
-    main process owns all agent-visible state.
+  description: >-
+    HTTP REST API for the Zettlr-Pandoc editor agent. Provides live document
+    reads, proposal submission, review inspection, and Server-Sent Events. The
+    Electron main process owns all agent-visible state.
 
-    '
+
+    The working loop: orient (workspace files -> documents -> reviews ->
+    chunks), submit claim-sized proposals against a fresh snapshot, then next
+    turn read the review's held chunks and comments and answer them with new
+    claims. Accepted material is already in the working text — never resubmit
+    it. A PATCH_NOT_APPLICABLE refusal means the text moved under you: re-read
+    the working side and rebuild against it, because a retry fails the same
+    way.
   license:
     name: GPL-3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
@@ -174,6 +182,9 @@ components:
             - reference
         snapshot:
           type: string
+          description: >-
+            Working-side reads only: the token to send as a proposal's
+            snapshot. A reference read carries none.
         revision:
           $ref: '#/components/schemas/DocumentRevision'
         reviewGeneration:
@@ -197,6 +208,9 @@ components:
           type: boolean
     ProposalClaim:
       type: object
+      description: >-
+        One logical decision — the smallest change a reviewer can accept or
+        reject on its own. Do not bundle unrelated edits into one claim.
       required:
         - description
         - patch
@@ -205,11 +219,17 @@ components:
           type: string
           minLength: 1
           description: >-
-            Prose: what this claim asserts its patch accomplishes. Shown to
-            the reviewer at the chunks the claim produced.
+            Self-contained prose shown to the reviewer at the chunks this
+            claim produced: what is wrong, what the patch changes, and why —
+            enough to adjudicate without re-deriving the diagnosis.
         patch:
           type: string
-          description: Unified diff implementing exactly this claim.
+          description: >-
+            Unified diff implementing exactly this claim. Name the target in
+            the ---/+++ headers as the literal `document` or as the
+            document's absolute path (a git-style a/ or b/ prefix is
+            allowed); any other filename, a create/delete/rename/binary/mode
+            patch, or a diff that leaves the text unchanged is PATCH_INVALID.
     SubmitProposalRequest:
       type: object
       required:
@@ -234,14 +254,22 @@ components:
             different request is refused as IDEMPOTENCY_CONFLICT.
         snapshot:
           type: string
+          description: >-
+            The token from the working-side read this proposal was built on.
+            It pins the version and hash the patches must apply to; a stale
+            one is refused as REVISION_MISMATCH.
         patchFormat:
           type: string
           enum:
             - unified-diff
         patch:
           type: string
+          description: The one-claim shape's diff; the rules of ProposalClaim.patch apply.
         description:
           type: string
+          description: >-
+            Prose for the one-claim shape, held to the same standard as
+            ProposalClaim.description.
         claims:
           type: array
           minItems: 1
@@ -251,9 +279,10 @@ components:
             Ordered claim sequence applied against the ONE snapshot,
             sequentially and atomically: claim k applies with zero fuzz to
             the text claim k-1 produced, all-or-nothing, and each claim
-            becomes its own packet. The patch/description pair remains as
-            the one-claim degenerate case; send exactly one of the two
-            shapes.
+            becomes its own packet. Prefer this shape — one entry per
+            logical decision gives the reviewer separately decidable
+            packets. The patch/description pair remains as the one-claim
+            degenerate case; send exactly one of the two shapes.
         expectedReviewGeneration:
           type: integer
     SubmitProposalResponse:
@@ -844,7 +873,10 @@ components:
             held chunks exist here.
         holdComment:
           type: string
-          description: The hold's comment, when this chunk is held with one.
+          description: >-
+            The hold's comment, when this chunk is held with one — the
+            reviewer's question or objection. Address it in your next
+            claims batch.
         patch:
           type: string
           description: Focused zero-context unified diff of exactly this chunk.
@@ -1243,6 +1275,13 @@ paths:
     get:
       operationId: readDocumentContent
       summary: Read live working or reference text by line slice
+      description: >-
+        side=working is the live document — the text your next patch must
+        match, with every accepted change already in it, and the only side
+        that returns the snapshot token a proposal needs. side=reference is
+        the review baseline, identical to working until a review exists.
+        Re-read working before each new proposal, and diff it against what
+        you proposed to detect an acceptance the reviewer tweaked.
       parameters:
         - name: documentId
           in: path
@@ -1338,7 +1377,9 @@ paths:
         batch applies sequentially and atomically server-side: every claim
         applies with zero fuzz to its predecessor's text or the whole batch
         is refused with nothing applied, and each claim becomes its own
-        packet (packetIds maps them in claim order). The reviewer may edit a
+        packet (packetIds maps them in claim order). Submit claim-sized
+        entries — one logical decision each. Accepted material is already in
+        the working text; do not resubmit it. The reviewer may edit a
         proposed chunk before accepting it, so diff your proposal against the
         final text if you care whether acceptance was verbatim.
       parameters:
@@ -1373,7 +1414,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
         '400':
-          description: Invalid or non-applicable patch
+          description: >-
+            Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the
+            document drifted from your snapshot: re-read the working content
+            and rebuild the patch against it — a blind retry fails
+            identically.
           content:
             application/json:
               schema:
@@ -1384,8 +1429,10 @@ paths:
       summary: List all reviews, attached and detached
       description: >-
         Reviews attached to open documents, plus detached (sidecar-backed)
-        reviews on files that are currently closed. A detached review
-        reattaches by opening its documentPath.
+        reviews on files that are currently closed. A returning turn starts
+        here: this is every review still carrying outstanding state, on files
+        nobody has open included. A detached review reattaches by opening its
+        documentPath.
       responses:
         '200':
           description: OK
@@ -1397,6 +1444,10 @@ paths:
     get:
       operationId: getReview
       summary: Inspect a review
+      description: >-
+        Status plus review-level comments — the reviewer's channel back to
+        you. Read the comments and the held chunks at the start of each turn
+        and address them with new claims.
       parameters:
         - name: reviewId
           in: path
@@ -1443,6 +1494,12 @@ paths:
     get:
       operationId: getReviewChunks
       summary: Inspect current unresolved chunks
+      description: >-
+        Read this at the start of each turn. A held chunk's holdComment is
+        the reviewer's question or objection — answer it with a revised claim
+        in your next submission. Pending chunks are simply undecided;
+        adjudicating your own proposals through the accept/reject routes ends
+        the review instead of answering it.
       parameters:
         - name: reviewId
           in: path
@@ -1583,7 +1640,8 @@ paths:
         Communication without adjudication: the comment lands in the review's
         comment list and advances the generation, so a long-poll on the
         existing generation cursor wakes — that cursor IS the "what changed
-        since my last turn" query.
+        since my last turn" query. Answer a hold here when the answer is an
+        argument; answer with a new claim when the answer is an edit.
       parameters:
         - name: reviewId
           in: path
@@ -1751,6 +1809,12 @@ paths:
     get:
       operationId: waitForReviewEvents
       summary: Long-poll review events and status after a generation advance
+      description: >-
+        The "what changed since my last turn" query: pass the generation from
+        your last response as afterGeneration. It answers at once if the
+        review has already moved past that generation, otherwise blocks until
+        a decision, hold, comment, or new packet advances it — or until
+        waitSeconds elapses, which answers with timedOut true.
       parameters:
         - name: reviewId
           in: path
@@ -1809,7 +1873,8 @@ paths:
       summary: List every file across the configured workspaces
       description: >-
         The agent's orientation entry point — all files the editor can see,
-        open or not, flat across every configured workspace.
+        open or not, flat across every configured workspace. Orient in this
+        order: workspace files -> documents -> reviews -> chunks.
       responses:
         '200':
           description: OK
