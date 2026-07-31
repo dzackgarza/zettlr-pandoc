@@ -916,9 +916,6 @@ export default class MarkdownEditor extends EventEmitter {
         });
         break;
       case "references":
-        // No-op wiring until the combined at-symbols provider joins the
-        // dispatcher (issue #1 Phase 3 green step): the dispatched effect has
-        // no consuming state field in the production extension set yet.
         this.databaseCache.references = database as ReferenceCompletionEntry[];
         this._instance.dispatch({
           effects: referencesUpdate.of(this.databaseCache.references),
