@@ -1362,8 +1362,10 @@ paths:
         '422':
           description: >-
             Pattern evaluation exceeded the server's time budget
-            (SEARCH_TIMEOUT). The deadline is checked between per-line
-            executions, so simplify the pattern rather than retrying.
+            (SEARCH_TIMEOUT). The budget bounds the whole match, including a
+            single catastrophically backtracking execution, so an identical
+            retry costs the same wall time and fails again: simplify the
+            pattern instead.
           content:
             application/json:
               schema:

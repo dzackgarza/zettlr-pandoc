@@ -56,6 +56,7 @@ import { app } from "electron";
 import fs from "fs";
 import http from "http";
 import path from "path";
+import vm from "vm";
 import { parse as parseYaml } from "yaml";
 import { sha256Text } from "@providers/documents/review-diff-store";
 import makeSearchRegex from "source/common/util/make-search-regex";
@@ -220,13 +221,55 @@ const SEARCH_CONTEXT_DEFAULT = 3;
  * regular expressions, and this server runs on the Electron main process: a
  * catastrophic pattern left unbounded does not slow one request down, it
  * freezes the editor. The length cap refuses absurd patterns at the decode
- * boundary; the deadline is checked between per-line executions inside the
- * match loop. JavaScript regex evaluation cannot be interrupted mid-exec, so
- * the honest ceiling is the deadline plus one line's worth of backtracking —
- * bounded by line length in practice, not by this constant alone.
+ * boundary; the deadline bounds evaluation.
+ *
+ * A deadline polled between lines would be a lie for the one input class it
+ * exists to survive: `/(a+)+$/` against a single non-matching line of a's
+ * backtracks exponentially inside one `exec` call, and no loop condition runs
+ * again until that call returns — minutes to never, with SEARCH_TIMEOUT
+ * unreachable. So the whole match loop is entered through `vm` with a
+ * `timeout`, which arms V8's execution terminator: V8 honours termination
+ * from inside regex evaluation, so the ceiling holds for any pattern, not
+ * just the ones that happen to yield between lines. The `vm` boundary is a
+ * pre-emption device here, not a security boundary — the pattern is still
+ * compiled and matched by this realm's code.
  */
 export const MAX_SEARCH_PATTERN_LENGTH = 512;
 const SEARCH_DEADLINE_MS = 1000;
+
+/**
+ * The match loop, factored out so it can be entered as one interruptible
+ * call. Runs to completion or is terminated mid-`exec`; a terminated run
+ * abandons this array, so partial hits never reach a response.
+ */
+function collectSearchHits(lines: string[], searchRegex: RegExp, contextSize: number): SearchHit[] {
+  const hits: SearchHit[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    searchRegex.lastIndex = 0;
+    let match: RegExpExecArray | null = searchRegex.exec(lines[i]);
+    while (match !== null) {
+      const found = match.index;
+      const hitLength = match[0].length;
+      if (hitLength === 0) {
+        searchRegex.lastIndex += 1;
+        match = searchRegex.exec(lines[i]);
+        continue;
+      }
+      hits.push({
+        line: i + 1,
+        column: found + 1,
+        length: hitLength,
+        contextBefore: lines.slice(Math.max(0, i - contextSize), i).join("\n"),
+        contextAfter: lines.slice(i + 1, Math.min(lines.length, i + 1 + contextSize)).join("\n"),
+      });
+      if (searchRegex.lastIndex >= lines[i].length) {
+        break;
+      }
+      match = searchRegex.exec(lines[i]);
+    }
+  }
+  return hits;
+}
 
 function decodeSearchDocumentRequest(
   body: string,
@@ -1318,7 +1361,6 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
     const lines = result.content.split("\n");
     const contextSize = searchRequest.context;
-    const hits: SearchHit[] = [];
     let searchRegex: RegExp;
     try {
       searchRegex = makeSearchRegex(searchRequest.literal, "g");
@@ -1326,38 +1368,24 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 400, "INVALID_PARAMS", "Invalid search pattern");
       return;
     }
-    const deadline = Date.now() + SEARCH_DEADLINE_MS;
-    for (let i = 0; i < lines.length; i++) {
-      if (Date.now() > deadline) {
-        this.sendError(
-          res,
-          422,
-          "SEARCH_TIMEOUT",
-          `Search did not finish within ${SEARCH_DEADLINE_MS} ms; simplify the pattern`,
-        );
-        return;
+    let hits: SearchHit[];
+    try {
+      hits = vm.runInNewContext(
+        "collectSearchHits(lines, searchRegex, contextSize)",
+        { collectSearchHits, lines, searchRegex, contextSize },
+        { timeout: SEARCH_DEADLINE_MS },
+      ) as SearchHit[];
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ERR_SCRIPT_EXECUTION_TIMEOUT") {
+        throw err;
       }
-      searchRegex.lastIndex = 0;
-      let match: RegExpExecArray | null = searchRegex.exec(lines[i]);
-      while (match !== null) {
-        const found = match.index;
-        const hitLength = match[0].length;
-        if (hitLength === 0) {
-          searchRegex.lastIndex += 1;
-          match = searchRegex.exec(lines[i]);
-          continue;
-        }
-        hits.push({
-          line: i + 1,
-          column: found + 1,
-          length: hitLength,
-          contextBefore: lines.slice(Math.max(0, i - contextSize), i).join("\n"),
-          contextAfter: lines.slice(i + 1, Math.min(lines.length, i + 1 + contextSize)).join("\n"),
-        });
-        if (searchRegex.lastIndex >= lines[i].length) {
-          break;
-        }
-      }
+      this.sendError(
+        res,
+        422,
+        "SEARCH_TIMEOUT",
+        `Search did not finish within ${SEARCH_DEADLINE_MS} ms; simplify the pattern`,
+      );
+      return;
     }
     this.sendJson(res, 200, {
       documentId,

@@ -147,8 +147,12 @@ import {
   projectStatusDisplayName
 } from '@common/pandoc-util/project-reference-status'
 import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
-import type { ProjectRootSpec, ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
-import { THEOREM_DIV_PREFIXES } from '@common/util/pandoc-quick-reference'
+import {
+  referenceFamilyDisplayName,
+  type ProjectRootSpec,
+  type ReferenceDefinition,
+  type ReferenceOccurrence
+} from '@dts/common/references'
 
 const props = withDefaults(defineProps<{
   definitions: ReferenceDefinition[]
@@ -227,44 +231,20 @@ const citingLocations = computed<ReferenceOccurrence[]>(() => {
 // A new query re-ranks the rows, so the selection restarts at the top match.
 watch(query, () => { selectedIndex.value = 0 })
 
-const CROSSREF_LABELS: Record<string, string> = {
-  fig: 'Figure',
-  tbl: 'Table',
-  eq: 'Equation',
-  sec: 'Section',
-  lst: 'Listing'
-}
-
-/**
- * Returns the human-readable type of a definition: the crossref object name
- * for attribute families, or the capitalized theorem-div class otherwise.
- *
- * @param   {ReferenceDefinition}  definition  The definition
- *
- * @return  {string}                           The display type
- */
-function familyLabel (definition: ReferenceDefinition): string {
-  const crossref = CROSSREF_LABELS[definition.family]
-  if (crossref !== undefined) {
-    return crossref
-  }
-
-  const divClass: string = THEOREM_DIV_PREFIXES[definition.family as keyof typeof THEOREM_DIV_PREFIXES]
-  return divClass.charAt(0).toUpperCase() + divClass.slice(1)
-}
-
 /**
  * Returns the row headline: `Type — title`, or just the type when nothing
- * was authored as a title.
+ * was authored as a title. The type comes from the shared family-display
+ * authority (referenceFamilyDisplayName), never from a label table local to
+ * this view: a family added to the reference registry must reach this row
+ * with its display name, not as an undefined lookup.
  *
  * @param   {ReferenceDefinition}  definition  The definition
  *
  * @return  {string}                           The row headline
  */
 function typeAndTitle (definition: ReferenceDefinition): string {
-  return definition.title === undefined
-    ? familyLabel(definition)
-    : `${familyLabel(definition)} — ${definition.title}`
+  const type = referenceFamilyDisplayName(definition.family)
+  return definition.title === undefined ? type : `${type} — ${definition.title}`
 }
 
 /**

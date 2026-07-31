@@ -915,21 +915,60 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(JSON.parse(response.body).error.code, "INVALID_PARAMS");
   });
 
-  it("stops a catastrophic search pattern with SEARCH_TIMEOUT", async function () {
-    // (a+)+$ against a line of a's ending in a non-match backtracks
-    // exponentially — 2^24 steps per line here. Unbounded, these 200 lines
-    // hold the main process for tens of seconds; the deadline between
-    // per-line executions must cut that off with a declared error instead.
-    this.timeout(15000);
+  it("stops a catastrophic search pattern on ONE line with SEARCH_TIMEOUT", async function () {
+    // The whole document is a single line: `(a+)+$` against 30 a's ending in
+    // a non-match backtracks exponentially inside ONE exec call — about ten
+    // seconds of frozen main process here, unbounded as the line grows. A
+    // deadline observed between lines never gets to run, so this is exactly
+    // the input the declared budget exists to survive, and the elapsed
+    // assertion is the declaration: the answer arrives on the budget's scale,
+    // not the pattern's. Then a plain search on the same document must still
+    // answer, because a ceiling that leaves the process wedged is no ceiling.
+    this.timeout(30000);
     const filePath = path.join(scratch, "catastrophic.md");
-    const line = "a".repeat(24) + "!";
-    const docId = await openFile(filePath, Array(200).fill(line).join("\n") + "\n");
+    const docId = await openFile(filePath, "a".repeat(30) + "!\n");
+    const started = Date.now();
     const response = await httpRequest("POST", `/v1/documents/${docId}/search`, {
       body: JSON.stringify({ literal: "/(a+)+$/" }),
       headers: { "content-type": "application/json" },
     });
+    const elapsed = Date.now() - started;
     assert.equal(response.status, 422);
     assert.equal(JSON.parse(response.body).error.code, "SEARCH_TIMEOUT");
+    assert.ok(elapsed < 5000, `search returned after ${elapsed} ms, past the declared budget`);
+
+    const after = await httpRequest("POST", `/v1/documents/${docId}/search`, {
+      body: JSON.stringify({ literal: "!" }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(after.status, 200);
+    assert.equal(JSON.parse(after.body).hits.length, 1);
+  });
+
+  it("returns every hit on a line that matches more than once", async function () {
+    // Two hits on one line is the ordinary case, and the per-line loop only
+    // advances if it re-executes after each hit. Without that, the same match
+    // is pushed forever and the search never returns.
+    this.timeout(10000);
+    const filePath = path.join(scratch, "repeated-hits.md");
+    const docId = await openFile(filePath, "alpha beta alpha gamma\n");
+    const response = await httpRequest("POST", `/v1/documents/${docId}/search`, {
+      body: JSON.stringify({ literal: "alpha" }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(response.status, 200);
+    const hits = JSON.parse(response.body).hits;
+    assert.deepEqual(
+      hits.map((hit: { line: number; column: number; length: number }) => [
+        hit.line,
+        hit.column,
+        hit.length,
+      ]),
+      [
+        [1, 1, 5],
+        [1, 12, 5],
+      ],
+    );
   });
 
   it("POST /v1/documents/{id}/proposals returns 412 on a stale snapshot", async function () {

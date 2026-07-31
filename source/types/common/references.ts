@@ -2,7 +2,11 @@
 // (FSAL-owned saved snapshots) and the renderer (live CodeMirror
 // replacements). This is the typed model locked by issue #1.
 
-import { PANDOC_CROSSREF_PREFIXES, THEOREM_DIV_PREFIXES } from '../../common/util/pandoc-quick-reference'
+import {
+  PANDOC_CROSS_REFERENCE_EXAMPLES,
+  PANDOC_CROSSREF_PREFIXES,
+  THEOREM_DIV_PREFIXES
+} from '../../common/util/pandoc-quick-reference'
 
 /**
  * The explicit pandoc-crossref label families supported at launch.
@@ -55,34 +59,41 @@ export function referenceFamilyOf (key: string): ReferenceFamily|undefined {
     : undefined
 }
 
-/**
- * Display names of the explicit pandoc-crossref label families.
- */
-const CROSSREF_FAMILY_DISPLAY: Record<CrossrefFamily, string> = {
-  fig: 'Figure',
-  tbl: 'Table',
-  eq: 'Equation',
-  sec: 'Section',
-  lst: 'Listing'
+function capitalized (word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1)
 }
 
 /**
- * The display name of a reference family, derived from the fixed theorem
- * prefix registry ('thm' -> 'Theorem') or the crossref family map
- * ('fig' -> 'Figure'). Display names never carry a computed number:
- * numbering is owned exclusively by export tools and templates.
+ * The display name of every supported reference family, DERIVED from the two
+ * registries that already carry the word: the crossref examples' object kind
+ * ('figure' -> 'Figure') and the theorem prefix registry's fenced-div class
+ * ('theorem' -> 'Theorem').
+ *
+ * AUTHORITY: deriving by iteration — instead of joining the registries against
+ * a second, hand-maintained label table — is what makes a family ADDED to a
+ * registry arrive with a display name. A hand-maintained table can only be
+ * joined by index, and an index lookup that misses yields undefined, which
+ * consumers then dereference. The type assertion states exactly what the two
+ * spreads build: one entry per member of ReferenceFamily, whose members are
+ * the keys of these very registries.
+ */
+const REFERENCE_FAMILY_DISPLAY = Object.fromEntries([
+  ...PANDOC_CROSS_REFERENCE_EXAMPLES.map(example => [ example.prefix, capitalized(example.kind) ] as const),
+  ...Object.entries(THEOREM_DIV_PREFIXES).map(([ prefix, divClass ]) => [ prefix, capitalized(divClass) ] as const)
+]) as Record<ReferenceFamily, string>
+
+/**
+ * The display name of a reference family ('thm' -> 'Theorem', 'fig' ->
+ * 'Figure'): the single authority every reference view labels its rows from.
+ * Display names never carry a computed number: numbering is owned exclusively
+ * by export tools and templates.
  *
  * @param   {ReferenceFamily}  family  The reference family
  *
  * @return  {string}                   The capitalized display name
  */
 export function referenceFamilyDisplayName (family: ReferenceFamily): string {
-  const theoremClass = (THEOREM_DIV_PREFIXES as Record<string, string|undefined>)[family]
-  if (theoremClass !== undefined) {
-    return theoremClass.charAt(0).toUpperCase() + theoremClass.slice(1)
-  }
-
-  return CROSSREF_FAMILY_DISPLAY[family as CrossrefFamily]
+  return REFERENCE_FAMILY_DISPLAY[family]
 }
 
 /**

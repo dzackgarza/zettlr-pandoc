@@ -28,6 +28,7 @@ import { tmpdir } from 'os'
 import path from 'path'
 import { promisify } from 'util'
 import { extractReferences } from 'source/common/pandoc-util/extract-references'
+import { referenceFamilyDisplayName, referenceFamilyOf } from 'source/types/common/references'
 
 const execFileAsync = promisify(execFile)
 
@@ -143,6 +144,29 @@ describe('Mod-P reference search overlay', function () {
       result.rows[0].text.includes('lem:kodaira:embedding'),
       'the row must display the authored key'
     )
+  })
+
+  it('headlines every row with the shared display name of its family', function () {
+    // The overlay may not label rows from a table of its own: the type word
+    // comes from referenceFamilyDisplayName(), the authority the completion
+    // detail line, hover tooltips, chips, and the label dialog also read. A
+    // view-local table drifts silently when a family is added to the
+    // registry — the row then renders an undefined type, or crashes on it.
+    const rows = result.initialState.rows
+    const families = new Set<string>()
+    for (const row of rows) {
+      assert.ok(row.key !== null, 'every row must carry its authored key')
+      const family = referenceFamilyOf(row.key)
+      assert.ok(family !== undefined, `the row key ${row.key} must belong to a supported family`)
+      assert.ok(
+        row.text.trim().startsWith(referenceFamilyDisplayName(family)),
+        `the ${family} row must open with its shared display name, got ${JSON.stringify(row.text.trim().slice(0, 60))}`
+      )
+      families.add(family)
+    }
+
+    // Non-vacuity: the scene must exercise many distinct family labels.
+    assert.ok(families.size >= 10, `the scene must label many distinct families, got ${families.size}`)
   })
 
   it('Enter emits the jump intent for the selected definition', function () {
