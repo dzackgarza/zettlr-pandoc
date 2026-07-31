@@ -238,7 +238,7 @@ export default class WindowProvider extends ProviderContract {
       )
     })
 
-    ipcMain.handle('request-dir', async (event, _message) => {
+    ipcMain.handle('request-dir', async (_event, _message) => {
       const focusedWindow = BrowserWindow.getFocusedWindow()
       return await this.askDir(trans('Open project folder'), focusedWindow)
     })
@@ -248,11 +248,11 @@ export default class WindowProvider extends ProviderContract {
       return await this.shouldCloseAll(rootType)
     })
 
-    this._documents.on(DP_EVENTS.CHANGE_FILE_STATUS, (_ctx: any) => {
+    this._documents.on(DP_EVENTS.CHANGE_FILE_STATUS, (_ctx: unknown) => {
       // Always update the main window's flag depending on whether the document
       // manager is clean or not
       for (const key in this._mainWindows) {
-        this.setModified(key, !this._documents.isClean(key, 'window'))
+        this.setModified(key, !this._documents.isClean(key))
       }
     })
 
@@ -321,7 +321,7 @@ export default class WindowProvider extends ProviderContract {
    * @param   {string}    evt       The event to listen to
    * @param   {Function}  callback  The callback to call
    */
-  on (evt: string, callback: (...args: any[]) => void): void {
+  on (evt: string, callback: (...args: unknown[]) => void): void {
     this._emitter.on(evt, callback)
   }
 
@@ -331,7 +331,7 @@ export default class WindowProvider extends ProviderContract {
    * @param   {string}    evt       The event to listen to
    * @param   {Function}  callback  The callback to call
    */
-  off (evt: string, callback: (...args: any[]) => void): void {
+  off (evt: string, callback: (...args: unknown[]) => void): void {
     this._emitter.off(evt, callback)
   }
 
@@ -380,8 +380,10 @@ export default class WindowProvider extends ProviderContract {
         return
       }
 
-      // Only close this window if it is safe to do so. The isClean() method will
-      // return true during shutdowns.
+      // Only close this window if it is safe to do so: unsaved changes in it
+      // get the save-or-discard prompt first. askUserToCloseWindow drops the
+      // window itself once answered, so the close it then permits comes back
+      // through here with nothing left to ask about.
       if (!this._documents.isClean(key)) {
         event.preventDefault()
         this._documents.askUserToCloseWindow(key)
