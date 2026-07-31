@@ -2877,10 +2877,33 @@ current contents from the editor somewhere else, and restart the application.`,
     if (currentText === workingText) {
       return;
     }
-    // Replace the document content atomically
+    // Splice only the changed span. A whole-document replacement maps every
+    // pane's selection through a change covering the full text, which
+    // collapses cursors to the splice boundary — the author's cursor jumped
+    // on every arriving packet and every reject. Trimming the common prefix
+    // and suffix leaves positions outside the edit untouched.
+    let prefix = 0;
+    const shorter = Math.min(currentText.length, workingText.length);
+    while (prefix < shorter && currentText.charCodeAt(prefix) === workingText.charCodeAt(prefix)) {
+      prefix++;
+    }
+    let suffix = 0;
+    while (
+      suffix < shorter - prefix &&
+      currentText.charCodeAt(currentText.length - 1 - suffix) ===
+        workingText.charCodeAt(workingText.length - 1 - suffix)
+    ) {
+      suffix++;
+    }
     const newText = Text.of(workingText.split("\n"));
     const changes = ChangeSet.of(
-      [{ from: 0, to: doc.document.length, insert: workingText }],
+      [
+        {
+          from: prefix,
+          to: currentText.length - suffix,
+          insert: workingText.slice(prefix, workingText.length - suffix),
+        },
+      ],
       doc.document.length,
     );
     // Serialize before mutating: serializeChangeSet throws on a shape it does
