@@ -530,7 +530,7 @@ export class ReviewDiffStore extends EventEmitter {
       generation: review.generation,
       workingText: newWorkingText,
       unresolvedChunks,
-      state: unresolvedChunks === 0 ? "resolved-awaiting-save" : "active",
+      state: this.classifyState(review, unresolvedChunks),
     };
     this.idempotencyIndex.set(
       this.idempotencyIndexKey(documentId, options.clientRequestId),
@@ -629,7 +629,7 @@ export class ReviewDiffStore extends EventEmitter {
       generation: review.generation,
       workingText: newWorkingText,
       unresolvedChunks,
-      state: unresolvedChunks === 0 ? "resolved-awaiting-save" : "active",
+      state: this.classifyState(review, unresolvedChunks),
     };
   }
 
@@ -882,11 +882,7 @@ export class ReviewDiffStore extends EventEmitter {
     const unresolvedChunks = this.partitionOf(review).length;
     return {
       reviewId: review.reviewId,
-      state: this.isInvalidated(review)
-        ? "invalidated"
-        : unresolvedChunks === 0
-          ? "resolved-awaiting-save"
-          : "active",
+      state: this.classifyState(review, unresolvedChunks),
       generation: review.generation,
       unresolvedChunks,
       packetCount: review.packets.length,
@@ -909,11 +905,7 @@ export class ReviewDiffStore extends EventEmitter {
       return {
         reviewId: r.reviewId,
         documentId: r.documentId,
-        state: this.isInvalidated(r)
-          ? "invalidated"
-          : unresolvedChunks === 0
-            ? "resolved-awaiting-save"
-            : "active",
+        state: this.classifyState(r, unresolvedChunks),
         generation: r.generation,
         unresolvedChunks,
         packetCount: r.packets.length,
@@ -968,8 +960,28 @@ export class ReviewDiffStore extends EventEmitter {
     return review.invalidated;
   }
 
+  /**
+   * The one review-state classifier. Every surface that reports a ReviewState
+   * for an existing review (single-review status, the review list, packet and
+   * decision results) must route through here so they cannot diverge.
+   */
+  private classifyState(
+    review: ActiveReviewState,
+    unresolvedChunks: number,
+  ): ReviewState {
+    if (this.isInvalidated(review)) {
+      return "invalidated";
+    }
+    return unresolvedChunks === 0 ? "resolved-awaiting-save" : "active";
+  }
+
+  /**
+   * Collision-free composite key: clientRequestId is an arbitrary
+   * client-supplied string and documentId is caller-supplied, so no separator
+   * character is safe. A JSON tuple encodes both components unambiguously.
+   */
   private idempotencyIndexKey(documentId: string, clientRequestId: string): string {
-    return `${documentId}:${clientRequestId}`;
+    return JSON.stringify([documentId, clientRequestId]);
   }
 
   emitEvent(event: string, payload: Record<string, unknown>): void {

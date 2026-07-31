@@ -192,6 +192,33 @@ describe("ReviewDiffStore", function () {
       assert.deepEqual(first, second);
     });
 
+    it("does not conflate idempotency keys whose components embed a separator", function () {
+      // ("a:b", "c") and ("a", "b:c") collide under a naive
+      // `${documentId}:${clientRequestId}` join: a colliding key would replay
+      // the first review's cached result for the second review's submission.
+      const baseline = "alpha\nbeta\n";
+      openReview("a:b", baseline);
+      openReview("a", baseline);
+      const first = store.submitPacket("a:b", {
+        patchFormat: "unified-diff",
+        patch: makePatch(baseline, "alpha\nGAMMA\n"),
+        clientRequestId: "c",
+      });
+      assert.equal(first.ok, true);
+      if (!first.ok) {return;}
+      documents.set("a:b", first.workingText);
+      const second = store.submitPacket("a", {
+        patchFormat: "unified-diff",
+        patch: makePatch(baseline, "ALPHA\nbeta\n"),
+        clientRequestId: "b:c",
+      });
+      assert.equal(second.ok, true, `expected a fresh application: ${JSON.stringify(second)}`);
+      if (!second.ok) {return;}
+      assert.notEqual(second.packetId, first.packetId);
+      assert.notEqual(second.reviewId, first.reviewId);
+      assert.equal(second.workingText, "ALPHA\nbeta\n");
+    });
+
     it("rejects a packet that leaves the working text unchanged, as openReview does", function () {
       const baseline = "alpha\nbeta\n";
       const proposed = "alpha\nBETA\n";
@@ -553,6 +580,19 @@ describe("ReviewDiffStore", function () {
       assert.notEqual(status, undefined);
       assert.equal(status!.state, "resolved-awaiting-save");
       assert.equal(status!.unresolvedChunks, 0);
+    });
+
+    it("reports invalidated identically from status and list", function () {
+      const baseline = "alpha\n";
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, "beta\n"),
+        clientRequestId: "req-1",
+      });
+      store.invalidateReview(DOC_ID);
+      assert.equal(store.getReviewStatus(DOC_ID)!.state, "invalidated");
+      const listed = store.listReviews();
+      assert.equal(listed.length, 1);
+      assert.equal(listed[0].state, "invalidated");
     });
   });
 
