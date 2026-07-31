@@ -37,7 +37,17 @@ def dev_pids() -> list[int]:
         except (FileNotFoundError, PermissionError, ProcessLookupError, UnicodeDecodeError):
             continue
 
-        is_forge_start = any(token.endswith("electron-forge.js") for token in command) and "start" in command
+        # Two shapes, because the CLI dispatches `forge start` to its own entry
+        # point: `node .../electron-forge.js start` when it is invoked through
+        # the multiplexer, and `node .../electron-forge-start.js` with no
+        # subcommand argument once it has. Matching only the first is why a
+        # stale launch survived --kill and the next one died on EADDRINUSE
+        # against :9001 with the reaper reporting nothing to do.
+        is_forge_start = any(
+            token.endswith("electron-forge-start.js")
+            or (token.endswith("electron-forge.js") and "start" in command)
+            for token in command
+        )
         is_project_electron = any(token.endswith("node_modules/electron/dist/electron") for token in command) and "." in command
         if working_directory == PROJECT_ROOT and (is_forge_start or is_project_electron):
             pids.append(int(process_dir.name))
