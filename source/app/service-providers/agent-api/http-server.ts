@@ -644,6 +644,15 @@ export default class AgentHTTPProvider extends ProviderContract {
       if (subPath === "/chunks" && method === "GET") {
         return this.handleGetReviewChunks(res, reviewId);
       }
+      const chunkDecision = subPath?.match(/^\/chunks\/([^/]+)\/(accept|reject)$/);
+      if (chunkDecision !== null && chunkDecision !== undefined && method === "POST") {
+        return this.handleDecideChunk(
+          res,
+          reviewId,
+          decodeURIComponent(chunkDecision[1]),
+          chunkDecision[2] as "accept" | "reject",
+        );
+      }
       if (subPath === "/packets" && method === "GET") {
         return this.handleGetReviewPackets(res, reviewId);
       }
@@ -1278,6 +1287,35 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
+  /**
+   * POST /v1/reviews/{reviewId}/chunks/{chunkId}/accept | /reject
+   *
+   * The same decision path the editor's buttons use — DocumentManager's
+   * decideChunk — so an agent and a human clicking are indistinguishable to
+   * the review state machine. The chunkId is content-addressed: if the region
+   * changed since the caller listed chunks, the decision fails with
+   * CHUNK_NOT_FOUND instead of landing somewhere unintended.
+   */
+  private handleDecideChunk(
+    res: http.ServerResponse,
+    reviewId: string,
+    chunkId: string,
+    decision: "accept" | "reject",
+  ): void {
+    const result = this._documents.decideChunk(reviewId, chunkId, decision);
+    if (!result.ok) {
+      const status =
+        result.code === "REVIEW_NOT_FOUND" || result.code === "CHUNK_NOT_FOUND"
+          ? 404
+          : result.code === "DOCUMENT_CLOSED"
+            ? 409
+            : 400;
+      this.sendError(res, status, result.code, result.message);
+      return;
+    }
+    this.sendJson(res, 200, result);
+  }
+
   private handleGetReviewChunks(res: http.ServerResponse, reviewId: string): void {
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
@@ -1458,7 +1496,9 @@ export default class AgentHTTPProvider extends ProviderContract {
           enriched.reviewGeneration = review.generation;
         }
         if (enriched.unresolvedChunks === undefined) {
-          enriched.unresolvedChunks = this._documents.reviewStore.countUnresolvedChunks(review);
+          enriched.unresolvedChunks = this._documents.reviewStore.countUnresolved(
+            enriched.documentId,
+          );
         }
       }
     }

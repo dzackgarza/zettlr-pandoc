@@ -219,14 +219,17 @@ export interface ActiveReviewState {
   documentPath: string;
   /** The initial baseline text when the review opened. Does not change. */
   baselineText: string;
-  /** Evolving merge reference: accepted state + rejected restorations. */
+  /**
+   * Evolving merge reference: accepted state + rejected restorations. This is
+   * the ONLY text a review stores. The working text is the live document,
+   * owned by the document authority and read through the store's resolver —
+   * a mirrored copy here is what previously let the two drift apart.
+   */
   referenceText: string;
-  /** Current visible provider document. */
-  workingText: string;
   generation: number;
   packets: ProposalPacket[];
   diskFenceSha256: string;
-  /** True after external disk drift invalidated the review (spec section 10). */
+  /** True after external disk drift invalidated the review. */
   invalidated: boolean;
 }
 
@@ -235,8 +238,15 @@ export interface ActiveReviewState {
 // ============================================================================
 
 export interface OutstandingChunk {
+  /**
+   * Content-addressed identity, stable while the chunk's own text is
+   * untouched: deciding one chunk does not invalidate the ids of the others.
+   * A decision on a chunk whose region has since changed fails with
+   * CHUNK_NOT_FOUND instead of applying somewhere unintended.
+   */
   chunkId: string;
-  generation: number;
+  /** 1-based, half-open: the chunk covers lines [fromLine, toLine). An empty
+   * range (fromLine === toLine) marks a pure insertion or deletion side. */
   referenceRange: {
     fromLine: number;
     toLine: number;
@@ -245,6 +255,11 @@ export interface OutstandingChunk {
     fromLine: number;
     toLine: number;
   };
+  /** The reference-side lines, newline-joined; "" for a pure insertion. */
+  referenceText: string;
+  /** The working-side lines, newline-joined; "" for a pure deletion. */
+  workingText: string;
+  /** Focused zero-context unified diff of exactly this chunk. */
   patch: string;
 }
 
@@ -484,6 +499,7 @@ export const AGENT_ERROR_CODES = [
   "PATCH_INVALID",
   "PATCH_NOT_APPLICABLE",
   "PACKET_NOT_RETRACTABLE",
+  "CHUNK_NOT_FOUND",
   "IDEMPOTENCY_CONFLICT",
   "REQUEST_TOO_LARGE",
   "METHOD_NOT_FOUND",

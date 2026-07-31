@@ -1,49 +1,22 @@
+/**
+ * What a renderer pane needs to DISPLAY a review: the provider-owned merge
+ * reference and the identifiers to send decisions back with. The pane derives
+ * its widgets from (referenceText, its own live document) via the shared chunk
+ * engine and never reports state — decisions go through the provider's
+ * decide-review-chunk command, and the next broadcast of this session is the
+ * only way review state changes reach the pane.
+ */
 export interface ReviewDiffSession {
   id: string;
   reviewGeneration: number;
   documentPath: string;
-  patchPath?: string;
   /**
-   * SHA-256 of the live document content the proposition was built against.
-   * This also powers idempotent proposal application and replays.
+   * The provider-owned merge reference. Accepting a chunk moves this text
+   * toward the editable document; rejecting moves the editable document
+   * toward this text. Only the provider mutates either.
    */
-  baselineSha256: string;
-  /**
-   * SHA-256 of the on-disk document when the review opened. The final save gate
-   * uses this to preserve external disk edits.
-   */
-  diskBaselineSha256: string;
-  baselineText: string;
-  /**
-   * CodeMirror's mutable unified-merge reference document. Accepting a chunk
-   * moves this text toward the editable document; rejecting moves the editable
-   * document toward this text.
-   */
-  originalText: string;
-  proposedText: string;
-  /**
-   * The authoritative provider buffer this session should currently display.
-   */
-  currentText: string;
+  referenceText: string;
   description?: string;
-}
-
-export interface ReviewDiffStatus {
-  filePath: string;
-  sessionId: string;
-  unresolvedChunks: number;
-  originalText: string;
-  currentText: string;
-  documentVersion: number;
-  sourceWindowId: string;
-  sourceLeafId: string;
-  /**
-   * Spec section 13: the review generation the pane observed when reporting.
-   * Required, not optional: the pane always knows its generation, and making it
-   * optional is what allowed the IPC payload to omit it silently and disable
-   * the staleness guard in DocumentManager.setReviewDiffStatus.
-   */
-  reviewGeneration: number;
 }
 
 export interface ReviewDiffDocumentSnapshot {

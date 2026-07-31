@@ -40,8 +40,8 @@ import {
 } from "@dts/common/documents";
 import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type { DocumentLocation, SourceRange } from "@dts/common/references";
-import type { ReviewState } from "@dts/common/agent-api";
-import type { ReviewDiffSession, ReviewDiffStatus } from "@dts/common/review-diff";
+import type { AgentErrorCode, ReviewState } from "@dts/common/agent-api";
+import type { ReviewDiffSession } from "@dts/common/review-diff";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import ProviderContract, { type IPCAPI } from "@providers/provider-contract";
@@ -61,7 +61,7 @@ import isDir from "source/common/util/is-dir";
 import { v4 as uuid4 } from "uuid";
 import { type AppServiceContainer } from "../../app-service-container";
 import { DocumentTree, type DTLeaf } from "./document-tree";
-import { ReviewDiffStore } from "./review-diff-store";
+import { ReviewDiffStore, type OpenReviewResult } from "./review-diff-store";
 
 type DocumentWindows = Record<string, DocumentTree>;
 type DocumentWindowsJSON = Record<string, BranchNodeJSON | LeafNodeJSON>;
@@ -303,8 +303,10 @@ export type DocumentManagerIPCAPI = IPCAPI<{
   "sort-open-files": LeafLoc & { newOrder: string[] };
   "get-file-modification-status": unknown;
   "get-review-diff-session": { path: string };
-  "set-review-diff-status": Omit<ReviewDiffStatus, "filePath"> & {
-    path: string;
+  "decide-review-chunk": {
+    reviewId: string;
+    chunkId: string;
+    decision: "accept" | "reject";
   };
 
   "move-file": {
@@ -417,7 +419,15 @@ export default class DocumentManager extends ProviderContract {
     this._config = new PersistentDataContainer(containerPath, "yaml");
     this._ignoreChanges = [];
     this._remoteChangeDialogShownFor = [];
-    this._reviewStore = new ReviewDiffStore();
+    // The store never mirrors the working text: it reads the live document —
+    // the single owner of that text — through this resolver.
+    this._reviewStore = new ReviewDiffStore((documentId) => {
+      const filePath = this.getDocumentPath(documentId);
+      if (filePath === undefined) {
+        return undefined;
+      }
+      return this.documents.find((d) => d.filePath === filePath)?.document.toString();
+    });
     this._documentIdByPath = new Map();
     this._proposalIdempotency = new Map();
     this.documents = [];
@@ -542,42 +552,16 @@ export default class DocumentManager extends ProviderContract {
           if (review === undefined) {
             return undefined;
           }
-          // Construct legacy ReviewDiffSession for renderer compat
           return {
             id: review.reviewId,
             reviewGeneration: review.generation,
             documentPath: payload.path,
-            baselineSha256: sha256Text(review.baselineText),
-            diskBaselineSha256: review.diskFenceSha256,
-            baselineText: review.baselineText,
-            originalText: review.referenceText,
-            proposedText: review.workingText,
-            currentText: review.workingText,
+            referenceText: review.referenceText,
           } as ReviewDiffSession;
         }
-        case "set-review-diff-status": {
-          const {
-            path,
-            sessionId,
-            unresolvedChunks,
-            originalText,
-            currentText,
-            documentVersion,
-            sourceWindowId,
-            sourceLeafId,
-            reviewGeneration,
-          } = payload;
-          return this.setReviewDiffStatus({
-            filePath: path,
-            sessionId,
-            unresolvedChunks,
-            originalText,
-            currentText,
-            documentVersion,
-            sourceWindowId,
-            sourceLeafId,
-            reviewGeneration,
-          });
+        case "decide-review-chunk": {
+          const { reviewId, chunkId, decision } = payload;
+          return this.decideChunk(reviewId, chunkId, decision);
         }
         case "move-file": {
           const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;
@@ -2055,98 +2039,91 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Reconciles a pane's accept/reject report into the provider-owned review
-   * state. Every rejection path logs why: a refused report leaves the review's
-   * unresolved count unchanged, which closes the save gate, and without a
-   * reason the resulting deadlock is invisible in the logs.
+   * Apply one accept/reject decision to a review chunk. This is the single
+   * decision path: the renderer's buttons and the HTTP API both land here,
+   * and the pane never mutates review state — so there is no pane report to
+   * reconcile, no generation/version/text triple-check, and no way for the
+   * provider and the editor to disagree about what was decided.
+   *
+   * Accept moves the merge reference. Reject edits the live document through
+   * the provider's own authority. Either way the new state is broadcast, and
+   * every pane redraws its widgets from that broadcast.
    */
-  private setReviewDiffStatus(status: ReviewDiffStatus): boolean {
-    const docId = this.getDocumentId(status.filePath);
-    if (docId === undefined) {
-      this._app.log.error(
-        `[DocumentManager] Review status refused: no documentId for ${status.filePath}`,
-      );
-      return false;
-    }
-    const review = this._reviewStore.getReview(docId);
-    if (review === undefined) {
-      this._app.log.error(
-        `[DocumentManager] Review status refused: no active review for ${status.filePath}`,
-      );
-      return false;
-    }
-    if (review.reviewId !== status.sessionId) {
-      this._app.log.error(
-        `[DocumentManager] Review status refused: session ${status.sessionId} does not match ` +
-          `active review ${review.reviewId} for ${status.filePath}`,
-      );
-      return false;
-    }
-
-    // Spec section 13: guard against stale pane decisions by checking
-    // the review generation the pane observed when reporting.
-    if (status.reviewGeneration !== review.generation) {
-      // The pane's report is stale — re-broadcast the current state so the
-      // pane can update its merge reference.
-      this._app.log.warning(
-        `[DocumentManager] Review status stale: pane reported generation ` +
-          `${status.reviewGeneration}, provider is at ${review.generation}; re-broadcasting`,
-      );
-      this._broadcastReviewState(status.filePath, review);
-      return false;
-    }
-
-    const document = this.documents.find((doc) => doc.filePath === status.filePath);
-    if (document === undefined) {
-      this._app.log.error(
-        `[DocumentManager] Review status refused: ${status.filePath} is not an open document`,
-      );
-      return false;
-    }
-    if (document.currentVersion !== status.documentVersion) {
-      this._app.log.warning(
-        `[DocumentManager] Review status refused: pane reported document version ` +
-          `${status.documentVersion}, provider is at ${document.currentVersion}; re-broadcasting`,
-      );
-      this._broadcastReviewState(status.filePath, review);
-      return false;
-    }
-    if (document.document.toString() !== status.currentText) {
-      this._app.log.warning(
-        "[DocumentManager] Review status refused: pane text does not match the provider buffer " +
-          `for ${status.filePath}; re-broadcasting`,
-      );
-      this._broadcastReviewState(status.filePath, review);
-      return false;
-    }
-
-    // Reconcile: the renderer reports the current originalText (merge reference)
-    // and currentText (working). Update the store's referenceText to match the
-    // renderer's evolved merge reference — this is the provider-owned state
-    // synchronization point (spec section 7).
-    const changed =
-      review.referenceText !== status.originalText || review.workingText !== status.currentText;
-    if (changed) {
-      review.referenceText = status.originalText;
-      review.workingText = status.currentText;
-      review.generation += 1;
-      const unresolvedChunks = this._reviewStore.countUnresolvedChunks(review);
-      this._reviewStore.emitEvent("review.changed", {
-        reviewId: review.reviewId,
-        documentId: docId,
-        generation: review.generation,
-        unresolvedChunks,
-      });
-      if (unresolvedChunks === 0) {
-        this._reviewStore.emitEvent("review.resolved", {
-          reviewId: review.reviewId,
-          documentId: docId,
-          generation: review.generation,
-        });
+  public decideChunk(
+    reviewId: string,
+    chunkId: string,
+    decision: "accept" | "reject",
+  ):
+    | {
+        ok: true;
+        reviewId: string;
+        documentId: string;
+        chunkId: string;
+        decision: "accept" | "reject";
+        reviewGeneration: number;
+        unresolvedChunks: number;
+        state: ReviewState;
+        documentRevision: { version: number; sha256: string };
       }
+    | { ok: false; code: AgentErrorCode; message: string } {
+    const review = this._reviewStore.findReviewByReviewId(reviewId);
+    if (review === undefined) {
+      return {
+        ok: false,
+        code: "REVIEW_NOT_FOUND",
+        message: "Review not found.",
+      };
     }
-    this._broadcastReviewState(status.filePath, review);
-    return true;
+    const filePath = this.getDocumentPath(review.documentId);
+    const doc =
+      filePath !== undefined
+        ? this.documents.find((d) => d.filePath === filePath)
+        : undefined;
+    if (filePath === undefined || doc === undefined) {
+      return {
+        ok: false,
+        code: "DOCUMENT_CLOSED",
+        message: "The reviewed document is no longer open.",
+      };
+    }
+
+    const result = this._reviewStore.decideChunk(
+      review.documentId,
+      reviewId,
+      chunkId,
+      decision,
+    );
+    if (!result.ok) {
+      if (result.code === "CHUNK_NOT_FOUND") {
+        // The caller decided against a stale partition (the text changed
+        // under it). Re-broadcast so every pane redraws from current state.
+        this._app.log.warning(
+          `[DocumentManager] Chunk decision refused for ${filePath}: ${result.message}`,
+        );
+        this._broadcastReviewState(filePath, review);
+      }
+      return { ok: false, code: result.code, message: result.message };
+    }
+
+    if (result.workingText !== undefined) {
+      this._applyWorkingTextToDocument(filePath, result.workingText);
+    }
+    this._broadcastReviewState(filePath, review);
+
+    return {
+      ok: true,
+      reviewId: result.reviewId,
+      documentId: result.documentId,
+      chunkId: result.chunkId,
+      decision: result.decision,
+      reviewGeneration: result.generation,
+      unresolvedChunks: result.unresolvedChunks,
+      state: result.state,
+      documentRevision: {
+        version: doc.currentVersion,
+        sha256: sha256Text(doc.document.toString()),
+      },
+    };
   }
 
   /**
@@ -2165,51 +2142,22 @@ current contents from the editor somewhere else, and restart the application.`,
       return undefined;
     }
 
-    const status = this._reviewStore.getReviewStatus(docId);
-    // The gate closes for distinct reasons and the user needs to know which:
-    // unresolved chunks are their own to resolve, but a missing report or a
-    // reference/working divergence means the provider never received a pane
-    // decision — the user can accept every chunk in the editor and still be
-    // refused. A missing status is not zero chunks and not an unknown count of
-    // them; it is a review the pane has never reported on at all.
-    if (status === undefined) {
-      this._app.log.error(
-        `[DocumentManager] Save gate closed for ${filePath}: the review store holds ` +
-          `review generation ${review.generation} but no status for document ${docId}, ` +
-          "so the pane has never reported on it. Expect a missing or failed " +
-          "setReviewDiffStatus round trip.",
-      );
-      return {
-        reason: "review-out-of-sync",
-        message: trans(
-          "This review is out of sync with the editor and cannot be saved. See the log for the reason.",
-        ),
-      };
-    }
-    if (status.unresolvedChunks > 0) {
+    // One engine counts the unresolved chunks — the same partition the panes
+    // draw their widgets from — so this count can never exceed what is
+    // clickable on screen. The old second check (reference !== working while
+    // the count says zero) is gone because it is unreachable: the count is
+    // derived from exactly those two texts, and it is zero iff they agree.
+    const unresolvedChunks = this._reviewStore.countUnresolved(docId);
+    if (unresolvedChunks > 0) {
       this._app.log.warning(
         `[DocumentManager] Save gate closed for ${filePath}: ` +
-          `${status.unresolvedChunks} unresolved chunk(s) at generation ` +
+          `${unresolvedChunks} unresolved chunk(s) at generation ` +
           `${review.generation}`,
       );
       return {
         reason: "unresolved-chunks",
         message: trans(
           "Resolve every accept/reject chunk before saving this review.",
-        ),
-      };
-    }
-    if (review.referenceText !== review.workingText) {
-      this._app.log.error(
-        `[DocumentManager] Save gate closed for ${filePath}: no unresolved chunks, but the ` +
-          `review reference and working text still differ at generation ${review.generation}. ` +
-          "The pane's accept/reject report never reached the provider — see the refusal reason " +
-          "logged by setReviewDiffStatus.",
-      );
-      return {
-        reason: "review-out-of-sync",
-        message: trans(
-          "This review is out of sync with the editor and cannot be saved. See the log for the reason.",
         ),
       };
     }
@@ -2663,10 +2611,11 @@ current contents from the editor somewhere else, and restart the application.`,
     }
     if (activeReview === undefined) {
       // Open a new review with the patch as the initial packet
+      let opened: OpenReviewResult;
       try {
         const diskContent = normalizeText(await this._app.fsal.loadAnySupportedFile(filePath));
         const diskSha = sha256Text(diskContent);
-        this._reviewStore.openReview({
+        opened = this._reviewStore.openReview({
           documentId,
           documentPath: filePath,
           baselineText: currentContent,
@@ -2687,7 +2636,7 @@ current contents from the editor somewhere else, and restart the application.`,
       }
       // Broadcast the review start to renderers
       const review = this._reviewStore.getReview(documentId)!;
-      this._applyWorkingTextToDocument(filePath, review.workingText);
+      this._applyWorkingTextToDocument(filePath, opened.workingText);
       this._broadcastReviewState(filePath, review);
       const newContent = doc.document.toString();
       const newSha256 = sha256Text(newContent);
@@ -2725,7 +2674,7 @@ current contents from the editor somewhere else, and restart the application.`,
     }
     // Update the document's working text
     const review = this._reviewStore.getReview(documentId)!;
-    this._applyWorkingTextToDocument(filePath, review.workingText);
+    this._applyWorkingTextToDocument(filePath, result.workingText);
     this._broadcastReviewState(filePath, review);
     const newContent = doc.document.toString();
     const newSha256 = sha256Text(newContent);
@@ -2838,7 +2787,7 @@ current contents from the editor somewhere else, and restart the application.`,
     const filePath = this.getDocumentPath(documentId);
     const review = this._reviewStore.getReview(documentId);
     if (filePath !== undefined && review !== undefined) {
-      this._applyWorkingTextToDocument(filePath, review.workingText);
+      this._applyWorkingTextToDocument(filePath, result.workingText);
       this._broadcastReviewState(filePath, review);
     }
     const doc =
@@ -2877,7 +2826,9 @@ current contents from the editor somewhere else, and restart the application.`,
 
   /**
    * Broadcast the current review state to all renderers displaying a document.
-   * Constructs a legacy-compatible ReviewDiffSession for the renderer.
+   * The session carries exactly what a pane needs to draw: the provider-owned
+   * merge reference and the identifiers to send decisions back with. Panes
+   * derive their widgets from it locally; nothing is reported back.
    */
   private _broadcastReviewState(
     filePath: string,
@@ -2886,29 +2837,15 @@ current contents from the editor somewhere else, and restart the application.`,
     if (review === undefined) {
       return;
     }
-    // Construct a legacy ReviewDiffSession for renderer compat
-    const legacySession: ReviewDiffSession = {
+    const session: ReviewDiffSession = {
       id: review.reviewId,
       reviewGeneration: review.generation,
       documentPath: filePath,
-      baselineSha256: sha256Text(review.baselineText),
-      diskBaselineSha256: review.diskFenceSha256,
-      baselineText: review.baselineText,
-      originalText: review.referenceText,
-      proposedText: review.workingText,
-      currentText: review.workingText,
+      referenceText: review.referenceText,
     };
     this.broadcastEvent(DP_EVENTS.REVIEW_DIFF, {
       filePath,
-      reviewDiffSession: legacySession,
-      reviewState: {
-        reviewId: review.reviewId,
-        generation: review.generation,
-        referenceText: review.referenceText,
-        workingText: review.workingText,
-        unresolvedChunks:
-          this._reviewStore.getReviewStatus(review.documentId)?.unresolvedChunks ?? 0,
-      },
+      reviewDiffSession: session,
     });
   }
 

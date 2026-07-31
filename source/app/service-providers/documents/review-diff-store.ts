@@ -7,25 +7,34 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Provider-owned authoritative review state. One active
- *                  review per document, keyed by documentId (not path).
+ * Description:     Provider-owned review state. One active review per
+ *                  document, keyed by documentId (not path).
  *
- *                  This is the critical prerequisite identified in the agent
- *                  API spec: the evolving merge reference must be owned by
- *                  the provider, not by individual CodeMirror panes. Without
- *                  provider-owned referenceText, live packet composition,
- *                  pane synchronization, remounting, and reliable
- *                  unresolved-status reporting are unsound.
+ *                  State model — deliberately minimal:
+ *                    referenceText = accepted state + rejected restorations,
+ *                                    owned HERE and nowhere else
+ *                    working text  = the live document, owned by the document
+ *                                    authority and READ through a resolver —
+ *                                    the store holds no copy
+ *                    chunks        = computeReviewChunks(reference, working),
+ *                                    derived on demand by the one shared
+ *                                    engine, never stored
  *
- *                  State model:
- *                    referenceText = accepted state + rejected restorations
- *                    workingText   = current visible provider document
- *                    unresolved    = diff(referenceText, workingText)
+ *                  The previous model mirrored the working text here and let
+ *                  renderer panes report an evolved referenceText back, which
+ *                  meant two owners per text and a reconciliation protocol
+ *                  (generation checks, version checks, text equality checks,
+ *                  re-broadcasts) to paper over the divergence. Both copies
+ *                  are gone: mutations that change the working text RETURN
+ *                  the new text for the document owner to apply, and the
+ *                  reference is only ever changed by accept/reject decisions
+ *                  arriving through the provider.
  *
  *                  Transitions:
- *                    incoming proposal → workingText := applyPatch(workingText)
- *                    accept chunk      → referenceText agrees with workingText
- *                    reject chunk      → workingText agrees with referenceText
+ *                    incoming proposal → new working text (returned to owner)
+ *                    accept chunk      → referenceText agrees with working
+ *                    reject chunk      → new working text agrees with
+ *                                        reference (returned to owner)
  *
  * END HEADER
  */
@@ -36,7 +45,6 @@ import {
   applyPatch,
   parsePatch,
   reversePatch,
-  diffLines,
   createPatch,
   type StructuredPatch,
 } from "diff";
@@ -48,19 +56,15 @@ import type {
   OutstandingChunk,
   AgentEvent,
 } from "@dts/common/agent-api";
+import {
+  computeReviewChunks,
+  spliceChunk,
+  type ReviewChunk,
+} from "@common/modules/review/review-chunks";
 
 // ============================================================================
 // Types
 // ============================================================================
-
-export interface ReviewDiffStoreSnapshot {
-  documentId: string;
-  referenceText: string;
-  workingText: string;
-  generation: number;
-  packets: ProposalPacket[];
-  diskFenceSha256: string;
-}
 
 export interface OpenReviewOptions {
   documentId: string;
@@ -78,6 +82,15 @@ export interface OpenReviewOptions {
   };
 }
 
+export interface OpenReviewResult {
+  state: ActiveReviewState;
+  /**
+   * The text the document must now show. The store holds no working text;
+   * applying this to the live document is the caller's obligation.
+   */
+  workingText: string;
+}
+
 export interface SubmitPacketOptions {
   patchFormat: "unified-diff";
   patch: string;
@@ -91,6 +104,7 @@ export interface SubmitPacketResult {
   packetId: string;
   reviewId: string;
   generation: number;
+  /** The text the document must now show. */
   workingText: string;
   unresolvedChunks: number;
   state: ReviewState;
@@ -103,7 +117,8 @@ export interface SubmitPacketError {
     | "PATCH_NOT_APPLICABLE"
     | "REVIEW_NOT_FOUND"
     | "REVIEW_INVALIDATED"
-    | "REVISION_MISMATCH";
+    | "REVISION_MISMATCH"
+    | "CHUNK_NOT_FOUND";
   message: string;
 }
 
@@ -111,6 +126,7 @@ export interface ClearUnresolvedResult {
   ok: true;
   reviewId: string;
   documentId: string;
+  /** The text the document must now show (the reference). */
   workingText: string;
   referenceText: string;
   generation: number;
@@ -124,6 +140,8 @@ export interface RetractPacketResult {
   reviewId: string;
   documentId: string;
   generation: number;
+  /** The text the document must now show (the packet reverted). */
+  workingText: string;
   unresolvedChunks: number;
 }
 
@@ -138,10 +156,17 @@ export interface RetractPacketError {
 export interface ChunkDecisionResult {
   ok: true;
   reviewId: string;
+  documentId: string;
+  chunkId: string;
+  decision: "accept" | "reject";
   generation: number;
-  referenceText: string;
-  workingText: string;
+  /**
+   * Present only for reject: the text the document must now show. Accepting
+   * touches the reference alone and leaves the document as it is.
+   */
+  workingText?: string;
   unresolvedChunks: number;
+  state: ReviewState;
 }
 
 // ============================================================================
@@ -198,8 +223,8 @@ export function validateAndParsePatch(
   if (patch.oldFileName === "/dev/null" || patch.newFileName === "/dev/null") {
     throw new Error("review-diff does not support create or delete patches");
   }
-  // Per spec §6.3: headers must be either the exact canonical document URI or
-  // the generic "--- document" / "+++ document". Basename matching is too weak.
+  // Headers must be either the exact canonical document URI or the generic
+  // "--- document" / "+++ document". Basename matching is too weak.
   if (
     !isAcceptableHeader(patch.oldFileName, documentPath) ||
     !isAcceptableHeader(patch.newFileName, documentPath)
@@ -252,9 +277,10 @@ function isAcceptableHeader(
 // ============================================================================
 
 /**
- * Provider-owned authoritative review state. The main process owns all
- * agent-visible state; this store is the single source of truth for the
- * evolving merge reference.
+ * Provider-owned review state. The main process owns all agent-visible state;
+ * this store is the single source of truth for the evolving merge reference,
+ * and reads the working text from the document authority through the resolver
+ * it is constructed with.
  *
  * Events emitted:
  *  - 'review.started'   { reviewId, documentId }
@@ -275,10 +301,46 @@ export class ReviewDiffStore extends EventEmitter {
   private readonly packetIndex: Map<string, string> = new Map();
 
   /**
-   * Open a new review session for a document. Returns the new review state.
+   * @param getWorkingText Resolves a documentId to the live document text.
+   *                       The document authority owns the working text; the
+   *                       store never holds a copy of it.
+   */
+  constructor(
+    private readonly getWorkingText: (documentId: string) => string | undefined,
+  ) {
+    super();
+  }
+
+  /**
+   * The live document text for an active review. Throws when the document is
+   * gone: a review outliving its document is a lifecycle bug (closeReview
+   * must run when a document closes), and silently treating it as empty or
+   * resolved would hide that bug behind a plausible-looking answer.
+   */
+  private workingTextOf(documentId: string): string {
+    const text = this.getWorkingText(documentId);
+    if (text === undefined) {
+      throw new Error(
+        `Review state exists for document ${documentId} but the document is not open`,
+      );
+    }
+    return normalizeText(text);
+  }
+
+  /** The current chunk partition for an active review. */
+  private partitionOf(review: ActiveReviewState): ReviewChunk[] {
+    return computeReviewChunks(
+      review.referenceText,
+      this.workingTextOf(review.documentId),
+    );
+  }
+
+  /**
+   * Open a new review session for a document. Returns the new review state
+   * and the working text the caller must apply to the live document.
    * Throws if a review is already active for this documentId.
    */
-  openReview(options: OpenReviewOptions): ActiveReviewState {
+  openReview(options: OpenReviewOptions): OpenReviewResult {
     if (this.reviews.has(options.documentId)) {
       throw new Error(
         `A review is already active for document ${options.documentId}`,
@@ -287,7 +349,7 @@ export class ReviewDiffStore extends EventEmitter {
 
     const baselineText = normalizeText(options.baselineText);
 
-    let referenceText = baselineText;
+    const referenceText = baselineText;
     let workingText = baselineText;
     let packets: ProposalPacket[] = [];
     let generation = 0;
@@ -341,7 +403,6 @@ export class ReviewDiffStore extends EventEmitter {
       documentPath: options.documentPath,
       baselineText: referenceText,
       referenceText,
-      workingText,
       generation,
       packets,
       diskFenceSha256: options.diskBaselineSha256,
@@ -356,12 +417,14 @@ export class ReviewDiffStore extends EventEmitter {
       reviewId,
       documentId: options.documentId,
     });
-    return state;
+    return { state, workingText };
   }
 
   /**
-   * Submit a proposal packet against an active review. Applies to workingText
-   * only; referenceText is unchanged. Existing unresolved chunks remain.
+   * Submit a proposal packet against an active review. The patch applies to
+   * the LIVE document text; the returned working text is what the caller must
+   * now apply to the document. referenceText is unchanged; existing
+   * unresolved chunks remain.
    */
   submitPacket(
     documentId: string,
@@ -414,7 +477,8 @@ export class ReviewDiffStore extends EventEmitter {
       };
     }
 
-    const proposed = applyPatch(review.workingText, patch, {
+    const workingText = this.workingTextOf(documentId);
+    const proposed = applyPatch(workingText, patch, {
       autoConvertLineEndings: true,
       fuzzFactor: 0,
     });
@@ -432,7 +496,7 @@ export class ReviewDiffStore extends EventEmitter {
     // later packet has to answer to the same invariant. A no-op that is allowed
     // through still burns a generation and becomes the newest packet, which
     // blocks retraction of the real one underneath it.
-    if (newWorkingText === review.workingText) {
+    if (newWorkingText === workingText) {
       return {
         ok: false,
         code: "PATCH_INVALID",
@@ -450,11 +514,15 @@ export class ReviewDiffStore extends EventEmitter {
       patch: options.patch,
       applicationGeneration: review.generation + 1,
     });
-    review.workingText = newWorkingText;
     review.generation += 1;
     this.packetIndex.set(packetId, review.reviewId);
 
-    const unresolvedChunks = this.countUnresolvedChunks(review);
+    // Count against the text the document is ABOUT to show, not the resolver:
+    // the caller has not applied newWorkingText yet.
+    const unresolvedChunks = computeReviewChunks(
+      review.referenceText,
+      newWorkingText,
+    ).length;
     const result: SubmitPacketResult = {
       ok: true,
       packetId,
@@ -480,17 +548,20 @@ export class ReviewDiffStore extends EventEmitter {
   }
 
   /**
-   * Report a user accept decision for a chunk range. Updates referenceText to
-   * agree with workingText on that range. Increments generation.
+   * Decide a single chunk by its content-addressed id.
    *
-   * The renderer computes exact from/to offsets; the store applies them.
+   * Accept makes the reference agree with the working text on the chunk (the
+   * document does not change). Reject computes the working text with the
+   * chunk restored to the reference; applying that text to the document is
+   * the caller's obligation. A stale id — the region changed since the caller
+   * read it — fails loudly with CHUNK_NOT_FOUND rather than splicing at a
+   * position that no longer means what the caller thought.
    */
-  applyChunkAccept(
+  decideChunk(
     documentId: string,
     reviewId: string,
-    fromOffset: number,
-    toOffset: number,
-    expectedGeneration: number,
+    chunkId: string,
+    decision: "accept" | "reject",
   ): ChunkDecisionResult | SubmitPacketError {
     const review = this.reviews.get(documentId);
     if (review === undefined || review.reviewId !== reviewId) {
@@ -500,21 +571,41 @@ export class ReviewDiffStore extends EventEmitter {
         message: "No active review for this document.",
       };
     }
-    if (review.generation !== expectedGeneration) {
+    if (this.isInvalidated(review)) {
       return {
         ok: false,
-        code: "REVISION_MISMATCH",
-        message: `Expected review generation ${expectedGeneration} but current is ${review.generation}.`,
+        code: "REVIEW_INVALIDATED",
+        message: "The review was invalidated by external disk drift.",
       };
     }
-    // Accept: referenceText agrees with workingText on [fromOffset, toOffset)
-    const workingSlice = review.workingText.slice(fromOffset, toOffset);
-    review.referenceText =
-      review.referenceText.slice(0, fromOffset) +
-      workingSlice +
-      review.referenceText.slice(toOffset);
+    const workingText = this.workingTextOf(documentId);
+    const partition = computeReviewChunks(review.referenceText, workingText);
+    const chunk = partition.find((c) => c.chunkId === chunkId);
+    if (chunk === undefined) {
+      return {
+        ok: false,
+        code: "CHUNK_NOT_FOUND",
+        message: `No unresolved chunk ${chunkId} exists at review generation ${review.generation}.`,
+      };
+    }
+
+    let newWorkingText: string | undefined;
+    let unresolvedChunks: number;
+    if (decision === "accept") {
+      review.referenceText = spliceChunk(review.referenceText, chunk, "accept");
+      unresolvedChunks = computeReviewChunks(
+        review.referenceText,
+        workingText,
+      ).length;
+    } else {
+      newWorkingText = spliceChunk(workingText, chunk, "reject");
+      unresolvedChunks = computeReviewChunks(
+        review.referenceText,
+        newWorkingText,
+      ).length;
+    }
     review.generation += 1;
-    const unresolvedChunks = this.countUnresolvedChunks(review);
+
     this.emitEvent("review.changed", {
       reviewId: review.reviewId,
       documentId,
@@ -526,78 +617,27 @@ export class ReviewDiffStore extends EventEmitter {
         reviewId: review.reviewId,
         documentId,
         generation: review.generation,
+        unresolvedChunks: 0,
       });
     }
     return {
       ok: true,
-      reviewId: review.reviewId,
-      generation: review.generation,
-      referenceText: review.referenceText,
-      workingText: review.workingText,
-      unresolvedChunks,
-    };
-  }
-
-  /**
-   * Report a user reject decision for a chunk range. Updates workingText to
-   * agree with referenceText on that range. Increments generation.
-   */
-  applyChunkReject(
-    documentId: string,
-    reviewId: string,
-    fromOffset: number,
-    toOffset: number,
-    expectedGeneration: number,
-  ): ChunkDecisionResult | SubmitPacketError {
-    const review = this.reviews.get(documentId);
-    if (review === undefined || review.reviewId !== reviewId) {
-      return {
-        ok: false,
-        code: "REVIEW_NOT_FOUND",
-        message: "No active review for this document.",
-      };
-    }
-    if (review.generation !== expectedGeneration) {
-      return {
-        ok: false,
-        code: "REVISION_MISMATCH",
-        message: `Expected review generation ${expectedGeneration} but current is ${review.generation}.`,
-      };
-    }
-    // Reject: workingText agrees with referenceText on [fromOffset, toOffset)
-    const referenceSlice = review.referenceText.slice(fromOffset, toOffset);
-    review.workingText =
-      review.workingText.slice(0, fromOffset) +
-      referenceSlice +
-      review.workingText.slice(toOffset);
-    review.generation += 1;
-    const unresolvedChunks = this.countUnresolvedChunks(review);
-    this.emitEvent("review.changed", {
       reviewId: review.reviewId,
       documentId,
+      chunkId,
+      decision,
       generation: review.generation,
+      workingText: newWorkingText,
       unresolvedChunks,
-    });
-    if (unresolvedChunks === 0) {
-      this.emitEvent("review.resolved", {
-        reviewId: review.reviewId,
-        documentId,
-        generation: review.generation,
-      });
-    }
-    return {
-      ok: true,
-      reviewId: review.reviewId,
-      generation: review.generation,
-      referenceText: review.referenceText,
-      workingText: review.workingText,
-      unresolvedChunks,
+      state: unresolvedChunks === 0 ? "resolved-awaiting-save" : "active",
     };
   }
 
   /**
-   * Clear all unresolved suggestions. workingText := referenceText.
+   * Clear all unresolved suggestions: the working text becomes the reference.
    * Preserves accepted changes; discards only currently unresolved material.
+   * Applying the returned working text to the document is the caller's
+   * obligation.
    */
   clearUnresolved(
     documentId: string,
@@ -610,14 +650,17 @@ export class ReviewDiffStore extends EventEmitter {
         message: "No active review for this document.",
       };
     }
-    review.workingText = review.referenceText;
     review.generation += 1;
-    this.emitEvent("review.cleared", { reviewId: review.reviewId, documentId });
+    this.emitEvent("review.cleared", {
+      reviewId: review.reviewId,
+      documentId,
+      unresolvedChunks: 0,
+    });
     return {
       ok: true,
       reviewId: review.reviewId,
       documentId,
-      workingText: review.workingText,
+      workingText: review.referenceText,
       referenceText: review.referenceText,
       generation: review.generation,
       unresolvedChunks: 0,
@@ -628,7 +671,8 @@ export class ReviewDiffStore extends EventEmitter {
   /**
    * Retract a proposal packet. Conservative: only the newest packet, no
    * subsequent packets or user decisions touching its ranges, and its
-   * inverse applies exactly.
+   * inverse applies exactly. Applying the returned working text to the
+   * document is the caller's obligation.
    */
   retractPacket(packetId: string): RetractPacketResult | RetractPacketError {
     const reviewId = this.packetIndex.get(packetId);
@@ -694,8 +738,9 @@ export class ReviewDiffStore extends EventEmitter {
     }
 
     // Compute the inverse patch and verify it applies exactly
+    const workingText = this.workingTextOf(review.documentId);
     const inversePatch = invertPatch(review.packets[packetIndex].patch);
-    const reverted = applyPatch(review.workingText, inversePatch, {
+    const reverted = applyPatch(workingText, inversePatch, {
       autoConvertLineEndings: true,
       fuzzFactor: 0,
     });
@@ -710,12 +755,15 @@ export class ReviewDiffStore extends EventEmitter {
       };
     }
 
-    review.workingText = normalizeText(reverted);
+    const newWorkingText = normalizeText(reverted);
     review.packets.pop();
     this.packetIndex.delete(packetId);
     review.generation += 1;
 
-    const unresolvedChunks = this.countUnresolvedChunks(review);
+    const unresolvedChunks = computeReviewChunks(
+      review.referenceText,
+      newWorkingText,
+    ).length;
     this.emitEvent("proposal.retracted", {
       reviewId: review.reviewId,
       documentId: review.documentId,
@@ -729,6 +777,7 @@ export class ReviewDiffStore extends EventEmitter {
       reviewId: review.reviewId,
       documentId: review.documentId,
       generation: review.generation,
+      workingText: newWorkingText,
       unresolvedChunks,
     };
   }
@@ -791,6 +840,30 @@ export class ReviewDiffStore extends EventEmitter {
   }
 
   /**
+   * Get the active review carrying a reviewId, however it is keyed.
+   */
+  findReviewByReviewId(reviewId: string): ActiveReviewState | undefined {
+    for (const review of this.reviews.values()) {
+      if (review.reviewId === reviewId) {
+        return review;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * The number of unresolved chunks for a document's active review, counted
+   * by the one shared engine against the live document.
+   */
+  countUnresolved(documentId: string): number {
+    const review = this.reviews.get(documentId);
+    if (review === undefined) {
+      return 0;
+    }
+    return this.partitionOf(review).length;
+  }
+
+  /**
    * Get the review state for status reporting.
    */
   getReviewStatus(documentId: string):
@@ -806,15 +879,16 @@ export class ReviewDiffStore extends EventEmitter {
     if (review === undefined) {
       return undefined;
     }
+    const unresolvedChunks = this.partitionOf(review).length;
     return {
       reviewId: review.reviewId,
       state: this.isInvalidated(review)
         ? "invalidated"
-        : this.countUnresolvedChunks(review) === 0
+        : unresolvedChunks === 0
           ? "resolved-awaiting-save"
           : "active",
       generation: review.generation,
-      unresolvedChunks: this.countUnresolvedChunks(review),
+      unresolvedChunks,
       packetCount: review.packets.length,
     };
   }
@@ -830,139 +904,46 @@ export class ReviewDiffStore extends EventEmitter {
     unresolvedChunks: number;
     packetCount: number;
   }> {
-    return [...this.reviews.values()].map((r) => ({
-      reviewId: r.reviewId,
-      documentId: r.documentId,
-      state:
-        this.isInvalidated(r)
+    return [...this.reviews.values()].map((r) => {
+      const unresolvedChunks = this.partitionOf(r).length;
+      return {
+        reviewId: r.reviewId,
+        documentId: r.documentId,
+        state: this.isInvalidated(r)
           ? "invalidated"
-          : this.countUnresolvedChunks(r) === 0
+          : unresolvedChunks === 0
             ? "resolved-awaiting-save"
             : "active",
-      generation: r.generation,
-      unresolvedChunks: this.countUnresolvedChunks(r),
-      packetCount: r.packets.length,
-    }));
+        generation: r.generation,
+        unresolvedChunks,
+        packetCount: r.packets.length,
+      };
+    });
   }
 
   /**
-   * Compute the current outstanding chunks: diff(referenceText, workingText).
-   * Chunk IDs are ephemeral, valid only for the reported generation.
-   */
-  /**
-   * Compute the current outstanding chunks: diff(referenceText, workingText).
-   * Chunk IDs are ephemeral, valid only for the reported generation.
-   *
-   * Coalesces adjacent added+removed diff parts into single chunks and
-   * generates a focused unified-diff patch for each chunk.
+   * The current outstanding chunks — the shared partition dressed for the
+   * agent API, with a focused zero-context patch per chunk.
    */
   getOutstandingChunks(documentId: string): OutstandingChunk[] | undefined {
     const review = this.reviews.get(documentId);
     if (review === undefined) {
       return undefined;
     }
-
-    const parts = diffLines(review.referenceText, review.workingText);
-    const chunks: OutstandingChunk[] = [];
-    let refLine = 1;
-    let workLine = 1;
-    let chunkIndex = 0;
-
-    // First pass: identify change groups by coalescing adjacent added/removed parts
-    const changeGroups: Array<{
-      startIdx: number;
-      endIdx: number;
-      refStart: number;
-      refEnd: number;
-      workStart: number;
-      workEnd: number;
-    }> = [];
-
-    let i = 0;
-    while (i < parts.length) {
-      if (parts[i].added || parts[i].removed) {
-        const startIdx = i;
-        let refStart = refLine;
-        let workStart = workLine;
-        let refLines = 0;
-        let workLines = 0;
-
-        // Coalesce contiguous added/removed parts
-        while (i < parts.length && (parts[i].added || parts[i].removed)) {
-          const lc = parts[i].count ?? 0;
-          if (parts[i].removed) {
-            refLines += lc;
-          } else {
-            workLines += lc;
-          }
-          i++;
-        }
-
-        // Include surrounding context: one unchanged part before and after
-        let contextBefore = 0;
-        let contextAfter = 0;
-        if (
-          startIdx > 0 &&
-          !(parts[startIdx - 1].added || parts[startIdx - 1].removed)
-        ) {
-          contextBefore = parts[startIdx - 1].count ?? 0;
-        }
-        if (i < parts.length && !(parts[i].added || parts[i].removed)) {
-          contextAfter = parts[i].count ?? 0;
-        }
-
-        const refEnd = refStart + refLines - 1;
-        const workEnd = workStart + workLines - 1;
-
-        changeGroups.push({
-          startIdx: Math.max(0, startIdx - 1),
-          endIdx: Math.min(parts.length - 1, i),
-          refStart: Math.max(1, refStart - contextBefore),
-          refEnd: refEnd + contextAfter,
-          workStart: Math.max(1, workStart - contextBefore),
-          workEnd: workEnd + contextAfter,
-        });
-      } else {
-        const lc = parts[i].count ?? 0;
-        refLine += lc;
-        workLine += lc;
-        i++;
-      }
-    }
-
-    // Second pass: build chunks with patches
-    for (const group of changeGroups) {
-      const refLines = review.referenceText.split("\n");
-      const workLines = review.workingText.split("\n");
-
-      const refStartLine = group.refStart;
-      const refEndLine = Math.min(group.refEnd, refLines.length);
-      const workStartLine = group.workStart;
-      const workEndLine = Math.min(group.workEnd, workLines.length);
-
-      const refSlice = refLines.slice(refStartLine - 1, refEndLine).join("\n");
-      const workSlice = workLines
-        .slice(workStartLine - 1, workEndLine)
-        .join("\n");
-
-      const patch = createPatch("document", refSlice, workSlice, "", "", {
+    return this.partitionOf(review).map((chunk) => ({
+      chunkId: chunk.chunkId,
+      referenceRange: { fromLine: chunk.refFromLine, toLine: chunk.refToLine },
+      workingRange: { fromLine: chunk.workFromLine, toLine: chunk.workToLine },
+      referenceText: chunk.referenceText,
+      workingText: chunk.workingText,
+      patch: createPatch("document", chunk.referenceText, chunk.workingText, "", "", {
         context: 0,
-      });
-
-      chunks.push({
-        chunkId: `chunk-${review.generation}-${chunkIndex++}`,
-        generation: review.generation,
-        referenceRange: { fromLine: refStartLine, toLine: refEndLine },
-        workingRange: { fromLine: workStartLine, toLine: workEndLine },
-        patch,
-      });
-    }
-
-    return chunks;
+      }),
+    }));
   }
 
   /**
-   * Compute the composite unresolved patch: referenceText → workingText.
+   * Compute the composite unresolved patch: referenceText → working text.
    */
   getReviewDiff(documentId: string): string | undefined {
     const review = this.reviews.get(documentId);
@@ -972,7 +953,7 @@ export class ReviewDiffStore extends EventEmitter {
     return createPatch(
       "document",
       review.referenceText,
-      review.workingText,
+      this.workingTextOf(documentId),
       "",
       "",
       { context: 3 },
@@ -982,29 +963,6 @@ export class ReviewDiffStore extends EventEmitter {
   // ========================================================================
   // Internal helpers
   // ========================================================================
-
-  countUnresolvedChunks(review: ActiveReviewState): number {
-    if (review.referenceText === review.workingText) {
-      return 0;
-    }
-    const parts = diffLines(review.referenceText, review.workingText);
-    let count = 0;
-    let i = 0;
-    while (i < parts.length) {
-      if (parts[i].added || parts[i].removed) {
-        count += 1;
-        // Coalesce adjacent added+removed
-        while (
-          i + 1 < parts.length &&
-          (parts[i + 1].added || parts[i + 1].removed)
-        ) {
-          i += 1;
-        }
-      }
-      i += 1;
-    }
-    return count;
-  }
 
   isInvalidated(review: ActiveReviewState): boolean {
     return review.invalidated;
@@ -1028,7 +986,7 @@ export class ReviewDiffStore extends EventEmitter {
           mapped.reviewGeneration = review.generation;
         }
         if (!("unresolvedChunks" in mapped)) {
-          mapped.unresolvedChunks = this.countUnresolvedChunks(review);
+          mapped.unresolvedChunks = this.partitionOf(review).length;
         }
       }
     }

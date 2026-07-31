@@ -224,6 +224,7 @@ components:
             - PATCH_INVALID
             - PATCH_NOT_APPLICABLE
             - PACKET_NOT_RETRACTABLE
+            - CHUNK_NOT_FOUND
             - IDEMPOTENCY_CONFLICT
             - REQUEST_TOO_LARGE
             - METHOD_NOT_FOUND
@@ -626,16 +627,25 @@ components:
       type: object
       required:
         - chunkId
-        - generation
         - referenceRange
         - workingRange
+        - referenceText
+        - workingText
         - patch
       properties:
         chunkId:
           type: string
-        generation:
-          type: integer
+          description: >-
+            Content-addressed identity: stable while the chunk's own text is
+            untouched, so deciding one chunk does not invalidate the ids of
+            the others. A decision against an id whose region has since
+            changed fails with CHUNK_NOT_FOUND.
         referenceRange:
+          description: >-
+            1-based, half-open: the chunk covers lines [fromLine, toLine).
+            fromLine equal to toLine marks an empty side (a pure insertion
+            has an empty reference range; a pure deletion an empty working
+            range). Ranges of distinct chunks never overlap.
           type: object
           required:
             - fromLine
@@ -655,8 +665,55 @@ components:
               type: integer
             toLine:
               type: integer
+        referenceText:
+          type: string
+          description: The reference-side lines, newline-joined; empty for a pure insertion.
+        workingText:
+          type: string
+          description: The working-side lines, newline-joined; empty for a pure deletion.
         patch:
           type: string
+          description: Focused zero-context unified diff of exactly this chunk.
+    ChunkDecisionResponse:
+      type: object
+      required:
+        - ok
+        - reviewId
+        - documentId
+        - chunkId
+        - decision
+        - reviewGeneration
+        - unresolvedChunks
+        - state
+        - documentRevision
+      properties:
+        ok:
+          type: boolean
+        reviewId:
+          type: string
+        documentId:
+          type: string
+        chunkId:
+          type: string
+        decision:
+          type: string
+          enum:
+            - accept
+            - reject
+        reviewGeneration:
+          type: integer
+        unresolvedChunks:
+          type: integer
+        state:
+          type: string
+          enum:
+            - active
+            - resolved-awaiting-save
+            - completed
+            - cleared
+            - invalidated
+        documentRevision:
+          $ref: '#/components/schemas/DocumentRevision'
     ProposalPacket:
       type: object
       required:
@@ -1045,6 +1102,66 @@ paths:
                 $ref: '#/components/schemas/ReviewChunksResponse'
         '404':
           description: Review not found
+  /v1/reviews/{reviewId}/chunks/{chunkId}/accept:
+    post:
+      operationId: acceptReviewChunk
+      summary: Accept one chunk
+      description: >-
+        Moves the merge reference to agree with the working document on this
+        chunk. The document itself does not change. The same decision path the
+        editor's Accept button uses.
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: chunkId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChunkDecisionResponse'
+        '404':
+          description: >-
+            Review not found, or no unresolved chunk carries this id at the
+            current state — the region changed since the chunk list was read.
+  /v1/reviews/{reviewId}/chunks/{chunkId}/reject:
+    post:
+      operationId: rejectReviewChunk
+      summary: Reject one chunk
+      description: >-
+        Restores this chunk of the working document to the merge reference.
+        The document changes; the response carries the new revision. The same
+        decision path the editor's Reject button uses.
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: chunkId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChunkDecisionResponse'
+        '404':
+          description: >-
+            Review not found, or no unresolved chunk carries this id at the
+            current state — the region changed since the chunk list was read.
   /v1/reviews/{reviewId}/packets:
     get:
       operationId: getReviewPackets
