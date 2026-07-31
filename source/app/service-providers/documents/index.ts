@@ -65,7 +65,7 @@ import isDir from "source/common/util/is-dir";
 import { v4 as uuid4 } from "uuid";
 import { type AppServiceContainer } from "../../app-service-container";
 import { DocumentTree, type DTLeaf } from "./document-tree";
-import { ReviewDiffStore, type OpenReviewResult } from "./review-diff-store";
+import { ReviewDiffStore, applyClaimSequence } from "./review-diff-store";
 
 type DocumentWindows = Record<string, DocumentTree>;
 type DocumentWindowsJSON = Record<string, BranchNodeJSON | LeafNodeJSON>;
@@ -2519,15 +2519,41 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Submit a proposal patch against a snapshot.
-   * Atomically: resolve snapshot → verify version+hash → parse patch →
-   * apply with zero fuzz → update working text → return review state.
+   * Submit a proposal patch against a snapshot — the one-claim degenerate
+   * case of the ordered claim sequence every proposal now travels as.
    */
   public async submitProposal(
     snapshot: string,
     patch: string,
     clientRequestId: string,
     description?: string,
+    expectedReviewGeneration?: number,
+  ): Promise<
+    | SubmittedProposalResponse
+    | {
+        ok: false;
+        code: string;
+        message: string;
+      }
+  > {
+    return await this._submitClaimSequence(
+      snapshot,
+      [{ patch, description }],
+      clientRequestId,
+      expectedReviewGeneration,
+    );
+  }
+
+  /**
+   * Apply an ordered claim sequence against a snapshot, atomically:
+   * resolve snapshot → verify version+hash → open a review if none is active
+   * → apply every claim with zero fuzz (all-or-nothing, one packet per
+   * claim) → update working text → return review state.
+   */
+  private async _submitClaimSequence(
+    snapshot: string,
+    claims: Array<{ patch: string; description?: string }>,
+    clientRequestId: string,
     expectedReviewGeneration?: number,
   ): Promise<
     | SubmittedProposalResponse
@@ -2552,8 +2578,7 @@ current contents from the editor somewhere else, and restart the application.`,
       JSON.stringify({
         documentId,
         snapshot,
-        patch,
-        description,
+        claims,
         expectedReviewGeneration,
       }),
     );
@@ -2577,6 +2602,27 @@ current contents from the editor somewhere else, and restart the application.`,
         message: "Document not found.",
       };
     }
+
+    // The disk fence is read up front: it is the only await on this path, so
+    // every check and mutation below runs synchronously against a document no
+    // concurrently-arriving request can change underneath it. Reading it when
+    // a review already exists is a wasted read, but a cheap one — cheaper than
+    // proving each interleaving of this await against review completion safe.
+    let diskSha256: string;
+    try {
+      diskSha256 = sha256Text(
+        normalizeText(await this._app.fsal.loadAnySupportedFile(filePath)),
+      );
+    } catch (err) {
+      return {
+        ok: false,
+        code: "INTERNAL_ERROR",
+        message:
+          "Could not read the document from disk to fence the review: " +
+          (err instanceof Error ? err.message : String(err)),
+      };
+    }
+
     const doc = this.documents.find((d) => d.filePath === filePath);
     if (doc === undefined) {
       return {
@@ -2607,80 +2653,55 @@ current contents from the editor somewhere else, and restart the application.`,
       };
     }
     if (activeReview === undefined) {
-      // Open a new review with the patch as the initial packet
-      let opened: OpenReviewResult;
-      try {
-        const diskContent = normalizeText(await this._app.fsal.loadAnySupportedFile(filePath));
-        const diskSha = sha256Text(diskContent);
-        opened = this._reviewStore.openReview({
-          documentId,
-          documentPath: filePath,
-          baselineText: currentContent,
-          diskBaselineSha256: diskSha,
-          initialPatch: {
-            patchFormat: "unified-diff",
-            patch,
-            description,
-            clientRequestId,
-          },
-        });
-      } catch (err) {
-        return {
-          ok: false,
-          code: "PATCH_INVALID",
-          message: err instanceof Error ? err.message : "Invalid patch.",
-        };
+      // Prove the whole sequence before opening: an open review with zero
+      // packets is exactly the state a failed batch must not leave behind,
+      // and announcing review.started for it would be a lie.
+      const dryRun = applyClaimSequence(
+        normalizeText(currentContent),
+        filePath,
+        claims,
+      );
+      if (!dryRun.ok) {
+        return { ok: false, code: dryRun.code, message: dryRun.message };
       }
-      // Broadcast the review start to renderers
-      const review = this._reviewStore.getReview(documentId)!;
-      this._applyWorkingTextToDocument(filePath, opened.workingText);
-      this._broadcastReviewState(filePath, review);
-      const newContent = doc.document.toString();
-      const newSha256 = sha256Text(newContent);
-      const status = this._reviewStore.getReviewStatus(documentId)!;
-      const response: SubmittedProposalResponse = {
-        ok: true,
-        packetId: review.packets[0].packetId,
-        reviewId: review.reviewId,
+      this._reviewStore.openReview({
         documentId,
-        documentRevision: {
-          version: doc.currentVersion,
-          sha256: newSha256,
-        },
-        reviewGeneration: status.generation,
-        unresolvedChunks: status.unresolvedChunks,
-        state: status.state,
-      };
-      this._proposalIdempotency.set(idempotencyKey, { fingerprint, response });
-      return response;
+        documentPath: filePath,
+        baselineText: currentContent,
+        diskBaselineSha256: diskSha256,
+      });
     }
 
-    // Submit as an additional packet
-    const result = this._reviewStore.submitPacket(documentId, {
+    const result = this._reviewStore.submitClaims(documentId, {
       patchFormat: "unified-diff",
-      patch,
-      description,
+      claims,
       clientRequestId,
     });
     if (!result.ok) {
-      return {
-        ok: false,
-        code: result.code,
-        message: "message" in result ? result.message : "Patch rejected.",
-      };
+      if (activeReview === undefined) {
+        // The dry run above proved this exact sequence against this exact
+        // text, and nothing ran in between. Failing here is a defect.
+        this._reviewStore.closeReview(documentId);
+        throw new Error(
+          `Claim sequence failed after a successful dry run: ${result.message}`,
+        );
+      }
+      return { ok: false, code: result.code, message: result.message };
     }
+
     // Update the document's working text
     const review = this._reviewStore.getReview(documentId)!;
     this._applyWorkingTextToDocument(filePath, result.workingText);
     this._broadcastReviewState(filePath, review);
-    const newContent = doc.document.toString();
-    const newSha256 = sha256Text(newContent);
     const response: SubmittedProposalResponse = {
       ok: true,
-      packetId: result.packetId,
+      packetId: result.packetIds[result.packetIds.length - 1],
       reviewId: result.reviewId,
       documentId,
-      documentRevision: { version: doc.currentVersion, sha256: newSha256 },
+      documentRevision: {
+        version: doc.currentVersion,
+        sha256: sha256Text(doc.document.toString()),
+      },
       reviewGeneration: result.generation,
       unresolvedChunks: result.unresolvedChunks,
       state: result.state,

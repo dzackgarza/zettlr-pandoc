@@ -51,7 +51,6 @@ import {
 import path from "path";
 import type {
   ActiveReviewState,
-  ProposalPacket,
   ReviewState,
   OutstandingChunk,
   AgentEvent,
@@ -73,22 +72,41 @@ export interface OpenReviewOptions {
   diskBaselineSha256: string;
   /** Optional: use a caller-provided reviewId instead of generating one. */
   reviewId?: string;
-  /** Optional: initial patch to apply (first proposal packet) */
-  initialPatch?: {
-    patchFormat: "unified-diff";
-    patch: string;
-    description?: string;
-    clientRequestId?: string;
-  };
 }
 
 export interface OpenReviewResult {
   state: ActiveReviewState;
   /**
-   * The text the document must now show. The store holds no working text;
-   * applying this to the live document is the caller's obligation.
+   * The text the document must now show — the normalized baseline. A fresh
+   * review carries no packets; proposals arrive through submitPacket or
+   * submitClaims, whose returned working text the caller applies.
    */
   workingText: string;
+}
+
+/** One ordered claim of a proposal: prose plus the patch implementing it. */
+export interface ClaimInput {
+  patch: string;
+  description?: string;
+}
+
+export interface SubmitClaimsOptions {
+  patchFormat: "unified-diff";
+  claims: ClaimInput[];
+  clientRequestId: string;
+  expectedReviewGeneration?: number;
+}
+
+export interface SubmitClaimsResult {
+  ok: true;
+  /** One packet per claim, in claim order. */
+  packetIds: string[];
+  reviewId: string;
+  generation: number;
+  /** The text the document must now show: the text after the whole sequence. */
+  workingText: string;
+  unresolvedChunks: number;
+  state: ReviewState;
 }
 
 export interface SubmitPacketOptions {
@@ -272,6 +290,76 @@ function isAcceptableHeader(
   return path.resolve(`/${stripped}`) === path.resolve(documentPath);
 }
 
+/** One validated, applied claim: its inputs plus the text it produced. */
+interface AppliedClaimStep {
+  patch: string;
+  description?: string;
+  textAfter: string;
+}
+
+/**
+ * Validate and apply an ordered claim sequence against startText. Pure: no
+ * store state is read or touched, which is what lets DocumentManager dry-run
+ * a sequence before opening a review for it. All-or-nothing: the first claim
+ * that fails invalidates the whole sequence. Claim k applies with zero fuzz
+ * to the text claim k-1 produced and must change it; error messages name the
+ * failing claim by its 1-based position.
+ */
+export function applyClaimSequence(
+  startText: string,
+  documentPath: string,
+  claims: readonly ClaimInput[],
+): { ok: true; steps: AppliedClaimStep[] } | SubmitPacketError {
+  if (claims.length === 0) {
+    throw new Error("applyClaimSequence requires at least one claim");
+  }
+  const steps: AppliedClaimStep[] = [];
+  let text = startText;
+  for (let i = 0; i < claims.length; i++) {
+    const label = claims.length === 1 ? "The patch" : `Claim ${i + 1}'s patch`;
+    let patch: StructuredPatch;
+    try {
+      patch = validateAndParsePatch(claims[i].patch, documentPath);
+    } catch (err) {
+      return {
+        ok: false,
+        code: "PATCH_INVALID",
+        message: `${label} is invalid: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+    const applied = applyPatch(text, patch, {
+      autoConvertLineEndings: true,
+      fuzzFactor: 0,
+    });
+    if (applied === false) {
+      return {
+        ok: false,
+        code: "PATCH_NOT_APPLICABLE",
+        message:
+          `${label} does not apply with zero fuzz to ` +
+          (i === 0 ? "the current working text." : `the text claim ${i} produced.`),
+      };
+    }
+    const textAfter = normalizeText(applied);
+    // A no-op that is allowed through still burns a generation and becomes
+    // the newest packet, which blocks retraction of the real one underneath.
+    if (textAfter === text) {
+      return {
+        ok: false,
+        code: "PATCH_INVALID",
+        message: `${label} does not change the target document.`,
+      };
+    }
+    steps.push({
+      patch: claims[i].patch,
+      description: claims[i].description,
+      textAfter,
+    });
+    text = textAfter;
+  }
+  return { ok: true, steps };
+}
+
 // ============================================================================
 // ReviewDiffStore
 // ============================================================================
@@ -336,9 +424,11 @@ export class ReviewDiffStore extends EventEmitter {
   }
 
   /**
-   * Open a new review session for a document. Returns the new review state
-   * and the working text the caller must apply to the live document.
-   * Throws if a review is already active for this documentId.
+   * Open a new review session for a document. The review opens empty — the
+   * reference and the working text are both the baseline; proposals arrive
+   * afterwards through submitPacket/submitClaims, so there is exactly one
+   * application path for a packet however it enters. Throws if a review is
+   * already active for this documentId.
    */
   openReview(options: OpenReviewOptions): OpenReviewResult {
     if (this.reviews.has(options.documentId)) {
@@ -348,83 +438,32 @@ export class ReviewDiffStore extends EventEmitter {
     }
 
     const baselineText = normalizeText(options.baselineText);
-
-    const referenceText = baselineText;
-    let workingText = baselineText;
-    let packets: ProposalPacket[] = [];
-    let generation = 0;
-    let initialPacketId: string | undefined;
-    let initialReviewId: string | undefined;
-
-    if (options.initialPatch !== undefined) {
-      const patch = validateAndParsePatch(
-        options.initialPatch.patch,
-        options.documentPath,
-      );
-      const proposed = applyPatch(referenceText, patch, {
-        autoConvertLineEndings: true,
-        fuzzFactor: 0,
-      });
-      if (proposed === false) {
-        throw new Error(
-          "review-diff initial patch does not apply to the baseline",
-        );
-      }
-      const proposedText = normalizeText(proposed);
-      if (proposedText === referenceText) {
-        throw new Error(
-          "review-diff patch does not change the target document",
-        );
-      }
-      workingText = proposedText;
-      const packetId = randomUUID();
-      const reviewId = options.reviewId ?? randomUUID();
-      initialPacketId = packetId;
-      initialReviewId = reviewId;
-      packets = [
-        {
-          packetId,
-          reviewId,
-          clientRequestId: options.initialPatch.clientRequestId ?? randomUUID(),
-          description: options.initialPatch.description,
-          appliedAt: new Date().toISOString(),
-          patchFormat: options.initialPatch.patchFormat,
-          patch: options.initialPatch.patch,
-          applicationGeneration: 1,
-        },
-      ];
-      generation = 1;
-    }
-
-    const reviewId = initialReviewId ?? options.reviewId ?? randomUUID();
+    const reviewId = options.reviewId ?? randomUUID();
     const state: ActiveReviewState = {
       reviewId,
       documentId: options.documentId,
       documentPath: options.documentPath,
-      baselineText: referenceText,
-      referenceText,
-      generation,
-      packets,
+      baselineText,
+      referenceText: baselineText,
+      generation: 0,
+      packets: [],
       diskFenceSha256: options.diskBaselineSha256,
       invalidated: false,
     };
     this.reviews.set(options.documentId, state);
-    if (initialPacketId !== undefined) {
-      this.packetIndex.set(initialPacketId, reviewId);
-    }
 
     this.emitEvent("review.started", {
       reviewId,
       documentId: options.documentId,
     });
-    return { state, workingText };
+    return { state, workingText: baselineText };
   }
 
   /**
-   * Submit a proposal packet against an active review. The patch applies to
-   * the LIVE document text; the returned working text is what the caller must
-   * now apply to the document. referenceText is unchanged; existing
-   * unresolved chunks remain.
+   * Submit a proposal packet against an active review — the one-claim
+   * degenerate case of submitClaims. The patch applies to the LIVE document
+   * text; the returned working text is what the caller must now apply to the
+   * document. referenceText is unchanged; existing unresolved chunks remain.
    */
   submitPacket(
     documentId: string,
@@ -438,6 +477,101 @@ export class ReviewDiffStore extends EventEmitter {
       return existing;
     }
 
+    const guarded = this.guardSubmission(
+      documentId,
+      options.expectedReviewGeneration,
+    );
+    if ("ok" in guarded) {
+      return guarded;
+    }
+    const review = guarded;
+
+    const sequence = applyClaimSequence(
+      this.workingTextOf(documentId),
+      review.documentPath,
+      [{ patch: options.patch, description: options.description }],
+    );
+    if (!sequence.ok) {
+      return sequence;
+    }
+    const committed = this.commitClaimSequence(
+      review,
+      options.clientRequestId,
+      options.patchFormat,
+      sequence.steps,
+    );
+
+    const result: SubmitPacketResult = {
+      ok: true,
+      packetId: committed.packetIds[0],
+      reviewId: review.reviewId,
+      generation: review.generation,
+      workingText: committed.workingText,
+      unresolvedChunks: committed.unresolvedChunks,
+      state: this.classifyState(review, committed.unresolvedChunks),
+    };
+    this.idempotencyIndex.set(
+      this.idempotencyIndexKey(documentId, options.clientRequestId),
+      result,
+    );
+    return result;
+  }
+
+  /**
+   * Submit an ordered claim sequence as one atomic batch: every claim applies
+   * — in order, zero fuzz, each against the text its predecessor produced —
+   * or none does and the review is untouched. Each claim becomes its own
+   * packet, so the ledger, retraction, and events see N claims as N packets.
+   * The returned working text is the text after the whole sequence; applying
+   * it to the live document is the caller's obligation.
+   */
+  submitClaims(
+    documentId: string,
+    options: SubmitClaimsOptions,
+  ): SubmitClaimsResult | SubmitPacketError {
+    const guarded = this.guardSubmission(
+      documentId,
+      options.expectedReviewGeneration,
+    );
+    if ("ok" in guarded) {
+      return guarded;
+    }
+    const review = guarded;
+
+    const sequence = applyClaimSequence(
+      this.workingTextOf(documentId),
+      review.documentPath,
+      options.claims,
+    );
+    if (!sequence.ok) {
+      return sequence;
+    }
+    const committed = this.commitClaimSequence(
+      review,
+      options.clientRequestId,
+      options.patchFormat,
+      sequence.steps,
+    );
+
+    return {
+      ok: true,
+      packetIds: committed.packetIds,
+      reviewId: review.reviewId,
+      generation: review.generation,
+      workingText: committed.workingText,
+      unresolvedChunks: committed.unresolvedChunks,
+      state: this.classifyState(review, committed.unresolvedChunks),
+    };
+  }
+
+  /**
+   * The shared submission guards: an active, non-invalidated review at the
+   * expected generation — or the error naming which guard refused.
+   */
+  private guardSubmission(
+    documentId: string,
+    expectedReviewGeneration: number | undefined,
+  ): ActiveReviewState | SubmitPacketError {
     const review = this.reviews.get(documentId);
     if (review === undefined) {
       return {
@@ -446,7 +580,6 @@ export class ReviewDiffStore extends EventEmitter {
         message: "No active review for this document.",
       };
     }
-
     if (this.isInvalidated(review)) {
       return {
         ok: false,
@@ -454,97 +587,66 @@ export class ReviewDiffStore extends EventEmitter {
         message: "The review was invalidated by external disk drift.",
       };
     }
-
     if (
-      options.expectedReviewGeneration !== undefined &&
-      options.expectedReviewGeneration !== review.generation
+      expectedReviewGeneration !== undefined &&
+      expectedReviewGeneration !== review.generation
     ) {
       return {
         ok: false,
         code: "REVISION_MISMATCH",
-        message: `Expected review generation ${options.expectedReviewGeneration} but current is ${review.generation}.`,
+        message: `Expected review generation ${expectedReviewGeneration} but current is ${review.generation}.`,
       };
     }
+    return review;
+  }
 
-    let patch: StructuredPatch;
-    try {
-      patch = validateAndParsePatch(options.patch, review.documentPath);
-    } catch (err) {
-      return {
-        ok: false,
-        code: "PATCH_INVALID",
-        message: err instanceof Error ? err.message : "Invalid patch.",
-      };
+  /**
+   * Commit a validated claim sequence: one packet and one generation per
+   * claim, then one proposal.applied event per packet carrying the state
+   * after the WHOLE sequence — the intermediate texts never exist for any
+   * consumer. The unresolved count is computed against the text the document
+   * is ABOUT to show, not the resolver: the caller has not applied the new
+   * working text yet.
+   */
+  private commitClaimSequence(
+    review: ActiveReviewState,
+    clientRequestId: string,
+    patchFormat: "unified-diff",
+    steps: readonly AppliedClaimStep[],
+  ): { packetIds: string[]; workingText: string; unresolvedChunks: number } {
+    const packetIds: string[] = [];
+    for (const step of steps) {
+      const packetId = randomUUID();
+      review.packets.push({
+        packetId,
+        reviewId: review.reviewId,
+        clientRequestId,
+        description: step.description,
+        appliedAt: new Date().toISOString(),
+        patchFormat,
+        patch: step.patch,
+        applicationGeneration: review.generation + 1,
+      });
+      review.generation += 1;
+      this.packetIndex.set(packetId, review.reviewId);
+      packetIds.push(packetId);
     }
 
-    const workingText = this.workingTextOf(documentId);
-    const proposed = applyPatch(workingText, patch, {
-      autoConvertLineEndings: true,
-      fuzzFactor: 0,
-    });
-    if (proposed === false) {
-      return {
-        ok: false,
-        code: "PATCH_NOT_APPLICABLE",
-        message:
-          "The patch does not apply with zero fuzz to the current working text.",
-      };
-    }
-
-    const newWorkingText = normalizeText(proposed);
-    // openReview rejects an initial patch that leaves the text unchanged; a
-    // later packet has to answer to the same invariant. A no-op that is allowed
-    // through still burns a generation and becomes the newest packet, which
-    // blocks retraction of the real one underneath it.
-    if (newWorkingText === workingText) {
-      return {
-        ok: false,
-        code: "PATCH_INVALID",
-        message: "The patch does not change the target document.",
-      };
-    }
-    const packetId = randomUUID();
-    review.packets.push({
-      packetId,
-      reviewId: review.reviewId,
-      clientRequestId: options.clientRequestId,
-      description: options.description,
-      appliedAt: new Date().toISOString(),
-      patchFormat: options.patchFormat,
-      patch: options.patch,
-      applicationGeneration: review.generation + 1,
-    });
-    review.generation += 1;
-    this.packetIndex.set(packetId, review.reviewId);
-
-    // Count against the text the document is ABOUT to show, not the resolver:
-    // the caller has not applied newWorkingText yet.
+    const workingText = steps[steps.length - 1].textAfter;
     const unresolvedChunks = computeReviewChunks(
       review.referenceText,
-      newWorkingText,
+      workingText,
     ).length;
-    const result: SubmitPacketResult = {
-      ok: true,
-      packetId,
-      reviewId: review.reviewId,
-      generation: review.generation,
-      workingText: newWorkingText,
-      unresolvedChunks,
-      state: this.classifyState(review, unresolvedChunks),
-    };
-    this.idempotencyIndex.set(
-      this.idempotencyIndexKey(documentId, options.clientRequestId),
-      result,
-    );
-
-    this.emitEvent("proposal.applied", {
-      reviewId: review.reviewId,
-      documentId,
-      packetId,
-      generation: review.generation,
-      unresolvedChunks,
-    });
-    return result;
+    for (const packetId of packetIds) {
+      this.emitEvent("proposal.applied", {
+        reviewId: review.reviewId,
+        documentId: review.documentId,
+        packetId,
+        generation: review.generation,
+        unresolvedChunks,
+      });
+    }
+    return { packetIds, workingText, unresolvedChunks };
   }
 
   /**

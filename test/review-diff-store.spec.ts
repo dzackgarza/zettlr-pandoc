@@ -56,25 +56,38 @@ describe("ReviewDiffStore", function () {
     store = new ReviewDiffStore((documentId) => documents.get(documentId));
   });
 
-  /** Open a review the way DocumentManager does: text into the doc, then open. */
+  /**
+   * Open a review the way DocumentManager does: text into the doc, open the
+   * (empty) review, then submit the first packet through the one application
+   * path. Throws on a refused initial packet, mirroring the manager's
+   * dry-run-then-open contract of never leaving an empty review behind.
+   */
   function openReview(
     documentId: string,
     baseline: string,
-    initialPatch?: { patch: string; clientRequestId: string },
+    initialPatch?: { patch: string; clientRequestId: string; description?: string },
   ): void {
     documents.set(documentId, baseline);
-    const opened = store.openReview({
+    store.openReview({
       documentId,
       documentPath: DOC_PATH,
       baselineText: baseline,
       diskBaselineSha256: sha256Text(baseline),
-      initialPatch:
-        initialPatch === undefined
-          ? undefined
-          : { patchFormat: "unified-diff", ...initialPatch },
     });
-    // The caller's obligation: the returned working text becomes the document.
-    documents.set(documentId, opened.workingText);
+    if (initialPatch !== undefined) {
+      const submitted = store.submitPacket(documentId, {
+        patchFormat: "unified-diff",
+        patch: initialPatch.patch,
+        clientRequestId: initialPatch.clientRequestId,
+        description: initialPatch.description,
+      });
+      if (!submitted.ok) {
+        store.closeReview(documentId);
+        throw new Error(submitted.message);
+      }
+      // The caller's obligation: the returned working text becomes the document.
+      documents.set(documentId, submitted.workingText);
+    }
   }
 
   /** Decide the sole outstanding chunk, applying any returned working text. */
@@ -290,6 +303,130 @@ describe("ReviewDiffStore", function () {
       assert.equal(result.ok, false);
       if (result.ok) {return;}
       assert.equal(result.code, "PATCH_NOT_APPLICABLE");
+    });
+  });
+
+  describe("submitClaims", function () {
+    it("applies an ordered sequence, one packet per claim, sequentially", function () {
+      const baseline = "alpha\nbeta\ngamma\n";
+      openReview(DOC_ID, baseline);
+      // Claim 2's patch is built against claim 1's output: it can only apply
+      // if the sequence really is sequential.
+      const afterFirst = "alpha\nBETA\ngamma\n";
+      const afterSecond = "alpha\nBETA\nGAMMA\n";
+      const result = store.submitClaims(DOC_ID, {
+        patchFormat: "unified-diff",
+        claims: [
+          { patch: makePatch(baseline, afterFirst), description: "Capitalize beta" },
+          { patch: makePatch(afterFirst, afterSecond), description: "Capitalize gamma" },
+        ],
+        clientRequestId: "batch-1",
+      });
+      assert.equal(result.ok, true, `batch failed: ${JSON.stringify(result)}`);
+      if (!result.ok) {return;}
+      documents.set(DOC_ID, result.workingText);
+
+      assert.equal(result.workingText, afterSecond);
+      assert.equal(result.packetIds.length, 2);
+      const review = store.getReview(DOC_ID)!;
+      assert.equal(review.generation, 2);
+      assert.deepEqual(
+        review.packets.map((p) => p.packetId),
+        result.packetIds,
+      );
+      assert.deepEqual(
+        review.packets.map((p) => p.description),
+        ["Capitalize beta", "Capitalize gamma"],
+      );
+      assert.deepEqual(
+        review.packets.map((p) => p.applicationGeneration),
+        [1, 2],
+      );
+    });
+
+    it("is all-or-nothing: a failing claim leaves the review untouched", function () {
+      const baseline = "alpha\nbeta\n";
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, "alpha\nBETA\n"),
+        clientRequestId: "req-1",
+      });
+      const result = store.submitClaims(DOC_ID, {
+        patchFormat: "unified-diff",
+        claims: [
+          { patch: makePatch("alpha\nBETA\n", "ALPHA\nBETA\n"), description: "ok" },
+          // Built against text the sequence never produces: zero fuzz refuses it.
+          { patch: makePatch("something\nelse\n", "other\n"), description: "broken" },
+        ],
+        clientRequestId: "batch-broken",
+      });
+      assert.equal(result.ok, false);
+      if (result.ok) {return;}
+      assert.equal(result.code, "PATCH_NOT_APPLICABLE");
+      assert.match(result.message, /^Claim 2's patch/);
+      // Nothing committed: no packet, no generation, document text untouched.
+      const review = store.getReview(DOC_ID)!;
+      assert.equal(review.packets.length, 1);
+      assert.equal(review.generation, 1);
+      assert.equal(documents.get(DOC_ID), "alpha\nBETA\n");
+    });
+
+    it("names the claim whose patch is a no-op and commits nothing", function () {
+      const baseline = "alpha\nbeta\n";
+      openReview(DOC_ID, baseline);
+      // Claim 1 leaves beta alone, so this hunk applies cleanly at zero fuzz
+      // to claim 1's output — only the no-op invariant can refuse it.
+      const noOp = [
+        "--- document",
+        "+++ document",
+        "@@ -2,1 +2,1 @@",
+        "-beta",
+        "+beta",
+        "",
+      ].join("\n");
+      const result = store.submitClaims(DOC_ID, {
+        patchFormat: "unified-diff",
+        claims: [
+          { patch: makePatch(baseline, "ALPHA\nbeta\n"), description: "real" },
+          { patch: noOp, description: "does nothing" },
+        ],
+        clientRequestId: "batch-noop",
+      });
+      assert.equal(result.ok, false);
+      if (result.ok) {return;}
+      assert.equal(result.code, "PATCH_INVALID");
+      assert.match(result.message, /^Claim 2's patch does not change/);
+      assert.equal(store.getReview(DOC_ID)!.packets.length, 0);
+      assert.equal(store.getReview(DOC_ID)!.generation, 0);
+    });
+
+    it("treats each batch claim as its own packet under the retraction rules", function () {
+      const baseline = "alpha\nbeta\n";
+      const afterFirst = "ALPHA\nbeta\n";
+      const afterSecond = "ALPHA\nBETA\n";
+      openReview(DOC_ID, baseline);
+      const result = store.submitClaims(DOC_ID, {
+        patchFormat: "unified-diff",
+        claims: [
+          { patch: makePatch(baseline, afterFirst), description: "first" },
+          { patch: makePatch(afterFirst, afterSecond), description: "second" },
+        ],
+        clientRequestId: "batch-retract",
+      });
+      assert.equal(result.ok, true);
+      if (!result.ok) {return;}
+      documents.set(DOC_ID, result.workingText);
+
+      // The first claim's packet is not the newest: refused, exactly as a
+      // sequentially submitted packet would be.
+      const early = store.retractPacket(result.packetIds[0]);
+      assert.equal(early.ok, false);
+
+      // The newest claim's packet retracts to the first claim's text.
+      const second = store.retractPacket(result.packetIds[1]);
+      assert.equal(second.ok, true);
+      if (!second.ok) {return;}
+      assert.equal(second.workingText, afterFirst);
+      documents.set(DOC_ID, second.workingText);
     });
   });
 
