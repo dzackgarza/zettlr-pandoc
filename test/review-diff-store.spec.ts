@@ -692,6 +692,149 @@ describe("ReviewDiffStore", function () {
     });
   });
 
+  describe("chunk attribution", function () {
+    it("attributes the single-patch degenerate case to its packet, with its description", function () {
+      const baseline = "alpha\nbeta\n";
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, "alpha\nBETA\n"),
+        clientRequestId: "req-1",
+        description: "Capitalize beta",
+      });
+      const chunks = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(chunks.length, 1);
+      assert.deepEqual(chunks[0].packetIds, [
+        store.getReview(DOC_ID)!.packets[0].packetId,
+      ]);
+      assert.deepEqual(chunks[0].descriptions, ["Capitalize beta"]);
+    });
+
+    it("omits the description of a packet that carries none", function () {
+      const baseline = "alpha\nbeta\n";
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, "alpha\nBETA\n"),
+        clientRequestId: "req-1",
+      });
+      const chunks = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(chunks[0].packetIds.length, 1);
+      assert.deepEqual(chunks[0].descriptions, []);
+    });
+
+    it("attributes each chunk of a batch to the claim that produced it", function () {
+      const baseline = "alpha\nx\ny\nz\nbeta\n";
+      openReview(DOC_ID, baseline);
+      const afterFirst = "ALPHA\nx\ny\nz\nbeta\n";
+      const afterSecond = "ALPHA\nx\ny\nz\nBETA\n";
+      const result = store.submitClaims(DOC_ID, {
+        patchFormat: "unified-diff",
+        claims: [
+          { patch: makePatch(baseline, afterFirst), description: "Fix the opening" },
+          { patch: makePatch(afterFirst, afterSecond), description: "Fix the closing" },
+        ],
+        clientRequestId: "batch-attr",
+      });
+      assert.equal(result.ok, true);
+      if (!result.ok) {return;}
+      documents.set(DOC_ID, result.workingText);
+
+      const chunks = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(chunks.length, 2);
+      assert.deepEqual(chunks[0].packetIds, [result.packetIds[0]]);
+      assert.deepEqual(chunks[0].descriptions, ["Fix the opening"]);
+      assert.deepEqual(chunks[1].packetIds, [result.packetIds[1]]);
+      assert.deepEqual(chunks[1].descriptions, ["Fix the closing"]);
+    });
+
+    it("multi-attributes a chunk two overlapping claims produced", function () {
+      const baseline = "alpha\nbeta\ngamma\n";
+      openReview(DOC_ID, baseline);
+      const afterFirst = "alpha\nBETA\ngamma\n";
+      const afterSecond = "alpha\nBETA!\ngamma\n";
+      const result = store.submitClaims(DOC_ID, {
+        patchFormat: "unified-diff",
+        claims: [
+          { patch: makePatch(baseline, afterFirst), description: "Capitalize" },
+          { patch: makePatch(afterFirst, afterSecond), description: "Emphasize" },
+        ],
+        clientRequestId: "batch-overlap",
+      });
+      assert.equal(result.ok, true);
+      if (!result.ok) {return;}
+      documents.set(DOC_ID, result.workingText);
+
+      const chunks = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(chunks.length, 1);
+      assert.deepEqual(chunks[0].packetIds, result.packetIds);
+      assert.deepEqual(chunks[0].descriptions, ["Capitalize", "Emphasize"]);
+    });
+
+    it("keeps attribution valid across an accept that shifts later lines", function () {
+      // The first chunk inserts a line, so accepting it moves every later
+      // reference line down by one — the remaining chunk only stays
+      // attributed if the spans were remapped across the splice.
+      const baseline = "one\ntwo\nthree\nfour\nfive\nsix\nseven\n";
+      const proposed = "one\nTWO-a\nTWO-b\nthree\nfour\nfive\nSIX\nseven\n";
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-shift",
+        description: "Expand two, capitalize six",
+      });
+      const before = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(before.length, 2);
+
+      const accept = store.decideChunk(
+        DOC_ID,
+        store.getReview(DOC_ID)!.reviewId,
+        before[0].chunkId,
+        "accept",
+      );
+      assert.equal(accept.ok, true);
+
+      const after = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(after.length, 1);
+      // The chunk moved from reference line 6 to 7 — attribution followed.
+      assert.equal(after[0].referenceRange.fromLine, 7);
+      assert.deepEqual(after[0].packetIds, [
+        store.getReview(DOC_ID)!.packets[0].packetId,
+      ]);
+      assert.deepEqual(after[0].descriptions, ["Expand two, capitalize six"]);
+    });
+
+    it("does not attribute a region the user re-edits after a reject", function () {
+      const baseline = "alpha\nbeta\ngamma\n";
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, "alpha\nBETA\ngamma\n"),
+        clientRequestId: "req-reject",
+        description: "Capitalize beta",
+      });
+      decideOnlyChunk("reject");
+      assert.equal(store.countUnresolved(DOC_ID), 0);
+
+      // The user edits the same line afterwards: that chunk is the user's,
+      // not the rejected packet's.
+      documents.set(DOC_ID, "alpha\nbeta-user\ngamma\n");
+      const chunks = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(chunks.length, 1);
+      assert.deepEqual(chunks[0].packetIds, []);
+      assert.deepEqual(chunks[0].descriptions, []);
+    });
+
+    it("does not attribute a chunk the user creates elsewhere during review", function () {
+      const baseline = "alpha\nx\ny\nz\nomega\n";
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, "ALPHA\nx\ny\nz\nomega\n"),
+        clientRequestId: "req-elsewhere",
+        description: "Fix alpha",
+      });
+      // The user edits a line the packet never touched.
+      documents.set(DOC_ID, "ALPHA\nx\ny\nz\nOMEGA-user\n");
+      const chunks = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(chunks.length, 2);
+      assert.deepEqual(chunks[0].descriptions, ["Fix alpha"]);
+      assert.deepEqual(chunks[1].packetIds, []);
+      assert.deepEqual(chunks[1].descriptions, []);
+    });
+  });
+
   describe("getReviewStatus", function () {
     it("reports active when unresolved chunks remain", function () {
       const baseline = "alpha\nbeta\n";

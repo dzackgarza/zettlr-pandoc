@@ -138,6 +138,55 @@ export function spliceChunk(
 }
 
 /**
+ * A half-open, 1-based line interval in the merge reference. An empty
+ * interval (from === to) is a boundary point: working-side lines exist
+ * between reference lines from-1 and from.
+ */
+export interface RefSpan {
+  from: number;
+  to: number;
+}
+
+/**
+ * Whether a chunk lies on any of the given reference spans — the single
+ * overlap rule behind packet attribution. The store uses it to attribute
+ * outstanding chunks to the packets whose edits produced them, and the
+ * renderer uses it to pick the descriptions shown at a chunk's controls, so
+ * the two surfaces agree by construction.
+ *
+ * Reference coordinates are the durable frame here: user edits move
+ * working-side positions freely and never pass through the store, but the
+ * reference moves only on decisions, which do. Non-empty intervals touch
+ * openly (mere adjacency is not overlap); a boundary point touches an
+ * interval when it lies on or inside its boundaries, so an insertion keeps
+ * attributing to the packet that produced it while the chunk around it grows
+ * or shrinks.
+ */
+export function chunkAttributesTo(
+  chunk: Pick<ReviewChunk, "refFromLine" | "refToLine">,
+  spans: readonly RefSpan[],
+): boolean {
+  return spans.some((span) =>
+    spansTouch(span.from, span.to, chunk.refFromLine, chunk.refToLine),
+  );
+}
+
+function spansTouch(
+  aFrom: number,
+  aTo: number,
+  bFrom: number,
+  bTo: number,
+): boolean {
+  if (aFrom === aTo) {
+    return bFrom <= aFrom && aFrom <= bTo;
+  }
+  if (bFrom === bTo) {
+    return aFrom <= bFrom && bFrom <= aTo;
+  }
+  return aFrom < bTo && bFrom < aTo;
+}
+
+/**
  * Convert a chunk's character span into a 1-based half-open line range.
  *
  * Chunk.build's conventions: `from` sits at a line start; `end` sits at the

@@ -56,8 +56,10 @@ import type {
   AgentEvent,
 } from "@dts/common/agent-api";
 import {
+  chunkAttributesTo,
   computeReviewChunks,
   spliceChunk,
+  type RefSpan,
   type ReviewChunk,
 } from "@common/modules/review/review-chunks";
 
@@ -361,6 +363,164 @@ export function applyClaimSequence(
 }
 
 // ============================================================================
+// Reference-span attribution helpers
+// ============================================================================
+
+/**
+ * The reference-side footprint of one applied claim: the merge-reference
+ * spans the working-text transition before → after changed, at chunk
+ * granularity.
+ *
+ * Reference coordinates are the durable frame for attribution: user edits
+ * move working-side positions freely and never pass through the store, but
+ * the reference moves only on decisions, which do — so spans recorded here
+ * stay meaningful for as long as the store remaps them across decisions.
+ *
+ * Both diffs run through the one shared engine: the claim's own edits are
+ * the partition of before → after, and each edited span is projected onto
+ * the reference through the partition of reference → after. A span reaching
+ * into a disagreement chunk widens to that chunk's whole reference range —
+ * attribution is consumed at chunk granularity, so a finer projection would
+ * claim precision no consumer sees.
+ */
+function computeChangedRefSpans(
+  referenceText: string,
+  beforeText: string,
+  afterText: string,
+): RefSpan[] {
+  const edits = computeReviewChunks(beforeText, afterText);
+  if (edits.length === 0) {
+    return [];
+  }
+  const partition = computeReviewChunks(referenceText, afterText);
+  return mergeRefSpans(
+    edits.map((edit) =>
+      projectWorkingSpan(partition, edit.workFromLine, edit.workToLine),
+    ),
+  );
+}
+
+/**
+ * Project one working-side line span onto the reference through a
+ * (reference, working) partition. Boundaries in agreement regions map by the
+ * accumulated line offset; a boundary inside a chunk rounds outward to the
+ * chunk's reference range. An empty span — a pure deletion at a boundary —
+ * maps to the reference range of the chunk covering that boundary, or to an
+ * empty span at the projected point when the reference agrees there (the
+ * deleted lines were a previous claim's own insertion, so the reference
+ * holds nothing to attribute).
+ */
+function projectWorkingSpan(
+  partition: readonly ReviewChunk[],
+  from: number,
+  to: number,
+): RefSpan {
+  if (from === to) {
+    const covering = partition.find(
+      (chunk) => chunk.workFromLine <= from && from <= chunk.workToLine,
+    );
+    if (covering !== undefined) {
+      return { from: covering.refFromLine, to: covering.refToLine };
+    }
+    let offset = 0;
+    for (const chunk of partition) {
+      if (chunk.workToLine >= from) {
+        break;
+      }
+      offset +=
+        chunk.refToLine - chunk.refFromLine - (chunk.workToLine - chunk.workFromLine);
+    }
+    return { from: from + offset, to: from + offset };
+  }
+  let refFrom = -1;
+  let offset = 0;
+  for (const chunk of partition) {
+    if (from < chunk.workFromLine) {
+      break;
+    }
+    if (from < chunk.workToLine) {
+      refFrom = chunk.refFromLine;
+      break;
+    }
+    offset +=
+      chunk.refToLine - chunk.refFromLine - (chunk.workToLine - chunk.workFromLine);
+  }
+  if (refFrom === -1) {
+    refFrom = from + offset;
+  }
+  let refTo = -1;
+  offset = 0;
+  for (const chunk of partition) {
+    if (to <= chunk.workFromLine) {
+      break;
+    }
+    if (to <= chunk.workToLine) {
+      refTo = chunk.refToLine;
+      break;
+    }
+    offset +=
+      chunk.refToLine - chunk.refFromLine - (chunk.workToLine - chunk.workFromLine);
+  }
+  if (refTo === -1) {
+    refTo = to + offset;
+  }
+  return { from: refFrom, to: refTo };
+}
+
+/** Sort spans and merge every overlapping or touching pair. */
+function mergeRefSpans(spans: readonly RefSpan[]): RefSpan[] {
+  const sorted = [...spans].sort((a, b) => a.from - b.from || a.to - b.to);
+  const merged: RefSpan[] = [];
+  for (const span of sorted) {
+    const last = merged[merged.length - 1];
+    if (last !== undefined && span.from <= last.to) {
+      last.to = Math.max(last.to, span.to);
+    } else {
+      merged.push({ ...span });
+    }
+  }
+  return merged;
+}
+
+/**
+ * Remap a span list across a decided chunk covering reference lines
+ * [refFrom, refTo). The decided region is resolved: span material inside it
+ * is dropped rather than carried forward — a later edit of those lines is
+ * the editor's change, not the packet's — and boundary points count as
+ * inside because the same closed rule attributed them to the chunk
+ * (chunkAttributesTo). Material behind the region shifts by lineDelta: the
+ * line-count change an accept spliced into the reference, 0 for a reject.
+ */
+function remapSpans(
+  spans: readonly RefSpan[],
+  refFrom: number,
+  refTo: number,
+  lineDelta: number,
+): RefSpan[] {
+  const result: RefSpan[] = [];
+  for (const span of spans) {
+    if (span.from === span.to) {
+      if (span.from < refFrom) {
+        result.push({ ...span });
+      } else if (span.from > refTo) {
+        result.push({ from: span.from + lineDelta, to: span.to + lineDelta });
+      }
+      continue;
+    }
+    if (span.from < refFrom) {
+      result.push({ from: span.from, to: Math.min(span.to, refFrom) });
+    }
+    if (span.to > refTo) {
+      result.push({
+        from: Math.max(span.from, refTo) + lineDelta,
+        to: span.to + lineDelta,
+      });
+    }
+  }
+  return result;
+}
+
+// ============================================================================
 // ReviewDiffStore
 // ============================================================================
 
@@ -387,6 +547,12 @@ export class ReviewDiffStore extends EventEmitter {
     new Map();
   /** Index from packetId → reviewId for retraction lookup */
   private readonly packetIndex: Map<string, string> = new Map();
+  /**
+   * Each packet's reference-side edit footprint, recorded at application and
+   * remapped across every decision. Attribution derives from these: a chunk
+   * attributes to every packet whose spans still touch its reference range.
+   */
+  private readonly packetRefSpans: Map<string, RefSpan[]> = new Map();
 
   /**
    * @param getWorkingText Resolves a documentId to the live document text.
@@ -486,11 +652,10 @@ export class ReviewDiffStore extends EventEmitter {
     }
     const review = guarded;
 
-    const sequence = applyClaimSequence(
-      this.workingTextOf(documentId),
-      review.documentPath,
-      [{ patch: options.patch, description: options.description }],
-    );
+    const workingText = this.workingTextOf(documentId);
+    const sequence = applyClaimSequence(workingText, review.documentPath, [
+      { patch: options.patch, description: options.description },
+    ]);
     if (!sequence.ok) {
       return sequence;
     }
@@ -498,6 +663,7 @@ export class ReviewDiffStore extends EventEmitter {
       review,
       options.clientRequestId,
       options.patchFormat,
+      workingText,
       sequence.steps,
     );
 
@@ -538,8 +704,9 @@ export class ReviewDiffStore extends EventEmitter {
     }
     const review = guarded;
 
+    const workingText = this.workingTextOf(documentId);
     const sequence = applyClaimSequence(
-      this.workingTextOf(documentId),
+      workingText,
       review.documentPath,
       options.claims,
     );
@@ -550,6 +717,7 @@ export class ReviewDiffStore extends EventEmitter {
       review,
       options.clientRequestId,
       options.patchFormat,
+      workingText,
       sequence.steps,
     );
 
@@ -612,9 +780,11 @@ export class ReviewDiffStore extends EventEmitter {
     review: ActiveReviewState,
     clientRequestId: string,
     patchFormat: "unified-diff",
+    startText: string,
     steps: readonly AppliedClaimStep[],
   ): { packetIds: string[]; workingText: string; unresolvedChunks: number } {
     const packetIds: string[] = [];
+    let textBefore = startText;
     for (const step of steps) {
       const packetId = randomUUID();
       review.packets.push({
@@ -629,6 +799,11 @@ export class ReviewDiffStore extends EventEmitter {
       });
       review.generation += 1;
       this.packetIndex.set(packetId, review.reviewId);
+      this.packetRefSpans.set(
+        packetId,
+        computeChangedRefSpans(review.referenceText, textBefore, step.textAfter),
+      );
+      textBefore = step.textAfter;
       packetIds.push(packetId);
     }
 
@@ -695,12 +870,23 @@ export class ReviewDiffStore extends EventEmitter {
     let unresolvedChunks: number;
     if (decision === "accept") {
       review.referenceText = spliceChunk(review.referenceText, chunk, "accept");
+      // The accepted splice changed the reference's line count: spans behind
+      // it shift, spans on it are resolved and dropped.
+      this.remapSpansAcrossDecision(
+        review,
+        chunk,
+        chunk.workToLine - chunk.workFromLine - (chunk.refToLine - chunk.refFromLine),
+      );
       unresolvedChunks = computeReviewChunks(
         review.referenceText,
         workingText,
       ).length;
     } else {
       newWorkingText = spliceChunk(workingText, chunk, "reject");
+      // The reference did not move, but the chunk's reference region is now
+      // resolved: attribution material there is dropped, so a later edit of
+      // the same lines is the editor's change, not the packet's.
+      this.remapSpansAcrossDecision(review, chunk, 0);
       unresolvedChunks = computeReviewChunks(
         review.referenceText,
         newWorkingText,
@@ -753,6 +939,10 @@ export class ReviewDiffStore extends EventEmitter {
       };
     }
     review.generation += 1;
+    // Every disagreement is resolved at once: nothing remains to attribute.
+    for (const packet of review.packets) {
+      this.packetRefSpans.set(packet.packetId, []);
+    }
     this.emitEvent("review.cleared", {
       reviewId: review.reviewId,
       documentId,
@@ -860,6 +1050,7 @@ export class ReviewDiffStore extends EventEmitter {
     const newWorkingText = normalizeText(reverted);
     review.packets.pop();
     this.packetIndex.delete(packetId);
+    this.packetRefSpans.delete(packetId);
     review.generation += 1;
 
     const unresolvedChunks = computeReviewChunks(
@@ -914,6 +1105,7 @@ export class ReviewDiffStore extends EventEmitter {
     });
     for (const p of review.packets) {
       this.packetIndex.delete(p.packetId);
+      this.packetRefSpans.delete(p.packetId);
       this.idempotencyIndex.delete(this.idempotencyIndexKey(documentId, p.clientRequestId));
     }
     this.reviews.delete(documentId);
@@ -929,6 +1121,7 @@ export class ReviewDiffStore extends EventEmitter {
     }
     for (const p of review.packets) {
       this.packetIndex.delete(p.packetId);
+      this.packetRefSpans.delete(p.packetId);
       this.idempotencyIndex.delete(this.idempotencyIndexKey(documentId, p.clientRequestId));
     }
     this.reviews.delete(documentId);
@@ -1017,23 +1210,34 @@ export class ReviewDiffStore extends EventEmitter {
 
   /**
    * The current outstanding chunks — the shared partition dressed for the
-   * agent API, with a focused zero-context patch per chunk.
+   * agent API, with a focused zero-context patch per chunk and the packets
+   * whose edits produced it (honest multi-attribution on overlap; empty for
+   * a chunk only the user's own edits created).
    */
   getOutstandingChunks(documentId: string): OutstandingChunk[] | undefined {
     const review = this.reviews.get(documentId);
     if (review === undefined) {
       return undefined;
     }
-    return this.partitionOf(review).map((chunk) => ({
-      chunkId: chunk.chunkId,
-      referenceRange: { fromLine: chunk.refFromLine, toLine: chunk.refToLine },
-      workingRange: { fromLine: chunk.workFromLine, toLine: chunk.workToLine },
-      referenceText: chunk.referenceText,
-      workingText: chunk.workingText,
-      patch: createPatch("document", chunk.referenceText, chunk.workingText, "", "", {
-        context: 0,
-      }),
-    }));
+    return this.partitionOf(review).map((chunk) => {
+      const attributed = review.packets.filter((packet) =>
+        chunkAttributesTo(chunk, this.spansOf(packet.packetId)),
+      );
+      return {
+        chunkId: chunk.chunkId,
+        referenceRange: { fromLine: chunk.refFromLine, toLine: chunk.refToLine },
+        workingRange: { fromLine: chunk.workFromLine, toLine: chunk.workToLine },
+        referenceText: chunk.referenceText,
+        workingText: chunk.workingText,
+        packetIds: attributed.map((packet) => packet.packetId),
+        descriptions: attributed
+          .map((packet) => packet.description)
+          .filter((description): description is string => description !== undefined),
+        patch: createPatch("document", chunk.referenceText, chunk.workingText, "", "", {
+          context: 0,
+        }),
+      };
+    });
   }
 
   /**
@@ -1060,6 +1264,38 @@ export class ReviewDiffStore extends EventEmitter {
 
   isInvalidated(review: ActiveReviewState): boolean {
     return review.invalidated;
+  }
+
+  /**
+   * A packet's current reference spans. Every application path records them
+   * at commit, so a missing entry is a lifecycle bug, not an empty footprint
+   * — answering [] would silently un-attribute every chunk the packet made.
+   */
+  private spansOf(packetId: string): RefSpan[] {
+    const spans = this.packetRefSpans.get(packetId);
+    if (spans === undefined) {
+      throw new Error(`Packet ${packetId} has no recorded reference spans`);
+    }
+    return spans;
+  }
+
+  /** Remap every packet's spans across one decided chunk (see remapSpans). */
+  private remapSpansAcrossDecision(
+    review: ActiveReviewState,
+    chunk: ReviewChunk,
+    lineDelta: number,
+  ): void {
+    for (const packet of review.packets) {
+      this.packetRefSpans.set(
+        packet.packetId,
+        remapSpans(
+          this.spansOf(packet.packetId),
+          chunk.refFromLine,
+          chunk.refToLine,
+          lineDelta,
+        ),
+      );
+    }
   }
 
   /**

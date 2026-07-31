@@ -671,6 +671,21 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // And the document shows the text after the whole sequence.
     const doc = provider.loadedDocuments.find((d) => d.filePath === filePath)!;
     assert.equal(doc.document.toString(), afterSecond);
+
+    // The chunk list exposes the attribution: each chunk names the packet
+    // whose claim produced it and carries that claim's description, so the
+    // agent can see which of its claims survive as which chunks.
+    const chunksResponse = await httpRequest("GET", `/v1/reviews/${body.reviewId}/chunks`);
+    assert.equal(chunksResponse.status, 200);
+    const chunksBody = JSON.parse(chunksResponse.body) as {
+      chunks: Array<{ packetIds: string[]; descriptions: string[] }>;
+    };
+    assertMatchesSchema(chunksBody, "ReviewChunksResponse");
+    assert.equal(chunksBody.chunks.length, 2);
+    assert.deepEqual(chunksBody.chunks[0].packetIds, [body.packetIds[0]]);
+    assert.deepEqual(chunksBody.chunks[0].descriptions, ["Capitalize the opening"]);
+    assert.deepEqual(chunksBody.chunks[1].packetIds, [body.packetIds[1]]);
+    assert.deepEqual(chunksBody.chunks[1].descriptions, ["Capitalize the closing"]);
   });
 
   it("refuses a claims batch whole when one claim fails, leaving no review behind", async function () {

@@ -694,6 +694,8 @@ components:
         - workingRange
         - referenceText
         - workingText
+        - packetIds
+        - descriptions
         - patch
       properties:
         chunkId:
@@ -734,6 +736,24 @@ components:
         workingText:
           type: string
           description: The working-side lines, newline-joined; empty for a pure deletion.
+        packetIds:
+          type: array
+          items:
+            type: string
+          description: >-
+            The packets whose edits produced this chunk, in application
+            order — every packet whose recorded edit spans still touch the
+            chunk's reference range. Overlapping claims attribute together;
+            a chunk the user tweaked keeps the attribution of the claim it
+            grew from; a chunk only the user's own edits created carries
+            none.
+        descriptions:
+          type: array
+          items:
+            type: string
+          description: >-
+            Those packets' descriptions, in the same order, packets without
+            one omitted.
         patch:
           type: string
           description: Focused zero-context unified diff of exactly this chunk.

@@ -280,6 +280,20 @@ export interface OutstandingChunk {
   referenceText: string;
   /** The working-side lines, newline-joined; "" for a pure deletion. */
   workingText: string;
+  /**
+   * The packets whose edits produced this chunk, in application order:
+   * every packet whose recorded reference-side edit spans still touch the
+   * chunk's reference range. Overlapping claims attribute together, and a
+   * chunk the user tweaked keeps the attribution of the claim it grew from —
+   * the reference frame moves only on decisions, never on user edits. Empty
+   * for a chunk only the user's own edits created.
+   */
+  packetIds: string[];
+  /**
+   * Those packets' descriptions, in the same order, packets without one
+   * omitted.
+   */
+  descriptions: string[];
   /** Focused zero-context unified diff of exactly this chunk. */
   patch: string;
 }
