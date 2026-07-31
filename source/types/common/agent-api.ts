@@ -343,29 +343,37 @@ export interface OutstandingChunk {
 
 export interface ReviewDiffResponse {
   reviewId: string;
-  documentId: string;
+  /** Absent for a detached review: no document is open to carry an id. */
+  documentId?: string;
   patch: string;
   generation: number;
 }
 
 export interface ReviewChunksResponse {
   reviewId: string;
-  documentId: string;
+  /** Absent for a detached review: no document is open to carry an id. */
+  documentId?: string;
   generation: number;
   chunks: OutstandingChunk[];
 }
 
 export interface ReviewPacketsResponse {
   reviewId: string;
-  documentId: string;
+  /** Absent for a detached review: no document is open to carry an id. */
+  documentId?: string;
   packets: ProposalPacket[];
 }
 
 /**
- * The body of GET /v1/reviews/{reviewId}: the review's own status plus the
- * live document revision. The wire carries no documentId here — the review is
- * addressed by reviewId, and /v1/reviews is the surface that maps reviews to
- * documents.
+ * The body of GET /v1/reviews/{reviewId}: the review's own status, its
+ * comments, and — while the reviewed file is open — the live document
+ * revision. The wire carries no documentId here: the review is addressed by
+ * reviewId, and /v1/reviews is the surface that maps reviews to documents.
+ *
+ * Every reviewId /v1/reviews hands out answers here, detached ones included:
+ * a detached review is served from its sidecar, which carries the whole
+ * review. Deciding its chunks still needs the file open — those routes
+ * answer DOCUMENT_CLOSED naming the path — but reading it does not.
  */
 export interface ReviewDetailResponse {
   reviewId: string;
@@ -376,7 +384,14 @@ export interface ReviewDetailResponse {
   packetCount: number;
   /** Review-level comments, direct and orphaned-from-hold alike. */
   comments: ReviewComment[];
-  documentRevision: DocumentRevision;
+  /** True while the reviewed document is open; see ReviewListEntry.attached. */
+  attached: boolean;
+  /**
+   * The open document's revision. Absent when the review is detached —
+   * there is no open document, and a fabricated revision would describe a
+   * state nobody has.
+   */
+  documentRevision?: DocumentRevision;
 }
 
 /** One entry of GET /v1/reviews: a ReviewSummary plus the document it reviews. */
@@ -527,6 +542,7 @@ export type AgentEventType =
   | "review.resolved"
   | "review.completed"
   | "review.cleared"
+  | "review.discarded"
   | "review.invalidated"
   | "review.held"
   | "review.commented"

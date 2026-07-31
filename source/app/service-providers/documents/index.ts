@@ -73,6 +73,7 @@ import {
   ReviewDiffStore,
   applyClaimSequence,
   classifyReviewState,
+  type ReviewSidecarData,
 } from "./review-diff-store";
 import { ReviewSidecarStore } from "./review-sidecar-store";
 
@@ -730,8 +731,7 @@ export default class DocumentManager extends ProviderContract {
                   return;
                 }
               } else {
-                document.lastSavedVersion = document.currentVersion;
-                this._detachReview(document.documentId);
+                this._discardChanges(document);
               }
             }
 
@@ -767,11 +767,17 @@ export default class DocumentManager extends ProviderContract {
     const result = await this._app.windows.askSaveChanges();
     // 0 = Save, 1 = Don't save, 2 = Cancel
     if (result.response === 1) {
-      // Mark everything as clean TODO: As of now this would mean that if the
-      // documents are open in other windows, they would still reflect the
-      // "wrong" (b/c omitted, unsaved) state!
-      for (const document of this.documents) {
-        document.lastSavedVersion = document.currentVersion;
+      // Discard, which is what the button says: the buffers go back to their
+      // disk bytes and every review over the discarded text is destroyed.
+      // Marking them clean and keeping the text was the older behaviour; a
+      // pane in another window then still showed the omitted edit, and a
+      // review's sidecar reattached it after the next restart.
+      //
+      // Only this window's documents: the prompt named this window's unsaved
+      // changes, and a discard that reached every loaded document would throw
+      // away edits the user is still holding in another window.
+      for (const document of this._windowDocuments(windowId)) {
+        this._discardChanges(document);
       }
 
       // If we're not shutting down, this function will only be called for when
@@ -782,8 +788,8 @@ export default class DocumentManager extends ProviderContract {
 
       return true;
     } else if (result.response === 0) {
-      // Save all docs
-      for (const document of this.documents) {
+      // Save this window's docs — the same set the discard branch throws away.
+      for (const document of this._windowDocuments(windowId)) {
         const saved = await this.saveFile(document.filePath);
         if (!saved.ok) {
           this._announceSaveRefusal(document.filePath, saved);
@@ -1397,14 +1403,7 @@ current contents from the editor somewhere else, and restart the application.`,
       const result = await this._app.windows.askSaveChanges(detail);
       // 0 = Save, 1 = Don't save, 2 = Cancel
       if (result.response === 1) {
-        // Clear the modification flag
-        openFile.lastSavedVersion = openFile.currentVersion;
-        {
-          const _id = this.getDocumentId(filePath);
-          if (_id !== undefined) {
-            this._detachReview(_id);
-          }
-        }
+        this._discardChanges(openFile);
         this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
           filePath,
           status: "modification",
@@ -2032,46 +2031,46 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Returns true if none of the open files have their modified flag set.
+   * True when nothing open in the given window has unsaved changes — or, with
+   * no window named, when nothing anywhere does. This is the gate in front of
+   * the close prompt, so a wrong "clean" is a prompt the user never sees.
    *
-   * @param  {string|number}  leafId  Can either contain a leafId or a window
-   *                                  index, and returns the clean state only
-   *                                  for that. If undefined, returns the total
-   *                                  clean state.
+   * It used to take a second argument choosing between a window id and a leaf
+   * id, defaulting to leaf. Both callers pass a window id and neither passed
+   * the selector, so both fell into the leaf branch, where no leaf ever
+   * carries a window's id — every window with unsaved changes answered clean,
+   * and closing one asked nothing and discarded nothing. Nothing scopes this
+   * question to a leaf, so there is no leaf mode to get wrong.
    */
-  public isClean(id?: string, which?: "window" | "leaf"): boolean {
-    const modPaths = this.documents
-      .filter((x) => this.isModified(x.filePath))
-      .map((x) => x.filePath);
-
-    if (id === undefined) {
-      // Total clean state
-      return modPaths.length === 0;
-    } else if (which === "window") {
-      // window-specific clean state
-      const allLeafs = this._windows[id].getAllLeafs();
-      for (const leaf of allLeafs) {
-        for (const file of leaf.tabMan.openFiles) {
-          if (modPaths.includes(file.path)) {
-            return false;
-          }
-        }
-      }
-    } else {
-      // leaf-specific clean state
-      for (const key in this._windows) {
-        const leaf = this._windows[key].findLeaf(id);
-        if (leaf !== undefined) {
-          for (const file of leaf.tabMan.openFiles) {
-            if (modPaths.includes(file.path)) {
-              return false;
-            }
-          }
-        }
-      }
+  public isClean(windowId?: string): boolean {
+    if (windowId !== undefined && !(windowId in this._windows)) {
+      // A window this manager has already dropped holds no documents, so it
+      // holds no unsaved changes. The close flow reaches this on purpose:
+      // askUserToCloseWindow drops the window itself, and the close it then
+      // permits runs this gate a second time.
+      return true;
     }
+    const scope = windowId === undefined ? this.documents : this._windowDocuments(windowId);
+    return scope.every((doc) => !this.isModified(doc.filePath));
+  }
 
-    return true;
+  /**
+   * The loaded documents open in a window's panes: the exact set that window's
+   * close prompt speaks for. Callers act on this set — save it, throw it away —
+   * so an id no window answers to throws by name rather than quietly resolving
+   * to "no documents", which would swallow the user's answer whole.
+   */
+  private _windowDocuments(windowId: string): Document[] {
+    const tree = this._windows[windowId];
+    if (tree === undefined) {
+      throw new Error(
+        `[DocumentManager] Cannot enumerate the documents of unknown window ${windowId}`,
+      );
+    }
+    const openPaths = new Set(
+      tree.getAllLeafs().flatMap((leaf) => leaf.tabMan.openFiles.map((file) => file.path)),
+    );
+    return this.documents.filter((doc) => openPaths.has(doc.filePath));
   }
 
   public async navigateForward(
@@ -2176,11 +2175,7 @@ current contents from the editor somewhere else, and restart the application.`,
   ): ChunkDecisionResponse | { ok: false; code: AgentErrorCode; message: string } {
     const review = this._reviewStore.findReviewByReviewId(reviewId);
     if (review === undefined) {
-      return {
-        ok: false,
-        code: "REVIEW_NOT_FOUND",
-        message: "Review not found.",
-      };
+      return this.reviewLookupFailure(reviewId);
     }
     const filePath = this.getDocumentPath(review.documentId);
     const doc =
@@ -2247,11 +2242,7 @@ current contents from the editor somewhere else, and restart the application.`,
   ): AcceptAllChunksResponse | { ok: false; code: AgentErrorCode; message: string } {
     const review = this._reviewStore.findReviewByReviewId(reviewId);
     if (review === undefined) {
-      return {
-        ok: false,
-        code: "REVIEW_NOT_FOUND",
-        message: "Review not found.",
-      };
+      return this.reviewLookupFailure(reviewId);
     }
     const filePath = this.getDocumentPath(review.documentId);
     const doc =
@@ -2548,6 +2539,59 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * The user's "Don't save" answer, applied to one document. DESTROY, where
+   * _detachReview preserves: the bytes thrown away die everywhere this
+   * provider captured them — the buffer, the in-memory review, and the
+   * review's sidecar file.
+   *
+   * Every close prompt used to hand-roll this as
+   * `lastSavedVersion = currentVersion` plus _detachReview, and both halves
+   * reversed the decision. Silencing the dirty flag left the discarded text
+   * in the buffer, where a pane in another window still showed it and the
+   * next save would write it. Detaching wrote that same live text through to
+   * the sidecar — and since a discard writes nothing to disk, the sidecar's
+   * disk fence still matched the untouched file, so the next open verified
+   * the fence, restored the working text, and put the discarded edit back
+   * with no signal that anything had been resurrected.
+   *
+   * So: the buffer returns to its disk bytes through the same splice path a
+   * review decision uses (every open pane follows), the review is closed, and
+   * its sidecar is deleted. Only then is the document clean, because only
+   * then is the claim true.
+   *
+   * The sidecar deletion is deliberately NOT wrapped in the error handling
+   * _detachReview uses: a discard whose file removal failed leaves those
+   * bytes reattachable, and swallowing that would reinstate the defect. It
+   * throws, and the close it was called from aborts.
+   */
+  private _discardChanges(doc: Document): void {
+    if (doc.currentVersion === doc.lastSavedVersion) {
+      // Nothing was thrown away here, so nothing may be destroyed here: a
+      // saved document's review is not the user's to lose at another
+      // document's prompt.
+      return;
+    }
+    const review = this._reviewStore.getReview(doc.documentId);
+    this._reviewSidecars.delete(doc.filePath);
+    this._reviewStore.closeReview(doc.documentId);
+    this._clearProposalIdempotency(doc.documentId);
+    if (review !== undefined) {
+      // Both audiences are told, after closeReview, so each signal describes a
+      // review that is already gone rather than one it could still try to
+      // decide: the agent over SSE, and every pane still showing the document
+      // — a discard that leaves the window open would otherwise keep drawing
+      // chunk widgets for a review the store no longer has.
+      this._reviewStore.emitEvent("review.discarded", {
+        reviewId: review.reviewId,
+        documentId: doc.documentId,
+      });
+      this._broadcastReviewCleared(doc.filePath, review.reviewId);
+    }
+    this._applyWorkingTextToDocument(doc.filePath, doc.lastSavedContent);
+    doc.lastSavedVersion = doc.currentVersion;
+  }
+
+  /**
    * The write-through target: mirror the review's current state to its
    * sidecar. A review absent from the store is NOT a deletion signal here —
    * completion and detachment own their own file lifecycle — so the mutation
@@ -2624,14 +2668,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * in-memory review is the live entry for the same fact.
    */
   public listDetachedReviews(): ReviewListEntry[] {
-    return this._reviewSidecars
-      .list()
-      .filter((sidecar) =>
-        this.documents.every(
-          (doc) => path.resolve(doc.filePath) !== path.resolve(sidecar.documentPath),
-        ),
-      )
-      .map((sidecar) => ({
+    return this._detachedReviews().map((sidecar) => ({
         reviewId: sidecar.reviewId,
         state: classifyReviewState(sidecar.invalidated, sidecar.unresolvedChunks),
         generation: sidecar.generation,
@@ -2641,6 +2678,59 @@ current contents from the editor somewhere else, and restart the application.`,
         documentPath: sidecar.documentPath,
         attached: false,
       }));
+  }
+
+  /**
+   * The sidecars behind the detached reviews — the exact set
+   * listDetachedReviews enumerates. Every reviewId lookup that misses the
+   * live store resolves against this same set, so an id the listing hands
+   * out is addressable and an id it withholds (a sidecar shadowed by its
+   * open document) is not.
+   */
+  // ponytail: rereads every sidecar file per call. Cache it when a workspace
+  // with hundreds of detached reviews makes the scan show up.
+  private _detachedReviews(): ReviewSidecarData[] {
+    return this._reviewSidecars
+      .list()
+      .filter((sidecar) =>
+        this.documents.every(
+          (doc) => path.resolve(doc.filePath) !== path.resolve(sidecar.documentPath),
+        ),
+      );
+  }
+
+  /**
+   * The complete review behind a detached reviewId, or undefined when no
+   * closed file carries it. This is what makes a listed reviewId readable:
+   * a sidecar holds both texts, every packet with its spans, the holds and
+   * the comments, so the review routes can answer from it without the
+   * document being open.
+   */
+  public findDetachedReview(reviewId: string): ReviewSidecarData | undefined {
+    return this._detachedReviews().find((sidecar) => sidecar.reviewId === reviewId);
+  }
+
+  /**
+   * Why a reviewId did not resolve in the live store. A detached review is
+   * not missing — /v1/reviews just vouched for it — it is unworkable until
+   * its file is open again, which is a conflict, not a 404.
+   */
+  public reviewLookupFailure(reviewId: string): {
+    ok: false;
+    code: AgentErrorCode;
+    message: string;
+  } {
+    const detached = this.findDetachedReview(reviewId);
+    if (detached !== undefined) {
+      return {
+        ok: false,
+        code: "DOCUMENT_CLOSED",
+        message:
+          `The reviewed document ${detached.documentPath} is not open. ` +
+          "Open it to reattach this review, then decide its chunks.",
+      };
+    }
+    return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
   }
 
   private _clearProposalIdempotency(documentId: string): void {
@@ -3053,7 +3143,7 @@ current contents from the editor somewhere else, and restart the application.`,
         reviewGeneration: number;
         unresolvedChunks: number;
       }
-    | { ok: false; code: string; message: string } {
+    | { ok: false; code: AgentErrorCode; message: string } {
     // Find documentId by reviewId
     let documentId: string | undefined;
     for (const r of this._reviewStore.listReviews()) {
@@ -3063,11 +3153,7 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     }
     if (documentId === undefined) {
-      return {
-        ok: false,
-        code: "REVIEW_NOT_FOUND",
-        message: "Review not found.",
-      };
+      return this.reviewLookupFailure(reviewId);
     }
     const result = this._reviewStore.clearUnresolved(documentId);
     if (!result.ok) {
@@ -3114,13 +3200,32 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     | {
         ok: false;
-        code: string;
+        code: AgentErrorCode;
         message: string;
         reviewId: string;
-        canClearUnresolved: true;
+        canClearUnresolved: boolean;
       } {
     const result = this._reviewStore.retractPacket(packetId);
     if (!result.ok) {
+      // GET /v1/reviews/{id}/packets hands out a detached review's packetIds,
+      // so this route owes them an answer. The live store dropped them when
+      // the file closed; the sidecar still carries them, and the refusal it
+      // earns is the same one every reviewId route gives — the file is shut,
+      // not the packet missing. Clearing is shut too, so say so.
+      const detached = this._detachedReviews().find((sidecar) =>
+        sidecar.packets.some((packet) => packet.packetId === packetId),
+      );
+      if (detached !== undefined) {
+        return {
+          ok: false,
+          code: "DOCUMENT_CLOSED",
+          message:
+            `The reviewed document ${detached.documentPath} is not open. ` +
+            "Open it to reattach this review, then retract this packet.",
+          reviewId: detached.reviewId,
+          canClearUnresolved: false,
+        };
+      }
       return {
         ok: false,
         code: result.code,

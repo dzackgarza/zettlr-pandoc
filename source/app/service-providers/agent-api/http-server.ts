@@ -42,6 +42,7 @@ import {
   type ReviewEventsResponse,
   type ReviewListEntry,
   type OpenDocumentRequest,
+  type PingResponse,
   type SearchHit,
   type WorkspaceDocumentEntry,
   type WorkspaceFileEntry,
@@ -57,8 +58,13 @@ import fs from "fs";
 import http from "http";
 import path from "path";
 import vm from "vm";
-import { parse as parseYaml } from "yaml";
-import { sha256Text } from "@providers/documents/review-diff-store";
+import { parseDocument, type Document } from "yaml";
+import {
+  classifyReviewState,
+  reviewPatch,
+  sha256Text,
+  sidecarOutstandingChunks,
+} from "@providers/documents/review-diff-store";
 import makeSearchRegex from "source/common/util/make-search-regex";
 
 /**
@@ -238,6 +244,18 @@ export const MAX_SEARCH_PATTERN_LENGTH = 512;
 const SEARCH_DEADLINE_MS = 1000;
 
 /**
+ * `context` is the third cost dimension of this endpoint, and the only one that
+ * scales the response rather than the search: every hit copies up to `context`
+ * lines on each side into its own `contextBefore`/`contextAfter`, so the bytes
+ * this request allocates in the main process are hits x 2 x context lines. Left
+ * open-ended, a single request naming a context larger than the document makes
+ * each of its hits carry a full copy of that document. The cap is enforced at
+ * the decode boundary and declared in openapi.yaml, so a caller learns the
+ * ceiling from the published contract instead of from a hung editor.
+ */
+export const MAX_SEARCH_CONTEXT = 100;
+
+/**
  * The match loop, factored out so it can be entered as one interruptible
  * call. Runs to completion or is terminated mid-`exec`; a terminated run
  * abandons this array, so partial hits never reach a response.
@@ -291,8 +309,16 @@ function decodeSearchDocumentRequest(
   if (context === undefined) {
     return { ok: true, value: { literal, context: SEARCH_CONTEXT_DEFAULT } };
   }
-  if (typeof context !== "number" || !Number.isInteger(context) || context < 0) {
-    return { ok: false, message: "context must be a non-negative integer" };
+  if (
+    typeof context !== "number" ||
+    !Number.isInteger(context) ||
+    context < 0 ||
+    context > MAX_SEARCH_CONTEXT
+  ) {
+    return {
+      ok: false,
+      message: `context must be an integer between 0 and ${MAX_SEARCH_CONTEXT}`,
+    };
   }
   return { ok: true, value: { literal, context } };
 }
@@ -422,6 +448,58 @@ export interface AgentApiHost {
   };
 }
 
+/** What a route handler is given: the exchange, plus its decoded path parameters. */
+interface RouteContext {
+  req: http.IncomingMessage;
+  res: http.ServerResponse;
+  url: URL;
+  params: Record<string, string>;
+}
+
+/**
+ * One route this server answers.
+ *
+ * `path` is the OpenAPI path template, spelled exactly as openapi.yaml spells
+ * it, and the matcher is compiled from that same string. The published
+ * document and the dispatcher therefore cannot disagree about what a route is
+ * called: there is one spelling, and `AgentHTTPProvider.routes` hands the list
+ * back so a caller — the conformance test among them — can ask the running
+ * server what it serves instead of guessing from the source text.
+ */
+interface AgentApiRoute {
+  method: string;
+  path: string;
+  /** Answered before the token check. Only the specification document is. */
+  anonymous?: boolean;
+  handle: (ctx: RouteContext) => void | Promise<void>;
+}
+
+interface CompiledRoute extends AgentApiRoute {
+  pattern: RegExp;
+  paramNames: string[];
+}
+
+/**
+ * `/v1/documents/{documentId}/content` becomes `^/v1/documents/([^/]+)/content$`
+ * with `documentId` named. A parameter spans exactly one segment, which is what
+ * keeps `/v1/documents/{documentId}` from swallowing its own sub-paths.
+ */
+function compileRoute(route: AgentApiRoute): CompiledRoute {
+  const paramNames: string[] = [];
+  const pattern = route.path
+    .split("/")
+    .map((segment) => {
+      const parameter = segment.match(/^\{(\w+)\}$/);
+      if (parameter === null) {
+        return segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      }
+      paramNames.push(parameter[1]);
+      return "([^/]+)";
+    })
+    .join("/");
+  return { ...route, pattern: new RegExp(`^${pattern}$`), paramNames };
+}
+
 export default class AgentHTTPProvider extends ProviderContract {
   private _server: http.Server | undefined;
   private _instanceId: string;
@@ -429,8 +507,17 @@ export default class AgentHTTPProvider extends ProviderContract {
   private _eventReplayBuffer: BufferedAgentEvent[] = [];
   private _eventSequence = 1;
   private _sseHeartbeat: NodeJS.Timeout | undefined;
-  private _openApiYaml = "";
+  /**
+   * The committed specification, parsed once at construction. Per-request
+   * copies get their `servers` entry set on the parsed document rather than
+   * spliced into its text: the origin comes off the wire, and a request-shaped
+   * string written into YAML text can produce a document that no longer
+   * parses.
+   */
+  private readonly _openApiSpecification: Document;
   private readonly _requiredToken: string | undefined;
+  /** The one route table. Dispatch matches against these entries and nothing else. */
+  private readonly _routes: CompiledRoute[];
 
   constructor(
     private readonly _log: LogProvider,
@@ -458,19 +545,33 @@ export default class AgentHTTPProvider extends ProviderContract {
       path.join(__dirname, "assets", "openapi.yaml"),
     ];
     let lastReadError: unknown;
+    let specificationText = "";
     for (const p of candidatePaths) {
       try {
-        this._openApiYaml = fs.readFileSync(p, "utf8");
+        specificationText = fs.readFileSync(p, "utf8");
         break;
       } catch (error) {
         lastReadError = error;
       }
     }
-    if (this._openApiYaml.length === 0) {
+    if (specificationText.length === 0) {
       throw new Error("Agent API OpenAPI specification is required", {
         cause: lastReadError,
       });
     }
+    // Parsed here and nowhere else. A malformed committed document is a build
+    // fault and stops this provider at construction, where the failure is the
+    // author's and is loud; per request it would be a caller's 500 at best,
+    // and this file is the one input that is not caller-controlled.
+    this._openApiSpecification = parseDocument(specificationText);
+    if (this._openApiSpecification.errors.length > 0) {
+      throw new Error(
+        `Agent API OpenAPI specification is not valid YAML: ${this._openApiSpecification.errors
+          .map((error) => error.message)
+          .join("; ")}`,
+      );
+    }
+    this._routes = this.buildRoutes().map(compileRoute);
   }
 
   async boot(): Promise<void> {
@@ -577,6 +678,14 @@ export default class AgentHTTPProvider extends ProviderContract {
     return this._server !== undefined;
   }
 
+  /**
+   * The (method, path template) pairs this server dispatches on — its own
+   * account of what it serves, read off the table dispatch matches against.
+   */
+  public get routes(): ReadonlyArray<{ method: string; path: string }> {
+    return this._routes.map(({ method, path }) => ({ method, path }));
+  }
+
   async shutdown(): Promise<void> {
     // Close all SSE clients
     for (const res of this._sseClients) {
@@ -615,21 +724,57 @@ export default class AgentHTTPProvider extends ProviderContract {
    * which is a client-supplied header on a server that also answers loopback
    * directly: anything that is not loopback reached this process through a
    * proxy that terminates TLS.
+   *
+   * The entry is set on a copy of the parsed document, so the Host header is a
+   * value in a YAML node and never text in a YAML file. Spliced as text it was
+   * neither: `Host: example.com: x` is a legal header that turned the
+   * specification into a document that no longer parsed, and the parse ran in
+   * this process after the 200 had already gone out.
    */
-  private specificationForRequest(req: http.IncomingMessage): string {
+  private specificationForRequest(req: http.IncomingMessage, asJson: boolean): string {
+    const specification = this._openApiSpecification.clone();
     const host = req.headers.host;
-    if (host === undefined) {
-      return this._openApiYaml;
+    if (host !== undefined) {
+      const isLoopback = /^(127\.0\.0\.1|\[::1\]|localhost)(:\d+)?$/.test(host);
+      specification.set("servers", [
+        {
+          url: `${isLoopback ? "http" : "https"}://${host}`,
+          description: "The endpoint this specification was fetched from",
+        },
+      ]);
     }
-    const isLoopback = /^(127\.0\.0\.1|\[::1\]|localhost)(:\d+)?$/.test(host);
-    const origin = `${isLoopback ? "http" : "https"}://${host}`;
-    return this._openApiYaml.replace(
-      /^servers:\n(?:[ \t]+.*\n)+/m,
-      `servers:\n  - url: ${origin}\n    description: The endpoint this specification was fetched from\n`,
-    );
+    return asJson
+      ? JSON.stringify(specification.toJSON(), null, 2)
+      : specification.toString();
   }
 
+  /**
+   * The synchronous boundary between Node's request callback and this
+   * provider. Everything below runs on the Electron main process' stack: a
+   * throw that escapes this frame is an uncaught exception, and the editor —
+   * not the request — is what ends. One malformed request target
+   * (`GET http://[ HTTP/1.1` is legal absolute form, and `new URL` refuses it)
+   * was enough. So no request leaves here unanswered or unlogged.
+   */
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+    try {
+      this.routeRequest(req, res);
+    } catch (error) {
+      this._log.error(
+        `[AgentHTTPProvider] ${req.method ?? "?"} ${req.url ?? "?"} threw out of the request ` +
+          `handler: ${String(error)}`,
+        error,
+      );
+      this.sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
+    }
+  }
+
+  private routeRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    const pathname = url.pathname;
+    const method = req.method ?? "GET";
+    const matched = this.matchRoute(method, pathname);
+
     // The specification is deliberately the one anonymous route. It describes
     // the API rather than exposing it — the same document sits in the public
     // repository — and a client that reads it still cannot call anything
@@ -641,27 +786,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     // pattern: /health next door stays behind the token because it reports the
     // instance id and process id of a running editor.
     //
-    // The same document is offered as JSON at /openapi.json because importers
-    // are not uniformly willing to read YAML: the Custom GPT builder fetched
-    // this URL and silently did nothing, while it accepted an otherwise
-    // equivalent JSON document served as application/json. YAML remains the
-    // committed source — the JSON is parsed from it per request, so the two
-    // cannot disagree.
-    if (req.method === "GET" && (req.url === "/openapi.yaml" || req.url === "/openapi.json")) {
-      const specification = this.specificationForRequest(req);
-      const asJson = req.url === "/openapi.json";
-      res.writeHead(200, {
-        "Content-Type": asJson ? "application/json" : "application/yaml",
-      });
-      res.end(asJson ? JSON.stringify(parseYaml(specification), null, 2) : specification);
-      return;
-    }
-
-    // Every other route passes the check here, at the entry point. Inside
-    // dispatch() was not enough: routes that short-circuit above it — the spec
-    // route being exactly that — would answer anonymously by accident rather
-    // than by decision.
-    if (!this.isAuthorized(req)) {
+    // The check runs before an unmatched path is refused, so an anonymous
+    // caller learns nothing about which routes exist: everything that is not
+    // the specification answers 401 first, routed or not.
+    if (matched?.route.anonymous !== true && !this.isAuthorized(req)) {
       // The body says nothing an anonymous caller did not already know. It
       // named the environment variable carrying the secret, which told whoever
       // reached the tunnel how this server is configured and what to probe for.
@@ -676,12 +804,21 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
 
-    // Route dispatch
-    const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    const pathname = url.pathname;
-    const method = req.method ?? "GET";
+    if (matched === undefined) {
+      this.sendError(res, 404, "METHOD_NOT_FOUND", `No route for ${method} ${pathname}`);
+      return;
+    }
 
-    this.dispatch(req, res, method, pathname, url).catch((err) => {
+    // Decoded after the token check: a malformed escape is a caller's error to
+    // be told about, not something an anonymous caller gets to provoke.
+    const params: Record<string, string> = {};
+    matched.route.paramNames.forEach((name, index) => {
+      params[name] = decodeURIComponent(matched.captures[index]);
+    });
+
+    // The async wrapper is what makes a handler that throws synchronously
+    // arrive in the same catch as one that rejects.
+    void (async () => await matched.route.handle({ req, res, url, params }))().catch((err) => {
       if (err instanceof RequestTooLargeError) {
         this.sendError(res, 413, "REQUEST_TOO_LARGE", "Request body exceeds the API limit");
         return;
@@ -746,158 +883,206 @@ export default class AgentHTTPProvider extends ProviderContract {
     );
   }
 
-  private async dispatch(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
+  /**
+   * The first route whose method and compiled pattern accept this request.
+   *
+   * Every template is anchored and a parameter never crosses a `/`, so no two
+   * entries can accept the same path and the order of the table is not part of
+   * its meaning.
+   */
+  private matchRoute(
     method: string,
     pathname: string,
-    url: URL,
-  ): Promise<void> {
-    // Health/system routes
-    if (pathname === "/health" && method === "GET") {
-      return this.sendJson(res, 200, {
-        protocolVersion: AGENT_API_PROTOCOL_VERSION,
-        instanceId: this._instanceId,
-        pid: process.pid,
-      });
+  ): { route: CompiledRoute; captures: string[] } | undefined {
+    for (const route of this._routes) {
+      if (route.method !== method) {
+        continue;
+      }
+      const match = pathname.match(route.pattern);
+      if (match !== null) {
+        return { route, captures: match.slice(1) };
+      }
     }
-    if (pathname === "/v1/ping" && method === "GET") {
-      return this.sendJson(res, 200, {
-        protocolVersion: AGENT_API_PROTOCOL_VERSION,
-        instanceId: this._instanceId,
-        pid: process.pid,
-      });
-    }
-    if (pathname === "/v1/capabilities" && method === "GET") {
-      return this.sendJson(res, 200, {
-        protocolVersion: AGENT_API_PROTOCOL_VERSION,
-        supportedPatchFormats: ["unified-diff"],
-        reviewSupport: true,
-        retractionSupport: true,
-        maxRequestSize: 25 * 1024 * 1024,
-        eventStreamSupport: true,
-        eventReplayBufferSize: SSE_REPLAY_BUFFER_SIZE,
-        applicationVersion: app.getVersion(),
-        instanceId: this._instanceId,
-      });
-    }
-    if (pathname === "/v1/context" && method === "GET") {
-      return this.handleGetContext(res);
-    }
-    if (pathname === "/v1/views" && method === "GET") {
-      return this.handleGetViews(res);
-    }
-    if (pathname === "/v1/workspaces" && method === "GET") {
-      return this.handleGetWorkspaces(res);
-    }
-    if (pathname === "/v1/workspace/files" && method === "GET") {
-      return this.handleListWorkspaceFiles(res);
-    }
-    if (pathname === "/v1/documents" && method === "GET") {
-      return this.handleListDocuments(res, url);
-    }
-    if (pathname === "/v1/documents" && method === "POST") {
-      return this.handleOpenDocument(req, res);
-    }
-    if (pathname === "/v1/events" && method === "GET") {
-      return this.handleSseSubscription(req, res);
-    }
+    return undefined;
+  }
 
-    const workspaceOpenMatch = pathname.match(
-      /^\/v1\/workspaces\/([^/]+)\/documents\/([^/]+)\/open$/,
-    );
-    if (workspaceOpenMatch !== null && method === "POST") {
-      return this.handleOpenDocumentInWorkspace(
-        res,
-        decodeURIComponent(workspaceOpenMatch[1]),
-        decodeURIComponent(workspaceOpenMatch[2]),
-      );
-    }
-    const workspaceDocumentsMatch = pathname.match(/^\/v1\/workspaces\/([^/]+)\/documents(\/.*)?$/);
-    if (workspaceDocumentsMatch !== null) {
-      const workspaceId = decodeURIComponent(workspaceDocumentsMatch[1]);
-      const workspaceSubPath = workspaceDocumentsMatch[2];
-      if ((workspaceSubPath === undefined || workspaceSubPath === "/") && method === "GET") {
-        return this.handleListWorkspaceDocuments(res, url, workspaceId);
-      }
-    }
+  /**
+   * Everything this server serves, in one list.
+   *
+   * This is the route table, not a description of one: dispatch answers from
+   * exactly these entries, so a route that is not here is not served, and
+   * `routes` can hand the same list to a caller asking what this server
+   * publishes. The path strings are the ones openapi.yaml declares.
+   */
+  private buildRoutes(): AgentApiRoute[] {
+    const instanceIdentity = (): PingResponse => ({
+      protocolVersion: AGENT_API_PROTOCOL_VERSION,
+      instanceId: this._instanceId,
+      pid: process.pid,
+    });
 
-    // Document-scoped routes: /v1/documents/{documentId}...
-    const docMatch = pathname.match(/^\/v1\/documents\/([^/]+)(\/.*)?$/);
-    if (docMatch !== null) {
-      const documentId = decodeURIComponent(docMatch[1]);
-      const subPath = docMatch[2];
+    // The same document in two encodings, because importers are not uniformly
+    // willing to read YAML: the Custom GPT builder fetched the YAML URL and
+    // silently did nothing, while it accepted an otherwise equivalent JSON
+    // document served as application/json. YAML remains the committed source —
+    // both encodings are written from the one parsed document, so the two
+    // cannot disagree.
+    const serveSpecification =
+      (asJson: boolean) =>
+      ({ req, res }: RouteContext): void => {
+        // Built before anything is committed to the wire: a body that failed
+        // half-written would leave a 200 already sent and nothing to correct
+        // it with.
+        const specification = this.specificationForRequest(req, asJson);
+        res.writeHead(200, {
+          "Content-Type": asJson ? "application/json" : "application/yaml",
+        });
+        res.end(specification);
+      };
 
-      if (subPath === undefined && method === "GET") {
-        return this.handleGetDocument(res, documentId);
-      }
-      if (subPath === "/focus" && method === "POST") {
-        return this.handleFocusDocument(res, documentId);
-      }
-      if (subPath === "/content" && method === "GET") {
-        return this.handleReadContent(res, documentId, url);
-      }
-      if (subPath === "/search" && method === "POST") {
-        return this.handleSearch(req, res, documentId);
-      }
-      if (subPath === "/proposals" && method === "POST") {
-        return this.handleSubmitProposal(req, res, documentId);
-      }
-    }
+    return [
+      { method: "GET", path: "/openapi.yaml", anonymous: true, handle: serveSpecification(false) },
+      { method: "GET", path: "/openapi.json", anonymous: true, handle: serveSpecification(true) },
 
-    // Review-scoped routes: /v1/reviews/{reviewId}...
-    const reviewMatch = pathname.match(/^\/v1\/reviews\/([^/]+)(\/.*)?$/);
-    if (reviewMatch !== null) {
-      const reviewId = decodeURIComponent(reviewMatch[1]);
-      const subPath = reviewMatch[2];
+      // Health/system routes
+      { method: "GET", path: "/health", handle: ({ res }) => this.sendJson(res, 200, instanceIdentity()) },
+      { method: "GET", path: "/v1/ping", handle: ({ res }) => this.sendJson(res, 200, instanceIdentity()) },
+      {
+        method: "GET",
+        path: "/v1/capabilities",
+        handle: ({ res }) =>
+          this.sendJson(res, 200, {
+            protocolVersion: AGENT_API_PROTOCOL_VERSION,
+            supportedPatchFormats: ["unified-diff"],
+            reviewSupport: true,
+            retractionSupport: true,
+            maxRequestSize: 25 * 1024 * 1024,
+            eventStreamSupport: true,
+            eventReplayBufferSize: SSE_REPLAY_BUFFER_SIZE,
+            applicationVersion: app.getVersion(),
+            instanceId: this._instanceId,
+          }),
+      },
+      { method: "GET", path: "/v1/context", handle: async ({ res }) => await this.handleGetContext(res) },
+      { method: "GET", path: "/v1/views", handle: async ({ res }) => await this.handleGetViews(res) },
+      { method: "GET", path: "/v1/events", handle: ({ req, res }) => this.handleSseSubscription(req, res) },
 
-      if (subPath === undefined && method === "GET") {
-        return this.handleGetReview(res, reviewId);
-      }
-      if (subPath === "/diff" && method === "GET") {
-        return this.handleGetReviewDiff(res, reviewId);
-      }
-      if (subPath === "/chunks" && method === "GET") {
-        return this.handleGetReviewChunks(res, reviewId);
-      }
-      const chunkDecision = subPath?.match(/^\/chunks\/([^/]+)\/(accept|reject|hold)$/);
-      if (chunkDecision !== null && chunkDecision !== undefined && method === "POST") {
-        return this.handleDecideChunk(
-          req,
-          res,
-          reviewId,
-          decodeURIComponent(chunkDecision[1]),
-          chunkDecision[2] as ChunkDecision,
-        );
-      }
-      if (subPath === "/comments" && method === "POST") {
-        return this.handleAddReviewComment(req, res, reviewId);
-      }
-      if (subPath === "/packets" && method === "GET") {
-        return this.handleGetReviewPackets(res, reviewId);
-      }
-      if (subPath === "/accept-all" && method === "POST") {
-        return this.handleAcceptAllChunks(res, reviewId);
-      }
-      if (subPath === "/clear" && method === "POST") {
-        return this.handleClearReview(res, reviewId);
-      }
-      if (subPath === "/events" && method === "GET") {
-        return this.handleWaitForReviewEvents(res, reviewId, url);
-      }
-    }
+      // Workspaces
+      { method: "GET", path: "/v1/workspaces", handle: ({ res }) => this.handleGetWorkspaces(res) },
+      {
+        method: "GET",
+        path: "/v1/workspace/files",
+        handle: async ({ res }) => await this.handleListWorkspaceFiles(res),
+      },
+      {
+        method: "GET",
+        path: "/v1/workspaces/{workspaceId}/documents",
+        handle: ({ res, url, params }) =>
+          this.handleListWorkspaceDocuments(res, url, params.workspaceId),
+      },
+      {
+        method: "POST",
+        path: "/v1/workspaces/{workspaceId}/documents/{documentId}/open",
+        handle: async ({ res, params }) =>
+          await this.handleOpenDocumentInWorkspace(res, params.workspaceId, params.documentId),
+      },
 
-    if (pathname === "/v1/reviews" && method === "GET") {
-      return this.handleListReviews(res);
-    }
+      // Documents
+      {
+        method: "GET",
+        path: "/v1/documents",
+        handle: async ({ res, url }) => await this.handleListDocuments(res, url),
+      },
+      {
+        method: "POST",
+        path: "/v1/documents",
+        handle: async ({ req, res }) => await this.handleOpenDocument(req, res),
+      },
+      {
+        method: "GET",
+        path: "/v1/documents/{documentId}",
+        handle: async ({ res, params }) => await this.handleGetDocument(res, params.documentId),
+      },
+      {
+        method: "POST",
+        path: "/v1/documents/{documentId}/focus",
+        handle: async ({ res, params }) => await this.handleFocusDocument(res, params.documentId),
+      },
+      {
+        method: "GET",
+        path: "/v1/documents/{documentId}/content",
+        handle: ({ res, url, params }) => this.handleReadContent(res, params.documentId, url),
+      },
+      {
+        method: "POST",
+        path: "/v1/documents/{documentId}/search",
+        handle: async ({ req, res, params }) => await this.handleSearch(req, res, params.documentId),
+      },
+      {
+        method: "POST",
+        path: "/v1/documents/{documentId}/proposals",
+        handle: async ({ req, res, params }) =>
+          await this.handleSubmitProposal(req, res, params.documentId),
+      },
 
-    // Proposal retraction: /v1/proposals/{packetId}/retract
-    const retractMatch = pathname.match(/^\/v1\/proposals\/([^/]+)\/retract$/);
-    if (retractMatch !== null && method === "POST") {
-      return this.handleRetractProposal(res, decodeURIComponent(retractMatch[1]));
-    }
+      // Reviews
+      { method: "GET", path: "/v1/reviews", handle: ({ res }) => this.handleListReviews(res) },
+      {
+        method: "GET",
+        path: "/v1/reviews/{reviewId}",
+        handle: ({ res, params }) => this.handleGetReview(res, params.reviewId),
+      },
+      {
+        method: "GET",
+        path: "/v1/reviews/{reviewId}/diff",
+        handle: ({ res, params }) => this.handleGetReviewDiff(res, params.reviewId),
+      },
+      {
+        method: "GET",
+        path: "/v1/reviews/{reviewId}/chunks",
+        handle: ({ res, params }) => this.handleGetReviewChunks(res, params.reviewId),
+      },
+      ...(["accept", "reject", "hold"] as ChunkDecision[]).map((decision) => ({
+        method: "POST",
+        path: `/v1/reviews/{reviewId}/chunks/{chunkId}/${decision}`,
+        handle: async ({ req, res, params }: RouteContext) =>
+          await this.handleDecideChunk(req, res, params.reviewId, params.chunkId, decision),
+      })),
+      {
+        method: "POST",
+        path: "/v1/reviews/{reviewId}/comments",
+        handle: async ({ req, res, params }) =>
+          await this.handleAddReviewComment(req, res, params.reviewId),
+      },
+      {
+        method: "GET",
+        path: "/v1/reviews/{reviewId}/packets",
+        handle: ({ res, params }) => this.handleGetReviewPackets(res, params.reviewId),
+      },
+      {
+        method: "POST",
+        path: "/v1/reviews/{reviewId}/accept-all",
+        handle: ({ res, params }) => this.handleAcceptAllChunks(res, params.reviewId),
+      },
+      {
+        method: "POST",
+        path: "/v1/reviews/{reviewId}/clear",
+        handle: ({ res, params }) => this.handleClearReview(res, params.reviewId),
+      },
+      {
+        method: "GET",
+        path: "/v1/reviews/{reviewId}/events",
+        handle: ({ res, url, params }) =>
+          this.handleWaitForReviewEvents(res, params.reviewId, url),
+      },
 
-    this.sendError(res, 404, "METHOD_NOT_FOUND", `No route for ${method} ${pathname}`);
+      // Proposals
+      {
+        method: "POST",
+        path: "/v1/proposals/{packetId}/retract",
+        handle: ({ res, params }) => this.handleRetractProposal(res, params.packetId),
+      },
+    ];
   }
 
   // ==========================================================================
@@ -1285,7 +1470,10 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      // A detached review's generation cannot advance — nothing can decide
+      // its chunks while its file is closed — so waiting on it would be
+      // waiting forever. The refusal names the file to open instead.
+      this.sendReviewLookupFailure(res, reviewId);
       return;
     }
 
@@ -1504,10 +1692,39 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, { reviews });
   }
 
+  /**
+   * The refusal a review route owes an id that is not in the live store:
+   * 409 when the id names a detached review (it exists — /v1/reviews just
+   * listed it — but its file is closed), 404 only when no review carries it.
+   */
+  private sendReviewLookupFailure(res: http.ServerResponse, reviewId: string): void {
+    const failure = this._documents.reviewLookupFailure(reviewId);
+    this.sendError(
+      res,
+      failure.code === "DOCUMENT_CLOSED" ? 409 : 404,
+      failure.code,
+      failure.message,
+    );
+  }
+
   private handleGetReview(res: http.ServerResponse, reviewId: string): void {
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      const detached = this._documents.findDetachedReview(reviewId);
+      if (detached === undefined) {
+        this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+        return;
+      }
+      this.sendJson(res, 200, {
+        reviewId: detached.reviewId,
+        state: classifyReviewState(detached.invalidated, detached.unresolvedChunks),
+        generation: detached.generation,
+        unresolvedChunks: detached.unresolvedChunks,
+        heldChunks: detached.heldChunks,
+        packetCount: detached.packets.length,
+        comments: detached.comments,
+        attached: false,
+      });
       return;
     }
     const status = this._documents.reviewStore.getReviewStatus(documentId);
@@ -1520,25 +1737,41 @@ export default class AgentHTTPProvider extends ProviderContract {
       filePath !== undefined
         ? this._documents.loadedDocuments.find((d) => d.filePath === filePath)
         : undefined;
+    if (doc === undefined) {
+      // A review in the live store whose document is not open is a
+      // lifecycle bug — closing a file detaches its review to a sidecar.
+      // Inventing a revision here would report a document state nobody has.
+      throw new Error(
+        `Review ${reviewId} is attached to document ${documentId}, which is not open`,
+      );
+    }
     // getReviewStatus just reconciled the holds, so the comments read here
     // already include any orphans that reconciliation surfaced.
     const review = this._documents.reviewStore.getReview(documentId)!;
     this.sendJson(res, 200, {
       ...status,
       comments: review.comments,
-      documentRevision: doc
-        ? {
-            version: doc.currentVersion,
-            sha256: sha256Text(doc.document.toString()),
-          }
-        : { version: 0, sha256: "" },
+      attached: true,
+      documentRevision: {
+        version: doc.currentVersion,
+        sha256: sha256Text(doc.document.toString()),
+      },
     });
   }
 
   private handleGetReviewDiff(res: http.ServerResponse, reviewId: string): void {
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      const detached = this._documents.findDetachedReview(reviewId);
+      if (detached === undefined) {
+        this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+        return;
+      }
+      this.sendJson(res, 200, {
+        reviewId: detached.reviewId,
+        patch: reviewPatch(detached.referenceText, detached.workingText),
+        generation: detached.generation,
+      });
       return;
     }
     const diff = this._documents.reviewStore.getReviewDiff(documentId);
@@ -1612,7 +1845,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      this.sendReviewLookupFailure(res, reviewId);
       return;
     }
     const result = this._documents.reviewStore.addReviewComment(
@@ -1634,7 +1867,16 @@ export default class AgentHTTPProvider extends ProviderContract {
   private handleGetReviewChunks(res: http.ServerResponse, reviewId: string): void {
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      const detached = this._documents.findDetachedReview(reviewId);
+      if (detached === undefined) {
+        this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+        return;
+      }
+      this.sendJson(res, 200, {
+        reviewId: detached.reviewId,
+        generation: detached.generation,
+        chunks: sidecarOutstandingChunks(detached),
+      });
       return;
     }
     const chunks = this._documents.reviewStore.getOutstandingChunks(documentId);
@@ -1654,7 +1896,17 @@ export default class AgentHTTPProvider extends ProviderContract {
   private handleGetReviewPackets(res: http.ServerResponse, reviewId: string): void {
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      const detached = this._documents.findDetachedReview(reviewId);
+      if (detached === undefined) {
+        this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+        return;
+      }
+      this.sendJson(res, 200, {
+        reviewId: detached.reviewId,
+        // The sidecar keeps each packet's reference spans alongside the
+        // ledger entry; the wire packet is the ledger entry alone.
+        packets: detached.packets.map(({ refSpans: _refSpans, ...packet }) => packet),
+      });
       return;
     }
     const review = this._documents.reviewStore.getReview(documentId);
@@ -1692,7 +1944,12 @@ export default class AgentHTTPProvider extends ProviderContract {
   private handleClearReview(res: http.ServerResponse, reviewId: string): void {
     const result = this._documents.clearReview(reviewId);
     if (!result.ok) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", result.message);
+      this.sendError(
+        res,
+        result.code === "DOCUMENT_CLOSED" ? 409 : 404,
+        result.code,
+        result.message,
+      );
       return;
     }
     this.sendJson(res, 200, {
@@ -1716,9 +1973,13 @@ export default class AgentHTTPProvider extends ProviderContract {
         documentRevision: result.documentRevision,
       });
     } else {
-      this.sendError(res, 409, "PACKET_NOT_RETRACTABLE", result.message, {
+      // Two different refusals share the 409: the packet is live but no
+      // longer the retractable one, or its file is closed. Restating the
+      // first code over the second would tell an agent to clear a review it
+      // cannot reach.
+      this.sendError(res, 409, result.code, result.message, {
         reviewId: result.reviewId,
-        canClearUnresolved: true,
+        canClearUnresolved: result.canClearUnresolved,
       });
     }
   }
@@ -2049,6 +2310,18 @@ export default class AgentHTTPProvider extends ProviderContract {
     message: string,
     detail?: Omit<AgentError, "code" | "message">,
   ): void {
+    if (res.headersSent) {
+      // The status line is already on the wire, so writeHead would throw here
+      // — inside whatever failure path called this — and take the process with
+      // it. The client gets a severed connection, which is what an incomplete
+      // body deserves; the operator gets the reason.
+      this._log.error(
+        `[AgentHTTPProvider] ${code} after the response headers were sent, so the response is ` +
+          `truncated and the connection is being closed: ${message}`,
+      );
+      res.destroy();
+      return;
+    }
     const error: AgentError = { code, message, ...detail };
     const json = JSON.stringify({ error } satisfies AgentErrorResponse);
     res.writeHead(status, {

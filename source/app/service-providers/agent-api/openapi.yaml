@@ -678,7 +678,7 @@ components:
         - heldChunks
         - packetCount
         - comments
-        - documentRevision
+        - attached
       properties:
         reviewId:
           type: string
@@ -700,13 +700,21 @@ components:
           description: >-
             Review-level comments in creation order — attached directly via
             the comments route, or orphaned from holds whose chunks vanished.
+        attached:
+          type: boolean
+          description: >-
+            True while the reviewed document is open. A detached review is
+            served from its sidecar: readable, but not decidable until its
+            documentPath is opened again.
         documentRevision:
           $ref: '#/components/schemas/DocumentRevision'
+          description: >-
+            The open document's revision. Absent for a detached review —
+            there is no open document to revise.
     ReviewDiffResponse:
       type: object
       required:
         - reviewId
-        - documentId
         - patch
         - generation
       properties:
@@ -714,6 +722,7 @@ components:
           type: string
         documentId:
           type: string
+          description: Absent for a detached review, whose file is closed.
         patch:
           type: string
         generation:
@@ -722,7 +731,6 @@ components:
       type: object
       required:
         - reviewId
-        - documentId
         - generation
         - chunks
       properties:
@@ -730,6 +738,7 @@ components:
           type: string
         documentId:
           type: string
+          description: Absent for a detached review, whose file is closed.
         generation:
           type: integer
         chunks:
@@ -740,13 +749,13 @@ components:
       type: object
       required:
         - reviewId
-        - documentId
         - packets
       properties:
         reviewId:
           type: string
         documentId:
           type: string
+          description: Absent for a detached review, whose file is closed.
         packets:
           type: array
           items:
@@ -1346,6 +1355,14 @@ paths:
                 context:
                   type: integer
                   default: 3
+                  minimum: 0
+                  maximum: 100
+                  description: >-
+                    Lines of surrounding text returned on each side of every
+                    hit. Every hit carries its own copy, so this multiplies
+                    the response by the number of hits and is capped rather
+                    than open-ended; a context outside this range is refused
+                    with INVALID_PARAMS.
       responses:
         '200':
           description: OK
@@ -1354,7 +1371,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/SearchDocumentResponse'
         '400':
-          description: Invalid, unparseable, or over-length search pattern
+          description: >-
+            Invalid, unparseable, or over-length search pattern, or a context
+            outside the declared range
           content:
             application/json:
               schema:
@@ -1449,7 +1468,9 @@ paths:
       description: >-
         Status plus review-level comments — the reviewer's channel back to
         you. Read the comments and the held chunks at the start of each turn
-        and address them with new claims.
+        and address them with new claims. Answers for every reviewId
+        /v1/reviews lists: a detached review is served from its sidecar,
+        with attached=false and no documentRevision.
       parameters:
         - name: reviewId
           in: path
@@ -1473,6 +1494,9 @@ paths:
     get:
       operationId: getReviewDiff
       summary: Retrieve the complete unresolved composite diff
+      description: >-
+        Answers for a detached review too, from the frozen texts in its
+        sidecar; that response carries no documentId.
       parameters:
         - name: reviewId
           in: path
@@ -1501,7 +1525,10 @@ paths:
         the reviewer's question or objection — answer it with a revised claim
         in your next submission. Pending chunks are simply undecided;
         adjudicating your own proposals through the accept/reject routes ends
-        the review instead of answering it.
+        the review instead of answering it. Answers for a detached review
+        too, from the frozen texts in its sidecar — same content-addressed
+        chunk ids, no documentId — but deciding those chunks needs the file
+        open.
       parameters:
         - name: reviewId
           in: path
@@ -1555,6 +1582,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: >-
+            DOCUMENT_CLOSED — the review is detached: it exists, and
+            /v1/reviews lists it, but no decision can land while its file is
+            closed. Open its documentPath to reattach it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews/{reviewId}/chunks/{chunkId}/reject:
     post:
       operationId: rejectReviewChunk
@@ -1585,6 +1621,15 @@ paths:
           description: >-
             Review not found, or no unresolved chunk carries this id at the
             current state — the region changed since the chunk list was read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: >-
+            DOCUMENT_CLOSED — the review is detached: it exists, and
+            /v1/reviews lists it, but no decision can land while its file is
+            closed. Open its documentPath to reattach it.
           content:
             application/json:
               schema:
@@ -1634,6 +1679,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: >-
+            DOCUMENT_CLOSED — the review is detached: it exists, and
+            /v1/reviews lists it, but no decision can land while its file is
+            closed. Open its documentPath to reattach it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews/{reviewId}/comments:
     post:
       operationId: addReviewComment
@@ -1675,10 +1729,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: >-
+            DOCUMENT_CLOSED — the review is detached: it exists, and
+            /v1/reviews lists it, but a comment cannot land while its file is
+            closed. Open its documentPath to reattach it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews/{reviewId}/packets:
     get:
       operationId: getReviewPackets
       summary: Inspect the proposal-packet ledger
+      description: >-
+        Answers for a detached review too, from its sidecar's ledger; that
+        response carries no documentId.
       parameters:
         - name: reviewId
           in: path
@@ -1757,6 +1823,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: >-
+            DOCUMENT_CLOSED — the review is detached: it exists, and
+            /v1/reviews lists it, but clearing edits the document, which is
+            closed. Open its documentPath to reattach it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/proposals/{packetId}/retract:
     post:
       operationId: retractProposal
@@ -1776,9 +1851,13 @@ paths:
                 $ref: '#/components/schemas/RetractProposalResponse'
         '409':
           description: >-
-            Packet not retractable. The error carries the owning reviewId and
+            PACKET_NOT_RETRACTABLE when the packet is live but no longer the
+            retractable one: the error carries the owning reviewId and
             canClearUnresolved: true — clearing is the remaining way to drop
-            the unresolved suggestions.
+            the unresolved suggestions. DOCUMENT_CLOSED when the packet
+            belongs to a detached review (one listReviews reports with
+            attached: false): the message names the file to open, and
+            canClearUnresolved is false because clearing refuses too.
           content:
             application/json:
               schema:
@@ -1854,6 +1933,15 @@ paths:
                 $ref: '#/components/schemas/ReviewEventsResponse'
         '404':
           description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: >-
+            DOCUMENT_CLOSED — the review is detached, so nothing can advance
+            its generation and the wait would never end. Open its
+            documentPath to reattach it, then poll.
           content:
             application/json:
               schema:

@@ -161,7 +161,6 @@ async function main(): Promise<void> {
   await provider.getDocument(samplePath);
 
   // Signal readiness. The parent parses this exact line.
-   
   console.log(
     `E2E_SERVER_READY port=${httpPort} docPath=${samplePath} scratch=${scratch}`,
   );
@@ -183,7 +182,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-   
   console.error("E2E server failed:", err);
   process.exit(1);
 });

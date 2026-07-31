@@ -270,6 +270,66 @@ export function classifyReviewState(
   return unresolvedChunks === 0 ? "resolved-awaiting-save" : "active";
 }
 
+/**
+ * The composite unresolved patch of a review: reference → working. The one
+ * owner of that computation, so the live store and a detached review read
+ * from its sidecar cannot answer different diffs for the same two texts.
+ */
+export function reviewPatch(referenceText: string, workingText: string): string {
+  return createPatch("document", referenceText, workingText, "", "", { context: 3 });
+}
+
+/**
+ * A chunk partition dressed for the agent API: a focused zero-context patch
+ * per chunk, the packets whose edits produced it (honest multi-attribution on
+ * overlap; empty for a chunk only the user's own edits created), and the hold
+ * state. Shared by the live store and the sidecar path below — an attached
+ * and a detached review with the same texts describe their chunks identically.
+ *
+ * Holds must already be reconciled against this partition: a hold naming a
+ * chunk that is not in it simply does not appear.
+ */
+function dressChunks(
+  partition: readonly ReviewChunk[],
+  packets: readonly PersistedReviewPacket[],
+  holds: readonly ChunkHold[],
+): OutstandingChunk[] {
+  return partition.map((chunk) => {
+    const attributed = packets.filter((packet) => chunkAttributesTo(chunk, packet.refSpans));
+    const hold = holds.find((h) => h.chunkId === chunk.chunkId);
+    return {
+      chunkId: chunk.chunkId,
+      referenceRange: { fromLine: chunk.refFromLine, toLine: chunk.refToLine },
+      workingRange: { fromLine: chunk.workFromLine, toLine: chunk.workToLine },
+      referenceText: chunk.referenceText,
+      workingText: chunk.workingText,
+      packetIds: attributed.map((packet) => packet.packetId),
+      descriptions: attributed
+        .map((packet) => packet.description)
+        .filter((description): description is string => description !== undefined),
+      state: hold === undefined ? ("pending" as const) : ("held" as const),
+      holdComment: hold?.comment,
+      patch: createPatch("document", chunk.referenceText, chunk.workingText, "", "", {
+        context: 0,
+      }),
+    };
+  });
+}
+
+/**
+ * The outstanding chunks of a detached review, computed from its sidecar.
+ * Both texts are frozen while the file is closed and the export reconciled
+ * the holds against exactly this partition, so no live document — and no
+ * reconciliation — is needed to answer.
+ */
+export function sidecarOutstandingChunks(sidecar: ReviewSidecarData): OutstandingChunk[] {
+  return dressChunks(
+    computeReviewChunks(sidecar.referenceText, sidecar.workingText),
+    sidecar.packets,
+    sidecar.holds,
+  );
+}
+
 export function normalizeText(content: string): string {
   return content
     .replace(/^\uFEFF/, "")
@@ -1631,28 +1691,11 @@ export class ReviewDiffStore extends EventEmitter {
     if (review === undefined) {
       return undefined;
     }
-    return this.partitionOf(review).map((chunk) => {
-      const attributed = review.packets.filter((packet) =>
-        chunkAttributesTo(chunk, this.spansOf(packet.packetId)),
-      );
-      const hold = review.holds.find((h) => h.chunkId === chunk.chunkId);
-      return {
-        chunkId: chunk.chunkId,
-        referenceRange: { fromLine: chunk.refFromLine, toLine: chunk.refToLine },
-        workingRange: { fromLine: chunk.workFromLine, toLine: chunk.workToLine },
-        referenceText: chunk.referenceText,
-        workingText: chunk.workingText,
-        packetIds: attributed.map((packet) => packet.packetId),
-        descriptions: attributed
-          .map((packet) => packet.description)
-          .filter((description): description is string => description !== undefined),
-        state: hold === undefined ? ("pending" as const) : ("held" as const),
-        holdComment: hold?.comment,
-        patch: createPatch("document", chunk.referenceText, chunk.workingText, "", "", {
-          context: 0,
-        }),
-      };
-    });
+    return dressChunks(
+      this.partitionOf(review),
+      review.packets.map((packet) => ({ ...packet, refSpans: this.spansOf(packet.packetId) })),
+      review.holds,
+    );
   }
 
   /**
@@ -1684,14 +1727,7 @@ export class ReviewDiffStore extends EventEmitter {
     if (review === undefined) {
       return undefined;
     }
-    return createPatch(
-      "document",
-      review.referenceText,
-      this.workingTextOf(documentId),
-      "",
-      "",
-      { context: 3 },
-    );
+    return reviewPatch(review.referenceText, this.workingTextOf(documentId));
   }
 
   // ========================================================================

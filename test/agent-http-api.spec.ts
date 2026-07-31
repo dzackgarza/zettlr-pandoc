@@ -18,6 +18,7 @@ import "./headless-electron-harness.cjs";
 import Ajv2020 from "ajv/dist/2020";
 import { parse as parseYaml } from "yaml";
 import { AGENT_ERROR_CODES, type AgentEvent } from "@dts/common/agent-api";
+import { DP_EVENTS } from "@dts/common/documents";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
@@ -28,6 +29,7 @@ import net from "net";
 import os from "os";
 import path from "path";
 import AgentHTTPProvider, {
+  MAX_SEARCH_CONTEXT,
   MAX_SEARCH_PATTERN_LENGTH,
 } from "source/app/service-providers/agent-api/http-server";
 import DocumentManager from "source/app/service-providers/documents";
@@ -37,6 +39,31 @@ import LogProvider from "source/app/service-providers/log";
 // ============================================================================
 // Contract conformance
 // ============================================================================
+
+/**
+ * The specification as this file reads it. An operation keeps an index
+ * signature so the structural audits below can walk any field generically,
+ * and `requestBody` is spelled out because tests read published request
+ * bounds out of it: a value reached through a declared path needs no cast to
+ * be used, and a cast is what would let this shape drift from the document
+ * without anything noticing.
+ */
+interface PublishedNumericBounds {
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
+  default?: number;
+}
+
+interface PublishedOperation {
+  [field: string]: unknown;
+  requestBody?: {
+    content: Record<
+      string,
+      { schema: { properties: Record<string, PublishedNumericBounds> } }
+    >;
+  };
+}
 
 /**
  * Validates a response body against the schema the server itself publishes.
@@ -52,13 +79,29 @@ const openApiDocument = parseYaml(
   ),
 ) as {
   components: { schemas: Record<string, unknown> };
-  paths: Record<string, Record<string, Record<string, unknown>>>;
+  paths: Record<string, Record<string, PublishedOperation>>;
 };
 
 const ajv = new Ajv2020({ strict: false, allErrors: true });
 for (const [name, schema] of Object.entries(openApiDocument.components.schemas)) {
   ajv.addSchema(schema as object, `#/components/schemas/${name}`);
 }
+
+/**
+ * The search request-body properties as the server publishes them. Search is
+ * the one endpoint whose cost a caller chooses, so these are the numbers a
+ * caller plans a request against; tests read them from here rather than
+ * repeating literals, which is what keeps a published bound and an enforced
+ * bound from drifting apart unnoticed.
+ */
+const searchRequestBody =
+  openApiDocument.paths["/v1/documents/{documentId}/search"].post.requestBody;
+assert.ok(
+  searchRequestBody !== undefined,
+  "openapi.yaml declares no request body for the search operation",
+);
+const searchRequestProperties =
+  searchRequestBody.content["application/json"].schema.properties;
 
 function assertMatchesSchema(body: unknown, schemaName: string): void {
   const validate = ajv.getSchema(`#/components/schemas/${schemaName}`);
@@ -79,6 +122,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   // The configured workspace set, read live by the config seam so a test can
   // exercise the no-workspace-open profile the app ships with.
   let openWorkspaces: string[] = [];
+  // What the close prompt answers: 0 = Save, 1 = Don't save, 2 = Cancel. The
+  // suite default is Cancel so no test loses a buffer by accident; the discard
+  // test sets 1 to make the user's "Don't save" the answer under test.
+  let saveChangesResponse = 2;
 
   // The suite owns this variable outright. It is a real token on a developer
   // machine that has it in ~/.envrc, and every test outside the enforcement
@@ -184,7 +231,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       },
       windows: {
         askSaveChanges: async (_detail?: string) => ({
-          response: 2,
+          response: saveChangesResponse,
           checkboxChecked: false,
         }),
         getFirstMainWindow: () => undefined,
@@ -277,6 +324,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   beforeEach(async function () {
     scratch = mkdtempSync(path.join(os.tmpdir(), "zettlr-http-api-"));
     openWorkspaces = [scratch];
+    saveChangesResponse = 2;
     rmSync(sidecarDirectory, { recursive: true, force: true });
     // Find a free port
     const server = net.createServer();
@@ -432,7 +480,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     it("serves the same specification as JSON, anonymously, at /openapi.json", async function () {
       // The Custom GPT builder reads a URL and imports nothing when it is
       // handed YAML. Offering JSON is what makes import-by-URL work at all;
-      // parsing the YAML per request is what keeps the two from drifting.
+      // writing both encodings from the one document parsed at construction is
+      // what keeps them from drifting.
       const asJson = await request("/openapi.json", { host: "zettlr.example.com" });
       assert.equal(asJson.status, 200);
       const parsed = JSON.parse(asJson.body);
@@ -533,6 +582,17 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
   });
 
+  it("publishes the search bounds the server actually enforces", function () {
+    // Search is the one endpoint whose cost a caller controls, on the process
+    // that draws the editor. A bound the server enforces but does not publish
+    // is a refusal the caller cannot anticipate, and a bound published but not
+    // enforced is a promise nothing keeps — so both dimensions of the request
+    // are compared against the constants the decoder refuses by.
+    assert.equal(searchRequestProperties.literal.maxLength, MAX_SEARCH_PATTERN_LENGTH);
+    assert.equal(searchRequestProperties.context.minimum, 0);
+    assert.equal(searchRequestProperties.context.maximum, MAX_SEARCH_CONTEXT);
+  });
+
   it("GET /openapi.yaml serves the OpenAPI specification without auth", async function () {
     const response = await httpRequest("GET", "/openapi.yaml", {
       headers: {}, // No auth header
@@ -540,6 +600,74 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(response.status, 200);
     assert.ok(response.body.includes("openapi:"));
     assert.ok(response.body.includes("Zettlr-Pandoc Editor Agent API"));
+  });
+
+  it("serves a parsable specification for a Host header that is not a YAML scalar", async function () {
+    // The origin the caller reached is written into the served document. Any
+    // header value is legal input here — `Host: example.com: x` arrives intact
+    // — and spliced into the document's text it produced YAML that no longer
+    // parsed. /openapi.json parsed it back, in a request callback on the
+    // Electron main process, with the 200 already on the wire: one anonymous
+    // request ended the editor for the user working in it.
+    const hostileHost = "zettlr.example.com: x";
+    const asJson = await httpRequest("GET", "/openapi.json", {
+      headers: { host: hostileHost },
+    });
+    assert.equal(asJson.status, 200);
+    assert.equal(JSON.parse(asJson.body).servers[0].url, `https://${hostileHost}`);
+
+    const asYaml = await httpRequest("GET", "/openapi.yaml", {
+      headers: { host: hostileHost },
+    });
+    assert.equal(asYaml.status, 200);
+    assert.deepEqual(
+      parseYaml(asYaml.body),
+      JSON.parse(asJson.body),
+      "the served YAML must parse, and to the same document as the JSON",
+    );
+
+    // And the editor is still running to answer the next caller.
+    assert.equal((await httpRequest("GET", "/v1/ping")).status, 200);
+
+    // That next caller gets the committed document, not this one's origin. The
+    // rewrite happens on a per-request copy; on the shared one, a caller that
+    // sends no Host at all — legal in HTTP/1.0, so anyone may — would be handed
+    // whichever origin the previous caller claimed.
+    const withoutHost = await new Promise<string>((resolve, reject) => {
+      const socket = net.connect(httpPort, "127.0.0.1", () => {
+        socket.write("GET /openapi.json HTTP/1.0\r\n\r\n");
+      });
+      let received = "";
+      socket.on("data", (chunk: Buffer) => (received += chunk.toString("utf8")));
+      socket.on("error", reject);
+      socket.on("close", () => resolve(received));
+    });
+    assert.match(withoutHost.split("\r\n")[0], /^HTTP\/1\.[01] 200 /);
+    assert.equal(
+      JSON.parse(withoutHost.split("\r\n\r\n")[1]).servers[0].url,
+      "http://127.0.0.1:27412",
+      "the committed servers entry must survive another caller's Host header",
+    );
+  });
+
+  it("answers a request target that is not a URL instead of dying on it", async function () {
+    // Absolute-form request targets are legal HTTP/1.1 and Node hands them to
+    // the handler verbatim, so `new URL(req.url, ...)` refuses input that the
+    // wire is entitled to send. A throw anywhere in the request callback is an
+    // uncaught exception in the main process, not a failed request.
+    const raw = await new Promise<string>((resolve, reject) => {
+      const socket = net.connect(httpPort, "127.0.0.1", () => {
+        socket.write("GET http://[ HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+      });
+      let received = "";
+      socket.on("data", (chunk: Buffer) => (received += chunk.toString("utf8")));
+      socket.on("error", reject);
+      socket.on("close", () => resolve(received));
+    });
+    assert.match(raw.split("\r\n")[0], /^HTTP\/1\.1 500 /);
+    assert.equal(JSON.parse(raw.split("\r\n\r\n")[1]).error.code, "INTERNAL_ERROR");
+
+    assert.equal((await httpRequest("GET", "/v1/ping")).status, 200);
   });
 
   it("GET /v1/ping returns protocol version", async function () {
@@ -913,6 +1041,97 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     });
     assert.equal(response.status, 400);
     assert.equal(JSON.parse(response.body).error.code, "INVALID_PARAMS");
+  });
+
+  it("refuses a search context outside the declared range with INVALID_PARAMS", async function () {
+    // `context` is a per-hit multiplier: every hit copies that many lines from
+    // each side into the response, so a caller naming a context the size of
+    // the document makes each hit carry a whole copy of it, in the main
+    // process. Both ends of the declared range are refused at the decode
+    // boundary — the endpoint never sees a request it cannot afford.
+    const filePath = path.join(scratch, "context-range.md");
+    const docId = await openFile(filePath, "alpha\n");
+    for (const context of [MAX_SEARCH_CONTEXT + 1, 1_000_000, -1]) {
+      const response = await httpRequest("POST", `/v1/documents/${docId}/search`, {
+        body: JSON.stringify({ literal: "alpha", context }),
+        headers: { "content-type": "application/json" },
+      });
+      assert.equal(response.status, 400, `context ${context} must be refused`);
+      assert.equal(JSON.parse(response.body).error.code, "INVALID_PARAMS");
+    }
+  });
+
+  it("carries at most the declared context around a hit in a longer document", async function () {
+    // The control for the refusal above, and the ceiling itself: a request at
+    // the maximum is served, and on a document three times the cap the hit
+    // carries exactly the capped window from each side — not the document.
+    const lines = Array.from({ length: 3 * MAX_SEARCH_CONTEXT }, (_, index) =>
+      `line-${String(index + 1).padStart(4, "0")}`,
+    );
+    const hitIndex = 2 * MAX_SEARCH_CONTEXT - 1;
+    const filePath = path.join(scratch, "context-window.md");
+    const docId = await openFile(filePath, lines.join("\n") + "\n");
+    const response = await httpRequest("POST", `/v1/documents/${docId}/search`, {
+      body: JSON.stringify({ literal: lines[hitIndex], context: MAX_SEARCH_CONTEXT }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(response.status, 200);
+    const hits = JSON.parse(response.body).hits as Array<{
+      line: number;
+      contextBefore: string;
+      contextAfter: string;
+    }>;
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0].line, hitIndex + 1);
+    assert.deepEqual(
+      hits[0].contextBefore.split("\n"),
+      lines.slice(hitIndex - MAX_SEARCH_CONTEXT, hitIndex),
+    );
+    assert.deepEqual(
+      hits[0].contextAfter.split("\n"),
+      lines.slice(hitIndex + 1, hitIndex + 1 + MAX_SEARCH_CONTEXT),
+    );
+  });
+
+  it("carries the context the specification publishes as the default", async function () {
+    // `context` is optional, so the published default is the multiplier on
+    // every request that omits it — the ordinary case, and the one a caller
+    // sizes its own buffers against. The window served here is measured
+    // against the number the document publishes rather than a literal
+    // repeated in this file, so a decoder default that drifts from the
+    // published one fails here instead of silently multiplying every
+    // response.
+    const declaredDefault = searchRequestProperties.context.default;
+    assert.ok(
+      typeof declaredDefault === "number",
+      "openapi.yaml must publish a default for context",
+    );
+    const lines = Array.from({ length: 2 * declaredDefault + 5 }, (_, index) =>
+      `line-${String(index + 1).padStart(4, "0")}`,
+    );
+    const hitIndex = declaredDefault + 2;
+    const filePath = path.join(scratch, "context-default.md");
+    const docId = await openFile(filePath, lines.join("\n") + "\n");
+    const response = await httpRequest("POST", `/v1/documents/${docId}/search`, {
+      body: JSON.stringify({ literal: lines[hitIndex] }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(response.status, 200);
+    const hits = JSON.parse(response.body).hits as Array<{
+      line: number;
+      contextBefore: string;
+      contextAfter: string;
+    }>;
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0].line, hitIndex + 1);
+    assert.deepEqual(
+      hits[0].contextBefore.split("\n"),
+      lines.slice(hitIndex - declaredDefault, hitIndex),
+    );
+    assert.deepEqual(
+      hits[0].contextAfter.split("\n"),
+      lines.slice(hitIndex + 1, hitIndex + 1 + declaredDefault),
+    );
   });
 
   it("stops a catastrophic search pattern on ONE line with SEARCH_TIMEOUT", async function () {
@@ -1772,6 +1991,462 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(invalidated[0].reviewId, submitted.reviewId);
     });
 
+    it("destroys the review when the user discards the unsaved changes", async function () {
+      // The user's own decision, taken at the close prompt: throw the unsaved
+      // edit away. Detaching the review here relocated that edit into the
+      // sidecar instead of destroying it, and because a discard writes nothing
+      // to disk the sidecar's fence still matched the untouched file — so the
+      // next open passed the fence and put the discarded text back.
+      const filePath = path.join(scratch, "sidecar-discard.md");
+      const onDisk = "alpha\n";
+      const docId = await openFile(filePath, onDisk);
+      const windowId = provider.windowKeys()[0];
+      const leafId = provider.leafIds(windowId)[0];
+      assert.equal(await provider.openFile(windowId, leafId, filePath, true), true);
+
+      const snap = provider.createSnapshot(docId)!;
+      const submitted = await provider.submitProposal(
+        snap.token,
+        makePatch(onDisk, "ALPHA\n"),
+        "sidecar-discard-1",
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+      await flushSidecarWrites();
+      assert.equal(
+        provider.loadedDocuments.find((d) => d.filePath === filePath)!.document.toString(),
+        "ALPHA\n",
+        "the proposal must be in the buffer before it can be discarded",
+      );
+      assert.ok(sidecars.read(filePath) !== undefined, "write-through must have run");
+
+      const discarded: AgentEvent[] = [];
+      provider.reviewStore.on("review.discarded", (event: AgentEvent) =>
+        discarded.push(event),
+      );
+      const cleared: Array<Record<string, unknown>> = [];
+      provider.on(DP_EVENTS.REVIEW_DIFF, (...args: unknown[]) => {
+        const context = args[0] as Record<string, unknown>;
+        if (context.reviewCleared === true) {
+          cleared.push(context);
+        }
+      });
+
+      saveChangesResponse = 1; // "Don't save"
+      assert.equal(await provider.closeFile(windowId, leafId, filePath), true);
+      await flushSidecarWrites();
+
+      assert.equal(readFileSync(filePath, "utf8"), onDisk, "a discard must not write to disk");
+      assert.equal(
+        sidecars.read(filePath),
+        undefined,
+        "no store may still hold the discarded text",
+      );
+      assert.deepEqual(
+        discarded.map((event) => event.reviewId),
+        [submitted.reviewId],
+        "destroying a review the user discarded must be announced to agents",
+      );
+      assert.deepEqual(
+        cleared.map((context) => context.reviewId),
+        [submitted.reviewId],
+        "and to every pane still drawing that review's chunks",
+      );
+
+      // Reopening is where the reversal used to happen.
+      await provider.getDocument(filePath);
+      assert.equal(
+        provider.loadedDocuments.find((d) => d.filePath === filePath)!.document.toString(),
+        onDisk,
+        "reopening a discarded file must show the bytes on disk",
+      );
+      assert.equal(
+        provider.reviewStore.getReview(docId),
+        undefined,
+        "a discarded review must not come back",
+      );
+      assert.equal(provider.isModified(filePath), false);
+    });
+
+    it("puts the buffer back on disk content when the close prompt discards", async function () {
+      // The window-close prompt discards without closing the documents, so
+      // this is the branch where the discarded bytes have somewhere to
+      // survive: the buffer the panes keep drawing. Silencing the dirty flag
+      // left them there, visible and one save away from disk.
+      //
+      // Reaching that branch at all is half the proof. The gate in front of
+      // the prompt asked isClean(windowId) without saying the id names a
+      // window, which sent it looking for a leaf by that id, found none, and
+      // called the window clean — so the prompt never opened and the answer
+      // was never taken.
+      const filePath = path.join(scratch, "sidecar-discard-window.md");
+      const onDisk = "alpha\n";
+      const docId = await openFile(filePath, onDisk);
+      const windowId = provider.windowKeys()[0];
+      const leafId = provider.leafIds(windowId)[0];
+      assert.equal(await provider.openFile(windowId, leafId, filePath, true), true);
+      assert.equal(
+        provider.isClean(windowId),
+        true,
+        "a window whose files are all saved is clean",
+      );
+
+      const snap = provider.createSnapshot(docId)!;
+      const submitted = await provider.submitProposal(
+        snap.token,
+        makePatch(onDisk, "ALPHA\n"),
+        "sidecar-discard-window-1",
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+      await flushSidecarWrites();
+      assert.equal(provider.isModified(filePath), true);
+      assert.equal(
+        provider.isClean(windowId),
+        false,
+        "and dirty once one of them is — this is what opens the prompt",
+      );
+
+      saveChangesResponse = 1; // "Don't save"
+      assert.equal(await provider.askUserToCloseWindow(windowId), true);
+      await flushSidecarWrites();
+
+      assert.equal(
+        provider.loadedDocuments.find((d) => d.filePath === filePath)!.document.toString(),
+        onDisk,
+        "the still-open buffer must show the bytes on disk, not the discarded edit",
+      );
+      assert.equal(provider.isModified(filePath), false, "and be clean because it now is");
+      assert.equal(provider.reviewStore.getReview(docId), undefined);
+      assert.equal(
+        sidecars.read(filePath),
+        undefined,
+        "no store may still hold the discarded text",
+      );
+      assert.equal(readFileSync(filePath, "utf8"), onDisk);
+    });
+
+    it("discards only the closing window's documents", async function () {
+      // The prompt speaks for the window being closed. A discard that reached
+      // every loaded document would answer it on behalf of every other window
+      // too — the same destruction, aimed at bytes the user never discarded.
+      const closing = path.join(scratch, "discard-scope-closing.md");
+      const kept = path.join(scratch, "discard-scope-kept.md");
+      const onDisk = "alpha\n";
+      const closingId = await openFile(closing, onDisk);
+      const keptId = await openFile(kept, onDisk);
+
+      const closingWindow = provider.windowKeys()[0];
+      assert.equal(
+        await provider.openFile(closingWindow, provider.leafIds(closingWindow)[0], closing, true),
+        true,
+      );
+      provider.newWindow();
+      const keptWindow = provider.windowKeys().find((key) => key !== closingWindow)!;
+      assert.equal(
+        await provider.openFile(keptWindow, provider.leafIds(keptWindow)[0], kept, true),
+        true,
+      );
+
+      for (const [documentId, key] of [
+        [closingId, "discard-scope-closing-1"],
+        [keptId, "discard-scope-kept-1"],
+      ] as const) {
+        const submitted = await provider.submitProposal(
+          provider.createSnapshot(documentId)!.token,
+          makePatch(onDisk, "ALPHA\n"),
+          key,
+        );
+        assert.equal(submitted.ok, true);
+      }
+      await flushSidecarWrites();
+
+      saveChangesResponse = 1; // "Don't save"
+      assert.equal(await provider.askUserToCloseWindow(closingWindow), true);
+      await flushSidecarWrites();
+
+      assert.equal(
+        provider.loadedDocuments.find((d) => d.filePath === closing)!.document.toString(),
+        onDisk,
+        "the closing window's document must lose the discarded edit",
+      );
+      assert.equal(sidecars.read(closing), undefined);
+      assert.equal(provider.reviewStore.getReview(closingId), undefined);
+
+      assert.equal(
+        provider.loadedDocuments.find((d) => d.filePath === kept)!.document.toString(),
+        "ALPHA\n",
+        "the other window's unsaved edit is not the one that was discarded",
+      );
+      assert.equal(provider.isModified(kept), true);
+      assert.ok(
+        sidecars.read(kept) !== undefined,
+        "and its review must still be there to decide",
+      );
+      assert.ok(provider.reviewStore.getReview(keptId) !== undefined);
+    });
+
+    it("answers every review route for the reviewId the listing hands out", async function () {
+      // Enumeration and addressability are one contract: /v1/reviews vouches
+      // for a detached review's id, so the routes that take a reviewId must
+      // answer it. They used to consult only the in-memory store, which made
+      // every listed detached review a 404 on read — the agent could see the
+      // unfinished work and could not open it.
+      const filePath = path.join(scratch, "sidecar-address.md");
+      const original = "alpha\nx\ny\nz\nbeta\n";
+      const docId = await openFile(filePath, original);
+      const snap = provider.createSnapshot(docId)!;
+      const submitted = await provider.submitProposalClaims(
+        snap.token,
+        [
+          { description: "caps alpha", patch: makePatch(original, "ALPHA\nx\ny\nz\nbeta\n") },
+          {
+            description: "caps beta",
+            patch: makePatch("ALPHA\nx\ny\nz\nbeta\n", "ALPHA\nx\ny\nz\nBETA\n"),
+          },
+        ],
+        "sidecar-address-1",
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+      const reviewId = submitted.reviewId;
+      const before = provider.reviewStore.getOutstandingChunks(docId)!;
+      assert.equal(before.length, 2);
+      assert.equal(
+        provider.decideChunk(reviewId, before[1].chunkId, "hold", "revisit").ok,
+        true,
+      );
+      assert.equal(provider.reviewStore.addReviewComment(docId, "overall note").ok, true);
+      const generation = provider.reviewStore.getReview(docId)!.generation;
+      const chunksBefore = provider.reviewStore
+        .getOutstandingChunks(docId)!
+        .map((chunk) => [chunk.chunkId, chunk.state, chunk.holdComment]);
+
+      await flushSidecarWrites();
+      await provider.closeFileEverywhere(filePath);
+      assert.equal(provider.reviewStore.getReview(docId), undefined, "the close must detach");
+
+      const listed = JSON.parse((await httpRequest("GET", "/v1/reviews")).body) as {
+        reviews: Array<{ reviewId: string; attached: boolean }>;
+      };
+      const entry = listed.reviews.find((review) => review.reviewId === reviewId);
+      assert.ok(entry !== undefined, "/v1/reviews must list the closed-file review");
+      assert.equal(entry.attached, false);
+
+      // Read routes: served from the sidecar, which carries the whole review.
+      const detail = await httpRequest("GET", `/v1/reviews/${reviewId}`);
+      assert.equal(detail.status, 200, detail.body);
+      const detailBody = JSON.parse(detail.body) as {
+        attached: boolean;
+        generation: number;
+        unresolvedChunks: number;
+        heldChunks: number;
+        packetCount: number;
+        comments: Array<{ text: string }>;
+        documentRevision?: unknown;
+      };
+      assertMatchesSchema(detailBody, "ReviewDetailResponse");
+      assert.equal(detailBody.attached, false);
+      assert.equal(detailBody.generation, generation);
+      assert.equal(detailBody.unresolvedChunks, 1);
+      assert.equal(detailBody.heldChunks, 1);
+      assert.equal(detailBody.packetCount, 2);
+      assert.deepEqual(
+        detailBody.comments.map((comment) => comment.text),
+        ["overall note"],
+      );
+      assert.equal(
+        detailBody.documentRevision,
+        undefined,
+        "a closed document has no revision to report",
+      );
+
+      const chunks = await httpRequest("GET", `/v1/reviews/${reviewId}/chunks`);
+      assert.equal(chunks.status, 200, chunks.body);
+      const chunksBody = JSON.parse(chunks.body) as {
+        documentId?: string;
+        chunks: Array<{ chunkId: string; state: string; holdComment?: string; descriptions: string[] }>;
+      };
+      assertMatchesSchema(chunksBody, "ReviewChunksResponse");
+      assert.deepEqual(
+        chunksBody.chunks.map((chunk) => [chunk.chunkId, chunk.state, chunk.holdComment]),
+        chunksBefore,
+        "the detached partition must be the one the open document had",
+      );
+      assert.deepEqual(chunksBody.chunks[0].descriptions, ["caps alpha"]);
+      assert.equal(chunksBody.documentId, undefined, "no document is open to name");
+
+      const diff = await httpRequest("GET", `/v1/reviews/${reviewId}/diff`);
+      assert.equal(diff.status, 200, diff.body);
+      const diffBody = JSON.parse(diff.body) as { patch: string; generation: number };
+      assertMatchesSchema(diffBody, "ReviewDiffResponse");
+      assert.ok(diffBody.patch.includes("+ALPHA"), diffBody.patch);
+      assert.equal(diffBody.generation, generation);
+
+      const packets = await httpRequest("GET", `/v1/reviews/${reviewId}/packets`);
+      assert.equal(packets.status, 200, packets.body);
+      const packetsBody = JSON.parse(packets.body) as {
+        packets: Array<{ description: string; refSpans?: unknown }>;
+      };
+      assertMatchesSchema(packetsBody, "ReviewPacketsResponse");
+      assert.deepEqual(
+        packetsBody.packets.map((packet) => packet.description),
+        ["caps alpha", "caps beta"],
+      );
+
+      // Write routes: the review is real, so the refusal is a conflict that
+      // names the file to open — never "not found".
+      const heldChunkId = chunksBefore[1][0];
+      for (const [method, route] of [
+        ["POST", `/v1/reviews/${reviewId}/accept-all`],
+        ["POST", `/v1/reviews/${reviewId}/clear`],
+        ["POST", `/v1/reviews/${reviewId}/chunks/${heldChunkId!}/accept`],
+        ["GET", `/v1/reviews/${reviewId}/events?waitSeconds=0`],
+      ] as const) {
+        const refused = await httpRequest(method, route);
+        assert.equal(refused.status, 409, `${method} ${route}: ${refused.body}`);
+        const error = (JSON.parse(refused.body) as { error: { code: string; message: string } })
+          .error;
+        assert.equal(error.code, "DOCUMENT_CLOSED", route);
+        assert.ok(error.message.includes(filePath), `${route}: ${error.message}`);
+      }
+      const commented = await httpRequest("POST", `/v1/reviews/${reviewId}/comments`, {
+        body: JSON.stringify({ text: "later" }),
+        headers: { "content-type": "application/json" },
+      });
+      assert.equal(commented.status, 409, commented.body);
+      assert.equal(
+        (JSON.parse(commented.body) as { error: { code: string } }).error.code,
+        "DOCUMENT_CLOSED",
+      );
+
+      // Nothing the refusal did may have touched the review.
+      assert.equal(
+        (
+          JSON.parse((await httpRequest("GET", `/v1/reviews/${reviewId}`)).body) as {
+            generation: number;
+            unresolvedChunks: number;
+          }
+        ).generation,
+        generation,
+      );
+
+      // An id no review carries is still a 404: DOCUMENT_CLOSED is a claim
+      // about a review that exists, not a blanket answer.
+      const unknown = await httpRequest("GET", "/v1/reviews/rev-nonexistent");
+      assert.equal(unknown.status, 404);
+      assert.equal(
+        (JSON.parse(unknown.body) as { error: { code: string } }).error.code,
+        "REVIEW_NOT_FOUND",
+      );
+
+      // Opening the file is the reattachment, and the same id keeps working.
+      await provider.getDocument(filePath);
+      const reattached = await httpRequest("GET", `/v1/reviews/${reviewId}`);
+      assert.equal(reattached.status, 200, reattached.body);
+      const reattachedBody = JSON.parse(reattached.body) as {
+        attached: boolean;
+        documentRevision?: { sha256: string };
+      };
+      assertMatchesSchema(reattachedBody, "ReviewDetailResponse");
+      assert.equal(reattachedBody.attached, true);
+      assert.ok(
+        reattachedBody.documentRevision !== undefined,
+        "an attached review reports the open document's revision",
+      );
+    });
+
+    it("answers the packetIds a detached review's packet listing hands out", async function () {
+      // The packets route serves a closed file from its sidecar, so the ids in
+      // that answer are ids the API vouched for. Retraction consults the live
+      // packet index, which the close empties, so every one of those ids came
+      // back "The packet was not found." with an empty reviewId — a denial that
+      // the packet exists, about a packet the API had just published.
+      const filePath = path.join(scratch, "sidecar-packet-address.md");
+      const original = "alpha\nx\ny\nz\nbeta\n";
+      const docId = await openFile(filePath, original);
+      const snap = provider.createSnapshot(docId)!;
+      const submitted = await provider.submitProposal(
+        snap.token,
+        makePatch(original, "ALPHA\nx\ny\nz\nbeta\n"),
+        "sidecar-packet-address-1",
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+      const reviewId = submitted.reviewId;
+      const generation = provider.reviewStore.getReview(docId)!.generation;
+
+      await flushSidecarWrites();
+      await provider.closeFileEverywhere(filePath);
+      assert.equal(provider.reviewStore.getReview(docId), undefined, "the close must detach");
+
+      const packets = await httpRequest("GET", `/v1/reviews/${reviewId}/packets`);
+      assert.equal(packets.status, 200, packets.body);
+      const listed = (JSON.parse(packets.body) as { packets: Array<{ packetId: string }> })
+        .packets;
+      assert.equal(listed.length, 1);
+      const packetId = listed[0].packetId;
+
+      const refused = await httpRequest("POST", `/v1/proposals/${packetId}/retract`);
+      assert.equal(refused.status, 409, refused.body);
+      const refusedBody = JSON.parse(refused.body) as {
+        error: {
+          code: string;
+          message: string;
+          reviewId: string;
+          canClearUnresolved: boolean;
+        };
+      };
+      assertMatchesSchema(refusedBody, "AgentErrorResponse");
+      assert.equal(refusedBody.error.code, "DOCUMENT_CLOSED");
+      assert.ok(refusedBody.error.message.includes(filePath), refusedBody.error.message);
+      assert.equal(
+        refusedBody.error.reviewId,
+        reviewId,
+        "the refusal names the review that owns the packet",
+      );
+      assert.equal(
+        refusedBody.error.canClearUnresolved,
+        false,
+        "clearing a detached review refuses too, so offering it would misdirect",
+      );
+
+      // A packetId no review carries stays PACKET_NOT_RETRACTABLE: the closed
+      // file is a claim about a packet that exists, not a blanket answer.
+      const unknown = await httpRequest("POST", "/v1/proposals/pkt-nonexistent/retract");
+      assert.equal(unknown.status, 409, unknown.body);
+      assert.equal(
+        (JSON.parse(unknown.body) as { error: { code: string } }).error.code,
+        "PACKET_NOT_RETRACTABLE",
+      );
+
+      // Opening the file is what the refusal asked for, and the same id then
+      // retracts for real — the id the listing handed out was always this one.
+      await provider.getDocument(filePath);
+      const retracted = await httpRequest("POST", `/v1/proposals/${packetId}/retract`);
+      assert.equal(retracted.status, 200, retracted.body);
+      const retractedBody = JSON.parse(retracted.body) as {
+        packetId: string;
+        reviewId: string;
+        reviewGeneration: number;
+      };
+      assertMatchesSchema(retractedBody, "RetractProposalResponse");
+      assert.equal(retractedBody.packetId, packetId);
+      assert.equal(retractedBody.reviewId, reviewId);
+      assert.ok(
+        retractedBody.reviewGeneration > generation,
+        "retraction advances the generation it refused to touch while closed",
+      );
+    });
+
     it("deletes the sidecar when saving completes the review", async function () {
       const filePath = path.join(scratch, "sidecar-resolve.md");
       const docId = await openFile(filePath, "alpha\n");
@@ -1964,105 +2639,55 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }
     });
 
-    it("publishes exactly the routes the runtime registers", function () {
-      // The dispatcher is stylized: literal `pathname === "..."` guards, and
-      // anchored `pathname.match(/^...$/)` patterns whose scoped variants
-      // branch on a captured sub-path. This extraction understands exactly
-      // those idioms; a route written another way surfaces as a set mismatch
-      // below rather than passing silently.
-      const source = readFileSync(
-        path.join(__dirname, "../source/app/service-providers/agent-api/http-server.ts"),
-        "utf8",
-      );
-      const runtimeRoutes = new Set<string>();
-
-      // The anonymous specification routes, served ahead of dispatch.
-      const specGate = source.match(
-        /req\.method === "GET" && \(req\.url === "([^"]+)" \|\| req\.url === "([^"]+)"\)/,
-      );
-      assert.ok(specGate !== null, "the anonymous specification gate must be extractable");
-      runtimeRoutes.add(`GET ${specGate[1]}`);
-      runtimeRoutes.add(`GET ${specGate[2]}`);
-
-      // Literal routes.
-      for (const m of source.matchAll(/pathname === "([^"]+)" && method === "([A-Z]+)"/g)) {
-        runtimeRoutes.add(`${m[2]} ${m[1]}`);
-      }
-
-      // Anchored patterns. `([^/]+)` is a path parameter; a trailing
-      // `(\/.*)?` marks a scope whose block branches on the sub-path.
-      const template = (regexBody: string): string =>
-        regexBody
-          .replace(/^\^/, "")
-          .replace(/\$$/, "")
-          .replace(/\(\[\^\/\]\+\)/g, "{}")
-          .replace(/\\\//g, "/");
-      const SCOPED_SUFFIX = "(\\/.*)?$";
-
-      const segments = source.split(/const \w+ = pathname\.match\(/).slice(1);
-      assert.ok(segments.length > 0, "dispatch must contain pattern routes");
-      for (const segment of segments) {
-        const literal = segment.match(/^\s*\/(.*)\/,?\s*\)/);
-        assert.ok(literal !== null, "every pathname.match must open with its regex literal");
-        const body = literal[1];
-
-        if (!body.endsWith(SCOPED_SUFFIX)) {
-          const method = segment.match(/!== null && method === "([A-Z]+)"/);
-          assert.ok(method !== null, `anchored route needs a method guard: ${body}`);
-          runtimeRoutes.add(`${method[1]} ${template(body)}`);
-          continue;
-        }
-
-        const base = template(body.slice(0, -SCOPED_SUFFIX.length));
-        // The bare scope (sub-path absent, optionally a lone trailing slash).
-        for (const m of segment.matchAll(
-          /\(?(\w*[sS]ubPath) === undefined(?: \|\| \1 === "\/"\))? && method === "([A-Z]+)"/g,
-        )) {
-          runtimeRoutes.add(`${m[2]} ${base}`);
-        }
-        // Named sub-paths.
-        for (const m of segment.matchAll(
-          /\w*[sS]ubPath === "(\/[^"]+)" && method === "([A-Z]+)"/g,
-        )) {
-          runtimeRoutes.add(`${m[2]} ${base}${m[1]}`);
-        }
-        // Nested sub-path patterns (the accept|reject decision pair).
-        for (const m of segment.matchAll(/const \w+ = \w+\?\.match\(\/(.*)\/\);/g)) {
-          const tail = segment.slice((m.index ?? 0) + m[0].length);
-          const method = tail.match(/method === "([A-Z]+)"/);
-          assert.ok(method !== null, `nested route needs a method guard: ${m[1]}`);
-          const sub = template(m[1]);
-          const alternation = sub.match(/^(.*)\((\w+(?:\|\w+)+)\)(.*)$/);
-          if (alternation !== null) {
-            for (const option of alternation[2].split("|")) {
-              runtimeRoutes.add(`${method[1]} ${base}${alternation[1]}${option}${alternation[3]}`);
-            }
-          } else {
-            runtimeRoutes.add(`${method[1]} ${base}${sub}`);
-          }
-        }
-      }
-
-      // Parameter names differ between the two statements; identity does not.
-      const declaredRoutes = specOperations().map(
-        ({ method, path: specPath }) => `${method} ${specPath.replace(/\{[^}]+\}/g, "{}")}`,
-      );
-      assert.deepEqual(
-        [...runtimeRoutes].sort(),
-        declaredRoutes.sort(),
-        "runtime route table and openapi.yaml paths must agree",
-      );
-    });
-
-    it("routes every declared operation (none falls through to METHOD_NOT_FOUND)", async function () {
-      this.timeout(10000);
-      // Negative control first: the discriminator this probe relies on.
+    it("publishes exactly the routes the running server serves", async function () {
+      this.timeout(20000);
+      // Negative control first: the discriminator the probe below relies on.
       const missing = await httpRequest("GET", "/v1/no-such-route");
       assert.equal(JSON.parse(missing.body).error.code, "METHOD_NOT_FOUND");
 
-      for (const { method, path: specPath } of specOperations()) {
-        const probePath = specPath.replace(/\{[^}]+\}/g, "conformance-probe");
-        if (specPath === "/v1/events") {
+      // The route table belonging to the instance that is answering these
+      // requests. Reading it asks the server what it serves; deriving the same
+      // list from the implementation's source text would only prove that two
+      // spellings of the route table agree, which they can do while the server
+      // disagrees with both.
+      const registered = httpProvider.routes.map(
+        ({ method, path: routePath }) => `${method} ${routePath}`,
+      );
+      // The other side is fetched, not read off disk. What a consumer is bound
+      // by is the document this server hands out, and the provider loads its
+      // specification from whichever of two candidate paths exists — the copy
+      // beside this suite is not by itself evidence of what the server
+      // publishes.
+      const published = JSON.parse((await httpRequest("GET", "/openapi.json")).body) as {
+        paths: Record<string, Record<string, unknown>>;
+      };
+      const declared = Object.entries(published.paths).flatMap(([specPath, pathItem]) =>
+        HTTP_METHODS.filter((method) => pathItem[method] !== undefined).map(
+          (method) => `${method.toUpperCase()} ${specPath}`,
+        ),
+      );
+      assert.deepEqual(
+        [...registered].sort(),
+        [...declared].sort(),
+        "the served specification and the server's route table must name the same routes",
+      );
+
+      // The structural audits in this block read the committed file. They only
+      // describe the contract if that file is the document being served, so
+      // that identity is asserted here rather than assumed.
+      assert.deepEqual(
+        published.paths,
+        openApiDocument.paths,
+        "the served specification must be the committed one",
+      );
+
+      // And that table is what the server answers from: every entry is asked
+      // for over the wire and must reach a handler. An entry that dispatch
+      // cannot reach fails here as METHOD_NOT_FOUND, so the list above cannot
+      // be a decorative one kept beside the real routing.
+      for (const { method, path: routePath } of httpProvider.routes) {
+        const probePath = routePath.replace(/\{[^}]+\}/g, "conformance-probe");
+        if (routePath === "/v1/events") {
           // SSE holds the connection open; headers alone prove the route.
           const observed = await new Promise<{ status: number; contentType: string }>(
             (resolve) => {
@@ -2080,7 +2705,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
               req.end();
             },
           );
-          assert.equal(observed.status, 200, `${method} ${specPath} must be routed`);
+          assert.equal(observed.status, 200, `${method} ${routePath} must be routed`);
           assert.equal(observed.contentType, "text/event-stream");
           continue;
         }
@@ -2090,7 +2715,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           assert.notEqual(
             parsed.error.code,
             "METHOD_NOT_FOUND",
-            `${method} ${specPath} is declared but not routed`,
+            `${method} ${routePath} is published but not routed`,
           );
         }
       }
