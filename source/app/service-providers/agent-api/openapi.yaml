@@ -355,7 +355,6 @@ components:
           items:
             type: object
             required:
-              - documentId
               - path
             properties:
               documentId:
