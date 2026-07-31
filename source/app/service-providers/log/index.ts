@@ -65,14 +65,14 @@ export default class LogProvider extends ProviderContract {
   private readonly _logPath: string
   private readonly _log: LogMessage[]
   private _entryPointer: number
-  private _fileLock: boolean
+  private _activeWrite: Promise<void>|null
 
   constructor () {
     super()
     this._logPath = path.join(app.getPath('userData'), 'logs')
     this._log = []
     this._entryPointer = 0 // Set the log entry file pointer to zero
-    this._fileLock = false // True while data is being appended to the log
+    this._activeWrite = null // The write in flight, so callers can wait for it
 
     // Ensure message handling
     ipcMain.handle('log-provider', (event, payload: { command: string, nextIndex?: number|string }) => {
@@ -162,7 +162,37 @@ export default class LogProvider extends ProviderContract {
     }
 
     this._append()
-      .catch((err: Error) => this.error(`[Log Provider] Unexpected error during write: ${err.message}`, err))
+      .catch(() => {
+        // _append() has already reported the failure out of band. Reporting it
+        // again from here would route the report through the very writer that
+        // just failed, which is where such reports go to die.
+      })
+  }
+
+  /**
+   * Reports a failure of the log's own file write.
+   *
+   * This deliberately does not go through log(): that queues another append,
+   * and a write that keeps failing would then keep generating reports of its
+   * own failure that it also cannot write. The report goes to stderr -- a
+   * channel that is not the one that just failed, and that is open in a
+   * packaged build too, unlike the debug output in log() -- and into the
+   * in-memory log, which the log viewer reads and which the next successful
+   * append carries to disk.
+   *
+   * @param {unknown} err The reason the write rejected
+   */
+  private _reportWriteFailure (err: unknown): void {
+    const reason = (err instanceof Error) ? err.message : 'unknown error'
+    const message = `[Log Provider] Could not write to the logfile: ${reason}. ` +
+      'The affected entries are kept in memory and retried with the next log entry.'
+    console.error(chalk.bold.red(message))
+    this._log.push({
+      level: LogLevel.error,
+      message,
+      details: err,
+      time: this._getTimestamp()
+    })
   }
 
   /**
@@ -192,37 +222,66 @@ export default class LogProvider extends ProviderContract {
    * Appends all not-yet-written log messages to today's log file
    */
   async _append (): Promise<void> {
-    if (this._fileLock) {
-      return // Cannot write until the previous write has finished
+    // A caller arriving while a write is in flight waits for that write instead
+    // of returning as though the log had been flushed. shutdown()'s final append
+    // is the last chance the pending entries have to reach disk, and the entry
+    // shutdown() logs on its own first line has already started a write by the
+    // time it gets here -- so returning early would make that flush a no-op that
+    // hands back a resolved promise for work nobody did.
+    while (this._activeWrite !== null) {
+      await this._activeWrite
     }
 
+    // The pointer counts entries already written, so it is the index of the
+    // first unwritten one -- equal to the length exactly when nothing is pending.
     if (this._entryPointer >= this._log.length) {
       return // Nothing to write
     }
 
-    // First slice the part of the log that is not yet written to file
-    let logsToWrite = this._log.slice(this._entryPointer)
-    // The pointer counts entries already written, so it is the index of the
-    // first unwritten one -- equal to the length exactly when nothing is
-    // pending, which is what the guard above tests.
-    this._entryPointer = this._log.length
+    this._activeWrite = this._writePendingEntries()
 
-    // Now, filter out all verbose entries
-    logsToWrite = logsToWrite.filter((entry) => entry.level > LogLevel.verbose)
-
-    if (logsToWrite.length === 0) {
-      return // Apparently, only verbose messages
+    try {
+      await this._activeWrite
+    } finally {
+      // Cleared on every path, a rejected write included: an in-flight marker
+      // left standing would park every later append on a settled promise for the
+      // rest of the process, and the log would be dead without saying so.
+      this._activeWrite = null
     }
+  }
 
-    // Then map the entries to strings and join them with newlines
-    let stringsToWrite = logsToWrite.map((elem) => this._toString(elem))
+  /**
+   * Writes everything the logfile is behind on, keeping the read pointer honest
+   * about what actually reached disk.
+   */
+  private async _writePendingEntries (): Promise<void> {
+    try {
+      // Keep going until the whole log is on disk. Entries arriving while the
+      // write below is awaited wait on this very call, so if it stopped after one
+      // batch they would sit unwritten until some later, unrelated log entry
+      // happened to drag them along.
+      while (this._entryPointer < this._log.length) {
+        const nextPointer = this._log.length
+        const logsToWrite = this._log
+          .slice(this._entryPointer, nextPointer)
+          .filter((entry) => entry.level > LogLevel.verbose) // Verbose stays out of the file
 
-    // Finally, append these guys to the current logfile
-    let logfile = path.join(this._logPath, this._getLogfileName())
+        if (logsToWrite.length > 0) {
+          const stringsToWrite = logsToWrite.map((elem) => this._toString(elem))
+          // Resolved per batch: a run spanning midnight rolls onto the new file
+          const logfile = path.join(this._logPath, this._getLogfileName())
+          await fs.writeFile(logfile, stringsToWrite.join('\n') + '\n', { flag: 'a' })
+        }
 
-    this._fileLock = true
-    await fs.writeFile(logfile, stringsToWrite.join('\n') + '\n', { flag: 'a' })
-    this._fileLock = false
+        // Advanced only now that those entries are on disk. A rejected write
+        // leaves the pointer on the batch it could not write, so the next append
+        // retries it instead of the log quietly swallowing the entries.
+        this._entryPointer = nextPointer
+      }
+    } catch (err: unknown) {
+      this._reportWriteFailure(err)
+      throw err
+    }
   }
 
   /**
