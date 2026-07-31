@@ -52,6 +52,8 @@ import path from "path";
 import type {
   ActiveReviewState,
   ChunkDecision,
+  ChunkHold,
+  ProposalPacket,
   ReviewComment,
   ReviewState,
   OutstandingChunk,
@@ -199,12 +201,62 @@ export interface AddReviewCommentResult {
   comment: ReviewComment;
 }
 
+/** A packet as persisted: the ledger entry plus its attribution spans. */
+export interface PersistedReviewPacket extends ProposalPacket {
+  refSpans: RefSpan[];
+}
+
+/**
+ * One review, serialized for its sidecar file. Both texts are mandatory:
+ * mid-review neither equals the disk file — the save gate guarantees the
+ * working text differs from disk while chunks are unresolved, and the
+ * reference is the store's own evolving state. The disk fence is what
+ * reattachment verifies: a file that moved on disk while the review was
+ * detached is exactly the external drift that invalidates it in-process.
+ *
+ * unresolvedChunks/heldChunks are snapshots taken against the two texts at
+ * write time, so a detached review can be listed without recomputing its
+ * partition; the texts remain the authority on reattachment.
+ */
+export interface ReviewSidecarData {
+  version: 1;
+  reviewId: string;
+  documentPath: string;
+  baselineText: string;
+  referenceText: string;
+  workingText: string;
+  generation: number;
+  diskFenceSha256: string;
+  invalidated: boolean;
+  packets: PersistedReviewPacket[];
+  holds: ChunkHold[];
+  comments: ReviewComment[];
+  unresolvedChunks: number;
+  heldChunks: number;
+  savedAt: string;
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
 
 export function sha256Text(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+/**
+ * The one review-state rule, shared by the live store and the sidecar-backed
+ * listing so an attached and a detached review with the same facts can never
+ * classify differently.
+ */
+export function classifyReviewState(
+  invalidated: boolean,
+  unresolvedChunks: number,
+): ReviewState {
+  if (invalidated) {
+    return "invalidated";
+  }
+  return unresolvedChunks === 0 ? "resolved-awaiting-save" : "active";
 }
 
 export function normalizeText(content: string): string {
@@ -1292,6 +1344,83 @@ export class ReviewDiffStore extends EventEmitter {
   }
 
   /**
+   * Serialize a review for its sidecar: everything restoreReview needs to
+   * rebuild identical state, plus count snapshots for listing it detached.
+   * The working text comes from the resolver, so the export must run while
+   * the document is still open — detachment exports first, then drops.
+   * Holds are reconciled against the exported texts, so no persisted hold
+   * can dangle on restore. Submission idempotency is deliberately NOT
+   * exported: closing a review has always retired its clientRequestIds.
+   */
+  exportReviewSidecar(documentId: string): ReviewSidecarData | undefined {
+    const review = this.reviews.get(documentId);
+    if (review === undefined) {
+      return undefined;
+    }
+    const workingText = this.workingTextOf(documentId);
+    const partition = computeReviewChunks(review.referenceText, workingText);
+    this.reconcileHolds(review, partition);
+    return {
+      version: 1,
+      reviewId: review.reviewId,
+      documentPath: review.documentPath,
+      baselineText: review.baselineText,
+      referenceText: review.referenceText,
+      workingText,
+      generation: review.generation,
+      diskFenceSha256: review.diskFenceSha256,
+      invalidated: review.invalidated,
+      packets: review.packets.map((packet) => ({
+        ...packet,
+        refSpans: this.spansOf(packet.packetId).map((span) => ({ ...span })),
+      })),
+      holds: review.holds.map((hold) => ({ ...hold })),
+      comments: review.comments.map((comment) => ({ ...comment })),
+      unresolvedChunks: partition.length - review.holds.length,
+      heldChunks: review.holds.length,
+      savedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Rebuild a review from its sidecar under a (possibly new) documentId.
+   * The inverse of exportReviewSidecar: same reviewId, generation, packets
+   * with their attribution spans, holds, and comments — and because chunk
+   * ids are content-addressed over the two texts, the same chunk ids.
+   * Emits no event: reattachment happens by opening a file, which is not a
+   * review mutation.
+   */
+  restoreReview(documentId: string, sidecar: ReviewSidecarData): ActiveReviewState {
+    if (this.reviews.has(documentId)) {
+      throw new Error(
+        `Cannot restore a review for document ${documentId}: one is already active`,
+      );
+    }
+    const state: ActiveReviewState = {
+      reviewId: sidecar.reviewId,
+      documentId,
+      documentPath: sidecar.documentPath,
+      baselineText: sidecar.baselineText,
+      referenceText: sidecar.referenceText,
+      generation: sidecar.generation,
+      packets: sidecar.packets.map(({ refSpans: _refSpans, ...packet }) => packet),
+      holds: sidecar.holds.map((hold) => ({ ...hold })),
+      comments: sidecar.comments.map((comment) => ({ ...comment })),
+      diskFenceSha256: sidecar.diskFenceSha256,
+      invalidated: sidecar.invalidated,
+    };
+    this.reviews.set(documentId, state);
+    for (const packet of sidecar.packets) {
+      this.packetIndex.set(packet.packetId, sidecar.reviewId);
+      this.packetRefSpans.set(
+        packet.packetId,
+        packet.refSpans.map((span) => ({ ...span })),
+      );
+    }
+    return state;
+  }
+
+  /**
    * Get the active review carrying a reviewId, however it is keyed.
    */
   findReviewByReviewId(reviewId: string): ActiveReviewState | undefined {
@@ -1392,6 +1521,7 @@ export class ReviewDiffStore extends EventEmitter {
   listReviews(): Array<{
     reviewId: string;
     documentId: string;
+    documentPath: string;
     state: ReviewState;
     generation: number;
     unresolvedChunks: number;
@@ -1403,6 +1533,7 @@ export class ReviewDiffStore extends EventEmitter {
       return {
         reviewId: r.reviewId,
         documentId: r.documentId,
+        documentPath: r.documentPath,
         state: this.classifyState(r, unresolvedChunks),
         generation: r.generation,
         unresolvedChunks,
@@ -1535,10 +1666,7 @@ export class ReviewDiffStore extends EventEmitter {
     review: ActiveReviewState,
     unresolvedChunks: number,
   ): ReviewState {
-    if (this.isInvalidated(review)) {
-      return "invalidated";
-    }
-    return unresolvedChunks === 0 ? "resolved-awaiting-save" : "active";
+    return classifyReviewState(this.isInvalidated(review), unresolvedChunks);
   }
 
   /**
