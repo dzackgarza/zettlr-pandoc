@@ -68,6 +68,15 @@ const SSE_REPLAY_BUFFER_SIZE = 100;
 const SSE_HEARTBEAT_MS = 15000;
 const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
 
+/**
+ * How long a request gets to finish transmitting its body before the read is
+ * abandoned with REQUEST_BODY_TIMEOUT. Generous for a loopback API — a local
+ * client delivers even the 25 MB maximum in well under a second — so a read
+ * that trips this was never going to complete, and holding its buffers longer
+ * serves no one.
+ */
+const REQUEST_BODY_DEADLINE_MS = 30_000;
+
 type BufferedAgentEvent = AgentEvent & { id: string };
 
 /** The payload shape the document-provider events this server subscribes to carry. */
@@ -78,6 +87,24 @@ interface DocumentEventContext {
 class RequestTooLargeError extends Error {
   constructor() {
     super("Request body exceeds the API limit");
+  }
+}
+
+/** The client stalled past the body deadline without finishing its request. */
+class RequestBodyTimeoutError extends Error {
+  constructor() {
+    super("Request body was not received within the deadline");
+  }
+}
+
+/**
+ * The connection died before the body completed. There is no caller left to
+ * answer, so the dispatcher drops the exchange instead of manufacturing a 500
+ * into a dead socket.
+ */
+class RequestAbandonedError extends Error {
+  constructor() {
+    super("Client disconnected before the request body completed");
   }
 }
 
@@ -251,6 +278,12 @@ export default class AgentHTTPProvider extends ProviderContract {
     private readonly _log: LogProvider,
     private readonly _documents: DocumentManager,
     private readonly _app: AgentApiHost,
+    /**
+     * Injectable so the request-body lifecycle tests can exercise the
+     * deadline without stalling for tens of real seconds. Production callers
+     * pass nothing.
+     */
+    private readonly _bodyDeadlineMs: number = REQUEST_BODY_DEADLINE_MS,
   ) {
     super();
     this._instanceId = crypto.randomUUID();
@@ -493,6 +526,28 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.dispatch(req, res, method, pathname, url).catch((err) => {
       if (err instanceof RequestTooLargeError) {
         this.sendError(res, 413, "REQUEST_TOO_LARGE", "Request body exceeds the API limit");
+        return;
+      }
+      if (err instanceof RequestBodyTimeoutError) {
+        // The request's body framing never completed, so this connection
+        // cannot carry another exchange. Declaring the close makes Node tear
+        // the socket down once the 408 has flushed to the stalled client.
+        res.setHeader("Connection", "close");
+        this.sendError(
+          res,
+          408,
+          "REQUEST_BODY_TIMEOUT",
+          `Request body was not received within ${this._bodyDeadlineMs} ms`,
+        );
+        return;
+      }
+      if (err instanceof RequestAbandonedError) {
+        // The client hung up mid-body. There is no one left to answer and
+        // nothing failed on this side; an error logged here would be an
+        // invented fault.
+        this._log.verbose(
+          `[AgentHTTPProvider] Client disconnected before finishing ${method} ${pathname}; dropped the body read`,
+        );
         return;
       }
       this._log.error(`[AgentHTTPProvider] Unhandled error: ${err}`);
@@ -1633,31 +1688,53 @@ export default class AgentHTTPProvider extends ProviderContract {
     return undefined;
   }
 
+  /**
+   * Reads the request body, bounded in size and time. The promise settles
+   * exactly once: with the body on a completed read, RequestTooLargeError
+   * past the size cap, RequestBodyTimeoutError when the client stalls past
+   * the deadline, or RequestAbandonedError when the connection dies first —
+   * any 'error' on an incoming request stream is the transport failing
+   * mid-body, which leaves nobody to answer. Every path clears the timer and
+   * detaches all four listeners, so a request that never completes cannot
+   * hold its buffers or closure alive beyond the deadline.
+   */
   private async readBody(req: http.IncomingMessage): Promise<string> {
-    return new Promise((resolve, reject) => {
-      let data = "";
-      let settled = false;
-      req.on("data", (chunk: Buffer) => {
-        if (settled) {
+    return await new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      let receivedBytes = 0;
+      let deadline: NodeJS.Timeout | undefined;
+      const settle = (outcome: () => void): void => {
+        clearTimeout(deadline);
+        req.removeListener("data", onData);
+        req.removeListener("end", onEnd);
+        req.removeListener("error", onError);
+        req.removeListener("close", onError);
+        outcome();
+      };
+      const onData = (chunk: Buffer): void => {
+        receivedBytes += chunk.byteLength;
+        if (receivedBytes > MAX_REQUEST_BODY_BYTES) {
+          settle(() => reject(new RequestTooLargeError()));
+          req.destroy();
           return;
         }
-        data += chunk.toString("utf8");
-        if (Buffer.byteLength(data, "utf8") > MAX_REQUEST_BODY_BYTES) {
-          settled = true;
-          reject(new RequestTooLargeError());
-          req.destroy();
-        }
-      });
-      req.on("end", () => {
-        if (!settled) {
-          resolve(data);
-        }
-      });
-      req.on("error", (err) => {
-        if (!settled) {
-          reject(err);
-        }
-      });
+        chunks.push(chunk);
+      };
+      const onEnd = (): void => {
+        settle(() => resolve(Buffer.concat(chunks).toString("utf8")));
+      };
+      const onError = (): void => {
+        settle(() => reject(new RequestAbandonedError()));
+      };
+      deadline = setTimeout(() => {
+        // No req.destroy() here: the 408 the dispatcher answers with must
+        // still reach the stalled client before the connection is torn down.
+        settle(() => reject(new RequestBodyTimeoutError()));
+      }, this._bodyDeadlineMs);
+      req.on("data", onData);
+      req.on("end", onEnd);
+      req.on("error", onError);
+      req.on("close", onError);
     });
   }
 

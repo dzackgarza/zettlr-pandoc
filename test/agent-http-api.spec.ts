@@ -940,4 +940,115 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     });
     assert.equal(contentType, "text/event-stream");
   });
+
+  describe("request body lifecycle", function () {
+    // Short enough for a test, long enough that a loopback client actually
+    // transmitting never trips it. The production default (tens of seconds)
+    // takes the same code path; only the constant differs.
+    const DEADLINE_MS = 300;
+    let lifecyclePort: number;
+    let lifecycle: AgentHTTPProvider;
+    let recordedErrors: string[];
+
+    /** Captures error-level log entries so a test can assert none occurred. */
+    class RecordingLog extends LogProvider {
+      public error(msg: string): void {
+        recordedErrors.push(msg);
+      }
+    }
+
+    beforeEach(async function () {
+      recordedErrors = [];
+      const probe = net.createServer();
+      await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+      lifecyclePort = (probe.address() as net.AddressInfo).port;
+      await new Promise<void>((resolve) => probe.close(() => resolve()));
+      lifecycle = new AgentHTTPProvider(
+        new RecordingLog(),
+        provider,
+        {
+          config: {
+            get: () => ({
+              app: { openWorkspaces: [scratch] },
+              agentApi: { enabled: true, port: lifecyclePort },
+            }),
+          },
+        },
+        DEADLINE_MS,
+      );
+      await lifecycle.boot();
+    });
+
+    afterEach(async function () {
+      await lifecycle.shutdown();
+    });
+
+    /** Opens a raw TCP connection to the lifecycle server. */
+    async function connect(): Promise<net.Socket> {
+      const socket = net.connect(lifecyclePort, "127.0.0.1");
+      await new Promise<void>((resolve, reject) => {
+        socket.once("connect", resolve);
+        socket.once("error", reject);
+      });
+      return socket;
+    }
+
+    /**
+     * Collects everything the server sends until it closes the connection.
+     * Resolving at all is therefore itself the close assertion: a server
+     * that answers but holds the socket open times the test out here.
+     */
+    async function readUntilClose(socket: net.Socket): Promise<string> {
+      return await new Promise((resolve) => {
+        let data = "";
+        socket.on("data", (chunk: Buffer) => {
+          data += chunk.toString("utf8");
+        });
+        // A reset after the response still ends the exchange; the bytes
+        // already received are the answer.
+        socket.on("error", () => {});
+        socket.on("close", () => resolve(data));
+      });
+    }
+
+    // Promises 64 body bytes and delivers a fragment, then goes quiet.
+    const STALLED_REQUEST =
+      "POST /v1/documents HTTP/1.1\r\n" +
+      "Host: 127.0.0.1\r\n" +
+      "Content-Type: application/json\r\n" +
+      "Content-Length: 64\r\n" +
+      "\r\n" +
+      '{"uri": "safe-file';
+
+    it("answers a stalled body with 408 REQUEST_BODY_TIMEOUT and closes the socket", async function () {
+      const socket = await connect();
+      socket.write(STALLED_REQUEST);
+      const response = await readUntilClose(socket);
+      assert.match(response, /^HTTP\/1\.1 408 /);
+      const body = JSON.parse(response.slice(response.indexOf("\r\n\r\n") + 4));
+      assert.equal(body.error.code, "REQUEST_BODY_TIMEOUT");
+      assertMatchesSchema(body.error, "AgentError");
+    });
+
+    it("abandons the read when the client disconnects mid-body and keeps serving", async function () {
+      const socket = await connect();
+      socket.write(STALLED_REQUEST);
+      // Let the server take the headers and begin the body read, then vanish.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      socket.destroy();
+
+      // Wait out the deadline too: the abandoned read's timer must have been
+      // cleared with its listeners, and the disconnect must not be booked as
+      // a failure — before the fix this path logged an unhandled error and
+      // wrote a 500 into the dead socket.
+      await new Promise((resolve) => setTimeout(resolve, DEADLINE_MS + 100));
+      assert.deepEqual(recordedErrors, []);
+
+      // And the server is still answering.
+      const check = await connect();
+      check.write("GET /v1/ping HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+      const response = await readUntilClose(check);
+      assert.match(response, /^HTTP\/1\.1 200 /);
+    });
+  });
 });
