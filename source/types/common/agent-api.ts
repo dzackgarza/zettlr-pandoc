@@ -43,11 +43,38 @@ export type ReviewState =
   | "cleared"
   | "invalidated";
 
+/**
+ * A hold: a comment attached to a chunk WITHOUT adjudicating it (the comment
+ * is optional — a hold without text is legal). Held chunks are excluded from
+ * the save-gate count and survive a save; the reference simply retains its
+ * disagreement over that span. Holds are keyed by content-addressed chunkId,
+ * so an edit inside a held chunk orphans the hold: its comment surfaces as a
+ * review-level ReviewComment carrying orphanedFromChunkId.
+ */
+export interface ChunkHold {
+  chunkId: string;
+  comment?: string;
+  heldAt: string; // ISO 8601 timestamp
+}
+
+/** A review-level comment — attached directly, or salvaged from a hold. */
+export interface ReviewComment {
+  text: string;
+  createdAt: string; // ISO 8601 timestamp
+  /**
+   * Present when this comment was carried over from a hold whose chunk id
+   * vanished from the partition (the chunk was edited, decided, cleared, or
+   * absorbed by a later claim). The hold's text is never silently lost.
+   */
+  orphanedFromChunkId?: string;
+}
+
 export interface ReviewSummary {
   reviewId: string;
   state: ReviewState;
   generation: number;
   unresolvedChunks: number;
+  heldChunks: number;
   packetCount: number;
 }
 
@@ -249,6 +276,14 @@ export interface ActiveReviewState {
   referenceText: string;
   generation: number;
   packets: ProposalPacket[];
+  /**
+   * Chunk holds, reconciled lazily against the live partition: a hold whose
+   * chunk id no longer exists is removed, and its comment (if any) moves to
+   * `comments` as an orphan.
+   */
+  holds: ChunkHold[];
+  /** Review-level comments, in creation order. */
+  comments: ReviewComment[];
   diskFenceSha256: string;
   /** True after external disk drift invalidated the review. */
   invalidated: boolean;
@@ -294,6 +329,14 @@ export interface OutstandingChunk {
    * omitted.
    */
   descriptions: string[];
+  /**
+   * The chunk's decision state. Only undecided chunks exist in the partition
+   * — an accepted or rejected chunk stops being a disagreement and vanishes —
+   * so the wire carries exactly `pending` and `held`.
+   */
+  state: "pending" | "held";
+  /** The hold's comment, when this chunk is held with one. */
+  holdComment?: string;
   /** Focused zero-context unified diff of exactly this chunk. */
   patch: string;
 }
@@ -329,7 +372,10 @@ export interface ReviewDetailResponse {
   state: ReviewState;
   generation: number;
   unresolvedChunks: number;
+  heldChunks: number;
   packetCount: number;
+  /** Review-level comments, direct and orphaned-from-hold alike. */
+  comments: ReviewComment[];
   documentRevision: DocumentRevision;
 }
 
@@ -342,21 +388,46 @@ export interface ReviewListResponse {
   reviews: ReviewListEntry[];
 }
 
+/** The three decision verbs a chunk accepts. Hold annotates without adjudicating. */
+export type ChunkDecision = "accept" | "reject" | "hold";
+
 /**
- * The body of POST /v1/reviews/{reviewId}/chunks/{chunkId}/accept | /reject.
- * The same shape DocumentManager.decideChunk returns on success — the HTTP
- * layer serializes it unchanged.
+ * The body of POST /v1/reviews/{reviewId}/chunks/{chunkId}/accept | /reject
+ * | /hold. The same shape DocumentManager.decideChunk returns on success —
+ * the HTTP layer serializes it unchanged.
  */
 export interface ChunkDecisionResponse {
   ok: true;
   reviewId: string;
   documentId: string;
   chunkId: string;
-  decision: "accept" | "reject";
+  decision: ChunkDecision;
   reviewGeneration: number;
   unresolvedChunks: number;
   state: ReviewState;
   documentRevision: DocumentRevision;
+}
+
+/**
+ * The body of POST /v1/reviews/{reviewId}/chunks/{chunkId}/hold. The whole
+ * body is optional — a hold without text is legal. Re-holding a held chunk
+ * replaces its comment.
+ */
+export interface HoldChunkRequest {
+  comment?: string;
+}
+
+/** The body of POST /v1/reviews/{reviewId}/comments. */
+export interface AddReviewCommentRequest {
+  text: string;
+}
+
+/** The 200 body of POST /v1/reviews/{reviewId}/comments. */
+export interface ReviewCommentResponse {
+  reviewId: string;
+  documentId: string;
+  reviewGeneration: number;
+  comment: ReviewComment;
 }
 
 // ============================================================================
@@ -425,6 +496,8 @@ export type AgentEventType =
   | "review.completed"
   | "review.cleared"
   | "review.invalidated"
+  | "review.held"
+  | "review.commented"
   | "app.shutting-down";
 
 export interface AgentEvent {
@@ -436,6 +509,12 @@ export interface AgentEvent {
   documentRevision?: DocumentRevision;
   reviewGeneration?: number;
   unresolvedChunks?: number;
+  /** review.held: the chunk that was held. */
+  chunkId?: string;
+  /** review.held / review.commented: the comment text, when one exists. */
+  comment?: string;
+  /** review.commented: set when the comment was salvaged from a dangling hold. */
+  orphanedFromChunkId?: string;
 }
 
 /**
@@ -608,6 +687,7 @@ export type AgentApiResponseBody =
   | ReviewDiffResponse
   | ReviewChunksResponse
   | ChunkDecisionResponse
+  | ReviewCommentResponse
   | ReviewPacketsResponse
   | ReviewEventsResponse
   | ClearReviewResponse

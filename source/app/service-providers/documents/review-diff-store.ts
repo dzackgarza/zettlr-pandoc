@@ -51,6 +51,8 @@ import {
 import path from "path";
 import type {
   ActiveReviewState,
+  ChunkDecision,
+  ReviewComment,
   ReviewState,
   OutstandingChunk,
   AgentEvent,
@@ -178,15 +180,23 @@ export interface ChunkDecisionResult {
   reviewId: string;
   documentId: string;
   chunkId: string;
-  decision: "accept" | "reject";
+  decision: ChunkDecision;
   generation: number;
   /**
    * Present only for reject: the text the document must now show. Accepting
-   * touches the reference alone and leaves the document as it is.
+   * and holding touch no document text.
    */
   workingText?: string;
   unresolvedChunks: number;
   state: ReviewState;
+}
+
+export interface AddReviewCommentResult {
+  ok: true;
+  reviewId: string;
+  documentId: string;
+  generation: number;
+  comment: ReviewComment;
 }
 
 // ============================================================================
@@ -539,6 +549,8 @@ function remapSpans(
  *  - 'review.completed'  { reviewId, documentId }
  *  - 'review.cleared'    { reviewId, documentId }
  *  - 'review.invalidated'{ reviewId, documentId }
+ *  - 'review.held'       { reviewId, documentId, chunkId, comment?, generation, unresolvedChunks }
+ *  - 'review.commented'  { reviewId, documentId, comment, orphanedFromChunkId? }
  */
 export class ReviewDiffStore extends EventEmitter {
   private readonly reviews: Map<string, ActiveReviewState> = new Map();
@@ -581,12 +593,87 @@ export class ReviewDiffStore extends EventEmitter {
     return normalizeText(text);
   }
 
-  /** The current chunk partition for an active review. */
+  /**
+   * The current chunk partition for an active review, with the holds
+   * reconciled against it. Every read path routes through here, so a hold
+   * whose chunk id vanished (user edit, later claim, decision elsewhere) is
+   * released — and its comment orphaned — at the first observation.
+   */
   private partitionOf(review: ActiveReviewState): ReviewChunk[] {
-    return computeReviewChunks(
+    const partition = computeReviewChunks(
       review.referenceText,
       this.workingTextOf(review.documentId),
     );
+    this.reconcileHolds(review, partition);
+    return partition;
+  }
+
+  /**
+   * The pending (undecided, not held) chunk count — the one save-gate and
+   * unresolvedChunks meaning everywhere. Valid because partitionOf just
+   * reconciled: every remaining hold names a chunk in the partition.
+   */
+  private pendingOf(review: ActiveReviewState): number {
+    return this.partitionOf(review).length - review.holds.length;
+  }
+
+  /**
+   * Reconcile holds against a freshly computed partition and count pending —
+   * for mutation paths that compute their partition against a text the
+   * resolver does not serve yet (the working text the caller is about to
+   * apply).
+   */
+  private reconcileAndCountPending(
+    review: ActiveReviewState,
+    partition: readonly ReviewChunk[],
+  ): number {
+    this.reconcileHolds(review, partition);
+    return partition.length - review.holds.length;
+  }
+
+  /**
+   * Release every hold whose chunk id is absent from the partition. Chunk
+   * ids are content-addressed, so any change to a held chunk's text — a user
+   * edit inside it, a later claim overlapping it, an explicit decision on it
+   * — retires the id and would leave the hold dangling. The decided
+   * semantics: the hold is removed, and a hold that carried a comment
+   * surfaces as an orphaned review-level comment naming the vanished chunk,
+   * so the text is never silently lost. A textless dangling hold simply
+   * vanishes — there is nothing to lose.
+   */
+  private reconcileHolds(
+    review: ActiveReviewState,
+    partition: readonly ReviewChunk[],
+  ): void {
+    const liveIds = new Set(partition.map((chunk) => chunk.chunkId));
+    const dangling = review.holds.filter((hold) => !liveIds.has(hold.chunkId));
+    if (dangling.length === 0) {
+      return;
+    }
+    review.holds = review.holds.filter((hold) => liveIds.has(hold.chunkId));
+    for (const hold of dangling) {
+      if (hold.comment === undefined) {
+        continue;
+      }
+      const comment: ReviewComment = {
+        text: hold.comment,
+        createdAt: new Date().toISOString(),
+        orphanedFromChunkId: hold.chunkId,
+      };
+      review.comments.push(comment);
+      // Generation and count are passed explicitly: orphaning is derived
+      // bookkeeping of an edit that already happened, not a review decision,
+      // so it does not advance the generation cursor — and letting emitEvent
+      // auto-fill the count would recurse into partitionOf.
+      this.emitEvent("review.commented", {
+        reviewId: review.reviewId,
+        documentId: review.documentId,
+        comment: comment.text,
+        orphanedFromChunkId: hold.chunkId,
+        generation: review.generation,
+        unresolvedChunks: partition.length - review.holds.length,
+      });
+    }
   }
 
   /**
@@ -613,6 +700,8 @@ export class ReviewDiffStore extends EventEmitter {
       referenceText: baselineText,
       generation: 0,
       packets: [],
+      holds: [],
+      comments: [],
       diskFenceSha256: options.diskBaselineSha256,
       invalidated: false,
     };
@@ -808,10 +897,10 @@ export class ReviewDiffStore extends EventEmitter {
     }
 
     const workingText = steps[steps.length - 1].textAfter;
-    const unresolvedChunks = computeReviewChunks(
-      review.referenceText,
-      workingText,
-    ).length;
+    const unresolvedChunks = this.reconcileAndCountPending(
+      review,
+      computeReviewChunks(review.referenceText, workingText),
+    );
     for (const packetId of packetIds) {
       this.emitEvent("proposal.applied", {
         reviewId: review.reviewId,
@@ -825,20 +914,26 @@ export class ReviewDiffStore extends EventEmitter {
   }
 
   /**
-   * Decide a single chunk by its content-addressed id.
+   * Decide a single chunk by its content-addressed id — the ONE decision
+   * path for all three verbs.
    *
    * Accept makes the reference agree with the working text on the chunk (the
    * document does not change). Reject computes the working text with the
    * chunk restored to the reference; applying that text to the document is
-   * the caller's obligation. A stale id — the region changed since the caller
-   * read it — fails loudly with CHUNK_NOT_FOUND rather than splicing at a
-   * position that no longer means what the caller thought.
+   * the caller's obligation. Hold adjudicates nothing: it attaches an
+   * optional comment to the chunk and takes it out of the pending count, so
+   * a held-only review saves while the reference retains its disagreement.
+   * Re-holding a held chunk replaces its comment. A stale id — the region
+   * changed since the caller read it — fails loudly with CHUNK_NOT_FOUND
+   * rather than acting on a region that no longer means what the caller
+   * thought.
    */
   decideChunk(
     documentId: string,
     reviewId: string,
     chunkId: string,
-    decision: "accept" | "reject",
+    decision: ChunkDecision,
+    comment?: string,
   ): ChunkDecisionResult | SubmitPacketError {
     const review = this.reviews.get(documentId);
     if (review === undefined || review.reviewId !== reviewId) {
@@ -857,6 +952,7 @@ export class ReviewDiffStore extends EventEmitter {
     }
     const workingText = this.workingTextOf(documentId);
     const partition = computeReviewChunks(review.referenceText, workingText);
+    this.reconcileHolds(review, partition);
     const chunk = partition.find((c) => c.chunkId === chunkId);
     if (chunk === undefined) {
       return {
@@ -868,7 +964,21 @@ export class ReviewDiffStore extends EventEmitter {
 
     let newWorkingText: string | undefined;
     let unresolvedChunks: number;
-    if (decision === "accept") {
+    if (decision === "hold") {
+      // Upsert: holding again replaces the comment (an empty re-hold clears it).
+      review.holds = review.holds.filter((hold) => hold.chunkId !== chunkId);
+      review.holds.push({ chunkId, comment, heldAt: new Date().toISOString() });
+      unresolvedChunks = partition.length - review.holds.length;
+      review.generation += 1;
+      this.emitEvent("review.held", {
+        reviewId: review.reviewId,
+        documentId,
+        chunkId,
+        comment,
+        generation: review.generation,
+        unresolvedChunks,
+      });
+    } else if (decision === "accept") {
       review.referenceText = spliceChunk(review.referenceText, chunk, "accept");
       // The accepted splice changed the reference's line count: spans behind
       // it shift, spans on it are resolved and dropped.
@@ -877,29 +987,36 @@ export class ReviewDiffStore extends EventEmitter {
         chunk,
         chunk.workToLine - chunk.workFromLine - (chunk.refToLine - chunk.refFromLine),
       );
-      unresolvedChunks = computeReviewChunks(
-        review.referenceText,
-        workingText,
-      ).length;
+      unresolvedChunks = this.reconcileAndCountPending(
+        review,
+        computeReviewChunks(review.referenceText, workingText),
+      );
+      review.generation += 1;
+      this.emitEvent("review.changed", {
+        reviewId: review.reviewId,
+        documentId,
+        generation: review.generation,
+        unresolvedChunks,
+      });
     } else {
       newWorkingText = spliceChunk(workingText, chunk, "reject");
       // The reference did not move, but the chunk's reference region is now
       // resolved: attribution material there is dropped, so a later edit of
       // the same lines is the editor's change, not the packet's.
       this.remapSpansAcrossDecision(review, chunk, 0);
-      unresolvedChunks = computeReviewChunks(
-        review.referenceText,
-        newWorkingText,
-      ).length;
+      unresolvedChunks = this.reconcileAndCountPending(
+        review,
+        computeReviewChunks(review.referenceText, newWorkingText),
+      );
+      review.generation += 1;
+      this.emitEvent("review.changed", {
+        reviewId: review.reviewId,
+        documentId,
+        generation: review.generation,
+        unresolvedChunks,
+      });
     }
-    review.generation += 1;
 
-    this.emitEvent("review.changed", {
-      reviewId: review.reviewId,
-      documentId,
-      generation: review.generation,
-      unresolvedChunks,
-    });
     if (unresolvedChunks === 0) {
       this.emitEvent("review.resolved", {
         reviewId: review.reviewId,
@@ -922,6 +1039,44 @@ export class ReviewDiffStore extends EventEmitter {
   }
 
   /**
+   * Attach a review-level comment. Advances the generation — a comment is a
+   * deliberate turn in the conversation, and the generation cursor IS the
+   * "what changed since my last turn" query.
+   */
+  addReviewComment(
+    documentId: string,
+    text: string,
+  ): AddReviewCommentResult | SubmitPacketError {
+    const review = this.reviews.get(documentId);
+    if (review === undefined) {
+      return {
+        ok: false,
+        code: "REVIEW_NOT_FOUND",
+        message: "No active review for this document.",
+      };
+    }
+    const comment: ReviewComment = {
+      text,
+      createdAt: new Date().toISOString(),
+    };
+    review.comments.push(comment);
+    review.generation += 1;
+    this.emitEvent("review.commented", {
+      reviewId: review.reviewId,
+      documentId,
+      comment: comment.text,
+      generation: review.generation,
+    });
+    return {
+      ok: true,
+      reviewId: review.reviewId,
+      documentId,
+      generation: review.generation,
+      comment,
+    };
+  }
+
+  /**
    * Clear all unresolved suggestions: the working text becomes the reference.
    * Preserves accepted changes; discards only currently unresolved material.
    * Applying the returned working text to the document is the caller's
@@ -939,7 +1094,9 @@ export class ReviewDiffStore extends EventEmitter {
       };
     }
     review.generation += 1;
-    // Every disagreement is resolved at once: nothing remains to attribute.
+    // Every disagreement is resolved at once: nothing remains to attribute,
+    // and every hold dangles — commented holds surface as orphans.
+    this.reconcileHolds(review, []);
     for (const packet of review.packets) {
       this.packetRefSpans.set(packet.packetId, []);
     }
@@ -1053,10 +1210,10 @@ export class ReviewDiffStore extends EventEmitter {
     this.packetRefSpans.delete(packetId);
     review.generation += 1;
 
-    const unresolvedChunks = computeReviewChunks(
-      review.referenceText,
-      newWorkingText,
-    ).length;
+    const unresolvedChunks = this.reconcileAndCountPending(
+      review,
+      computeReviewChunks(review.referenceText, newWorkingText),
+    );
     this.emitEvent("proposal.retracted", {
       reviewId: review.reviewId,
       documentId: review.documentId,
@@ -1147,15 +1304,43 @@ export class ReviewDiffStore extends EventEmitter {
   }
 
   /**
-   * The number of unresolved chunks for a document's active review, counted
-   * by the one shared engine against the live document.
+   * The number of PENDING chunks for a document's active review, counted by
+   * the one shared engine against the live document. Held chunks are
+   * excluded: this is the save-gate count, and a held-only review saves.
    */
   countUnresolved(documentId: string): number {
     const review = this.reviews.get(documentId);
     if (review === undefined) {
       return 0;
     }
-    return this.partitionOf(review).length;
+    return this.pendingOf(review);
+  }
+
+  /**
+   * The number of held chunks, after reconciling against the live partition
+   * — a hold whose chunk vanished does not keep a review alive.
+   */
+  countHeld(documentId: string): number {
+    const review = this.reviews.get(documentId);
+    if (review === undefined) {
+      return 0;
+    }
+    this.partitionOf(review);
+    return review.holds.length;
+  }
+
+  /**
+   * Move the disk fence to freshly saved content. Used when a save retains
+   * the review because held chunks survive it: the just-written file IS the
+   * new fenced state, and leaving the old fence would refuse every later
+   * save as external drift.
+   */
+  refreshDiskFence(documentId: string, diskSha256: string): void {
+    const review = this.reviews.get(documentId);
+    if (review === undefined) {
+      throw new Error(`No active review for document ${documentId}`);
+    }
+    review.diskFenceSha256 = diskSha256;
   }
 
   /**
@@ -1167,6 +1352,7 @@ export class ReviewDiffStore extends EventEmitter {
         state: ReviewState;
         generation: number;
         unresolvedChunks: number;
+        heldChunks: number;
         packetCount: number;
       }
     | undefined {
@@ -1174,12 +1360,13 @@ export class ReviewDiffStore extends EventEmitter {
     if (review === undefined) {
       return undefined;
     }
-    const unresolvedChunks = this.partitionOf(review).length;
+    const unresolvedChunks = this.pendingOf(review);
     return {
       reviewId: review.reviewId,
       state: this.classifyState(review, unresolvedChunks),
       generation: review.generation,
       unresolvedChunks,
+      heldChunks: review.holds.length,
       packetCount: review.packets.length,
     };
   }
@@ -1193,16 +1380,18 @@ export class ReviewDiffStore extends EventEmitter {
     state: ReviewState;
     generation: number;
     unresolvedChunks: number;
+    heldChunks: number;
     packetCount: number;
   }> {
     return [...this.reviews.values()].map((r) => {
-      const unresolvedChunks = this.partitionOf(r).length;
+      const unresolvedChunks = this.pendingOf(r);
       return {
         reviewId: r.reviewId,
         documentId: r.documentId,
         state: this.classifyState(r, unresolvedChunks),
         generation: r.generation,
         unresolvedChunks,
+        heldChunks: r.holds.length,
         packetCount: r.packets.length,
       };
     });
@@ -1223,6 +1412,7 @@ export class ReviewDiffStore extends EventEmitter {
       const attributed = review.packets.filter((packet) =>
         chunkAttributesTo(chunk, this.spansOf(packet.packetId)),
       );
+      const hold = review.holds.find((h) => h.chunkId === chunk.chunkId);
       return {
         chunkId: chunk.chunkId,
         referenceRange: { fromLine: chunk.refFromLine, toLine: chunk.refToLine },
@@ -1233,6 +1423,8 @@ export class ReviewDiffStore extends EventEmitter {
         descriptions: attributed
           .map((packet) => packet.description)
           .filter((description): description is string => description !== undefined),
+        state: hold === undefined ? ("pending" as const) : ("held" as const),
+        holdComment: hold?.comment,
         patch: createPatch("document", chunk.referenceText, chunk.workingText, "", "", {
           context: 0,
         }),
@@ -1357,7 +1549,7 @@ export class ReviewDiffStore extends EventEmitter {
           mapped.reviewGeneration = review.generation;
         }
         if (!("unresolvedChunks" in mapped)) {
-          mapped.unresolvedChunks = this.partitionOf(review).length;
+          mapped.unresolvedChunks = this.pendingOf(review);
         }
       }
     }

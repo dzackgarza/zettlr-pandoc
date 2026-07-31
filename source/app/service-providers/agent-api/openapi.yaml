@@ -47,6 +47,7 @@ components:
         - state
         - generation
         - unresolvedChunks
+        - heldChunks
         - packetCount
       properties:
         reviewId:
@@ -57,8 +58,30 @@ components:
           type: integer
         unresolvedChunks:
           type: integer
+          description: >-
+            Pending chunks only. Held chunks are excluded — they do not block
+            saving.
+        heldChunks:
+          type: integer
         packetCount:
           type: integer
+    ReviewComment:
+      type: object
+      required:
+        - text
+        - createdAt
+      properties:
+        text:
+          type: string
+        createdAt:
+          type: string
+        orphanedFromChunkId:
+          type: string
+          description: >-
+            Present when this comment was salvaged from a hold whose chunk id
+            vanished from the partition (the held region was edited, decided,
+            cleared, or absorbed by a later claim). Hold text is never
+            silently lost.
     EditorViewSummary:
       type: object
       required:
@@ -339,6 +362,17 @@ components:
           type: integer
         unresolvedChunks:
           type: integer
+        chunkId:
+          type: string
+          description: 'review.held: the chunk that was held.'
+        comment:
+          type: string
+          description: 'review.held / review.commented: the comment text, when one exists.'
+        orphanedFromChunkId:
+          type: string
+          description: >-
+            review.commented: set when the comment was salvaged from a hold
+            whose chunk id vanished from the partition.
         id:
           type: string
           description: Server-generated event sequence identifier.
@@ -580,7 +614,9 @@ components:
         - state
         - generation
         - unresolvedChunks
+        - heldChunks
         - packetCount
+        - comments
         - documentRevision
       properties:
         reviewId:
@@ -591,8 +627,18 @@ components:
           type: integer
         unresolvedChunks:
           type: integer
+          description: Pending chunks only; held chunks are excluded.
+        heldChunks:
+          type: integer
         packetCount:
           type: integer
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewComment'
+          description: >-
+            Review-level comments in creation order — attached directly via
+            the comments route, or orphaned from holds whose chunks vanished.
         documentRevision:
           $ref: '#/components/schemas/DocumentRevision'
     ReviewDiffResponse:
@@ -696,6 +742,7 @@ components:
         - workingText
         - packetIds
         - descriptions
+        - state
         - patch
       properties:
         chunkId:
@@ -754,6 +801,18 @@ components:
           description: >-
             Those packets' descriptions, in the same order, packets without
             one omitted.
+        state:
+          type: string
+          enum:
+            - pending
+            - held
+          description: >-
+            The chunk's decision state. Accepted and rejected chunks stop
+            being disagreements and leave the partition, so only pending and
+            held chunks exist here.
+        holdComment:
+          type: string
+          description: The hold's comment, when this chunk is held with one.
         patch:
           type: string
           description: Focused zero-context unified diff of exactly this chunk.
@@ -784,6 +843,7 @@ components:
           enum:
             - accept
             - reject
+            - hold
         reviewGeneration:
           type: integer
         unresolvedChunks:
@@ -792,6 +852,40 @@ components:
           $ref: '#/components/schemas/ReviewState'
         documentRevision:
           $ref: '#/components/schemas/DocumentRevision'
+    HoldChunkRequest:
+      type: object
+      properties:
+        comment:
+          type: string
+          minLength: 1
+          description: >-
+            Optional note attached to the chunk without adjudicating it. A
+            hold without text is legal; re-holding a held chunk replaces its
+            comment.
+    AddReviewCommentRequest:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          minLength: 1
+    ReviewCommentResponse:
+      type: object
+      required:
+        - reviewId
+        - documentId
+        - reviewGeneration
+        - comment
+      properties:
+        reviewId:
+          type: string
+        documentId:
+          type: string
+        reviewGeneration:
+          type: integer
+        comment:
+          $ref: '#/components/schemas/ReviewComment'
     ProposalPacket:
       type: object
       required:
@@ -1351,6 +1445,91 @@ paths:
           description: >-
             Review not found, or no unresolved chunk carries this id at the
             current state — the region changed since the chunk list was read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/reviews/{reviewId}/chunks/{chunkId}/hold:
+    post:
+      operationId: holdReviewChunk
+      summary: Hold one chunk without adjudicating it
+      description: >-
+        Attaches an optional comment to the chunk and takes it out of the
+        pending count: held chunks do not block saving, survive the save (the
+        reference retains its disagreement over the span), and stay rendered
+        in the editor. Chunk ids are content-addressed, so editing or
+        deciding a held chunk retires its id — the hold is then released and
+        a comment it carried surfaces as an orphaned review-level comment.
+        Re-holding a held chunk replaces its comment. The same decision path
+        the editor's Hold button uses.
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: chunkId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HoldChunkRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChunkDecisionResponse'
+        '404':
+          description: >-
+            Review not found, or no unresolved chunk carries this id at the
+            current state — the region changed since the chunk list was read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/reviews/{reviewId}/comments:
+    post:
+      operationId: addReviewComment
+      summary: Attach a review-level comment
+      description: >-
+        Communication without adjudication: the comment lands in the review's
+        comment list and advances the generation, so a long-poll on the
+        existing generation cursor wakes — that cursor IS the "what changed
+        since my last turn" query.
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddReviewCommentRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewCommentResponse'
+        '404':
+          description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '400':
+          description: Missing or empty comment text
           content:
             application/json:
               schema:

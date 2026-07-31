@@ -28,10 +28,13 @@ import {
   type DocumentSummary,
   type EditorContext,
   type EditorViewSummary,
+  type AddReviewCommentRequest,
   type AgentApiResponseBody,
   type AgentError,
   type AgentErrorCode,
   type AgentErrorResponse,
+  type ChunkDecision,
+  type HoldChunkRequest,
   type ProposalClaim,
   type ReadDocumentResponse,
   type SubmitProposalRequest,
@@ -129,6 +132,44 @@ function decodeJsonObject(body: string): Decoded<Record<string, unknown>> {
     return { ok: false, message: "Invalid JSON body" };
   }
   return { ok: true, value: parsed as Record<string, unknown> };
+}
+
+/**
+ * The hold body is optional in its entirety — a hold without text is legal,
+ * and a schema-driven client may POST no body at all. A present body must
+ * still parse: swallowing a malformed one would silently drop the comment
+ * the caller thought it attached.
+ */
+function decodeHoldChunkRequest(body: string): Decoded<HoldChunkRequest> {
+  if (body.trim().length === 0) {
+    return { ok: true, value: {} };
+  }
+  const raw = decodeJsonObject(body);
+  if (!raw.ok) {
+    return raw;
+  }
+  const { comment } = raw.value;
+  if (comment === undefined) {
+    return { ok: true, value: {} };
+  }
+  if (typeof comment !== "string" || comment.length === 0) {
+    return { ok: false, message: "comment must be a non-empty string when present" };
+  }
+  return { ok: true, value: { comment } };
+}
+
+function decodeAddReviewCommentRequest(
+  body: string,
+): Decoded<AddReviewCommentRequest> {
+  const raw = decodeJsonObject(body);
+  if (!raw.ok) {
+    return raw;
+  }
+  const { text } = raw.value;
+  if (typeof text !== "string" || text.length === 0) {
+    return { ok: false, message: "text is required and must be a non-empty string" };
+  }
+  return { ok: true, value: { text } };
 }
 
 function decodeOpenDocumentRequest(body: string): Decoded<OpenDocumentRequest> {
@@ -771,14 +812,18 @@ export default class AgentHTTPProvider extends ProviderContract {
       if (subPath === "/chunks" && method === "GET") {
         return this.handleGetReviewChunks(res, reviewId);
       }
-      const chunkDecision = subPath?.match(/^\/chunks\/([^/]+)\/(accept|reject)$/);
+      const chunkDecision = subPath?.match(/^\/chunks\/([^/]+)\/(accept|reject|hold)$/);
       if (chunkDecision !== null && chunkDecision !== undefined && method === "POST") {
         return this.handleDecideChunk(
+          req,
           res,
           reviewId,
           decodeURIComponent(chunkDecision[1]),
-          chunkDecision[2] as "accept" | "reject",
+          chunkDecision[2] as ChunkDecision,
         );
+      }
+      if (subPath === "/comments" && method === "POST") {
+        return this.handleAddReviewComment(req, res, reviewId);
       }
       if (subPath === "/packets" && method === "GET") {
         return this.handleGetReviewPackets(res, reviewId);
@@ -1409,8 +1454,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       filePath !== undefined
         ? this._documents.loadedDocuments.find((d) => d.filePath === filePath)
         : undefined;
+    // getReviewStatus just reconciled the holds, so the comments read here
+    // already include any orphans that reconciliation surfaced.
+    const review = this._documents.reviewStore.getReview(documentId)!;
     this.sendJson(res, 200, {
       ...status,
+      comments: review.comments,
       documentRevision: doc
         ? {
             version: doc.currentVersion,
@@ -1441,21 +1490,32 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   /**
-   * POST /v1/reviews/{reviewId}/chunks/{chunkId}/accept | /reject
+   * POST /v1/reviews/{reviewId}/chunks/{chunkId}/accept | /reject | /hold
    *
    * The same decision path the editor's buttons use — DocumentManager's
    * decideChunk — so an agent and a human clicking are indistinguishable to
    * the review state machine. The chunkId is content-addressed: if the region
    * changed since the caller listed chunks, the decision fails with
-   * CHUNK_NOT_FOUND instead of landing somewhere unintended.
+   * CHUNK_NOT_FOUND instead of landing somewhere unintended. Hold alone
+   * carries a body — the optional comment attached without adjudicating.
    */
-  private handleDecideChunk(
+  private async handleDecideChunk(
+    req: http.IncomingMessage,
     res: http.ServerResponse,
     reviewId: string,
     chunkId: string,
-    decision: "accept" | "reject",
-  ): void {
-    const result = this._documents.decideChunk(reviewId, chunkId, decision);
+    decision: ChunkDecision,
+  ): Promise<void> {
+    let comment: string | undefined;
+    if (decision === "hold") {
+      const decoded = decodeHoldChunkRequest(await this.readBody(req));
+      if (!decoded.ok) {
+        this.sendError(res, 400, "INVALID_PARAMS", decoded.message);
+        return;
+      }
+      comment = decoded.value.comment;
+    }
+    const result = this._documents.decideChunk(reviewId, chunkId, decision, comment);
     if (!result.ok) {
       const status =
         result.code === "REVIEW_NOT_FOUND" || result.code === "CHUNK_NOT_FOUND"
@@ -1467,6 +1527,42 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     this.sendJson(res, 200, result);
+  }
+
+  /**
+   * POST /v1/reviews/{reviewId}/comments — attach a review-level comment.
+   * No document text moves, so this goes straight to the store; the
+   * generation advance is what wakes the agent's long-poll.
+   */
+  private async handleAddReviewComment(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
+    const decoded = decodeAddReviewCommentRequest(await this.readBody(req));
+    if (!decoded.ok) {
+      this.sendError(res, 400, "INVALID_PARAMS", decoded.message);
+      return;
+    }
+    const documentId = this.findDocumentIdByReviewId(reviewId);
+    if (documentId === undefined) {
+      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      return;
+    }
+    const result = this._documents.reviewStore.addReviewComment(
+      documentId,
+      decoded.value.text,
+    );
+    if (!result.ok) {
+      this.sendError(res, 404, result.code, result.message);
+      return;
+    }
+    this.sendJson(res, 200, {
+      reviewId: result.reviewId,
+      documentId: result.documentId,
+      reviewGeneration: result.generation,
+      comment: result.comment,
+    });
   }
 
   private handleGetReviewChunks(res: http.ServerResponse, reviewId: string): void {

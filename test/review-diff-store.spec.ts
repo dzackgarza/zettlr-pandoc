@@ -25,6 +25,7 @@
 
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
+import type { AgentEvent } from "@dts/common/agent-api";
 import {
   ReviewDiffStore,
   sha256Text,
@@ -929,6 +930,203 @@ describe("ReviewDiffStore", function () {
       const listed = store.listReviews();
       assert.equal(listed.length, 1);
       assert.equal(listed[0].state, "invalidated");
+    });
+  });
+
+  describe("holds and review comments", function () {
+    // Two separated edits → two chunks: ALPHA and BETA.
+    const baseline = "alpha\nx\ny\nz\nbeta\n";
+    const proposed = "ALPHA\nx\ny\nz\nBETA\n";
+
+    function openTwoChunkReview(): string {
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-hold",
+      });
+      return store.getReview(DOC_ID)!.reviewId;
+    }
+
+    it("holds a chunk out of the save-gate count without touching any text", function () {
+      const reviewId = openTwoChunkReview();
+      const held: AgentEvent[] = [];
+      store.on("review.held", (event: AgentEvent) => held.push(event));
+      assert.equal(store.countUnresolved(DOC_ID), 2);
+
+      const chunks = store.getOutstandingChunks(DOC_ID)!;
+      const result = store.decideChunk(
+        DOC_ID,
+        reviewId,
+        chunks[0].chunkId,
+        "hold",
+        "needs a second look",
+      );
+      assert.equal(result.ok, true, JSON.stringify(result));
+      if (!result.ok) {
+        return;
+      }
+      assert.equal(result.decision, "hold");
+      assert.equal(result.workingText, undefined, "holding must not move any text");
+      assert.equal(result.unresolvedChunks, 1);
+      assert.equal(result.generation, 2, "a hold is a turn: it advances the generation");
+      assert.equal(documents.get(DOC_ID), proposed);
+      assert.equal(store.getReview(DOC_ID)!.referenceText, baseline);
+
+      // The chunk stays in the partition, marked held with its comment.
+      const after = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(after.length, 2, "a held chunk remains a rendered disagreement");
+      assert.equal(after[0].state, "held");
+      assert.equal(after[0].holdComment, "needs a second look");
+      assert.equal(after[1].state, "pending");
+      assert.equal(store.countUnresolved(DOC_ID), 1);
+      assert.equal(store.countHeld(DOC_ID), 1);
+
+      assert.equal(held.length, 1);
+      assert.equal(held[0].chunkId, chunks[0].chunkId);
+      assert.equal(held[0].comment, "needs a second look");
+      assert.equal(held[0].reviewGeneration, 2);
+      assert.equal(held[0].unresolvedChunks, 1);
+    });
+
+    it("holds without text, and re-holding replaces the comment", function () {
+      const reviewId = openTwoChunkReview();
+      const chunkId = store.getOutstandingChunks(DOC_ID)![0].chunkId;
+      const bare = store.decideChunk(DOC_ID, reviewId, chunkId, "hold");
+      assert.equal(bare.ok, true);
+      assert.equal(store.getOutstandingChunks(DOC_ID)![0].holdComment, undefined);
+
+      const reheld = store.decideChunk(DOC_ID, reviewId, chunkId, "hold", "on reflection");
+      assert.equal(reheld.ok, true);
+      assert.equal(store.countHeld(DOC_ID), 1, "re-holding must not duplicate the hold");
+      assert.equal(store.getOutstandingChunks(DOC_ID)![0].holdComment, "on reflection");
+    });
+
+    it("refuses to hold a stale chunk id", function () {
+      const reviewId = openTwoChunkReview();
+      const result = store.decideChunk(DOC_ID, reviewId, "chunk-bogus", "hold");
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.code, "CHUNK_NOT_FOUND");
+      }
+    });
+
+    it("reports resolved-awaiting-save for an accepted+rejected+held mix", function () {
+      // Three separated edits → three chunks; one of each decision.
+      const wide = "alpha\nx\ny\nz\nbeta\np\nq\nr\ngamma\n";
+      const wideProposed = "ALPHA\nx\ny\nz\nBETA\np\nq\nr\nGAMMA\n";
+      openReview(DOC_ID, wide, {
+        patch: makePatch(wide, wideProposed),
+        clientRequestId: "req-mix",
+      });
+      const reviewId = store.getReview(DOC_ID)!.reviewId;
+      const resolved: AgentEvent[] = [];
+      store.on("review.resolved", (event: AgentEvent) => resolved.push(event));
+
+      const chunks = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(chunks.length, 3);
+      const accepted = store.decideChunk(DOC_ID, reviewId, chunks[0].chunkId, "accept");
+      assert.equal(accepted.ok, true);
+      const rejected = store.decideChunk(DOC_ID, reviewId, chunks[1].chunkId, "reject");
+      assert.equal(rejected.ok, true);
+      if (rejected.ok && rejected.workingText !== undefined) {
+        documents.set(DOC_ID, rejected.workingText);
+      }
+      const heldResult = store.decideChunk(DOC_ID, reviewId, chunks[2].chunkId, "hold", "unsure");
+      assert.equal(heldResult.ok, true);
+      if (!heldResult.ok) {
+        return;
+      }
+
+      // The held disagreement remains, but nothing blocks the save gate.
+      assert.equal(store.countUnresolved(DOC_ID), 0);
+      assert.equal(heldResult.state, "resolved-awaiting-save");
+      const status = store.getReviewStatus(DOC_ID)!;
+      assert.equal(status.state, "resolved-awaiting-save");
+      assert.equal(status.heldChunks, 1);
+      assert.equal(resolved.length, 1, "pending reaching zero must announce review.resolved");
+      assert.equal(store.getOutstandingChunks(DOC_ID)!.length, 1);
+      assert.equal(store.getOutstandingChunks(DOC_ID)![0].state, "held");
+    });
+
+    it("orphans a commented hold as a review-level comment when its chunk is edited", function () {
+      const reviewId = openTwoChunkReview();
+      const chunkId = store.getOutstandingChunks(DOC_ID)![0].chunkId;
+      const heldOk = store.decideChunk(DOC_ID, reviewId, chunkId, "hold", "keep the emphasis");
+      assert.equal(heldOk.ok, true);
+      const commented: AgentEvent[] = [];
+      store.on("review.commented", (event: AgentEvent) => commented.push(event));
+
+      // A user edit inside the held chunk: the content-addressed id changes
+      // and the hold dangles. The next observation reconciles it.
+      documents.set(DOC_ID, documents.get(DOC_ID)!.replace("ALPHA", "ALPHA tweaked"));
+      const after = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(after.length, 2);
+      assert.notEqual(after[0].chunkId, chunkId, "the edit must retire the held id");
+      assert.equal(after[0].state, "pending", "the reshaped chunk is no longer held");
+      assert.equal(store.countHeld(DOC_ID), 0);
+      assert.equal(store.countUnresolved(DOC_ID), 2);
+
+      // The comment is not silently lost: it surfaces at review level naming
+      // the vanished chunk.
+      const review = store.getReview(DOC_ID)!;
+      assert.equal(review.comments.length, 1);
+      assert.equal(review.comments[0].text, "keep the emphasis");
+      assert.equal(review.comments[0].orphanedFromChunkId, chunkId);
+      assert.equal(commented.length, 1);
+      assert.equal(commented[0].comment, "keep the emphasis");
+      assert.equal(commented[0].orphanedFromChunkId, chunkId);
+    });
+
+    it("orphans a commented hold when the held chunk is decided", function () {
+      const reviewId = openTwoChunkReview();
+      const chunkId = store.getOutstandingChunks(DOC_ID)![0].chunkId;
+      store.decideChunk(DOC_ID, reviewId, chunkId, "hold", "second thoughts");
+      const accepted = store.decideChunk(DOC_ID, reviewId, chunkId, "accept");
+      assert.equal(accepted.ok, true);
+
+      assert.equal(store.countHeld(DOC_ID), 0);
+      const review = store.getReview(DOC_ID)!;
+      assert.equal(review.comments.length, 1);
+      assert.equal(review.comments[0].orphanedFromChunkId, chunkId);
+    });
+
+    it("lets a textless dangling hold vanish without inventing a comment", function () {
+      const reviewId = openTwoChunkReview();
+      const chunkId = store.getOutstandingChunks(DOC_ID)![0].chunkId;
+      store.decideChunk(DOC_ID, reviewId, chunkId, "hold");
+      const commented: AgentEvent[] = [];
+      store.on("review.commented", (event: AgentEvent) => commented.push(event));
+
+      documents.set(DOC_ID, documents.get(DOC_ID)!.replace("ALPHA", "ALPHA tweaked"));
+      assert.equal(store.countHeld(DOC_ID), 0);
+      assert.equal(store.getReview(DOC_ID)!.comments.length, 0);
+      assert.equal(commented.length, 0);
+    });
+
+    it("appends a review-level comment and advances the generation", function () {
+      openTwoChunkReview();
+      const commented: AgentEvent[] = [];
+      store.on("review.commented", (event: AgentEvent) => commented.push(event));
+      const before = store.getReview(DOC_ID)!.generation;
+
+      const result = store.addReviewComment(DOC_ID, "overall: tighten section 2");
+      assert.equal(result.ok, true, JSON.stringify(result));
+      if (!result.ok) {
+        return;
+      }
+      assert.equal(result.generation, before + 1, "a comment is a turn the cursor must see");
+      assert.equal(result.comment.text, "overall: tighten section 2");
+      assert.equal(result.comment.orphanedFromChunkId, undefined);
+      assert.equal(store.getReview(DOC_ID)!.comments.length, 1);
+      assert.equal(commented.length, 1);
+      assert.equal(commented[0].reviewGeneration, before + 1);
+    });
+
+    it("refuses a review-level comment without an active review", function () {
+      const result = store.addReviewComment(DOC_ID, "nobody home");
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.code, "REVIEW_NOT_FOUND");
+      }
     });
   });
 

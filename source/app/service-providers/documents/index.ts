@@ -319,7 +319,9 @@ export type DocumentManagerIPCAPI = IPCAPI<{
   "decide-review-chunk": {
     reviewId: string;
     chunkId: string;
-    decision: "accept" | "reject";
+    decision: "accept" | "reject" | "hold";
+    /** Hold only: the optional note attached without adjudicating. */
+    comment?: string;
   };
 
   "move-file": {
@@ -568,8 +570,8 @@ export default class DocumentManager extends ProviderContract {
           return this._reviewSessionFor(payload.path, review);
         }
         case "decide-review-chunk": {
-          const { reviewId, chunkId, decision } = payload;
-          return this.decideChunk(reviewId, chunkId, decision);
+          const { reviewId, chunkId, decision, comment } = payload;
+          return this.decideChunk(reviewId, chunkId, decision, comment);
         }
         case "move-file": {
           const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;
@@ -2047,20 +2049,22 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Apply one accept/reject decision to a review chunk. This is the single
-   * decision path: the renderer's buttons and the HTTP API both land here,
-   * and the pane never mutates review state — so there is no pane report to
-   * reconcile, no generation/version/text triple-check, and no way for the
-   * provider and the editor to disagree about what was decided.
+   * Apply one accept/reject/hold decision to a review chunk. This is the
+   * single decision path: the renderer's buttons and the HTTP API both land
+   * here, and the pane never mutates review state — so there is no pane
+   * report to reconcile, no generation/version/text triple-check, and no way
+   * for the provider and the editor to disagree about what was decided.
    *
    * Accept moves the merge reference. Reject edits the live document through
-   * the provider's own authority. Either way the new state is broadcast, and
-   * every pane redraws its widgets from that broadcast.
+   * the provider's own authority. Hold attaches an optional comment without
+   * adjudicating and touches neither text. Either way the new state is
+   * broadcast, and every pane redraws its widgets from that broadcast.
    */
   public decideChunk(
     reviewId: string,
     chunkId: string,
-    decision: "accept" | "reject",
+    decision: "accept" | "reject" | "hold",
+    comment?: string,
   ): ChunkDecisionResponse | { ok: false; code: AgentErrorCode; message: string } {
     const review = this._reviewStore.findReviewByReviewId(reviewId);
     if (review === undefined) {
@@ -2088,6 +2092,7 @@ current contents from the editor somewhere else, and restart the application.`,
       reviewId,
       chunkId,
       decision,
+      comment,
     );
     if (!result.ok) {
       if (result.code === "CHUNK_NOT_FOUND") {
@@ -2153,7 +2158,7 @@ current contents from the editor somewhere else, and restart the application.`,
       return {
         reason: "unresolved-chunks",
         message: trans(
-          "Resolve every accept/reject chunk before saving this review.",
+          "Accept, reject, or hold every chunk before saving this review.",
         ),
       };
     }
@@ -2267,11 +2272,20 @@ current contents from the editor somewhere else, and restart the application.`,
       const _id = this.getDocumentId(filePath);
       if (_id !== undefined) {
         const _review = this._reviewStore.getReview(_id);
-        if (_review !== undefined) {
-          this._broadcastReviewCleared(filePath, _review.reviewId);
+        if (_review !== undefined && this._reviewStore.countHeld(_id) > 0) {
+          // Held chunks survive a save: the review stays open and the
+          // reference retains its disagreement over the held spans, so the
+          // panes keep rendering them. The disk fence moves to the content
+          // just written — the file on disk IS this save — or every later
+          // save would be refused as external drift.
+          this._reviewStore.refreshDiskFence(_id, sha256Text(content));
+        } else {
+          if (_review !== undefined) {
+            this._broadcastReviewCleared(filePath, _review.reviewId);
+          }
+          this._reviewStore.completeReview(_id);
+          this._clearProposalIdempotency(_id);
         }
-        this._reviewStore.completeReview(_id);
-        this._clearProposalIdempotency(_id);
       }
     }
     this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {

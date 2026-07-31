@@ -1061,6 +1061,169 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(JSON.parse(stale.body).error.code, "CHUNK_NOT_FOUND");
   });
 
+  it("POST /v1/reviews/{id}/chunks/{chunkId}/hold annotates without adjudicating", async function () {
+    const filePath = path.join(scratch, "rhold.md");
+    const original = "alpha\nx\ny\nz\nbeta\n";
+    const proposed = "ALPHA\nx\ny\nz\nBETA\n";
+    const docId = await openFile(filePath, original);
+
+    const snap = provider.createSnapshot(docId)!;
+    await provider.submitProposal(snap.token, makePatch(original, proposed), "http-rhold-req");
+    const review = provider.reviewStore.getReview(docId)!;
+    const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+    assert.equal(chunks.length, 2);
+
+    // Hold the first chunk with a comment.
+    const held = await httpRequest(
+      "POST",
+      `/v1/reviews/${review.reviewId}/chunks/${chunks[0].chunkId}/hold`,
+      {
+        body: JSON.stringify({ comment: "verify the constant first" }),
+        headers: { "content-type": "application/json" },
+      },
+    );
+    assert.equal(held.status, 200, held.body);
+    const heldBody = JSON.parse(held.body) as { decision: string; unresolvedChunks: number };
+    assertMatchesSchema(heldBody, "ChunkDecisionResponse");
+    assert.equal(heldBody.decision, "hold");
+    assert.equal(heldBody.unresolvedChunks, 1);
+
+    // No text moved: the document still shows the full proposal.
+    const doc = provider.loadedDocuments.find((d) => d.filePath === filePath)!;
+    assert.equal(doc.document.toString(), proposed);
+
+    // The chunk list carries the state and the comment.
+    const listed = await httpRequest("GET", `/v1/reviews/${review.reviewId}/chunks`);
+    const listedBody = JSON.parse(listed.body) as {
+      chunks: Array<{ state: string; holdComment?: string }>;
+    };
+    assertMatchesSchema(listedBody, "ReviewChunksResponse");
+    assert.equal(listedBody.chunks[0].state, "held");
+    assert.equal(listedBody.chunks[0].holdComment, "verify the constant first");
+    assert.equal(listedBody.chunks[1].state, "pending");
+
+    // A hold without a body is legal, and a held-only review is saveable.
+    const bare = await httpRequest(
+      "POST",
+      `/v1/reviews/${review.reviewId}/chunks/${chunks[1].chunkId}/hold`,
+    );
+    assert.equal(bare.status, 200, bare.body);
+    const bareBody = JSON.parse(bare.body) as { unresolvedChunks: number; state: string };
+    assert.equal(bareBody.unresolvedChunks, 0);
+    assert.equal(bareBody.state, "resolved-awaiting-save");
+
+    const detail = await httpRequest("GET", `/v1/reviews/${review.reviewId}`);
+    const detailBody = JSON.parse(detail.body) as {
+      heldChunks: number;
+      unresolvedChunks: number;
+      comments: unknown[];
+    };
+    assertMatchesSchema(detailBody, "ReviewDetailResponse");
+    assert.equal(detailBody.unresolvedChunks, 0);
+    assert.equal(detailBody.heldChunks, 2);
+    assert.deepEqual(detailBody.comments, []);
+  });
+
+  it("POST /v1/reviews/{id}/comments attaches a comment the generation cursor sees", async function () {
+    const filePath = path.join(scratch, "rcomment.md");
+    const docId = await openFile(filePath, "alpha\n");
+    const snap = provider.createSnapshot(docId)!;
+    await provider.submitProposal(snap.token, makePatch("alpha\n", "ALPHA\n"), "http-rcomment");
+    const review = provider.reviewStore.getReview(docId)!;
+    assert.equal(review.generation, 1);
+
+    const posted = await httpRequest("POST", `/v1/reviews/${review.reviewId}/comments`, {
+      body: JSON.stringify({ text: "keep the original spelling of my name" }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(posted.status, 200, posted.body);
+    const postedBody = JSON.parse(posted.body) as {
+      reviewGeneration: number;
+      comment: { text: string };
+    };
+    assertMatchesSchema(postedBody, "ReviewCommentResponse");
+    assert.equal(postedBody.comment.text, "keep the original spelling of my name");
+    assert.equal(postedBody.reviewGeneration, 2);
+
+    // The existing generation cursor IS the "what changed since my last
+    // turn" query: a long-poll parked after generation 1 returns at once.
+    const events = await httpRequest(
+      "GET",
+      `/v1/reviews/${review.reviewId}/events?afterGeneration=1&waitSeconds=0`,
+    );
+    const eventsBody = JSON.parse(events.body) as {
+      status?: { generation: number };
+      timedOut?: boolean;
+    };
+    assert.notEqual(eventsBody.timedOut, true, "the comment must wake the cursor");
+    assert.equal(eventsBody.status?.generation, 2);
+
+    // And the detail read carries it.
+    const detail = await httpRequest("GET", `/v1/reviews/${review.reviewId}`);
+    const detailBody = JSON.parse(detail.body) as { comments: Array<{ text: string }> };
+    assert.equal(detailBody.comments.length, 1);
+    assert.equal(detailBody.comments[0].text, "keep the original spelling of my name");
+
+    // An empty comment is refused loudly, not stored as noise.
+    const empty = await httpRequest("POST", `/v1/reviews/${review.reviewId}/comments`, {
+      body: JSON.stringify({ text: "" }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(empty.status, 400);
+    assert.equal(JSON.parse(empty.body).error.code, "INVALID_PARAMS");
+  });
+
+  it("saves a review with accepted+rejected+held chunks and the held chunk survives", async function () {
+    const filePath = path.join(scratch, "rhold-save.md");
+    const original = "alpha\nx\ny\nz\nbeta\np\nq\nr\ngamma\n";
+    const proposed = "ALPHA\nx\ny\nz\nBETA\np\nq\nr\nGAMMA\n";
+    const docId = await openFile(filePath, original);
+
+    const snap = provider.createSnapshot(docId)!;
+    await provider.submitProposal(snap.token, makePatch(original, proposed), "http-hold-save");
+    const review = provider.reviewStore.getReview(docId)!;
+    const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+    assert.equal(chunks.length, 3);
+
+    assert.equal(provider.decideChunk(review.reviewId, chunks[0].chunkId, "accept").ok, true);
+    assert.equal(provider.decideChunk(review.reviewId, chunks[1].chunkId, "reject").ok, true);
+    assert.equal(
+      provider.decideChunk(review.reviewId, chunks[2].chunkId, "hold", "gamma is undecided").ok,
+      true,
+    );
+
+    // Held chunks do not block the save gate.
+    const saved = await provider.saveFile(filePath);
+    assert.equal(saved.ok, true, JSON.stringify(saved));
+    const written = normalizedRead(filePath);
+    assert.equal(written, "ALPHA\nx\ny\nz\nbeta\np\nq\nr\nGAMMA\n");
+
+    // The review survives: the reference retains its disagreement over the
+    // held span, the chunk is still held with its comment, and nothing was
+    // invalidated — this is what keeps the annotation rendered in the panes.
+    const survivor = provider.reviewStore.getReview(docId);
+    assert.ok(survivor !== undefined, "a save with held chunks must retain the review");
+    assert.equal(survivor.reviewId, review.reviewId);
+    assert.equal(survivor.invalidated, false);
+    const remaining = provider.reviewStore.getOutstandingChunks(docId)!;
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0].state, "held");
+    assert.equal(remaining[0].holdComment, "gamma is undecided");
+    assert.equal(remaining[0].workingText, "GAMMA");
+
+    // The disk fence moved to the saved content: a second save is not
+    // refused as external drift, and the review still survives it.
+    const savedAgain = await provider.saveFile(filePath);
+    assert.equal(savedAgain.ok, true, JSON.stringify(savedAgain));
+    assert.ok(provider.reviewStore.getReview(docId) !== undefined);
+
+    // Deciding the held chunk afterwards completes the review on the next save.
+    assert.equal(provider.decideChunk(review.reviewId, remaining[0].chunkId, "accept").ok, true);
+    const finalSave = await provider.saveFile(filePath);
+    assert.equal(finalSave.ok, true);
+    assert.equal(provider.reviewStore.getReview(docId), undefined);
+  });
+
   it("POST /v1/proposals/{id}/retract retracts an untouched packet", async function () {
     const filePath = path.join(scratch, "retract.md");
     const docId = await openFile(filePath, "alpha\nbeta\n");
