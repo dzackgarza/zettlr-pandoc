@@ -49,11 +49,27 @@ import { extractReferences } from 'source/common/pandoc-util/extract-references'
 import { THEOREM_DIV_PREFIXES } from 'source/common/util/pandoc-quick-reference'
 import { type ReferenceCompletionEntry } from 'source/types/common/references'
 
+/**
+ * The slice of the jsdom global surface the CodeMirror polyfills touch. The
+ * member types are chosen so typeof globalThis is directly comparable to
+ * this interface: the single type assertion below is compiler-checked
+ * against the real global surface instead of laundered through unknown.
+ * ResizeObserver is unknown because the polyfill only checks its existence
+ * before installing a no-op class.
+ */
+interface CodeMirrorPolyfillTarget {
+  requestAnimationFrame?: (callback: (time: number) => void) => unknown
+  cancelAnimationFrame?: (id: never) => void
+  ResizeObserver?: unknown
+  Range: { prototype: { getClientRects?: () => unknown, getBoundingClientRect?: () => unknown } }
+  window?: CodeMirrorPolyfillTarget
+}
+
 function polyfillJsdomForCodeMirror (): void {
-  const w = globalThis as any
+  const w = globalThis as CodeMirrorPolyfillTarget
   if (typeof w.requestAnimationFrame !== 'function') {
     w.requestAnimationFrame = (callback: (time: number) => void) => setTimeout(() => callback(Date.now()), 0)
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id)
+    w.cancelAnimationFrame = (id) => clearTimeout(id)
   }
   if (typeof w.window === 'object' && typeof w.window.requestAnimationFrame !== 'function') {
     w.window.requestAnimationFrame = w.requestAnimationFrame
