@@ -160,11 +160,10 @@ for (const theme of ['light', 'dark'] as const) {
       // single click rather than a hunt for a target that moved.
       await dirtyTab.hover()
       await close.waitFor({ state: 'visible', timeout: 10_000 })
-      assert.equal(
-        await indicators.first().isVisible(),
-        false,
-        'the dot must yield to the close cross under the pointer'
-      )
+      // The cross appearing and the dot going are two separate style commits,
+      // so waiting on the cross says nothing about the dot yet: wait on the
+      // dot's own state or this races the swap and fails under load.
+      await indicators.first().waitFor({ state: 'hidden', timeout: 10_000 })
       await shoot('row-dirty-hover')
       await shootTab('dirty-hover')
 
