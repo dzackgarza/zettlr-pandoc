@@ -32,6 +32,14 @@ components:
           type: integer
         sha256:
           type: string
+    ReviewState:
+      type: string
+      enum:
+        - active
+        - resolved-awaiting-save
+        - completed
+        - cleared
+        - invalidated
     ReviewSummary:
       type: object
       required:
@@ -44,19 +52,32 @@ components:
         reviewId:
           type: string
         state:
-          type: string
-          enum:
-            - active
-            - resolved-awaiting-save
-            - completed
-            - cleared
-            - invalidated
+          $ref: '#/components/schemas/ReviewState'
         generation:
           type: integer
         unresolvedChunks:
           type: integer
         packetCount:
           type: integer
+    EditorViewSummary:
+      type: object
+      required:
+        - viewId
+        - windowId
+        - leafId
+        - focused
+        - active
+      properties:
+        viewId:
+          type: string
+        windowId:
+          type: string
+        leafId:
+          type: string
+        focused:
+          type: boolean
+        active:
+          type: boolean
     DocumentSummary:
       type: object
       required:
@@ -95,7 +116,7 @@ components:
         views:
           type: array
           items:
-            type: object
+            $ref: '#/components/schemas/EditorViewSummary'
         review:
           $ref: '#/components/schemas/ReviewSummary'
     EditorContext:
@@ -202,12 +223,13 @@ components:
         unresolvedChunks:
           type: integer
         state:
-          type: string
+          $ref: '#/components/schemas/ReviewState'
     AgentError:
       type: object
       required:
         - code
         - message
+      additionalProperties: false
       properties:
         code:
           type: string
@@ -235,6 +257,23 @@ components:
             - INTERNAL_ERROR
         message:
           type: string
+        documentId:
+          type: string
+        expected:
+          $ref: '#/components/schemas/DocumentRevision'
+        actual:
+          $ref: '#/components/schemas/DocumentRevision'
+        reviewId:
+          type: string
+        canClearUnresolved:
+          type: boolean
+    AgentErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          $ref: '#/components/schemas/AgentError'
     AgentEvent:
       type: object
       required:
@@ -262,25 +301,11 @@ components:
       type: object
       required:
         - reviewId
-        - status
       properties:
         reviewId:
           type: string
         status:
-          type: object
-          properties:
-            reviewId:
-              type: string
-            state:
-              type: string
-            generation:
-              type: integer
-            unresolvedChunks:
-              type: integer
-            packetCount:
-              type: integer
-            documentRevision:
-              $ref: '#/components/schemas/DocumentRevision'
+          $ref: '#/components/schemas/ReviewSummary'
         events:
           type: array
           items:
@@ -295,8 +320,6 @@ components:
         - windowId
         - leafId
         - documentId
-        - focused
-        - active
       properties:
         viewId:
           type: string
@@ -305,14 +328,6 @@ components:
         leafId:
           type: string
         documentId:
-          type: string
-        focused:
-          type: boolean
-        active:
-          type: boolean
-        documentPath:
-          type: string
-        focusedAt:
           type: string
     ViewSummary:
       type: object
@@ -421,7 +436,7 @@ components:
         views:
           type: array
           items:
-            $ref: '#/components/schemas/ViewSummary'
+            $ref: '#/components/schemas/EditorViewSummary'
         review:
           $ref: '#/components/schemas/ReviewSummary'
     UnloadedWorkspaceDocumentSummary:
@@ -453,7 +468,7 @@ components:
       oneOf:
         - $ref: '#/components/schemas/LoadedWorkspaceDocumentSummary'
         - $ref: '#/components/schemas/UnloadedWorkspaceDocumentSummary'
-    WorkspaceOpenDocumentResponse:
+    FocusDocumentResponse:
       type: object
       required:
         - focused
@@ -461,6 +476,7 @@ components:
       properties:
         focused:
           type: boolean
+          const: true
         documentId:
           type: string
     WorkspaceDocumentsResponse:
@@ -526,7 +542,7 @@ components:
         reviewId:
           type: string
         state:
-          type: string
+          $ref: '#/components/schemas/ReviewState'
         generation:
           type: integer
         unresolvedChunks:
@@ -597,7 +613,7 @@ components:
         documentId:
           type: string
         state:
-          type: string
+          $ref: '#/components/schemas/ReviewState'
         documentRevision:
           $ref: '#/components/schemas/DocumentRevision'
     RetractProposalResponse:
@@ -613,6 +629,7 @@ components:
       properties:
         retracted:
           type: boolean
+          const: true
         packetId:
           type: string
         reviewId:
@@ -691,6 +708,7 @@ components:
       properties:
         ok:
           type: boolean
+          const: true
         reviewId:
           type: string
         documentId:
@@ -707,13 +725,7 @@ components:
         unresolvedChunks:
           type: integer
         state:
-          type: string
-          enum:
-            - active
-            - resolved-awaiting-save
-            - completed
-            - cleared
-            - invalidated
+          $ref: '#/components/schemas/ReviewState'
         documentRevision:
           $ref: '#/components/schemas/DocumentRevision'
     ProposalPacket:
@@ -725,6 +737,7 @@ components:
         - appliedAt
         - patchFormat
         - patch
+        - applicationGeneration
       properties:
         packetId:
           type: string
@@ -740,6 +753,9 @@ components:
           type: string
         patch:
           type: string
+        applicationGeneration:
+          type: integer
+          description: The review generation this packet's application produced.
     PingResponse:
       type: object
       required:
@@ -791,6 +807,33 @@ components:
           type: string
         instanceId:
           type: string
+    DocumentListResponse:
+      type: object
+      required:
+        - documents
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocumentSummary'
+    ReviewListEntry:
+      allOf:
+        - $ref: '#/components/schemas/ReviewSummary'
+        - type: object
+          required:
+            - documentId
+          properties:
+            documentId:
+              type: string
+    ReviewListResponse:
+      type: object
+      required:
+        - reviews
+      properties:
+        reviews:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewListEntry'
 security:
   - bearerToken: []
 paths:
@@ -806,6 +849,22 @@ paths:
             application/yaml:
               schema:
                 type: string
+  /openapi.json:
+    get:
+      operationId: getOpenApiSpecJson
+      summary: Serve the OpenAPI specification as JSON
+      description: >-
+        The identical document, parsed from the YAML per request so the two
+        encodings cannot disagree. Offered because schema importers are not
+        uniformly willing to read YAML.
+      security: []
+      responses:
+        '200':
+          description: OpenAPI JSON document
+          content:
+            application/json:
+              schema:
+                type: object
   /health:
     get:
       operationId: health
@@ -860,12 +919,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  documents:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/DocumentSummary'
+                $ref: '#/components/schemas/DocumentListResponse'
       parameters:
         - name: state
           in: query
@@ -900,6 +954,10 @@ paths:
                 $ref: '#/components/schemas/DocumentSummary'
         '404':
           description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/documents/{documentId}:
     get:
       operationId: getDocument
@@ -919,6 +977,10 @@ paths:
                 $ref: '#/components/schemas/DocumentSummary'
         '404':
           description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/documents/{documentId}/focus:
     post:
       operationId: focusDocument
@@ -932,6 +994,16 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FocusDocumentResponse'
+        '404':
+          description: Document not found or outside configured workspace scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/documents/{documentId}/content:
     get:
       operationId: readDocumentContent
@@ -971,6 +1043,10 @@ paths:
                 $ref: '#/components/schemas/ReadDocumentResponse'
         '404':
           description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/documents/{documentId}/search:
     post:
       operationId: searchDocument
@@ -1005,11 +1081,19 @@ paths:
                 $ref: '#/components/schemas/SearchDocumentResponse'
         '400':
           description: Invalid, unparseable, or over-length search pattern
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
         '422':
           description: >-
             Pattern evaluation exceeded the server's time budget
             (SEARCH_TIMEOUT). The deadline is checked between per-line
             executions, so simplify the pattern rather than retrying.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/documents/{documentId}/proposals:
     post:
       operationId: submitProposal
@@ -1035,10 +1119,22 @@ paths:
                 $ref: '#/components/schemas/SubmitProposalResponse'
         '412':
           description: Stale revision (ETag mismatch)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
         '409':
           description: Review generation conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
         '400':
           description: Invalid or non-applicable patch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews:
     get:
       operationId: listReviews
@@ -1049,12 +1145,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  reviews:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ReviewSummary'
+                $ref: '#/components/schemas/ReviewListResponse'
   /v1/reviews/{reviewId}:
     get:
       operationId: getReview
@@ -1074,6 +1165,10 @@ paths:
                 $ref: '#/components/schemas/ReviewDetailResponse'
         '404':
           description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews/{reviewId}/diff:
     get:
       operationId: getReviewDiff
@@ -1093,6 +1188,10 @@ paths:
                 $ref: '#/components/schemas/ReviewDiffResponse'
         '404':
           description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews/{reviewId}/chunks:
     get:
       operationId: getReviewChunks
@@ -1112,6 +1211,10 @@ paths:
                 $ref: '#/components/schemas/ReviewChunksResponse'
         '404':
           description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews/{reviewId}/chunks/{chunkId}/accept:
     post:
       operationId: acceptReviewChunk
@@ -1142,6 +1245,10 @@ paths:
           description: >-
             Review not found, or no unresolved chunk carries this id at the
             current state — the region changed since the chunk list was read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews/{reviewId}/chunks/{chunkId}/reject:
     post:
       operationId: rejectReviewChunk
@@ -1172,6 +1279,10 @@ paths:
           description: >-
             Review not found, or no unresolved chunk carries this id at the
             current state — the region changed since the chunk list was read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews/{reviewId}/packets:
     get:
       operationId: getReviewPackets
@@ -1191,6 +1302,10 @@ paths:
                 $ref: '#/components/schemas/ReviewPacketsResponse'
         '404':
           description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews/{reviewId}/clear:
     post:
       operationId: clearReview
@@ -1210,6 +1325,10 @@ paths:
                 $ref: '#/components/schemas/ClearReviewResponse'
         '404':
           description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/proposals/{packetId}/retract:
     post:
       operationId: retractProposal
@@ -1228,7 +1347,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/RetractProposalResponse'
         '409':
-          description: Packet not retractable
+          description: >-
+            Packet not retractable. The error carries the owning reviewId and
+            canClearUnresolved: true — clearing is the remaining way to drop
+            the unresolved suggestions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/events:
     get:
       operationId: subscribeEvents
@@ -1294,6 +1420,10 @@ paths:
                 $ref: '#/components/schemas/ReviewEventsResponse'
         '404':
           description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/views:
     get:
       operationId: listViews
@@ -1341,6 +1471,10 @@ paths:
                 $ref: '#/components/schemas/WorkspaceDocumentsResponse'
         '404':
           description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/workspaces/{workspaceId}/documents/{documentId}/open:
     post:
       operationId: openWorkspaceDocument
@@ -1362,8 +1496,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkspaceOpenDocumentResponse'
+                $ref: '#/components/schemas/FocusDocumentResponse'
         '401':
-          description: Unauthorized workspace access
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
         '404':
           description: Workspace not found or document unavailable in workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
