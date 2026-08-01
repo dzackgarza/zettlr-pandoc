@@ -144,17 +144,22 @@ export function computeReviewChunks(
     .filter(
       ({ range, refSlice, workSlice }) =>
         refSlice !== workSlice || isBlankOnlyRange(range, refLines, workLines),
-    );
+  );
   const hashCounts = new Map<string, number>();
   for (const identity of identities) {
-    hashCounts.set(identity.hash, (hashCounts.get(identity.hash) ?? 0) + 1);
+    const previousHashCount = hashCounts.get(identity.hash);
+    hashCounts.set(
+      identity.hash,
+      previousHashCount === undefined ? 1 : previousHashCount + 1,
+    );
   }
   const result: ReviewChunk[] = [];
   const anchorCounts = new Map<string, number>();
   for (const { range, refSlice, workSlice, hash, anchor } of identities) {
     let chunkId = `chunk-${hash}-${anchor}`;
     if (hashCounts.get(hash)! > 1) {
-      const sameAnchorCount = anchorCounts.get(anchor) ?? 0;
+      const previousAnchorCount = anchorCounts.get(anchor);
+      const sameAnchorCount = previousAnchorCount === undefined ? 0 : previousAnchorCount;
       if (sameAnchorCount > 0) {
         chunkId += `-${sameAnchorCount}`;
       }
