@@ -272,6 +272,32 @@ describe('review-diff closure contract composite lifecycle', function () {
     assert.ok(isRecord(resolvedSave) && resolvedSave.ok === true)
     assert.equal(await readFile(documentPath, 'utf8'), mixedExpected)
 
+    // The ordinary editor's existing clear operation is the mass-reject path:
+    // it must be reachable from the real status panel and restore the current
+    // review reference before the normal save completes the review.
+    const clearProposal = mixedExpected.replace('tail', 'tail clear candidate')
+    const clearDocumentId = documentIdOf(await restartedApi.get('/v1/documents'))
+    const clearReview = await restartedApi.post(`/v1/documents/${clearDocumentId}/proposals`, {
+      snapshot: stringField(
+        await restartedApi.get(`/v1/documents/${clearDocumentId}/content?side=working`),
+        'snapshot'
+      ),
+      patchFormat: 'unified-diff',
+      patch: patch(documentPath, mixedExpected, clearProposal),
+      description: 'clear remaining review work',
+      clientRequestId: 'composite-clear'
+    })
+    assert.ok(isRecord(clearReview) && typeof clearReview.reviewId === 'string')
+    await waitForReview(restartedPage)
+    await restartedPage.locator('button.cm-reviewClear').click()
+    await restartedPage.locator('.cm-reviewStatusPanel').waitFor({ state: 'detached', timeout: 30_000 })
+    assert.deepEqual(
+      await invokeSave(restartedPage, documentPath),
+      { ok: true },
+      'the clear result must be saveable through the ordinary editor'
+    )
+    assert.equal(await readFile(documentPath, 'utf8'), mixedExpected)
+
     // External disk drift is never overwritten by a later review save.
     const finalText = await readFile(documentPath, 'utf8')
     const finalId = documentIdOf(await restartedApi.get('/v1/documents'))

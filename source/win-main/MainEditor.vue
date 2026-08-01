@@ -754,6 +754,19 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
       .catch(err => console.error('Could not accept all review chunks', err))
   })
 
+  editor.on('review-clear', (payload: { reviewId: string }) => {
+    ipcRenderer.invoke('documents-provider', {
+      command: 'clear-review',
+      payload
+    })
+      .then(result => {
+        if (!result.ok) {
+          showToast(trans(result.message), 'error')
+        }
+      })
+      .catch(err => console.error('Could not reject remaining review chunks', err))
+  })
+
   editor.on('review-comment', (payload: { reviewId: string, text: string }) => {
     ipcRenderer.invoke('documents-provider', {
       command: 'add-review-comment',

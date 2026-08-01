@@ -57,6 +57,7 @@ async function mount (): Promise<void> {
           holds: [],
           onDecide: () => { /* capture harness: decisions are not exercised */ },
           onAcceptAll: () => { /* capture harness: decisions are not exercised */ },
+          onClear: () => { /* capture harness: decisions are not exercised */ },
           onComment: () => { /* capture harness: comments are not exercised */ }
         })
       ]

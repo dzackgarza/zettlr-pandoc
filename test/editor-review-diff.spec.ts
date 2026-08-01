@@ -139,6 +139,15 @@ describe('Editor review-chunk controls', function () {
           holds = []
           view.dispatch({ effects: compartment.reconfigure(makeExtension()) })
         },
+        onClear: () => {
+          // The provider's clear operation rejects every unresolved chunk by
+          // restoring the current merge reference, then broadcasts the empty
+          // partition.
+          holds = []
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: reference }
+          })
+        },
         onComment: (text) => {
           reviewComments.push({ text, createdAt: '' })
           view.dispatch({ effects: compartment.reconfigure(makeExtension()) })
@@ -474,6 +483,21 @@ describe('Editor review-chunk controls', function () {
     assert.equal(chunkCount(view), 0, 'accept-all must resolve every remaining chunk')
     assert.equal(label.textContent, '0 outstanding')
     assert.equal(acceptAll.disabled, true, 'a finished review has nothing left to mass-accept')
+  })
+
+  it('rejects every remaining chunk through the existing clear operation', function () {
+    const baseline = 'first baseline\n\nsecond baseline\n'
+    const proposed = baseline
+      .replace('first baseline', 'first proposed')
+      .replace('second baseline', 'second proposed')
+    const view = createReviewView(baseline, proposed)
+    const clear = view.dom.querySelector<HTMLButtonElement>('button.cm-reviewClear')
+    assert.ok(clear !== null, 'the status panel must expose the existing clear operation')
+    assert.equal(clear.disabled, false)
+    clear.click()
+    assert.equal(chunkCount(view), 0, 'clear must reject every unresolved chunk')
+    assert.equal(view.state.doc.toString(), baseline)
+    assert.equal(clear.disabled, true)
   })
 
   it('submits and renders a review-level comment from the status panel', function () {

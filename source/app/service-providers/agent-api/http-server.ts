@@ -2017,7 +2017,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (!result.ok) {
       this.sendError(
         res,
-        result.code === "DOCUMENT_CLOSED" ? 409 : 404,
+        result.code === "DOCUMENT_CLOSED" || result.code === "REVIEW_INVALIDATED" ? 409 : 404,
         result.code,
         result.message,
       );

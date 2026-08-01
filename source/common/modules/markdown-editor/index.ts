@@ -1000,6 +1000,9 @@ export default class MarkdownEditor extends EventEmitter {
       onAcceptAll: () => {
         this.emit("review-accept-all", { reviewId: session.id });
       },
+      onClear: () => {
+        this.emit("review-clear", { reviewId: session.id });
+      },
       onComment: (text) => {
         this.emit("review-comment", { reviewId: session.id, text });
       },

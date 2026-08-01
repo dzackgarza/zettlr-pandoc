@@ -1333,6 +1333,46 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(readFileSync(filePath, "utf8"), "external\n", "external bytes must remain untouched");
   });
 
+  it("accepts a proposal for the current buffer when the editor has unsaved changes", async function () {
+    const filePath = path.join(scratch, "ingress-unsaved-buffer.md");
+    const onDisk = "alpha\n";
+    const live = "alpha edited\n";
+    const proposed = "ALPHA edited\n";
+    const docId = await openFile(filePath, onDisk);
+    const loaded = provider.loadedDocuments.find((document) => document.filePath === filePath)!;
+    const pushUpdates = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(provider),
+      "pushUpdates",
+    )?.value as
+      | ((filePath: string, version: number, updates: SerializedUpdate[]) => Promise<boolean>)
+      | undefined;
+    assert.equal(typeof pushUpdates, "function", "the authority update seam must exist");
+    if (pushUpdates === undefined) {
+      return;
+    }
+    const update: SerializedUpdate = {
+      clientID: "ingress-unsaved-buffer-test",
+      changes: ChangeSet.of([{ from: 0, to: onDisk.length, insert: live }], onDisk.length).toJSON(),
+    };
+    assert.equal(await pushUpdates.call(provider, filePath, loaded.currentVersion, [update]), true);
+
+    const snapshot = provider.createSnapshot(docId)!;
+    const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      body: JSON.stringify({
+        snapshot: snapshot.token,
+        patchFormat: "unified-diff",
+        patch: makePatch(live, proposed),
+        clientRequestId: "http-ingress-unsaved-buffer",
+      }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(readFileSync(filePath, "utf8"), onDisk, "proposal ingress must not save by itself");
+    assert.equal(
+      provider.loadedDocuments.find((document) => document.filePath === filePath)!.document.toString(),
+      proposed,
+    );
+  });
+
   it("GET /v1/reviews lists active reviews", async function () {
     const filePath = path.join(scratch, "reviews.md");
     const docId = await openFile(filePath, "alpha\n");

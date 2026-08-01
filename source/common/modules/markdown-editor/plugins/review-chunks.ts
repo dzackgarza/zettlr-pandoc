@@ -78,6 +78,8 @@ export interface ReviewChunksConfig {
    * broadcasts; this pane redraws from that broadcast, like any decision.
    */
   onAcceptAll: () => void
+  /** Called when the status panel rejects every remaining chunk. */
+  onClear: () => void
   /** Called when the status panel submits a review-level comment. */
   onComment: (text: string) => void
 }
@@ -198,6 +200,14 @@ function reviewStatusPanel (view: EditorView): Panel {
       requireReviewChunksConfig(view.state).onAcceptAll()
     }
   )
+  const clear = makeButton(
+    'cm-review-diff-control cm-reviewClear',
+    'Reject remaining',
+    'Reject every remaining change',
+    () => {
+      requireReviewChunksConfig(view.state).onClear()
+    }
+  )
   const commentList = document.createElement('div')
   commentList.className = 'cm-reviewComments'
   const commentInput = document.createElement('input')
@@ -219,7 +229,7 @@ function reviewStatusPanel (view: EditorView): Panel {
     commentSubmit.disabled = commentInput.value.trim() === ''
   })
   commentSubmit.disabled = true
-  dom.append(previous, next, label, acceptAll, commentList, commentInput, commentSubmit)
+  dom.append(previous, next, label, acceptAll, clear, commentList, commentInput, commentSubmit)
 
   const render = (state: EditorState): void => {
     const chunks = state.field(reviewChunksField).chunks
@@ -231,6 +241,7 @@ function reviewStatusPanel (view: EditorView): Panel {
     previous.disabled = done
     next.disabled = done
     acceptAll.disabled = done
+    clear.disabled = done
     commentList.replaceChildren(...requireReviewChunksConfig(state).comments.map(comment => {
       const entry = document.createElement('div')
       entry.className = 'cm-reviewComment'

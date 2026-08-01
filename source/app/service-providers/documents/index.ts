@@ -350,6 +350,7 @@ export type DocumentManagerIPCAPI = IPCAPI<{
     comment?: string;
   };
   "accept-all-review-chunks": { reviewId: string };
+  "clear-review": { reviewId: string };
   "add-review-comment": { reviewId: string; text: string };
 
   "move-file": {
@@ -656,6 +657,10 @@ export default class DocumentManager extends ProviderContract {
         case "accept-all-review-chunks": {
           const { reviewId } = payload;
           return await this.acceptAllChunksAsync(reviewId);
+        }
+        case "clear-review": {
+          const { reviewId } = payload;
+          return await this.clearReviewAsync(reviewId);
         }
         case "add-review-comment": {
           const { reviewId, text } = payload;
@@ -3285,17 +3290,21 @@ current contents from the editor somewhere else, and restart the application.`,
       };
     }
 
-    // Check the ingress disk fence before any review mutation. A live buffer
-    // that is still at the snapshot must not open a review against bytes an
-    // external writer has already changed. Existing reviews instead fence
-    // against the bytes present when they opened.
+    // Check the ingress disk fence before any review mutation. The fence is
+    // the document's last saved bytes, not the current live buffer: an
+    // ordinary editor may have unsaved changes when the agent submits a
+    // proposal, and those changes are precisely what the snapshot binds.
+    // Comparing against currentContent would incorrectly reject that normal
+    // case while still failing to distinguish an external write from the
+    // user's own unsaved edit. Existing reviews instead fence against the
+    // bytes present when they opened.
     const activeReview = this._reviewStore.getReview(documentId);
-    const normalizedCurrentSha256 = sha256Text(normalizeText(currentContent));
-    if (activeReview === undefined && diskSha256 !== normalizedCurrentSha256) {
+    const savedDiskSha256 = sha256Text(normalizeText(doc.lastSavedContent));
+    if (activeReview === undefined && diskSha256 !== savedDiskSha256) {
       return {
         ok: false,
         code: "REVISION_MISMATCH",
-        message: "The document changed on disk after the live snapshot was read.",
+        message: "The document changed on disk after the last saved editor baseline.",
       };
     }
     if (activeReview !== undefined && diskSha256 !== activeReview.diskFenceSha256) {
