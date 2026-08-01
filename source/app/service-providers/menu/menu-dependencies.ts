@@ -17,6 +17,10 @@ WindowProvider,
 >
 export type MenuDocuments = Pick<DocumentManager, 'newWindow' | 'openFile'>
 
+type MenuConfigWrite =
+  | [key: 'darkMode'|'fileMeta', value: boolean]
+  | [key: 'editor.fontSize', value: number]
+
 /**
  * The application menu reads four configuration fields and can toggle two of
  * them. Keeping that capability explicit lets callers provide the real config
@@ -28,8 +32,5 @@ export interface MenuConfig {
     (): { editor: { fontSize: number } }
     (key: 'system.zoomBehavior' | 'darkMode' | 'fileMeta' | 'debug'): unknown
   }
-  set: (
-    key: 'darkMode' | 'fileMeta' | 'editor.fontSize',
-    value: boolean | number
-  ) => void
+  set: (...args: MenuConfigWrite) => void
 }
