@@ -39,6 +39,7 @@
  * END HEADER
  */
 
+import assert from "assert";
 import { createHash, randomUUID } from "crypto";
 import EventEmitter from "events";
 import {
@@ -133,6 +134,8 @@ export interface SubmitPacketResult {
   unresolvedChunks: number;
   state: ReviewState;
 }
+
+type IdempotentSubmissionResult = SubmitPacketResult | SubmitClaimsResult;
 
 export interface SubmitPacketError {
   ok: false;
@@ -677,8 +680,8 @@ function remapSpans(
  */
 export class ReviewDiffStore extends EventEmitter {
   private readonly reviews: Map<string, ActiveReviewState> = new Map();
-  /** Index from clientRequestId → packetId for idempotency */
-  private readonly idempotencyIndex: Map<string, SubmitPacketResult> =
+  /** Index from clientRequestId to the exact committed submission result. */
+  private readonly idempotencyIndex: Map<string, IdempotentSubmissionResult> =
     new Map();
   /** Index from packetId → reviewId for retraction lookup */
   private readonly packetIndex: Map<string, string> = new Map();
@@ -852,6 +855,10 @@ export class ReviewDiffStore extends EventEmitter {
       this.idempotencyIndexKey(documentId, options.clientRequestId),
     );
     if (existing !== undefined) {
+      assert(
+        "packetId" in existing,
+        "A packet request may only replay a packet submission result",
+      );
       return existing;
     }
 
@@ -907,6 +914,19 @@ export class ReviewDiffStore extends EventEmitter {
     documentId: string,
     options: SubmitClaimsOptions,
   ): SubmitClaimsResult | SubmitPacketError {
+    const idempotencyKey = this.idempotencyIndexKey(
+      documentId,
+      options.clientRequestId,
+    );
+    const existing = this.idempotencyIndex.get(idempotencyKey);
+    if (existing !== undefined) {
+      assert(
+        "packetIds" in existing,
+        "A claims request may only replay a claims submission result",
+      );
+      return existing;
+    }
+
     const guarded = this.guardSubmission(
       documentId,
       options.expectedReviewGeneration,
@@ -933,7 +953,7 @@ export class ReviewDiffStore extends EventEmitter {
       sequence.steps,
     );
 
-    return {
+    const result: SubmitClaimsResult = {
       ok: true,
       packetIds: committed.packetIds,
       reviewId: review.reviewId,
@@ -942,6 +962,8 @@ export class ReviewDiffStore extends EventEmitter {
       unresolvedChunks: committed.unresolvedChunks,
       state: this.classifyState(review, committed.unresolvedChunks),
     };
+    this.idempotencyIndex.set(idempotencyKey, result);
+    return result;
   }
 
   /**
