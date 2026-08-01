@@ -150,9 +150,6 @@ const MAX_VERSION_HISTORY = 100;
 const DELAYED_SAVE_TIMEOUT = 5000;
 // Even "immediate" should not save immediately to prevent race conditions on slower systems
 const IMMEDIATE_SAVE_TIMEOUT = 500;
-// Watchers may emit the same failed remote reload more than once in one turn.
-// Keep that duplicate from becoming duplicate renderer error surfaces.
-const REMOTE_CHANGE_ERROR_DEDUPE_TIMEOUT = 1000;
 
 export interface DocumentsUpdateContext {
   windowId?: string;
@@ -562,7 +559,7 @@ export default class DocumentManager extends ProviderContract {
             if (index >= 0) {
               this._remoteChangeErrorShownFor.splice(index, 1);
             }
-          }, REMOTE_CHANGE_ERROR_DEDUPE_TIMEOUT);
+          }, 1000);
 
           const diagnostic = errorToString(err);
           this._app.log.error(
