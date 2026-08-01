@@ -30,6 +30,7 @@ import os from "os";
 import path from "path";
 import AgentHTTPProvider, {
   MAX_SEARCH_CONTEXT,
+  MAX_SEARCH_HITS,
   MAX_SEARCH_PATTERN_LENGTH,
 } from "source/app/service-providers/agent-api/http-server";
 import DocumentManager from "source/app/service-providers/documents";
@@ -606,6 +607,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(searchRequestProperties.literal.maxLength, MAX_SEARCH_PATTERN_LENGTH);
     assert.equal(searchRequestProperties.context.minimum, 0);
     assert.equal(searchRequestProperties.context.maximum, MAX_SEARCH_CONTEXT);
+    const searchResponseSchema = openApiDocument.components.schemas.SearchDocumentResponse as {
+      properties: { hits: { maxItems: number } };
+    };
+    assert.equal(searchResponseSchema.properties.hits.maxItems, MAX_SEARCH_HITS);
   });
 
   it("GET /openapi.yaml serves the OpenAPI specification without auth", async function () {
@@ -1258,6 +1263,24 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         [1, 12, 5],
       ],
     );
+    assert.equal(JSON.parse(response.body).truncated, false);
+  });
+
+  it("caps frequent search results and reports truncation truthfully", async function () {
+    const filePath = path.join(scratch, "truncated-hits.md");
+    const docId = await openFile(filePath, Array.from({ length: MAX_SEARCH_HITS + 1 }, () => "alpha").join("\n"));
+    const response = await httpRequest("POST", `/v1/documents/${docId}/search`, {
+      body: JSON.stringify({ literal: "alpha", context: 0 }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(response.status, 200);
+    const body = JSON.parse(response.body) as {
+      hits: Array<{ line: number }>;
+      truncated: boolean;
+    };
+    assert.equal(body.hits.length, MAX_SEARCH_HITS);
+    assert.equal(body.hits.at(-1)?.line, MAX_SEARCH_HITS);
+    assert.equal(body.truncated, true);
   });
 
   it("POST /v1/documents/{id}/proposals returns 412 on a stale snapshot", async function () {

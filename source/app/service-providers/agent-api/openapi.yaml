@@ -647,6 +647,10 @@ components:
           $ref: '#/components/schemas/DocumentRevision'
         hits:
           type: array
+          maxItems: 1000
+          description: >-
+            Search hits in document order. At most 1000 hits are returned; a
+            true truncated field means more matching hits were present.
           items:
             type: object
             required:

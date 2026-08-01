@@ -246,12 +246,26 @@ const SEARCH_DEADLINE_MS = 1000;
 export const MAX_SEARCH_CONTEXT = 100;
 
 /**
+ * A frequent pattern can produce an unbounded number of hits even when its
+ * regex evaluation finishes quickly. The endpoint returns a prefix in
+ * document order and marks that prefix so callers can choose a narrower
+ * search rather than receiving an unbounded main-process response.
+ */
+export const MAX_SEARCH_HITS = 1000;
+
+/**
  * The match loop, factored out so it can be entered as one interruptible
  * call. Runs to completion or is terminated mid-`exec`; a terminated run
  * abandons this array, so partial hits never reach a response.
  */
-function collectSearchHits(lines: string[], searchRegex: RegExp, contextSize: number): SearchHit[] {
+function collectSearchHits(
+  lines: string[],
+  searchRegex: RegExp,
+  contextSize: number,
+  maxHits: number,
+): { hits: SearchHit[]; truncated: boolean } {
   const hits: SearchHit[] = [];
+  let truncated = false;
   for (let i = 0; i < lines.length; i++) {
     searchRegex.lastIndex = 0;
     let match: RegExpExecArray | null = searchRegex.exec(lines[i]);
@@ -262,6 +276,10 @@ function collectSearchHits(lines: string[], searchRegex: RegExp, contextSize: nu
         searchRegex.lastIndex += 1;
         match = searchRegex.exec(lines[i]);
         continue;
+      }
+      if (hits.length >= maxHits) {
+        truncated = true;
+        return { hits, truncated };
       }
       hits.push({
         line: i + 1,
@@ -276,7 +294,7 @@ function collectSearchHits(lines: string[], searchRegex: RegExp, contextSize: nu
       match = searchRegex.exec(lines[i]);
     }
   }
-  return hits;
+  return { hits, truncated };
 }
 
 function decodeSearchDocumentRequest(
@@ -1580,6 +1598,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
     const lines = result.content.split("\n");
     const contextSize = searchRequest.context;
+    const maxHits = MAX_SEARCH_HITS;
     let searchRegex: RegExp;
     try {
       searchRegex = makeSearchRegex(searchRequest.literal, "g");
@@ -1587,13 +1606,13 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 400, "INVALID_PARAMS", "Invalid search pattern");
       return;
     }
-    let hits: SearchHit[];
+    let collected: { hits: SearchHit[]; truncated: boolean };
     try {
-      hits = vm.runInNewContext(
-        "collectSearchHits(lines, searchRegex, contextSize)",
-        { collectSearchHits, lines, searchRegex, contextSize },
+      collected = vm.runInNewContext(
+        "collectSearchHits(lines, searchRegex, contextSize, maxHits)",
+        { collectSearchHits, lines, searchRegex, contextSize, maxHits },
         { timeout: SEARCH_DEADLINE_MS },
-      ) as SearchHit[];
+      ) as { hits: SearchHit[]; truncated: boolean };
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ERR_SCRIPT_EXECUTION_TIMEOUT") {
         throw err;
@@ -1610,8 +1629,8 @@ export default class AgentHTTPProvider extends ProviderContract {
       documentId,
       snapshot: result.snapshot,
       revision: { version: result.version, sha256: result.sha256 },
-      hits,
-      truncated: false,
+      hits: collected.hits,
+      truncated: collected.truncated,
     });
   }
 
