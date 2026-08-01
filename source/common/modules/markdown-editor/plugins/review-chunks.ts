@@ -113,26 +113,6 @@ export function getReviewChunks (state: EditorState): ReviewChunk[]|null {
   return value === undefined ? null : value.chunks
 }
 
-/**
- * The most chunks this review has shown at once — the "total" of the status
- * panel's resolved/total indicator; resolved = highWater − outstanding. The
- * field survives the per-broadcast compartment reconfigure (same StateField
- * identity) and resets when the review extension is dropped.
- *
- * ponytail: a high-water mark, not a ledger — a user edit that merges two
- * chunks shrinks the outstanding count without a decision, which reads as
- * one more "resolved". Exact accounting would need decision history the
- * pane deliberately does not keep.
- */
-const reviewChunkHighWater = StateField.define<number>({
-  create (state) {
-    return state.field(reviewChunksField).chunks.length
-  },
-  update (value, tr) {
-    return Math.max(value, tr.state.field(reviewChunksField).chunks.length)
-  }
-})
-
 /** The anchor position of a chunk: its first working line, or document end. */
 function chunkAnchor (doc: Text, chunk: ReviewChunk): number {
   return chunk.workFromLine <= doc.lines ? doc.line(chunk.workFromLine).from : doc.length
@@ -174,7 +154,7 @@ const reviewChunkKeymap = keymap.of([
 ])
 
 /**
- * The review status bar: resolved/total (plus held) at a glance, chunk
+ * The review status bar: outstanding chunks (plus held) at a glance, chunk
  * navigation, and the mass-accept control. A module-level constructor keeps
  * the panel alive across the per-broadcast reconfigure; everything it shows
  * is re-read from the current state, and the click handlers resolve the
@@ -217,12 +197,10 @@ function reviewStatusPanel (view: EditorView): Panel {
 
   const render = (state: EditorState): void => {
     const chunks = state.field(reviewChunksField).chunks
-    const total = state.field(reviewChunkHighWater)
     const liveIds = new Set(chunks.map(chunk => chunk.chunkId))
     const held = requireReviewChunksConfig(state).holds
       .filter(hold => liveIds.has(hold.chunkId)).length
-    const resolved = Math.max(0, total - chunks.length)
-    label.textContent = `${resolved} of ${total} resolved` + (held > 0 ? ` · ${held} held` : '')
+    label.textContent = `${chunks.length} outstanding` + (held > 0 ? ` · ${held} held` : '')
     const done = chunks.length === 0
     previous.disabled = done
     next.disabled = done
@@ -243,7 +221,6 @@ export function reviewChunksExtension (config: ReviewChunksConfig): Extension[] 
   return [
     reviewChunksConfig.of(config),
     reviewChunksField,
-    reviewChunkHighWater,
     showPanel.of(reviewStatusPanel),
     reviewChunkKeymap,
     reviewChunksTheme

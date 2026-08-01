@@ -442,7 +442,7 @@ describe('Editor review-chunk controls', function () {
     assert.equal(selectPreviousReviewChunk(view), false)
   })
 
-  it('shows a live resolved/total indicator and a working Accept-all control', function () {
+  it('shows truthful outstanding progress and a working Accept-all control', function () {
     const baseline = [
       '# Note', '', 'first baseline', '', 'middle unchanged', '', 'second baseline', ''
     ].join('\n')
@@ -454,20 +454,31 @@ describe('Editor review-chunk controls', function () {
 
     const label = view.dom.querySelector<HTMLElement>('.cm-reviewStatusPanel .cm-reviewStatusLabel')
     assert.ok(label !== null, 'a review must show its status panel')
-    assert.equal(label.textContent, '0 of 2 resolved')
+    assert.equal(label.textContent, '2 outstanding')
 
-    // One decision moves the indicator.
+    // One decision reduces the live outstanding count.
     view.dom.querySelector<HTMLButtonElement>('button.cm-review-diff-control.accept')!.click()
     assert.equal(chunkCount(view), 1)
-    assert.equal(label.textContent, '1 of 2 resolved')
+    assert.equal(label.textContent, '1 outstanding')
 
     // Accept-all finishes the review through the provider sweep.
     const acceptAll = view.dom.querySelector<HTMLButtonElement>('button.cm-reviewAcceptAll')
     assert.ok(acceptAll !== null, 'the panel must carry the Accept-all control')
     acceptAll.click()
     assert.equal(chunkCount(view), 0, 'accept-all must resolve every remaining chunk')
-    assert.equal(label.textContent, '2 of 2 resolved')
+    assert.equal(label.textContent, '0 outstanding')
     assert.equal(acceptAll.disabled, true, 'a finished review has nothing left to mass-accept')
+  })
+
+  it('does not count an ordinary edit as a review decision', function () {
+    const baseline = 'first baseline\n\nsecond baseline'
+    const proposed = 'first proposed\n\nsecond proposed'
+    const view = createReviewView(baseline, proposed)
+    const label = view.dom.querySelector<HTMLElement>('.cm-reviewStatusPanel .cm-reviewStatusLabel')
+    assert.ok(label !== null)
+    view.dispatch({ changes: { from: view.state.doc.length, insert: '\nordinary edit' } })
+    assert.match(label.textContent ?? '', /outstanding$/)
+    assert.doesNotMatch(label.textContent ?? '', /resolved/)
   })
 
   it('renders normally once no review is active', function () {
