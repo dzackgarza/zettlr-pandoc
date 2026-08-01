@@ -61,6 +61,9 @@ interface CliFailure {
   status?: number;
 }
 
+const TOKEN_ENVIRONMENT_VARIABLE = "ZETTLR_REVIEW_DIFF_TEST_TOKEN";
+const TOKEN = "review-diff-test-secret";
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -178,9 +181,10 @@ function parseCliFailure(result: CliResult): CliFailure {
  * The token a developer's shell may carry would make the spawned server demand
  * authentication the spawned CLI is not being asked to prove here.
  */
-function untokenizedEnvironment(): NodeJS.ProcessEnv {
+function reviewDiffEnvironment(): NodeJS.ProcessEnv {
   const inherited = { ...process.env };
   delete inherited.ZETTLR_AGENT_API_TOKEN;
+  inherited[TOKEN_ENVIRONMENT_VARIABLE] = TOKEN;
   return inherited;
 }
 
@@ -209,7 +213,13 @@ describe("review-diff CLI submission boundary", function () {
   function httpGet(pathname: string): Promise<{ status: number; body: string }> {
     return new Promise((resolve, reject) => {
       const req = http.request(
-        { hostname: "127.0.0.1", port: httpPort, path: pathname, method: "GET" },
+        {
+          hostname: "127.0.0.1",
+          port: httpPort,
+          path: pathname,
+          method: "GET",
+          headers: { Authorization: `Bearer ${TOKEN}` },
+        },
         (res) => {
           let data = "";
           res.on("data", (chunk: Buffer) => {
@@ -234,7 +244,7 @@ describe("review-diff CLI submission boundary", function () {
     return new Promise((resolve, reject) => {
       const cli = spawn("node", [cliPath, ...args], {
         cwd: repositoryRoot,
-        env: untokenizedEnvironment(),
+        env: reviewDiffEnvironment(),
         stdio: ["ignore", "pipe", "pipe"],
       });
       let stdout = "";
@@ -291,7 +301,7 @@ describe("review-diff CLI submission boundary", function () {
       {
         cwd: repositoryRoot,
         stdio: ["ignore", "pipe", "pipe", "ipc"],
-        env: untokenizedEnvironment(),
+        env: reviewDiffEnvironment(),
       },
     );
     child = server;
@@ -354,6 +364,8 @@ describe("review-diff CLI submission boundary", function () {
       patchPath,
       "--port",
       String(httpPort),
+      "--token-environment-variable",
+      TOKEN_ENVIRONMENT_VARIABLE,
     ]);
 
     const failure = parseCliFailure(result);
@@ -385,6 +397,8 @@ describe("review-diff CLI submission boundary", function () {
       patchPath,
       "--port",
       String(httpPort),
+      "--token-environment-variable",
+      TOKEN_ENVIRONMENT_VARIABLE,
       "--baseline-sha256",
       "0".repeat(64),
     ]);
@@ -418,6 +432,8 @@ describe("review-diff CLI submission boundary", function () {
       "submitted by the review-diff CLI",
       "--port",
       String(httpPort),
+      "--token-environment-variable",
+      TOKEN_ENVIRONMENT_VARIABLE,
       "--baseline-sha256",
       live.revision.sha256,
     ]);

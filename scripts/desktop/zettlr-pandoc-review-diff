@@ -9,7 +9,8 @@
  * needs to know nothing about Electron, the editor's document ids, snapshot
  * tokens, or the loopback agent API -- this script performs that handshake.
  *
- *   zettlr-pandoc-review-diff --document doc.md --patch proposition.diff
+ *   zettlr-pandoc-review-diff --document doc.md --patch proposition.diff \
+ *     --port PORT --token-environment-variable NAME
  *
  * The transport is the running instance's loopback agent API, which is where
  * the document buffers actually live; a second process cannot reach them any
@@ -30,10 +31,16 @@ const http = require("http");
 const path = require("path");
 const { pathToFileURL } = require("url");
 
-const TOKEN_VARIABLE = "ZETTLR_AGENT_API_TOKEN";
 const PROGRAM = path.basename(__filename);
 
-const KNOWN_OPTIONS = ["document", "patch", "description", "baseline-sha256", "port"];
+const KNOWN_OPTIONS = [
+  "document",
+  "patch",
+  "description",
+  "baseline-sha256",
+  "port",
+  "token-environment-variable",
+];
 
 function usage() {
   return [
@@ -46,6 +53,9 @@ function usage() {
     "  --document FILE          The document the patch applies to.",
     "  --patch FILE             The proposition, as a unified diff.",
     "  --port N                 Agent API port from the editor configuration.",
+    "  --token-environment-variable NAME",
+    "                           Bearer-token environment key from the editor",
+    "                           configuration.",
     "",
     "Optional:",
     "  --description TEXT       Provenance shown at the review's chunks.",
@@ -55,8 +65,8 @@ function usage() {
     "                           hashes to it.",
     "  -h, --help               Show this help and exit.",
     "",
-    `The bearer token is read from ${TOKEN_VARIABLE}, the same variable the`,
-    "editor was started with. Leave it unset when the editor runs untokenized.",
+    "The bearer token is read from the named environment variable. Leave that",
+    "variable unset when the editor runs untokenized.",
   ].join("\n");
 }
 
@@ -158,9 +168,9 @@ function readRequiredFile(filePath, flag) {
   return text;
 }
 
-function request(port, method, requestPath, body) {
+function request(port, tokenEnvironmentVariable, method, requestPath, body) {
   const headers = {};
-  const token = process.env[TOKEN_VARIABLE];
+  const token = process.env[tokenEnvironmentVariable];
   if (token !== undefined && token.length > 0) {
     headers.Authorization = `Bearer ${token}`;
   }
@@ -219,7 +229,12 @@ async function main() {
     return;
   }
 
-  for (const required of ["document", "patch", "port"]) {
+  for (const required of [
+    "document",
+    "patch",
+    "port",
+    "token-environment-variable",
+  ]) {
     if (options[required] === undefined) {
       fail("INVALID_INVOCATION", `--${required} is required\n\n${usage()}`, 2);
     }
@@ -228,6 +243,14 @@ async function main() {
   const port = Number(options.port);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     fail("INVALID_INVOCATION", `--port must be a TCP port number, got: ${options.port}`, 2);
+  }
+  const tokenEnvironmentVariable = options["token-environment-variable"];
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tokenEnvironmentVariable)) {
+    fail(
+      "INVALID_INVOCATION",
+      `--token-environment-variable must be an environment variable name, got: ${tokenEnvironmentVariable}`,
+      2,
+    );
   }
 
   const documentPath = path.resolve(options.document);
@@ -251,7 +274,7 @@ async function main() {
   // boundary is allowed to leave behind.
   let ping;
   try {
-    ping = await request(port, "GET", "/v1/ping");
+    ping = await request(port, tokenEnvironmentVariable, "GET", "/v1/ping");
   } catch (error) {
     fail(
       "INSTANCE_UNREACHABLE",
@@ -270,7 +293,7 @@ async function main() {
     );
   }
 
-  const opened = await request(port, "POST", "/v1/documents", {
+  const opened = await request(port, tokenEnvironmentVariable, "POST", "/v1/documents", {
     uri: pathToFileURL(documentPath).href,
   });
   const openedBody = requireSuccessBody(opened, 201, "document open");
@@ -278,10 +301,20 @@ async function main() {
 
   // Put the document in front of the user before proposing anything to it: a
   // review nobody can see is not the outcome this boundary promises.
-  const focused = await request(port, "POST", `/v1/documents/${documentId}/focus`);
+  const focused = await request(
+    port,
+    tokenEnvironmentVariable,
+    "POST",
+    `/v1/documents/${documentId}/focus`,
+  );
   requireSuccessBody(focused, 200, "document focus");
 
-  const live = await request(port, "GET", `/v1/documents/${documentId}/content?side=working`);
+  const live = await request(
+    port,
+    tokenEnvironmentVariable,
+    "GET",
+    `/v1/documents/${documentId}/content?side=working`,
+  );
   const liveBody = requireSuccessBody(live, 200, "live document read");
   const snapshot = requireString(liveBody.snapshot, "live document snapshot");
   const revision = requireRecord(liveBody.revision, "live document revision");
@@ -298,13 +331,19 @@ async function main() {
     );
   }
 
-  const submitted = await request(port, "POST", `/v1/documents/${documentId}/proposals`, {
-    snapshot,
-    patchFormat: "unified-diff",
-    patch: patchText,
-    description: options.description,
-    clientRequestId: crypto.randomUUID(),
-  });
+  const submitted = await request(
+    port,
+    tokenEnvironmentVariable,
+    "POST",
+    `/v1/documents/${documentId}/proposals`,
+    {
+      snapshot,
+      patchFormat: "unified-diff",
+      patch: patchText,
+      description: options.description,
+      clientRequestId: crypto.randomUUID(),
+    },
+  );
   const submittedBody = requireSuccessBody(submitted, 200, "proposition submission");
   const reviewId = requireString(submittedBody.reviewId, "submitted reviewId");
   const unresolvedChunks = requireInteger(
