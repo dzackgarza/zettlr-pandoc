@@ -159,8 +159,7 @@ tput civis >/dev/null 2>&1
 # present, because the alternative is launching with a security posture nobody
 # chose.
 if ! command -v direnv >/dev/null 2>&1; then
-  printf 'direnv is required to launch: the app reads its environment from ~/.envrc.\n' >&2
-  exit 1
+  fail "direnv is required to launch: the app reads its environment from ~/.envrc."
 fi
 
 setsid sh -c 'repo="$1"; shift; cd -- "$repo" && exec direnv exec "$repo" just launch-desktop "$@"' sh "$repo" "$@" \

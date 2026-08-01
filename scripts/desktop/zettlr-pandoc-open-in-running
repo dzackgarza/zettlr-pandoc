@@ -47,9 +47,9 @@ fi
 # a handshake that never returns -- a running instance answers in well under a
 # second, and one that does not answer at all must not hang the launcher.
 status=0
-timeout 30 "$electron" "$repo" --open-in-running-instance "$@" || status=$?
+timeout --kill-after=2 30 "$electron" "$repo" --open-in-running-instance "$@" || status=$?
 
-if (( status == 124 )); then
+if (( status == 124 || status == 137 )); then
   printf 'The running Zettlr-Pandoc did not answer the single-instance handshake.\n' >&2
   exit 1
 fi
