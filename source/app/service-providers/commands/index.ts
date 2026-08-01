@@ -193,17 +193,7 @@ export default class CommandProvider extends ProviderContract {
   async run (command: string, payload: unknown): Promise<unknown> {
     // FIRST: Try to run a minimal command for which its own custom function
     // wouldn't make sense.
-    if (command === 'next-file') {
-      // Trigger a "forward" command on the document manager
-      // await this._app.documents.forward()
-      // TODO!!!
-      return true
-    } else if (command === 'previous-file') {
-      // Trigger a "back" command on the document manager
-      // await this._app.documents.back()
-      // TODO!!!
-      return true
-    } else if (command === 'copy-img-to-clipboard') {
+    if (command === 'copy-img-to-clipboard') {
       // We should copy the contents of an image file to clipboard. Payload
       // contains the image path. We can rely on the Electron framework here.
       if (typeof payload !== 'string') {
@@ -260,7 +250,12 @@ export default class CommandProvider extends ProviderContract {
       } else if (command === 'get-available-dictionaries') {
         return enumDictFiles().map(elem => elem.tag)
       } else {
-        this._app.log.warning(`[Application] Received a request to run command ${command}, but it's not registered.`)
+        // Nothing answered for this name. The result channel is the caller's
+        // only evidence of what happened, and ipcMain.handle turns a plain
+        // return into a RESOLVED invoke() — so logging and falling out would
+        // report success for work that never ran. Throwing is what keeps an
+        // unimplemented command indistinguishable from a failing one.
+        throw new Error(`[Commands] Could not run command "${command}": Not registered.`)
       }
     }
   }

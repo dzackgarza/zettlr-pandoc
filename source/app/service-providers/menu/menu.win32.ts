@@ -14,26 +14,28 @@
  * END HEADER
  */
 
-import { app, type MenuItemConstructorOptions, shell, dialog, type BrowserWindow } from 'electron'
+import { app, BrowserWindow, type MenuItemConstructorOptions, shell, dialog } from 'electron'
 import { trans } from '@common/i18n-main'
 import path from 'path'
-import type RecentDocumentsProvider from '@providers/recent-docs'
-import type WindowProvider from '@providers/windows'
-import type CommandProvider from '@providers/commands'
-import type LogProvider from '@providers/log'
 import { zoomIn, zoomOut } from './font-zoom'
-import type ConfigProvider from '@providers/config'
-import type DocumentManager from '@providers/documents'
 import { DocumentType } from '@dts/common/documents'
 import openPandocQuickHelp from './open-pandoc-quick-help'
+import type {
+  MenuCommands,
+  MenuConfig,
+  MenuDocuments,
+  MenuLogger,
+  MenuRecentDocuments,
+  MenuWindows
+} from './menu-dependencies'
 
 export default function getMenu (
-  logger: LogProvider,
-  config: ConfigProvider,
-  recentDocs: RecentDocumentsProvider,
-  commands: CommandProvider,
-  windows: WindowProvider,
-  documents: DocumentManager,
+  logger: MenuLogger,
+  config: MenuConfig,
+  recentDocs: MenuRecentDocuments,
+  commands: MenuCommands,
+  windows: MenuWindows,
+  documents: MenuDocuments,
   _getCheckboxState: (id: string, init: boolean) => boolean,
   _setCheckboxState: (id: string, val: boolean) => void
 ): MenuItemConstructorOptions[] {
@@ -44,7 +46,7 @@ export default function getMenu (
     click: function (_menuitem, _focusedWindow) {
       // Immediately open the window instead of first checking
       commands.run('open-update-window', undefined)
-        .catch(e => logger.error(String(e.message), e))
+        .catch((e: Error) => logger.error(e.message, e))
     }
   }
 
@@ -109,7 +111,7 @@ export default function getMenu (
               accelerator: 'Ctrl+N',
               click: function (_menuitem, _focusedWindow) {
                 commands.run('file-new', { type: DocumentType.Markdown })
-                  .catch(e => logger.error(String(e.message), e))
+                  .catch((e: Error) => logger.error(e.message, e))
               }
             },
             {
@@ -117,7 +119,7 @@ export default function getMenu (
               label: 'TeX',
               click: function (_menuitem, _focusedWindow) {
                 commands.run('file-new', { type: DocumentType.LaTeX })
-                  .catch(e => logger.error(String(e.message), e))
+                  .catch((e: Error) => logger.error(e.message, e))
               }
             },
             {
@@ -125,7 +127,7 @@ export default function getMenu (
               label: 'YAML',
               click: function (_menuitem, _focusedWindow) {
                 commands.run('file-new', { type: DocumentType.YAML })
-                  .catch(e => logger.error(String(e.message), e))
+                  .catch((e: Error) => logger.error(e.message, e))
               }
             },
             {
@@ -133,7 +135,7 @@ export default function getMenu (
               label: 'JSON',
               click: function (_menuitem, _focusedWindow) {
                 commands.run('file-new', { type: DocumentType.JSON })
-                  .catch(e => logger.error(String(e.message), e))
+                  .catch((e: Error) => logger.error(e.message, e))
               }
             }
           ]
@@ -154,7 +156,7 @@ export default function getMenu (
           accelerator: 'Ctrl+O',
           click: function (_menuitem, _focusedWindow) {
             commands.run('root-open-files', [])
-              .catch(e => logger.error(String(e.message), e))
+              .catch((e: Error) => logger.error(e.message, e))
           }
         },
         {
@@ -163,7 +165,7 @@ export default function getMenu (
           accelerator: 'Ctrl+Shift+O',
           click: function (_menuitem, _focusedWindow) {
             commands.run('root-open-workspaces', [])
-              .catch(e => logger.error(String(e.message), e))
+              .catch((e: Error) => logger.error(e.message, e))
           }
         },
         recentDocsItem,
@@ -185,22 +187,24 @@ export default function getMenu (
           id: 'menu.previous_file',
           label: trans('Previous file'),
           accelerator: 'Ctrl+[',
-          click: function (_menuitem, _focusedWindow) {
-            commands.run('previous-file', undefined)
-              .catch(e => {
-                logger.error(`[Menu] Error selecting previous file: ${e.message as string}`, e)
-              })
+          click: function (_menuitem, focusedWindow) {
+            // Session history is per-pane, and the renderer owns which pane is
+            // focused, so the navigation request goes out on the same
+            // 'shortcut' channel the swipe and browser back/forward gestures
+            // use (create-main-window.ts).
+            if (focusedWindow instanceof BrowserWindow) {
+              focusedWindow.webContents.send('shortcut', 'navigate-back')
+            }
           }
         },
         {
           id: 'menu.next_file',
           label: trans('Next file'),
           accelerator: 'Ctrl+]',
-          click: function (_menuitem, _focusedWindow) {
-            commands.run('next-file', undefined)
-              .catch(e => {
-                logger.error(`[Menu] Error selecting next file: ${e.message as string}`, e)
-              })
+          click: function (_menuitem, focusedWindow) {
+            if (focusedWindow instanceof BrowserWindow) {
+              focusedWindow.webContents.send('shortcut', 'navigate-forward')
+            }
           }
         },
         {
@@ -211,7 +215,7 @@ export default function getMenu (
           label: trans('Import files…'),
           click: function (_menuItem, _focusedWindow) {
             commands.run('import-files', undefined)
-              .catch(e => logger.error('[Menu Provider] Cannot import files', e))
+              .catch((e: Error) => logger.error('[Menu Provider] Cannot import files', e))
           }
         },
         {
@@ -269,7 +273,7 @@ export default function getMenu (
           label: trans('Import translation…'),
           click: function (_menuItem, _focusedWindow) {
             commands.run('import-lang-file', undefined)
-              .catch(e => logger.error('[Menu Provider] Cannot import translation', e))
+              .catch((e: Error) => logger.error('[Menu Provider] Cannot import translation', e))
           }
         },
         {
@@ -283,8 +287,8 @@ export default function getMenu (
                   logger.error(msg + potentialError)
                 }
               })
-              .catch(err => {
-                logger.error(msg + String(err.message), err)
+              .catch((err: Error) => {
+                logger.error(msg + err.message, err)
               })
           }
         },
@@ -438,7 +442,7 @@ export default function getMenu (
           label: trans('Dark mode'),
           accelerator: 'Ctrl+Alt+L',
           type: 'checkbox',
-          checked: config.get('darkMode'),
+          checked: config.get('darkMode') === true,
           click: function (_menuitem, _focusedWindow) {
             config.set('darkMode', config.get('darkMode') === false)
           }
@@ -448,7 +452,7 @@ export default function getMenu (
           label: trans('Additional information'),
           accelerator: 'Ctrl+Alt+S',
           type: 'checkbox',
-          checked: config.get('fileMeta'),
+          checked: config.get('fileMeta') === true,
           click: function (_menuitem, _focusedWindow) {
             config.set('fileMeta', config.get('fileMeta') === false)
           }
@@ -633,7 +637,7 @@ export default function getMenu (
           label: trans('Support Zettlr ↗︎'),
           click: function (_menuitem, _focusedWindow) {
             const target = 'https://patreon.com/zettlr'
-            shell.openExternal(target).catch(e => {
+            shell.openExternal(target).catch((e: Error) => {
               logger.error(`[Menu Provider] Cannot open target: ${target}`, e.message)
             })
           }
@@ -643,7 +647,7 @@ export default function getMenu (
           label: trans('Visit website ↗︎'),
           click: function (_menuitem, _focusedWindow) {
             const target = 'https://www.zettlr.com/'
-            shell.openExternal(target).catch(e => {
+            shell.openExternal(target).catch((e: Error) => {
               logger.error(`[Menu Provider] Cannot open target: ${target}`, e.message)
             })
           }
@@ -654,7 +658,7 @@ export default function getMenu (
           accelerator: 'F1',
           click: function (_menuitem, _focusedWindow) {
             const target = 'https://docs.zettlr.com/'
-            shell.openExternal(target).catch(e => {
+            shell.openExternal(target).catch((e: Error) => {
               logger.error(`[Menu Provider] Cannot open target: ${target}`, e.message)
             })
           }
@@ -674,7 +678,7 @@ export default function getMenu (
           label: trans('Open tutorial'),
           click: function (_menuitem, _focusedWindow) {
             commands.run('tutorial-open', undefined)
-              .catch(e => logger.error(String(e.message), e))
+              .catch((e: Error) => logger.error(e.message, e))
           }
         },
         {
@@ -702,7 +706,7 @@ export default function getMenu (
                 app.relaunch({ args: process.argv.slice(1).concat(['--clear-cache']) })
                 app.quit()
               })
-              .catch(err => logger.error(err.message as string, err))
+              .catch((err: Error) => logger.error(err.message, err))
           }
         }
       ]
