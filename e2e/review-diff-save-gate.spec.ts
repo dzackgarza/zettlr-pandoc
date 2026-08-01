@@ -423,6 +423,73 @@ describe('saving after accepting a reviewed change', function () {
     )
   })
 
+  it('keeps a held review rendered after saving it', async function () {
+    const activeClient = requireInitialized(running.client, 'The Agent API client must be initialized')
+    const activeDocumentPath = requireInitialized(running.documentPath, 'The document path must be initialized')
+    assert.ok(running.browser, 'The application must be running')
+    const page = await findEditorPage(running.browser, this.timeout())
+
+    const reviewId = await openReview(
+      activeClient,
+      page,
+      activeDocumentPath,
+      PROPOSED_PHRASE,
+      STRICT_PHRASE,
+      'e2e-review-diff-save-gate-held'
+    )
+    const chunksPayload = await activeClient.get(`/v1/reviews/${reviewId}/chunks`)
+    assert.ok(
+      chunksPayload !== null &&
+        typeof chunksPayload === 'object' &&
+        'chunks' in chunksPayload &&
+        Array.isArray(chunksPayload.chunks) &&
+        chunksPayload.chunks.length === 1 &&
+        typeof chunksPayload.chunks[0].chunkId === 'string',
+      `Held-review proof expected one addressable chunk: ${JSON.stringify(chunksPayload)}`
+    )
+    const chunkId = chunksPayload.chunks[0].chunkId as string
+    await activeClient.post(
+      `/v1/reviews/${reviewId}/chunks/${chunkId}/hold`,
+      { comment: 'Preserve this decision across save' }
+    )
+
+    const heldWidget = page.locator('.cm-deletedChunk.held').first()
+    await heldWidget.waitFor({ state: 'visible', timeout: 20_000 })
+    assert.ok(
+      (await heldWidget.innerText()).includes('Held: Preserve this decision across save'),
+      'The held chunk must render its durable comment before save.'
+    )
+    screenshots.set('review-held-before-save.png', await page.screenshot())
+
+    assert.deepEqual(
+      await invokeSave(page, activeDocumentPath),
+      { ok: true },
+      'A held-only review must pass the save gate.'
+    )
+    assert.equal(
+      await readFile(activeDocumentPath, 'utf8'),
+      `# Review gate\n\n${STRICT_PHRASE}\n`,
+      'Saving a held review must persist its working text.'
+    )
+
+    await heldWidget.waitFor({ state: 'visible', timeout: 20_000 })
+    assert.ok(
+      (await heldWidget.innerText()).includes('Held: Preserve this decision across save'),
+      'FILE_SAVED must not clear the active held review from the pane.'
+    )
+    const detail = await activeClient.get(`/v1/reviews/${reviewId}`)
+    assert.ok(
+      detail !== null &&
+        typeof detail === 'object' &&
+        'heldChunks' in detail &&
+        detail.heldChunks === 1,
+      `The provider must retain the held review after save: ${JSON.stringify(detail)}`
+    )
+    screenshots.set('review-held-after-save.png', await page.screenshot())
+
+    await clearReviewAndFlush(activeClient, page, reviewId, activeDocumentPath)
+  })
+
   it('refuses an unresolved review with a typed reason, not a modal', async function () {
     const activeClient = requireInitialized(running.client, 'The Agent API client must be initialized')
     const activeDocumentPath = requireInitialized(running.documentPath, 'The document path must be initialized')
