@@ -40,12 +40,13 @@ export function rangeInPreviewSuppression (
 }
 
 /**
- * Whether an unresolved review chunk touches [rangeFrom, rangeTo].
+ * Whether an unresolved review chunk intersects [rangeFrom, rangeTo).
  *
  * Chunk positions are read on the B side: the working text lives in the
- * document, the reference on the A side. Bounds are inclusive because a pure
- * deletion is empty in B — its widget sits at a single offset, and a renderer
- * whose range merely reaches that offset still swallows it.
+ * document, the reference on the A side. Non-empty chunks and renderer ranges
+ * use CodeMirror's half-open convention, so adjacent ranges do not overlap.
+ * A pure deletion is empty in B and its widget sits at a single point; only
+ * that special case uses point containment.
  */
 function rangeCarriesReviewChunk (
   state: EditorState,
@@ -56,5 +57,10 @@ function rangeCarriesReviewChunk (
   if (chunks === null) {
     return false
   }
-  return chunks.some(chunk => chunk.fromB <= rangeTo && rangeFrom <= chunk.toB)
+  return chunks.some(chunk => {
+    if (chunk.fromB === chunk.toB) {
+      return rangeFrom <= chunk.fromB && chunk.fromB <= rangeTo
+    }
+    return chunk.fromB < rangeTo && rangeFrom < chunk.toB
+  })
 }
