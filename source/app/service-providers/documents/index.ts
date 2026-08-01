@@ -150,6 +150,9 @@ const MAX_VERSION_HISTORY = 100;
 const DELAYED_SAVE_TIMEOUT = 5000;
 // Even "immediate" should not save immediately to prevent race conditions on slower systems
 const IMMEDIATE_SAVE_TIMEOUT = 500;
+// Watchers may emit the same failed remote reload more than once in one turn.
+// Keep that duplicate from becoming duplicate renderer error surfaces.
+const REMOTE_CHANGE_ERROR_DEDUPE_TIMEOUT = 1000;
 
 export interface DocumentsUpdateContext {
   windowId?: string;
@@ -424,6 +427,14 @@ export default class DocumentManager extends ProviderContract {
   private readonly _remoteChangeDialogShownFor: string[];
 
   /**
+   * Paths whose most recent remote reload failure has already been surfaced.
+   * Watchdog duplicate events must not produce duplicate renderer toasts.
+   *
+   * @var {string[]}
+   */
+  private readonly _remoteChangeErrorShownFor: string[];
+
+  /**
    * Provider-owned authoritative review state. Replaces the
    * old _reviewDiffSessions map. The store owns referenceText, workingText,
    * packet ledger, and review generation.
@@ -470,6 +481,7 @@ export default class DocumentManager extends ProviderContract {
     this._config = new PersistentDataContainer(containerPath, "yaml");
     this._ignoreChanges = [];
     this._remoteChangeDialogShownFor = [];
+    this._remoteChangeErrorShownFor = [];
     // The store never mirrors the working text: it reads the live document —
     // the single owner of that text — through this resolver.
     this._reviewStore = new ReviewDiffStore((documentId) => {
@@ -541,6 +553,17 @@ export default class DocumentManager extends ProviderContract {
         );
       } else {
         this.handleRemoteChange(changedPath).catch((err: unknown) => {
+          if (this._remoteChangeErrorShownFor.includes(changedPath)) {
+            return;
+          }
+          this._remoteChangeErrorShownFor.push(changedPath);
+          setTimeout(() => {
+            const index = this._remoteChangeErrorShownFor.indexOf(changedPath);
+            if (index >= 0) {
+              this._remoteChangeErrorShownFor.splice(index, 1);
+            }
+          }, REMOTE_CHANGE_ERROR_DEDUPE_TIMEOUT);
+
           const diagnostic = errorToString(err);
           this._app.log.error(
             `[DocumentManager] Could not reload changed file ${changedPath}`,
