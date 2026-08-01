@@ -28,9 +28,15 @@
  * END HEADER
  */
 
-import fs from "fs";
+import { promises as fs } from "fs";
 import path from "path";
-import { sha256Text, type ReviewSidecarData } from "./review-diff-store";
+import type { ChunkHold, ReviewComment } from "@dts/common/agent-api";
+import type { RefSpan } from "@common/modules/review/review-chunks";
+import {
+  sha256Text,
+  type PersistedReviewPacket,
+  type ReviewSidecarData,
+} from "./review-diff-store";
 
 /**
  * The sidecar file for a document. Keyed by the hash of the canonical
@@ -43,39 +49,173 @@ export function reviewSidecarFilePath(directory: string, documentPath: string): 
   return path.join(directory, `${sha256Text(path.resolve(documentPath))}.json`);
 }
 
+function isMissingFile(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+function isFiniteInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value);
+}
+
+function isRefSpan(value: unknown): value is RefSpan {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "from" in value &&
+    isFiniteInteger(value.from) &&
+    "to" in value &&
+    isFiniteInteger(value.to)
+  );
+}
+
+function isPersistedPacket(value: unknown): value is PersistedReviewPacket {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "packetId" in value &&
+    typeof value.packetId === "string" &&
+    "reviewId" in value &&
+    typeof value.reviewId === "string" &&
+    "clientRequestId" in value &&
+    typeof value.clientRequestId === "string" &&
+    (!("description" in value) ||
+      value.description === undefined ||
+      typeof value.description === "string") &&
+    "appliedAt" in value &&
+    typeof value.appliedAt === "string" &&
+    "patchFormat" in value &&
+    value.patchFormat === "unified-diff" &&
+    "patch" in value &&
+    typeof value.patch === "string" &&
+    "applicationGeneration" in value &&
+    isFiniteInteger(value.applicationGeneration) &&
+    "refSpans" in value &&
+    Array.isArray(value.refSpans) &&
+    value.refSpans.every(isRefSpan)
+  );
+}
+
+function isChunkHold(value: unknown): value is ChunkHold {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "chunkId" in value &&
+    typeof value.chunkId === "string" &&
+    (!("comment" in value) ||
+      value.comment === undefined ||
+      typeof value.comment === "string") &&
+    "heldAt" in value &&
+    typeof value.heldAt === "string"
+  );
+}
+
+function isReviewComment(value: unknown): value is ReviewComment {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "text" in value &&
+    typeof value.text === "string" &&
+    "createdAt" in value &&
+    typeof value.createdAt === "string" &&
+    (!("orphanedFromChunkId" in value) ||
+      value.orphanedFromChunkId === undefined ||
+      typeof value.orphanedFromChunkId === "string")
+  );
+}
+
+/**
+ * The one version-1 sidecar parser. Persisted bytes cross into trusted review
+ * state only after every required top-level and nested field is validated.
+ */
+function isReviewSidecarData(parsed: unknown): parsed is ReviewSidecarData {
+  return (
+    typeof parsed === "object" &&
+    parsed !== null &&
+    "version" in parsed &&
+    parsed.version === 1 &&
+    "reviewId" in parsed &&
+    typeof parsed.reviewId === "string" &&
+    "documentPath" in parsed &&
+    typeof parsed.documentPath === "string" &&
+    "baselineText" in parsed &&
+    typeof parsed.baselineText === "string" &&
+    "referenceText" in parsed &&
+    typeof parsed.referenceText === "string" &&
+    "workingText" in parsed &&
+    typeof parsed.workingText === "string" &&
+    "generation" in parsed &&
+    isFiniteInteger(parsed.generation) &&
+    "diskFenceSha256" in parsed &&
+    typeof parsed.diskFenceSha256 === "string" &&
+    "invalidated" in parsed &&
+    typeof parsed.invalidated === "boolean" &&
+    "packets" in parsed &&
+    Array.isArray(parsed.packets) &&
+    parsed.packets.every(isPersistedPacket) &&
+    "holds" in parsed &&
+    Array.isArray(parsed.holds) &&
+    parsed.holds.every(isChunkHold) &&
+    "comments" in parsed &&
+    Array.isArray(parsed.comments) &&
+    parsed.comments.every(isReviewComment) &&
+    "unresolvedChunks" in parsed &&
+    isFiniteInteger(parsed.unresolvedChunks) &&
+    "heldChunks" in parsed &&
+    isFiniteInteger(parsed.heldChunks) &&
+    "savedAt" in parsed &&
+    typeof parsed.savedAt === "string"
+  );
+}
+
+function parseReviewSidecar(raw: string, target: string): ReviewSidecarData {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `Review sidecar ${target} is not valid JSON: ` +
+        (error instanceof Error ? error.message : String(error)),
+    );
+  }
+  if (!isReviewSidecarData(parsed)) {
+    throw new Error(`Review sidecar ${target} is not a version-1 review sidecar`);
+  }
+  return parsed;
+}
+
 export class ReviewSidecarStore {
   constructor(private readonly directory: string) {}
 
   /** Write a sidecar through, atomically (write-then-rename). */
-  write(sidecar: ReviewSidecarData): void {
-    fs.mkdirSync(this.directory, { recursive: true });
+  async write(sidecar: ReviewSidecarData): Promise<void> {
+    await fs.mkdir(this.directory, { recursive: true });
     const target = reviewSidecarFilePath(this.directory, sidecar.documentPath);
     const temporary = `${target}.tmp`;
-    fs.writeFileSync(temporary, JSON.stringify(sidecar), "utf8");
-    fs.renameSync(temporary, target);
+    await fs.writeFile(temporary, JSON.stringify(sidecar), "utf8");
+    await fs.rename(temporary, target);
   }
 
   /**
    * The sidecar for a document, or undefined when none exists. A file that
    * exists but does not parse as a version-1 sidecar throws.
    */
-  read(documentPath: string): ReviewSidecarData | undefined {
+  async read(documentPath: string): Promise<ReviewSidecarData | undefined> {
     const target = reviewSidecarFilePath(this.directory, documentPath);
     let raw: string;
     try {
-      raw = fs.readFileSync(target, "utf8");
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      raw = await fs.readFile(target, "utf8");
+    } catch (error) {
+      if (isMissingFile(error)) {
         return undefined;
       }
-      throw err;
+      throw error;
     }
-    return this.parse(raw, target);
+    return parseReviewSidecar(raw, target);
   }
 
   /** Remove a document's sidecar. Absent is fine — deletion is idempotent. */
-  delete(documentPath: string): void {
-    fs.rmSync(reviewSidecarFilePath(this.directory, documentPath), { force: true });
+  async delete(documentPath: string): Promise<void> {
+    await fs.rm(reviewSidecarFilePath(this.directory, documentPath), { force: true });
   }
 
   /**
@@ -83,47 +223,21 @@ export class ReviewSidecarStore {
    * its path named — a partial answer would present the surviving reviews
    * as the complete set.
    */
-  list(): ReviewSidecarData[] {
+  async list(): Promise<ReviewSidecarData[]> {
     let names: string[];
     try {
-      names = fs.readdirSync(this.directory);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      names = await fs.readdir(this.directory);
+    } catch (error) {
+      if (isMissingFile(error)) {
         return [];
       }
-      throw err;
+      throw error;
     }
-    return names
-      .filter((name) => name.endsWith(".json"))
-      .map((name) => {
+    return await Promise.all(
+      names.filter((name) => name.endsWith(".json")).map(async (name) => {
         const target = path.join(this.directory, name);
-        return this.parse(fs.readFileSync(target, "utf8"), target);
-      });
-  }
-
-  private parse(raw: string, target: string): ReviewSidecarData {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (err) {
-      throw new Error(
-        `Review sidecar ${target} is not valid JSON: ` +
-          (err instanceof Error ? err.message : String(err)),
-      );
-    }
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      (parsed as { version?: unknown }).version !== 1 ||
-      typeof (parsed as { reviewId?: unknown }).reviewId !== "string" ||
-      typeof (parsed as { documentPath?: unknown }).documentPath !== "string" ||
-      typeof (parsed as { referenceText?: unknown }).referenceText !== "string" ||
-      typeof (parsed as { workingText?: unknown }).workingText !== "string" ||
-      typeof (parsed as { diskFenceSha256?: unknown }).diskFenceSha256 !== "string" ||
-      !Array.isArray((parsed as { packets?: unknown }).packets)
-    ) {
-      throw new Error(`Review sidecar ${target} is not a version-1 review sidecar`);
-    }
-    return parsed as ReviewSidecarData;
+        return parseReviewSidecar(await fs.readFile(target, "utf8"), target);
+      }),
+    );
   }
 }

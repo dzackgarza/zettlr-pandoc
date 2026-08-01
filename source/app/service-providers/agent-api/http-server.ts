@@ -1048,21 +1048,25 @@ export default class AgentHTTPProvider extends ProviderContract {
       },
 
       // Reviews
-      { method: "GET", path: "/v1/reviews", handle: ({ res }) => this.handleListReviews(res) },
+      {
+        method: "GET",
+        path: "/v1/reviews",
+        handle: async ({ res }) => await this.handleListReviews(res),
+      },
       {
         method: "GET",
         path: "/v1/reviews/{reviewId}",
-        handle: ({ res, params }) => this.handleGetReview(res, params.reviewId),
+        handle: async ({ res, params }) => await this.handleGetReview(res, params.reviewId),
       },
       {
         method: "GET",
         path: "/v1/reviews/{reviewId}/diff",
-        handle: ({ res, params }) => this.handleGetReviewDiff(res, params.reviewId),
+        handle: async ({ res, params }) => await this.handleGetReviewDiff(res, params.reviewId),
       },
       {
         method: "GET",
         path: "/v1/reviews/{reviewId}/chunks",
-        handle: ({ res, params }) => this.handleGetReviewChunks(res, params.reviewId),
+        handle: async ({ res, params }) => await this.handleGetReviewChunks(res, params.reviewId),
       },
       ...(["accept", "reject", "hold"] as ChunkDecision[]).map((decision) => ({
         method: "POST",
@@ -1079,30 +1083,31 @@ export default class AgentHTTPProvider extends ProviderContract {
       {
         method: "GET",
         path: "/v1/reviews/{reviewId}/packets",
-        handle: ({ res, params }) => this.handleGetReviewPackets(res, params.reviewId),
+        handle: async ({ res, params }) => await this.handleGetReviewPackets(res, params.reviewId),
       },
       {
         method: "POST",
         path: "/v1/reviews/{reviewId}/accept-all",
-        handle: ({ res, params }) => this.handleAcceptAllChunks(res, params.reviewId),
+        handle: async ({ res, params }) => await this.handleAcceptAllChunks(res, params.reviewId),
       },
       {
         method: "POST",
         path: "/v1/reviews/{reviewId}/clear",
-        handle: ({ res, params }) => this.handleClearReview(res, params.reviewId),
+        handle: async ({ res, params }) => await this.handleClearReview(res, params.reviewId),
       },
       {
         method: "GET",
         path: "/v1/reviews/{reviewId}/events",
-        handle: ({ res, url, params }) =>
-          this.handleWaitForReviewEvents(res, params.reviewId, url),
+        handle: async ({ res, url, params }) =>
+          await this.handleWaitForReviewEvents(res, params.reviewId, url),
       },
 
       // Proposals
       {
         method: "POST",
         path: "/v1/proposals/{packetId}/retract",
-        handle: ({ res, params }) => this.handleRetractProposal(res, params.packetId),
+        handle: async ({ res, params }) =>
+          await this.handleRetractProposal(res, params.packetId),
       },
     ];
   }
@@ -1462,7 +1467,11 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, response);
   }
 
-  private handleWaitForReviewEvents(res: http.ServerResponse, reviewId: string, url: URL): void {
+  private async handleWaitForReviewEvents(
+    res: http.ServerResponse,
+    reviewId: string,
+    url: URL,
+  ): Promise<void> {
     const parseNumber = (
       value: string | null,
       fallback: number,
@@ -1495,7 +1504,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       // A detached review's generation cannot advance — nothing can decide
       // its chunks while its file is closed — so waiting on it would be
       // waiting forever. The refusal names the file to open instead.
-      this.sendReviewLookupFailure(res, reviewId);
+      await this.sendReviewLookupFailure(res, reviewId);
       return;
     }
 
@@ -1701,7 +1710,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private handleListReviews(res: http.ServerResponse): void {
+  private async handleListReviews(res: http.ServerResponse): Promise<void> {
     // Open-document reviews, then the sidecar-backed reviews whose files
     // are closed — one list, discriminated by `attached`.
     const reviews: ReviewListEntry[] = [
@@ -1709,7 +1718,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         ...review,
         attached: true,
       })),
-      ...this._documents.listDetachedReviews(),
+      ...(await this._documents.listDetachedReviews()),
     ];
     this.sendJson(res, 200, { reviews });
   }
@@ -1719,8 +1728,11 @@ export default class AgentHTTPProvider extends ProviderContract {
    * 409 when the id names a detached review (it exists — /v1/reviews just
    * listed it — but its file is closed), 404 only when no review carries it.
    */
-  private sendReviewLookupFailure(res: http.ServerResponse, reviewId: string): void {
-    const failure = this._documents.reviewLookupFailure(reviewId);
+  private async sendReviewLookupFailure(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
+    const failure = await this._documents.reviewLookupFailure(reviewId);
     this.sendError(
       res,
       failure.code === "DOCUMENT_CLOSED" ? 409 : 404,
@@ -1729,10 +1741,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     );
   }
 
-  private handleGetReview(res: http.ServerResponse, reviewId: string): void {
+  private async handleGetReview(res: http.ServerResponse, reviewId: string): Promise<void> {
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
-      const detached = this._documents.findDetachedReview(reviewId);
+      const detached = await this._documents.findDetachedReview(reviewId);
       if (detached === undefined) {
         this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
         return;
@@ -1781,10 +1793,13 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private handleGetReviewDiff(res: http.ServerResponse, reviewId: string): void {
+  private async handleGetReviewDiff(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
-      const detached = this._documents.findDetachedReview(reviewId);
+      const detached = await this._documents.findDetachedReview(reviewId);
       if (detached === undefined) {
         this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
         return;
@@ -1836,7 +1851,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       }
       comment = decoded.value.comment;
     }
-    const result = this._documents.decideChunk(reviewId, chunkId, decision, comment);
+    let result = this._documents.decideChunk(reviewId, chunkId, decision, comment);
+    if (!result.ok && result.code === "REVIEW_NOT_FOUND") {
+      result = await this._documents.reviewLookupFailure(reviewId);
+    }
     if (!result.ok) {
       const status =
         result.code === "REVIEW_NOT_FOUND" || result.code === "CHUNK_NOT_FOUND"
@@ -1867,7 +1885,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
-      this.sendReviewLookupFailure(res, reviewId);
+      await this.sendReviewLookupFailure(res, reviewId);
       return;
     }
     const result = this._documents.reviewStore.addReviewComment(
@@ -1886,10 +1904,13 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private handleGetReviewChunks(res: http.ServerResponse, reviewId: string): void {
+  private async handleGetReviewChunks(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
-      const detached = this._documents.findDetachedReview(reviewId);
+      const detached = await this._documents.findDetachedReview(reviewId);
       if (detached === undefined) {
         this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
         return;
@@ -1915,10 +1936,13 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private handleGetReviewPackets(res: http.ServerResponse, reviewId: string): void {
+  private async handleGetReviewPackets(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
-      const detached = this._documents.findDetachedReview(reviewId);
+      const detached = await this._documents.findDetachedReview(reviewId);
       if (detached === undefined) {
         this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
         return;
@@ -1948,8 +1972,14 @@ export default class AgentHTTPProvider extends ProviderContract {
    * current partition in one sweep, the mirror of /clear (mass reject).
    * Same decision authority as the editor's Accept-all control.
    */
-  private handleAcceptAllChunks(res: http.ServerResponse, reviewId: string): void {
-    const result = this._documents.acceptAllChunks(reviewId);
+  private async handleAcceptAllChunks(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
+    let result = this._documents.acceptAllChunks(reviewId);
+    if (!result.ok && result.code === "REVIEW_NOT_FOUND") {
+      result = await this._documents.reviewLookupFailure(reviewId);
+    }
     if (!result.ok) {
       const status =
         result.code === "REVIEW_NOT_FOUND"
@@ -1963,8 +1993,11 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, result);
   }
 
-  private handleClearReview(res: http.ServerResponse, reviewId: string): void {
-    const result = this._documents.clearReview(reviewId);
+  private async handleClearReview(res: http.ServerResponse, reviewId: string): Promise<void> {
+    let result = this._documents.clearReview(reviewId);
+    if (!result.ok && result.code === "REVIEW_NOT_FOUND") {
+      result = await this._documents.reviewLookupFailure(reviewId);
+    }
     if (!result.ok) {
       this.sendError(
         res,
@@ -1982,8 +2015,11 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private handleRetractProposal(res: http.ServerResponse, packetId: string): void {
-    const result = this._documents.retractProposal(packetId);
+  private async handleRetractProposal(
+    res: http.ServerResponse,
+    packetId: string,
+  ): Promise<void> {
+    const result = await this._documents.retractProposal(packetId);
     if (result.ok) {
       this.sendJson(res, 200, {
         retracted: true,

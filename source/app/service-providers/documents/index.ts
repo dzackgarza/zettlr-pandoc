@@ -435,8 +435,8 @@ export default class DocumentManager extends ProviderContract {
    */
   private readonly _reviewSidecars: ReviewSidecarStore;
 
-  /** documentIds with a sidecar write already scheduled this microtask turn. */
-  private readonly _pendingSidecarWrites: Set<string>;
+  /** The serialized tail of asynchronous sidecar writes for each document. */
+  private readonly _pendingSidecarWrites: Map<string, Promise<void>>;
 
   /** Successful proposal responses, keyed by document and client idempotency key. */
   private readonly _proposalIdempotency: Map<string, ProposalIdempotencyRecord>;
@@ -477,7 +477,7 @@ export default class DocumentManager extends ProviderContract {
     this._reviewSidecars = new ReviewSidecarStore(
       path.join(app.getPath("userData"), "review-sidecars"),
     );
-    this._pendingSidecarWrites = new Set();
+    this._pendingSidecarWrites = new Map();
     // Write-through persistence: every review mutation announces itself on
     // the store's event bus, and the sidecar mirrors the post-mutation
     // state. The write is deferred one microtask because mutation events
@@ -494,13 +494,17 @@ export default class DocumentManager extends ProviderContract {
       if (documentId === undefined || event.event === "review.sidecar-error") {
         return;
       }
-      if (this._pendingSidecarWrites.has(documentId)) {
-        return;
-      }
-      this._pendingSidecarWrites.add(documentId);
-      queueMicrotask(() => {
-        this._pendingSidecarWrites.delete(documentId);
-        this._persistReviewSidecar(documentId);
+      const earlier = this._pendingSidecarWrites.get(documentId);
+      const pending = (
+        earlier === undefined ? Promise.resolve() : earlier
+      ).then(async () => {
+        await this._persistReviewSidecar(documentId);
+      });
+      this._pendingSidecarWrites.set(documentId, pending);
+      void pending.then(() => {
+        if (this._pendingSidecarWrites.get(documentId) === pending) {
+          this._pendingSidecarWrites.delete(documentId);
+        }
       });
     });
     this._documentIdByPath = new Map();
@@ -783,7 +787,7 @@ export default class DocumentManager extends ProviderContract {
       // If we're not shutting down, this function will only be called for when
       // the user wants to actively close a window for good
       if (!this._shuttingDown) {
-        this.closeWindow(windowId);
+        await this.closeWindow(windowId);
       }
 
       return true;
@@ -800,7 +804,7 @@ export default class DocumentManager extends ProviderContract {
       // If we're not shutting down, this function will only be called for when
       // the user wants to actively close a window for good
       if (!this._shuttingDown) {
-        this.closeWindow(windowId);
+        await this.closeWindow(windowId);
       }
 
       return true;
@@ -902,7 +906,7 @@ export default class DocumentManager extends ProviderContract {
     this.syncToConfig();
   }
 
-  public closeWindow(windowId: string): void {
+  public async closeWindow(windowId: string): Promise<void> {
     if (this._shuttingDown) {
       return; // During shutdown only the WindowManager should close windows
     }
@@ -918,7 +922,7 @@ export default class DocumentManager extends ProviderContract {
       // necessary anymore.
       this._app.log.info(`[Documents Manager] Closing window ${windowId}!`);
       for (const document of this._windowExclusiveDocuments(windowId)) {
-        this._detachReview(document.documentId);
+        await this._detachReview(document.documentId);
         this.documents.splice(this.documents.indexOf(document), 1);
         this._app.references.dropAuthorityBuffer(document.filePath);
       }
@@ -948,6 +952,7 @@ export default class DocumentManager extends ProviderContract {
     // every chokidar process we utilize. Otherwise, the fsevents dylib will
     // still hold on to some memory after the Electron process itself shuts down
     // which will result in a crash report appearing on macOS.
+    await this.flushReviewSidecarWrites();
     await this._watcher.shutdown();
     this._config.shutdown();
   }
@@ -1011,7 +1016,7 @@ export default class DocumentManager extends ProviderContract {
     // Reattachment: a sidecar for this path means a review detached here.
     // On a verified fence this restores the buffer to the review's working
     // text, so the content and version returned must be read AFTER it.
-    this._reattachReviewSidecar(doc);
+    await this._reattachReviewSidecar(doc);
 
     // The authority loaded a markdown buffer: feed the references provider's
     // live overlay (issue #53). Reporting on LOAD — not only on the first
@@ -1436,7 +1441,7 @@ current contents from the editor somewhere else, and restart the application.`,
       {
         const _id = this.getDocumentId(filePath);
         if (_id !== undefined) {
-          this._detachReview(_id);
+          await this._detachReview(_id);
         }
       }
       this.documents.splice(this.documents.indexOf(openFile), 1);
@@ -1502,7 +1507,7 @@ current contents from the editor somewhere else, and restart the application.`,
     // live document.
     const documentId = this.getDocumentId(filePath);
     if (documentId !== undefined) {
-      this._detachReview(documentId);
+      await this._detachReview(documentId);
     }
     const idx = this.documents.findIndex((doc) => doc.filePath === filePath);
     if (idx > -1) {
@@ -1856,7 +1861,7 @@ current contents from the editor somewhere else, and restart the application.`,
     {
       const _id = this.getDocumentId(filePath);
       if (_id !== undefined) {
-        this._detachReview(_id);
+        await this._detachReview(_id);
       }
     }
     const idx = this.documents.findIndex((file) => file.filePath === filePath);
@@ -2200,7 +2205,7 @@ current contents from the editor somewhere else, and restart the application.`,
   ): ChunkDecisionResponse | { ok: false; code: AgentErrorCode; message: string } {
     const review = this._reviewStore.findReviewByReviewId(reviewId);
     if (review === undefined) {
-      return this.reviewLookupFailure(reviewId);
+      return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
     }
     const filePath = this.getDocumentPath(review.documentId);
     const doc =
@@ -2267,7 +2272,7 @@ current contents from the editor somewhere else, and restart the application.`,
   ): AcceptAllChunksResponse | { ok: false; code: AgentErrorCode; message: string } {
     const review = this._reviewStore.findReviewByReviewId(reviewId);
     if (review === undefined) {
-      return this.reviewLookupFailure(reviewId);
+      return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
     }
     const filePath = this.getDocumentPath(review.documentId);
     const doc =
@@ -2446,6 +2451,7 @@ current contents from the editor somewhere else, and restart the application.`,
     {
       const _id = this.getDocumentId(filePath);
       if (_id !== undefined) {
+        await this._awaitReviewSidecarWrite(_id);
         const _review = this._reviewStore.getReview(_id);
         if (_review !== undefined && this._reviewStore.countHeld(_id) > 0) {
           // Held chunks survive a save: the review stays open and the
@@ -2457,7 +2463,7 @@ current contents from the editor somewhere else, and restart the application.`,
           // a stale persisted fence would invalidate the review on its
           // next reattachment.
           this._reviewStore.refreshDiskFence(_id, sha256Text(content));
-          this._persistReviewSidecar(_id);
+          await this._persistReviewSidecar(_id);
         } else {
           if (_review !== undefined) {
             this._broadcastReviewCleared(filePath, _review.reviewId);
@@ -2466,7 +2472,7 @@ current contents from the editor somewhere else, and restart the application.`,
           this._clearProposalIdempotency(_id);
           // Explicit resolution: a completed review leaves no residue.
           try {
-            this._reviewSidecars.delete(filePath);
+            await this._reviewSidecars.delete(filePath);
           } catch (err) {
             this._surfaceReviewSidecarError(_id, "delete", err);
           }
@@ -2546,14 +2552,15 @@ current contents from the editor somewhere else, and restart the application.`,
    * from disk closes it), so detaching would only preserve a review that
    * can never be decided again — the sidecar is deleted instead.
    */
-  private _detachReview(documentId: string): void {
+  private async _detachReview(documentId: string): Promise<void> {
+    await this._awaitReviewSidecarWrite(documentId);
     const review = this._reviewStore.getReview(documentId);
     if (review !== undefined) {
       try {
         if (review.invalidated) {
-          this._reviewSidecars.delete(review.documentPath);
+          await this._reviewSidecars.delete(review.documentPath);
         } else {
-          this._reviewSidecars.write(this._reviewStore.exportReviewSidecar(documentId)!);
+          await this._reviewSidecars.write(this._reviewStore.exportReviewSidecar(documentId)!);
         }
       } catch (err) {
         this._surfaceReviewSidecarError(documentId, "detach write", err);
@@ -2596,9 +2603,10 @@ current contents from the editor somewhere else, and restart the application.`,
       // document's prompt.
       return;
     }
+    await this._awaitReviewSidecarWrite(doc.documentId);
     const diskContents = await this._app.fsal.loadAnySupportedFile(doc.filePath);
     const review = this._reviewStore.getReview(doc.documentId);
-    this._reviewSidecars.delete(doc.filePath);
+    await this._reviewSidecars.delete(doc.filePath);
     this._reviewStore.closeReview(doc.documentId);
     this._clearProposalIdempotency(doc.documentId);
     if (review !== undefined) {
@@ -2624,15 +2632,27 @@ current contents from the editor somewhere else, and restart the application.`,
    * completion and detachment own their own file lifecycle — so the mutation
    * event that raced a close in the same turn simply has nothing to write.
    */
-  private _persistReviewSidecar(documentId: string): void {
+  private async _persistReviewSidecar(documentId: string): Promise<void> {
     try {
       const sidecar = this._reviewStore.exportReviewSidecar(documentId);
       if (sidecar === undefined) {
         return;
       }
-      this._reviewSidecars.write(sidecar);
+      await this._reviewSidecars.write(sidecar);
     } catch (err) {
       this._surfaceReviewSidecarError(documentId, "write-through", err);
+    }
+  }
+
+  /** Await every sidecar write currently owned by this provider. */
+  public async flushReviewSidecarWrites(): Promise<void> {
+    await Promise.all(this._pendingSidecarWrites.values());
+  }
+
+  private async _awaitReviewSidecarWrite(documentId: string): Promise<void> {
+    const pending = this._pendingSidecarWrites.get(documentId);
+    if (pending !== undefined) {
+      await pending;
     }
   }
 
@@ -2658,10 +2678,10 @@ current contents from the editor somewhere else, and restart the application.`,
    * gets in-process: the review is announced invalidated and destroyed (its
    * sidecar deleted), and the file opens with the disk content preserved.
    */
-  private _reattachReviewSidecar(doc: Document): void {
+  private async _reattachReviewSidecar(doc: Document): Promise<void> {
     let sidecar;
     try {
-      sidecar = this._reviewSidecars.read(doc.filePath);
+      sidecar = await this._reviewSidecars.read(doc.filePath);
     } catch (err) {
       // The document itself is fine — open it; the broken sidecar stays on
       // disk as evidence and keeps failing loudly until it is dealt with.
@@ -2677,7 +2697,7 @@ current contents from the editor somewhere else, and restart the application.`,
           "the file changed on disk while the review was detached. The disk content " +
           "was preserved; the detached review was discarded.",
       );
-      this._reviewSidecars.delete(doc.filePath);
+      await this._reviewSidecars.delete(doc.filePath);
       this._reviewStore.emitEvent("review.invalidated", {
         reviewId: sidecar.reviewId,
         documentId: doc.documentId,
@@ -2694,8 +2714,8 @@ current contents from the editor somewhere else, and restart the application.`,
    * GET /v1/reviews. A loaded document's sidecar is excluded — its
    * in-memory review is the live entry for the same fact.
    */
-  public listDetachedReviews(): ReviewListEntry[] {
-    return this._detachedReviews().map((sidecar) => ({
+  public async listDetachedReviews(): Promise<ReviewListEntry[]> {
+    return (await this._detachedReviews()).map((sidecar) => ({
         reviewId: sidecar.reviewId,
         state: classifyReviewState(sidecar.invalidated, sidecar.unresolvedChunks),
         generation: sidecar.generation,
@@ -2716,10 +2736,8 @@ current contents from the editor somewhere else, and restart the application.`,
    */
   // ponytail: rereads every sidecar file per call. Cache it when a workspace
   // with hundreds of detached reviews makes the scan show up.
-  private _detachedReviews(): ReviewSidecarData[] {
-    return this._reviewSidecars
-      .list()
-      .filter((sidecar) =>
+  private async _detachedReviews(): Promise<ReviewSidecarData[]> {
+    return (await this._reviewSidecars.list()).filter((sidecar) =>
         this.documents.every(
           (doc) => path.resolve(doc.filePath) !== path.resolve(sidecar.documentPath),
         ),
@@ -2733,8 +2751,8 @@ current contents from the editor somewhere else, and restart the application.`,
    * the comments, so the review routes can answer from it without the
    * document being open.
    */
-  public findDetachedReview(reviewId: string): ReviewSidecarData | undefined {
-    return this._detachedReviews().find((sidecar) => sidecar.reviewId === reviewId);
+  public async findDetachedReview(reviewId: string): Promise<ReviewSidecarData | undefined> {
+    return (await this._detachedReviews()).find((sidecar) => sidecar.reviewId === reviewId);
   }
 
   /**
@@ -2742,12 +2760,12 @@ current contents from the editor somewhere else, and restart the application.`,
    * not missing — /v1/reviews just vouched for it — it is unworkable until
    * its file is open again, which is a conflict, not a 404.
    */
-  public reviewLookupFailure(reviewId: string): {
+  public async reviewLookupFailure(reviewId: string): Promise<{
     ok: false;
     code: AgentErrorCode;
     message: string;
-  } {
-    const detached = this.findDetachedReview(reviewId);
+  }> {
+    const detached = await this.findDetachedReview(reviewId);
     if (detached !== undefined) {
       return {
         ok: false,
@@ -3180,7 +3198,7 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     }
     if (documentId === undefined) {
-      return this.reviewLookupFailure(reviewId);
+      return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
     }
     const result = this._reviewStore.clearUnresolved(documentId);
     if (!result.ok) {
@@ -3214,7 +3232,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * Atomically mutates store, applies working text to document, broadcasts state,
    * and returns the post-mutation document revision.
    */
-  public retractProposal(packetId: string):
+  public async retractProposal(packetId: string): Promise<
     | {
         ok: true;
         retracted: true;
@@ -3231,7 +3249,8 @@ current contents from the editor somewhere else, and restart the application.`,
         message: string;
         reviewId: string;
         canClearUnresolved: boolean;
-      } {
+      }
+  > {
     const result = this._reviewStore.retractPacket(packetId);
     if (!result.ok) {
       // GET /v1/reviews/{id}/packets hands out a detached review's packetIds,
@@ -3239,7 +3258,7 @@ current contents from the editor somewhere else, and restart the application.`,
       // the file closed; the sidecar still carries them, and the refusal it
       // earns is the same one every reviewId route gives — the file is shut,
       // not the packet missing. Clearing is shut too, so say so.
-      const detached = this._detachedReviews().find((sidecar) =>
+      const detached = (await this._detachedReviews()).find((sidecar) =>
         sidecar.packets.some((packet) => packet.packetId === packetId),
       );
       if (detached !== undefined) {

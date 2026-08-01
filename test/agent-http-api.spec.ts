@@ -33,7 +33,10 @@ import AgentHTTPProvider, {
   MAX_SEARCH_PATTERN_LENGTH,
 } from "source/app/service-providers/agent-api/http-server";
 import DocumentManager from "source/app/service-providers/documents";
-import { ReviewSidecarStore } from "source/app/service-providers/documents/review-sidecar-store";
+import {
+  ReviewSidecarStore,
+  reviewSidecarFilePath,
+} from "source/app/service-providers/documents/review-sidecar-store";
 import LogProvider from "source/app/service-providers/log";
 
 // ============================================================================
@@ -317,9 +320,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   const sidecarDirectory = path.join(app.getPath("userData"), "review-sidecars");
   const sidecars = new ReviewSidecarStore(sidecarDirectory);
 
-  /** Sidecar write-through is deferred one microtask; run it to completion. */
+  /** Await the provider-owned asynchronous write queue. */
   async function flushSidecarWrites(): Promise<void> {
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await provider.flushReviewSidecarWrites();
   }
 
   beforeEach(async function () {
@@ -353,6 +356,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
   afterEach(async function () {
     await httpProvider.shutdown();
+    await provider.shutdown();
     rmSync(scratch, { recursive: true, force: true });
   });
 
@@ -1976,6 +1980,33 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   // ==========================================================================
 
   describe("review sidecar persistence", function () {
+    it("surfaces an invalid sidecar without aborting the valid document open", async function () {
+      const filePath = path.join(scratch, "sidecar-invalid.md");
+      writeFileSync(filePath, "valid document\n", "utf8");
+      mkdirSync(sidecarDirectory, { recursive: true });
+      writeFileSync(
+        reviewSidecarFilePath(sidecarDirectory, filePath),
+        JSON.stringify({ version: 1, reviewId: "incomplete" }),
+        "utf8",
+      );
+      const failures: AgentEvent[] = [];
+      provider.reviewStore.on("review.sidecar-error", (event: AgentEvent) =>
+        failures.push(event),
+      );
+
+      const opened = await provider.getDocument(filePath);
+
+      assert.equal(opened.content, "valid document\n");
+      assert.equal(failures.length, 1);
+      const failureMessage = failures[0].message;
+      assert.ok(typeof failureMessage === "string");
+      assert.match(
+        failureMessage,
+        /is not a version-1 review sidecar/,
+        "the documented sidecar error must name the validation failure",
+      );
+    });
+
     it("writes the sidecar through on every review mutation", async function () {
       const filePath = path.join(scratch, "sidecar-write.md");
       const docId = await openFile(filePath, "alpha\nbeta\n");
@@ -1991,7 +2022,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }
       await flushSidecarWrites();
 
-      const first = sidecars.read(filePath);
+      const first = await sidecars.read(filePath);
       assert.ok(first !== undefined, "a review mutation must write its sidecar through");
       assert.equal(first.reviewId, submitted.reviewId);
       assert.equal(first.generation, 1);
@@ -2009,7 +2040,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       );
       assert.equal(held.ok, true);
       await flushSidecarWrites();
-      const second = sidecars.read(filePath)!;
+      const second = (await sidecars.read(filePath))!;
       assert.equal(second.generation, 2);
       assert.deepEqual(
         second.holds.map((hold) => hold.comment),
@@ -2124,7 +2155,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }
       await flushSidecarWrites();
       await provider.closeFileEverywhere(filePath);
-      assert.ok(sidecars.read(filePath) !== undefined, "the close must have detached");
+      assert.ok((await sidecars.read(filePath)) !== undefined, "the close must have detached");
 
       // The external edit that invalidates a review in-process, landing
       // across the gap instead.
@@ -2146,7 +2177,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "externally rewritten\n",
         "the external disk content must be preserved",
       );
-      assert.equal(sidecars.read(filePath), undefined, "the drifted sidecar must be discarded");
+      assert.equal(
+        await sidecars.read(filePath),
+        undefined,
+        "the drifted sidecar must be discarded",
+      );
       assert.equal(invalidated.length, 1);
       assert.equal(invalidated[0].reviewId, submitted.reviewId);
     });
@@ -2180,7 +2215,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "ALPHA\n",
         "the proposal must be in the buffer before it can be discarded",
       );
-      assert.ok(sidecars.read(filePath) !== undefined, "write-through must have run");
+      assert.ok((await sidecars.read(filePath)) !== undefined, "write-through must have run");
 
       const discarded: AgentEvent[] = [];
       provider.reviewStore.on("review.discarded", (event: AgentEvent) =>
@@ -2200,7 +2235,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
       assert.equal(readFileSync(filePath, "utf8"), onDisk, "a discard must not write to disk");
       assert.equal(
-        sidecars.read(filePath),
+        await sidecars.read(filePath),
         undefined,
         "no store may still hold the discarded text",
       );
@@ -2285,7 +2320,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(provider.isModified(filePath), false, "and be clean because it now is");
       assert.equal(provider.reviewStore.getReview(docId), undefined);
       assert.equal(
-        sidecars.read(filePath),
+        await sidecars.read(filePath),
         undefined,
         "no store may still hold the discarded text",
       );
@@ -2342,7 +2377,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "the closing window's exclusively owned document must be unloaded",
       );
       assert.equal(readFileSync(closing, "utf8"), onDisk);
-      assert.equal(sidecars.read(closing), undefined);
+      assert.equal(await sidecars.read(closing), undefined);
       assert.equal(provider.reviewStore.getReview(closingId), undefined);
 
       assert.equal(
@@ -2352,7 +2387,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       );
       assert.equal(provider.isModified(kept), true);
       assert.ok(
-        sidecars.read(kept) !== undefined,
+        (await sidecars.read(kept)) !== undefined,
         "and its review must still be there to decide",
       );
       assert.ok(provider.reviewStore.getReview(keptId) !== undefined);
@@ -2391,7 +2426,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.deepEqual(await provider.saveFile(filePath), { ok: true });
       await flushSidecarWrites();
 
-      provider.closeWindow(closingWindow);
+      await provider.closeWindow(closingWindow);
       await flushSidecarWrites();
 
       assert.equal(
@@ -2404,7 +2439,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         undefined,
         "the live review must detach when its document has no remaining owner",
       );
-      const detached = provider.findDetachedReview(submitted.reviewId);
+      const detached = await provider.findDetachedReview(submitted.reviewId);
       assert.ok(detached !== undefined, "the held review must persist as a detached sidecar");
       assert.equal(detached.workingText, "ALPHA\n");
       assert.equal(detached.heldChunks, 1);
@@ -2693,7 +2728,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         return;
       }
       await flushSidecarWrites();
-      assert.ok(sidecars.read(filePath) !== undefined);
+      assert.ok((await sidecars.read(filePath)) !== undefined);
 
       const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
       const accepted = provider.decideChunk(submitted.reviewId, chunks[0].chunkId, "accept");
@@ -2704,7 +2739,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
       assert.equal(provider.reviewStore.getReview(docId), undefined);
       assert.equal(
-        sidecars.read(filePath),
+        await sidecars.read(filePath),
         undefined,
         "a resolved review must leave no residue",
       );

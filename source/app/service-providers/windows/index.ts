@@ -346,6 +346,8 @@ export default class WindowProvider extends ProviderContract {
    * Listens to events on the main window
    */
   private _hookMainWindow (window: BrowserWindow): void {
+    let documentCloseReady = false
+
     // Listens to events from the window
     window.on('focus', () => {
       const key = this.getMainWindowKey(window)
@@ -355,6 +357,10 @@ export default class WindowProvider extends ProviderContract {
     })
 
     window.on('close', (event) => {
+      if (documentCloseReady) {
+        return
+      }
+
       const key = this.getMainWindowKey(window)
 
       if (key === undefined) {
@@ -389,6 +395,7 @@ export default class WindowProvider extends ProviderContract {
         this._documents.askUserToCloseWindow(key)
           .then(canCloseWindow => {
             if (canCloseWindow) {
+              documentCloseReady = true
               window.close()
             }
           })
@@ -396,7 +403,15 @@ export default class WindowProvider extends ProviderContract {
             this._logger.error('[WindowManager] Could not ask user to close window', err)
           })
       } else {
+        event.preventDefault()
         this._documents.closeWindow(key)
+          .then(() => {
+            documentCloseReady = true
+            window.close()
+          })
+          .catch(err => {
+            this._logger.error('[WindowManager] Could not close clean window', err)
+          })
       }
     })
 

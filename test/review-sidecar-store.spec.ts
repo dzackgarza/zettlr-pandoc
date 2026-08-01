@@ -131,12 +131,21 @@ describe("ReviewSidecarStore", function () {
       { ...valid, packets: [{ ...packet, refSpans: null }] },
       { ...valid, packets: [{ ...packet, refSpans: [{ from: "1", to: 2 }] }] },
       { ...valid, packets: [{ ...packet, refSpans: [{ from: 1, to: "2" }] }] },
+      {
+        ...valid,
+        packets: [
+          packet,
+          { ...packet, refSpans: [{ from: 1, to: 2 }, { from: "1", to: 2 }] },
+        ],
+      },
       { ...valid, holds: [{ ...hold, chunkId: 1 }] },
       { ...valid, holds: [{ ...hold, comment: 1 }] },
       { ...valid, holds: [{ ...hold, heldAt: 1 }] },
+      { ...valid, holds: [hold, { ...hold, chunkId: 1 }] },
       { ...valid, comments: [{ ...comment, text: 1 }] },
       { ...valid, comments: [{ ...comment, createdAt: 1 }] },
       { ...valid, comments: [{ ...comment, orphanedFromChunkId: 1 }] },
+      { ...valid, comments: [comment, { ...comment, text: 1 }] },
     ];
 
     const sidecarDirectory = path.dirname(
