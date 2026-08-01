@@ -33,7 +33,7 @@ function sidecar(documentPath: string): ReviewSidecarData {
     referenceText: "alpha\n",
     workingText: "ALPHA\n",
     generation: 1,
-    diskFenceSha256: "fence",
+    diskFenceSha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     invalidated: false,
     packets: [
       {
@@ -113,6 +113,7 @@ describe("ReviewSidecarStore", function () {
       { ...valid, workingText: {} },
       { ...valid, generation: "1" },
       { ...valid, diskFenceSha256: 1 },
+      { ...valid, diskFenceSha256: "fence" },
       { ...valid, invalidated: "false" },
       { ...valid, packets: null },
       { ...valid, holds: null },
@@ -157,5 +158,24 @@ describe("ReviewSidecarStore", function () {
       writeFileSync(persistedPath, JSON.stringify(invalid), "utf8");
       await assert.rejects(Promise.resolve(store.read(documentPath)), Error);
     }
+  });
+
+  it("rejects a sidecar whose payload path does not match its hashed filename", async function () {
+    const expected = sidecar(documentPath);
+    await store.write(expected);
+    const persistedPath = reviewSidecarFilePath(path.join(directory, "sidecars"), documentPath);
+    writeFileSync(
+      persistedPath,
+      JSON.stringify({ ...expected, documentPath: path.join(directory, "other.md") }),
+      "utf8",
+    );
+    await assert.rejects(store.read(documentPath), /does not match its document path/);
+  });
+
+  it("serializes overlapping writes to the same sidecar", async function () {
+    const first = sidecar(documentPath);
+    const second = { ...first, workingText: "SECOND\n" };
+    await Promise.all([store.write(first), store.write(second)]);
+    assert.equal((await store.read(documentPath))?.workingText, "SECOND\n");
   });
 });

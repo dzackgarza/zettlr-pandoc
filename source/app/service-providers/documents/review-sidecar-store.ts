@@ -57,6 +57,10 @@ function isFiniteInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value);
 }
 
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+
 function isRefSpan(value: unknown): value is RefSpan {
   return (
     typeof value === "object" &&
@@ -146,7 +150,7 @@ function isReviewSidecarData(parsed: unknown): parsed is ReviewSidecarData {
     "generation" in parsed &&
     isFiniteInteger(parsed.generation) &&
     "diskFenceSha256" in parsed &&
-    typeof parsed.diskFenceSha256 === "string" &&
+    isSha256(parsed.diskFenceSha256) &&
     "invalidated" in parsed &&
     typeof parsed.invalidated === "boolean" &&
     "packets" in parsed &&
@@ -180,19 +184,41 @@ function parseReviewSidecar(raw: string, target: string): ReviewSidecarData {
   if (!isReviewSidecarData(parsed)) {
     throw new Error(`Review sidecar ${target} is not a version-1 review sidecar`);
   }
+  const expectedHash = path.basename(target, ".json");
+  if (expectedHash !== sha256Text(path.resolve(parsed.documentPath))) {
+    throw new Error(`Review sidecar ${target} does not match its document path`);
+  }
   return parsed;
 }
 
 export class ReviewSidecarStore {
+  private readonly pendingWrites = new Map<string, Promise<void>>();
+
   constructor(private readonly directory: string) {}
 
   /** Write a sidecar through, atomically (write-then-rename). */
   async write(sidecar: ReviewSidecarData): Promise<void> {
-    await fs.mkdir(this.directory, { recursive: true });
     const target = reviewSidecarFilePath(this.directory, sidecar.documentPath);
-    const temporary = `${target}.tmp`;
-    await fs.writeFile(temporary, JSON.stringify(sidecar), "utf8");
-    await fs.rename(temporary, target);
+    const previous = this.pendingWrites.get(target);
+    const start = previous === undefined ? Promise.resolve() : previous.catch(() => undefined);
+    const pending = start.then(async () => {
+      await fs.mkdir(this.directory, { recursive: true });
+      const temporary = `${target}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
+      try {
+        await fs.writeFile(temporary, JSON.stringify(sidecar), "utf8");
+        await fs.rename(temporary, target);
+      } finally {
+        await fs.rm(temporary, { force: true });
+      }
+    });
+    this.pendingWrites.set(target, pending);
+    try {
+      await pending;
+    } finally {
+      if (this.pendingWrites.get(target) === pending) {
+        this.pendingWrites.delete(target);
+      }
+    }
   }
 
   /**
@@ -210,7 +236,11 @@ export class ReviewSidecarStore {
       }
       throw error;
     }
-    return parseReviewSidecar(raw, target);
+    const parsed = parseReviewSidecar(raw, target);
+    if (path.resolve(parsed.documentPath) !== path.resolve(documentPath)) {
+      throw new Error(`Review sidecar ${target} does not match the requested document path`);
+    }
+    return parsed;
   }
 
   /** Remove a document's sidecar. Absent is fine — deletion is idempotent. */
