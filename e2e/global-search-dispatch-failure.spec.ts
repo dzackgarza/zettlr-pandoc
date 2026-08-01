@@ -26,6 +26,7 @@ import {
   assertCleanExit,
   attach,
   createFixture,
+  delay,
   findEditorPage,
   preserveArtifacts,
   requireInitialized,
@@ -42,6 +43,20 @@ const PANE = '#global-search-pane'
 const QUERY_INPUT = `${PANE} input#field-inputquery-input`
 const RUNNING_INDICATOR = `${PANE} progress`
 const ERROR_MESSAGE = `${PANE} p.search-error`
+const REPLACEMENT_RESULT = `${PANE} .single-search-result .filename`
+
+const PROJECT_SETTINGS = {
+  sorting: 'name-up',
+  project: {
+    title: 'Initial project',
+    profiles: [],
+    files: [],
+    cslStyle: '',
+    templates: { tex: '', html: '' }
+  },
+  icon: null,
+  color: null
+}
 
 /** The pane's Search button — 'Cancel' and 'Clear search' sit beside it. */
 function searchButton (page: Page): Locator {
@@ -52,6 +67,8 @@ interface RunningFixture {
   appProcess: ChildProcess | undefined
   browser: Browser | undefined
   fixtureRoot: string | undefined
+  workspace: string | undefined
+  projectSettingsFile: string | undefined
   vanishingWorkspace: string | undefined
   getOutput: () => string
   rendererEvents: string[]
@@ -72,6 +89,27 @@ async function boot (fixture: RunningFixture, timeoutMs: number): Promise<void> 
     documentContents: '# Searchable\n\nThe word haystack appears here.\n'
   })
   fixture.fixtureRoot = created.root
+  const workspace = path.dirname(created.documentPath)
+  fixture.workspace = workspace
+  const projectSettingsFile = path.join(workspace, '.ztr-directory')
+  fixture.projectSettingsFile = projectSettingsFile
+  await writeFile(projectSettingsFile, JSON.stringify(PROJECT_SETTINGS), 'utf8')
+
+  const searchablePadding = 'ordinary words '.repeat(600)
+  await Promise.all(
+    Array.from({ length: 800 }, async (_, index) => {
+      await writeFile(
+        path.join(workspace, `search-corpus-${String(index).padStart(3, '0')}.md`),
+        `# Corpus ${index}\n\n${searchablePadding}\n`,
+        'utf8'
+      )
+    })
+  )
+  await writeFile(
+    path.join(workspace, 'replacement-hit.md'),
+    '# Replacement\n\nreplacementtoken appears here.\n',
+    'utf8'
+  )
 
   const vanishingWorkspace = path.join(created.root, 'workspace-on-a-removable-drive')
   await mkdir(vanishingWorkspace)
@@ -113,17 +151,102 @@ async function teardown (fixture: RunningFixture): Promise<void> {
 
 /** Opens the global search pane the way a user does: the toolbar toggle. */
 async function openSearchPane (page: Page, timeoutMs: number): Promise<void> {
-  await page
-    .locator('#toolbar-toggle-file-manager button[title="Search across all files"]')
-    .click()
-  await page.locator(QUERY_INPUT).waitFor({ state: 'visible', timeout: timeoutMs })
+  const queryInput = page.locator(QUERY_INPUT)
+  if (!(await queryInput.isVisible())) {
+    await page
+      .locator('#toolbar-toggle-file-manager button[title="Search across all files"]')
+      .click()
+    await queryInput.waitFor({ state: 'visible', timeout: timeoutMs })
+  }
 }
 
-describe('a global search whose dispatch fails', function () {
+async function findProjectPropertiesPage (
+  browser: Browser,
+  timeoutMs: number
+): Promise<Page> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    for (const context of browser.contexts()) {
+      for (const page of context.pages()) {
+        if ((await page.locator('#formats-panel').count()) > 0) {
+          return page
+        }
+      }
+    }
+    await delay(100)
+  }
+  throw new Error(`No project-properties window appeared within ${timeoutMs}ms`)
+}
+
+async function waitForProjectState (
+  page: Page,
+  workspace: string,
+  shouldBeProject: boolean
+): Promise<void> {
+  await page.waitForFunction(
+    async ({ directoryPath, enabled }) => {
+      const descriptor = await window.ipc.invoke('fsal', {
+        command: 'get-descriptor',
+        payload: directoryPath
+      })
+      return descriptor !== undefined &&
+        !Array.isArray(descriptor) &&
+        descriptor.type === 'directory' &&
+        (descriptor.settings.project !== null) === enabled
+    },
+    { directoryPath: workspace, enabled: shouldBeProject },
+    { timeout: 30_000 }
+  )
+}
+
+async function waitForRendererEvent (
+  events: string[],
+  fragment: string,
+  timeoutMs: number
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (events.some(event => event.includes(fragment))) {
+      return
+    }
+    await delay(100)
+  }
+  assert.fail(`Renderer never reported ${JSON.stringify(fragment)}`)
+}
+
+async function waitForProjectTitle (
+  settingsFile: string,
+  expectedTitle: string,
+  timeoutMs: number
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const settings: unknown = JSON.parse(await readFile(settingsFile, 'utf8'))
+    if (
+      settings !== null &&
+      typeof settings === 'object' &&
+      'project' in settings &&
+      settings.project !== null &&
+      typeof settings.project === 'object' &&
+      'title' in settings.project &&
+      settings.project.title === expectedTitle
+    ) {
+      return
+    }
+    await delay(100)
+  }
+  assert.fail(`Project settings never persisted title ${JSON.stringify(expectedTitle)}`)
+}
+
+describe('global-search and project-properties failure recovery', function () {
+  this.timeout(300_000)
+
   const running: RunningFixture = {
     appProcess: undefined,
     browser: undefined,
     fixtureRoot: undefined,
+    workspace: undefined,
+    projectSettingsFile: undefined,
     vanishingWorkspace: undefined,
     getOutput: () => '',
     rendererEvents: [],
@@ -137,6 +260,88 @@ describe('a global search whose dispatch fails', function () {
 
   after(async function () {
     await teardown(running)
+  })
+
+  it('starts the edited query after cancelling the active search', async function () {
+    assert.ok(running.browser, 'The application must be running')
+    const page = await findEditorPage(running.browser, this.timeout())
+    await openSearchPane(page, 30_000)
+
+    const queryInput = page.locator(QUERY_INPUT)
+    await queryInput.fill('notpresentinthecorpus')
+    await searchButton(page).click()
+    await page.locator(RUNNING_INDICATOR).waitFor({
+      state: 'visible',
+      timeout: 30_000
+    })
+
+    await queryInput.fill('replacementtoken')
+    await queryInput.press('Enter')
+    await page.locator(REPLACEMENT_RESULT).filter({
+      hasText: 'replacement-hit.md'
+    }).waitFor({ state: 'visible', timeout: 60_000 })
+  })
+
+  it('retries a project edit after descriptor validation recovers', async function () {
+    const workspace = requireInitialized(
+      running.workspace,
+      'The fixture workspace must be initialized'
+    )
+    const projectSettingsFile = requireInitialized(
+      running.projectSettingsFile,
+      'The project settings path must be initialized'
+    )
+    assert.ok(running.browser, 'The application must be running')
+    const mainPage = await findEditorPage(running.browser, this.timeout())
+
+    // The visible Project Settings button dispatches this exact production
+    // application command from PopoverDirProps. Its containing directory
+    // popover is reached from an Electron native context menu, which CDP
+    // cannot select; enter at the command boundary, then drive the real
+    // project-properties window and controls.
+    await mainPage.evaluate(
+      async ([directoryPath]) =>
+        await window.ipc.invoke('application', {
+          command: 'open-project-preferences',
+          payload: directoryPath
+        }),
+      [workspace]
+    )
+
+    const propertiesPage = await findProjectPropertiesPage(
+      running.browser,
+      30_000
+    )
+    try {
+      const titleInput = propertiesPage.getByLabel('Project Title')
+      await titleInput.waitFor({ state: 'visible', timeout: 30_000 })
+      assert.equal(await titleInput.inputValue(), 'Initial project')
+
+      await rm(projectSettingsFile)
+      await waitForProjectState(mainPage, workspace, false)
+      await titleInput.fill('First edit cannot persist')
+      await waitForRendererEvent(
+        running.rendererEvents,
+        'Project was null',
+        30_000
+      )
+
+      await writeFile(projectSettingsFile, JSON.stringify(PROJECT_SETTINGS), 'utf8')
+      await waitForProjectState(mainPage, workspace, true)
+      await titleInput.fill('Recovered project title')
+      await waitForProjectTitle(
+        projectSettingsFile,
+        'Recovered project title',
+        10_000
+      )
+    } finally {
+      if (!propertiesPage.isClosed()) {
+        await propertiesPage.evaluate(() => {
+          window.ipc.send('window-controls', { command: 'win-close' })
+        })
+        await propertiesPage.waitForEvent('close', { timeout: 10_000 })
+      }
+    }
   })
 
   it('names the failure in the pane and stops showing the search as running', async function () {
