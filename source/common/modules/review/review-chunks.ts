@@ -63,9 +63,10 @@ import { Text } from "@codemirror/state";
 export interface ReviewChunk {
   /**
    * Content-addressed identity: a hash of the chunk's reference and working
-   * text, plus an occurrence index when the same edit appears more than once
-   * in one document. Accepting or rejecting one chunk therefore does NOT
-   * invalidate the ids of the others — the property positional ids
+   * text, plus a reverse occurrence index when the same edit appears more
+   * than once in one document. Counting identical siblings after a chunk
+   * means accepting or rejecting an earlier sibling does NOT invalidate the
+   * ids of the later siblings — the property positional ids
    * (`chunk-<generation>-<index>`) could not provide, which is what made the
    * old chunk list unactionable: every decision renumbered the rest.
    */
@@ -124,8 +125,8 @@ export function computeReviewChunks(
   );
 
   const result: ReviewChunk[] = [];
-  const seen = new Map<string, { nextOccurrence: number }>();
-  for (const range of ranges) {
+  const identicalChunksAfter = new Map<string, number>();
+  for (const range of [...ranges].reverse()) {
     const refSlice = joinLines(refLines, range.refFrom, range.refTo);
     const workSlice = joinLines(workLines, range.workFrom, range.workTo);
     // A seam split can isolate an agreement stretch of a merged or extended
@@ -136,13 +137,13 @@ export function computeReviewChunks(
     }
 
     const hash = fnv1a64(`${refSlice}\0${workSlice}`);
-    const occurrenceState = seen.get(hash);
+    const laterIdenticalCount = identicalChunksAfter.get(hash);
     let chunkId = `chunk-${hash}`;
-    if (occurrenceState === undefined) {
-      seen.set(hash, { nextOccurrence: 1 });
+    if (laterIdenticalCount === undefined) {
+      identicalChunksAfter.set(hash, 1);
     } else {
-      chunkId += `-${occurrenceState.nextOccurrence}`;
-      occurrenceState.nextOccurrence += 1;
+      chunkId += `-${laterIdenticalCount}`;
+      identicalChunksAfter.set(hash, laterIdenticalCount + 1);
     }
 
     result.push({
@@ -159,7 +160,7 @@ export function computeReviewChunks(
       workingText: workSlice,
     });
   }
-  return result;
+  return result.reverse();
 }
 
 // ============================================================================
@@ -594,8 +595,8 @@ function lineStartOffset(doc: Text, line: number): number {
 /**
  * FNV-1a, 64-bit, hex-encoded. Chosen over crypto hashes because this module
  * must load in the renderer, which has no `crypto` builtin; identity only
- * needs to distinguish chunks within one document, and the occurrence index
- * already disambiguates true duplicates.
+ * needs to distinguish chunks within one document, and the reverse occurrence
+ * index already disambiguates true duplicates.
  */
 function fnv1a64(input: string): string {
   const PRIME = 0x100000001b3n;
