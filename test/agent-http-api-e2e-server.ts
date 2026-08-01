@@ -20,15 +20,27 @@
 // main-process modules that import 'electron' resolve to the stub.
 import "./headless-electron-harness.cjs";
 
-import { mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from "fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import net from "net";
 import os from "os";
 import path from "path";
+import { BrowserWindow } from "electron";
 import DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
-import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
-import type { AppServiceContainer } from "source/app/app-service-container";
+import AgentHTTPProvider, {
+  type AgentApiHost,
+} from "source/app/service-providers/agent-api/http-server";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
+
+type DocumentManagerApp = ConstructorParameters<typeof DocumentManager>[0];
 
 const scratch = mkdtempSync(path.join(os.tmpdir(), "zettlr-http-api-e2e-"));
 
@@ -54,22 +66,38 @@ function normalizedRead(filePath: string): string {
     .join("\n");
 }
 
-import { readFileSync } from "fs";
+function filesBelow(directoryPath: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(directoryPath, { withFileTypes: true })) {
+    const entryPath = path.join(directoryPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...filesBelow(entryPath));
+    } else if (entry.isFile()) {
+      files.push(entryPath);
+    }
+  }
+  return files;
+}
 
 async function main(): Promise<void> {
   // Find a free port and listen on 127.0.0.1, the same binding the app uses.
   const freePortServer = net.createServer();
-  const httpPort = await new Promise<number>((resolve) => {
+  const httpPort = await new Promise<number>((resolve, reject) => {
     freePortServer.listen(0, "127.0.0.1", () => {
-      const addr = freePortServer.address() as net.AddressInfo;
-      freePortServer.close(() => resolve(addr.port));
+      const address = freePortServer.address();
+      if (address === null || typeof address === "string") {
+        reject(new Error("The E2E server did not bind a TCP address."));
+        return;
+      }
+      freePortServer.close(() => resolve(address.port));
     });
   });
 
   const userData = path.join(scratch, "userData");
   mkdirSync(path.join(userData, "logs"), { recursive: true });
+  const log = new LogProvider();
 
-  const watcherSeam = {
+  const watcherSeam: ReturnType<DocumentManagerApp["fsal"]["getWatchdog"]> = {
     on: () => {},
     getWatched: () => ({}),
     watchPath: (_path: string) => {},
@@ -78,14 +106,14 @@ async function main(): Promise<void> {
   };
 
   let activeWindowId = "";
-  const appSeam = {
-    log: new LogProvider(),
+  const mainWindow = new BrowserWindow();
+  const appSeam: DocumentManagerApp & AgentApiHost = {
+    log,
     config: {
       get: () => ({
         app: {
           openFiles: [],
           openWorkspaces: [scratch],
-          appLang: "en-US",
         },
         system: {
           avoidNewTabs: false,
@@ -93,6 +121,12 @@ async function main(): Promise<void> {
         editor: {
           autoSave: "off",
         },
+        files: {
+          images: { openWith: "zettlr" },
+          pdf: { openWith: "zettlr" },
+        },
+        appLang: "en-US",
+        alwaysReloadFiles: false,
         agentApi: {
           enabled: true,
           port: httpPort,
@@ -112,6 +146,11 @@ async function main(): Promise<void> {
         writeFileSync(filePath, content, "utf8");
       },
       getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
+      getFilesystemMetadata: async (filePath: string) => ({
+        modtime: statSync(filePath).mtimeMs,
+      }),
+      readDirectoryRecursively: async (workspacePath: string) =>
+        filesBelow(workspacePath),
     },
     citeproc: {
       synchronizeDatabases: async (_libraries: string[]) => {},
@@ -119,10 +158,17 @@ async function main(): Promise<void> {
     recentDocs: {
       add: (_path: string) => {},
     },
+    stats: {
+      updateCounts: (_words: number, _chars: number) => {},
+    },
     windows: {
-      showAnyWindow: () => {},
-      getFirstMainWindow: () => ({}),
-      getMainWindowKey: (_window: unknown) => activeWindowId,
+      askSaveChanges: async () => ({
+        response: 2,
+        checkboxChecked: false,
+      }),
+      getFirstMainWindow: () => mainWindow,
+      getMainWindowKey: (window: BrowserWindow) =>
+        window === mainWindow ? activeWindowId : undefined,
     },
     // The manager drives the references provider's live overlay at its
     // mutation points (issue #53); this harness exercises the agent API,
@@ -133,22 +179,11 @@ async function main(): Promise<void> {
     },
   };
 
-  const provider = new DocumentManager(
-    appSeam as unknown as AppServiceContainer,
-  );
+  const provider = new DocumentManager(appSeam);
   await provider.boot();
   activeWindowId = provider.windowKeys()[0];
 
-  const httpProvider = new AgentHTTPProvider(new LogProvider(), provider, {
-    config: {
-      get: () => ({
-        agentApi: {
-          enabled: true,
-          port: httpPort,
-        },
-      }),
-    },
-  } as unknown as AppServiceContainer);
+  const httpProvider = new AgentHTTPProvider(log, provider, appSeam);
   await httpProvider.boot();
 
   // Create a sample document so the parent process has something to query.
@@ -160,24 +195,44 @@ async function main(): Promise<void> {
   );
   await provider.getDocument(samplePath);
 
-  // Signal readiness. The parent parses this exact line.
-  console.log(
-    `E2E_SERVER_READY port=${httpPort} docPath=${samplePath} scratch=${scratch}`,
-  );
+  if (process.send === undefined) {
+    throw new Error("The E2E server requires an IPC parent.");
+  }
+  process.send({
+    event: "e2e-server-ready",
+    port: httpPort,
+    docPath: samplePath,
+    scratch,
+  });
 
-  function shutdown(): void {
-    httpProvider
-      .shutdown()
-      .then(() => provider.shutdown())
-      .then(() => rmSync(scratch, { recursive: true, force: true }))
-      .then(() => process.exit(0))
-      .catch(() => process.exit(1));
+  async function shutdown(): Promise<void> {
+    try {
+      await httpProvider.shutdown();
+      await provider.shutdown();
+      rmSync(scratch, { recursive: true, force: true });
+      process.exit(0);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "e2e-server-failure",
+          phase: "shutdown",
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      process.exit(1);
+    }
   }
 
-  process.on("SIGTERM", shutdown);
-  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", () => {
+    void shutdown();
+  });
+  process.on("SIGINT", () => {
+    void shutdown();
+  });
   process.on("message", (msg: unknown) => {
-    if (msg === "shutdown") {shutdown();}
+    if (msg === "shutdown") {
+      void shutdown();
+    }
   });
 }
 

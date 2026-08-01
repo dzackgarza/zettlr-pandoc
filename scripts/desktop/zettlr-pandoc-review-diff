@@ -1,0 +1,332 @@
+#!/usr/bin/env node
+"use strict";
+
+/**
+ * Hand a review proposition to a running Zettlr-Pandoc and return.
+ *
+ * This is the external submission boundary for issue #34: a producer of
+ * changes names a document and a unified patch, and gets an exit code. It
+ * needs to know nothing about Electron, the editor's document ids, snapshot
+ * tokens, or the loopback agent API -- this script performs that handshake.
+ *
+ *   zettlr-pandoc-review-diff --document doc.md --patch proposition.diff
+ *
+ * The transport is the running instance's loopback agent API, which is where
+ * the document buffers actually live; a second process cannot reach them any
+ * other way. Every step is reported by exit code:
+ *
+ *   0  the review opened, with the unresolved chunk count on stdout
+ *   1  the instance refused the request (unreachable, out of scope, stale
+ *      baseline, unparseable or inapplicable patch) -- reason on stderr
+ *   2  the invocation itself is wrong (bad flags, missing files)
+ *
+ * Nothing is retried and nothing is guessed: a refusal is printed with the
+ * instance's own message and the process stops.
+ */
+
+const crypto = require("crypto");
+const fs = require("fs");
+const http = require("http");
+const path = require("path");
+const { pathToFileURL } = require("url");
+
+// The app's own configuration default (get-config-template.ts: agentApi.port).
+// An instance configured onto another port is reached with --port; this script
+// never scans for one, because a different process answering the expected port
+// must be a loud failure rather than a silent redirection.
+const DEFAULT_PORT = 27412;
+const TOKEN_VARIABLE = "ZETTLR_AGENT_API_TOKEN";
+const PROGRAM = path.basename(__filename);
+
+const KNOWN_OPTIONS = ["document", "patch", "description", "baseline-sha256", "port"];
+
+function usage() {
+  return [
+    `usage: ${PROGRAM} --document FILE --patch FILE [options]`,
+    "",
+    "Submit a unified-diff proposition against a document to the running",
+    "Zettlr-Pandoc, which opens it as a review with per-chunk accept/reject.",
+    "",
+    "Required:",
+    "  --document FILE          The document the patch applies to.",
+    "  --patch FILE             The proposition, as a unified diff.",
+    "",
+    "Optional:",
+    "  --description TEXT       Provenance shown at the review's chunks.",
+    "  --baseline-sha256 HEX    The SHA-256 of the baseline text the patch was",
+    "                           computed against. When given, the request is",
+    "                           refused unless the editor's live text still",
+    "                           hashes to it.",
+    `  --port N                 Agent API port (default ${DEFAULT_PORT}).`,
+    "  -h, --help               Show this help and exit.",
+    "",
+    `The bearer token is read from ${TOKEN_VARIABLE}, the same variable the`,
+    "editor was started with. Leave it unset when the editor runs untokenized.",
+  ].join("\n");
+}
+
+function fail(code, message, exitCode, status) {
+  const error = { code, message };
+  if (status !== undefined) {
+    error.status = status;
+  }
+  process.stderr.write(`${JSON.stringify({ ok: false, error })}\n`);
+  process.exit(exitCode);
+}
+
+function errorText(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requireRecord(value, label) {
+  if (!isRecord(value)) {
+    throw new Error(`${label} was not an object`);
+  }
+  return value;
+}
+
+function requireString(value, label) {
+  if (typeof value !== "string") {
+    throw new Error(`${label} was not a string`);
+  }
+  return value;
+}
+
+function requireInteger(value, label) {
+  if (!Number.isInteger(value)) {
+    throw new Error(`${label} was not an integer`);
+  }
+  return value;
+}
+
+/** Stop on an API refusal while preserving its stable error code and status. */
+function refuse(response, context) {
+  const body = requireRecord(response.body, `${context} response`);
+  const error = requireRecord(body.error, `${context} error`);
+  fail(
+    requireString(error.code, `${context} error code`),
+    `${context}: ${requireString(error.message, `${context} error message`)}`,
+    1,
+    response.status,
+  );
+}
+
+function requireSuccessBody(response, status, context) {
+  if (response.status !== status) {
+    refuse(response, context);
+  }
+  return requireRecord(response.body, `${context} response`);
+}
+
+function parseArguments(argv) {
+  const options = {};
+  for (let i = 0; i < argv.length; i++) {
+    const argument = argv[i];
+    if (argument === "-h" || argument === "--help") {
+      return { help: true };
+    }
+    if (!argument.startsWith("--")) {
+      fail("INVALID_INVOCATION", `unexpected argument: ${argument}\n\n${usage()}`, 2);
+    }
+    const equals = argument.indexOf("=");
+    const key = equals === -1 ? argument.slice(2) : argument.slice(2, equals);
+    if (!KNOWN_OPTIONS.includes(key)) {
+      fail("INVALID_INVOCATION", `unknown option: --${key}\n\n${usage()}`, 2);
+    }
+    if (options[key] !== undefined) {
+      fail("INVALID_INVOCATION", `--${key} was given twice`, 2);
+    }
+    const value = equals === -1 ? argv[++i] : argument.slice(equals + 1);
+    if (value === undefined) {
+      fail("INVALID_INVOCATION", `--${key} requires a value`, 2);
+    }
+    options[key] = value;
+  }
+  return options;
+}
+
+/** Read a file that must exist and must not be empty, or exit 2. */
+function readRequiredFile(filePath, flag) {
+  let text;
+  try {
+    text = fs.readFileSync(filePath, "utf8");
+  } catch (error) {
+    fail("INPUT_NOT_READABLE", `${flag} could not be read: ${errorText(error)}`, 2);
+  }
+  if (text.trim().length === 0) {
+    fail("INPUT_EMPTY", `${flag} is empty: ${filePath}`, 2);
+  }
+  return text;
+}
+
+function request(port, method, requestPath, body) {
+  const headers = {};
+  const token = process.env[TOKEN_VARIABLE];
+  if (token !== undefined && token.length > 0) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  let payload;
+  if (body !== undefined) {
+    payload = JSON.stringify(body);
+    headers["Content-Type"] = "application/json";
+    headers["Content-Length"] = Buffer.byteLength(payload, "utf8");
+  }
+
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { hostname: "127.0.0.1", port, path: requestPath, method, headers },
+      (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          text += chunk;
+        });
+        res.on("end", () => {
+          if (res.statusCode === undefined) {
+            reject(new Error("Agent API response had no HTTP status."));
+            return;
+          }
+          if (text.length === 0) {
+            reject(new Error(`Agent API response for ${requestPath} had no body.`));
+            return;
+          }
+          try {
+            resolve({
+              status: res.statusCode,
+              body: JSON.parse(text),
+            });
+          } catch (error) {
+            reject(
+              new Error(
+                `Agent API response for ${requestPath} was not JSON: ${errorText(error)}`,
+              ),
+            );
+          }
+        });
+      },
+    );
+    req.on("error", reject);
+    if (payload !== undefined) {
+      req.write(payload);
+    }
+    req.end();
+  });
+}
+
+async function main() {
+  const options = parseArguments(process.argv.slice(2));
+  if (options.help === true) {
+    process.stdout.write(`${usage()}\n`);
+    return;
+  }
+
+  for (const required of ["document", "patch"]) {
+    if (options[required] === undefined) {
+      fail("INVALID_INVOCATION", `--${required} is required\n\n${usage()}`, 2);
+    }
+  }
+
+  const port = options.port === undefined ? DEFAULT_PORT : Number(options.port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    fail("INVALID_INVOCATION", `--port must be a TCP port number, got: ${options.port}`, 2);
+  }
+
+  const documentPath = path.resolve(options.document);
+  let documentStat;
+  try {
+    documentStat = fs.statSync(documentPath);
+  } catch (error) {
+    fail(
+      "INPUT_NOT_READABLE",
+      `--document could not be read: ${errorText(error)}`,
+      2,
+    );
+  }
+  if (!documentStat.isFile()) {
+    fail("INPUT_NOT_FILE", `--document is not a file: ${documentPath}`, 2);
+  }
+  const patchText = readRequiredFile(path.resolve(options.patch), "--patch");
+
+  // The handshake, in the order the instance requires it. Every non-success
+  // response ends the run: a half-submitted proposition is not a state this
+  // boundary is allowed to leave behind.
+  let ping;
+  try {
+    ping = await request(port, "GET", "/v1/ping");
+  } catch (error) {
+    fail(
+      "INSTANCE_UNREACHABLE",
+      `no Zettlr-Pandoc answered 127.0.0.1:${port} (${errorText(error)}). ` +
+        "Start the editor, or name its port with --port.",
+      1,
+    );
+  }
+  const pingBody = requireSuccessBody(ping, 200, "agent API handshake");
+  if (pingBody.protocolVersion === undefined) {
+    fail(
+      "UNEXPECTED_RESPONSE",
+      `127.0.0.1:${port} did not identify a Zettlr-Pandoc agent API.`,
+      1,
+      ping.status,
+    );
+  }
+
+  const opened = await request(port, "POST", "/v1/documents", {
+    uri: pathToFileURL(documentPath).href,
+  });
+  const openedBody = requireSuccessBody(opened, 201, "document open");
+  const documentId = requireString(openedBody.documentId, "documentId");
+
+  // Put the document in front of the user before proposing anything to it: a
+  // review nobody can see is not the outcome this boundary promises.
+  const focused = await request(port, "POST", `/v1/documents/${documentId}/focus`);
+  requireSuccessBody(focused, 200, "document focus");
+
+  const live = await request(port, "GET", `/v1/documents/${documentId}/content?side=working`);
+  const liveBody = requireSuccessBody(live, 200, "live document read");
+  const snapshot = requireString(liveBody.snapshot, "live document snapshot");
+  const revision = requireRecord(liveBody.revision, "live document revision");
+  const liveSha256 = requireString(revision.sha256, "live document SHA-256");
+
+  const declaredBaseline = options["baseline-sha256"];
+  if (declaredBaseline !== undefined && declaredBaseline.toLowerCase() !== liveSha256) {
+    fail(
+      "BASELINE_MISMATCH",
+      `the editor's text for ${documentPath} is not the baseline this patch was made ` +
+        `against: --baseline-sha256 ${declaredBaseline.toLowerCase()}, editor ${liveSha256}. ` +
+        "Rebase the patch onto the current text and submit again.",
+      1,
+    );
+  }
+
+  const submitted = await request(port, "POST", `/v1/documents/${documentId}/proposals`, {
+    snapshot,
+    patchFormat: "unified-diff",
+    patch: patchText,
+    description: options.description,
+    clientRequestId: crypto.randomUUID(),
+  });
+  const submittedBody = requireSuccessBody(submitted, 200, "proposition submission");
+  const reviewId = requireString(submittedBody.reviewId, "submitted reviewId");
+  const unresolvedChunks = requireInteger(
+    submittedBody.unresolvedChunks,
+    "submitted unresolvedChunks",
+  );
+
+  process.stdout.write(
+    `${JSON.stringify({
+      ok: true,
+      reviewId,
+      documentPath,
+      unresolvedChunks,
+    })}\n`,
+  );
+}
+
+main().catch((error) => {
+  fail("UNEXPECTED_FAILURE", errorText(error), 1);
+});
