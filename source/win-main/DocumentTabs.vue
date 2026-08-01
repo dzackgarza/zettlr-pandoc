@@ -45,6 +45,7 @@
           pinned: file.pinned
         }"
         :title="file.path"
+        :aria-label="getAccessibleTabLabel(file)"
         :data-path="file.path"
         :draggable="true"
         role="tab"
@@ -72,9 +73,8 @@
         <span
           v-if="modifiedPaths.includes(file.path)"
           class="modification-indicator"
-          role="img"
           :title="unsavedChangesLabel"
-          :aria-label="unsavedChangesLabel"
+          aria-hidden="true"
         />
         <span
           v-if="!file.pinned"
@@ -387,6 +387,13 @@ function hasDuplicate (doc: OpenDocument): boolean {
 
 function getDirBasename (doc: OpenDocument): string {
   return pathBasename(pathDirname(doc.path))
+}
+
+function getAccessibleTabLabel (doc: OpenDocument): string {
+  const title = getDocumentTitle(doc)
+  return modifiedPaths.value.includes(doc.path)
+    ? `${title} — ${unsavedChangesLabel}`
+    : title
 }
 
 /**
@@ -1037,7 +1044,7 @@ body div.tab-container {
     // row does not reflow as the pointer travels.
     .close { visibility: hidden; }
     &:hover .close { visibility: visible; }
-    &:hover .modification-indicator { display: none; }
+    &:hover .modification-indicator { visibility: hidden; }
 
     // A dot alone is a fair signal for an unsaved shopping list and a poor one
     // for unsaved research. The top edge carries the same amber, so the state

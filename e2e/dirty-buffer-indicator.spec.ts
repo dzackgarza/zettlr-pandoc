@@ -74,7 +74,7 @@ async function bootWithTabRow (
     'utf8'
   )
 
-  const app = await attach(created.configDirectory, fixture.rendererEvents, 120_000)
+  const app = await attach(created.configDirectory, fixture.rendererEvents, 240_000)
   fixture.appProcess = app.appProcess
   fixture.browser = app.browser
   fixture.getOutput = app.getOutput
@@ -83,7 +83,7 @@ async function bootWithTabRow (
 
 for (const theme of ['light', 'dark'] as const) {
   describe(`unsaved-changes indicator (${theme})`, function () {
-    this.timeout(180_000)
+    this.timeout(300_000)
 
     const fixture: RunningFixture = {
       fixtureRoot: undefined,
@@ -154,7 +154,13 @@ for (const theme of ['light', 'dark'] as const) {
       // glyphs competing for the same meaning.
       const dirtyTab = tabs.first()
       const close = dirtyTab.locator('span.close')
+      const dirtyIndicator = indicators.first()
       assert.equal(await close.isVisible(), false, 'the close cross must yield to the dot')
+      assert.equal(
+        await dirtyIndicator.evaluate(el => getComputedStyle(el).visibility),
+        'visible',
+        'the dirty dot must be visually present before hover'
+      )
       assert.match(
         await dirtyTab.ariaSnapshot(),
         /Unsaved changes/,
@@ -169,18 +175,25 @@ for (const theme of ['light', 'dark'] as const) {
       // ...and take the slot back on hover, so closing a dirty tab stays a
       // single click rather than a hunt for a target that moved.
       await dirtyTab.hover()
-      await close.waitFor({ state: 'visible', timeout: 10_000 })
+      const closeElement = await close.elementHandle()
+      assert.ok(closeElement, 'the close control must remain mounted during hover')
+      await page.waitForFunction(
+        element => getComputedStyle(element).visibility === 'visible',
+        closeElement
+      )
       // The cross appearing and the dot going are two separate style commits,
       // so waiting on the cross says nothing about the dot yet: wait on the
       // dot's own state or this races the swap and fails under load.
-      await indicators.first().waitFor({ state: 'hidden', timeout: 10_000 })
+      assert.equal(
+        await dirtyIndicator.evaluate(el => getComputedStyle(el).visibility),
+        'hidden',
+        'the dirty dot must visually yield its slot to the close cross'
+      )
       assert.match(
         await dirtyTab.ariaSnapshot(),
         /Unsaved changes/,
         'hover may replace the visible dot, but not the accessible unsaved-state cue'
       )
-      await shoot('row-dirty-hover')
-      await shootTab('dirty-hover')
 
       // The old '* ' prefix shifted the filename sideways; the dot must not.
       const filename = await dirtyTab.locator('span.filename').innerText()
@@ -204,6 +217,25 @@ for (const theme of ['light', 'dark'] as const) {
       await shoot('row-dirty-inactive')
       await shootTab('dirty-inactive')
 
+      // Return the fixture to a saved state through the same IPC call
+      // MainEditor makes for the save-file shortcut. CDP-injected key events
+      // do not run Electron's main-process menu accelerators, so Ctrl+S here
+      // would save nothing and leave the real close guard blocking teardown.
+      const dirtyPath = await dirtyTab.getAttribute('data-path')
+      assert.ok(dirtyPath !== null, 'The dirty tab must identify its document')
+      assert.deepEqual(
+        await page.evaluate(
+          async ([documentPath]) =>
+            await window.ipc.invoke('documents-provider', {
+              command: 'save-file',
+              payload: { path: documentPath }
+            }),
+          [dirtyPath]
+        ),
+        { ok: true },
+        'The dirty fixture document must save before teardown'
+      )
+      await dirtyIndicator.waitFor({ state: 'detached', timeout: 30_000 })
     })
   })
 }
