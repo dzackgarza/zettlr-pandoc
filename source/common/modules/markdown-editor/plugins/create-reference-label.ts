@@ -28,7 +28,7 @@ import { StateEffect } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import { type Command, type EditorView } from '@codemirror/view'
 import type { SyntaxNode } from '@lezer/common'
-import { THEOREM_DIV_PREFIXES } from '@common/util/pandoc-quick-reference'
+import { THEOREM_FAMILY_METADATA } from '@common/util/pandoc-quick-reference'
 import { extractReferences } from '@common/pandoc-util/extract-references'
 import type { ReferenceFamily } from '@dts/common/references'
 import { nodeAtPos } from '../util/node-in-selection'
@@ -101,7 +101,7 @@ const TARGET_NODES = [
 
 /** Maps a referenceable fenced-div class back to its label family. */
 const CLASS_TO_FAMILY = new Map<string, ReferenceFamily>(
-  Object.entries(THEOREM_DIV_PREFIXES).map(([ family, divClass ]) => [ divClass, family as ReferenceFamily ])
+  THEOREM_FAMILY_METADATA.map(metadata => [ metadata.divClass, metadata.prefix ])
 )
 
 /**

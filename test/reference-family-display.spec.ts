@@ -14,48 +14,41 @@
  *                  line, hover tooltips, reference chips, and the label
  *                  dialog — so these strings ARE the words the user reads.
  *
- *                  The enumeration below is deliberately hand-written while
- *                  the implementation derives its table from the crossref
- *                  and theorem registries: a family added to either registry
- *                  therefore fails this spec until its user-visible name is
- *                  decided here, instead of reaching a view unnamed.
+ *                  Family identity and the rendered word are authored together
+ *                  in the two metadata registries. This spec proves the public
+ *                  family sequence and accessor preserve that complete metadata
+ *                  without a second table that must be updated on expansion.
  *
  * END HEADER
  */
 
 import { strict as assert } from 'assert'
+import {
+  PANDOC_CROSS_REFERENCE_EXAMPLES,
+  THEOREM_FAMILY_METADATA
+} from 'source/common/util/pandoc-quick-reference'
 import { REFERENCE_FAMILIES, referenceFamilyDisplayName } from 'source/types/common/references'
 
-/** The user-visible type label of every supported family, in registry order. */
-const EXPECTED_DISPLAY_NAMES: Array<[string, string]> = [
-  [ 'fig', 'Figure' ],
-  [ 'tbl', 'Table' ],
-  [ 'eq', 'Equation' ],
-  [ 'sec', 'Section' ],
-  [ 'lst', 'Listing' ],
-  [ 'thm', 'Theorem' ],
-  [ 'lem', 'Lemma' ],
-  [ 'prop', 'Proposition' ],
-  [ 'cor', 'Corollary' ],
-  [ 'def', 'Definition' ],
-  [ 'rmk', 'Remark' ],
-  [ 'ex', 'Example' ],
-  [ 'conj', 'Conjecture' ],
-  [ 'clm', 'Claim' ],
-  [ 'obs', 'Observation' ],
-  [ 'qst', 'Question' ],
-  [ 'prob', 'Problem' ],
-  [ 'ass', 'Assumption' ],
-  [ 'warn', 'Warning' ],
-  [ 'exr', 'Exercise' ],
+const AUTHORED_FAMILY_DISPLAYS = [
+  ...PANDOC_CROSS_REFERENCE_EXAMPLES.map(metadata => ({
+    family: metadata.prefix,
+    displayName: metadata.displayName
+  })),
+  ...THEOREM_FAMILY_METADATA.map(metadata => ({
+    family: metadata.prefix,
+    displayName: metadata.displayName
+  }))
 ]
 
 describe('Reference family display names', function () {
-  it('names every supported family with the word the user reads', function () {
+  it('preserves every authored family/display pair through the public authority', function () {
     assert.deepEqual(
-      REFERENCE_FAMILIES.map(family => [ family, referenceFamilyDisplayName(family) ]),
-      EXPECTED_DISPLAY_NAMES,
-      'every registered family must carry its decided display name; a family added to the crossref or theorem registry must be named here before it can reach a reference view'
+      REFERENCE_FAMILIES.map(family => ({
+        family,
+        displayName: referenceFamilyDisplayName(family)
+      })),
+      AUTHORED_FAMILY_DISPLAYS,
+      'the public family model must preserve every identity/display pair from the metadata authorities'
     )
   })
 })

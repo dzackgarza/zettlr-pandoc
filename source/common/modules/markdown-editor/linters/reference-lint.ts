@@ -38,7 +38,7 @@
  *                    `lemma` with id `thm:foo`) receives an ERROR at the
  *                    authored id range naming BOTH conflicting values and a
  *                    valid example (e.g. `#lem:foo` per the
- *                    THEOREM_DIV_PREFIXES mapping). The linter never guesses
+ *                    theorem-family metadata). The linter never guesses
  *                    which side the author meant and never rewrites either.
  *                  - PROOF-DIV ID: an id attribute on a proof-like div
  *                    (which defines no target) receives an INFO diagnostic
@@ -60,16 +60,16 @@ import { markdownToAST } from '@common/modules/markdown-utils'
 import type { ASTNode } from '@common/modules/markdown-utils/markdown-ast'
 import { locateAttribute } from '@common/pandoc-util/extract-references'
 import { SEMANTIC_DIV_CLASSES } from '@common/pandoc-util/pandoc-div-model'
-import { THEOREM_DIV_PREFIXES, REFERENCEABLE_DIV_CLASSES } from '@common/util/pandoc-quick-reference'
+import { THEOREM_FAMILY_METADATA, REFERENCEABLE_DIV_CLASSES } from '@common/util/pandoc-quick-reference'
 import { referenceFamilyOf, type ReferenceFamily } from '@dts/common/references'
 import { workspaceReferencesField, type EditorWorkspaceReferences } from '../plugins/workspace-references-field'
 
 /**
  * The label prefix of each referenceable div class, inverted from the fixed
- * THEOREM_DIV_PREFIXES registry ('lemma' -> 'lem').
+ * theorem-family registry ('lemma' -> 'lem').
  */
 const CLASS_TO_PREFIX: Record<string, string> = Object.fromEntries(
-  Object.entries(THEOREM_DIV_PREFIXES).map(([ prefix, divClass ]) => [ divClass, prefix ])
+  THEOREM_FAMILY_METADATA.map(metadata => [ metadata.divClass, metadata.prefix ])
 )
 
 /**

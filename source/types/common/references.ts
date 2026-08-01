@@ -5,7 +5,8 @@
 import {
   PANDOC_CROSS_REFERENCE_EXAMPLES,
   PANDOC_CROSSREF_PREFIXES,
-  THEOREM_DIV_PREFIXES
+  THEOREM_FAMILY_METADATA,
+  type TheoremFamilyPrefix
 } from '../../common/util/pandoc-quick-reference'
 
 /**
@@ -15,7 +16,7 @@ import {
  * registry (PANDOC_CROSS_REFERENCE_EXAMPLES -> PANDOC_CROSSREF_PREFIXES),
  * which is the single owner of the crossref family set. The dependency
  * points this way because this module already consumes
- * THEOREM_DIV_PREFIXES from the same registry module; the reverse
+ * theorem-family metadata from the same registry module; the reverse
  * direction would create an import cycle.
  */
 export const CROSSREF_FAMILIES: readonly CrossrefFamily[] = PANDOC_CROSSREF_PREFIXES
@@ -26,9 +27,10 @@ export type CrossrefFamily = typeof PANDOC_CROSSREF_PREFIXES[number]
  * Theorem-like fenced-div label families, derived from the fixed prefix
  * registry so this model cannot drift from the export theorem filter.
  */
-export type TheoremFamily = keyof typeof THEOREM_DIV_PREFIXES
+export type TheoremFamily = TheoremFamilyPrefix
 
-export const THEOREM_FAMILIES = Object.keys(THEOREM_DIV_PREFIXES) as readonly TheoremFamily[]
+export const THEOREM_FAMILIES: readonly TheoremFamily[] =
+  THEOREM_FAMILY_METADATA.map(metadata => metadata.prefix)
 
 /**
  * Every supported reference family. Anything else (automatic heading IDs,
@@ -54,33 +56,42 @@ export function referenceFamilyOf (key: string): ReferenceFamily|undefined {
   }
 
   const family = key.slice(0, colon)
-  return (REFERENCE_FAMILIES as readonly string[]).includes(family)
-    ? family as ReferenceFamily
-    : undefined
-}
+  for (const supportedFamily of REFERENCE_FAMILIES) {
+    if (supportedFamily === family) {
+      return supportedFamily
+    }
+  }
 
-function capitalized (word: string): string {
-  return word.charAt(0).toUpperCase() + word.slice(1)
+  return undefined
 }
 
 /**
  * The display name of every supported reference family, DERIVED from the two
- * registries that already carry the word: the crossref examples' object kind
- * ('figure' -> 'Figure') and the theorem prefix registry's fenced-div class
- * ('theorem' -> 'Theorem').
+ * registries that own family identity and presentation.
  *
  * AUTHORITY: deriving by iteration — instead of joining the registries against
  * a second, hand-maintained label table — is what makes a family ADDED to a
- * registry arrive with a display name. A hand-maintained table can only be
- * joined by index, and an index lookup that misses yields undefined, which
- * consumers then dereference. The type assertion states exactly what the two
- * spreads build: one entry per member of ReferenceFamily, whose members are
- * the keys of these very registries.
+ * registry arrive with a display name. Each derived record has to satisfy the
+ * shared family/display shape, and the public lookup walks those same records
+ * rather than asserting that Object.fromEntries produced an exhaustive object.
+ * A newly added registry entry therefore carries its display name through the
+ * same expression that introduces its family identity.
  */
-const REFERENCE_FAMILY_DISPLAY = Object.fromEntries([
-  ...PANDOC_CROSS_REFERENCE_EXAMPLES.map(example => [ example.prefix, capitalized(example.kind) ] as const),
-  ...Object.entries(THEOREM_DIV_PREFIXES).map(([ prefix, divClass ]) => [ prefix, capitalized(divClass) ] as const)
-]) as Record<ReferenceFamily, string>
+interface ReferenceFamilyDisplay {
+  family: ReferenceFamily
+  displayName: string
+}
+
+const REFERENCE_FAMILY_DISPLAYS = [
+  ...PANDOC_CROSS_REFERENCE_EXAMPLES.map(example => ({
+    family: example.prefix,
+    displayName: example.displayName
+  })),
+  ...THEOREM_FAMILY_METADATA.map(metadata => ({
+    family: metadata.prefix,
+    displayName: metadata.displayName
+  }))
+] satisfies readonly ReferenceFamilyDisplay[]
 
 /**
  * The display name of a reference family ('thm' -> 'Theorem', 'fig' ->
@@ -93,7 +104,16 @@ const REFERENCE_FAMILY_DISPLAY = Object.fromEntries([
  * @return  {string}                   The capitalized display name
  */
 export function referenceFamilyDisplayName (family: ReferenceFamily): string {
-  return REFERENCE_FAMILY_DISPLAY[family]
+  for (const metadata of REFERENCE_FAMILY_DISPLAYS) {
+    if (metadata.family === family) {
+      return metadata.displayName
+    }
+  }
+
+  // ReferenceFamily is derived from the same two registries iterated above.
+  // Reaching this point means those authorities no longer agree, so rendering
+  // cannot fulfil its contract and must stop rather than return an empty label.
+  throw new Error(`Reference family ${family} has no display metadata`)
 }
 
 /**

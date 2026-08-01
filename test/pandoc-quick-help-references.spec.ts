@@ -35,7 +35,7 @@ import path from 'path'
 import {
   PANDOC_REFERENCE_AUTHORING_TOPICS,
   THEOREM_DIV_EXAMPLES,
-  THEOREM_DIV_PREFIXES
+  THEOREM_FAMILY_METADATA
 } from 'source/common/util/pandoc-quick-reference'
 
 const HELP_COMPONENT_PATH = path.join('source', 'win-main', 'PandocQuickHelp.vue')
@@ -74,28 +74,18 @@ describe('Quick-help reference authoring content (issue #1 Phase 8)', function (
   })
 
   it('exposes an exact fenced-div example for every one of the 15 theorem prefixes', function () {
-    // Derived oracle: the fixed prefix registry is the single authority the
-    // examples may never drift from.
-    assert.deepEqual(
-      THEOREM_DIV_EXAMPLES.map(example => example.prefix).sort(),
-      Object.keys(THEOREM_DIV_PREFIXES).sort(),
-      'the help must show one fenced-div example per registered theorem prefix — all 15, nothing invented'
-    )
+    const expected = THEOREM_FAMILY_METADATA.map(metadata => ({
+      prefix: metadata.prefix,
+      divClass: metadata.divClass,
+      label: `::: {.${metadata.divClass} #${metadata.prefix}:key}`,
+      reference: `@${metadata.prefix}:key`,
+    }))
 
-    for (const example of THEOREM_DIV_EXAMPLES) {
-      const divClass = THEOREM_DIV_PREFIXES[example.prefix as keyof typeof THEOREM_DIV_PREFIXES]
-      assert.equal(example.divClass, divClass, `the ${example.prefix} example must name its registered div class`)
-      assert.equal(
-        example.label,
-        `::: {.${divClass} #${example.prefix}:key}`,
-        `the ${example.prefix} example must author the exact fenced-div label syntax`
-      )
-      assert.equal(
-        example.reference,
-        `@${example.prefix}:key`,
-        `the ${example.prefix} example must cite its own label`
-      )
-    }
+    assert.deepEqual(
+      THEOREM_DIV_EXAMPLES,
+      expected,
+      'the help must expose the complete authored syntax for every registered theorem family'
+    )
   })
 
   it('the help component drops the stale not-currently-available copy', function () {

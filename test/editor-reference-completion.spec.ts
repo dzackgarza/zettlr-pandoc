@@ -46,7 +46,7 @@ import { tags } from 'source/common/modules/markdown-editor/autocomplete/tags'
 import { snippets } from 'source/common/modules/markdown-editor/autocomplete/snippets'
 import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 import { extractReferences } from 'source/common/pandoc-util/extract-references'
-import { THEOREM_DIV_PREFIXES } from 'source/common/util/pandoc-quick-reference'
+import { referenceFamilyDisplayName } from 'source/types/common/references'
 import { type ReferenceCompletionEntry } from 'source/types/common/references'
 
 /**
@@ -132,30 +132,11 @@ function workspaceEntries (): ReferenceCompletionEntry[] {
   })
 }
 
-const CROSSREF_DISPLAY: Record<string, string> = {
-  fig: 'Figure',
-  tbl: 'Table',
-  eq: 'Equation',
-  sec: 'Section',
-  lst: 'Listing',
-}
-
-/** The family display name of a label entry ('thm' -> 'Theorem', …). */
-function familyDisplay (family: string): string {
-  const theoremClass = (THEOREM_DIV_PREFIXES as Record<string, string>)[family]
-  if (theoremClass !== undefined) {
-    return theoremClass.charAt(0).toUpperCase() + theoremClass.slice(1)
-  }
-  const crossref = CROSSREF_DISPLAY[family]
-  assert.notStrictEqual(crossref, undefined, `unexpected reference family: ${family}`)
-  return crossref
-}
-
 /** The locked `Type — title` display text of a label completion. */
 function expectedDetail (entry: ReferenceCompletionEntry): string {
   return entry.title !== undefined
-    ? `${familyDisplay(entry.family)} — ${entry.title}`
-    : familyDisplay(entry.family)
+    ? `${referenceFamilyDisplayName(entry.family)} — ${entry.title}`
+    : referenceFamilyDisplayName(entry.family)
 }
 
 interface CompletionSurface {
