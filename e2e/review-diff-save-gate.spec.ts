@@ -447,7 +447,12 @@ describe('saving after accepting a reviewed change', function () {
         typeof chunksPayload.chunks[0].chunkId === 'string',
       `Held-review proof expected one addressable chunk: ${JSON.stringify(chunksPayload)}`
     )
-    const chunkId = chunksPayload.chunks[0].chunkId as string
+    const chunkId: unknown = chunksPayload.chunks[0].chunkId
+    assert.equal(
+      typeof chunkId,
+      'string',
+      `Held-review proof received a non-string chunk id: ${JSON.stringify(chunkId)}`
+    )
     await activeClient.post(
       `/v1/reviews/${reviewId}/chunks/${chunkId}/hold`,
       { comment: 'Preserve this decision across save' }

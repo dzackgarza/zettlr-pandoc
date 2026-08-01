@@ -985,8 +985,15 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       `/v1/workspaces/${encodeURIComponent(encodedWorkspace)}/documents`,
     );
     assert.equal(listed.status, 200, listed.body);
+    const listedPayload: unknown = JSON.parse(listed.body);
+    assert.ok(
+      listedPayload !== null &&
+        typeof listedPayload === "object" &&
+        "workspaceId" in listedPayload,
+      `Workspace listing carried no workspaceId: ${listed.body}`,
+    );
     assert.equal(
-      (JSON.parse(listed.body) as { workspaceId: string }).workspaceId,
+      listedPayload.workspaceId,
       encodedWorkspace,
       "the workspace identifier on the wire must be the once-decoded requested path",
     );
@@ -997,8 +1004,18 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       `/v1/workspaces/${encodeURIComponent(encodedWorkspace)}/documents/${otherDocumentId}/open`,
     );
     assert.equal(refused.status, 404, refused.body);
+    const refusedPayload: unknown = JSON.parse(refused.body);
+    assert.ok(
+      refusedPayload !== null &&
+        typeof refusedPayload === "object" &&
+        "error" in refusedPayload &&
+        refusedPayload.error !== null &&
+        typeof refusedPayload.error === "object" &&
+        "code" in refusedPayload.error,
+      `Workspace refusal carried no error code: ${refused.body}`,
+    );
     assert.equal(
-      (JSON.parse(refused.body) as { error: { code: string } }).error.code,
+      refusedPayload.error.code,
       "DOCUMENT_NOT_FOUND",
     );
     assert.equal(
@@ -1756,29 +1773,20 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const DEADLINE_MS = 300;
     let lifecyclePort: number;
     let lifecycle: AgentHTTPProvider;
-    let recordedErrors: string[];
-    let recordedWarnings: string[];
-
-    /** Captures lifecycle boundary logs emitted by the live HTTP provider. */
-    class RecordingLog extends LogProvider {
-      public error(msg: string): void {
-        recordedErrors.push(msg);
-      }
-
-      public warning(msg: string): void {
-        recordedWarnings.push(msg);
-      }
-    }
+    let lifecycleLog: LogProvider;
+    let lifecycleLogPath: string;
 
     beforeEach(async function () {
-      recordedErrors = [];
-      recordedWarnings = [];
       const probe = net.createServer();
       await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
       lifecyclePort = (probe.address() as net.AddressInfo).port;
       await new Promise<void>((resolve) => probe.close(() => resolve()));
+      const logDirectory = path.join(app.getPath("userData"), "logs");
+      mkdirSync(logDirectory, { recursive: true });
+      lifecycleLog = new LogProvider();
+      lifecycleLogPath = path.join(logDirectory, lifecycleLog._getLogfileName());
       lifecycle = new AgentHTTPProvider(
-        new RecordingLog(),
+        lifecycleLog,
         provider,
         {
           config: {
@@ -1799,7 +1807,27 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     afterEach(async function () {
       await lifecycle.shutdown();
+      await lifecycleLog.shutdown();
     });
+
+    /**
+     * Flushes the production logger and returns the byte boundary after which
+     * the next request's records must appear.
+     */
+    async function markLogBoundary(): Promise<number> {
+      await lifecycleLog.shutdown();
+      return statSync(lifecycleLogPath).size;
+    }
+
+    /** Reads production log bytes emitted after a previously flushed boundary. */
+    function readLogAfter(byteOffset: number): string {
+      const logBytes = readFileSync(lifecycleLogPath);
+      assert.ok(
+        logBytes.byteLength >= byteOffset,
+        "The production logfile shrank while the lifecycle request was in flight.",
+      );
+      return logBytes.subarray(byteOffset).toString("utf8");
+    }
 
     /** Opens a raw TCP connection to the lifecycle server. */
     async function connect(): Promise<net.Socket> {
@@ -1849,6 +1877,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     });
 
     it("answers an oversized body with structured 413 and logs the refusal", async function () {
+      const logBoundary = await markLogBoundary();
       const body = JSON.stringify({ uri: `safe-file://${"x".repeat(25 * 1024 * 1024)}` });
       const response = await new Promise<{
         status: number;
@@ -1870,9 +1899,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             incoming.on("data", (chunk: Buffer) => {
               responseBody += chunk.toString("utf8");
             });
-            incoming.on("end", () =>
-              resolve({ status: incoming.statusCode ?? 0, body: responseBody }),
-            );
+            incoming.on("end", () => {
+              if (incoming.statusCode === undefined) {
+                reject(new Error("Oversized-body HTTP response carried no status code."));
+                return;
+              }
+              resolve({ status: incoming.statusCode, body: responseBody });
+            });
           },
         );
         request.on("error", reject);
@@ -1880,17 +1913,36 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       });
 
       assert.equal(response.status, 413, response.body);
-      const error = (JSON.parse(response.body) as { error: { code: string } }).error;
-      assert.equal(error.code, "REQUEST_TOO_LARGE");
-      assertMatchesSchema(error, "AgentError");
-      assert.deepEqual(
-        recordedWarnings.filter((message) => message.includes("REQUEST_TOO_LARGE")),
-        ["[AgentHTTPProvider] Refused oversized POST /v1/documents with REQUEST_TOO_LARGE"],
-        "the operator log must identify the oversized request the client saw refused",
+      const responsePayload: unknown = JSON.parse(response.body);
+      assert.ok(
+        responsePayload !== null &&
+          typeof responsePayload === "object" &&
+          "error" in responsePayload &&
+          responsePayload.error !== null &&
+          typeof responsePayload.error === "object" &&
+          "code" in responsePayload.error,
+        `Oversized-body refusal carried no error code: ${response.body}`,
+      );
+      assert.equal(responsePayload.error.code, "REQUEST_TOO_LARGE");
+      assertMatchesSchema(responsePayload.error, "AgentError");
+
+      await lifecycleLog.shutdown();
+      const emittedRecord = readLogAfter(logBoundary)
+        .split("\n")
+        .find(
+          (line) =>
+            line.includes("[Warning]") &&
+            line.includes("REQUEST_TOO_LARGE") &&
+            line.includes("POST /v1/documents"),
+        );
+      assert.ok(
+        emittedRecord !== undefined,
+        "The real application logfile contains no warning identifying the refused oversized request.",
       );
     });
 
     it("abandons the read when the client disconnects mid-body and keeps serving", async function () {
+      const logBoundary = await markLogBoundary();
       const socket = await connect();
       socket.write(STALLED_REQUEST);
       // Let the server take the headers and begin the body read, then vanish.
@@ -1902,7 +1954,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       // a failure — before the fix this path logged an unhandled error and
       // wrote a 500 into the dead socket.
       await new Promise((resolve) => setTimeout(resolve, DEADLINE_MS + 100));
-      assert.deepEqual(recordedErrors, []);
+      await lifecycleLog.shutdown();
+      assert.equal(
+        readLogAfter(logBoundary)
+          .split("\n")
+          .some((line) => line.includes("[Error]")),
+        false,
+        "An abandoned request must not emit an error record into the production logfile.",
+      );
 
       // And the server is still answering.
       const check = await connect();
@@ -2308,16 +2367,23 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(await provider.openFile(closingWindow, closingLeaf, filePath, true), true);
       provider.newWindow();
 
+      const snapshot = provider.createSnapshot(docId);
+      assert.ok(snapshot !== undefined, "The open document must produce a proposal snapshot.");
       const submitted = await provider.submitProposal(
-        provider.createSnapshot(docId)!.token,
+        snapshot.token,
         makePatch(original, "ALPHA\n"),
         "sidecar-save-close-1",
       );
-      assert.equal(submitted.ok, true);
       if (!submitted.ok) {
-        return;
+        assert.fail(`Held-review proposal was refused: ${JSON.stringify(submitted)}`);
       }
-      const chunk = provider.reviewStore.getOutstandingChunks(docId)![0];
+      const chunks = provider.reviewStore.getOutstandingChunks(docId);
+      assert.ok(
+        chunks !== undefined && chunks.length === 1,
+        "The held-review proposal must create exactly one outstanding chunk.",
+      );
+      const chunk = chunks[0];
+      assert.ok(chunk !== undefined, "The held-review proposal produced no addressable chunk.");
       assert.equal(
         provider.decideChunk(submitted.reviewId, chunk.chunkId, "hold", "revisit").ok,
         true,
