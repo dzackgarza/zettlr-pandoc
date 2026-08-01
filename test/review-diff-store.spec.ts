@@ -1247,6 +1247,47 @@ describe("ReviewDiffStore", function () {
       assert.equal(commented.length, 0);
     });
 
+    it("keeps a held chunk and its comment through an ordinary line shift", function () {
+      const baseline = "alpha\n\nbeta\n\ngamma\n";
+      const proposed = "alpha\n\nBETA\n\ngamma\n";
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-shift-hold",
+      });
+      const reviewId = store.getReview(DOC_ID)!.reviewId;
+      const before = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(before.length, 1);
+      const held = store.decideChunk(DOC_ID, reviewId, before[0].chunkId, "hold", "keep this note");
+      assert.equal(held.ok, true, JSON.stringify(held));
+
+      documents.set(DOC_ID, "inserted\n\n" + documents.get(DOC_ID)!);
+      const after = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(after.length, 2);
+      const heldAfterShift = after.find((chunk) => chunk.state === "held");
+      assert.ok(heldAfterShift !== undefined);
+      assert.equal(heldAfterShift.holdComment, "keep this note");
+      assert.equal(store.getReview(DOC_ID)!.comments.length, 0);
+    });
+
+    it("does not move a hold onto an identical sibling after its own text is edited", function () {
+      const baseline = "same\nb\nsame\n";
+      const proposed = "DIFF\nb\nDIFF\n";
+      openReview(DOC_ID, baseline, {
+        patch: makePatch(baseline, proposed),
+        clientRequestId: "req-duplicate-hold",
+      });
+      const reviewId = store.getReview(DOC_ID)!.reviewId;
+      const first = store.getOutstandingChunks(DOC_ID)![0];
+      const held = store.decideChunk(DOC_ID, reviewId, first.chunkId, "hold", "first only");
+      assert.equal(held.ok, true, JSON.stringify(held));
+
+      documents.set(DOC_ID, documents.get(DOC_ID)!.replace("DIFF", "OTHER"));
+      const after = store.getOutstandingChunks(DOC_ID)!;
+      assert.equal(after.filter((chunk) => chunk.state === "held").length, 0);
+      assert.equal(store.getReview(DOC_ID)!.comments[0].orphanedFromChunkId, first.chunkId);
+      assert.equal(after.some((chunk) => chunk.holdComment === "first only"), false);
+    });
+
     it("appends a review-level comment and advances the generation", function () {
       openTwoChunkReview();
       const commented: AgentEvent[] = [];

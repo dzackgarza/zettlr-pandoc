@@ -55,6 +55,11 @@ export interface ChunkHold {
   chunkId: string;
   comment?: string;
   heldAt: string; // ISO 8601 timestamp
+  /** Snapshot used to reattach the hold when unrelated lines shift. */
+  referenceText?: string;
+  workingText?: string;
+  referenceFromLine?: number;
+  workingFromLine?: number;
 }
 
 /** A review-level comment — attached directly, or salvaged from a hold. */

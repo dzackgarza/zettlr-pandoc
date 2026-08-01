@@ -756,6 +756,19 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
       .catch(err => console.error('Could not accept all review chunks', err))
   })
 
+  editor.on('review-comment', (payload: { reviewId: string, text: string }) => {
+    ipcRenderer.invoke('documents-provider', {
+      command: 'add-review-comment',
+      payload
+    })
+      .then(result => {
+        if (!result.ok) {
+          showToast(trans(result.message), 'error')
+        }
+      })
+      .catch(err => console.error('Could not add review comment', err))
+  })
+
   editor.on('focus', () => {
     ipcRenderer.invoke('documents-provider', {
       command: 'focus-leaf',

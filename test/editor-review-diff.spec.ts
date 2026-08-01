@@ -99,7 +99,8 @@ describe('Editor review-chunk controls', function () {
   function createReviewView (
     baseline: string,
     proposed: string,
-    packets: Array<{ packetId: string, description?: string, refSpans: Array<{ from: number, to: number }> }> = []
+    packets: Array<{ packetId: string, description?: string, refSpans: Array<{ from: number, to: number }> }> = [],
+    reviewComments: Array<{ text: string, createdAt: string }> = []
   ): EditorView {
     const compartment = new Compartment()
     let reference = baseline
@@ -110,6 +111,7 @@ describe('Editor review-chunk controls', function () {
         referenceText: reference,
         packets,
         holds,
+        comments: reviewComments,
         onDecide: (chunkId, decision, comment) => {
           const partition = computeReviewChunks(reference, view.state.doc.toString())
           const chunk = partition.find(c => c.chunkId === chunkId)
@@ -135,6 +137,10 @@ describe('Editor review-chunk controls', function () {
           // what accepting every chunk converges to — and the pane redraws.
           reference = view.state.doc.toString()
           holds = []
+          view.dispatch({ effects: compartment.reconfigure(makeExtension()) })
+        },
+        onComment: (text) => {
+          reviewComments.push({ text, createdAt: '' })
           view.dispatch({ effects: compartment.reconfigure(makeExtension()) })
         }
       })
@@ -468,6 +474,27 @@ describe('Editor review-chunk controls', function () {
     assert.equal(chunkCount(view), 0, 'accept-all must resolve every remaining chunk')
     assert.equal(label.textContent, '0 outstanding')
     assert.equal(acceptAll.disabled, true, 'a finished review has nothing left to mass-accept')
+  })
+
+  it('submits and renders a review-level comment from the status panel', function () {
+    const comments: Array<{ text: string, createdAt: string }> = []
+    const view = createReviewView('baseline', 'proposed', [], comments)
+    const input = view.dom.querySelector<HTMLInputElement>('.cm-reviewCommentInput')
+    const submit = view.dom.querySelector<HTMLButtonElement>('.cm-reviewCommentSubmit')
+    assert.ok(input !== null, 'the status panel must expose a review comment input')
+    assert.ok(submit !== null, 'the status panel must expose a review comment action')
+
+    input.value = '  overall note  '
+    input.dispatchEvent(new window.Event('input', { bubbles: true }))
+    assert.equal(submit.disabled, false)
+    submit.click()
+
+    assert.deepEqual(comments, [{ text: 'overall note', createdAt: '' }])
+    assert.equal(
+      view.dom.querySelector<HTMLElement>('.cm-reviewComment')?.textContent,
+      'overall note',
+      'the submitted comment must remain visible in the review pane',
+    )
   })
 
   it('does not count an ordinary edit as a review decision', function () {

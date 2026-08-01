@@ -132,6 +132,24 @@ describe("computeReviewChunks", function () {
     );
   });
 
+  it("keeps all three identical siblings independently addressable after the middle is decided", function () {
+    const reference = "same\n\nsame\n\nsame";
+    const working = "DIFF\n\nDIFF\n\nDIFF";
+    const before = computeReviewChunks(reference, working);
+    assert.equal(before.length, 3);
+
+    const afterMiddle = computeReviewChunks(
+      reference,
+      spliceChunk(working, before[1], "reject"),
+    );
+    assert.equal(afterMiddle.length, 2);
+    assert.deepEqual(
+      afterMiddle.map((chunk) => chunk.chunkId),
+      [before[0].chunkId, before[2].chunkId],
+      "deciding the middle occurrence may not redirect either untouched sibling",
+    );
+  });
+
   it("represents a pure insertion with an empty reference range", function () {
     const chunks = computeReviewChunks("a\nc", "a\nb\nc");
     assert.equal(chunks.length, 1);
@@ -162,6 +180,15 @@ describe("computeReviewChunks", function () {
     assert.equal(deletion[0].workingText, "");
     assert.equal(deletion[0].refToLine - deletion[0].refFromLine, 1);
     assert.equal(deletion[0].workFromLine, deletion[0].workToLine);
+  });
+  it("applies blank-line-only decisions to exact bytes", function () {
+    const insertion = computeReviewChunks("a\nb", "a\n\nb");
+    assert.equal(insertion.length, 1);
+    assert.equal(spliceChunk("a\nb", insertion[0], "accept"), "a\n\nb");
+
+    const deletion = computeReviewChunks("a\n\nb", "a\nb");
+    assert.equal(deletion.length, 1);
+    assert.equal(spliceChunk("a\nb", deletion[0], "reject"), "a\n\nb");
   });
 });
 
@@ -196,6 +223,20 @@ describe("computeReviewChunks block-aware boundaries", function () {
     assert.equal(chunks[0].workToLine, 11);
     assert.ok(chunks[0].referenceText.startsWith("$$"));
     assert.ok(chunks[0].referenceText.endsWith("$$"));
+  });
+
+  it("keeps a \\[...\\] display-math environment atomic", function () {
+    const reference = [
+      "before", "", "\\[", "x = 1", "y = 2", "\\]", "", "after",
+    ].join("\n");
+    const working = reference.replace("x = 1", "x = 7").replace("y = 2", "y = 8");
+    const chunks = computeReviewChunks(reference, working);
+    assert.equal(chunks.length, 1);
+    assert.deepEqual(
+      [chunks[0].refFromLine, chunks[0].refToLine],
+      [3, 7],
+      "the LaTeX display environment must be decided as one block",
+    );
   });
 
   it("no longer splits mid-\\begin{aligned} when an environment is rewritten", function () {

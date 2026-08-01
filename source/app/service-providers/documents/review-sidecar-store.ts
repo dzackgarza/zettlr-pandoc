@@ -109,7 +109,11 @@ function isChunkHold(value: unknown): value is ChunkHold {
       value.comment === undefined ||
       typeof value.comment === "string") &&
     "heldAt" in value &&
-    typeof value.heldAt === "string"
+    typeof value.heldAt === "string" &&
+    (!("referenceText" in value) || value.referenceText === undefined || typeof value.referenceText === "string") &&
+    (!("workingText" in value) || value.workingText === undefined || typeof value.workingText === "string") &&
+    (!("referenceFromLine" in value) || value.referenceFromLine === undefined || isFiniteInteger(value.referenceFromLine)) &&
+    (!("workingFromLine" in value) || value.workingFromLine === undefined || isFiniteInteger(value.workingFromLine))
   );
 }
 

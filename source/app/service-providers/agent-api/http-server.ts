@@ -1878,7 +1878,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       const status =
         result.code === "REVIEW_NOT_FOUND" || result.code === "CHUNK_NOT_FOUND"
           ? 404
-          : result.code === "DOCUMENT_CLOSED"
+          : result.code === "DOCUMENT_CLOSED" || result.code === "REVIEW_INVALIDATED"
             ? 409
             : 400;
       this.sendError(res, status, result.code, result.message);
@@ -1907,10 +1907,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       await this.sendReviewLookupFailure(res, reviewId);
       return;
     }
-    const result = this._documents.reviewStore.addReviewComment(
-      documentId,
-      decoded.value.text,
-    );
+    const result = this._documents.addReviewComment(reviewId, decoded.value.text);
     if (!result.ok) {
       this.sendError(res, 404, result.code, result.message);
       return;

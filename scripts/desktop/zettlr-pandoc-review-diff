@@ -117,6 +117,13 @@ function requireInteger(value, label) {
   return value;
 }
 
+function requireArray(value, label) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} was not an array`);
+  }
+  return value;
+}
+
 /** Stop on an API refusal while preserving its stable error code and status. */
 function refuse(response, context) {
   const body = requireRecord(response.body, `${context} response`);
@@ -236,6 +243,7 @@ function validatePatchBeforeOpen(patchText, documentPath) {
   if (normalizeText(applied) === documentText) {
     throw new Error("review-diff patch does not change the target document");
   }
+  return documentText;
 }
 
 function request(
@@ -420,35 +428,57 @@ async function main() {
     );
   }
 
+  let diskBaselineText;
   try {
-    validatePatchBeforeOpen(patchText, documentPath);
+    diskBaselineText = validatePatchBeforeOpen(patchText, documentPath);
   } catch (error) {
     fail("PATCH_INVALID", errorText(error), 1, 400);
   }
 
-  const opened = await request(
+  // Reuse an already-loaded authority buffer. This lets a stale-baseline
+  // refusal happen before any focus/open mutation. An unopened path still
+  // passes the local disk validation above before the authority is loaded.
+  const listed = await request(
     port,
     tokenEnvironmentVariable,
     responseDeadlineMs,
-    "POST",
+    "GET",
     "/v1/documents",
-    {
-      uri: pathToFileURL(documentPath).href,
-    },
   );
-  const openedBody = requireSuccessBody(opened, 201, "document open");
-  const documentId = requireString(openedBody.documentId, "documentId");
-
-  // Put the document in front of the user before proposing anything to it: a
-  // review nobody can see is not the outcome this boundary promises.
-  const focused = await request(
-    port,
-    tokenEnvironmentVariable,
-    responseDeadlineMs,
-    "POST",
-    `/v1/documents/${documentId}/focus`,
+  const listedBody = requireSuccessBody(listed, 200, "document list");
+  const listedDocuments = requireArray(listedBody.documents, "document list");
+  const existing = listedDocuments.find(
+    (entry) => isRecord(entry) && entry.path === documentPath,
   );
-  requireSuccessBody(focused, 200, "document focus");
+  let documentId;
+  if (existing !== undefined) {
+    documentId = requireString(existing.documentId, "documentId");
+  } else {
+    if (
+      declaredBaseline !== undefined &&
+      declaredBaseline.toLowerCase() !== crypto.createHash("sha256").update(diskBaselineText, "utf8").digest("hex")
+    ) {
+      fail(
+        "BASELINE_MISMATCH",
+        `the document on disk for ${documentPath} is not the baseline this patch was made against: ` +
+          `--baseline-sha256 ${declaredBaseline.toLowerCase()}, disk ${crypto.createHash("sha256").update(diskBaselineText, "utf8").digest("hex")}. ` +
+          "Rebase the patch onto the current text and submit again.",
+        1,
+      );
+    }
+    const opened = await request(
+      port,
+      tokenEnvironmentVariable,
+      responseDeadlineMs,
+      "POST",
+      "/v1/documents",
+      {
+        uri: pathToFileURL(documentPath).href,
+      },
+    );
+    const openedBody = requireSuccessBody(opened, 201, "document open");
+    documentId = requireString(openedBody.documentId, "documentId");
+  }
 
   const live = await request(
     port,
@@ -495,6 +525,17 @@ async function main() {
     submittedBody.unresolvedChunks,
     "submitted unresolvedChunks",
   );
+
+  // Focus is deliberately last: malformed, stale, inapplicable, or rejected
+  // proposals never steal the user's active tab or reveal a partial review.
+  const focused = await request(
+    port,
+    tokenEnvironmentVariable,
+    responseDeadlineMs,
+    "POST",
+    `/v1/documents/${documentId}/focus`,
+  );
+  requireSuccessBody(focused, 200, "document focus");
 
   process.stdout.write(
     `${JSON.stringify({

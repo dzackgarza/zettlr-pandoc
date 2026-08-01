@@ -1,3 +1,5 @@
+import type { ReviewComment } from './agent-api'
+
 /**
  * What a renderer pane needs to DISPLAY a review: the provider-owned merge
  * reference and the identifiers to send decisions back with. The pane derives
@@ -16,6 +18,8 @@ export interface ReviewDiffSession {
    * toward this text. Only the provider mutates either.
    */
   referenceText: string;
+  /** The provider-authoritative working bytes the pane currently displays. */
+  workingText: string;
   /**
    * Every packet's attribution surface, in application order. The pane
    * matches its chunks against the spans (shared chunkAttributesTo rule) to
@@ -29,12 +33,18 @@ export interface ReviewDiffSession {
    * orphans the hold on its side — the pane never reports state back).
    */
   holds: ReviewChunkHoldView[];
+  /** Review-level comments, including orphaned hold notes, in creation order. */
+  comments: ReviewComment[];
 }
 
 /** One held chunk as a pane sees it: identity plus the optional comment. */
 export interface ReviewChunkHoldView {
   chunkId: string;
   comment?: string;
+  referenceText?: string;
+  workingText?: string;
+  referenceFromLine?: number;
+  workingFromLine?: number;
 }
 
 /**

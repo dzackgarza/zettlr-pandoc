@@ -618,6 +618,11 @@ function mergeRefSpans(spans: readonly RefSpan[]): RefSpan[] {
   return merged;
 }
 
+/** Ignore only seam newlines when matching an unchanged held edit. */
+function trimIdentitySeams(text: string): string {
+  return text.replace(/^\n+|\n+$/g, "");
+}
+
 /**
  * Remap a span list across a decided chunk covering reference lines
  * [refFrom, refTo). The decided region is resolved: span material inside it
@@ -772,11 +777,49 @@ export class ReviewDiffStore extends EventEmitter {
     partition: readonly ReviewChunk[],
   ): void {
     const liveIds = new Set(partition.map((chunk) => chunk.chunkId));
-    const dangling = review.holds.filter((hold) => !liveIds.has(hold.chunkId));
+    const usedIds = new Set<string>();
+    const dangling: ChunkHold[] = [];
+    for (const hold of review.holds) {
+      if (liveIds.has(hold.chunkId)) {
+        usedIds.add(hold.chunkId);
+        continue;
+      }
+      const candidates = partition
+        .filter((chunk) => !usedIds.has(chunk.chunkId))
+        .filter((chunk) =>
+          hold.referenceText !== undefined &&
+          hold.workingText !== undefined &&
+          trimIdentitySeams(chunk.referenceText) === trimIdentitySeams(hold.referenceText) &&
+          trimIdentitySeams(chunk.workingText) === trimIdentitySeams(hold.workingText),
+        )
+        .map((chunk) => ({
+          chunk,
+          distance: (hold.referenceFromLine === undefined ? 0 : Math.abs(chunk.refFromLine - hold.referenceFromLine)) +
+            (hold.workingFromLine === undefined ? 0 : Math.abs(chunk.workFromLine - hold.workingFromLine)),
+        }))
+        .sort((a, b) => a.distance - b.distance);
+      const positionedCandidates = hold.referenceFromLine === undefined
+        ? candidates
+        : candidates.filter(({ chunk }) => chunk.refFromLine === hold.referenceFromLine);
+      const selected = positionedCandidates.length === 1
+        ? positionedCandidates[0]
+        : positionedCandidates.length > 1 && positionedCandidates[0].distance < positionedCandidates[1].distance
+          ? positionedCandidates[0]
+          : undefined;
+      if (selected !== undefined) {
+        hold.chunkId = selected.chunk.chunkId;
+        hold.referenceFromLine = selected.chunk.refFromLine;
+        hold.workingFromLine = selected.chunk.workFromLine;
+        usedIds.add(hold.chunkId);
+      } else {
+        dangling.push(hold);
+      }
+    }
     if (dangling.length === 0) {
+      review.holds = review.holds.filter((hold) => usedIds.has(hold.chunkId));
       return;
     }
-    review.holds = review.holds.filter((hold) => liveIds.has(hold.chunkId));
+    review.holds = review.holds.filter((hold) => usedIds.has(hold.chunkId));
     for (const hold of dangling) {
       if (hold.comment === undefined) {
         continue;
@@ -1112,7 +1155,15 @@ export class ReviewDiffStore extends EventEmitter {
     if (decision === "hold") {
       // Upsert: holding again replaces the comment (an empty re-hold clears it).
       review.holds = review.holds.filter((hold) => hold.chunkId !== chunkId);
-      review.holds.push({ chunkId, comment, heldAt: new Date().toISOString() });
+      review.holds.push({
+        chunkId,
+        comment,
+        heldAt: new Date().toISOString(),
+        referenceText: chunk.referenceText,
+        workingText: chunk.workingText,
+        referenceFromLine: chunk.refFromLine,
+        workingFromLine: chunk.workFromLine,
+      });
       unresolvedChunks = partition.length - review.holds.length;
       review.generation += 1;
       this.emitEvent("review.held", {
@@ -1124,13 +1175,20 @@ export class ReviewDiffStore extends EventEmitter {
         unresolvedChunks,
       });
     } else if (decision === "accept") {
+      const referenceLineDelta =
+        chunk.workToLine - chunk.workFromLine - (chunk.refToLine - chunk.refFromLine);
+      for (const hold of review.holds) {
+        if (hold.chunkId !== chunkId && hold.referenceFromLine !== undefined && hold.referenceFromLine >= chunk.refToLine) {
+          hold.referenceFromLine += referenceLineDelta;
+        }
+      }
       review.referenceText = spliceChunk(review.referenceText, chunk, "accept");
       // The accepted splice changed the reference's line count: spans behind
       // it shift, spans on it are resolved and dropped.
       this.remapSpansAcrossDecision(
         review,
         chunk,
-        chunk.workToLine - chunk.workFromLine - (chunk.refToLine - chunk.refFromLine),
+        referenceLineDelta,
       );
       unresolvedChunks = this.reconcileAndCountPending(
         review,
@@ -1144,6 +1202,13 @@ export class ReviewDiffStore extends EventEmitter {
         unresolvedChunks,
       });
     } else {
+      const workingLineDelta =
+        chunk.refToLine - chunk.refFromLine - (chunk.workToLine - chunk.workFromLine);
+      for (const hold of review.holds) {
+        if (hold.chunkId !== chunkId && hold.workingFromLine !== undefined && hold.workingFromLine >= chunk.workToLine) {
+          hold.workingFromLine += workingLineDelta;
+        }
+      }
       newWorkingText = spliceChunk(workingText, chunk, "reject");
       // The reference did not move, but the chunk's reference region is now
       // resolved: attribution material there is dropped, so a later edit of
@@ -1623,13 +1688,20 @@ export class ReviewDiffStore extends EventEmitter {
    */
   getHolds(
     documentId: string,
-  ): Array<{ chunkId: string; comment?: string }> | undefined {
+  ): Array<{
+    chunkId: string;
+    comment?: string;
+    referenceText?: string;
+    workingText?: string;
+    referenceFromLine?: number;
+    workingFromLine?: number;
+  }> | undefined {
     const review = this.reviews.get(documentId);
     if (review === undefined) {
       return undefined;
     }
     this.partitionOf(review);
-    return review.holds.map(({ chunkId, comment }) => ({ chunkId, comment }));
+    return review.holds.map((hold) => ({ ...hold }));
   }
 
   /**

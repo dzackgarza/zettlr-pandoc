@@ -133,38 +133,27 @@ export function computeReviewChunks(
     .map((range) => {
       const refSlice = joinLines(refLines, range.refFrom, range.refTo);
       const workSlice = joinLines(workLines, range.workFrom, range.workTo);
+      // CodeMirror's line diff may attach a shared seam newline to either
+      // neighbouring chunk. It is structural context, not the edit itself;
+      // excluding it keeps the same occurrence's identity when a sibling is
+      // decided and the kernel chooses the opposite seam attachment.
+      const identityReference = trimSeamNewlines(refSlice);
+      const identityWorking = trimSeamNewlines(workSlice);
       return {
         range,
         refSlice,
         workSlice,
-        hash: fnv1a64(`${refSlice}\0${workSlice}`),
-        anchor: fnv1a64(stableContext(refLines, workLines, range)),
+        hash: fnv1a64(`${identityReference}\0${identityWorking}`),
+        anchor: firstDifferenceLine(refLines, workLines, range),
       };
     })
     .filter(
       ({ range, refSlice, workSlice }) =>
         refSlice !== workSlice || isBlankOnlyRange(range, refLines, workLines),
   );
-  const hashCounts = new Map<string, number>();
-  for (const identity of identities) {
-    const previousHashCount = hashCounts.get(identity.hash);
-    hashCounts.set(
-      identity.hash,
-      previousHashCount === undefined ? 1 : previousHashCount + 1,
-    );
-  }
   const result: ReviewChunk[] = [];
-  const anchorCounts = new Map<string, number>();
   for (const { range, refSlice, workSlice, hash, anchor } of identities) {
-    let chunkId = `chunk-${hash}-${anchor}`;
-    if (hashCounts.get(hash)! > 1) {
-      const previousAnchorCount = anchorCounts.get(anchor);
-      const sameAnchorCount = previousAnchorCount === undefined ? 0 : previousAnchorCount;
-      if (sameAnchorCount > 0) {
-        chunkId += `-${sameAnchorCount}`;
-      }
-      anchorCounts.set(anchor, sameAnchorCount + 1);
-    }
+    const chunkId = `chunk-${hash}-${anchor}`;
 
     result.push({
       chunkId,
@@ -183,22 +172,35 @@ export function computeReviewChunks(
   return result;
 }
 
-/** Stable context shared by both sides around a chunk. */
-function stableContext(
+/** Remove structural seam newlines from an identity payload. */
+function trimSeamNewlines(text: string): string {
+  return text.replace(/^\n+|\n+$/g, "");
+}
+
+/**
+ * Return the first line that actually differs inside a range. Unlike an
+ * occurrence counter, this anchor survives a sibling disappearing: the
+ * resolved sibling remains in the document and therefore does not renumber
+ * the later edit. A pure blank-line edit has no unequal line, so its boundary
+ * is the deterministic fallback.
+ */
+function firstDifferenceLine(
   referenceLines: readonly string[],
   workingLines: readonly string[],
   range: ChunkRange,
-): string {
-  const beforeReference = referenceLines[range.refFrom - 1];
-  const beforeWorking = workingLines[range.workFrom - 1];
-  const afterReference = referenceLines[range.refTo];
-  const afterWorking = workingLines[range.workTo];
-  return [
-    beforeReference !== undefined && beforeReference === beforeWorking
-      ? beforeReference
-      : "",
-    afterReference !== undefined && afterReference === afterWorking ? afterReference : "",
-  ].join("\0");
+): number {
+  const length = Math.max(
+    range.refTo - range.refFrom,
+    range.workTo - range.workFrom,
+  );
+  for (let index = 0; index < length; index++) {
+    const reference = referenceLines[range.refFrom - 1 + index];
+    const working = workingLines[range.workFrom - 1 + index];
+    if (reference !== working) {
+      return Math.min(range.refFrom + index, range.workFrom + index);
+    }
+  }
+  return Math.min(range.refFrom, range.workFrom);
 }
 
 function isBlankOnlyRange(
@@ -284,7 +286,7 @@ function isBlank(line: string): boolean {
 }
 
 /**
- * The atomic blocks of a text: $$ display math, ``` / ~~~ code fences, and
+ * The atomic blocks of a text: $$ or \\[...\\] display math, ``` / ~~~ code fences, and
  * ::: fenced divs, as 1-based half-open line spans covering their fences. A
  * single scanner state means blocks cannot nest across kinds — a $$ inside a
  * code fence is code, a fence inside a div belongs to the div. An
@@ -297,7 +299,7 @@ function atomicBlocks(lines: readonly string[]): AtomicBlock[] {
     // `fence` is the opener's whole run: a closer must be the same character
     // and no shorter, so a ``` inside a ```` block is content, not the end.
     | { kind: "code"; from: number; fence: string }
-    | { kind: "math"; from: number }
+    | { kind: "math"; from: number; close: "$$" | "\\]" }
     | { kind: "div"; from: number; depth: number }
     | null = null;
   for (let i = 0; i < lines.length; i++) {
@@ -315,7 +317,15 @@ function atomicBlocks(lines: readonly string[]): AtomicBlock[] {
           // One-line $$…$$: a block of its own single line.
           blocks.push({ kind: "math", from: lineNo, to: lineNo + 1 });
         } else {
-          open = { kind: "math", from: lineNo };
+          open = { kind: "math", from: lineNo, close: "$$" };
+        }
+        continue;
+      }
+      if (trimmed.startsWith("\\[")) {
+        if (trimmed.length > 2 && trimmed.endsWith("\\]")) {
+          blocks.push({ kind: "math", from: lineNo, to: lineNo + 1 });
+        } else {
+          open = { kind: "math", from: lineNo, close: "\\]" };
         }
         continue;
       }
@@ -340,7 +350,7 @@ function atomicBlocks(lines: readonly string[]): AtomicBlock[] {
         break;
       }
       case "math": {
-        if (trimmed.endsWith("$$")) {
+        if (trimmed.endsWith(open.close)) {
           blocks.push({ kind: "math", from: open.from, to: lineNo + 1 });
           open = null;
         }
@@ -586,13 +596,18 @@ export function spliceChunk(
   decision: "accept" | "reject",
 ): string {
   const lines = targetText.split("\n");
-  const [fromLine, toLine, insert] =
+  const [fromLine, toLine, insert, blankLineCount] =
     decision === "accept"
-      ? [chunk.refFromLine, chunk.refToLine, chunk.workingText]
-      : [chunk.workFromLine, chunk.workToLine, chunk.referenceText];
+      ? [chunk.refFromLine, chunk.refToLine, chunk.workingText, chunk.workToLine - chunk.workFromLine]
+      : [chunk.workFromLine, chunk.workToLine, chunk.referenceText, chunk.refToLine - chunk.refFromLine];
   const before = lines.slice(0, fromLine - 1);
   const after = lines.slice(toLine - 1);
-  const inserted = insert === "" ? [] : insert.split("\n");
+  // A blank-line-only chunk deliberately carries empty text on both sides.
+  // Preserve its line span instead of treating the empty payload as no
+  // insertion: one empty line is still one byte-level document line.
+  const inserted = insert === "" && chunk.referenceText === "" && chunk.workingText === ""
+    ? Array.from({ length: blankLineCount }, () => "")
+    : insert === "" ? [] : insert.split("\n");
   return [...before, ...inserted, ...after].join("\n");
 }
 

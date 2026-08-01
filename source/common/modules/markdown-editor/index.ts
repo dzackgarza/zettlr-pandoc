@@ -258,6 +258,7 @@ export default class MarkdownEditor extends EventEmitter {
 
   private readonly reviewDiffCompartment: Compartment;
   private activeReviewDiffSession: ReviewDiffSession | null;
+  private pendingReviewDiffSession: ReviewDiffSession | null = null;
 
   /**
    * Creates a new MarkdownEditor instance associated with the given leafId and
@@ -355,6 +356,7 @@ export default class MarkdownEditor extends EventEmitter {
         // Listen for changes and emit events appropriately
         if (update.docChanged) {
           this.emit("change");
+          queueMicrotask(() => this.activatePendingReviewDiffSession());
         }
 
         if (update.focusChanged && this._instance.hasFocus) {
@@ -943,18 +945,25 @@ export default class MarkdownEditor extends EventEmitter {
       return;
     }
 
-    // The pane needs no buffer-catch-up choreography here: the chunk field
-    // recomputes against whatever this buffer currently shows, and when the
-    // provider's collab update arrives the field recomputes again. A briefly
-    // stale buffer means briefly stale widgets, never wrong state — the
-    // provider validates every decision against ITS partition. The generation
-    // is part of the identity check because state the reference does not
-    // capture — packet attribution spans after a reject, say — still changes
-    // with every store mutation, and each mutation bumps the generation.
+    // Never mount controls over a renderer buffer that is not the provider's
+    // authoritative working text. The collab update will retry activation;
+    // until then the pane is ordinary editable Markdown with no stale action.
+    if (this._instance.state.doc.toString() !== session.workingText) {
+      this.pendingReviewDiffSession = session;
+      this.activeReviewDiffSession = null;
+      this._instance.dom.classList.remove("review-diff-active");
+      this._instance.dispatch({ effects: this.reviewDiffCompartment.reconfigure([]) });
+      return;
+    }
+    this.pendingReviewDiffSession = null;
     if (
       this.activeReviewDiffSession?.id === session.id &&
       this.activeReviewDiffSession.reviewGeneration === session.reviewGeneration &&
-      this.activeReviewDiffSession.referenceText === session.referenceText
+      this.activeReviewDiffSession.referenceText === session.referenceText &&
+      this.activeReviewDiffSession.workingText === session.workingText &&
+      JSON.stringify(this.activeReviewDiffSession.packets) === JSON.stringify(session.packets) &&
+      JSON.stringify(this.activeReviewDiffSession.holds) === JSON.stringify(session.holds) &&
+      JSON.stringify(this.activeReviewDiffSession.comments) === JSON.stringify(session.comments)
     ) {
       return;
     }
@@ -979,6 +988,7 @@ export default class MarkdownEditor extends EventEmitter {
       referenceText: session.referenceText,
       packets: session.packets,
       holds: session.holds,
+      comments: session.comments,
       onDecide: (chunkId, decision, comment) => {
         this.emit("review-chunk-decision", {
           reviewId: session.id,
@@ -990,11 +1000,24 @@ export default class MarkdownEditor extends EventEmitter {
       onAcceptAll: () => {
         this.emit("review-accept-all", { reviewId: session.id });
       },
+      onComment: (text) => {
+        this.emit("review-comment", { reviewId: session.id, text });
+      },
     });
+  }
+
+  private activatePendingReviewDiffSession(): void {
+    const session = this.pendingReviewDiffSession;
+    if (session !== null && this._instance.state.doc.toString() === session.workingText) {
+      this.startReviewDiffSession(session);
+    }
   }
 
   clearReviewDiffSession(sessionId?: string): void {
     if (this.activeReviewDiffSession === null) {
+      if (sessionId === undefined || this.pendingReviewDiffSession?.id === sessionId) {
+        this.pendingReviewDiffSession = null;
+      }
       return;
     }
 
@@ -1003,6 +1026,7 @@ export default class MarkdownEditor extends EventEmitter {
     }
 
     this.activeReviewDiffSession = null;
+    this.pendingReviewDiffSession = null;
     this._instance.dom.classList.remove("review-diff-active");
     this._instance.dispatch({
       effects: this.reviewDiffCompartment.reconfigure([]),

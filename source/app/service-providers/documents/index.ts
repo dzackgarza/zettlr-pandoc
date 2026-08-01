@@ -61,7 +61,7 @@ import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
 import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions, shell } from "electron";
 import EventEmitter from "events";
-import { constants as FSConstants } from "fs";
+import { constants as FSConstants, readFileSync } from "fs";
 import path from "path";
 import { normalizeText, sha256Text } from "./review-diff-store";
 import {
@@ -349,6 +349,7 @@ export type DocumentManagerIPCAPI = IPCAPI<{
     comment?: string;
   };
   "accept-all-review-chunks": { reviewId: string };
+  "add-review-comment": { reviewId: string; text: string };
 
   "move-file": {
     originWindow: string;
@@ -654,6 +655,10 @@ export default class DocumentManager extends ProviderContract {
         case "accept-all-review-chunks": {
           const { reviewId } = payload;
           return this.acceptAllChunks(reviewId);
+        }
+        case "add-review-comment": {
+          const { reviewId, text } = payload;
+          return this.addReviewComment(reviewId, text);
         }
         case "move-file": {
           const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;
@@ -1141,6 +1146,13 @@ current contents from the editor somewhere else, and restart the application.`,
       // editor typing does not; queue a sidecar export after every authority
       // update so a crash cannot lose the current working text.
       this._scheduleReviewSidecarWrite(documentId);
+      const review = this._reviewStore.getReview(documentId);
+      if (review !== undefined) {
+        // Ordinary editor typing changes the working partition without going
+        // through a review decision. Reconcile holds and refresh every pane
+        // from the same authority so controls never target a stale region.
+        this._broadcastReviewState(filePath, review);
+      }
     }
 
     // Drop all updates that exceed the amount of updates we allow.
@@ -2247,6 +2259,11 @@ current contents from the editor somewhere else, and restart the application.`,
       };
     }
 
+    const diskFence = this.checkReviewDiskFenceSync(filePath, review);
+    if (!diskFence.ok) {
+      return diskFence;
+    }
+
     const result = this._reviewStore.decideChunk(
       review.documentId,
       reviewId,
@@ -2314,6 +2331,11 @@ current contents from the editor somewhere else, and restart the application.`,
       };
     }
 
+    const diskFence = this.checkReviewDiskFenceSync(filePath, review);
+    if (!diskFence.ok) {
+      return diskFence;
+    }
+
     const result = this._reviewStore.acceptAllChunks(review.documentId);
     if (!result.ok) {
       return { ok: false, code: result.code, message: result.message };
@@ -2332,6 +2354,29 @@ current contents from the editor somewhere else, and restart the application.`,
         sha256: sha256Text(doc.document.toString()),
       },
     };
+  }
+
+  /** Add a review-level comment through the provider-owned review state. */
+  public addReviewComment(
+    reviewId: string,
+    text: string,
+  ): ReturnType<ReviewDiffStore["addReviewComment"]> | { ok: false; code: AgentErrorCode; message: string } {
+    const review = this._reviewStore.findReviewByReviewId(reviewId);
+    if (review === undefined) {
+      return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+    }
+    const filePath = this.getDocumentPath(review.documentId);
+    const doc = filePath === undefined
+      ? undefined
+      : this.documents.find((candidate) => candidate.filePath === filePath);
+    if (filePath === undefined || doc === undefined) {
+      return { ok: false, code: "DOCUMENT_CLOSED", message: "The reviewed document is no longer open." };
+    }
+    const result = this._reviewStore.addReviewComment(review.documentId, text);
+    if (result.ok) {
+      this._broadcastReviewState(filePath, review);
+    }
+    return result;
   }
 
   /**
@@ -2385,6 +2430,49 @@ current contents from the editor somewhere else, and restart the application.`,
     }
 
     return undefined;
+  }
+
+  /**
+   * Decisions must observe the same disk fence as saves. The decision APIs are
+   * synchronous because they are also the renderer IPC boundary; a single
+   * small text read here closes the race where a direct disk edit has happened
+   * but the filesystem watcher has not delivered its event yet. In that case
+   * invalidate before returning so no later decision can act on the stale
+   * review, while the live buffer and external bytes remain untouched.
+   */
+  private checkReviewDiskFenceSync(
+    filePath: string,
+    review: NonNullable<ReturnType<ReviewDiffStore["getReview"]>>,
+  ): { ok: true } | { ok: false; code: AgentErrorCode; message: string } {
+    if (review.invalidated) {
+      return {
+        ok: false,
+        code: "REVIEW_INVALIDATED",
+        message: "The review was invalidated by external disk drift.",
+      };
+    }
+    let diskContents: string;
+    try {
+      diskContents = readFileSync(filePath, "utf8");
+    } catch {
+      this._reviewStore.invalidateReview(review.documentId);
+      this._broadcastReviewCleared(filePath, review.reviewId);
+      return {
+        ok: false,
+        code: "REVIEW_INVALIDATED",
+        message: "The reviewed document could not be read from disk; the review was invalidated.",
+      };
+    }
+    if (sha256Text(normalizeText(diskContents)) === review.diskFenceSha256) {
+      return { ok: true };
+    }
+    this._reviewStore.invalidateReview(review.documentId);
+    this._broadcastReviewCleared(filePath, review.reviewId);
+    return {
+      ok: false,
+      code: "REVIEW_INVALIDATED",
+      message: "The document changed on disk after this review opened; the review was invalidated.",
+    };
   }
 
   public async saveFile(filePath: string): Promise<SaveFileResult> {
@@ -3254,11 +3342,23 @@ current contents from the editor somewhere else, and restart the application.`,
     if (documentId === undefined) {
       return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
     }
+    const filePath = this.getDocumentPath(documentId);
+    const openDoc = filePath === undefined
+      ? undefined
+      : this.documents.find((candidate) => candidate.filePath === filePath);
+    if (filePath !== undefined && openDoc !== undefined) {
+      const review = this._reviewStore.getReview(documentId);
+      if (review !== undefined) {
+        const diskFence = this.checkReviewDiskFenceSync(filePath, review);
+        if (!diskFence.ok) {
+          return diskFence;
+        }
+      }
+    }
     const result = this._reviewStore.clearUnresolved(documentId);
     if (!result.ok) {
       return { ok: false, code: result.code, message: result.message };
     }
-    const filePath = this.getDocumentPath(documentId);
     if (filePath !== undefined) {
       this._applyWorkingTextToDocument(filePath, result.workingText);
       this._broadcastReviewCleared(filePath, reviewId);
@@ -3509,8 +3609,10 @@ current contents from the editor somewhere else, and restart the application.`,
       reviewGeneration: review.generation,
       documentPath: filePath,
       referenceText: review.referenceText,
+      workingText: this.documents.find((document) => document.filePath === filePath)?.document.toString() ?? "",
       packets: this._reviewStore.getPacketAttributions(review.documentId)!,
       holds: this._reviewStore.getHolds(review.documentId)!,
+      comments: review.comments.map((comment) => ({ ...comment })),
     };
   }
 

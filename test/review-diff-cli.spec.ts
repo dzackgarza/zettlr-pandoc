@@ -561,6 +561,38 @@ describe("review-diff CLI submission boundary", function () {
     assert.deepEqual(await reviews(), []);
   });
 
+  it("refuses a stale baseline for an unopened document without loading it", async function () {
+    const unopenedPath = path.join(scratch, "stale-unopened.md");
+    const original = "unopened original\n";
+    writeFileSync(unopenedPath, original, "utf8");
+    const patchPath = path.join(scratch, "stale-unopened.diff");
+    writeFileSync(
+      patchPath,
+      createPatch("document", original, "unopened revised\n", "", "", { context: 0 }),
+      "utf8",
+    );
+
+    const result = await runCli([
+      "--document", unopenedPath,
+      "--patch", patchPath,
+      "--baseline-sha256", "0".repeat(64),
+      "--port", String(httpPort),
+      "--token-environment-variable", TOKEN_ENVIRONMENT_VARIABLE,
+      "--response-deadline-ms", RESPONSE_DEADLINE_MS,
+    ]);
+    const failure = parseCliFailure(result);
+    assert.equal(failure.code, "BASELINE_MISMATCH");
+    assert.deepEqual(await reviews(), []);
+    const documents = await httpGet("/v1/documents");
+    assert.equal(documents.status, 200, serverDiagnostics());
+    const entries = requiredArray(parseObject(documents.body, "document list").documents, "document list");
+    assert.equal(
+      entries.some((entry) => requiredRecord(entry, "document entry").path === unopenedPath),
+      false,
+      "a refused unopened submission must not load or focus the document",
+    );
+  });
+
   it("focuses the document and opens every submitted review chunk", async function () {
     const live = await liveDocument();
     const proposed = live.content

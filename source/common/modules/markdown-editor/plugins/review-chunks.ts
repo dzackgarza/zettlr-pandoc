@@ -45,6 +45,7 @@ import {
   type ReviewChunk
 } from '@common/modules/review/review-chunks'
 import type { ReviewChunkHoldView, ReviewPacketAttribution } from '@dts/common/review-diff'
+import type { ReviewComment } from '@dts/common/agent-api'
 
 export interface ReviewChunksConfig {
   reviewId: string
@@ -64,6 +65,8 @@ export interface ReviewChunksConfig {
    * simply renders pending again (the provider orphans the hold's comment).
    */
   holds: ReviewChunkHoldView[]
+  /** Review-level comments shown in the status panel. */
+  comments: ReviewComment[]
   /**
    * Called with a chunk's content-addressed id when a control is clicked.
    * Hold carries the optional comment typed into the chunk's note field.
@@ -75,6 +78,8 @@ export interface ReviewChunksConfig {
    * broadcasts; this pane redraws from that broadcast, like any decision.
    */
   onAcceptAll: () => void
+  /** Called when the status panel submits a review-level comment. */
+  onComment: (text: string) => void
 }
 
 const reviewChunksConfig = Facet.define<ReviewChunksConfig>()
@@ -193,7 +198,28 @@ function reviewStatusPanel (view: EditorView): Panel {
       requireReviewChunksConfig(view.state).onAcceptAll()
     }
   )
-  dom.append(previous, next, label, acceptAll)
+  const commentList = document.createElement('div')
+  commentList.className = 'cm-reviewComments'
+  const commentInput = document.createElement('input')
+  commentInput.type = 'text'
+  commentInput.className = 'cm-reviewCommentInput'
+  commentInput.placeholder = 'Review comment…'
+  const commentSubmit = makeButton(
+    'cm-review-diff-control cm-reviewCommentSubmit',
+    'Comment',
+    'Add a review-level comment',
+    () => {
+      const text = commentInput.value.trim()
+      if (text === '') {return}
+      requireReviewChunksConfig(view.state).onComment(text)
+      commentInput.value = ''
+    }
+  )
+  commentInput.addEventListener('input', () => {
+    commentSubmit.disabled = commentInput.value.trim() === ''
+  })
+  commentSubmit.disabled = true
+  dom.append(previous, next, label, acceptAll, commentList, commentInput, commentSubmit)
 
   const render = (state: EditorState): void => {
     const chunks = state.field(reviewChunksField).chunks
@@ -205,6 +231,12 @@ function reviewStatusPanel (view: EditorView): Panel {
     previous.disabled = done
     next.disabled = done
     acceptAll.disabled = done
+    commentList.replaceChildren(...requireReviewChunksConfig(state).comments.map(comment => {
+      const entry = document.createElement('div')
+      entry.className = 'cm-reviewComment'
+      entry.textContent = comment.text
+      return entry
+    }))
   }
   render(view.state)
 
@@ -253,7 +285,13 @@ function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
       .map(packet => packet.description)
       .filter((description): description is string => description !== undefined)
 
-    const hold = config.holds.find(h => h.chunkId === chunk.chunkId)
+    const hold = config.holds.find(h => h.chunkId === chunk.chunkId) ?? config.holds.find(h =>
+      h.referenceText !== undefined &&
+      h.workingText !== undefined &&
+      h.referenceFromLine === chunk.refFromLine &&
+      trimIdentitySeams(h.referenceText) === trimIdentitySeams(chunk.referenceText) &&
+      trimIdentitySeams(h.workingText) === trimIdentitySeams(chunk.workingText)
+    )
 
     ranges.push(
       Decoration.widget({
@@ -278,6 +316,10 @@ function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
     }
   }
   return { chunks, decorations: Decoration.set(ranges, true) }
+}
+
+function trimIdentitySeams (text: string): string {
+  return text.replace(/^\n+|\n+$/g, '')
 }
 
 const changedLine = Decoration.line({ class: 'cm-changedLine' })
@@ -307,6 +349,7 @@ class DeletedLinesWidget extends WidgetType {
     return other.chunk.chunkId === this.chunk.chunkId &&
       other.chunk.referenceText === this.chunk.referenceText &&
       other.chunk.workingText === this.chunk.workingText &&
+      other.config.reviewId === this.config.reviewId &&
       JSON.stringify(other.descriptions) === JSON.stringify(this.descriptions) &&
       (other.hold === undefined) === (this.hold === undefined) &&
       other.hold?.comment === this.hold?.comment
