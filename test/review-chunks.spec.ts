@@ -258,6 +258,24 @@ describe("computeReviewChunks block-aware boundaries", function () {
     );
   });
 
+  it("keeps a fenced div atomic", function () {
+    const reference = [
+      "before", "",
+      "::: {.theorem}", "claim one", "claim two", "::: ",
+      "", "after",
+    ].join("\n");
+    const working = reference
+      .replace("claim one", "claim ONE")
+      .replace("claim two", "claim TWO");
+    const chunks = computeReviewChunks(reference, working);
+    assert.equal(chunks.length, 1, "one fenced div, one decision");
+    assert.deepEqual(
+      [chunks[0].refFromLine, chunks[0].refToLine],
+      [3, 7],
+      "the chunk must cover the fenced div edge to edge",
+    );
+  });
+
   it("converges under accept and reject with the policies active", function () {
     const reference = [
       "intro", "", "alpha one", "alpha two", "", "$$", "x &= 1", "$$", "", "tail",
