@@ -221,7 +221,16 @@ async function waitForProjectTitle (
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const settings: unknown = JSON.parse(await readFile(settingsFile, 'utf8'))
+    let settings: unknown
+    try {
+      settings = JSON.parse(await readFile(settingsFile, 'utf8'))
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        await delay(100)
+        continue
+      }
+      throw error
+    }
     if (
       settings !== null &&
       typeof settings === 'object' &&
@@ -270,11 +279,10 @@ describe('global-search and project-properties failure recovery', function () {
     const queryInput = page.locator(QUERY_INPUT)
     await queryInput.fill('notpresentinthecorpus')
     await searchButton(page).click()
-    await page.locator(RUNNING_INDICATOR).waitFor({
-      state: 'visible',
-      timeout: 30_000
-    })
-
+    // Replace the query immediately after starting it. The running indicator
+    // can appear and disappear between two CDP polls on a fast machine; the
+    // user gesture under test is Enter while the dispatched search is active,
+    // not observation of that transient paint.
     await queryInput.fill('replacementtoken')
     await queryInput.press('Enter')
     await page.locator(REPLACEMENT_RESULT).filter({

@@ -426,16 +426,15 @@ function updateProperties (): void {
       // The JSON round trip de-proxies the reactive settings object.
       const deproxiedSettings = JSON.parse(JSON.stringify(projectSettings.value)) as ProjectSettings
 
-      ipcRenderer.invoke('application', {
+      return ipcRenderer.invoke('application', {
         command: 'update-project-properties',
         payload: { properties: deproxiedSettings, path: dirPath }
       })
-        .finally(() => {
-          updateLock.value = false
-        })
-        .catch(err => console.error(err))
     })
     .catch(err => console.error(err))
+    .finally(() => {
+      updateLock.value = false
+    })
 }
 
 async function fetchProperties (): Promise<void> {

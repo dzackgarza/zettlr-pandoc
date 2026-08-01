@@ -371,6 +371,11 @@ const stopListeningForSearchResults = ipcRenderer.on('search-provider', (event, 
     searchIsRunning.value = false
     hadNoResult.value = filteredSearchResults.value.length === 0
     searchProgress.value = 0
+    const restartSearch = shouldStartNewSearch.value
+    shouldStartNewSearch.value = false
+    if (restartSearch) {
+      startSearch()
+    }
   } else if (message.type === 'search-result') {
     processSearchResult(message.progress, message.file, message.result)
       .catch(err => console.error(err))
