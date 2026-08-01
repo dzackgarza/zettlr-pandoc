@@ -323,6 +323,8 @@ export interface LaunchOptions {
    * caller's choice here is the only thing that decides the app's auth mode.
    */
   agentApiToken?: string
+  /** Files delivered as literal application arguments on a cold start. */
+  files?: string[]
 }
 
 export async function launchElectron (
@@ -357,6 +359,7 @@ export async function launchElectron (
     '--disable-backgrounding-occluded-windows',
     '--disable-renderer-backgrounding'
   ]
+  forgeArguments.push(...(options.files ?? []))
   const needsVirtualDisplay =
     process.platform === 'linux' &&
     process.env.DISPLAY === undefined &&

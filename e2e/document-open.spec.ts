@@ -1,9 +1,9 @@
 import { strict as assert } from 'node:assert'
 import { type ChildProcess } from 'node:child_process'
-import { chmod, readFile, rm, utimes } from 'node:fs/promises'
+import { chmod, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { type Browser } from 'playwright'
+import { type Browser, type Page } from 'playwright'
 import {
   assertCleanExit,
   attach,
@@ -40,6 +40,52 @@ async function waitForAppDiagnostic (
 
   throw new Error(
     `No app diagnostic identified ${documentPath} and EACCES within ${timeoutMs}ms.`
+  )
+}
+
+async function readEditorDocument (page: Page): Promise<string> {
+  return await page.locator('.cm-content').evaluate(content => {
+    const tile = (
+      content as HTMLElement & {
+        cmTile?: {
+          root?: {
+            view?: {
+              state?: { doc?: { toString(): string } }
+            }
+          }
+        }
+      }
+    ).cmTile
+    const documentText = tile?.root?.view?.state?.doc?.toString()
+    if (documentText === undefined) {
+      throw new Error('Could not read the active CodeMirror document state')
+    }
+    return documentText
+  })
+}
+
+async function waitForEditorDocument (
+  page: Page,
+  expected: string,
+  timeoutMs: number
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (await page.locator('.cm-content').count() > 0) {
+      try {
+        if (await readEditorDocument(page) === expected) {
+          return
+        }
+      } catch {
+        // The editor is still being replaced by roots-add; keep observing the
+        // same real page until the requested cold-start document is active.
+      }
+    }
+    await delay(100)
+  }
+  throw new Error(
+    `The cold-start file was not active within ${timeoutMs}ms. ` +
+    `Expected ${JSON.stringify(expected)}`
   )
 }
 
@@ -274,5 +320,72 @@ describe('opening a Markdown document', function () {
         rendererEvents.join('\n')
     )
     await waitForAppDiagnostic(activeFixtureRoot, activeDocumentPath, 20_000)
+  })
+})
+
+describe('cold-launch file delivery', function () {
+  let appProcess: ChildProcess | undefined
+  let browser: Browser | undefined
+  let fixtureRoot: string | undefined
+  let documentPath: string | undefined
+  let expectedContents: string | undefined
+  let getOutput: () => string = () => ''
+  const rendererEvents: string[] = []
+  const screenshots = new Map<string, Buffer>()
+
+  before(async function () {
+    const fixture = await createFixture('zettlr-cold-file-e2e-', {
+      documentName: 'initial-document.md',
+      documentContents: '# Initial document\n'
+    })
+    fixtureRoot = fixture.root
+    documentPath = path.join(fixture.root, 'workspace', 'cold launch document.md')
+    expectedContents =
+      '# Cold launch\n\n' +
+      'This exact buffer arrived through the application argv.\n'
+    await writeFile(documentPath, expectedContents, 'utf8')
+
+    const app = await attach(
+      fixture.configDirectory,
+      rendererEvents,
+      this.timeout(),
+      { files: [documentPath] }
+    )
+    appProcess = app.appProcess
+    browser = app.browser
+    getOutput = app.getOutput
+  })
+
+  after(async function () {
+    await shutdown(browser, appProcess)
+    await preserveArtifacts(
+      path.join(tmpdir(), 'zettlr-cold-file-e2e-latest'),
+      fixtureRoot,
+      getOutput(),
+      rendererEvents,
+      screenshots
+    )
+    if (fixtureRoot !== undefined) {
+      await rm(fixtureRoot, { recursive: true, force: true })
+    }
+    console.log('E2E artifacts: /tmp/zettlr-cold-file-e2e-latest')
+    assertCleanExit(getOutput())
+  })
+
+  it('opens the requested file as the active editor with its exact contents', async function () {
+    assert.ok(browser, 'The application must be running')
+    const expected = requireInitialized(
+      expectedContents,
+      'The requested file contents must be initialized'
+    )
+    const page = await findEditorPage(browser, this.timeout())
+    await waitForEditorDocument(page, expected, this.timeout())
+    assert.equal(await readEditorDocument(page), expected)
+    screenshots.set('cold-launch-document.png', await page.screenshot())
+    assert.deepEqual(
+      rendererEvents,
+      [],
+      `The renderer reported unexpected errors or dialogs:\n${rendererEvents.join('\n')}`
+    )
   })
 })
