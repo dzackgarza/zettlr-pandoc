@@ -139,7 +139,7 @@ export type ApplicationIPCAPI =
   | { command: 'get-available-dictionaries', payload?: undefined }
   | { command: 'get-available-languages', payload?: undefined }
   | { command: 'get-file-contents', payload: string }
-  | { command: 'open-attachment', payload: { citekey: string, filePath?: string } }
+  | { command: 'open-attachment', payload: { citekey: string, filePath: string } }
   | { command: 'open-aux-window', payload: { window: ProgrammaticallyOpenableWindows, hash?: string } }
   | { command: 'open-preferences', payload?: undefined }
   | { command: 'open-project-preferences', payload: string }
