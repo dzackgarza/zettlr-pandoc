@@ -363,6 +363,30 @@ describe('Editor review-chunk controls', function () {
     )
   })
 
+  it('uses half-open chunk overlap while preserving deletion-point suppression', function () {
+    const adjacent = createReviewView(
+      'alpha\nunchanged',
+      'ALPHA\nunchanged'
+    )
+    const unchanged = adjacent.state.doc.line(2)
+    assert.equal(
+      rangeInPreviewSuppression(adjacent.state, unchanged.from, unchanged.to),
+      false,
+      'a nonempty chunk ending at the renderer start must not suppress its unchanged neighbour'
+    )
+
+    const deletion = createReviewView(
+      'removed\nunchanged',
+      'unchanged'
+    )
+    const surviving = deletion.state.doc.line(1)
+    assert.equal(
+      rangeInPreviewSuppression(deletion.state, surviving.from, surviving.to),
+      true,
+      'a zero-width deletion point at the renderer start must remain visible'
+    )
+  })
+
   it('navigates between chunks with the next/previous commands, wrapping', function () {
     const baseline = [
       '# Note', '', 'first baseline', '', 'middle unchanged', '', 'second baseline', ''
