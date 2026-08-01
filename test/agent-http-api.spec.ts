@@ -970,6 +970,44 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assertMatchesSchema(openedBody, "FocusDocumentResponse");
   });
 
+  it("decodes a workspace id once and scopes document opens to that workspace", async function () {
+    const encodedWorkspace = path.join(scratch, "workspace%25");
+    const otherWorkspace = path.join(scratch, "other-workspace");
+    mkdirSync(encodedWorkspace);
+    mkdirSync(otherWorkspace);
+    writeFileSync(path.join(encodedWorkspace, "unopened.md"), "encoded workspace\n", "utf8");
+    const otherDocument = path.join(otherWorkspace, "outside.md");
+    writeFileSync(otherDocument, "other workspace\n", "utf8");
+    openWorkspaces = [encodedWorkspace, otherWorkspace];
+
+    const listed = await httpRequest(
+      "GET",
+      `/v1/workspaces/${encodeURIComponent(encodedWorkspace)}/documents`,
+    );
+    assert.equal(listed.status, 200, listed.body);
+    assert.equal(
+      (JSON.parse(listed.body) as { workspaceId: string }).workspaceId,
+      encodedWorkspace,
+      "the workspace identifier on the wire must be the once-decoded requested path",
+    );
+
+    const otherDocumentId = provider.ensureDocumentId(otherDocument);
+    const refused = await httpRequest(
+      "POST",
+      `/v1/workspaces/${encodeURIComponent(encodedWorkspace)}/documents/${otherDocumentId}/open`,
+    );
+    assert.equal(refused.status, 404, refused.body);
+    assert.equal(
+      (JSON.parse(refused.body) as { error: { code: string } }).error.code,
+      "DOCUMENT_NOT_FOUND",
+    );
+    assert.equal(
+      provider.loadedDocuments.some((document) => document.filePath === otherDocument),
+      false,
+      "a document from another configured workspace must not be opened through this route",
+    );
+  });
+
   it("refuses to open an unopened path when no workspace is configured", async function () {
     // A fresh profile enables the agent API and opens no workspace. If an empty
     // workspace set meant "unrestricted", any loopback client could POST an
@@ -1719,16 +1757,22 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     let lifecyclePort: number;
     let lifecycle: AgentHTTPProvider;
     let recordedErrors: string[];
+    let recordedWarnings: string[];
 
-    /** Captures error-level log entries so a test can assert none occurred. */
+    /** Captures lifecycle boundary logs emitted by the live HTTP provider. */
     class RecordingLog extends LogProvider {
       public error(msg: string): void {
         recordedErrors.push(msg);
+      }
+
+      public warning(msg: string): void {
+        recordedWarnings.push(msg);
       }
     }
 
     beforeEach(async function () {
       recordedErrors = [];
+      recordedWarnings = [];
       const probe = net.createServer();
       await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
       lifecyclePort = (probe.address() as net.AddressInfo).port;
@@ -1802,6 +1846,48 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const body = JSON.parse(response.slice(response.indexOf("\r\n\r\n") + 4));
       assert.equal(body.error.code, "REQUEST_BODY_TIMEOUT");
       assertMatchesSchema(body.error, "AgentError");
+    });
+
+    it("answers an oversized body with structured 413 and logs the refusal", async function () {
+      const body = JSON.stringify({ uri: `safe-file://${"x".repeat(25 * 1024 * 1024)}` });
+      const response = await new Promise<{
+        status: number;
+        body: string;
+      }>((resolve, reject) => {
+        const request = http.request(
+          {
+            hostname: "127.0.0.1",
+            port: lifecyclePort,
+            path: "/v1/documents",
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "content-length": Buffer.byteLength(body),
+            },
+          },
+          (incoming) => {
+            let responseBody = "";
+            incoming.on("data", (chunk: Buffer) => {
+              responseBody += chunk.toString("utf8");
+            });
+            incoming.on("end", () =>
+              resolve({ status: incoming.statusCode ?? 0, body: responseBody }),
+            );
+          },
+        );
+        request.on("error", reject);
+        request.end(body);
+      });
+
+      assert.equal(response.status, 413, response.body);
+      const error = (JSON.parse(response.body) as { error: { code: string } }).error;
+      assert.equal(error.code, "REQUEST_TOO_LARGE");
+      assertMatchesSchema(error, "AgentError");
+      assert.deepEqual(
+        recordedWarnings.filter((message) => message.includes("REQUEST_TOO_LARGE")),
+        ["[AgentHTTPProvider] Refused oversized POST /v1/documents with REQUEST_TOO_LARGE"],
+        "the operator log must identify the oversized request the client saw refused",
+      );
     });
 
     it("abandons the read when the client disconnects mid-body and keeps serving", async function () {
@@ -2085,7 +2171,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(provider.isModified(filePath), false);
     });
 
-    it("puts the buffer back on disk content when the close prompt discards", async function () {
+    it("puts the buffer back on current disk content when the close prompt discards", async function () {
       // The window-close prompt discards without closing the documents, so
       // this is the branch where the discarded bytes have somewhere to
       // survive: the buffer the panes keep drawing. Silencing the dirty flag
@@ -2125,6 +2211,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         false,
         "and dirty once one of them is — this is what opens the prompt",
       );
+      const currentDisk = "externally updated\n";
+      writeFileSync(filePath, currentDisk, "utf8");
 
       saveChangesResponse = 1; // "Don't save"
       assert.equal(await provider.askUserToCloseWindow(windowId), true);
@@ -2132,8 +2220,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
       assert.equal(
         provider.loadedDocuments.find((d) => d.filePath === filePath)!.document.toString(),
-        onDisk,
-        "the still-open buffer must show the bytes on disk, not the discarded edit",
+        currentDisk,
+        "the still-open buffer must show the current bytes on disk, not a stale saved snapshot",
       );
       assert.equal(provider.isModified(filePath), false, "and be clean because it now is");
       assert.equal(provider.reviewStore.getReview(docId), undefined);
@@ -2142,10 +2230,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         undefined,
         "no store may still hold the discarded text",
       );
-      assert.equal(readFileSync(filePath, "utf8"), onDisk);
+      assert.equal(readFileSync(filePath, "utf8"), currentDisk);
     });
 
-    it("discards only the closing window's documents", async function () {
+    it("discards only documents exclusively owned by the closing window", async function () {
       // The prompt speaks for the window being closed. A discard that reached
       // every loaded document would answer it on behalf of every other window
       // too — the same destruction, aimed at bytes the user never discarded.
@@ -2165,6 +2253,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(
         await provider.openFile(keptWindow, provider.leafIds(keptWindow)[0], kept, true),
         true,
+      );
+      assert.equal(
+        await provider.openFile(closingWindow, provider.leafIds(closingWindow)[0], kept, true),
+        true,
+        "the kept document must also be open in the window being closed",
       );
 
       for (const [documentId, key] of [
@@ -2203,6 +2296,63 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "and its review must still be there to decide",
       );
       assert.ok(provider.reviewStore.getReview(keptId) !== undefined);
+    });
+
+    it("detaches a saved held review when its final window owner closes", async function () {
+      const filePath = path.join(scratch, "sidecar-save-close.md");
+      const original = "alpha\n";
+      const docId = await openFile(filePath, original);
+      const closingWindow = provider.windowKeys()[0];
+      const closingLeaf = provider.leafIds(closingWindow)[0];
+      assert.equal(await provider.openFile(closingWindow, closingLeaf, filePath, true), true);
+      provider.newWindow();
+
+      const submitted = await provider.submitProposal(
+        provider.createSnapshot(docId)!.token,
+        makePatch(original, "ALPHA\n"),
+        "sidecar-save-close-1",
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+      const chunk = provider.reviewStore.getOutstandingChunks(docId)![0];
+      assert.equal(
+        provider.decideChunk(submitted.reviewId, chunk.chunkId, "hold", "revisit").ok,
+        true,
+      );
+      assert.deepEqual(await provider.saveFile(filePath), { ok: true });
+      await flushSidecarWrites();
+
+      provider.closeWindow(closingWindow);
+      await flushSidecarWrites();
+
+      assert.equal(
+        provider.loadedDocuments.some((document) => document.filePath === filePath),
+        false,
+        "closing the document's final window owner must unload its live buffer",
+      );
+      assert.equal(
+        provider.reviewStore.getReview(docId),
+        undefined,
+        "the live review must detach when its document has no remaining owner",
+      );
+      const detached = provider.findDetachedReview(submitted.reviewId);
+      assert.ok(detached !== undefined, "the held review must persist as a detached sidecar");
+      assert.equal(detached.workingText, "ALPHA\n");
+      assert.equal(detached.heldChunks, 1);
+
+      await provider.getDocument(filePath);
+      assert.equal(
+        provider.reviewStore.getReview(docId)?.reviewId,
+        submitted.reviewId,
+        "opening the saved file later must reattach the same review",
+      );
+      assert.equal(
+        provider.reviewStore.getOutstandingChunks(docId)?.[0].state,
+        "held",
+        "the held decision must survive save, close, and reattachment",
+      );
     });
 
     it("answers every review route for the reviewId the listing hands out", async function () {
