@@ -43,7 +43,7 @@
             v-if="hasPreview(attachment.path)"
             :src="getPreviewImageData(attachment.path)"
           >
-          <!-- eslint-disable vue/no-v-html -- Markup comes from the repository-bundled file-ext.svg; getIcon substitutes at most three file-extension characters into its text label. -->
+          <!-- eslint-disable vue/no-v-html -- getAttachmentIconMarkup uses the repository-bundled SVG and escapes the file-derived label as XML text before substitution. -->
           <span
             v-else
             v-html="getAttachmentIconMarkup(attachment.ext)"
