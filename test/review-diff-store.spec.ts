@@ -361,8 +361,10 @@ describe("ReviewDiffStore", function () {
       };
 
       const committed = store.submitClaims(DOC_ID, options);
-      assert.equal(committed.ok, true);
-      if (!committed.ok) {return;}
+      assert.ok(
+        committed.ok,
+        `the initial batch must commit before replay: ${JSON.stringify(committed)}`,
+      );
       documents.set(DOC_ID, committed.workingText);
 
       const replayed = store.submitClaims(DOC_ID, options);
