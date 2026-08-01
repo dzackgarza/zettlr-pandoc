@@ -72,6 +72,7 @@
  */
 
 import { ipcMain } from 'electron'
+import { strict as assert } from 'assert'
 import { randomBytes } from 'crypto'
 import { readFile, rename, unlink, writeFile } from 'fs/promises'
 import path from 'path'
@@ -119,10 +120,9 @@ interface PendingUndo {
   /**
    * Expected post-commit sourceHash per documentPath. Closed files fence on
    * the just-written disk content; open buffers fence on the post-commit
-   * content COMPUTED AT COMMIT TIME from the authority's verified text plus
-   * the committed edits (issue #53) — the exact content the renderer's
-   * returned transactions produce, so a user edit between commit and undo
-   * changes the hash and surfaces as a conflict.
+   * content acknowledged by the authority after it applies the committed
+   * edits (issue #53), so a user edit between commit and undo changes the
+   * hash and surfaces as a conflict.
    */
   expectedSourceHashes: Record<string, string>
 }
@@ -142,6 +142,7 @@ export type ReferenceProviderIPCAPI = { command: 'get-snapshot', payload?: undef
  */
 export interface ReferenceDocumentAuthority {
   readMarkdownBufferContent: (filePath: string) => string|undefined
+  applyWorkspaceTextEdits: (edits: WorkspaceTextEdit[]) => Promise<string[]>
 }
 
 /**
@@ -327,9 +328,8 @@ export default class ReferenceProvider extends ProviderContract {
    * - On success, partitions the edits by the authority's open set: closed
    *   files are rewritten atomically (write to a temp file in the same
    *   directory, then rename over the original); open-buffer edits are
-   *   RETURNED as openBufferTransactions for the RENDERER to apply as
-   *   CodeMirror transactions, leaving those buffers dirty/unsaved (the
-   *   main process cannot reach live CodeMirror buffers).
+   *   applied through the document authority, which records collab updates
+   *   for every renderer pane while leaving the buffers dirty/unsaved.
    * - Records a one-shot inverse WorkspaceReferenceEdit as the pending
    *   workspace undo consumed by undoRename(). Open buffers fence on the
    *   post-commit content computed here from the verified authority text
@@ -374,10 +374,11 @@ export default class ReferenceProvider extends ProviderContract {
       }
     }
 
-    // Phase 2 — apply. Closed files are rewritten atomically on disk;
-    // open-buffer edits are returned for the renderer to apply as
-    // CodeMirror transactions (the main process cannot reach live buffers).
+    // Phase 2 — apply. Closed files are rewritten atomically on disk; open
+    // buffers are applied through the central document authority so every
+    // renderer pane receives the same collab update.
     const closedFilePaths = documentPaths.filter(p => !openBufferPaths.includes(p))
+    const openBufferEdits = edit.edits.filter(e => openBufferPaths.includes(e.documentPath))
     const rewritten = new Map<string, string>()
     for (const documentPath of closedFilePaths) {
       const content = closedContents.get(documentPath)
@@ -388,23 +389,51 @@ export default class ReferenceProvider extends ProviderContract {
     }
     await this._writeFilesAtomically(rewritten)
 
-    // Phase 3 — record the one-shot inverse as the pending workspace undo.
+    // The authority promise is the application acknowledgement. Validate its
+    // complete path set and re-read every touched buffer before exposing
+    // success or a pending undo.
+    const openBuffersUpdated = await this._authority.applyWorkspaceTextEdits(openBufferEdits)
+    assert.equal(
+      new Set(openBuffersUpdated).size,
+      openBufferPaths.length,
+      'The document authority must acknowledge each open workspace-edit path exactly once'
+    )
+    for (const documentPath of openBufferPaths) {
+      assert(
+        openBuffersUpdated.includes(documentPath),
+        `The document authority did not acknowledge workspace edits for ${documentPath}`
+      )
+    }
+
+    // Phase 3 — record the one-shot inverse as the pending workspace undo,
+    // but only after every open-buffer application was acknowledged.
     // Closed files fence against the just-written content; open buffers
-    // fence against the post-commit content computed from the verified
-    // authority text plus the committed edits — exactly what the renderer's
-    // returned transactions produce.
+    // fence against the acknowledged authority content.
     const undoHashes: Record<string, string> = {}
     for (const documentPath of closedFilePaths) {
-      undoHashes[documentPath] = hashDocumentSource(rewritten.get(documentPath) ?? '')
+      const content = rewritten.get(documentPath)
+      assert(content !== undefined, `Commit lost rewritten disk content for ${documentPath}`)
+      undoHashes[documentPath] = hashDocumentSource(content)
     }
     for (const documentPath of openBufferPaths) {
       const content = openBufferContents.get(documentPath)
       if (content === undefined) {
         throw new Error(`commit-rename: no verified buffer content for ${documentPath}`)
       }
-      undoHashes[documentPath] = hashDocumentSource(
+      const expectedAppliedHash = hashDocumentSource(
         applyTextEdits(content, edit.edits.filter(e => e.documentPath === documentPath))
       )
+      const appliedContent = this._authority.readMarkdownBufferContent(documentPath)
+      assert(
+        appliedContent !== undefined,
+        `The document authority dropped ${documentPath} before acknowledging its workspace edits`
+      )
+      assert.equal(
+        hashDocumentSource(appliedContent),
+        expectedAppliedHash,
+        `The document authority acknowledged different workspace-edit content for ${documentPath}`
+      )
+      undoHashes[documentPath] = expectedAppliedHash
     }
     this._pendingUndo = {
       edits: edit.undo,
@@ -417,7 +446,7 @@ export default class ReferenceProvider extends ProviderContract {
     return {
       status: 'applied',
       closedFilesWritten: closedFilePaths,
-      openBufferTransactions: edit.edits.filter(e => openBufferPaths.includes(e.documentPath))
+      openBuffersUpdated
     }
   }
 
@@ -463,8 +492,8 @@ export default class ReferenceProvider extends ProviderContract {
    * are checked through the document authority's current text — and ANY
    * mismatch aborts the whole undo with a structured conflict, leaving the
    * pending undo record intact. An applied undo restores every touched
-   * document (closed files via atomic temp+rename writes, open buffers via
-   * returned openBufferTransactions the renderer applies) and CONSUMES the
+   * document (closed files via atomic temp+rename writes, open buffers
+   * through acknowledged document-authority updates) and CONSUMES the
    * record: a subsequent undoRename() reports 'no-pending-undo'.
    *
    * @return  {Promise<UndoRenameOutcome>}  The typed undo outcome
@@ -480,6 +509,7 @@ export default class ReferenceProvider extends ProviderContract {
     // closed file now). Any mismatch aborts the whole undo and leaves the
     // pending record intact for a retry once the interference is resolved.
     const openBufferPaths: string[] = []
+    const openBufferContents = new Map<string, string>()
     const closedContents = new Map<string, string>()
     for (const documentPath of pending.documentPaths) {
       const expected = pending.expectedSourceHashes[documentPath]
@@ -487,6 +517,7 @@ export default class ReferenceProvider extends ProviderContract {
       let actual: string
       if (bufferContent !== undefined) {
         openBufferPaths.push(documentPath)
+        openBufferContents.set(documentPath, bufferContent)
         actual = hashDocumentSource(bufferContent)
       } else {
         const content = await readFile(documentPath, 'utf-8')
@@ -502,9 +533,10 @@ export default class ReferenceProvider extends ProviderContract {
       }
     }
 
-    // Apply: closed files via atomic temp+rename writes, open buffers via
-    // returned transactions the renderer applies.
+    // Apply: closed files via atomic temp+rename writes, open buffers through
+    // the central document authority.
     const closedFilePaths = pending.documentPaths.filter(p => !openBufferPaths.includes(p))
+    const openBufferEdits = pending.edits.filter(e => openBufferPaths.includes(e.documentPath))
     const restored = new Map<string, string>()
     for (const documentPath of closedFilePaths) {
       const content = closedContents.get(documentPath)
@@ -515,7 +547,38 @@ export default class ReferenceProvider extends ProviderContract {
     }
     await this._writeFilesAtomically(restored)
 
-    // One-shot: the applied undo consumes the record.
+    const expectedRestoredHashes: Record<string, string> = {}
+    for (const documentPath of openBufferPaths) {
+      const content = openBufferContents.get(documentPath)
+      assert(content !== undefined, `Undo lost verified authority content for ${documentPath}`)
+      expectedRestoredHashes[documentPath] = hashDocumentSource(
+        applyTextEdits(content, pending.edits.filter(e => e.documentPath === documentPath))
+      )
+    }
+    const openBuffersUpdated = await this._authority.applyWorkspaceTextEdits(openBufferEdits)
+    assert.equal(
+      new Set(openBuffersUpdated).size,
+      openBufferPaths.length,
+      'The document authority must acknowledge each open undo path exactly once'
+    )
+    for (const documentPath of openBufferPaths) {
+      assert(
+        openBuffersUpdated.includes(documentPath),
+        `The document authority did not acknowledge undo edits for ${documentPath}`
+      )
+      const restoredContent = this._authority.readMarkdownBufferContent(documentPath)
+      assert(
+        restoredContent !== undefined,
+        `The document authority dropped ${documentPath} before acknowledging its undo`
+      )
+      assert.equal(
+        hashDocumentSource(restoredContent),
+        expectedRestoredHashes[documentPath],
+        `The document authority acknowledged different undo content for ${documentPath}`
+      )
+    }
+
+    // One-shot: the applied and fully acknowledged undo consumes the record.
     this._pendingUndo = undefined
 
     broadcastIpcMessage('references')
@@ -523,7 +586,7 @@ export default class ReferenceProvider extends ProviderContract {
     return {
       status: 'applied',
       closedFilesWritten: closedFilePaths,
-      openBufferTransactions: pending.edits.filter(e => openBufferPaths.includes(e.documentPath))
+      openBuffersUpdated
     }
   }
 

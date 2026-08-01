@@ -38,6 +38,7 @@ import LogProvider from 'source/app/service-providers/log'
 import { extractReferences } from 'source/common/pandoc-util/extract-references'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import type { MDFileDescriptor } from 'source/types/common/fsal'
+import type { WorkspaceTextEdit } from '@dts/common/references'
 
 const FIXTURE_ROOT = path.join('test', 'fixtures', 'reference-workspace')
 const THEOREMS_PATH = path.join(FIXTURE_ROOT, 'ProjectA', 'Theorems.md')
@@ -111,6 +112,35 @@ function firePending (tasks: RecordedTask[]): void {
   }
 }
 
+/** Applies authority-owned workspace edits to the test's real live buffers. */
+function applyAuthorityEdits (
+  authorityBuffers: Map<string, string>,
+  edits: WorkspaceTextEdit[]
+): string[] {
+  const editsByDocument = new Map<string, WorkspaceTextEdit[]>()
+  for (const edit of edits) {
+    const documentEdits = editsByDocument.get(edit.documentPath)
+    if (documentEdits === undefined) {
+      editsByDocument.set(edit.documentPath, [edit])
+    } else {
+      documentEdits.push(edit)
+    }
+  }
+
+  for (const [ documentPath, documentEdits ] of editsByDocument) {
+    const content = authorityBuffers.get(documentPath)
+    assert(content !== undefined, `Workspace edit names unopened authority buffer ${documentPath}`)
+    const ordered = [...documentEdits].sort((a, b) => b.range.from - a.range.from)
+    let rewritten = content
+    for (const edit of ordered) {
+      rewritten = rewritten.slice(0, edit.range.from) + edit.insert + rewritten.slice(edit.range.to)
+    }
+    authorityBuffers.set(documentPath, rewritten)
+  }
+
+  return [...editsByDocument.keys()]
+}
+
 describe('References provider Electron shell', function () {
   // A minimal REAL event emitter standing at the exact seam the provider
   // consumes (FSAL's on('fsal-event', …) subscription surface), plus a real
@@ -126,7 +156,12 @@ describe('References provider Electron shell', function () {
     provider = new ReferenceProvider(
       new LogProvider(),
       fsalSeam,
-      { readMarkdownBufferContent: (filePath: string) => authorityBuffers.get(filePath) },
+      {
+        readMarkdownBufferContent: (filePath: string) => authorityBuffers.get(filePath),
+        applyWorkspaceTextEdits: async (edits: WorkspaceTextEdit[]) => {
+          return applyAuthorityEdits(authorityBuffers, edits)
+        }
+      },
       500,
       { schedule: scheduler.schedule }
     )

@@ -1214,9 +1214,11 @@ function cancelWorkspaceRename (): void {
 
 /**
  * Applies the previewed workspace rename (the dialog's Apply all): the
- * hash-fenced atomic commit, this document's returned open-buffer
- * transactions, and the confirmation toast carrying the reachable Undo
- * (issue #1, review A5 / US-17). Conflicts surface as closable toasts.
+ * hash-fenced atomic commit and the confirmation toast carrying the
+ * reachable Undo (issue #1, review A5 / US-17). The central document
+ * authority applies every open-buffer transaction and acknowledges it
+ * before the command returns; every renderer receives the resulting collab
+ * update. Conflicts surface as closable toasts.
  */
 async function applyWorkspaceRename (): Promise<void> {
   const prompt = renamePreviewPrompt.value
@@ -1240,20 +1242,6 @@ async function applyWorkspaceRename (): Promise<void> {
     return
   }
 
-  // Renderer half of the boundary split: apply this document's returned
-  // open-buffer transactions (the buffer stays dirty/unsaved). When this
-  // document was committed as a closed-file disk write instead, replay the
-  // same edits locally so the buffer matches the rewritten disk content.
-  const ownEdits = (outcome.openBufferTransactions.length > 0
-    ? outcome.openBufferTransactions
-    : edit.edits
-  ).filter(e => e.documentPath === intent.documentPath)
-  if (ownEdits.length > 0) {
-    view.dispatch({
-      changes: ownEdits.map(e => ({ from: e.range.from, to: e.range.to, insert: e.insert }))
-    })
-  }
-
   showToast(
     trans(
       'Renamed %s to %s across %s documents.',
@@ -1266,7 +1254,7 @@ async function applyWorkspaceRename (): Promise<void> {
     {
       label: trans('Undo'),
       onAction: () => {
-        undoWorkspaceRename(intent.documentPath).catch(err => console.error('Workspace rename undo failed', err))
+        undoWorkspaceRename().catch(err => console.error('Workspace rename undo failed', err))
       }
     }
   )
@@ -1275,13 +1263,12 @@ async function applyWorkspaceRename (): Promise<void> {
 /**
  * Invokes the production rename-undo route (issue #1, review A5): the
  * 'application' channel's 'undo-reference-rename' command reaches the
- * reference provider's one-shot, hash-fenced undoRename(). An applied undo
- * replays this document's returned open-buffer transactions; conflicts and
- * a consumed record surface as closable toasts.
- *
- * @param   {string}  documentPath  The invoking document (own-edit replay)
+ * reference provider's one-shot, hash-fenced undoRename(). The document
+ * authority applies and acknowledges every open-buffer inverse before the
+ * command returns; conflicts and a consumed record surface as closable
+ * toasts.
  */
-async function undoWorkspaceRename (documentPath: string): Promise<void> {
+async function undoWorkspaceRename (): Promise<void> {
   const outcome: UndoRenameOutcome = await ipcRenderer.invoke('application', {
     command: 'undo-reference-rename'
   })
@@ -1297,14 +1284,6 @@ async function undoWorkspaceRename (documentPath: string): Promise<void> {
       outcome.conflict.documentPath
     ), 'error')
     return
-  }
-
-  const view = currentEditor?.instance
-  const ownEdits = outcome.openBufferTransactions.filter(e => e.documentPath === documentPath)
-  if (view !== undefined && ownEdits.length > 0) {
-    view.dispatch({
-      changes: ownEdits.map(e => ({ from: e.range.from, to: e.range.to, insert: e.insert }))
-    })
   }
 
   showToast(trans('Workspace rename undone.'))

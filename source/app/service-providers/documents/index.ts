@@ -39,7 +39,11 @@ import {
   type SaveRefusedBroadcast,
 } from "@dts/common/documents";
 import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
-import type { DocumentLocation, SourceRange } from "@dts/common/references";
+import type {
+  DocumentLocation,
+  SourceRange,
+  WorkspaceTextEdit,
+} from "@dts/common/references";
 import type {
   AcceptAllChunksResponse,
   AgentErrorCode,
@@ -53,6 +57,7 @@ import type { ReviewDiffSession } from "@dts/common/review-diff";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import ProviderContract, { type IPCAPI } from "@providers/provider-contract";
+import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
 import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions, shell } from "electron";
 import EventEmitter from "events";
@@ -3339,6 +3344,86 @@ current contents from the editor somewhere else, and restart the application.`,
       return undefined;
     }
     return doc.document.toString();
+  }
+
+  /**
+   * Apply a workspace edit to every open Markdown document named by the
+   * transaction set. The document manager is the central collab authority:
+   * it prepares every ChangeSet before mutating any document, records one
+   * serialized authority update per touched document, then broadcasts the
+   * updates for every renderer pane to pull.
+   *
+   * Resolving the returned promise is the application acknowledgement used
+   * by ReferenceProvider. No rename success or undo record may be exposed
+   * before this method has updated every named authority buffer.
+   *
+   * @param   {WorkspaceTextEdit[]}  edits  Open-document workspace edits
+   *
+   * @return  {Promise<string[]>}           Acknowledged document paths
+   */
+  public async applyWorkspaceTextEdits(edits: WorkspaceTextEdit[]): Promise<string[]> {
+    const editsByDocument = new Map<string, WorkspaceTextEdit[]>();
+    for (const edit of edits) {
+      const documentEdits = editsByDocument.get(edit.documentPath);
+      if (documentEdits === undefined) {
+        editsByDocument.set(edit.documentPath, [edit]);
+      } else {
+        documentEdits.push(edit);
+      }
+    }
+
+    const prepared: Array<{
+      document: Document;
+      filePath: string;
+      nextText: Text;
+      update: SerializedUpdate;
+    }> = [];
+    for (const [filePath, documentEdits] of editsByDocument) {
+      const document = this.documents.find((candidate) => candidate.filePath === filePath);
+      assert(document !== undefined, `[DocumentManager] Workspace edit names unopened document ${filePath}`);
+      assert(
+        document.type === DocumentType.Markdown,
+        `[DocumentManager] Workspace edit names non-Markdown document ${filePath}`,
+      );
+      const changes = ChangeSet.of(
+        documentEdits.map((edit) => ({
+          from: edit.range.from,
+          to: edit.range.to,
+          insert: edit.insert,
+        })),
+        document.document.length,
+      );
+      const update = {
+        changes: serializeChangeSet(changes),
+        clientID: "reference-rename",
+      };
+      prepared.push({
+        document,
+        filePath,
+        nextText: changes.apply(document.document),
+        update,
+      });
+    }
+
+    for (const transaction of prepared) {
+      transaction.document.document = transaction.nextText;
+      transaction.document.currentVersion += 1;
+      transaction.document.updates.push(transaction.update);
+      while (transaction.document.updates.length > MAX_VERSION_HISTORY) {
+        transaction.document.updates.shift();
+        transaction.document.minimumVersion += 1;
+      }
+    }
+
+    for (const transaction of prepared) {
+      this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
+        filePath: transaction.filePath,
+        status: "modification",
+      });
+      this._app.references.reportAuthorityBuffer(transaction.filePath);
+    }
+
+    return prepared.map((transaction) => transaction.filePath);
   }
 
   /**

@@ -23,18 +23,13 @@
  *
  *                  BOUNDARY SPLIT (stated per the red-proof contract): the
  *                  main-process provider owns hash-fencing and CLOSED-FILE
- *                  atomic disk writes only. Open buffers live in renderer
- *                  CodeMirror instances the provider cannot reach directly,
- *                  so an applied commit RETURNS openBufferTransactions and
- *                  the RENDERER applies them (buffers stay dirty/unsaved);
- *                  the resulting text flows back to the DOCUMENT AUTHORITY
- *                  through collab push-updates (issue #53). This spec
- *                  asserts the returned transaction payload and PLAYS both
- *                  halves at their real seams: the renderer half applies
- *                  the edits locally, and the authority half is a real
- *                  mutable buffer map behind the injected
- *                  readMarkdownBufferContent seam — the provider's open-set
- *                  partition, hash fences, and live overlay all read it.
+ *                  atomic disk writes. Open buffers remain unsaved, but the
+ *                  DOCUMENT AUTHORITY applies their transactions and records
+ *                  collab updates for every renderer pane before it
+ *                  acknowledges success (issue #53). This spec exercises
+ *                  that authority seam through a real mutable buffer map —
+ *                  the provider's open-set partition, hash fences, live
+ *                  overlay, commit, and undo all read it.
  *
  * END HEADER
  */
@@ -183,7 +178,21 @@ async function setUpScratchWorkspace (): Promise<ScratchWorkspace> {
   const provider = new ReferenceProvider(
     new LogProvider(),
     seam,
-    { readMarkdownBufferContent: (filePath: string) => authorityBuffers.get(filePath) },
+    {
+      readMarkdownBufferContent: (filePath: string) => authorityBuffers.get(filePath),
+      applyWorkspaceTextEdits: async (edits: WorkspaceTextEdit[]) => {
+        const paths = [...new Set(edits.map(edit => edit.documentPath))]
+        for (const documentPath of paths) {
+          const content = authorityBuffers.get(documentPath)
+          assert(content !== undefined, `Workspace edit names unopened authority buffer ${documentPath}`)
+          authorityBuffers.set(
+            documentPath,
+            applyEdits(content, edits.filter(edit => edit.documentPath === documentPath))
+          )
+        }
+        return paths
+      }
+    },
     500,
     {
       schedule: (callback: () => void, _delayMs: number) => {
@@ -212,8 +221,7 @@ async function setUpScratchWorkspace (): Promise<ScratchWorkspace> {
 
   // Halphen_Surfaces.md is OPEN in the document authority (content identical
   // to disk), and the authority reported the load (issue #53). The commit
-  // must route Halphen through openBufferTransactions, never through a disk
-  // write.
+  // must route Halphen through the authority, never through a disk write.
   authorityBuffers.set(paths.halphen, originals.get(paths.halphen) ?? '')
   provider.reportAuthorityBuffer(paths.halphen)
   fireScheduled()
@@ -325,12 +333,9 @@ describe('Workspace rename commit protocol', function () {
     let scratch: ScratchWorkspace
     let previewedEdit: WorkspaceReferenceEdit|undefined
     let commitOutcome: CommitRenameOutcome|undefined
-    /** The Halphen buffer content as the renderer sees it (spec plays renderer). */
-    let halphenBuffer: string
 
     before(async function () {
       scratch = await setUpScratchWorkspace()
-      halphenBuffer = scratch.originals.get(scratch.paths.halphen) ?? ''
     })
 
     after(async function () {
@@ -338,7 +343,7 @@ describe('Workspace rename commit protocol', function () {
       await rm(scratch.root, { recursive: true, force: true })
     })
 
-    it('commit-reference-rename writes closed files atomically and returns the open-buffer transactions', async function () {
+    it('commit-reference-rename writes closed files atomically and acknowledges open authority buffers', async function () {
       const preview = await scratch.command.run('preview-reference-rename', { oldKey: OLD_KEY, newKey: NEW_KEY }) as ReferenceRenamePreview
       previewedEdit = editOf(preview, 'applied-path preview')
 
@@ -366,12 +371,20 @@ describe('Workspace rename commit protocol', function () {
       // renderer until the user saves.
       assertWorkspaceBytes(scratch, expectedBytes, 'after applied commit')
 
-      // The provider cannot reach real CodeMirror buffers: the RENDERER
-      // applies these transactions. Assert the payload contract verbatim.
+      // The provider routes every open transaction through the central
+      // document authority and reports the acknowledged paths.
       assert.deepEqual(
-        outcome.status === 'applied' ? outcome.openBufferTransactions : undefined,
-        previewedEdit.edits.filter(e => e.documentPath === scratch.paths.halphen),
-        'the open-buffer edits must come back as the renderer-applied transaction payload'
+        outcome.status === 'applied' ? outcome.openBuffersUpdated : undefined,
+        [scratch.paths.halphen],
+        'the open Halphen authority buffer must be acknowledged before success'
+      )
+      assert.equal(
+        scratch.authorityBuffers.get(scratch.paths.halphen),
+        applyEdits(
+          scratch.originals.get(scratch.paths.halphen) ?? '',
+          previewedEdit.edits.filter(e => e.documentPath === scratch.paths.halphen)
+        ),
+        'the central authority owns the renamed open-buffer text'
       )
 
       // No temp+rename debris: the workspace directories contain exactly
@@ -380,16 +393,8 @@ describe('Workspace rename commit protocol', function () {
       assert.deepEqual(readdirSync(path.join(scratch.root, 'ProjectB')), ['Other_Paper.md'])
       assert.deepEqual(readdirSync(scratch.root).sort(), [ 'ProjectA', 'ProjectB', 'Standalone_Notes.md' ])
 
-      // Renderer half (played at the real seam): apply the transactions to
-      // the live buffer; the text reaches the document authority through
-      // collab push-updates, which reports the change (issue #53).
-      if (outcome.status === 'applied') {
-        halphenBuffer = applyEdits(halphenBuffer, outcome.openBufferTransactions)
-        assert.ok(halphenBuffer.includes('[@thm:torelli-enriques; @lem:embedding]'), 'the applied transaction renames the cluster occurrence')
-        scratch.authorityBuffers.set(scratch.paths.halphen, halphenBuffer)
-        scratch.provider.reportAuthorityBuffer(scratch.paths.halphen)
-        scratch.fireScheduled()
-      }
+      scratch.provider.reportAuthorityBuffer(scratch.paths.halphen)
+      scratch.fireScheduled()
     })
 
     it('undo-reference-rename is hash-fenced, restores every byte, and is one-shot', async function () {
@@ -408,7 +413,7 @@ describe('Workspace rename commit protocol', function () {
       const interfered = renamedTheorems + '\nPost-commit interference.\n'
       writeFileSync(scratch.paths.theorems, interfered, 'utf-8')
 
-      const conflicted = await scratch.command.run('undo-reference-rename', {}) as UndoRenameOutcome
+      const conflicted = await scratch.command.run('undo-reference-rename', undefined) as UndoRenameOutcome
       assert.equal(
         conflicted.status,
         'conflict',
@@ -437,7 +442,7 @@ describe('Workspace rename commit protocol', function () {
       // conflicted attempt.
       writeFileSync(scratch.paths.theorems, renamedTheorems, 'utf-8')
 
-      const applied = await scratch.command.run('undo-reference-rename', {}) as UndoRenameOutcome
+      const applied = await scratch.command.run('undo-reference-rename', undefined) as UndoRenameOutcome
       assert.equal(applied.status, 'applied', `the clean undo must apply, got ${JSON.stringify(applied)}`)
       assert.deepEqual(
         applied.status === 'applied' ? [...applied.closedFilesWritten].sort() : undefined,
@@ -449,22 +454,21 @@ describe('Workspace rename commit protocol', function () {
       // Halphen buffer's disk file remains untouched throughout.
       assertWorkspaceBytes(scratch, scratch.originals, 'after applied undo')
 
-      // Renderer half again: the inverse transaction restores the buffer,
-      // and the authority reports the restored text.
-      if (applied.status === 'applied') {
-        halphenBuffer = applyEdits(halphenBuffer, applied.openBufferTransactions)
-        assert.equal(
-          halphenBuffer,
-          scratch.originals.get(scratch.paths.halphen),
-          'the inverse open-buffer transaction must restore the buffer byte-exactly'
-        )
-        scratch.authorityBuffers.set(scratch.paths.halphen, halphenBuffer)
-        scratch.provider.reportAuthorityBuffer(scratch.paths.halphen)
-        scratch.fireScheduled()
-      }
+      assert.deepEqual(
+        applied.status === 'applied' ? applied.openBuffersUpdated : undefined,
+        [scratch.paths.halphen],
+        'the open Halphen undo must be acknowledged before undo reports success'
+      )
+      assert.equal(
+        scratch.authorityBuffers.get(scratch.paths.halphen),
+        scratch.originals.get(scratch.paths.halphen),
+        'the inverse authority transaction must restore the open buffer byte-exactly'
+      )
+      scratch.provider.reportAuthorityBuffer(scratch.paths.halphen)
+      scratch.fireScheduled()
 
       // One-shot: the applied undo consumed the record.
-      const exhausted = await scratch.command.run('undo-reference-rename', {}) as UndoRenameOutcome
+      const exhausted = await scratch.command.run('undo-reference-rename', undefined) as UndoRenameOutcome
       assert.deepEqual(
         exhausted,
         { status: 'no-pending-undo' },

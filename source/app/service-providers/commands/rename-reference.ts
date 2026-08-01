@@ -26,10 +26,10 @@
  *                  - 'commit-reference-rename' { edit } returns the
  *                    provider's commitRename() outcome: hash-fenced atomic
  *                    application (closed files via temp+rename disk writes;
- *                    open-buffer transactions RETURNED for the invoking
- *                    renderer to apply through CodeMirror, keeping those
- *                    buffers dirty/unsaved) or a structured conflict with
- *                    nothing applied anywhere.
+ *                    open-buffer transactions applied and acknowledged by
+ *                    the central document authority, keeping those buffers
+ *                    dirty/unsaved) or a structured conflict with nothing
+ *                    applied anywhere.
  *                  - 'undo-reference-rename' returns the provider's
  *                    undoRename() outcome: the one-shot, hash-fenced
  *                    inverse application restoring every touched document.
@@ -52,6 +52,11 @@ import type {
 } from '@common/pandoc-util/compute-reference-edits'
 import type { WorkspaceReferenceEdit } from '@dts/common/references'
 
+type RenameReferenceCommandArgument =
+  | { oldKey: string, newKey: string }
+  | { edit: WorkspaceReferenceEdit }
+  | undefined
+
 export default class RenameReference extends ZettlrCommand {
   constructor (app: AppServiceContainer) {
     super(app, [ 'preview-reference-rename', 'commit-reference-rename', 'undo-reference-rename' ])
@@ -63,15 +68,25 @@ export default class RenameReference extends ZettlrCommand {
    * boundary by test/reference-rename-atomicity.spec.ts.
    *
    * @param   {string}  evt  One of the three bound rename events
-   * @param   {any}     arg  The event payload (see the header contract)
+   * @param   {RenameReferenceCommandArgument} arg The event payload
    *
-   * @return  {Promise<any>}  The provider's typed outcome, verbatim
+   * @return  {Promise<ReferenceRenamePreview|CommitRenameOutcome|UndoRenameOutcome>}
+   *   The provider's typed outcome, verbatim
    */
-  async run (evt: string, arg: any): Promise<ReferenceRenamePreview|CommitRenameOutcome|UndoRenameOutcome> {
+  async run (
+    evt: string,
+    arg: RenameReferenceCommandArgument
+  ): Promise<ReferenceRenamePreview|CommitRenameOutcome|UndoRenameOutcome> {
     if (evt === 'preview-reference-rename') {
-      return this._app.references.previewRename(arg.oldKey as string, arg.newKey as string)
+      if (arg === undefined || !('oldKey' in arg)) {
+        throw new Error('preview-reference-rename requires oldKey and newKey')
+      }
+      return this._app.references.previewRename(arg.oldKey, arg.newKey)
     } else if (evt === 'commit-reference-rename') {
-      return await this._app.references.commitRename(arg.edit as WorkspaceReferenceEdit)
+      if (arg === undefined || !('edit' in arg)) {
+        throw new Error('commit-reference-rename requires a workspace edit')
+      }
+      return await this._app.references.commitRename(arg.edit)
     } else {
       return await this._app.references.undoRename()
     }

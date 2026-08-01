@@ -43,6 +43,7 @@ import type {
   UndoRenameOutcome
 } from '@common/pandoc-util/compute-reference-edits'
 import type { MDFileDescriptor } from 'source/types/common/fsal'
+import type { WorkspaceTextEdit } from '@dts/common/references'
 
 const FIXTURE_ROOT = path.join('test', 'fixtures', 'reference-workspace')
 const WORKSPACE_FILES = [
@@ -99,7 +100,10 @@ describe('Renderer-reachable rename-undo command route (review A5)', function ()
     provider = new ReferenceProvider(
       new LogProvider(),
       fsalSeam,
-      { readMarkdownBufferContent: (_filePath: string) => undefined },
+      {
+        readMarkdownBufferContent: (_filePath: string) => undefined,
+        applyWorkspaceTextEdits: async (_edits: WorkspaceTextEdit[]) => []
+      },
       500
     )
     await provider.boot()
@@ -156,7 +160,7 @@ describe('Renderer-reachable rename-undo command route (review A5)', function ()
   })
 
   it('undo-reference-rename through the same chain restores every document byte-identically', async function () {
-    const outcome = await command.run('undo-reference-rename', {}) as UndoRenameOutcome
+    const outcome = await command.run('undo-reference-rename', undefined) as UndoRenameOutcome
     assert.strictEqual(outcome.status, 'applied', 'the pending undo must apply over the untouched post-commit state')
 
     for (const [ absolute, original ] of originals) {
@@ -169,7 +173,7 @@ describe('Renderer-reachable rename-undo command route (review A5)', function ()
   })
 
   it('the applied undo consumes the one-shot record', async function () {
-    const outcome = await command.run('undo-reference-rename', {}) as UndoRenameOutcome
+    const outcome = await command.run('undo-reference-rename', undefined) as UndoRenameOutcome
     assert.strictEqual(outcome.status, 'no-pending-undo')
   })
 })
