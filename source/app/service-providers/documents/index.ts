@@ -1418,6 +1418,10 @@ current contents from the editor somewhere else, and restart the application.`,
       // 0 = Save, 1 = Don't save, 2 = Cancel
       if (result.response === 1) {
         await this._discardChanges(openFile);
+        // A saved held review may survive the discard of a later edit. The
+        // document is about to leave the live registry, so detach that
+        // preserved review before removing its working-text resolver.
+        await this._detachReview(openFile.documentId);
         this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
           filePath,
           status: "modification",
@@ -2590,9 +2594,12 @@ current contents from the editor somewhere else, and restart the application.`,
    * with no signal that anything had been resurrected.
    *
    * So: the buffer returns to its disk bytes through the same splice path a
-   * review decision uses (every open pane follows), the review is closed, and
-   * its sidecar is deleted. Only then is the document clean, because only
-   * then is the claim true.
+   * review decision uses (every open pane follows). An already-saved held
+   * review is the one exception: when its disk fence still matches the file,
+   * the later ordinary edit is discarded but the held review remains in its
+   * sidecar for the close/detach path. Any other review is closed and its
+   * sidecar deleted. Only then is the document clean, because only then is the
+   * claim true.
    *
    * The sidecar deletion is deliberately NOT wrapped in the error handling
    * _detachReview uses: a discard whose file removal failed leaves those
@@ -2609,20 +2616,31 @@ current contents from the editor somewhere else, and restart the application.`,
     await this._awaitReviewSidecarWrite(doc.documentId);
     const diskContents = await this._app.fsal.loadAnySupportedFile(doc.filePath);
     const review = this._reviewStore.getReview(doc.documentId);
-    await this._reviewSidecars.delete(doc.filePath);
-    this._reviewStore.closeReview(doc.documentId);
-    this._clearProposalIdempotency(doc.documentId);
-    if (review !== undefined) {
-      // Both audiences are told, after closeReview, so each signal describes a
-      // review that is already gone rather than one it could still try to
-      // decide: the agent over SSE, and every pane still showing the document
-      // — a discard that leaves the window open would otherwise keep drawing
-      // chunk widgets for a review the store no longer has.
-      this._reviewStore.emitEvent("review.discarded", {
-        reviewId: review.reviewId,
-        documentId: doc.documentId,
-      });
-      this._broadcastReviewCleared(doc.filePath, review.reviewId);
+    const persisted = review === undefined ? undefined : await this._reviewSidecars.read(doc.filePath);
+    const preserveSavedReview =
+      review !== undefined &&
+      persisted !== undefined &&
+      persisted.reviewId === review.reviewId &&
+      !persisted.invalidated &&
+      persisted.heldChunks > 0 &&
+      persisted.diskFenceSha256 === sha256Text(normalizeText(diskContents));
+
+    if (!preserveSavedReview) {
+      await this._reviewSidecars.delete(doc.filePath);
+      this._reviewStore.closeReview(doc.documentId);
+      this._clearProposalIdempotency(doc.documentId);
+      if (review !== undefined) {
+        // Both audiences are told, after closeReview, so each signal describes
+        // a review that is already gone rather than one it could still try to
+        // decide: the agent over SSE, and every pane still showing the document
+        // — a discard that leaves the window open would otherwise keep drawing
+        // chunk widgets for a review the store no longer has.
+        this._reviewStore.emitEvent("review.discarded", {
+          reviewId: review.reviewId,
+          documentId: doc.documentId,
+        });
+        this._broadcastReviewCleared(doc.filePath, review.reviewId);
+      }
     }
     this._applyWorkingTextToDocument(doc.filePath, diskContents);
     doc.lastSavedContent = diskContents;

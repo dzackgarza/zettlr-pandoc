@@ -17,8 +17,9 @@
 import "./headless-electron-harness.cjs";
 import Ajv2020 from "ajv/dist/2020";
 import { parse as parseYaml } from "yaml";
+import { ChangeSet } from "@codemirror/state";
 import { AGENT_ERROR_CODES, type AgentEvent } from "@dts/common/agent-api";
-import { DP_EVENTS } from "@dts/common/documents";
+import { DP_EVENTS, type SerializedUpdate } from "@dts/common/documents";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
@@ -2286,6 +2287,73 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "a discarded review must not come back",
       );
       assert.equal(provider.isModified(filePath), false);
+    });
+
+    it("preserves a saved held review when discarding a later editor edit", async function () {
+      const filePath = path.join(scratch, "sidecar-discard-after-save.md");
+      const original = "alpha\nx\ny\nz\nbeta\n";
+      const proposed = "ALPHA\nx\ny\nz\nbeta\n";
+      const laterEdit = "ALPHA\nx\ny\nz\nBETA edited\n";
+      const docId = await openFile(filePath, original);
+      const windowId = provider.windowKeys()[0];
+      const leafId = provider.leafIds(windowId)[0];
+      assert.equal(await provider.openFile(windowId, leafId, filePath, true), true);
+      provider.newWindow();
+
+      const submitted = await provider.submitProposal(
+        provider.createSnapshot(docId)!.token,
+        makePatch(original, proposed),
+        "sidecar-discard-after-save-1",
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+      const chunk = provider.reviewStore.getOutstandingChunks(docId)![0];
+      assert.ok(chunk !== undefined, "the saved held review must have an outstanding chunk");
+      assert.equal(provider.decideChunk(submitted.reviewId, chunk.chunkId, "hold", "revisit").ok, true);
+      assert.deepEqual(await provider.saveFile(filePath), { ok: true });
+      await flushSidecarWrites();
+
+      const loaded = provider.loadedDocuments.find((document) => document.filePath === filePath)!;
+      const pushUpdates = Object.getOwnPropertyDescriptor(
+        Object.getPrototypeOf(provider),
+        "pushUpdates",
+      )?.value as
+        | ((filePath: string, version: number, updates: SerializedUpdate[]) => Promise<boolean>)
+        | undefined;
+      assert.equal(typeof pushUpdates, "function", "the authority update seam must exist");
+      if (pushUpdates === undefined) {
+        return;
+      }
+      const update: SerializedUpdate = {
+        clientID: "discard-after-save-test",
+        changes: ChangeSet.of([{ from: 12, to: 17, insert: "BETA edited\n" }], 17).toJSON(),
+      };
+      assert.equal(await pushUpdates.call(provider, filePath, loaded.currentVersion, [update]), true);
+      await flushSidecarWrites();
+      assert.equal(
+        provider.loadedDocuments.find((document) => document.filePath === filePath)!.document.toString(),
+        laterEdit,
+      );
+      const persistedBeforeDiscard = (await sidecars.read(filePath))!;
+      assert.equal(persistedBeforeDiscard.heldChunks, 1);
+      assert.equal(persistedBeforeDiscard.workingText, laterEdit);
+
+      saveChangesResponse = 1; // "Don't save"
+      assert.equal(await provider.askUserToCloseWindow(windowId), true);
+      await flushSidecarWrites();
+
+      assert.equal(readFileSync(filePath, "utf8"), proposed);
+      assert.equal(
+        provider.reviewStore.getReview(docId),
+        undefined,
+        "closing the final owner still detaches the preserved review",
+      );
+      const detached = await provider.findDetachedReview(submitted.reviewId);
+      assert.ok(detached !== undefined, "discarding the later edit must keep the saved held review");
+      assert.equal(detached.workingText, proposed);
+      assert.equal(detached.heldChunks, 1);
     });
 
     it("puts the buffer back on current disk content when the close prompt discards", async function () {
