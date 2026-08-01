@@ -17,9 +17,10 @@
 
 import { strict as assert } from "assert";
 import http from "http";
-import { spawn } from "child_process";
+import { spawn, type ChildProcess } from "child_process";
 import path from "path";
 import { createPatch } from "diff";
+import { once } from "events";
 
 /**
  * The slices of the responses this suite reads. JSON.parse hands back `any`,
@@ -36,12 +37,43 @@ interface ContentBody {
   snapshot: string;
 }
 
+interface ServerReady {
+  port: number;
+  docPath: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseReady(message: unknown): ServerReady {
+  assert.ok(isRecord(message), "server readiness event must be an object");
+  assert.equal(message.event, "e2e-server-ready");
+  assert.ok(
+    typeof message.port === "number" && Number.isInteger(message.port),
+    "server readiness port must be an integer",
+  );
+  if (typeof message.docPath !== "string") {
+    assert.fail("server readiness document path must be a string");
+  }
+  return {
+    port: message.port,
+    docPath: message.docPath,
+  };
+}
+
 describe("Agent HTTP API cross-process E2E", function () {
   this.timeout(30000);
 
-  let child: ReturnType<typeof spawn> | undefined;
+  let child: ChildProcess | undefined;
   let httpPort: number | undefined;
   let docPath: string | undefined;
+  let serverStdout = "";
+  let serverStderr = "";
+
+  function serverDiagnostics(): string {
+    return `server stdout:\n${serverStdout}\nserver stderr:\n${serverStderr}`;
+  }
 
   function httpRequest(
     method: string,
@@ -113,67 +145,52 @@ describe("Agent HTTP API cross-process E2E", function () {
       },
     );
 
-    const readyLine = await new Promise<string>((resolve, reject) => {
+    assert.ok(child.stdout !== null);
+    assert.ok(child.stderr !== null);
+    child.stdout.on("data", (chunk: Buffer) => {
+      serverStdout += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      serverStderr += chunk.toString("utf8");
+    });
+
+    const ready = await new Promise<ServerReady>((resolve, reject) => {
       assert.ok(child !== undefined);
-      let buffer = "";
-      child.stdout!.on("data", (chunk: Buffer) => {
-        buffer += chunk.toString("utf8");
-        const match = buffer.match(
-          /E2E_SERVER_READY port=(\d+) docPath=([^\s]+) scratch=([^\s]+)/,
+      child.once("error", reject);
+      child.once("exit", (code) => {
+        reject(
+          new Error(
+            `E2E server exited before readiness with code ${String(code)}.\n${serverDiagnostics()}`,
+          ),
         );
-        if (match !== null) {
-          resolve(match[0]);
-        }
       });
-
-      child.on("exit", (code) => {
-        reject(new Error(`E2E server exited early with code ${code}`));
-      });
-
-      child.stderr!.on("data", (chunk: Buffer) => {
-        // Surface fatal errors quickly.
-        const text = chunk.toString("utf8");
-        if (text.includes("E2E server failed")) {
-          reject(new Error(text));
+      child.once("message", (message: unknown) => {
+        try {
+          resolve(parseReady(message));
+        } catch (error) {
+          reject(error);
         }
       });
     });
 
-    const match = readyLine.match(
-      /E2E_SERVER_READY port=(\d+) docPath=([^\s]+) scratch=([^\s]+)/,
-    );
-    assert.ok(match !== null, "ready line must contain port and docPath");
-    httpPort = parseInt(match[1], 10);
-    docPath = match[2];
+    httpPort = ready.port;
+    docPath = ready.docPath;
   });
 
-  after(function (done) {
-    if (child === undefined || child.killed) {
-      done();
+  after(async function () {
+    const server = child;
+    if (server === undefined) {
       return;
     }
-
-    let settled = false;
-    function finish() {
-      if (!settled) {
-        settled = true;
-        done();
-      }
+    if (server.exitCode !== null) {
+      assert.equal(server.exitCode, 0, serverDiagnostics());
+      return;
     }
-
-    child.on("exit", finish);
-    child.send("shutdown");
-    setTimeout(() => {
-      if (child !== undefined && !child.killed) {
-        child.kill("SIGTERM");
-      }
-      setTimeout(() => {
-        if (child !== undefined && !child.killed) {
-          child.kill("SIGKILL");
-        }
-        finish();
-      }, 1000);
-    }, 1000);
+    const exited = once(server, "exit");
+    const sent = server.send("shutdown");
+    assert.equal(sent, true, "the shutdown event must reach the E2E server");
+    const [exitCode] = await exited;
+    assert.equal(exitCode, 0, serverDiagnostics());
   });
 
   it("serves /v1/ping to a separate process over loopback", async function () {
