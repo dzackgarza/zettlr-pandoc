@@ -11,6 +11,7 @@ import type { Browser, Page } from 'playwright'
 import { stringify } from 'yaml'
 import {
   attach,
+  assertCleanExit,
   createFixture,
   findEditorPage,
   preserveArtifacts,
@@ -122,6 +123,7 @@ for (const theme of ['light', 'dark'] as const) {
         fixture.screenshots
       )
       await shutdown(fixture.browser, fixture.appProcess)
+      assertCleanExit(fixture.getOutput())
     })
 
     it('marks only the dirty tab, and yields the slot back on hover', async function () {

@@ -38,15 +38,22 @@ export function outputTail (output: string): string {
   return output.split('\n').slice(-100).join('\n')
 }
 
-/** Bind port 0, read what the kernel gave, release it, hand it to the caller. */
-export async function reserveFreePort (): Promise<number> {
+/**
+ * Observe a currently available loopback port.
+ *
+ * This does not reserve the port: closing the probe releases ownership. The
+ * assembled-app harness serializes complete Forge lifetimes below, so another
+ * repository E2E run cannot race an Agent API or Forge bind. A collision with
+ * an unrelated process remains a loud bind failure owned by the server.
+ */
+export async function findAvailablePort (): Promise<number> {
   return await new Promise((resolve, reject) => {
     const server = createServer()
     server.once('error', reject)
     server.listen(0, '127.0.0.1', () => {
       const address = server.address()
       if (address === null || typeof address === 'string') {
-        reject(new Error('Could not reserve a loopback port'))
+        reject(new Error('Could not observe an available loopback port'))
         return
       }
       const { port } = address
@@ -359,18 +366,12 @@ export async function launchElectron (
   const args = needsVirtualDisplay
     ? ['--auto-servernum', forgeExecutable, ...forgeArguments]
     : forgeArguments
-  // Forge's dev server and logger bind fixed ports, so anything launching the
-  // app twice collides on EADDRINUSE. Asking the kernel per launch covers both
-  // shapes of that: concurrent runs on one machine, and the relaunch a suite
-  // performs while the previous app may still be releasing its ports.
-  const rendererPort = await reserveFreePort()
-  const loggerPort = await reserveFreePort()
 
   const childEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     NODE_ENV: 'develop',
-    ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
-    ZETTLR_FORGE_LOGGER_PORT: String(loggerPort)
+    ZETTLR_FORGE_RENDERER_PORT: '3100',
+    ZETTLR_FORGE_LOGGER_PORT: '9001'
   }
   // An inherited token would boot the app in bearer-token mode and silently
   // change what every unauthenticated spec is testing, so the developer's
@@ -380,7 +381,20 @@ export async function launchElectron (
     childEnvironment.ZETTLR_AGENT_API_TOKEN = options.agentApiToken
   }
 
-  return spawn(executable, args, {
+  // Forge owns two fixed TCP ports and writes the repository-wide .webpack
+  // tree. The lock spans the complete child lifetime, so a second repository
+  // E2E launch is refused before either shared resource can be touched. flock
+  // holds the descriptor through the wrapped command and the kernel releases
+  // it if that process dies; there is no check-then-release ownership gap.
+  const launchLock = path.join(tmpdir(), 'zettlr-pandoc-electron-e2e.lock')
+  return spawn('flock', [
+    '--exclusive',
+    '--nonblock',
+    '--verbose',
+    launchLock,
+    executable,
+    ...args
+  ], {
     cwd: REPO_ROOT,
     detached: true,
     env: childEnvironment,

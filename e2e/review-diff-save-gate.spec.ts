@@ -26,12 +26,12 @@ import {
   attach,
   createFixture,
   delay,
+  findAvailablePort,
   findEditorPage,
   outputTail,
   preserveArtifacts,
   readAppLog,
   requireInitialized,
-  reserveFreePort,
   shutdown
 } from './support/electron-app'
 
@@ -294,7 +294,7 @@ interface RunningFixture {
 }
 
 async function boot (fixture: RunningFixture, timeoutMs: number): Promise<void> {
-  const port = await reserveFreePort()
+  const port = await findAvailablePort()
   const created = await createFixture('zettlr-review-diff-save-gate-e2e-', {
     documentName: 'reviewed-document.md',
     documentContents: DOCUMENT_CONTENTS,

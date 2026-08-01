@@ -8,8 +8,8 @@ import type { Browser } from 'playwright'
 import {
   attach,
   createFixture,
+  findAvailablePort,
   preserveArtifacts,
-  reserveFreePort,
   shutdown
 } from './support/electron-app'
 
@@ -42,7 +42,7 @@ describe('agent API bearer token', function () {
   }
 
   before(async function () {
-    port = await reserveFreePort()
+    port = await findAvailablePort()
 
     const created = await createFixture('zettlr-agent-api-auth-e2e-', {
       documentName: 'guarded.md',
