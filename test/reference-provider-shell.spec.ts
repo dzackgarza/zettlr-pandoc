@@ -147,12 +147,15 @@ describe('References provider Electron shell', function () {
   // mutable map standing at the document authority's
   // readMarkdownBufferContent seam. This is dependency injection of real
   // collaborators, not a mock of provider behavior.
-  const fsalSeam = new EventEmitter()
-  const authorityBuffers = new Map<string, string>()
-  const scheduler = makeScheduler()
+  let fsalSeam: EventEmitter
+  let authorityBuffers: Map<string, string>
+  let scheduler: ReturnType<typeof makeScheduler>
   let provider: ReferenceProvider
 
-  before(async function () {
+  beforeEach(async function () {
+    fsalSeam = new EventEmitter()
+    authorityBuffers = new Map<string, string>()
+    scheduler = makeScheduler()
     provider = new ReferenceProvider(
       new LogProvider(),
       fsalSeam,
@@ -166,9 +169,11 @@ describe('References provider Electron shell', function () {
       { schedule: scheduler.schedule }
     )
     await provider.boot()
+    fsalSeam.emit('fsal-event', { event: 'change', descriptor: makeDescriptor(THEOREMS_PATH) })
+    fsalSeam.emit('fsal-event', { event: 'change', descriptor: makeDescriptor(OTHER_PAPER_PATH) })
   })
 
-  after(async function () {
+  afterEach(async function () {
     await provider.shutdown()
   })
 
