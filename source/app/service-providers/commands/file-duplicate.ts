@@ -30,7 +30,7 @@ export default class FileDuplicate extends ZettlrCommand {
    * @param  {string}  evt The event name
    * @param  {any}     arg  An object containing all necessary information.
    */
-  async run (evt: string, arg: { path: string, name: string, windowNumber: string, leafId: string }): Promise<void> {
+  async run (evt: string, arg: { path: string, name?: string, windowId: string, leafId?: string }): Promise<void> {
     // First, retrieve our source file
     const file = await this._app.fsal.getDescriptorForAnySupportedFile(arg.path)
     if (file === undefined) {
@@ -96,6 +96,6 @@ export default class FileDuplicate extends ZettlrCommand {
     await this._app.fsal.writeTextFile(path.join(dir.path, filename), contents)
 
     // And directly thereafter, open the file
-    await this._app.documents.openFile(arg.windowNumber, arg.leafId, path.join(dir.path, filename))
+    await this._app.documents.openFile(arg.windowId, arg.leafId, path.join(dir.path, filename))
   }
 }

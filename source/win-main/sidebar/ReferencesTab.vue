@@ -1,14 +1,24 @@
 <template>
-  <div id="references-panel" role="tabpanel">
+  <div
+    id="references-panel"
+    role="tabpanel"
+  >
     <!-- References -->
     <h1>
       {{ referencesLabel }}
-      <small v-if="bibliography !== undefined && bibliography[1].length > 0" class="word-count">
+      <small
+        v-if="bibliography !== undefined && bibliography[1].length > 0"
+        class="word-count"
+      >
         {{ wordCountLabel }}
       </small>
     </h1>
-    <!-- eslint-disable-next-line vue/no-v-html NOTE: We can only disable this rule here since the referenceHTML will pass everything through DOMPurify -->
-    <div id="references-list" v-html="referenceHTML"></div>
+    <!-- eslint-disable vue/no-v-html -- referenceHTML is sanitized by DOMPurify before insertion. -->
+    <div
+      id="references-list"
+      v-html="referenceHTML"
+    />
+    <!-- eslint-enable vue/no-v-html -->
   </div>
 </template>
 
@@ -128,15 +138,15 @@ async function updateBibliography (): Promise<void> {
   const keys = descriptor.citekeys
 
   // Now also include potential nocite citations (see https://pandoc.org/MANUAL.html#including-uncited-items-in-the-bibliography)
-  if (descriptor.frontmatter != null && 'nocite' in descriptor.frontmatter) {
-    let nocite: string[]|string = descriptor.frontmatter.nocite
+  const frontmatter = descriptor.frontmatter as { nocite?: unknown } | null | undefined
+  if (frontmatter?.nocite !== undefined) {
+    const rawNocite = frontmatter.nocite
+    let nocite: string[] = []
 
-    if (Array.isArray(nocite)) {
-      nocite = nocite.map(e => e.replace('@', '').trim())
-    } else if (nocite.includes(',')) {
-      nocite = nocite.split(',').map(e => e.replace('@', '').trim())
-    } else {
-      nocite = [] // Some error
+    if (Array.isArray(rawNocite) && rawNocite.every((e): e is string => typeof e === 'string')) {
+      nocite = rawNocite.map(e => e.replace('@', '').trim())
+    } else if (typeof rawNocite === 'string' && rawNocite.includes(',')) {
+      nocite = rawNocite.split(',').map(e => e.replace('@', '').trim())
     }
 
     keys.push(...nocite)
@@ -148,7 +158,7 @@ async function updateBibliography (): Promise<void> {
       database: getBibliographyForDescriptor(descriptor),
       citations: [...new Set(keys)]
     }
-  } as CiteprocProviderIPCAPI)
+  } as Extract<CiteprocProviderIPCAPI, { command: 'get-bibliography' }>)
 }
 </script>
 

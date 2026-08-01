@@ -120,7 +120,7 @@ export type ApplicationIPCAPI =
   | { command: 'commit-reference-rename', payload: { edit: WorkspaceReferenceEdit } }
   | { command: 'custom-export', payload: CustomExportIPCAPI }
   | { command: 'dir-delete', payload: { path: string } }
-  | { command: 'dir-new', payload?: { path?: string, name?: string } }
+  | { command: 'dir-new', payload: { path: string, name?: string } }
   | { command: 'dir-new-project', payload: { path: string } }
   | { command: 'dir-project-export', payload: string }
   | { command: 'dir-remove-project', payload: { path: string } }
@@ -130,8 +130,8 @@ export type ApplicationIPCAPI =
   | { command: 'fetch-link-preview', payload: string }
   | { command: 'file-find-and-return-meta-data', payload: string }
   | { command: 'file-delete', payload: { path: string } }
-  | { command: 'file-duplicate', payload: { path: string, windowId?: string, leafId?: string|undefined } }
-  | { command: 'file-new', payload?: { path?: string, name?: string, type?: DocumentType } }
+  | { command: 'file-duplicate', payload: { path: string, windowId: string, leafId?: string, name?: string } }
+  | { command: 'file-new', payload: { path?: string, name?: string, type?: DocumentType } }
   | { command: 'file-rename', payload: { path: string, name: string } }
   | { command: 'find-exact', payload: string }
   | { command: 'force-open', payload: ForceOpenAPI }

@@ -18,6 +18,8 @@ import assert from 'assert'
 import 'mocha'
 import type { ApplicationIPCAPI } from 'source/app/service-providers/commands'
 import type { IPCAPI } from 'source/app/service-providers/provider-contract'
+import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
+import type { LRTIPCAsyncMessage } from 'source/app/service-providers/long-running-tasks'
 
 type BareIPC = IPCAPI<{ 'bare-command': unknown }>
 
@@ -52,6 +54,46 @@ type MissingAttachmentFilePathRejected = {
 const completeOpenAttachmentAccepted: CompleteOpenAttachmentAccepted = true
 const missingAttachmentFilePathRejected: MissingAttachmentFilePathRejected = true
 
+type RequiredCommandPayload<C extends ApplicationIPCAPI['command']> = Extract<
+ApplicationIPCAPI,
+{ command: C }
+>
+
+type DirectoryWithoutPayloadRejected = {
+  command: 'dir-new'
+} extends RequiredCommandPayload<'dir-new'> ? false : true
+
+type DirectoryWithoutPathRejected = {
+  command: 'dir-new'
+  payload: { name: 'new-directory' }
+} extends RequiredCommandPayload<'dir-new'> ? false : true
+
+type FileWithoutPayloadRejected = {
+  command: 'file-new'
+} extends RequiredCommandPayload<'file-new'> ? false : true
+
+type DuplicateWithoutWindowRejected = {
+  command: 'file-duplicate'
+  payload: { path: '/workspace/document.md', leafId: 'leaf' }
+} extends RequiredCommandPayload<'file-duplicate'> ? false : true
+
+type SyncCitationCannotInvoke = {
+  command: 'get-citation-sync'
+  payload: { database: 'main', citations: [], composite: false }
+} extends Exclude<CiteprocProviderIPCAPI, { command: 'get-citation-sync' }> ? false : true
+
+type SyncLRTCannotInvoke = {
+  command: 'abort-task'
+  payload: { id: 'task' }
+} extends LRTIPCAsyncMessage ? false : true
+
+const directoryWithoutPayloadRejected: DirectoryWithoutPayloadRejected = true
+const directoryWithoutPathRejected: DirectoryWithoutPathRejected = true
+const fileWithoutPayloadRejected: FileWithoutPayloadRejected = true
+const duplicateWithoutWindowRejected: DuplicateWithoutWindowRejected = true
+const syncCitationCannotInvoke: SyncCitationCannotInvoke = true
+const syncLRTCannotInvoke: SyncLRTCannotInvoke = true
+
 describe('IPC type contracts', function () {
   it('admits a bare no-argument command and rejects an arbitrary payload', function () {
     assert.strictEqual(bareCommandAccepted, true)
@@ -61,5 +103,17 @@ describe('IPC type contracts', function () {
   it('requires the source file path when opening a citation attachment', function () {
     assert.strictEqual(completeOpenAttachmentAccepted, true)
     assert.strictEqual(missingAttachmentFilePathRejected, true)
+  })
+
+  it('rejects payloads that the command handlers cannot consume', function () {
+    assert.strictEqual(directoryWithoutPayloadRejected, true)
+    assert.strictEqual(directoryWithoutPathRejected, true)
+    assert.strictEqual(fileWithoutPayloadRejected, true)
+    assert.strictEqual(duplicateWithoutWindowRejected, true)
+  })
+
+  it('keeps synchronous-only IPC commands out of the invoke contract', function () {
+    assert.strictEqual(syncCitationCannotInvoke, true)
+    assert.strictEqual(syncLRTCannotInvoke, true)
   })
 })

@@ -54,7 +54,6 @@ import type { AssetsProviderIPCAPI, PandocProfileMetadata } from 'source/app/ser
 import type { SearchProviderIPCAPI } from 'source/app/service-providers/search'
 import type {
   LRTIPCAsyncMessage,
-  LRTIPCSyncMessage
 } from 'source/app/service-providers/long-running-tasks'
 import type { LRT_JSON } from 'source/app/service-providers/long-running-tasks/task'
 import type {
@@ -149,10 +148,10 @@ export interface IpcRequestMap {
   'documents-provider': DocumentManagerIPCAPI
   'documents-authority': DocumentAuthorityIPCAPI
   'reference-provider': ReferenceProviderIPCAPI
-  'citeproc-provider': CiteprocProviderIPCAPI
+  'citeproc-provider': Exclude<CiteprocProviderIPCAPI, { command: 'get-citation-sync' }>
   'assets-provider': AssetsProviderIPCAPI
   'search-provider': SearchProviderIPCAPI
-  'lrt-provider': LRTIPCSyncMessage|LRTIPCAsyncMessage
+  'lrt-provider': LRTIPCAsyncMessage
   'onboarding': OnboardingIPCMessage
   'request-files': RequestFilesIPCAPI
   'close-all': CloseAllIPCAPI
