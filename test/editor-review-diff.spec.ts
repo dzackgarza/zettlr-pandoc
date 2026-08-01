@@ -376,14 +376,33 @@ describe('Editor review-chunk controls', function () {
     )
 
     const deletion = createReviewView(
-      'removed\nunchanged',
-      'unchanged'
+      'prefix\nremoved\nunchanged',
+      'prefix\nunchanged'
     )
-    const surviving = deletion.state.doc.line(1)
+    const surviving = deletion.state.doc.line(2)
     assert.equal(
       rangeInPreviewSuppression(deletion.state, surviving.from, surviving.to),
       true,
       'a zero-width deletion point at the renderer start must remain visible'
+    )
+
+    const deletionAtEnd = createReviewView(
+      'prefix\nunchanged\nremoved\ntail',
+      'prefix\nunchanged\ntail'
+    )
+    const beforeDeletion = deletionAtEnd.state.doc.line(2)
+    const deletionAtEndChunks = getReviewChunks(deletionAtEnd.state)
+    assert.ok(deletionAtEndChunks !== null)
+    assert.equal(deletionAtEndChunks.length, 1)
+    assert.equal(deletionAtEndChunks[0].fromB, deletionAtEndChunks[0].toB)
+    assert.equal(
+      rangeInPreviewSuppression(
+        deletionAtEnd.state,
+        beforeDeletion.from,
+        deletionAtEndChunks[0].fromB
+      ),
+      false,
+      'a renderer merely ending at a zero-width deletion point must not suppress'
     )
   })
 

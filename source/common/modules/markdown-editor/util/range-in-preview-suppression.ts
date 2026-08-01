@@ -59,7 +59,7 @@ function rangeCarriesReviewChunk (
   }
   return chunks.some(chunk => {
     if (chunk.fromB === chunk.toB) {
-      return rangeFrom <= chunk.fromB && chunk.fromB <= rangeTo
+      return rangeFrom <= chunk.fromB && chunk.fromB < rangeTo
     }
     return chunk.fromB < rangeTo && rangeFrom < chunk.toB
   })
