@@ -156,6 +156,7 @@ export class AppServiceContainer {
       this._logProvider,
       this._fsal,
       this._documentManager,
+      this._configProvider.get().references.authorityReportDebounceMs,
     )
     this._agentHTTPProvider = new AgentHTTPProvider(
       this._logProvider,

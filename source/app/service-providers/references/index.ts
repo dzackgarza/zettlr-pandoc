@@ -168,9 +168,6 @@ export interface AuthorityReportScheduler {
   schedule: (callback: () => void, delayMs: number) => AuthorityReportTask
 }
 
-/** The debounce window between an authority change and its live extraction. */
-export const AUTHORITY_REPORT_DEBOUNCE_MS = 500
-
 /** The production scheduler: plain setTimeout/clearTimeout. */
 const setTimeoutScheduler: AuthorityReportScheduler = {
   schedule: (callback, delayMs) => {
@@ -211,6 +208,7 @@ export default class ReferenceProvider extends ProviderContract {
     private readonly _logger: LogProvider,
     private readonly _fsal: ReferenceFSALEvents,
     private readonly _authority: ReferenceDocumentAuthority,
+    private readonly _authorityReportDebounceMs: number,
     private readonly _scheduler: AuthorityReportScheduler = setTimeoutScheduler
   ) {
     super()
@@ -261,7 +259,7 @@ export default class ReferenceProvider extends ProviderContract {
 
       this._index.reportLiveBuffer(extractReferences(filePath, content))
       broadcastIpcMessage('references')
-    }, immediate ? 0 : AUTHORITY_REPORT_DEBOUNCE_MS))
+    }, immediate ? 0 : this._authorityReportDebounceMs))
   }
 
   /**

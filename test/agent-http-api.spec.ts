@@ -201,6 +201,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           agentApi: {
             enabled: true,
             port: httpPort,
+            tokenEnvironmentVariable: "ZETTLR_AGENT_API_TOKEN",
           },
         }),
         addPath: (_path: string) => false,
@@ -342,6 +343,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           agentApi: {
             enabled: true,
             port: httpPort,
+            tokenEnvironmentVariable: "ZETTLR_AGENT_API_TOKEN",
           },
         }),
       },
@@ -356,6 +358,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
   describe("bearer token enforcement", function () {
     const TOKEN = "s3cret-token-value";
+    const TOKEN_ENVIRONMENT_VARIABLE = "ZETTLR_TEST_AGENT_API_TOKEN";
     let tokenPort: number;
     let guarded: AgentHTTPProvider;
     let previousToken: string | undefined;
@@ -386,13 +389,17 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
       // The provider reads the variable once, in its constructor, so it has to
       // be in place before the instance exists.
-      previousToken = process.env.ZETTLR_AGENT_API_TOKEN;
-      process.env.ZETTLR_AGENT_API_TOKEN = TOKEN;
+      previousToken = process.env[TOKEN_ENVIRONMENT_VARIABLE];
+      process.env[TOKEN_ENVIRONMENT_VARIABLE] = TOKEN;
       guarded = new AgentHTTPProvider(new LogProvider(), provider, {
         config: {
           get: () => ({
             app: { openWorkspaces: [scratch] },
-            agentApi: { enabled: true, port: tokenPort },
+            agentApi: {
+              enabled: true,
+              port: tokenPort,
+              tokenEnvironmentVariable: TOKEN_ENVIRONMENT_VARIABLE,
+            },
           }),
         },
       });
@@ -402,9 +409,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     afterEach(async function () {
       await guarded.shutdown();
       if (previousToken === undefined) {
-        delete process.env.ZETTLR_AGENT_API_TOKEN;
+        delete process.env.ZETTLR_TEST_AGENT_API_TOKEN;
       } else {
-        process.env.ZETTLR_AGENT_API_TOKEN = previousToken;
+        process.env[TOKEN_ENVIRONMENT_VARIABLE] = previousToken;
       }
     });
 
@@ -537,7 +544,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       config: {
         get: () => ({
           app: { openWorkspaces: [scratch] },
-          agentApi: { enabled: true, port: takenPort },
+          agentApi: {
+            enabled: true,
+            port: takenPort,
+            tokenEnvironmentVariable: "ZETTLR_AGENT_API_TOKEN",
+          },
         }),
       },
     });
@@ -1729,7 +1740,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           config: {
             get: () => ({
               app: { openWorkspaces: [scratch] },
-              agentApi: { enabled: true, port: lifecyclePort },
+              agentApi: {
+                enabled: true,
+                port: lifecyclePort,
+                tokenEnvironmentVariable: "ZETTLR_AGENT_API_TOKEN",
+              },
             }),
           },
         },

@@ -127,6 +127,7 @@ describe('References provider Electron shell', function () {
       new LogProvider(),
       fsalSeam,
       { readMarkdownBufferContent: (filePath: string) => authorityBuffers.get(filePath) },
+      500,
       { schedule: scheduler.schedule }
     )
     await provider.boot()

@@ -67,16 +67,6 @@ import {
 } from "@providers/documents/review-diff-store";
 import makeSearchRegex from "source/common/util/make-search-regex";
 
-/**
- * The environment variable carrying the shared secret. Present and non-empty
- * means every request must prove it; absent means the server answers any
- * loopback caller, which is the intended posture for personal hooks on a
- * 127.0.0.1 bind. The mode in force is logged at boot, because the dangerous
- * failure here is silent: a tunnel published in front of a server that never
- * saw the variable would serve the author's documents to anyone.
- */
-const AGENT_API_TOKEN_VARIABLE = "ZETTLR_AGENT_API_TOKEN";
-
 const SSE_REPLAY_BUFFER_SIZE = 100;
 const SSE_HEARTBEAT_MS = 15000;
 const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
@@ -442,7 +432,11 @@ function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalReques
 export interface AgentApiHost {
   config: {
     get: () => {
-      agentApi?: { enabled: boolean; port: number };
+      agentApi?: {
+        enabled: boolean;
+        port: number;
+        tokenEnvironmentVariable: string;
+      };
       app: { openWorkspaces: string[] };
     };
   };
@@ -516,6 +510,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    */
   private readonly _openApiSpecification: Document;
   private readonly _requiredToken: string | undefined;
+  private readonly _tokenEnvironmentVariable: string;
   /** The one route table. Dispatch matches against these entries and nothing else. */
   private readonly _routes: CompiledRoute[];
 
@@ -534,7 +529,12 @@ export default class AgentHTTPProvider extends ProviderContract {
     this._instanceId = crypto.randomUUID();
     // Read once, at construction: a token that appears or changes mid-run would
     // mean the same server answered two different security postures.
-    const configuredToken = process.env[AGENT_API_TOKEN_VARIABLE];
+    const agentApiConfig = this._app.config.get().agentApi;
+    if (agentApiConfig === undefined) {
+      throw new Error("Agent API configuration is required");
+    }
+    this._tokenEnvironmentVariable = agentApiConfig.tokenEnvironmentVariable;
+    const configuredToken = process.env[this._tokenEnvironmentVariable];
     this._requiredToken =
       configuredToken === undefined || configuredToken.length === 0
         ? undefined
@@ -606,7 +606,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         this._log.info(
           `[AgentHTTPProvider] Listening on http://127.0.0.1:${config.port} ` +
             (this._requiredToken === undefined
-              ? `(no ${AGENT_API_TOKEN_VARIABLE} set: any loopback caller is served without a token. ` +
+              ? `(no ${this._tokenEnvironmentVariable} set: any loopback caller is served without a token. ` +
                 "Do not expose this port through a tunnel or proxy in this mode.)"
               : "(bearer token required)"),
         );
@@ -757,11 +757,25 @@ export default class AgentHTTPProvider extends ProviderContract {
    * was enough. So no request leaves here unanswered or unlogged.
    */
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+    const method = req.method;
+    const requestUrl = req.url;
+    if (method === undefined || requestUrl === undefined) {
+      this._log.error(
+        "[AgentHTTPProvider] Node delivered an HTTP request without a method or URL.",
+      );
+      this.sendError(
+        res,
+        400,
+        "INVALID_PARAMS",
+        "HTTP method and request target are required",
+      );
+      return;
+    }
     try {
-      this.routeRequest(req, res);
+      this.routeRequest(req, res, method, requestUrl);
     } catch (error) {
       this._log.error(
-        `[AgentHTTPProvider] ${req.method ?? "?"} ${req.url ?? "?"} threw out of the request ` +
+        `[AgentHTTPProvider] ${method} ${requestUrl} threw out of the request ` +
           `handler: ${String(error)}`,
         error,
       );
@@ -769,10 +783,14 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
   }
 
-  private routeRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
-    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+  private routeRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    method: string,
+    requestUrl: string,
+  ): void {
+    const url = new URL(requestUrl, "http://127.0.0.1");
     const pathname = url.pathname;
-    const method = req.method ?? "GET";
     const matched = this.matchRoute(method, pathname);
 
     // The specification is deliberately the one anonymous route. It describes
@@ -796,9 +814,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       // The operator needs that sentence; a stranger does not, so it goes to
       // the log the operator can read and nowhere else.
       this._log.warning(
-        `[AgentHTTPProvider] Refused an unauthenticated ${req.method ?? "?"} ${req.url ?? "?"}. ` +
+        `[AgentHTTPProvider] Refused an unauthenticated ${method} ${requestUrl}. ` +
           `Callers must send "Authorization: Bearer <token>" carrying the value of ` +
-          `${AGENT_API_TOKEN_VARIABLE} that this editor was started with.`,
+          `${this._tokenEnvironmentVariable} that this editor was started with.`,
       );
       this.sendError(res, 401, "UNAUTHORIZED", "Authentication required.");
       return;

@@ -130,6 +130,7 @@ async function main(): Promise<void> {
         agentApi: {
           enabled: true,
           port: httpPort,
+          tokenEnvironmentVariable: "ZETTLR_AGENT_API_TOKEN",
         },
       }),
       addPath: (_path: string) => false,

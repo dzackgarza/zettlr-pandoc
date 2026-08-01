@@ -184,6 +184,7 @@ async function setUpScratchWorkspace (): Promise<ScratchWorkspace> {
     new LogProvider(),
     seam,
     { readMarkdownBufferContent: (filePath: string) => authorityBuffers.get(filePath) },
+    500,
     {
       schedule: (callback: () => void, _delayMs: number) => {
         const task = { callback, cancelled: false }

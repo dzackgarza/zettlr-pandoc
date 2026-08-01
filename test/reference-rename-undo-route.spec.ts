@@ -99,7 +99,8 @@ describe('Renderer-reachable rename-undo command route (review A5)', function ()
     provider = new ReferenceProvider(
       new LogProvider(),
       fsalSeam,
-      { readMarkdownBufferContent: (_filePath: string) => undefined }
+      { readMarkdownBufferContent: (_filePath: string) => undefined },
+      500
     )
     await provider.boot()
 

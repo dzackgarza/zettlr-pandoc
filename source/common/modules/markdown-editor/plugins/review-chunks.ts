@@ -77,16 +77,20 @@ export interface ReviewChunksConfig {
   onAcceptAll: () => void
 }
 
-const reviewChunksConfig = Facet.define<ReviewChunksConfig, ReviewChunksConfig|null>({
-  combine: values => values.length > 0 ? values[0] : null
-})
+const reviewChunksConfig = Facet.define<ReviewChunksConfig>()
+
+function requireReviewChunksConfig (state: EditorState): ReviewChunksConfig {
+  const configs = state.facet(reviewChunksConfig)
+  if (configs.length !== 1) {
+    throw new Error(`review chunks require exactly one configuration, received ${configs.length}`)
+  }
+  return configs[0]
+}
 
 interface ReviewChunksFieldValue {
   chunks: ReviewChunk[]
   decorations: DecorationSet
 }
-
-const EMPTY: ReviewChunksFieldValue = { chunks: [], decorations: Decoration.none }
 
 const reviewChunksField = StateField.define<ReviewChunksFieldValue>({
   create: buildFieldValue,
@@ -206,7 +210,7 @@ function reviewStatusPanel (view: EditorView): Panel {
     'Accept all',
     'Accept every remaining chunk',
     () => {
-      view.state.facet(reviewChunksConfig)?.onAcceptAll()
+      requireReviewChunksConfig(view.state).onAcceptAll()
     }
   )
   dom.append(previous, next, label, acceptAll)
@@ -215,7 +219,7 @@ function reviewStatusPanel (view: EditorView): Panel {
     const chunks = state.field(reviewChunksField).chunks
     const total = state.field(reviewChunkHighWater)
     const liveIds = new Set(chunks.map(chunk => chunk.chunkId))
-    const held = (state.facet(reviewChunksConfig)?.holds ?? [])
+    const held = requireReviewChunksConfig(state).holds
       .filter(hold => liveIds.has(hold.chunkId)).length
     const resolved = Math.max(0, total - chunks.length)
     label.textContent = `${resolved} of ${total} resolved` + (held > 0 ? ` · ${held} held` : '')
@@ -247,10 +251,7 @@ export function reviewChunksExtension (config: ReviewChunksConfig): Extension[] 
 }
 
 function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
-  const config = state.facet(reviewChunksConfig)
-  if (config === null) {
-    return EMPTY
-  }
+  const config = requireReviewChunksConfig(state)
   const doc = state.doc
   const chunks = computeReviewChunks(config.referenceText, doc.toString())
   if (chunks.length === 0) {
@@ -393,7 +394,9 @@ class DeletedLinesWidget extends WidgetType {
     noteInput.type = 'text'
     noteInput.className = 'cm-holdCommentInput'
     noteInput.placeholder = 'Optional note…'
-    noteInput.value = this.hold?.comment ?? ''
+    if (this.hold?.comment !== undefined) {
+      noteInput.value = this.hold.comment
+    }
     holdButton.addEventListener('click', (event) => {
       event.preventDefault()
       const note = noteInput.value.trim()

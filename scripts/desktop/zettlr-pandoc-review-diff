@@ -30,11 +30,6 @@ const http = require("http");
 const path = require("path");
 const { pathToFileURL } = require("url");
 
-// The app's own configuration default (get-config-template.ts: agentApi.port).
-// An instance configured onto another port is reached with --port; this script
-// never scans for one, because a different process answering the expected port
-// must be a loud failure rather than a silent redirection.
-const DEFAULT_PORT = 27412;
 const TOKEN_VARIABLE = "ZETTLR_AGENT_API_TOKEN";
 const PROGRAM = path.basename(__filename);
 
@@ -50,6 +45,7 @@ function usage() {
     "Required:",
     "  --document FILE          The document the patch applies to.",
     "  --patch FILE             The proposition, as a unified diff.",
+    "  --port N                 Agent API port from the editor configuration.",
     "",
     "Optional:",
     "  --description TEXT       Provenance shown at the review's chunks.",
@@ -57,7 +53,6 @@ function usage() {
     "                           computed against. When given, the request is",
     "                           refused unless the editor's live text still",
     "                           hashes to it.",
-    `  --port N                 Agent API port (default ${DEFAULT_PORT}).`,
     "  -h, --help               Show this help and exit.",
     "",
     `The bearer token is read from ${TOKEN_VARIABLE}, the same variable the`,
@@ -224,13 +219,13 @@ async function main() {
     return;
   }
 
-  for (const required of ["document", "patch"]) {
+  for (const required of ["document", "patch", "port"]) {
     if (options[required] === undefined) {
       fail("INVALID_INVOCATION", `--${required} is required\n\n${usage()}`, 2);
     }
   }
 
-  const port = options.port === undefined ? DEFAULT_PORT : Number(options.port);
+  const port = Number(options.port);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     fail("INVALID_INVOCATION", `--port must be a TCP port number, got: ${options.port}`, 2);
   }

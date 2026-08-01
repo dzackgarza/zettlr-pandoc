@@ -124,7 +124,7 @@ export function computeReviewChunks(
   );
 
   const result: ReviewChunk[] = [];
-  const seen = new Map<string, number>();
+  const seen = new Map<string, { nextOccurrence: number }>();
   for (const range of ranges) {
     const refSlice = joinLines(refLines, range.refFrom, range.refTo);
     const workSlice = joinLines(workLines, range.workFrom, range.workTo);
@@ -136,11 +136,17 @@ export function computeReviewChunks(
     }
 
     const hash = fnv1a64(`${refSlice}\0${workSlice}`);
-    const occurrence = seen.get(hash) ?? 0;
-    seen.set(hash, occurrence + 1);
+    const occurrenceState = seen.get(hash);
+    let chunkId = `chunk-${hash}`;
+    if (occurrenceState === undefined) {
+      seen.set(hash, { nextOccurrence: 1 });
+    } else {
+      chunkId += `-${occurrenceState.nextOccurrence}`;
+      occurrenceState.nextOccurrence += 1;
+    }
 
     result.push({
-      chunkId: occurrence === 0 ? `chunk-${hash}` : `chunk-${hash}-${occurrence}`,
+      chunkId,
       fromA: lineStartOffset(refDoc, range.refFrom),
       toA: lineStartOffset(refDoc, range.refTo),
       fromB: lineStartOffset(workDoc, range.workFrom),
