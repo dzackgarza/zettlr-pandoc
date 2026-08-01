@@ -765,4 +765,4 @@ export type AgentApiResponseBody =
   | RetractProposalResponse
   | AgentErrorResponse;
 
-export const AGENT_API_PROTOCOL_VERSION = "1.0";
+export { AGENT_API_PROTOCOL_VERSION } from "./agent-api-version.cjs";

@@ -63,6 +63,7 @@ interface CliFailure {
 
 const TOKEN_ENVIRONMENT_VARIABLE = "ZETTLR_REVIEW_DIFF_TEST_TOKEN";
 const TOKEN = "review-diff-test-secret";
+const RESPONSE_DEADLINE_MS = "5000";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -389,6 +390,8 @@ describe("review-diff CLI submission boundary", function () {
       String(httpPort),
       "--token-environment-variable",
       TOKEN_ENVIRONMENT_VARIABLE,
+      "--response-deadline-ms",
+      RESPONSE_DEADLINE_MS,
     ]);
 
     const failure = parseCliFailure(result);
@@ -422,6 +425,8 @@ describe("review-diff CLI submission boundary", function () {
       String(incompatiblePort),
       "--token-environment-variable",
       TOKEN_ENVIRONMENT_VARIABLE,
+      "--response-deadline-ms",
+      RESPONSE_DEADLINE_MS,
     ]);
 
     const failure = parseCliFailure(result);
@@ -447,6 +452,8 @@ describe("review-diff CLI submission boundary", function () {
       String(silentPort),
       "--token-environment-variable",
       TOKEN_ENVIRONMENT_VARIABLE,
+      "--response-deadline-ms",
+      RESPONSE_DEADLINE_MS,
     ]);
 
     const failure = parseCliFailure(result);
@@ -467,8 +474,32 @@ describe("review-diff CLI submission boundary", function () {
       String(httpPort),
       "--token-environment-variable",
       TOKEN_ENVIRONMENT_VARIABLE,
+      "--response-deadline-ms",
+      RESPONSE_DEADLINE_MS,
       "--baseline-sha256",
       "not-a-sha256-digest",
+    ]);
+
+    const failure = parseCliFailure(result);
+    assert.equal(failure.code, "INVALID_INVOCATION");
+    assert.deepEqual(await reviews(), []);
+  });
+
+  it("refuses an invalid response deadline at the CLI boundary", async function () {
+    const patchPath = path.join(scratch, "invalid-deadline.diff");
+    writeFileSync(patchPath, "a non-empty proposition\n", "utf8");
+
+    const result = await runCli([
+      "--document",
+      docPath,
+      "--patch",
+      patchPath,
+      "--port",
+      String(httpPort),
+      "--token-environment-variable",
+      TOKEN_ENVIRONMENT_VARIABLE,
+      "--response-deadline-ms",
+      "not-an-integer",
     ]);
 
     const failure = parseCliFailure(result);
@@ -501,6 +532,8 @@ describe("review-diff CLI submission boundary", function () {
       String(httpPort),
       "--token-environment-variable",
       TOKEN_ENVIRONMENT_VARIABLE,
+      "--response-deadline-ms",
+      RESPONSE_DEADLINE_MS,
       "--baseline-sha256",
       "0".repeat(64),
     ]);
@@ -536,6 +569,8 @@ describe("review-diff CLI submission boundary", function () {
       String(httpPort),
       "--token-environment-variable",
       TOKEN_ENVIRONMENT_VARIABLE,
+      "--response-deadline-ms",
+      RESPONSE_DEADLINE_MS,
       "--baseline-sha256",
       live.revision.sha256,
     ]);
