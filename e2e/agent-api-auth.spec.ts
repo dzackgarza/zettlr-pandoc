@@ -8,7 +8,6 @@ import type { Browser } from 'playwright'
 import {
   attach,
   createFixture,
-  E2E_AGENT_API_PORT,
   preserveArtifacts,
   shutdown
 } from './support/electron-app'
@@ -34,10 +33,13 @@ describe('agent API bearer token', function () {
     getOutput: () => '',
     rendererEvents: []
   }
-  const port = E2E_AGENT_API_PORT
+  const agentApi = { enabled: true, port: 39001 }
 
   async function ping (headers: Record<string, string>): Promise<number> {
-    const response = await fetch(`http://127.0.0.1:${port}/v1/ping`, { headers })
+    const response = await fetch(
+      `http://127.0.0.1:${agentApi.port}/v1/ping`,
+      { headers }
+    )
     return response.status
   }
 
@@ -45,7 +47,7 @@ describe('agent API bearer token', function () {
     const created = await createFixture('zettlr-agent-api-auth-e2e-', {
       documentName: 'guarded.md',
       documentContents: '# Guarded\n\nContents behind a token.\n',
-      config: { agentApi: { enabled: true, port } }
+      config: { agentApi }
     })
     fixture.fixtureRoot = created.root
     // The harness plants the token in the child's environment, which is the
@@ -68,7 +70,9 @@ describe('agent API bearer token', function () {
         break
       } catch (error) {
         if (Date.now() > deadline) {
-          throw new Error(`Agent API never answered on ${port}: ${String(error)}`)
+          throw new Error(
+            `Agent API never answered on ${agentApi.port}: ${String(error)}`
+          )
         }
         await new Promise((resolve) => setTimeout(resolve, 500))
       }
@@ -98,7 +102,7 @@ describe('agent API bearer token', function () {
   })
 
   it('refuses /health too, which reports the instance and process id', async function () {
-    const response = await fetch(`http://127.0.0.1:${port}/health`)
+    const response = await fetch(`http://127.0.0.1:${agentApi.port}/health`)
     assert.equal(response.status, 401)
   })
 
@@ -106,11 +110,18 @@ describe('agent API bearer token', function () {
     // The one exemption, and the reason it is safe: the document describes the
     // API, the identical file is in the public repository, and every route it
     // describes still demands the token.
-    const response = await fetch(`http://127.0.0.1:${port}/openapi.yaml`)
+    const response = await fetch(
+      `http://127.0.0.1:${agentApi.port}/openapi.yaml`
+    )
     assert.equal(response.status, 200)
     const body = await response.text()
     assert.ok(body.includes('openapi:'))
-    assert.match(body, new RegExp(`servers:\\n {2}- url: http://127\\.0\\.0\\.1:${port}\\n`))
+    assert.match(
+      body,
+      new RegExp(
+        `servers:\\n {2}- url: http://127\\.0\\.0\\.1:${agentApi.port}\\n`
+      )
+    )
   })
 
   it('records which auth mode it booted in', async function () {

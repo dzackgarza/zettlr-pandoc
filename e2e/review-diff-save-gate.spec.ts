@@ -26,7 +26,6 @@ import {
   attach,
   createFixture,
   delay,
-  E2E_AGENT_API_PORT,
   findEditorPage,
   outputTail,
   preserveArtifacts,
@@ -294,7 +293,7 @@ interface RunningFixture {
 }
 
 async function boot (fixture: RunningFixture, timeoutMs: number): Promise<void> {
-  const port = E2E_AGENT_API_PORT
+  const agentApi = { enabled: true, port: 39001 }
   const created = await createFixture('zettlr-review-diff-save-gate-e2e-', {
     documentName: 'reviewed-document.md',
     documentContents: DOCUMENT_CONTENTS,
@@ -302,7 +301,7 @@ async function boot (fixture: RunningFixture, timeoutMs: number): Promise<void> 
     // `:w` is a CodeMirror Ex command handled in the renderer, whereas Ctrl+S
     // is a main-process menu accelerator that CDP-injected keys cannot fire.
     config: {
-      agentApi: { enabled: true, port },
+      agentApi,
       editor: { inputMode: 'vim' }
     }
   })
@@ -312,7 +311,7 @@ async function boot (fixture: RunningFixture, timeoutMs: number): Promise<void> 
   fixture.appProcess = app.appProcess
   fixture.browser = app.browser
   fixture.getOutput = app.getOutput
-  fixture.client = agentClient(port)
+  fixture.client = agentClient(agentApi.port)
   await waitForAgentApi(fixture.client, 60_000)
 }
 

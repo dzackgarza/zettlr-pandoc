@@ -18,7 +18,6 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { stringify } from 'yaml'
 
 export const REPO_ROOT = path.resolve(process.cwd())
-export const E2E_AGENT_API_PORT = 39001
 
 export function delay (milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
