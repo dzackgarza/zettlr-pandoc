@@ -83,6 +83,23 @@ describe("computeReviewChunks", function () {
     assert.equal(chunks[1].chunkId, `${chunks[0].chunkId}-1`);
   });
 
+  it("keeps an identical later sibling's id after the earlier sibling is accepted", function () {
+    const reference = ["same", "b", "c", "d", "e", "same"].join("\n");
+    const working = ["different", "b", "c", "d", "e", "different"].join("\n");
+    const before = computeReviewChunks(reference, working);
+    assert.equal(before.length, 2);
+
+    const acceptedFirst = spliceChunk(reference, before[0], "accept");
+    const after = computeReviewChunks(acceptedFirst, working);
+
+    assert.equal(after.length, 1);
+    assert.equal(
+      after[0].chunkId,
+      before[1].chunkId,
+      "identity may not be renumbered when an identical sibling leaves the partition",
+    );
+  });
+
   it("represents a pure insertion with an empty reference range", function () {
     const chunks = computeReviewChunks("a\nc", "a\nb\nc");
     assert.equal(chunks.length, 1);
