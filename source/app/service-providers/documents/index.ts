@@ -499,18 +499,7 @@ export default class DocumentManager extends ProviderContract {
       if (documentId === undefined || event.event === "review.sidecar-error") {
         return;
       }
-      const earlier = this._pendingSidecarWrites.get(documentId);
-      const pending = (
-        earlier === undefined ? Promise.resolve() : earlier
-      ).then(async () => {
-        await this._persistReviewSidecar(documentId);
-      });
-      this._pendingSidecarWrites.set(documentId, pending);
-      void pending.then(() => {
-        if (this._pendingSidecarWrites.get(documentId) === pending) {
-          this._pendingSidecarWrites.delete(documentId);
-        }
-      });
+      this._scheduleReviewSidecarWrite(documentId);
     });
     this._documentIdByPath = new Map();
     this._proposalIdempotency = new Map();
@@ -1123,6 +1112,15 @@ current contents from the editor somewhere else, and restart the application.`,
     // overlay (issue #53; debounced inside the provider).
     if (doc.type === DocumentType.Markdown) {
       this._app.references.reportAuthorityBuffer(filePath);
+    }
+
+    const documentId = this.getDocumentId(filePath);
+    if (documentId !== undefined && this._reviewStore.getReview(documentId) !== undefined) {
+      // The editor's authority buffer is the sole working-text owner. Review
+      // mutations already arrive through the store event bus, but ordinary
+      // editor typing does not; queue a sidecar export after every authority
+      // update so a crash cannot lose the current working text.
+      this._scheduleReviewSidecarWrite(documentId);
     }
 
     // Drop all updates that exceed the amount of updates we allow.
@@ -2647,6 +2645,19 @@ current contents from the editor somewhere else, and restart the application.`,
     } catch (err) {
       this._surfaceReviewSidecarError(documentId, "write-through", err);
     }
+  }
+
+  private _scheduleReviewSidecarWrite(documentId: string): void {
+    const earlier = this._pendingSidecarWrites.get(documentId);
+    const pending = (earlier === undefined ? Promise.resolve() : earlier).then(async () => {
+      await this._persistReviewSidecar(documentId);
+    });
+    this._pendingSidecarWrites.set(documentId, pending);
+    void pending.then(() => {
+      if (this._pendingSidecarWrites.get(documentId) === pending) {
+        this._pendingSidecarWrites.delete(documentId);
+      }
+    });
   }
 
   /** Await every sidecar write currently owned by this provider. */
