@@ -26,7 +26,7 @@ import {
   attach,
   createFixture,
   delay,
-  findAvailablePort,
+  E2E_AGENT_API_PORT,
   findEditorPage,
   outputTail,
   preserveArtifacts,
@@ -294,7 +294,7 @@ interface RunningFixture {
 }
 
 async function boot (fixture: RunningFixture, timeoutMs: number): Promise<void> {
-  const port = await findAvailablePort()
+  const port = E2E_AGENT_API_PORT
   const created = await createFixture('zettlr-review-diff-save-gate-e2e-', {
     documentName: 'reviewed-document.md',
     documentContents: DOCUMENT_CONTENTS,

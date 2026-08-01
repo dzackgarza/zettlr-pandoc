@@ -12,13 +12,13 @@ import {
   rm,
   writeFile
 } from 'node:fs/promises'
-import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chromium, type Browser, type Page } from 'playwright'
 import { stringify } from 'yaml'
 
 export const REPO_ROOT = path.resolve(process.cwd())
+export const E2E_AGENT_API_PORT = 39001
 
 export function delay (milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
@@ -36,30 +36,6 @@ export function requireInitialized<T> (
 
 export function outputTail (output: string): string {
   return output.split('\n').slice(-100).join('\n')
-}
-
-/**
- * Observe a currently available loopback port.
- *
- * This does not reserve the port: closing the probe releases ownership. The
- * assembled-app harness serializes complete Forge lifetimes below, so another
- * repository E2E run cannot race an Agent API or Forge bind. A collision with
- * an unrelated process remains a loud bind failure owned by the server.
- */
-export async function findAvailablePort (): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      if (address === null || typeof address === 'string') {
-        reject(new Error('Could not observe an available loopback port'))
-        return
-      }
-      const { port } = address
-      server.close(() => resolve(port))
-    })
-  })
 }
 
 export async function waitForDevTools (
@@ -381,11 +357,12 @@ export async function launchElectron (
     childEnvironment.ZETTLR_AGENT_API_TOKEN = options.agentApiToken
   }
 
-  // Forge owns two fixed TCP ports and writes the repository-wide .webpack
-  // tree. The lock spans the complete child lifetime, so a second repository
-  // E2E launch is refused before either shared resource can be touched. flock
-  // holds the descriptor through the wrapped command and the kernel releases
-  // it if that process dies; there is no check-then-release ownership gap.
+  // Forge owns two fixed TCP ports, the fixture owns one Agent API port, and
+  // every launch writes the repository-wide .webpack tree. The lock spans the
+  // complete child lifetime, so a second repository E2E launch is refused
+  // before any shared resource can be touched. flock holds the descriptor
+  // through the wrapped command and the kernel releases it if that process
+  // dies; there is no check-then-release ownership gap.
   const launchLock = path.join(tmpdir(), 'zettlr-pandoc-electron-e2e.lock')
   return spawn('flock', [
     '--exclusive',

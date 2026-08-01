@@ -8,7 +8,7 @@ import type { Browser } from 'playwright'
 import {
   attach,
   createFixture,
-  findAvailablePort,
+  E2E_AGENT_API_PORT,
   preserveArtifacts,
   shutdown
 } from './support/electron-app'
@@ -34,7 +34,7 @@ describe('agent API bearer token', function () {
     getOutput: () => '',
     rendererEvents: []
   }
-  let port: number
+  const port = E2E_AGENT_API_PORT
 
   async function ping (headers: Record<string, string>): Promise<number> {
     const response = await fetch(`http://127.0.0.1:${port}/v1/ping`, { headers })
@@ -42,8 +42,6 @@ describe('agent API bearer token', function () {
   }
 
   before(async function () {
-    port = await findAvailablePort()
-
     const created = await createFixture('zettlr-agent-api-auth-e2e-', {
       documentName: 'guarded.md',
       documentContents: '# Guarded\n\nContents behind a token.\n',
