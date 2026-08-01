@@ -116,6 +116,22 @@ describe("computeReviewChunks", function () {
     );
   });
 
+  it("keeps an identical earlier sibling's id after the later sibling is decided", function () {
+    const reference = ["same", "b", "c", "d", "e", "same"].join("\n");
+    const working = ["different", "b", "c", "d", "e", "different"].join("\n");
+    const before = computeReviewChunks(reference, working);
+    assert.equal(before.length, 2);
+
+    const acceptedLater = spliceChunk(reference, before[1], "accept");
+    const after = computeReviewChunks(acceptedLater, working);
+    assert.equal(after.length, 1);
+    assert.equal(
+      after[0].chunkId,
+      before[0].chunkId,
+      "identity may not be renumbered when the later identical sibling leaves the partition",
+    );
+  });
+
   it("represents a pure insertion with an empty reference range", function () {
     const chunks = computeReviewChunks("a\nc", "a\nb\nc");
     assert.equal(chunks.length, 1);
@@ -130,6 +146,22 @@ describe("computeReviewChunks", function () {
     assert.equal(chunks[0].workFromLine, chunks[0].workToLine);
     assert.equal(chunks[0].workingText, "");
     assert.equal(chunks[0].referenceText, "b");
+  });
+
+  it("represents blank-line-only insertion and deletion as actionable chunks", function () {
+    const insertion = computeReviewChunks("a\nb", "a\n\nb");
+    assert.equal(insertion.length, 1);
+    assert.equal(insertion[0].referenceText, "");
+    assert.equal(insertion[0].workingText, "");
+    assert.equal(insertion[0].refFromLine, insertion[0].refToLine);
+    assert.equal(insertion[0].workToLine - insertion[0].workFromLine, 1);
+
+    const deletion = computeReviewChunks("a\n\nb", "a\nb");
+    assert.equal(deletion.length, 1);
+    assert.equal(deletion[0].referenceText, "");
+    assert.equal(deletion[0].workingText, "");
+    assert.equal(deletion[0].refToLine - deletion[0].refFromLine, 1);
+    assert.equal(deletion[0].workFromLine, deletion[0].workToLine);
   });
 });
 

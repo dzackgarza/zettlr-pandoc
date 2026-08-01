@@ -63,10 +63,9 @@ import { Text } from "@codemirror/state";
 export interface ReviewChunk {
   /**
    * Content-addressed identity: a hash of the chunk's reference and working
-   * text, plus a reverse occurrence index when the same edit appears more
-   * than once in one document. Counting identical siblings after a chunk
-   * means accepting or rejecting an earlier sibling does NOT invalidate the
-   * ids of the later siblings — the property positional ids
+   * text, plus stable shared context when the same edit appears more than
+   * once in one document. The context anchor means deciding either identical
+   * sibling does not renumber the other — the property positional ids
    * (`chunk-<generation>-<index>`) could not provide, which is what made the
    * old chunk list unactionable: every decision renumbered the rest.
    */
@@ -116,34 +115,50 @@ export function computeReviewChunks(
       workTo: workRange.to,
     };
   });
+  const blankOnly = blankLineOnlyRange(refLines, workLines);
+  if (blankOnly !== undefined) {
+    ranges = [blankOnly];
+  }
 
   const refBlocks = atomicBlocks(refLines);
   const workBlocks = atomicBlocks(workLines);
   ranges = extendToAtomicBlocks(ranges, refBlocks, workBlocks, refLines.length);
   ranges = ranges.flatMap((range) =>
-    splitAtSeams(range, refLines, workLines, refBlocks, workBlocks),
+    isBlankOnlyRange(range, refLines, workLines)
+      ? [range]
+      : splitAtSeams(range, refLines, workLines, refBlocks, workBlocks),
   );
 
+  const identities = ranges
+    .map((range) => {
+      const refSlice = joinLines(refLines, range.refFrom, range.refTo);
+      const workSlice = joinLines(workLines, range.workFrom, range.workTo);
+      return {
+        range,
+        refSlice,
+        workSlice,
+        hash: fnv1a64(`${refSlice}\0${workSlice}`),
+        anchor: fnv1a64(stableContext(refLines, workLines, range)),
+      };
+    })
+    .filter(
+      ({ range, refSlice, workSlice }) =>
+        refSlice !== workSlice || isBlankOnlyRange(range, refLines, workLines),
+    );
+  const hashCounts = new Map<string, number>();
+  for (const identity of identities) {
+    hashCounts.set(identity.hash, (hashCounts.get(identity.hash) ?? 0) + 1);
+  }
   const result: ReviewChunk[] = [];
-  const identicalChunksAfter = new Map<string, number>();
-  for (const range of [...ranges].reverse()) {
-    const refSlice = joinLines(refLines, range.refFrom, range.refTo);
-    const workSlice = joinLines(workLines, range.workFrom, range.workTo);
-    // A seam split can isolate an agreement stretch of a merged or extended
-    // chunk (identical slices on both sides). It is not a disagreement, so
-    // it is not a chunk.
-    if (refSlice === workSlice) {
-      continue;
-    }
-
-    const hash = fnv1a64(`${refSlice}\0${workSlice}`);
-    const laterIdenticalCount = identicalChunksAfter.get(hash);
-    let chunkId = `chunk-${hash}`;
-    if (laterIdenticalCount === undefined) {
-      identicalChunksAfter.set(hash, 1);
-    } else {
-      chunkId += `-${laterIdenticalCount}`;
-      identicalChunksAfter.set(hash, laterIdenticalCount + 1);
+  const anchorCounts = new Map<string, number>();
+  for (const { range, refSlice, workSlice, hash, anchor } of identities) {
+    let chunkId = `chunk-${hash}-${anchor}`;
+    if (hashCounts.get(hash)! > 1) {
+      const sameAnchorCount = anchorCounts.get(anchor) ?? 0;
+      if (sameAnchorCount > 0) {
+        chunkId += `-${sameAnchorCount}`;
+      }
+      anchorCounts.set(anchor, sameAnchorCount + 1);
     }
 
     result.push({
@@ -160,7 +175,82 @@ export function computeReviewChunks(
       workingText: workSlice,
     });
   }
-  return result.reverse();
+  return result;
+}
+
+/** Stable context shared by both sides around a chunk. */
+function stableContext(
+  referenceLines: readonly string[],
+  workingLines: readonly string[],
+  range: ChunkRange,
+): string {
+  const beforeReference = referenceLines[range.refFrom - 1];
+  const beforeWorking = workingLines[range.workFrom - 1];
+  const afterReference = referenceLines[range.refTo];
+  const afterWorking = workingLines[range.workTo];
+  return [
+    beforeReference !== undefined && beforeReference === beforeWorking
+      ? beforeReference
+      : "",
+    afterReference !== undefined && afterReference === afterWorking ? afterReference : "",
+  ].join("\0");
+}
+
+function isBlankOnlyRange(
+  range: ChunkRange,
+  referenceLines: readonly string[],
+  workingLines: readonly string[],
+): boolean {
+  if (range.refFrom === range.refTo && range.workFrom === range.workTo) {
+    return false;
+  }
+  return (
+    referenceLines.slice(range.refFrom - 1, range.refTo - 1).every(isBlank) &&
+    workingLines.slice(range.workFrom - 1, range.workTo - 1).every(isBlank)
+  );
+}
+
+/**
+ * CodeMirror's line diff intentionally treats blank lines as paragraph seams,
+ * so an insertion or deletion consisting only of blank lines can produce no
+ * raw chunk at all. Preserve that edit as one actionable pure insertion or
+ * deletion when the texts differ only in blank lines.
+ */
+function blankLineOnlyRange(
+  referenceLines: readonly string[],
+  workingLines: readonly string[],
+): ChunkRange | undefined {
+  let prefix = 0;
+  while (
+    prefix < referenceLines.length &&
+    prefix < workingLines.length &&
+    referenceLines[prefix] === workingLines[prefix]
+  ) {
+    prefix++;
+  }
+  let suffix = 0;
+  while (
+    prefix + suffix < referenceLines.length &&
+    prefix + suffix < workingLines.length &&
+    referenceLines[referenceLines.length - 1 - suffix] ===
+      workingLines[workingLines.length - 1 - suffix]
+  ) {
+    suffix++;
+  }
+  const from = prefix + 1;
+  const refTo = referenceLines.length - suffix + 1;
+  const workTo = workingLines.length - suffix + 1;
+  const changedReference = referenceLines.slice(from - 1, refTo - 1);
+  const changedWorking = workingLines.slice(from - 1, workTo - 1);
+  if (
+    changedReference.length === 0 &&
+    changedWorking.length === 0 ||
+    changedReference.some((line) => !isBlank(line)) ||
+    changedWorking.some((line) => !isBlank(line))
+  ) {
+    return undefined;
+  }
+  return { refFrom: from, refTo, workFrom: from, workTo };
 }
 
 // ============================================================================
