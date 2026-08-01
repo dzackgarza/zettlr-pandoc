@@ -43,7 +43,7 @@
             v-if="hasPreview(attachment.path)"
             :src="getPreviewImageData(attachment.path)"
           >
-          <!-- eslint-disable vue/no-v-html -- getIcon runs DOMPurify over the HTML -->
+          <!-- eslint-disable vue/no-v-html -- Markup comes from the repository-bundled file-ext.svg; getIcon substitutes at most three file-extension characters into its text label. -->
           <span
             v-else
             v-html="getIcon(attachment.ext)"
