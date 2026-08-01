@@ -74,13 +74,12 @@ describe("computeReviewChunks", function () {
     assert.equal(after[0].chunkId, before[1].chunkId);
   });
 
-  it("distinguishes identical edits at different positions by occurrence", function () {
+  it("distinguishes identical edits at different positions", function () {
     const reference = ["same", "b", "c", "d", "e", "same"].join("\n");
     const working = ["different", "b", "c", "d", "e", "different"].join("\n");
     const chunks = computeReviewChunks(reference, working);
     assert.equal(chunks.length, 2);
     assert.notEqual(chunks[0].chunkId, chunks[1].chunkId);
-    assert.equal(chunks[1].chunkId, `${chunks[0].chunkId}-1`);
   });
 
   it("keeps an identical later sibling's id after the earlier sibling is accepted", function () {
@@ -91,6 +90,23 @@ describe("computeReviewChunks", function () {
 
     const acceptedFirst = spliceChunk(reference, before[0], "accept");
     const after = computeReviewChunks(acceptedFirst, working);
+
+    assert.equal(after.length, 1);
+    assert.equal(
+      after[0].chunkId,
+      before[1].chunkId,
+      "identity may not be renumbered when an identical sibling leaves the partition",
+    );
+  });
+
+  it("keeps an identical later sibling's id after the earlier sibling is rejected", function () {
+    const reference = ["same", "b", "c", "d", "e", "same"].join("\n");
+    const working = ["different", "b", "c", "d", "e", "different"].join("\n");
+    const before = computeReviewChunks(reference, working);
+    assert.equal(before.length, 2);
+
+    const rejectedFirst = spliceChunk(working, before[0], "reject");
+    const after = computeReviewChunks(reference, rejectedFirst);
 
     assert.equal(after.length, 1);
     assert.equal(
