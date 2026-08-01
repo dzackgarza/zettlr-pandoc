@@ -61,11 +61,24 @@ const debugConsole = {
   verbose: function (message: string) { console.log(chalk.grey(message)) }
 }
 
+interface AppendSucceeded {
+  state: 'succeeded'
+}
+
+interface AppendFailed {
+  state: 'failed'
+  error: unknown
+}
+
+type AppendResult = AppendSucceeded|AppendFailed
+
+const APPEND_SUCCEEDED: AppendSucceeded = { state: 'succeeded' }
+
 export default class LogProvider extends ProviderContract {
   private readonly _logPath: string
   private readonly _log: LogMessage[]
   private _entryPointer: number
-  private _activeWrite: Promise<void>|null
+  private _activeWrite: Promise<AppendResult>|null
 
   constructor () {
     super()
@@ -116,7 +129,12 @@ export default class LogProvider extends ProviderContract {
    */
   async shutdown (): Promise<void> {
     this.verbose('Log provider shutting down ...')
-    await this._append() // One final append to flush the log
+    const result = await this._append() // One final append to flush the log
+    if (result.state === 'failed') {
+      // shutdown() is the fail-loud boundary: it must not report a clean flush
+      // when the explicit append state says the write did not reach disk.
+      throw result.error
+    }
   }
 
   /**
@@ -161,12 +179,10 @@ export default class LogProvider extends ProviderContract {
       }
     }
 
-    this._append()
-      .catch(() => {
-        // _append() has already reported the failure out of band. Reporting it
-        // again from here would route the report through the very writer that
-        // just failed, which is where such reports go to die.
-      })
+    // _append() translates the asynchronous filesystem boundary into an
+    // explicit result and reports a failed write out of band. log() is
+    // intentionally fire-and-forget, but no rejecting promise is discarded.
+    void this._append()
   }
 
   /**
@@ -183,10 +199,9 @@ export default class LogProvider extends ProviderContract {
    * @param {unknown} err The reason the write rejected
    */
   private _reportWriteFailure (err: unknown): void {
-    const reason = (err instanceof Error) ? err.message : 'unknown error'
-    const message = `[Log Provider] Could not write to the logfile: ${reason}. ` +
-      'The affected entries are kept in memory and retried with the next log entry.'
-    console.error(chalk.bold.red(message))
+    const message = '[Log Provider] Could not write to the logfile. ' +
+      'The affected entries remain pending for the next explicit append.'
+    console.error(chalk.bold.red(message), err)
     this._log.push({
       level: LogLevel.error,
       message,
@@ -221,7 +236,7 @@ export default class LogProvider extends ProviderContract {
   /**
    * Appends all not-yet-written log messages to today's log file
    */
-  async _append (): Promise<void> {
+  async _append (): Promise<AppendResult> {
     // A caller arriving while a write is in flight waits for that write instead
     // of returning as though the log had been flushed. shutdown()'s final append
     // is the last chance the pending entries have to reach disk, and the entry
@@ -229,59 +244,75 @@ export default class LogProvider extends ProviderContract {
     // time it gets here -- so returning early would make that flush a no-op that
     // hands back a resolved promise for work nobody did.
     while (this._activeWrite !== null) {
-      await this._activeWrite
+      const activeResult = await this._activeWrite
+      if (activeResult.state === 'failed') {
+        return activeResult
+      }
     }
 
     // The pointer counts entries already written, so it is the index of the
     // first unwritten one -- equal to the length exactly when nothing is pending.
     if (this._entryPointer >= this._log.length) {
-      return // Nothing to write
+      return APPEND_SUCCEEDED // Nothing to write
     }
 
-    this._activeWrite = this._writePendingEntries()
+    // Translate any unexpected rejection into the same explicit failure state
+    // as a rejected filesystem append. This promise therefore always settles
+    // with data, allowing the in-flight marker to be cleared on every path
+    // without try/finally exception control flow.
+    this._activeWrite = this._writePendingEntries().then(
+      result => result,
+      (error: unknown): AppendFailed => ({ state: 'failed', error })
+    )
 
-    try {
-      await this._activeWrite
-    } finally {
-      // Cleared on every path, a rejected write included: an in-flight marker
-      // left standing would park every later append on a settled promise for the
-      // rest of the process, and the log would be dead without saying so.
-      this._activeWrite = null
+    const result = await this._activeWrite
+    this._activeWrite = null
+
+    if (result.state === 'failed') {
+      this._reportWriteFailure(result.error)
     }
+
+    return result
   }
 
   /**
    * Writes everything the logfile is behind on, keeping the read pointer honest
    * about what actually reached disk.
    */
-  private async _writePendingEntries (): Promise<void> {
-    try {
-      // Keep going until the whole log is on disk. Entries arriving while the
-      // write below is awaited wait on this very call, so if it stopped after one
-      // batch they would sit unwritten until some later, unrelated log entry
-      // happened to drag them along.
-      while (this._entryPointer < this._log.length) {
-        const nextPointer = this._log.length
-        const logsToWrite = this._log
-          .slice(this._entryPointer, nextPointer)
-          .filter((entry) => entry.level > LogLevel.verbose) // Verbose stays out of the file
+  private async _writePendingEntries (): Promise<AppendResult> {
+    // Keep going until the whole log is on disk. Entries arriving while the
+    // write below is awaited are included by the next loop iteration, so they
+    // never depend on a later unrelated log call to drag them along.
+    while (this._entryPointer < this._log.length) {
+      const nextPointer = this._log.length
+      const logsToWrite = this._log
+        .slice(this._entryPointer, nextPointer)
+        .filter((entry) => entry.level > LogLevel.verbose) // Verbose stays out of the file
 
-        if (logsToWrite.length > 0) {
-          const stringsToWrite = logsToWrite.map((elem) => this._toString(elem))
-          // Resolved per batch: a run spanning midnight rolls onto the new file
-          const logfile = path.join(this._logPath, this._getLogfileName())
-          await fs.writeFile(logfile, stringsToWrite.join('\n') + '\n', { flag: 'a' })
+      if (logsToWrite.length > 0) {
+        const stringsToWrite = logsToWrite.map((elem) => this._toString(elem))
+        // Resolved per batch: a run spanning midnight rolls onto the new file
+        const logfile = path.join(this._logPath, this._getLogfileName())
+        const writeResult = await fs.writeFile(
+          logfile,
+          stringsToWrite.join('\n') + '\n',
+          { flag: 'a' }
+        ).then(
+          (): AppendSucceeded => APPEND_SUCCEEDED,
+          (error: unknown): AppendFailed => ({ state: 'failed', error })
+        )
+        if (writeResult.state === 'failed') {
+          return writeResult
         }
-
-        // Advanced only now that those entries are on disk. A rejected write
-        // leaves the pointer on the batch it could not write, so the next append
-        // retries it instead of the log quietly swallowing the entries.
-        this._entryPointer = nextPointer
       }
-    } catch (err: unknown) {
-      this._reportWriteFailure(err)
-      throw err
+
+      // Advanced only now that those entries are on disk. A rejected write
+      // leaves the pointer on the batch it could not write, so the next append
+      // retries it instead of the log quietly swallowing the entries.
+      this._entryPointer = nextPointer
     }
+
+    return APPEND_SUCCEEDED
   }
 
   /**
