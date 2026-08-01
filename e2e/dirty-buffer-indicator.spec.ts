@@ -115,8 +115,11 @@ for (const theme of ['light', 'dark'] as const) {
     })
 
     after(async function () {
+      const artifactDirectory: string = theme === 'dark'
+        ? path.join(ARTIFACTS_ROOT, 'dark')
+        : path.join(ARTIFACTS_ROOT, 'light')
       await preserveArtifacts(
-        path.join(ARTIFACTS_ROOT, theme),
+        artifactDirectory,
         fixture.fixtureRoot,
         fixture.getOutput(),
         fixture.rendererEvents,
@@ -152,6 +155,11 @@ for (const theme of ['light', 'dark'] as const) {
       const dirtyTab = tabs.first()
       const close = dirtyTab.locator('span.close')
       assert.equal(await close.isVisible(), false, 'the close cross must yield to the dot')
+      assert.match(
+        await dirtyTab.ariaSnapshot(),
+        /Unsaved changes/,
+        'the dirty tab must expose the unsaved state to assistive technology'
+      )
 
       // ...and so must every other tab's, or the dot is just one more small
       // glyph in a row of small glyphs and stands out from none of them.
@@ -166,6 +174,11 @@ for (const theme of ['light', 'dark'] as const) {
       // so waiting on the cross says nothing about the dot yet: wait on the
       // dot's own state or this races the swap and fails under load.
       await indicators.first().waitFor({ state: 'hidden', timeout: 10_000 })
+      assert.match(
+        await dirtyTab.ariaSnapshot(),
+        /Unsaved changes/,
+        'hover may replace the visible dot, but not the accessible unsaved-state cue'
+      )
       await shoot('row-dirty-hover')
       await shootTab('dirty-hover')
 
