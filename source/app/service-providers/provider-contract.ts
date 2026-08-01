@@ -38,7 +38,7 @@ export type IPCAPI<T> = {
   // Commands declared with an `unknown` payload take no payload at all; the
   // property is optional for them so call sites can send the bare command.
   [K in keyof T]: unknown extends T[K]
-    ? { command: K, payload?: unknown }
+    ? { command: K, payload?: undefined }
     : { command: K, payload: T[K] }
 }[keyof T] // This last thing is required to get from key->value to value only.
 
