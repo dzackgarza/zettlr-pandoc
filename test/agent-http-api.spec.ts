@@ -2278,10 +2278,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       await flushSidecarWrites();
 
       assert.equal(
-        provider.loadedDocuments.find((d) => d.filePath === closing)!.document.toString(),
-        onDisk,
-        "the closing window's document must lose the discarded edit",
+        provider.loadedDocuments.some((document) => document.filePath === closing),
+        false,
+        "the closing window's exclusively owned document must be unloaded",
       );
+      assert.equal(readFileSync(closing, "utf8"), onDisk);
       assert.equal(sidecars.read(closing), undefined);
       assert.equal(provider.reviewStore.getReview(closingId), undefined);
 

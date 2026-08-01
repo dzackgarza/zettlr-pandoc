@@ -731,7 +731,7 @@ export default class DocumentManager extends ProviderContract {
                   return;
                 }
               } else {
-                this._discardChanges(document);
+                await this._discardChanges(document);
               }
             }
 
@@ -776,8 +776,8 @@ export default class DocumentManager extends ProviderContract {
       // Only this window's documents: the prompt named this window's unsaved
       // changes, and a discard that reached every loaded document would throw
       // away edits the user is still holding in another window.
-      for (const document of this._windowDocuments(windowId)) {
-        this._discardChanges(document);
+      for (const document of this._windowExclusiveDocuments(windowId)) {
+        await this._discardChanges(document);
       }
 
       // If we're not shutting down, this function will only be called for when
@@ -789,7 +789,7 @@ export default class DocumentManager extends ProviderContract {
       return true;
     } else if (result.response === 0) {
       // Save this window's docs — the same set the discard branch throws away.
-      for (const document of this._windowDocuments(windowId)) {
+      for (const document of this._windowExclusiveDocuments(windowId)) {
         const saved = await this.saveFile(document.filePath);
         if (!saved.ok) {
           this._announceSaveRefusal(document.filePath, saved);
@@ -917,9 +917,15 @@ export default class DocumentManager extends ProviderContract {
       // TODO: If we ever implement workspaces, etc., this safeguard won't be
       // necessary anymore.
       this._app.log.info(`[Documents Manager] Closing window ${windowId}!`);
+      for (const document of this._windowExclusiveDocuments(windowId)) {
+        this._detachReview(document.documentId);
+        this.documents.splice(this.documents.indexOf(document), 1);
+        this._app.references.dropAuthorityBuffer(document.filePath);
+      }
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete this._windows[windowId];
       this.syncToConfig();
+      this.syncWatchedFilePaths();
     }
   }
 
@@ -1403,7 +1409,7 @@ current contents from the editor somewhere else, and restart the application.`,
       const result = await this._app.windows.askSaveChanges(detail);
       // 0 = Save, 1 = Don't save, 2 = Cancel
       if (result.response === 1) {
-        this._discardChanges(openFile);
+        await this._discardChanges(openFile);
         this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
           filePath,
           status: "modification",
@@ -2050,7 +2056,8 @@ current contents from the editor somewhere else, and restart the application.`,
       // permits runs this gate a second time.
       return true;
     }
-    const scope = windowId === undefined ? this.documents : this._windowDocuments(windowId);
+    const scope =
+      windowId === undefined ? this.documents : this._windowExclusiveDocuments(windowId);
     return scope.every((doc) => !this.isModified(doc.filePath));
   }
 
@@ -2071,6 +2078,24 @@ current contents from the editor somewhere else, and restart the application.`,
       tree.getAllLeafs().flatMap((leaf) => leaf.tabMan.openFiles.map((file) => file.path)),
     );
     return this.documents.filter((doc) => openPaths.has(doc.filePath));
+  }
+
+  /**
+   * Documents whose final live owner is the named window. A window-close
+   * decision may save, discard, or unload only these buffers; any document
+   * still present in another window remains owned there.
+   */
+  private _windowExclusiveDocuments(windowId: string): Document[] {
+    const otherWindowPaths = new Set(
+      Object.entries(this._windows)
+        .filter(([otherWindowId]) => otherWindowId !== windowId)
+        .flatMap(([, tree]) =>
+          tree.getAllLeafs().flatMap((leaf) => leaf.tabMan.openFiles.map((file) => file.path)),
+        ),
+    );
+    return this._windowDocuments(windowId).filter(
+      (document) => !otherWindowPaths.has(document.filePath),
+    );
   }
 
   public async navigateForward(
@@ -2564,13 +2589,14 @@ current contents from the editor somewhere else, and restart the application.`,
    * bytes reattachable, and swallowing that would reinstate the defect. It
    * throws, and the close it was called from aborts.
    */
-  private _discardChanges(doc: Document): void {
+  private async _discardChanges(doc: Document): Promise<void> {
     if (doc.currentVersion === doc.lastSavedVersion) {
       // Nothing was thrown away here, so nothing may be destroyed here: a
       // saved document's review is not the user's to lose at another
       // document's prompt.
       return;
     }
+    const diskContents = await this._app.fsal.loadAnySupportedFile(doc.filePath);
     const review = this._reviewStore.getReview(doc.documentId);
     this._reviewSidecars.delete(doc.filePath);
     this._reviewStore.closeReview(doc.documentId);
@@ -2587,7 +2613,8 @@ current contents from the editor somewhere else, and restart the application.`,
       });
       this._broadcastReviewCleared(doc.filePath, review.reviewId);
     }
-    this._applyWorkingTextToDocument(doc.filePath, doc.lastSavedContent);
+    this._applyWorkingTextToDocument(doc.filePath, diskContents);
+    doc.lastSavedContent = diskContents;
     doc.lastSavedVersion = doc.currentVersion;
   }
 
