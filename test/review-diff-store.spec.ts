@@ -345,6 +345,39 @@ describe("ReviewDiffStore", function () {
       );
     });
 
+    it("replays the exact committed batch result for the same clientRequestId", function () {
+      const baseline = "alpha\nbeta\ngamma\n";
+      const afterFirst = "ALPHA\nbeta\ngamma\n";
+      const afterSecond = "ALPHA\nbeta\nGAMMA\n";
+      openReview(DOC_ID, baseline);
+      const options = {
+        patchFormat: "unified-diff" as const,
+        claims: [
+          { patch: makePatch(baseline, afterFirst), description: "first" },
+          { patch: makePatch(afterFirst, afterSecond), description: "second" },
+        ],
+        clientRequestId: "batch-replay",
+        expectedReviewGeneration: 0,
+      };
+
+      const committed = store.submitClaims(DOC_ID, options);
+      assert.equal(committed.ok, true);
+      if (!committed.ok) {return;}
+      documents.set(DOC_ID, committed.workingText);
+
+      const replayed = store.submitClaims(DOC_ID, options);
+      assert.deepEqual(
+        replayed,
+        committed,
+        "a retry must replay the original atomic result instead of consulting advanced state",
+      );
+      assert.equal(store.getReview(DOC_ID)!.generation, 2);
+      assert.deepEqual(
+        store.getReview(DOC_ID)!.packets.map((packet) => packet.packetId),
+        committed.packetIds,
+      );
+    });
+
     it("is all-or-nothing: a failing claim leaves the review untouched", function () {
       const baseline = "alpha\nbeta\n";
       openReview(DOC_ID, baseline, {
