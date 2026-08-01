@@ -62,9 +62,7 @@ import type { FileContentSearchResult } from 'source/app/service-providers/searc
 import type { DocumentLocation, ProjectRootSpec, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
-import { extractReferences } from '@common/pandoc-util/extract-references'
 import { annotateCompletionEntries } from '@common/pandoc-util/project-reference-status'
-import { resolveWorkspace } from '@common/pandoc-util/resolve-references'
 import { trans } from '@common/i18n-renderer'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import showToast from '@common/util/show-toast'
@@ -1067,18 +1065,18 @@ async function updateReferenceEntries (): Promise<void> {
     return
   }
 
-  // Additionally feed the resolved workspace reference view (issue #1
-  // Phase 4): the current document's snapshot comes from a live extraction
-  // of the local buffer (exact live ranges), which replaces the provider's
-  // saved snapshot inside the merged workspace view.
-  const liveSnapshot = extractReferences(props.file.path, currentEditor.value)
+  // The main-process reference provider owns the live buffer overlay. Do not
+  // extract a parallel snapshot from the renderer: that would let an editor
+  // pane diverge from the authority used by citing and rename operations.
+  const liveSnapshot = state.snapshots.find(candidate => candidate.documentPath === props.file.path)
+  if (liveSnapshot === undefined) {
+    return
+  }
   const workspace = state.snapshots
-    .filter(candidate => candidate.documentPath !== props.file.path)
-    .concat([liveSnapshot])
   currentEditor.setWorkspaceReferences({
     snapshot: liveSnapshot,
     workspaceOccurrences: workspace.flatMap(candidate => candidate.occurrences),
-    resolutions: resolveWorkspace(workspace),
+    resolutions: state.resolutions,
     projectRoots
   })
 }

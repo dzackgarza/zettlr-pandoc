@@ -61,7 +61,8 @@ import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
 import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions, shell } from "electron";
 import EventEmitter from "events";
-import { constants as FSConstants, readFileSync } from "fs";
+import { constants as FSConstants } from "fs";
+import { readFile } from "fs/promises";
 import path from "path";
 import { normalizeText, sha256Text } from "./review-diff-store";
 import {
@@ -650,11 +651,11 @@ export default class DocumentManager extends ProviderContract {
         }
         case "decide-review-chunk": {
           const { reviewId, chunkId, decision, comment } = payload;
-          return this.decideChunk(reviewId, chunkId, decision, comment);
+          return await this.decideChunkAsync(reviewId, chunkId, decision, comment);
         }
         case "accept-all-review-chunks": {
           const { reviewId } = payload;
-          return this.acceptAllChunks(reviewId);
+          return await this.acceptAllChunksAsync(reviewId);
         }
         case "add-review-comment": {
           const { reviewId, text } = payload;
@@ -2259,11 +2260,6 @@ current contents from the editor somewhere else, and restart the application.`,
       };
     }
 
-    const diskFence = this.checkReviewDiskFenceSync(filePath, review);
-    if (!diskFence.ok) {
-      return diskFence;
-    }
-
     const result = this._reviewStore.decideChunk(
       review.documentId,
       reviewId,
@@ -2305,6 +2301,32 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * Decision entry point used by HTTP and renderer IPC. The filesystem fence
+   * is deliberately asynchronous: request-path disk reads must not block the
+   * Electron main-process event loop.
+   */
+  public async decideChunkAsync(
+    reviewId: string,
+    chunkId: string,
+    decision: "accept" | "reject" | "hold",
+    comment?: string,
+  ): Promise<ChunkDecisionResponse | { ok: false; code: AgentErrorCode; message: string }> {
+    const review = this._reviewStore.findReviewByReviewId(reviewId);
+    if (review === undefined) {
+      return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+    }
+    const filePath = this.getDocumentPath(review.documentId);
+    if (filePath === undefined) {
+      return { ok: false, code: "DOCUMENT_CLOSED", message: "The reviewed document is no longer open." };
+    }
+    const diskFence = await this.checkReviewDiskFence(filePath, review);
+    if (!diskFence.ok) {
+      return diskFence;
+    }
+    return this.decideChunk(reviewId, chunkId, decision, comment);
+  }
+
+  /**
    * Accept every outstanding chunk of a review at once — the mirror of
    * clearReview, which is mass reject. Same decision authority, same
    * broadcast; the document text does not change, so there is nothing to
@@ -2331,11 +2353,6 @@ current contents from the editor somewhere else, and restart the application.`,
       };
     }
 
-    const diskFence = this.checkReviewDiskFenceSync(filePath, review);
-    if (!diskFence.ok) {
-      return diskFence;
-    }
-
     const result = this._reviewStore.acceptAllChunks(review.documentId);
     if (!result.ok) {
       return { ok: false, code: result.code, message: result.message };
@@ -2354,6 +2371,24 @@ current contents from the editor somewhere else, and restart the application.`,
         sha256: sha256Text(doc.document.toString()),
       },
     };
+  }
+
+  public async acceptAllChunksAsync(
+    reviewId: string,
+  ): Promise<AcceptAllChunksResponse | { ok: false; code: AgentErrorCode; message: string }> {
+    const review = this._reviewStore.findReviewByReviewId(reviewId);
+    if (review === undefined) {
+      return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+    }
+    const filePath = this.getDocumentPath(review.documentId);
+    if (filePath === undefined) {
+      return { ok: false, code: "DOCUMENT_CLOSED", message: "The reviewed document is no longer open." };
+    }
+    const diskFence = await this.checkReviewDiskFence(filePath, review);
+    if (!diskFence.ok) {
+      return diskFence;
+    }
+    return this.acceptAllChunks(reviewId);
   }
 
   /** Add a review-level comment through the provider-owned review state. */
@@ -2433,17 +2468,13 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Decisions must observe the same disk fence as saves. The decision APIs are
-   * synchronous because they are also the renderer IPC boundary; a single
-   * small text read here closes the race where a direct disk edit has happened
-   * but the filesystem watcher has not delivered its event yet. In that case
-   * invalidate before returning so no later decision can act on the stale
-   * review, while the live buffer and external bytes remain untouched.
+   * Decisions observe the same disk fence as saves. This is asynchronous so
+   * HTTP and IPC request paths never perform blocking filesystem I/O.
    */
-  private checkReviewDiskFenceSync(
+  private async checkReviewDiskFence(
     filePath: string,
     review: NonNullable<ReturnType<ReviewDiffStore["getReview"]>>,
-  ): { ok: true } | { ok: false; code: AgentErrorCode; message: string } {
+  ): Promise<{ ok: true } | { ok: false; code: AgentErrorCode; message: string }> {
     if (review.invalidated) {
       return {
         ok: false,
@@ -2453,7 +2484,7 @@ current contents from the editor somewhere else, and restart the application.`,
     }
     let diskContents: string;
     try {
-      diskContents = readFileSync(filePath, "utf8");
+      diskContents = await readFile(filePath, "utf8");
     } catch {
       this._reviewStore.invalidateReview(review.documentId);
       this._broadcastReviewCleared(filePath, review.reviewId);
@@ -2921,9 +2952,14 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   private _clearProposalIdempotency(documentId: string): void {
-    const prefix = `${documentId}:`;
     for (const key of this._proposalIdempotency.keys()) {
-      if (key.startsWith(prefix)) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(key);
+      } catch {
+        continue;
+      }
+      if (Array.isArray(parsed) && parsed[0] === documentId) {
         this._proposalIdempotency.delete(key);
       }
     }
@@ -3177,7 +3213,10 @@ current contents from the editor somewhere else, and restart the application.`,
     }
     const { documentId, version, sha256 } = parsed;
 
-    const idempotencyKey = `${documentId}:${clientRequestId}`;
+    // Encode the tuple as a JSON value rather than joining with a delimiter:
+    // clientRequestId is caller-controlled and must not be able to collide
+    // with another document/request pair.
+    const idempotencyKey = JSON.stringify([documentId, clientRequestId]);
     const fingerprint = sha256Text(
       JSON.stringify({
         documentId,
@@ -3246,8 +3285,28 @@ current contents from the editor somewhere else, and restart the application.`,
       };
     }
 
-    // Check if a review is already active; if not, open one
+    // Check the ingress disk fence before any review mutation. A live buffer
+    // that is still at the snapshot must not open a review against bytes an
+    // external writer has already changed. Existing reviews instead fence
+    // against the bytes present when they opened.
     const activeReview = this._reviewStore.getReview(documentId);
+    const normalizedCurrentSha256 = sha256Text(normalizeText(currentContent));
+    if (activeReview === undefined && diskSha256 !== normalizedCurrentSha256) {
+      return {
+        ok: false,
+        code: "REVISION_MISMATCH",
+        message: "The document changed on disk after the live snapshot was read.",
+      };
+    }
+    if (activeReview !== undefined && diskSha256 !== activeReview.diskFenceSha256) {
+      this._reviewStore.invalidateReview(documentId);
+      this._broadcastReviewCleared(filePath, activeReview.reviewId);
+      return {
+        ok: false,
+        code: "REVIEW_INVALIDATED",
+        message: "The document changed on disk after this review opened; the review was invalidated.",
+      };
+    }
     const currentGeneration = activeReview === undefined ? 0 : activeReview.generation;
     if (expectedReviewGeneration !== undefined && expectedReviewGeneration !== currentGeneration) {
       return {
@@ -3343,18 +3402,6 @@ current contents from the editor somewhere else, and restart the application.`,
       return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
     }
     const filePath = this.getDocumentPath(documentId);
-    const openDoc = filePath === undefined
-      ? undefined
-      : this.documents.find((candidate) => candidate.filePath === filePath);
-    if (filePath !== undefined && openDoc !== undefined) {
-      const review = this._reviewStore.getReview(documentId);
-      if (review !== undefined) {
-        const diskFence = this.checkReviewDiskFenceSync(filePath, review);
-        if (!diskFence.ok) {
-          return diskFence;
-        }
-      }
-    }
     const result = this._reviewStore.clearUnresolved(documentId);
     if (!result.ok) {
       return { ok: false, code: result.code, message: result.message };
@@ -3379,6 +3426,34 @@ current contents from the editor somewhere else, and restart the application.`,
       reviewGeneration: result.generation,
       unresolvedChunks: result.unresolvedChunks,
     };
+  }
+
+  public async clearReviewAsync(
+    reviewId: string,
+  ): Promise<
+    | {
+        ok: true;
+        reviewId: string;
+        documentId: string;
+        state: ReviewState;
+        documentRevision: { version: number; sha256: string };
+        reviewGeneration: number;
+        unresolvedChunks: number;
+      }
+    | { ok: false; code: AgentErrorCode; message: string }
+  > {
+    const review = this._reviewStore.findReviewByReviewId(reviewId);
+    if (review === undefined) {
+      return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+    }
+    const filePath = this.getDocumentPath(review.documentId);
+    if (filePath !== undefined) {
+      const diskFence = await this.checkReviewDiskFence(filePath, review);
+      if (!diskFence.ok) {
+        return diskFence;
+      }
+    }
+    return this.clearReview(reviewId);
   }
 
   /**

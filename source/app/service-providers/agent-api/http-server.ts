@@ -1870,7 +1870,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       }
       comment = decoded.value.comment;
     }
-    let result = this._documents.decideChunk(reviewId, chunkId, decision, comment);
+    let result = await this._documents.decideChunkAsync(reviewId, chunkId, decision, comment);
     if (!result.ok && result.code === "REVIEW_NOT_FOUND") {
       result = await this._documents.reviewLookupFailure(reviewId);
     }
@@ -1992,7 +1992,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: http.ServerResponse,
     reviewId: string,
   ): Promise<void> {
-    let result = this._documents.acceptAllChunks(reviewId);
+    let result = await this._documents.acceptAllChunksAsync(reviewId);
     if (!result.ok && result.code === "REVIEW_NOT_FOUND") {
       result = await this._documents.reviewLookupFailure(reviewId);
     }
@@ -2010,7 +2010,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleClearReview(res: http.ServerResponse, reviewId: string): Promise<void> {
-    let result = this._documents.clearReview(reviewId);
+    let result = await this._documents.clearReviewAsync(reviewId);
     if (!result.ok && result.code === "REVIEW_NOT_FOUND") {
       result = await this._documents.reviewLookupFailure(reviewId);
     }

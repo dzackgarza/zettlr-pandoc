@@ -1310,6 +1310,29 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(response.status, 412);
   });
 
+  it("refuses proposal ingress when disk drifted before the first review opened", async function () {
+    const filePath = path.join(scratch, "ingress-drift.md");
+    const docId = await openFile(filePath, "alpha\n");
+    const snapshot = provider.createSnapshot(docId)!;
+
+    // The editor still owns the snapshot bytes, but an external writer has
+    // already changed disk. Opening a review against that external baseline
+    // would make a later accepted proposal overwrite it.
+    writeFileSync(filePath, "external\n", "utf8");
+    const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      body: JSON.stringify({
+        snapshot: snapshot.token,
+        patchFormat: "unified-diff",
+        patch: makePatch("alpha\n", "ALPHA\n"),
+        clientRequestId: "http-ingress-drift",
+      }),
+    });
+    assert.equal(response.status, 412);
+    assert.equal(JSON.parse(response.body).error.code, "REVISION_MISMATCH");
+    assert.equal(provider.reviewStore.listReviews().length, 0, "refusal must not open a review");
+    assert.equal(readFileSync(filePath, "utf8"), "external\n", "external bytes must remain untouched");
+  });
+
   it("GET /v1/reviews lists active reviews", async function () {
     const filePath = path.join(scratch, "reviews.md");
     const docId = await openFile(filePath, "alpha\n");

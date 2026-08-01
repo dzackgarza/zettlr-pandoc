@@ -8,7 +8,8 @@
  * License: GNU GPL v3
  *
  * Description: Drives the assembled Linux app through the complete review
- *              lifecycle: ordered claims, mixed decisions, ordinary editing,
+ *              lifecycle: ordered claims, accept/reject/hold decisions,
+ *              ordinary editing, identical and blank-line edits,
  *              persistence/restart, exact save bytes, and disk-drift refusal.
  *
  * END HEADER
@@ -157,15 +158,21 @@ describe('review-diff closure contract composite lifecycle', function () {
     const page = await findEditorPage(browser, this.timeout())
 
     const step1 = BASELINE.replace('alpha baseline', 'alpha proposal')
-    const step2 = step1.replace('same\n\nsame', 'same\n\nDIFF')
+    // Two identical occurrences must remain independently actionable: the
+    // first is edited and accepted, while the second is rejected.
+    const step2 = step1.replace('same\n\nsame', 'DIFF\n\nDIFF')
     const proposed = step2.replace('x = 1', 'x = 7').replace('y = 2', 'y = 8')
+    const blankProposed = proposed.replace('tail\n', 'tail\n\n')
     const reviewId = await submitBatch(api, documentPath, [
       { description: 'Revise alpha wording', patch: patch(documentPath, BASELINE, step1) },
-      { description: 'Change the second repeated occurrence', patch: patch(documentPath, step1, step2) },
-      { description: 'Rewrite the display-math environment', patch: patch(documentPath, step2, proposed) }
+      { description: 'Change both repeated occurrences', patch: patch(documentPath, step1, step2) },
+      { description: 'Rewrite the display-math environment', patch: patch(documentPath, step2, proposed) },
+      { description: 'Preserve the intentional blank line', patch: patch(documentPath, proposed, blankProposed) }
     ])
     await waitForReview(page)
-    assert.equal(await page.locator('.cm-chunkDescription').count(), 3)
+    // One claim can yield two independently actionable chunks when it edits
+    // two identical occurrences; every packet still retains its description.
+    assert.equal(await page.locator('.cm-chunkDescription').count(), 5)
 
     // Accept alpha through its real widget.
     await (await widgetWithText(page, 'alpha baseline')).locator('button.accept').click()
@@ -173,15 +180,21 @@ describe('review-diff closure contract composite lifecycle', function () {
 
     // Edit the repeated proposal in the ordinary editor, then accept the
     // edited proposal: the provider must accept the bytes now displayed.
+    const repeatedWidgets = page.locator('.cm-deletedChunk').filter({ hasText: 'same' })
+    await repeatedWidgets.nth(1).waitFor({ state: 'visible' })
     const diffLine = page.locator('.cm-line').filter({ hasText: 'DIFF' }).first()
     await diffLine.click()
     await page.keyboard.press('Home')
     await page.keyboard.press('Shift+End')
     await page.keyboard.type('DIFF edited')
-    const repeated = await widgetWithText(page, 'same')
-    await repeated.locator('button.accept').click()
+    await repeatedWidgets.nth(0).locator('button.accept').click()
     await page.locator('.cm-content').filter({ hasText: 'DIFF edited' }).waitFor({ state: 'visible' })
-    await repeated.waitFor({ state: 'detached' })
+    await repeatedWidgets.nth(1).waitFor({ state: 'detached' })
+
+    // Reject the second identical occurrence independently of the first.
+    const rejectedRepeated = repeatedWidgets.nth(0)
+    await rejectedRepeated.locator('button.reject').click()
+    await rejectedRepeated.waitFor({ state: 'detached' })
 
     // Hold the display-math chunk with a comment and add a review-level note.
     const math = await widgetWithText(page, 'x = 1')
@@ -193,9 +206,19 @@ describe('review-diff closure contract composite lifecycle', function () {
     await page.locator('.cm-reviewCommentSubmit').click()
     await page.locator('.cm-reviewComment').filter({ hasText: 'overall composite note' }).waitFor({ state: 'visible' })
 
+    // Resolve the blank-line-only chunk by its empty reference/working text.
+    const blankChunks = await api.get(`/v1/reviews/${reviewId}/chunks`)
+    assert.ok(isRecord(blankChunks) && Array.isArray(blankChunks.chunks))
+    const blankChunk = blankChunks.chunks.find(chunk =>
+      isRecord(chunk) && chunk.referenceText === '' && chunk.workingText === '')
+    assert.ok(isRecord(blankChunk), 'blank-line-only proposal must remain actionable')
+    const blankChunkId = stringField(blankChunk, 'chunkId')
+    await api.post(`/v1/reviews/${reviewId}/chunks/${blankChunkId}/accept`)
+
     const heldSave = await invokeSave(page, documentPath)
     assert.deepEqual(heldSave, { ok: true })
-    assert.equal(await readFile(documentPath, 'utf8'), proposed.replace('DIFF', 'DIFF edited'))
+    const mixedExpected = blankProposed.replace('DIFF\n\nDIFF', 'DIFF edited\n\nsame')
+    assert.equal(await readFile(documentPath, 'utf8'), mixedExpected)
 
     // Close and reopen in the same running app: sidecar state must reattach.
     await page.evaluate(async pathInPage => await window.ipc.invoke('documents-provider', {
@@ -210,6 +233,18 @@ describe('review-diff closure contract composite lifecycle', function () {
     const reopenedReview = await api.get(`/v1/reviews/${reviewId}`)
     assert.ok(isRecord(reopenedReview) && Array.isArray(reopenedReview.comments))
     assert.ok(reopenedReview.comments.some(comment => isRecord(comment) && comment.text === 'overall composite note'))
+    const reopenedPackets = await api.get(`/v1/reviews/${reviewId}/packets`)
+    assert.ok(isRecord(reopenedPackets) && Array.isArray(reopenedPackets.packets))
+    assert.deepEqual(
+      reopenedPackets.packets.map(packet => isRecord(packet) ? packet.description : undefined),
+      [
+        'Revise alpha wording',
+        'Change both repeated occurrences',
+        'Rewrite the display-math environment',
+        'Preserve the intentional blank line'
+      ],
+      'sidecar reattachment must preserve every packet description and its order'
+    )
 
     // A real process restart must restore the same sidecar-backed review.
     await shutdown(browser, appProcess)
@@ -227,12 +262,15 @@ describe('review-diff closure contract composite lifecycle', function () {
     assert.ok(isRecord(outstanding.chunks[0]))
     assert.equal(outstanding.chunks[0].state, 'held')
     assert.equal(outstanding.chunks[0].holdComment, 'check the constants')
+    assert.ok(Array.isArray(outstanding.chunks[0].packetIds) && outstanding.chunks[0].packetIds.length > 0)
+    assert.ok(Array.isArray(outstanding.chunks[0].descriptions))
+    assert.ok(outstanding.chunks[0].descriptions.includes('Rewrite the display-math environment'))
 
     // Resolve the held block through the UI and prove exact final bytes.
     await restartedPage.locator('.cm-deletedChunk.held button.accept').click()
     const resolvedSave = await invokeSave(restartedPage, documentPath)
     assert.ok(isRecord(resolvedSave) && resolvedSave.ok === true)
-    assert.equal(await readFile(documentPath, 'utf8'), proposed.replace('DIFF', 'DIFF edited'))
+    assert.equal(await readFile(documentPath, 'utf8'), mixedExpected)
 
     // External disk drift is never overwritten by a later review save.
     const finalText = await readFile(documentPath, 'utf8')

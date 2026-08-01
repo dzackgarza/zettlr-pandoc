@@ -196,8 +196,8 @@ interface IpcCommandResponseMap {
   'documents-provider': {
     'save-file': SaveFileResult
     'get-review-diff-session': ReviewDiffSession|undefined
-    'decide-review-chunk': ReturnType<DocumentManager['decideChunk']>
-    'accept-all-review-chunks': ReturnType<DocumentManager['acceptAllChunks']>
+    'decide-review-chunk': Awaited<ReturnType<DocumentManager['decideChunkAsync']>>
+    'accept-all-review-chunks': Awaited<ReturnType<DocumentManager['acceptAllChunksAsync']>>
     'add-review-comment': ReturnType<DocumentManager['addReviewComment']>
     'get-navigation-state': ReturnType<DocumentManager['getNavigationState']>
     'get-open-workspace-files': Awaited<ReturnType<DocumentManager['getFilesForWorkspace']>>
