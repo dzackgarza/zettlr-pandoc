@@ -200,6 +200,7 @@ describe("review-diff CLI submission boundary", function () {
   );
 
   let child: ChildProcess | undefined;
+  const peerServers: http.Server[] = [];
   let httpPort: number;
   let docPath: string;
   let scratch: string;
@@ -208,6 +209,15 @@ describe("review-diff CLI submission boundary", function () {
 
   function serverDiagnostics(): string {
     return `server stdout:\n${serverStdout}\nserver stderr:\n${serverStderr}`;
+  }
+
+  async function listenOnLoopback(server: http.Server): Promise<number> {
+    peerServers.push(server);
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    assert.ok(address !== null && typeof address !== "string");
+    return address.port;
   }
 
   function httpGet(pathname: string): Promise<{ status: number; body: string }> {
@@ -338,6 +348,19 @@ describe("review-diff CLI submission boundary", function () {
   });
 
   after(async function () {
+    for (const peerServer of peerServers) {
+      peerServer.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        peerServer.close((error) => {
+          if (error === undefined) {
+            resolve();
+          } else {
+            reject(error);
+          }
+        });
+      });
+    }
+
     const server = child;
     if (server === undefined) {
       return;
@@ -371,6 +394,85 @@ describe("review-diff CLI submission boundary", function () {
     const failure = parseCliFailure(result);
     assert.equal(failure.code, "PATCH_INVALID");
     assert.equal(failure.status, 400);
+    assert.deepEqual(await reviews(), []);
+  });
+
+  it("refuses an incompatible protocol before submitting anything", async function () {
+    const requestPaths: string[] = [];
+    const incompatiblePeer = http.createServer((request, response) => {
+      requestPaths.push(request.url ?? "");
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          ok: true,
+          protocolVersion: "999.0",
+        }),
+      );
+    });
+    const incompatiblePort = await listenOnLoopback(incompatiblePeer);
+    const patchPath = path.join(scratch, "incompatible-protocol.diff");
+    writeFileSync(patchPath, "a non-empty proposition\n", "utf8");
+
+    const result = await runCli([
+      "--document",
+      docPath,
+      "--patch",
+      patchPath,
+      "--port",
+      String(incompatiblePort),
+      "--token-environment-variable",
+      TOKEN_ENVIRONMENT_VARIABLE,
+    ]);
+
+    const failure = parseCliFailure(result);
+    assert.equal(failure.code, "PROTOCOL_VERSION_UNSUPPORTED");
+    assert.deepEqual(requestPaths, ["/v1/ping"]);
+    assert.deepEqual(await reviews(), []);
+  });
+
+  it("refuses a loopback peer that accepts but never responds", async function () {
+    const silentPeer = http.createServer(() => {
+      // Deliberately leave the real HTTP response open.
+    });
+    const silentPort = await listenOnLoopback(silentPeer);
+    const patchPath = path.join(scratch, "silent-peer.diff");
+    writeFileSync(patchPath, "a non-empty proposition\n", "utf8");
+
+    const result = await runCli([
+      "--document",
+      docPath,
+      "--patch",
+      patchPath,
+      "--port",
+      String(silentPort),
+      "--token-environment-variable",
+      TOKEN_ENVIRONMENT_VARIABLE,
+    ]);
+
+    const failure = parseCliFailure(result);
+    assert.equal(failure.code, "INSTANCE_UNREACHABLE");
+    assert.deepEqual(await reviews(), []);
+  });
+
+  it("refuses a malformed baseline digest at the CLI boundary", async function () {
+    const patchPath = path.join(scratch, "malformed-baseline.diff");
+    writeFileSync(patchPath, "a non-empty proposition\n", "utf8");
+
+    const result = await runCli([
+      "--document",
+      docPath,
+      "--patch",
+      patchPath,
+      "--port",
+      String(httpPort),
+      "--token-environment-variable",
+      TOKEN_ENVIRONMENT_VARIABLE,
+      "--baseline-sha256",
+      "not-a-sha256-digest",
+    ]);
+
+    const failure = parseCliFailure(result);
+    assert.equal(failure.code, "INVALID_INVOCATION");
     assert.deepEqual(await reviews(), []);
   });
 
