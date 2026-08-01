@@ -46,7 +46,7 @@
           <!-- eslint-disable vue/no-v-html -- Markup comes from the repository-bundled file-ext.svg; getIcon substitutes at most three file-extension characters into its text label. -->
           <span
             v-else
-            v-html="getIcon(attachment.ext)"
+            v-html="getAttachmentIconMarkup(attachment.ext)"
           />
           <!-- eslint-enable vue/no-v-html -->
 
@@ -63,11 +63,11 @@
 <script setup lang="ts">
 import { trans } from '@common/i18n-renderer'
 import makeValidUri from '@common/util/make-valid-uri'
-import { ClarityIcons } from '@cds/core/icon'
 import { computed } from 'vue'
 import { useConfigStore } from 'source/pinia'
 import { hasImageExt } from 'source/common/util/file-extention-checks'
 import { useWorkspaceStore } from 'source/pinia/workspace-store'
+import { getAttachmentIconMarkup } from './attachment-icon-markup'
 
 const ipcRenderer = window.ipc
 
@@ -100,20 +100,6 @@ function handleDragStart (event: DragEvent, attachmentPath: string): void {
   // Indicate with custom data that this is a file from the sidebar
   const data = { type: 'other', path: attachmentPath }
   event.dataTransfer?.setData('text/x-zettlr-file', JSON.stringify(data))
-}
-
-function getIcon (ext: string): string {
-  // The registry value type does not advertise the outline property, but
-  // load-icons.ts registers shapes that carry one; narrow structurally.
-  const fileExtIcon: unknown = ClarityIcons.registry['file-ext']
-  const outline = typeof fileExtIcon === 'object' && fileExtIcon !== null && 'outline' in fileExtIcon
-    ? (fileExtIcon as { outline?: unknown }).outline
-    : undefined
-  if (typeof outline === 'string') {
-    return outline.replace('EXT', ext.slice(1, 4))
-  } else {
-    return ''
-  }
 }
 
 function handleClick (filePath: string) {
