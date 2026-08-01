@@ -348,7 +348,6 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     currentEditor?.clearReviewDiffSession()
     currentEditor?.reload().catch(reportDocumentLoadError)
   } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
-    currentEditor?.clearReviewDiffSession()
     // The file has been saved to disk. This means we should probably update the
     // descriptor to know of, e.g., library changes.
     ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: props.file.path })
