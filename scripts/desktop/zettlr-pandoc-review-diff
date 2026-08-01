@@ -27,6 +27,7 @@
  */
 
 const crypto = require("crypto");
+const { applyPatch, parsePatch } = require("diff");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
@@ -174,6 +175,67 @@ function readRequiredFile(filePath, flag) {
     fail("INPUT_EMPTY", `${flag} is empty: ${filePath}`, 2);
   }
   return text;
+}
+
+function normalizeText(text) {
+  return text.replace(/^\uFEFF/, "").split(/\r\n|\n\r|\n|\r/g).join("\n");
+}
+
+function acceptablePatchHeader(fileName, documentPath) {
+  if (typeof fileName !== "string") {
+    return false;
+  }
+  const normalized = fileName.replace(/\\/g, "/");
+  if (normalized === "document" || normalized === "a/document" || normalized === "b/document") {
+    return true;
+  }
+  const carriedPrefix = /^(a|b)\//.test(normalized);
+  const stripped = normalized.replace(/^(a|b)\//, "");
+  if (path.isAbsolute(stripped)) {
+    return path.resolve(stripped) === path.resolve(documentPath);
+  }
+  return carriedPrefix && path.resolve(`/${stripped}`) === path.resolve(documentPath);
+}
+
+/** Validate and apply locally before the open request can mutate the app. */
+function validatePatchBeforeOpen(patchText, documentPath) {
+  if (patchText.includes("GIT binary patch")) {
+    throw new Error("review-diff does not support binary patches");
+  }
+  const patches = parsePatch(patchText);
+  if (patches.length !== 1) {
+    throw new Error("review-diff requires exactly one file patch");
+  }
+  const patch = patches[0];
+  if (patch.hunks.length === 0 || patch.isBinary === true) {
+    throw new Error("review-diff patch does not change the target document");
+  }
+  if (
+    patch.isRename === true ||
+    patch.isCopy === true ||
+    patch.isCreate === true ||
+    patch.isDelete === true ||
+    patch.oldMode !== undefined ||
+    patch.newMode !== undefined
+  ) {
+    throw new Error("review-diff does not support rename, copy, create, delete, or mode-change patches");
+  }
+  if (
+    patch.oldFileName === "/dev/null" ||
+    patch.newFileName === "/dev/null" ||
+    !acceptablePatchHeader(patch.oldFileName, documentPath) ||
+    !acceptablePatchHeader(patch.newFileName, documentPath)
+  ) {
+    throw new Error("review-diff patch headers do not match the target document");
+  }
+  const documentText = normalizeText(fs.readFileSync(documentPath, "utf8"));
+  const applied = applyPatch(documentText, patch, { fuzzFactor: 0 });
+  if (applied === false) {
+    throw new Error("review-diff patch does not apply to the document on disk");
+  }
+  if (normalizeText(applied) === documentText) {
+    throw new Error("review-diff patch does not change the target document");
+  }
 }
 
 function request(
@@ -356,6 +418,12 @@ async function main() {
       1,
       ping.status,
     );
+  }
+
+  try {
+    validatePatchBeforeOpen(patchText, documentPath);
+  } catch (error) {
+    fail("PATCH_INVALID", errorText(error), 1, 400);
   }
 
   const opened = await request(

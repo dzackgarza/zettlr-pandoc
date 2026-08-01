@@ -377,13 +377,15 @@ describe("review-diff CLI submission boundary", function () {
     assert.equal(exitCode, 0, serverDiagnostics());
   });
 
-  it("refuses a malformed patch without creating a review", async function () {
+  it("refuses a malformed patch before opening an unopened document", async function () {
+    const unopenedPath = path.join(scratch, "malformed-unopened.md");
+    writeFileSync(unopenedPath, "unopened document\n", "utf8");
     const patchPath = path.join(scratch, "malformed.diff");
     writeFileSync(patchPath, "this is not a unified diff at all\n", "utf8");
 
     const result = await runCli([
       "--document",
-      docPath,
+      unopenedPath,
       "--patch",
       patchPath,
       "--port",
@@ -398,6 +400,21 @@ describe("review-diff CLI submission boundary", function () {
     assert.equal(failure.code, "PATCH_INVALID");
     assert.equal(failure.status, 400);
     assert.deepEqual(await reviews(), []);
+    const documents = await httpGet("/v1/documents");
+    assert.equal(documents.status, 200, serverDiagnostics());
+    const documentEntries = requiredArray(
+      parseObject(documents.body, "document list response").documents,
+      "document list",
+    );
+    assert.equal(
+      documentEntries.some(
+        (entry) =>
+          requiredString(requiredRecord(entry, "document list entry").path, "document path") ===
+          unopenedPath,
+      ),
+      false,
+      "local patch validation must precede the document-open request",
+    );
   });
 
   it("refuses an incompatible protocol before submitting anything", async function () {
