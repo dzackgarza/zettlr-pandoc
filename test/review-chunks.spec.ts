@@ -165,6 +165,34 @@ describe("computeReviewChunks block-aware boundaries", function () {
     assert.equal(chunks[0].workingText, "$$\na + b\n$$\nmore text edited");
   });
 
+  it("keeps a ```` fence atomic when its body contains a shorter ``` run", function () {
+    // A four-backtick fence is how a Markdown document quotes a three-backtick
+    // block verbatim, so the inner ``` is CONTENT. Closing the block on it
+    // leaves the second half of the code unguarded, and the seam policy then
+    // hands out one Accept/Reject per half of a block that only compiles, runs,
+    // and means anything as a whole. Per CommonMark a closing fence must be the
+    // same character AND at least as long as the opener.
+    const reference = [
+      "para", "",
+      "````", "print(one)", "```", "print(two)", "````",
+      "", "tail",
+    ].join("\n");
+    const working = reference
+      .replace("print(one)", "print(ONE)")
+      .replace("print(two)", "print(TWO)");
+    const chunks = computeReviewChunks(reference, working);
+    assert.equal(chunks.length, 1, "one code block, one decision");
+    assert.deepEqual(
+      [chunks[0].refFromLine, chunks[0].refToLine],
+      [3, 8],
+      "the chunk must cover the outer fence edge to edge",
+    );
+    assert.equal(
+      chunks[0].workingText,
+      "````\nprint(ONE)\n```\nprint(TWO)\n````",
+    );
+  });
+
   it("converges under accept and reject with the policies active", function () {
     const reference = [
       "intro", "", "alpha one", "alpha two", "", "$$", "x &= 1", "$$", "", "tail",

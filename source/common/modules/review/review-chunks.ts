@@ -192,6 +192,8 @@ function isBlank(line: string): boolean {
 function atomicBlocks(lines: readonly string[]): AtomicBlock[] {
   const blocks: AtomicBlock[] = [];
   let open:
+    // `fence` is the opener's whole run: a closer must be the same character
+    // and no shorter, so a ``` inside a ```` block is content, not the end.
     | { kind: "code"; from: number; fence: string }
     | { kind: "math"; from: number }
     | { kind: "div"; from: number; depth: number }
@@ -203,7 +205,7 @@ function atomicBlocks(lines: readonly string[]): AtomicBlock[] {
     if (open === null) {
       const fence = line.match(/^\s{0,3}(`{3,}|~{3,})/);
       if (fence !== null) {
-        open = { kind: "code", from: lineNo, fence: fence[1][0] };
+        open = { kind: "code", from: lineNo, fence: fence[1] };
         continue;
       }
       if (trimmed.startsWith("$$")) {
@@ -225,7 +227,11 @@ function atomicBlocks(lines: readonly string[]): AtomicBlock[] {
     switch (open.kind) {
       case "code": {
         const close = line.match(/^\s{0,3}(`{3,}|~{3,})\s*$/);
-        if (close !== null && close[1][0] === open.fence) {
+        if (
+          close !== null &&
+          close[1][0] === open.fence[0] &&
+          close[1].length >= open.fence.length
+        ) {
           blocks.push({ kind: "code", from: open.from, to: lineNo + 1 });
           open = null;
         }
