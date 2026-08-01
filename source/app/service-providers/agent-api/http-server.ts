@@ -838,6 +838,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     // arrive in the same catch as one that rejects.
     void (async () => await matched.route.handle({ req, res, url, params }))().catch((err) => {
       if (err instanceof RequestTooLargeError) {
+        this._log.warning(
+          `[AgentHTTPProvider] Refused oversized ${method} ${pathname} with REQUEST_TOO_LARGE`,
+        );
+        res.setHeader("Connection", "close");
         this.sendError(res, 413, "REQUEST_TOO_LARGE", "Request body exceeds the API limit");
         return;
       }
@@ -1214,7 +1218,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     url: URL,
     workspaceId: string,
   ): void {
-    const workspacePath = decodeURIComponent(workspaceId);
+    const workspacePath = workspaceId;
     const knownWorkspaces = this._app.config.get().app.openWorkspaces;
     if (!knownWorkspaces.includes(workspacePath)) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
@@ -1260,14 +1264,14 @@ export default class AgentHTTPProvider extends ProviderContract {
     workspaceId: string,
     documentId: string,
   ): Promise<void> {
-    const workspacePath = decodeURIComponent(workspaceId);
+    const workspacePath = workspaceId;
     const knownWorkspaces = this._app.config.get().app.openWorkspaces;
     if (!knownWorkspaces.includes(workspacePath)) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
       return;
     }
     const filePath = this._documents.getDocumentPath(documentId);
-    if (filePath === undefined || !(await this.isDocumentOpenableInCurrentWorkspaces(filePath))) {
+    if (filePath === undefined || !(await this.isDocumentOpenableInWorkspace(filePath, workspacePath))) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document is not part of workspace");
       return;
     }
@@ -2205,6 +2209,18 @@ export default class AgentHTTPProvider extends ProviderContract {
       // right now is the question this predicate actually has.
       return this._documents.loadedDocuments.some((doc) => doc.filePath === filePath);
     }
+    for (const workspacePath of workspaces) {
+      if (await this.isDocumentOpenableInWorkspace(filePath, workspacePath)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async isDocumentOpenableInWorkspace(
+    filePath: string,
+    workspacePath: string,
+  ): Promise<boolean> {
     // Canonicalize the requested path so a symlink inside a workspace cannot
     // point the containment check at a file outside it. A path realpath cannot
     // resolve — nonexistent, a dangling link, a component that is not a
@@ -2217,40 +2233,36 @@ export default class AgentHTTPProvider extends ProviderContract {
     } catch {
       return false;
     }
-    for (const workspacePath of workspaces) {
-      // A configured workspace can be deleted or unmounted while the editor
-      // runs, and realpath then rejects with ENOENT. Letting that escape turned
-      // every openability check into a bare 500 whose message named neither the
-      // path nor the reason, so the only diagnosis was reading the app log and
-      // guessing which of several workspaces was gone. A vanished workspace
-      // cannot contain the file, which is the answer this predicate owes its
-      // caller; anything else is a real fault and still propagates.
-      let canonicalWorkspacePath: string;
-      try {
-        canonicalWorkspacePath = await fs.promises.realpath(workspacePath);
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code !== "ENOENT" && code !== "ENOTDIR") {
-          throw error;
-        }
-        this._log.warning(
-          `[AgentHTTPProvider] Configured workspace ${workspacePath} could not be resolved ` +
-            `(${code}); treating it as not containing ${filePath}. The workspace is ` +
-            "probably deleted or unmounted.",
-        );
-        continue;
+
+    // A configured workspace can be deleted or unmounted while the editor
+    // runs, and realpath then rejects with ENOENT. Letting that escape turned
+    // every openability check into a bare 500 whose message named neither the
+    // path nor the reason, so the only diagnosis was reading the app log and
+    // guessing which of several workspaces was gone. A vanished workspace
+    // cannot contain the file, which is the answer this predicate owes its
+    // caller; anything else is a real fault and still propagates.
+    let canonicalWorkspacePath: string;
+    try {
+      canonicalWorkspacePath = await fs.promises.realpath(workspacePath);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") {
+        throw error;
       }
-      const relativePath = path.relative(canonicalWorkspacePath, canonicalFilePath);
-      if (
-        relativePath === "" ||
-        (!relativePath.startsWith(`..${path.sep}`) &&
-          relativePath !== ".." &&
-          !path.isAbsolute(relativePath))
-      ) {
-        return true;
-      }
+      this._log.warning(
+        `[AgentHTTPProvider] Configured workspace ${workspacePath} could not be resolved ` +
+          `(${code}); treating it as not containing ${filePath}. The workspace is ` +
+          "probably deleted or unmounted.",
+      );
+      return false;
     }
-    return false;
+    const relativePath = path.relative(canonicalWorkspacePath, canonicalFilePath);
+    return (
+      relativePath === "" ||
+      (!relativePath.startsWith(`..${path.sep}`) &&
+        relativePath !== ".." &&
+        !path.isAbsolute(relativePath))
+    );
   }
 
   private findDocumentIdByReviewId(reviewId: string): string | undefined {
@@ -2289,7 +2301,10 @@ export default class AgentHTTPProvider extends ProviderContract {
         receivedBytes += chunk.byteLength;
         if (receivedBytes > MAX_REQUEST_BODY_BYTES) {
           settle(() => reject(new RequestTooLargeError()));
-          req.destroy();
+          // Keep the transport alive long enough for the dispatcher to answer
+          // with its structured 413. Resuming after our listeners are removed
+          // drains and discards the remainder without retaining more buffers.
+          req.resume();
           return;
         }
         chunks.push(chunk);
