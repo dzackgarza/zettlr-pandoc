@@ -1044,6 +1044,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         handle: async ({ res, params }) => await this.handleGetDocument(res, params.documentId),
       },
       {
+        method: "DELETE",
+        path: "/v1/documents/{documentId}",
+        handle: async ({ res, params }) =>
+          await this.handleReleaseDocument(res, params.documentId),
+      },
+      {
         method: "POST",
         path: "/v1/documents/{documentId}/focus",
         handle: async ({ res, params }) => await this.handleFocusDocument(res, params.documentId),
@@ -1361,6 +1367,14 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     this.sendJson(res, 200, summary);
+  }
+
+  private async handleReleaseDocument(
+    res: http.ServerResponse,
+    documentId: string,
+  ): Promise<void> {
+    const result = await this._documents.releaseUnattachedDocument(documentId);
+    this.sendJson(res, 200, result);
   }
 
   private async handleFocusDocument(res: http.ServerResponse, documentId: string): Promise<void> {

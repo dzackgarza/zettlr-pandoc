@@ -40,6 +40,7 @@
  */
 
 import type { GetTextTranslations } from 'gettext-parser'
+import type { MenuItemConstructorOptions } from 'electron'
 import type DocumentManager from 'source/app/service-providers/documents'
 import type {
   DocumentAuthorityIPCAPI,
@@ -111,14 +112,15 @@ export type TagProviderIPCAPI =
 
 /**
  * The term commands carry terms at the message's top level, not in payload.
- * 'set-user-dictionary' takes unknown because the handler owns validation (it
- * throws unless the payload is a string array) and its one caller forwards a
- * generic preferences-form value.
+ * The dictionary handler validates the payload at runtime as well, but its
+ * renderer-facing contract is a string array; keeping that shape here makes a
+ * wrong IPC payload a compile-time error instead of deferring the mistake to
+ * the main process.
  */
 export type DictionaryProviderIPCAPI =
   | { command: 'check'|'suggest'|'add', terms: string[] }
   | { command: 'get-user-dictionary' }
-  | { command: 'set-user-dictionary', payload: unknown }
+  | { command: 'set-user-dictionary', payload: string[] }
   | { command: 'open-dictionary-folder' }
 
 /** 'set-custom-css' carries its css at the message's top level. */
@@ -132,7 +134,7 @@ export type StatsProviderIPCAPI = { command: 'get-data', payload?: undefined }
 /** The menu tree is an opaque serialized structure the provider validates. */
 export type MenuProviderIPCAPI = {
   command: 'display-native-context-menu'
-  payload: { menu: unknown, x: number, y: number }
+  payload: { menu: MenuItemConstructorOptions[], x: number, y: number }
 }
 
 export type AppearanceProviderIPCAPI = { command: 'get-accent-color', payload?: undefined }

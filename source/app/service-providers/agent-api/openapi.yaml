@@ -589,6 +589,19 @@ components:
           const: true
         documentId:
           type: string
+    ReleaseDocumentResponse:
+      type: object
+      required:
+        - released
+        - documentId
+      properties:
+        released:
+          type: boolean
+          description: >-
+            True when a clean, viewless authority buffer was released. A false
+            result is non-destructive when another owner appeared.
+        documentId:
+          type: string
     WorkspaceDocumentsResponse:
       type: object
       required:
@@ -1261,6 +1274,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+    delete:
+      operationId: releaseDocument
+      summary: Release a clean, viewless document authority buffer
+      description: >-
+        This is a cleanup operation for an external review submission that
+        loaded a path before the proposal was refused. It never closes an
+        editor view, discards dirty text, or removes an active review.
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cleanup result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseDocumentResponse'
   /v1/documents/{documentId}/focus:
     post:
       operationId: focusDocument

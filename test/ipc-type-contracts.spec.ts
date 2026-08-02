@@ -20,6 +20,7 @@ import type { ApplicationIPCAPI } from 'source/app/service-providers/commands'
 import type { IPCAPI } from 'source/app/service-providers/provider-contract'
 import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
 import type { LRTIPCAsyncMessage } from 'source/app/service-providers/long-running-tasks'
+import type { DictionaryProviderIPCAPI, MenuProviderIPCAPI } from 'source/types/renderer/ipc-bridge'
 
 type BareIPC = IPCAPI<{ 'bare-command': unknown }>
 
@@ -87,12 +88,36 @@ type SyncLRTCannotInvoke = {
   payload: { id: 'task' }
 } extends LRTIPCAsyncMessage ? false : true
 
+type DictionaryPayloadMustBeStrings = {
+  command: 'set-user-dictionary'
+  payload: ['word']
+} extends DictionaryProviderIPCAPI ? true : false
+
+type DictionaryPayloadRejectsNumbers = {
+  command: 'set-user-dictionary'
+  payload: [42]
+} extends DictionaryProviderIPCAPI ? false : true
+
+type ContextMenuPayloadRequiresCoordinates = {
+  command: 'display-native-context-menu'
+  payload: { menu: [], x: 1, y: 2 }
+} extends MenuProviderIPCAPI ? true : false
+
+type ContextMenuPayloadRejectsMissingCoordinates = {
+  command: 'display-native-context-menu'
+  payload: { menu: [] }
+} extends MenuProviderIPCAPI ? false : true
+
 const directoryWithoutPayloadRejected: DirectoryWithoutPayloadRejected = true
 const directoryWithoutPathRejected: DirectoryWithoutPathRejected = true
 const fileWithoutPayloadRejected: FileWithoutPayloadRejected = true
 const duplicateWithoutWindowRejected: DuplicateWithoutWindowRejected = true
 const syncCitationCannotInvoke: SyncCitationCannotInvoke = true
 const syncLRTCannotInvoke: SyncLRTCannotInvoke = true
+const dictionaryPayloadMustBeStrings: DictionaryPayloadMustBeStrings = true
+const dictionaryPayloadRejectsNumbers: DictionaryPayloadRejectsNumbers = true
+const contextMenuPayloadRequiresCoordinates: ContextMenuPayloadRequiresCoordinates = true
+const contextMenuPayloadRejectsMissingCoordinates: ContextMenuPayloadRejectsMissingCoordinates = true
 
 describe('IPC type contracts', function () {
   it('admits a bare no-argument command and rejects an arbitrary payload', function () {
@@ -115,5 +140,12 @@ describe('IPC type contracts', function () {
   it('keeps synchronous-only IPC commands out of the invoke contract', function () {
     assert.strictEqual(syncCitationCannotInvoke, true)
     assert.strictEqual(syncLRTCannotInvoke, true)
+  })
+
+  it('rejects concrete provider payload mistakes at compile time', function () {
+    assert.strictEqual(dictionaryPayloadMustBeStrings, true)
+    assert.strictEqual(dictionaryPayloadRejectsNumbers, true)
+    assert.strictEqual(contextMenuPayloadRequiresCoordinates, true)
+    assert.strictEqual(contextMenuPayloadRejectsMissingCoordinates, true)
   })
 })

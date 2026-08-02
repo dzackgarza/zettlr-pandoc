@@ -1059,6 +1059,49 @@ export default class DocumentManager extends ProviderContract {
     };
   }
 
+  /**
+   * Release a clean authority buffer that has no editor view.
+   *
+   * The review CLI loads an unopened path only to obtain the live snapshot
+   * required by the normal proposal route. If that route refuses the
+   * submission, the CLI uses this non-destructive cleanup seam so the refused
+   * request leaves the document unopened. A document that acquired a view,
+   * became dirty, or acquired a review is left untouched and reports
+   * `released: false` instead.
+   */
+  public async releaseUnattachedDocument(documentId: string): Promise<{
+    released: boolean;
+    documentId: string;
+  }> {
+    const filePath = this.getDocumentPath(documentId);
+    if (filePath === undefined) {
+      return { released: false, documentId };
+    }
+    const doc = this.documents.find((candidate) => candidate.filePath === filePath);
+    if (doc === undefined || doc.currentVersion !== doc.lastSavedVersion) {
+      return { released: false, documentId };
+    }
+    if (this._reviewStore.getReview(documentId) !== undefined) {
+      return { released: false, documentId };
+    }
+
+    let hasEditorView = false;
+    await this.forEachLeaf(async (tabMan) => {
+      if (tabMan.openFiles.some((openFile) => openFile.path === filePath)) {
+        hasEditorView = true;
+      }
+      return false;
+    });
+    if (hasEditorView) {
+      return { released: false, documentId };
+    }
+
+    this.documents.splice(this.documents.indexOf(doc), 1);
+    this._app.references.dropAuthorityBuffer(filePath);
+    this.syncWatchedFilePaths();
+    return { released: true, documentId };
+  }
+
   private async pullUpdates(filePath: string, clientVersion: number): Promise<SerializedUpdate[] | false> {
     const doc = this.documents.find((doc) => doc.filePath === filePath);
     if (doc === undefined) {

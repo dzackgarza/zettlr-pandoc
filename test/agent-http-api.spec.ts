@@ -746,6 +746,20 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assertMatchesSchema(body, "DocumentSummary");
   });
 
+  it("DELETE /v1/documents/{id} releases a clean viewless authority buffer", async function () {
+    const filePath = path.join(scratch, "release.md");
+    const docId = await openFile(filePath, "content\n");
+
+    const response = await httpRequest("DELETE", `/v1/documents/${docId}`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(JSON.parse(response.body), { released: true, documentId: docId });
+    assertMatchesSchema(JSON.parse(response.body), "ReleaseDocumentResponse");
+
+    const listed = await httpRequest("GET", "/v1/documents");
+    const documents = (JSON.parse(listed.body) as { documents: Array<{ path: string }> }).documents;
+    assert.equal(documents.some((document) => document.path === filePath), false);
+  });
+
   it("GET /v1/documents/{id}/content returns live buffer with ETag", async function () {
     const filePath = path.join(scratch, "read.md");
     const docId = await openFile(filePath, "alpha\nbeta\n");

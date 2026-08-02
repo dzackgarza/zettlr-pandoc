@@ -462,6 +462,27 @@ async function main() {
     (entry) => isRecord(entry) && entry.path === documentPath,
   );
   let documentId;
+  let openedByCli = false;
+  const releaseOpenedDocument = async () => {
+    if (!openedByCli || documentId === undefined) {
+      return;
+    }
+    try {
+      await request(
+        port,
+        tokenEnvironmentVariable,
+        responseDeadlineMs,
+        "DELETE",
+        `/v1/documents/${documentId}`,
+      );
+    } catch {
+      // Preserve the original refusal. Cleanup is deliberately best effort:
+      // the API leaves a document alone if another owner acquired a view or
+      // made it dirty while this request was in flight.
+    } finally {
+      openedByCli = false;
+    }
+  };
   if (existing !== undefined) {
     documentId = requireString(existing.documentId, "documentId");
   } else {
@@ -493,21 +514,47 @@ async function main() {
         uri: pathToFileURL(documentPath).href,
       },
     );
-    const openedBody = requireSuccessBody(opened, 201, "document open");
-    documentId = requireString(openedBody.documentId, "documentId");
+    if (opened.status === 201) {
+      openedByCli = true;
+    }
+    try {
+      const openedBody = requireSuccessBody(opened, 201, "document open");
+      documentId = requireString(openedBody.documentId, "documentId");
+    } catch (error) {
+      await releaseOpenedDocument();
+      fail("UNEXPECTED_RESPONSE", `document open: ${errorText(error)}`, 1, opened.status);
+    }
   }
 
-  const live = await request(
-    port,
-    tokenEnvironmentVariable,
-    responseDeadlineMs,
-    "GET",
-    `/v1/documents/${documentId}/content?side=working`,
-  );
-  const liveBody = requireSuccessBody(live, 200, "live document read");
-  const snapshot = requireString(liveBody.snapshot, "live document snapshot");
-  const revision = requireRecord(liveBody.revision, "live document revision");
-  const liveSha256 = requireString(revision.sha256, "live document SHA-256");
+  let live;
+  try {
+    live = await request(
+      port,
+      tokenEnvironmentVariable,
+      responseDeadlineMs,
+      "GET",
+      `/v1/documents/${documentId}/content?side=working`,
+    );
+  } catch (error) {
+    await releaseOpenedDocument();
+    fail("INSTANCE_UNREACHABLE", `live document read failed: ${errorText(error)}`, 1);
+  }
+  if (live.status !== 200) {
+    await releaseOpenedDocument();
+    refuse(live, "live document read");
+  }
+  let liveBody;
+  let snapshot;
+  let liveSha256;
+  try {
+    liveBody = requireRecord(live.body, "live document read response");
+    snapshot = requireString(liveBody.snapshot, "live document snapshot");
+    const revision = requireRecord(liveBody.revision, "live document revision");
+    liveSha256 = requireString(revision.sha256, "live document SHA-256");
+  } catch (error) {
+    await releaseOpenedDocument();
+    fail("UNEXPECTED_RESPONSE", `live document read: ${errorText(error)}`, 1, live.status);
+  }
 
   // An already-open document may contain unsaved editor text. Validate against
   // the authority response, never against disk bytes, before submitting or
@@ -517,6 +564,7 @@ async function main() {
   try {
     validatePatchAgainstText(patch, liveBody.content);
   } catch (error) {
+    await releaseOpenedDocument();
     fail("PATCH_INVALID", errorText(error), 1, 400);
   }
 
@@ -524,6 +572,7 @@ async function main() {
     declaredBaseline !== undefined &&
     declaredBaseline.toLowerCase() !== liveSha256
   ) {
+    await releaseOpenedDocument();
     fail(
       "BASELINE_MISMATCH",
       `the editor's text for ${documentPath} is not the baseline this patch was made ` +
@@ -533,26 +582,48 @@ async function main() {
     );
   }
 
-  const submitted = await request(
-    port,
-    tokenEnvironmentVariable,
-    responseDeadlineMs,
-    "POST",
-    `/v1/documents/${documentId}/proposals`,
-    {
-      snapshot,
-      patchFormat: "unified-diff",
-      patch: patchText,
-      description: options.description,
-      clientRequestId: crypto.randomUUID(),
-    },
-  );
-  const submittedBody = requireSuccessBody(submitted, 200, "proposition submission");
-  const reviewId = requireString(submittedBody.reviewId, "submitted reviewId");
-  const unresolvedChunks = requireInteger(
-    submittedBody.unresolvedChunks,
-    "submitted unresolvedChunks",
-  );
+  let submitted;
+  try {
+    submitted = await request(
+      port,
+      tokenEnvironmentVariable,
+      responseDeadlineMs,
+      "POST",
+      `/v1/documents/${documentId}/proposals`,
+      {
+        snapshot,
+        patchFormat: "unified-diff",
+        patch: patchText,
+        description: options.description,
+        clientRequestId: crypto.randomUUID(),
+      },
+    );
+  } catch (error) {
+    await releaseOpenedDocument();
+    fail("INSTANCE_UNREACHABLE", `proposition submission failed: ${errorText(error)}`, 1);
+  }
+  if (submitted.status !== 200) {
+    await releaseOpenedDocument();
+    refuse(submitted, "proposition submission");
+  }
+  let submittedBody;
+  try {
+    submittedBody = requireRecord(submitted.body, "proposition submission response");
+  } catch (error) {
+    await releaseOpenedDocument();
+    fail("UNEXPECTED_RESPONSE", `proposition submission: ${errorText(error)}`, 1, submitted.status);
+  }
+  let reviewId;
+  let unresolvedChunks;
+  try {
+    reviewId = requireString(submittedBody.reviewId, "submitted reviewId");
+    unresolvedChunks = requireInteger(
+      submittedBody.unresolvedChunks,
+      "submitted unresolvedChunks",
+    );
+  } catch (error) {
+    fail("UNEXPECTED_RESPONSE", `proposition submission: ${errorText(error)}`, 1, submitted.status);
+  }
 
   // Focus is deliberately last: malformed, stale, inapplicable, or rejected
   // proposals never steal the user's active tab or reveal a partial review.

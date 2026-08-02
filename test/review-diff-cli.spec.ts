@@ -445,6 +445,75 @@ describe("review-diff CLI submission boundary", function () {
     );
   });
 
+  it("releases a newly loaded document after a post-open refusal", async function () {
+    const unopenedPath = path.join(scratch, "post-open-refusal.md");
+    const original = "alpha\n";
+    writeFileSync(unopenedPath, original, "utf8");
+    const patchPath = path.join(scratch, "post-open-refusal.diff");
+    writeFileSync(
+      patchPath,
+      createPatch("document", original, "ALPHA\n", "", "", { context: 0 }),
+      "utf8",
+    );
+    const ping = parseObject(
+      (await httpGet("/v1/ping")).body,
+      "agent ping response",
+    );
+    const requestPaths: string[] = [];
+    const peer = http.createServer((request, response) => {
+      requestPaths.push(`${request.method} ${request.url ?? ""}`);
+      const pathname = request.url?.split("?", 1)[0] ?? "";
+      const send = (status: number, body: Record<string, unknown>): void => {
+        const json = JSON.stringify(body);
+        response.writeHead(status, {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(json, "utf8"),
+        });
+        response.end(json);
+      };
+      if (request.method === "GET" && pathname === "/v1/ping") {
+        send(200, { protocolVersion: requiredString(ping.protocolVersion, "protocolVersion") });
+      } else if (request.method === "GET" && pathname === "/v1/documents") {
+        send(200, { documents: [] });
+      } else if (request.method === "POST" && pathname === "/v1/documents") {
+        send(201, { documentId: "doc-cli-cleanup" });
+      } else if (request.method === "GET" && pathname === "/v1/documents/doc-cli-cleanup/content") {
+        send(200, {
+          content: original,
+          snapshot: "snap_v1_fake",
+          revision: { version: 0, sha256: "0".repeat(64) },
+        });
+      } else if (request.method === "POST" && pathname === "/v1/documents/doc-cli-cleanup/proposals") {
+        send(409, { error: { code: "REVISION_MISMATCH", message: "race" } });
+      } else if (request.method === "DELETE" && pathname === "/v1/documents/doc-cli-cleanup") {
+        send(200, { released: true, documentId: "doc-cli-cleanup" });
+      } else {
+        send(404, { error: { code: "METHOD_NOT_FOUND", message: "unexpected request" } });
+      }
+    });
+    const peerPort = await listenOnLoopback(peer);
+
+    const result = await runCli([
+      "--document", unopenedPath,
+      "--patch", patchPath,
+      "--port", String(peerPort),
+      "--token-environment-variable", TOKEN_ENVIRONMENT_VARIABLE,
+      "--response-deadline-ms", RESPONSE_DEADLINE_MS,
+    ]);
+
+    const failure = parseCliFailure(result);
+    assert.equal(failure.code, "REVISION_MISMATCH");
+    assert.equal(failure.status, 409);
+    assert.deepEqual(requestPaths, [
+      "GET /v1/ping",
+      "GET /v1/documents",
+      "POST /v1/documents",
+      "GET /v1/documents/doc-cli-cleanup/content?side=working",
+      "POST /v1/documents/doc-cli-cleanup/proposals",
+      "DELETE /v1/documents/doc-cli-cleanup",
+    ]);
+  });
+
   it("refuses an incompatible protocol before submitting anything", async function () {
     const requestPaths: string[] = [];
     const incompatiblePeer = http.createServer((request, response) => {
