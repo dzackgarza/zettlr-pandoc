@@ -105,6 +105,10 @@ interface PreferencesListItem {
   icon?: string
 }
 
+function isStringArray (value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string')
+}
+
 const hasVibrancy = computed(() => configStore.config.window.vibrancy && process.platform === 'darwin')
 
 const currentGroup = ref(0)
@@ -326,9 +330,13 @@ function handleInput (prop: string, val: unknown): void {
   // We do have an easy time here
   if (prop === 'userDictionaryContents') {
     // The user dictionary is not handled by the config
+    if (!isStringArray(val)) {
+      console.error(new TypeError('The user dictionary form value was not a string array.'))
+      return
+    }
     ipcRenderer.invoke('dictionary-provider', {
       command: 'set-user-dictionary',
-      payload: val as string[]
+      payload: val
     })
       .catch(err => console.error(err))
   } else if (prop === 'availableDictionaries') {
@@ -405,7 +413,10 @@ function populateDynamicValues (): void {
     command: 'get-user-dictionary'
   })
     .then((dictionary) => {
-      userDictionaryContents.value = dictionary as string[]
+      if (!isStringArray(dictionary)) {
+        throw new TypeError('The dictionary provider returned a non-string array.')
+      }
+      userDictionaryContents.value = dictionary
     })
     .catch(err => console.error(err))
 }
