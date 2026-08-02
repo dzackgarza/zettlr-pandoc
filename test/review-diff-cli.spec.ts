@@ -207,6 +207,7 @@ describe("review-diff CLI submission boundary", function () {
   let scratch: string;
   let serverStdout = "";
   let serverStderr = "";
+  let serverRequestNumber = 0;
 
   function serverDiagnostics(): string {
     return `server stdout:\n${serverStdout}\nserver stderr:\n${serverStderr}`;
@@ -268,6 +269,33 @@ describe("review-diff CLI submission boundary", function () {
       });
       cli.on("error", reject);
       cli.on("close", (code) => resolve({ code, stdout, stderr }));
+    });
+  }
+
+  /** Make a real authority edit without saving it to disk. */
+  function setSampleText(text: string): Promise<void> {
+    const server = child;
+    assert.ok(server !== undefined, "the E2E server must be running");
+    const requestId = `set-sample-text-${++serverRequestNumber}`;
+    return new Promise((resolve, reject) => {
+      const onMessage = (message: unknown): void => {
+        if (!isRecord(message) || message.event !== "sample-text-result" || message.requestId !== requestId) {
+          return;
+        }
+        server.removeListener("message", onMessage);
+        if (message.ok !== true) {
+          reject(new Error(requiredString(message.message, "sample-text error")));
+          return;
+        }
+        resolve();
+      };
+      server.on("message", onMessage);
+      server.send({ event: "set-sample-text", requestId, text }, (error) => {
+        if (error !== undefined && error !== null) {
+          server.removeListener("message", onMessage);
+          reject(error);
+        }
+      });
     });
   }
 
@@ -593,11 +621,15 @@ describe("review-diff CLI submission boundary", function () {
     );
   });
 
-  it("focuses the document and opens every submitted review chunk", async function () {
+  it("focuses the document and opens every submitted review chunk from the live unsaved buffer", async function () {
+    const disk = await liveDocument();
+    const unsaved = disk.content.replace("Original content.", "Unsaved editor content.");
+    await setSampleText(unsaved);
     const live = await liveDocument();
+    assert.equal(live.content, unsaved);
     const proposed = live.content
       .replace("# E2E certification", "# E2E certification (revised)")
-      .replace("Original content.", "Replacement content.");
+      .replace("Unsaved editor content.", "Replacement content.");
     assert.notEqual(proposed, live.content, "the proposition must change the fixture");
 
     const patchPath = path.join(scratch, "proposition.diff");

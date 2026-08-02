@@ -32,6 +32,8 @@ import {
 import net from "net";
 import os from "os";
 import path from "path";
+import { ChangeSet } from "@codemirror/state";
+import serializeChangeSet from "@common/util/serialize-change-set";
 import { BrowserWindow } from "electron";
 import DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
@@ -39,6 +41,7 @@ import AgentHTTPProvider, {
   type AgentApiHost,
 } from "source/app/service-providers/agent-api/http-server";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
+import type { SerializedUpdate } from "@dts/common/documents";
 
 type DocumentManagerApp = ConstructorParameters<typeof DocumentManager>[0];
 
@@ -233,7 +236,69 @@ async function main(): Promise<void> {
   process.on("message", (msg: unknown) => {
     if (msg === "shutdown") {
       void shutdown();
+      return;
     }
+    if (
+      typeof msg !== "object" ||
+      msg === null ||
+      Array.isArray(msg) ||
+      (msg as Record<string, unknown>).event !== "set-sample-text" ||
+      typeof (msg as Record<string, unknown>).requestId !== "string" ||
+      typeof (msg as Record<string, unknown>).text !== "string"
+    ) {
+      return;
+    }
+    const request = msg as Record<string, string>;
+    const document = provider.loadedDocuments.find((entry) => entry.filePath === samplePath);
+    if (document === undefined) {
+      process.send?.({
+        event: "sample-text-result",
+        requestId: request.requestId,
+        ok: false,
+        message: "sample document is not loaded",
+      });
+      return;
+    }
+    const changes = ChangeSet.of(
+      [{ from: 0, to: document.document.length, insert: request.text }],
+      document.document.length,
+    );
+    const update: SerializedUpdate = {
+      clientID: "review-diff-cli-e2e",
+      changes: serializeChangeSet(changes),
+    };
+    const pushUpdates = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(provider),
+      "pushUpdates",
+    )?.value as
+      | ((filePath: string, version: number, updates: SerializedUpdate[]) => Promise<boolean>)
+      | undefined;
+    if (pushUpdates === undefined) {
+      process.send?.({
+        event: "sample-text-result",
+        requestId: request.requestId,
+        ok: false,
+        message: "the authority update seam is unavailable",
+      });
+      return;
+    }
+    void pushUpdates.call(provider, samplePath, document.currentVersion, [update]).then(
+      (ok) => {
+        process.send?.({
+          event: "sample-text-result",
+          requestId: request.requestId,
+          ok,
+        });
+      },
+      (error: unknown) => {
+        process.send?.({
+          event: "sample-text-result",
+          requestId: request.requestId,
+          ok: false,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      },
+    );
   });
 }
 

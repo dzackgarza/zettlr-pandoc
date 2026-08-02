@@ -204,8 +204,8 @@ function acceptablePatchHeader(fileName, documentPath) {
   return carriedPrefix && path.resolve(`/${stripped}`) === path.resolve(documentPath);
 }
 
-/** Validate and apply locally before the open request can mutate the app. */
-function validatePatchBeforeOpen(patchText, documentPath) {
+/** Parse and validate the patch shape before any open/focus request. */
+function parseReviewPatch(patchText, documentPath) {
   if (patchText.includes("GIT binary patch")) {
     throw new Error("review-diff does not support binary patches");
   }
@@ -235,15 +235,26 @@ function validatePatchBeforeOpen(patchText, documentPath) {
   ) {
     throw new Error("review-diff patch headers do not match the target document");
   }
-  const documentText = normalizeText(fs.readFileSync(documentPath, "utf8"));
-  const applied = applyPatch(documentText, patch, { fuzzFactor: 0 });
+  return patch;
+}
+
+/** Apply a parsed patch against the exact text the authority will review. */
+function validatePatchAgainstText(patch, documentText) {
+  const normalizedDocumentText = normalizeText(documentText);
+  const applied = applyPatch(normalizedDocumentText, patch, { fuzzFactor: 0 });
   if (applied === false) {
-    throw new Error("review-diff patch does not apply to the document on disk");
+    throw new Error("review-diff patch does not apply to the current document text");
   }
-  if (normalizeText(applied) === documentText) {
+  if (normalizeText(applied) === normalizedDocumentText) {
     throw new Error("review-diff patch does not change the target document");
   }
-  return documentText;
+}
+
+/** Validate an unopened document against its current disk bytes. */
+function validatePatchBeforeOpen(patch, documentPath) {
+  const documentText = fs.readFileSync(documentPath, "utf8");
+  validatePatchAgainstText(patch, documentText);
+  return normalizeText(documentText);
 }
 
 function request(
@@ -428,9 +439,9 @@ async function main() {
     );
   }
 
-  let diskBaselineText;
+  let patch;
   try {
-    diskBaselineText = validatePatchBeforeOpen(patchText, documentPath);
+    patch = parseReviewPatch(patchText, documentPath);
   } catch (error) {
     fail("PATCH_INVALID", errorText(error), 1, 400);
   }
@@ -454,6 +465,12 @@ async function main() {
   if (existing !== undefined) {
     documentId = requireString(existing.documentId, "documentId");
   } else {
+    let diskBaselineText;
+    try {
+      diskBaselineText = validatePatchBeforeOpen(patch, documentPath);
+    } catch (error) {
+      fail("PATCH_INVALID", errorText(error), 1, 400);
+    }
     if (
       declaredBaseline !== undefined &&
       declaredBaseline.toLowerCase() !== crypto.createHash("sha256").update(diskBaselineText, "utf8").digest("hex")
@@ -491,6 +508,17 @@ async function main() {
   const snapshot = requireString(liveBody.snapshot, "live document snapshot");
   const revision = requireRecord(liveBody.revision, "live document revision");
   const liveSha256 = requireString(revision.sha256, "live document SHA-256");
+
+  // An already-open document may contain unsaved editor text. Validate against
+  // the authority response, never against disk bytes, before submitting or
+  // focusing the review. The unopened path was prevalidated against disk
+  // before the open request and is checked again here for a race-safe exact
+  // snapshot.
+  try {
+    validatePatchAgainstText(patch, liveBody.content);
+  } catch (error) {
+    fail("PATCH_INVALID", errorText(error), 1, 400);
+  }
 
   if (
     declaredBaseline !== undefined &&
