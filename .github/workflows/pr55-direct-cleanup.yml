@@ -1,0 +1,372 @@
+name: PR55 direct code cleanup
+
+on:
+  push:
+    branches:
+      - feat/outstanding-issue-sweep
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: feat/outstanding-issue-sweep
+          fetch-depth: 0
+
+      - name: Remove proxy tests and bearer-auth implementation
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          def read(path: str) -> str:
+              return Path(path).read_text(encoding="utf-8")
+
+          def write(path: str, text: str) -> None:
+              Path(path).write_text(text, encoding="utf-8")
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              text = read(path)
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f"{path}: expected one occurrence, found {count}: {old[:80]!r}")
+              write(path, text.replace(old, new, 1))
+
+          # ------------------------------------------------------------------
+          # The Agent API is always unauthenticated and loopback-only. Remote
+          # access control belongs to the tunnel, not to a second app protocol.
+          # ------------------------------------------------------------------
+          config_path = "source/app/service-providers/config/get-config-template.ts"
+          text = read(config_path)
+          text = text.replace(
+              "export interface AgentApiConfig {\n  enabled: boolean;\n  port: number;\n  tokenEnvironmentVariable: string;\n}",
+              "export interface AgentApiConfig {\n  enabled: boolean;\n  port: number;\n}",
+          )
+          text = text.replace(
+              "      port: 27412,\n      tokenEnvironmentVariable: \"ZETTLR_AGENT_API_TOKEN\",\n",
+              "      port: 27412,\n",
+          )
+          if "tokenEnvironmentVariable" in text:
+              raise RuntimeError(f"{config_path}: token configuration remains")
+          write(config_path, text)
+
+          server_path = "source/app/service-providers/agent-api/http-server.ts"
+          text = read(server_path)
+          old_host = """      agentApi?: {
+                  enabled: boolean;
+                  port: number;
+                  tokenEnvironmentVariable: string;
+                };"""
+          if old_host not in text:
+              raise RuntimeError(f"{server_path}: AgentApiHost token shape not found")
+          text = text.replace(
+              old_host,
+              "      agentApi?: { enabled: boolean; port: number };",
+              1,
+          )
+
+          route_comment_start = text.index("/**\n * One route this server answers.")
+          route_interface = text.index("interface AgentApiRoute", route_comment_start)
+          text = (
+              text[:route_comment_start]
+              + "/** One route matched and dispatched by the server. */\n"
+              + text[route_interface:]
+          )
+          text = text.replace(
+              "  /** Answered before the token check. Only the specification document is. */\n  anonymous?: boolean;\n",
+              "",
+              1,
+          )
+          text = text.replace(
+              "  private readonly _requiredToken: string | undefined;\n  private readonly _tokenEnvironmentVariable: string;\n",
+              "",
+              1,
+          )
+
+          auth_init_start = text.index("    // Read once, at construction: a token")
+          auth_init_end = text.index("    // Load the OpenAPI YAML spec", auth_init_start)
+          text = text[:auth_init_start] + text[auth_init_end:]
+
+          listen_start = text.index("      this._server!.listen(config.port, \"127.0.0.1\", () => {")
+          log_start = text.index("        this._log.info(", listen_start)
+          resolve_start = text.index("        resolve(undefined);", log_start)
+          text = (
+              text[:log_start]
+              + "        this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${config.port}`);\n"
+              + text[resolve_start:]
+          )
+
+          auth_route_start = text.index("    // The specification is deliberately the one anonymous route.")
+          auth_route_end = text.index("    if (matched === undefined) {", auth_route_start)
+          text = text[:auth_route_start] + text[auth_route_end:]
+          text = text.replace(
+              "    // Decoded after the token check: a malformed escape is a caller's error to\n"
+              "    // be told about, not something an anonymous caller gets to provoke.\n",
+              "    // Decode each captured path parameter exactly once.\n",
+              1,
+          )
+
+          auth_method_start = text.index("  /**\n   * True when the request may proceed")
+          auth_method_end = text.index("  /**\n   * The first route", auth_method_start)
+          text = text[:auth_method_start] + text[auth_method_end:]
+
+          routes_getter_start = text.index("  /**\n   * The (method, path template) pairs")
+          routes_getter_end = text.index("  async shutdown()", routes_getter_start)
+          text = text[:routes_getter_start] + text[routes_getter_end:]
+
+          build_comment_start = text.index("  /**\n   * Everything this server serves")
+          build_method = text.index("  private buildRoutes(): AgentApiRoute[] {", build_comment_start)
+          text = (
+              text[:build_comment_start]
+              + "  /** All HTTP routes served by this provider. */\n"
+              + text[build_method:]
+          )
+          text = text.replace(", anonymous: true, handle:", ", handle:")
+
+          for forbidden in (
+              "tokenEnvironmentVariable",
+              "_requiredToken",
+              "_tokenEnvironmentVariable",
+              "isAuthorized",
+              "anonymous: true",
+              "UNAUTHORIZED",
+              "Bearer ",
+              "bearer token",
+          ):
+              if forbidden in text:
+                  raise RuntimeError(f"{server_path}: auth residue remains: {forbidden}")
+          write(server_path, text)
+
+          api_types_path = "source/types/common/agent-api.ts"
+          text = read(api_types_path)
+          error_start = text.index("/**\n * Every error code the server may emit")
+          error_end = text.index("\nexport interface AgentError {", error_start)
+          error_union = """export type AgentErrorCode =
+            | \"APP_NOT_RUNNING\"
+            | \"PROTOCOL_MISMATCH\"
+            | \"NO_FOCUSED_DOCUMENT\"
+            | \"DOCUMENT_NOT_FOUND\"
+            | \"DOCUMENT_CLOSED\"
+            | \"REVISION_MISMATCH\"
+            | \"REVIEW_GENERATION_MISMATCH\"
+            | \"REVIEW_NOT_FOUND\"
+            | \"REVIEW_INVALIDATED\"
+            | \"PATCH_INVALID\"
+            | \"PATCH_NOT_APPLICABLE\"
+            | \"PACKET_NOT_RETRACTABLE\"
+            | \"CHUNK_NOT_FOUND\"
+            | \"IDEMPOTENCY_CONFLICT\"
+            | \"REQUEST_TOO_LARGE\"
+            | \"REQUEST_BODY_TIMEOUT\"
+            | \"SEARCH_TIMEOUT\"
+            | \"METHOD_NOT_FOUND\"
+            | \"INVALID_PARAMS\"
+            | \"INTERNAL_ERROR\";
+          """
+          text = text[:error_start] + error_union + text[error_end:]
+          if "AGENT_ERROR_CODES" in text or "UNAUTHORIZED" in text:
+              raise RuntimeError(f"{api_types_path}: obsolete runtime error registry remains")
+          write(api_types_path, text)
+
+          openapi_path = "source/app/service-providers/agent-api/openapi.yaml"
+          lines = read(openapi_path).splitlines(keepends=True)
+          output: list[str] = []
+          i = 0
+          while i < len(lines):
+              line = lines[i]
+              bare = line.rstrip("\n")
+              if bare == "  securitySchemes:":
+                  i += 1
+                  while i < len(lines) and lines[i].rstrip("\n") != "  schemas:":
+                      i += 1
+                  if i >= len(lines):
+                      raise RuntimeError(f"{openapi_path}: securitySchemes did not end at schemas")
+                  output.append(lines[i])
+                  i += 1
+                  continue
+              if bare == "security:":
+                  i += 1
+                  while i < len(lines):
+                      next_bare = lines[i].rstrip("\n")
+                      if next_bare and not next_bare.startswith((" ", "\t")):
+                          break
+                      i += 1
+                  continue
+              if bare.strip() == "security: []" or bare.strip() == "- UNAUTHORIZED":
+                  i += 1
+                  continue
+              match_401 = re.match(r"^(\s+)'401':\s*$", bare)
+              if match_401 is not None:
+                  block_indent = len(match_401.group(1))
+                  i += 1
+                  while i < len(lines):
+                      next_bare = lines[i].rstrip("\n")
+                      if next_bare:
+                          next_indent = len(next_bare) - len(next_bare.lstrip())
+                          if next_indent <= block_indent:
+                              break
+                      i += 1
+                  continue
+              output.append(line)
+              i += 1
+          text = "".join(output)
+          for forbidden in ("securitySchemes", "bearerToken", "UNAUTHORIZED", "'401':"):
+              if forbidden in text:
+                  raise RuntimeError(f"{openapi_path}: auth residue remains: {forbidden}")
+          write(openapi_path, text)
+
+          boot_path = "scripts/desktop/zettlr-pandoc-boot"
+          text = read(boot_path)
+          marker = "# Launched through `direnv exec`"
+          marker_at = text.index(marker)
+          block_start = text.rfind("#\n", 0, marker_at)
+          launch_at = text.index("setsid sh -c", marker_at)
+          text = text[:block_start] + text[launch_at:]
+          text = text.replace(
+              "setsid sh -c 'repo=\"$1\"; shift; cd -- \"$repo\" && exec direnv exec \"$repo\" just launch-desktop \"$@\"' sh \"$repo\" \"$@\" \\",
+              "setsid sh -c 'repo=\"$1\"; shift; cd -- \"$repo\" && exec just launch-desktop \"$@\"' sh \"$repo\" \"$@\" \\",
+              1,
+          )
+          if "direnv" in text or "ZETTLR_AGENT_API_TOKEN" in text:
+              raise RuntimeError(f"{boot_path}: authentication launcher residue remains")
+          write(boot_path, text)
+
+          e2e_server_path = "test/agent-http-api-e2e-server.ts"
+          text = read(e2e_server_path)
+          text, removed = re.subn(
+              r'\n\s*tokenEnvironmentVariable: \"ZETTLR_REVIEW_DIFF_TEST_TOKEN\",',
+              "",
+              text,
+          )
+          if removed != 1:
+              raise RuntimeError(f"{e2e_server_path}: expected one token field, removed {removed}")
+          text = text.replace("# E2E certification", "# E2E API")
+          write(e2e_server_path, text)
+
+          cross_process_path = "test/agent-http-api-e2e-cross-process.spec.ts"
+          text = read(cross_process_path)
+          env_start = text.index("        // The child inherits this process's environment")
+          env_end_marker = "        })(),\n"
+          env_end = text.index(env_end_marker, env_start) + len(env_end_marker)
+          text = text[:env_start] + text[env_end:]
+          write(cross_process_path, text)
+
+          # ------------------------------------------------------------------
+          # Keep live HTTP behavior and schema checks over live responses. Drop
+          # source-reading, registry mirroring, route-table self-certification,
+          # and tests for the rejected bearer-auth mode.
+          # ------------------------------------------------------------------
+          api_test_path = "test/agent-http-api.spec.ts"
+          text = read(api_test_path)
+          text = text.replace(
+              'import { AGENT_ERROR_CODES, type AgentEvent } from "@dts/common/agent-api";',
+              'import { type AgentEvent } from "@dts/common/agent-api";',
+              1,
+          )
+
+          ambient_start = text.index("  // The suite owns this variable outright.")
+          ambient_end = text.index("  function descriptorFor", ambient_start)
+          text = text[:ambient_start] + text[ambient_end:]
+
+          bearer_start = text.index('  describe("bearer token enforcement", function () {')
+          bearer_end = text.index('  it("serves any loopback caller when no token is configured"', bearer_start)
+          text = text[:bearer_start] + text[bearer_end:]
+
+          duplicate_unauth_start = text.index('  it("serves any loopback caller when no token is configured"')
+          duplicate_unauth_end = text.index('  it("boots without a listener when the configured port is taken"', duplicate_unauth_start)
+          text = text[:duplicate_unauth_start] + text[duplicate_unauth_end:]
+
+          error_registry_start = text.index('  it("publishes exactly the error codes the server can emit"')
+          search_registry_start = text.index('  it("publishes the search bounds the server actually enforces"', error_registry_start)
+          text = text[:error_registry_start] + text[search_registry_start:]
+          search_registry_start = text.index('  it("publishes the search bounds the server actually enforces"')
+          next_live_test = text.index('  it("GET /openapi.yaml serves the OpenAPI specification without auth"', search_registry_start)
+          text = text[:search_registry_start] + text[next_live_test:]
+
+          conformance_start = text.index(
+              "  // ============================================================================\n"
+              "  // OpenAPI conformance (issues #40/#43)\n"
+          )
+          live_response_test = text.index(
+              '    it("serves the remaining declared bodies matching their schemas"',
+              conformance_start,
+          )
+          text = (
+              text[:conformance_start]
+              + '  describe("live OpenAPI response conformance", function () {\n'
+              + text[live_response_test:]
+          )
+
+          text, token_fields = re.subn(
+              r'\n\s*tokenEnvironmentVariable: \"[^\"]+\",',
+              "",
+              text,
+          )
+          if token_fields < 1:
+              raise RuntimeError(f"{api_test_path}: expected token fixture fields")
+          for forbidden in (
+              "AGENT_ERROR_CODES",
+              "tokenEnvironmentVariable",
+              "ZETTLR_AGENT_API_TOKEN",
+              "ZETTLR_TEST_AGENT_API_TOKEN",
+              "bearer token",
+              "Authorization: Bearer",
+              "httpProvider.routes",
+              "specOperations()",
+              "readFileSync(\n        path.join(__dirname, \"../source/types/common/agent-api.ts\")",
+          ):
+              if forbidden in text:
+                  raise RuntimeError(f"{api_test_path}: certification/auth residue remains: {forbidden}")
+          write(api_test_path, text)
+
+          # The temporary workflow is excluded from this scan because it names
+          # the strings it removes. Production, tests, and maintained docs must
+          # contain none of them after this commit.
+          roots = [
+              Path("source"),
+              Path("scripts"),
+              Path("test"),
+              Path("e2e"),
+              Path("AGENTS.md"),
+              Path("justfile"),
+          ]
+          forbidden = [
+              "ZETTLR_AGENT_API_TOKEN",
+              "ZETTLR_REVIEW_DIFF_TEST_TOKEN",
+              "tokenEnvironmentVariable",
+              "_requiredToken",
+              "_tokenEnvironmentVariable",
+              "isAuthorized",
+              "bearerToken",
+              "UNAUTHORIZED",
+              "agentApiToken",
+              "direnv exec",
+          ]
+          for root in roots:
+              files = [root] if root.is_file() else [p for p in root.rglob("*") if p.is_file()]
+              for path in files:
+                  try:
+                      source = path.read_text(encoding="utf-8")
+                  except UnicodeDecodeError:
+                      continue
+                  for needle in forbidden:
+                      if needle in source:
+                          raise RuntimeError(f"{path}: forbidden residue {needle}")
+          PY
+
+          git diff --check
+          git status --short
+
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "refactor: remove proxy tests and application authentication"
+          git push origin HEAD:feat/outstanding-issue-sweep
