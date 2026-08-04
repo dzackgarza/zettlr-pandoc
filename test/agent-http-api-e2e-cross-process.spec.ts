@@ -133,15 +133,6 @@ describe("Agent HTTP API cross-process E2E", function () {
       {
         cwd: path.join(__dirname, ".."),
         stdio: ["ignore", "pipe", "pipe", "ipc"],
-        // The child inherits this process's environment, and a developer whose
-        // ~/.envrc carries a real token would hand the server one — after
-        // which every request below, none of which authenticate, is refused.
-        // The unauthenticated loopback posture is what this suite exercises.
-        env: (() => {
-          const inherited = { ...process.env };
-          delete inherited.ZETTLR_AGENT_API_TOKEN;
-          return inherited;
-        })(),
       },
     );
 

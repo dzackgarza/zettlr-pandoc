@@ -58,7 +58,6 @@ export interface LanguageToolIgnoredRuleEntry {
 export interface AgentApiConfig {
   enabled: boolean;
   port: number;
-  tokenEnvironmentVariable: string;
 }
 
 export interface ReferenceConfig {
@@ -618,7 +617,6 @@ export function getConfigTemplate(): ConfigOptions {
     agentApi: {
       enabled: true,
       port: 27412,
-      tokenEnvironmentVariable: "ZETTLR_AGENT_API_TOKEN",
     },
     references: {
       authorityReportDebounceMs: 500,

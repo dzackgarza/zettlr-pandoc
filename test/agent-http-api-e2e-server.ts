@@ -133,7 +133,6 @@ async function main(): Promise<void> {
         agentApi: {
           enabled: true,
           port: httpPort,
-          tokenEnvironmentVariable: "ZETTLR_REVIEW_DIFF_TEST_TOKEN",
         },
       }),
       addPath: (_path: string) => false,
@@ -194,7 +193,7 @@ async function main(): Promise<void> {
   const samplePath = path.join(scratch, "sample.md");
   writeFileSync(
     samplePath,
-    "# E2E certification\n\nOriginal content.\n",
+    "# E2E API\n\nOriginal content.\n",
     "utf8",
   );
   await provider.getDocument(samplePath);

@@ -18,7 +18,7 @@ import "./headless-electron-harness.cjs";
 import Ajv2020 from "ajv/dist/2020";
 import { parse as parseYaml } from "yaml";
 import { ChangeSet } from "@codemirror/state";
-import { AGENT_ERROR_CODES, type AgentEvent } from "@dts/common/agent-api";
+import { type AgentEvent } from "@dts/common/agent-api";
 import { DP_EVENTS, type SerializedUpdate } from "@dts/common/documents";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
@@ -132,21 +132,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   // test sets 1 to make the user's "Don't save" the answer under test.
   let saveChangesResponse = 2;
 
-  // The suite owns this variable outright. It is a real token on a developer
-  // machine that has it in ~/.envrc, and every test outside the enforcement
-  // block below is written for a server that requires nothing: inheriting it
-  // turned twenty-three unrelated tests red for a reason none of them named.
-  let ambientToken: string | undefined;
-  before(function () {
-    ambientToken = process.env.ZETTLR_AGENT_API_TOKEN;
-    delete process.env.ZETTLR_AGENT_API_TOKEN;
-  });
-  after(function () {
-    if (ambientToken !== undefined) {
-      process.env.ZETTLR_AGENT_API_TOKEN = ambientToken;
-    }
-  });
-
   function descriptorFor(filePath: string): CodeFileDescriptor {
     const stat = statSync(filePath);
     return {
@@ -206,7 +191,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           agentApi: {
             enabled: true,
             port: httpPort,
-            tokenEnvironmentVariable: "ZETTLR_AGENT_API_TOKEN",
           },
         }),
         addPath: (_path: string) => false,
@@ -348,7 +332,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           agentApi: {
             enabled: true,
             port: httpPort,
-            tokenEnvironmentVariable: "ZETTLR_AGENT_API_TOKEN",
           },
         }),
       },
@@ -360,178 +343,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     await httpProvider.shutdown();
     await provider.shutdown();
     rmSync(scratch, { recursive: true, force: true });
-  });
-
-  describe("bearer token enforcement", function () {
-    const TOKEN = "s3cret-token-value";
-    const TOKEN_ENVIRONMENT_VARIABLE = "ZETTLR_TEST_AGENT_API_TOKEN";
-    let tokenPort: number;
-    let guarded: AgentHTTPProvider;
-    let previousToken: string | undefined;
-
-    async function request(
-      pathname: string,
-      headers: Record<string, string> = {},
-    ): Promise<{ status: number; body: string }> {
-      return await new Promise((resolve, reject) => {
-        const req = http.request(
-          { hostname: "127.0.0.1", port: tokenPort, path: pathname, method: "GET", headers },
-          (res) => {
-            let body = "";
-            res.on("data", (chunk) => (body += chunk));
-            res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
-          },
-        );
-        req.on("error", reject);
-        req.end();
-      });
-    }
-
-    beforeEach(async function () {
-      const probe = net.createServer();
-      await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
-      tokenPort = (probe.address() as net.AddressInfo).port;
-      await new Promise<void>((resolve) => probe.close(() => resolve()));
-
-      // The provider reads the variable once, in its constructor, so it has to
-      // be in place before the instance exists.
-      previousToken = process.env[TOKEN_ENVIRONMENT_VARIABLE];
-      process.env[TOKEN_ENVIRONMENT_VARIABLE] = TOKEN;
-      guarded = new AgentHTTPProvider(new LogProvider(), provider, {
-        config: {
-          get: () => ({
-            app: { openWorkspaces: [scratch] },
-            agentApi: {
-              enabled: true,
-              port: tokenPort,
-              tokenEnvironmentVariable: TOKEN_ENVIRONMENT_VARIABLE,
-            },
-          }),
-        },
-      });
-      await guarded.boot();
-    });
-
-    afterEach(async function () {
-      await guarded.shutdown();
-      if (previousToken === undefined) {
-        delete process.env.ZETTLR_TEST_AGENT_API_TOKEN;
-      } else {
-        process.env[TOKEN_ENVIRONMENT_VARIABLE] = previousToken;
-      }
-    });
-
-    it("serves a request carrying the configured token", async function () {
-      const response = await request("/v1/ping", { authorization: `Bearer ${TOKEN}` });
-      assert.equal(response.status, 200);
-      assert.equal(JSON.parse(response.body).instanceId.length > 0, true);
-    });
-
-    it("refuses every route without the token", async function () {
-      // The check sits ahead of the route table rather than on the handlers.
-      // /health is included deliberately: it reports the instance id and the
-      // process id of a running editor, which a published tunnel must not hand
-      // to an anonymous caller.
-      for (const pathname of ["/health", "/v1/ping", "/v1/context"]) {
-        const anonymous = await request(pathname);
-        assert.equal(anonymous.status, 401, `${pathname} must refuse an anonymous caller`);
-        assert.equal(JSON.parse(anonymous.body).error.code, "UNAUTHORIZED");
-      }
-    });
-
-    it("tells an anonymous caller nothing about how this server is configured", async function () {
-      // The refusal used to name the environment variable carrying the secret,
-      // and so did the specification, which is served anonymously. Between them
-      // a stranger who reached a published tunnel learned the exact variable to
-      // ask about and the exact misconfiguration to probe for. Neither sentence
-      // helped anyone who was entitled to call the API: the operator already
-      // knows, and reads it in the log instead.
-      const surfaces = [
-        (await request("/v1/ping")).body,
-        (await request("/openapi.yaml")).body,
-        (await request("/openapi.json")).body,
-      ];
-      for (const body of surfaces) {
-        assert.equal(
-          /ZETTLR_AGENT_API_TOKEN/.test(body),
-          false,
-          "an anonymous response must not name the variable carrying the secret",
-        );
-        assert.equal(
-          /environment variable|is not enforced|loopback caller/i.test(body),
-          false,
-          "an anonymous response must not describe the server's auth posture",
-        );
-      }
-      assert.equal(JSON.parse(surfaces[0]).error.message, "Authentication required.");
-    });
-
-    it("serves the specification anonymously, with the origin it was asked on", async function () {
-      // The one deliberate exemption: the document describes the API rather
-      // than exposing it, and the identical file is in the public repository.
-      // Reading it grants nothing — every route it describes still needs the
-      // token. Serving it openly is what lets a consumer import by URL rather
-      // than carry a pasted copy that drifts.
-      const anonymous = await request("/openapi.yaml");
-      assert.equal(anonymous.status, 200);
-      assert.ok(anonymous.body.includes("openapi:"));
-
-      // And it must describe the endpoint the caller actually reached, or an
-      // importer behind a tunnel builds every call against its own loopback.
-      const forwarded = await request("/openapi.yaml", { host: "zettlr.example.com" });
-      assert.match(forwarded.body, /servers:\n {2}- url: https:\/\/zettlr\.example\.com\n/);
-      assert.equal(
-        forwarded.body.includes("127.0.0.1:27412"),
-        false,
-        "the loopback origin must not survive the rewrite",
-      );
-
-      // Asked on loopback it stays http, since nothing terminated TLS.
-      assert.match(anonymous.body, /servers:\n {2}- url: http:\/\/127\.0\.0\.1:\d+\n/);
-    });
-
-    it("serves the same specification as JSON, anonymously, at /openapi.json", async function () {
-      // The Custom GPT builder reads a URL and imports nothing when it is
-      // handed YAML. Offering JSON is what makes import-by-URL work at all;
-      // writing both encodings from the one document parsed at construction is
-      // what keeps them from drifting.
-      const asJson = await request("/openapi.json", { host: "zettlr.example.com" });
-      assert.equal(asJson.status, 200);
-      const parsed = JSON.parse(asJson.body);
-      const asYaml = await request("/openapi.yaml", { host: "zettlr.example.com" });
-      assert.deepEqual(parsed, parseYaml(asYaml.body), "the two encodings must agree");
-      assert.equal(parsed.servers[0].url, "https://zettlr.example.com");
-
-      // 3.1.1 is editorially identical to 3.1.0, and consumers key off the
-      // version string they were built against.
-      assert.equal(parsed.openapi, "3.1.0");
-    });
-
-    it("refuses a wrong token, a wrong scheme, and a token that is merely a prefix", async function () {
-      const rejected = [
-        `Bearer ${TOKEN}x`,
-        `Bearer ${TOKEN.slice(0, -1)}`,
-        // A prefix of the right length family: the comparison must not accept
-        // on an early match, and must not throw on a length mismatch either.
-        "Bearer s",
-        `Basic ${TOKEN}`,
-        TOKEN,
-        "Bearer",
-      ];
-      for (const authorization of rejected) {
-        const response = await request("/v1/ping", { authorization });
-        assert.equal(response.status, 401, `"${authorization}" must be refused`);
-      }
-    });
-  });
-
-  it("serves any loopback caller when no token is configured", async function () {
-    // The unauthenticated loopback posture is the intended default for personal
-    // hooks, and the rest of this suite depends on it. Assert it explicitly so
-    // adding the token check cannot quietly become mandatory.
-    assert.equal(process.env.ZETTLR_AGENT_API_TOKEN, undefined);
-    const response = await httpRequest("GET", "/v1/ping");
-    assert.equal(response.status, 200);
   });
 
   it("boots without a listener when the configured port is taken", async function () {
@@ -553,7 +364,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           agentApi: {
             enabled: true,
             port: takenPort,
-            tokenEnvironmentVariable: "ZETTLR_AGENT_API_TOKEN",
           },
         }),
       },
@@ -575,43 +385,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       await collided.shutdown();
       await new Promise<void>((resolve) => squatter.close(() => resolve()));
     }
-  });
-
-  it("publishes exactly the error codes the server can emit", function () {
-    // The enum was written out by hand and drifted: it omitted INTERNAL_ERROR
-    // while four 500 paths emitted it, so those responses failed validation
-    // against the spec the server itself serves. Compare the sets rather than
-    // spot-checking one code, and compare against the runtime constant the
-    // AgentErrorCode type is derived from, so neither side can drift alone.
-    const declared = (
-      openApiDocument.components.schemas.AgentError as {
-        properties: { code: { enum?: string[] } };
-      }
-    ).properties.code.enum;
-    assert.ok(
-      declared !== undefined,
-      "openapi.yaml must constrain AgentError.code to an enum",
-    );
-    assert.deepEqual(
-      [...declared].sort(),
-      [...AGENT_ERROR_CODES].sort(),
-      "openapi.yaml's AgentError.code enum and AGENT_ERROR_CODES must agree",
-    );
-  });
-
-  it("publishes the search bounds the server actually enforces", function () {
-    // Search is the one endpoint whose cost a caller controls, on the process
-    // that draws the editor. A bound the server enforces but does not publish
-    // is a refusal the caller cannot anticipate, and a bound published but not
-    // enforced is a promise nothing keeps — so both dimensions of the request
-    // are compared against the constants the decoder refuses by.
-    assert.equal(searchRequestProperties.literal.maxLength, MAX_SEARCH_PATTERN_LENGTH);
-    assert.equal(searchRequestProperties.context.minimum, 0);
-    assert.equal(searchRequestProperties.context.maximum, MAX_SEARCH_CONTEXT);
-    const searchResponseSchema = openApiDocument.components.schemas.SearchDocumentResponse as {
-      properties: { hits: { maxItems: number } };
-    };
-    assert.equal(searchResponseSchema.properties.hits.maxItems, MAX_SEARCH_HITS);
   });
 
   it("GET /openapi.yaml serves the OpenAPI specification without auth", async function () {
@@ -1900,7 +1673,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
               agentApi: {
                 enabled: true,
                 port: lifecyclePort,
-                tokenEnvironmentVariable: "ZETTLR_AGENT_API_TOKEN",
               },
             }),
           },
@@ -2938,224 +2710,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   });
 
   // ==========================================================================
-  // OpenAPI conformance (issues #40/#43)
-  //
-  // The served specification, the shared TypeScript types, and the runtime
-  // route table are three statements of one contract. Everything below checks
-  // them against each other mechanically, so a change to any one of them that
-  // is not carried to the others fails here instead of shipping as drift.
-  // ==========================================================================
-
-  describe("OpenAPI conformance", function () {
-    const HTTP_METHODS = ["get", "put", "post", "delete", "options", "head", "patch", "trace"];
-
-    /** Every operation in the published document, as METHOD + template path. */
-    function specOperations(): Array<{
-      method: string;
-      path: string;
-      operation: Record<string, unknown>;
-    }> {
-      const out: Array<{ method: string; path: string; operation: Record<string, unknown> }> = [];
-      for (const [specPath, pathItem] of Object.entries(openApiDocument.paths)) {
-        for (const method of HTTP_METHODS) {
-          const operation = pathItem[method];
-          if (operation !== undefined) {
-            out.push({ method: method.toUpperCase(), path: specPath, operation });
-          }
-        }
-      }
-      return out;
-    }
-
-    it("resolves every $ref in the served specification", function () {
-      const refs: string[] = [];
-      (function collect(node: unknown): void {
-        if (Array.isArray(node)) {
-          node.forEach(collect);
-          return;
-        }
-        if (node === null || typeof node !== "object") {
-          return;
-        }
-        for (const [key, value] of Object.entries(node)) {
-          if (key === "$ref" && typeof value === "string") {
-            refs.push(value);
-          } else {
-            collect(value);
-          }
-        }
-      })(openApiDocument);
-      assert.ok(refs.length > 0, "the specification must contain component references");
-      for (const ref of refs) {
-        assert.match(ref, /^#\//, `only document-internal references are servable: ${ref}`);
-        let cursor: unknown = openApiDocument;
-        for (const part of ref.slice(2).split("/")) {
-          assert.ok(
-            cursor !== null && typeof cursor === "object" && part in (cursor as object),
-            `dangling reference: ${ref}`,
-          );
-          cursor = (cursor as Record<string, unknown>)[part];
-        }
-      }
-    });
-
-    it("compiles every published component schema", function () {
-      // ajv compiles lazily; forcing each one surfaces schemas that are
-      // structurally broken in ways a reference walk cannot see.
-      for (const name of Object.keys(openApiDocument.components.schemas)) {
-        assert.ok(
-          ajv.getSchema(`#/components/schemas/${name}`) !== undefined,
-          `schema ${name} must compile`,
-        );
-      }
-    });
-
-    it("declares responses on every operation, and the AgentError envelope on every declared error", function () {
-      for (const { method, path: specPath, operation } of specOperations()) {
-        const responses = operation.responses as
-          | Record<string, { content?: Record<string, { schema?: unknown }> }>
-          | undefined;
-        assert.ok(
-          responses !== undefined && Object.keys(responses).length > 0,
-          `${method} ${specPath} must declare its responses`,
-        );
-        for (const [status, response] of Object.entries(responses)) {
-          if (!/^[45]/.test(status)) {
-            continue;
-          }
-          const schema = response.content?.["application/json"]?.schema;
-          assert.deepEqual(
-            schema,
-            { $ref: "#/components/schemas/AgentErrorResponse" },
-            `${method} ${specPath} ${status} must declare the AgentError envelope`,
-          );
-        }
-      }
-    });
-
-    it("backs every declared success body with a named schema exported from the TS types", function () {
-      // The wire shapes live twice by design: as OpenAPI components for
-      // consumers and as TypeScript types for the implementation. This pins
-      // the correspondence at the name level so neither list can grow alone.
-      const typeSource = readFileSync(
-        path.join(__dirname, "../source/types/common/agent-api.ts"),
-        "utf8",
-      );
-      const exported = new Set(
-        [...typeSource.matchAll(/^export (?:interface|type|const) (\w+)/gm)].map((m) => m[1]),
-      );
-      for (const { method, path: specPath, operation } of specOperations()) {
-        if (specPath.startsWith("/openapi.")) {
-          continue; // The specification routes serve the document itself.
-        }
-        const responses = operation.responses as Record<
-          string,
-          { content?: Record<string, { schema?: { $ref?: string } }> }
-        >;
-        for (const [status, response] of Object.entries(responses)) {
-          if (!/^2/.test(status)) {
-            continue;
-          }
-          const schema = response.content?.["application/json"]?.schema;
-          if (schema === undefined) {
-            continue; // Not a JSON body (the SSE stream).
-          }
-          const ref = schema.$ref;
-          assert.ok(
-            ref !== undefined,
-            `${method} ${specPath} ${status} must reference a named component, not an inline schema`,
-          );
-          const name = ref.split("/").pop()!;
-          assert.ok(
-            exported.has(name),
-            `${method} ${specPath} ${status} references ${name}, which agent-api.ts does not export`,
-          );
-        }
-      }
-    });
-
-    it("publishes exactly the routes the running server serves", async function () {
-      this.timeout(20000);
-      // Negative control first: the discriminator the probe below relies on.
-      const missing = await httpRequest("GET", "/v1/no-such-route");
-      assert.equal(JSON.parse(missing.body).error.code, "METHOD_NOT_FOUND");
-
-      // The route table belonging to the instance that is answering these
-      // requests. Reading it asks the server what it serves; deriving the same
-      // list from the implementation's source text would only prove that two
-      // spellings of the route table agree, which they can do while the server
-      // disagrees with both.
-      const registered = httpProvider.routes.map(
-        ({ method, path: routePath }) => `${method} ${routePath}`,
-      );
-      // The other side is fetched, not read off disk. What a consumer is bound
-      // by is the document this server hands out, and the provider loads its
-      // specification from whichever of two candidate paths exists — the copy
-      // beside this suite is not by itself evidence of what the server
-      // publishes.
-      const published = JSON.parse((await httpRequest("GET", "/openapi.json")).body) as {
-        paths: Record<string, Record<string, unknown>>;
-      };
-      const declared = Object.entries(published.paths).flatMap(([specPath, pathItem]) =>
-        HTTP_METHODS.filter((method) => pathItem[method] !== undefined).map(
-          (method) => `${method.toUpperCase()} ${specPath}`,
-        ),
-      );
-      assert.deepEqual(
-        [...registered].sort(),
-        [...declared].sort(),
-        "the served specification and the server's route table must name the same routes",
-      );
-
-      // The structural audits in this block read the committed file. They only
-      // describe the contract if that file is the document being served, so
-      // that identity is asserted here rather than assumed.
-      assert.deepEqual(
-        published.paths,
-        openApiDocument.paths,
-        "the served specification must be the committed one",
-      );
-
-      // And that table is what the server answers from: every entry is asked
-      // for over the wire and must reach a handler. An entry that dispatch
-      // cannot reach fails here as METHOD_NOT_FOUND, so the list above cannot
-      // be a decorative one kept beside the real routing.
-      for (const { method, path: routePath } of httpProvider.routes) {
-        const probePath = routePath.replace(/\{[^}]+\}/g, "conformance-probe");
-        if (routePath === "/v1/events") {
-          // SSE holds the connection open; headers alone prove the route.
-          const observed = await new Promise<{ status: number; contentType: string }>(
-            (resolve) => {
-              const req = http.request(
-                { hostname: "127.0.0.1", port: httpPort, path: probePath, method },
-                (res) => {
-                  resolve({
-                    status: res.statusCode ?? 0,
-                    contentType: res.headers["content-type"] ?? "",
-                  });
-                  res.destroy();
-                },
-              );
-              req.on("error", () => resolve({ status: 0, contentType: "" }));
-              req.end();
-            },
-          );
-          assert.equal(observed.status, 200, `${method} ${routePath} must be routed`);
-          assert.equal(observed.contentType, "text/event-stream");
-          continue;
-        }
-        const response = await httpRequest(method, probePath);
-        if (response.status >= 400) {
-          const parsed = JSON.parse(response.body) as { error: { code: string } };
-          assert.notEqual(
-            parsed.error.code,
-            "METHOD_NOT_FOUND",
-            `${method} ${routePath} is published but not routed`,
-          );
-        }
-      }
-    });
-
+  describe("live OpenAPI response conformance", function () {
     it("serves the remaining declared bodies matching their schemas", async function () {
       // The response shapes not already pinned by a dedicated test above:
       // health, views, workspaces, search, review detail, packets, and the

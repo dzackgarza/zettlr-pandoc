@@ -699,40 +699,27 @@ export interface ClearReviewResponse {
 // Section 12: Error codes
 // ============================================================================
 
-/**
- * Every error code the server may emit, as a runtime value.
- *
- * This is the single source of truth: `AgentErrorCode` is derived from it, and
- * a conformance test asserts openapi.yaml's `AgentError.code` enum lists exactly
- * these. Publishing the enum by hand let it drift — it omitted INTERNAL_ERROR
- * while the server emitted that code from four separate 500 paths, so those
- * responses contradicted the spec agents validate against.
- */
-export const AGENT_ERROR_CODES = [
-  "APP_NOT_RUNNING",
-  "PROTOCOL_MISMATCH",
-  "NO_FOCUSED_DOCUMENT",
-  "DOCUMENT_NOT_FOUND",
-  "DOCUMENT_CLOSED",
-  "REVISION_MISMATCH",
-  "REVIEW_GENERATION_MISMATCH",
-  "REVIEW_NOT_FOUND",
-  "REVIEW_INVALIDATED",
-  "PATCH_INVALID",
-  "PATCH_NOT_APPLICABLE",
-  "PACKET_NOT_RETRACTABLE",
-  "CHUNK_NOT_FOUND",
-  "IDEMPOTENCY_CONFLICT",
-  "REQUEST_TOO_LARGE",
-  "REQUEST_BODY_TIMEOUT",
-  "SEARCH_TIMEOUT",
-  "METHOD_NOT_FOUND",
-  "INVALID_PARAMS",
-  "UNAUTHORIZED",
-  "INTERNAL_ERROR",
-] as const;
-
-export type AgentErrorCode = (typeof AGENT_ERROR_CODES)[number];
+export type AgentErrorCode =
+  | "APP_NOT_RUNNING"
+  | "PROTOCOL_MISMATCH"
+  | "NO_FOCUSED_DOCUMENT"
+  | "DOCUMENT_NOT_FOUND"
+  | "DOCUMENT_CLOSED"
+  | "REVISION_MISMATCH"
+  | "REVIEW_GENERATION_MISMATCH"
+  | "REVIEW_NOT_FOUND"
+  | "REVIEW_INVALIDATED"
+  | "PATCH_INVALID"
+  | "PATCH_NOT_APPLICABLE"
+  | "PACKET_NOT_RETRACTABLE"
+  | "CHUNK_NOT_FOUND"
+  | "IDEMPOTENCY_CONFLICT"
+  | "REQUEST_TOO_LARGE"
+  | "REQUEST_BODY_TIMEOUT"
+  | "SEARCH_TIMEOUT"
+  | "METHOD_NOT_FOUND"
+  | "INVALID_PARAMS"
+  | "INTERNAL_ERROR";
 
 export interface AgentError {
   code: AgentErrorCode;

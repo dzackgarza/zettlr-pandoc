@@ -450,11 +450,7 @@ function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalReques
 export interface AgentApiHost {
   config: {
     get: () => {
-      agentApi?: {
-        enabled: boolean;
-        port: number;
-        tokenEnvironmentVariable: string;
-      };
+      agentApi?: { enabled: boolean; port: number };
       app: { openWorkspaces: string[] };
     };
   };
@@ -468,21 +464,10 @@ interface RouteContext {
   params: Record<string, string>;
 }
 
-/**
- * One route this server answers.
- *
- * `path` is the OpenAPI path template, spelled exactly as openapi.yaml spells
- * it, and the matcher is compiled from that same string. The published
- * document and the dispatcher therefore cannot disagree about what a route is
- * called: there is one spelling, and `AgentHTTPProvider.routes` hands the list
- * back so a caller — the conformance test among them — can ask the running
- * server what it serves instead of guessing from the source text.
- */
+/** One route matched and dispatched by the server. */
 interface AgentApiRoute {
   method: string;
   path: string;
-  /** Answered before the token check. Only the specification document is. */
-  anonymous?: boolean;
   handle: (ctx: RouteContext) => void | Promise<void>;
 }
 
@@ -527,8 +512,6 @@ export default class AgentHTTPProvider extends ProviderContract {
    * parses.
    */
   private readonly _openApiSpecification: Document;
-  private readonly _requiredToken: string | undefined;
-  private readonly _tokenEnvironmentVariable: string;
   /** The one route table. Dispatch matches against these entries and nothing else. */
   private readonly _routes: CompiledRoute[];
 
@@ -545,18 +528,6 @@ export default class AgentHTTPProvider extends ProviderContract {
   ) {
     super();
     this._instanceId = crypto.randomUUID();
-    // Read once, at construction: a token that appears or changes mid-run would
-    // mean the same server answered two different security postures.
-    const agentApiConfig = this._app.config.get().agentApi;
-    if (agentApiConfig === undefined) {
-      throw new Error("Agent API configuration is required");
-    }
-    this._tokenEnvironmentVariable = agentApiConfig.tokenEnvironmentVariable;
-    const configuredToken = process.env[this._tokenEnvironmentVariable];
-    this._requiredToken =
-      configuredToken === undefined || configuredToken.length === 0
-        ? undefined
-        : configuredToken;
     // Load the OpenAPI YAML spec (dev: sibling to this file; packaged: assets/openapi.yaml)
     const candidatePaths = [
       path.join(__dirname, "openapi.yaml"),
@@ -621,13 +592,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         resolve(error);
       });
       this._server!.listen(config.port, "127.0.0.1", () => {
-        this._log.info(
-          `[AgentHTTPProvider] Listening on http://127.0.0.1:${config.port} ` +
-            (this._requiredToken === undefined
-              ? `(no ${this._tokenEnvironmentVariable} set: any loopback caller is served without a token. ` +
-                "Do not expose this port through a tunnel or proxy in this mode.)"
-              : "(bearer token required)"),
-        );
+        this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${config.port}`);
         resolve(undefined);
       });
     });
@@ -694,14 +659,6 @@ export default class AgentHTTPProvider extends ProviderContract {
   /** Whether the HTTP listener is bound. False after a refused bind. */
   public get isListening(): boolean {
     return this._server !== undefined;
-  }
-
-  /**
-   * The (method, path template) pairs this server dispatches on — its own
-   * account of what it serves, read off the table dispatch matches against.
-   */
-  public get routes(): ReadonlyArray<{ method: string; path: string }> {
-    return this._routes.map(({ method, path }) => ({ method, path }));
   }
 
   async shutdown(): Promise<void> {
@@ -811,42 +768,12 @@ export default class AgentHTTPProvider extends ProviderContract {
     const pathname = url.pathname;
     const matched = this.matchRoute(method, pathname);
 
-    // The specification is deliberately the one anonymous route. It describes
-    // the API rather than exposing it — the same document sits in the public
-    // repository — and a client that reads it still cannot call anything
-    // without the token. Serving it openly is what lets a schema consumer, the
-    // Custom GPT builder among them, import by URL instead of being handed a
-    // pasted copy that then drifts.
-    //
-    // This is a deliberate exemption for a static document, not a general
-    // pattern: /health next door stays behind the token because it reports the
-    // instance id and process id of a running editor.
-    //
-    // The check runs before an unmatched path is refused, so an anonymous
-    // caller learns nothing about which routes exist: everything that is not
-    // the specification answers 401 first, routed or not.
-    if (matched?.route.anonymous !== true && !this.isAuthorized(req)) {
-      // The body says nothing an anonymous caller did not already know. It
-      // named the environment variable carrying the secret, which told whoever
-      // reached the tunnel how this server is configured and what to probe for.
-      // The operator needs that sentence; a stranger does not, so it goes to
-      // the log the operator can read and nowhere else.
-      this._log.warning(
-        `[AgentHTTPProvider] Refused an unauthenticated ${method} ${requestUrl}. ` +
-          `Callers must send "Authorization: Bearer <token>" carrying the value of ` +
-          `${this._tokenEnvironmentVariable} that this editor was started with.`,
-      );
-      this.sendError(res, 401, "UNAUTHORIZED", "Authentication required.");
-      return;
-    }
-
     if (matched === undefined) {
       this.sendError(res, 404, "METHOD_NOT_FOUND", `No route for ${method} ${pathname}`);
       return;
     }
 
-    // Decoded after the token check: a malformed escape is a caller's error to
-    // be told about, not something an anonymous caller gets to provoke.
+    // Decode each captured path parameter exactly once.
     const params: Record<string, string> = {};
     matched.route.paramNames.forEach((name, index) => {
       params[name] = decodeURIComponent(matched.captures[index]);
@@ -891,39 +818,6 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   /**
-   * True when the request may proceed: either no token is configured, or the
-   * request carries exactly it.
-   *
-   * The comparison is constant-time. A `===` on the secret leaks its prefix
-   * through response timing, which matters precisely in the case this check
-   * exists for — a caller that reached the port from somewhere other than the
-   * author's own machine and can retry as often as it likes.
-   */
-  private isAuthorized(req: http.IncomingMessage): boolean {
-    if (this._requiredToken === undefined) {
-      return true;
-    }
-    const header = req.headers.authorization;
-    if (header === undefined) {
-      return false;
-    }
-    const match = header.match(/^Bearer (.+)$/);
-    if (match === null) {
-      return false;
-    }
-    const presented = Buffer.from(match[1], "utf8");
-    const expected = Buffer.from(this._requiredToken, "utf8");
-    // timingSafeEqual throws on a length mismatch, which would itself disclose
-    // the secret's length — so the lengths are compared first and the result is
-    // folded in, never short-circuited.
-    const sameLength = presented.length === expected.length;
-    return (
-      crypto.timingSafeEqual(sameLength ? presented : expected, expected) &&
-      sameLength
-    );
-  }
-
-  /**
    * The first route whose method and compiled pattern accept this request.
    *
    * Every template is anchored and a parameter never crosses a `/`, so no two
@@ -946,14 +840,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     return undefined;
   }
 
-  /**
-   * Everything this server serves, in one list.
-   *
-   * This is the route table, not a description of one: dispatch answers from
-   * exactly these entries, so a route that is not here is not served, and
-   * `routes` can hand the same list to a caller asking what this server
-   * publishes. The path strings are the ones openapi.yaml declares.
-   */
+  /** All HTTP routes served by this provider. */
   private buildRoutes(): AgentApiRoute[] {
     const instanceIdentity = (): PingResponse => ({
       protocolVersion: AGENT_API_PROTOCOL_VERSION,
@@ -981,8 +868,8 @@ export default class AgentHTTPProvider extends ProviderContract {
       };
 
     return [
-      { method: "GET", path: "/openapi.yaml", anonymous: true, handle: serveSpecification(false) },
-      { method: "GET", path: "/openapi.json", anonymous: true, handle: serveSpecification(true) },
+      { method: "GET", path: "/openapi.yaml", handle: serveSpecification(false) },
+      { method: "GET", path: "/openapi.json", handle: serveSpecification(true) },
 
       // Health/system routes
       { method: "GET", path: "/health", handle: ({ res }) => this.sendJson(res, 200, instanceIdentity()) },
