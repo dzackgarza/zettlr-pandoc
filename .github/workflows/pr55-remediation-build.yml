@@ -78,6 +78,7 @@ jobs:
               json.dumps(entries, indent=2) + '\n', encoding='utf-8'
           )
           PY
+          tar --exclude=.git --exclude=node_modules -czf /tmp/pr55-remediation/repository.tar.gz .
       - uses: actions/upload-artifact@v4
         with:
           name: pr55-remediation-source
