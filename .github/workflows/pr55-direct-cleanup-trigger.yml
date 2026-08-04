@@ -36,11 +36,8 @@ jobs:
               "  // ============================================================================\\n"
               "  // OpenAPI conformance (issues #40/#43)\\n"
           )'''
-          new = '''conformance_label = text.index("  // OpenAPI conformance (issues #40/#43)\\n")
-          conformance_start = text.rfind(
-              "  // ============================================================================\\n",
-              0,
-              conformance_label,
+          new = '''conformance_start = text.index(
+              "  // OpenAPI conformance (issues #40/#43)\\n"
           )'''
           if old not in script:
               raise RuntimeError('cleanup script conformance marker was not found')
