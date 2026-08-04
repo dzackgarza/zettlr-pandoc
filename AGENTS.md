@@ -183,14 +183,8 @@ they must be threaded through **four** layers:
 - **Logs:** launcher `~/.cache/zettlr-pandoc-dev.log`; app `~/.config/Zettlr-Pandoc/logs/`.
 - **In-editor markdown linter** is `remark-lint`
   (`source/common/modules/markdown-editor/linters/md-lint.ts`); its rule set is
-  hard-coded there (not GUI-configurable). It lints the user's documents, not
-  this codebase.
-- **Linting this codebase:** the repository tracks no eslint config, no eslint
-  dependency, and no code-lint script (`lint:po` lints translation catalogs, not
-  code) — global QC rejects a local `eslint.config.js` as an override. ESLint runs
-  only from the ai-review-ci gates, always against
-  `~/ai-review-ci/tool-configs/eslint.config.js`: `just test-commit` auto-fixes the
-  *staged* files, `just test-ci` scans `source/` and `test/` whole.
+  hard-coded there (not GUI-configurable). The project's own linter is ESLint
+  (`eslint.config.mjs`).
 
 ## Traps (details in agent-memory: `agent-memory search --scope both`)
 
@@ -201,13 +195,6 @@ they must be threaded through **four** layers:
 - `source/common/util/math-delimiters.ts` must stay CodeMirror-free (main-process
   bundle).
 - The launcher's focus-if-running is **intentional** — quit fully to load a new build.
-- ESLint findings here are **not reproducible from a clone** — the config lives in
-  `~/ai-review-ci`. The gate's auto-fix also deletes any `eslint-disable` whose rule
-  that config does not enable, leaving the indentation behind as a whitespace-only
-  line; that is how two inert `no-console` directives left
-  `test/agent-http-api-e2e-server.ts` in a commit about something else. A finding
-  count is evidence only for the change that actually moved it — attribute it to that
-  commit, and never cite it as proof of unrelated work.
 
 # Review Guidelines
 
