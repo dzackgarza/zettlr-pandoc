@@ -317,12 +317,6 @@ export async function createFixture (
 }
 
 export interface LaunchOptions {
-  /**
-   * Bearer token the launched app must demand. Absent means it boots unguarded.
-   * There is no third state: an inherited token is always discarded, so the
-   * caller's choice here is the only thing that decides the app's auth mode.
-   */
-  agentApiToken?: string
   /** Files delivered as literal application arguments on a cold start. */
   files?: string[]
 }
@@ -342,22 +336,7 @@ export async function launchElectron (
     '--',
     `--data-dir=${configDirectory}`,
     '--remote-debugging-port=0',
-    '--disable-hardware-acceleration',
-    // Kept for one property only: whether a test passes must not depend on
-    // which window happens to be on top. Chromium does throttle renderers it
-    // considers occluded, which would stall the style recalculation a :hover
-    // assertion waits on.
-    //
-    // These flags are NOT known to have fixed anything. They were added after
-    // a suite failure that occlusion would explain, but the green run cited as
-    // evidence changed two things at once -- the flags went in and the other
-    // agents sharing this checkout stopped -- so it discriminates nothing.
-    // Competing candidates for that failure remain open: concurrent runs
-    // corrupting each other through the repo-wide .webpack build directory,
-    // and a boot/shutdown-shaped failure seen with neither signature. Do not
-    // cite these flags as the fix for suite instability.
-    '--disable-backgrounding-occluded-windows',
-    '--disable-renderer-backgrounding'
+    '--disable-hardware-acceleration'
   ]
   forgeArguments.push(...(options.files ?? []))
   const needsVirtualDisplay =
@@ -380,13 +359,6 @@ export async function launchElectron (
     NODE_ENV: 'develop',
     ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
     ZETTLR_FORGE_LOGGER_PORT: String(loggerPort)
-  }
-  // An inherited token would boot the app in bearer-token mode and silently
-  // change what every unauthenticated spec is testing, so the developer's
-  // shell does not get a vote: only an explicit request supplies one.
-  delete childEnvironment.ZETTLR_AGENT_API_TOKEN
-  if (options.agentApiToken !== undefined) {
-    childEnvironment.ZETTLR_AGENT_API_TOKEN = options.agentApiToken
   }
 
   return spawn(executable, args, {
