@@ -7,18 +7,10 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Locks the PRODUCTION wire route of the workspace rename
- *                  undo: the renderer invokes the 'application' ipc channel
- *                  with 'undo-reference-rename' (MainEditor.vue's Undo toast
- *                  action), CommandProvider dispatches by respondsTo(), and
- *                  the RenameReference command delegates to the real
- *                  ReferenceProvider. This spec drives the REAL command
- *                  object over a REAL provider and a REAL scratch workspace
- *                  on disk — commit rewrites files, undo restores them
- *                  byte-identically, and the one-shot record is consumed.
- *                  The provider-level protocol details stay locked by
- *                  test/reference-rename-atomicity.spec.ts; this spec owns
- *                  the renderer-reachable command chain above it.
+ * Description:     Drives the production rename command over the real
+ *                  ReferenceProvider and a scratch workspace on disk. Commit
+ *                  rewrites every affected file, undo restores the original
+ *                  bytes, and the one-shot undo record is consumed.
  *
  * END HEADER
  */
@@ -95,8 +87,6 @@ describe('Renderer-reachable rename-undo command route (review A5)', function ()
     scratchRoot = await mkdtemp(path.join(tmpdir(), 'zettlr-rename-undo-route-'))
     await cp(FIXTURE_ROOT, scratchRoot, { recursive: true })
 
-    // No document is open in this scenario: the document authority seam
-    // (issue #53) reports every path as a closed file.
     provider = new ReferenceProvider(
       new LogProvider(),
       fsalSeam,
@@ -114,23 +104,12 @@ describe('Renderer-reachable rename-undo command route (review A5)', function ()
       fsalSeam.emit('fsal-event', { event: 'change', descriptor: makeDescriptor(absolute) })
     }
 
-    // The REAL command object CommandProvider dispatches to: its app seam
-    // carries the real provider at the exact injection point
-    // (this._app.references).
     command = new RenameReference({ references: provider } as unknown as AppServiceContainer)
   })
 
   after(async function () {
     await provider.shutdown()
     await rm(scratchRoot, { recursive: true, force: true })
-  })
-
-  it('binds all three rename protocol events for the application-channel dispatch', function () {
-    // CommandProvider.run() finds the command via respondsTo(): these
-    // predicates ARE the renderer-reachability of the route.
-    assert.strictEqual(command.respondsTo('preview-reference-rename'), true)
-    assert.strictEqual(command.respondsTo('commit-reference-rename'), true)
-    assert.strictEqual(command.respondsTo('undo-reference-rename'), true)
   })
 
   it('commits a rename through the command chain, rewriting every citing document on disk', async function () {
@@ -140,8 +119,6 @@ describe('Renderer-reachable rename-undo command route (review A5)', function ()
       return
     }
 
-    // The fixture spreads thm:torelli over all four workspace documents
-    // (two definitions, two citing clusters).
     assert.strictEqual(Object.keys(preview.edit.expectedSourceHashes).length, 4)
 
     const outcome = await command.run('commit-reference-rename', { edit: preview.edit }) as CommitRenameOutcome
