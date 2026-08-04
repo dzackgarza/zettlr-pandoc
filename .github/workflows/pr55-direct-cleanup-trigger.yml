@@ -32,6 +32,9 @@ jobs:
               line[10:] if line.startswith("          ") else line
               for line in embedded.splitlines()
           )
+          for number, line in enumerate(script.splitlines(), 1):
+              if 255 <= number <= 275:
+                  print(f"{number:04d}: {line}")
           exec(compile(script, 'pr55-direct-cleanup.py', 'exec'))
           PY
 
