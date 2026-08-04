@@ -1,12 +1,12 @@
 name: PR55 remediation build
 
 on:
-  push:
+  pull_request:
     branches:
-      - automation/pr55-stage
+      - feat/outstanding-issue-sweep
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: automation/pr55-stage
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
         with:
@@ -28,17 +28,61 @@ jobs:
         run: |
           bun install
           bun run generate:agent-api-types
-      - name: Commit generated tree
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "refactor: complete PR55 remediation"
-            git push origin HEAD:automation/pr55-stage
-          fi
       - name: Typecheck
         run: bun run typecheck
       - name: Focused review tests
         run: |
           bun run test -- --grep "Agent HTTP API|ReviewDiffStore|ReviewSidecarStore|review-diff|reference rename"
+      - name: Build source artifact
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          rm -f .github/workflows/pr55-remediation-build.yml scripts/pr55-remediate.py .pr55-remediation-trigger
+          rm -rf /tmp/pr55-remediation
+          mkdir -p /tmp/pr55-remediation/tree
+          git rev-parse "${BASE_SHA}^{tree}" > /tmp/pr55-remediation/base-tree-sha
+          printf '%s\n' "$BASE_SHA" > /tmp/pr55-remediation/base-commit-sha
+          git diff --binary "$BASE_SHA" > /tmp/pr55-remediation/remediation.patch
+          python3 - "$BASE_SHA" <<'PY'
+          import json
+          import shutil
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          base = sys.argv[1]
+          raw = subprocess.check_output([
+              'git', 'diff', '--name-status', '-z', base,
+          ])
+          fields = raw.split(b'\0')
+          entries = []
+          index = 0
+          target = Path('/tmp/pr55-remediation/tree')
+          while index < len(fields) and fields[index]:
+              status = fields[index].decode('utf-8')
+              index += 1
+              if status.startswith(('R', 'C')):
+                  old_path = fields[index].decode('utf-8')
+                  new_path = fields[index + 1].decode('utf-8')
+                  index += 2
+                  entries.append({'status': status[0], 'oldPath': old_path, 'path': new_path})
+                  path = new_path
+              else:
+                  path = fields[index].decode('utf-8')
+                  index += 1
+                  entries.append({'status': status[0], 'path': path})
+              source = Path(path)
+              if source.is_file():
+                  destination = target / path
+                  destination.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copy2(source, destination)
+          Path('/tmp/pr55-remediation/manifest.json').write_text(
+              json.dumps(entries, indent=2) + '\n', encoding='utf-8'
+          )
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr55-remediation-source
+          path: /tmp/pr55-remediation
+          if-no-files-found: error
+          retention-days: 1
