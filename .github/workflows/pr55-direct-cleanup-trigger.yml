@@ -32,9 +32,19 @@ jobs:
               line[10:] if line.startswith("          ") else line
               for line in embedded.splitlines()
           )
-          for number, line in enumerate(script.splitlines(), 1):
-              if 255 <= number <= 275:
-                  print(f"{number:04d}: {line}")
+          old = '''conformance_start = text.index(
+              "  // ============================================================================\\n"
+              "  // OpenAPI conformance (issues #40/#43)\\n"
+          )'''
+          new = '''conformance_label = text.index("  // OpenAPI conformance (issues #40/#43)\\n")
+          conformance_start = text.rfind(
+              "  // ============================================================================\\n",
+              0,
+              conformance_label,
+          )'''
+          if old not in script:
+              raise RuntimeError('cleanup script conformance marker was not found')
+          script = script.replace(old, new, 1)
           exec(compile(script, 'pr55-direct-cleanup.py', 'exec'))
           PY
 
