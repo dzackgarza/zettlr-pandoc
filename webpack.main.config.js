@@ -18,6 +18,13 @@ module.exports = {
   // Main entry point: the file that runs in the main process
   entry: "./source/main.ts",
   mode: process.env.NODE_ENV === "production" ? "production" : "development",
+  // Development builds happen once per `forge start`, and the E2E suites each
+  // launch their own app instance. Without a persistent cache every launch
+  // pays a full cold compile, which under load can exceed a test's timeout.
+  cache:
+    process.env.NODE_ENV === "production"
+      ? false
+      : { type: "filesystem", buildDependencies: { config: [__filename] } },
   module: { rules },
   plugins: [
     new CopyWebpackPlugin({
