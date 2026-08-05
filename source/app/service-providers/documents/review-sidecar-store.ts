@@ -30,7 +30,8 @@
 
 import { promises as fs } from "fs";
 import path from "path";
-import type { ChunkHold, ReviewComment } from "@dts/common/agent-api";
+import type { ReviewComment } from "@dts/common/agent-api";
+import type { ChunkHold } from "@dts/common/review-domain";
 import type { RefSpan } from "@common/modules/review/review-chunks";
 import {
   sha256Text,

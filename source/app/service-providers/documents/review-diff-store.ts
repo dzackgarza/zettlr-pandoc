@@ -51,15 +51,14 @@ import {
 } from "diff";
 import path from "path";
 import type {
-  ActiveReviewState,
   ChunkDecision,
-  ChunkHold,
   ProposalPacket,
   ReviewComment,
   ReviewState,
   OutstandingChunk,
   AgentEvent,
 } from "@dts/common/agent-api";
+import type { ActiveReviewState, ChunkHold } from "@dts/common/review-domain";
 import {
   chunkAttributesTo,
   computeReviewChunks,
