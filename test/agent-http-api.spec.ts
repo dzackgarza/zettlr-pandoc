@@ -281,6 +281,42 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   }
 
   // HTTP client helper
+  /**
+   * The precondition a decision on this review would carry right now: its
+   * current generation and the hash of the live working text. Tests whose
+   * subject is not the precondition send this, so they are refused for the
+   * reason they are about and never for a stale fence.
+   */
+  function livePrecondition(reviewId: string): {
+    expectedReviewGeneration: number;
+    expectedWorkingSha256: string;
+  } {
+    const review = provider.reviewStore.findReviewByReviewId(reviewId)!;
+    return {
+      expectedReviewGeneration: review.generation,
+      expectedWorkingSha256: sha256Text(provider.readWorkingText(review.documentId) ?? ""),
+    };
+  }
+
+  /**
+   * A well-formed precondition for a review with no live buffer to hash — a
+   * detached one. Those routes refuse on the closed document before any
+   * precondition is read; this exists only so the request is not rejected as
+   * malformed first.
+   */
+  const DETACHED_PRECONDITION = {
+    expectedReviewGeneration: 0,
+    expectedWorkingSha256: sha256Text(""),
+  };
+
+  /** A JSON request body, with the content type the routes declare. */
+  function jsonBody(value: unknown): { body: string; headers: Record<string, string> } {
+    return {
+      body: JSON.stringify(value),
+      headers: { "content-type": "application/json" },
+    };
+  }
+
   async function httpRequest(
     method: string,
     pathname: string,
@@ -1674,10 +1710,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const review = provider.reviewStore.getReview(docId)!;
     const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
     assert.equal(chunks.length, 2);
-    const accepted = await provider.decideReviewChunk(review.reviewId, chunks[0].chunkId, "accept");
+    const accepted = await provider.decideReviewChunk(review.reviewId, chunks[0].chunkId, "accept", livePrecondition(review.reviewId));
     assert.equal(accepted.ok, true);
 
-    const response = await httpRequest("POST", `/v1/reviews/${review.reviewId}/clear`);
+    const response = await httpRequest(
+      "POST",
+      `/v1/reviews/${review.reviewId}/clear`,
+      jsonBody(livePrecondition(review.reviewId)),
+    );
     assert.equal(response.status, 200);
     const body = JSON.parse(response.body);
     assert.equal(body.state, "cleared");
@@ -1699,7 +1739,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const review = provider.reviewStore.getReview(docId)!;
     assert.equal((provider.reviewStatus(docId)?.unresolvedChunks ?? 0), 2);
 
-    const response = await httpRequest("POST", `/v1/reviews/${review.reviewId}/accept-all`);
+    const response = await httpRequest(
+      "POST",
+      `/v1/reviews/${review.reviewId}/accept-all`,
+      jsonBody(livePrecondition(review.reviewId)),
+    );
     assert.equal(response.status, 200, response.body);
     const body = JSON.parse(response.body) as {
       acceptedChunks: number;
@@ -1719,9 +1763,113 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal((provider.reviewStatus(docId)?.unresolvedChunks ?? 0), 0);
 
     // An unknown review fails loudly.
-    const missing = await httpRequest("POST", "/v1/reviews/no-such-review/accept-all");
+    const missing = await httpRequest(
+      "POST",
+      "/v1/reviews/no-such-review/accept-all",
+      jsonBody(DETACHED_PRECONDITION),
+    );
     assert.equal(missing.status, 404);
     assert.equal(JSON.parse(missing.body).error.code, "REVIEW_NOT_FOUND");
+  });
+
+  it("refuses a decision whose working-text precondition no longer holds", async function () {
+    const filePath = path.join(scratch, "precondition-text.md");
+    const original = "alpha\nx\ny\nz\nbeta\n";
+    const proposed = "ALPHA\nx\ny\nz\nBETA\n";
+    const docId = await openFile(filePath, original);
+    await submitClaim(docId, makePatch(original, proposed), "precondition-text-req");
+
+    const review = provider.reviewStore.getReview(docId)!;
+    const chunks = provider.reviewStore.getOutstandingChunks(
+      docId,
+      provider.readWorkingText(docId) ?? "",
+    )!;
+    const before = {
+      generation: review.generation,
+      reference: review.referenceText,
+      working: provider.readWorkingText(docId),
+      unresolved: provider.reviewStatus(docId)?.unresolvedChunks,
+    };
+
+    // The reviewer read the chunks, then something moved the text. The chunk
+    // id is still live — this is exactly the case a content-addressed id
+    // cannot catch on its own.
+    const stale = await provider.decideReviewChunk(review.reviewId, chunks[0].chunkId, "accept", {
+      expectedReviewGeneration: review.generation,
+      expectedWorkingSha256: sha256Text("text this document never held\n"),
+    });
+    assert.equal(stale.ok, false);
+    assert.equal(!stale.ok && stale.code, "REVISION_MISMATCH");
+    assert.equal(
+      !stale.ok && stale.actual?.sha256,
+      sha256Text(provider.readWorkingText(docId) ?? ""),
+      "the refusal must name the revision the caller has to re-read from",
+    );
+
+    // Nothing moved: no reference advance, no text edit, no generation burn.
+    const after = provider.reviewStore.getReview(docId)!;
+    assert.equal(after.generation, before.generation);
+    assert.equal(after.referenceText, before.reference);
+    assert.equal(provider.readWorkingText(docId), before.working);
+    assert.equal(provider.reviewStatus(docId)?.unresolvedChunks, before.unresolved);
+
+    // The same decision with the precondition the reviewer would actually be
+    // holding is applied, so the refusal was about staleness and nothing else.
+    const applied = await provider.decideReviewChunk(
+      review.reviewId,
+      chunks[0].chunkId,
+      "accept",
+      livePrecondition(review.reviewId),
+    );
+    assert.equal(applied.ok, true, JSON.stringify(applied));
+    assert.equal(provider.reviewStore.getReview(docId)!.generation, before.generation + 1);
+  });
+
+  it("refuses a decision whose review generation was overtaken", async function () {
+    const filePath = path.join(scratch, "precondition-generation.md");
+    const original = "alpha\nx\ny\nz\nbeta\n";
+    const proposed = "ALPHA\nx\ny\nz\nBETA\n";
+    const docId = await openFile(filePath, original);
+    await submitClaim(docId, makePatch(original, proposed), "precondition-generation-req");
+
+    const review = provider.reviewStore.getReview(docId)!;
+    const chunks = provider.reviewStore.getOutstandingChunks(
+      docId,
+      provider.readWorkingText(docId) ?? "",
+    )!;
+    assert.equal(chunks.length, 2);
+
+    // Somebody else decides the OTHER chunk first. The text is untouched — an
+    // accept moves the reference only — so the working hash still matches and
+    // the generation is the only thing that can catch this.
+    const first = await provider.decideReviewChunk(
+      review.reviewId,
+      chunks[1].chunkId,
+      "accept",
+      livePrecondition(review.reviewId),
+    );
+    assert.equal(first.ok, true);
+
+    const overtakenGeneration = review.generation;
+    const current = provider.reviewStore.getReview(docId)!;
+    assert.ok(current.generation > overtakenGeneration);
+
+    const stale = await provider.decideReviewChunk(review.reviewId, chunks[0].chunkId, "accept", {
+      expectedReviewGeneration: overtakenGeneration,
+      expectedWorkingSha256: sha256Text(provider.readWorkingText(docId) ?? ""),
+    });
+    assert.equal(stale.ok, false);
+    assert.equal(!stale.ok && stale.code, "REVIEW_GENERATION_MISMATCH");
+    assert.equal(
+      !stale.ok && stale.reviewGeneration,
+      current.generation,
+      "the refusal must name the generation the caller has to re-read from",
+    );
+    assert.equal(
+      provider.reviewStore.getReview(docId)!.generation,
+      current.generation,
+      "a refused decision burns no generation",
+    );
   });
 
   it("POST /v1/reviews/{id}/chunks/{chunkId}/accept and /reject decide through the provider", async function () {
@@ -1751,6 +1899,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const accept = await httpRequest(
       "POST",
       `/v1/reviews/${review.reviewId}/chunks/${listedBody.chunks[0].chunkId}/accept`,
+      jsonBody(livePrecondition(review.reviewId)),
     );
     assert.equal(accept.status, 200, accept.body);
     const acceptBody = JSON.parse(accept.body) as {
@@ -1765,6 +1914,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const reject = await httpRequest(
       "POST",
       `/v1/reviews/${review.reviewId}/chunks/${listedBody.chunks[1].chunkId}/reject`,
+      jsonBody(livePrecondition(review.reviewId)),
     );
     assert.equal(reject.status, 200, reject.body);
     const rejectBody = JSON.parse(reject.body) as { unresolvedChunks: number };
@@ -1778,6 +1928,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const stale = await httpRequest(
       "POST",
       `/v1/reviews/${review.reviewId}/chunks/${listedBody.chunks[0].chunkId}/accept`,
+      jsonBody(livePrecondition(review.reviewId)),
     );
     assert.equal(stale.status, 404);
     assert.equal(JSON.parse(stale.body).error.code, "CHUNK_NOT_FOUND");
@@ -1798,10 +1949,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const held = await httpRequest(
       "POST",
       `/v1/reviews/${review.reviewId}/chunks/${chunks[0].chunkId}/hold`,
-      {
-        body: JSON.stringify({ comment: "verify the constant first" }),
-        headers: { "content-type": "application/json" },
-      },
+      jsonBody({
+        ...livePrecondition(review.reviewId),
+        comment: "verify the constant first",
+      }),
     );
     assert.equal(held.status, 200, held.body);
     const heldBody = JSON.parse(held.body) as { decision: string; unresolvedChunks: number };
@@ -1823,10 +1974,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(listedBody.chunks[0].holdComment, "verify the constant first");
     assert.equal(listedBody.chunks[1].state, "pending");
 
-    // A hold without a body is legal, and a held-only review is saveable.
+    // A hold without a comment is legal, and a held-only review is saveable.
     const bare = await httpRequest(
       "POST",
       `/v1/reviews/${review.reviewId}/chunks/${chunks[1].chunkId}/hold`,
+      jsonBody(livePrecondition(review.reviewId)),
     );
     assert.equal(bare.status, 200, bare.body);
     const bareBody = JSON.parse(bare.body) as { unresolvedChunks: number; state: string };
@@ -1852,10 +2004,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const review = provider.reviewStore.getReview(docId)!;
     assert.equal(review.generation, 1);
 
-    const posted = await httpRequest("POST", `/v1/reviews/${review.reviewId}/comments`, {
-      body: JSON.stringify({ text: "keep the original spelling of my name" }),
-      headers: { "content-type": "application/json" },
-    });
+    const posted = await httpRequest(
+      "POST",
+      `/v1/reviews/${review.reviewId}/comments`,
+      jsonBody({
+        text: "keep the original spelling of my name",
+        expectedReviewGeneration: review.generation,
+      }),
+    );
     assert.equal(posted.status, 200, posted.body);
     const postedBody = JSON.parse(posted.body) as {
       reviewGeneration: number;
@@ -1885,10 +2041,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(detailBody.comments[0].text, "keep the original spelling of my name");
 
     // An empty comment is refused loudly, not stored as noise.
-    const empty = await httpRequest("POST", `/v1/reviews/${review.reviewId}/comments`, {
-      body: JSON.stringify({ text: "" }),
-      headers: { "content-type": "application/json" },
-    });
+    const empty = await httpRequest(
+      "POST",
+      `/v1/reviews/${review.reviewId}/comments`,
+      jsonBody({ text: "", expectedReviewGeneration: review.generation }),
+    );
     assert.equal(empty.status, 400);
     assert.equal(JSON.parse(empty.body).error.code, "INVALID_PARAMS");
   });
@@ -1904,10 +2061,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
     assert.equal(chunks.length, 3);
 
-    assert.equal((await provider.decideReviewChunk(review.reviewId, chunks[0].chunkId, "accept")).ok, true);
-    assert.equal((await provider.decideReviewChunk(review.reviewId, chunks[1].chunkId, "reject")).ok, true);
+    assert.equal((await provider.decideReviewChunk(review.reviewId, chunks[0].chunkId, "accept", livePrecondition(review.reviewId))).ok, true);
+    assert.equal((await provider.decideReviewChunk(review.reviewId, chunks[1].chunkId, "reject", livePrecondition(review.reviewId))).ok, true);
     assert.equal(
-      (await provider.decideReviewChunk(review.reviewId, chunks[2].chunkId, "hold", "gamma is undecided")).ok,
+      (await provider.decideReviewChunk(review.reviewId, chunks[2].chunkId, "hold", livePrecondition(review.reviewId), "gamma is undecided")).ok,
       true,
     );
 
@@ -1937,7 +2094,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(provider.reviewStore.getReview(docId) !== undefined);
 
     // Deciding the held chunk afterwards completes the review on the next save.
-    assert.equal((await provider.decideReviewChunk(review.reviewId, remaining[0].chunkId, "accept")).ok, true);
+    assert.equal((await provider.decideReviewChunk(review.reviewId, remaining[0].chunkId, "accept", livePrecondition(review.reviewId))).ok, true);
     const finalSave = await provider.saveFile(filePath);
     assert.equal(finalSave.ok, true);
     assert.equal(provider.reviewStore.getReview(docId), undefined);
@@ -1964,8 +2121,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // Resolve every chunk, then let the file drift on disk underneath the
     // review — the case where stored positions would otherwise overwrite
     // content the review never saw.
-    assert.equal((await provider.decideReviewChunk(review.reviewId, chunks[0].chunkId, "accept")).ok, true);
-    assert.equal((await provider.decideReviewChunk(review.reviewId, chunks[1].chunkId, "reject")).ok, true);
+    assert.equal((await provider.decideReviewChunk(review.reviewId, chunks[0].chunkId, "accept", livePrecondition(review.reviewId))).ok, true);
+    assert.equal((await provider.decideReviewChunk(review.reviewId, chunks[1].chunkId, "reject", livePrecondition(review.reviewId))).ok, true);
     assert.equal((provider.reviewStatus(docId)?.unresolvedChunks ?? 0), 0);
     writeFileSync(filePath, "externally rewritten\n", "utf8");
 
@@ -1997,7 +2154,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       return;
     }
 
-    const response = await httpRequest("POST", `/v1/proposals/${first.packetId}/retract`);
+    const response = await httpRequest(
+      "POST",
+      `/v1/proposals/${first.packetId}/retract`,
+      jsonBody(livePrecondition(first.reviewId)),
+    );
     assert.equal(response.status, 200);
     const body = JSON.parse(response.body);
     assert.equal(body.retracted, true);
@@ -2026,10 +2187,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // Deciding a chunk advances the review generation past the packet's,
     // which is exactly what makes the packet non-retractable.
     const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
-    const decided = await provider.decideReviewChunk(submitted.reviewId, chunks[0].chunkId, "accept");
+    const decided = await provider.decideReviewChunk(submitted.reviewId, chunks[0].chunkId, "accept", livePrecondition(submitted.reviewId));
     assert.equal(decided.ok, true);
 
-    const refused = await httpRequest("POST", `/v1/proposals/${submitted.packetId}/retract`);
+    const refused = await httpRequest(
+      "POST",
+      `/v1/proposals/${submitted.packetId}/retract`,
+      jsonBody(livePrecondition(submitted.reviewId)),
+    );
     assert.equal(refused.status, 409);
     const body = JSON.parse(refused.body);
     assertMatchesSchema(body, "AgentErrorResponse");
@@ -2360,7 +2525,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const held = await provider.decideReviewChunk(
         submitted.reviewId,
         chunks[0].chunkId,
-        "hold",
+        "hold", livePrecondition(submitted.reviewId),
         "needs thought",
       );
       assert.equal(held.ok, true);
@@ -2399,9 +2564,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const reviewId = submitted.reviewId;
       const beforeChunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
       assert.equal(beforeChunks.length, 2);
-      const held = await provider.decideReviewChunk(reviewId, beforeChunks[1].chunkId, "hold", "revisit");
+      const held = await provider.decideReviewChunk(reviewId, beforeChunks[1].chunkId, "hold", livePrecondition(reviewId), "revisit");
       assert.equal(held.ok, true);
-      const commented = await provider.addReviewComment(provider.reviewStore.getReview(docId)!.reviewId, "overall note");
+      const commented = await provider.addReviewComment(provider.reviewStore.getReview(docId)!.reviewId, "overall note", livePrecondition(provider.reviewStore.getReview(docId)!.reviewId).expectedReviewGeneration);
       assert.equal(commented.ok, true);
 
       const review = provider.reviewStore.getReview(docId)!;
@@ -2670,7 +2835,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }
       const chunk = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")![0];
       assert.ok(chunk !== undefined, "the saved held review must have an outstanding chunk");
-      assert.equal((await provider.decideReviewChunk(submitted.reviewId, chunk.chunkId, "hold", "revisit")).ok, true);
+      assert.equal((await provider.decideReviewChunk(submitted.reviewId, chunk.chunkId, "hold", livePrecondition(submitted.reviewId), "revisit")).ok, true);
       assert.deepEqual(await provider.saveFile(filePath), { ok: true });
 
       const loaded = provider.loadedDocuments.find((document) => document.filePath === filePath)!;
@@ -2860,7 +3025,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const chunk = chunks[0];
       assert.ok(chunk !== undefined, "The held-review proposal produced no addressable chunk.");
       assert.equal(
-        (await provider.decideReviewChunk(submitted.reviewId, chunk.chunkId, "hold", "revisit")).ok,
+        (await provider.decideReviewChunk(submitted.reviewId, chunk.chunkId, "hold", livePrecondition(submitted.reviewId), "revisit")).ok,
         true,
       );
       assert.deepEqual(await provider.saveFile(filePath), { ok: true });
@@ -2923,10 +3088,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const before = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
       assert.equal(before.length, 2);
       assert.equal(
-        (await provider.decideReviewChunk(reviewId, before[1].chunkId, "hold", "revisit")).ok,
+        (await provider.decideReviewChunk(reviewId, before[1].chunkId, "hold", livePrecondition(reviewId), "revisit")).ok,
         true,
       );
-      assert.equal((await provider.addReviewComment(provider.reviewStore.getReview(docId)!.reviewId, "overall note")).ok, true);
+      assert.equal((await provider.addReviewComment(provider.reviewStore.getReview(docId)!.reviewId, "overall note", livePrecondition(provider.reviewStore.getReview(docId)!.reviewId).expectedReviewGeneration)).ok, true);
       const generation = provider.reviewStore.getReview(docId)!.generation;
       const chunksBefore = provider.reviewStore
         .getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!
@@ -3012,17 +3177,22 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         ["POST", `/v1/reviews/${reviewId}/chunks/${heldChunkId!}/accept`],
         ["GET", `/v1/reviews/${reviewId}/events?waitSeconds=0`],
       ] as const) {
-        const refused = await httpRequest(method, route);
+        const refused = await httpRequest(
+          method,
+          route,
+          method === "POST" ? jsonBody(DETACHED_PRECONDITION) : {},
+        );
         assert.equal(refused.status, 409, `${method} ${route}: ${refused.body}`);
         const error = (JSON.parse(refused.body) as { error: { code: string; message: string } })
           .error;
         assert.equal(error.code, "DOCUMENT_CLOSED", route);
         assert.ok(error.message.includes(filePath), `${route}: ${error.message}`);
       }
-      const commented = await httpRequest("POST", `/v1/reviews/${reviewId}/comments`, {
-        body: JSON.stringify({ text: "later" }),
-        headers: { "content-type": "application/json" },
-      });
+      const commented = await httpRequest(
+        "POST",
+        `/v1/reviews/${reviewId}/comments`,
+        jsonBody({ text: "later", expectedReviewGeneration: 0 }),
+      );
       assert.equal(commented.status, 409, commented.body);
       assert.equal(
         (JSON.parse(commented.body) as { error: { code: string } }).error.code,
@@ -3096,7 +3266,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(listed.length, 1);
       const packetId = listed[0].packetId;
 
-      const refused = await httpRequest("POST", `/v1/proposals/${packetId}/retract`);
+      const refused = await httpRequest(
+        "POST",
+        `/v1/proposals/${packetId}/retract`,
+        jsonBody(DETACHED_PRECONDITION),
+      );
       assert.equal(refused.status, 409, refused.body);
       const refusedBody = JSON.parse(refused.body) as {
         error: {
@@ -3122,7 +3296,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
       // A packetId no review carries stays PACKET_NOT_RETRACTABLE: the closed
       // file is a claim about a packet that exists, not a blanket answer.
-      const unknown = await httpRequest("POST", "/v1/proposals/pkt-nonexistent/retract");
+      const unknown = await httpRequest(
+        "POST",
+        "/v1/proposals/pkt-nonexistent/retract",
+        jsonBody(DETACHED_PRECONDITION),
+      );
       assert.equal(unknown.status, 409, unknown.body);
       assert.equal(
         (JSON.parse(unknown.body) as { error: { code: string } }).error.code,
@@ -3132,7 +3310,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       // Opening the file is what the refusal asked for, and the same id then
       // retracts for real — the id the listing handed out was always this one.
       await provider.getDocument(filePath);
-      const retracted = await httpRequest("POST", `/v1/proposals/${packetId}/retract`);
+      const retracted = await httpRequest(
+        "POST",
+        `/v1/proposals/${packetId}/retract`,
+        jsonBody(livePrecondition(reviewId)),
+      );
       assert.equal(retracted.status, 200, retracted.body);
       const retractedBody = JSON.parse(retracted.body) as {
         packetId: string;
@@ -3163,7 +3345,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.ok((await sidecars.read(filePath)) !== undefined);
 
       const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
-      const accepted = await provider.decideReviewChunk(submitted.reviewId, chunks[0].chunkId, "accept");
+      const accepted = await provider.decideReviewChunk(submitted.reviewId, chunks[0].chunkId, "accept", livePrecondition(submitted.reviewId));
       assert.equal(accepted.ok, true);
       const saved = await provider.saveFile(filePath);
       assert.equal(saved.ok, true);
@@ -3306,14 +3488,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       )![0].chunkId;
 
       const restore = breakSidecarWrites();
-      const refused = await provider.decideReviewChunk(submitted.reviewId, chunkId, "accept");
+      const refused = await provider.decideReviewChunk(submitted.reviewId, chunkId, "accept", livePrecondition(submitted.reviewId));
       assert.equal(refused.ok, false);
       assert.equal(!refused.ok && refused.code, "PERSISTENCE_FAILED");
       assert.equal(projections(docId), before, "a refused decision must move nothing");
       assert.equal(await persistedSidecar(filePath), beforeSidecar);
 
       restore();
-      const retried = await provider.decideReviewChunk(submitted.reviewId, chunkId, "accept");
+      const retried = await provider.decideReviewChunk(submitted.reviewId, chunkId, "accept", livePrecondition(submitted.reviewId));
       assert.equal(retried.ok, true);
       assert.notEqual(await persistedSidecar(filePath), beforeSidecar);
     });
@@ -3402,7 +3584,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         provider.readWorkingText(docId) ?? "",
       )![0].chunkId;
       assert.equal(
-        (await provider.decideReviewChunk(submitted.reviewId, chunkId, "hold", "later")).ok,
+        (await provider.decideReviewChunk(submitted.reviewId, chunkId, "hold", livePrecondition(submitted.reviewId), "later")).ok,
         true,
       );
       const before = projections(docId);

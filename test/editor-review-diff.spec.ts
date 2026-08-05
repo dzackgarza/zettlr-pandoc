@@ -145,12 +145,12 @@ describe('Editor review-chunk view', function () {
             packets: options.packets ?? [],
             holds: options.holds ?? [],
             comments: options.comments ?? [],
-            onDecide: (chunkId, decision, comment) => {
+            onDecide: async (chunkId, decision, comment) => {
               calls.decisions.push({ chunkId, decision, comment })
             },
-            onAcceptAll: () => { calls.acceptAll += 1 },
-            onClear: () => { calls.clear += 1 },
-            onComment: (text) => { calls.comments.push(text) }
+            onAcceptAll: async () => { calls.acceptAll += 1 },
+            onClear: async () => { calls.clear += 1 },
+            onComment: async (text) => { calls.comments.push(text) }
           }),
           EditorView.updateListener.of(() => {})
         ]
@@ -379,7 +379,7 @@ describe('Editor review-chunk view', function () {
     assert.equal(selectPreviousReviewChunk(view), false)
   })
 
-  it('shows outstanding progress and emits mass actions without mutating local review state', function () {
+  it('shows outstanding progress and emits mass actions without mutating local review state', async function () {
     const baseline = 'first baseline\n\nsecond baseline\n'
     const proposed = baseline
       .replace('first baseline', 'first proposed')
@@ -392,10 +392,21 @@ describe('Editor review-chunk view', function () {
     assert.ok(acceptAll !== null)
     assert.ok(clear !== null)
 
+    // A mass action locks every control of the panel for its round trip, so
+    // the second click here lands on a disabled button and does nothing. That
+    // is the point: two sweeps must not be launched over one partition.
     acceptAll.click()
+    assert.equal(acceptAll.disabled, true)
+    assert.equal(clear.disabled, true)
     clear.click()
-
     assert.equal(calls.acceptAll, 1)
+    assert.equal(calls.clear, 0)
+
+    // Once it settles the controls come back, and the pane has still changed
+    // nothing: only the provider's broadcast may do that.
+    await new Promise(resolve => setTimeout(resolve, 0))
+    assert.equal(acceptAll.disabled, false)
+    clear.click()
     assert.equal(calls.clear, 1)
     assert.equal(chunksOf(view).length, 2)
     assert.equal(label?.textContent, '2 outstanding')

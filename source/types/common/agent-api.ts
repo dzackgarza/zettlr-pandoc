@@ -58,6 +58,7 @@ export type ReviewListResponse = Schemas["ReviewListResponse"];
 export type ChunkDecisionResponse = Schemas["ChunkDecisionResponse"];
 export type ChunkDecision = ChunkDecisionResponse["decision"];
 export type AcceptAllChunksResponse = Schemas["AcceptAllChunksResponse"];
+export type ReviewMutationPrecondition = Schemas["ReviewMutationPrecondition"];
 export type HoldChunkRequest = Schemas["HoldChunkRequest"];
 export type AddReviewCommentRequest = Schemas["AddReviewCommentRequest"];
 export type ReviewCommentResponse = Schemas["ReviewCommentResponse"];

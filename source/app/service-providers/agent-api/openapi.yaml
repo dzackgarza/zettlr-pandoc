@@ -345,6 +345,11 @@ components:
           type: string
         canClearUnresolved:
           type: boolean
+        reviewGeneration:
+          type: integer
+          description: >-
+            REVIEW_GENERATION_MISMATCH: the generation the review is actually
+            at, so the caller can re-read from exactly there.
     AgentErrorResponse:
       type: object
       required:
@@ -723,6 +728,14 @@ components:
           description: Absent for a detached review, whose file is closed.
         generation:
           type: integer
+        workingSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: >-
+            SHA-256 of the working text these chunks were partitioned from —
+            the `expectedWorkingSha256` to send with a decision on any of
+            them. Absent for a detached review, which has no live buffer and
+            accepts no decisions until its file is reopened.
         chunks:
           type: array
           items:
@@ -937,9 +950,52 @@ components:
           $ref: '#/components/schemas/ReviewState'
         documentRevision:
           $ref: '#/components/schemas/DocumentRevision'
+    ReviewMutationPrecondition:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedReviewGeneration
+        - expectedWorkingSha256
+      properties:
+        expectedReviewGeneration:
+          type: integer
+          minimum: 0
+          description: >-
+            The review generation this decision was formed against — the
+            `generation` of the chunk list, diff, or status you read. Every
+            review mutation advances it, so a decision that carries a stale
+            one was decided before somebody else's mutation landed and is
+            refused as REVIEW_GENERATION_MISMATCH.
+        expectedWorkingSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: >-
+            SHA-256 of the working text this decision was formed against —
+            `workingSha256` from GET /v1/reviews/{reviewId}/chunks. Chunk ids
+            are content-addressed, so text that moved retires them; binding
+            the decision to the exact bytes makes an edit between the read
+            and the decision a REVISION_MISMATCH refusal instead of a
+            decision landing on a chunk the reviewer never saw.
     HoldChunkRequest:
       type: object
+      additionalProperties: false
+      required:
+        - expectedReviewGeneration
+        - expectedWorkingSha256
       properties:
+        # The two preconditions are spelled out rather than composed from
+        # ReviewMutationPrecondition with allOf: additionalProperties is
+        # evaluated per subschema, so an allOf branch carrying
+        # `additionalProperties: false` rejects `comment` from the sibling
+        # branch. Inlining is the only shape that stays strict.
+        expectedReviewGeneration:
+          type: integer
+          minimum: 0
+          description: See ReviewMutationPrecondition.
+        expectedWorkingSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: See ReviewMutationPrecondition.
         comment:
           type: string
           minLength: 1
@@ -949,9 +1005,17 @@ components:
             comment.
     AddReviewCommentRequest:
       type: object
+      additionalProperties: false
       required:
+        - expectedReviewGeneration
         - text
       properties:
+        expectedReviewGeneration:
+          type: integer
+          minimum: 0
+          description: >-
+            See ReviewMutationPrecondition. A comment moves no document text,
+            so it carries no working hash.
         text:
           type: string
           minLength: 1
@@ -1538,6 +1602,12 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewMutationPrecondition'
       responses:
         '200':
           description: OK
@@ -1558,10 +1628,16 @@ paths:
             DOCUMENT_CLOSED — the review is detached: it exists, and
             /v1/reviews lists it, but no decision can land while its file is
             closed. Open its documentPath to reattach it.
+            Also REVISION_MISMATCH when expectedWorkingSha256 does not
+            match the live working text, and REVIEW_GENERATION_MISMATCH
+            when expectedReviewGeneration is not the review's current
+            generation; the error carries the actual revision and
+            generation, and neither refusal mutates anything.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+
   /v1/reviews/{reviewId}/chunks/{chunkId}/reject:
     post:
       operationId: rejectReviewChunk
@@ -1581,6 +1657,12 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewMutationPrecondition'
       responses:
         '200':
           description: OK
@@ -1601,10 +1683,16 @@ paths:
             DOCUMENT_CLOSED — the review is detached: it exists, and
             /v1/reviews lists it, but no decision can land while its file is
             closed. Open its documentPath to reattach it.
+            Also REVISION_MISMATCH when expectedWorkingSha256 does not
+            match the live working text, and REVIEW_GENERATION_MISMATCH
+            when expectedReviewGeneration is not the review's current
+            generation; the error carries the actual revision and
+            generation, and neither refusal mutates anything.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+
   /v1/reviews/{reviewId}/chunks/{chunkId}/hold:
     post:
       operationId: holdReviewChunk
@@ -1630,7 +1718,7 @@ paths:
           schema:
             type: string
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
@@ -1655,10 +1743,16 @@ paths:
             DOCUMENT_CLOSED — the review is detached: it exists, and
             /v1/reviews lists it, but no decision can land while its file is
             closed. Open its documentPath to reattach it.
+            Also REVISION_MISMATCH when expectedWorkingSha256 does not
+            match the live working text, and REVIEW_GENERATION_MISMATCH
+            when expectedReviewGeneration is not the review's current
+            generation; the error carries the actual revision and
+            generation, and neither refusal mutates anything.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+
   /v1/reviews/{reviewId}/comments:
     post:
       operationId: addReviewComment
@@ -1705,10 +1799,16 @@ paths:
             DOCUMENT_CLOSED — the review is detached: it exists, and
             /v1/reviews lists it, but a comment cannot land while its file is
             closed. Open its documentPath to reattach it.
+            Also REVISION_MISMATCH when expectedWorkingSha256 does not
+            match the live working text, and REVIEW_GENERATION_MISMATCH
+            when expectedReviewGeneration is not the review's current
+            generation; the error carries the actual revision and
+            generation, and neither refusal mutates anything.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+
   /v1/reviews/{reviewId}/packets:
     get:
       operationId: getReviewPackets
@@ -1752,6 +1852,12 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewMutationPrecondition'
       responses:
         '200':
           description: OK
@@ -1767,10 +1873,16 @@ paths:
                 $ref: '#/components/schemas/AgentErrorResponse'
         '409':
           description: The reviewed document is closed, or the review was invalidated
+            Also REVISION_MISMATCH when expectedWorkingSha256 does not
+            match the live working text, and REVIEW_GENERATION_MISMATCH
+            when expectedReviewGeneration is not the review's current
+            generation; the error carries the actual revision and
+            generation, and neither refusal mutates anything.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+
   /v1/reviews/{reviewId}/clear:
     post:
       operationId: clearReview
@@ -1781,6 +1893,12 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewMutationPrecondition'
       responses:
         '200':
           description: OK
@@ -1799,10 +1917,16 @@ paths:
             DOCUMENT_CLOSED — the review is detached: it exists, and
             /v1/reviews lists it, but clearing edits the document, which is
             closed. Open its documentPath to reattach it.
+            Also REVISION_MISMATCH when expectedWorkingSha256 does not
+            match the live working text, and REVIEW_GENERATION_MISMATCH
+            when expectedReviewGeneration is not the review's current
+            generation; the error carries the actual revision and
+            generation, and neither refusal mutates anything.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+
   /v1/proposals/{packetId}/retract:
     post:
       operationId: retractProposal
@@ -1813,6 +1937,12 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewMutationPrecondition'
       responses:
         '200':
           description: OK
@@ -1829,10 +1959,16 @@ paths:
             belongs to a detached review (one listReviews reports with
             attached: false): the message names the file to open, and
             canClearUnresolved is false because clearing refuses too.
+            Also REVISION_MISMATCH when expectedWorkingSha256 does not
+            match the live working text, and REVIEW_GENERATION_MISMATCH
+            when expectedReviewGeneration is not the review's current
+            generation; the error carries the actual revision and
+            generation, and neither refusal mutates anything.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+
   /v1/events:
     get:
       operationId: subscribeEvents

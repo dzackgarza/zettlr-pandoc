@@ -40,6 +40,7 @@ import type {
   ReadSide,
   ReviewEventsResponse,
   ReviewListEntry,
+  ReviewMutationPrecondition,
   SearchDocumentRequest,
   SearchHit,
   SubmitProposalRequest,
@@ -49,6 +50,7 @@ import type {
 } from "@dts/common/agent-api";
 import { DocumentType, DP_EVENTS } from "@dts/common/documents";
 import type DocumentManager from "@providers/documents";
+import type { ReviewFailure } from "@providers/documents/review-application-service";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import crypto from "crypto";
@@ -644,13 +646,14 @@ export default class AgentHTTPProvider extends ProviderContract {
     string,
     (context: Context, req: http.IncomingMessage, res: http.ServerResponse) => unknown
   > {
-    // The three decision operations take the same path parameters. Hold is the
-    // one that also declares a body, so its context types all three: accept and
-    // reject reach the handler with no comment because they can carry none.
+    // The three decision operations take the same path parameters and the same
+    // required precondition. Hold is the one that also declares a comment, so
+    // its context types all three: accept and reject reach the handler with no
+    // comment because they can carry none.
     const decideChunk =
       (decision: ChunkDecision) =>
       (
-        c: OperationContext<"holdReviewChunk", HoldChunkRequest | undefined>,
+        c: OperationContext<"holdReviewChunk", HoldChunkRequest>,
         _req: http.IncomingMessage,
         res: http.ServerResponse,
       ) =>
@@ -659,7 +662,8 @@ export default class AgentHTTPProvider extends ProviderContract {
           c.request.params.reviewId,
           c.request.params.chunkId,
           decision,
-          c.request.requestBody?.comment,
+          c.request.requestBody,
+          c.request.requestBody.comment,
         );
 
     return {
@@ -732,25 +736,37 @@ export default class AgentHTTPProvider extends ProviderContract {
       rejectReviewChunk: decideChunk("reject"),
       holdReviewChunk: decideChunk("hold"),
       acceptAllReviewChunks: (
-        c: OperationContext<"acceptAllReviewChunks">,
+        c: OperationContext<"acceptAllReviewChunks", ReviewMutationPrecondition>,
         _req,
         res: http.ServerResponse,
-      ) => this.handleAcceptAllChunks(res, c.request.params.reviewId),
-      clearReview: (c: OperationContext<"clearReview">, _req, res: http.ServerResponse) =>
-        this.handleClearReview(res, c.request.params.reviewId),
+      ) => this.handleAcceptAllChunks(res, c.request.params.reviewId, c.request.requestBody),
+      clearReview: (
+        c: OperationContext<"clearReview", ReviewMutationPrecondition>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleClearReview(res, c.request.params.reviewId, c.request.requestBody),
       addReviewComment: (
         c: OperationContext<"addReviewComment", AddReviewCommentRequest>,
         _req,
         res: http.ServerResponse,
-      ) => this.handleAddReviewComment(res, c.request.params.reviewId, c.request.requestBody.text),
+      ) =>
+        this.handleAddReviewComment(
+          res,
+          c.request.params.reviewId,
+          c.request.requestBody.text,
+          c.request.requestBody.expectedReviewGeneration,
+        ),
       waitForReviewEvents: (
         c: OperationContext<"waitForReviewEvents">,
         _req,
         res: http.ServerResponse,
       ) => this.handleWaitForReviewEvents(res, c.request.params.reviewId, c.request.query),
 
-      retractProposal: (c: OperationContext<"retractProposal">, _req, res: http.ServerResponse) =>
-        this.handleRetractProposal(res, c.request.params.packetId),
+      retractProposal: (
+        c: OperationContext<"retractProposal", ReviewMutationPrecondition>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleRetractProposal(res, c.request.params.packetId, c.request.requestBody),
 
       /**
        * The document decided the request was malformed. Its Ajv errors name
@@ -1387,14 +1403,49 @@ export default class AgentHTTPProvider extends ProviderContract {
    * CHUNK_NOT_FOUND instead of landing somewhere unintended. Hold alone
    * carries a body — the optional comment attached without adjudicating.
    */
+  /**
+   * The refusals that mean the caller's picture of the review is stale rather
+   * than wrong: the file closed, the review was invalidated by disk drift, or
+   * a precondition named a text or generation the review has moved past. All
+   * are 409, and keeping the list in one place is what stops a code meaning
+   * 409 on one route and 400 on another.
+   */
+  private static isConflict(code: AgentErrorCode): boolean {
+    return (
+      code === "DOCUMENT_CLOSED" ||
+      code === "REVIEW_INVALIDATED" ||
+      code === "REVISION_MISMATCH" ||
+      code === "REVIEW_GENERATION_MISMATCH"
+    );
+  }
+
+  /**
+   * What a precondition refusal tells the caller to re-read from. Absent on
+   * every other refusal, which has nothing to resynchronize against.
+   */
+  private static conflictDetail(
+    result: ReviewFailure,
+  ): Omit<AgentError, "code" | "message"> | undefined {
+    return result.actual === undefined
+      ? undefined
+      : { actual: result.actual, reviewGeneration: result.reviewGeneration };
+  }
+
   private async handleDecideChunk(
     res: http.ServerResponse,
     reviewId: string,
     chunkId: string,
     decision: ChunkDecision,
+    precondition: ReviewMutationPrecondition,
     comment: string | undefined,
   ): Promise<void> {
-    let result = await this._documents.decideReviewChunk(reviewId, chunkId, decision, comment);
+    let result = await this._documents.decideReviewChunk(
+      reviewId,
+      chunkId,
+      decision,
+      precondition,
+      comment,
+    );
     if (!result.ok && result.code === "REVIEW_NOT_FOUND") {
       result = await this._documents.reviewLookupFailure(reviewId);
     }
@@ -1402,12 +1453,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       const status =
         result.code === "REVIEW_NOT_FOUND" || result.code === "CHUNK_NOT_FOUND"
           ? 404
-          : result.code === "DOCUMENT_CLOSED" || result.code === "REVIEW_INVALIDATED"
+          : AgentHTTPProvider.isConflict(result.code)
             ? 409
             : result.code === "PERSISTENCE_FAILED"
               ? 500
               : 400;
-      this.sendError(res, status, result.code, result.message);
+      this.sendError(res, status, result.code, result.message, AgentHTTPProvider.conflictDetail(result));
       return;
     }
     this.sendJson(res, 200, result);
@@ -1422,19 +1473,29 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: http.ServerResponse,
     reviewId: string,
     text: string,
+    expectedReviewGeneration: number,
   ): Promise<void> {
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
       await this.sendReviewLookupFailure(res, reviewId);
       return;
     }
-    const result = await this._documents.addReviewComment(reviewId, text);
+    const result = await this._documents.addReviewComment(
+      reviewId,
+      text,
+      expectedReviewGeneration,
+    );
     if (!result.ok) {
       this.sendError(
         res,
-        result.code === "PERSISTENCE_FAILED" ? 500 : 404,
+        AgentHTTPProvider.isConflict(result.code)
+          ? 409
+          : result.code === "PERSISTENCE_FAILED"
+            ? 500
+            : 404,
         result.code,
         result.message,
+        AgentHTTPProvider.conflictDetail(result),
       );
       return;
     }
@@ -1477,6 +1538,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       reviewId: review.reviewId,
       documentId,
       generation: review.generation,
+      // The precondition a decision on any of these chunks must carry. A
+      // detached review has no live buffer and so publishes none: it accepts
+      // no decisions until its file is reopened.
+      workingSha256: sha256Text(this._documents.readWorkingText(documentId) ?? ""),
       chunks,
     });
   }
@@ -1520,8 +1585,9 @@ export default class AgentHTTPProvider extends ProviderContract {
   private async handleAcceptAllChunks(
     res: http.ServerResponse,
     reviewId: string,
+    precondition: ReviewMutationPrecondition,
   ): Promise<void> {
-    let result = await this._documents.acceptAllReviewChunks(reviewId);
+    let result = await this._documents.acceptAllReviewChunks(reviewId, precondition);
     if (!result.ok && result.code === "REVIEW_NOT_FOUND") {
       result = await this._documents.reviewLookupFailure(reviewId);
     }
@@ -1529,32 +1595,37 @@ export default class AgentHTTPProvider extends ProviderContract {
       const status =
         result.code === "REVIEW_NOT_FOUND"
           ? 404
-          : result.code === "DOCUMENT_CLOSED" || result.code === "REVIEW_INVALIDATED"
+          : AgentHTTPProvider.isConflict(result.code)
             ? 409
             : result.code === "PERSISTENCE_FAILED"
               ? 500
               : 400;
-      this.sendError(res, status, result.code, result.message);
+      this.sendError(res, status, result.code, result.message, AgentHTTPProvider.conflictDetail(result));
       return;
     }
     this.sendJson(res, 200, result);
   }
 
-  private async handleClearReview(res: http.ServerResponse, reviewId: string): Promise<void> {
-    let result = await this._documents.clearReview(reviewId);
+  private async handleClearReview(
+    res: http.ServerResponse,
+    reviewId: string,
+    precondition: ReviewMutationPrecondition,
+  ): Promise<void> {
+    let result = await this._documents.clearReview(reviewId, precondition);
     if (!result.ok && result.code === "REVIEW_NOT_FOUND") {
       result = await this._documents.reviewLookupFailure(reviewId);
     }
     if (!result.ok) {
       this.sendError(
         res,
-        result.code === "DOCUMENT_CLOSED" || result.code === "REVIEW_INVALIDATED"
+        AgentHTTPProvider.isConflict(result.code)
           ? 409
           : result.code === "PERSISTENCE_FAILED"
             ? 500
             : 404,
         result.code,
         result.message,
+        AgentHTTPProvider.conflictDetail(result),
       );
       return;
     }
@@ -1569,8 +1640,9 @@ export default class AgentHTTPProvider extends ProviderContract {
   private async handleRetractProposal(
     res: http.ServerResponse,
     packetId: string,
+    precondition: ReviewMutationPrecondition,
   ): Promise<void> {
-    const result = await this._documents.retractProposal(packetId);
+    const result = await this._documents.retractProposal(packetId, precondition);
     if (result.ok) {
       this.sendJson(res, 200, {
         retracted: true,
@@ -1589,6 +1661,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, result.code === "PERSISTENCE_FAILED" ? 500 : 409, result.code, result.message, {
         reviewId: result.reviewId,
         canClearUnresolved: result.canClearUnresolved,
+        ...AgentHTTPProvider.conflictDetail(result),
       });
     }
   }

@@ -129,12 +129,33 @@ export interface ReviewDocumentAuthority {
 /** A committed submission, with the discriminant every route reads. */
 export type SubmittedProposal = SubmitProposalResponse & { ok: true };
 
-/** The refusal shape every route already speaks. */
+/**
+ * The refusal shape every route already speaks. A precondition refusal adds
+ * what the caller needs to re-read from: the revision and generation the
+ * review is ACTUALLY at, so a stale client can resynchronize in one round
+ * trip instead of polling.
+ */
 export type ReviewFailure = {
   ok: false;
   code: AgentErrorCode;
   message: string;
+  actual?: { sha256: string };
+  reviewGeneration?: number;
 };
+
+/**
+ * What the caller believed when it formed the decision. Both fields are
+ * required on every mutation: a decision that cannot say which text and which
+ * generation it was made against cannot be checked, and an unchecked decision
+ * is the tweak-before-accept race.
+ *
+ * A review comment moves no document text, so its precondition carries the
+ * generation alone.
+ */
+export interface ReviewMutationPrecondition {
+  expectedReviewGeneration: number;
+  expectedWorkingSha256: string;
+}
 
 interface ReviewApplicationDependencies {
   authority: ReviewDocumentAuthority;
@@ -275,6 +296,55 @@ export class ReviewApplicationService {
       };
     }
     return { documentId: review.documentId, documentPath, review, workingText };
+  }
+
+  /**
+   * The caller's own fence: the decision is applied only if the review is
+   * still at the generation, and the buffer still holds the bytes, that the
+   * reviewer was looking at when they decided.
+   *
+   * Called with the lock held, before any transition is prepared, because
+   * that is the only window in which "the current text" means anything. The
+   * generation is checked first: it moves on every review mutation, so a
+   * mismatch there names a competing decision, while a text mismatch names
+   * an edit — and the reviewer needs to be told which.
+   *
+   * `expectedWorkingSha256` is undefined only for a review comment, which
+   * adjudicates nothing and moves no text.
+   */
+  private checkPrecondition(
+    context: MutationContext,
+    precondition: { expectedReviewGeneration: number; expectedWorkingSha256?: string },
+  ): ReviewFailure | undefined {
+    const actualSha256 = sha256Text(context.workingText);
+    if (precondition.expectedReviewGeneration !== context.review.generation) {
+      return {
+        ok: false,
+        code: "REVIEW_GENERATION_MISMATCH",
+        message:
+          `The review is at generation ${context.review.generation}, not ` +
+          `${precondition.expectedReviewGeneration}: something was decided ` +
+          "after this one was read. Re-read the review and decide again.",
+        actual: { sha256: actualSha256 },
+        reviewGeneration: context.review.generation,
+      };
+    }
+    if (
+      precondition.expectedWorkingSha256 !== undefined &&
+      precondition.expectedWorkingSha256 !== actualSha256
+    ) {
+      return {
+        ok: false,
+        code: "REVISION_MISMATCH",
+        message:
+          "The document text changed after this decision was formed, so the " +
+          "chunk it names is not the chunk that would be decided. Re-read " +
+          "the chunks and decide again.",
+        actual: { sha256: actualSha256 },
+        reviewGeneration: context.review.generation,
+      };
+    }
+    return undefined;
   }
 
   /**
@@ -511,12 +581,17 @@ export class ReviewApplicationService {
     reviewId: string,
     chunkId: string,
     decision: ChunkDecision,
+    precondition: ReviewMutationPrecondition,
     comment?: string,
   ): Promise<ChunkDecisionResponse | ReviewFailure> {
     return await this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
+      }
+      const stale = this.checkPrecondition(context, precondition);
+      if (stale !== undefined) {
+        return stale;
       }
       return await this.commitReviewMutation(context, () => {
         const plan = prepareChunkDecision({
@@ -548,11 +623,16 @@ export class ReviewApplicationService {
    */
   public async acceptAllChunks(
     reviewId: string,
+    precondition: ReviewMutationPrecondition,
   ): Promise<AcceptAllChunksResponse | ReviewFailure> {
     return await this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
+      }
+      const stale = this.checkPrecondition(context, precondition);
+      if (stale !== undefined) {
+        return stale;
       }
       return await this.commitReviewMutation(context, () => {
         const plan = prepareAcceptAll({
@@ -569,11 +649,16 @@ export class ReviewApplicationService {
   /** Clear every unresolved suggestion: mass reject, ending review mode. */
   public async clearReview(
     reviewId: string,
+    precondition: ReviewMutationPrecondition,
   ): Promise<ClearReviewResponse | ReviewFailure> {
     return await this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
+      }
+      const stale = this.checkPrecondition(context, precondition);
+      if (stale !== undefined) {
+        return stale;
       }
       return await this.commitReviewMutation(
         context,
@@ -588,23 +673,31 @@ export class ReviewApplicationService {
   public async addReviewComment(
     reviewId: string,
     text: string,
+    expectedReviewGeneration: number,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    return await this.runKeyedByReview(reviewId, async (context) =>
-      await this.commitReviewMutation(context, () =>
+    return await this.runKeyedByReview(reviewId, async (context) => {
+      const stale = this.checkPrecondition(context, { expectedReviewGeneration });
+      if (stale !== undefined) {
+        return stale;
+      }
+      return await this.commitReviewMutation(context, () =>
         prepareReviewComment({
           review: context.review,
           workingText: context.workingText,
           text,
         }),
-      ),
-    );
+      );
+    });
   }
 
   /**
    * Retract a proposal packet. Keyed by packetId, so the owning review is
    * found first and the lock is taken on its document.
    */
-  public async retractProposal(packetId: string): Promise<
+  public async retractProposal(
+    packetId: string,
+    precondition: ReviewMutationPrecondition,
+  ): Promise<
     | RetractProposalResponse
     | (ReviewFailure & { reviewId: string; canClearUnresolved: boolean })
   > {
@@ -628,6 +721,10 @@ export class ReviewApplicationService {
       const context = this.contextForReview(owner.reviewId);
       if ("ok" in context) {
         return { ...context, reviewId: owner.reviewId, canClearUnresolved: false };
+      }
+      const stale = this.checkPrecondition(context, precondition);
+      if (stale !== undefined) {
+        return { ...stale, reviewId: owner.reviewId, canClearUnresolved: true };
       }
       const result = await this.commitReviewMutation(context, () => {
         const plan = prepareRetraction({

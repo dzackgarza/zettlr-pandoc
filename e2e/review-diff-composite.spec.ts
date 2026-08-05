@@ -349,10 +349,18 @@ describe('review-diff closure contract composite lifecycle', function () {
     assert.ok(isRecord(driftChunks) && Array.isArray(driftChunks.chunks) && driftChunks.chunks.length > 0)
     assert.ok(isRecord(driftChunks.chunks[0]))
     const driftChunkId = stringField(driftChunks.chunks[0], 'chunkId')
+    // An invalidated review refuses before any precondition is read, so the
+    // fence values here only have to be well formed.
     const refusedDecision = await restartedPage.evaluate(async ({ reviewId, chunkId }) => {
       return await window.ipc.invoke('documents-provider', {
         command: 'decide-review-chunk',
-        payload: { reviewId, chunkId, decision: 'reject' }
+        payload: {
+          reviewId,
+          chunkId,
+          decision: 'reject',
+          expectedReviewGeneration: 0,
+          expectedWorkingSha256: '0'.repeat(64)
+        }
       })
     }, { reviewId: driftReviewId, chunkId: driftChunkId })
     assert.ok(isRecord(refusedDecision) && !refusedDecision.ok)

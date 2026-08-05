@@ -91,6 +91,7 @@ import {
   type PreparedDocumentMutation,
   type ReviewDocumentAuthority,
   type ReviewFailure,
+  type ReviewMutationPrecondition,
   type SubmittedProposal,
 } from "./review-application-service";
 import { ReviewSidecarStore } from "./review-sidecar-store";
@@ -347,10 +348,18 @@ export type DocumentManagerIPCAPI = IPCAPI<{
     decision: "accept" | "reject" | "hold";
     /** Hold only: the optional note attached without adjudicating. */
     comment?: string;
+  } & ReviewMutationPrecondition;
+  "accept-all-review-chunks": { reviewId: string } & ReviewMutationPrecondition;
+  "clear-review": { reviewId: string } & ReviewMutationPrecondition;
+  /**
+   * A comment adjudicates nothing and moves no text, so it fences on the
+   * review generation alone.
+   */
+  "add-review-comment": {
+    reviewId: string;
+    text: string;
+    expectedReviewGeneration: number;
   };
-  "accept-all-review-chunks": { reviewId: string };
-  "clear-review": { reviewId: string };
-  "add-review-comment": { reviewId: string; text: string };
 
   "move-file": {
     originWindow: string;
@@ -654,20 +663,26 @@ export default class DocumentManager
           return this._reviewSessionFor(payload.path, review);
         }
         case "decide-review-chunk": {
-          const { reviewId, chunkId, decision, comment } = payload;
-          return await this.decideReviewChunk(reviewId, chunkId, decision, comment);
+          const { reviewId, chunkId, decision, comment, ...precondition } = payload;
+          return await this.decideReviewChunk(
+            reviewId,
+            chunkId,
+            decision,
+            precondition,
+            comment,
+          );
         }
         case "accept-all-review-chunks": {
-          const { reviewId } = payload;
-          return await this.acceptAllReviewChunks(reviewId);
+          const { reviewId, ...precondition } = payload;
+          return await this.acceptAllReviewChunks(reviewId, precondition);
         }
         case "clear-review": {
-          const { reviewId } = payload;
-          return await this.clearReview(reviewId);
+          const { reviewId, ...precondition } = payload;
+          return await this.clearReview(reviewId, precondition);
         }
         case "add-review-comment": {
-          const { reviewId, text } = payload;
-          return await this.addReviewComment(reviewId, text);
+          const { reviewId, text, expectedReviewGeneration } = payload;
+          return await this.addReviewComment(reviewId, text, expectedReviewGeneration);
         }
         case "move-file": {
           const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;
@@ -2547,28 +2562,42 @@ current contents from the editor somewhere else, and restart the application.`,
     reviewId: string,
     chunkId: string,
     decision: ChunkDecision,
+    precondition: ReviewMutationPrecondition,
     comment?: string,
   ): Promise<ChunkDecisionResponse | ReviewFailure> {
-    return await this._reviewApplication.decideChunk(reviewId, chunkId, decision, comment);
+    return await this._reviewApplication.decideChunk(
+      reviewId,
+      chunkId,
+      decision,
+      precondition,
+      comment,
+    );
   }
 
   public async acceptAllReviewChunks(
     reviewId: string,
+    precondition: ReviewMutationPrecondition,
   ): Promise<AcceptAllChunksResponse | ReviewFailure> {
-    return await this._reviewApplication.acceptAllChunks(reviewId);
+    return await this._reviewApplication.acceptAllChunks(reviewId, precondition);
   }
 
   public async clearReview(
     reviewId: string,
+    precondition: ReviewMutationPrecondition,
   ): Promise<ClearReviewResponse | ReviewFailure> {
-    return await this._reviewApplication.clearReview(reviewId);
+    return await this._reviewApplication.clearReview(reviewId, precondition);
   }
 
   public async addReviewComment(
     reviewId: string,
     text: string,
+    expectedReviewGeneration: number,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    return await this._reviewApplication.addReviewComment(reviewId, text);
+    return await this._reviewApplication.addReviewComment(
+      reviewId,
+      text,
+      expectedReviewGeneration,
+    );
   }
 
   /**
@@ -3345,7 +3374,10 @@ current contents from the editor somewhere else, and restart the application.`,
     });
   }
 
-  public async retractProposal(packetId: string): Promise<
+  public async retractProposal(
+    packetId: string,
+    precondition: ReviewMutationPrecondition,
+  ): Promise<
     | RetractProposalResponse
     | {
         ok: false;
@@ -3353,9 +3385,11 @@ current contents from the editor somewhere else, and restart the application.`,
         message: string;
         reviewId: string;
         canClearUnresolved: boolean;
+        actual?: { sha256: string };
+        reviewGeneration?: number;
       }
   > {
-    const result = await this._reviewApplication.retractProposal(packetId);
+    const result = await this._reviewApplication.retractProposal(packetId, precondition);
     if ("ok" in result && !result.ok && result.code === "PACKET_NOT_RETRACTABLE" && result.reviewId === "") {
       // GET /v1/reviews/{id}/packets hands out a detached review's packetIds,
       // so this route owes them an answer. The live store dropped them when

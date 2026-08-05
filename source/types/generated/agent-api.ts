@@ -683,6 +683,8 @@ export interface components {
             actual?: components["schemas"]["DocumentRevision"];
             reviewId?: string;
             canClearUnresolved?: boolean;
+            /** @description REVIEW_GENERATION_MISMATCH: the generation the review is actually at, so the caller can re-read from exactly there. */
+            reviewGeneration?: number;
         };
         AgentErrorResponse: {
             error: components["schemas"]["AgentError"];
@@ -828,6 +830,8 @@ export interface components {
             /** @description Absent for a detached review, whose file is closed. */
             documentId?: string;
             generation: number;
+            /** @description SHA-256 of the working text these chunks were partitioned from — the `expectedWorkingSha256` to send with a decision on any of them. Absent for a detached review, which has no live buffer and accepts no decisions until its file is reopened. */
+            workingSha256?: string;
             chunks: components["schemas"]["OutstandingChunk"][];
         };
         ReviewPacketsResponse: {
@@ -907,11 +911,23 @@ export interface components {
             state: components["schemas"]["ReviewState"];
             documentRevision: components["schemas"]["DocumentRevision"];
         };
+        ReviewMutationPrecondition: {
+            /** @description The review generation this decision was formed against — the `generation` of the chunk list, diff, or status you read. Every review mutation advances it, so a decision that carries a stale one was decided before somebody else's mutation landed and is refused as REVIEW_GENERATION_MISMATCH. */
+            expectedReviewGeneration: number;
+            /** @description SHA-256 of the working text this decision was formed against — `workingSha256` from GET /v1/reviews/{reviewId}/chunks. Chunk ids are content-addressed, so text that moved retires them; binding the decision to the exact bytes makes an edit between the read and the decision a REVISION_MISMATCH refusal instead of a decision landing on a chunk the reviewer never saw. */
+            expectedWorkingSha256: string;
+        };
         HoldChunkRequest: {
+            /** @description See ReviewMutationPrecondition. */
+            expectedReviewGeneration: number;
+            /** @description See ReviewMutationPrecondition. */
+            expectedWorkingSha256: string;
             /** @description Optional note attached to the chunk without adjudicating it. A hold without text is legal; re-holding a held chunk replaces its comment. */
             comment?: string;
         };
         AddReviewCommentRequest: {
+            /** @description See ReviewMutationPrecondition. A comment moves no document text, so it carries no working hash. */
+            expectedReviewGeneration: number;
             text: string;
         };
         ReviewCommentResponse: {
@@ -1461,7 +1477,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewMutationPrecondition"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -1481,7 +1501,7 @@ export interface operations {
                     "application/json": components["schemas"]["AgentErrorResponse"];
                 };
             };
-            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but no decision can land while its file is closed. Open its documentPath to reattach it. */
+            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but no decision can land while its file is closed. Open its documentPath to reattach it. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1502,7 +1522,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewMutationPrecondition"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -1522,7 +1546,7 @@ export interface operations {
                     "application/json": components["schemas"]["AgentErrorResponse"];
                 };
             };
-            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but no decision can land while its file is closed. Open its documentPath to reattach it. */
+            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but no decision can land while its file is closed. Open its documentPath to reattach it. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1543,7 +1567,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": components["schemas"]["HoldChunkRequest"];
             };
@@ -1567,7 +1591,7 @@ export interface operations {
                     "application/json": components["schemas"]["AgentErrorResponse"];
                 };
             };
-            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but no decision can land while its file is closed. Open its documentPath to reattach it. */
+            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but no decision can land while its file is closed. Open its documentPath to reattach it. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1620,7 +1644,7 @@ export interface operations {
                     "application/json": components["schemas"]["AgentErrorResponse"];
                 };
             };
-            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but a comment cannot land while its file is closed. Open its documentPath to reattach it. */
+            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but a comment cannot land while its file is closed. Open its documentPath to reattach it. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1671,7 +1695,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewMutationPrecondition"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -1691,7 +1719,7 @@ export interface operations {
                     "application/json": components["schemas"]["AgentErrorResponse"];
                 };
             };
-            /** @description The reviewed document is closed, or the review was invalidated */
+            /** @description The reviewed document is closed, or the review was invalidated Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1711,7 +1739,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewMutationPrecondition"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -1731,7 +1763,7 @@ export interface operations {
                     "application/json": components["schemas"]["AgentErrorResponse"];
                 };
             };
-            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but clearing edits the document, which is closed. Open its documentPath to reattach it. */
+            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but clearing edits the document, which is closed. Open its documentPath to reattach it. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1751,7 +1783,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewMutationPrecondition"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -1762,7 +1798,7 @@ export interface operations {
                     "application/json": components["schemas"]["RetractProposalResponse"];
                 };
             };
-            /** @description PACKET_NOT_RETRACTABLE when the packet is live but no longer the retractable one: the error carries the owning reviewId and canClearUnresolved: true — clearing is the remaining way to drop the unresolved suggestions. DOCUMENT_CLOSED when the packet belongs to a detached review (one listReviews reports with attached: false): the message names the file to open, and canClearUnresolved is false because clearing refuses too. */
+            /** @description PACKET_NOT_RETRACTABLE when the packet is live but no longer the retractable one: the error carries the owning reviewId and canClearUnresolved: true — clearing is the remaining way to drop the unresolved suggestions. DOCUMENT_CLOSED when the packet belongs to a detached review (one listReviews reports with attached: false): the message names the file to open, and canClearUnresolved is false because clearing refuses too. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -43,6 +43,32 @@ import {
   type SourceRange,
 } from "@dts/common/references";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
+
+/**
+ * What the pane must do with a review decision. Every method carries the
+ * review generation the widgets were drawn from; the implementation adds the
+ * hash of the text they were drawn over, and main refuses anything that no
+ * longer matches. A method rejects when the mutation was refused.
+ */
+export interface ReviewActionClient {
+  decide: (input: {
+    reviewId: string;
+    expectedReviewGeneration: number;
+    chunkId: string;
+    decision: "accept" | "reject" | "hold";
+    comment?: string;
+  }) => Promise<void>;
+  acceptAll: (input: {
+    reviewId: string;
+    expectedReviewGeneration: number;
+  }) => Promise<void>;
+  clear: (input: { reviewId: string; expectedReviewGeneration: number }) => Promise<void>;
+  comment: (input: {
+    reviewId: string;
+    expectedReviewGeneration: number;
+    text: string;
+  }) => Promise<void>;
+}
 import { type TagRecord } from "@providers/tags";
 // Keymaps/Input modes
 import { emacs } from "@replit/codemirror-emacs";
@@ -257,6 +283,9 @@ export default class MarkdownEditor extends EventEmitter {
   private workspaceReferencesCache: EditorWorkspaceReferences | null;
 
   private readonly reviewDiffCompartment: Compartment;
+
+  /** Installed by the pane that owns this editor; see setReviewActionClient. */
+  private reviewActionClient: ReviewActionClient | null = null;
   private activeReviewDiffSession: ReviewDiffSession | null;
   private pendingReviewDiffSession: ReviewDiffSession | null = null;
 
@@ -940,6 +969,17 @@ export default class MarkdownEditor extends EventEmitter {
     });
   }
 
+  /**
+   * Installs the one thing allowed to act on a review decision. The editor
+   * raises no review events of its own: a fire-and-forget event left the
+   * click and the IPC call unordered, so a decision could reach main before
+   * the edit the reviewer made just above it. The client awaits instead, and
+   * its rejection is what hands the widget's controls back.
+   */
+  setReviewActionClient(client: ReviewActionClient): void {
+    this.reviewActionClient = client;
+  }
+
   startReviewDiffSession(session: ReviewDiffSession): void {
     if (session.documentPath !== this.representedDocument) {
       return;
@@ -983,29 +1023,37 @@ export default class MarkdownEditor extends EventEmitter {
    * the only thing that changes review state here.
    */
   private buildReviewExtension(session: ReviewDiffSession): ReturnType<typeof reviewChunksExtension> {
+    // Every callback binds the generation of the session these widgets were
+    // DRAWN from, not whatever the newest broadcast carries. That is the
+    // whole point: the decision is bound to what the reviewer was looking at
+    // when they clicked, so a session that changed underneath refuses.
+    const client = (): ReviewActionClient => {
+      if (this.reviewActionClient === null) {
+        throw new Error("no review action client is installed on this editor");
+      }
+      return this.reviewActionClient;
+    };
+    const reviewId = session.id;
+    const expectedReviewGeneration = session.reviewGeneration;
     return reviewChunksExtension({
-      reviewId: session.id,
+      reviewId,
       referenceText: session.referenceText,
       packets: session.packets,
       holds: session.holds,
       comments: session.comments,
-      onDecide: (chunkId, decision, comment) => {
-        this.emit("review-chunk-decision", {
-          reviewId: session.id,
+      onDecide: async (chunkId, decision, comment) =>
+        await client().decide({
+          reviewId,
+          expectedReviewGeneration,
           chunkId,
           decision,
           comment,
-        });
-      },
-      onAcceptAll: () => {
-        this.emit("review-accept-all", { reviewId: session.id });
-      },
-      onClear: () => {
-        this.emit("review-clear", { reviewId: session.id });
-      },
-      onComment: (text) => {
-        this.emit("review-comment", { reviewId: session.id, text });
-      },
+        }),
+      onAcceptAll: async () =>
+        await client().acceptAll({ reviewId, expectedReviewGeneration }),
+      onClear: async () => await client().clear({ reviewId, expectedReviewGeneration }),
+      onComment: async (text) =>
+        await client().comment({ reviewId, expectedReviewGeneration, text }),
     });
   }
 

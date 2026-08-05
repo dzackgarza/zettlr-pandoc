@@ -71,17 +71,47 @@ export interface ReviewChunksConfig {
    * Called with a chunk's content-addressed id when a control is clicked.
    * Hold carries the optional comment typed into the chunk's note field.
    */
-  onDecide: (chunkId: string, decision: 'accept'|'reject'|'hold', comment?: string) => void
+  onDecide: (chunkId: string, decision: 'accept'|'reject'|'hold', comment?: string) => Promise<void>
   /**
    * Called when the status panel's Accept-all control is clicked. The
    * provider sweeps the whole partition through its one decision path and
    * broadcasts; this pane redraws from that broadcast, like any decision.
    */
-  onAcceptAll: () => void
+  onAcceptAll: () => Promise<void>
   /** Called when the status panel rejects every remaining chunk. */
-  onClear: () => void
+  onClear: () => Promise<void>
   /** Called when the status panel submits a review-level comment. */
-  onComment: (text: string) => void
+  onComment: (text: string) => Promise<void>
+}
+
+/**
+ * Runs one review action with its controls dead for the round trip.
+ *
+ * A decision is a request, not a local edit: the provider owns review state
+ * and its broadcast is what replaces these widgets. So a settled action does
+ * NOT hand the controls back — they stay disabled until the broadcast rebuilds
+ * them, which is what stops a second click landing on a chunk the first one
+ * already resolved. Only a refusal re-enables, because a refusal changed
+ * nothing and the reviewer may want to try again.
+ */
+async function withControlsLocked (
+  container: HTMLElement,
+  controls: HTMLButtonElement[],
+  action: () => Promise<void>
+): Promise<void> {
+  container.setAttribute('aria-busy', 'true')
+  for (const control of controls) {
+    control.disabled = true
+  }
+  try {
+    await action()
+  } catch (err) {
+    container.removeAttribute('aria-busy')
+    for (const control of controls) {
+      control.disabled = false
+    }
+    console.error('Review action refused', err)
+  }
 }
 
 const reviewChunksConfig = Facet.define<ReviewChunksConfig>()
@@ -192,12 +222,24 @@ function reviewStatusPanel (view: EditorView): Panel {
   })
   const label = document.createElement('span')
   label.className = 'cm-reviewStatusLabel'
+  // Set for the duration of a round trip so the per-update render below does
+  // not hand the controls back while the provider is still deciding.
+  let busy = false
+  const runPanelAction = (action: () => Promise<void>): void => {
+    busy = true
+    void withControlsLocked(dom, [acceptAll, clear, commentSubmit], action)
+      .finally(() => {
+        busy = false
+        render(view.state)
+      })
+  }
   const acceptAll = makeButton(
     'cm-review-diff-control cm-reviewAcceptAll',
     'Accept all',
     'Accept every remaining chunk',
     () => {
-      requireReviewChunksConfig(view.state).onAcceptAll()
+      const config = requireReviewChunksConfig(view.state)
+      runPanelAction(async () => { await config.onAcceptAll() })
     }
   )
   const clear = makeButton(
@@ -205,7 +247,8 @@ function reviewStatusPanel (view: EditorView): Panel {
     'Reject remaining',
     'Reject every remaining change',
     () => {
-      requireReviewChunksConfig(view.state).onClear()
+      const config = requireReviewChunksConfig(view.state)
+      runPanelAction(async () => { await config.onClear() })
     }
   )
   const commentList = document.createElement('div')
@@ -221,8 +264,13 @@ function reviewStatusPanel (view: EditorView): Panel {
     () => {
       const text = commentInput.value.trim()
       if (text === '') {return}
-      requireReviewChunksConfig(view.state).onComment(text)
-      commentInput.value = ''
+      const config = requireReviewChunksConfig(view.state)
+      // The field clears only once the comment is committed; a refused one
+      // stays typed so the reviewer does not lose it.
+      runPanelAction(async () => {
+        await config.onComment(text)
+        commentInput.value = ''
+      })
     }
   )
   commentInput.addEventListener('input', () => {
@@ -240,8 +288,9 @@ function reviewStatusPanel (view: EditorView): Panel {
     const done = chunks.length === 0
     previous.disabled = done
     next.disabled = done
-    acceptAll.disabled = done
-    clear.disabled = done
+    acceptAll.disabled = done || busy
+    clear.disabled = done || busy
+    commentSubmit.disabled = busy || commentInput.value.trim() === ''
     commentList.replaceChildren(...requireReviewChunksConfig(state).comments.map(comment => {
       const entry = document.createElement('div')
       entry.className = 'cm-reviewComment'
@@ -398,6 +447,15 @@ class DeletedLinesWidget extends WidgetType {
 
     const buttons = document.createElement('div')
     buttons.className = 'cm-chunkButtons'
+    // Every control of this chunk locks together for the round trip: the three
+    // decisions are mutually exclusive, so leaving one live during another's
+    // flight is an invitation to double-decide.
+    const controls: HTMLButtonElement[] = []
+    const decide = (decision: 'accept'|'reject'|'hold', comment?: string): void => {
+      void withControlsLocked(buttons, controls, async () => {
+        await this.config.onDecide(this.chunk.chunkId, decision, comment)
+      })
+    }
     for (const decision of ['accept', 'reject'] as const) {
       const button = document.createElement('button')
       button.type = 'button'
@@ -407,8 +465,9 @@ class DeletedLinesWidget extends WidgetType {
       button.title = decision === 'accept' ? 'Accept this change' : 'Reject this change'
       button.addEventListener('click', (event) => {
         event.preventDefault()
-        this.config.onDecide(this.chunk.chunkId, decision)
+        decide(decision)
       })
+      controls.push(button)
       buttons.appendChild(button)
     }
 
@@ -431,8 +490,9 @@ class DeletedLinesWidget extends WidgetType {
     holdButton.addEventListener('click', (event) => {
       event.preventDefault()
       const note = noteInput.value.trim()
-      this.config.onDecide(this.chunk.chunkId, 'hold', note === '' ? undefined : note)
+      decide('hold', note === '' ? undefined : note)
     })
+    controls.push(holdButton)
     buttons.appendChild(holdButton)
     buttons.appendChild(noteInput)
     container.appendChild(buttons)

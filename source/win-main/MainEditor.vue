@@ -66,6 +66,7 @@ import { annotateCompletionEntries } from '@common/pandoc-util/project-reference
 import { trans } from '@common/i18n-renderer'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import showToast from '@common/util/show-toast'
+import { sha256Text } from '@common/util/sha256'
 import type { ReferenceKeyEditPromptIntent } from '@common/modules/markdown-editor/plugins/reference-key-edit-prompt'
 import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
 import {
@@ -186,6 +187,32 @@ function applyReviewDiffSession (session: ReviewDiffSession): void {
 
   pendingReviewDiffSession = null
   currentEditor.startReviewDiffSession(session)
+}
+
+/**
+ * The working-text hash a review decision is bound to. The sync comes first:
+ * hashing before the pane's pending edits have reached the document authority
+ * would bind text main has not been told about, and main would then refuse a
+ * decision that was in fact current.
+ */
+async function syncedWorkingSha256 (editor: MarkdownEditor): Promise<string> {
+  await editor.whenSynced()
+  return sha256Text(editor.value)
+}
+
+/**
+ * Surfaces a refused review mutation. Success changes nothing locally — the
+ * provider's broadcast is the only thing that moves review state in this pane
+ * — so this is the whole of the response handling. A refusal is toasted and
+ * rethrown, which is what tells the widget to hand its controls back.
+ */
+function throwOnReviewRefusal (
+  result: { ok: true }|{ ok: false, message: string }
+): void {
+  if (result.ok === false) {
+    showToast(trans(result.message), 'error')
+    throw new Error(result.message)
+  }
 }
 
 function fetchActiveReviewDiffSession (): void {
@@ -722,62 +749,58 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     }
   })
 
-  editor.on('review-chunk-decision', (decision: { reviewId: string, chunkId: string, decision: 'accept'|'reject'|'hold', comment?: string }) => {
-    // The pane only names the chunk; the provider is the one decision path.
-    // Whatever happens — applied, or refused because the region changed under
-    // the click — the provider broadcasts its state, and this pane redraws
-    // from that broadcast. A refusal needs no local handling beyond surfacing.
-    ipcRenderer.invoke('documents-provider', {
-      command: 'decide-review-chunk',
-      payload: decision
-    })
-      .then(result => {
-        if (!result.ok) {
-          showToast(trans(result.message), 'error')
+  // The pane's one path to a review decision. Nothing here mutates review
+  // state: the provider owns it, and its broadcast is what redraws the
+  // widgets. Every call binds the decision to the generation the widgets were
+  // drawn from and to the exact bytes the reviewer is looking at, so a
+  // decision formed against a stale pane is refused instead of landing on a
+  // chunk that moved.
+  editor.setReviewActionClient({
+    decide: async input => {
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents-provider', {
+        command: 'decide-review-chunk',
+        payload: {
+          reviewId: input.reviewId,
+          chunkId: input.chunkId,
+          decision: input.decision,
+          comment: input.comment,
+          expectedReviewGeneration: input.expectedReviewGeneration,
+          expectedWorkingSha256: await syncedWorkingSha256(editor)
         }
-      })
-      .catch(err => console.error('Could not decide review chunk', err))
-  })
-
-  editor.on('review-accept-all', (payload: { reviewId: string }) => {
-    // Same contract as a single decision: the provider sweeps its partition
-    // and broadcasts; this pane redraws from the broadcast.
-    ipcRenderer.invoke('documents-provider', {
-      command: 'accept-all-review-chunks',
-      payload
-    })
-      .then(result => {
-        if (!result.ok) {
-          showToast(trans(result.message), 'error')
+      }))
+    },
+    acceptAll: async input => {
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents-provider', {
+        command: 'accept-all-review-chunks',
+        payload: {
+          reviewId: input.reviewId,
+          expectedReviewGeneration: input.expectedReviewGeneration,
+          expectedWorkingSha256: await syncedWorkingSha256(editor)
         }
-      })
-      .catch(err => console.error('Could not accept all review chunks', err))
-  })
-
-  editor.on('review-clear', (payload: { reviewId: string }) => {
-    ipcRenderer.invoke('documents-provider', {
-      command: 'clear-review',
-      payload
-    })
-      .then(result => {
-        if (!result.ok) {
-          showToast(trans(result.message), 'error')
+      }))
+    },
+    clear: async input => {
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents-provider', {
+        command: 'clear-review',
+        payload: {
+          reviewId: input.reviewId,
+          expectedReviewGeneration: input.expectedReviewGeneration,
+          expectedWorkingSha256: await syncedWorkingSha256(editor)
         }
-      })
-      .catch(err => console.error('Could not reject remaining review chunks', err))
-  })
-
-  editor.on('review-comment', (payload: { reviewId: string, text: string }) => {
-    ipcRenderer.invoke('documents-provider', {
-      command: 'add-review-comment',
-      payload
-    })
-      .then(result => {
-        if (!result.ok) {
-          showToast(trans(result.message), 'error')
+      }))
+    },
+    comment: async input => {
+      // A comment adjudicates nothing and moves no text, so it fences on the
+      // review generation alone and needs no sync.
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents-provider', {
+        command: 'add-review-comment',
+        payload: {
+          reviewId: input.reviewId,
+          text: input.text,
+          expectedReviewGeneration: input.expectedReviewGeneration
         }
-      })
-      .catch(err => console.error('Could not add review comment', err))
+      }))
+    }
   })
 
   editor.on('focus', () => {
