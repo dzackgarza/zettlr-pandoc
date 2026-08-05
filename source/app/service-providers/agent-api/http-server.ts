@@ -1221,6 +1221,8 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 409, "REVIEW_INVALIDATED", result.message);
       } else if (result.code === "IDEMPOTENCY_CONFLICT" || result.code === "REVIEW_GENERATION_MISMATCH") {
         this.sendError(res, 409, result.code, result.message);
+      } else if (result.code === "PERSISTENCE_FAILED") {
+        this.sendError(res, 500, "PERSISTENCE_FAILED", result.message);
       } else {
         this.sendError(res, 500, "INTERNAL_ERROR", result.message);
       }
@@ -1390,7 +1392,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     decision: ChunkDecision,
     comment: string | undefined,
   ): Promise<void> {
-    let result = await this._documents.decideChunkAsync(reviewId, chunkId, decision, comment);
+    let result = await this._documents.decideReviewChunk(reviewId, chunkId, decision, comment);
     if (!result.ok && result.code === "REVIEW_NOT_FOUND") {
       result = await this._documents.reviewLookupFailure(reviewId);
     }
@@ -1400,7 +1402,9 @@ export default class AgentHTTPProvider extends ProviderContract {
           ? 404
           : result.code === "DOCUMENT_CLOSED" || result.code === "REVIEW_INVALIDATED"
             ? 409
-            : 400;
+            : result.code === "PERSISTENCE_FAILED"
+              ? 500
+              : 400;
       this.sendError(res, status, result.code, result.message);
       return;
     }
@@ -1422,9 +1426,14 @@ export default class AgentHTTPProvider extends ProviderContract {
       await this.sendReviewLookupFailure(res, reviewId);
       return;
     }
-    const result = this._documents.addReviewComment(reviewId, text);
+    const result = await this._documents.addReviewComment(reviewId, text);
     if (!result.ok) {
-      this.sendError(res, 404, result.code, result.message);
+      this.sendError(
+        res,
+        result.code === "PERSISTENCE_FAILED" ? 500 : 404,
+        result.code,
+        result.message,
+      );
       return;
     }
     this.sendJson(res, 200, {
@@ -1510,7 +1519,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: http.ServerResponse,
     reviewId: string,
   ): Promise<void> {
-    let result = await this._documents.acceptAllChunksAsync(reviewId);
+    let result = await this._documents.acceptAllReviewChunks(reviewId);
     if (!result.ok && result.code === "REVIEW_NOT_FOUND") {
       result = await this._documents.reviewLookupFailure(reviewId);
     }
@@ -1520,7 +1529,9 @@ export default class AgentHTTPProvider extends ProviderContract {
           ? 404
           : result.code === "DOCUMENT_CLOSED" || result.code === "REVIEW_INVALIDATED"
             ? 409
-            : 400;
+            : result.code === "PERSISTENCE_FAILED"
+              ? 500
+              : 400;
       this.sendError(res, status, result.code, result.message);
       return;
     }
@@ -1528,14 +1539,18 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleClearReview(res: http.ServerResponse, reviewId: string): Promise<void> {
-    let result = await this._documents.clearReviewAsync(reviewId);
+    let result = await this._documents.clearReview(reviewId);
     if (!result.ok && result.code === "REVIEW_NOT_FOUND") {
       result = await this._documents.reviewLookupFailure(reviewId);
     }
     if (!result.ok) {
       this.sendError(
         res,
-        result.code === "DOCUMENT_CLOSED" || result.code === "REVIEW_INVALIDATED" ? 409 : 404,
+        result.code === "DOCUMENT_CLOSED" || result.code === "REVIEW_INVALIDATED"
+          ? 409
+          : result.code === "PERSISTENCE_FAILED"
+            ? 500
+            : 404,
         result.code,
         result.message,
       );
@@ -1569,7 +1584,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       // longer the retractable one, or its file is closed. Restating the
       // first code over the second would tell an agent to clear a review it
       // cannot reach.
-      this.sendError(res, 409, result.code, result.message, {
+      this.sendError(res, result.code === "PERSISTENCE_FAILED" ? 500 : 409, result.code, result.message, {
         reviewId: result.reviewId,
         canClearUnresolved: result.canClearUnresolved,
       });
