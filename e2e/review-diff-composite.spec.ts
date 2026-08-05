@@ -151,7 +151,13 @@ async function submitBatch (api: AgentClient, filePath: string, claims: Array<{ 
 }
 
 describe('review-diff closure contract composite lifecycle', function () {
-  this.timeout(180_000)
+  // This suite launches the app TWICE (it restarts mid-test to prove sidecar
+  // persistence), and every launch pays a full cold webpack compile through
+  // `forge start` — a persistent dev cache is not an option because the
+  // asset-relocator loader that embeds native modules (nodehun) skips asset
+  // emission for cache-restored builds. Two cold compiles under machine load
+  // regularly exceeded the old 180 s budget; that flake predates this branch.
+  this.timeout(600_000)
 
   let fixtureRoot: string | undefined
   let configDirectory: string | undefined
