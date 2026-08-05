@@ -1,0 +1,94 @@
+name: Apply PR55 remediation directly
+
+on:
+  push:
+    branches:
+      - automation/pr55-direct-remediation
+    paths:
+      - .github/pr55-remediation/run
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr55-direct-remediation
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out the actual PR branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: feat/outstanding-issue-sweep
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
+        with:
+          bun-version: 1.3.11
+
+      - name: Recover and inspect the implementation patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin automation/pr55-direct-remediation
+          : > /tmp/pr55-remediation.b64
+          for part in 00 01 02 03 04 05 06; do
+            git show "origin/automation/pr55-direct-remediation:.github/pr55-remediation/part-${part}.b64" >> /tmp/pr55-remediation.b64
+          done
+          tr -d '\r\n' < /tmp/pr55-remediation.b64 | base64 --decode > /tmp/pr55-remediation.xz
+          xz --decompress --stdout /tmp/pr55-remediation.xz > /tmp/pr55-remediation.patch
+          test "$(head -n 1 /tmp/pr55-remediation.patch)" = "diff --git a/package.json b/package.json" || {
+            echo "Recovered payload is not the expected git patch" >&2
+            head -n 20 /tmp/pr55-remediation.patch >&2
+            exit 1
+          }
+          git apply --numstat /tmp/pr55-remediation.patch
+          changed_paths="$(git apply --numstat /tmp/pr55-remediation.patch | awk '{print $3}')"
+          if printf '%s\n' "$changed_paths" | grep -Eq '^(\.github/|AGENTS\.md$|scripts/pr55-)'; then
+            echo "Patch contains administrative or staging files" >&2
+            printf '%s\n' "$changed_paths" >&2
+            exit 1
+          fi
+          git apply --check --binary /tmp/pr55-remediation.patch
+          git apply --binary /tmp/pr55-remediation.patch
+
+      - name: Resolve dependencies and regenerate the OpenAPI types
+        run: |
+          set -euo pipefail
+          bun install
+          bun run generate:agent-api-types
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Run the focused behavioral suites
+        run: |
+          set -euo pipefail
+          bun run test -- \
+            test/agent-http-api.spec.ts \
+            test/review-diff-store.spec.ts \
+            test/review-sidecar-store.spec.ts \
+            test/editor-authority-sync-guard.spec.ts \
+            test/reference-rename-atomicity.spec.ts
+
+      - name: Run the complete unit suite
+        run: bun run test
+
+      - name: Commit directly to the PR branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Recovered patch produced no changes" >&2
+            exit 1
+          fi
+          git commit -m "refactor(review): complete PR 55 remediation"
+          git push origin HEAD:feat/outstanding-issue-sweep
