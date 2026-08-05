@@ -639,8 +639,9 @@ export default class AgentHTTPProvider extends ProviderContract {
   // ==========================================================================
 
   /**
-   * The specification with `servers` rewritten to the origin the request
-   * arrived on.
+   * A per-request copy of the specification with `servers` rewritten to the
+   * origin the request arrived on. The caller owns the encoding, and may drop
+   * routes from the copy before serializing it.
    *
    * The committed document names the loopback endpoint, which is correct for
    * the file and wrong for anyone who reached this server another way: a
@@ -660,7 +661,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    * specification into a document that no longer parsed, and the parse ran in
    * this process after the 200 had already gone out.
    */
-  private specificationForRequest(req: http.IncomingMessage, asJson: boolean): string {
+  private specificationForRequest(req: http.IncomingMessage): Document {
     const specification = this._openApiSpecification.clone();
     const host = req.headers.host;
     if (host !== undefined) {
@@ -672,9 +673,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         },
       ]);
     }
-    return asJson
-      ? JSON.stringify(specification.toJSON(), null, 2)
-      : specification.toString();
+    return specification;
   }
 
   /**
@@ -814,16 +813,34 @@ export default class AgentHTTPProvider extends ProviderContract {
         // Built before anything is committed to the wire: a body that failed
         // half-written would leave a 200 already sent and nothing to correct
         // it with.
-        const specification = this.specificationForRequest(req, asJson);
+        const specification = this.specificationForRequest(req);
         res.writeHead(200, {
           "Content-Type": asJson ? "application/json" : "application/yaml",
         });
-        res.end(specification);
+        res.end(
+          asJson
+            ? JSON.stringify(specification.toJSON(), null, 2)
+            : specification.toString(),
+        );
       };
+
+    // The same document minus the one route an Action cannot consume:
+    // /v1/events is Server-Sent Events, and an importer that calls it waits on
+    // it forever. Derived here from the parsed document rather than by a
+    // command that curls this server and edits the result, so there is no
+    // second copy of the contract to keep in step. The long-poll route
+    // /v1/reviews/{reviewId}/events is an ordinary request and stays.
+    const serveActionSpecification = ({ req, res }: RouteContext): void => {
+      const specification = this.specificationForRequest(req);
+      specification.deleteIn(["paths", "/v1/events"]);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(specification.toJSON(), null, 2));
+    };
 
     return [
       { method: "GET", path: "/openapi.yaml", handle: serveSpecification(false) },
       { method: "GET", path: "/openapi.json", handle: serveSpecification(true) },
+      { method: "GET", path: "/openapi-actions.json", handle: serveActionSpecification },
 
       // Health/system routes
       { method: "GET", path: "/health", handle: ({ res }) => this.sendJson(res, 200, instanceIdentity()) },

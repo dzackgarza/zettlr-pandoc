@@ -537,6 +537,41 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
   });
 
+  it("serves an Action-compatible projection that differs only by the SSE route", async function () {
+    // An Action importer cannot consume Server-Sent Events: it calls /v1/events
+    // and waits on it forever. The projection drops that one route, and is
+    // derived from the same parsed document per request, so there is no second
+    // copy of the contract for this one to drift from.
+    const host = "zettlr.example.com";
+    const full = JSON.parse(
+      (await httpRequest("GET", "/openapi.json", { headers: { host } })).body,
+    );
+    const projected = await httpRequest("GET", "/openapi-actions.json", {
+      headers: { host },
+    });
+    assert.equal(projected.status, 200);
+    assert.equal(projected.headers["content-type"], "application/json");
+    const actions = JSON.parse(projected.body);
+
+    assert.ok("/v1/events" in full.paths, "/openapi.json must keep the SSE route");
+    assert.ok(!("/v1/events" in actions.paths), "the projection must drop the SSE route");
+    assert.ok(
+      "/v1/reviews/{reviewId}/events" in actions.paths,
+      "the long-poll route is an ordinary request and must survive the projection",
+    );
+
+    // Everything else is the same document: every other operation, the schemas,
+    // and the servers entry rewritten to the origin this request arrived on.
+    delete full.paths["/v1/events"];
+    assert.deepEqual(actions, full);
+    assert.equal(actions.servers[0].url, `https://${host}`);
+
+    for (const document of [full, actions]) {
+      assert.equal(document.security, undefined, "the API declares no authentication");
+      assert.equal(document.components.securitySchemes, undefined);
+    }
+  });
+
   it("answers a request target that is not a URL instead of dying on it", async function () {
     // Absolute-form request targets are legal HTTP/1.1 and Node hands them to
     // the handler verbatim, so `new URL(req.url, ...)` refuses input that the

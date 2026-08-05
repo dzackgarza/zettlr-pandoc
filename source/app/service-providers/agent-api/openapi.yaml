@@ -1118,6 +1118,23 @@ paths:
             application/json:
               schema:
                 type: object
+  /openapi-actions.json:
+    get:
+      operationId: getOpenApiActionsJson
+      summary: Serve the OpenAPI specification as JSON without the SSE route
+      description: >-
+        Action-compatible projection without the SSE route. Derived per request
+        from the same document, dropping only /v1/events, which is
+        Server-Sent Events: an Action cannot consume it and waits on it
+        forever. The long-poll route /v1/reviews/{reviewId}/events is an
+        ordinary request and remains.
+      responses:
+        '200':
+          description: OpenAPI JSON document
+          content:
+            application/json:
+              schema:
+                type: object
   /health:
     get:
       operationId: health
