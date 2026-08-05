@@ -66,10 +66,10 @@ import {
   classifyReviewState,
   sidecarCounts,
   reviewPatch,
-  sha256Text,
   sidecarOutstandingChunks,
   toWirePacket,
 } from "@providers/documents/review-diff-store";
+import { sha256Text } from "@common/util/sha256";
 import makeSearchRegex from "source/common/util/make-search-regex";
 
 const SSE_REPLAY_BUFFER_SIZE = 100;

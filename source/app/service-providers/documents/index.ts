@@ -65,7 +65,8 @@ import EventEmitter from "events";
 import { constants as FSConstants } from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
-import { normalizeText, sha256Text } from "./review-diff-store";
+import { normalizeText } from "./review-diff-store";
+import { sha256Text } from "@common/util/sha256";
 import {
   getDocumentTypeForExtension,
   hasImageExt,

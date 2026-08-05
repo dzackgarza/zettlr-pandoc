@@ -33,9 +33,9 @@ import {
   ReviewDiffStore,
   reviewFromSidecar,
   reviewSidecar,
-  sha256Text,
   type ReviewSidecarData,
 } from "source/app/service-providers/documents/review-diff-store";
+import { sha256Text } from "source/common/util/sha256";
 import {
   isTransitionError,
   prepareAcceptAll,

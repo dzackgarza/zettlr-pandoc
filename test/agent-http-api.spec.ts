@@ -46,10 +46,8 @@ import {
   ReviewSidecarStore,
   reviewSidecarFilePath,
 } from "source/app/service-providers/documents/review-sidecar-store";
-import {
-  sha256Text,
-  sidecarCounts,
-} from "source/app/service-providers/documents/review-diff-store";
+import { sidecarCounts } from "source/app/service-providers/documents/review-diff-store";
+import { sha256Text } from "source/common/util/sha256";
 import LogProvider from "source/app/service-providers/log";
 
 // ============================================================================

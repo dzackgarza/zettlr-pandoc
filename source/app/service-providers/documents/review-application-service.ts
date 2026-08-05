@@ -45,10 +45,10 @@ import type { ActiveReviewState } from "@dts/common/review-domain";
 import {
   proposalRequestFingerprint,
   reviewSidecar,
-  sha256Text,
   normalizeText,
   type ReviewDiffStore,
 } from "./review-diff-store";
+import { sha256Text } from "@common/util/sha256";
 import type { ReviewSidecarStore } from "./review-sidecar-store";
 import {
   isTransitionError,

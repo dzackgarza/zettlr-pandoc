@@ -59,8 +59,8 @@ import {
   classifyReviewState,
   countPending,
   normalizeText,
-  sha256Text,
 } from "./review-diff-store";
+import { sha256Text } from "@common/util/sha256";
 
 // ============================================================================
 // Plan and error shapes

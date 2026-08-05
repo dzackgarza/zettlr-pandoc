@@ -32,7 +32,6 @@
  * END HEADER
  */
 
-import { createHash } from "crypto";
 import { createPatch } from "diff";
 import type {
   OutstandingChunk,
@@ -49,6 +48,7 @@ import {
   computeReviewChunks,
   type ReviewChunk,
 } from "@common/modules/review/review-chunks";
+import { sha256Text } from "@common/util/sha256";
 import type { ReviewSidecarData } from "./review-sidecar-schema";
 
 export type { ReviewSidecarData };
@@ -70,10 +70,6 @@ export interface ReviewStatus {
 // ============================================================================
 // Shared primitives
 // ============================================================================
-
-export function sha256Text(content: string): string {
-  return createHash("sha256").update(content, "utf8").digest("hex");
-}
 
 export function normalizeText(content: string): string {
   return content

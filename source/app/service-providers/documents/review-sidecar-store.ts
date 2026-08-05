@@ -33,7 +33,7 @@ import Ajv from "ajv";
 import { promises as fs } from "fs";
 import path from "path";
 import writeFileAtomic from "write-file-atomic";
-import { sha256Text } from "./review-diff-store";
+import { sha256Text } from "@common/util/sha256";
 import { ReviewSidecarSchema, type ReviewSidecarData } from "./review-sidecar-schema";
 
 /**
