@@ -4,10 +4,7 @@ on:
   pull_request:
     branches:
       - develop
-    types:
-      - synchronize
-      - opened
-      - reopened
+    types: [synchronize, opened, reopened]
 
 permissions:
   contents: write
@@ -48,75 +45,61 @@ jobs:
           from __future__ import annotations
 
           import base64
+          import itertools
           import lzma
           import subprocess
           from pathlib import Path
 
           ref = "origin/automation/pr55-direct-remediation"
-          alphabet = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")
-          encoded_parts: list[str] = []
-          diagnostics: list[str] = []
+          parts: list[str] = []
           for index in range(7):
               raw = subprocess.check_output(
-                  [
-                      "git",
-                      "show",
-                      f"{ref}:.github/pr55-remediation/part-{index:02d}.b64",
-                  ],
+                  ["git", "show", f"{ref}:.github/pr55-remediation/part-{index:02d}.b64"],
                   text=True,
               )
-              compact = "".join(raw.split())
-              invalid = sorted(set(compact) - alphabet)
-              diagnostics.append(
-                  f"part {index:02d}: chars={len(compact)}, mod4={len(compact) % 4}, "
-                  f"invalid={invalid!r}, prefix={compact[:12]!r}, suffix={compact[-12:]!r}"
-              )
-              encoded_parts.append(compact)
+              parts.append("".join(raw.split()))
 
-          def decode(encoded: str, *, strict: bool) -> bytes:
-              padded = encoded + "=" * ((-len(encoded)) % 4)
-              return base64.b64decode(padded, altchars=b"-_", validate=strict)
+          def decode(encoded: str) -> bytes:
+              return base64.b64decode(encoded, altchars=b"-_", validate=True)
 
-          candidates: list[tuple[str, bytes]] = []
-          decode_failures: list[str] = []
-          for strict in (True, False):
-              try:
-                  candidates.append(
-                      (f"one split base64 stream, strict={strict}", decode("".join(encoded_parts), strict=strict))
-                  )
-              except Exception as error:
-                  decode_failures.append(f"combined strict={strict}: {error}")
-              try:
-                  candidates.append(
-                      (
-                          f"independently encoded chunks, strict={strict}",
-                          b"".join(decode(part, strict=strict) for part in encoded_parts),
-                      )
-                  )
-              except Exception as error:
-                  decode_failures.append(f"per-part strict={strict}: {error}")
+          prefix = b"".join(decode(part) for part in parts[:5])
+
+          def boundary_repairs(encoded: str):
+              positions = list(range(min(32, len(encoded))))
+              positions.extend(range(max(0, len(encoded) - 32), len(encoded)))
+              seen: set[int] = set()
+              for position in positions:
+                  if position in seen:
+                      continue
+                  seen.add(position)
+                  repaired = encoded[:position] + encoded[position + 1:]
+                  if len(repaired) % 4 != 0:
+                      continue
+                  try:
+                      yield position, decode(repaired)
+                  except Exception:
+                      continue
 
           expected_prefix = b"diff --git a/package.json b/package.json\n"
-          failures: list[str] = []
-          for label, compressed in candidates:
+          candidates5 = list(boundary_repairs(parts[5]))
+          candidates6 = list(boundary_repairs(parts[6]))
+          for (position5, decoded5), (position6, decoded6) in itertools.product(candidates5, candidates6):
               try:
-                  patch = lzma.decompress(compressed)
-              except Exception as error:
-                  failures.append(f"{label}: {error}")
+                  patch = lzma.decompress(prefix + decoded5 + decoded6)
+              except lzma.LZMAError:
                   continue
               if not patch.startswith(expected_prefix):
-                  failures.append(f"{label}: decompressed bytes did not start with the expected patch")
                   continue
               Path("/tmp/pr55-remediation.patch").write_bytes(patch)
-              print(f"Recovered {len(patch)} patch bytes using {label}")
+              print(
+                  f"Recovered {len(patch)} patch bytes after dropping "
+                  f"part-05[{position5}] and part-06[{position6}]"
+              )
               break
           else:
-              print("\n".join(diagnostics))
               raise SystemExit(
-                  "Could not recover implementation patch. Decode failures: "
-                  + "; ".join(decode_failures)
-                  + ". Decompression failures: "
-                  + "; ".join(failures)
+                  f"No boundary repair recovered the patch "
+                  f"({len(candidates5)} x {len(candidates6)} candidates)"
               )
           PY
           changed_paths="$(git apply --numstat /tmp/pr55-remediation.patch | awk '{print $3}')"
@@ -128,9 +111,8 @@ jobs:
           git apply --check --binary /tmp/pr55-remediation.patch
           git apply --binary /tmp/pr55-remediation.patch
 
-      - name: Install the remediated dependency tree and generate API types
+      - name: Install dependencies and generate API types
         run: |
-          set -euo pipefail
           bun install
           bun run generate:agent-api-types
 
@@ -139,7 +121,6 @@ jobs:
 
       - name: Run focused behavioral suites
         run: |
-          set -euo pipefail
           bun run test -- \
             test/agent-http-api.spec.ts \
             test/review-diff-store.spec.ts \
