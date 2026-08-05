@@ -2,8 +2,7 @@ name: Apply recovered PR55 remediation
 
 on:
   pull_request:
-    branches:
-      - develop
+    branches: [develop]
     types: [synchronize, opened, reopened]
 
 permissions:
@@ -45,7 +44,6 @@ jobs:
           from __future__ import annotations
 
           import base64
-          import itertools
           import lzma
           import subprocess
           from pathlib import Path
@@ -62,45 +60,50 @@ jobs:
           def decode(encoded: str) -> bytes:
               return base64.b64decode(encoded, altchars=b"-_", validate=True)
 
-          prefix = b"".join(decode(part) for part in parts[:5])
-
-          def boundary_repairs(encoded: str):
-              positions = list(range(min(32, len(encoded))))
-              positions.extend(range(max(0, len(encoded) - 32), len(encoded)))
-              seen: set[int] = set()
-              for position in positions:
-                  if position in seen:
-                      continue
-                  seen.add(position)
-                  repaired = encoded[:position] + encoded[position + 1:]
-                  if len(repaired) % 4 != 0:
-                      continue
-                  try:
-                      yield position, decode(repaired)
-                  except Exception:
-                      continue
-
+          compressed_prefix = b"".join(decode(part) for part in parts[:5])
           expected_prefix = b"diff --git a/package.json b/package.json\n"
-          candidates5 = list(boundary_repairs(parts[5]))
-          candidates6 = list(boundary_repairs(parts[6]))
-          for (position5, decoded5), (position6, decoded6) in itertools.product(candidates5, candidates6):
+
+          valid_part5: list[tuple[int, bytes]] = []
+          encoded5 = parts[5]
+          for position in range(len(encoded5)):
+              repaired = encoded5[:position] + encoded5[position + 1:]
               try:
-                  patch = lzma.decompress(prefix + decoded5 + decoded6)
-              except lzma.LZMAError:
+                  decoded5 = decode(repaired)
+                  decompressor = lzma.LZMADecompressor(format=lzma.FORMAT_XZ)
+                  output = decompressor.decompress(compressed_prefix + decoded5)
+              except (ValueError, lzma.LZMAError):
                   continue
-              if not patch.startswith(expected_prefix):
+              if output.startswith(expected_prefix) and not decompressor.eof:
+                  valid_part5.append((position, decoded5))
+              if position > 0 and position % 5000 == 0:
+                  print(f"Checked {position}/{len(encoded5)} part-05 positions")
+
+          if not valid_part5:
+              raise SystemExit("No single-character repair made part 05 a valid XZ prefix")
+          print(f"Part 05 has {len(valid_part5)} valid repair position(s): {[p for p, _ in valid_part5]}")
+
+          encoded6 = parts[6]
+          for position5, decoded5 in valid_part5:
+              prefix5 = compressed_prefix + decoded5
+              for position6 in range(len(encoded6)):
+                  repaired6 = encoded6[:position6] + encoded6[position6 + 1:]
+                  try:
+                      patch = lzma.decompress(prefix5 + decode(repaired6), format=lzma.FORMAT_XZ)
+                  except (ValueError, lzma.LZMAError):
+                      continue
+                  if not patch.startswith(expected_prefix):
+                      continue
+                  Path("/tmp/pr55-remediation.patch").write_bytes(patch)
+                  print(
+                      f"Recovered {len(patch)} patch bytes after dropping "
+                      f"part-05[{position5}] and part-06[{position6}]"
+                  )
+                  break
+              else:
                   continue
-              Path("/tmp/pr55-remediation.patch").write_bytes(patch)
-              print(
-                  f"Recovered {len(patch)} patch bytes after dropping "
-                  f"part-05[{position5}] and part-06[{position6}]"
-              )
               break
           else:
-              raise SystemExit(
-                  f"No boundary repair recovered the patch "
-                  f"({len(candidates5)} x {len(candidates6)} candidates)"
-              )
+              raise SystemExit("No single-character repair of part 06 completed the XZ stream")
           PY
           changed_paths="$(git apply --numstat /tmp/pr55-remediation.patch | awk '{print $3}')"
           if printf '%s\n' "$changed_paths" | grep -Eq '^(\.github/|AGENTS\.md$|scripts/pr55-)'; then
