@@ -361,6 +361,24 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
   }
 
+  const jsonHeaders = { "content-type": "application/json" };
+
+  /**
+   * A well-formed proposal against a closed file's known disk text. Tests
+   * whose subject is whether the route acquires the file at all send this:
+   * it is refused for the path, never for its shape.
+   */
+  function closedProposalBody(diskText: string, clientRequestId: string): string {
+    return JSON.stringify({
+      baselineSha256: sha256Text(diskText),
+      expectedReviewGeneration: 0,
+      clientRequestId,
+      claims: [
+        { description: "caps the text", patch: makePatch(diskText, diskText.toUpperCase()) },
+      ],
+    });
+  }
+
   /** The canonical proposal body, built against the document's live state. */
   function proposalBody(
     documentId: string,
@@ -592,20 +610,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(body.documentId, docId);
     assert.equal(body.path, filePath);
     assertMatchesSchema(body, "DocumentSummary");
-  });
-
-  it("DELETE /v1/documents/{id} releases a clean viewless authority buffer", async function () {
-    const filePath = path.join(scratch, "release.md");
-    const docId = await openFile(filePath, "content\n");
-
-    const response = await httpRequest("DELETE", `/v1/documents/${docId}`);
-    assert.equal(response.status, 200);
-    assert.deepEqual(JSON.parse(response.body), { released: true, documentId: docId });
-    assertMatchesSchema(JSON.parse(response.body), "ReleaseDocumentResponse");
-
-    const listed = await httpRequest("GET", "/v1/documents");
-    const documents = (JSON.parse(listed.body) as { documents: Array<{ path: string }> }).documents;
-    assert.equal(documents.some((document) => document.path === filePath), false);
   });
 
   it("GET /v1/documents/{id}/content returns live buffer with ETag", async function () {
@@ -1097,7 +1101,28 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(JSON.parse(response.body).error.code, "DOCUMENT_NOT_FOUND");
   });
 
-  it("lists and opens an unopened workspace document by its assigned resource id", async function () {
+  it("no longer routes the client-side acquisition operations", async function () {
+    // Submission acquires and releases the buffer itself, so the routes a
+    // client used to drive that with are gone — not aliased, not redirected.
+    // Focus survives: it is the one operation that means "take a pane".
+    const filePath = path.join(scratch, "acquisition.md");
+    const docId = await openFile(filePath, "alpha\n");
+    const removed = [
+      ["POST", "/v1/documents"],
+      ["DELETE", `/v1/documents/${docId}`],
+      ["POST", `/v1/workspaces/${encodeURIComponent(scratch)}/documents/${docId}/open`],
+    ];
+    for (const [method, route] of removed) {
+      // No body: an unrouted request is refused before anything reads one.
+      const response = await httpRequest(method, route);
+      assert.equal(response.status, 404, `${method} ${route}: ${response.body}`);
+      assert.equal(JSON.parse(response.body).error.code, "METHOD_NOT_FOUND", route);
+    }
+    const focus = await httpRequest("POST", `/v1/documents/${docId}/focus`);
+    assert.equal(focus.status, 200, focus.body);
+  });
+
+  it("lists and focuses an unopened workspace document by its assigned resource id", async function () {
     const unopenedPath = path.join(scratch, "unopened.md");
     writeFileSync(unopenedPath, "unopened\n", "utf8");
     const response = await httpRequest(
@@ -1119,25 +1144,20 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     for (const entry of documents) {
       assertMatchesSchema(entry, "WorkspaceDocumentSummary");
     }
-    const opened = await httpRequest(
-      "POST",
-      `/v1/workspaces/${encodeURIComponent(scratch)}/documents/${document.documentId}/open`,
-    );
-    assert.equal(opened.status, 200);
-    const openedBody = JSON.parse(opened.body);
-    assert.equal(openedBody.documentId, document.documentId);
-    assertMatchesSchema(openedBody, "FocusDocumentResponse");
+    // Focus is the one operation that intentionally takes a pane, and it is
+    // now the only way to open a listed file through the API.
+    const focused = await httpRequest("POST", `/v1/documents/${document.documentId}/focus`);
+    assert.equal(focused.status, 200);
+    const focusedBody = JSON.parse(focused.body);
+    assert.equal(focusedBody.documentId, document.documentId);
+    assertMatchesSchema(focusedBody, "FocusDocumentResponse");
   });
 
-  it("decodes a workspace id once and scopes document opens to that workspace", async function () {
+  it("decodes a workspace id once when listing that workspace's documents", async function () {
     const encodedWorkspace = path.join(scratch, "workspace%25");
-    const otherWorkspace = path.join(scratch, "other-workspace");
     mkdirSync(encodedWorkspace);
-    mkdirSync(otherWorkspace);
     writeFileSync(path.join(encodedWorkspace, "unopened.md"), "encoded workspace\n", "utf8");
-    const otherDocument = path.join(otherWorkspace, "outside.md");
-    writeFileSync(otherDocument, "other workspace\n", "utf8");
-    openWorkspaces = [encodedWorkspace, otherWorkspace];
+    openWorkspaces = [encodedWorkspace];
 
     const listed = await httpRequest(
       "GET",
@@ -1156,32 +1176,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       encodedWorkspace,
       "the workspace identifier on the wire must be the once-decoded requested path",
     );
-
-    const otherDocumentId = provider.ensureDocumentId(otherDocument);
-    const refused = await httpRequest(
-      "POST",
-      `/v1/workspaces/${encodeURIComponent(encodedWorkspace)}/documents/${otherDocumentId}/open`,
-    );
-    assert.equal(refused.status, 404, refused.body);
-    const refusedPayload: unknown = JSON.parse(refused.body);
-    assert.ok(
-      refusedPayload !== null &&
-        typeof refusedPayload === "object" &&
-        "error" in refusedPayload &&
-        refusedPayload.error !== null &&
-        typeof refusedPayload.error === "object" &&
-        "code" in refusedPayload.error,
-      `Workspace refusal carried no error code: ${refused.body}`,
-    );
-    assert.equal(
-      refusedPayload.error.code,
-      "DOCUMENT_NOT_FOUND",
-    );
-    assert.equal(
-      provider.loadedDocuments.some((document) => document.filePath === otherDocument),
-      false,
-      "a document from another configured workspace must not be opened through this route",
-    );
   });
 
   it("refuses to open an unopened path when no workspace is configured", async function () {
@@ -1194,12 +1188,18 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const openDocId = await openFile(alreadyOpen, "visible\n");
     openWorkspaces = [];
 
-    const denied = await httpRequest("POST", "/v1/documents", {
-      body: JSON.stringify({ uri: `file://${secret}` }),
-      headers: { "content-type": "application/json" },
-    });
+    const denied = await httpRequest(
+      "POST",
+      `/v1/documents/${provider.ensureDocumentId(secret)}/proposals`,
+      { body: closedProposalBody("private\n", "denied"), headers: jsonHeaders },
+    );
     assert.equal(denied.status, 404);
     assert.equal(JSON.parse(denied.body).error.code, "DOCUMENT_NOT_FOUND");
+    assert.equal(
+      provider.loadedDocuments.some((document) => document.filePath === secret),
+      false,
+      "a refused path must not be acquired",
+    );
 
     // What the user already opened stays reachable: workspace containment is
     // not the thing that made those documents legitimate.
@@ -1211,13 +1211,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // cached permanently and handed out to every file a workspace listing
     // enumerates, so closing a document has to take its path back out of
     // scope — otherwise closing the last workspace leaves every path the
-    // editor ever touched reloadable through the API.
+    // editor ever touched reachable through the API.
     await provider.closeFileEverywhere(alreadyOpen);
-    const reopened = await httpRequest("POST", "/v1/documents", {
-      body: JSON.stringify({ uri: `file://${alreadyOpen}` }),
-      headers: { "content-type": "application/json" },
+    const reacquired = await httpRequest("POST", `/v1/documents/${openDocId}/proposals`, {
+      body: closedProposalBody("visible\n", "reacquired"),
+      headers: jsonHeaders,
     });
-    assert.equal(reopened.status, 404);
+    assert.equal(reacquired.status, 404);
   });
 
   it("refuses paths that escape a configured workspace by traversal or symlink", async function () {
@@ -1227,11 +1227,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     writeFileSync(secret, "private\n", "utf8");
     openWorkspaces = [wsDir];
 
-    // `..` traversal: the URI names a path inside the workspace textually,
-    // but it resolves outside it.
-    const traversed = await httpRequest("POST", "/v1/documents", {
-      body: JSON.stringify({ uri: `file://${wsDir}/inner/../../secret.md` }),
-      headers: { "content-type": "application/json" },
+    // `..` traversal: the id names a path inside the workspace textually, but
+    // it resolves outside it.
+    const traversedId = provider.ensureDocumentId(`${wsDir}/inner/../../secret.md`);
+    const traversed = await httpRequest("POST", `/v1/documents/${traversedId}/proposals`, {
+      body: closedProposalBody("private\n", "traversed"),
+      headers: jsonHeaders,
     });
     assert.equal(traversed.status, 404);
     assert.equal(JSON.parse(traversed.body).error.code, "DOCUMENT_NOT_FOUND");
@@ -1239,22 +1240,32 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // Symlink escape: the path sits inside the workspace, its target does not.
     // Containment must judge the canonical target, not the link's location.
     symlinkSync(secret, path.join(wsDir, "inside.md"));
-    const linked = await httpRequest("POST", "/v1/documents", {
-      body: JSON.stringify({ uri: `file://${wsDir}/inside.md` }),
-      headers: { "content-type": "application/json" },
+    const linkedId = provider.ensureDocumentId(path.join(wsDir, "inside.md"));
+    const linked = await httpRequest("POST", `/v1/documents/${linkedId}/proposals`, {
+      body: closedProposalBody("private\n", "linked"),
+      headers: jsonHeaders,
     });
     assert.equal(linked.status, 404);
     assert.equal(JSON.parse(linked.body).error.code, "DOCUMENT_NOT_FOUND");
 
-    // Control: a genuine workspace file opens, so the refusals above are the
-    // containment check refusing — not a broken fixture refusing everything.
+    assert.equal(
+      provider.loadedDocuments.some((document) => document.filePath === secret),
+      false,
+      "no escaping path may be acquired",
+    );
+
+    // Control: a genuine workspace file is acquired and proposed against, so
+    // the refusals above are the containment check refusing — not a broken
+    // fixture refusing everything.
     const real = path.join(wsDir, "real.md");
     writeFileSync(real, "ok\n", "utf8");
-    const opened = await httpRequest("POST", "/v1/documents", {
-      body: JSON.stringify({ uri: `file://${real}` }),
-      headers: { "content-type": "application/json" },
-    });
-    assert.equal(opened.status, 201);
+    const accepted = await httpRequest(
+      "POST",
+      `/v1/documents/${provider.ensureDocumentId(real)}/proposals`,
+      { body: closedProposalBody("ok\n", "accepted"), headers: jsonHeaders },
+    );
+    assert.equal(accepted.status, 200, accepted.body);
+    assert.ok(provider.loadedDocuments.some((document) => document.filePath === real));
   });
 
   it("refuses an over-length search pattern with INVALID_PARAMS", async function () {
@@ -2131,14 +2142,16 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       });
     }
 
-    // Promises 64 body bytes and delivers a fragment, then goes quiet.
+    // Promises 64 body bytes and delivers a fragment, then goes quiet. The
+    // route is any that reads a body: the refusal happens in the read, before
+    // the handler ever sees a request.
     const STALLED_REQUEST =
-      "POST /v1/documents HTTP/1.1\r\n" +
+      "POST /v1/documents/doc-lifecycle/proposals HTTP/1.1\r\n" +
       "Host: 127.0.0.1\r\n" +
       "Content-Type: application/json\r\n" +
       "Content-Length: 64\r\n" +
       "\r\n" +
-      '{"uri": "safe-file';
+      '{"clientRequestId": "sta';
 
     it("answers a stalled body with 408 REQUEST_BODY_TIMEOUT and closes the socket", async function () {
       const socket = await connect();
@@ -2152,7 +2165,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     it("answers an oversized body with structured 413 and logs the refusal", async function () {
       const logBoundary = await markLogBoundary();
-      const body = JSON.stringify({ uri: `safe-file://${"x".repeat(25 * 1024 * 1024)}` });
+      const body = JSON.stringify({ clientRequestId: "x".repeat(25 * 1024 * 1024) });
       const response = await new Promise<{
         status: number;
         body: string;
@@ -2161,7 +2174,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           {
             hostname: "127.0.0.1",
             port: lifecyclePort,
-            path: "/v1/documents",
+            path: "/v1/documents/doc-lifecycle/proposals",
             method: "POST",
             headers: {
               "content-type": "application/json",
@@ -2207,7 +2220,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           (line) =>
             line.includes("[Warning]") &&
             line.includes("REQUEST_TOO_LARGE") &&
-            line.includes("POST /v1/documents"),
+            line.includes("POST /v1/documents/doc-lifecycle/proposals"),
         );
       assert.ok(
         emittedRecord !== undefined,

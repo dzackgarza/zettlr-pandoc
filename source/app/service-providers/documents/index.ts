@@ -1093,29 +1093,25 @@ export default class DocumentManager extends ProviderContract {
   }
 
   /**
-   * Release a clean authority buffer that has no editor view.
+   * Undo an acquisition that a refused proposal no longer justifies.
    *
-   * The review CLI loads an unopened path only to obtain the live snapshot
-   * required by the normal proposal route. If that route refuses the
-   * submission, the CLI uses this non-destructive cleanup seam so the refused
-   * request leaves the document unopened. A document that acquired a view,
-   * became dirty, or acquired a review is left untouched and reports
-   * `released: false` instead.
+   * A submission that commits nothing must not leave the editor holding a
+   * document nobody opened, so the buffer it acquired goes back out. The
+   * unload is non-destructive by construction: a document that gained an
+   * editor view, unsaved changes, or a review has an owner beyond this
+   * acquisition, and it is left exactly as it is.
    */
-  public async releaseUnattachedDocument(documentId: string): Promise<{
-    released: boolean;
-    documentId: string;
-  }> {
+  private async releaseTemporaryReviewAcquisition(documentId: string): Promise<void> {
     const filePath = this.getDocumentPath(documentId);
     if (filePath === undefined) {
-      return { released: false, documentId };
+      return;
     }
     const doc = this.documents.find((candidate) => candidate.filePath === filePath);
     if (doc === undefined || doc.currentVersion !== doc.lastSavedVersion) {
-      return { released: false, documentId };
+      return;
     }
     if (this._reviewStore.getReview(documentId) !== undefined) {
-      return { released: false, documentId };
+      return;
     }
 
     let hasEditorView = false;
@@ -1126,13 +1122,12 @@ export default class DocumentManager extends ProviderContract {
       return false;
     });
     if (hasEditorView) {
-      return { released: false, documentId };
+      return;
     }
 
     this.documents.splice(this.documents.indexOf(doc), 1);
     this._app.references.dropAuthorityBuffer(filePath);
     this.syncWatchedFilePaths();
-    return { released: true, documentId };
   }
 
   private async pullUpdates(filePath: string, clientVersion: number): Promise<SerializedUpdate[] | false> {
@@ -3218,7 +3213,7 @@ current contents from the editor somewhere else, and restart the application.`,
       expectedReviewGeneration,
     );
     if (!result.ok && acquired?.wasAlreadyLoaded === false) {
-      await this.releaseUnattachedDocument(documentId);
+      await this.releaseTemporaryReviewAcquisition(documentId);
     }
     return result;
   }

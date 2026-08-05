@@ -41,7 +41,6 @@ import {
   type ReadSide,
   type ReviewEventsResponse,
   type ReviewListEntry,
-  type OpenDocumentRequest,
   type PingResponse,
   type SearchHit,
   type WorkspaceDocumentEntry,
@@ -169,18 +168,6 @@ function decodeAddReviewCommentRequest(
     return { ok: false, message: "text is required and must be a non-empty string" };
   }
   return { ok: true, value: { text } };
-}
-
-function decodeOpenDocumentRequest(body: string): Decoded<OpenDocumentRequest> {
-  const raw = decodeJsonObject(body);
-  if (!raw.ok) {
-    return raw;
-  }
-  const { uri } = raw.value;
-  if (typeof uri !== "string") {
-    return { ok: false, message: "uri is required and must be a string" };
-  }
-  return { ok: true, value: { uri } };
 }
 
 /**
@@ -874,12 +861,6 @@ export default class AgentHTTPProvider extends ProviderContract {
         handle: ({ res, url, params }) =>
           this.handleListWorkspaceDocuments(res, url, params.workspaceId),
       },
-      {
-        method: "POST",
-        path: "/v1/workspaces/{workspaceId}/documents/{documentId}/open",
-        handle: async ({ res, params }) =>
-          await this.handleOpenDocumentInWorkspace(res, params.workspaceId, params.documentId),
-      },
 
       // Documents
       {
@@ -888,20 +869,9 @@ export default class AgentHTTPProvider extends ProviderContract {
         handle: async ({ res, url }) => await this.handleListDocuments(res, url),
       },
       {
-        method: "POST",
-        path: "/v1/documents",
-        handle: async ({ req, res }) => await this.handleOpenDocument(req, res),
-      },
-      {
         method: "GET",
         path: "/v1/documents/{documentId}",
         handle: async ({ res, params }) => await this.handleGetDocument(res, params.documentId),
-      },
-      {
-        method: "DELETE",
-        path: "/v1/documents/{documentId}",
-        handle: async ({ res, params }) =>
-          await this.handleReleaseDocument(res, params.documentId),
       },
       {
         method: "POST",
@@ -1143,78 +1113,6 @@ export default class AgentHTTPProvider extends ProviderContract {
       });
   }
 
-  private async handleOpenDocumentInWorkspace(
-    res: http.ServerResponse,
-    workspaceId: string,
-    documentId: string,
-  ): Promise<void> {
-    const workspacePath = workspaceId;
-    const knownWorkspaces = this._app.config.get().app.openWorkspaces;
-    if (!knownWorkspaces.includes(workspacePath)) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
-      return;
-    }
-    const filePath = this._documents.getDocumentPath(documentId);
-    if (filePath === undefined || !(await this.isDocumentOpenableInWorkspace(filePath, workspacePath))) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document is not part of workspace");
-      return;
-    }
-    await this._documents.openFile(undefined, undefined, filePath, true);
-    this.sendJson(res, 200, { focused: true, documentId });
-  }
-
-  private async handleOpenDocument(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): Promise<void> {
-    const body = await this.readBody(req);
-    const decoded = decodeOpenDocumentRequest(body);
-    if (!decoded.ok) {
-      this.sendError(res, 400, "INVALID_PARAMS", decoded.message);
-      return;
-    }
-    const request = decoded.value;
-    const resolveOpenPath = (uri: string): string | undefined => {
-      try {
-        const parsedUri = new URL(uri);
-        if (parsedUri.protocol !== "safe-file:" && parsedUri.protocol !== "file:") {
-          throw new Error("Unsupported protocol");
-        }
-
-        let filePath = decodeURIComponent(parsedUri.pathname);
-        if (process.platform === "win32" && /^\/[A-Za-z]:/.test(filePath)) {
-          filePath = filePath.slice(1);
-        }
-        return path.resolve(filePath);
-      } catch {
-        return path.isAbsolute(uri) ? path.resolve(uri) : undefined;
-      }
-    };
-
-    const filePath = resolveOpenPath(request.uri);
-    if (filePath === undefined || !(await this.isDocumentOpenableInCurrentWorkspaces(filePath))) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Path is outside configured workspace scope");
-      return;
-    }
-    try {
-      await this._documents.getDocument(filePath);
-    } catch {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "File not found");
-      return;
-    }
-    const docId = this._documents.getDocumentId(filePath);
-    if (docId === undefined) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Could not open document");
-      return;
-    }
-    const summary = await this.getDocumentSummary(docId);
-    if (summary === undefined) {
-      this.sendError(res, 500, "INTERNAL_ERROR", "Document opened but could not be summarized");
-      return;
-    }
-    this.sendJson(res, 201, summary);
-  }
-
   private async handleGetDocument(res: http.ServerResponse, documentId: string): Promise<void> {
     const summary = await this.getDocumentSummary(documentId);
     if (summary === undefined) {
@@ -1222,14 +1120,6 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     this.sendJson(res, 200, summary);
-  }
-
-  private async handleReleaseDocument(
-    res: http.ServerResponse,
-    documentId: string,
-  ): Promise<void> {
-    const result = await this._documents.releaseUnattachedDocument(documentId);
-    this.sendJson(res, 200, result);
   }
 
   private async handleFocusDocument(res: http.ServerResponse, documentId: string): Promise<void> {

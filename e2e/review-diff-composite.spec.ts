@@ -18,7 +18,6 @@
 import { strict as assert } from 'node:assert'
 import { readFile, writeFile, rm } from 'node:fs/promises'
 import type { ChildProcess } from 'node:child_process'
-import { pathToFileURL } from 'node:url'
 import { createPatch } from 'diff'
 import type { Browser, Locator, Page } from 'playwright'
 import {
@@ -86,8 +85,13 @@ function documentIdOf (payload: unknown): string {
   return stringField(document, 'documentId')
 }
 
-function documentIdFromSummary (payload: unknown): string {
-  return stringField(payload, 'documentId')
+/** The id the workspace listing hands out for a path, open or closed. */
+async function workspaceDocumentId (api: AgentClient, filePath: string): Promise<string> {
+  const payload = await api.get('/v1/workspace/files')
+  assert.ok(isRecord(payload) && Array.isArray(payload.files))
+  const entry = payload.files.find(file => isRecord(file) && file.path === filePath)
+  assert.ok(isRecord(entry), `workspace listing carried no entry for ${filePath}`)
+  return stringField(entry, 'documentId')
 }
 
 async function invokeSave (page: Page, filePath: string): Promise<unknown> {
@@ -244,10 +248,9 @@ describe('review-diff closure contract composite lifecycle', function () {
     await page.evaluate(async pathInPage => await window.ipc.invoke('documents-provider', {
       command: 'close-file-everywhere', payload: { path: pathInPage }
     }), documentPath)
-    const reopenedId = documentIdFromSummary(await api.post('/v1/documents', {
-      uri: pathToFileURL(documentPath).href
-    }))
-    await api.post(`/v1/documents/${reopenedId}/focus`)
+    // Focus is now the only operation that deliberately takes a pane, and
+    // opening the file is what reattaches its sidecar-backed review.
+    await api.post(`/v1/documents/${await workspaceDocumentId(api, documentPath)}/focus`)
     await waitForReview(page)
     assert.ok((await page.locator('.cm-deletedChunk.held').innerText()).includes('check the constants'))
     const reopenedReview = await api.get(`/v1/reviews/${reviewId}`)

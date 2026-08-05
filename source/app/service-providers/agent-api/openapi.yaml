@@ -569,19 +569,6 @@ components:
           const: true
         documentId:
           type: string
-    ReleaseDocumentResponse:
-      type: object
-      required:
-        - released
-        - documentId
-      properties:
-        released:
-          type: boolean
-          description: >-
-            True when a clean, viewless authority buffer was released. A false
-            result is non-destructive when another owner appeared.
-        documentId:
-          type: string
     WorkspaceDocumentsResponse:
       type: object
       required:
@@ -1197,33 +1184,6 @@ paths:
             default: open
           description: Reserved document-state filter for clients. Only open is currently
             supported.
-    post:
-      operationId: openDocument
-      summary: Open a server-local file URI
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - uri
-              properties:
-                uri:
-                  type: string
-      responses:
-        '201':
-          description: Document opened
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DocumentSummary'
-        '404':
-          description: File not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/documents/{documentId}:
     get:
       operationId: getDocument
@@ -1247,26 +1207,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
-    delete:
-      operationId: releaseDocument
-      summary: Release a clean, viewless document authority buffer
-      description: >-
-        This is a cleanup operation for an external review submission that
-        loaded a path before the proposal was refused. It never closes an
-        editor view, discards dirty text, or removes an active review.
-      parameters:
-        - name: documentId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Cleanup result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReleaseDocumentResponse'
   /v1/documents/{documentId}/focus:
     post:
       operationId: focusDocument
@@ -2021,34 +1961,6 @@ paths:
                 $ref: '#/components/schemas/WorkspaceDocumentsResponse'
         '404':
           description: Workspace not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-  /v1/workspaces/{workspaceId}/documents/{documentId}/open:
-    post:
-      operationId: openWorkspaceDocument
-      summary: Open or focus a document in a workspace
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: documentId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FocusDocumentResponse'
-        '404':
-          description: Workspace not found or document unavailable in workspace
           content:
             application/json:
               schema:

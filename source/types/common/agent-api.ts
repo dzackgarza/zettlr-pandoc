@@ -579,10 +579,6 @@ export interface ReviewEventsResponse {
 // Request bodies (validated once at the HTTP boundary)
 // ============================================================================
 
-export interface OpenDocumentRequest {
-  uri: string;
-}
-
 export interface SearchDocumentRequest {
   literal: string;
   context?: number;
@@ -652,16 +648,6 @@ export interface FocusDocumentResponse {
   documentId: string;
 }
 
-/**
- * Result of releasing a clean document that has no editor view. The review
- * CLI uses this only to undo a pre-submission load after a refusal; a false
- * result is deliberately non-destructive when another owner appeared.
- */
-export interface ReleaseDocumentResponse {
-  released: boolean;
-  documentId: string;
-}
-
 export interface ClearReviewResponse {
   reviewId: string;
   documentId: string;
@@ -725,7 +711,6 @@ export type AgentApiResponseBody =
   | WorkspaceDocumentsResponse
   | WorkspaceFilesResponse
   | FocusDocumentResponse
-  | ReleaseDocumentResponse
   | ReadDocumentResponse
   | SearchDocumentResponse
   | SubmitProposalResponse
