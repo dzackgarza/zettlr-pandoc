@@ -27,9 +27,13 @@ import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import type { AgentEvent } from "@dts/common/agent-api";
 import {
+  proposalRequestFingerprint,
   ReviewDiffStore,
   sha256Text,
   validateAndParsePatch,
+  type ClaimInput,
+  type SubmitClaimsResult,
+  type SubmitPacketError,
 } from "source/app/service-providers/documents/review-diff-store";
 
 const DOC_ID = "doc-test";
@@ -58,6 +62,51 @@ describe("ReviewDiffStore", function () {
   });
 
   /**
+   * Submit a claim sequence the way the application layer does: fingerprint
+   * the request, then apply it. The store no longer decides idempotency —
+   * the ledger in ActiveReviewState.submissions does, and its owner is the
+   * caller that composes the response.
+   */
+  function submitClaims(
+    documentId: string,
+    options: {
+      claims: ClaimInput[];
+      clientRequestId: string;
+      expectedReviewGeneration?: number;
+    },
+  ): SubmitClaimsResult | SubmitPacketError {
+    return store.submitClaims(documentId, {
+      ...options,
+      requestFingerprint: proposalRequestFingerprint({
+        documentId,
+        baselineSha256: sha256Text(documents.get(documentId) ?? ""),
+        expectedReviewGeneration: options.expectedReviewGeneration ?? 0,
+        claims: options.claims,
+      }),
+    });
+  }
+
+  /** The one-claim case, with the newest packetId surfaced for assertions. */
+  function submitOne(
+    documentId: string,
+    options: {
+      patch: string;
+      description?: string;
+      clientRequestId: string;
+      expectedReviewGeneration?: number;
+    },
+  ): (SubmitClaimsResult & { packetId: string }) | SubmitPacketError {
+    const result = submitClaims(documentId, {
+      claims: [
+        { patch: options.patch, description: options.description ?? "a claim" },
+      ],
+      clientRequestId: options.clientRequestId,
+      expectedReviewGeneration: options.expectedReviewGeneration,
+    });
+    return result.ok ? { ...result, packetId: result.packetIds[0] } : result;
+  }
+
+  /**
    * Open a review the way DocumentManager does: text into the doc, open the
    * (empty) review, then submit the first packet through the one application
    * path. Throws on a refused initial packet, mirroring the manager's
@@ -76,8 +125,7 @@ describe("ReviewDiffStore", function () {
       diskBaselineSha256: sha256Text(baseline),
     });
     if (initialPatch !== undefined) {
-      const submitted = store.submitPacket(documentId, {
-        patchFormat: "unified-diff",
+      const submitted = submitOne(documentId, {
         patch: initialPatch.patch,
         clientRequestId: initialPatch.clientRequestId,
         description: initialPatch.description,
@@ -159,7 +207,7 @@ describe("ReviewDiffStore", function () {
     });
   });
 
-  describe("submitPacket", function () {
+  describe("single-claim submission", function () {
     it("applies a second packet to the live document text while preserving unresolved chunks", function () {
       const baseline = "alpha\nbeta\ngamma\n";
       const first = "alpha\nBETA\ngamma\n";
@@ -168,8 +216,7 @@ describe("ReviewDiffStore", function () {
         patch: makePatch(baseline, first),
         clientRequestId: "req-1",
       });
-      const result = store.submitPacket(DOC_ID, {
-        patchFormat: "unified-diff",
+      const result = submitOne(DOC_ID, {
         patch: makePatch(first, second),
         clientRequestId: "req-2",
       });
@@ -182,55 +229,52 @@ describe("ReviewDiffStore", function () {
       assert.equal(result.unresolvedChunks, 1);
     });
 
-    it("is idempotent for a repeated clientRequestId", function () {
+    it("stamps every packet with the fingerprint of the request that applied it", function () {
+      // Idempotency is the ledger's job, not the store's: the store applies
+      // what it is given and records what made the request identifiable.
+      // ActiveReviewState.submissions — written by the caller that composes
+      // the response — is what answers a replayed clientRequestId.
       const baseline = "alpha\nbeta\n";
       const proposed = "alpha\nBETA\n";
       openReview(DOC_ID, baseline, {
         patch: makePatch(baseline, proposed),
         clientRequestId: "req-1",
       });
-      const first = store.submitPacket(DOC_ID, {
-        patchFormat: "unified-diff",
-        patch: makePatch(proposed, "alpha\nGAMMA\n"),
-        clientRequestId: "req-2",
-      });
-      assert.equal(first.ok, true);
-      if (first.ok) {
-        documents.set(DOC_ID, first.workingText);
-      }
-      const second = store.submitPacket(DOC_ID, {
-        patchFormat: "unified-diff",
-        patch: makePatch(proposed, "alpha\nGAMMA\n"),
-        clientRequestId: "req-2",
-      });
-      assert.deepEqual(first, second);
+      const review = store.getReview(DOC_ID)!;
+      assert.equal(review.packets[0].clientRequestId, "req-1");
+      assert.match(review.packets[0].requestFingerprint, /^[0-9a-f]{64}$/);
+      assert.deepEqual(review.submissions, []);
     });
 
-    it("does not conflate idempotency keys whose components embed a separator", function () {
-      // ("a:b", "c") and ("a", "b:c") collide under a naive
-      // `${documentId}:${clientRequestId}` join: a colliding key would replay
-      // the first review's cached result for the second review's submission.
-      const baseline = "alpha\nbeta\n";
-      openReview("a:b", baseline);
-      openReview("a", baseline);
-      const first = store.submitPacket("a:b", {
-        patchFormat: "unified-diff",
-        patch: makePatch(baseline, "alpha\nGAMMA\n"),
-        clientRequestId: "c",
-      });
-      assert.equal(first.ok, true);
-      if (!first.ok) {return;}
-      documents.set("a:b", first.workingText);
-      const second = store.submitPacket("a", {
-        patchFormat: "unified-diff",
-        patch: makePatch(baseline, "ALPHA\nbeta\n"),
-        clientRequestId: "b:c",
-      });
-      assert.equal(second.ok, true, `expected a fresh application: ${JSON.stringify(second)}`);
-      if (!second.ok) {return;}
-      assert.notEqual(second.packetId, first.packetId);
-      assert.notEqual(second.reviewId, first.reviewId);
-      assert.equal(second.workingText, "ALPHA\nbeta\n");
+    it("fingerprints requests that differ only inside a claim differently", function () {
+      const baseline = "alpha\n";
+      const shared = {
+        documentId: DOC_ID,
+        baselineSha256: sha256Text(baseline),
+        expectedReviewGeneration: 0,
+      };
+      const patch = makePatch(baseline, "ALPHA\n");
+      assert.notEqual(
+        proposalRequestFingerprint({
+          ...shared,
+          claims: [{ description: "caps", patch }],
+        }),
+        proposalRequestFingerprint({
+          ...shared,
+          claims: [{ description: "lowers", patch }],
+        }),
+      );
+      // Key order inside a claim is the client's, not part of its identity.
+      assert.equal(
+        proposalRequestFingerprint({
+          ...shared,
+          claims: [{ description: "caps", patch }],
+        }),
+        proposalRequestFingerprint({
+          ...shared,
+          claims: [{ patch, description: "caps" } as ClaimInput],
+        }),
+      );
     });
 
     it("rejects a packet that leaves the working text unchanged, as openReview does", function () {
@@ -251,8 +295,7 @@ describe("ReviewDiffStore", function () {
         "+BETA",
         "",
       ].join("\n");
-      const result = store.submitPacket(DOC_ID, {
-        patchFormat: "unified-diff",
+      const result = submitOne(DOC_ID, {
         patch: noOp,
         clientRequestId: "req-noop",
       });
@@ -270,8 +313,7 @@ describe("ReviewDiffStore", function () {
     it("rejects with REVISION_MISMATCH when expectedReviewGeneration does not match", function () {
       const baseline = "alpha\n";
       openReview(DOC_ID, baseline);
-      const result = store.submitPacket(DOC_ID, {
-        patchFormat: "unified-diff",
+      const result = submitOne(DOC_ID, {
         patch: makePatch(baseline, "beta\n"),
         clientRequestId: "req-1",
         expectedReviewGeneration: 99,
@@ -282,8 +324,7 @@ describe("ReviewDiffStore", function () {
     });
 
     it("rejects with REVIEW_NOT_FOUND when no review is active", function () {
-      const result = store.submitPacket("doc-missing", {
-        patchFormat: "unified-diff",
+      const result = submitOne("doc-missing", {
         patch: makePatch("a\n", "b\n"),
         clientRequestId: "req-1",
       });
@@ -296,8 +337,7 @@ describe("ReviewDiffStore", function () {
       const baseline = "alpha\nbeta\n";
       openReview(DOC_ID, baseline);
       // A patch built against a completely different text
-      const result = store.submitPacket(DOC_ID, {
-        patchFormat: "unified-diff",
+      const result = submitOne(DOC_ID, {
         patch: makePatch("completely\ndifferent\ntext\n", "something\nelse\n"),
         clientRequestId: "req-1",
       });
@@ -315,8 +355,7 @@ describe("ReviewDiffStore", function () {
       // if the sequence really is sequential.
       const afterFirst = "alpha\nBETA\ngamma\n";
       const afterSecond = "alpha\nBETA\nGAMMA\n";
-      const result = store.submitClaims(DOC_ID, {
-        patchFormat: "unified-diff",
+      const result = submitClaims(DOC_ID, {
         claims: [
           { patch: makePatch(baseline, afterFirst), description: "Capitalize beta" },
           { patch: makePatch(afterFirst, afterSecond), description: "Capitalize gamma" },
@@ -345,13 +384,15 @@ describe("ReviewDiffStore", function () {
       );
     });
 
-    it("replays the exact committed batch result for the same clientRequestId", function () {
+    it("answers a replayed clientRequestId from the review's own ledger", function () {
+      // The store applies; the ledger decides. A replay is looked up in the
+      // review's submissions — which is why it survives detach and restart
+      // for as long as the review does, and stops the moment it does not.
       const baseline = "alpha\nbeta\ngamma\n";
       const afterFirst = "ALPHA\nbeta\ngamma\n";
       const afterSecond = "ALPHA\nbeta\nGAMMA\n";
       openReview(DOC_ID, baseline);
       const options = {
-        patchFormat: "unified-diff" as const,
         claims: [
           { patch: makePatch(baseline, afterFirst), description: "first" },
           { patch: makePatch(afterFirst, afterSecond), description: "second" },
@@ -360,22 +401,43 @@ describe("ReviewDiffStore", function () {
         expectedReviewGeneration: 0,
       };
 
-      const committed = store.submitClaims(DOC_ID, options);
+      const committed = submitClaims(DOC_ID, options);
       assert.ok(
         committed.ok,
         `the initial batch must commit before replay: ${JSON.stringify(committed)}`,
       );
       documents.set(DOC_ID, committed.workingText);
+      const review = store.getReview(DOC_ID)!;
+      review.submissions.push({
+        clientRequestId: options.clientRequestId,
+        requestFingerprint: review.packets[0].requestFingerprint,
+        packetIds: committed.packetIds,
+        response: {
+          packetId: committed.packetIds[committed.packetIds.length - 1],
+          packetIds: committed.packetIds,
+          reviewId: committed.reviewId,
+          documentId: DOC_ID,
+          documentRevision: { sha256: sha256Text(committed.workingText) },
+          reviewGeneration: committed.generation,
+          unresolvedChunks: committed.unresolvedChunks,
+          state: committed.state,
+        },
+      });
 
-      const replayed = store.submitClaims(DOC_ID, options);
-      assert.deepEqual(
-        replayed,
-        committed,
-        "a retry must replay the original atomic result instead of consulting advanced state",
+      const prior = review.submissions.find(
+        (submission) => submission.clientRequestId === options.clientRequestId,
       );
-      assert.equal(store.getReview(DOC_ID)!.generation, 2);
+      assert.ok(prior !== undefined, "the ledger must carry the committed submission");
+      assert.deepEqual(prior.packetIds, committed.packetIds);
+      // Every packet of one submission shares that submission's fingerprint,
+      // so a replayed id is compared against the request that produced them.
       assert.deepEqual(
-        store.getReview(DOC_ID)!.packets.map((packet) => packet.packetId),
+        review.packets.map((packet) => packet.requestFingerprint),
+        [prior.requestFingerprint, prior.requestFingerprint],
+      );
+      assert.equal(review.generation, 2);
+      assert.deepEqual(
+        review.packets.map((packet) => packet.packetId),
         committed.packetIds,
       );
     });
@@ -386,8 +448,7 @@ describe("ReviewDiffStore", function () {
         patch: makePatch(baseline, "alpha\nBETA\n"),
         clientRequestId: "req-1",
       });
-      const result = store.submitClaims(DOC_ID, {
-        patchFormat: "unified-diff",
+      const result = submitClaims(DOC_ID, {
         claims: [
           { patch: makePatch("alpha\nBETA\n", "ALPHA\nBETA\n"), description: "ok" },
           // Built against text the sequence never produces: zero fuzz refuses it.
@@ -419,8 +480,7 @@ describe("ReviewDiffStore", function () {
         "+beta",
         "",
       ].join("\n");
-      const result = store.submitClaims(DOC_ID, {
-        patchFormat: "unified-diff",
+      const result = submitClaims(DOC_ID, {
         claims: [
           { patch: makePatch(baseline, "ALPHA\nbeta\n"), description: "real" },
           { patch: noOp, description: "does nothing" },
@@ -440,8 +500,7 @@ describe("ReviewDiffStore", function () {
       const afterFirst = "ALPHA\nbeta\n";
       const afterSecond = "ALPHA\nBETA\n";
       openReview(DOC_ID, baseline);
-      const result = store.submitClaims(DOC_ID, {
-        patchFormat: "unified-diff",
+      const result = submitClaims(DOC_ID, {
         claims: [
           { patch: makePatch(baseline, afterFirst), description: "first" },
           { patch: makePatch(afterFirst, afterSecond), description: "second" },
@@ -756,8 +815,7 @@ describe("ReviewDiffStore", function () {
         patch: makePatch(baseline, first),
         clientRequestId: "req-1",
       });
-      const submitResult = store.submitPacket(DOC_ID, {
-        patchFormat: "unified-diff",
+      const submitResult = submitOne(DOC_ID, {
         patch: makePatch(first, second),
         clientRequestId: "req-2",
       });
@@ -812,8 +870,7 @@ describe("ReviewDiffStore", function () {
         patch: makePatch(baseline, first),
         clientRequestId: "req-1",
       });
-      const secondResult = store.submitPacket(DOC_ID, {
-        patchFormat: "unified-diff",
+      const secondResult = submitOne(DOC_ID, {
         patch: makePatch(first, second),
         clientRequestId: "req-2",
       });
@@ -910,15 +967,19 @@ describe("ReviewDiffStore", function () {
       assert.deepEqual(chunks[0].descriptions, ["Capitalize beta"]);
     });
 
-    it("omits the description of a packet that carries none", function () {
+    it("carries one description per attributed packet, in application order", function () {
+      // Every claim carries prose — the contract requires it — so the
+      // descriptions array is exactly as long as packetIds, and a chunk that
+      // attributes to nothing carries neither.
       const baseline = "alpha\nbeta\n";
       openReview(DOC_ID, baseline, {
         patch: makePatch(baseline, "alpha\nBETA\n"),
         clientRequestId: "req-1",
+        description: "Capitalize beta",
       });
       const chunks = store.getOutstandingChunks(DOC_ID)!;
       assert.equal(chunks[0].packetIds.length, 1);
-      assert.deepEqual(chunks[0].descriptions, []);
+      assert.deepEqual(chunks[0].descriptions, ["Capitalize beta"]);
     });
 
     it("attributes each chunk of a batch to the claim that produced it", function () {
@@ -926,8 +987,7 @@ describe("ReviewDiffStore", function () {
       openReview(DOC_ID, baseline);
       const afterFirst = "ALPHA\nx\ny\nz\nbeta\n";
       const afterSecond = "ALPHA\nx\ny\nz\nBETA\n";
-      const result = store.submitClaims(DOC_ID, {
-        patchFormat: "unified-diff",
+      const result = submitClaims(DOC_ID, {
         claims: [
           { patch: makePatch(baseline, afterFirst), description: "Fix the opening" },
           { patch: makePatch(afterFirst, afterSecond), description: "Fix the closing" },
@@ -951,8 +1011,7 @@ describe("ReviewDiffStore", function () {
       openReview(DOC_ID, baseline);
       const afterFirst = "alpha\nBETA\ngamma\n";
       const afterSecond = "alpha\nBETA!\ngamma\n";
-      const result = store.submitClaims(DOC_ID, {
-        patchFormat: "unified-diff",
+      const result = submitClaims(DOC_ID, {
         claims: [
           { patch: makePatch(baseline, afterFirst), description: "Capitalize" },
           { patch: makePatch(afterFirst, afterSecond), description: "Emphasize" },

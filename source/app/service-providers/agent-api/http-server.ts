@@ -67,6 +67,7 @@ import {
   reviewPatch,
   sha256Text,
   sidecarOutstandingChunks,
+  toWirePacket,
 } from "@providers/documents/review-diff-store";
 import makeSearchRegex from "source/common/util/make-search-regex";
 
@@ -1467,9 +1468,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       }
       this.sendJson(res, 200, {
         reviewId: detached.reviewId,
-        // The sidecar keeps each packet's reference spans alongside the
-        // ledger entry; the wire packet is the ledger entry alone.
-        packets: detached.packets.map(({ refSpans: _refSpans, ...packet }) => packet),
+        // A stored packet carries its reference spans and no patch format;
+        // the wire packet is the ledger entry with the format stamped on.
+        packets: detached.packets.map(toWirePacket),
       });
       return;
     }
@@ -1481,7 +1482,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, {
       reviewId: review.reviewId,
       documentId,
-      packets: review.packets,
+      packets: review.packets.map(toWirePacket),
     });
   }
 

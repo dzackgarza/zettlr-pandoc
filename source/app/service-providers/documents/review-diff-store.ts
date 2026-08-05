@@ -39,7 +39,6 @@
  * END HEADER
  */
 
-import assert from "assert";
 import { createHash, randomUUID } from "crypto";
 import EventEmitter from "events";
 import {
@@ -58,7 +57,12 @@ import type {
   OutstandingChunk,
   AgentEvent,
 } from "@dts/common/agent-api";
-import type { ActiveReviewState, ChunkHold } from "@dts/common/review-domain";
+import type {
+  ActiveReviewState,
+  ChunkHold,
+  ProposalSubmissionRecord,
+  ReviewPacket,
+} from "@dts/common/review-domain";
 import {
   chunkAttributesTo,
   computeReviewChunks,
@@ -93,13 +97,14 @@ export interface OpenReviewResult {
 /** One ordered claim of a proposal: prose plus the patch implementing it. */
 export interface ClaimInput {
   patch: string;
-  description?: string;
+  description: string;
 }
 
 export interface SubmitClaimsOptions {
-  patchFormat: "unified-diff";
   claims: ClaimInput[];
   clientRequestId: string;
+  /** Identity of the request body — see proposalRequestFingerprint. */
+  requestFingerprint: string;
   expectedReviewGeneration?: number;
 }
 
@@ -114,27 +119,6 @@ export interface SubmitClaimsResult {
   unresolvedChunks: number;
   state: ReviewState;
 }
-
-export interface SubmitPacketOptions {
-  patchFormat: "unified-diff";
-  patch: string;
-  description?: string;
-  clientRequestId: string;
-  expectedReviewGeneration?: number;
-}
-
-export interface SubmitPacketResult {
-  ok: true;
-  packetId: string;
-  reviewId: string;
-  generation: number;
-  /** The text the document must now show. */
-  workingText: string;
-  unresolvedChunks: number;
-  state: ReviewState;
-}
-
-type IdempotentSubmissionResult = SubmitPacketResult | SubmitClaimsResult;
 
 export interface SubmitPacketError {
   ok: false;
@@ -214,11 +198,6 @@ export interface AddReviewCommentResult {
   comment: ReviewComment;
 }
 
-/** A packet as persisted: the ledger entry plus its attribution spans. */
-export interface PersistedReviewPacket extends ProposalPacket {
-  refSpans: RefSpan[];
-}
-
 /**
  * One review, serialized for its sidecar file. Both texts are mandatory:
  * mid-review neither equals the disk file — the save gate guarantees the
@@ -232,16 +211,21 @@ export interface PersistedReviewPacket extends ProposalPacket {
  * partition; the texts remain the authority on reattachment.
  */
 export interface ReviewSidecarData {
-  version: 1;
+  version: 2;
   reviewId: string;
   documentPath: string;
-  baselineText: string;
   referenceText: string;
   workingText: string;
   generation: number;
   diskFenceSha256: string;
   invalidated: boolean;
-  packets: PersistedReviewPacket[];
+  packets: ReviewPacket[];
+  /**
+   * The idempotency ledger. Persisted so a replayed clientRequestId answers
+   * from the original response after a detach, a reopen, or a restart —
+   * anywhere the review itself survives.
+   */
+  submissions: ProposalSubmissionRecord[];
   holds: ChunkHold[];
   comments: ReviewComment[];
   unresolvedChunks: number;
@@ -255,6 +239,50 @@ export interface ReviewSidecarData {
 
 export function sha256Text(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+/**
+ * The identity of a proposal request: what makes a replayed clientRequestId
+ * the SAME request rather than a conflicting reuse of the id. Serialization
+ * is a fixed literal field order — including inside each claim, because the
+ * claim objects arrive from JSON and their key order is the client's, not
+ * ours. Nothing here needs a general canonical-JSON framework.
+ */
+export function proposalRequestFingerprint(request: {
+  documentId: string;
+  baselineSha256: string;
+  expectedReviewGeneration: number;
+  claims: ReadonlyArray<{ description: string; patch: string }>;
+}): string {
+  return sha256Text(
+    JSON.stringify({
+      documentId: request.documentId,
+      baselineSha256: request.baselineSha256,
+      expectedReviewGeneration: request.expectedReviewGeneration,
+      claims: request.claims.map((claim) => ({
+        description: claim.description,
+        patch: claim.patch,
+      })),
+    }),
+  );
+}
+
+/**
+ * A stored packet as the API publishes it: the ledger entry alone. The
+ * attribution spans are internal, and the patch format is a constant of the
+ * contract rather than a per-packet fact.
+ */
+export function toWirePacket(packet: ReviewPacket): ProposalPacket {
+  return {
+    packetId: packet.packetId,
+    reviewId: packet.reviewId,
+    clientRequestId: packet.clientRequestId,
+    description: packet.description,
+    appliedAt: packet.appliedAt,
+    patchFormat: "unified-diff",
+    patch: packet.patch,
+    applicationGeneration: packet.applicationGeneration,
+  };
 }
 
 /**
@@ -293,7 +321,7 @@ export function reviewPatch(referenceText: string, workingText: string): string 
  */
 function dressChunks(
   partition: readonly ReviewChunk[],
-  packets: readonly PersistedReviewPacket[],
+  packets: readonly ReviewPacket[],
   holds: readonly ChunkHold[],
 ): OutstandingChunk[] {
   return partition.map((chunk) => {
@@ -306,9 +334,7 @@ function dressChunks(
       referenceText: chunk.referenceText,
       workingText: chunk.workingText,
       packetIds: attributed.map((packet) => packet.packetId),
-      descriptions: attributed
-        .map((packet) => packet.description)
-        .filter((description): description is string => description !== undefined),
+      descriptions: attributed.map((packet) => packet.description),
       state: hold === undefined ? ("pending" as const) : ("held" as const),
       holdComment: hold?.comment,
       patch: createPatch("document", chunk.referenceText, chunk.workingText, "", "", {
@@ -430,7 +456,7 @@ function isAcceptableHeader(
 /** One validated, applied claim: its inputs plus the text it produced. */
 interface AppliedClaimStep {
   patch: string;
-  description?: string;
+  description: string;
   textAfter: string;
 }
 
@@ -684,17 +710,6 @@ function remapSpans(
  */
 export class ReviewDiffStore extends EventEmitter {
   private readonly reviews: Map<string, ActiveReviewState> = new Map();
-  /** Index from clientRequestId to the exact committed submission result. */
-  private readonly idempotencyIndex: Map<string, IdempotentSubmissionResult> =
-    new Map();
-  /** Index from packetId → reviewId for retraction lookup */
-  private readonly packetIndex: Map<string, string> = new Map();
-  /**
-   * Each packet's reference-side edit footprint, recorded at application and
-   * remapped across every decision. Attribution derives from these: a chunk
-   * attributes to every packet whose spans still touch its reference range.
-   */
-  private readonly packetRefSpans: Map<string, RefSpan[]> = new Map();
 
   /**
    * @param getWorkingText Resolves a documentId to the live document text.
@@ -864,10 +879,10 @@ export class ReviewDiffStore extends EventEmitter {
       reviewId,
       documentId: options.documentId,
       documentPath: options.documentPath,
-      baselineText,
       referenceText: baselineText,
       generation: 0,
       packets: [],
+      submissions: [],
       holds: [],
       comments: [],
       diskFenceSha256: options.diskBaselineSha256,
@@ -883,92 +898,21 @@ export class ReviewDiffStore extends EventEmitter {
   }
 
   /**
-   * Submit a proposal packet against an active review — the one-claim
-   * degenerate case of submitClaims. The patch applies to the LIVE document
-   * text; the returned working text is what the caller must now apply to the
-   * document. referenceText is unchanged; existing unresolved chunks remain.
-   */
-  submitPacket(
-    documentId: string,
-    options: SubmitPacketOptions,
-  ): SubmitPacketResult | SubmitPacketError {
-    // Idempotency: return the original result for a repeated clientRequestId
-    const existing = this.idempotencyIndex.get(
-      this.idempotencyIndexKey(documentId, options.clientRequestId),
-    );
-    if (existing !== undefined) {
-      assert(
-        "packetId" in existing,
-        "A packet request may only replay a packet submission result",
-      );
-      return existing;
-    }
-
-    const guarded = this.guardSubmission(
-      documentId,
-      options.expectedReviewGeneration,
-    );
-    if ("ok" in guarded) {
-      return guarded;
-    }
-    const review = guarded;
-
-    const workingText = this.workingTextOf(documentId);
-    const sequence = applyClaimSequence(workingText, review.documentPath, [
-      { patch: options.patch, description: options.description },
-    ]);
-    if (!sequence.ok) {
-      return sequence;
-    }
-    const committed = this.commitClaimSequence(
-      review,
-      options.clientRequestId,
-      options.patchFormat,
-      workingText,
-      sequence.steps,
-    );
-
-    const result: SubmitPacketResult = {
-      ok: true,
-      packetId: committed.packetIds[0],
-      reviewId: review.reviewId,
-      generation: review.generation,
-      workingText: committed.workingText,
-      unresolvedChunks: committed.unresolvedChunks,
-      state: this.classifyState(review, committed.unresolvedChunks),
-    };
-    this.idempotencyIndex.set(
-      this.idempotencyIndexKey(documentId, options.clientRequestId),
-      result,
-    );
-    return result;
-  }
-
-  /**
    * Submit an ordered claim sequence as one atomic batch: every claim applies
    * — in order, zero fuzz, each against the text its predecessor produced —
    * or none does and the review is untouched. Each claim becomes its own
    * packet, so the ledger, retraction, and events see N claims as N packets.
    * The returned working text is the text after the whole sequence; applying
    * it to the live document is the caller's obligation.
+   *
+   * Idempotency is NOT decided here: the ledger entry carries the response
+   * the caller composed (document revision included), so the caller owns
+   * both the replay lookup and the append. See ActiveReviewState.submissions.
    */
   submitClaims(
     documentId: string,
     options: SubmitClaimsOptions,
   ): SubmitClaimsResult | SubmitPacketError {
-    const idempotencyKey = this.idempotencyIndexKey(
-      documentId,
-      options.clientRequestId,
-    );
-    const existing = this.idempotencyIndex.get(idempotencyKey);
-    if (existing !== undefined) {
-      assert(
-        "packetIds" in existing,
-        "A claims request may only replay a claims submission result",
-      );
-      return existing;
-    }
-
     const guarded = this.guardSubmission(
       documentId,
       options.expectedReviewGeneration,
@@ -990,12 +934,12 @@ export class ReviewDiffStore extends EventEmitter {
     const committed = this.commitClaimSequence(
       review,
       options.clientRequestId,
-      options.patchFormat,
+      options.requestFingerprint,
       workingText,
       sequence.steps,
     );
 
-    const result: SubmitClaimsResult = {
+    return {
       ok: true,
       packetIds: committed.packetIds,
       reviewId: review.reviewId,
@@ -1004,8 +948,6 @@ export class ReviewDiffStore extends EventEmitter {
       unresolvedChunks: committed.unresolvedChunks,
       state: this.classifyState(review, committed.unresolvedChunks),
     };
-    this.idempotencyIndex.set(idempotencyKey, result);
-    return result;
   }
 
   /**
@@ -1055,7 +997,7 @@ export class ReviewDiffStore extends EventEmitter {
   private commitClaimSequence(
     review: ActiveReviewState,
     clientRequestId: string,
-    patchFormat: "unified-diff",
+    requestFingerprint: string,
     startText: string,
     steps: readonly AppliedClaimStep[],
   ): { packetIds: string[]; workingText: string; unresolvedChunks: number } {
@@ -1067,18 +1009,18 @@ export class ReviewDiffStore extends EventEmitter {
         packetId,
         reviewId: review.reviewId,
         clientRequestId,
+        requestFingerprint,
         description: step.description,
         appliedAt: new Date().toISOString(),
-        patchFormat,
         patch: step.patch,
         applicationGeneration: review.generation + 1,
+        refSpans: computeChangedRefSpans(
+          review.referenceText,
+          textBefore,
+          step.textAfter,
+        ),
       });
       review.generation += 1;
-      this.packetIndex.set(packetId, review.reviewId);
-      this.packetRefSpans.set(
-        packetId,
-        computeChangedRefSpans(review.referenceText, textBefore, step.textAfter),
-      );
       textBefore = step.textAfter;
       packetIds.push(packetId);
     }
@@ -1373,7 +1315,7 @@ export class ReviewDiffStore extends EventEmitter {
     // and every hold dangles — commented holds surface as orphans.
     this.reconcileHolds(review, []);
     for (const packet of review.packets) {
-      this.packetRefSpans.set(packet.packetId, []);
+      packet.refSpans = [];
     }
     this.emitEvent("review.cleared", {
       reviewId: review.reviewId,
@@ -1399,8 +1341,12 @@ export class ReviewDiffStore extends EventEmitter {
    * document is the caller's obligation.
    */
   retractPacket(packetId: string): RetractPacketResult | RetractPacketError {
-    const reviewId = this.packetIndex.get(packetId);
-    if (reviewId === undefined) {
+    // Reviews and their packets are few; a scan is cheaper to keep correct
+    // than a second index that every mutation must remember to maintain.
+    const review = [...this.reviews.values()].find((candidate) =>
+      candidate.packets.some((packet) => packet.packetId === packetId),
+    );
+    if (review === undefined) {
       return {
         ok: false,
         code: "PACKET_NOT_RETRACTABLE",
@@ -1409,36 +1355,10 @@ export class ReviewDiffStore extends EventEmitter {
         canClearUnresolved: true,
       };
     }
-    // Find the review
-    let review: ActiveReviewState | undefined;
-    for (const r of this.reviews.values()) {
-      if (r.reviewId === reviewId) {
-        review = r;
-        break;
-      }
-    }
-    if (review === undefined) {
-      return {
-        ok: false,
-        code: "PACKET_NOT_RETRACTABLE",
-        message: "The review for this packet is no longer active.",
-        reviewId,
-        canClearUnresolved: true,
-      };
-    }
 
     const packetIndex = review.packets.findIndex(
       (p) => p.packetId === packetId,
     );
-    if (packetIndex === -1) {
-      return {
-        ok: false,
-        code: "PACKET_NOT_RETRACTABLE",
-        message: "The packet was not found in its review.",
-        reviewId: review.reviewId,
-        canClearUnresolved: true,
-      };
-    }
 
     // Must be the newest active packet
     if (packetIndex !== review.packets.length - 1) {
@@ -1481,8 +1401,6 @@ export class ReviewDiffStore extends EventEmitter {
 
     const newWorkingText = normalizeText(reverted);
     review.packets.pop();
-    this.packetIndex.delete(packetId);
-    this.packetRefSpans.delete(packetId);
     review.generation += 1;
 
     const unresolvedChunks = this.reconcileAndCountPending(
@@ -1535,11 +1453,6 @@ export class ReviewDiffStore extends EventEmitter {
       reviewId: review.reviewId,
       documentId,
     });
-    for (const p of review.packets) {
-      this.packetIndex.delete(p.packetId);
-      this.packetRefSpans.delete(p.packetId);
-      this.idempotencyIndex.delete(this.idempotencyIndexKey(documentId, p.clientRequestId));
-    }
     this.reviews.delete(documentId);
   }
 
@@ -1547,15 +1460,6 @@ export class ReviewDiffStore extends EventEmitter {
    * Remove a review (document closed). Emits no event if not present.
    */
   closeReview(documentId: string): void {
-    const review = this.reviews.get(documentId);
-    if (review === undefined) {
-      return;
-    }
-    for (const p of review.packets) {
-      this.packetIndex.delete(p.packetId);
-      this.packetRefSpans.delete(p.packetId);
-      this.idempotencyIndex.delete(this.idempotencyIndexKey(documentId, p.clientRequestId));
-    }
     this.reviews.delete(documentId);
   }
 
@@ -1572,8 +1476,9 @@ export class ReviewDiffStore extends EventEmitter {
    * The working text comes from the resolver, so the export must run while
    * the document is still open — detachment exports first, then drops.
    * Holds are reconciled against the exported texts, so no persisted hold
-   * can dangle on restore. Submission idempotency is deliberately NOT
-   * exported: closing a review has always retired its clientRequestIds.
+   * can dangle on restore. The submission ledger travels with the review:
+   * a replayed clientRequestId must answer the same way after a detach and
+   * reopen as it did before.
    */
   exportReviewSidecar(documentId: string): ReviewSidecarData | undefined {
     const review = this.reviews.get(documentId);
@@ -1584,10 +1489,9 @@ export class ReviewDiffStore extends EventEmitter {
     const partition = computeReviewChunks(review.referenceText, workingText);
     this.reconcileHolds(review, partition);
     return {
-      version: 1,
+      version: 2,
       reviewId: review.reviewId,
       documentPath: review.documentPath,
-      baselineText: review.baselineText,
       referenceText: review.referenceText,
       workingText,
       generation: review.generation,
@@ -1595,7 +1499,11 @@ export class ReviewDiffStore extends EventEmitter {
       invalidated: review.invalidated,
       packets: review.packets.map((packet) => ({
         ...packet,
-        refSpans: this.spansOf(packet.packetId).map((span) => ({ ...span })),
+        refSpans: packet.refSpans.map((span) => ({ ...span })),
+      })),
+      submissions: review.submissions.map((submission) => ({
+        ...submission,
+        packetIds: [...submission.packetIds],
       })),
       holds: review.holds.map((hold) => ({ ...hold })),
       comments: review.comments.map((comment) => ({ ...comment })),
@@ -1623,23 +1531,22 @@ export class ReviewDiffStore extends EventEmitter {
       reviewId: sidecar.reviewId,
       documentId,
       documentPath: sidecar.documentPath,
-      baselineText: sidecar.baselineText,
       referenceText: sidecar.referenceText,
       generation: sidecar.generation,
-      packets: sidecar.packets.map(({ refSpans: _refSpans, ...packet }) => packet),
+      packets: sidecar.packets.map((packet) => ({
+        ...packet,
+        refSpans: packet.refSpans.map((span) => ({ ...span })),
+      })),
+      submissions: sidecar.submissions.map((submission) => ({
+        ...submission,
+        packetIds: [...submission.packetIds],
+      })),
       holds: sidecar.holds.map((hold) => ({ ...hold })),
       comments: sidecar.comments.map((comment) => ({ ...comment })),
       diskFenceSha256: sidecar.diskFenceSha256,
       invalidated: sidecar.invalidated,
     };
     this.reviews.set(documentId, state);
-    for (const packet of sidecar.packets) {
-      this.packetIndex.set(packet.packetId, sidecar.reviewId);
-      this.packetRefSpans.set(
-        packet.packetId,
-        packet.refSpans.map((span) => ({ ...span })),
-      );
-    }
     return state;
   }
 
@@ -1784,11 +1691,7 @@ export class ReviewDiffStore extends EventEmitter {
     if (review === undefined) {
       return undefined;
     }
-    return dressChunks(
-      this.partitionOf(review),
-      review.packets.map((packet) => ({ ...packet, refSpans: this.spansOf(packet.packetId) })),
-      review.holds,
-    );
+    return dressChunks(this.partitionOf(review), review.packets, review.holds);
   }
 
   /**
@@ -1799,7 +1702,7 @@ export class ReviewDiffStore extends EventEmitter {
    * serves the HTTP API, so the two surfaces agree by construction.
    */
   getPacketAttributions(documentId: string):
-    | Array<{ packetId: string; description?: string; refSpans: RefSpan[] }>
+    | Array<{ packetId: string; description: string; refSpans: RefSpan[] }>
     | undefined {
     const review = this.reviews.get(documentId);
     if (review === undefined) {
@@ -1808,7 +1711,7 @@ export class ReviewDiffStore extends EventEmitter {
     return review.packets.map((packet) => ({
       packetId: packet.packetId,
       description: packet.description,
-      refSpans: this.spansOf(packet.packetId),
+      refSpans: packet.refSpans,
     }));
   }
 
@@ -1831,19 +1734,6 @@ export class ReviewDiffStore extends EventEmitter {
     return review.invalidated;
   }
 
-  /**
-   * A packet's current reference spans. Every application path records them
-   * at commit, so a missing entry is a lifecycle bug, not an empty footprint
-   * — answering [] would silently un-attribute every chunk the packet made.
-   */
-  private spansOf(packetId: string): RefSpan[] {
-    const spans = this.packetRefSpans.get(packetId);
-    if (spans === undefined) {
-      throw new Error(`Packet ${packetId} has no recorded reference spans`);
-    }
-    return spans;
-  }
-
   /** Remap every packet's spans across one decided chunk (see remapSpans). */
   private remapSpansAcrossDecision(
     review: ActiveReviewState,
@@ -1851,14 +1741,11 @@ export class ReviewDiffStore extends EventEmitter {
     lineDelta: number,
   ): void {
     for (const packet of review.packets) {
-      this.packetRefSpans.set(
-        packet.packetId,
-        remapSpans(
-          this.spansOf(packet.packetId),
-          chunk.refFromLine,
-          chunk.refToLine,
-          lineDelta,
-        ),
+      packet.refSpans = remapSpans(
+        packet.refSpans,
+        chunk.refFromLine,
+        chunk.refToLine,
+        lineDelta,
       );
     }
   }
@@ -1873,15 +1760,6 @@ export class ReviewDiffStore extends EventEmitter {
     unresolvedChunks: number,
   ): ReviewState {
     return classifyReviewState(this.isInvalidated(review), unresolvedChunks);
-  }
-
-  /**
-   * Collision-free composite key: clientRequestId is an arbitrary
-   * client-supplied string and documentId is caller-supplied, so no separator
-   * character is safe. A JSON tuple encodes both components unambiguously.
-   */
-  private idempotencyIndexKey(documentId: string, clientRequestId: string): string {
-    return JSON.stringify([documentId, clientRequestId]);
   }
 
   emitEvent(event: string, payload: Record<string, unknown>): void {

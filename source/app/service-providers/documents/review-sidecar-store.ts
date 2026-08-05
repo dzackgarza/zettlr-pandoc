@@ -31,13 +31,13 @@
 import { promises as fs } from "fs";
 import path from "path";
 import type { ReviewComment } from "@dts/common/agent-api";
-import type { ChunkHold } from "@dts/common/review-domain";
+import type {
+  ChunkHold,
+  ProposalSubmissionRecord,
+  ReviewPacket,
+} from "@dts/common/review-domain";
 import type { RefSpan } from "@common/modules/review/review-chunks";
-import {
-  sha256Text,
-  type PersistedReviewPacket,
-  type ReviewSidecarData,
-} from "./review-diff-store";
+import { sha256Text, type ReviewSidecarData } from "./review-diff-store";
 
 /**
  * The sidecar file for a document. Keyed by the hash of the canonical
@@ -73,7 +73,7 @@ function isRefSpan(value: unknown): value is RefSpan {
   );
 }
 
-function isPersistedPacket(value: unknown): value is PersistedReviewPacket {
+function isReviewPacket(value: unknown): value is ReviewPacket {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -83,13 +83,12 @@ function isPersistedPacket(value: unknown): value is PersistedReviewPacket {
     typeof value.reviewId === "string" &&
     "clientRequestId" in value &&
     typeof value.clientRequestId === "string" &&
-    (!("description" in value) ||
-      value.description === undefined ||
-      typeof value.description === "string") &&
+    "requestFingerprint" in value &&
+    isSha256(value.requestFingerprint) &&
+    "description" in value &&
+    typeof value.description === "string" &&
     "appliedAt" in value &&
     typeof value.appliedAt === "string" &&
-    "patchFormat" in value &&
-    value.patchFormat === "unified-diff" &&
     "patch" in value &&
     typeof value.patch === "string" &&
     "applicationGeneration" in value &&
@@ -97,6 +96,29 @@ function isPersistedPacket(value: unknown): value is PersistedReviewPacket {
     "refSpans" in value &&
     Array.isArray(value.refSpans) &&
     value.refSpans.every(isRefSpan)
+  );
+}
+
+/**
+ * The idempotency ledger entry. `response` is the exact body the original
+ * submission answered with and is replayed verbatim, so it is checked as a
+ * JSON object rather than field by field — the wire schema owns its shape,
+ * and Phase 8's TypeBox sidecar schema will own it here too.
+ */
+function isProposalSubmissionRecord(value: unknown): value is ProposalSubmissionRecord {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "clientRequestId" in value &&
+    typeof value.clientRequestId === "string" &&
+    "requestFingerprint" in value &&
+    isSha256(value.requestFingerprint) &&
+    "packetIds" in value &&
+    Array.isArray(value.packetIds) &&
+    value.packetIds.every((packetId) => typeof packetId === "string") &&
+    "response" in value &&
+    typeof value.response === "object" &&
+    value.response !== null
   );
 }
 
@@ -133,7 +155,7 @@ function isReviewComment(value: unknown): value is ReviewComment {
 }
 
 /**
- * The one version-1 sidecar parser. Persisted bytes cross into trusted review
+ * The one version-2 sidecar parser. Persisted bytes cross into trusted review
  * state only after every required top-level and nested field is validated.
  */
 function isReviewSidecarData(parsed: unknown): parsed is ReviewSidecarData {
@@ -141,13 +163,11 @@ function isReviewSidecarData(parsed: unknown): parsed is ReviewSidecarData {
     typeof parsed === "object" &&
     parsed !== null &&
     "version" in parsed &&
-    parsed.version === 1 &&
+    parsed.version === 2 &&
     "reviewId" in parsed &&
     typeof parsed.reviewId === "string" &&
     "documentPath" in parsed &&
     typeof parsed.documentPath === "string" &&
-    "baselineText" in parsed &&
-    typeof parsed.baselineText === "string" &&
     "referenceText" in parsed &&
     typeof parsed.referenceText === "string" &&
     "workingText" in parsed &&
@@ -160,7 +180,10 @@ function isReviewSidecarData(parsed: unknown): parsed is ReviewSidecarData {
     typeof parsed.invalidated === "boolean" &&
     "packets" in parsed &&
     Array.isArray(parsed.packets) &&
-    parsed.packets.every(isPersistedPacket) &&
+    parsed.packets.every(isReviewPacket) &&
+    "submissions" in parsed &&
+    Array.isArray(parsed.submissions) &&
+    parsed.submissions.every(isProposalSubmissionRecord) &&
     "holds" in parsed &&
     Array.isArray(parsed.holds) &&
     parsed.holds.every(isChunkHold) &&
@@ -187,7 +210,7 @@ function parseReviewSidecar(raw: string, target: string): ReviewSidecarData {
     );
   }
   if (!isReviewSidecarData(parsed)) {
-    throw new Error(`Review sidecar ${target} is not a version-1 review sidecar`);
+    throw new Error(`Review sidecar ${target} is not a version-2 review sidecar`);
   }
   const expectedHash = path.basename(target, ".json");
   if (expectedHash !== sha256Text(path.resolve(parsed.documentPath))) {
@@ -228,7 +251,7 @@ export class ReviewSidecarStore {
 
   /**
    * The sidecar for a document, or undefined when none exists. A file that
-   * exists but does not parse as a version-1 sidecar throws.
+   * exists but does not parse as a version-2 sidecar throws.
    */
   async read(documentPath: string): Promise<ReviewSidecarData | undefined> {
     const target = reviewSidecarFilePath(this.directory, documentPath);

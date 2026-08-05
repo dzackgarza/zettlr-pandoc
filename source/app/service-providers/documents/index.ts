@@ -53,6 +53,7 @@ import type {
   ProposalClaim,
   ReviewListEntry,
   ReviewState,
+  SubmitProposalResponse,
 } from "@dts/common/agent-api";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
@@ -65,7 +66,11 @@ import EventEmitter from "events";
 import { constants as FSConstants } from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
-import { normalizeText, sha256Text } from "./review-diff-store";
+import {
+  normalizeText,
+  proposalRequestFingerprint,
+  sha256Text,
+} from "./review-diff-store";
 import {
   getDocumentTypeForExtension,
   hasImageExt,
@@ -273,24 +278,12 @@ interface Document {
   saveTimeout: undefined | NodeJS.Timeout;
 }
 
-interface SubmittedProposalResponse {
-  ok: true;
-  /** The newest packet of this submission — the last element of packetIds. */
-  packetId: string;
-  /** One packet per claim, in claim order; a single patch has exactly one. */
-  packetIds: string[];
-  reviewId: string;
-  documentId: string;
-  documentRevision: DocumentRevision;
-  reviewGeneration: number;
-  unresolvedChunks: number;
-  state: ReviewState;
-}
-
-interface ProposalIdempotencyRecord {
-  fingerprint: string;
-  response: SubmittedProposalResponse;
-}
+/**
+ * The wire response plus the discriminant this provider's callers switch on.
+ * The body itself is the generated contract type — a second transcription of
+ * those fields here is what the ledger would then have to store a copy of.
+ */
+type SubmittedProposalResponse = SubmitProposalResponse & { ok: true };
 
 export type DocumentAuthorityIPCAPI = IPCAPI<{
   "get-document": { filePath: string };
@@ -455,9 +448,6 @@ export default class DocumentManager extends ProviderContract {
   /** The serialized tail of asynchronous sidecar writes for each document. */
   private readonly _pendingSidecarWrites: Map<string, Promise<void>>;
 
-  /** Successful proposal responses, keyed by document and client idempotency key. */
-  private readonly _proposalIdempotency: Map<string, ProposalIdempotencyRecord>;
-
   /**
    * This holds all currently opened documents somewhere across the app.
    *
@@ -515,7 +505,6 @@ export default class DocumentManager extends ProviderContract {
       this._scheduleReviewSidecarWrite(documentId);
     });
     this._documentIdByPath = new Map();
-    this._proposalIdempotency = new Map();
     this.documents = [];
     this._shuttingDown = false;
     this._lastEditor = {
@@ -2685,7 +2674,6 @@ current contents from the editor somewhere else, and restart the application.`,
             this._broadcastReviewCleared(filePath, _review.reviewId);
           }
           this._reviewStore.completeReview(_id);
-          this._clearProposalIdempotency(_id);
           // Explicit resolution: a completed review leaves no residue.
           try {
             await this._reviewSidecars.delete(filePath);
@@ -2783,7 +2771,6 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     }
     this._reviewStore.closeReview(documentId);
-    this._clearProposalIdempotency(documentId);
   }
 
   /**
@@ -2837,7 +2824,6 @@ current contents from the editor somewhere else, and restart the application.`,
     if (!preserveSavedReview) {
       await this._reviewSidecars.delete(doc.filePath);
       this._reviewStore.closeReview(doc.documentId);
-      this._clearProposalIdempotency(doc.documentId);
       if (review !== undefined) {
         // Both audiences are told, after closeReview, so each signal describes
         // a review that is already gone rather than one it could still try to
@@ -3019,20 +3005,6 @@ current contents from the editor somewhere else, and restart the application.`,
       };
     }
     return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
-  }
-
-  private _clearProposalIdempotency(documentId: string): void {
-    for (const key of this._proposalIdempotency.keys()) {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(key);
-      } catch {
-        continue;
-      }
-      if (Array.isArray(parsed) && parsed[0] === documentId) {
-        this._proposalIdempotency.delete(key);
-      }
-    }
   }
 
   /**
@@ -3227,7 +3199,7 @@ current contents from the editor somewhere else, and restart the application.`,
   private async _submitClaimSequence(
     documentId: string,
     baselineSha256: string,
-    claims: Array<{ patch: string; description?: string }>,
+    claims: ProposalClaim[],
     clientRequestId: string,
     expectedReviewGeneration: number,
   ): Promise<
@@ -3238,28 +3210,23 @@ current contents from the editor somewhere else, and restart the application.`,
         message: string;
       }
   > {
-    // Encode the tuple as a JSON value rather than joining with a delimiter:
-    // clientRequestId is caller-controlled and must not be able to collide
-    // with another document/request pair.
-    const idempotencyKey = JSON.stringify([documentId, clientRequestId]);
-    const fingerprint = sha256Text(
-      JSON.stringify({
-        documentId,
-        baselineSha256,
-        expectedReviewGeneration,
-        claims,
-      }),
+    const requestFingerprint = proposalRequestFingerprint({
+      documentId,
+      baselineSha256,
+      expectedReviewGeneration,
+      claims,
+    });
+    // The ledger lives in the review, so a replay is only meaningful while
+    // the review that recorded it exists. A review that completed or was
+    // discarded retired its clientRequestIds with it, and the replay is then
+    // an ordinary new request judged on its own preconditions.
+    const replayed = this._replayedSubmission(
+      documentId,
+      clientRequestId,
+      requestFingerprint,
     );
-    const idempotent = this._proposalIdempotency.get(idempotencyKey);
-    if (idempotent !== undefined) {
-      if (idempotent.fingerprint !== fingerprint) {
-        return {
-          ok: false,
-          code: "IDEMPOTENCY_CONFLICT",
-          message: "clientRequestId was already used for a different proposal request.",
-        };
-      }
-      return idempotent.response;
+    if (replayed !== undefined) {
+      return replayed;
     }
 
     const filePath = this.getDocumentPath(documentId);
@@ -3366,9 +3333,9 @@ current contents from the editor somewhere else, and restart the application.`,
     }
 
     const result = this._reviewStore.submitClaims(documentId, {
-      patchFormat: "unified-diff",
       claims,
       clientRequestId,
+      requestFingerprint,
     });
     if (!result.ok) {
       if (activeReview === undefined) {
@@ -3386,8 +3353,7 @@ current contents from the editor somewhere else, and restart the application.`,
     const review = this._reviewStore.getReview(documentId)!;
     this._applyWorkingTextToDocument(filePath, result.workingText);
     this._broadcastReviewState(filePath, review);
-    const response: SubmittedProposalResponse = {
-      ok: true,
+    const response: SubmitProposalResponse = {
       packetId: result.packetIds[result.packetIds.length - 1],
       packetIds: result.packetIds,
       reviewId: result.reviewId,
@@ -3397,8 +3363,45 @@ current contents from the editor somewhere else, and restart the application.`,
       unresolvedChunks: result.unresolvedChunks,
       state: result.state,
     };
-    this._proposalIdempotency.set(idempotencyKey, { fingerprint, response });
-    return response;
+    // Appended only now: the packets are committed, the document carries the
+    // new working text, and this response is the one a replay must repeat.
+    review.submissions.push({
+      clientRequestId,
+      requestFingerprint,
+      packetIds: result.packetIds,
+      response,
+    });
+    return { ok: true, ...response };
+  }
+
+  /**
+   * The answer a repeated clientRequestId earns from the review's ledger:
+   * the original response for the same request, a conflict for a different
+   * one, and undefined when this id has not been seen by a live review.
+   */
+  private _replayedSubmission(
+    documentId: string,
+    clientRequestId: string,
+    requestFingerprint: string,
+  ):
+    | SubmittedProposalResponse
+    | { ok: false; code: string; message: string }
+    | undefined {
+    const review = this._reviewStore.getReview(documentId);
+    const prior = review?.submissions.find(
+      (submission) => submission.clientRequestId === clientRequestId,
+    );
+    if (prior === undefined) {
+      return undefined;
+    }
+    if (prior.requestFingerprint !== requestFingerprint) {
+      return {
+        ok: false,
+        code: "IDEMPOTENCY_CONFLICT",
+        message: "clientRequestId was already used for a different proposal request.",
+      };
+    }
+    return { ok: true, ...prior.response };
   }
 
   /**

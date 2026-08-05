@@ -9,7 +9,7 @@
  *
  * Description:     Drives the production sidecar store against the real
  *                  filesystem. The tests certify its asynchronous contract
- *                  and the one total parser for persisted version-1 data.
+ *                  and the one total parser for persisted version-2 data.
  *
  * END HEADER
  */
@@ -24,12 +24,14 @@ import {
   reviewSidecarFilePath,
 } from "source/app/service-providers/documents/review-sidecar-store";
 
+const FINGERPRINT =
+  "1111111111111111111111111111111111111111111111111111111111111111";
+
 function sidecar(documentPath: string): ReviewSidecarData {
   return {
-    version: 1,
+    version: 2,
     reviewId: "review-1",
     documentPath,
-    baselineText: "alpha\n",
     referenceText: "alpha\n",
     workingText: "ALPHA\n",
     generation: 1,
@@ -40,12 +42,29 @@ function sidecar(documentPath: string): ReviewSidecarData {
         packetId: "packet-1",
         reviewId: "review-1",
         clientRequestId: "request-1",
+        requestFingerprint: FINGERPRINT,
         description: "capitalize alpha",
         appliedAt: "2026-08-01T00:00:00.000Z",
-        patchFormat: "unified-diff",
         patch: "--- document\n+++ document\n@@ -1 +1 @@\n-alpha\n+ALPHA\n",
         applicationGeneration: 1,
         refSpans: [{ from: 1, to: 2 }],
+      },
+    ],
+    submissions: [
+      {
+        clientRequestId: "request-1",
+        requestFingerprint: FINGERPRINT,
+        packetIds: ["packet-1"],
+        response: {
+          packetId: "packet-1",
+          packetIds: ["packet-1"],
+          reviewId: "review-1",
+          documentId: "doc-1",
+          documentRevision: { sha256: FINGERPRINT },
+          reviewGeneration: 1,
+          unresolvedChunks: 1,
+          state: "active",
+        },
       },
     ],
     holds: [
@@ -102,13 +121,16 @@ describe("ReviewSidecarStore", function () {
   it("rejects every malformed required field before persisted state reaches restore", async function () {
     const valid = sidecar(documentPath);
     const packet = valid.packets[0];
+    const submission = valid.submissions[0];
     const hold = valid.holds[0];
     const comment = valid.comments[0];
     const invalidSidecars: unknown[] = [
-      { ...valid, version: 2 },
+      // A version-1 sidecar is the pre-flattening shape: it must fail loudly
+      // rather than restore a review whose packets carry no attribution.
+      { ...valid, version: 1 },
+      { ...valid, version: 3 },
       { ...valid, reviewId: 1 },
       { ...valid, documentPath: false },
-      { ...valid, baselineText: null },
       { ...valid, referenceText: [] },
       { ...valid, workingText: {} },
       { ...valid, generation: "1" },
@@ -116,6 +138,7 @@ describe("ReviewSidecarStore", function () {
       { ...valid, diskFenceSha256: "fence" },
       { ...valid, invalidated: "false" },
       { ...valid, packets: null },
+      { ...valid, submissions: null },
       { ...valid, holds: null },
       { ...valid, comments: null },
       { ...valid, unresolvedChunks: "1" },
@@ -126,7 +149,7 @@ describe("ReviewSidecarStore", function () {
       { ...valid, packets: [{ ...packet, clientRequestId: 1 }] },
       { ...valid, packets: [{ ...packet, description: 1 }] },
       { ...valid, packets: [{ ...packet, appliedAt: 1 }] },
-      { ...valid, packets: [{ ...packet, patchFormat: "other" }] },
+      { ...valid, packets: [{ ...packet, requestFingerprint: "not-a-hash" }] },
       { ...valid, packets: [{ ...packet, patch: 1 }] },
       { ...valid, packets: [{ ...packet, applicationGeneration: "1" }] },
       { ...valid, packets: [{ ...packet, refSpans: null }] },
@@ -139,6 +162,10 @@ describe("ReviewSidecarStore", function () {
           { ...packet, refSpans: [{ from: 1, to: 2 }, { from: "1", to: 2 }] },
         ],
       },
+      { ...valid, submissions: [{ ...submission, clientRequestId: 1 }] },
+      { ...valid, submissions: [{ ...submission, requestFingerprint: "short" }] },
+      { ...valid, submissions: [{ ...submission, packetIds: [1] }] },
+      { ...valid, submissions: [{ ...submission, response: "ok" }] },
       { ...valid, holds: [{ ...hold, chunkId: 1 }] },
       { ...valid, holds: [{ ...hold, comment: 1 }] },
       { ...valid, holds: [{ ...hold, heldAt: 1 }] },

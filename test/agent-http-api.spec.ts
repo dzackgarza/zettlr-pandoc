@@ -2318,7 +2318,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       mkdirSync(sidecarDirectory, { recursive: true });
       writeFileSync(
         reviewSidecarFilePath(sidecarDirectory, filePath),
-        JSON.stringify({ version: 1, reviewId: "incomplete" }),
+        JSON.stringify({ version: 2, reviewId: "incomplete" }),
         "utf8",
       );
       const failures: AgentEvent[] = [];
@@ -2334,7 +2334,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.ok(typeof failureMessage === "string");
       assert.match(
         failureMessage,
-        /is not a version-1 review sidecar/,
+        /is not a version-2 review sidecar/,
         "the documented sidecar error must name the validation failure",
       );
     });
@@ -2468,6 +2468,73 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       );
       // Attribution survives: the restored spans still bind claims to chunks.
       assert.deepEqual(afterChunks[0].descriptions, ["caps alpha"]);
+    });
+
+    it("replays a submission from the restored ledger after detach and reattach", async function () {
+      // Idempotency lives in the review, not in a manager-side map, so it is
+      // persisted with the review and survives the file being closed. The
+      // replay must repeat the original response rather than apply the
+      // claims a second time.
+      const filePath = path.join(scratch, "sidecar-replay.md");
+      const original = "alpha\nbeta\n";
+      const docId = await openFile(filePath, original);
+      const request = {
+        baselineSha256: baselineOf(docId),
+        expectedReviewGeneration: generationOf(docId),
+        claims: [
+          { description: "caps alpha", patch: makePatch(original, "ALPHA\nbeta\n") },
+        ],
+        clientRequestId: "sidecar-replay-1",
+      };
+      const submitted = await provider.submitProposalClaims(
+        docId,
+        request.baselineSha256,
+        request.claims,
+        request.clientRequestId,
+        request.expectedReviewGeneration,
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+
+      await flushSidecarWrites();
+      await provider.closeFileEverywhere(filePath);
+      assert.equal(provider.reviewStore.getReview(docId), undefined);
+      await provider.getDocument(filePath);
+      assert.ok(
+        provider.reviewStore.getReview(docId) !== undefined,
+        "opening the file must reattach the review",
+      );
+
+      const replayed = await provider.submitProposalClaims(
+        docId,
+        request.baselineSha256,
+        request.claims,
+        request.clientRequestId,
+        request.expectedReviewGeneration,
+      );
+      assert.deepEqual(replayed, submitted, "the restored ledger must answer the replay");
+      assert.deepEqual(
+        provider.reviewStore.getReview(docId)!.packets.map((packet) => packet.packetId),
+        submitted.packetIds,
+        "a replay must not apply the claims again",
+      );
+
+      // Same id, different body: the ledger refuses rather than silently
+      // applying a second, unrelated proposal under a used id.
+      const conflicting = await provider.submitProposalClaims(
+        docId,
+        request.baselineSha256,
+        [{ description: "caps beta", patch: makePatch(original, "alpha\nBETA\n") }],
+        request.clientRequestId,
+        request.expectedReviewGeneration,
+      );
+      assert.equal(conflicting.ok, false);
+      if (conflicting.ok) {
+        return;
+      }
+      assert.equal(conflicting.code, "IDEMPOTENCY_CONFLICT");
     });
 
     it("invalidates instead of reattaching when the disk changed while closed", async function () {
