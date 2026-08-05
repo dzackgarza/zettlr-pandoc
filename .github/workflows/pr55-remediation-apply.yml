@@ -53,7 +53,9 @@ jobs:
           from pathlib import Path
 
           ref = "origin/automation/pr55-direct-remediation"
+          alphabet = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")
           encoded_parts: list[str] = []
+          diagnostics: list[str] = []
           for index in range(7):
               raw = subprocess.check_output(
                   [
@@ -63,23 +65,36 @@ jobs:
                   ],
                   text=True,
               )
-              encoded_parts.append("".join(raw.split()))
+              compact = "".join(raw.split())
+              invalid = sorted(set(compact) - alphabet)
+              diagnostics.append(
+                  f"part {index:02d}: chars={len(compact)}, mod4={len(compact) % 4}, "
+                  f"invalid={invalid!r}, prefix={compact[:12]!r}, suffix={compact[-12:]!r}"
+              )
+              encoded_parts.append(compact)
 
-          def decode(encoded: str) -> bytes:
+          def decode(encoded: str, *, strict: bool) -> bytes:
               padded = encoded + "=" * ((-len(encoded)) % 4)
-              return base64.b64decode(padded, altchars=b"-_", validate=True)
+              return base64.b64decode(padded, altchars=b"-_", validate=strict)
 
           candidates: list[tuple[str, bytes]] = []
-          try:
-              candidates.append(("one split base64 stream", decode("".join(encoded_parts))))
-          except Exception:
-              pass
-          try:
-              candidates.append(
-                  ("independently encoded chunks", b"".join(decode(part) for part in encoded_parts))
-              )
-          except Exception:
-              pass
+          decode_failures: list[str] = []
+          for strict in (True, False):
+              try:
+                  candidates.append(
+                      (f"one split base64 stream, strict={strict}", decode("".join(encoded_parts), strict=strict))
+                  )
+              except Exception as error:
+                  decode_failures.append(f"combined strict={strict}: {error}")
+              try:
+                  candidates.append(
+                      (
+                          f"independently encoded chunks, strict={strict}",
+                          b"".join(decode(part, strict=strict) for part in encoded_parts),
+                      )
+                  )
+              except Exception as error:
+                  decode_failures.append(f"per-part strict={strict}: {error}")
 
           expected_prefix = b"diff --git a/package.json b/package.json\n"
           failures: list[str] = []
@@ -96,7 +111,13 @@ jobs:
               print(f"Recovered {len(patch)} patch bytes using {label}")
               break
           else:
-              raise SystemExit("Could not recover implementation patch: " + "; ".join(failures))
+              print("\n".join(diagnostics))
+              raise SystemExit(
+                  "Could not recover implementation patch. Decode failures: "
+                  + "; ".join(decode_failures)
+                  + ". Decompression failures: "
+                  + "; ".join(failures)
+              )
           PY
           changed_paths="$(git apply --numstat /tmp/pr55-remediation.patch | awk '{print $3}')"
           if printf '%s\n' "$changed_paths" | grep -Eq '^(\.github/|AGENTS\.md$|scripts/pr55-)'; then
