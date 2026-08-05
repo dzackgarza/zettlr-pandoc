@@ -1061,6 +1061,38 @@ export default class DocumentManager extends ProviderContract {
   }
 
   /**
+   * Load the authority buffer a proposal needs, without opening a pane.
+   *
+   * A proposal is defined against a live buffer, so submitting one against a
+   * closed workspace file has to load it. `getDocument` is the primitive that
+   * does exactly that and no more: it populates the authority, reattaches any
+   * sidecar the path carries, and creates no renderer view — so the load
+   * changes nothing the user can see until the review it carries commits.
+   *
+   * `wasAlreadyLoaded` is what a refused submission needs: only a buffer this
+   * acquisition brought in may be released again. `undefined` means the id
+   * names no path at all, which the submission below refuses on its own.
+   */
+  private async acquireDocumentForReview(documentId: string): Promise<
+    | {
+        documentId: string;
+        documentPath: string;
+        wasAlreadyLoaded: boolean;
+      }
+    | undefined
+  > {
+    const documentPath = this.getDocumentPath(documentId);
+    if (documentPath === undefined) {
+      return undefined;
+    }
+    const wasAlreadyLoaded = this.documents.some((doc) => doc.filePath === documentPath);
+    if (!wasAlreadyLoaded) {
+      await this.getDocument(documentPath);
+    }
+    return { documentId, documentPath, wasAlreadyLoaded };
+  }
+
+  /**
    * Release a clean authority buffer that has no editor view.
    *
    * The review CLI loads an unopened path only to obtain the live snapshot
@@ -3156,6 +3188,12 @@ current contents from the editor somewhere else, and restart the application.`,
   /**
    * Submit an ordered claim sequence against a baseline content hash: applied
    * sequentially and atomically (all-or-nothing), one packet per claim.
+   *
+   * A closed workspace file is acquired first and released again when the
+   * submission commits nothing, so a refused proposal leaves the editor
+   * exactly as it found it. A committed review keeps its buffer: the review
+   * owns the document from that point, and showing it to the user is a
+   * separate, explicit focus call.
    */
   public async submitProposalClaims(
     documentId: string,
@@ -3171,13 +3209,18 @@ current contents from the editor somewhere else, and restart the application.`,
         message: string;
       }
   > {
-    return await this._submitClaimSequence(
+    const acquired = await this.acquireDocumentForReview(documentId);
+    const result = await this._submitClaimSequence(
       documentId,
       baselineSha256,
       claims,
       clientRequestId,
       expectedReviewGeneration,
     );
+    if (!result.ok && acquired?.wasAlreadyLoaded === false) {
+      await this.releaseUnattachedDocument(documentId);
+    }
+    return result;
   }
 
   /**
@@ -3391,24 +3434,29 @@ current contents from the editor somewhere else, and restart the application.`,
       return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
     }
     const filePath = this.getDocumentPath(documentId);
+    const doc =
+      filePath === undefined ? undefined : this.documents.find((d) => d.filePath === filePath);
+    if (filePath === undefined || doc === undefined) {
+      // A review in the live store whose document is not open is a lifecycle
+      // bug — closing a file detaches its review to a sidecar. Every answer
+      // here carries a documentRevision, and the only hash there would be to
+      // report is one no document has, so refuse before mutating anything.
+      throw new Error(
+        `Review ${reviewId} is attached to document ${documentId}, which is not open`,
+      );
+    }
     const result = this._reviewStore.clearUnresolved(documentId);
     if (!result.ok) {
       return { ok: false, code: result.code, message: result.message };
     }
-    if (filePath !== undefined) {
-      this._applyWorkingTextToDocument(filePath, result.workingText);
-      this._broadcastReviewCleared(filePath, reviewId);
-    }
-    const doc =
-      filePath !== undefined ? this.documents.find((d) => d.filePath === filePath) : undefined;
+    this._applyWorkingTextToDocument(filePath, result.workingText);
+    this._broadcastReviewCleared(filePath, reviewId);
     return {
       ok: true,
       reviewId: result.reviewId,
       documentId,
       state: result.state,
-      documentRevision: doc
-        ? { sha256: sha256Text(doc.document.toString()) }
-        : { sha256: "" },
+      documentRevision: { sha256: sha256Text(doc.document.toString()) },
       reviewGeneration: result.generation,
       unresolvedChunks: result.unresolvedChunks,
     };
@@ -3497,13 +3545,23 @@ current contents from the editor somewhere else, and restart the application.`,
     }
     const documentId = result.documentId;
     const filePath = this.getDocumentPath(documentId);
+    const doc =
+      filePath === undefined ? undefined : this.documents.find((d) => d.filePath === filePath);
+    if (filePath === undefined || doc === undefined) {
+      // The live store just retracted a packet from a review whose document
+      // is not open, which closing a file makes impossible: the close detaches
+      // the review to a sidecar and the retraction above would have refused.
+      // The answer owes a documentRevision and no document holds one, so fail
+      // loudly rather than report a hash nothing has.
+      throw new Error(
+        `Review ${result.reviewId} is attached to document ${documentId}, which is not open`,
+      );
+    }
     const review = this._reviewStore.getReview(documentId);
-    if (filePath !== undefined && review !== undefined) {
+    if (review !== undefined) {
       this._applyWorkingTextToDocument(filePath, result.workingText);
       this._broadcastReviewState(filePath, review);
     }
-    const doc =
-      filePath !== undefined ? this.documents.find((d) => d.filePath === filePath) : undefined;
     return {
       ok: true,
       retracted: true,
@@ -3512,9 +3570,7 @@ current contents from the editor somewhere else, and restart the application.`,
       documentId,
       reviewGeneration: result.generation,
       unresolvedChunks: result.unresolvedChunks,
-      documentRevision: doc
-        ? { sha256: sha256Text(doc.document.toString()) }
-        : { sha256: "" },
+      documentRevision: { sha256: sha256Text(doc.document.toString()) },
     };
   }
 

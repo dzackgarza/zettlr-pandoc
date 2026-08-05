@@ -1539,9 +1539,19 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    const doc = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
-    if (doc === undefined) {
-      this.sendError(res, 404, "DOCUMENT_CLOSED", "Document is no longer open");
+    // A closed workspace file is proposed against directly: the submission
+    // acquires its authority buffer and releases it again if nothing commits.
+    // That makes this route reach files the user never opened, so containment
+    // is checked here for the same reason the read route checks it — an id is
+    // not authorization, and nothing else stands between a loopback client and
+    // an arbitrary path on disk.
+    if (!(await this.isDocumentOpenableInCurrentWorkspaces(filePath))) {
+      this.sendError(
+        res,
+        404,
+        "DOCUMENT_NOT_FOUND",
+        "Document is outside configured workspace scope",
+      );
       return;
     }
     const result = await this._documents.submitProposalClaims(
@@ -1554,7 +1564,14 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     if (!result.ok) {
       if (result.code === "REVISION_MISMATCH") {
-        res.setHeader("ETag", `"sha256:${sha256Text(doc.document.toString())}"`);
+        // The buffer is gone when the refusal released an acquisition, and
+        // there is then no live revision to advertise. The caller re-reads
+        // the content either way; an ETag naming a buffer nobody holds would
+        // only invite a retry against a baseline that no longer exists.
+        const current = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
+        if (current !== undefined) {
+          res.setHeader("ETag", `"sha256:${sha256Text(current.document.toString())}"`);
+        }
         this.sendError(res, 412, "REVISION_MISMATCH", result.message);
       } else if (result.code === "PATCH_INVALID" || result.code === "PATCH_NOT_APPLICABLE") {
         this.sendError(res, 400, result.code, result.message);
@@ -1568,12 +1585,16 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
 
-    // Set the new ETag on the response
-    const newSha = sha256Text(
-      this._documents.loadedDocuments.find((d) => d.filePath === filePath)?.document.toString() ??
-        doc.document.toString(),
-    );
-    res.setHeader("ETag", `"sha256:${newSha}"`);
+    // Set the new ETag on the response. A committed review keeps its buffer
+    // loaded, so the document is there whether the caller opened it or the
+    // submission acquired it.
+    const applied = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
+    if (applied === undefined) {
+      throw new Error(
+        `Proposal ${result.reviewId} committed against ${documentId}, which is not open`,
+      );
+    }
+    res.setHeader("ETag", `"sha256:${sha256Text(applied.document.toString())}"`);
     this.sendJson(res, 200, {
       packetId: result.packetId,
       packetIds: result.packetIds,

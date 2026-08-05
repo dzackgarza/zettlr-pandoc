@@ -24,7 +24,16 @@ import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import { app } from "electron";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "fs";
 import http from "http";
 import net from "net";
 import os from "os";
@@ -207,9 +216,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         },
         getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
         getFilesystemMetadata: async (_filePath: string) => ({ modtime: 0 }),
-        readDirectoryRecursively: async (workspacePath: string) => [
-          path.join(workspacePath, "unopened.md"),
-        ],
+        // A real walk of the scratch workspace. Closed-file routes answer for
+        // exactly the ids this listing hands out, so a seam that reported one
+        // fixed name would let those tests pass against files that are not
+        // there and miss files that are.
+        readDirectoryRecursively: async (workspacePath: string) =>
+          readdirSync(workspacePath, { recursive: true, withFileTypes: true })
+            .filter((entry) => entry.isFile())
+            .map((entry) => path.join(entry.parentPath, entry.name)),
       },
       citeproc: {
         synchronizeDatabases: async (_libraries: string[]) => {},
@@ -814,6 +828,173 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       false,
       "reading a closed file must not put it in a renderer view",
     );
+  });
+
+  /** The documentId the workspace listing hands out for a path, over HTTP. */
+  async function listedDocumentId(filePath: string): Promise<string> {
+    const listed = await httpRequest("GET", "/v1/workspace/files");
+    assert.equal(listed.status, 200, listed.body);
+    const entry = (
+      JSON.parse(listed.body) as {
+        files: Array<{ documentId: string; path: string; open: boolean }>;
+      }
+    ).files.find((file) => file.path === filePath);
+    assert.ok(entry !== undefined, `the workspace listing must carry ${filePath}`);
+    assert.equal(entry.open, false, "this helper is for files nothing has opened");
+    return entry.documentId;
+  }
+
+  it("proposes against a closed workspace file over HTTP alone", async function () {
+    // The orientation loop's third question, and the one that made the open
+    // and release routes exist: an agent that can only speak HTTP has to be
+    // able to propose against a file the user never opened. Every call below
+    // is a published route — no CLI, no filesystem access, no other channel.
+    const closedPath = path.join(scratch, "closed-proposal.md");
+    const diskText = "alpha\nbeta\ngamma\n";
+    const proposed = "ALPHA\nbeta\ngamma\n";
+    writeFileSync(closedPath, diskText, "utf8");
+    const docId = await listedDocumentId(closedPath);
+
+    const read = await httpRequest("GET", `/v1/documents/${docId}/content`);
+    assert.equal(read.status, 200, read.body);
+    const readBody = JSON.parse(read.body) as ReadDocumentResponse;
+    assert.equal(readBody.attached, false, "the file must still be closed when the proposal binds");
+
+    const submitted = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      body: JSON.stringify({
+        baselineSha256: readBody.revision.sha256,
+        expectedReviewGeneration: readBody.reviewGeneration,
+        clientRequestId: "closed-file-proposal",
+        claims: [{ description: "caps alpha", patch: makePatch(diskText, proposed) }],
+      }),
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(submitted.status, 200, submitted.body);
+    const submittedBody = JSON.parse(submitted.body) as {
+      reviewId: string;
+      documentId: string;
+    };
+    assertMatchesSchema(submittedBody, "SubmitProposalResponse");
+    assert.equal(submittedBody.documentId, docId);
+
+    // The review is real, and it carries the proposed text.
+    const review = await httpRequest("GET", `/v1/reviews/${submittedBody.reviewId}`);
+    assert.equal(review.status, 200, review.body);
+    assert.equal(JSON.parse(review.body).attached, true);
+
+    // The submission acquired the buffer and kept it: the review owns the
+    // document from here, which is what makes it decidable.
+    const after = await httpRequest("GET", `/v1/documents/${docId}/content`);
+    const afterBody = JSON.parse(after.body) as ReadDocumentResponse;
+    assert.equal(afterBody.attached, true, "a committed review keeps its buffer loaded");
+    assert.equal(afterBody.content, proposed, "the working side is the proposed text");
+
+    // Acquiring is not opening: the review waits in the authority, and the
+    // user's panes are where the user left them.
+    const views = await httpRequest("GET", "/v1/views");
+    assert.equal(
+      views.body.includes(closedPath),
+      false,
+      "submitting a proposal must not put the file in a renderer view",
+    );
+    // Nothing reached disk: a review is a proposal, not a write.
+    assert.equal(readFileSync(closedPath, "utf8"), diskText);
+  });
+
+  it("leaves no residue when a proposal against a closed file is refused", async function () {
+    // Every refusal below happens after the submission acquired an authority
+    // buffer for a closed file. Nothing committed, so nothing may survive:
+    // the acquisition has to roll back, or a refused proposal silently leaves
+    // the editor holding a document nobody opened.
+    const diskText = "alpha\nbeta\ngamma\n";
+    const proposed = "ALPHA\nbeta\ngamma\n";
+    const refusals = [
+      {
+        name: "malformed patch",
+        status: 400,
+        code: "PATCH_INVALID",
+        claims: [{ description: "not a diff", patch: "this is not a unified diff\n" }],
+        baseline: undefined,
+        generation: undefined,
+      },
+      {
+        name: "non-applicable patch",
+        status: 400,
+        code: "PATCH_NOT_APPLICABLE",
+        claims: [
+          { description: "built elsewhere", patch: makePatch("unrelated\ntext\n", "other\n") },
+        ],
+        baseline: undefined,
+        generation: undefined,
+      },
+      {
+        name: "stale baselineSha256",
+        status: 412,
+        code: "REVISION_MISMATCH",
+        claims: [{ description: "caps alpha", patch: makePatch(diskText, proposed) }],
+        baseline: sha256Text("text this file never held\n"),
+        generation: undefined,
+      },
+      {
+        name: "stale expectedReviewGeneration",
+        status: 409,
+        code: "REVIEW_GENERATION_MISMATCH",
+        claims: [{ description: "caps alpha", patch: makePatch(diskText, proposed) }],
+        baseline: undefined,
+        generation: 7,
+      },
+    ];
+
+    for (const refusal of refusals) {
+      // A fresh file per case: residue from one refusal must not be able to
+      // pass as the next one's clean start.
+      const closedPath = path.join(scratch, `refused-${refusal.status}-${refusal.code}.md`);
+      writeFileSync(closedPath, diskText, "utf8");
+      const docId = await listedDocumentId(closedPath);
+      const read = JSON.parse(
+        (await httpRequest("GET", `/v1/documents/${docId}/content`)).body,
+      ) as ReadDocumentResponse;
+
+      const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+        body: JSON.stringify({
+          baselineSha256: refusal.baseline ?? read.revision.sha256,
+          expectedReviewGeneration: refusal.generation ?? read.reviewGeneration,
+          clientRequestId: `refused-${refusal.code}`,
+          claims: refusal.claims,
+        }),
+        headers: { "content-type": "application/json" },
+      });
+      assert.equal(response.status, refusal.status, `${refusal.name}: ${response.body}`);
+      assert.equal(JSON.parse(response.body).error.code, refusal.code, refusal.name);
+
+      // No review anywhere — neither live nor detached to a sidecar.
+      const reviews = JSON.parse((await httpRequest("GET", "/v1/reviews")).body) as {
+        reviews: Array<{ documentPath: string }>;
+      };
+      assert.equal(
+        reviews.reviews.some((entry) => entry.documentPath === closedPath),
+        false,
+        `${refusal.name} must not leave a review`,
+      );
+
+      // The acquisition rolled back: no authority buffer, and no view.
+      assert.equal(
+        provider.loadedDocuments.some((document) => document.filePath === closedPath),
+        false,
+        `${refusal.name} must not leave the document loaded`,
+      );
+      const views = await httpRequest("GET", "/v1/views");
+      assert.equal(views.body.includes(closedPath), false, `${refusal.name} must not focus`);
+
+      // The file on disk is untouched, byte for byte, and reads as closed.
+      assert.equal(readFileSync(closedPath, "utf8"), diskText, `${refusal.name} must not write`);
+      const after = JSON.parse(
+        (await httpRequest("GET", `/v1/documents/${docId}/content`)).body,
+      ) as ReadDocumentResponse;
+      assert.equal(after.attached, false, `${refusal.name} must leave the file closed`);
+      assert.equal(after.content, diskText);
+      assert.equal(after.reviewGeneration, 0);
+    }
   });
 
   it("reads a closed file's detached review from its sidecar", async function () {
@@ -2893,7 +3074,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   });
 
   it("GET /v1/workspace/files lists files across workspaces with open state", async function () {
-    const expected = path.join(scratch, "unopened.md"); // what the fsal seam reports
+    const expected = path.join(scratch, "unopened.md");
+    writeFileSync(expected, "alpha\n", "utf8");
     const first = await httpRequest("GET", "/v1/workspace/files");
     assert.equal(first.status, 200);
     const firstBody = JSON.parse(first.body) as {
