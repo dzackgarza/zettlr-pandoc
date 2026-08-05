@@ -209,7 +209,7 @@ async function syncedWorkingSha256 (editor: MarkdownEditor): Promise<string> {
 function throwOnReviewRefusal (
   result: { ok: true }|{ ok: false, message: string }
 ): void {
-  if (result.ok === false) {
+  if (!result.ok) {
     showToast(trans(result.message), 'error')
     throw new Error(result.message)
   }
