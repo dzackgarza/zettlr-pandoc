@@ -81,6 +81,7 @@ import {
   classifyReviewState,
   reviewFromSidecar,
   reviewSidecar,
+  sidecarCounts,
   type ReviewSidecarData,
   type ReviewStatus,
 } from "./review-diff-store";
@@ -948,7 +949,12 @@ export default class DocumentManager
       // necessary anymore.
       this._app.log.info(`[Documents Manager] Closing window ${windowId}!`);
       for (const document of this._windowExclusiveDocuments(windowId)) {
-        await this._detachReview(document.documentId);
+        try {
+          await this._detachReview(document.documentId);
+        } catch (err) {
+          this._announceDetachFailure(document.filePath, err);
+          return;
+        }
         this.documents.splice(this.documents.indexOf(document), 1);
         this._app.references.dropAuthorityBuffer(document.filePath);
       }
@@ -1149,6 +1155,19 @@ export default class DocumentManager
     }
   }
 
+  /**
+   * Accept an editor's collab updates into the authority buffer.
+   *
+   * While a review is open this is a STAGED commit: the incoming changes are
+   * applied to a local candidate, the review's holds are reconciled against
+   * that candidate, and the resulting sidecar is written BEFORE the document
+   * takes any of it. Persistence failure leaves `doc.document`, the versions,
+   * the update history and the review exactly as they were, and rejects the
+   * call — the renderer's update stays unsent and is retried.
+   *
+   * That is what makes an acknowledgment mean something: a `true` answer here
+   * says the reviewed buffer is already on disk, not that it will be.
+   */
   private async pushUpdates(
     filePath: string,
     clientVersion: number,
@@ -1170,11 +1189,12 @@ export default class DocumentManager
     // anymore.
     clearTimeout(doc.saveTimeout);
 
+    // The candidate document: everything the updates produce, computed
+    // without touching the authority's own state.
+    let candidateText = doc.document;
     for (const update of clientUpdates) {
-      const changes = ChangeSet.fromJSON(update.changes);
-      doc.updates.push(update);
       try {
-        doc.document = changes.apply(doc.document);
+        candidateText = ChangeSet.fromJSON(update.changes).apply(candidateText);
       } catch (err: unknown) {
         dialog.showErrorBox(
           "Document out of sync",
@@ -1184,21 +1204,55 @@ current contents from the editor somewhere else, and restart the application.`,
         );
         throw err;
       }
-      doc.currentVersion = doc.minimumVersion + doc.updates.length;
-      // People are lazy, and hence there is a non-zero chance that in a few
-      // instances the currentVersion will get dangerously close to
-      // Number.MAX_SAFE_INTEGER. In that case, we need to perform a rollback to
-      // version 0 and notify all editors that have the document in question
-      // open to simply re-load it. That will cause a screen-flicker, but
-      // honestly better like this than otherwise.
-      if (doc.currentVersion === Number.MAX_SAFE_INTEGER - 1) {
-        console.warn(`Document ${filePath} has reached MAX_SAFE_INTEGER. Performing rollback ...`);
-        doc.minimumVersion = 0;
-        doc.currentVersion = doc.updates.length;
-        // TODO: Broadcast a message so that all editor instances can reload the
-        // document.
-      }
     }
+    const candidateUpdates = [...doc.updates, ...clientUpdates];
+    let candidateMinimumVersion = doc.minimumVersion;
+    let candidateVersion = candidateMinimumVersion + candidateUpdates.length;
+    // People are lazy, and hence there is a non-zero chance that in a few
+    // instances the currentVersion will get dangerously close to
+    // Number.MAX_SAFE_INTEGER. In that case, we need to perform a rollback to
+    // version 0 and notify all editors that have the document in question
+    // open to simply re-load it. That will cause a screen-flicker, but
+    // honestly better like this than otherwise.
+    if (candidateVersion >= Number.MAX_SAFE_INTEGER - 1) {
+      console.warn(`Document ${filePath} has reached MAX_SAFE_INTEGER. Performing rollback ...`);
+      candidateMinimumVersion = 0;
+      candidateVersion = candidateUpdates.length;
+      // TODO: Broadcast a message so that all editor instances can reload the
+      // document.
+    }
+    // Drop all updates that exceed the amount of updates we allow.
+    while (candidateUpdates.length > MAX_VERSION_HISTORY) {
+      candidateUpdates.shift();
+      candidateMinimumVersion += 1;
+    }
+
+    const documentId = this.getDocumentId(filePath);
+    const review = documentId === undefined ? undefined : this._reviewStore.getReview(documentId);
+    // Ordinary editor typing changes the working partition without going
+    // through a review decision. Reconciling holds against the new partition
+    // is a state change like any other, so it goes through a transition —
+    // reads stay pure projections of committed state, and a hold is never
+    // silently repaired by whoever looked at it first.
+    const candidateWorkingText = normalizeText(candidateText.toString());
+    const plan =
+      review === undefined
+        ? undefined
+        : prepareWorkingTextEdit({ review, workingText: candidateWorkingText });
+    if (review !== undefined) {
+      // Ordinary typing announces nothing on the agent event bus, so the
+      // sidecar is written through here — and before the buffer moves, so a
+      // crash cannot lose a working text the editor was already told about.
+      await this._reviewSidecars.write(
+        reviewSidecar(plan === undefined ? review : plan.nextReview!, candidateWorkingText),
+      );
+    }
+
+    // Persisted. Only now does any of it become the state of record.
+    doc.document = candidateText;
+    doc.updates = candidateUpdates;
+    doc.minimumVersion = candidateMinimumVersion;
+    doc.currentVersion = candidateVersion;
 
     // Notify all clients, they will then request the update
     this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
@@ -1212,24 +1266,9 @@ current contents from the editor somewhere else, and restart the application.`,
       this._app.references.reportAuthorityBuffer(filePath);
     }
 
-    const documentId = this.getDocumentId(filePath);
-    const review = documentId === undefined ? undefined : this._reviewStore.getReview(documentId);
     if (documentId !== undefined && review !== undefined) {
-      // Ordinary editor typing changes the working partition without going
-      // through a review decision. Reconciling holds against the new
-      // partition is a state change like any other, so it goes through a
-      // transition — reads stay pure projections of committed state, and a
-      // hold is never silently repaired by whoever looked at it first.
-      const workingText = this._workingTextOf(documentId) ?? "";
-      const plan = prepareWorkingTextEdit({ review, workingText });
-      const next = plan === undefined ? review : plan.nextReview!;
-      // The editor's authority buffer is the sole working-text owner, and
-      // ordinary typing announces nothing on the agent event bus, so the
-      // sidecar is written through here: a crash must not lose the working
-      // text the review is defined against.
-      await this._reviewSidecars.write(reviewSidecar(next, workingText));
       if (plan !== undefined) {
-        this._reviewStore.replaceReview(documentId, next);
+        this._reviewStore.replaceReview(documentId, plan.nextReview!);
         for (const draft of plan.events) {
           this.emitAgentEvent(draft.event, draft.payload);
         }
@@ -1237,16 +1276,8 @@ current contents from the editor somewhere else, and restart the application.`,
       // Refresh every pane from the same authority so controls never
       // target a stale region.
       this._broadcastReviewState(filePath, this._reviewStore.getReview(documentId)!);
-    }
-
-    // Drop all updates that exceed the amount of updates we allow.
-    while (doc.updates.length > MAX_VERSION_HISTORY) {
-      doc.updates.shift();
-      doc.minimumVersion += 1;
-    }
-
-    const _docId = this.getDocumentId(filePath);
-    if (_docId !== undefined && this._reviewStore.getReview(_docId) !== undefined) {
+      // A reviewed document does not autosave: the save gate owns when its
+      // bytes reach disk.
       return true;
     }
 
@@ -1537,7 +1568,12 @@ current contents from the editor somewhere else, and restart the application.`,
         // A saved held review may survive the discard of a later edit. The
         // document is about to leave the live registry, so detach that
         // preserved review before removing its working-text resolver.
-        await this._detachReview(openFile.documentId);
+        try {
+          await this._detachReview(openFile.documentId);
+        } catch (err) {
+          this._announceDetachFailure(filePath, err);
+          return false;
+        }
         this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
           filePath,
           status: "modification",
@@ -1561,10 +1597,13 @@ current contents from the editor somewhere else, and restart the application.`,
       // The file is not modified, but this is still the last instance, so we
       // can close it without having to ask. Detach before the splice: the
       // sidecar export reads the working text through the live document.
-      {
-        const _id = this.getDocumentId(filePath);
-        if (_id !== undefined) {
+      const _id = this.getDocumentId(filePath);
+      if (_id !== undefined) {
+        try {
           await this._detachReview(_id);
+        } catch (err) {
+          this._announceDetachFailure(filePath, err);
+          return false;
         }
       }
       this.documents.splice(this.documents.indexOf(openFile), 1);
@@ -1630,7 +1669,15 @@ current contents from the editor somewhere else, and restart the application.`,
     // live document.
     const documentId = this.getDocumentId(filePath);
     if (documentId !== undefined) {
-      await this._detachReview(documentId);
+      try {
+        await this._detachReview(documentId);
+      } catch (err) {
+        // The file is gone from disk, so there is no reopening it to retry
+        // the export; the review stays in memory and the buffer stays loaded
+        // rather than being dropped along with the only copy of both.
+        this._announceDetachFailure(filePath, err);
+        return;
+      }
     }
     const idx = this.documents.findIndex((doc) => doc.filePath === filePath);
     if (idx > -1) {
@@ -1977,10 +2024,16 @@ current contents from the editor somewhere else, and restart the application.`,
     // through the live document. (After external drift the review arrives
     // here invalidated, and detaching an invalidated review deletes its
     // sidecar — reloading from disk remains the terminal resolution.)
-    {
-      const _id = this.getDocumentId(filePath);
-      if (_id !== undefined) {
+    const _id = this.getDocumentId(filePath);
+    if (_id !== undefined) {
+      try {
         await this._detachReview(_id);
+      } catch (err) {
+        // The reload is what would discard the in-memory review, so it does
+        // not happen: the buffer and the review stay, and the renderer is
+        // told why the file it saw change was not reloaded.
+        this._announceDetachFailure(filePath, err);
+        return;
       }
     }
     const idx = this.documents.findIndex((file) => file.filePath === filePath);
@@ -2643,6 +2696,35 @@ current contents from the editor somewhere else, and restart the application.`,
       doc.lastSavedCharCount = newCharCount;
     }
 
+    // 8.6: a held review's sidecar records the save it is about to survive
+    // BEFORE the document write, naming both hashes. A process that exits
+    // between the two writes is then recoverable: reattachment reads the file
+    // and can tell which of them landed. The fence itself does not move until
+    // the document write returns.
+    const documentId = this.getDocumentId(filePath);
+    const review = documentId === undefined ? undefined : this._reviewStore.getReview(documentId);
+    const heldChunks =
+      documentId === undefined
+        ? 0
+        : (this._reviewStore.getStatus(documentId, this._workingTextOf(documentId) ?? "")
+            ?.heldChunks ?? 0);
+    const survivesSave = review !== undefined && heldChunks > 0;
+    const savedSha256 = sha256Text(content);
+    if (survivesSave) {
+      try {
+        await this._reviewSidecars.write(
+          reviewSidecar(review, this._workingTextOf(documentId!) ?? "", {
+            beforeDiskSha256: review.diskFenceSha256,
+            afterDiskSha256: savedSha256,
+          }),
+        );
+      } catch (err) {
+        // Nothing is written to disk: an unrecorded save is what makes the
+        // crash window unrecoverable, so the save does not start.
+        return { ok: false, refusal: this._persistenceRefusal(filePath, err) };
+      }
+    }
+
     this._ignoreChanges.push(filePath);
 
     try {
@@ -2673,41 +2755,41 @@ current contents from the editor somewhere else, and restart the application.`,
     }
 
     this._app.log.info(`[DocumentManager] File ${filePath} saved.`);
-    {
-      const _id = this.getDocumentId(filePath);
-      if (_id !== undefined) {
-        const _review = this._reviewStore.getReview(_id);
-        const _heldChunks =
-          this._reviewStore.getStatus(_id, this._workingTextOf(_id) ?? "")?.heldChunks ?? 0;
-        if (_review !== undefined && _heldChunks > 0) {
-          // Held chunks survive a save: the review stays open and the
-          // reference retains its disagreement over the held spans, so the
-          // panes keep rendering them. The disk fence moves to the content
-          // just written — the file on disk IS this save — or every later
-          // save would be refused as external drift. The fence move emits
-          // no event, so the sidecar is written through explicitly: a stale
-          // persisted fence would invalidate the review on its next
-          // reattachment.
-          const _fenced = { ..._review, diskFenceSha256: sha256Text(content) };
+    if (documentId !== undefined && review !== undefined) {
+      if (survivesSave) {
+        // Held chunks survive a save: the review stays open and the reference
+        // retains its disagreement over the held spans, so the panes keep
+        // rendering them. The disk fence moves to the content just written —
+        // the file on disk IS this save — or every later save would be
+        // refused as external drift. Only after this second write, which
+        // clears pendingSave, has the save succeeded.
+        const fenced = { ...review, diskFenceSha256: savedSha256 };
+        try {
           await this._reviewSidecars.write(
-            reviewSidecar(_fenced, this._workingTextOf(_id) ?? ""),
+            reviewSidecar(fenced, this._workingTextOf(documentId) ?? ""),
           );
-          this._reviewStore.replaceReview(_id, _fenced);
-        } else {
-          if (_review !== undefined) {
-            this._broadcastReviewCleared(filePath, _review.reviewId);
-            this.emitAgentEvent("review.completed", {
-              reviewId: _review.reviewId,
-              documentId: _id,
-            });
-          }
-          this._reviewStore.removeReview(_id);
-          // Explicit resolution: a completed review leaves no residue.
-          try {
-            await this._reviewSidecars.delete(filePath);
-          } catch (err) {
-            this._surfaceReviewSidecarError(_id, "delete", err);
-          }
+        } catch (err) {
+          // The document IS written; only the fence update was lost. The
+          // sidecar still carries pendingSave, so reattachment settles it —
+          // but this save did not complete, and must not report that it did.
+          return { ok: false, refusal: this._persistenceRefusal(filePath, err) };
+        }
+        this._reviewStore.replaceReview(documentId, fenced);
+      } else {
+        this._broadcastReviewCleared(filePath, review.reviewId);
+        this.emitAgentEvent("review.completed", {
+          reviewId: review.reviewId,
+          documentId,
+        });
+        this._reviewStore.removeReview(documentId);
+        // Explicit resolution: a completed review leaves no residue. A
+        // deletion that fails leaves a sidecar whose two texts already agree,
+        // and reattachment cleans that up rather than restoring a review with
+        // nothing left to decide.
+        try {
+          await this._reviewSidecars.delete(filePath);
+        } catch (err) {
+          this._surfaceReviewSidecarError(documentId, "delete", err);
         }
       }
     }
@@ -2783,6 +2865,11 @@ current contents from the editor somewhere else, and restart the application.`,
    * was always destruction (the disk moved underneath it, and reloading
    * from disk closes it), so detaching would only preserve a review that
    * can never be decided again — the sidecar is deleted instead.
+   *
+   * A failed write ABORTS the close. It throws, the review stays in memory,
+   * the document stays open, and the sidecar keeps its previous valid state.
+   * Catching the error and closing anyway is what turned an unwritable
+   * sidecar into a silently destroyed review.
    */
   private async _detachReview(documentId: string): Promise<void> {
     await this._reviewApplication.withDocumentLock(documentId, async () => {
@@ -2793,19 +2880,42 @@ current contents from the editor somewhere else, and restart the application.`,
   private async _detachReviewLocked(documentId: string): Promise<void> {
     const review = this._reviewStore.getReview(documentId);
     if (review !== undefined) {
-      try {
-        if (review.invalidated) {
-          await this._reviewSidecars.delete(review.documentPath);
-        } else {
-          await this._reviewSidecars.write(
-            reviewSidecar(review, this._workingTextOf(documentId)!),
-          );
-        }
-      } catch (err) {
-        this._surfaceReviewSidecarError(documentId, "detach write", err);
+      if (review.invalidated) {
+        await this._reviewSidecars.delete(review.documentPath);
+      } else {
+        await this._reviewSidecars.write(
+          reviewSidecar(review, this._workingTextOf(documentId)!),
+        );
       }
     }
     this._reviewStore.removeReview(documentId);
+  }
+
+  /**
+   * A close aborted because the review could not be written through. The
+   * renderer surfaces this the same way it surfaces a refused save: the
+   * document is still open, and the reason has to reach the person who asked
+   * for the close rather than only the log.
+   */
+  /** The refusal a save owes when the review could not be persisted. */
+  private _persistenceRefusal(filePath: string, err: unknown): SaveRefusal {
+    const message =
+      "The review could not be written to its sidecar, so the save did not complete: " +
+      (err instanceof Error ? err.message : String(err));
+    this._app.log.error(`[DocumentManager] Save refused for ${filePath}: ${message}`, err);
+    return { reason: "review-not-persisted", message };
+  }
+
+  private _announceDetachFailure(filePath: string, err: unknown): void {
+    const message =
+      "The review could not be written to its sidecar, so this document was left open: " +
+      (err instanceof Error ? err.message : String(err));
+    this._app.log.error(`[DocumentManager] Close aborted for ${filePath}: ${message}`, err);
+    const payload: SaveRefusedBroadcast = {
+      filePath,
+      refusal: { reason: "review-not-persisted", message },
+    };
+    broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
   }
 
   /**
@@ -2858,7 +2968,7 @@ current contents from the editor somewhere else, and restart the application.`,
       persisted !== undefined &&
       persisted.reviewId === review.reviewId &&
       !persisted.invalidated &&
-      persisted.heldChunks > 0 &&
+      sidecarCounts(persisted).heldChunks > 0 &&
       persisted.diskFenceSha256 === sha256Text(normalizeText(diskContents));
 
     if (!preserveSavedReview) {
@@ -2897,15 +3007,16 @@ current contents from the editor somewhere else, and restart the application.`,
 
   /**
    * Reattachment — the second half of detach, run when a document loads.
-   * Find the sidecar by canonical path, verify the disk fence, then restore
-   * the buffer to the working text and the review to its reference. A fence
-   * mismatch is external drift observed across a gap in time instead of
-   * within a process, and gets the same terminal treatment drift-then-reload
-   * gets in-process: the review is announced invalidated and destroyed (its
-   * sidecar deleted), and the file opens with the disk content preserved.
+   * Find the sidecar by canonical path, settle any interrupted save, verify
+   * the disk fence, then restore the buffer to the working text and the
+   * review to its reference. A fence mismatch is external drift observed
+   * across a gap in time instead of within a process, and gets the same
+   * terminal treatment drift-then-reload gets in-process: the review is
+   * announced invalidated and destroyed (its sidecar deleted), and the file
+   * opens with the disk content preserved.
    */
   private async _reattachReviewSidecar(doc: Document): Promise<void> {
-    let sidecar;
+    let sidecar: ReviewSidecarData | undefined;
     try {
       sidecar = await this._reviewSidecars.read(doc.filePath);
     } catch (err) {
@@ -2917,23 +3028,83 @@ current contents from the editor somewhere else, and restart the application.`,
     if (sidecar === undefined) {
       return;
     }
-    if (sha256Text(normalizeText(doc.lastSavedContent)) !== sidecar.diskFenceSha256) {
-      this._app.log.warning(
-        `[DocumentManager] Review ${sidecar.reviewId} for ${doc.filePath} is invalidated: ` +
-          "the file changed on disk while the review was detached. The disk content " +
-          "was preserved; the detached review was discarded.",
-      );
-      await this._reviewSidecars.delete(doc.filePath);
-      this.emitAgentEvent("review.invalidated", {
-        reviewId: sidecar.reviewId,
-        documentId: doc.documentId,
-      });
+    const diskSha256 = sha256Text(normalizeText(doc.lastSavedContent));
+
+    if (sidecar.pendingSave !== undefined) {
+      const settled = await this._settlePendingSave(doc, sidecar, diskSha256);
+      if (settled === undefined) {
+        return;
+      }
+      sidecar = settled;
+    } else if (diskSha256 !== sidecar.diskFenceSha256) {
+      await this._discardDriftedSidecar(doc, sidecar);
       return;
     }
+
+    // A sidecar whose two texts agree has nothing left to decide: this is a
+    // resolved review whose completion could not delete its own file. Clean
+    // it up rather than restoring a review with an empty partition.
+    if (sidecar.referenceText === sidecar.workingText) {
+      this._app.log.info(
+        `[DocumentManager] Removing the resolved sidecar for ${doc.filePath}: ` +
+          "its reference and working texts agree, so no review remains.",
+      );
+      await this._reviewSidecars.delete(doc.filePath);
+      return;
+    }
+
     const restored = reviewFromSidecar(doc.documentId, sidecar);
     this._reviewStore.replaceReview(doc.documentId, restored);
     this._applyWorkingTextToDocument(doc.filePath, sidecar.workingText);
     this._broadcastReviewState(doc.filePath, restored);
+  }
+
+  /**
+   * Settle a sidecar left mid-save by a process that exited between the
+   * document write and the fence update. The file on disk says which write
+   * landed; nothing is guessed.
+   *
+   * Returns the settled sidecar, or undefined when the review was discarded
+   * as external drift.
+   */
+  private async _settlePendingSave(
+    doc: Document,
+    sidecar: ReviewSidecarData,
+    diskSha256: string,
+  ): Promise<ReviewSidecarData | undefined> {
+    const pendingSave = sidecar.pendingSave!;
+    let fence: string;
+    if (diskSha256 === pendingSave.afterDiskSha256) {
+      // The document write landed; only the fence update was lost.
+      fence = pendingSave.afterDiskSha256;
+    } else if (diskSha256 === pendingSave.beforeDiskSha256) {
+      // The document write did not land. The old fence still describes the
+      // file, and the save simply did not happen.
+      fence = pendingSave.beforeDiskSha256;
+    } else {
+      await this._discardDriftedSidecar(doc, sidecar);
+      return undefined;
+    }
+    const settled: ReviewSidecarData = { ...sidecar, diskFenceSha256: fence };
+    delete settled.pendingSave;
+    await this._reviewSidecars.write(settled);
+    return settled;
+  }
+
+  private async _discardDriftedSidecar(
+    doc: Document,
+    sidecar: ReviewSidecarData,
+  ): Promise<void> {
+    this._app.log.warning(
+      `[DocumentManager] Review ${sidecar.reviewId} for ${doc.filePath} is invalidated: ` +
+        "the file changed on disk while the review was detached. The disk content " +
+        "was preserved; the detached review was discarded.",
+    );
+    await this._reviewSidecars.delete(doc.filePath);
+    this.emitAgentEvent("review.invalidated", {
+      reviewId: sidecar.reviewId,
+      documentId: doc.documentId,
+    });
   }
 
   /**
@@ -2942,16 +3113,19 @@ current contents from the editor somewhere else, and restart the application.`,
    * in-memory review is the live entry for the same fact.
    */
   public async listDetachedReviews(): Promise<ReviewListEntry[]> {
-    return (await this._detachedReviews()).map((sidecar) => ({
+    return (await this._detachedReviews()).map((sidecar) => {
+      const counts = sidecarCounts(sidecar);
+      return {
         reviewId: sidecar.reviewId,
-        state: classifyReviewState(sidecar.invalidated, sidecar.unresolvedChunks),
+        state: classifyReviewState(sidecar.invalidated, counts.unresolvedChunks),
         generation: sidecar.generation,
-        unresolvedChunks: sidecar.unresolvedChunks,
-        heldChunks: sidecar.heldChunks,
+        unresolvedChunks: counts.unresolvedChunks,
+        heldChunks: counts.heldChunks,
         packetCount: sidecar.packets.length,
         documentPath: sidecar.documentPath,
         attached: false,
-      }));
+      };
+    });
   }
 
   /**

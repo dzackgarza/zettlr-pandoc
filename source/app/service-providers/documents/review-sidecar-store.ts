@@ -16,9 +16,10 @@
  *                  reattaches the review from here.
  *
  *                  This module only moves bytes. What a sidecar means —
- *                  when one is written, verified, restored, or deleted —
- *                  is DocumentManager's business; what it contains is
- *                  ReviewDiffStore's (ReviewSidecarData).
+ *                  when one is written, verified, restored, or deleted — is
+ *                  the review application service's business; what it
+ *                  contains is review-sidecar-schema.ts, one TypeBox
+ *                  declaration compiled here into one Ajv validator.
  *
  *                  Fail loudly: a sidecar that cannot be read, parsed, or
  *                  written throws with the file path named. Swallowing the
@@ -28,16 +29,12 @@
  * END HEADER
  */
 
+import Ajv from "ajv";
 import { promises as fs } from "fs";
 import path from "path";
-import type { ReviewComment } from "@dts/common/agent-api";
-import type {
-  ChunkHold,
-  ProposalSubmissionRecord,
-  ReviewPacket,
-} from "@dts/common/review-domain";
-import type { RefSpan } from "@common/modules/review/review-chunks";
-import { sha256Text, type ReviewSidecarData } from "./review-diff-store";
+import writeFileAtomic from "write-file-atomic";
+import { sha256Text } from "./review-diff-store";
+import { ReviewSidecarSchema, type ReviewSidecarData } from "./review-sidecar-schema";
 
 /**
  * The sidecar file for a document. Keyed by the hash of the canonical
@@ -54,151 +51,17 @@ function isMissingFile(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
-function isFiniteInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value);
-}
-
-function isSha256(value: unknown): value is string {
-  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
-}
-
-function isRefSpan(value: unknown): value is RefSpan {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "from" in value &&
-    isFiniteInteger(value.from) &&
-    "to" in value &&
-    isFiniteInteger(value.to)
-  );
-}
-
-function isReviewPacket(value: unknown): value is ReviewPacket {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "packetId" in value &&
-    typeof value.packetId === "string" &&
-    "reviewId" in value &&
-    typeof value.reviewId === "string" &&
-    "clientRequestId" in value &&
-    typeof value.clientRequestId === "string" &&
-    "requestFingerprint" in value &&
-    isSha256(value.requestFingerprint) &&
-    "description" in value &&
-    typeof value.description === "string" &&
-    "appliedAt" in value &&
-    typeof value.appliedAt === "string" &&
-    "patch" in value &&
-    typeof value.patch === "string" &&
-    "applicationGeneration" in value &&
-    isFiniteInteger(value.applicationGeneration) &&
-    "refSpans" in value &&
-    Array.isArray(value.refSpans) &&
-    value.refSpans.every(isRefSpan)
-  );
-}
+const validateReviewSidecar = new Ajv({ allErrors: true }).compile<ReviewSidecarData>(
+  ReviewSidecarSchema,
+);
 
 /**
- * The idempotency ledger entry. `response` is the exact body the original
- * submission answered with and is replayed verbatim, so it is checked as a
- * JSON object rather than field by field — the wire schema owns its shape,
- * and Phase 8's TypeBox sidecar schema will own it here too.
+ * Persisted bytes cross into trusted review state here and nowhere else:
+ * parse, validate against the one schema, then verify the payload's own path
+ * hashes to the filename it was found under — a sidecar that names a
+ * different document would otherwise restore that document's review onto
+ * this one.
  */
-function isProposalSubmissionRecord(value: unknown): value is ProposalSubmissionRecord {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "clientRequestId" in value &&
-    typeof value.clientRequestId === "string" &&
-    "requestFingerprint" in value &&
-    isSha256(value.requestFingerprint) &&
-    "packetIds" in value &&
-    Array.isArray(value.packetIds) &&
-    value.packetIds.every((packetId) => typeof packetId === "string") &&
-    "response" in value &&
-    typeof value.response === "object" &&
-    value.response !== null
-  );
-}
-
-function isChunkHold(value: unknown): value is ChunkHold {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "chunkId" in value &&
-    typeof value.chunkId === "string" &&
-    (!("comment" in value) ||
-      value.comment === undefined ||
-      typeof value.comment === "string") &&
-    "heldAt" in value &&
-    typeof value.heldAt === "string" &&
-    (!("referenceText" in value) || value.referenceText === undefined || typeof value.referenceText === "string") &&
-    (!("workingText" in value) || value.workingText === undefined || typeof value.workingText === "string") &&
-    (!("referenceFromLine" in value) || value.referenceFromLine === undefined || isFiniteInteger(value.referenceFromLine)) &&
-    (!("workingFromLine" in value) || value.workingFromLine === undefined || isFiniteInteger(value.workingFromLine))
-  );
-}
-
-function isReviewComment(value: unknown): value is ReviewComment {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "text" in value &&
-    typeof value.text === "string" &&
-    "createdAt" in value &&
-    typeof value.createdAt === "string" &&
-    (!("orphanedFromChunkId" in value) ||
-      value.orphanedFromChunkId === undefined ||
-      typeof value.orphanedFromChunkId === "string")
-  );
-}
-
-/**
- * The one version-2 sidecar parser. Persisted bytes cross into trusted review
- * state only after every required top-level and nested field is validated.
- */
-function isReviewSidecarData(parsed: unknown): parsed is ReviewSidecarData {
-  return (
-    typeof parsed === "object" &&
-    parsed !== null &&
-    "version" in parsed &&
-    parsed.version === 2 &&
-    "reviewId" in parsed &&
-    typeof parsed.reviewId === "string" &&
-    "documentPath" in parsed &&
-    typeof parsed.documentPath === "string" &&
-    "referenceText" in parsed &&
-    typeof parsed.referenceText === "string" &&
-    "workingText" in parsed &&
-    typeof parsed.workingText === "string" &&
-    "generation" in parsed &&
-    isFiniteInteger(parsed.generation) &&
-    "diskFenceSha256" in parsed &&
-    isSha256(parsed.diskFenceSha256) &&
-    "invalidated" in parsed &&
-    typeof parsed.invalidated === "boolean" &&
-    "packets" in parsed &&
-    Array.isArray(parsed.packets) &&
-    parsed.packets.every(isReviewPacket) &&
-    "submissions" in parsed &&
-    Array.isArray(parsed.submissions) &&
-    parsed.submissions.every(isProposalSubmissionRecord) &&
-    "holds" in parsed &&
-    Array.isArray(parsed.holds) &&
-    parsed.holds.every(isChunkHold) &&
-    "comments" in parsed &&
-    Array.isArray(parsed.comments) &&
-    parsed.comments.every(isReviewComment) &&
-    "unresolvedChunks" in parsed &&
-    isFiniteInteger(parsed.unresolvedChunks) &&
-    "heldChunks" in parsed &&
-    isFiniteInteger(parsed.heldChunks) &&
-    "savedAt" in parsed &&
-    typeof parsed.savedAt === "string"
-  );
-}
-
 function parseReviewSidecar(raw: string, target: string): ReviewSidecarData {
   let parsed: unknown;
   try {
@@ -209,8 +72,13 @@ function parseReviewSidecar(raw: string, target: string): ReviewSidecarData {
         (error instanceof Error ? error.message : String(error)),
     );
   }
-  if (!isReviewSidecarData(parsed)) {
-    throw new Error(`Review sidecar ${target} is not a version-2 review sidecar`);
+  if (!validateReviewSidecar(parsed)) {
+    throw new Error(
+      `Review sidecar ${target} is not a version-2 review sidecar: ` +
+        (validateReviewSidecar.errors ?? [])
+          .map((error) => `${error.instancePath || "/"} ${error.message ?? ""}`.trim())
+          .join("; "),
+    );
   }
   const expectedHash = path.basename(target, ".json");
   if (expectedHash !== sha256Text(path.resolve(parsed.documentPath))) {
@@ -220,33 +88,21 @@ function parseReviewSidecar(raw: string, target: string): ReviewSidecarData {
 }
 
 export class ReviewSidecarStore {
-  private readonly pendingWrites = new Map<string, Promise<void>>();
-
   constructor(private readonly directory: string) {}
 
-  /** Write a sidecar through, atomically (write-then-rename). */
+  /**
+   * Write a sidecar through. write-file-atomic does the temporary file, the
+   * fsync, and the rename, and already serializes concurrent writes to the
+   * same path — wrapping it in a queue of our own would only add a second
+   * ordering to reason about.
+   */
   async write(sidecar: ReviewSidecarData): Promise<void> {
     const target = reviewSidecarFilePath(this.directory, sidecar.documentPath);
-    const previous = this.pendingWrites.get(target);
-    const start = previous === undefined ? Promise.resolve() : previous.catch(() => undefined);
-    const pending = start.then(async () => {
-      await fs.mkdir(this.directory, { recursive: true });
-      const temporary = `${target}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
-      try {
-        await fs.writeFile(temporary, JSON.stringify(sidecar), "utf8");
-        await fs.rename(temporary, target);
-      } finally {
-        await fs.rm(temporary, { force: true });
-      }
+    await fs.mkdir(this.directory, { recursive: true });
+    await writeFileAtomic(target, JSON.stringify(sidecar), {
+      encoding: "utf8",
+      fsync: true,
     });
-    this.pendingWrites.set(target, pending);
-    try {
-      await pending;
-    } finally {
-      if (this.pendingWrites.get(target) === pending) {
-        this.pendingWrites.delete(target);
-      }
-    }
   }
 
   /**
@@ -264,11 +120,7 @@ export class ReviewSidecarStore {
       }
       throw error;
     }
-    const parsed = parseReviewSidecar(raw, target);
-    if (path.resolve(parsed.documentPath) !== path.resolve(documentPath)) {
-      throw new Error(`Review sidecar ${target} does not match the requested document path`);
-    }
-    return parsed;
+    return parseReviewSidecar(raw, target);
   }
 
   /** Remove a document's sidecar. Absent is fine — deletion is idempotent. */

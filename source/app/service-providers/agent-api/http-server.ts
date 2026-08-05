@@ -64,6 +64,7 @@ import vm from "vm";
 import { parseDocument, type Document } from "yaml";
 import {
   classifyReviewState,
+  sidecarCounts,
   reviewPatch,
   sha256Text,
   sidecarOutstandingChunks,
@@ -1299,12 +1300,13 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
         return;
       }
+      const counts = sidecarCounts(detached);
       this.sendJson(res, 200, {
         reviewId: detached.reviewId,
-        state: classifyReviewState(detached.invalidated, detached.unresolvedChunks),
+        state: classifyReviewState(detached.invalidated, counts.unresolvedChunks),
         generation: detached.generation,
-        unresolvedChunks: detached.unresolvedChunks,
-        heldChunks: detached.heldChunks,
+        unresolvedChunks: counts.unresolvedChunks,
+        heldChunks: counts.heldChunks,
         packetCount: detached.packets.length,
         comments: detached.comments,
         attached: false,

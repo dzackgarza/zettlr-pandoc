@@ -37,13 +37,11 @@ import { createPatch } from "diff";
 import type {
   OutstandingChunk,
   ProposalPacket,
-  ReviewComment,
   ReviewState,
 } from "@dts/common/agent-api";
 import type {
   ActiveReviewState,
   ChunkHold,
-  ProposalSubmissionRecord,
   ReviewPacket,
 } from "@dts/common/review-domain";
 import {
@@ -51,45 +49,13 @@ import {
   computeReviewChunks,
   type ReviewChunk,
 } from "@common/modules/review/review-chunks";
+import type { ReviewSidecarData } from "./review-sidecar-schema";
+
+export type { ReviewSidecarData };
 
 // ============================================================================
 // Persisted shape
 // ============================================================================
-
-/**
- * One review, serialized for its sidecar file. Both texts are mandatory:
- * mid-review neither equals the disk file — the save gate guarantees the
- * working text differs from disk while chunks are unresolved, and the
- * reference is the store's own evolving state. The disk fence is what
- * reattachment verifies: a file that moved on disk while the review was
- * detached is exactly the external drift that invalidates it in-process.
- *
- * unresolvedChunks/heldChunks are snapshots taken against the two texts at
- * write time, so a detached review can be listed without recomputing its
- * partition; the texts remain the authority on reattachment.
- */
-export interface ReviewSidecarData {
-  version: 2;
-  reviewId: string;
-  documentPath: string;
-  referenceText: string;
-  workingText: string;
-  generation: number;
-  diskFenceSha256: string;
-  invalidated: boolean;
-  packets: ReviewPacket[];
-  /**
-   * The idempotency ledger. Persisted so a replayed clientRequestId answers
-   * from the original response after a detach, a reopen, or a restart —
-   * anywhere the review itself survives.
-   */
-  submissions: ProposalSubmissionRecord[];
-  holds: ChunkHold[];
-  comments: ReviewComment[];
-  unresolvedChunks: number;
-  heldChunks: number;
-  savedAt: string;
-}
 
 /** What a status read reports about one review. */
 export interface ReviewStatus {
@@ -261,15 +227,14 @@ export function sidecarOutstandingChunks(sidecar: ReviewSidecarData): Outstandin
 
 /**
  * Serialize a review for its sidecar: everything reviewFromSidecar needs to
- * rebuild identical state, plus count snapshots for listing it detached.
- * The working text is passed in because its owner is the document, not this
- * module.
+ * rebuild identical state, and nothing derived from it. The working text is
+ * passed in because its owner is the document, not this module.
  */
 export function reviewSidecar(
   review: ActiveReviewState,
   workingText: string,
+  pendingSave?: ReviewSidecarData["pendingSave"],
 ): ReviewSidecarData {
-  const partition = computeReviewChunks(review.referenceText, workingText);
   return {
     version: 2,
     reviewId: review.reviewId,
@@ -289,9 +254,24 @@ export function reviewSidecar(
     })),
     holds: review.holds.map((hold) => ({ ...hold })),
     comments: review.comments.map((comment) => ({ ...comment })),
+    ...(pendingSave === undefined ? {} : { pendingSave }),
+  };
+}
+
+/**
+ * The chunk counts of a detached review, computed from its sidecar. Nothing
+ * derived is persisted: the two texts and the holds are the whole answer, and
+ * a stored count is a second answer that can disagree with them.
+ */
+export function sidecarCounts(sidecar: ReviewSidecarData): {
+  unresolvedChunks: number;
+  heldChunks: number;
+} {
+  const review = reviewFromSidecar("", sidecar);
+  const partition = computeReviewChunks(sidecar.referenceText, sidecar.workingText);
+  return {
     unresolvedChunks: countPending(review, partition),
     heldChunks: countLiveHolds(review, partition),
-    savedAt: new Date().toISOString(),
   };
 }
 

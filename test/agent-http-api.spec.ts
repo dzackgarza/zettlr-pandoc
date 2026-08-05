@@ -14,7 +14,7 @@
  * END HEADER
  */
 
-import "./headless-electron-harness.cjs";
+import { ipcMainHandlers } from "./headless-electron-harness.cjs";
 import Ajv2020 from "ajv/dist/2020";
 import { parse as parseYaml } from "yaml";
 import { ChangeSet } from "@codemirror/state";
@@ -46,7 +46,10 @@ import {
   ReviewSidecarStore,
   reviewSidecarFilePath,
 } from "source/app/service-providers/documents/review-sidecar-store";
-import { sha256Text } from "source/app/service-providers/documents/review-diff-store";
+import {
+  sha256Text,
+  sidecarCounts,
+} from "source/app/service-providers/documents/review-diff-store";
 import LogProvider from "source/app/service-providers/log";
 
 // ============================================================================
@@ -2352,7 +2355,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(first.generation, 1);
       assert.equal(first.referenceText, "alpha\nbeta\n");
       assert.equal(first.workingText, "ALPHA\nbeta\n");
-      assert.equal(first.unresolvedChunks, 1);
+      assert.equal(sidecarCounts(first).unresolvedChunks, 1);
 
       // A decision is a mutation too: the hold and its comment reach disk.
       const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
@@ -2369,8 +2372,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         second.holds.map((hold) => hold.comment),
         ["needs thought"],
       );
-      assert.equal(second.unresolvedChunks, 0);
-      assert.equal(second.heldChunks, 1);
+      assert.equal(sidecarCounts(second).unresolvedChunks, 0);
+      assert.equal(sidecarCounts(second).heldChunks, 1);
     });
 
     it("detaches on close and reattaches on open with identical review state", async function () {
@@ -2693,7 +2696,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         laterEdit,
       );
       const persistedBeforeDiscard = (await sidecars.read(filePath))!;
-      assert.equal(persistedBeforeDiscard.heldChunks, 1);
+      assert.equal(sidecarCounts(persistedBeforeDiscard).heldChunks, 1);
       assert.equal(persistedBeforeDiscard.workingText, laterEdit);
 
       saveChangesResponse = 1; // "Don't save"
@@ -2708,7 +2711,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const detached = await provider.findDetachedReview(submitted.reviewId);
       assert.ok(detached !== undefined, "discarding the later edit must keep the saved held review");
       assert.equal(detached.workingText, proposed);
-      assert.equal(detached.heldChunks, 1);
+      assert.equal(sidecarCounts(detached).heldChunks, 1);
     });
 
     it("puts the buffer back on current disk content when the close prompt discards", async function () {
@@ -2879,7 +2882,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const detached = await provider.findDetachedReview(submitted.reviewId);
       assert.ok(detached !== undefined, "the held review must persist as a detached sidecar");
       assert.equal(detached.workingText, "ALPHA\n");
-      assert.equal(detached.heldChunks, 1);
+      assert.equal(sidecarCounts(detached).heldChunks, 1);
 
       await provider.getDocument(filePath);
       assert.equal(
@@ -3198,6 +3201,232 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       second.files.map((file) => file.open),
       [true],
     );
+  });
+
+  // ==========================================================================
+  describe("review persistence failure", function () {
+    /**
+     * Break the one seam every review transaction persists through, and hand
+     * back the restore. This is the store the provider actually writes to —
+     * not a module mock — so the failure reaches exactly the code path a full
+     * disk would.
+     */
+    function breakSidecarWrites(): () => void {
+      const original = ReviewSidecarStore.prototype.write;
+      ReviewSidecarStore.prototype.write = async () => {
+        throw new Error("injected sidecar write failure");
+      };
+      return () => {
+        ReviewSidecarStore.prototype.write = original;
+      };
+    }
+
+    /**
+     * Everything a committed review can be observed through, as bytes. A
+     * refused mutation must leave this identical — asserting a field at a
+     * time is what lets an unasserted field move unnoticed.
+     */
+    function projections(docId: string): string {
+      const workingText = provider.readWorkingText(docId) ?? "";
+      return JSON.stringify({
+        workingText,
+        buffer: provider.readLiveBuffer(docId),
+        review: provider.reviewStore.getReview(docId),
+        status: provider.reviewStatus(docId),
+        chunks: provider.reviewStore.getOutstandingChunks(docId, workingText),
+      });
+    }
+
+    async function persistedSidecar(filePath: string): Promise<string | undefined> {
+      const sidecar = await sidecars.read(filePath);
+      return sidecar === undefined ? undefined : JSON.stringify(sidecar);
+    }
+
+    /** Drive the real authority IPC the editor uses to push its updates. */
+    async function pushEditorUpdate(
+      filePath: string,
+      docId: string,
+      nextText: string,
+    ): Promise<unknown> {
+      const handler = ipcMainHandlers.get("documents-authority");
+      assert.ok(handler !== undefined, "the authority IPC handler must be registered");
+      const current = provider.readLiveBuffer(docId)!.content;
+      const changes = ChangeSet.of(
+        [{ from: 0, to: current.length, insert: nextText }],
+        current.length,
+      );
+      return await handler({}, {
+        command: "push-updates",
+        payload: {
+          filePath,
+          version: provider.loadedDocuments.find((d) => d.filePath === filePath)!.currentVersion,
+          updates: [{ changes: changes.toJSON(), clientID: "test-editor" }],
+        },
+      });
+    }
+
+    it("refuses a proposal whose sidecar cannot be written, and leaves no review", async function () {
+      const filePath = path.join(scratch, "persist-proposal.md");
+      const docId = await openFile(filePath, "alpha\nbeta\n");
+      const before = projections(docId);
+
+      const restore = breakSidecarWrites();
+      const refused = await submitClaim(
+        docId,
+        makePatch("alpha\nbeta\n", "ALPHA\nbeta\n"),
+        "persist-proposal-1",
+      );
+      assert.equal(refused.ok, false);
+      assert.equal(!refused.ok && refused.code, "PERSISTENCE_FAILED");
+      assert.equal(projections(docId), before, "a refused proposal must move nothing");
+      assert.equal(await persistedSidecar(filePath), undefined);
+
+      restore();
+      const retried = await submitClaim(
+        docId,
+        makePatch("alpha\nbeta\n", "ALPHA\nbeta\n"),
+        "persist-proposal-2",
+      );
+      assert.equal(retried.ok, true);
+      assert.notEqual(await persistedSidecar(filePath), undefined);
+    });
+
+    it("refuses a chunk decision whose sidecar cannot be written", async function () {
+      const filePath = path.join(scratch, "persist-decision.md");
+      const docId = await openFile(filePath, "alpha\nbeta\n");
+      const submitted = await submitClaim(
+        docId,
+        makePatch("alpha\nbeta\n", "ALPHA\nBETA\n"),
+        "persist-decision-1",
+      );
+      assert.ok(submitted.ok);
+      const before = projections(docId);
+      const beforeSidecar = await persistedSidecar(filePath);
+      const chunkId = provider.reviewStore.getOutstandingChunks(
+        docId,
+        provider.readWorkingText(docId) ?? "",
+      )![0].chunkId;
+
+      const restore = breakSidecarWrites();
+      const refused = await provider.decideReviewChunk(submitted.reviewId, chunkId, "accept");
+      assert.equal(refused.ok, false);
+      assert.equal(!refused.ok && refused.code, "PERSISTENCE_FAILED");
+      assert.equal(projections(docId), before, "a refused decision must move nothing");
+      assert.equal(await persistedSidecar(filePath), beforeSidecar);
+
+      restore();
+      const retried = await provider.decideReviewChunk(submitted.reviewId, chunkId, "accept");
+      assert.equal(retried.ok, true);
+      assert.notEqual(await persistedSidecar(filePath), beforeSidecar);
+    });
+
+    it("rejects an editor update whose sidecar cannot be written, leaving the buffer unchanged", async function () {
+      const filePath = path.join(scratch, "persist-editor.md");
+      const docId = await openFile(filePath, "alpha\nbeta\n");
+      const submitted = await submitClaim(
+        docId,
+        makePatch("alpha\nbeta\n", "ALPHA\nbeta\n"),
+        "persist-editor-1",
+      );
+      assert.ok(submitted.ok);
+      const before = projections(docId);
+      const beforeSidecar = await persistedSidecar(filePath);
+
+      const restore = breakSidecarWrites();
+      await assert.rejects(
+        pushEditorUpdate(filePath, docId, "ALPHA\nBETA EDITED\n"),
+        /injected sidecar write failure/,
+      );
+      assert.equal(projections(docId), before, "a rejected update must not reach the buffer");
+      assert.equal(await persistedSidecar(filePath), beforeSidecar);
+
+      restore();
+      assert.equal(await pushEditorUpdate(filePath, docId, "ALPHA\nBETA EDITED\n"), true);
+    });
+
+    it("makes an acknowledged editor update already durable", async function () {
+      const filePath = path.join(scratch, "persist-editor-durable.md");
+      const docId = await openFile(filePath, "alpha\nbeta\n");
+      const submitted = await submitClaim(
+        docId,
+        makePatch("alpha\nbeta\n", "ALPHA\nbeta\n"),
+        "persist-editor-durable-1",
+      );
+      assert.ok(submitted.ok);
+
+      assert.equal(await pushEditorUpdate(filePath, docId, "ALPHA\nbeta typed\n"), true);
+
+      // Read the file, not the process: an acknowledgment that only promised
+      // durability is exactly the defect this ordering exists to remove.
+      const persisted = await sidecars.read(filePath);
+      assert.equal(persisted?.workingText, "ALPHA\nbeta typed\n");
+    });
+
+    it("keeps the document open when a detach cannot write its sidecar", async function () {
+      const filePath = path.join(scratch, "persist-detach.md");
+      const docId = await openFile(filePath, "alpha\nbeta\n");
+      const submitted = await submitClaim(
+        docId,
+        makePatch("alpha\nbeta\n", "ALPHA\nbeta\n"),
+        "persist-detach-1",
+      );
+      assert.ok(submitted.ok);
+      const before = projections(docId);
+      const beforeSidecar = await persistedSidecar(filePath);
+
+      const restore = breakSidecarWrites();
+      await provider.closeFileEverywhere(filePath);
+
+      assert.ok(
+        provider.loadedDocuments.some((document) => document.filePath === filePath),
+        "a failed detach must abort the close",
+      );
+      assert.equal(projections(docId), before, "the in-memory review must survive");
+      assert.equal(await persistedSidecar(filePath), beforeSidecar);
+
+      restore();
+      await provider.closeFileEverywhere(filePath);
+      assert.ok(!provider.loadedDocuments.some((document) => document.filePath === filePath));
+      assert.notEqual(await persistedSidecar(filePath), undefined);
+    });
+
+    it("refuses to save a held review whose sidecar cannot be written", async function () {
+      const filePath = path.join(scratch, "persist-save.md");
+      const docId = await openFile(filePath, "alpha\nbeta\n");
+      const submitted = await submitClaim(
+        docId,
+        makePatch("alpha\nbeta\n", "ALPHA\nbeta\n"),
+        "persist-save-1",
+      );
+      assert.ok(submitted.ok);
+      const chunkId = provider.reviewStore.getOutstandingChunks(
+        docId,
+        provider.readWorkingText(docId) ?? "",
+      )![0].chunkId;
+      assert.equal(
+        (await provider.decideReviewChunk(submitted.reviewId, chunkId, "hold", "later")).ok,
+        true,
+      );
+      const before = projections(docId);
+      const beforeSidecar = await persistedSidecar(filePath);
+      const diskBefore = readFileSync(filePath, "utf8");
+
+      const restore = breakSidecarWrites();
+      const refused = await provider.saveFile(filePath);
+      assert.equal(refused.ok, false);
+      assert.equal(!refused.ok && refused.refusal?.reason, "review-not-persisted");
+      assert.equal(readFileSync(filePath, "utf8"), diskBefore, "the save must not start");
+      assert.equal(projections(docId), before);
+      assert.equal(await persistedSidecar(filePath), beforeSidecar);
+
+      restore();
+      const saved = await provider.saveFile(filePath);
+      assert.equal(saved.ok, true);
+      assert.equal(readFileSync(filePath, "utf8"), "ALPHA\nbeta\n");
+      const fenced = await sidecars.read(filePath);
+      assert.equal(fenced?.pendingSave, undefined, "a completed save clears pendingSave");
+      assert.equal(fenced?.diskFenceSha256, sha256Text("ALPHA\nbeta\n"));
+    });
   });
 
   // ==========================================================================
