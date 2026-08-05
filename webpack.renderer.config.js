@@ -46,11 +46,6 @@ rules.push({
 
 module.exports = {
   module: { rules },
-  // Persistent cache: see webpack.main.config.js. Every E2E app launch is a
-  // fresh `forge start`; without this each one recompiles the renderer cold.
-  cache: (process.env.NODE_ENV === 'production')
-    ? false
-    : { type: 'filesystem', buildDependencies: { config: [__filename] } },
   // The following line of code serves two purposes: While we're in develop
   // (NODE_ENV = develop), emit source maps so we have an easy time finding the
   // origin of bugs or performance bottlenecks. But since source maps are a
