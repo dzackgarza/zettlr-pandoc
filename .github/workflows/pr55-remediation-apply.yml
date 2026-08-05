@@ -39,6 +39,11 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install just
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes just
+
       - name: Provision the repository's real CI toolchain
         run: bash scripts/setup-ci-toolchain.sh
 
