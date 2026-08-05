@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "target": "ES2024",
+    "target": "ESNext",
     "allowJs": true,
     "module": "commonjs",
     "skipLibCheck": true,
