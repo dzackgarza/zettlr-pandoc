@@ -1677,7 +1677,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     // Accept ALPHA first, through the one real decision path.
     const review = provider.reviewStore.getReview(docId)!;
-    const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+    const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
     assert.equal(chunks.length, 2);
     const accepted = provider.decideChunk(review.reviewId, chunks[0].chunkId, "accept");
     assert.equal(accepted.ok, true);
@@ -1702,7 +1702,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       "http-racceptall-req",
     );
     const review = provider.reviewStore.getReview(docId)!;
-    assert.equal(provider.reviewStore.countUnresolved(docId), 2);
+    assert.equal((provider.reviewStatus(docId)?.unresolvedChunks ?? 0), 2);
 
     const response = await httpRequest("POST", `/v1/reviews/${review.reviewId}/accept-all`);
     assert.equal(response.status, 200, response.body);
@@ -1721,7 +1721,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const doc = provider.loadedDocuments.find((d) => d.filePath === filePath)!;
     assert.equal(doc.document.toString(), proposed);
     assert.equal(provider.reviewStore.getReview(docId)!.referenceText, proposed);
-    assert.equal(provider.reviewStore.countUnresolved(docId), 0);
+    assert.equal((provider.reviewStatus(docId)?.unresolvedChunks ?? 0), 0);
 
     // An unknown review fails loudly.
     const missing = await httpRequest("POST", "/v1/reviews/no-such-review/accept-all");
@@ -1796,7 +1796,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     await submitClaim(docId, makePatch(original, proposed), "http-rhold-req");
     const review = provider.reviewStore.getReview(docId)!;
-    const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+    const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
     assert.equal(chunks.length, 2);
 
     // Hold the first chunk with a comment.
@@ -1906,7 +1906,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     await submitClaim(docId, makePatch(original, proposed), "http-hold-save");
     const review = provider.reviewStore.getReview(docId)!;
-    const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+    const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
     assert.equal(chunks.length, 3);
 
     assert.equal(provider.decideChunk(review.reviewId, chunks[0].chunkId, "accept").ok, true);
@@ -1929,7 +1929,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(survivor !== undefined, "a save with held chunks must retain the review");
     assert.equal(survivor.reviewId, review.reviewId);
     assert.equal(survivor.invalidated, false);
-    const remaining = provider.reviewStore.getOutstandingChunks(docId)!;
+    const remaining = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
     assert.equal(remaining.length, 1);
     assert.equal(remaining[0].state, "held");
     assert.equal(remaining[0].holdComment, "gamma is undecided");
@@ -1956,7 +1956,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     await submitClaim(docId, makePatch(original, proposed), "save-gate-1");
     const review = provider.reviewStore.getReview(docId)!;
-    const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+    const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
     assert.equal(chunks.length, 2);
 
     // An undecided chunk closes the gate: the buffer here is a mixture of
@@ -1971,7 +1971,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // content the review never saw.
     assert.equal(provider.decideChunk(review.reviewId, chunks[0].chunkId, "accept").ok, true);
     assert.equal(provider.decideChunk(review.reviewId, chunks[1].chunkId, "reject").ok, true);
-    assert.equal(provider.reviewStore.countUnresolved(docId), 0);
+    assert.equal((provider.reviewStatus(docId)?.unresolvedChunks ?? 0), 0);
     writeFileSync(filePath, "externally rewritten\n", "utf8");
 
     const drifted = await provider.saveFile(filePath);
@@ -2030,7 +2030,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     // Deciding a chunk advances the review generation past the packet's,
     // which is exactly what makes the packet non-retractable.
-    const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+    const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
     const decided = provider.decideChunk(submitted.reviewId, chunks[0].chunkId, "accept");
     assert.equal(decided.ok, true);
 
@@ -2322,7 +2322,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "utf8",
       );
       const failures: AgentEvent[] = [];
-      provider.reviewStore.on("review.sidecar-error", (event: AgentEvent) =>
+      provider.agentEvents.on("review.sidecar-error", (event: AgentEvent) =>
         failures.push(event),
       );
 
@@ -2362,7 +2362,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(first.unresolvedChunks, 1);
 
       // A decision is a mutation too: the hold and its comment reach disk.
-      const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+      const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
       const held = provider.decideChunk(
         submitted.reviewId,
         chunks[0].chunkId,
@@ -2404,11 +2404,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         return;
       }
       const reviewId = submitted.reviewId;
-      const beforeChunks = provider.reviewStore.getOutstandingChunks(docId)!;
+      const beforeChunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
       assert.equal(beforeChunks.length, 2);
       const held = provider.decideChunk(reviewId, beforeChunks[1].chunkId, "hold", "revisit");
       assert.equal(held.ok, true);
-      const commented = provider.reviewStore.addReviewComment(docId, "overall note");
+      const commented = provider.addReviewComment(provider.reviewStore.getReview(docId)!.reviewId, "overall note");
       assert.equal(commented.ok, true);
 
       const review = provider.reviewStore.getReview(docId)!;
@@ -2418,7 +2418,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         .find((d) => d.filePath === filePath)!
         .document.toString();
       const chunkStatesBefore = provider.reviewStore
-        .getOutstandingChunks(docId)!
+        .getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!
         .map((chunk) => [chunk.chunkId, chunk.state]);
 
       await flushSidecarWrites();
@@ -2455,7 +2455,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         workingText,
         "the buffer must be restored to the working text",
       );
-      const afterChunks = provider.reviewStore.getOutstandingChunks(docId)!;
+      const afterChunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
       assert.deepEqual(
         afterChunks.map((chunk) => [chunk.chunkId, chunk.state]),
         chunkStatesBefore,
@@ -2558,7 +2558,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       writeFileSync(filePath, "externally rewritten\n", "utf8");
 
       const invalidated: AgentEvent[] = [];
-      provider.reviewStore.on("review.invalidated", (event: AgentEvent) =>
+      provider.agentEvents.on("review.invalidated", (event: AgentEvent) =>
         invalidated.push(event),
       );
       await provider.getDocument(filePath);
@@ -2613,7 +2613,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.ok((await sidecars.read(filePath)) !== undefined, "write-through must have run");
 
       const discarded: AgentEvent[] = [];
-      provider.reviewStore.on("review.discarded", (event: AgentEvent) =>
+      provider.agentEvents.on("review.discarded", (event: AgentEvent) =>
         discarded.push(event),
       );
       const cleared: Array<Record<string, unknown>> = [];
@@ -2680,7 +2680,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       if (!submitted.ok) {
         return;
       }
-      const chunk = provider.reviewStore.getOutstandingChunks(docId)![0];
+      const chunk = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")![0];
       assert.ok(chunk !== undefined, "the saved held review must have an outstanding chunk");
       assert.equal(provider.decideChunk(submitted.reviewId, chunk.chunkId, "hold", "revisit").ok, true);
       assert.deepEqual(await provider.saveFile(filePath), { ok: true });
@@ -2871,7 +2871,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       if (!submitted.ok) {
         assert.fail(`Held-review proposal was refused: ${JSON.stringify(submitted)}`);
       }
-      const chunks = provider.reviewStore.getOutstandingChunks(docId);
+      const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "");
       assert.ok(
         chunks !== undefined && chunks.length === 1,
         "The held-review proposal must create exactly one outstanding chunk.",
@@ -2910,7 +2910,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "opening the saved file later must reattach the same review",
       );
       assert.equal(
-        provider.reviewStore.getOutstandingChunks(docId)?.[0].state,
+        provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")?.[0].state,
         "held",
         "the held decision must survive save, close, and reattachment",
       );
@@ -2941,16 +2941,16 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         return;
       }
       const reviewId = submitted.reviewId;
-      const before = provider.reviewStore.getOutstandingChunks(docId)!;
+      const before = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
       assert.equal(before.length, 2);
       assert.equal(
         provider.decideChunk(reviewId, before[1].chunkId, "hold", "revisit").ok,
         true,
       );
-      assert.equal(provider.reviewStore.addReviewComment(docId, "overall note").ok, true);
+      assert.equal(provider.addReviewComment(provider.reviewStore.getReview(docId)!.reviewId, "overall note").ok, true);
       const generation = provider.reviewStore.getReview(docId)!.generation;
       const chunksBefore = provider.reviewStore
-        .getOutstandingChunks(docId)!
+        .getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!
         .map((chunk) => [chunk.chunkId, chunk.state, chunk.holdComment]);
 
       await flushSidecarWrites();
@@ -3186,7 +3186,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       await flushSidecarWrites();
       assert.ok((await sidecars.read(filePath)) !== undefined);
 
-      const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
+      const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
       const accepted = provider.decideChunk(submitted.reviewId, chunks[0].chunkId, "accept");
       assert.equal(accepted.ok, true);
       const saved = await provider.saveFile(filePath);

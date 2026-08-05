@@ -372,8 +372,8 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
 
-    // Subscribe to review store events
-    this._documents.reviewStore.on("*", (event: AgentEvent) => {
+    // Subscribe to committed review events
+    this._documents.agentEvents.on("*", (event: AgentEvent) => {
       this.broadcastSseEvent(event);
     });
 
@@ -1068,7 +1068,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
 
-    const current = this._documents.reviewStore.getReviewStatus(documentId);
+    const current = this._documents.reviewStatus(documentId);
     if (current !== undefined && current.generation > afterGeneration) {
       this.sendJson(res, 200, {
         reviewId,
@@ -1083,7 +1083,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       if (timeout !== undefined) {
         clearTimeout(timeout);
       }
-      this._documents.reviewStore.removeListener("*", listener);
+      this._documents.agentEvents.removeListener("*", listener);
       res.removeListener("close", cleanup);
     };
     const finish = (status: ReviewEventsResponse): void => {
@@ -1100,7 +1100,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
       if (event.reviewGeneration !== undefined && event.reviewGeneration > afterGeneration) {
-        const status = this._documents.reviewStore.getReviewStatus(documentId);
+        const status = this._documents.reviewStatus(documentId);
         finish({
           reviewId,
           status,
@@ -1109,10 +1109,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       }
     };
 
-    this._documents.reviewStore.on("*", listener);
+    this._documents.agentEvents.on("*", listener);
     res.on("close", cleanup);
     timeout = setTimeout(() => {
-      const status = this._documents.reviewStore.getReviewStatus(documentId);
+      const status = this._documents.reviewStatus(documentId);
       finish({
         reviewId,
         status,
@@ -1253,10 +1253,19 @@ export default class AgentHTTPProvider extends ProviderContract {
     // Open-document reviews, then the sidecar-backed reviews whose files
     // are closed — one list, discriminated by `attached`.
     const reviews: ReviewListEntry[] = [
-      ...this._documents.reviewStore.listReviews().map((review) => ({
-        ...review,
-        attached: true,
-      })),
+      ...this._documents.reviewStore.listReviews().flatMap((review) => {
+        const status = this._documents.reviewStatus(review.documentId);
+        return status === undefined
+          ? []
+          : [
+              {
+                ...status,
+                documentId: review.documentId,
+                documentPath: review.documentPath,
+                attached: true,
+              },
+            ];
+      }),
       ...(await this._documents.listDetachedReviews()),
     ];
     this.sendJson(res, 200, { reviews });
@@ -1300,7 +1309,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       });
       return;
     }
-    const status = this._documents.reviewStore.getReviewStatus(documentId);
+    const status = this._documents.reviewStatus(documentId);
     if (status === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
       return;
@@ -1347,7 +1356,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       });
       return;
     }
-    const diff = this._documents.reviewStore.getReviewDiff(documentId);
+    const diff = this._documents.reviewStore.getReviewDiff(
+      documentId,
+      this._documents.readWorkingText(documentId) ?? "",
+    );
     if (diff === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
       return;
@@ -1418,7 +1430,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, {
       reviewId: result.reviewId,
       documentId: result.documentId,
-      reviewGeneration: result.generation,
+      reviewGeneration: result.reviewGeneration,
       comment: result.comment,
     });
   }
@@ -1441,7 +1453,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       });
       return;
     }
-    const chunks = this._documents.reviewStore.getOutstandingChunks(documentId);
+    const chunks = this._documents.reviewStore.getOutstandingChunks(
+      documentId,
+      this._documents.readWorkingText(documentId) ?? "",
+    );
     if (chunks === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
       return;
@@ -1666,9 +1681,8 @@ export default class AgentHTTPProvider extends ProviderContract {
           enriched.reviewGeneration = review.generation;
         }
         if (enriched.unresolvedChunks === undefined) {
-          enriched.unresolvedChunks = this._documents.reviewStore.countUnresolved(
-            enriched.documentId,
-          );
+          enriched.unresolvedChunks =
+            this._documents.reviewStatus(enriched.documentId)?.unresolvedChunks;
         }
       }
     }
@@ -1725,7 +1739,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
     const content = doc.document.toString();
     const lines = content.split("\n");
-    const reviewStatus = this._documents.reviewStore.getReviewStatus(documentId);
+    const reviewStatus = this._documents.reviewStatus(documentId);
     return {
       documentId,
       uri: `safe-file://${filePath}`,

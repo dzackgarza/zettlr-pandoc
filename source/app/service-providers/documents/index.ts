@@ -49,13 +49,12 @@ import type {
   AgentErrorCode,
   AgentEvent,
   ChunkDecisionResponse,
-  DocumentRevision,
   ProposalClaim,
   ReviewListEntry,
-  ReviewState,
   SubmitProposalResponse,
 } from "@dts/common/agent-api";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
+import type { ActiveReviewState } from "@dts/common/review-domain";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import ProviderContract, { type IPCAPI } from "@providers/provider-contract";
@@ -83,11 +82,27 @@ import { type AppServiceContainer } from "../../app-service-container";
 import { DocumentTree, type DTLeaf } from "./document-tree";
 import {
   ReviewDiffStore,
-  applyClaimSequence,
   classifyReviewState,
+  reviewFromSidecar,
+  reviewSidecar,
   type ReviewSidecarData,
+  type ReviewStatus,
 } from "./review-diff-store";
 import { ReviewSidecarStore } from "./review-sidecar-store";
+import {
+  isTransitionError,
+  prepareAcceptAll,
+  prepareChunkDecision,
+  prepareClear,
+  prepareProposalSubmission,
+  prepareRetraction,
+  prepareReviewComment,
+  prepareWorkingTextEdit,
+  type AddReviewCommentResponse,
+  type ClearReviewResponse,
+  type RetractProposalResponse,
+  type ReviewMutationPlan,
+} from "./review-transitions";
 
 type DocumentWindows = Record<string, DocumentTree>;
 type DocumentWindowsJSON = Record<string, BranchNodeJSON | LeafNodeJSON>;
@@ -429,11 +444,19 @@ export default class DocumentManager extends ProviderContract {
   private readonly _remoteChangeErrorShownFor: string[];
 
   /**
-   * Provider-owned authoritative review state. Replaces the
-   * old _reviewDiffSessions map. The store owns referenceText, workingText,
-   * packet ledger, and review generation.
+   * Committed review state. The store owns the merge reference, the packet
+   * ledger, and the review generation; every decision about them is a pure
+   * transition this provider prepares, persists, and commits.
    */
   private readonly _reviewStore: ReviewDiffStore;
+
+  /**
+   * The agent-visible event bus. The store used to be an EventEmitter and
+   * announce its own mutations, which meant a mutation was announced the
+   * instant the store changed — before the document had the working text the
+   * event described. Emission belongs to whoever commits, so it lives here.
+   */
+  public readonly agentEvents = new EventEmitter();
 
   /** Path → documentId mapping for agent API lookups. */
   private readonly _documentIdByPath: Map<string, string>;
@@ -473,28 +496,16 @@ export default class DocumentManager extends ProviderContract {
     this._ignoreChanges = [];
     this._remoteChangeDialogShownFor = [];
     this._remoteChangeErrorShownFor = [];
-    // The store never mirrors the working text: it reads the live document —
-    // the single owner of that text — through this resolver.
-    this._reviewStore = new ReviewDiffStore((documentId) => {
-      const filePath = this.getDocumentPath(documentId);
-      if (filePath === undefined) {
-        return undefined;
-      }
-      return this.documents.find((d) => d.filePath === filePath)?.document.toString();
-    });
+    this._reviewStore = new ReviewDiffStore();
     this._reviewSidecars = new ReviewSidecarStore(
       path.join(app.getPath("userData"), "review-sidecars"),
     );
     this._pendingSidecarWrites = new Map();
-    // Write-through persistence: every review mutation announces itself on
-    // the store's event bus, and the sidecar mirrors the post-mutation
-    // state. The write is deferred one microtask because mutation events
-    // fire before the caller applies the returned working text to the
-    // document — by the time the microtask runs, the synchronous mutation
-    // turn (store change plus document splice) has completed, so the export
-    // is consistent. Hooking the bus instead of each caller means a
-    // mutation added tomorrow persists without remembering to.
-    this._reviewStore.on("*", (...args: unknown[]) => {
+    // Write-through persistence: every committed review mutation announces
+    // itself here, and the sidecar mirrors the post-mutation state. Hooking
+    // the bus rather than each commit site means a mutation added tomorrow
+    // persists without remembering to.
+    this.agentEvents.on("*", (...args: unknown[]) => {
       const [event] = args as [AgentEvent];
       const documentId = event.documentId;
       // A failed sidecar write emits review.sidecar-error; re-persisting on
@@ -1208,16 +1219,30 @@ current contents from the editor somewhere else, and restart the application.`,
     const documentId = this.getDocumentId(filePath);
     if (documentId !== undefined && this._reviewStore.getReview(documentId) !== undefined) {
       // The editor's authority buffer is the sole working-text owner. Review
-      // mutations already arrive through the store event bus, but ordinary
+      // mutations announce themselves on the agent event bus, but ordinary
       // editor typing does not; queue a sidecar export after every authority
       // update so a crash cannot lose the current working text.
       this._scheduleReviewSidecarWrite(documentId);
       const review = this._reviewStore.getReview(documentId);
       if (review !== undefined) {
         // Ordinary editor typing changes the working partition without going
-        // through a review decision. Reconcile holds and refresh every pane
-        // from the same authority so controls never target a stale region.
-        this._broadcastReviewState(filePath, review);
+        // through a review decision. Reconciling holds against the new
+        // partition is a state change like any other, so it goes through a
+        // transition — reads stay pure projections of committed state, and a
+        // hold is never silently repaired by whoever looked at it first.
+        const plan = prepareWorkingTextEdit({
+          review,
+          workingText: this._workingTextOf(documentId) ?? "",
+        });
+        if (plan !== undefined) {
+          this._reviewStore.replaceReview(documentId, plan.nextReview!);
+          for (const draft of plan.events) {
+            this.emitAgentEvent(draft.event, draft.payload);
+          }
+        }
+        // Refresh every pane from the same authority so controls never
+        // target a stale region.
+        this._broadcastReviewState(filePath, this._reviewStore.getReview(documentId)!);
       }
     }
 
@@ -1698,7 +1723,7 @@ current contents from the editor somewhere else, and restart the application.`,
     if (_docId !== undefined) {
       const _review = this._reviewStore.getReview(_docId);
       if (_review !== undefined && !_review.invalidated) {
-        this._reviewStore.invalidateReview(_docId);
+        this._invalidateReview(_docId);
         this._broadcastReviewCleared(filePath, _review.reviewId);
       }
     }
@@ -2291,6 +2316,128 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * The live working text of an open document, normalized. Every review read
+   * and every transition takes this explicitly: the document authority owns
+   * the text, and a review that outlives its document is a lifecycle bug the
+   * caller must not paper over with an empty string.
+   */
+  private _workingTextOf(documentId: string): string | undefined {
+    const filePath = this.getDocumentPath(documentId);
+    if (filePath === undefined) {
+      return undefined;
+    }
+    const doc = this.documents.find((d) => d.filePath === filePath);
+    return doc === undefined ? undefined : normalizeText(doc.document.toString());
+  }
+
+  /**
+   * Mark a review invalidated by external disk drift. It rejects further
+   * proposals from then on; both the live editor content and the external
+   * disk content are preserved.
+   */
+  private _invalidateReview(documentId: string): void {
+    const review = this._reviewStore.getReview(documentId);
+    if (review === undefined) {
+      return;
+    }
+    this._reviewStore.replaceReview(documentId, { ...review, invalidated: true });
+    this.emitAgentEvent("review.invalidated", {
+      reviewId: review.reviewId,
+      documentId,
+    });
+  }
+
+  /**
+   * Announce one committed review fact. The payload's `generation` is the
+   * wire's `reviewGeneration`; anything the emitter left implicit is filled
+   * from the committed review, so a caller never has to restate the state it
+   * just committed.
+   */
+  public emitAgentEvent(event: string, payload: Record<string, unknown>): void {
+    const mapped: Record<string, unknown> = { ...payload };
+    if ("generation" in mapped) {
+      mapped.reviewGeneration = mapped.generation;
+      delete mapped.generation;
+    }
+    const documentId = typeof mapped.documentId === "string" ? mapped.documentId : undefined;
+    if (documentId !== undefined) {
+      const review = this._reviewStore.getReview(documentId);
+      const workingText = this._workingTextOf(documentId);
+      if (review !== undefined) {
+        if (!("reviewGeneration" in mapped)) {
+          mapped.reviewGeneration = review.generation;
+        }
+        if (!("unresolvedChunks" in mapped) && workingText !== undefined) {
+          mapped.unresolvedChunks =
+            this._reviewStore.getStatus(documentId, workingText)?.unresolvedChunks;
+        }
+      }
+    }
+    const agentEvent: AgentEvent = {
+      event: event as AgentEvent["event"],
+      timestamp: new Date().toISOString(),
+      ...mapped,
+    };
+    this.agentEvents.emit(event, agentEvent);
+    this.agentEvents.emit("*", agentEvent);
+  }
+
+  /**
+   * Commit a prepared plan: the review becomes the state of record, the
+   * document takes the candidate working text, the panes are refreshed, and
+   * only then are the plan's events announced — so every listener that reads
+   * back state sees the state the event describes.
+   *
+   * Phase 7 owns the per-document lock and the persist-before-commit
+   * ordering; today the sidecar still follows on the event bus.
+   */
+  private _commitReviewPlan(
+    documentId: string,
+    filePath: string,
+    plan: ReviewMutationPlan<unknown>,
+  ): void {
+    if (plan.nextReview === undefined) {
+      this._reviewStore.removeReview(documentId);
+    } else {
+      this._reviewStore.replaceReview(documentId, plan.nextReview);
+    }
+    this._applyWorkingTextToDocument(filePath, plan.nextWorkingText);
+    if (plan.nextReview !== undefined) {
+      this._broadcastReviewState(filePath, plan.nextReview);
+    }
+    for (const draft of plan.events) {
+      this.emitAgentEvent(draft.event, draft.payload);
+    }
+  }
+
+  /**
+   * Resolve a reviewId to everything a mutation needs: the committed review,
+   * its file, and its live working text. A review whose document is closed
+   * cannot be decided — closing detaches it to a sidecar.
+   */
+  private _reviewContext(
+    reviewId: string,
+  ):
+    | { review: ActiveReviewState; filePath: string; workingText: string }
+    | { ok: false; code: AgentErrorCode; message: string } {
+    const review = this._reviewStore.findReviewByReviewId(reviewId);
+    if (review === undefined) {
+      return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+    }
+    const filePath = this.getDocumentPath(review.documentId);
+    const workingText =
+      filePath === undefined ? undefined : this._workingTextOf(review.documentId);
+    if (filePath === undefined || workingText === undefined) {
+      return {
+        ok: false,
+        code: "DOCUMENT_CLOSED",
+        message: "The reviewed document is no longer open.",
+      };
+    }
+    return { review, filePath, workingText };
+  }
+
+  /**
    * Apply one accept/reject/hold decision to a review chunk. This is the
    * single decision path: the renderer's buttons and the HTTP API both land
    * here, and the pane never mutates review state — so there is no pane
@@ -2308,58 +2455,31 @@ current contents from the editor somewhere else, and restart the application.`,
     decision: "accept" | "reject" | "hold",
     comment?: string,
   ): ChunkDecisionResponse | { ok: false; code: AgentErrorCode; message: string } {
-    const review = this._reviewStore.findReviewByReviewId(reviewId);
-    if (review === undefined) {
-      return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
-    }
-    const filePath = this.getDocumentPath(review.documentId);
-    const doc =
-      filePath !== undefined
-        ? this.documents.find((d) => d.filePath === filePath)
-        : undefined;
-    if (filePath === undefined || doc === undefined) {
-      return {
-        ok: false,
-        code: "DOCUMENT_CLOSED",
-        message: "The reviewed document is no longer open.",
-      };
+    const context = this._reviewContext(reviewId);
+    if ("ok" in context) {
+      return context;
     }
 
-    const result = this._reviewStore.decideChunk(
-      review.documentId,
-      reviewId,
+    const plan = prepareChunkDecision({
+      review: context.review,
+      workingText: context.workingText,
       chunkId,
       decision,
       comment,
-    );
-    if (!result.ok) {
-      if (result.code === "CHUNK_NOT_FOUND") {
+    });
+    if (isTransitionError(plan)) {
+      if (plan.code === "CHUNK_NOT_FOUND") {
         // The caller decided against a stale partition (the text changed
         // under it). Re-broadcast so every pane redraws from current state.
         this._app.log.warning(
-          `[DocumentManager] Chunk decision refused for ${filePath}: ${result.message}`,
+          `[DocumentManager] Chunk decision refused for ${context.filePath}: ${plan.message}`,
         );
-        this._broadcastReviewState(filePath, review);
+        this._broadcastReviewState(context.filePath, context.review);
       }
-      return { ok: false, code: result.code, message: result.message };
+      return { ok: false, code: plan.code, message: plan.message };
     }
-
-    if (result.workingText !== undefined) {
-      this._applyWorkingTextToDocument(filePath, result.workingText);
-    }
-    this._broadcastReviewState(filePath, review);
-
-    return {
-      ok: true,
-      reviewId: result.reviewId,
-      documentId: result.documentId,
-      chunkId: result.chunkId,
-      decision: result.decision,
-      reviewGeneration: result.generation,
-      unresolvedChunks: result.unresolvedChunks,
-      state: result.state,
-      documentRevision: { sha256: sha256Text(doc.document.toString()) },
-    };
+    this._commitReviewPlan(context.review.documentId, context.filePath, plan);
+    return plan.response;
   }
 
   /**
@@ -2398,38 +2518,19 @@ current contents from the editor somewhere else, and restart the application.`,
   public acceptAllChunks(
     reviewId: string,
   ): AcceptAllChunksResponse | { ok: false; code: AgentErrorCode; message: string } {
-    const review = this._reviewStore.findReviewByReviewId(reviewId);
-    if (review === undefined) {
-      return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+    const context = this._reviewContext(reviewId);
+    if ("ok" in context) {
+      return context;
     }
-    const filePath = this.getDocumentPath(review.documentId);
-    const doc =
-      filePath !== undefined
-        ? this.documents.find((d) => d.filePath === filePath)
-        : undefined;
-    if (filePath === undefined || doc === undefined) {
-      return {
-        ok: false,
-        code: "DOCUMENT_CLOSED",
-        message: "The reviewed document is no longer open.",
-      };
+    const plan = prepareAcceptAll({
+      review: context.review,
+      workingText: context.workingText,
+    });
+    if (isTransitionError(plan)) {
+      return { ok: false, code: plan.code, message: plan.message };
     }
-
-    const result = this._reviewStore.acceptAllChunks(review.documentId);
-    if (!result.ok) {
-      return { ok: false, code: result.code, message: result.message };
-    }
-    this._broadcastReviewState(filePath, review);
-    return {
-      ok: true,
-      reviewId: result.reviewId,
-      documentId: result.documentId,
-      acceptedChunks: result.acceptedChunks,
-      reviewGeneration: result.generation,
-      unresolvedChunks: result.unresolvedChunks,
-      state: result.state,
-      documentRevision: { sha256: sha256Text(doc.document.toString()) },
-    };
+    this._commitReviewPlan(context.review.documentId, context.filePath, plan);
+    return plan.response;
   }
 
   public async acceptAllChunksAsync(
@@ -2454,23 +2555,18 @@ current contents from the editor somewhere else, and restart the application.`,
   public addReviewComment(
     reviewId: string,
     text: string,
-  ): ReturnType<ReviewDiffStore["addReviewComment"]> | { ok: false; code: AgentErrorCode; message: string } {
-    const review = this._reviewStore.findReviewByReviewId(reviewId);
-    if (review === undefined) {
-      return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+  ): AddReviewCommentResponse | { ok: false; code: AgentErrorCode; message: string } {
+    const context = this._reviewContext(reviewId);
+    if ("ok" in context) {
+      return context;
     }
-    const filePath = this.getDocumentPath(review.documentId);
-    const doc = filePath === undefined
-      ? undefined
-      : this.documents.find((candidate) => candidate.filePath === filePath);
-    if (filePath === undefined || doc === undefined) {
-      return { ok: false, code: "DOCUMENT_CLOSED", message: "The reviewed document is no longer open." };
-    }
-    const result = this._reviewStore.addReviewComment(review.documentId, text);
-    if (result.ok) {
-      this._broadcastReviewState(filePath, review);
-    }
-    return result;
+    const plan = prepareReviewComment({
+      review: context.review,
+      workingText: context.workingText,
+      text,
+    });
+    this._commitReviewPlan(context.review.documentId, context.filePath, plan);
+    return plan.response;
   }
 
   /**
@@ -2494,7 +2590,9 @@ current contents from the editor somewhere else, and restart the application.`,
     // clickable on screen. The old second check (reference !== working while
     // the count says zero) is gone because it is unreachable: the count is
     // derived from exactly those two texts, and it is zero iff they agree.
-    const unresolvedChunks = this._reviewStore.countUnresolved(docId);
+    const unresolvedChunks =
+      this._reviewStore.getStatus(docId, this._workingTextOf(docId) ?? "")
+        ?.unresolvedChunks ?? 0;
     if (unresolvedChunks > 0) {
       this._app.log.warning(
         `[DocumentManager] Save gate closed for ${filePath}: ` +
@@ -2545,7 +2643,7 @@ current contents from the editor somewhere else, and restart the application.`,
     try {
       diskContents = await readFile(filePath, "utf8");
     } catch {
-      this._reviewStore.invalidateReview(review.documentId);
+      this._invalidateReview(review.documentId);
       this._broadcastReviewCleared(filePath, review.reviewId);
       return {
         ok: false,
@@ -2556,7 +2654,7 @@ current contents from the editor somewhere else, and restart the application.`,
     if (sha256Text(normalizeText(diskContents)) === review.diskFenceSha256) {
       return { ok: true };
     }
-    this._reviewStore.invalidateReview(review.documentId);
+    this._invalidateReview(review.documentId);
     this._broadcastReviewCleared(filePath, review.reviewId);
     return {
       ok: false,
@@ -2658,22 +2756,31 @@ current contents from the editor somewhere else, and restart the application.`,
       if (_id !== undefined) {
         await this._awaitReviewSidecarWrite(_id);
         const _review = this._reviewStore.getReview(_id);
-        if (_review !== undefined && this._reviewStore.countHeld(_id) > 0) {
+        const _heldChunks =
+          this._reviewStore.getStatus(_id, this._workingTextOf(_id) ?? "")?.heldChunks ?? 0;
+        if (_review !== undefined && _heldChunks > 0) {
           // Held chunks survive a save: the review stays open and the
           // reference retains its disagreement over the held spans, so the
           // panes keep rendering them. The disk fence moves to the content
           // just written — the file on disk IS this save — or every later
           // save would be refused as external drift. The fence move emits
-          // no store event, so the sidecar is written through explicitly:
-          // a stale persisted fence would invalidate the review on its
-          // next reattachment.
-          this._reviewStore.refreshDiskFence(_id, sha256Text(content));
+          // no event, so the sidecar is written through explicitly: a stale
+          // persisted fence would invalidate the review on its next
+          // reattachment.
+          this._reviewStore.replaceReview(_id, {
+            ..._review,
+            diskFenceSha256: sha256Text(content),
+          });
           await this._persistReviewSidecar(_id);
         } else {
           if (_review !== undefined) {
             this._broadcastReviewCleared(filePath, _review.reviewId);
+            this.emitAgentEvent("review.completed", {
+              reviewId: _review.reviewId,
+              documentId: _id,
+            });
           }
-          this._reviewStore.completeReview(_id);
+          this._reviewStore.removeReview(_id);
           // Explicit resolution: a completed review leaves no residue.
           try {
             await this._reviewSidecars.delete(filePath);
@@ -2749,7 +2856,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * DETACH, not destroy: write the review through to its sidecar, then drop
    * the in-memory state. Closing a reviewed file is free — reopening the
    * file reattaches the review. Must run while the document is still in
-   * `documents`: the export reads the working text through the resolver.
+   * `documents`: the export needs its working text.
    *
    * An invalidated review is the one exception. Its in-process resolution
    * was always destruction (the disk moved underneath it, and reloading
@@ -2764,13 +2871,15 @@ current contents from the editor somewhere else, and restart the application.`,
         if (review.invalidated) {
           await this._reviewSidecars.delete(review.documentPath);
         } else {
-          await this._reviewSidecars.write(this._reviewStore.exportReviewSidecar(documentId)!);
+          await this._reviewSidecars.write(
+            reviewSidecar(review, this._workingTextOf(documentId)!),
+          );
         }
       } catch (err) {
         this._surfaceReviewSidecarError(documentId, "detach write", err);
       }
     }
-    this._reviewStore.closeReview(documentId);
+    this._reviewStore.removeReview(documentId);
   }
 
   /**
@@ -2823,14 +2932,14 @@ current contents from the editor somewhere else, and restart the application.`,
 
     if (!preserveSavedReview) {
       await this._reviewSidecars.delete(doc.filePath);
-      this._reviewStore.closeReview(doc.documentId);
+      this._reviewStore.removeReview(doc.documentId);
       if (review !== undefined) {
         // Both audiences are told, after closeReview, so each signal describes
         // a review that is already gone rather than one it could still try to
         // decide: the agent over SSE, and every pane still showing the document
         // — a discard that leaves the window open would otherwise keep drawing
         // chunk widgets for a review the store no longer has.
-        this._reviewStore.emitEvent("review.discarded", {
+        this.emitAgentEvent("review.discarded", {
           reviewId: review.reviewId,
           documentId: doc.documentId,
         });
@@ -2850,11 +2959,12 @@ current contents from the editor somewhere else, and restart the application.`,
    */
   private async _persistReviewSidecar(documentId: string): Promise<void> {
     try {
-      const sidecar = this._reviewStore.exportReviewSidecar(documentId);
-      if (sidecar === undefined) {
+      const review = this._reviewStore.getReview(documentId);
+      const workingText = this._workingTextOf(documentId);
+      if (review === undefined || workingText === undefined) {
         return;
       }
-      await this._reviewSidecars.write(sidecar);
+      await this._reviewSidecars.write(reviewSidecar(review, workingText));
     } catch (err) {
       this._surfaceReviewSidecarError(documentId, "write-through", err);
     }
@@ -2895,7 +3005,7 @@ current contents from the editor somewhere else, and restart the application.`,
       `Review sidecar ${action} failed for document ${documentId}: ` +
       (err instanceof Error ? err.message : String(err));
     this._app.log.error(`[DocumentManager] ${message}`, err);
-    this._reviewStore.emitEvent("review.sidecar-error", { documentId, message });
+    this.emitAgentEvent("review.sidecar-error", { documentId, message });
   }
 
   /**
@@ -2927,15 +3037,16 @@ current contents from the editor somewhere else, and restart the application.`,
           "was preserved; the detached review was discarded.",
       );
       await this._reviewSidecars.delete(doc.filePath);
-      this._reviewStore.emitEvent("review.invalidated", {
+      this.emitAgentEvent("review.invalidated", {
         reviewId: sidecar.reviewId,
         documentId: doc.documentId,
       });
       return;
     }
-    this._reviewStore.restoreReview(doc.documentId, sidecar);
+    const restored = reviewFromSidecar(doc.documentId, sidecar);
+    this._reviewStore.replaceReview(doc.documentId, restored);
     this._applyWorkingTextToDocument(doc.filePath, sidecar.workingText);
-    this._broadcastReviewState(doc.filePath, this._reviewStore.getReview(doc.documentId));
+    this._broadcastReviewState(doc.filePath, restored);
   }
 
   /**
@@ -3296,7 +3407,7 @@ current contents from the editor somewhere else, and restart the application.`,
       };
     }
     if (activeReview !== undefined && diskSha256 !== activeReview.diskFenceSha256) {
-      this._reviewStore.invalidateReview(documentId);
+      this._invalidateReview(documentId);
       this._broadcastReviewCleared(filePath, activeReview.reviewId);
       return {
         ok: false,
@@ -3312,66 +3423,25 @@ current contents from the editor somewhere else, and restart the application.`,
         message: "The review generation no longer matches.",
       };
     }
-    if (activeReview === undefined) {
-      // Prove the whole sequence before opening: an open review with zero
-      // packets is exactly the state a failed batch must not leave behind,
-      // and announcing review.started for it would be a lie.
-      const dryRun = applyClaimSequence(
-        normalizeText(currentContent),
-        filePath,
-        claims,
-      );
-      if (!dryRun.ok) {
-        return { ok: false, code: dryRun.code, message: dryRun.message };
-      }
-      this._reviewStore.openReview({
-        documentId,
-        documentPath: filePath,
-        baselineText: currentContent,
-        diskBaselineSha256: diskSha256,
-      });
-    }
-
-    const result = this._reviewStore.submitClaims(documentId, {
+    // The transition opens the review when none exists, so a sequence that
+    // does not apply produces no plan and leaves nothing behind. The old
+    // dry-run-then-open-then-roll-back dance existed only because opening
+    // was a separate committed step.
+    const plan = prepareProposalSubmission({
+      review: activeReview,
+      documentId,
+      documentPath: filePath,
+      workingText: currentContent,
+      diskSha256,
       claims,
       clientRequestId,
       requestFingerprint,
     });
-    if (!result.ok) {
-      if (activeReview === undefined) {
-        // The dry run above proved this exact sequence against this exact
-        // text, and nothing ran in between. Failing here is a defect.
-        this._reviewStore.closeReview(documentId);
-        throw new Error(
-          `Claim sequence failed after a successful dry run: ${result.message}`,
-        );
-      }
-      return { ok: false, code: result.code, message: result.message };
+    if (isTransitionError(plan)) {
+      return { ok: false, code: plan.code, message: plan.message };
     }
-
-    // Update the document's working text
-    const review = this._reviewStore.getReview(documentId)!;
-    this._applyWorkingTextToDocument(filePath, result.workingText);
-    this._broadcastReviewState(filePath, review);
-    const response: SubmitProposalResponse = {
-      packetId: result.packetIds[result.packetIds.length - 1],
-      packetIds: result.packetIds,
-      reviewId: result.reviewId,
-      documentId,
-      documentRevision: { sha256: sha256Text(doc.document.toString()) },
-      reviewGeneration: result.generation,
-      unresolvedChunks: result.unresolvedChunks,
-      state: result.state,
-    };
-    // Appended only now: the packets are committed, the document carries the
-    // new working text, and this response is the one a replay must repeat.
-    review.submissions.push({
-      clientRequestId,
-      requestFingerprint,
-      packetIds: result.packetIds,
-      response,
-    });
-    return { ok: true, ...response };
+    this._commitReviewPlan(documentId, filePath, plan);
+    return { ok: true, ...plan.response };
   }
 
   /**
@@ -3409,71 +3479,40 @@ current contents from the editor somewhere else, and restart the application.`,
    * Atomically mutates store, applies working text to document, broadcasts state,
    * and returns the post-mutation document revision.
    */
-  public clearReview(reviewId: string):
-    | {
-        ok: true;
-        reviewId: string;
-        documentId: string;
-        state: ReviewState;
-        documentRevision: DocumentRevision;
-        reviewGeneration: number;
-        unresolvedChunks: number;
+  public clearReview(
+    reviewId: string,
+  ): ClearReviewResponse | { ok: false; code: AgentErrorCode; message: string } {
+    const context = this._reviewContext(reviewId);
+    if ("ok" in context) {
+      if (context.code === "DOCUMENT_CLOSED") {
+        // A review in the live store whose document is not open is a
+        // lifecycle bug — closing a file detaches its review to a sidecar.
+        // Every answer here carries a documentRevision, and the only hash
+        // there would be to report is one no document has.
+        throw new Error(
+          `Review ${reviewId} is attached to a document that is not open`,
+        );
       }
-    | { ok: false; code: AgentErrorCode; message: string } {
-    // Find documentId by reviewId
-    let documentId: string | undefined;
-    for (const r of this._reviewStore.listReviews()) {
-      if (r.reviewId === reviewId) {
-        documentId = r.documentId;
-        break;
-      }
+      return context;
     }
-    if (documentId === undefined) {
-      return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+    const plan = prepareClear({
+      review: context.review,
+      workingText: context.workingText,
+    });
+    // Clearing ends review mode in every pane: the broadcast the generic
+    // commit path sends would put the widgets back.
+    this._reviewStore.replaceReview(context.review.documentId, plan.nextReview!);
+    this._applyWorkingTextToDocument(context.filePath, plan.nextWorkingText);
+    this._broadcastReviewCleared(context.filePath, reviewId);
+    for (const draft of plan.events) {
+      this.emitAgentEvent(draft.event, draft.payload);
     }
-    const filePath = this.getDocumentPath(documentId);
-    const doc =
-      filePath === undefined ? undefined : this.documents.find((d) => d.filePath === filePath);
-    if (filePath === undefined || doc === undefined) {
-      // A review in the live store whose document is not open is a lifecycle
-      // bug — closing a file detaches its review to a sidecar. Every answer
-      // here carries a documentRevision, and the only hash there would be to
-      // report is one no document has, so refuse before mutating anything.
-      throw new Error(
-        `Review ${reviewId} is attached to document ${documentId}, which is not open`,
-      );
-    }
-    const result = this._reviewStore.clearUnresolved(documentId);
-    if (!result.ok) {
-      return { ok: false, code: result.code, message: result.message };
-    }
-    this._applyWorkingTextToDocument(filePath, result.workingText);
-    this._broadcastReviewCleared(filePath, reviewId);
-    return {
-      ok: true,
-      reviewId: result.reviewId,
-      documentId,
-      state: result.state,
-      documentRevision: { sha256: sha256Text(doc.document.toString()) },
-      reviewGeneration: result.generation,
-      unresolvedChunks: result.unresolvedChunks,
-    };
+    return plan.response;
   }
 
   public async clearReviewAsync(
     reviewId: string,
-  ): Promise<
-    | {
-        ok: true;
-        reviewId: string;
-        documentId: string;
-        state: ReviewState;
-        documentRevision: DocumentRevision;
-        reviewGeneration: number;
-        unresolvedChunks: number;
-      }
-    | { ok: false; code: AgentErrorCode; message: string }
-  > {
+  ): Promise<ClearReviewResponse | { ok: false; code: AgentErrorCode; message: string }> {
     const review = this._reviewStore.findReviewByReviewId(reviewId);
     if (review === undefined) {
       return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
@@ -3494,16 +3533,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * and returns the post-mutation document revision.
    */
   public async retractProposal(packetId: string): Promise<
-    | {
-        ok: true;
-        retracted: true;
-        packetId: string;
-        reviewId: string;
-        documentId: string;
-        reviewGeneration: number;
-        unresolvedChunks: number;
-        documentRevision: DocumentRevision;
-      }
+    | RetractProposalResponse
     | {
         ok: false;
         code: AgentErrorCode;
@@ -3512,8 +3542,16 @@ current contents from the editor somewhere else, and restart the application.`,
         canClearUnresolved: boolean;
       }
   > {
-    const result = this._reviewStore.retractPacket(packetId);
-    if (!result.ok) {
+    // Reviews and their packets are few; a scan is cheaper to keep correct
+    // than an index every mutation must remember to maintain.
+    const review = this._reviewStore
+      .listReviews()
+      .find((candidate) =>
+        candidate.packets.some((packet) => packet.packetId === packetId),
+      );
+    const workingText =
+      review === undefined ? undefined : this._workingTextOf(review.documentId);
+    if (review === undefined || workingText === undefined) {
       // GET /v1/reviews/{id}/packets hands out a detached review's packetIds,
       // so this route owes them an answer. The live store dropped them when
       // the file closed; the sidecar still carries them, and the refusal it
@@ -3535,41 +3573,25 @@ current contents from the editor somewhere else, and restart the application.`,
       }
       return {
         ok: false,
-        code: result.code,
-        message: result.message,
-        reviewId: result.reviewId,
-        canClearUnresolved: result.canClearUnresolved,
+        code: "PACKET_NOT_RETRACTABLE",
+        message: "The packet was not found.",
+        reviewId: review?.reviewId ?? "",
+        canClearUnresolved: true,
       };
     }
-    const documentId = result.documentId;
-    const filePath = this.getDocumentPath(documentId);
-    const doc =
-      filePath === undefined ? undefined : this.documents.find((d) => d.filePath === filePath);
-    if (filePath === undefined || doc === undefined) {
-      // The live store just retracted a packet from a review whose document
-      // is not open, which closing a file makes impossible: the close detaches
-      // the review to a sidecar and the retraction above would have refused.
-      // The answer owes a documentRevision and no document holds one, so fail
-      // loudly rather than report a hash nothing has.
-      throw new Error(
-        `Review ${result.reviewId} is attached to document ${documentId}, which is not open`,
-      );
+
+    // Every refusal is decided before any state moves, so a retraction the
+    // document's state cannot support leaves that state exactly as it was.
+    const plan = prepareRetraction({ review, workingText, packetId });
+    if (isTransitionError(plan)) {
+      return plan;
     }
-    const review = this._reviewStore.getReview(documentId);
-    if (review !== undefined) {
-      this._applyWorkingTextToDocument(filePath, result.workingText);
-      this._broadcastReviewState(filePath, review);
-    }
-    return {
-      ok: true,
-      retracted: true,
-      packetId: result.packetId,
-      reviewId: result.reviewId,
-      documentId,
-      reviewGeneration: result.generation,
-      unresolvedChunks: result.unresolvedChunks,
-      documentRevision: { sha256: sha256Text(doc.document.toString()) },
-    };
+    this._commitReviewPlan(
+      review.documentId,
+      this.getDocumentPath(review.documentId)!,
+      plan,
+    );
+    return plan.response;
   }
 
   /**
@@ -3577,6 +3599,28 @@ current contents from the editor somewhere else, and restart the application.`,
    */
   public get reviewStore(): ReviewDiffStore {
     return this._reviewStore;
+  }
+
+  /**
+   * The live working text of an open document, normalized — the text every
+   * review read projection must be given. Undefined when the document is not
+   * open, which is the caller's signal that only the sidecar can answer.
+   */
+  public readWorkingText(documentId: string): string | undefined {
+    return this._workingTextOf(documentId);
+  }
+
+  /**
+   * The status of a document's active review, against its live text. The one
+   * place the working text is paired with the review for a status read, so
+   * no caller can project a review against a text it does not have.
+   */
+  public reviewStatus(documentId: string): ReviewStatus | undefined {
+    const workingText = this._workingTextOf(documentId);
+    if (workingText === undefined) {
+      return undefined;
+    }
+    return this._reviewStore.getStatus(documentId, workingText);
   }
 
   /**
@@ -3714,7 +3758,7 @@ current contents from the editor somewhere else, and restart the application.`,
    */
   private _reviewSessionFor(
     filePath: string,
-    review: NonNullable<ReturnType<ReviewDiffStore["getReview"]>>,
+    review: ActiveReviewState,
   ): ReviewDiffSession {
     return {
       id: review.reviewId,
@@ -3722,8 +3766,14 @@ current contents from the editor somewhere else, and restart the application.`,
       documentPath: filePath,
       referenceText: review.referenceText,
       workingText: this.documents.find((document) => document.filePath === filePath)?.document.toString() ?? "",
-      packets: this._reviewStore.getPacketAttributions(review.documentId)!,
-      holds: this._reviewStore.getHolds(review.documentId)!,
+      // A packet carries its own attribution, and a hold its own identity:
+      // the pane reads them straight off the committed review.
+      packets: review.packets.map((packet) => ({
+        packetId: packet.packetId,
+        description: packet.description,
+        refSpans: packet.refSpans.map((span) => ({ ...span })),
+      })),
+      holds: review.holds.map((hold) => ({ ...hold })),
       comments: review.comments.map((comment) => ({ ...comment })),
     };
   }
