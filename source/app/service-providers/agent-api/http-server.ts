@@ -21,31 +21,31 @@
  * END HEADER
  */
 
-import {
-  AGENT_API_PROTOCOL_VERSION,
-  type AgentEvent,
-  type AgentEventType,
-  type DocumentSummary,
-  type EditorContext,
-  type EditorViewSummary,
-  type AddReviewCommentRequest,
-  type AgentApiResponseBody,
-  type AgentError,
-  type AgentErrorCode,
-  type AgentErrorResponse,
-  type ChunkDecision,
-  type HoldChunkRequest,
-  type ProposalClaim,
-  type ReadDocumentResponse,
-  type SubmitProposalRequest,
-  type ReadSide,
-  type ReviewEventsResponse,
-  type ReviewListEntry,
-  type PingResponse,
-  type SearchHit,
-  type WorkspaceDocumentEntry,
-  type WorkspaceFileEntry,
-  type ViewSummary,
+import type {
+  AgentApiOperations,
+  AgentApiResponseBody,
+  AgentEvent,
+  AgentEventType,
+  AddReviewCommentRequest,
+  AgentError,
+  AgentErrorCode,
+  AgentErrorResponse,
+  ChunkDecision,
+  DocumentSummary,
+  EditorContext,
+  EditorViewSummary,
+  HoldChunkRequest,
+  PingResponse,
+  ReadDocumentResponse,
+  ReadSide,
+  ReviewEventsResponse,
+  ReviewListEntry,
+  SearchDocumentRequest,
+  SearchHit,
+  SubmitProposalRequest,
+  ViewSummary,
+  WorkspaceDocumentEntry,
+  WorkspaceFileEntry,
 } from "@dts/common/agent-api";
 import { DocumentType, DP_EVENTS } from "@dts/common/documents";
 import type DocumentManager from "@providers/documents";
@@ -55,6 +55,10 @@ import crypto from "crypto";
 import { app } from "electron";
 import fs from "fs";
 import http from "http";
+import OpenAPIBackend, {
+  type Context,
+  type Document as OpenApiDefinition,
+} from "openapi-backend";
 import path from "path";
 import vm from "vm";
 import { parseDocument, type Document } from "yaml";
@@ -112,99 +116,28 @@ class RequestAbandonedError extends Error {
 
 
 /**
- * Request decoding happens exactly once, here, at the owned HTTP boundary.
- * Handlers downstream receive declared types and never inspect raw JSON, so a
- * missing or wrong-typed field is a 400 at the edge rather than an `unknown`
- * threaded through the request path.
+ * What openapi-backend hands a handler once it has matched the request against
+ * the document and validated it. Its own Context types params, query and body
+ * as `any`; naming the operation here recovers the shapes the document already
+ * declares, so a handler reads validated values rather than `any`.
  */
-type Decoded<T> = { ok: true; value: T } | { ok: false; message: string };
+type OperationContext<Id extends keyof AgentApiOperations, Body = unknown> = Context<
+  Body,
+  OrEmpty<AgentApiOperations[Id]["parameters"]["path"]>,
+  OrEmpty<AgentApiOperations[Id]["parameters"]["query"]>
+>;
 
-function decodeJsonObject(body: string): Decoded<Record<string, unknown>> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    return { ok: false, message: "Invalid JSON body" };
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return { ok: false, message: "Invalid JSON body" };
-  }
-  return { ok: true, value: parsed as Record<string, unknown> };
-}
+/** The generated operations write `never` for a parameter section an operation has none of. */
+type OrEmpty<T> = [NonNullable<T>] extends [never] ? Record<string, never> : NonNullable<T>;
 
-/**
- * The hold body is optional in its entirety — a hold without text is legal,
- * and a schema-driven client may POST no body at all. A present body must
- * still parse: swallowing a malformed one would silently drop the comment
- * the caller thought it attached.
- */
-function decodeHoldChunkRequest(body: string): Decoded<HoldChunkRequest> {
-  if (body.trim().length === 0) {
-    return { ok: true, value: {} };
-  }
-  const raw = decodeJsonObject(body);
-  if (!raw.ok) {
-    return raw;
-  }
-  const { comment } = raw.value;
-  if (comment === undefined) {
-    return { ok: true, value: {} };
-  }
-  if (typeof comment !== "string" || comment.length === 0) {
-    return { ok: false, message: "comment must be a non-empty string when present" };
-  }
-  return { ok: true, value: { comment } };
-}
-
-function decodeAddReviewCommentRequest(
-  body: string,
-): Decoded<AddReviewCommentRequest> {
-  const raw = decodeJsonObject(body);
-  if (!raw.ok) {
-    return raw;
-  }
-  const { text } = raw.value;
-  if (typeof text !== "string" || text.length === 0) {
-    return { ok: false, message: "text is required and must be a non-empty string" };
-  }
-  return { ok: true, value: { text } };
-}
-
-/**
- * Decodes the `side` query parameter into a total ReadSide. The spec declares it
- * optional with `default: working`, so an absent parameter is the contract's
- * value rather than a runtime guess, and an unrecognized one is refused here
- * instead of being silently read as `working`.
- */
-function decodeReadSide(raw: string | null): Decoded<ReadSide> {
-  if (raw === null) {
-    return { ok: true, value: "working" };
-  }
-  if (raw !== "working" && raw !== "reference") {
-    return { ok: false, message: "side must be working or reference" };
-  }
-  return { ok: true, value: raw };
-}
-
-/**
- * The spec declares `context` optional with `default: 3`. That default is part
- * of the published contract, so it is applied here, once, at the boundary that
- * owns request decoding — and the decoded type carries a total `context`, so no
- * handler downstream can substitute a different value for a missing one.
- */
-export interface DecodedSearchDocumentRequest {
-  literal: string;
-  context: number;
-}
-
+/** The spec's published default for the search request's `context`. */
 const SEARCH_CONTEXT_DEFAULT = 3;
 
 /**
- * Bounds on user-provided search patterns. The search endpoint accepts raw
- * regular expressions, and this server runs on the Electron main process: a
- * catastrophic pattern left unbounded does not slow one request down, it
- * freezes the editor. The length cap refuses absurd patterns at the decode
- * boundary; the deadline bounds evaluation.
+ * The search endpoint accepts raw regular expressions, and this server runs on
+ * the Electron main process: a catastrophic pattern left unbounded does not
+ * slow one request down, it freezes the editor. openapi.yaml caps the pattern
+ * length and the per-hit context; this deadline bounds evaluation.
  *
  * A deadline polled between lines would be a lie for the one input class it
  * exists to survive: `/(a+)+$/` against a single non-matching line of a's
@@ -217,20 +150,7 @@ const SEARCH_CONTEXT_DEFAULT = 3;
  * pre-emption device here, not a security boundary — the pattern is still
  * compiled and matched by this realm's code.
  */
-export const MAX_SEARCH_PATTERN_LENGTH = 512;
 const SEARCH_DEADLINE_MS = 1000;
-
-/**
- * `context` is the third cost dimension of this endpoint, and the only one that
- * scales the response rather than the search: every hit copies up to `context`
- * lines on each side into its own `contextBefore`/`contextAfter`, so the bytes
- * this request allocates in the main process are hits x 2 x context lines. Left
- * open-ended, a single request naming a context larger than the document makes
- * each of its hits carry a full copy of that document. The cap is enforced at
- * the decode boundary and declared in openapi.yaml, so a caller learns the
- * ceiling from the published contract instead of from a hung editor.
- */
-export const MAX_SEARCH_CONTEXT = 100;
 
 /**
  * A frequent pattern can produce an unbounded number of hits even when its
@@ -284,112 +204,6 @@ function collectSearchHits(
   return { hits, truncated };
 }
 
-function decodeSearchDocumentRequest(
-  body: string,
-): Decoded<DecodedSearchDocumentRequest> {
-  const raw = decodeJsonObject(body);
-  if (!raw.ok) {
-    return raw;
-  }
-  const { literal, context } = raw.value;
-  if (typeof literal !== "string") {
-    return { ok: false, message: "literal is required and must be a string" };
-  }
-  if (literal.length > MAX_SEARCH_PATTERN_LENGTH) {
-    return {
-      ok: false,
-      message: `literal must be at most ${MAX_SEARCH_PATTERN_LENGTH} characters`,
-    };
-  }
-  if (context === undefined) {
-    return { ok: true, value: { literal, context: SEARCH_CONTEXT_DEFAULT } };
-  }
-  if (
-    typeof context !== "number" ||
-    !Number.isInteger(context) ||
-    context < 0 ||
-    context > MAX_SEARCH_CONTEXT
-  ) {
-    return {
-      ok: false,
-      message: `context must be an integer between 0 and ${MAX_SEARCH_CONTEXT}`,
-    };
-  }
-  return { ok: true, value: { literal, context } };
-}
-
-/** The published DocumentRevision.sha256 pattern. */
-const SHA256_HEX = /^[0-9a-f]{64}$/;
-
-/**
- * Field predicates written as type guards, so a decoder narrows its own values
- * instead of asserting them afterwards: `baselineSha256 as string` would
- * compile even if the check above it were deleted.
- */
-function isString(value: unknown): value is string {
-  return typeof value === "string";
-}
-
-function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalRequest> {
-  const raw = decodeJsonObject(body);
-  if (!raw.ok) {
-    return raw;
-  }
-  const { baselineSha256, claims, clientRequestId, expectedReviewGeneration } = raw.value;
-  if (!isString(baselineSha256) || !SHA256_HEX.test(baselineSha256)) {
-    return {
-      ok: false,
-      message: "baselineSha256 is required and must be a 64-character hex SHA-256",
-    };
-  }
-  if (!isString(clientRequestId) || clientRequestId.length === 0) {
-    return { ok: false, message: "clientRequestId is required and must be a non-empty string" };
-  }
-  if (
-    typeof expectedReviewGeneration !== "number" ||
-    !Number.isInteger(expectedReviewGeneration) ||
-    expectedReviewGeneration < 0
-  ) {
-    return {
-      ok: false,
-      message: "expectedReviewGeneration is required and must be an integer of at least 0",
-    };
-  }
-  if (!Array.isArray(claims) || claims.length === 0) {
-    return { ok: false, message: "claims is required and must be a non-empty array" };
-  }
-  const decodedClaims: ProposalClaim[] = [];
-  for (let i = 0; i < claims.length; i++) {
-    const claim: unknown = claims[i];
-    if (typeof claim !== "object" || claim === null || Array.isArray(claim)) {
-      return { ok: false, message: `claims[${i}] must be an object` };
-    }
-    const { description: claimDescription, patch: claimPatch } = claim as Record<string, unknown>;
-    if (!isString(claimDescription) || claimDescription.length === 0) {
-      return {
-        ok: false,
-        message: `claims[${i}].description is required and must be a non-empty string`,
-      };
-    }
-    if (!isString(claimPatch) || claimPatch.length === 0) {
-      return {
-        ok: false,
-        message: `claims[${i}].patch is required and must be a non-empty string`,
-      };
-    }
-    decodedClaims.push({ description: claimDescription, patch: claimPatch });
-  }
-  return {
-    ok: true,
-    value: {
-      baselineSha256,
-      expectedReviewGeneration,
-      clientRequestId,
-      claims: decodedClaims,
-    },
-  };
-}
-
 // ============================================================================
 // AgentHTTPProvider
 // ============================================================================
@@ -410,47 +224,6 @@ export interface AgentApiHost {
   };
 }
 
-/** What a route handler is given: the exchange, plus its decoded path parameters. */
-interface RouteContext {
-  req: http.IncomingMessage;
-  res: http.ServerResponse;
-  url: URL;
-  params: Record<string, string>;
-}
-
-/** One route matched and dispatched by the server. */
-interface AgentApiRoute {
-  method: string;
-  path: string;
-  handle: (ctx: RouteContext) => void | Promise<void>;
-}
-
-interface CompiledRoute extends AgentApiRoute {
-  pattern: RegExp;
-  paramNames: string[];
-}
-
-/**
- * `/v1/documents/{documentId}/content` becomes `^/v1/documents/([^/]+)/content$`
- * with `documentId` named. A parameter spans exactly one segment, which is what
- * keeps `/v1/documents/{documentId}` from swallowing its own sub-paths.
- */
-function compileRoute(route: AgentApiRoute): CompiledRoute {
-  const paramNames: string[] = [];
-  const pattern = route.path
-    .split("/")
-    .map((segment) => {
-      const parameter = segment.match(/^\{(\w+)\}$/);
-      if (parameter === null) {
-        return segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      }
-      paramNames.push(parameter[1]);
-      return "([^/]+)";
-    })
-    .join("/");
-  return { ...route, pattern: new RegExp(`^${pattern}$`), paramNames };
-}
-
 export default class AgentHTTPProvider extends ProviderContract {
   private _server: http.Server | undefined;
   private _instanceId: string;
@@ -466,8 +239,14 @@ export default class AgentHTTPProvider extends ProviderContract {
    * parses.
    */
   private readonly _openApiSpecification: Document;
-  /** The one route table. Dispatch matches against these entries and nothing else. */
-  private readonly _routes: CompiledRoute[];
+  /**
+   * The router. Every route, path parameter, query parameter and request body
+   * this server accepts comes from the OpenAPI document through this instance;
+   * there is no second route table to keep in step with it.
+   */
+  private readonly _api: OpenAPIBackend;
+  /** The published protocol version — `info.version` of the document. */
+  private readonly _protocolVersion: string;
 
   constructor(
     private readonly _log: LogProvider,
@@ -514,7 +293,29 @@ export default class AgentHTTPProvider extends ProviderContract {
           .join("; ")}`,
       );
     }
-    this._routes = this.buildRoutes().map(compileRoute);
+    const definition = this._openApiSpecification.toJS() as OpenApiDefinition;
+    const version = definition.info?.version;
+    if (typeof version !== "string" || version.length === 0) {
+      throw new Error("Agent API OpenAPI specification declares no info.version");
+    }
+    this._protocolVersion = version;
+    this._api = new OpenAPIBackend({
+      definition,
+      // strict: a handler named for an operation this document does not
+      // declare is a build fault, and stops the provider where the failure is
+      // the author's rather than becoming a route nobody can reach.
+      strict: true,
+      // quick: skips openapi-backend's own definition check, which validates
+      // against the OpenAPI 3.0 metaschema only. This document is 3.1 and uses
+      // 3.1 keywords (`const`), so that check reports valid declarations as
+      // errors. Generation of the wire types is what fails on a malformed
+      // document.
+      quick: true,
+      // Query and path parameters arrive as strings. The document says which
+      // are integers, so the validator is what turns them into numbers.
+      coerceTypes: true,
+      handlers: this.operationHandlers(),
+    });
   }
 
   async boot(): Promise<void> {
@@ -526,6 +327,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       this._log.info("[AgentHTTPProvider] Disabled by config, skipping boot");
       return;
     }
+
+    // Compiles the document's route table and validation schemas. Done before
+    // the listener binds, so the first request does not pay for it.
+    await this._api.init();
 
     const handler = (req: http.IncomingMessage, res: http.ServerResponse) => {
       this.handleRequest(req, res);
@@ -699,42 +504,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       );
       return;
     }
-    try {
-      this.routeRequest(req, res, method, requestUrl);
-    } catch (error) {
-      this._log.error(
-        `[AgentHTTPProvider] ${method} ${requestUrl} threw out of the request ` +
-          `handler: ${String(error)}`,
-        error,
-      );
-      this.sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
-    }
-  }
-
-  private routeRequest(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    method: string,
-    requestUrl: string,
-  ): void {
-    const url = new URL(requestUrl, "http://127.0.0.1");
-    const pathname = url.pathname;
-    const matched = this.matchRoute(method, pathname);
-
-    if (matched === undefined) {
-      this.sendError(res, 404, "METHOD_NOT_FOUND", `No route for ${method} ${pathname}`);
-      return;
-    }
-
-    // Decode each captured path parameter exactly once.
-    const params: Record<string, string> = {};
-    matched.route.paramNames.forEach((name, index) => {
-      params[name] = decodeURIComponent(matched.captures[index]);
-    });
-
     // The async wrapper is what makes a handler that throws synchronously
     // arrive in the same catch as one that rejects.
-    void (async () => await matched.route.handle({ req, res, url, params }))().catch((err) => {
+    void this.dispatch(req, res, method, requestUrl).catch((err) => {
+      const pathname = requestUrl.split("?")[0];
       if (err instanceof RequestTooLargeError) {
         this._log.warning(
           `[AgentHTTPProvider] Refused oversized ${method} ${pathname} with REQUEST_TOO_LARGE`,
@@ -771,211 +544,239 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   /**
-   * The first route whose method and compiled pattern accept this request.
-   *
-   * Every template is anchored and a parameter never crosses a `/`, so no two
-   * entries can accept the same path and the order of the table is not part of
-   * its meaning.
+   * The raw-Node half of the exchange: read the body once, hand the request to
+   * the router, and let the matched operation's handler answer on `res`.
+   * Everything the OpenAPI document can decide — which operation this is, its
+   * path and query parameters, whether the body satisfies the schema — is
+   * decided by openapi-backend from that document.
    */
-  private matchRoute(
+  private async dispatch(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
     method: string,
-    pathname: string,
-  ): { route: CompiledRoute; captures: string[] } | undefined {
-    for (const route of this._routes) {
-      if (route.method !== method) {
-        continue;
-      }
-      const match = pathname.match(route.pattern);
-      if (match !== null) {
-        return { route, captures: match.slice(1) };
+    requestUrl: string,
+  ): Promise<void> {
+    const url = new URL(requestUrl, "http://127.0.0.1");
+    const rawBody = await this.readBody(req);
+    let body: unknown;
+    if (rawBody.trim().length > 0) {
+      try {
+        body = JSON.parse(rawBody);
+      } catch {
+        // Parsed here, once, because the router only receives what parsed.
+        this.sendError(res, 400, "INVALID_PARAMS", "Invalid JSON body");
+        return;
       }
     }
-    return undefined;
+    await this._api.handleRequest(
+      {
+        method,
+        path: url.pathname,
+        query: url.search,
+        headers: req.headers as Record<string, string | string[]>,
+        body,
+      },
+      req,
+      res,
+    );
   }
 
-  /** All HTTP routes served by this provider. */
-  private buildRoutes(): AgentApiRoute[] {
-    const instanceIdentity = (): PingResponse => ({
-      protocolVersion: AGENT_API_PROTOCOL_VERSION,
+  /** Identity and instance facts, shared by /health and /v1/ping. */
+  private instanceIdentity(): PingResponse {
+    return {
+      protocolVersion: this._protocolVersion,
       instanceId: this._instanceId,
       pid: process.pid,
-    });
-
-    // The same document in two encodings, because importers are not uniformly
-    // willing to read YAML: the Custom GPT builder fetched the YAML URL and
-    // silently did nothing, while it accepted an otherwise equivalent JSON
-    // document served as application/json. YAML remains the committed source —
-    // both encodings are written from the one parsed document, so the two
-    // cannot disagree.
-    const serveSpecification =
-      (asJson: boolean) =>
-      ({ req, res }: RouteContext): void => {
-        // Built before anything is committed to the wire: a body that failed
-        // half-written would leave a 200 already sent and nothing to correct
-        // it with.
-        const specification = this.specificationForRequest(req);
-        res.writeHead(200, {
-          "Content-Type": asJson ? "application/json" : "application/yaml",
-        });
-        res.end(
-          asJson
-            ? JSON.stringify(specification.toJSON(), null, 2)
-            : specification.toString(),
-        );
-      };
-
-    // The same document minus the one route an Action cannot consume:
-    // /v1/events is Server-Sent Events, and an importer that calls it waits on
-    // it forever. Derived here from the parsed document rather than by a
-    // command that curls this server and edits the result, so there is no
-    // second copy of the contract to keep in step. The long-poll route
-    // /v1/reviews/{reviewId}/events is an ordinary request and stays.
-    const serveActionSpecification = ({ req, res }: RouteContext): void => {
-      const specification = this.specificationForRequest(req);
-      specification.deleteIn(["paths", "/v1/events"]);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(specification.toJSON(), null, 2));
     };
+  }
 
-    return [
-      { method: "GET", path: "/openapi.yaml", handle: serveSpecification(false) },
-      { method: "GET", path: "/openapi.json", handle: serveSpecification(true) },
-      { method: "GET", path: "/openapi-actions.json", handle: serveActionSpecification },
+  /**
+   * The same document in two encodings, because importers are not uniformly
+   * willing to read YAML: the Custom GPT builder fetched the YAML URL and
+   * silently did nothing, while it accepted an otherwise equivalent JSON
+   * document served as application/json. YAML remains the committed source —
+   * both encodings are written from the one parsed document, so the two
+   * cannot disagree.
+   */
+  private serveSpecification(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    asJson: boolean,
+  ): void {
+    // Built before anything is committed to the wire: a body that failed
+    // half-written would leave a 200 already sent and nothing to correct
+    // it with.
+    const specification = this.specificationForRequest(req);
+    res.writeHead(200, {
+      "Content-Type": asJson ? "application/json" : "application/yaml",
+    });
+    res.end(
+      asJson ? JSON.stringify(specification.toJSON(), null, 2) : specification.toString(),
+    );
+  }
 
-      // Health/system routes
-      { method: "GET", path: "/health", handle: ({ res }) => this.sendJson(res, 200, instanceIdentity()) },
-      { method: "GET", path: "/v1/ping", handle: ({ res }) => this.sendJson(res, 200, instanceIdentity()) },
-      {
-        method: "GET",
-        path: "/v1/capabilities",
-        handle: ({ res }) =>
-          this.sendJson(res, 200, {
-            protocolVersion: AGENT_API_PROTOCOL_VERSION,
-            supportedPatchFormats: ["unified-diff"],
-            reviewSupport: true,
-            retractionSupport: true,
-            maxRequestSize: 25 * 1024 * 1024,
-            eventStreamSupport: true,
-            eventReplayBufferSize: SSE_REPLAY_BUFFER_SIZE,
-            applicationVersion: app.getVersion(),
-            instanceId: this._instanceId,
-          }),
-      },
-      { method: "GET", path: "/v1/context", handle: async ({ res }) => await this.handleGetContext(res) },
-      { method: "GET", path: "/v1/views", handle: async ({ res }) => await this.handleGetViews(res) },
-      { method: "GET", path: "/v1/events", handle: ({ req, res }) => this.handleSseSubscription(req, res) },
+  /**
+   * The same document minus the one route an Action cannot consume:
+   * /v1/events is Server-Sent Events, and an importer that calls it waits on
+   * it forever. Derived here from the parsed document rather than by a
+   * command that curls this server and edits the result, so there is no
+   * second copy of the contract to keep in step. The long-poll route
+   * /v1/reviews/{reviewId}/events is an ordinary request and stays.
+   */
+  private serveActionSpecification(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    const specification = this.specificationForRequest(req);
+    specification.deleteIn(["paths", "/v1/events"]);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(specification.toJSON(), null, 2));
+  }
 
-      // Workspaces
-      { method: "GET", path: "/v1/workspaces", handle: ({ res }) => this.handleGetWorkspaces(res) },
-      {
-        method: "GET",
-        path: "/v1/workspace/files",
-        handle: async ({ res }) => await this.handleListWorkspaceFiles(res),
-      },
-      {
-        method: "GET",
-        path: "/v1/workspaces/{workspaceId}/documents",
-        handle: ({ res, url, params }) =>
-          this.handleListWorkspaceDocuments(res, url, params.workspaceId),
-      },
+  /**
+   * One handler per operationId the document declares. Registered in strict
+   * mode, so a name here that the document does not declare stops the provider
+   * at construction instead of quietly never being reached.
+   */
+  private operationHandlers(): Record<
+    string,
+    (context: Context, req: http.IncomingMessage, res: http.ServerResponse) => unknown
+  > {
+    // The three decision operations take the same path parameters. Hold is the
+    // one that also declares a body, so its context types all three: accept and
+    // reject reach the handler with no comment because they can carry none.
+    const decideChunk =
+      (decision: ChunkDecision) =>
+      (
+        c: OperationContext<"holdReviewChunk", HoldChunkRequest | undefined>,
+        _req: http.IncomingMessage,
+        res: http.ServerResponse,
+      ) =>
+        this.handleDecideChunk(
+          res,
+          c.request.params.reviewId,
+          c.request.params.chunkId,
+          decision,
+          c.request.requestBody?.comment,
+        );
 
-      // Documents
-      {
-        method: "GET",
-        path: "/v1/documents",
-        handle: async ({ res, url }) => await this.handleListDocuments(res, url),
-      },
-      {
-        method: "GET",
-        path: "/v1/documents/{documentId}",
-        handle: async ({ res, params }) => await this.handleGetDocument(res, params.documentId),
-      },
-      {
-        method: "POST",
-        path: "/v1/documents/{documentId}/focus",
-        handle: async ({ res, params }) => await this.handleFocusDocument(res, params.documentId),
-      },
-      {
-        method: "GET",
-        path: "/v1/documents/{documentId}/content",
-        handle: async ({ res, url, params }) =>
-          await this.handleReadContent(res, params.documentId, url),
-      },
-      {
-        method: "POST",
-        path: "/v1/documents/{documentId}/search",
-        handle: async ({ req, res, params }) => await this.handleSearch(req, res, params.documentId),
-      },
-      {
-        method: "POST",
-        path: "/v1/documents/{documentId}/proposals",
-        handle: async ({ req, res, params }) =>
-          await this.handleSubmitProposal(req, res, params.documentId),
-      },
+    return {
+      getOpenApiSpec: (_c, req, res) => this.serveSpecification(req, res, false),
+      getOpenApiSpecJson: (_c, req, res) => this.serveSpecification(req, res, true),
+      getOpenApiActionsJson: (_c, req, res) => this.serveActionSpecification(req, res),
 
-      // Reviews
-      {
-        method: "GET",
-        path: "/v1/reviews",
-        handle: async ({ res }) => await this.handleListReviews(res),
-      },
-      {
-        method: "GET",
-        path: "/v1/reviews/{reviewId}",
-        handle: async ({ res, params }) => await this.handleGetReview(res, params.reviewId),
-      },
-      {
-        method: "GET",
-        path: "/v1/reviews/{reviewId}/diff",
-        handle: async ({ res, params }) => await this.handleGetReviewDiff(res, params.reviewId),
-      },
-      {
-        method: "GET",
-        path: "/v1/reviews/{reviewId}/chunks",
-        handle: async ({ res, params }) => await this.handleGetReviewChunks(res, params.reviewId),
-      },
-      ...(["accept", "reject", "hold"] as ChunkDecision[]).map((decision) => ({
-        method: "POST",
-        path: `/v1/reviews/{reviewId}/chunks/{chunkId}/${decision}`,
-        handle: async ({ req, res, params }: RouteContext) =>
-          await this.handleDecideChunk(req, res, params.reviewId, params.chunkId, decision),
-      })),
-      {
-        method: "POST",
-        path: "/v1/reviews/{reviewId}/comments",
-        handle: async ({ req, res, params }) =>
-          await this.handleAddReviewComment(req, res, params.reviewId),
-      },
-      {
-        method: "GET",
-        path: "/v1/reviews/{reviewId}/packets",
-        handle: async ({ res, params }) => await this.handleGetReviewPackets(res, params.reviewId),
-      },
-      {
-        method: "POST",
-        path: "/v1/reviews/{reviewId}/accept-all",
-        handle: async ({ res, params }) => await this.handleAcceptAllChunks(res, params.reviewId),
-      },
-      {
-        method: "POST",
-        path: "/v1/reviews/{reviewId}/clear",
-        handle: async ({ res, params }) => await this.handleClearReview(res, params.reviewId),
-      },
-      {
-        method: "GET",
-        path: "/v1/reviews/{reviewId}/events",
-        handle: async ({ res, url, params }) =>
-          await this.handleWaitForReviewEvents(res, params.reviewId, url),
-      },
+      health: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
+      ping: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
+      getCapabilities: (_c, _req, res) =>
+        this.sendJson(res, 200, {
+          protocolVersion: this._protocolVersion,
+          supportedPatchFormats: ["unified-diff"],
+          reviewSupport: true,
+          retractionSupport: true,
+          maxRequestSize: MAX_REQUEST_BODY_BYTES,
+          eventStreamSupport: true,
+          eventReplayBufferSize: SSE_REPLAY_BUFFER_SIZE,
+          applicationVersion: app.getVersion(),
+          instanceId: this._instanceId,
+        }),
+      getContext: (_c, _req, res) => this.handleGetContext(res),
+      listViews: (_c, _req, res) => this.handleGetViews(res),
+      subscribeEvents: (_c, req, res) => this.handleSseSubscription(req, res),
 
-      // Proposals
-      {
-        method: "POST",
-        path: "/v1/proposals/{packetId}/retract",
-        handle: async ({ res, params }) =>
-          await this.handleRetractProposal(res, params.packetId),
-      },
-    ];
+      listWorkspaces: (_c, _req, res) => this.handleGetWorkspaces(res),
+      listWorkspaceFiles: (_c, _req, res) => this.handleListWorkspaceFiles(res),
+      listWorkspaceDocuments: (
+        c: OperationContext<"listWorkspaceDocuments">,
+        _req,
+        res: http.ServerResponse,
+      ) =>
+        this.handleListWorkspaceDocuments(
+          res,
+          c.request.params.workspaceId,
+          c.request.query.query,
+        ),
+
+      listDocuments: (_c, _req, res) => this.handleListDocuments(res),
+      getDocument: (c: OperationContext<"getDocument">, _req, res: http.ServerResponse) =>
+        this.handleGetDocument(res, c.request.params.documentId),
+      focusDocument: (c: OperationContext<"focusDocument">, _req, res: http.ServerResponse) =>
+        this.handleFocusDocument(res, c.request.params.documentId),
+      readDocumentContent: (
+        c: OperationContext<"readDocumentContent">,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleReadContent(res, c.request.params.documentId, c.request.query),
+      searchDocument: (
+        c: OperationContext<"searchDocument", SearchDocumentRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleSearch(res, c.request.params.documentId, c.request.requestBody),
+      submitProposal: (
+        c: OperationContext<"submitProposal", SubmitProposalRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleSubmitProposal(res, c.request.params.documentId, c.request.requestBody),
+
+      listReviews: (_c, _req, res) => this.handleListReviews(res),
+      getReview: (c: OperationContext<"getReview">, _req, res: http.ServerResponse) =>
+        this.handleGetReview(res, c.request.params.reviewId),
+      getReviewDiff: (c: OperationContext<"getReviewDiff">, _req, res: http.ServerResponse) =>
+        this.handleGetReviewDiff(res, c.request.params.reviewId),
+      getReviewChunks: (c: OperationContext<"getReviewChunks">, _req, res: http.ServerResponse) =>
+        this.handleGetReviewChunks(res, c.request.params.reviewId),
+      getReviewPackets: (c: OperationContext<"getReviewPackets">, _req, res: http.ServerResponse) =>
+        this.handleGetReviewPackets(res, c.request.params.reviewId),
+      acceptReviewChunk: decideChunk("accept"),
+      rejectReviewChunk: decideChunk("reject"),
+      holdReviewChunk: decideChunk("hold"),
+      acceptAllReviewChunks: (
+        c: OperationContext<"acceptAllReviewChunks">,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleAcceptAllChunks(res, c.request.params.reviewId),
+      clearReview: (c: OperationContext<"clearReview">, _req, res: http.ServerResponse) =>
+        this.handleClearReview(res, c.request.params.reviewId),
+      addReviewComment: (
+        c: OperationContext<"addReviewComment", AddReviewCommentRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleAddReviewComment(res, c.request.params.reviewId, c.request.requestBody.text),
+      waitForReviewEvents: (
+        c: OperationContext<"waitForReviewEvents">,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleWaitForReviewEvents(res, c.request.params.reviewId, c.request.query),
+
+      retractProposal: (c: OperationContext<"retractProposal">, _req, res: http.ServerResponse) =>
+        this.handleRetractProposal(res, c.request.params.packetId),
+
+      /**
+       * The document decided the request was malformed. Its Ajv errors name
+       * the offending field, which is more than the hand-written decoders
+       * could say about a body they refused wholesale.
+       */
+      validationFail: (c: Context, _req: http.IncomingMessage, res: http.ServerResponse) =>
+        this.sendError(
+          res,
+          400,
+          "INVALID_PARAMS",
+          (c.validation.errors ?? [])
+            .map((error) =>
+              typeof error === "string"
+                ? error
+                : `${error.instancePath} ${error.message}`.trim(),
+            )
+            .join("; ") || "Request does not match the published schema",
+        ),
+
+      notFound: (c: Context, req: http.IncomingMessage, res: http.ServerResponse) =>
+        this.sendError(
+          res,
+          404,
+          "METHOD_NOT_FOUND",
+          `No route for ${req.method} ${c.request.path}`,
+        ),
+    };
   }
 
   // ==========================================================================
@@ -1010,13 +811,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, context);
   }
 
-  private async handleListDocuments(res: http.ServerResponse, url: URL): Promise<void> {
-    const state = url.searchParams.get("state");
-    if (state !== null && state !== "open") {
-      this.sendError(res, 400, "INVALID_PARAMS", "Unsupported state filter");
-      return;
-    }
-
+  private async handleListDocuments(res: http.ServerResponse): Promise<void> {
     const documents: DocumentSummary[] = [];
     for (const doc of this._documents.loadedDocuments) {
       const summary = await this.getDocumentSummary(doc.documentId);
@@ -1086,8 +881,8 @@ export default class AgentHTTPProvider extends ProviderContract {
 
   private handleListWorkspaceDocuments(
     res: http.ServerResponse,
-    url: URL,
     workspaceId: string,
+    query: string | undefined,
   ): void {
     const workspacePath = workspaceId;
     const knownWorkspaces = this._app.config.get().app.openWorkspaces;
@@ -1096,8 +891,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
 
-    const query = url.searchParams.get("query");
-    const normalizedQuery = query === null ? "" : query.toLowerCase().trim();
+    const normalizedQuery = query === undefined ? "" : query.toLowerCase().trim();
     const documents: WorkspaceDocumentEntry[] = [];
 
     this._documents
@@ -1168,19 +962,8 @@ export default class AgentHTTPProvider extends ProviderContract {
   private async handleReadContent(
     res: http.ServerResponse,
     documentId: string,
-    url: URL,
+    query: { side?: ReadSide; startLine?: number; endLine?: number },
   ): Promise<void> {
-    const parseLine = (input: string | null): number | undefined => {
-      if (input === null) {
-        return undefined;
-      }
-      const parsed = parseInt(input, 10);
-      if (!Number.isInteger(parsed) || parsed <= 0) {
-        return undefined;
-      }
-      return parsed;
-    };
-
     const applyRange = (
       text: string,
       lineCount: number,
@@ -1203,15 +986,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       };
     };
 
-    const decodedSide = decodeReadSide(url.searchParams.get("side"));
-    if (!decodedSide.ok) {
-      this.sendError(res, 400, "INVALID_PARAMS", decodedSide.message);
-      return;
-    }
-    const side = decodedSide.value;
-    const startLine = url.searchParams.get("startLine");
-    const endLine = url.searchParams.get("endLine");
-
+    // openapi.yaml declares `side` optional with `default: working`. A
+    // request parameter's default describes what the server assumes when the
+    // caller omits it, so this is where it is applied.
+    const side = query.side ?? "working";
     const filePath = this._documents.getDocumentPath(documentId);
     if (filePath === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
@@ -1248,12 +1026,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     // is the document's, never the requested slice's.
     const text = side === "working" ? sides.working : sides.reference;
     const lineCount = text.split("\n").length;
-    const range = applyRange(
-      text,
-      lineCount,
-      parseLine(startLine) ?? 1,
-      parseLine(endLine) ?? lineCount,
-    );
+    const range = applyRange(text, lineCount, query.startLine ?? 1, query.endLine ?? lineCount);
 
     const response: ReadDocumentResponse = {
       documentId,
@@ -1278,34 +1051,12 @@ export default class AgentHTTPProvider extends ProviderContract {
   private async handleWaitForReviewEvents(
     res: http.ServerResponse,
     reviewId: string,
-    url: URL,
+    query: { waitSeconds?: number; wait?: number; afterGeneration?: number },
   ): Promise<void> {
-    const parseNumber = (
-      value: string | null,
-      fallback: number,
-      min: number,
-      max: number,
-    ): number => {
-      if (value === null) {
-        return fallback;
-      }
-      const parsed = parseInt(value, 10);
-      if (!Number.isInteger(parsed)) {
-        return fallback;
-      }
-      return Math.max(min, Math.min(max, parsed));
-    };
-
-    const waitSeconds = parseNumber(
-      url.searchParams.get("waitSeconds") ?? url.searchParams.get("wait"),
-      30,
-      0,
-      120,
-    );
-    const afterGeneration = Math.max(
-      0,
-      parseNumber(url.searchParams.get("afterGeneration"), 0, 0, 2 ** 31),
-    );
+    // Both bounds and both defaults are the document's; `wait` is its
+    // deprecated alias for `waitSeconds`.
+    const waitSeconds = query.waitSeconds ?? query.wait ?? 30;
+    const afterGeneration = query.afterGeneration ?? 0;
 
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
@@ -1369,25 +1120,18 @@ export default class AgentHTTPProvider extends ProviderContract {
     }, waitSeconds * 1000);
   }
 
-  private async handleSearch(
-    req: http.IncomingMessage,
+  private handleSearch(
     res: http.ServerResponse,
     documentId: string,
-  ): Promise<void> {
-    const body = await this.readBody(req);
-    const decodedSearch = decodeSearchDocumentRequest(body);
-    if (!decodedSearch.ok) {
-      this.sendError(res, 400, "INVALID_PARAMS", decodedSearch.message);
-      return;
-    }
-    const searchRequest = decodedSearch.value;
+    searchRequest: SearchDocumentRequest,
+  ): void {
     const result = this._documents.readLiveBuffer(documentId);
     if (result === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
     const lines = result.content.split("\n");
-    const contextSize = searchRequest.context;
+    const contextSize = searchRequest.context ?? SEARCH_CONTEXT_DEFAULT;
     const maxHits = MAX_SEARCH_HITS;
     let searchRegex: RegExp;
     try {
@@ -1424,23 +1168,13 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleSubmitProposal(
-    req: http.IncomingMessage,
     res: http.ServerResponse,
     documentId: string,
+    proposal: SubmitProposalRequest,
   ): Promise<void> {
     // No request headers are read here. Concurrency rides in the body, because
     // an OpenAPI consumer that generates calls from the published document
     // drops header parameters and could never satisfy a header requirement.
-
-    // Read and parse the request body
-    const body = await this.readBody(req);
-    const decodedProposal = decodeSubmitProposalRequest(body);
-    if (!decodedProposal.ok) {
-      this.sendError(res, 400, "INVALID_PARAMS", decodedProposal.message);
-      return;
-    }
-    const proposal: SubmitProposalRequest = decodedProposal.value;
-
     const filePath = this._documents.getDocumentPath(documentId);
     if (filePath === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
@@ -1637,21 +1371,12 @@ export default class AgentHTTPProvider extends ProviderContract {
    * carries a body — the optional comment attached without adjudicating.
    */
   private async handleDecideChunk(
-    req: http.IncomingMessage,
     res: http.ServerResponse,
     reviewId: string,
     chunkId: string,
     decision: ChunkDecision,
+    comment: string | undefined,
   ): Promise<void> {
-    let comment: string | undefined;
-    if (decision === "hold") {
-      const decoded = decodeHoldChunkRequest(await this.readBody(req));
-      if (!decoded.ok) {
-        this.sendError(res, 400, "INVALID_PARAMS", decoded.message);
-        return;
-      }
-      comment = decoded.value.comment;
-    }
     let result = await this._documents.decideChunkAsync(reviewId, chunkId, decision, comment);
     if (!result.ok && result.code === "REVIEW_NOT_FOUND") {
       result = await this._documents.reviewLookupFailure(reviewId);
@@ -1675,21 +1400,16 @@ export default class AgentHTTPProvider extends ProviderContract {
    * generation advance is what wakes the agent's long-poll.
    */
   private async handleAddReviewComment(
-    req: http.IncomingMessage,
     res: http.ServerResponse,
     reviewId: string,
+    text: string,
   ): Promise<void> {
-    const decoded = decodeAddReviewCommentRequest(await this.readBody(req));
-    if (!decoded.ok) {
-      this.sendError(res, 400, "INVALID_PARAMS", decoded.message);
-      return;
-    }
     const documentId = this.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
       await this.sendReviewLookupFailure(res, reviewId);
       return;
     }
-    const result = this._documents.addReviewComment(reviewId, decoded.value.text);
+    const result = this._documents.addReviewComment(reviewId, text);
     if (!result.ok) {
       this.sendError(res, 404, result.code, result.message);
       return;

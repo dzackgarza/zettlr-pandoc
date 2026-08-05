@@ -39,9 +39,7 @@ import net from "net";
 import os from "os";
 import path from "path";
 import AgentHTTPProvider, {
-  MAX_SEARCH_CONTEXT,
   MAX_SEARCH_HITS,
-  MAX_SEARCH_PATTERN_LENGTH,
 } from "source/app/service-providers/agent-api/http-server";
 import DocumentManager from "source/app/service-providers/documents";
 import {
@@ -117,6 +115,22 @@ assert.ok(
 );
 const searchRequestProperties =
   searchRequestBody.content["application/json"].schema.properties;
+
+/**
+ * The router validates every search body against the document, so these are
+ * the enforced bounds, not a copy of them: a request built from these numbers
+ * is refused by the same declaration a client reads.
+ */
+const MAX_SEARCH_PATTERN_LENGTH = searchRequestProperties.literal.maxLength;
+const MAX_SEARCH_CONTEXT = searchRequestProperties.context.maximum;
+assert.ok(
+  typeof MAX_SEARCH_PATTERN_LENGTH === "number",
+  "openapi.yaml must publish a maxLength for the search literal",
+);
+assert.ok(
+  typeof MAX_SEARCH_CONTEXT === "number",
+  "openapi.yaml must publish a maximum for the search context",
+);
 
 function assertMatchesSchema(body: unknown, schemaName: string): void {
   const validate = ajv.getSchema(`#/components/schemas/${schemaName}`);

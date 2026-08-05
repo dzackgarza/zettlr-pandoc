@@ -32,6 +32,8 @@ export type ReviewComment = Schemas["ReviewComment"];
 export type DocumentSummary = Schemas["DocumentSummary"];
 export type EditorContext = Schemas["EditorContext"];
 export type ReadDocumentResponse = Schemas["ReadDocumentResponse"];
+export type SearchDocumentRequest =
+  operations["searchDocument"]["requestBody"]["content"]["application/json"];
 export type SearchDocumentResponse = Schemas["SearchDocumentResponse"];
 export type SearchHit = SearchDocumentResponse["hits"][number];
 export type ProposalClaim = Schemas["ProposalClaim"];
@@ -107,5 +109,3 @@ export type {
   operations as AgentApiOperations,
   paths as AgentApiPaths,
 };
-
-export { AGENT_API_PROTOCOL_VERSION } from "./agent-api-version.cjs";
