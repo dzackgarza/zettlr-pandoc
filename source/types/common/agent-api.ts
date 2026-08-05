@@ -20,7 +20,6 @@
 // ============================================================================
 
 export interface DocumentRevision {
-  version: number;
   sha256: string;
 }
 
@@ -100,29 +99,6 @@ export interface DocumentSummary {
 }
 
 // ============================================================================
-// Section 4: Snapshot tokens
-// ============================================================================
-
-/**
- * A snapshot token binds a read to a specific documentId + version + content
- * hash. The snapshot, rather than the current focus, identifies the target
- * during proposal submission. Changing tabs between reading and proposing
- * cannot redirect a patch to the wrong document.
- *
- * Format: snap_v1_<base64url(documentId|version|sha256)>
- */
-export interface SnapshotToken {
-  /** The literal token string returned by a read operation. */
-  token: string;
-  /** The documentId the snapshot is bound to. */
-  documentId: string;
-  /** The document version at read time. */
-  version: number;
-  /** The SHA-256 hex digest of the document content at read time. */
-  sha256: string;
-}
-
-// ============================================================================
 // Section 4: Focused context
 // ============================================================================
 
@@ -154,7 +130,6 @@ export interface ReadRange {
 export interface ReadDocumentResponse {
   documentId: string;
   side: ReadSide;
-  snapshot?: string;
   revision: DocumentRevision;
   reviewGeneration?: number;
   range: ReadRange;
@@ -172,7 +147,6 @@ export interface SearchHit {
 
 export interface SearchDocumentResponse {
   documentId: string;
-  snapshot: string;
   revision: DocumentRevision;
   hits: SearchHit[];
   truncated: boolean;
@@ -198,43 +172,41 @@ export interface ProposalClaim {
  * The body of POST /v1/documents/{documentId}/proposals. Everything the
  * operation needs is in the body; it reads no request headers.
  *
- * A proposal is either a single `patch` (with an optional `description`) or
- * an ordered `claims` sequence — exactly one of the two shapes. Claims apply
- * against the ONE snapshot, sequentially and atomically: claim k applies with
- * zero fuzz to the text claim k-1 produced, all-or-nothing, and each claim
- * becomes its own packet. The single-patch shape is the one-claim degenerate
- * case.
+ * A proposal is one ordered `claims` sequence applied against the ONE
+ * baseline, sequentially and atomically: claim k applies with zero fuzz to the
+ * text claim k-1 produced, all-or-nothing, and each claim becomes its own
+ * packet. There is no single-patch shape.
  *
- * This used to require `If-Match` and `Idempotency-Key` as headers. Both moved
- * here because a schema-driven client cannot send them — an OpenAPI consumer
- * generating calls from this document (a Custom GPT Action, for one) drops
- * header parameters and would be refused on every attempt. `If-Match` was
- * redundant besides: it asserted the current content hash, which `snapshot`
- * already pins along with the version, so it could only fail where the
- * snapshot check failed anyway.
+ * `baselineSha256` and `clientRequestId` live in the body rather than as the
+ * `If-Match` and `Idempotency-Key` headers this once required. A schema-driven
+ * client cannot send those — an OpenAPI consumer generating calls from this
+ * document (a Custom GPT Action, for one) drops header parameters and would be
+ * refused on every attempt.
  *
  * Every patch's `---`/`+++` headers must name the target document, either as
  * the literal `document` or as its absolute path (with or without a git-style
  * `a/`/`b/` prefix). Any other filename is rejected as PATCH_INVALID.
  */
 export interface SubmitProposalRequest {
-  snapshot: string;
-  patchFormat: PatchFormat;
-  patch?: string;
-  description?: string;
-  claims?: ProposalClaim[];
+  /**
+   * SHA-256 returned by the most recent working-content read. It pins the
+   * exact text the patches must apply to; a stale hash is refused as
+   * REVISION_MISMATCH.
+   */
+  baselineSha256: string;
+  /**
+   * Zero when no review exists; otherwise the generation returned by the most
+   * recent review or chunk read. A mismatch is refused as
+   * REVIEW_GENERATION_MISMATCH.
+   */
+  expectedReviewGeneration: number;
   /**
    * Client-chosen unique string. Replaying the same value returns the original
    * packet instead of applying the patch twice; reusing it for a different
    * request is refused as IDEMPOTENCY_CONFLICT.
    */
   clientRequestId: string;
-  /**
-   * If set, the request is refused when the current review generation does
-   * not match. Guards against applying a packet built against a stale
-   * review state.
-   */
-  expectedReviewGeneration?: number;
+  claims: ProposalClaim[];
 }
 
 export interface SubmitProposalResponse {

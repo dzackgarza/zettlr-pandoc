@@ -96,33 +96,22 @@ async function waitForAgentApi (
 }
 
 /**
- * Narrow the two read fields this spec needs. The server is contract-typed and
+ * Narrow the one read field this spec needs. The server is contract-typed and
  * conformance-tested elsewhere; this is the test's own boundary check so a shape
  * change fails here with the payload rather than as `undefined` further down.
  */
-function readSnapshot (payload: unknown): {
-  snapshot: string
-  sha256: string
-} {
+function readSha256 (payload: unknown): string {
   assert.ok(
     payload !== null && typeof payload === 'object',
     `Read response was not an object: ${JSON.stringify(payload)}`
   )
-  const { snapshot, revision } = payload as {
-    snapshot?: unknown
-    revision?: { sha256?: unknown }
-  }
-  assert.equal(
-    typeof snapshot,
-    'string',
-    `Read response carried no snapshot token: ${JSON.stringify(payload)}`
-  )
+  const { revision } = payload as { revision?: { sha256?: unknown } }
   assert.equal(
     typeof revision?.sha256,
     'string',
     `Read response carried no revision sha256: ${JSON.stringify(payload)}`
   )
-  return { snapshot: snapshot as string, sha256: revision?.sha256 as string }
+  return revision?.sha256 as string
 }
 
 function reviewIdOf (payload: unknown): string {
@@ -181,17 +170,21 @@ async function openReview (
   idempotencyKey: string
 ): Promise<string> {
   const documentId = documentIdOf(await client.get('/v1/documents'))
-  const { snapshot } = readSnapshot(
+  const baselineSha256 = readSha256(
     await client.get(`/v1/documents/${documentId}/content?side=working`)
   )
   const reviewId = reviewIdOf(await client.post(
     `/v1/documents/${documentId}/proposals`,
     {
-      snapshot,
-      patchFormat: 'unified-diff',
-      patch: buildPatch(documentPath, from, to),
-      description: 'Left unresolved on purpose',
-      clientRequestId: idempotencyKey
+      baselineSha256,
+      expectedReviewGeneration: 0,
+      clientRequestId: idempotencyKey,
+      claims: [
+        {
+          description: 'Left unresolved on purpose',
+          patch: buildPatch(documentPath, from, to)
+        }
+      ]
     }
   ))
   await page
@@ -361,18 +354,22 @@ describe('saving after accepting a reviewed change', function () {
     await page.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
 
     const documentId = documentIdOf(await activeClient.get('/v1/documents'))
-    const { snapshot } = readSnapshot(
+    const baselineSha256 = readSha256(
       await activeClient.get(`/v1/documents/${documentId}/content?side=working`)
     )
 
     await activeClient.post(
       `/v1/documents/${documentId}/proposals`,
       {
-        snapshot,
-        patchFormat: 'unified-diff',
-        patch: buildPatch(activeDocumentPath, ORIGINAL_PHRASE, PROPOSED_PHRASE),
-        description: 'Abbreviate simple normal crossings',
-        clientRequestId: 'e2e-review-diff-save-gate'
+        baselineSha256,
+        expectedReviewGeneration: 0,
+        clientRequestId: 'e2e-review-diff-save-gate',
+        claims: [
+          {
+            description: 'Abbreviate simple normal crossings',
+            patch: buildPatch(activeDocumentPath, ORIGINAL_PHRASE, PROPOSED_PHRASE)
+          }
+        ]
       }
     )
 

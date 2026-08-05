@@ -108,17 +108,37 @@ async function widgetWithText (page: Page, text: string): Promise<Locator> {
   return widget
 }
 
+/**
+ * The proposal preconditions, read from the working side: the content hash the
+ * patches apply to, and the generation of whatever review is open (none = 0).
+ */
+async function readPreconditions (
+  api: AgentClient,
+  documentId: string
+): Promise<{ baselineSha256: string, expectedReviewGeneration: number }> {
+  const payload = await api.get(`/v1/documents/${documentId}/content?side=working`)
+  assert.ok(isRecord(payload), 'content response must be an object')
+  const { revision, reviewGeneration } = payload as {
+    revision?: { sha256?: unknown }
+    reviewGeneration?: unknown
+  }
+  assert.equal(
+    typeof revision?.sha256,
+    'string',
+    `content response carried no revision sha256: ${JSON.stringify(payload)}`
+  )
+  return {
+    baselineSha256: revision?.sha256 as string,
+    expectedReviewGeneration: typeof reviewGeneration === 'number' ? reviewGeneration : 0
+  }
+}
+
 async function submitBatch (api: AgentClient, filePath: string, claims: Array<{ description: string, patch: string }>): Promise<string> {
   const documentId = documentIdOf(await api.get('/v1/documents'))
-  const snapshot = stringField(
-    await api.get(`/v1/documents/${documentId}/content?side=working`),
-    'snapshot'
-  )
   const result = await api.post(`/v1/documents/${documentId}/proposals`, {
-    snapshot,
-    patchFormat: 'unified-diff',
-    claims,
-    clientRequestId: 'composite-batch-1'
+    ...(await readPreconditions(api, documentId)),
+    clientRequestId: 'composite-batch-1',
+    claims
   })
   assert.ok(isRecord(result) && 'packetIds' in result && 'reviewId' in result)
   assert.ok(Array.isArray(result.packetIds))
@@ -278,14 +298,14 @@ describe('review-diff closure contract composite lifecycle', function () {
     const clearProposal = mixedExpected.replace('tail', 'tail clear candidate')
     const clearDocumentId = documentIdOf(await restartedApi.get('/v1/documents'))
     const clearReview = await restartedApi.post(`/v1/documents/${clearDocumentId}/proposals`, {
-      snapshot: stringField(
-        await restartedApi.get(`/v1/documents/${clearDocumentId}/content?side=working`),
-        'snapshot'
-      ),
-      patchFormat: 'unified-diff',
-      patch: patch(documentPath, mixedExpected, clearProposal),
-      description: 'clear remaining review work',
-      clientRequestId: 'composite-clear'
+      ...(await readPreconditions(restartedApi, clearDocumentId)),
+      clientRequestId: 'composite-clear',
+      claims: [
+        {
+          description: 'clear remaining review work',
+          patch: patch(documentPath, mixedExpected, clearProposal)
+        }
+      ]
     })
     assert.ok(isRecord(clearReview) && typeof clearReview.reviewId === 'string')
     await waitForReview(restartedPage)
@@ -301,16 +321,15 @@ describe('review-diff closure contract composite lifecycle', function () {
     // External disk drift is never overwritten by a later review save.
     const finalText = await readFile(documentPath, 'utf8')
     const finalId = documentIdOf(await restartedApi.get('/v1/documents'))
-    const finalSnapshot = stringField(
-      await restartedApi.get(`/v1/documents/${finalId}/content?side=working`),
-      'snapshot'
-    )
     const driftReview = await restartedApi.post(`/v1/documents/${finalId}/proposals`, {
-      snapshot: finalSnapshot,
-      patchFormat: 'unified-diff',
-      patch: patch(documentPath, finalText, finalText.replace('tail', 'tail externally proposed')),
-      description: 'drift guard',
-      clientRequestId: 'composite-drift'
+      ...(await readPreconditions(restartedApi, finalId)),
+      clientRequestId: 'composite-drift',
+      claims: [
+        {
+          description: 'drift guard',
+          patch: patch(documentPath, finalText, finalText.replace('tail', 'tail externally proposed'))
+        }
+      ]
     })
     await writeFile(documentPath, finalText.replace('tail', 'external disk edit'), 'utf8')
     const refused = await invokeSave(restartedPage, documentPath)

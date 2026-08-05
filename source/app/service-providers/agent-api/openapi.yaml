@@ -9,10 +9,11 @@ info:
 
 
     The working loop: orient (workspace files -> documents -> reviews ->
-    chunks), submit claim-sized proposals against a fresh snapshot, then next
-    turn read the review's held chunks and comments and answer them with new
-    claims. Accepted material is already in the working text — never resubmit
-    it. A PATCH_NOT_APPLICABLE refusal means the text moved under you: re-read
+    chunks), submit claim-sized proposals against a freshly read content
+    hash, then next turn read the review's held chunks and comments and
+    answer them with new claims. Accepted material is already in the working
+    text — never resubmit it. A PATCH_NOT_APPLICABLE refusal means the text
+    moved under you: re-read
     the working side and rebuild against it, because a retry fails the same
     way.
   license:
@@ -25,14 +26,13 @@ components:
   schemas:
     DocumentRevision:
       type: object
+      additionalProperties: false
       required:
-        - version
         - sha256
       properties:
-        version:
-          type: integer
         sha256:
           type: string
+          pattern: '^[0-9a-f]{64}$'
     ReviewState:
       type: string
       enum:
@@ -173,11 +173,6 @@ components:
           enum:
             - working
             - reference
-        snapshot:
-          type: string
-          description: >-
-            Working-side reads only: the token to send as a proposal's
-            snapshot. A reference read carries none.
         revision:
           $ref: '#/components/schemas/DocumentRevision'
         reviewGeneration:
@@ -217,6 +212,7 @@ components:
             enough to adjudicate without re-deriving the diagnosis.
         patch:
           type: string
+          minLength: 1
           description: >-
             Unified diff implementing exactly this claim. Name the target in
             the ---/+++ headers as the literal `document` or as the
@@ -225,19 +221,26 @@ components:
             patch, or a diff that leaves the text unchanged is PATCH_INVALID.
     SubmitProposalRequest:
       type: object
+      additionalProperties: false
       required:
+        - baselineSha256
+        - expectedReviewGeneration
         - clientRequestId
-        - snapshot
-        - patchFormat
-      oneOf:
-        - required:
-            - patch
-        - required:
-            - claims
-          not:
-            required:
-              - description
+        - claims
       properties:
+        baselineSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: >-
+            SHA-256 returned by the most recent working-content read. It pins
+            the exact text the patches must apply to; a stale hash is refused
+            as REVISION_MISMATCH.
+        expectedReviewGeneration:
+          type: integer
+          minimum: 0
+          description: >-
+            Zero when no review exists; otherwise the generation returned by
+            the most recent review or chunk read.
         clientRequestId:
           type: string
           minLength: 1
@@ -245,39 +248,17 @@ components:
             Client-chosen unique string. Replaying it returns the original
             packet rather than applying the patch twice; reusing it for a
             different request is refused as IDEMPOTENCY_CONFLICT.
-        snapshot:
-          type: string
-          description: >-
-            The token from the working-side read this proposal was built on.
-            It pins the version and hash the patches must apply to; a stale
-            one is refused as REVISION_MISMATCH.
-        patchFormat:
-          type: string
-          enum:
-            - unified-diff
-        patch:
-          type: string
-          description: The one-claim shape's diff; the rules of ProposalClaim.patch apply.
-        description:
-          type: string
-          description: >-
-            Prose for the one-claim shape, held to the same standard as
-            ProposalClaim.description.
         claims:
           type: array
           minItems: 1
           items:
             $ref: '#/components/schemas/ProposalClaim'
           description: >-
-            Ordered claim sequence applied against the ONE snapshot,
+            Ordered claim sequence applied against the ONE baseline,
             sequentially and atomically: claim k applies with zero fuzz to
             the text claim k-1 produced, all-or-nothing, and each claim
-            becomes its own packet. Prefer this shape — one entry per
-            logical decision gives the reviewer separately decidable
-            packets. The patch/description pair remains as the one-claim
-            degenerate case; send exactly one of the two shapes.
-        expectedReviewGeneration:
-          type: integer
+            becomes its own packet. Send one entry per logical decision —
+            that gives the reviewer separately decidable packets.
     SubmitProposalResponse:
       type: object
       required:
@@ -639,14 +620,11 @@ components:
       type: object
       required:
         - documentId
-        - snapshot
         - revision
         - hits
         - truncated
       properties:
         documentId:
-          type: string
-        snapshot:
           type: string
         revision:
           $ref: '#/components/schemas/DocumentRevision'
@@ -1311,9 +1289,9 @@ paths:
       summary: Read live working or reference text by line slice
       description: >-
         side=working is the live document — the text your next patch must
-        match, with every accepted change already in it, and the only side
-        that returns the snapshot token a proposal needs. side=reference is
-        the review baseline, identical to working until a review exists.
+        match, with every accepted change already in it, and the side whose
+        revision hash a proposal needs. side=reference is the review
+        baseline, identical to working until a review exists.
         Re-read working before each new proposal, and diff it against what
         you proposed to detect an acceptance the reviewer tweaked.
       parameters:
@@ -1417,12 +1395,12 @@ paths:
   /v1/documents/{documentId}/proposals:
     post:
       operationId: submitProposal
-      summary: Submit an exact unified-diff proposal — one patch or an ordered claims batch
+      summary: Submit an ordered batch of exact unified-diff claims
       description: >-
-        Both request shapes bind to the one snapshot in the body. A claims
-        batch applies sequentially and atomically server-side: every claim
-        applies with zero fuzz to its predecessor's text or the whole batch
-        is refused with nothing applied, and each claim becomes its own
+        The batch binds to the one baselineSha256 in the body. It applies
+        sequentially and atomically server-side: every claim applies with
+        zero fuzz to its predecessor's text or the whole batch is
+        refused with nothing applied, and each claim becomes its own
         packet (packetIds maps them in claim order). Submit claim-sized
         entries — one logical decision each. Accepted material is already in
         the working text; do not resubmit it. The reviewer may edit a
@@ -1462,9 +1440,9 @@ paths:
         '400':
           description: >-
             Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the
-            document drifted from your snapshot: re-read the working content
-            and rebuild the patch against it — a blind retry fails
-            identically.
+            document drifted from the text you built against: re-read the
+            working content and rebuild the patch against it — a blind retry
+            fails identically.
           content:
             application/json:
               schema:

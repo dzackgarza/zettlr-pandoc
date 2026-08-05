@@ -49,6 +49,7 @@ import type {
   AgentErrorCode,
   AgentEvent,
   ChunkDecisionResponse,
+  DocumentRevision,
   ProposalClaim,
   ReviewListEntry,
   ReviewState,
@@ -280,7 +281,7 @@ interface SubmittedProposalResponse {
   packetIds: string[];
   reviewId: string;
   documentId: string;
-  documentRevision: { version: number; sha256: string };
+  documentRevision: DocumentRevision;
   reviewGeneration: number;
   unresolvedChunks: number;
   state: ReviewState;
@@ -2341,10 +2342,7 @@ current contents from the editor somewhere else, and restart the application.`,
       reviewGeneration: result.generation,
       unresolvedChunks: result.unresolvedChunks,
       state: result.state,
-      documentRevision: {
-        version: doc.currentVersion,
-        sha256: sha256Text(doc.document.toString()),
-      },
+      documentRevision: { sha256: sha256Text(doc.document.toString()) },
     };
   }
 
@@ -2414,10 +2412,7 @@ current contents from the editor somewhere else, and restart the application.`,
       reviewGeneration: result.generation,
       unresolvedChunks: result.unresolvedChunks,
       state: result.state,
-      documentRevision: {
-        version: doc.currentVersion,
-        sha256: sha256Text(doc.document.toString()),
-      },
+      documentRevision: { sha256: sha256Text(doc.document.toString()) },
     };
   }
 
@@ -3067,70 +3062,9 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Create a snapshot token bound to documentId + version + content hash
-   * The snapshot identifies the target during proposal
-   * submission, not the current focus.
-   */
-  public createSnapshot(
-    documentId: string,
-  ): { token: string; version: number; sha256: string } | undefined {
-    const filePath = this.getDocumentPath(documentId);
-    if (filePath === undefined) {
-      return undefined;
-    }
-    const doc = this.documents.find((d) => d.filePath === filePath);
-    if (doc === undefined) {
-      return undefined;
-    }
-    const content = doc.document.toString();
-    const sha256 = sha256Text(content);
-    const payload = JSON.stringify({
-      documentId,
-      version: doc.currentVersion,
-      sha256,
-    });
-    const encoded = Buffer.from(payload, "utf8").toString("base64url");
-    return {
-      token: `snap_v1_${encoded}`,
-      version: doc.currentVersion,
-      sha256,
-    };
-  }
-
-  /**
-   * Parse and validate a snapshot token. Returns the bound documentId,
-   * version, and sha256, or undefined if the token is malformed.
-   */
-  public static parseSnapshotToken(
-    token: string,
-  ): { documentId: string; version: number; sha256: string } | undefined {
-    if (!token.startsWith("snap_v1_")) {
-      return undefined;
-    }
-    try {
-      const encoded = token.slice("snap_v1_".length);
-      const payload = Buffer.from(encoded, "base64url").toString("utf8");
-      const parsed = JSON.parse(payload) as {
-        documentId: string;
-        version: number;
-        sha256: string;
-      };
-      if (
-        typeof parsed.documentId !== "string" ||
-        typeof parsed.version !== "number" ||
-        typeof parsed.sha256 !== "string"
-      ) {
-        return undefined;
-      }
-      return parsed;
-    } catch {
-      return undefined;
-    }
-  }
-
-  /**
    * Read the live buffer for a document.
-   * Returns the current working text and a snapshot token.
+   * Returns the current working text and its content hash — the hash a
+   * proposal sends back as its baseline.
    */
   public readLiveBuffer(
     documentId: string,
@@ -3139,8 +3073,6 @@ current contents from the editor somewhere else, and restart the application.`,
   ):
     | {
         content: string;
-        snapshot: string;
-        version: number;
         sha256: string;
         lineCount: number;
         truncated: boolean;
@@ -3166,56 +3098,24 @@ current contents from the editor somewhere else, and restart the application.`,
       content = lines.slice(start, end).join("\n");
       truncated = end < totalLines;
     }
-    const snap = this.createSnapshot(documentId);
-    if (snap === undefined) {
-      return undefined;
-    }
     return {
       content,
-      snapshot: snap.token,
-      version: snap.version,
-      sha256: snap.sha256,
+      sha256: sha256Text(fullContent),
       lineCount: totalLines,
       truncated,
     };
   }
 
   /**
-   * Submit a proposal patch against a snapshot — the one-claim degenerate
-   * case of the ordered claim sequence every proposal now travels as.
-   */
-  public async submitProposal(
-    snapshot: string,
-    patch: string,
-    clientRequestId: string,
-    description?: string,
-    expectedReviewGeneration?: number,
-  ): Promise<
-    | SubmittedProposalResponse
-    | {
-        ok: false;
-        code: string;
-        message: string;
-      }
-  > {
-    return await this._submitClaimSequence(
-      snapshot,
-      [{ patch, description }],
-      clientRequestId,
-      expectedReviewGeneration,
-    );
-  }
-
-  /**
-   * Submit an ordered claim sequence against a snapshot: applied sequentially
-   * and atomically (all-or-nothing), one packet per claim. submitProposal is
-   * the one-claim degenerate case of exactly this path.
+   * Submit an ordered claim sequence against a baseline content hash: applied
+   * sequentially and atomically (all-or-nothing), one packet per claim.
    */
   public async submitProposalClaims(
-    snapshot: string,
+    documentId: string,
+    baselineSha256: string,
     claims: ProposalClaim[],
     clientRequestId: string,
-    expectedReviewGeneration?: number,
+    expectedReviewGeneration: number,
   ): Promise<
     | SubmittedProposalResponse
     | {
@@ -3225,7 +3125,8 @@ current contents from the editor somewhere else, and restart the application.`,
       }
   > {
     return await this._submitClaimSequence(
-      snapshot,
+      documentId,
+      baselineSha256,
       claims,
       clientRequestId,
       expectedReviewGeneration,
@@ -3233,16 +3134,17 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Apply an ordered claim sequence against a snapshot, atomically:
-   * resolve snapshot → verify version+hash → open a review if none is active
-   * → apply every claim with zero fuzz (all-or-nothing, one packet per
-   * claim) → update working text → return review state.
+   * Apply an ordered claim sequence against a baseline content hash,
+   * atomically: verify the hash → open a review if none is active → apply
+   * every claim with zero fuzz (all-or-nothing, one packet per claim) →
+   * update working text → return review state.
    */
   private async _submitClaimSequence(
-    snapshot: string,
+    documentId: string,
+    baselineSha256: string,
     claims: Array<{ patch: string; description?: string }>,
     clientRequestId: string,
-    expectedReviewGeneration?: number,
+    expectedReviewGeneration: number,
   ): Promise<
     | SubmittedProposalResponse
     | {
@@ -3251,16 +3153,6 @@ current contents from the editor somewhere else, and restart the application.`,
         message: string;
       }
   > {
-    const parsed = DocumentManager.parseSnapshotToken(snapshot);
-    if (parsed === undefined) {
-      return {
-        ok: false,
-        code: "PATCH_INVALID",
-        message: "Invalid snapshot token.",
-      };
-    }
-    const { documentId, version, sha256 } = parsed;
-
     // Encode the tuple as a JSON value rather than joining with a delimiter:
     // clientRequestId is caller-controlled and must not be able to collide
     // with another document/request pair.
@@ -3268,9 +3160,9 @@ current contents from the editor somewhere else, and restart the application.`,
     const fingerprint = sha256Text(
       JSON.stringify({
         documentId,
-        snapshot,
-        claims,
+        baselineSha256,
         expectedReviewGeneration,
+        claims,
       }),
     );
     const idempotent = this._proposalIdempotency.get(idempotencyKey);
@@ -3322,21 +3214,22 @@ current contents from the editor somewhere else, and restart the application.`,
         message: "Document is no longer open.",
       };
     }
-    // Verify version and hash
+    // The baseline hash is the whole external concurrency identity: the
+    // patches were built against exactly this text or they were not.
     const currentContent = doc.document.toString();
     const currentSha256 = sha256Text(currentContent);
-    if (doc.currentVersion !== version || currentSha256 !== sha256) {
+    if (currentSha256 !== baselineSha256) {
       return {
         ok: false,
         code: "REVISION_MISMATCH",
-        message: "The document changed after the snapshot was read.",
+        message: "The document changed after the baseline content was read.",
       };
     }
 
     // Check the ingress disk fence before any review mutation. The fence is
     // the document's last saved bytes, not the current live buffer: an
     // ordinary editor may have unsaved changes when the agent submits a
-    // proposal, and those changes are precisely what the snapshot binds.
+    // proposal, and those changes are precisely what the baseline hash binds.
     // Comparing against currentContent would incorrectly reject that normal
     // case while still failing to distinguish an external write from the
     // user's own unsaved edit. Existing reviews instead fence against the
@@ -3360,7 +3253,7 @@ current contents from the editor somewhere else, and restart the application.`,
       };
     }
     const currentGeneration = activeReview === undefined ? 0 : activeReview.generation;
-    if (expectedReviewGeneration !== undefined && expectedReviewGeneration !== currentGeneration) {
+    if (expectedReviewGeneration !== currentGeneration) {
       return {
         ok: false,
         code: "REVIEW_GENERATION_MISMATCH",
@@ -3414,10 +3307,7 @@ current contents from the editor somewhere else, and restart the application.`,
       packetIds: result.packetIds,
       reviewId: result.reviewId,
       documentId,
-      documentRevision: {
-        version: doc.currentVersion,
-        sha256: sha256Text(doc.document.toString()),
-      },
+      documentRevision: { sha256: sha256Text(doc.document.toString()) },
       reviewGeneration: result.generation,
       unresolvedChunks: result.unresolvedChunks,
       state: result.state,
@@ -3437,7 +3327,7 @@ current contents from the editor somewhere else, and restart the application.`,
         reviewId: string;
         documentId: string;
         state: ReviewState;
-        documentRevision: { version: number; sha256: string };
+        documentRevision: DocumentRevision;
         reviewGeneration: number;
         unresolvedChunks: number;
       }
@@ -3470,11 +3360,8 @@ current contents from the editor somewhere else, and restart the application.`,
       documentId,
       state: result.state,
       documentRevision: doc
-        ? {
-            version: doc.currentVersion,
-            sha256: sha256Text(doc.document.toString()),
-          }
-        : { version: 0, sha256: "" },
+        ? { sha256: sha256Text(doc.document.toString()) }
+        : { sha256: "" },
       reviewGeneration: result.generation,
       unresolvedChunks: result.unresolvedChunks,
     };
@@ -3488,7 +3375,7 @@ current contents from the editor somewhere else, and restart the application.`,
         reviewId: string;
         documentId: string;
         state: ReviewState;
-        documentRevision: { version: number; sha256: string };
+        documentRevision: DocumentRevision;
         reviewGeneration: number;
         unresolvedChunks: number;
       }
@@ -3522,7 +3409,7 @@ current contents from the editor somewhere else, and restart the application.`,
         documentId: string;
         reviewGeneration: number;
         unresolvedChunks: number;
-        documentRevision: { version: number; sha256: string };
+        documentRevision: DocumentRevision;
       }
     | {
         ok: false;
@@ -3579,11 +3466,8 @@ current contents from the editor somewhere else, and restart the application.`,
       reviewGeneration: result.generation,
       unresolvedChunks: result.unresolvedChunks,
       documentRevision: doc
-        ? {
-            version: doc.currentVersion,
-            sha256: sha256Text(doc.document.toString()),
-          }
-        : { version: 0, sha256: "" },
+        ? { sha256: sha256Text(doc.document.toString()) }
+        : { sha256: "" },
     };
   }
 

@@ -18,7 +18,7 @@ import "./headless-electron-harness.cjs";
 import Ajv2020 from "ajv/dist/2020";
 import { parse as parseYaml } from "yaml";
 import { ChangeSet } from "@codemirror/state";
-import { type AgentEvent } from "@dts/common/agent-api";
+import { type AgentEvent, type ReadDocumentResponse } from "@dts/common/agent-api";
 import { DP_EVENTS, type SerializedUpdate } from "@dts/common/documents";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
@@ -39,6 +39,7 @@ import {
   ReviewSidecarStore,
   reviewSidecarFilePath,
 } from "source/app/service-providers/documents/review-sidecar-store";
+import { sha256Text } from "source/app/service-providers/documents/review-diff-store";
 import LogProvider from "source/app/service-providers/log";
 
 // ============================================================================
@@ -300,6 +301,66 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     return createPatch("document", oldText, newText, "", "", { context: 3 });
   }
 
+  /** The baseline hash a proposal must send: the live working text's sha256. */
+  function baselineOf(documentId: string): string {
+    const buffer = provider.readLiveBuffer(documentId);
+    assert.ok(buffer !== undefined, "the document must be open to read its baseline");
+    return buffer.sha256;
+  }
+
+  /** The generation a proposal must expect: 0 when no review is open. */
+  function generationOf(documentId: string): number {
+    return provider.reviewStore.getReview(documentId)?.generation ?? 0;
+  }
+
+  /**
+   * Set-up submissions: one claim against the document's current text and
+   * current generation. Tests whose subject IS a precondition send it
+   * explicitly instead of going through here.
+   */
+  async function submitClaim(
+    documentId: string,
+    patch: string,
+    clientRequestId: string,
+    description = "test claim",
+  ): ReturnType<DocumentManager["submitProposalClaims"]> {
+    return await provider.submitProposalClaims(
+      documentId,
+      baselineOf(documentId),
+      [{ description, patch }],
+      clientRequestId,
+      generationOf(documentId),
+    );
+  }
+
+  async function submitClaims(
+    documentId: string,
+    claims: Array<{ description: string; patch: string }>,
+    clientRequestId: string,
+  ): ReturnType<DocumentManager["submitProposalClaims"]> {
+    return await provider.submitProposalClaims(
+      documentId,
+      baselineOf(documentId),
+      claims,
+      clientRequestId,
+      generationOf(documentId),
+    );
+  }
+
+  /** The canonical proposal body, built against the document's live state. */
+  function proposalBody(
+    documentId: string,
+    claims: Array<{ description: string; patch: string }>,
+    clientRequestId: string,
+  ): string {
+    return JSON.stringify({
+      baselineSha256: baselineOf(documentId),
+      expectedReviewGeneration: generationOf(documentId),
+      clientRequestId,
+      claims,
+    });
+  }
+
   // The sidecar directory is app data shared by every DocumentManager this
   // process constructs, so it is cleared per test: review write-through would
   // otherwise leak one test's detached reviews into another's /v1/reviews.
@@ -538,12 +599,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const docId = await openFile(filePath, "alpha\nbeta\n");
     const response = await httpRequest("GET", `/v1/documents/${docId}/content`);
     assert.equal(response.status, 200);
-    const body = JSON.parse(response.body) as {
-      content: string;
-      snapshot: string;
-    };
+    const body = JSON.parse(response.body) as ReadDocumentResponse;
     assert.ok(body.content.includes("alpha"));
-    assert.ok(body.snapshot.startsWith("snap_v1_"));
+    // The revision hash is the whole external identity a proposal sends back.
+    assert.equal(body.revision.sha256, sha256Text("alpha\nbeta\n"));
     assertMatchesSchema(body, "ReadDocumentResponse");
     // ETag must be present
     const etag = response.headers["etag"];
@@ -551,24 +610,23 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(etag.includes("sha256:"));
   });
 
-  it("POST /v1/documents/{id}/proposals submits a patch carrying its own clientRequestId", async function () {
+  it("POST /v1/documents/{id}/proposals submits one claim carrying its own clientRequestId", async function () {
     const filePath = path.join(scratch, "propose.md");
     const docId = await openFile(filePath, "alpha\n");
 
-    // Read to get the snapshot token, which is the only concurrency check.
+    // Read first: the hash that read returns is what the proposal binds to.
     const readResponse = await httpRequest("GET", `/v1/documents/${docId}/content`);
-    const snapshot = JSON.parse(readResponse.body).snapshot;
+    const baselineSha256 = (JSON.parse(readResponse.body) as ReadDocumentResponse).revision.sha256;
 
-    // Submit proposal
     const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
       body: JSON.stringify({
-        snapshot,
-        patchFormat: "unified-diff",
-        patch: makePatch("alpha\n", "ALPHA\n"),
+        baselineSha256,
+        expectedReviewGeneration: 0,
         clientRequestId: "http-req-1",
+        claims: [{ description: "caps alpha", patch: makePatch("alpha\n", "ALPHA\n") }],
       }),
     });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 200, response.body);
     const body = JSON.parse(response.body);
     assert.ok(body.packetId !== undefined);
     assert.ok(body.reviewId !== undefined);
@@ -580,23 +638,19 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const filePath = path.join(scratch, "claims.md");
     const original = "alpha\nx\ny\nz\nbeta\n";
     const docId = await openFile(filePath, original);
-    const readResponse = await httpRequest("GET", `/v1/documents/${docId}/content`);
-    const snapshot = JSON.parse(readResponse.body).snapshot;
-
     // Claim 2's patch is built against claim 1's output: it only applies if
     // the server really applies the sequence in order.
     const afterFirst = "ALPHA\nx\ny\nz\nbeta\n";
     const afterSecond = "ALPHA\nx\ny\nz\nBETA\n";
     const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
-      body: JSON.stringify({
-        snapshot,
-        patchFormat: "unified-diff",
-        claims: [
+      body: proposalBody(
+        docId,
+        [
           { description: "Capitalize the opening", patch: makePatch(original, afterFirst) },
           { description: "Capitalize the closing", patch: makePatch(afterFirst, afterSecond) },
         ],
-        clientRequestId: "http-claims-1",
-      }),
+        "http-claims-1",
+      ),
     });
     assert.equal(response.status, 200, response.body);
     const body = JSON.parse(response.body) as {
@@ -649,20 +703,16 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const filePath = path.join(scratch, "claims-atomic.md");
     const original = "alpha\nbeta\n";
     const docId = await openFile(filePath, original);
-    const readResponse = await httpRequest("GET", `/v1/documents/${docId}/content`);
-    const snapshot = JSON.parse(readResponse.body).snapshot;
-
     const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
-      body: JSON.stringify({
-        snapshot,
-        patchFormat: "unified-diff",
-        claims: [
+      body: proposalBody(
+        docId,
+        [
           { description: "applies", patch: makePatch(original, "ALPHA\nbeta\n") },
           // Built against text the sequence never produces: zero fuzz refuses it.
           { description: "does not", patch: makePatch("unrelated\ntext\n", "other\n") },
         ],
-        clientRequestId: "http-claims-broken",
-      }),
+        "http-claims-broken",
+      ),
     });
     assert.equal(response.status, 400);
     assert.equal(JSON.parse(response.body).error.code, "PATCH_NOT_APPLICABLE");
@@ -674,65 +724,43 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(doc.document.toString(), original);
   });
 
-  it("refuses a proposal carrying both the patch and the claims shape", async function () {
-    const filePath = path.join(scratch, "claims-shapes.md");
-    const docId = await openFile(filePath, "alpha\n");
-    const readResponse = await httpRequest("GET", `/v1/documents/${docId}/content`);
-    const snapshot = JSON.parse(readResponse.body).snapshot;
-    const patch = makePatch("alpha\n", "ALPHA\n");
-    const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
-      body: JSON.stringify({
-        snapshot,
-        patchFormat: "unified-diff",
-        patch,
-        claims: [{ description: "duplicate shape", patch }],
-        clientRequestId: "http-claims-shapes",
-      }),
-    });
-    assert.equal(response.status, 400);
-    assert.equal(JSON.parse(response.body).error.code, "INVALID_PARAMS");
-  });
-
   it("rejects reuse of an idempotency key for a different proposal", async function () {
     const filePath = path.join(scratch, "idempotency.md");
     const docId = await openFile(filePath, "alpha\n");
-    const readResponse = await httpRequest("GET", `/v1/documents/${docId}/content`);
-    const snapshot = JSON.parse(readResponse.body).snapshot;
+    const baseline = baselineOf(docId);
     const first = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
       body: JSON.stringify({
-        snapshot,
-        patchFormat: "unified-diff",
-        patch: makePatch("alpha\n", "ALPHA\n"),
+        baselineSha256: baseline,
+        expectedReviewGeneration: 0,
         clientRequestId: "one-key",
+        claims: [{ description: "caps alpha", patch: makePatch("alpha\n", "ALPHA\n") }],
       }),
     });
-    assert.equal(first.status, 200);
+    assert.equal(first.status, 200, first.body);
+    // Same key, different claims: the fingerprint no longer matches.
     const conflicting = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
       body: JSON.stringify({
-        snapshot,
-        patchFormat: "unified-diff",
-        patch: makePatch("alpha\n", "BETA\n"),
+        baselineSha256: baseline,
+        expectedReviewGeneration: 0,
         clientRequestId: "one-key",
+        claims: [{ description: "different claim", patch: makePatch("alpha\n", "BETA\n") }],
       }),
     });
     assert.equal(conflicting.status, 409);
     assert.equal(JSON.parse(conflicting.body).error.code, "IDEMPOTENCY_CONFLICT");
   });
 
-  it("does not expose a working snapshot or ETag for reference reads", async function () {
+  it("does not expose an ETag for reference reads, and answers the review baseline", async function () {
     const filePath = path.join(scratch, "reference.md");
     const docId = await openFile(filePath, "alpha\n");
-    const snapshot = provider.createSnapshot(docId)!;
-    await provider.submitProposal(
-      snapshot.token,
-      makePatch("alpha\n", "ALPHA\n"),
-      "reference-read",
-    );
+    await submitClaim(docId, makePatch("alpha\n", "ALPHA\n"), "reference-read");
     const response = await httpRequest("GET", `/v1/documents/${docId}/content?side=reference`);
-    const body = JSON.parse(response.body);
+    const body = JSON.parse(response.body) as ReadDocumentResponse;
     assert.equal(response.headers.etag, undefined);
-    assert.equal(body.snapshot, undefined);
     assert.equal(body.content, "alpha\n");
+    // The reference side answers its own text's hash, not the working side's.
+    assert.equal(body.revision.sha256, sha256Text("alpha\n"));
+    assertMatchesSchema(body, "ReadDocumentResponse");
   });
 
   it("lists and opens an unopened workspace document by its assigned resource id", async function () {
@@ -1071,48 +1099,96 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(body.truncated, true);
   });
 
-  it("POST /v1/documents/{id}/proposals returns 412 on a stale snapshot", async function () {
+  it("POST /v1/documents/{id}/proposals returns 412 on a stale baseline hash", async function () {
     const filePath = path.join(scratch, "stale.md");
     const docId = await openFile(filePath, "alpha\n");
 
-    // Use a valid snapshot token format but with a mismatched hash
-    // snap_v1_ prefix + base64url of {"documentId":"<docId>","version":1,"sha256":"<wrong>"}
-    const wrongSha = "0000000000000000000000000000000000000000000000000000000000000000";
-    const snapPayload = Buffer.from(
-      JSON.stringify({
-        documentId: docId,
-        version: 1,
-        sha256: wrongSha,
-      }),
-    ).toString("base64url");
-
+    // A well-formed hash of text this document never held.
     const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
       body: JSON.stringify({
-        snapshot: `snap_v1_${snapPayload}`,
-        patchFormat: "unified-diff",
-        patch: makePatch("alpha\n", "ALPHA\n"),
+        baselineSha256: sha256Text("some other text\n"),
+        expectedReviewGeneration: 0,
         clientRequestId: "http-req-stale",
+        claims: [{ description: "caps alpha", patch: makePatch("alpha\n", "ALPHA\n") }],
       }),
     });
     assert.equal(response.status, 412);
+    assert.equal(JSON.parse(response.body).error.code, "REVISION_MISMATCH");
+    assert.equal(provider.reviewStore.listReviews().length, 0, "refusal must not open a review");
+  });
+
+  it("POST /v1/documents/{id}/proposals refuses a malformed baseline hash", async function () {
+    const filePath = path.join(scratch, "malformed-baseline.md");
+    const docId = await openFile(filePath, "alpha\n");
+    const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      body: JSON.stringify({
+        baselineSha256: "not-a-hash",
+        expectedReviewGeneration: 0,
+        clientRequestId: "http-req-malformed-baseline",
+        claims: [{ description: "caps alpha", patch: makePatch("alpha\n", "ALPHA\n") }],
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal(JSON.parse(response.body).error.code, "INVALID_PARAMS");
+  });
+
+  it("POST /v1/documents/{id}/proposals refuses the retired single-patch shape", async function () {
+    const filePath = path.join(scratch, "retired-shape.md");
+    const docId = await openFile(filePath, "alpha\n");
+    const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      body: JSON.stringify({
+        baselineSha256: baselineOf(docId),
+        expectedReviewGeneration: 0,
+        clientRequestId: "http-req-retired-shape",
+        patch: makePatch("alpha\n", "ALPHA\n"),
+        description: "caps alpha",
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal(JSON.parse(response.body).error.code, "INVALID_PARAMS");
+    assert.equal(provider.reviewStore.listReviews().length, 0, "refusal must not open a review");
+  });
+
+  it("POST /v1/documents/{id}/proposals refuses a stale expectedReviewGeneration", async function () {
+    const filePath = path.join(scratch, "stale-generation.md");
+    const docId = await openFile(filePath, "alpha\nx\ny\nz\nbeta\n");
+    // The first proposal opens a review, moving the generation off zero.
+    assert.equal(
+      (await submitClaim(docId, makePatch("alpha\nx\ny\nz\nbeta\n", "ALPHA\nx\ny\nz\nbeta\n"), "gen-1"))
+        .ok,
+      true,
+    );
+    const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      body: JSON.stringify({
+        baselineSha256: baselineOf(docId),
+        expectedReviewGeneration: 0,
+        clientRequestId: "http-req-stale-generation",
+        claims: [
+          {
+            description: "caps beta",
+            patch: makePatch("ALPHA\nx\ny\nz\nbeta\n", "ALPHA\nx\ny\nz\nBETA\n"),
+          },
+        ],
+      }),
+    });
+    assert.equal(response.status, 409);
+    assert.equal(JSON.parse(response.body).error.code, "REVIEW_GENERATION_MISMATCH");
   });
 
   it("refuses proposal ingress when disk drifted before the first review opened", async function () {
     const filePath = path.join(scratch, "ingress-drift.md");
     const docId = await openFile(filePath, "alpha\n");
-    const snapshot = provider.createSnapshot(docId)!;
 
-    // The editor still owns the snapshot bytes, but an external writer has
+    // The editor still owns the baseline bytes, but an external writer has
     // already changed disk. Opening a review against that external baseline
     // would make a later accepted proposal overwrite it.
     writeFileSync(filePath, "external\n", "utf8");
     const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
-      body: JSON.stringify({
-        snapshot: snapshot.token,
-        patchFormat: "unified-diff",
-        patch: makePatch("alpha\n", "ALPHA\n"),
-        clientRequestId: "http-ingress-drift",
-      }),
+      body: proposalBody(
+        docId,
+        [{ description: "caps alpha", patch: makePatch("alpha\n", "ALPHA\n") }],
+        "http-ingress-drift",
+      ),
     });
     assert.equal(response.status, 412);
     assert.equal(JSON.parse(response.body).error.code, "REVISION_MISMATCH");
@@ -1143,16 +1219,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     };
     assert.equal(await pushUpdates.call(provider, filePath, loaded.currentVersion, [update]), true);
 
-    const snapshot = provider.createSnapshot(docId)!;
     const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
-      body: JSON.stringify({
-        snapshot: snapshot.token,
-        patchFormat: "unified-diff",
-        patch: makePatch(live, proposed),
-        clientRequestId: "http-ingress-unsaved-buffer",
-      }),
+      body: proposalBody(
+        docId,
+        [{ description: "caps the edited line", patch: makePatch(live, proposed) }],
+        "http-ingress-unsaved-buffer",
+      ),
     });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 200, response.body);
     assert.equal(readFileSync(filePath, "utf8"), onDisk, "proposal ingress must not save by itself");
     assert.equal(
       provider.loadedDocuments.find((document) => document.filePath === filePath)!.document.toString(),
@@ -1165,8 +1239,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const docId = await openFile(filePath, "alpha\n");
 
     // Create a review
-    const snap = provider.createSnapshot(docId)!;
-    await provider.submitProposal(snap.token, makePatch("alpha\n", "ALPHA\n"), "http-reviews-req");
+    await submitClaim(docId, makePatch("alpha\n", "ALPHA\n"), "http-reviews-req");
 
     const response = await httpRequest("GET", "/v1/reviews");
     assert.equal(response.status, 200);
@@ -1181,8 +1254,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const filePath = path.join(scratch, "rdiff.md");
     const docId = await openFile(filePath, "alpha\n");
 
-    const snap = provider.createSnapshot(docId)!;
-    await provider.submitProposal(snap.token, makePatch("alpha\n", "ALPHA\n"), "http-rdiff-req");
+    await submitClaim(docId, makePatch("alpha\n", "ALPHA\n"), "http-rdiff-req");
 
     const reviewsResponse = await httpRequest("GET", "/v1/reviews");
     const reviewId = JSON.parse(reviewsResponse.body).reviews[0].reviewId;
@@ -1203,9 +1275,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const proposed = "ALPHA\nx\ny\nz\nBETA\n";
     const docId = await openFile(filePath, original);
 
-    const snap = provider.createSnapshot(docId)!;
-    await provider.submitProposal(
-      snap.token,
+    await submitClaim(
+      docId,
       makePatch(original, proposed),
       "http-rclear-req",
     );
@@ -1231,9 +1302,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const proposed = "ALPHA\nx\ny\nz\nBETA\n";
     const docId = await openFile(filePath, original);
 
-    const snap = provider.createSnapshot(docId)!;
-    await provider.submitProposal(
-      snap.token,
+    await submitClaim(
+      docId,
       makePatch(original, proposed),
       "http-racceptall-req",
     );
@@ -1271,9 +1341,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const proposed = "ALPHA\nx\ny\nz\nBETA\n";
     const docId = await openFile(filePath, original);
 
-    const snap = provider.createSnapshot(docId)!;
-    await provider.submitProposal(
-      snap.token,
+    await submitClaim(
+      docId,
       makePatch(original, proposed),
       "http-rdecide-req",
     );
@@ -1331,8 +1400,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const proposed = "ALPHA\nx\ny\nz\nBETA\n";
     const docId = await openFile(filePath, original);
 
-    const snap = provider.createSnapshot(docId)!;
-    await provider.submitProposal(snap.token, makePatch(original, proposed), "http-rhold-req");
+    await submitClaim(docId, makePatch(original, proposed), "http-rhold-req");
     const review = provider.reviewStore.getReview(docId)!;
     const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
     assert.equal(chunks.length, 2);
@@ -1391,8 +1459,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   it("POST /v1/reviews/{id}/comments attaches a comment the generation cursor sees", async function () {
     const filePath = path.join(scratch, "rcomment.md");
     const docId = await openFile(filePath, "alpha\n");
-    const snap = provider.createSnapshot(docId)!;
-    await provider.submitProposal(snap.token, makePatch("alpha\n", "ALPHA\n"), "http-rcomment");
+    await submitClaim(docId, makePatch("alpha\n", "ALPHA\n"), "http-rcomment");
     const review = provider.reviewStore.getReview(docId)!;
     assert.equal(review.generation, 1);
 
@@ -1443,8 +1510,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const proposed = "ALPHA\nx\ny\nz\nBETA\np\nq\nr\nGAMMA\n";
     const docId = await openFile(filePath, original);
 
-    const snap = provider.createSnapshot(docId)!;
-    await provider.submitProposal(snap.token, makePatch(original, proposed), "http-hold-save");
+    await submitClaim(docId, makePatch(original, proposed), "http-hold-save");
     const review = provider.reviewStore.getReview(docId)!;
     const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
     assert.equal(chunks.length, 3);
@@ -1494,8 +1560,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const proposed = "ALPHA\nx\ny\nz\nBETA\n";
     const docId = await openFile(filePath, original);
 
-    const snap = provider.createSnapshot(docId)!;
-    await provider.submitProposal(snap.token, makePatch(original, proposed), "save-gate-1");
+    await submitClaim(docId, makePatch(original, proposed), "save-gate-1");
     const review = provider.reviewStore.getReview(docId)!;
     const chunks = provider.reviewStore.getOutstandingChunks(docId)!;
     assert.equal(chunks.length, 2);
@@ -1533,9 +1598,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const filePath = path.join(scratch, "retract.md");
     const docId = await openFile(filePath, "alpha\nbeta\n");
 
-    const snap = provider.createSnapshot(docId)!;
-    const first = await provider.submitProposal(
-      snap.token,
+    const first = await submitClaim(
+      docId,
       makePatch("alpha\nbeta\n", "alpha\nBETA\n"),
       "http-retract-1",
     );
@@ -1560,9 +1624,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const original = "alpha\nx\ny\nz\nbeta\n";
     const docId = await openFile(filePath, original);
 
-    const snap = provider.createSnapshot(docId)!;
-    const submitted = await provider.submitProposal(
-      snap.token,
+    const submitted = await submitClaim(
+      docId,
       makePatch(original, "ALPHA\nx\ny\nz\nBETA\n"),
       "http-retract-refused",
     );
@@ -1883,9 +1946,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     it("writes the sidecar through on every review mutation", async function () {
       const filePath = path.join(scratch, "sidecar-write.md");
       const docId = await openFile(filePath, "alpha\nbeta\n");
-      const snap = provider.createSnapshot(docId)!;
-      const submitted = await provider.submitProposal(
-        snap.token,
+      const submitted = await submitClaim(
+        docId,
         makePatch("alpha\nbeta\n", "ALPHA\nbeta\n"),
         "sidecar-write-1",
       );
@@ -1927,9 +1989,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const filePath = path.join(scratch, "sidecar-cycle.md");
       const original = "alpha\nx\ny\nz\nbeta\n";
       const docId = await openFile(filePath, original);
-      const snap = provider.createSnapshot(docId)!;
-      const submitted = await provider.submitProposalClaims(
-        snap.token,
+      const submitted = await submitClaims(
+        docId,
         [
           {
             description: "caps alpha",
@@ -2016,9 +2077,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     it("invalidates instead of reattaching when the disk changed while closed", async function () {
       const filePath = path.join(scratch, "sidecar-fence.md");
       const docId = await openFile(filePath, "alpha\n");
-      const snap = provider.createSnapshot(docId)!;
-      const submitted = await provider.submitProposal(
-        snap.token,
+      const submitted = await submitClaim(
+        docId,
         makePatch("alpha\n", "ALPHA\n"),
         "sidecar-fence-1",
       );
@@ -2072,9 +2132,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const leafId = provider.leafIds(windowId)[0];
       assert.equal(await provider.openFile(windowId, leafId, filePath, true), true);
 
-      const snap = provider.createSnapshot(docId)!;
-      const submitted = await provider.submitProposal(
-        snap.token,
+      const submitted = await submitClaim(
+        docId,
         makePatch(onDisk, "ALPHA\n"),
         "sidecar-discard-1",
       );
@@ -2149,8 +2208,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(await provider.openFile(windowId, leafId, filePath, true), true);
       provider.newWindow();
 
-      const submitted = await provider.submitProposal(
-        provider.createSnapshot(docId)!.token,
+      const submitted = await submitClaim(
+        docId,
         makePatch(original, proposed),
         "sidecar-discard-after-save-1",
       );
@@ -2228,9 +2287,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "a window whose files are all saved is clean",
       );
 
-      const snap = provider.createSnapshot(docId)!;
-      const submitted = await provider.submitProposal(
-        snap.token,
+      const submitted = await submitClaim(
+        docId,
         makePatch(onDisk, "ALPHA\n"),
         "sidecar-discard-window-1",
       );
@@ -2298,8 +2356,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         [closingId, "discard-scope-closing-1"],
         [keptId, "discard-scope-kept-1"],
       ] as const) {
-        const submitted = await provider.submitProposal(
-          provider.createSnapshot(documentId)!.token,
+        const submitted = await submitClaim(
+          documentId,
           makePatch(onDisk, "ALPHA\n"),
           key,
         );
@@ -2342,10 +2400,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(await provider.openFile(closingWindow, closingLeaf, filePath, true), true);
       provider.newWindow();
 
-      const snapshot = provider.createSnapshot(docId);
-      assert.ok(snapshot !== undefined, "The open document must produce a proposal snapshot.");
-      const submitted = await provider.submitProposal(
-        snapshot.token,
+      const submitted = await submitClaim(
+        docId,
         makePatch(original, "ALPHA\n"),
         "sidecar-save-close-1",
       );
@@ -2406,9 +2462,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const filePath = path.join(scratch, "sidecar-address.md");
       const original = "alpha\nx\ny\nz\nbeta\n";
       const docId = await openFile(filePath, original);
-      const snap = provider.createSnapshot(docId)!;
-      const submitted = await provider.submitProposalClaims(
-        snap.token,
+      const submitted = await submitClaims(
+        docId,
         [
           { description: "caps alpha", patch: makePatch(original, "ALPHA\nx\ny\nz\nbeta\n") },
           {
@@ -2578,9 +2633,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const filePath = path.join(scratch, "sidecar-packet-address.md");
       const original = "alpha\nx\ny\nz\nbeta\n";
       const docId = await openFile(filePath, original);
-      const snap = provider.createSnapshot(docId)!;
-      const submitted = await provider.submitProposal(
-        snap.token,
+      const submitted = await submitClaim(
+        docId,
         makePatch(original, "ALPHA\nx\ny\nz\nbeta\n"),
         "sidecar-packet-address-1",
       );
@@ -2657,9 +2711,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     it("deletes the sidecar when saving completes the review", async function () {
       const filePath = path.join(scratch, "sidecar-resolve.md");
       const docId = await openFile(filePath, "alpha\n");
-      const snap = provider.createSnapshot(docId)!;
-      const submitted = await provider.submitProposal(
-        snap.token,
+      const submitted = await submitClaim(
+        docId,
         makePatch("alpha\n", "ALPHA\n"),
         "sidecar-resolve-1",
       );
@@ -2740,9 +2793,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(searchBody.hits.length, 1);
       assertMatchesSchema(searchBody, "SearchDocumentResponse");
 
-      const snap = provider.createSnapshot(docId)!;
-      const submitted = await provider.submitProposal(
-        snap.token,
+      const submitted = await submitClaim(
+        docId,
         makePatch("alpha\nbeta\n", "ALPHA\nbeta\n"),
         "conformance-flow",
       );

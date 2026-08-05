@@ -49,7 +49,7 @@ import {
   type ViewSummary,
 } from "@dts/common/agent-api";
 import { DocumentType, DP_EVENTS } from "@dts/common/documents";
-import DocumentManager from "@providers/documents";
+import type DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import crypto from "crypto";
@@ -331,21 +331,16 @@ function decodeSearchDocumentRequest(
   return { ok: true, value: { literal, context } };
 }
 
+/** The published DocumentRevision.sha256 pattern. */
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
 /**
  * Field predicates written as type guards, so a decoder narrows its own values
- * instead of asserting them afterwards: `snapshot as string` would compile even
- * if the check above it were deleted.
+ * instead of asserting them afterwards: `baselineSha256 as string` would
+ * compile even if the check above it were deleted.
  */
 function isString(value: unknown): value is string {
   return typeof value === "string";
-}
-
-function isOptionalString(value: unknown): value is string | undefined {
-  return value === undefined || typeof value === "string";
-}
-
-function isOptionalInteger(value: unknown): value is number | undefined {
-  return value === undefined || (typeof value === "number" && Number.isInteger(value));
 }
 
 function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalRequest> {
@@ -353,86 +348,58 @@ function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalReques
   if (!raw.ok) {
     return raw;
   }
-  const {
-    snapshot,
-    patchFormat,
-    patch,
-    description,
-    claims,
-    clientRequestId,
-    expectedReviewGeneration,
-  } = raw.value;
-  if (patchFormat !== "unified-diff") {
+  const { baselineSha256, claims, clientRequestId, expectedReviewGeneration } = raw.value;
+  if (!isString(baselineSha256) || !SHA256_HEX.test(baselineSha256)) {
     return {
       ok: false,
-      message: isString(patchFormat)
-        ? "Unsupported patch format"
-        : "patchFormat is required and must be unified-diff",
+      message: "baselineSha256 is required and must be a 64-character hex SHA-256",
     };
-  }
-  if (!isString(snapshot)) {
-    return { ok: false, message: "snapshot is required and must be a string" };
   }
   if (!isString(clientRequestId) || clientRequestId.length === 0) {
     return { ok: false, message: "clientRequestId is required and must be a non-empty string" };
   }
-  if (!isOptionalInteger(expectedReviewGeneration)) {
-    return { ok: false, message: "expectedReviewGeneration must be an integer" };
-  }
-
-  // Exactly one of the two shapes: a claims sequence, or a single patch.
-  if (claims !== undefined) {
-    if (patch !== undefined || description !== undefined) {
-      return {
-        ok: false,
-        message: "claims replaces patch and description; send one shape or the other",
-      };
-    }
-    if (!Array.isArray(claims) || claims.length === 0) {
-      return { ok: false, message: "claims must be a non-empty array" };
-    }
-    const decodedClaims: ProposalClaim[] = [];
-    for (let i = 0; i < claims.length; i++) {
-      const claim: unknown = claims[i];
-      if (typeof claim !== "object" || claim === null || Array.isArray(claim)) {
-        return { ok: false, message: `claims[${i}] must be an object` };
-      }
-      const { description: claimDescription, patch: claimPatch } = claim as Record<
-        string,
-        unknown
-      >;
-      if (!isString(claimDescription) || claimDescription.length === 0) {
-        return {
-          ok: false,
-          message: `claims[${i}].description is required and must be a non-empty string`,
-        };
-      }
-      if (!isString(claimPatch)) {
-        return { ok: false, message: `claims[${i}].patch is required and must be a string` };
-      }
-      decodedClaims.push({ description: claimDescription, patch: claimPatch });
-    }
+  if (
+    typeof expectedReviewGeneration !== "number" ||
+    !Number.isInteger(expectedReviewGeneration) ||
+    expectedReviewGeneration < 0
+  ) {
     return {
-      ok: true,
-      value: {
-        snapshot,
-        patchFormat,
-        claims: decodedClaims,
-        clientRequestId,
-        expectedReviewGeneration,
-      },
+      ok: false,
+      message: "expectedReviewGeneration is required and must be an integer of at least 0",
     };
   }
-
-  if (!isString(patch)) {
-    return { ok: false, message: "patch is required and must be a string" };
+  if (!Array.isArray(claims) || claims.length === 0) {
+    return { ok: false, message: "claims is required and must be a non-empty array" };
   }
-  if (!isOptionalString(description)) {
-    return { ok: false, message: "description must be a string" };
+  const decodedClaims: ProposalClaim[] = [];
+  for (let i = 0; i < claims.length; i++) {
+    const claim: unknown = claims[i];
+    if (typeof claim !== "object" || claim === null || Array.isArray(claim)) {
+      return { ok: false, message: `claims[${i}] must be an object` };
+    }
+    const { description: claimDescription, patch: claimPatch } = claim as Record<string, unknown>;
+    if (!isString(claimDescription) || claimDescription.length === 0) {
+      return {
+        ok: false,
+        message: `claims[${i}].description is required and must be a non-empty string`,
+      };
+    }
+    if (!isString(claimPatch) || claimPatch.length === 0) {
+      return {
+        ok: false,
+        message: `claims[${i}].patch is required and must be a non-empty string`,
+      };
+    }
+    decodedClaims.push({ description: claimDescription, patch: claimPatch });
   }
   return {
     ok: true,
-    value: { snapshot, patchFormat, patch, description, clientRequestId, expectedReviewGeneration },
+    value: {
+      baselineSha256,
+      expectedReviewGeneration,
+      clientRequestId,
+      claims: decodedClaims,
+    },
   };
 }
 
@@ -1345,7 +1312,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
 
     let range = applyRange(result.content, result.lineCount, requestedStartLine, requestedEndLine);
-    let revision = { version: result.version, sha256: result.sha256 };
+    let revision = { sha256: result.sha256 };
 
     if (side === "reference") {
       if (review !== undefined) {
@@ -1359,7 +1326,7 @@ export default class AgentHTTPProvider extends ProviderContract {
           referenceRangeEnd,
         );
         reviewGeneration = review.generation;
-        revision = { version: review.generation, sha256: sha256Text(review.referenceText) };
+        revision = { sha256: sha256Text(review.referenceText) };
       }
     }
 
@@ -1380,8 +1347,6 @@ export default class AgentHTTPProvider extends ProviderContract {
     };
     if (side === "working") {
       res.setHeader("ETag", `"sha256:${result.sha256}"`);
-      this.sendJson(res, 200, { ...response, snapshot: result.snapshot });
-      return;
     }
     this.sendJson(res, 200, response);
   }
@@ -1528,8 +1493,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
     this.sendJson(res, 200, {
       documentId,
-      snapshot: result.snapshot,
-      revision: { version: result.version, sha256: result.sha256 },
+      revision: { sha256: result.sha256 },
       hits: collected.hits,
       truncated: collected.truncated,
     });
@@ -1552,15 +1516,6 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     const proposal: SubmitProposalRequest = decodedProposal.value;
-    const parsedSnapshot = DocumentManager.parseSnapshotToken(proposal.snapshot);
-    if (parsedSnapshot === undefined) {
-      this.sendError(res, 400, "INVALID_PARAMS", "Invalid snapshot token");
-      return;
-    }
-    if (parsedSnapshot.documentId !== documentId) {
-      this.sendError(res, 400, "INVALID_PARAMS", "Snapshot belongs to a different document");
-      return;
-    }
 
     const filePath = this._documents.getDocumentPath(documentId);
     if (filePath === undefined) {
@@ -1572,29 +1527,13 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 404, "DOCUMENT_CLOSED", "Document is no longer open");
       return;
     }
-    // Submit through the same DocumentManager claim-sequence path the
-    // single-patch shape travels — one application path, two wire shapes.
-    let result;
-    if (proposal.claims !== undefined) {
-      result = await this._documents.submitProposalClaims(
-        proposal.snapshot,
-        proposal.claims,
-        proposal.clientRequestId,
-        proposal.expectedReviewGeneration,
-      );
-    } else if (proposal.patch !== undefined) {
-      result = await this._documents.submitProposal(
-        proposal.snapshot,
-        proposal.patch,
-        proposal.clientRequestId,
-        proposal.description,
-        proposal.expectedReviewGeneration,
-      );
-    } else {
-      // The decoder admits exactly the two shapes above.
-      this.sendError(res, 400, "INVALID_PARAMS", "patch or claims is required");
-      return;
-    }
+    const result = await this._documents.submitProposalClaims(
+      documentId,
+      proposal.baselineSha256,
+      proposal.claims,
+      proposal.clientRequestId,
+      proposal.expectedReviewGeneration,
+    );
 
     if (!result.ok) {
       if (result.code === "REVISION_MISMATCH") {
@@ -1706,10 +1645,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       ...status,
       comments: review.comments,
       attached: true,
-      documentRevision: {
-        version: doc.currentVersion,
-        sha256: sha256Text(doc.document.toString()),
-      },
+      documentRevision: { sha256: sha256Text(doc.document.toString()) },
     });
   }
 
@@ -2053,10 +1989,7 @@ export default class AgentHTTPProvider extends ProviderContract {
           ? undefined
           : this._documents.loadedDocuments.find((candidate) => candidate.filePath === filePath);
       if (document !== undefined && enriched.documentRevision === undefined) {
-        enriched.documentRevision = {
-          version: document.currentVersion,
-          sha256: sha256Text(document.document.toString()),
-        };
+        enriched.documentRevision = { sha256: sha256Text(document.document.toString()) };
       }
       const review = this._documents.reviewStore.getReview(enriched.documentId);
       if (review !== undefined) {
@@ -2135,10 +2068,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       // The wire contract is "markdown" | "code", not the internal enum ordinal.
       type: doc.type === DocumentType.Markdown ? "markdown" : "code",
       dirty: doc.currentVersion !== doc.lastSavedVersion,
-      revision: {
-        version: doc.currentVersion,
-        sha256: sha256Text(content),
-      },
+      revision: { sha256: sha256Text(content) },
       lineCount: lines.length,
       byteLength: Buffer.byteLength(content, "utf8"),
       views: await this.getViewsForDocument(documentId),
