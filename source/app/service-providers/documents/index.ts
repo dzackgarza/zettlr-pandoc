@@ -3107,6 +3107,53 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * Both sides of a document for the read route, whether or not it is open.
+   * A closed file answers from its sidecar when it has one and from disk
+   * otherwise; neither path loads the document or touches a renderer pane,
+   * so reading a workspace file costs nothing and leaves nothing behind.
+   *
+   * A sidecar that cannot be read throws. Answering with the disk text
+   * instead would present a corrupt review's document as an unreviewed one
+   * — the exact state the sidecar exists to make impossible.
+   */
+  public async readDocumentSides(documentId: string): Promise<
+    | {
+        attached: boolean;
+        working: string;
+        reference: string;
+        reviewGeneration: number;
+      }
+    | undefined
+  > {
+    const filePath = this.getDocumentPath(documentId);
+    if (filePath === undefined) {
+      return undefined;
+    }
+    const doc = this.documents.find((d) => d.filePath === filePath);
+    if (doc !== undefined) {
+      const working = doc.document.toString();
+      const review = this._reviewStore.getReview(documentId);
+      return {
+        attached: true,
+        working,
+        reference: review === undefined ? working : review.referenceText,
+        reviewGeneration: review === undefined ? 0 : review.generation,
+      };
+    }
+    const sidecar = await this._reviewSidecars.read(filePath);
+    if (sidecar !== undefined) {
+      return {
+        attached: false,
+        working: sidecar.workingText,
+        reference: sidecar.referenceText,
+        reviewGeneration: sidecar.generation,
+      };
+    }
+    const disk = normalizeText(await this._app.fsal.loadAnySupportedFile(filePath));
+    return { attached: false, working: disk, reference: disk, reviewGeneration: 0 };
+  }
+
+  /**
    * Submit an ordered claim sequence against a baseline content hash: applied
    * sequentially and atomically (all-or-nothing), one packet per claim.
    */

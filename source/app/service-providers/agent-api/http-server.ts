@@ -911,7 +911,8 @@ export default class AgentHTTPProvider extends ProviderContract {
       {
         method: "GET",
         path: "/v1/documents/{documentId}/content",
-        handle: ({ res, url, params }) => this.handleReadContent(res, params.documentId, url),
+        handle: async ({ res, url, params }) =>
+          await this.handleReadContent(res, params.documentId, url),
       },
       {
         method: "POST",
@@ -1251,7 +1252,17 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, { focused: true, documentId });
   }
 
-  private handleReadContent(res: http.ServerResponse, documentId: string, url: URL): void {
+  /**
+   * The read route answers for every documentId the workspace listing hands
+   * out, open or closed. Workspace containment is checked here rather than
+   * left to the buffer lookup: with no document loaded there is nothing else
+   * standing between a loopback client and an arbitrary path on disk.
+   */
+  private async handleReadContent(
+    res: http.ServerResponse,
+    documentId: string,
+    url: URL,
+  ): Promise<void> {
     const parseLine = (input: string | null): number | undefined => {
       if (input === null) {
         return undefined;
@@ -1294,59 +1305,65 @@ export default class AgentHTTPProvider extends ProviderContract {
     const startLine = url.searchParams.get("startLine");
     const endLine = url.searchParams.get("endLine");
 
-    const result = this._documents.readLiveBuffer(documentId, undefined, undefined);
-    if (result === undefined) {
+    const filePath = this._documents.getDocumentPath(documentId);
+    if (filePath === undefined) {
+      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
+      return;
+    }
+    if (!(await this.isDocumentOpenableInCurrentWorkspaces(filePath))) {
+      this.sendError(
+        res,
+        404,
+        "DOCUMENT_NOT_FOUND",
+        "Document is outside configured workspace scope",
+      );
+      return;
+    }
+
+    let sides;
+    try {
+      sides = await this._documents.readDocumentSides(documentId);
+    } catch (err) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        err instanceof Error ? err.message : String(err),
+      );
+      return;
+    }
+    if (sides === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
 
-    const requestedStartLine = parseLine(startLine) ?? 1;
-    const requestedEndLine = parseLine(endLine) ?? result.lineCount;
-
-    let content = result.content;
-    let rangeLineCount = result.lineCount;
-    let reviewGeneration: number | undefined;
-    const review = this._documents.reviewStore.getReview(documentId);
-    if (review !== undefined) {
-      reviewGeneration = review.generation;
-    }
-
-    let range = applyRange(result.content, result.lineCount, requestedStartLine, requestedEndLine);
-    let revision = { sha256: result.sha256 };
-
-    if (side === "reference") {
-      if (review !== undefined) {
-        const referenceLines = review.referenceText.split("\n");
-        rangeLineCount = referenceLines.length;
-        const referenceRangeEnd = Math.min(requestedEndLine, rangeLineCount);
-        range = applyRange(
-          review.referenceText,
-          rangeLineCount,
-          requestedStartLine,
-          referenceRangeEnd,
-        );
-        reviewGeneration = review.generation;
-        revision = { sha256: sha256Text(review.referenceText) };
-      }
-    }
-
-    content = range.content;
+    // The whole side is the external identity: the hash a proposal binds to
+    // is the document's, never the requested slice's.
+    const text = side === "working" ? sides.working : sides.reference;
+    const lineCount = text.split("\n").length;
+    const range = applyRange(
+      text,
+      lineCount,
+      parseLine(startLine) ?? 1,
+      parseLine(endLine) ?? lineCount,
+    );
 
     const response: ReadDocumentResponse = {
       documentId,
+      attached: sides.attached,
       side,
-      revision,
-      reviewGeneration,
+      revision: { sha256: sha256Text(text) },
+      reviewGeneration: sides.reviewGeneration,
       range: {
         startLine: range.startLine,
         endLine: range.endLine,
-        totalLines: rangeLineCount,
+        totalLines: lineCount,
       },
-      content,
+      content: range.content,
       truncated: range.truncated,
     };
     if (side === "working") {
-      res.setHeader("ETag", `"sha256:${result.sha256}"`);
+      res.setHeader("ETag", `"sha256:${response.revision.sha256}"`);
     }
     this.sendJson(res, 200, response);
   }

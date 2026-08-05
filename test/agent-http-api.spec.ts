@@ -763,6 +763,159 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assertMatchesSchema(body, "ReadDocumentResponse");
   });
 
+  it("reads a workspace file that was never opened, without loading it", async function () {
+    // The orientation loop's second question. Every id the file listing hands
+    // out has to be readable, or an agent's only route to a closed file's text
+    // is to open it — which steals the user's pane to answer a read.
+    const closedPath = path.join(scratch, "unopened.md");
+    const diskText = "closed alpha\nclosed beta\n";
+    writeFileSync(closedPath, diskText, "utf8");
+
+    const listed = await httpRequest("GET", "/v1/workspace/files");
+    assert.equal(listed.status, 200, listed.body);
+    const files = (
+      JSON.parse(listed.body) as {
+        files: Array<{ documentId: string; path: string; open: boolean }>;
+      }
+    ).files;
+    const entry = files.find((file) => file.path === closedPath);
+    assert.ok(entry !== undefined, "the workspace listing must carry the never-opened file");
+    assert.equal(entry.open, false);
+
+    const response = await httpRequest("GET", `/v1/documents/${entry.documentId}/content`);
+    assert.equal(response.status, 200, response.body);
+    const body = JSON.parse(response.body) as ReadDocumentResponse;
+    assertMatchesSchema(body, "ReadDocumentResponse");
+    assert.equal(body.content, diskText, "a closed file answers its exact disk text");
+    assert.equal(body.attached, false);
+    assert.equal(body.reviewGeneration, 0);
+    assert.equal(body.truncated, false);
+    assert.equal(body.revision.sha256, sha256Text(diskText));
+
+    // With no review, the reference side is the same disk text.
+    const reference = await httpRequest(
+      "GET",
+      `/v1/documents/${entry.documentId}/content?side=reference`,
+    );
+    const referenceBody = JSON.parse(reference.body) as ReadDocumentResponse;
+    assertMatchesSchema(referenceBody, "ReadDocumentResponse");
+    assert.equal(referenceBody.content, diskText);
+    assert.equal(referenceBody.revision.sha256, sha256Text(diskText));
+
+    // Reading is not opening: no authority buffer, and no pane showing it.
+    assert.equal(
+      provider.loadedDocuments.some((document) => document.filePath === closedPath),
+      false,
+      "reading a closed file must not create an authority buffer",
+    );
+    const views = await httpRequest("GET", "/v1/views");
+    assert.equal(
+      views.body.includes(closedPath),
+      false,
+      "reading a closed file must not put it in a renderer view",
+    );
+  });
+
+  it("reads a closed file's detached review from its sidecar", async function () {
+    const filePath = path.join(scratch, "closed-review.md");
+    const original = "alpha\nx\ny\nz\nbeta\n";
+    const proposed = "ALPHA\nx\ny\nz\nbeta\n";
+    const docId = await openFile(filePath, original);
+    const submitted = await submitClaim(docId, makePatch(original, proposed), "closed-read-1");
+    assert.equal(submitted.ok, true);
+    if (!submitted.ok) {
+      return;
+    }
+    const generation = provider.reviewStore.getReview(docId)!.generation;
+    await flushSidecarWrites();
+    await provider.closeFileEverywhere(filePath);
+    assert.ok((await sidecars.read(filePath)) !== undefined, "the close must have detached");
+
+    const working = await httpRequest("GET", `/v1/documents/${docId}/content`);
+    assert.equal(working.status, 200, working.body);
+    const workingBody = JSON.parse(working.body) as ReadDocumentResponse;
+    assertMatchesSchema(workingBody, "ReadDocumentResponse");
+    assert.equal(workingBody.attached, false);
+    assert.equal(workingBody.content, proposed, "the working side is the sidecar's working text");
+    assert.equal(workingBody.revision.sha256, sha256Text(proposed));
+    assert.equal(workingBody.reviewGeneration, generation);
+
+    const reference = await httpRequest("GET", `/v1/documents/${docId}/content?side=reference`);
+    const referenceBody = JSON.parse(reference.body) as ReadDocumentResponse;
+    assertMatchesSchema(referenceBody, "ReadDocumentResponse");
+    assert.equal(referenceBody.attached, false);
+    assert.equal(referenceBody.content, original, "the reference side is the review's baseline");
+    assert.equal(referenceBody.revision.sha256, sha256Text(original));
+    assert.equal(referenceBody.reviewGeneration, generation);
+
+    // Reading a detached review does not reattach it — that is what opening
+    // the file does, and it would move the user's editor to answer a read.
+    assert.equal(
+      provider.loadedDocuments.some((document) => document.filePath === filePath),
+      false,
+    );
+    assert.equal(provider.reviewStore.getReview(docId), undefined);
+  });
+
+  it("fails loudly when a closed file's sidecar cannot be read", async function () {
+    // Falling back to the disk text here would answer a corrupt review's
+    // document as an unreviewed one, and the agent would propose against a
+    // baseline the reviewer never saw.
+    const closedPath = path.join(scratch, "unopened.md");
+    writeFileSync(closedPath, "disk text\n", "utf8");
+    mkdirSync(sidecarDirectory, { recursive: true });
+    writeFileSync(reviewSidecarFilePath(sidecarDirectory, closedPath), "{ not a sidecar", "utf8");
+    const documentId = provider.ensureDocumentId(closedPath);
+
+    const response = await httpRequest("GET", `/v1/documents/${documentId}/content`);
+    assert.equal(response.status, 500, response.body);
+    assert.equal(JSON.parse(response.body).error.code, "INTERNAL_ERROR");
+    assert.equal(
+      response.body.includes("disk text"),
+      false,
+      "a broken sidecar must not be answered with the disk text",
+    );
+  });
+
+  it("hashes the whole side when a closed file is read by line range", async function () {
+    const closedPath = path.join(scratch, "unopened.md");
+    const diskText = "one\ntwo\nthree\nfour\n";
+    writeFileSync(closedPath, diskText, "utf8");
+    const documentId = provider.ensureDocumentId(closedPath);
+
+    const response = await httpRequest(
+      "GET",
+      `/v1/documents/${documentId}/content?startLine=2&endLine=3`,
+    );
+    assert.equal(response.status, 200, response.body);
+    const body = JSON.parse(response.body) as ReadDocumentResponse;
+    assertMatchesSchema(body, "ReadDocumentResponse");
+    assert.equal(body.attached, false);
+    assert.equal(body.content, "two\nthree");
+    assert.equal(body.range.totalLines, 5);
+    assert.equal(body.truncated, true);
+    assert.equal(
+      body.revision.sha256,
+      sha256Text(diskText),
+      "a slice must not change the hash a proposal binds to",
+    );
+  });
+
+  it("refuses a content read for a path outside the configured workspaces", async function () {
+    const workspace = path.join(scratch, "ws");
+    mkdirSync(workspace);
+    const outside = path.join(scratch, "outside.md");
+    writeFileSync(outside, "private\n", "utf8");
+    openWorkspaces = [workspace];
+    // An id is not authorization: closed-file reads are the one route that
+    // reaches disk without the user having opened anything.
+    const outsideId = provider.ensureDocumentId(outside);
+
+    const response = await httpRequest("GET", `/v1/documents/${outsideId}/content`);
+    assert.equal(response.status, 404, response.body);
+    assert.equal(JSON.parse(response.body).error.code, "DOCUMENT_NOT_FOUND");
+  });
+
   it("lists and opens an unopened workspace document by its assigned resource id", async function () {
     const unopenedPath = path.join(scratch, "unopened.md");
     writeFileSync(unopenedPath, "unopened\n", "utf8");

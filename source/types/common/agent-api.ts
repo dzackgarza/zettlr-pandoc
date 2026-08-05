@@ -129,9 +129,11 @@ export interface ReadRange {
 
 export interface ReadDocumentResponse {
   documentId: string;
+  /** Whether the document currently has a live authority buffer. */
+  attached: boolean;
   side: ReadSide;
   revision: DocumentRevision;
-  reviewGeneration?: number;
+  reviewGeneration: number;
   range: ReadRange;
   content: string;
   truncated: boolean;

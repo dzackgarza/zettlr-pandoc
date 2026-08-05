@@ -158,16 +158,22 @@ components:
         - openDocuments
     ReadDocumentResponse:
       type: object
+      additionalProperties: false
       required:
         - documentId
+        - attached
         - side
         - revision
+        - reviewGeneration
         - range
         - content
         - truncated
       properties:
         documentId:
           type: string
+        attached:
+          type: boolean
+          description: Whether the document currently has a live authority buffer.
         side:
           type: string
           enum:
@@ -177,6 +183,7 @@ components:
           $ref: '#/components/schemas/DocumentRevision'
         reviewGeneration:
           type: integer
+          minimum: 0
         range:
           type: object
           required:
@@ -1286,12 +1293,15 @@ paths:
   /v1/documents/{documentId}/content:
     get:
       operationId: readDocumentContent
-      summary: Read live working or reference text by line slice
+      summary: Read working or reference text by line slice
       description: >-
-        side=working is the live document — the text your next patch must
-        match, with every accepted change already in it, and the side whose
-        revision hash a proposal needs. side=reference is the review
-        baseline, identical to working until a review exists.
+        Answers for every documentId GET /v1/workspace/files returns, whether
+        or not the file is open; reading never opens a file or moves the
+        user's focus. side=working is the text your next patch must match,
+        with every accepted change already in it, and the side whose revision
+        hash a proposal needs. side=reference is the review baseline,
+        identical to working until a review exists. A closed file answers
+        from its detached review when it has one and from disk otherwise.
         Re-read working before each new proposal, and diff it against what
         you proposed to detect an acceptance the reviewer tweaked.
       parameters:
