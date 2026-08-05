@@ -44,20 +44,60 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin automation/pr55-direct-remediation
-          : > /tmp/pr55-remediation.xz
-          for part in 00 01 02 03 04 05 06; do
-            git show "origin/automation/pr55-direct-remediation:.github/pr55-remediation/part-${part}.b64" \
-              | tr -d '\r\n' \
-              | base64 --decode \
-              >> /tmp/pr55-remediation.xz
-          done
-          xz --test /tmp/pr55-remediation.xz
-          xz --decompress --stdout /tmp/pr55-remediation.xz > /tmp/pr55-remediation.patch
-          test "$(head -n 1 /tmp/pr55-remediation.patch)" = "diff --git a/package.json b/package.json" || {
-            echo "Recovered payload is not the expected implementation patch" >&2
-            head -n 20 /tmp/pr55-remediation.patch >&2
-            exit 1
-          }
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import lzma
+          import subprocess
+          from pathlib import Path
+
+          ref = "origin/automation/pr55-direct-remediation"
+          encoded_parts: list[str] = []
+          for index in range(7):
+              raw = subprocess.check_output(
+                  [
+                      "git",
+                      "show",
+                      f"{ref}:.github/pr55-remediation/part-{index:02d}.b64",
+                  ],
+                  text=True,
+              )
+              encoded_parts.append("".join(raw.split()))
+
+          def decode(encoded: str) -> bytes:
+              padded = encoded + "=" * ((-len(encoded)) % 4)
+              return base64.b64decode(padded, altchars=b"-_", validate=True)
+
+          candidates: list[tuple[str, bytes]] = []
+          try:
+              candidates.append(("one split base64 stream", decode("".join(encoded_parts))))
+          except Exception:
+              pass
+          try:
+              candidates.append(
+                  ("independently encoded chunks", b"".join(decode(part) for part in encoded_parts))
+              )
+          except Exception:
+              pass
+
+          expected_prefix = b"diff --git a/package.json b/package.json\n"
+          failures: list[str] = []
+          for label, compressed in candidates:
+              try:
+                  patch = lzma.decompress(compressed)
+              except Exception as error:
+                  failures.append(f"{label}: {error}")
+                  continue
+              if not patch.startswith(expected_prefix):
+                  failures.append(f"{label}: decompressed bytes did not start with the expected patch")
+                  continue
+              Path("/tmp/pr55-remediation.patch").write_bytes(patch)
+              print(f"Recovered {len(patch)} patch bytes using {label}")
+              break
+          else:
+              raise SystemExit("Could not recover implementation patch: " + "; ".join(failures))
+          PY
           changed_paths="$(git apply --numstat /tmp/pr55-remediation.patch | awk '{print $3}')"
           if printf '%s\n' "$changed_paths" | grep -Eq '^(\.github/|AGENTS\.md$|scripts/pr55-)'; then
             echo "Recovered patch contains staging or administrative files" >&2
