@@ -369,13 +369,6 @@ export type DocumentManagerIPCContract = {
     request: { payload: { path: string } };
     response: string[];
   };
-  // NOTE: this command has no case in the handler switch below — invoking it
-  // resolves undefined. Kept only because it predates the takeover; see the
-  // remediation notes before wiring a caller to it.
-  "get-workspace-files": {
-    request: { payload: { path: string } };
-    response: undefined;
-  };
   "sort-open-files": {
     request: { payload: LeafLoc & { newOrder: string[] } };
     response: undefined;
