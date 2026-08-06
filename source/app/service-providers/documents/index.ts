@@ -58,6 +58,7 @@ import type { ActiveReviewState } from "@dts/common/review-domain";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import ProviderContract, { type IPCAPI } from "@providers/provider-contract";
+import { IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
 import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions, shell } from "electron";
@@ -320,7 +321,6 @@ type LeafLoc = { windowId: string; leafId: string };
 export type DocumentManagerIPCAPI = IPCAPI<{
   "set-pinned": LeafLoc & { path: string; pinned: boolean };
   "retrieve-tab-config": { windowId: string };
-  "save-file": { path: string };
   // targetRange/sourceLocation are additive (issue #1 Phase 5): a reference
   // jump lands on targetRange in the opened document and stamps the origin
   // pane's current history entry with sourceLocation so Back can restore it.
@@ -342,25 +342,6 @@ export type DocumentManagerIPCAPI = IPCAPI<{
   "sort-open-files": LeafLoc & { newOrder: string[] };
   "get-file-modification-status": unknown;
   "get-review-diff-session": { path: string };
-  "decide-review-chunk": {
-    reviewId: string;
-    chunkId: string;
-    decision: "accept" | "reject" | "hold";
-    /** Hold only: the optional note attached without adjudicating. */
-    comment?: string;
-  } & ReviewMutationPrecondition;
-  "accept-all-review-chunks": { reviewId: string } & ReviewMutationPrecondition;
-  "clear-review": { reviewId: string } & ReviewMutationPrecondition;
-  /**
-   * A comment adjudicates nothing and moves no text, so it fences on the
-   * review generation alone.
-   */
-  "add-review-comment": {
-    reviewId: string;
-    text: string;
-    expectedReviewGeneration: number;
-  };
-
   "move-file": {
     originWindow: string;
     targetWindow: string;
@@ -389,6 +370,56 @@ export type DocumentManagerIPCAPI = IPCAPI<{
   // entries before/after the pointer (Back/Forward enabled state).
   "get-navigation-state": LeafLoc;
 }>;
+
+/** The document to save. */
+export interface SaveFileInput {
+  path: string;
+}
+
+/** One chunk decision, fenced on the generation and working text it was formed against. */
+export type ReviewDecisionInput = {
+  reviewId: string;
+  chunkId: string;
+  decision: ChunkDecision;
+  /** Hold only: the optional note attached without adjudicating. */
+  comment?: string;
+} & ReviewMutationPrecondition;
+
+/** Accepting every remaining chunk, under the same fence one decision uses. */
+export type ReviewAcceptAllInput = { reviewId: string } & ReviewMutationPrecondition;
+
+/** Discarding a review, under the same fence one decision uses. */
+export type ReviewClearInput = { reviewId: string } & ReviewMutationPrecondition;
+
+/**
+ * A comment adjudicates nothing and moves no text, so it fences on the review
+ * generation alone.
+ */
+export interface ReviewCommentInput {
+  reviewId: string;
+  text: string;
+  expectedReviewGeneration: number;
+}
+
+/**
+ * The document operations the renderer invokes on their own typed channels,
+ * one handler signature each. This provider owns the schema; the renderer
+ * bridge composes it, so a wrong payload or a changed return type is a
+ * compile error at the call site with no second map to keep in step.
+ */
+export type DocumentIpcHandlers = {
+  "documents:save-file": (input: SaveFileInput) => SaveFileResult;
+  "documents:decide-review-chunk": (
+    input: ReviewDecisionInput,
+  ) => ChunkDecisionResponse | ReviewFailure;
+  "documents:accept-all-review-chunks": (
+    input: ReviewAcceptAllInput,
+  ) => AcceptAllChunksResponse | ReviewFailure;
+  "documents:clear-review": (input: ReviewClearInput) => ClearReviewResponse | ReviewFailure;
+  "documents:add-review-comment": (
+    input: ReviewCommentInput,
+  ) => AddReviewCommentResponse | ReviewFailure;
+}
 
 export default class DocumentManager
   extends ProviderContract
@@ -607,6 +638,29 @@ export default class DocumentManager
       }
     });
 
+    // The document operations the renderer drives on their own channels. Each
+    // one is a single typed handler, so the payload and the response are the
+    // handler's own signature rather than a branch of a multiplexer.
+    const operations = new IpcListener<DocumentIpcHandlers>();
+    operations.handle("documents:save-file", async (_event, input) => {
+      return await this.saveFile(input.path);
+    });
+    operations.handle("documents:decide-review-chunk", async (_event, input) => {
+      const { reviewId, chunkId, decision, comment, ...precondition } = input;
+      return await this.decideReviewChunk(reviewId, chunkId, decision, precondition, comment);
+    });
+    operations.handle("documents:accept-all-review-chunks", async (_event, input) => {
+      const { reviewId, ...precondition } = input;
+      return await this.acceptAllReviewChunks(reviewId, precondition);
+    });
+    operations.handle("documents:clear-review", async (_event, input) => {
+      const { reviewId, ...precondition } = input;
+      return await this.clearReview(reviewId, precondition);
+    });
+    operations.handle("documents:add-review-comment", async (_event, input) => {
+      return await this.addReviewComment(input.reviewId, input.text, input.expectedReviewGeneration);
+    });
+
     // Finally, listen to events from the renderer
     ipcMain.handle("documents-provider", async (event, message: DocumentManagerIPCAPI) => {
       const { command, payload } = message;
@@ -620,9 +674,6 @@ export default class DocumentManager
         // Some main window has requested its tab/split view state
         case "retrieve-tab-config": {
           return this._windows[payload.windowId].toJSON();
-        }
-        case "save-file": {
-          return await this.saveFile(payload.path);
         }
         case "open-file": {
           const { windowId, leafId, path, newTab, targetRange, sourceLocation } = payload;
@@ -661,28 +712,6 @@ export default class DocumentManager
             return undefined;
           }
           return this._reviewSessionFor(payload.path, review);
-        }
-        case "decide-review-chunk": {
-          const { reviewId, chunkId, decision, comment, ...precondition } = payload;
-          return await this.decideReviewChunk(
-            reviewId,
-            chunkId,
-            decision,
-            precondition,
-            comment,
-          );
-        }
-        case "accept-all-review-chunks": {
-          const { reviewId, ...precondition } = payload;
-          return await this.acceptAllReviewChunks(reviewId, precondition);
-        }
-        case "clear-review": {
-          const { reviewId, ...precondition } = payload;
-          return await this.clearReview(reviewId, precondition);
-        }
-        case "add-review-comment": {
-          const { reviewId, text, expectedReviewGeneration } = payload;
-          return await this.addReviewComment(reviewId, text, expectedReviewGeneration);
         }
         case "move-file": {
           const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;

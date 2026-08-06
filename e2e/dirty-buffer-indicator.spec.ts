@@ -226,10 +226,7 @@ for (const theme of ['light', 'dark'] as const) {
       assert.deepEqual(
         await page.evaluate(
           async ([documentPath]) =>
-            await window.ipc.invoke('documents-provider', {
-              command: 'save-file',
-              payload: { path: documentPath }
-            }),
+            await window.ipc.invoke('documents:save-file', { path: documentPath }),
           [dirtyPath]
         ),
         { ok: true },

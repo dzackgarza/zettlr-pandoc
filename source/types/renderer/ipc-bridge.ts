@@ -7,13 +7,22 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     The typed surface of window.ipc.invoke (issue #50). Every
- *                  channel a renderer may invoke is enumerated here together
- *                  with its request contract and — where the owning handler's
- *                  return type is recorded — its per-command response type.
- *                  global.d.ts references IpcInvoke, so a wrong channel or a
- *                  wrong payload is a compile error at the call site instead
- *                  of an `any` that silently spreads.
+ * Description:     The typed surface of window.ipc.invoke (issue #50).
+ *
+ *                  window.ipc.invoke has two halves. The first is
+ *                  @electron-toolkit/typed-ipc's own invoke over the
+ *                  OPERATION CHANNELS: one channel per operation, whose
+ *                  payload and response ARE the owning handler's signature
+ *                  (DocumentIpcHandlers, declared next to the handlers).
+ *                  Nothing about those channels is recorded here, so a
+ *                  changed handler breaks its call sites directly.
+ *
+ *                  The second half is the legacy command multiplexers: one
+ *                  channel serving many commands, whose response depends on
+ *                  the command and therefore needs the maps below. Migrating
+ *                  a command family to its own operation channel deletes its
+ *                  entries from both maps; when a channel's last command is
+ *                  migrated the channel leaves this file entirely.
  *
  *                  Ownership: providers that already declare an XxxIPCAPI
  *                  next to their ipcMain.handle() remain the single owners
@@ -41,11 +50,12 @@
 
 import type { GetTextTranslations } from 'gettext-parser'
 import type { MenuItemConstructorOptions } from 'electron'
+import type { IpcEmitter } from '@electron-toolkit/typed-ipc/renderer'
 import type DocumentManager from 'source/app/service-providers/documents'
 import type {
   DocumentAuthorityIPCAPI,
-  DocumentManagerIPCAPI,
-  SaveFileResult
+  DocumentIpcHandlers,
+  DocumentManagerIPCAPI
 } from 'source/app/service-providers/documents'
 import type { ApplicationIPCAPI } from 'source/app/service-providers/commands'
 import type { ReferenceProviderIPCAPI } from 'source/app/service-providers/references'
@@ -196,12 +206,7 @@ interface IpcFixedResponseMap {
  */
 interface IpcCommandResponseMap {
   'documents-provider': {
-    'save-file': SaveFileResult
     'get-review-diff-session': ReviewDiffSession|undefined
-    'decide-review-chunk': Awaited<ReturnType<DocumentManager['decideReviewChunk']>>
-    'accept-all-review-chunks': Awaited<ReturnType<DocumentManager['acceptAllReviewChunks']>>
-    'clear-review': Awaited<ReturnType<DocumentManager['clearReview']>>
-    'add-review-comment': Awaited<ReturnType<DocumentManager['addReviewComment']>>
     'get-navigation-state': ReturnType<DocumentManager['getNavigationState']>
     'get-open-workspace-files': Awaited<ReturnType<DocumentManager['getFilesForWorkspace']>>
     'get-file-modification-status': string[]
@@ -333,7 +338,9 @@ declare global {
   /**
    * The typed surface of window.ipc.invoke, aliased into the global scope so
    * the ambient Window declaration in source/global.d.ts (which cannot use
-   * import statements or import() annotations) can reference it.
+   * import statements or import() annotations) can reference it. The
+   * operation-channel half comes from the dependency; the multiplexer half is
+   * IpcInvoke above, and shrinks as command families migrate.
    */
-  type ZettlrIpcInvoke = IpcInvoke
+  type ZettlrIpcInvoke = IpcEmitter<DocumentIpcHandlers>['invoke'] & IpcInvoke
 }

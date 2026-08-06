@@ -262,10 +262,7 @@ ipcRenderer.on('shortcut', (event, command) => {
   if (command === 'save-file') {
     // Main is telling us to save, so tell main to save the current file.
     const doSave = (): void => {
-      ipcRenderer.invoke('documents-provider', {
-        command: 'save-file',
-        payload: { path: props.file.path }
-      })
+      ipcRenderer.invoke('documents:save-file', { path: props.file.path })
         .then(result => {
           if (result.ok) {
             return
@@ -757,48 +754,36 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   // chunk that moved.
   editor.setReviewActionClient({
     decide: async input => {
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents-provider', {
-        command: 'decide-review-chunk',
-        payload: {
-          reviewId: input.reviewId,
-          chunkId: input.chunkId,
-          decision: input.decision,
-          comment: input.comment,
-          expectedReviewGeneration: input.expectedReviewGeneration,
-          expectedWorkingSha256: await syncedWorkingSha256(editor)
-        }
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents:decide-review-chunk', {
+        reviewId: input.reviewId,
+        chunkId: input.chunkId,
+        decision: input.decision,
+        comment: input.comment,
+        expectedReviewGeneration: input.expectedReviewGeneration,
+        expectedWorkingSha256: await syncedWorkingSha256(editor)
       }))
     },
     acceptAll: async input => {
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents-provider', {
-        command: 'accept-all-review-chunks',
-        payload: {
-          reviewId: input.reviewId,
-          expectedReviewGeneration: input.expectedReviewGeneration,
-          expectedWorkingSha256: await syncedWorkingSha256(editor)
-        }
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents:accept-all-review-chunks', {
+        reviewId: input.reviewId,
+        expectedReviewGeneration: input.expectedReviewGeneration,
+        expectedWorkingSha256: await syncedWorkingSha256(editor)
       }))
     },
     clear: async input => {
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents-provider', {
-        command: 'clear-review',
-        payload: {
-          reviewId: input.reviewId,
-          expectedReviewGeneration: input.expectedReviewGeneration,
-          expectedWorkingSha256: await syncedWorkingSha256(editor)
-        }
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents:clear-review', {
+        reviewId: input.reviewId,
+        expectedReviewGeneration: input.expectedReviewGeneration,
+        expectedWorkingSha256: await syncedWorkingSha256(editor)
       }))
     },
     comment: async input => {
       // A comment adjudicates nothing and moves no text, so it fences on the
       // review generation alone and needs no sync.
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents-provider', {
-        command: 'add-review-comment',
-        payload: {
-          reviewId: input.reviewId,
-          text: input.text,
-          expectedReviewGeneration: input.expectedReviewGeneration
-        }
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents:add-review-comment', {
+        reviewId: input.reviewId,
+        text: input.text,
+        expectedReviewGeneration: input.expectedReviewGeneration
       }))
     }
   })

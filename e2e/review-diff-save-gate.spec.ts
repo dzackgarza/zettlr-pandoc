@@ -239,10 +239,7 @@ async function clearReviewAndFlush (
 function invokeSave (page: Page, documentPath: string): Promise<unknown> {
   return page.evaluate(
     async ([documentPathInPage]) =>
-      await window.ipc.invoke('documents-provider', {
-        command: 'save-file',
-        payload: { path: documentPathInPage }
-      }),
+      await window.ipc.invoke('documents:save-file', { path: documentPathInPage }),
     [documentPath]
   )
 }

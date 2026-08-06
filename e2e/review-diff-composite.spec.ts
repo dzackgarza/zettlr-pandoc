@@ -95,10 +95,10 @@ async function workspaceDocumentId (api: AgentClient, filePath: string): Promise
 }
 
 async function invokeSave (page: Page, filePath: string): Promise<unknown> {
-  return await page.evaluate(async pathInPage => await window.ipc.invoke('documents-provider', {
-    command: 'save-file',
-    payload: { path: pathInPage }
-  }), filePath)
+  return await page.evaluate(
+    async pathInPage => await window.ipc.invoke('documents:save-file', { path: pathInPage }),
+    filePath
+  )
 }
 
 async function waitForReview (page: Page): Promise<void> {
@@ -358,15 +358,12 @@ describe('review-diff closure contract composite lifecycle', function () {
     // An invalidated review refuses before any precondition is read, so the
     // fence values here only have to be well formed.
     const refusedDecision = await restartedPage.evaluate(async ({ reviewId, chunkId }) => {
-      return await window.ipc.invoke('documents-provider', {
-        command: 'decide-review-chunk',
-        payload: {
-          reviewId,
-          chunkId,
-          decision: 'reject',
-          expectedReviewGeneration: 0,
-          expectedWorkingSha256: '0'.repeat(64)
-        }
+      return await window.ipc.invoke('documents:decide-review-chunk', {
+        reviewId,
+        chunkId,
+        decision: 'reject',
+        expectedReviewGeneration: 0,
+        expectedWorkingSha256: '0'.repeat(64)
       })
     }, { reviewId: driftReviewId, chunkId: driftChunkId })
     assert.ok(isRecord(refusedDecision) && !refusedDecision.ok)
