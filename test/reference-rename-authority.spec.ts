@@ -164,7 +164,8 @@ async function createScratchBoundary (): Promise<ScratchBoundary> {
     app.log,
     fsalEvents,
     documents,
-    500
+    500,
+    userData
   )
   await references.boot()
 

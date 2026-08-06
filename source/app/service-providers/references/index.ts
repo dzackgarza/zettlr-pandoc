@@ -72,16 +72,12 @@
  */
 
 import { ipcMain } from 'electron'
-import { strict as assert } from 'assert'
-import { randomBytes } from 'crypto'
-import { readFile, rename, unlink, writeFile } from 'fs/promises'
-import path from 'path'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
 import ProviderContract from '../provider-contract'
 import type LogProvider from '@providers/log'
 import type { FSALEventPayload } from '../fsal'
 import type { WorkspaceReferenceEdit, WorkspaceTextEdit } from '@dts/common/references'
-import { extractReferences, hashDocumentSource } from '@common/pandoc-util/extract-references'
+import { extractReferences } from '@common/pandoc-util/extract-references'
 import {
   previewReferenceRename,
   type CommitRenameOutcome,
@@ -89,25 +85,11 @@ import {
   type UndoRenameOutcome
 } from '@common/pandoc-util/compute-reference-edits'
 import { ReferenceIndex, type WorkspaceReferenceState } from './reference-index'
-
-/**
- * Applies a document's WorkspaceTextEdits to its source, descending by range
- * start so earlier ranges stay valid — the same application contract the
- * renderer uses for open-buffer transactions.
- *
- * @param   {string}               source  The document source
- * @param   {WorkspaceTextEdit[]}  edits   The edits to apply
- *
- * @return  {string}                       The rewritten source
- */
-function applyTextEdits (source: string, edits: WorkspaceTextEdit[]): string {
-  const ordered = [...edits].sort((a, b) => b.range.from - a.range.from)
-  let result = source
-  for (const edit of ordered) {
-    result = result.slice(0, edit.range.from) + edit.insert + result.slice(edit.range.to)
-  }
-  return result
-}
+import {
+  recoverWorkspaceEditJournal,
+  runWorkspaceEditTransaction,
+  type WorkspaceEditAuthority
+} from './workspace-edit-transaction'
 
 /**
  * The one-shot pending workspace undo recorded by an applied commitRename().
@@ -140,10 +122,7 @@ export type ReferenceProviderIPCAPI = { command: 'get-snapshot', payload?: undef
  * buffer's text; this seam returns the CURRENT text of an open markdown
  * document, or undefined when the path is not an open markdown buffer.
  */
-export interface ReferenceDocumentAuthority {
-  readMarkdownBufferContent: (filePath: string) => string|undefined
-  applyWorkspaceTextEdits: (edits: WorkspaceTextEdit[]) => Promise<string[]>
-}
+export type ReferenceDocumentAuthority = WorkspaceEditAuthority
 
 /**
  * The slice of FSAL this provider actually consumes: the 'fsal-event'
@@ -210,6 +189,8 @@ export default class ReferenceProvider extends ProviderContract {
     private readonly _fsal: ReferenceFSALEvents,
     private readonly _authority: ReferenceDocumentAuthority,
     private readonly _authorityReportDebounceMs: number,
+    /** Application data directory holding the workspace-edit journal */
+    private readonly _journalDirectory: string,
     private readonly _scheduler: AuthorityReportScheduler = setTimeoutScheduler
   ) {
     super()
@@ -280,10 +261,19 @@ export default class ReferenceProvider extends ProviderContract {
 
   /**
    * Subscribes to the injected FSAL's 'fsal-event' stream so saved snapshots
-   * follow the on-disk workspace state.
+   * follow the on-disk workspace state, and finishes any workspace-edit
+   * transaction a crash interrupted before the app reads a half-written
+   * workspace.
    */
   public async boot (): Promise<void> {
     this._fsal.on('fsal-event', this._onFsalEvent)
+    const restored = await recoverWorkspaceEditJournal(this._journalDirectory)
+    if (restored.length > 0) {
+      this._logger.warning(
+        `[Reference Provider] Restored ${restored.length} file(s) from an interrupted workspace edit`,
+        restored
+      )
+    }
   }
 
   /**
@@ -316,185 +306,60 @@ export default class ReferenceProvider extends ProviderContract {
    *
    * CONTRACT (locked red by test/reference-rename-atomicity.spec.ts):
    *
-   * - Re-verifies EVERY document named in edit.expectedSourceHashes against
-   *   current reality BEFORE applying anything: documents open in the
-   *   document authority are checked against the authority's CURRENT buffer
-   *   text (issue #53 — the open set and the text both come from the
-   *   authority, never from a reporter-fed overlay); all other documents are
-   *   RE-READ FROM DISK and re-hashed (a stale index snapshot is not
-   *   trusted). ANY mismatch aborts the ENTIRE operation with a structured
-   *   conflict naming the first mismatching document — nothing is applied
-   *   anywhere, no file and no buffer.
-   * - On success, partitions the edits by the authority's open set: closed
-   *   files are rewritten atomically (write to a temp file in the same
-   *   directory, then rename over the original); open-buffer edits are
-   *   applied through the document authority, which records collab updates
-   *   for every renderer pane while leaving the buffers dirty/unsaved.
-   * - Records a one-shot inverse WorkspaceReferenceEdit as the pending
-   *   workspace undo consumed by undoRename(). Open buffers fence on the
-   *   post-commit content computed here from the verified authority text
-   *   plus the committed edits.
+   * The journaled workspace-edit transaction owns the whole sequence: it
+   * re-verifies EVERY document named in edit.expectedSourceHashes against
+   * current reality before touching anything (open buffers through the
+   * document authority, closed files re-read from disk), aborts the ENTIRE
+   * operation on any mismatch, and rolls every buffer and file back if a
+   * later step fails. This method only records the one-shot inverse as the
+   * pending workspace undo, fenced on the transaction's resulting hashes.
    *
    * @param   {WorkspaceReferenceEdit}        edit  The previewed edit to apply
    *
    * @return  {Promise<CommitRenameOutcome>}        The typed commit outcome
    */
   public async commitRename (edit: WorkspaceReferenceEdit): Promise<CommitRenameOutcome> {
-    const documentPaths = Object.keys(edit.expectedSourceHashes)
+    const result = await runWorkspaceEditTransaction(this._authority, this._journalDirectory, {
+      edits: edit.edits,
+      expectedSourceHashes: edit.expectedSourceHashes
+    })
 
-    // Phase 1 — verify EVERY fenced document against current reality before
-    // touching anything. Open buffers are checked through the document
-    // authority; everything else is re-read from disk and re-hashed (the
-    // index's saved snapshot is never trusted here: a concurrent write
-    // without an FSAL event must still be caught).
-    const openBufferPaths: string[] = []
-    const openBufferContents = new Map<string, string>()
-    const closedContents = new Map<string, string>()
-    for (const documentPath of documentPaths) {
-      const expected = edit.expectedSourceHashes[documentPath]
-      const bufferContent = this._authority.readMarkdownBufferContent(documentPath)
-      let actual: string
-      if (bufferContent !== undefined) {
-        openBufferPaths.push(documentPath)
-        openBufferContents.set(documentPath, bufferContent)
-        actual = hashDocumentSource(bufferContent)
-      } else {
-        const content = await readFile(documentPath, 'utf-8')
-        closedContents.set(documentPath, content)
-        actual = hashDocumentSource(content)
-      }
-
-      if (actual !== expected) {
-        // ANY mismatch aborts the ENTIRE commit: nothing has been applied
-        // anywhere at this point, and no temp file exists yet.
-        return {
+    if (result.status === 'conflict') {
+      return {
+        status: 'conflict',
+        conflict: {
           status: 'conflict',
-          conflict: { status: 'conflict', documentPath, expectedSourceHash: expected, actualSourceHash: actual }
+          documentPath: result.documentPath,
+          expectedSourceHash: result.expectedSourceHash,
+          actualSourceHash: result.actualSourceHash
         }
       }
     }
 
-    // Phase 2 — apply. Closed files are rewritten atomically on disk; open
-    // buffers are applied through the central document authority so every
-    // renderer pane receives the same collab update.
-    const closedFilePaths = documentPaths.filter(p => !openBufferPaths.includes(p))
-    const openBufferEdits = edit.edits.filter(e => openBufferPaths.includes(e.documentPath))
-    const rewritten = new Map<string, string>()
-    for (const documentPath of closedFilePaths) {
-      const content = closedContents.get(documentPath)
-      if (content === undefined) {
-        throw new Error(`commit-rename: no verified disk content for ${documentPath}`)
-      }
-      rewritten.set(documentPath, applyTextEdits(content, edit.edits.filter(e => e.documentPath === documentPath)))
-    }
-    await this._writeFilesAtomically(rewritten)
-
-    // The authority promise is the application acknowledgement. Validate its
-    // complete path set and re-read every touched buffer before exposing
-    // success or a pending undo.
-    const openBuffersUpdated = await this._authority.applyWorkspaceTextEdits(openBufferEdits)
-    assert.equal(
-      new Set(openBuffersUpdated).size,
-      openBufferPaths.length,
-      'The document authority must acknowledge each open workspace-edit path exactly once'
-    )
-    for (const documentPath of openBufferPaths) {
-      assert(
-        openBuffersUpdated.includes(documentPath),
-        `The document authority did not acknowledge workspace edits for ${documentPath}`
-      )
-    }
-
-    // Phase 3 — record the one-shot inverse as the pending workspace undo,
-    // but only after every open-buffer application was acknowledged.
-    // Closed files fence against the just-written content; open buffers
-    // fence against the acknowledged authority content.
-    const undoHashes: Record<string, string> = {}
-    for (const documentPath of closedFilePaths) {
-      const content = rewritten.get(documentPath)
-      assert(content !== undefined, `Commit lost rewritten disk content for ${documentPath}`)
-      undoHashes[documentPath] = hashDocumentSource(content)
-    }
-    for (const documentPath of openBufferPaths) {
-      const content = openBufferContents.get(documentPath)
-      if (content === undefined) {
-        throw new Error(`commit-rename: no verified buffer content for ${documentPath}`)
-      }
-      const expectedAppliedHash = hashDocumentSource(
-        applyTextEdits(content, edit.edits.filter(e => e.documentPath === documentPath))
-      )
-      const appliedContent = this._authority.readMarkdownBufferContent(documentPath)
-      assert(
-        appliedContent !== undefined,
-        `The document authority dropped ${documentPath} before acknowledging its workspace edits`
-      )
-      assert.equal(
-        hashDocumentSource(appliedContent),
-        expectedAppliedHash,
-        `The document authority acknowledged different workspace-edit content for ${documentPath}`
-      )
-      undoHashes[documentPath] = expectedAppliedHash
-    }
     this._pendingUndo = {
       edits: edit.undo,
-      documentPaths,
-      expectedSourceHashes: undoHashes
+      documentPaths: Object.keys(edit.expectedSourceHashes),
+      expectedSourceHashes: result.resultingHashes
     }
 
     broadcastIpcMessage('references')
 
     return {
       status: 'applied',
-      closedFilesWritten: closedFilePaths,
-      openBuffersUpdated
+      closedFilesWritten: result.closedFilesWritten,
+      openBuffersUpdated: result.openBuffersUpdated
     }
   }
 
   /**
-   * Rewrites every file in the map atomically: each new content is written
-   * to a temp file in the file's own directory, and only after every temp
-   * write succeeded are the temps renamed over their originals. A failed
-   * temp write removes all staged temps and rethrows, leaving every
-   * original byte-identical and no debris behind.
+   * Applies the pending one-shot workspace undo recorded by the last applied
+   * commitRename(), through the same journaled transaction the commit used.
    *
-   * @param   {Map<string, string>}  contents  New content per file path
-   */
-  private async _writeFilesAtomically (contents: Map<string, string>): Promise<void> {
-    const tempPaths = new Map<string, string>()
-    try {
-      for (const [ filePath, content ] of contents) {
-        const tempPath = path.join(
-          path.dirname(filePath),
-          `.${path.basename(filePath)}.${randomBytes(6).toString('hex')}.tmp`
-        )
-        await writeFile(tempPath, content, 'utf-8')
-        tempPaths.set(filePath, tempPath)
-      }
-    } catch (err) {
-      for (const tempPath of tempPaths.values()) {
-        await unlink(tempPath).catch(() => { /* the temp never made it to disk */ })
-      }
-      throw err
-    }
-
-    for (const [ filePath, tempPath ] of tempPaths) {
-      await rename(tempPath, filePath)
-    }
-  }
-
-  /**
-   * Applies the pending one-shot workspace undo recorded by the last
-   * applied commitRename().
-   *
-   * CONTRACT (locked red by test/reference-rename-atomicity.spec.ts): the
-   * undo is hash-fenced exactly like the commit — closed files are re-read
-   * from disk and re-hashed against the post-commit content, open buffers
-   * are checked through the document authority's current text — and ANY
-   * mismatch aborts the whole undo with a structured conflict, leaving the
-   * pending undo record intact. An applied undo restores every touched
-   * document (closed files via atomic temp+rename writes, open buffers
-   * through acknowledged document-authority updates) and CONSUMES the
-   * record: a subsequent undoRename() reports 'no-pending-undo'.
+   * The undo is hash-fenced exactly like the commit — against the post-commit
+   * content of every touched document — and ANY mismatch aborts the whole
+   * undo with a structured conflict, leaving the pending undo record intact
+   * for a retry. An applied undo CONSUMES the record: a subsequent
+   * undoRename() reports 'no-pending-undo'.
    *
    * @return  {Promise<UndoRenameOutcome>}  The typed undo outcome
    */
@@ -504,89 +369,32 @@ export default class ReferenceProvider extends ProviderContract {
       return { status: 'no-pending-undo' }
     }
 
-    // Verify every fenced document against current reality, partitioned by
-    // the CURRENT authority open set (a buffer closed since the commit is a
-    // closed file now). Any mismatch aborts the whole undo and leaves the
-    // pending record intact for a retry once the interference is resolved.
-    const openBufferPaths: string[] = []
-    const openBufferContents = new Map<string, string>()
-    const closedContents = new Map<string, string>()
-    for (const documentPath of pending.documentPaths) {
-      const expected = pending.expectedSourceHashes[documentPath]
-      const bufferContent = this._authority.readMarkdownBufferContent(documentPath)
-      let actual: string
-      if (bufferContent !== undefined) {
-        openBufferPaths.push(documentPath)
-        openBufferContents.set(documentPath, bufferContent)
-        actual = hashDocumentSource(bufferContent)
-      } else {
-        const content = await readFile(documentPath, 'utf-8')
-        closedContents.set(documentPath, content)
-        actual = hashDocumentSource(content)
-      }
+    const result = await runWorkspaceEditTransaction(this._authority, this._journalDirectory, {
+      edits: pending.edits,
+      expectedSourceHashes: pending.expectedSourceHashes
+    })
 
-      if (actual !== expected) {
-        return {
+    if (result.status === 'conflict') {
+      return {
+        status: 'conflict',
+        conflict: {
           status: 'conflict',
-          conflict: { status: 'conflict', documentPath, expectedSourceHash: expected, actualSourceHash: actual }
+          documentPath: result.documentPath,
+          expectedSourceHash: result.expectedSourceHash,
+          actualSourceHash: result.actualSourceHash
         }
       }
     }
 
-    // Apply: closed files via atomic temp+rename writes, open buffers through
-    // the central document authority.
-    const closedFilePaths = pending.documentPaths.filter(p => !openBufferPaths.includes(p))
-    const openBufferEdits = pending.edits.filter(e => openBufferPaths.includes(e.documentPath))
-    const restored = new Map<string, string>()
-    for (const documentPath of closedFilePaths) {
-      const content = closedContents.get(documentPath)
-      if (content === undefined) {
-        throw new Error(`undo-rename: no verified disk content for ${documentPath}`)
-      }
-      restored.set(documentPath, applyTextEdits(content, pending.edits.filter(e => e.documentPath === documentPath)))
-    }
-    await this._writeFilesAtomically(restored)
-
-    const expectedRestoredHashes: Record<string, string> = {}
-    for (const documentPath of openBufferPaths) {
-      const content = openBufferContents.get(documentPath)
-      assert(content !== undefined, `Undo lost verified authority content for ${documentPath}`)
-      expectedRestoredHashes[documentPath] = hashDocumentSource(
-        applyTextEdits(content, pending.edits.filter(e => e.documentPath === documentPath))
-      )
-    }
-    const openBuffersUpdated = await this._authority.applyWorkspaceTextEdits(openBufferEdits)
-    assert.equal(
-      new Set(openBuffersUpdated).size,
-      openBufferPaths.length,
-      'The document authority must acknowledge each open undo path exactly once'
-    )
-    for (const documentPath of openBufferPaths) {
-      assert(
-        openBuffersUpdated.includes(documentPath),
-        `The document authority did not acknowledge undo edits for ${documentPath}`
-      )
-      const restoredContent = this._authority.readMarkdownBufferContent(documentPath)
-      assert(
-        restoredContent !== undefined,
-        `The document authority dropped ${documentPath} before acknowledging its undo`
-      )
-      assert.equal(
-        hashDocumentSource(restoredContent),
-        expectedRestoredHashes[documentPath],
-        `The document authority acknowledged different undo content for ${documentPath}`
-      )
-    }
-
-    // One-shot: the applied and fully acknowledged undo consumes the record.
+    // One-shot: the applied undo consumes the record.
     this._pendingUndo = undefined
 
     broadcastIpcMessage('references')
 
     return {
       status: 'applied',
-      closedFilesWritten: closedFilePaths,
-      openBuffersUpdated
+      closedFilesWritten: result.closedFilesWritten,
+      openBuffersUpdated: result.openBuffersUpdated
     }
   }
 
@@ -603,3 +411,4 @@ export default class ReferenceProvider extends ProviderContract {
     this._logger.verbose('Reference provider shutting down ...')
   }
 }
+

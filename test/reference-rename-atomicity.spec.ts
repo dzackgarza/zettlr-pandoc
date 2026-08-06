@@ -36,10 +36,10 @@
 
 // The harness must load before any provider module: LogProvider imports
 // 'electron' at module scope.
-import { ipcMainHandlers } from './headless-electron-harness.cjs'
+import { ipcMainHandlers, userData } from './headless-electron-harness.cjs'
 import { strict as assert } from 'assert'
 import EventEmitter from 'events'
-import { readdirSync, readFileSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { cp, mkdtemp, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
@@ -194,6 +194,7 @@ async function setUpScratchWorkspace (): Promise<ScratchWorkspace> {
       }
     },
     500,
+    userData,
     {
       schedule: (callback: () => void, _delayMs: number) => {
         const task = { callback, cancelled: false }
@@ -473,6 +474,112 @@ describe('Workspace rename commit protocol', function () {
         exhausted,
         { status: 'no-pending-undo' },
         'a second undo has nothing left to restore'
+      )
+    })
+  })
+})
+
+describe('Workspace edit transaction rollback and recovery', function () {
+  describe('a failed file installation rolls the whole transaction back', function () {
+    let scratch: ScratchWorkspace
+
+    before(async function () {
+      scratch = await setUpScratchWorkspace()
+    })
+
+    after(async function () {
+      chmodSync(path.join(scratch.root, 'ProjectB'), 0o755)
+      await scratch.provider.shutdown()
+      await rm(scratch.root, { recursive: true, force: true })
+    })
+
+    it('restores every installed file and every mutated buffer, and leaves no journal', async function () {
+      if (process.getuid?.() === 0) {
+        this.skip() // root ignores the directory permission this injection needs
+      }
+
+      const preview = await scratch.command.run('preview-reference-rename', { oldKey: OLD_KEY, newKey: NEW_KEY }) as ReferenceRenamePreview
+      const edit = editOf(preview, 'rollback-path preview')
+
+      // Real failure injection, no filesystem mock: ProjectB becomes
+      // unwritable, so write-file-atomic cannot stage its temp file there.
+      // Other_Paper.md is installed after Theorems.md and Standalone_Notes.md,
+      // so the transaction fails with earlier installations already on disk.
+      chmodSync(path.join(scratch.root, 'ProjectB'), 0o555)
+
+      await assert.rejects(
+        async () => await scratch.command.run('commit-reference-rename', { edit }),
+        'an installation that cannot be performed must fail loudly'
+      )
+
+      // Every file holds its original bytes again, including the ones the
+      // transaction had already installed.
+      assertWorkspaceBytes(scratch, scratch.originals, 'after rolled-back commit')
+      assert.equal(
+        scratch.authorityBuffers.get(scratch.paths.halphen),
+        scratch.originals.get(scratch.paths.halphen),
+        'the rollback must restore the open authority buffer byte-exactly'
+      )
+      assert.deepEqual(readdirSync(path.join(scratch.root, 'ProjectA')).sort(), [ 'Coble_Lattice_Table.md', 'Halphen_Surfaces.md', 'Theorems.md' ])
+      assert.equal(
+        existsSync(path.join(userData, 'workspace-edit-journal.json')),
+        false,
+        'a completed rollback deletes its journal'
+      )
+
+      // Nothing was recorded to undo: the failed commit never applied.
+      const undone = await scratch.command.run('undo-reference-rename', undefined) as UndoRenameOutcome
+      assert.deepEqual(undone, { status: 'no-pending-undo' })
+    })
+  })
+
+  describe('a journal found at startup restores the pre-transaction state', function () {
+    let root: string
+    let provider: ReferenceProvider
+
+    after(async function () {
+      await provider.shutdown()
+      await rm(root, { recursive: true, force: true })
+      await rm(path.join(userData, 'workspace-edit-journal.json'), { force: true })
+    })
+
+    it('rewrites every journaled file to its original content and deletes the journal', async function () {
+      root = await mkdtemp(path.join(tmpdir(), 'zettlr-reference-journal-'))
+      const interrupted = path.join(root, 'Interrupted.md')
+      const untouched = path.join(root, 'Untouched.md')
+      writeFileSync(interrupted, 'installed target\n', 'utf-8')
+      writeFileSync(untouched, 'original\n', 'utf-8')
+
+      // The journal a crash between installations leaves behind.
+      writeFileSync(path.join(userData, 'workspace-edit-journal.json'), JSON.stringify({
+        transactionId: 'crashed-transaction',
+        phase: 'installing',
+        closedFiles: [
+          { documentPath: interrupted, original: 'original\n', target: 'installed target\n' },
+          { documentPath: untouched, original: 'original\n', target: 'never installed\n' }
+        ],
+        openBuffers: []
+      }), 'utf-8')
+
+      provider = new ReferenceProvider(
+        new LogProvider(),
+        new EventEmitter(),
+        {
+          readMarkdownBufferContent: () => undefined,
+          applyWorkspaceTextEdits: async () => []
+        },
+        500,
+        userData,
+        { schedule: (callback: () => void) => { callback(); return { cancel: () => {} } } }
+      )
+      await provider.boot()
+
+      assert.equal(readFileSync(interrupted, 'utf-8'), 'original\n', 'the installed file must be rolled back')
+      assert.equal(readFileSync(untouched, 'utf-8'), 'original\n', 'the file that was never installed stays as it is')
+      assert.equal(
+        existsSync(path.join(userData, 'workspace-edit-journal.json')),
+        false,
+        'finished recovery deletes the journal'
       )
     })
   })

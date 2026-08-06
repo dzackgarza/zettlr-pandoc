@@ -17,7 +17,7 @@
 
 // The harness must load before any provider module: LogProvider imports
 // 'electron' at module scope.
-import { ipcMainHandlers } from './headless-electron-harness.cjs'
+import { ipcMainHandlers, userData } from './headless-electron-harness.cjs'
 import assert from 'assert'
 import EventEmitter from 'events'
 import { readFileSync } from 'fs'
@@ -137,6 +137,7 @@ describe('References provider behavior', function () {
         }
       },
       500,
+      userData,
       { schedule: scheduler.schedule }
     )
     await provider.boot()

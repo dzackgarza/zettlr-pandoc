@@ -36,7 +36,7 @@ import TargetProvider from '@providers/targets'
 import TrayProvider from '@providers/tray'
 import UpdateProvider from '@providers/updates'
 import WindowProvider from '@providers/windows'
-import { dialog } from 'electron'
+import { app, dialog } from 'electron'
 import {
   closeSplashScreen,
   showSplashScreen,
@@ -157,6 +157,7 @@ export class AppServiceContainer {
       this._fsal,
       this._documentManager,
       this._configProvider.get().references.authorityReportDebounceMs,
+      app.getPath('userData'),
     )
     this._agentHTTPProvider = new AgentHTTPProvider(
       this._logProvider,
