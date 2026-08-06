@@ -306,71 +306,11 @@ export interface paths {
         };
         /**
          * Inspect current unresolved chunks
-         * @description Read this at the start of each turn. A held chunk's holdComment is the reviewer's question or objection — answer it with a revised claim in your next submission. Pending chunks are simply undecided; adjudicating your own proposals through the accept/reject routes ends the review instead of answering it. Answers for a detached review too, from the frozen texts in its sidecar — same content-addressed chunk ids, no documentId — but deciding those chunks needs the file open.
+         * @description Read this at the start of each turn. A held chunk's holdComment is the reviewer's question or objection — answer it with a revised claim in your next submission. Pending chunks are simply undecided: the reviewer accepts, rejects, and holds them in the editor, and this API offers no way to decide them for them. Answers for a detached review too, from the frozen texts in its sidecar — same content-addressed chunk ids, no documentId.
          */
         get: operations["getReviewChunks"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/reviews/{reviewId}/chunks/{chunkId}/accept": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Accept one chunk
-         * @description Moves the merge reference to agree with the working document on this chunk. The document itself does not change. The same decision path the editor's Accept button uses.
-         */
-        post: operations["acceptReviewChunk"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/reviews/{reviewId}/chunks/{chunkId}/reject": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reject one chunk
-         * @description Restores this chunk of the working document to the merge reference. The document changes; the response carries the new revision. The same decision path the editor's Reject button uses.
-         */
-        post: operations["rejectReviewChunk"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/reviews/{reviewId}/chunks/{chunkId}/hold": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Hold one chunk without adjudicating it
-         * @description Attaches an optional comment to the chunk and takes it out of the pending count: held chunks do not block saving, survive the save (the reference retains its disagreement over the span), and stay rendered in the editor. Chunk ids are content-addressed, so editing or deciding a held chunk retires its id — the hold is then released and a comment it carried surfaces as an orphaned review-level comment. Re-holding a held chunk replaces its comment. The same decision path the editor's Hold button uses.
-         */
-        post: operations["holdReviewChunk"];
         delete?: never;
         options?: never;
         head?: never;
@@ -411,43 +351,6 @@ export interface paths {
         get: operations["getReviewPackets"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/reviews/{reviewId}/accept-all": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Accept every outstanding chunk in one sweep
-         * @description Accepts the whole current partition at once — the mirror of /clear, which is mass reject. The reference moves to agree with the working document; the document itself does not change. Held chunks are accepted too; a hold's comment is preserved as an orphaned review-level comment. Same decision authority as the editor's Accept-all control.
-         */
-        post: operations["acceptAllReviewChunks"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/reviews/{reviewId}/clear": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Discard unresolved suggestions while preserving accepted changes */
-        post: operations["clearReview"];
         delete?: never;
         options?: never;
         head?: never;
@@ -682,7 +585,6 @@ export interface components {
             expected?: components["schemas"]["DocumentRevision"];
             actual?: components["schemas"]["DocumentRevision"];
             reviewId?: string;
-            canClearUnresolved?: boolean;
             /** @description REVIEW_GENERATION_MISMATCH: the generation the review is actually at, so the caller can re-read from exactly there. */
             reviewGeneration?: number;
         };
@@ -830,7 +732,7 @@ export interface components {
             /** @description Absent for a detached review, whose file is closed. */
             documentId?: string;
             generation: number;
-            /** @description SHA-256 of the working text these chunks were partitioned from — the `expectedWorkingSha256` to send with a decision on any of them. Absent for a detached review, which has no live buffer and accepts no decisions until its file is reopened. */
+            /** @description SHA-256 of the working text these chunks were partitioned from — the `expectedWorkingSha256` a retraction of one of the packets behind them must carry. Absent for a detached review, which has no live buffer and accepts no mutation until its file is reopened. */
             workingSha256?: string;
             chunks: components["schemas"]["OutstandingChunk"][];
         };
@@ -839,12 +741,6 @@ export interface components {
             /** @description Absent for a detached review, whose file is closed. */
             documentId?: string;
             packets: components["schemas"]["ProposalPacket"][];
-        };
-        ClearReviewResponse: {
-            reviewId: string;
-            documentId: string;
-            state: components["schemas"]["ReviewState"];
-            documentRevision: components["schemas"]["DocumentRevision"];
         };
         RetractProposalResponse: {
             /** @constant */
@@ -886,44 +782,11 @@ export interface components {
             /** @description Focused zero-context unified diff of exactly this chunk. */
             patch: string;
         };
-        ChunkDecisionResponse: {
-            /** @constant */
-            ok: true;
-            reviewId: string;
-            documentId: string;
-            chunkId: string;
-            /** @enum {string} */
-            decision: "accept" | "reject" | "hold";
-            reviewGeneration: number;
-            unresolvedChunks: number;
-            state: components["schemas"]["ReviewState"];
-            documentRevision: components["schemas"]["DocumentRevision"];
-        };
-        AcceptAllChunksResponse: {
-            /** @constant */
-            ok: true;
-            reviewId: string;
-            documentId: string;
-            /** @description How many chunks the sweep resolved (held ones included). */
-            acceptedChunks: number;
-            reviewGeneration: number;
-            unresolvedChunks: number;
-            state: components["schemas"]["ReviewState"];
-            documentRevision: components["schemas"]["DocumentRevision"];
-        };
         ReviewMutationPrecondition: {
-            /** @description The review generation this decision was formed against — the `generation` of the chunk list, diff, or status you read. Every review mutation advances it, so a decision that carries a stale one was decided before somebody else's mutation landed and is refused as REVIEW_GENERATION_MISMATCH. */
+            /** @description The review generation this request was formed against — the `generation` of the chunk list, diff, or status you read. Every review mutation advances it, including the reviewer's decisions, so a request that carries a stale one was formed before somebody else's mutation landed and is refused as REVIEW_GENERATION_MISMATCH. */
             expectedReviewGeneration: number;
-            /** @description SHA-256 of the working text this decision was formed against — `workingSha256` from GET /v1/reviews/{reviewId}/chunks. Chunk ids are content-addressed, so text that moved retires them; binding the decision to the exact bytes makes an edit between the read and the decision a REVISION_MISMATCH refusal instead of a decision landing on a chunk the reviewer never saw. */
+            /** @description SHA-256 of the working text this request was formed against — `workingSha256` from GET /v1/reviews/{reviewId}/chunks. Binding the request to the exact bytes makes an edit between the read and the request a REVISION_MISMATCH refusal instead of a retraction landing on text the caller never saw. */
             expectedWorkingSha256: string;
-        };
-        HoldChunkRequest: {
-            /** @description See ReviewMutationPrecondition. */
-            expectedReviewGeneration: number;
-            /** @description See ReviewMutationPrecondition. */
-            expectedWorkingSha256: string;
-            /** @description Optional note attached to the chunk without adjudicating it. A hold without text is legal; re-holding a held chunk replaces its comment. */
-            comment?: string;
         };
         AddReviewCommentRequest: {
             /** @description See ReviewMutationPrecondition. A comment moves no document text, so it carries no working hash. */
@@ -1467,141 +1330,6 @@ export interface operations {
             };
         };
     };
-    acceptReviewChunk: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                reviewId: string;
-                chunkId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReviewMutationPrecondition"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChunkDecisionResponse"];
-                };
-            };
-            /** @description Review not found, or no unresolved chunk carries this id at the current state — the region changed since the chunk list was read. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but no decision can land while its file is closed. Open its documentPath to reattach it. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
-    };
-    rejectReviewChunk: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                reviewId: string;
-                chunkId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReviewMutationPrecondition"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChunkDecisionResponse"];
-                };
-            };
-            /** @description Review not found, or no unresolved chunk carries this id at the current state — the region changed since the chunk list was read. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but no decision can land while its file is closed. Open its documentPath to reattach it. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
-    };
-    holdReviewChunk: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                reviewId: string;
-                chunkId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["HoldChunkRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChunkDecisionResponse"];
-                };
-            };
-            /** @description Review not found, or no unresolved chunk carries this id at the current state — the region changed since the chunk list was read. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but no decision can land while its file is closed. Open its documentPath to reattach it. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
-    };
     addReviewComment: {
         parameters: {
             query?: never;
@@ -1686,94 +1414,6 @@ export interface operations {
             };
         };
     };
-    acceptAllReviewChunks: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                reviewId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReviewMutationPrecondition"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcceptAllChunksResponse"];
-                };
-            };
-            /** @description Review not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description The reviewed document is closed, or the review was invalidated Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
-    };
-    clearReview: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                reviewId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReviewMutationPrecondition"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ClearReviewResponse"];
-                };
-            };
-            /** @description Review not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but clearing edits the document, which is closed. Open its documentPath to reattach it. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
-    };
     retractProposal: {
         parameters: {
             query?: never;
@@ -1798,7 +1438,7 @@ export interface operations {
                     "application/json": components["schemas"]["RetractProposalResponse"];
                 };
             };
-            /** @description PACKET_NOT_RETRACTABLE when the packet is live but no longer the retractable one: the error carries the owning reviewId and canClearUnresolved: true — clearing is the remaining way to drop the unresolved suggestions. DOCUMENT_CLOSED when the packet belongs to a detached review (one listReviews reports with attached: false): the message names the file to open, and canClearUnresolved is false because clearing refuses too. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
+            /** @description PACKET_NOT_RETRACTABLE when the packet is live but no longer the retractable one: the error carries the owning reviewId, and the suggestions stay up for the reviewer to dispose of. A packet the reviewer has already adjudicated is never retractable — the decision advanced the generation the packet was applied at. DOCUMENT_CLOSED when the packet belongs to a detached review (one listReviews reports with attached: false): the message names the file to open. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
             409: {
                 headers: {
                     [name: string]: unknown;

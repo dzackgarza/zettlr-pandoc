@@ -663,11 +663,10 @@ describe('a review decision waits for the document authority', function () {
 
     // Leave the window closable: resolve the review and flush the buffer.
     await toast.first().click()
-    const fence = await chunkListing(activeApi, staleReviewId)
-    await activeApi.post(`/v1/reviews/${staleReviewId}/clear`, {
-      expectedReviewGeneration: fence.generation,
-      expectedWorkingSha256: fence.workingSha256
-    })
+    // Disposing of the remaining chunks is the reviewer's: the status panel's
+    // own control, which is the only surface that offers it.
+    // Two panes draw the review, so this is the first panel's control.
+    await activePage.locator('button.cm-reviewClear').first().click()
     await activePage
       .locator('.cm-reviewStatusPanel')
       .waitFor({ state: 'detached', timeout: 30_000 })

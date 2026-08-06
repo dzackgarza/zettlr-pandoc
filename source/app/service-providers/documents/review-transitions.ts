@@ -36,9 +36,6 @@ import {
 } from "diff";
 import path from "path";
 import type {
-  AcceptAllChunksResponse,
-  ChunkDecision,
-  ChunkDecisionResponse,
   DocumentRevision,
   ReviewComment,
   ReviewState,
@@ -124,6 +121,38 @@ export function isTransitionError<Response, Error extends { ok: false }>(
 export interface ClaimInput {
   patch: string;
   description: string;
+}
+
+/** What the reviewer can decide about one chunk. */
+export type ChunkDecision = "accept" | "reject" | "hold";
+
+/**
+ * The three decision shapes are owned here rather than generated from the
+ * OpenAPI document: adjudication is the human's, reachable only through the
+ * editor's typed IPC channels, so no agent-facing contract describes it.
+ */
+export interface ChunkDecisionResponse {
+  ok: true;
+  reviewId: string;
+  documentId: string;
+  chunkId: string;
+  decision: ChunkDecision;
+  reviewGeneration: number;
+  unresolvedChunks: number;
+  state: ReviewState;
+  documentRevision: DocumentRevision;
+}
+
+export interface AcceptAllChunksResponse {
+  ok: true;
+  reviewId: string;
+  documentId: string;
+  /** How many chunks the sweep resolved (held ones included). */
+  acceptedChunks: number;
+  reviewGeneration: number;
+  unresolvedChunks: number;
+  state: ReviewState;
+  documentRevision: DocumentRevision;
 }
 
 export interface ClearReviewResponse {

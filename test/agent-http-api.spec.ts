@@ -650,6 +650,36 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
   });
 
+  it("publishes no adjudication operation in either served document", async function () {
+    // The product boundary: an agent submits revisions and may comment on
+    // them; disposing of a chunk is the reviewer's, through the editor. A
+    // Custom GPT builds its callable surface from these documents alone, so
+    // the absence of these operationIds is what makes adjudication
+    // inexpressible to it — not a refusal it could retry.
+    const adjudication = [
+      "acceptReviewChunk",
+      "rejectReviewChunk",
+      "holdReviewChunk",
+      "acceptAllReviewChunks",
+      "clearReview",
+    ];
+    for (const route of ["/openapi.json", "/openapi-actions.json"]) {
+      const document = JSON.parse((await httpRequest("GET", route)).body) as {
+        paths: Record<string, Record<string, { operationId?: string }>>;
+      };
+      const declared = Object.values(document.paths).flatMap((methods) =>
+        Object.values(methods).map((operation) => operation.operationId),
+      );
+      // Submission and comment prove the enumeration reads real operationIds:
+      // a selector that found nothing would pass the absence check alone.
+      assert.ok(declared.includes("submitProposal"), route);
+      assert.ok(declared.includes("addReviewComment"), route);
+      for (const operationId of adjudication) {
+        assert.ok(!declared.includes(operationId), `${route} must not declare ${operationId}`);
+      }
+    }
+  });
+
   it("answers a request target that is not a URL instead of dying on it", async function () {
     // Absolute-form request targets are legal HTTP/1.1 and Node hands them to
     // the handler verbatim, so `new URL(req.url, ...)` refuses input that the
@@ -1786,86 +1816,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assertMatchesSchema(body, "ReviewDiffResponse");
   });
 
-  it("POST /v1/reviews/{id}/clear discards unresolved", async function () {
-    const filePath = path.join(scratch, "rclear.md");
-    // Separated edits so the review carries two chunks: one to accept, one
-    // for /clear to discard.
-    const original = "alpha\nx\ny\nz\nbeta\n";
-    const proposed = "ALPHA\nx\ny\nz\nBETA\n";
-    const docId = await openFile(filePath, original);
-
-    await submitClaim(
-      docId,
-      makePatch(original, proposed),
-      "http-rclear-req",
-    );
-
-    // Accept ALPHA first, through the one real decision path.
-    const review = provider.reviewStore.getReview(docId)!;
-    const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
-    assert.equal(chunks.length, 2);
-    const accepted = await provider.decideReviewChunk(review.reviewId, chunks[0].chunkId, "accept", livePrecondition(review.reviewId));
-    assert.equal(accepted.ok, true);
-
-    const response = await httpRequest(
-      "POST",
-      `/v1/reviews/${review.reviewId}/clear`,
-      jsonBody(livePrecondition(review.reviewId)),
-    );
-    assert.equal(response.status, 200);
-    const body = JSON.parse(response.body);
-    assert.equal(body.state, "cleared");
-    assertMatchesSchema(body, "ClearReviewResponse");
-  });
-
-  it("POST /v1/reviews/{id}/accept-all accepts the whole partition without touching the document", async function () {
-    const filePath = path.join(scratch, "racceptall.md");
-    // Separated edits so the sweep has more than one chunk to resolve.
-    const original = "alpha\nx\ny\nz\nbeta\n";
-    const proposed = "ALPHA\nx\ny\nz\nBETA\n";
-    const docId = await openFile(filePath, original);
-
-    await submitClaim(
-      docId,
-      makePatch(original, proposed),
-      "http-racceptall-req",
-    );
-    const review = provider.reviewStore.getReview(docId)!;
-    assert.equal((provider.reviewStatus(docId)?.unresolvedChunks ?? 0), 2);
-
-    const response = await httpRequest(
-      "POST",
-      `/v1/reviews/${review.reviewId}/accept-all`,
-      jsonBody(livePrecondition(review.reviewId)),
-    );
-    assert.equal(response.status, 200, response.body);
-    const body = JSON.parse(response.body) as {
-      acceptedChunks: number;
-      unresolvedChunks: number;
-      state: string;
-    };
-    assertMatchesSchema(body, "AcceptAllChunksResponse");
-    assert.equal(body.acceptedChunks, 2);
-    assert.equal(body.unresolvedChunks, 0);
-    assert.equal(body.state, "resolved-awaiting-save");
-
-    // Accept moves the reference only: the document keeps the proposed text,
-    // and the reference now agrees with it.
-    const doc = provider.loadedDocuments.find((d) => d.filePath === filePath)!;
-    assert.equal(doc.document.toString(), proposed);
-    assert.equal(provider.reviewStore.getReview(docId)!.referenceText, proposed);
-    assert.equal((provider.reviewStatus(docId)?.unresolvedChunks ?? 0), 0);
-
-    // An unknown review fails loudly.
-    const missing = await httpRequest(
-      "POST",
-      "/v1/reviews/no-such-review/accept-all",
-      jsonBody(DETACHED_PRECONDITION),
-    );
-    assert.equal(missing.status, 404);
-    assert.equal(JSON.parse(missing.body).error.code, "REVIEW_NOT_FOUND");
-  });
-
   it("refuses a decision whose working-text precondition no longer holds", async function () {
     const filePath = path.join(scratch, "precondition-text.md");
     const original = "alpha\nx\ny\nz\nbeta\n";
@@ -1966,13 +1916,15 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
   });
 
-  it("refuses every review mutation route whose precondition is stale", async function () {
+  it("refuses the retraction whose precondition is stale", async function () {
     // The precondition check is one function, and the two specs above prove
-    // it. What they cannot prove is that each of the six routes forwards
-    // what the caller actually wrote: a route that dropped the working hash,
-    // or filled in the current generation for the caller, would pass every
-    // test of the check itself and silently decide against text the caller
-    // never saw. So each route is driven here with each kind of stale fence.
+    // it. What they cannot prove is that the route forwards what the caller
+    // actually wrote: a route that dropped the working hash, or filled in the
+    // current generation for the caller, would pass every test of the check
+    // itself and silently mutate against text the caller never saw. So the
+    // one agent-callable mutation that carries a fence — retraction; the
+    // reviewer's decisions reach the provider through the editor's IPC
+    // channels — is driven here with each kind of stale fence.
     const filePath = path.join(scratch, "precondition-routes.md");
     const original = "alpha\nx\ny\nz\nbeta\n";
     const proposed = "ALPHA\nx\ny\nz\nBETA\n";
@@ -1981,21 +1933,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(submitted.ok, JSON.stringify(submitted));
 
     const reviewId = submitted.reviewId;
-    const chunks = provider.reviewStore.getOutstandingChunks(
-      docId,
-      provider.readWorkingText(docId) ?? "",
-    )!;
-    assert.equal(chunks.length, 2);
-
     const live = livePrecondition(reviewId);
-    const routes = [
-      { name: "accept", path: `/v1/reviews/${reviewId}/chunks/${chunks[0].chunkId}/accept` },
-      { name: "reject", path: `/v1/reviews/${reviewId}/chunks/${chunks[0].chunkId}/reject` },
-      { name: "hold", path: `/v1/reviews/${reviewId}/chunks/${chunks[0].chunkId}/hold` },
-      { name: "accept-all", path: `/v1/reviews/${reviewId}/accept-all` },
-      { name: "clear", path: `/v1/reviews/${reviewId}/clear` },
-      { name: "retract", path: `/v1/proposals/${submitted.packetIds[0]}/retract` },
-    ];
+    const retract = `/v1/proposals/${submitted.packetIds[0]}/retract`;
     const staleFences = [
       {
         name: "overtaken generation",
@@ -2015,153 +1954,25 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       },
     ];
 
-    // Every route is refused against the SAME committed state, so a route
-    // that let one refusal through would be caught by the next one's
-    // comparison as much as by its own.
+    // Both fences are refused against the SAME committed state, so one that
+    // let a refusal through would be caught by the next one's comparison as
+    // much as by its own.
     const before = projections(docId);
-    for (const route of routes) {
-      for (const fence of staleFences) {
-        const where = `${route.name} / ${fence.name}`;
-        const response = await httpRequest("POST", route.path, jsonBody(fence.precondition));
-        assert.equal(response.status, 409, `${where}: ${response.body}`);
-        assert.equal(JSON.parse(response.body).error.code, fence.code, where);
-        assert.equal(projections(docId), before, `${where} must move nothing`);
-      }
+    for (const fence of staleFences) {
+      const response = await httpRequest("POST", retract, jsonBody(fence.precondition));
+      assert.equal(response.status, 409, `${fence.name}: ${response.body}`);
+      assert.equal(JSON.parse(response.body).error.code, fence.code, fence.name);
+      assert.equal(projections(docId), before, `${fence.name} must move nothing`);
     }
 
-    // And the fence is the only thing that refused them: the same review
-    // still accepts a decision carrying the precondition it really holds.
-    const accepted = await httpRequest(
+    // And the fence is the only thing that refused them: the same packet
+    // retracts when it carries the precondition the review really holds.
+    const retracted = await httpRequest(
       "POST",
-      `/v1/reviews/${reviewId}/chunks/${chunks[0].chunkId}/accept`,
+      retract,
       jsonBody(livePrecondition(reviewId)),
     );
-    assert.equal(accepted.status, 200, accepted.body);
-  });
-
-  it("POST /v1/reviews/{id}/chunks/{chunkId}/accept and /reject decide through the provider", async function () {
-    const filePath = path.join(scratch, "rdecide.md");
-    const original = "alpha\nx\ny\nz\nbeta\n";
-    const proposed = "ALPHA\nx\ny\nz\nBETA\n";
-    const docId = await openFile(filePath, original);
-
-    await submitClaim(
-      docId,
-      makePatch(original, proposed),
-      "http-rdecide-req",
-    );
-    const review = provider.reviewStore.getReview(docId)!;
-
-    const listed = await httpRequest("GET", `/v1/reviews/${review.reviewId}/chunks`);
-    assert.equal(listed.status, 200);
-    const listedBody = JSON.parse(listed.body) as {
-      chunks: Array<{ chunkId: string; referenceText: string; workingText: string }>;
-    };
-    assertMatchesSchema(listedBody, "ReviewChunksResponse");
-    assert.equal(listedBody.chunks.length, 2);
-    assert.equal(listedBody.chunks[0].referenceText, "alpha");
-    assert.equal(listedBody.chunks[0].workingText, "ALPHA");
-
-    // Accept the first chunk: the reference moves, the document does not.
-    const accept = await httpRequest(
-      "POST",
-      `/v1/reviews/${review.reviewId}/chunks/${listedBody.chunks[0].chunkId}/accept`,
-      jsonBody(livePrecondition(review.reviewId)),
-    );
-    assert.equal(accept.status, 200, accept.body);
-    const acceptBody = JSON.parse(accept.body) as {
-      decision: string;
-      unresolvedChunks: number;
-    };
-    assertMatchesSchema(acceptBody, "ChunkDecisionResponse");
-    assert.equal(acceptBody.decision, "accept");
-    assert.equal(acceptBody.unresolvedChunks, 1);
-
-    // The second chunk's content-addressed id survived the first decision.
-    const reject = await httpRequest(
-      "POST",
-      `/v1/reviews/${review.reviewId}/chunks/${listedBody.chunks[1].chunkId}/reject`,
-      jsonBody(livePrecondition(review.reviewId)),
-    );
-    assert.equal(reject.status, 200, reject.body);
-    const rejectBody = JSON.parse(reject.body) as { unresolvedChunks: number };
-    assert.equal(rejectBody.unresolvedChunks, 0);
-
-    // Mixed outcome: ALPHA accepted, beta restored.
-    const doc = provider.loadedDocuments.find((d) => d.filePath === filePath)!;
-    assert.equal(doc.document.toString(), "ALPHA\nx\ny\nz\nbeta\n");
-
-    // A stale id — the chunk was already decided — fails loudly.
-    const stale = await httpRequest(
-      "POST",
-      `/v1/reviews/${review.reviewId}/chunks/${listedBody.chunks[0].chunkId}/accept`,
-      jsonBody(livePrecondition(review.reviewId)),
-    );
-    assert.equal(stale.status, 404);
-    assert.equal(JSON.parse(stale.body).error.code, "CHUNK_NOT_FOUND");
-  });
-
-  it("POST /v1/reviews/{id}/chunks/{chunkId}/hold annotates without adjudicating", async function () {
-    const filePath = path.join(scratch, "rhold.md");
-    const original = "alpha\nx\ny\nz\nbeta\n";
-    const proposed = "ALPHA\nx\ny\nz\nBETA\n";
-    const docId = await openFile(filePath, original);
-
-    await submitClaim(docId, makePatch(original, proposed), "http-rhold-req");
-    const review = provider.reviewStore.getReview(docId)!;
-    const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
-    assert.equal(chunks.length, 2);
-
-    // Hold the first chunk with a comment.
-    const held = await httpRequest(
-      "POST",
-      `/v1/reviews/${review.reviewId}/chunks/${chunks[0].chunkId}/hold`,
-      jsonBody({
-        ...livePrecondition(review.reviewId),
-        comment: "verify the constant first",
-      }),
-    );
-    assert.equal(held.status, 200, held.body);
-    const heldBody = JSON.parse(held.body) as { decision: string; unresolvedChunks: number };
-    assertMatchesSchema(heldBody, "ChunkDecisionResponse");
-    assert.equal(heldBody.decision, "hold");
-    assert.equal(heldBody.unresolvedChunks, 1);
-
-    // No text moved: the document still shows the full proposal.
-    const doc = provider.loadedDocuments.find((d) => d.filePath === filePath)!;
-    assert.equal(doc.document.toString(), proposed);
-
-    // The chunk list carries the state and the comment.
-    const listed = await httpRequest("GET", `/v1/reviews/${review.reviewId}/chunks`);
-    const listedBody = JSON.parse(listed.body) as {
-      chunks: Array<{ state: string; holdComment?: string }>;
-    };
-    assertMatchesSchema(listedBody, "ReviewChunksResponse");
-    assert.equal(listedBody.chunks[0].state, "held");
-    assert.equal(listedBody.chunks[0].holdComment, "verify the constant first");
-    assert.equal(listedBody.chunks[1].state, "pending");
-
-    // A hold without a comment is legal, and a held-only review is saveable.
-    const bare = await httpRequest(
-      "POST",
-      `/v1/reviews/${review.reviewId}/chunks/${chunks[1].chunkId}/hold`,
-      jsonBody(livePrecondition(review.reviewId)),
-    );
-    assert.equal(bare.status, 200, bare.body);
-    const bareBody = JSON.parse(bare.body) as { unresolvedChunks: number; state: string };
-    assert.equal(bareBody.unresolvedChunks, 0);
-    assert.equal(bareBody.state, "resolved-awaiting-save");
-
-    const detail = await httpRequest("GET", `/v1/reviews/${review.reviewId}`);
-    const detailBody = JSON.parse(detail.body) as {
-      heldChunks: number;
-      unresolvedChunks: number;
-      comments: unknown[];
-    };
-    assertMatchesSchema(detailBody, "ReviewDetailResponse");
-    assert.equal(detailBody.unresolvedChunks, 0);
-    assert.equal(detailBody.heldChunks, 2);
-    assert.deepEqual(detailBody.comments, []);
+    assert.equal(retracted.status, 200, retracted.body);
   });
 
   it("POST /v1/reviews/{id}/comments attaches a comment the generation cursor sees", async function () {
@@ -2334,9 +2145,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
   it("answers a refused retraction with the declared PACKET_NOT_RETRACTABLE envelope", async function () {
     // Issue #43: the refusal is not a RetractProposalResponse — it is a 409
-    // AgentErrorResponse whose error carries the owning reviewId and the
-    // canClearUnresolved hint. AgentError declares additionalProperties: false,
-    // so an undeclared detail field sneaking into the refusal fails here.
+    // AgentErrorResponse whose error carries the owning reviewId. AgentError
+    // declares additionalProperties: false, so an undeclared detail field
+    // sneaking into the refusal fails here. The refusal itself is the product
+    // boundary: an adjudicated packet is the reviewer's now, and no agent
+    // route takes it back.
     const filePath = path.join(scratch, "retract-refused.md");
     const original = "alpha\nx\ny\nz\nbeta\n";
     const docId = await openFile(filePath, original);
@@ -2367,7 +2180,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assertMatchesSchema(body, "AgentErrorResponse");
     assert.equal(body.error.code, "PACKET_NOT_RETRACTABLE");
     assert.equal(body.error.reviewId, submitted.reviewId);
-    assert.equal(body.error.canClearUnresolved, true);
   });
 
   it("accepts unauthenticated loopback requests", async function () {
@@ -3335,26 +3147,16 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         ["caps alpha", "caps beta"],
       );
 
-      // Write routes: the review is real, so the refusal is a conflict that
-      // names the file to open — never "not found".
-      const heldChunkId = chunksBefore[1][0];
-      for (const [method, route] of [
-        ["POST", `/v1/reviews/${reviewId}/accept-all`],
-        ["POST", `/v1/reviews/${reviewId}/clear`],
-        ["POST", `/v1/reviews/${reviewId}/chunks/${heldChunkId!}/accept`],
-        ["GET", `/v1/reviews/${reviewId}/events?waitSeconds=0`],
-      ] as const) {
-        const refused = await httpRequest(
-          method,
-          route,
-          method === "POST" ? jsonBody(DETACHED_PRECONDITION) : {},
-        );
-        assert.equal(refused.status, 409, `${method} ${route}: ${refused.body}`);
-        const error = (JSON.parse(refused.body) as { error: { code: string; message: string } })
-          .error;
-        assert.equal(error.code, "DOCUMENT_CLOSED", route);
-        assert.ok(error.message.includes(filePath), `${route}: ${error.message}`);
-      }
+      // The routes that need the live document: the review is real, so the
+      // refusal is a conflict that names the file to open — never "not found".
+      const polled = await httpRequest("GET", `/v1/reviews/${reviewId}/events?waitSeconds=0`);
+      assert.equal(polled.status, 409, polled.body);
+      const polledError = (
+        JSON.parse(polled.body) as { error: { code: string; message: string } }
+      ).error;
+      assert.equal(polledError.code, "DOCUMENT_CLOSED");
+      assert.ok(polledError.message.includes(filePath), polledError.message);
+
       const commented = await httpRequest(
         "POST",
         `/v1/reviews/${reviewId}/comments`,
@@ -3444,7 +3246,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           code: string;
           message: string;
           reviewId: string;
-          canClearUnresolved: boolean;
         };
       };
       assertMatchesSchema(refusedBody, "AgentErrorResponse");
@@ -3454,11 +3255,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         refusedBody.error.reviewId,
         reviewId,
         "the refusal names the review that owns the packet",
-      );
-      assert.equal(
-        refusedBody.error.canClearUnresolved,
-        false,
-        "clearing a detached review refuses too, so offering it would misdirect",
       );
 
       // A packetId no review carries stays PACKET_NOT_RETRACTABLE: the closed
@@ -3748,9 +3544,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   describe("live OpenAPI response conformance", function () {
     it("serves the remaining declared bodies matching their schemas", async function () {
       // The response shapes not already pinned by a dedicated test above:
-      // health, views, workspaces, search, review detail, packets, and the
-      // long-poll. Together with those tests, every 2xx JSON component the
-      // specification names is validated against a live response.
+      // health, views, workspaces, search, review detail, the attached
+      // chunk list, packets, and the long-poll. Together with those tests,
+      // every 2xx JSON component the specification names is validated
+      // against a live response.
       const health = await httpRequest("GET", "/health");
       assert.equal(health.status, 200);
       assertMatchesSchema(JSON.parse(health.body), "PingResponse");
@@ -3788,6 +3585,17 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const detail = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}`);
       assert.equal(detail.status, 200);
       assertMatchesSchema(JSON.parse(detail.body), "ReviewDetailResponse");
+
+      const chunks = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}/chunks`);
+      assert.equal(chunks.status, 200);
+      const chunksBody = JSON.parse(chunks.body);
+      assertMatchesSchema(chunksBody, "ReviewChunksResponse");
+      // An attached review publishes the fence a retraction has to carry;
+      // the detached case above proves the absence, not this presence.
+      assert.equal(
+        chunksBody.workingSha256,
+        sha256Text(provider.readWorkingText(docId) ?? ""),
+      );
 
       const packets = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}/packets`);
       assert.equal(packets.status, 200);

@@ -532,18 +532,21 @@ describe('a review that cannot be persisted', function () {
     )
 
     // Typing outside the review's chunks adds one of its own, and an
-    // unresolved chunk closes the save gate. Accept it, so the next scenario
-    // starts from a saved document with only its held chunk outstanding.
+    // unresolved chunk closes the save gate. The reviewer accepts it in the
+    // pane — the held chunk from earlier stays held — so the next scenario
+    // starts from a saved document with only that held chunk outstanding.
     const pending = await chunkListing(activeApi, activeReviewId)
     const typed = pending.chunks.find(chunk => chunk.workingText.includes('accepted-edit'))
     assert.ok(typed !== undefined, `the typed line must be its own chunk: ${JSON.stringify(pending)}`)
-    await activeApi.post(
-      `/v1/reviews/${activeReviewId}/chunks/${typed.chunkId}/accept`,
-      {
-        expectedReviewGeneration: pending.generation,
-        expectedWorkingSha256: pending.workingSha256
-      }
+    const typedWidget = activePage.locator('.cm-deletedChunk:not(.held)')
+    await typedWidget.waitFor({ state: 'visible', timeout: 30_000 })
+    assert.equal(
+      await typedWidget.count(),
+      1,
+      'the typed line must be the only undecided chunk to click'
     )
+    await typedWidget.locator('button.cm-review-diff-control.accept').click()
+    await typedWidget.waitFor({ state: 'detached', timeout: 30_000 })
     assert.deepEqual(
       await activePage.evaluate(
         async (pathInPage: string) =>

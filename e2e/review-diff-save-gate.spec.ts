@@ -200,27 +200,13 @@ async function openReview (
  * leaves a review standing gets its fixture SIGKILLed during teardown.
  */
 async function clearReviewAndFlush (
-  client: AgentClient,
   page: Page,
-  reviewId: string,
   documentPath: string
 ): Promise<void> {
-  // Clearing is a decision like any other: it binds to the generation and
-  // working hash of the chunk list it is sweeping away.
-  const chunks = await client.get(`/v1/reviews/${reviewId}/chunks`)
-  assert.ok(
-    chunks !== null &&
-      typeof chunks === 'object' &&
-      'generation' in chunks &&
-      typeof chunks.generation === 'number' &&
-      'workingSha256' in chunks &&
-      typeof chunks.workingSha256 === 'string',
-    `Clearing needs the chunk list's fence values: ${JSON.stringify(chunks)}`
-  )
-  await client.post(`/v1/reviews/${reviewId}/clear`, {
-    expectedReviewGeneration: chunks.generation,
-    expectedWorkingSha256: chunks.workingSha256
-  })
+  // Disposing of the remaining chunks is the reviewer's alone, so this is the
+  // status panel's own control — the gesture a user makes, carrying the fence
+  // the pane already holds. No agent route can do it.
+  await page.locator('button.cm-reviewClear').first().click()
   await page
     .locator('button.cm-review-diff-control.accept')
     .first()
@@ -451,33 +437,17 @@ describe('saving after accepting a reviewed change', function () {
         typeof chunksPayload === 'object' &&
         'chunks' in chunksPayload &&
         Array.isArray(chunksPayload.chunks) &&
-        chunksPayload.chunks.length === 1 &&
-        typeof chunksPayload.chunks[0].chunkId === 'string',
+        chunksPayload.chunks.length === 1,
       `Held-review proof expected one addressable chunk: ${JSON.stringify(chunksPayload)}`
     )
-    const chunkId: unknown = chunksPayload.chunks[0].chunkId
-    assert.equal(
-      typeof chunkId,
-      'string',
-      `Held-review proof received a non-string chunk id: ${JSON.stringify(chunkId)}`
-    )
-    // The chunk list is the fence: the hold binds to the generation and
-    // working hash it was partitioned from, exactly as a real client must.
-    assert.ok(
-      'generation' in chunksPayload &&
-        typeof chunksPayload.generation === 'number' &&
-        'workingSha256' in chunksPayload &&
-        typeof chunksPayload.workingSha256 === 'string',
-      `Held-review proof needs the chunk list's fence values: ${JSON.stringify(chunksPayload)}`
-    )
-    await activeClient.post(
-      `/v1/reviews/${reviewId}/chunks/${chunkId}/hold`,
-      {
-        comment: 'Preserve this decision across save',
-        expectedReviewGeneration: chunksPayload.generation,
-        expectedWorkingSha256: chunksPayload.workingSha256
-      }
-    )
+
+    // The hold is the reviewer's, made where the reviewer makes it: the note
+    // field and Hold button on the chunk's own widget.
+    const chunkWidget = page.locator('.cm-deletedChunk').first()
+    await chunkWidget
+      .locator('input.cm-holdCommentInput')
+      .fill('Preserve this decision across save')
+    await chunkWidget.locator('button.cm-review-diff-control.hold').click()
 
     const heldWidget = page.locator('.cm-deletedChunk.held').first()
     await heldWidget.waitFor({ state: 'visible', timeout: 20_000 })
@@ -513,7 +483,7 @@ describe('saving after accepting a reviewed change', function () {
     )
     screenshots.set('review-held-after-save.png', await page.screenshot())
 
-    await clearReviewAndFlush(activeClient, page, reviewId, activeDocumentPath)
+    await clearReviewAndFlush(page, activeDocumentPath)
   })
 
   it('refuses an unresolved review with a typed reason, not a modal', async function () {
@@ -524,7 +494,7 @@ describe('saving after accepting a reviewed change', function () {
 
     // The previous test completed its review, so this opens a fresh one and
     // deliberately leaves the chunk unresolved.
-    const reviewId = await openReview(
+    await openReview(
       activeClient,
       page,
       activeDocumentPath,
@@ -558,7 +528,7 @@ describe('saving after accepting a reviewed change', function () {
       'A refused save must not touch the file.'
     )
 
-    await clearReviewAndFlush(activeClient, page, reviewId, activeDocumentPath)
+    await clearReviewAndFlush(page, activeDocumentPath)
   })
 
   it('shows the refusal on a dismissable toast when the user saves with :w', async function () {
@@ -567,7 +537,7 @@ describe('saving after accepting a reviewed change', function () {
     assert.ok(running.browser, 'The application must be running')
     const page = await findEditorPage(running.browser, this.timeout())
 
-    const reviewId = await openReview(
+    await openReview(
       activeClient,
       page,
       activeDocumentPath,
@@ -613,6 +583,6 @@ describe('saving after accepting a reviewed change', function () {
       'The refusal toast must dismiss on click.'
     )
 
-    await clearReviewAndFlush(activeClient, page, reviewId, activeDocumentPath)
+    await clearReviewAndFlush(page, activeDocumentPath)
   })
 })

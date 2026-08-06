@@ -26,7 +26,8 @@
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import EventEmitter from "events";
-import type { AgentEvent, ChunkDecision } from "@dts/common/agent-api";
+import type { AgentEvent } from "@dts/common/agent-api";
+import type { ChunkDecision } from "@providers/documents/review-transitions";
 import type { ActiveReviewState } from "@dts/common/review-domain";
 import {
   proposalRequestFingerprint,

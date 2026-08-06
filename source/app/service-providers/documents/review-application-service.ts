@@ -34,10 +34,7 @@
 import { Mutex } from "async-mutex";
 import type { ChangeSet, Text } from "@codemirror/state";
 import type {
-  AcceptAllChunksResponse,
   AgentErrorCode,
-  ChunkDecision,
-  ChunkDecisionResponse,
   SubmitProposalResponse,
 } from "@dts/common/agent-api";
 import type { SerializedUpdate } from "@dts/common/documents";
@@ -58,7 +55,10 @@ import {
   prepareProposalSubmission,
   prepareRetraction,
   prepareReviewComment,
+  type AcceptAllChunksResponse,
   type AddReviewCommentResponse,
+  type ChunkDecision,
+  type ChunkDecisionResponse,
   type ClaimInput,
   type ClearReviewResponse,
   type ReviewMutationPlan,

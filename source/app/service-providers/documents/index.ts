@@ -45,11 +45,8 @@ import type {
   WorkspaceTextEdit,
 } from "@dts/common/references";
 import type {
-  AcceptAllChunksResponse,
   AgentErrorCode,
   AgentEvent,
-  ChunkDecision,
-  ChunkDecisionResponse,
   ProposalClaim,
   ReviewListEntry,
 } from "@dts/common/agent-api";
@@ -98,7 +95,10 @@ import {
 import { ReviewSidecarStore } from "./review-sidecar-store";
 import {
   prepareWorkingTextEdit,
+  type AcceptAllChunksResponse,
   type AddReviewCommentResponse,
+  type ChunkDecision,
+  type ChunkDecisionResponse,
   type ClearReviewResponse,
   type RetractProposalResponse,
 } from "./review-transitions";

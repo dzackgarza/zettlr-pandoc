@@ -236,20 +236,23 @@ describe('review-diff closure contract composite lifecycle', function () {
     await page.locator('.cm-reviewCommentSubmit').click()
     await page.locator('.cm-reviewComment').filter({ hasText: 'overall composite note' }).waitFor({ state: 'visible' })
 
-    // Resolve the blank-line-only chunk by its empty reference/working text.
+    // The blank-line-only chunk is the last one left unheld. The API vouches
+    // for it by its empty reference/working text; the reviewer resolves it
+    // from its own widget, which a chunk with no text on either side must
+    // still render controls for.
     const blankChunks = await api.get(`/v1/reviews/${reviewId}/chunks`)
     assert.ok(isRecord(blankChunks) && Array.isArray(blankChunks.chunks))
     const blankChunk = blankChunks.chunks.find(chunk =>
       isRecord(chunk) && chunk.referenceText === '' && chunk.workingText === '')
     assert.ok(isRecord(blankChunk), 'blank-line-only proposal must remain actionable')
-    const blankChunkId = stringField(blankChunk, 'chunkId')
-    // The chunk list is the fence: decide against the generation and working
-    // hash it was partitioned from, exactly as a real client must.
-    assert.equal(typeof blankChunks.generation, 'number', 'chunk list must carry its generation')
-    await api.post(`/v1/reviews/${reviewId}/chunks/${blankChunkId}/accept`, {
-      expectedReviewGeneration: blankChunks.generation,
-      expectedWorkingSha256: stringField(blankChunks, 'workingSha256')
-    })
+    const blankWidget = page.locator('.cm-deletedChunk:not(.held)')
+    assert.equal(
+      await blankWidget.count(),
+      1,
+      'the blank chunk must be the only undecided one left to click'
+    )
+    await blankWidget.locator('button.cm-review-diff-control.accept').click()
+    await blankWidget.waitFor({ state: 'detached' })
 
     const heldSave = await invokeSave(page, documentPath)
     assert.deepEqual(heldSave, { ok: true })
