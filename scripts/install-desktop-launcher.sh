@@ -13,6 +13,20 @@ done
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 repo=$(cd -- "$script_dir/.." && pwd -P)
+
+# The bin entries are installed as symlinks into this checkout so the dev
+# launcher tracks repo edits. A temporary checkout therefore poisons the
+# machine-global launcher with links that dangle when the directory is
+# cleaned up (observed 2026-08-06: ~/.local/bin/zettlr-pandoc-dev pointing
+# into a vanished /tmp integration tree). Refuse the non-durable source.
+case "$repo" in
+  /tmp/*|/var/tmp/*|/dev/shm/*)
+    printf 'Refusing to install launcher symlinks from a temporary checkout: %s\n' "$repo" >&2
+    printf 'Run this from the durable repository clone.\n' >&2
+    exit 1
+    ;;
+esac
+
 source_dir="$repo/scripts/desktop"
 bin_dir="$HOME/.local/bin"
 applications_dir="$HOME/.local/share/applications"
