@@ -1213,7 +1213,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       );
       return;
     }
-    const result = await this._documents.submitProposalClaims(
+    const result = await this._documents.submitProposal(
       documentId,
       proposal.baselineSha256,
       proposal.claims,

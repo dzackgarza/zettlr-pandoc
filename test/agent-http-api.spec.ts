@@ -420,8 +420,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     patch: string,
     clientRequestId: string,
     description = "test claim",
-  ): ReturnType<DocumentManager["submitProposalClaims"]> {
-    return await provider.submitProposalClaims(
+  ): ReturnType<DocumentManager["submitProposal"]> {
+    return await provider.submitProposal(
       documentId,
       baselineOf(documentId),
       [{ description, patch }],
@@ -434,8 +434,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     documentId: string,
     claims: Array<{ description: string; patch: string }>,
     clientRequestId: string,
-  ): ReturnType<DocumentManager["submitProposalClaims"]> {
-    return await provider.submitProposalClaims(
+  ): ReturnType<DocumentManager["submitProposal"]> {
+    return await provider.submitProposal(
       documentId,
       baselineOf(documentId),
       claims,
@@ -2810,7 +2810,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         ],
         clientRequestId: "sidecar-replay-1",
       };
-      const submitted = await provider.submitProposalClaims(
+      const submitted = await provider.submitProposal(
         docId,
         request.baselineSha256,
         request.claims,
@@ -2830,7 +2830,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "opening the file must reattach the review",
       );
 
-      const replayed = await provider.submitProposalClaims(
+      const replayed = await provider.submitProposal(
         docId,
         request.baselineSha256,
         request.claims,
@@ -2846,7 +2846,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
       // Same id, different body: the ledger refuses rather than silently
       // applying a second, unrelated proposal under a used id.
-      const conflicting = await provider.submitProposalClaims(
+      const conflicting = await provider.submitProposal(
         docId,
         request.baselineSha256,
         [{ description: "caps beta", patch: makePatch(original, "alpha\nBETA\n") }],

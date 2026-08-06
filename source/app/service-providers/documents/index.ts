@@ -3450,7 +3450,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * Submit an ordered claim sequence against a baseline content hash: applied
    * sequentially and atomically (all-or-nothing), one packet per claim.
    */
-  public async submitProposalClaims(
+  public async submitProposal(
     documentId: string,
     baselineSha256: string,
     claims: ProposalClaim[],

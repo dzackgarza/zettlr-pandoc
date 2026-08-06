@@ -659,7 +659,7 @@ describe("review transitions over committed review state", function () {
       });
       // A hunk that replaces a line with itself. validateAndParsePatch only
       // rejects a patch with no hunks at all, and this one applies cleanly at
-      // zero fuzz — so nothing upstream of submitPacket catches it.
+      // zero fuzz — so nothing upstream of submitProposal catches it.
       const noOp = [
         "--- document",
         "+++ document",
