@@ -243,7 +243,13 @@ describe('review-diff closure contract composite lifecycle', function () {
       isRecord(chunk) && chunk.referenceText === '' && chunk.workingText === '')
     assert.ok(isRecord(blankChunk), 'blank-line-only proposal must remain actionable')
     const blankChunkId = stringField(blankChunk, 'chunkId')
-    await api.post(`/v1/reviews/${reviewId}/chunks/${blankChunkId}/accept`)
+    // The chunk list is the fence: decide against the generation and working
+    // hash it was partitioned from, exactly as a real client must.
+    assert.equal(typeof blankChunks.generation, 'number', 'chunk list must carry its generation')
+    await api.post(`/v1/reviews/${reviewId}/chunks/${blankChunkId}/accept`, {
+      expectedReviewGeneration: blankChunks.generation,
+      expectedWorkingSha256: stringField(blankChunks, 'workingSha256')
+    })
 
     const heldSave = await invokeSave(page, documentPath)
     assert.deepEqual(heldSave, { ok: true })

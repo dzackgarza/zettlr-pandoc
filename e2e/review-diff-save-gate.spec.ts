@@ -205,7 +205,22 @@ async function clearReviewAndFlush (
   reviewId: string,
   documentPath: string
 ): Promise<void> {
-  await client.post(`/v1/reviews/${reviewId}/clear`, {})
+  // Clearing is a decision like any other: it binds to the generation and
+  // working hash of the chunk list it is sweeping away.
+  const chunks = await client.get(`/v1/reviews/${reviewId}/chunks`)
+  assert.ok(
+    chunks !== null &&
+      typeof chunks === 'object' &&
+      'generation' in chunks &&
+      typeof chunks.generation === 'number' &&
+      'workingSha256' in chunks &&
+      typeof chunks.workingSha256 === 'string',
+    `Clearing needs the chunk list's fence values: ${JSON.stringify(chunks)}`
+  )
+  await client.post(`/v1/reviews/${reviewId}/clear`, {
+    expectedReviewGeneration: chunks.generation,
+    expectedWorkingSha256: chunks.workingSha256
+  })
   await page
     .locator('button.cm-review-diff-control.accept')
     .first()
@@ -449,9 +464,22 @@ describe('saving after accepting a reviewed change', function () {
       'string',
       `Held-review proof received a non-string chunk id: ${JSON.stringify(chunkId)}`
     )
+    // The chunk list is the fence: the hold binds to the generation and
+    // working hash it was partitioned from, exactly as a real client must.
+    assert.ok(
+      'generation' in chunksPayload &&
+        typeof chunksPayload.generation === 'number' &&
+        'workingSha256' in chunksPayload &&
+        typeof chunksPayload.workingSha256 === 'string',
+      `Held-review proof needs the chunk list's fence values: ${JSON.stringify(chunksPayload)}`
+    )
     await activeClient.post(
       `/v1/reviews/${reviewId}/chunks/${chunkId}/hold`,
-      { comment: 'Preserve this decision across save' }
+      {
+        comment: 'Preserve this decision across save',
+        expectedReviewGeneration: chunksPayload.generation,
+        expectedWorkingSha256: chunksPayload.workingSha256
+      }
     )
 
     const heldWidget = page.locator('.cm-deletedChunk.held').first()
