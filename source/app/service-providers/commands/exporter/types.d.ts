@@ -13,7 +13,7 @@
  * END HEADER
  */
 
-import { type PandocProfileMetadata } from '@providers/assets'
+import { type PandocProfileMetadata, type ValidPandocProfile } from '@providers/assets'
 
 // The exporter only needs a few properties, so by defining a minimal type here
 // we can make the exporter more flexible to accept also objects that only
@@ -47,10 +47,11 @@ interface DefaultsOverride {
  */
 export interface ExporterOptions {
   /**
-   * The profile must be a profile descriptor (can be retrieved from the assets
-   * provider) or any of the custom values we support
+   * The profile must be a runnable profile descriptor (can be retrieved from
+   * the assets provider) or any of the custom values we support. Callers narrow
+   * to the valid variant before they reach the exporter.
    */
-  profile: PandocProfileMetadata
+  profile: ValidPandocProfile
   /**
    * This is an array of source files you wish to compile into the target file.
    */

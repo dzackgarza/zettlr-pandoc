@@ -66,7 +66,7 @@ import SelectControl from '@common/vue/form/elements/SelectControl.vue'
 import CheckboxControl from '@common/vue/form/elements/CheckboxControl.vue'
 import ExportConfigSummary from './ExportConfigSummary.vue'
 import { ref, computed, watch, onMounted } from 'vue'
-import type { PandocProfileMetadata } from '@providers/assets'
+import type { PandocProfileMetadata, ValidPandocProfile } from '@providers/assets'
 import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import { trans } from '@common/i18n-renderer'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
@@ -101,8 +101,8 @@ ipcRenderer.invoke('assets-provider', { command: 'list-export-profiles' })
 
     if (profile in availableFormats.value) {
       format.value = profile
-    } else {
-      format.value = profileMetadata.value[0].name
+    } else if (exportableProfiles.value.length > 0) {
+      format.value = exportableProfiles.value[0].name
     }
   })
   .catch(err => console.error(err))
@@ -132,15 +132,19 @@ const lastUsedProfile = computed(() => configStore.config.export.lastUsedProfile
 
 const exportButtonLabel = computed(() => isExporting.value ? trans('Exporting…') : trans('Export'))
 const filename = computed(() => pathBasename(props.filePath))
+// Only profiles Zettlr can actually run may be offered for export; an unusable
+// one is repaired in the defaults editor, not exported from here.
+const exportableProfiles = computed(() => {
+  return profileMetadata.value
+    .filter((e): e is ValidPandocProfile => !e.isInvalid)
+    // Remove files that cannot read any of Zettlr's internal formats
+    .filter(e => SUPPORTED_READERS.includes(parseReaderWriter(e.reader).name))
+})
+
 const availableFormats = computed(() => {
   const selectOptions: Record<string, string> = {}
 
-  profileMetadata.value
-    // Remove files that cannot read any of Zettlr's internal formats ...
-    .filter(e => {
-      return SUPPORTED_READERS.includes(parseReaderWriter(e.reader).name)
-    })
-    // ... and add the others to the available options
+  exportableProfiles.value
     .forEach(elem => { selectOptions[elem.name] = getDisplayText(elem) })
 
   const cmdTitle = trans('command')
@@ -153,7 +157,7 @@ const availableFormats = computed(() => {
 
 // Observability: at a glance, what the selected format actually uses.
 const exportSummary = computed(() => {
-  const profile = profileMetadata.value.find(p => p.name === format.value)
+  const profile = exportableProfiles.value.find(p => p.name === format.value)
   const script = configStore.config.export.scripts.find(s => s.name === format.value)
   const customCommand = customCommands.value.find(c => c.command === format.value)
   let scriptInfo = ''
@@ -195,7 +199,7 @@ watch(exportDirectory, function (value) {
 
 watch(format, function (value) {
   // Remember the last choice
-  const prof = profileMetadata.value.find(e => e.name === value)
+  const prof = exportableProfiles.value.find(e => e.name === value)
   const cmd = customCommands.value.find(x => x.command === value)
 
   const profile: string  = prof?.name ?? cmd?.command ?? lastUsedProfile.value
@@ -215,7 +219,7 @@ watch(format, function (value) {
 
 function doExport (): void {
   const customCommand = customCommands.value.find(x => x.command === format.value)
-  const profile = profileMetadata.value.find(e => e.name === format.value)
+  const profile = exportableProfiles.value.find(e => e.name === format.value)
   isExporting.value = true
 
   if (customCommand !== undefined) {
@@ -232,12 +236,17 @@ function doExport (): void {
         emit('close')
       })
       .catch(e => console.error(e))
+  } else if (profile === undefined) {
+    isExporting.value = false
+    console.error(`Cannot export: the selected format ${format.value} is neither a runnable profile nor a custom command.`)
   } else {
     // Run the regular exporter
     ipcRenderer.invoke('application', {
       command: 'export',
       payload: {
-        profile: JSON.parse(JSON.stringify(profile)) as PandocProfileMetadata,
+        // Spread into a plain object: the reactive proxy cannot cross the IPC
+        // boundary.
+        profile: { ...profile },
         exportTo: exportDirectory.value,
         file: props.filePath
       } satisfies ExportIPCAPI
@@ -250,7 +259,7 @@ function doExport (): void {
   }
 }
 
-function getDisplayText (item: PandocProfileMetadata): string {
+function getDisplayText (item: ValidPandocProfile): string {
   const name = item.name.substring(0, item.name.lastIndexOf('.'))
   return `${name} (${item.writer})`
 }

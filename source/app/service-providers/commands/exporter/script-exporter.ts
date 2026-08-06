@@ -44,6 +44,9 @@ export async function runScriptExport (
   if (baseProfile === undefined) {
     throw new Error(`Export script "${script.name}" references unknown base profile "${script.profile}"`)
   }
+  if (baseProfile.isInvalid) {
+    throw new Error(`Export script "${script.name}" references the unusable base profile "${script.profile}": ${baseProfile.reason}`)
+  }
   const baseWriter = parseReaderWriter(baseProfile.writer).name
   const intermediateExt = WRITER2EXT[baseWriter] ?? baseWriter
   const intermediate = path.join(os.tmpdir(), `${title}.intermediate.${intermediateExt}`)

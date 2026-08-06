@@ -185,7 +185,7 @@ import TextControl from '@common/vue/form/elements/TextControl.vue'
 import ZtrAdmonition from '@common/vue/ZtrAdmonition.vue'
 import { ref, computed, watch, onMounted } from 'vue'
 import type { ProjectSettings, MDFileDescriptor, CodeFileDescriptor } from '@dts/common/fsal'
-import type { PandocProfileMetadata } from '@providers/assets'
+import type { PandocProfileMetadata, ValidPandocProfile } from '@providers/assets'
 import { PANDOC_READERS, PANDOC_WRITERS, SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import { type WindowTab } from '@common/vue/window/WindowTabbar.vue'
 import { useConfigStore, useWorkspaceStore } from 'source/pinia'
@@ -341,7 +341,9 @@ const windowTitle = computed(() => projectSettings.value.title)
 
 const exportFormatList = computed<ExportProfile[]>(() => {
   // We need to return a list of { selected: boolean, name: string, conversion: string }
-  return profiles.value.filter(e => {
+  // A project builds by running its profiles, so only profiles Zettlr can
+  // actually run may be offered here.
+  return profiles.value.filter((e): e is ValidPandocProfile => !e.isInvalid).filter(e => {
     return SUPPORTED_READERS.includes(parseReaderWriter(e.reader).name)
   }).map(e => {
     const plainReader = parseReaderWriter(e.reader).name
@@ -356,12 +358,10 @@ const exportFormatList = computed<ExportProfile[]>(() => {
     const readerFull = hasReaderExtensions ? reader + ` (${e.reader})` : reader
     const writerFull = hasWriterExtensions ? writer + ` (${e.writer})` : writer
 
-    const conversionString = (e.isInvalid) ? 'Invalid' : [ readerFull, writerFull ].join(' → ')
-
     return {
       selected: projectSettings.value.profiles.includes(e.name),
       name: getDisplayText(e.name),
-      conversion: conversionString
+      conversion: [ readerFull, writerFull ].join(' → ')
     }
   }).concat(
     customCommands.map(c => {

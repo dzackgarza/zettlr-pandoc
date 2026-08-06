@@ -109,7 +109,7 @@ import CodeEditor from '@common/vue/CodeEditor.vue'
 import ZtrAdmonition from '@common/vue/ZtrAdmonition.vue'
 import { trans } from '@common/i18n-renderer'
 import { ref, computed, toRef, watch, onUnmounted } from 'vue'
-import type { AssetsProviderIPCAPI, PandocProfileMetadata } from '@providers/assets'
+import type { AssetsProviderIPCAPI, PandocProfileMetadata, ValidPandocProfile } from '@providers/assets'
 import { PANDOC_READERS, PANDOC_WRITERS, SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import sanitizeFilename from 'sanitize-filename'
 import { DateTime } from 'luxon'
@@ -162,21 +162,26 @@ const visibleItems = computed(() => {
     })
 })
 
+/**
+ * Describes the conversion a profile performs, resolving known and fully
+ * supported extensions to their display names.
+ */
+function conversionText (file: ValidPandocProfile): string {
+  const parsedReader = parseReaderWriter(file.reader)
+  const parsedWriter = parseReaderWriter(file.writer)
+  const reader = parsedReader.name in PANDOC_READERS ? PANDOC_READERS[parsedReader.name] : parsedReader.name
+  const writer = parsedWriter.name in PANDOC_WRITERS ? PANDOC_WRITERS[parsedWriter.name] : parsedWriter.name
+  return [ reader, writer ].join(' → ')
+}
+
 const listItems = computed<SelectableListItem[]>(() => {
   return visibleItems.value
     .map(file => {
-      // Try to resolve known and fully supported extensions
-      const parsedReader = parseReaderWriter(file.reader)
-      const parsedWriter = parseReaderWriter(file.writer)
-      const reader = parsedReader.name in PANDOC_READERS ? PANDOC_READERS[parsedReader.name] : parsedReader.name
-      const writer = parsedWriter.name in PANDOC_WRITERS ? PANDOC_WRITERS[parsedWriter.name] : parsedWriter.name
-      const infoString = (file.isInvalid) ? 'Invalid' : [ reader, writer ].join(' → ')
-
       return {
         displayText: file.name.substring(0, file.name.lastIndexOf('.')),
         icon: file.isProtected === true ? 'lock' : undefined,
         solidIcon: true,
-        infoString,
+        infoString: file.isInvalid ? 'Invalid' : conversionText(file),
         infoStringClass: file.isInvalid ? 'error' : undefined
       }
     })

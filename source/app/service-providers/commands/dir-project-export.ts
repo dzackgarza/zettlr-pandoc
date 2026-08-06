@@ -22,7 +22,7 @@ import { runShellCommand } from './exporter/run-shell-command'
 import { showNativeNotification } from '@common/util/show-notification'
 import path from 'path'
 import type { AppServiceContainer } from 'source/app/app-service-container'
-import { type PandocProfileMetadata } from '../assets'
+import { type ValidPandocProfile } from '../assets'
 import type { DirDescriptor, ProjectSettings } from 'source/types/common/fsal'
 import { PANDOC_WRITERS } from 'source/common/pandoc-util/pandoc-maps'
 
@@ -111,6 +111,11 @@ export default class DirProjectExport extends ZettlrCommand {
         continue
       }
 
+      if (profile?.isInvalid === true) {
+        this._app.log.error(`Could not export project ${dir.name} using profile ${profilePathOrCommand}: ${profile.reason}`)
+        continue
+      }
+
       // Now check if it's actually a custom export because that will be pretty
       // much easier than the regular exports.
       try {
@@ -191,9 +196,9 @@ async function exportUsingCustomCommand (app: AppServiceContainer, dir: DirDescr
  * @param   {AppServiceContainer}    app      The ASC
  * @param   {DirDescriptor}          dir      The directory
  * @param   {ProjectSettings}        config   The project settings
- * @param   {PandocProfileMetadata}  profile  The profile
+ * @param   {ValidPandocProfile}     profile  The profile
  */
-async function exportUsingProfile (app: AppServiceContainer, dir: DirDescriptor, config: ProjectSettings, profile: PandocProfileMetadata) {
+async function exportUsingProfile (app: AppServiceContainer, dir: DirDescriptor, config: ProjectSettings, profile: ValidPandocProfile) {
   const projectTitle = dir.settings.project?.title ?? dir.name
   const task = app.lrt.registerTask(
     trans('Exporting project "%s"', projectTitle),

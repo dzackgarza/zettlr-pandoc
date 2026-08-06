@@ -24,6 +24,7 @@ import type { DirDescriptor } from '@dts/common/fsal'
 import { app, dialog } from 'electron'
 import { trans } from '@common/i18n-main'
 import type AssetsProvider from '@providers/assets'
+import type { ValidPandocProfile } from '@providers/assets'
 import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import { hasMarkdownExt } from '@common/util/file-extention-checks'
 
@@ -73,9 +74,9 @@ export default async function makeImport (
       const newName = path.join(dirToImport.path, path.basename(file.path, path.extname(file.path))) + '.md'
 
       // Retrieve the corresponding defaults file ...
-      const allDefaults = (await assetsProvider.listDefaults()).filter(e => SUPPORTED_READERS.includes(e.writer))
-      const potentialProfiles = allDefaults
-        .filter(profile => !profile.isInvalid)
+      const potentialProfiles = (await assetsProvider.listDefaults())
+        .filter((profile): profile is ValidPandocProfile => !profile.isInvalid)
+        .filter(profile => SUPPORTED_READERS.includes(profile.writer))
         .filter(profile => file.availableReaders.includes(profile.reader))
 
       // Case 1: Not a single defaults file found. We require one so that users

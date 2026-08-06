@@ -37,25 +37,11 @@ function stringProperty (doc: Record<string, unknown>, key: string): string|unde
   return typeof value === 'string' ? value : undefined
 }
 
-export interface PandocProfileMetadata {
+interface PandocProfileBase {
   /**
    * The filename of the defaults file
    */
   name: string
-  /**
-   * The writer, can be an empty string
-   */
-  writer: string
-  /**
-   * The reader, can be an empty string
-   */
-  reader: string
-  /**
-   * Since Zettlr has a few requirements, we must have writers and readers.
-   * While we strive to even support unknown readers and writers, those fields
-   * at least have to have a value. If any hasn't, isInvalid will be true.
-   */
-  isInvalid: boolean
   /**
    * Zettlr ships with a few profiles by default. In order to ensure that there
    * is always a set of minimal profiles to export and import to, Zettlr will
@@ -64,12 +50,44 @@ export interface PandocProfileMetadata {
    * some misconceptions, i.e. why certain files cannot be deleted.
    */
   isProtected?: boolean
+}
+
+/**
+ * A profile Zettlr can run. It declares both a reader and a writer, and at
+ * least one of the two is a format Zettlr itself speaks. Only this variant may
+ * reach the exporter or the importer.
+ */
+export interface ValidPandocProfile extends PandocProfileBase {
+  isInvalid: false
+  /**
+   * The writer the profile declares, verbatim
+   */
+  writer: string
+  /**
+   * The reader the profile declares, verbatim
+   */
+  reader: string
   /**
    * The Pandoc template the profile declares (resolved by name from the Pandoc
    * data directory), if any. Surfaced for export observability.
    */
   template?: string
 }
+
+/**
+ * A defaults file Zettlr cannot run. It carries no reader and no writer,
+ * because neither could be established; `reason` states what stopped it. The
+ * defaults editor still lists these so that the user can repair them.
+ */
+export interface InvalidPandocProfile extends PandocProfileBase {
+  isInvalid: true
+  /**
+   * What made the profile unusable, as observed while reading the file
+   */
+  reason: string
+}
+
+export type PandocProfileMetadata = ValidPandocProfile|InvalidPandocProfile
 
 export type AssetsProviderIPCContract = {
   'get-filter': {
@@ -653,43 +671,66 @@ export default class AssetsProvider extends ProviderContract {
     const defaultsFiles = await fs.readdir(this._defaultsPath)
     const defaults = defaultsFiles.filter(file => /\.ya?ml$/.test(file))
     for (const file of defaults) {
-      const absolutePath = path.join(this._defaultsPath, file)
-      try {
-        const contents = await fs.readFile(absolutePath, { encoding: 'utf-8' })
-        const yaml: unknown = YAML.parse(contents)
-        if (!isRecord(yaml)) {
-          throw new Error(`Profile ${file} does not contain a YAML mapping.`)
-        }
-
-        // A defaults file needs to fulfill three conditions in order to be
-        // considered valid: (1) has a writer, (2) has a reader, (3) either
-        // reader or writer must be a supported Markdown format.
-        const writer = stringProperty(yaml, 'writer')
-        const reader = stringProperty(yaml, 'reader')
-        const validWriter = writer !== undefined && SUPPORTED_READERS.includes(parseReaderWriter(writer).name)
-        const validReader = reader !== undefined && SUPPORTED_READERS.includes(parseReaderWriter(reader).name)
-
-        profiles.push({
-          name: file,
-          writer: writer ?? '',
-          reader: reader ?? '',
-          isInvalid: !(writer !== undefined && reader !== undefined && (validWriter || validReader)),
-          isProtected: this._protectedDefaults.includes(file),
-          template: stringProperty(yaml, 'template')
-        })
-      } catch {
-        this._logger.warning(`[Assets Provider] Installed profile ${file} had an error and could not be parsed`)
-        profiles.push({
-          name: file,
-          writer: '',
-          reader: '',
-          isInvalid: true,
-          isProtected: this._protectedDefaults.includes(file)
-        })
+      const profile = await this.readProfile(file)
+      if (profile.isInvalid) {
+        this._logger.warning(`[Assets Provider] Installed profile ${file} is unusable: ${profile.reason}`)
       }
+      profiles.push(profile)
     }
 
     return profiles
+  }
+
+  /**
+   * Reads one defaults file and decides, once and here, which kind of profile
+   * it is. A file that cannot be read, does not parse, omits its reader or
+   * writer, or speaks no format Zettlr knows becomes the invalid variant, which
+   * carries no reader and no writer at all.
+   *
+   * @param   {string}                            file  The defaults filename
+   *
+   * @return  {Promise<PandocProfileMetadata>}          The parsed profile
+   */
+  private async readProfile (file: string): Promise<PandocProfileMetadata> {
+    const isProtected = this._protectedDefaults.includes(file)
+
+    try {
+      const contents = await fs.readFile(path.join(this._defaultsPath, file), { encoding: 'utf-8' })
+      const yaml: unknown = YAML.parse(contents)
+      if (!isRecord(yaml)) {
+        return { name: file, isProtected, isInvalid: true, reason: 'the file does not contain a YAML mapping' }
+      }
+
+      const writer = stringProperty(yaml, 'writer')
+      const reader = stringProperty(yaml, 'reader')
+      if (writer === undefined || reader === undefined) {
+        return { name: file, isProtected, isInvalid: true, reason: 'the profile declares no reader, no writer, or neither' }
+      }
+
+      // Zettlr can only use a profile if one of its two ends speaks one of
+      // Zettlr's own formats, since one end is always a Zettlr document.
+      const readsZettlr = SUPPORTED_READERS.includes(parseReaderWriter(reader).name)
+      const writesZettlr = SUPPORTED_READERS.includes(parseReaderWriter(writer).name)
+      if (!readsZettlr && !writesZettlr) {
+        return { name: file, isProtected, isInvalid: true, reason: `neither the reader "${reader}" nor the writer "${writer}" is a format Zettlr supports` }
+      }
+
+      return {
+        name: file,
+        isProtected,
+        isInvalid: false,
+        writer,
+        reader,
+        template: stringProperty(yaml, 'template')
+      }
+    } catch (err: unknown) {
+      return {
+        name: file,
+        isProtected,
+        isInvalid: true,
+        reason: err instanceof Error ? err.message : 'the file could not be read'
+      }
+    }
   }
 
   //////////////////////////////////////////////////////////////////////////////

@@ -30,7 +30,7 @@ import { runScriptExport } from './script-exporter'
 import { runRecipeExport } from './recipe-exporter'
 import type AssetsProvider from '@providers/assets'
 import type LogProvider from '@providers/log'
-import { type PandocProfileMetadata } from '@providers/assets'
+import { type ValidPandocProfile } from '@providers/assets'
 import type { ConfigOptions } from '@providers/config/get-config-template'
 import type ConfigProvider from '@providers/config'
 import { enableExtension, parseReaderWriter, readerWriterToString } from '@common/pandoc-util/parse-reader-writer'
@@ -45,9 +45,9 @@ import { loadMathJaxMacros, mathJaxMacrosPath } from '../../../util/load-mathjax
  * are not defined as regular defaults files, therefore we need to output them
  * here.
  *
- * @return  {PandocProfileMetadata[]}The additional profiles
+ * @return  {ValidPandocProfile[]}   The additional profiles
  */
-export function getCustomProfiles (scripts: ConfigOptions['export']['scripts'] = []): PandocProfileMetadata[] {
+export function getCustomProfiles (scripts: ConfigOptions['export']['scripts'] = []): ValidPandocProfile[] {
   return [
     {
       // PDF export is not a Pandoc-defaults export: it delegates to the
@@ -71,7 +71,7 @@ export function getCustomProfiles (scripts: ConfigOptions['export']['scripts'] =
     },
     // User-declared pipeline-integrated export scripts (config.export.scripts),
     // passed by callers that have config access.
-    ...scripts.map(script => ({
+    ...scripts.map((script): ValidPandocProfile => ({
       name: script.name,
       reader: 'markdown',
       writer: 'script',
