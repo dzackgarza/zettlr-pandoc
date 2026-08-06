@@ -664,12 +664,21 @@ describe('a review decision waits for the document authority', function () {
     // Leave the window closable: resolve the review and flush the buffer.
     await toast.first().click()
     // Disposing of the remaining chunks is the reviewer's: the status panel's
-    // own control, which is the only surface that offers it.
-    // Two panes draw the review, so this is the first panel's control.
-    await activePage.locator('button.cm-reviewClear').first().click()
+    // own control, which is the only surface that offers it. Clicked in the
+    // pane under test, the way a reviewer with a split window clicks one of
+    // the two panels drawing the same review.
     await activePage
-      .locator('.cm-reviewStatusPanel')
-      .waitFor({ state: 'detached', timeout: 30_000 })
+      .locator('.cm-editor')
+      .nth(0)
+      .locator('button.cm-reviewClear')
+      .click()
+    // Both panels go, so the wait is on the count: a detached-wait on the
+    // two-element locator is a strict-mode violation, not a passing test.
+    await waitFor(
+      async () => await activePage.locator('.cm-reviewStatusPanel').count(),
+      count => count === 0,
+      'both panes to drop the review panel'
+    )
     assert.deepEqual(
       await activePage.evaluate(
         async (pathInPage: string) =>

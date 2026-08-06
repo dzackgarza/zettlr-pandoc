@@ -18,7 +18,7 @@
  */
 
 import { strict as assert } from 'assert'
-import { EditorState } from '@codemirror/state'
+import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import {
   getReviewChunks,
@@ -410,6 +410,112 @@ describe('Editor review-chunk view', function () {
     assert.equal(calls.clear, 1)
     assert.equal(chunksOf(view).length, 2)
     assert.equal(label?.textContent, '2 outstanding')
+  })
+
+  it('decides through the configuration on screen, not the one its widget was built with', async function () {
+    // Every review mutation broadcasts a new session and the pane
+    // reconfigures. A chunk nobody touched keeps its widget — CodeMirror
+    // reuses one whose `eq` reports it unchanged — so a control closed over
+    // the configuration it was BUILT with decides against a review state that
+    // has since moved on. The generation the provider fences on lives in that
+    // closure, and a click carrying the older one is refused.
+    const baseline = 'first baseline\n\nsecond baseline\n'
+    const proposed = baseline
+      .replace('first baseline', 'first proposed')
+      .replace('second baseline', 'second proposed')
+    const built: DecisionCall[] = []
+    const current: DecisionCall[] = []
+    const configFor = (sink: DecisionCall[]): Parameters<typeof reviewChunksExtension>[0] => ({
+      reviewId: 'review-test',
+      referenceText: baseline,
+      packets: [],
+      holds: [],
+      comments: [],
+      onDecide: async (chunkId, decision, comment) => {
+        sink.push({ chunkId, decision, comment })
+      },
+      onAcceptAll: async () => {},
+      onClear: async () => {},
+      onComment: async () => {}
+    })
+    const compartment = new Compartment()
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: proposed,
+        extensions: [compartment.of(reviewChunksExtension(configFor(built)))]
+      })
+    })
+    views.push(view)
+    const chunks = chunksOf(view)
+    const widgetBefore = view.dom.querySelector('.cm-deletedChunk')
+
+    view.dispatch({
+      effects: compartment.reconfigure(reviewChunksExtension(configFor(current)))
+    })
+    assert.equal(
+      view.dom.querySelector('.cm-deletedChunk'),
+      widgetBefore,
+      'the untouched chunk must keep its widget, or this proves nothing'
+    )
+
+    view.dom.querySelector<HTMLButtonElement>('button.cm-review-diff-control.accept')?.click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    assert.deepEqual(current, [
+      { chunkId: chunks[0].chunkId, decision: 'accept', comment: undefined }
+    ])
+    assert.deepEqual(built, [], 'the retired configuration must never be called')
+  })
+
+  it('lets a mass action end the review without an unhandled rejection', async function () {
+    // Rejecting the last chunks ends the review, and the provider's broadcast
+    // takes this extension out of the state. The panel's post-action render
+    // then runs against a state carrying no review at all: reading the field
+    // unconditionally threw "Field is not present in this state" out of a
+    // promise nobody was holding, and in the running app that error covered
+    // the window with the dev-server overlay and blocked every later click.
+    const compartment = new Compartment()
+    let cleared = 0
+    let view: EditorView
+    const extension = reviewChunksExtension({
+      reviewId: 'review-test',
+      referenceText: 'baseline\n',
+      packets: [],
+      holds: [],
+      comments: [],
+      onDecide: async () => {},
+      onAcceptAll: async () => {},
+      onClear: async () => {
+        cleared += 1
+        // What MainEditor does when the provider reports the review gone.
+        view.dispatch({ effects: compartment.reconfigure([]) })
+      },
+      onComment: async () => {}
+    })
+    view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: 'proposal\n',
+        extensions: [compartment.of(extension)]
+      })
+    })
+    views.push(view)
+
+    const rejections: unknown[] = []
+    const collect = (reason: unknown): void => { rejections.push(reason) }
+    process.on('unhandledRejection', collect)
+    view.dom.querySelector<HTMLButtonElement>('button.cm-reviewClear')?.click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    process.off('unhandledRejection', collect)
+
+    assert.equal(cleared, 1)
+    assert.deepEqual(rejections, [], 'ending a review must raise nothing')
+    assert.equal(
+      view.dom.querySelector('.cm-reviewStatusPanel'),
+      null,
+      'the ended review takes its panel with it'
+    )
   })
 
   it('emits trimmed review comments and renders comments supplied by the provider', function () {

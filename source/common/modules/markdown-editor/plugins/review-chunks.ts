@@ -280,7 +280,16 @@ function reviewStatusPanel (view: EditorView): Panel {
   dom.append(previous, next, label, acceptAll, clear, commentList, commentInput, commentSubmit)
 
   const render = (state: EditorState): void => {
-    const chunks = state.field(reviewChunksField).chunks
+    // The panel outlives the review by a tick: a mass action that ends the
+    // review takes this field out of the state before the action's promise
+    // settles, and the `finally` below then renders against a state that no
+    // longer describes a review. Reading the field unconditionally threw
+    // "Field is not present in this state" out of an unhandled rejection.
+    const value = state.field(reviewChunksField, false)
+    if (value === undefined) {
+      return
+    }
+    const chunks = value.chunks
     const liveIds = new Set(chunks.map(chunk => chunk.chunkId))
     const held = requireReviewChunksConfig(state).holds
       .filter(hold => liveIds.has(hold.chunkId)).length
@@ -415,7 +424,7 @@ class DeletedLinesWidget extends WidgetType {
       other.hold?.comment === this.hold?.comment
   }
 
-  toDOM (): HTMLElement {
+  toDOM (view: EditorView): HTMLElement {
     const container = document.createElement('div')
     container.className = this.hold === undefined
       ? 'cm-deletedChunk'
@@ -453,7 +462,13 @@ class DeletedLinesWidget extends WidgetType {
     const controls: HTMLButtonElement[] = []
     const decide = (decision: 'accept'|'reject'|'hold', comment?: string): void => {
       void withControlsLocked(buttons, controls, async () => {
-        await this.config.onDecide(this.chunk.chunkId, decision, comment)
+        // Resolved at click time, like the status panel's controls: a widget
+        // whose chunk did not change survives a reconfigure, so the config it
+        // was BUILT with can be older than the one on screen — and the
+        // generation captured in it then fences the click against a review
+        // state nobody is looking at any more.
+        await requireReviewChunksConfig(view.state)
+          .onDecide(this.chunk.chunkId, decision, comment)
       })
     }
     for (const decision of ['accept', 'reject'] as const) {
