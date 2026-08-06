@@ -240,6 +240,78 @@ export async function preserveArtifacts (
   }
 }
 
+/**
+ * Takes the dev server's error overlay out of the way. `forge start` injects a
+ * full-window iframe that intercepts pointer events, so a Playwright click on
+ * a real control is refused for a reason that belongs to the harness rather
+ * than to the application.
+ */
+export async function hideDevServerOverlay (page: Page): Promise<void> {
+  await page.addStyleTag({
+    content: '#webpack-dev-server-client-overlay { display: none !important; }'
+  })
+}
+
+/** The Agent API, as the specs drive it: JSON in, parsed JSON out. */
+export interface AgentClient {
+  get: (route: string) => Promise<unknown>
+  post: (route: string, body: unknown) => Promise<unknown>
+  /** Like `post`, but hands back the status and raw body of a refusal. */
+  postExpectingFailure: (
+    route: string,
+    body: unknown
+  ) => Promise<{ status: number, body: unknown }>
+}
+
+export function agentClient (port: number): AgentClient {
+  const base = `http://127.0.0.1:${port}`
+  const post = async (route: string, body: unknown): Promise<Response> =>
+    await fetch(`${base}${route}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+  const parse = async (response: Response): Promise<unknown> => {
+    const text = await response.text()
+    return text === '' ? undefined : JSON.parse(text)
+  }
+  const require = async (response: Response): Promise<unknown> => {
+    const parsed = await parse(response)
+    if (!response.ok) {
+      throw new Error(
+        `Agent API ${response.status} for ${response.url}: ${JSON.stringify(parsed)}`
+      )
+    }
+    return parsed
+  }
+  return {
+    get: async route => await require(await fetch(`${base}${route}`)),
+    post: async (route, body) => await require(await post(route, body)),
+    postExpectingFailure: async (route, body) => {
+      const response = await post(route, body)
+      return { status: response.status, body: await parse(response) }
+    }
+  }
+}
+
+/** Resolves once the Agent API answers `/v1/ping`; throws when it never does. */
+export async function waitForAgentApi (
+  port: number,
+  timeoutMs: number
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/ping`).catch(
+      () => undefined
+    )
+    if (response?.ok === true) {
+      return
+    }
+    await delay(250)
+  }
+  throw new Error(`The Agent API on port ${port} never answered /v1/ping`)
+}
+
 export interface Fixture {
   root: string
   configDirectory: string
@@ -338,7 +410,9 @@ export async function launchElectron (
     '--remote-debugging-port=0',
     '--disable-hardware-acceleration'
   ]
-  forgeArguments.push(...(options.files ?? []))
+  if (options.files !== undefined) {
+    forgeArguments.push(...options.files)
+  }
   const needsVirtualDisplay =
     process.platform === 'linux' &&
     process.env.DISPLAY === undefined &&
