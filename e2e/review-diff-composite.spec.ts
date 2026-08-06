@@ -217,8 +217,13 @@ describe('review-diff closure contract composite lifecycle', function () {
     await page.keyboard.press('Home')
     await page.keyboard.press('Shift+End')
     await page.keyboard.type('DIFF edited')
-    await repeatedWidgets.nth(0).locator('button.accept').click()
+    // Wait for the pane to redraw from the edit BEFORE clicking: chunk ids are
+    // content-addressed, so the widget still on screen from before the last
+    // keystroke names a chunk the provider will no longer have once the click
+    // syncs the edited buffer to it, and the decision is refused as
+    // CHUNK_NOT_FOUND. A reviewer types and then clicks what they can see.
     await page.locator('.cm-content').filter({ hasText: 'DIFF edited' }).waitFor({ state: 'visible' })
+    await repeatedWidgets.nth(0).locator('button.accept').click()
     await repeatedWidgets.nth(1).waitFor({ state: 'detached' })
 
     // Reject the second identical occurrence independently of the first.
