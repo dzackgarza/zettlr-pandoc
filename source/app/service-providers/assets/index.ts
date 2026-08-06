@@ -30,11 +30,36 @@ function isRecord (value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Reads a string property off a parsed YAML document, if it has one.
+ * What a parsed YAML document holds under a key. A key the user wrote with the
+ * wrong kind of value is its own case: it must never read as an absent key.
  */
-function stringProperty (doc: Record<string, unknown>, key: string): string|undefined {
+type YamlString =
+  { kind: 'absent' } |
+  { kind: 'string', value: string } |
+  { kind: 'malformed', observed: string }
+
+/**
+ * Names the kind of value a YAML document holds, for use in a diagnostic.
+ */
+function describeValue (value: unknown): string {
+  if (value === null) {
+    return 'null'
+  }
+  return Array.isArray(value) ? 'a list' : `a ${typeof value}`
+}
+
+/**
+ * Reads a string property off a parsed YAML document.
+ */
+function stringProperty (doc: Record<string, unknown>, key: string): YamlString {
   const value = doc[key]
-  return typeof value === 'string' ? value : undefined
+  if (value === undefined) {
+    return { kind: 'absent' }
+  }
+
+  return typeof value === 'string'
+    ? { kind: 'string', value }
+    : { kind: 'malformed', observed: describeValue(value) }
 }
 
 interface PandocProfileBase {
@@ -540,7 +565,11 @@ export default class AssetsProvider extends ProviderContract {
   async getDefaultsFile (filename: string): Promise<Record<string, unknown>> {
     const parsed: unknown = YAML.parse(await this.getDefaultsFileContents(filename))
     if (!isRecord(parsed)) {
-      throw new Error(`Defaults file ${filename} does not contain a YAML mapping.`)
+      // Not an invariant: listDefaults read the file when it built the profile
+      // list, but this reads it again, and the user can have saved a broken
+      // file in between. The message therefore goes to the user, who is the
+      // only one who can fix it.
+      throw new Error(`Defaults file ${filename} holds ${describeValue(parsed)} where a YAML mapping was expected. Repair the profile in the Assets Manager.`)
     }
     return parsed
   }
@@ -683,9 +712,12 @@ export default class AssetsProvider extends ProviderContract {
 
   /**
    * Reads one defaults file and decides, once and here, which kind of profile
-   * it is. A file that cannot be read, does not parse, omits its reader or
-   * writer, or speaks no format Zettlr knows becomes the invalid variant, which
-   * carries no reader and no writer at all.
+   * it is. Every way a defaults file can fall short of a usable profile — it
+   * cannot be read, it is not YAML, it is not a mapping, it declares no reader
+   * or writer, it declares one of them as something other than a string, or it
+   * speaks no format Zettlr knows — is a case the user can produce by editing
+   * the file, so each returns the invalid variant with its own reason. The
+   * invalid variant carries no reader and no writer at all.
    *
    * @param   {string}                            file  The defaults filename
    *
@@ -693,43 +725,63 @@ export default class AssetsProvider extends ProviderContract {
    */
   private async readProfile (file: string): Promise<PandocProfileMetadata> {
     const isProtected = this._protectedDefaults.includes(file)
+    const invalid = (reason: string): InvalidPandocProfile => {
+      return { name: file, isProtected, isInvalid: true, reason }
+    }
 
+    let contents: string
     try {
-      const contents = await fs.readFile(path.join(this._defaultsPath, file), { encoding: 'utf-8' })
-      const yaml: unknown = YAML.parse(contents)
-      if (!isRecord(yaml)) {
-        return { name: file, isProtected, isInvalid: true, reason: 'the file does not contain a YAML mapping' }
-      }
-
-      const writer = stringProperty(yaml, 'writer')
-      const reader = stringProperty(yaml, 'reader')
-      if (writer === undefined || reader === undefined) {
-        return { name: file, isProtected, isInvalid: true, reason: 'the profile declares no reader, no writer, or neither' }
-      }
-
-      // Zettlr can only use a profile if one of its two ends speaks one of
-      // Zettlr's own formats, since one end is always a Zettlr document.
-      const readsZettlr = SUPPORTED_READERS.includes(parseReaderWriter(reader).name)
-      const writesZettlr = SUPPORTED_READERS.includes(parseReaderWriter(writer).name)
-      if (!readsZettlr && !writesZettlr) {
-        return { name: file, isProtected, isInvalid: true, reason: `neither the reader "${reader}" nor the writer "${writer}" is a format Zettlr supports` }
-      }
-
-      return {
-        name: file,
-        isProtected,
-        isInvalid: false,
-        writer,
-        reader,
-        template: stringProperty(yaml, 'template')
-      }
+      contents = await fs.readFile(path.join(this._defaultsPath, file), { encoding: 'utf-8' })
     } catch (err: unknown) {
-      return {
-        name: file,
-        isProtected,
-        isInvalid: true,
-        reason: err instanceof Error ? err.message : 'the file could not be read'
-      }
+      return invalid(`the file could not be read: ${err instanceof Error ? err.message : 'unknown error'}`)
+    }
+
+    let parsed: unknown
+    try {
+      parsed = YAML.parse(contents)
+    } catch (err: unknown) {
+      return invalid(`the file is not valid YAML: ${err instanceof Error ? err.message : 'unknown error'}`)
+    }
+
+    if (!isRecord(parsed)) {
+      return invalid(`the file holds ${describeValue(parsed)} where a YAML mapping was expected`)
+    }
+
+    const writer = stringProperty(parsed, 'writer')
+    const reader = stringProperty(parsed, 'reader')
+    const template = stringProperty(parsed, 'template')
+
+    if (writer.kind === 'malformed') {
+      return invalid(`the writer is ${writer.observed}, but it must be a string`)
+    }
+
+    if (reader.kind === 'malformed') {
+      return invalid(`the reader is ${reader.observed}, but it must be a string`)
+    }
+
+    if (template.kind === 'malformed') {
+      return invalid(`the template is ${template.observed}, but it must be a string`)
+    }
+
+    if (writer.kind === 'absent' || reader.kind === 'absent') {
+      return invalid('the profile declares no reader, no writer, or neither')
+    }
+
+    // Zettlr can only use a profile if one of its two ends speaks one of
+    // Zettlr's own formats, since one end is always a Zettlr document.
+    const readsZettlr = SUPPORTED_READERS.includes(parseReaderWriter(reader.value).name)
+    const writesZettlr = SUPPORTED_READERS.includes(parseReaderWriter(writer.value).name)
+    if (!readsZettlr && !writesZettlr) {
+      return invalid(`neither the reader "${reader.value}" nor the writer "${writer.value}" is a format Zettlr supports`)
+    }
+
+    return {
+      name: file,
+      isProtected,
+      isInvalid: false,
+      writer: writer.value,
+      reader: reader.value,
+      template: template.kind === 'string' ? template.value : undefined
     }
   }
 

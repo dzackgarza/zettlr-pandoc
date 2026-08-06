@@ -106,7 +106,6 @@ import TextControl from '@common/vue/form/elements/TextControl.vue'
 import CodeEditor from '@common/vue/CodeEditor.vue'
 import { trans } from '@common/i18n-renderer'
 import { ref, watch, onUnmounted } from 'vue'
-import type { AssetsProviderIPCAPI } from 'source/app/service-providers/assets'
 import ZtrAdmonition from 'source/common/vue/ZtrAdmonition.vue'
 
 const ipcRenderer = window.ipc
@@ -206,7 +205,7 @@ function saveSnippet (): void {
       name: availableSnippets.value[currentItem.value],
       contents: editorContents.value
     }
-  } as AssetsProviderIPCAPI)
+  })
     .then(() => {
       savingStatus.value = trans('Saved!')
       setTimeout(() => { savingStatus.value = '' }, 1000)
@@ -232,7 +231,7 @@ function addSnippet (newName?: string): void {
       name: newName,
       contents: ''
     }
-  } as AssetsProviderIPCAPI)
+  })
     .then(() => { updateAvailableSnippets(newName) })
     .catch(err => console.error(err))
 }
@@ -246,7 +245,7 @@ function removeSnippet (idx: number): void {
   ipcRenderer.invoke('assets-provider', {
     command: 'remove-snippet',
     payload: { name: availableSnippets.value[idx] }
-  } as AssetsProviderIPCAPI)
+  })
     .then(() => { updateAvailableSnippets() })
     .catch(err => console.error(err))
 }
@@ -265,7 +264,7 @@ function renameSnippet (): void {
       name: availableSnippets.value[currentItem.value],
       newName: newVal
     }
-  } as AssetsProviderIPCAPI)
+  })
     .then(() => { updateAvailableSnippets(newVal) })
     .catch(err => console.error(err))
 }
@@ -301,7 +300,7 @@ function ensureUniqueName (candidate: string): string {
 function openSnippetsDirectory (): void {
   ipcRenderer.invoke('assets-provider', {
     command: 'open-snippets-directory'
-  } as AssetsProviderIPCAPI).catch(err => console.error(err))
+  }).catch(err => console.error(err))
 }
 </script>
 

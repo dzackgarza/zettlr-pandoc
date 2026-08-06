@@ -112,7 +112,6 @@ import TextControl from '@common/vue/form/elements/TextControl.vue'
 import CodeEditor from '@common/vue/CodeEditor.vue'
 import { trans } from '@common/i18n-renderer'
 import { ref, watch, onUnmounted, computed, onMounted } from 'vue'
-import type { AssetsProviderIPCAPI } from 'source/app/service-providers/assets'
 import ZtrAdmonition from 'source/common/vue/ZtrAdmonition.vue'
 
 const ipcRenderer = window.ipc
@@ -239,7 +238,7 @@ function saveFilter (): void {
       filename: availableFilters.value[currentItem.value],
       contents: editorContents.value
     }
-  } as AssetsProviderIPCAPI)
+  })
     .then(() => {
       lastLoadedEditorContents.value = editorContents.value
       savingStatus.value = trans('Saved!')
@@ -266,7 +265,7 @@ function addFilter (newName?: string): void {
       filename: newName,
       contents: ''
     }
-  } as AssetsProviderIPCAPI)
+  })
     .then(() => { updateAvailableFilters(newName) })
     .catch(err => console.error(err))
 }
@@ -280,7 +279,7 @@ function removeFilter (idx: number): void {
   ipcRenderer.invoke('assets-provider', {
     command: 'remove-filter',
     payload: { filename: availableFilters.value[idx] }
-  } as AssetsProviderIPCAPI)
+  })
     .then(() => { updateAvailableFilters() })
     .catch(err => console.error(err))
 }
@@ -299,7 +298,7 @@ function renameFilter (): void {
       oldName: availableFilters.value[currentItem.value],
       newName: newVal
     }
-  } as AssetsProviderIPCAPI)
+  })
     .then(() => { updateAvailableFilters(newVal) })
     .catch(err => console.error(err))
 }
@@ -335,7 +334,7 @@ function ensureUniqueName (candidate: string): string {
 function openFilterDirectory (): void {
   ipcRenderer.invoke('assets-provider', {
     command: 'open-filter-directory'
-  } as AssetsProviderIPCAPI).catch(err => console.error(err))
+  }).catch(err => console.error(err))
 }
 </script>
 
