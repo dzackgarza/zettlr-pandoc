@@ -158,11 +158,10 @@ declare interface Window {
     sendSync: <T = unknown>(event: string, ...args: unknown[]) => T
     /**
      * Sends a message to main and returns a promise which fulfills with the
-     * response from main. The channel set, each channel's request contract,
-     * and the recorded per-command response types live in
-     * source/types/renderer/ipc-bridge.ts (which contributes this global
-     * alias) — a wrong channel or payload is a compile error at the call
-     * site.
+     * response from main. Every channel's request and response type lives
+     * beside its owning handler; source/types/renderer/ipc-bridge.ts
+     * composes those contracts and contributes this global alias — a wrong
+     * channel, command, or payload is a compile error at the call site.
      */
     invoke: ZettlrIpcInvoke
     /**

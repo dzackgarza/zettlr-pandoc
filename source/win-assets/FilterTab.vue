@@ -1,36 +1,42 @@
 <template>
   <SplitView
-    v-bind:initial-size-percent="[ 20, 80 ]"
-    v-bind:minimum-size-percent="[ 20, 20 ]"
-    v-bind:reset-size-percent="[ 20, 80 ]"
-    v-bind:split="'horizontal'"
-    v-bind:initial-total-width="100"
+    :initial-size-percent="[ 20, 80 ]"
+    :minimum-size-percent="[ 20, 20 ]"
+    :reset-size-percent="[ 20, 80 ]"
+    :split="'horizontal'"
+    :initial-total-width="100"
   >
     <template #view1>
       <div class="asset-container-list">
         <SelectableList
-          v-bind:items="listItems"
-          v-bind:selected-item="currentItem"
-          v-bind:editable="true"
-          v-bind:add-text-item="true"
-          v-on:add="addFilter($event)"
-          v-on:select="currentItem = $event"
-          v-on:remove="removeFilter($event)"
-        ></SelectableList>
+          :items="listItems"
+          :selected-item="currentItem"
+          :editable="true"
+          :add-text-item="true"
+          @add="addFilter($event)"
+          @select="currentItem = $event"
+          @remove="removeFilter($event)"
+        />
         <ButtonControl
-          v-bind:label="openFilterFolderLabel"
-          v-bind:inline="false"
-          v-on:click="openFilterDirectory"
-        ></ButtonControl>
+          :label="openFilterFolderLabel"
+          :inline="false"
+          @click="openFilterDirectory"
+        />
       </div>
     </template>
     <template #view2>
       <div class="asset-container">
-        <ZtrAdmonition type="info" class="asset-admonition">
+        <ZtrAdmonition
+          type="info"
+          class="asset-admonition"
+        >
           {{ filterExplanation }}
         </ZtrAdmonition>
         <template v-if="currentItem < 0">
-          <ZtrAdmonition type="warning" class="asset-admonition">
+          <ZtrAdmonition
+            type="warning"
+            class="asset-admonition"
+          >
             {{ noFilterMessage }}
           </ZtrAdmonition>
         </template>
@@ -39,17 +45,17 @@
             <TextControl
               v-model="currentFilterText"
               class="asset-input-name"
-              v-bind:inline="false"
-              v-bind:disabled="currentItem < 0"
-              v-on:confirm="renameFilter()"
-            ></TextControl>
+              :inline="false"
+              :disabled="currentItem < 0"
+              @confirm="renameFilter()"
+            />
             <ButtonControl
               class="asset-input-button"
-              v-bind:label="renameFilterLabel"
-              v-bind:inline="true"
-              v-bind:disabled="availableFilters.length === 0 || currentFilterText === availableFilters[currentItem]"
-              v-on:click="renameFilter()"
-            ></ButtonControl>
+              :label="renameFilterLabel"
+              :inline="true"
+              :disabled="availableFilters.length === 0 || currentFilterText === availableFilters[currentItem]"
+              @click="renameFilter()"
+            />
           </p>
           <ZtrAdmonition
             v-if="currentItem >= 0 && protectedFilters.includes(availableFilters[currentItem])"
@@ -59,21 +65,24 @@
             {{ protectedFilterWarning }}
           </ZtrAdmonition>
           <CodeEditor
-            ref="code-editor"
+            ref="codeEditor"
             v-model="editorContents"
-            v-bind:mode="'lua'"
-            v-bind:readonly="currentItem < 0"
-          ></CodeEditor>
+            :mode="'lua'"
+            :readonly="currentItem < 0"
+          />
           <!-- This div is used to keep the buttons in a line despite the flex -->
           <div class="save-asset-file">
             <ButtonControl
-              v-bind:primary="true"
-              v-bind:label="saveButtonLabel"
-              v-bind:inline="true"
-              v-bind:disabled="currentItem < 0 || ($refs['code-editor'] != null && ($refs['code-editor'] as any).isClean())"
-              v-on:click="saveFilter()"
-            ></ButtonControl>
-            <span v-if="savingStatus !== ''" class="saving-status">{{ savingStatus }}</span>
+              :primary="true"
+              :label="saveButtonLabel"
+              :inline="true"
+              :disabled="currentItem < 0 || (codeEditor != null && codeEditor.isClean())"
+              @click="saveFilter()"
+            />
+            <span
+              v-if="savingStatus !== ''"
+              class="saving-status"
+            >{{ savingStatus }}</span>
           </div>
         </template>
       </div>
@@ -107,6 +116,14 @@ import type { AssetsProviderIPCAPI } from 'source/app/service-providers/assets'
 import ZtrAdmonition from 'source/common/vue/ZtrAdmonition.vue'
 
 const ipcRenderer = window.ipc
+
+// The mounted CodeEditor instance. The previous code called
+// CodeEditor.value on the imported component object, which is always
+// undefined at runtime, so markClean()/isClean() never ran.
+// NOTE: This mirrors CodeEditor.vue's defineExpose surface; the SFC's own
+// instance type is not resolvable from here.
+interface CodeEditorAPI { isClean: () => boolean, markClean: () => void }
+const codeEditor = ref<CodeEditorAPI | null>(null)
 
 const noFilterMessage = trans('No filter selected.')
 const protectedFilterWarning = trans('This filter is protected. It will be restored if you rename or remove this file.')
@@ -162,7 +179,7 @@ onMounted(() => {
 onUnmounted(() => { offCallback() })
 
 function updateAvailableFilters (selectAfterUpdate?: string): void {
-  ipcRenderer.invoke('assets-provider', { command: 'list-filter' } as AssetsProviderIPCAPI)
+  ipcRenderer.invoke('assets-provider', { command: 'list-filter' })
     .then(data => {
       availableFilters.value = data
       if (typeof selectAfterUpdate === 'string' && availableFilters.value.includes(selectAfterUpdate)) {
@@ -174,7 +191,7 @@ function updateAvailableFilters (selectAfterUpdate?: string): void {
 }
 
 function getProtectedFilters (): void {
-  ipcRenderer.invoke('assets-provider', { command: 'list-protected-filter' } as AssetsProviderIPCAPI)
+  ipcRenderer.invoke('assets-provider', { command: 'list-protected-filter' })
     .then(files => {
       protectedFilters.value = files
     })
@@ -184,7 +201,7 @@ function getProtectedFilters (): void {
 function loadState (): void {
   if (availableFilters.value.length === 0) {
     editorContents.value = ''
-    CodeEditor.value?.markClean()
+    codeEditor.value?.markClean()
     savingStatus.value = ''
     currentFilterText.value = ''
     currentItem.value = -1
@@ -202,10 +219,10 @@ function loadState (): void {
     payload: {
       filename: availableFilters.value[currentItem.value]
     }
-  } as AssetsProviderIPCAPI)
+  })
     .then(data => {
       editorContents.value = data
-      CodeEditor.value?.markClean()
+      codeEditor.value?.markClean()
       lastLoadedEditorContents.value = data
       savingStatus.value = ''
       currentFilterText.value = availableFilters.value[currentItem.value]

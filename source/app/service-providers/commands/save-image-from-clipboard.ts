@@ -35,6 +35,19 @@ export interface PasteModalResult {
   height: string
 }
 
+/**
+ * What the bare 'paste-image-retrieve-data' invoke channel answers with —
+ * the object the handleOnce() handler in run() below returns to the paste
+ * image modal. Composed into the renderer's invoke type in
+ * source/types/renderer/ipc-bridge.ts.
+ */
+export interface PasteImageRetrieveDataIPCResponse {
+  dataUrl: string
+  name: string
+  size: { width: number, height: number }
+  aspect: number
+}
+
 export default class SaveImage extends ZettlrCommand {
   constructor (app: AppServiceContainer) {
     super(app, 'save-image-from-clipboard')
@@ -67,7 +80,7 @@ export default class SaveImage extends ZettlrCommand {
     // ridiculous amount of code it takes to get that exact information with
     // only browser APIs, and (b) circumvent permission issues (since in the
     // browser, reading from clipboard often requires the user to do something).
-    ipcMain.handleOnce('paste-image-retrieve-data', (event) => {
+    ipcMain.handleOnce('paste-image-retrieve-data', () => {
       const text = clipboard.readText()
 
       const dataUrl = arg.imageData
@@ -116,7 +129,7 @@ export default class SaveImage extends ZettlrCommand {
     // Now we need to make sure the directory exists.
     try {
       await fs.lstat(target.targetDir)
-    } catch (err) {
+    } catch {
       await fs.mkdir(target.targetDir, { recursive: true })
     }
 

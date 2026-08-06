@@ -57,7 +57,7 @@ import type { ReviewDiffSession } from "@dts/common/review-diff";
 import type { ActiveReviewState } from "@dts/common/review-domain";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
 import type { ConfigOptions } from "@providers/config/get-config-template";
-import ProviderContract, { type IPCAPI } from "@providers/provider-contract";
+import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
@@ -292,11 +292,22 @@ interface Document {
   saveTimeout: undefined | NodeJS.Timeout;
 }
 
-export type DocumentAuthorityIPCAPI = IPCAPI<{
-  "get-document": { filePath: string };
-  "pull-updates": { filePath: string; version: number };
-  "push-updates": { filePath: string; version: number; updates: SerializedUpdate[] };
-}>;
+export type DocumentAuthorityIPCContract = {
+  "get-document": {
+    request: { payload: { filePath: string } };
+    response: { content: string; type: DocumentType; startVersion: number };
+  };
+  "pull-updates": {
+    request: { payload: { filePath: string; version: number } };
+    response: SerializedUpdate[] | false;
+  };
+  "push-updates": {
+    request: { payload: { filePath: string; version: number; updates: SerializedUpdate[] } };
+    response: boolean;
+  };
+};
+
+export type DocumentAuthorityIPCAPI = IPCMessage<DocumentAuthorityIPCContract>;
 
 /**
  * Why a save was refused. The provider never presents this itself: a blocking
@@ -318,9 +329,15 @@ export { SAVE_REFUSED_CHANNEL } from "@dts/common/documents";
 // Most document manager commands require a leaf location, described by the
 // window and leaf IDs.
 type LeafLoc = { windowId: string; leafId: string };
-export type DocumentManagerIPCAPI = IPCAPI<{
-  "set-pinned": LeafLoc & { path: string; pinned: boolean };
-  "retrieve-tab-config": { windowId: string };
+export type DocumentManagerIPCContract = {
+  "set-pinned": {
+    request: { payload: LeafLoc & { path: string; pinned: boolean } };
+    response: undefined;
+  };
+  "retrieve-tab-config": {
+    request: { payload: { windowId: string } };
+    response: LeafNodeJSON | BranchNodeJSON;
+  };
   // targetRange/sourceLocation are additive (issue #1 Phase 5): a reference
   // jump lands on targetRange in the opened document and stamps the origin
   // pane's current history entry with sourceLocation so Back can restore it.
@@ -328,48 +345,101 @@ export type DocumentManagerIPCAPI = IPCAPI<{
   // openFile() parameters: callers such as the sidebar and renderers open
   // files without naming a pane and let the manager pick one.
   "open-file": {
-    path: string;
-    windowId?: string;
-    leafId?: string;
-    newTab?: boolean;
-    targetRange?: SourceRange;
-    sourceLocation?: DocumentLocation;
+    request: {
+      payload: {
+        path: string;
+        windowId?: string;
+        leafId?: string;
+        newTab?: boolean;
+        targetRange?: SourceRange;
+        sourceLocation?: DocumentLocation;
+      };
+    };
+    response: boolean;
   };
-  "close-file": LeafLoc & { path: string };
-  "close-file-everywhere": { path: string };
-  "get-open-workspace-files": { path: string };
-  "get-workspace-files": { path: string };
-  "sort-open-files": LeafLoc & { newOrder: string[] };
-  "get-file-modification-status": unknown;
-  "get-review-diff-session": { path: string };
+  "close-file": {
+    request: { payload: LeafLoc & { path: string } };
+    response: boolean;
+  };
+  "close-file-everywhere": {
+    request: { payload: { path: string } };
+    response: undefined;
+  };
+  "get-open-workspace-files": {
+    request: { payload: { path: string } };
+    response: string[];
+  };
+  // NOTE: this command has no case in the handler switch below — invoking it
+  // resolves undefined. Kept only because it predates the takeover; see the
+  // remediation notes before wiring a caller to it.
+  "get-workspace-files": {
+    request: { payload: { path: string } };
+    response: undefined;
+  };
+  "sort-open-files": {
+    request: { payload: LeafLoc & { newOrder: string[] } };
+    response: undefined;
+  };
+  "get-file-modification-status": {
+    request: { payload?: undefined };
+    response: string[];
+  };
+  "get-review-diff-session": {
+    request: { payload: { path: string } };
+    response: ReviewDiffSession | undefined;
+  };
   "move-file": {
-    originWindow: string;
-    targetWindow: string;
-    originLeaf: string;
-    targetLeaf: string;
-    path: string;
+    request: {
+      payload: {
+        originWindow: string;
+        targetWindow: string;
+        originLeaf: string;
+        targetLeaf: string;
+        path: string;
+      };
+    };
+    response: undefined;
   };
   "split-leaf": {
-    originWindow: string;
-    originLeaf: string;
-    direction: "horizontal" | "vertical";
-    insertion: "before" | "after";
-    path?: string;
-    fromWindow?: string;
-    fromLeaf?: string;
+    request: {
+      payload: {
+        originWindow: string;
+        originLeaf: string;
+        direction: "horizontal" | "vertical";
+        insertion: "before" | "after";
+        path?: string;
+        fromWindow?: string;
+        fromLeaf?: string;
+      };
+    };
+    response: undefined;
   };
-  "close-leaf": LeafLoc;
-  "focus-leaf": LeafLoc;
-  "set-branch-sizes": { windowId: string; branchId: string; sizes: number[] };
+  "close-leaf": { request: { payload: LeafLoc }; response: undefined };
+  "focus-leaf": { request: { payload: LeafLoc }; response: undefined };
+  "set-branch-sizes": {
+    request: { payload: { windowId: string; branchId: string; sizes: number[] } };
+    response: undefined;
+  };
   // location is additive (issue #1 Phase 5): the current DocumentLocation of
   // the navigating pane, stamped onto the current history entry before the
   // move so the opposite direction can restore it.
-  "navigate-forward": LeafLoc & { location?: DocumentLocation };
-  "navigate-back": LeafLoc & { location?: DocumentLocation };
+  "navigate-forward": {
+    request: { payload: LeafLoc & { location?: DocumentLocation } };
+    response: undefined;
+  };
+  "navigate-back": {
+    request: { payload: LeafLoc & { location?: DocumentLocation } };
+    response: undefined;
+  };
   // Additive (issue #1 Phase 5): whether the leaf's session history has
   // entries before/after the pointer (Back/Forward enabled state).
-  "get-navigation-state": LeafLoc;
-}>;
+  "get-navigation-state": {
+    request: { payload: LeafLoc };
+    response: { canGoBack: boolean; canGoForward: boolean };
+  };
+};
+
+export type DocumentManagerIPCAPI = IPCMessage<DocumentManagerIPCContract>;
 
 /** The document to save. */
 export interface SaveFileInput {

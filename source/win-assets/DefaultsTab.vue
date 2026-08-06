@@ -1,49 +1,52 @@
 <template>
   <SplitView
-    v-bind:initial-size-percent="[ 20, 80 ]"
-    v-bind:minimum-size-percent="[ 20, 20 ]"
-    v-bind:reset-size-percent="[ 20, 80 ]"
-    v-bind:split="'horizontal'"
-    v-bind:initial-total-width="100"
+    :initial-size-percent="[ 20, 80 ]"
+    :minimum-size-percent="[ 20, 20 ]"
+    :reset-size-percent="[ 20, 80 ]"
+    :split="'horizontal'"
+    :initial-total-width="100"
   >
     <template #view1>
       <div class="asset-container-list">
         <SelectableList
-          v-bind:items="listItems"
-          v-bind:editable="true"
-          v-bind:selected-item="currentItem"
-          v-bind:add-text-item="true"
-          v-on:select="currentItem = $event"
-          v-on:add="newDefaultsFile($event)"
-          v-on:remove="removeFile($event)"
-        ></SelectableList>
+          :items="listItems"
+          :editable="true"
+          :selected-item="currentItem"
+          :add-text-item="true"
+          @select="currentItem = $event"
+          @add="newDefaultsFile($event)"
+          @remove="removeFile($event)"
+        />
         <ButtonControl
-          v-bind:label="openDefaultsFolderLabel"
-          v-bind:inline="false"
-          v-on:click="openDefaultsDirectory"
-        ></ButtonControl>
+          :label="openDefaultsFolderLabel"
+          :inline="false"
+          @click="openDefaultsDirectory"
+        />
       </div>
     </template>
     <template #view2>
       <div class="asset-container">
-        <ZtrAdmonition type="info" class="asset-admonition">
+        <ZtrAdmonition
+          type="info"
+          class="asset-admonition"
+        >
           {{ defaultsExplanation }}
         </ZtrAdmonition>
         <p class="asset-input">
           <TextControl
             v-model="currentFilename"
             class="asset-input-name"
-            v-bind:inline="false"
-            v-bind:disabled="currentItem < 0"
-            v-on:confirm="renameFile()"
-          ></TextControl>
+            :inline="false"
+            :disabled="currentItem < 0"
+            @confirm="renameFile()"
+          />
           <ButtonControl
             class="asset-input-button"
-            v-bind:label="renameFileLabel"
-            v-bind:inline="true"
-            v-bind:disabled="visibleItems.length === 0 || currentFilename === visibleItems[currentItem].name"
-            v-on:click="renameFile()"
-          ></ButtonControl>
+            :label="renameFileLabel"
+            :inline="true"
+            :disabled="visibleItems.length === 0 || currentFilename === visibleItems[currentItem].name"
+            @click="renameFile()"
+          />
         </p>
         <ZtrAdmonition
           v-if="visibleItems.length > 0 && visibleItems[currentItem].isProtected === true"
@@ -61,18 +64,21 @@
         <CodeEditor
           ref="code-editor"
           v-model="editorContents"
-          v-bind:mode="'yaml'"
-        ></CodeEditor>
+          :mode="'yaml'"
+        />
         <!-- This div is used to keep the buttons in a line despite the flex -->
         <div class="save-asset-file">
           <ButtonControl
             class="save-button"
-            v-bind:primary="true"
-            v-bind:label="saveButtonLabel"
-            v-bind:inline="true"
-            v-on:click="saveDefaultsFile()"
-          ></ButtonControl>
-          <span v-if="savingStatus !== ''" class="saving-status">{{ savingStatus }}</span>
+            :primary="true"
+            :label="saveButtonLabel"
+            :inline="true"
+            @click="saveDefaultsFile()"
+          />
+          <span
+            v-if="savingStatus !== ''"
+            class="saving-status"
+          >{{ savingStatus }}</span>
         </div>
       </div>
     </template>
@@ -232,7 +238,7 @@ async function loadDefaultsForState (): Promise<void> {
   const data = await ipcRenderer.invoke('assets-provider', {
     command: 'get-defaults-file',
     payload: { filename: name }
-  } as AssetsProviderIPCAPI)
+  })
 
   lastLoadedEditorContents.value = data
   editorContents.value = data
@@ -245,7 +251,7 @@ async function retrieveDefaultsFiles (): Promise<void> {
   // does not work with the custom profiles the exporter provides).
   const files: PandocProfileMetadata[] = await ipcRenderer.invoke('assets-provider', {
     command: 'list-defaults'
-  } as AssetsProviderIPCAPI)
+  })
 
   availableDefaultsFiles.value = files
   if (currentItem.value < 0) {

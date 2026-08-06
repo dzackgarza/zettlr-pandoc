@@ -1,36 +1,42 @@
 <template>
   <SplitView
-    v-bind:initial-size-percent="[ 20, 80 ]"
-    v-bind:minimum-size-percent="[ 20, 20 ]"
-    v-bind:reset-size-percent="[ 20, 80 ]"
-    v-bind:split="'horizontal'"
-    v-bind:initial-total-width="100"
+    :initial-size-percent="[ 20, 80 ]"
+    :minimum-size-percent="[ 20, 20 ]"
+    :reset-size-percent="[ 20, 80 ]"
+    :split="'horizontal'"
+    :initial-total-width="100"
   >
     <template #view1>
       <div class="asset-container-list">
         <SelectableList
-          v-bind:items="availableSnippets"
-          v-bind:selected-item="currentItem"
-          v-bind:editable="true"
-          v-bind:add-text-item="true"
-          v-on:add="addSnippet($event)"
-          v-on:select="currentItem = $event"
-          v-on:remove="removeSnippet($event)"
-        ></SelectableList>
+          :items="availableSnippets"
+          :selected-item="currentItem"
+          :editable="true"
+          :add-text-item="true"
+          @add="addSnippet($event)"
+          @select="currentItem = $event"
+          @remove="removeSnippet($event)"
+        />
         <ButtonControl
-          v-bind:label="openSnippetsFolderLabel"
-          v-bind:inline="false"
-          v-on:click="openSnippetsDirectory"
-        ></ButtonControl>
+          :label="openSnippetsFolderLabel"
+          :inline="false"
+          @click="openSnippetsDirectory"
+        />
       </div>
     </template>
     <template #view2>
       <div class="asset-container">
-        <ZtrAdmonition type="info" class="asset-admonition">
+        <ZtrAdmonition
+          type="info"
+          class="asset-admonition"
+        >
           {{ snippetsExplanation }}
         </ZtrAdmonition>
         <template v-if="currentItem < 0">
-          <ZtrAdmonition type="warning" class="asset-admonition">
+          <ZtrAdmonition
+            type="warning"
+            class="asset-admonition"
+          >
             {{ noSnippetsMessage }}
           </ZtrAdmonition>
         </template>
@@ -39,34 +45,37 @@
             <TextControl
               v-model="currentSnippetText"
               class="asset-input-name"
-              v-bind:inline="false"
-              v-bind:disabled="currentItem < 0"
-              v-on:confirm="renameSnippet()"
-            ></TextControl>
+              :inline="false"
+              :disabled="currentItem < 0"
+              @confirm="renameSnippet()"
+            />
             <ButtonControl
               class="asset-input-button"
-              v-bind:label="renameSnippetLabel"
-              v-bind:inline="true"
-              v-bind:disabled="availableSnippets.length === 0 || currentSnippetText === availableSnippets[currentItem]"
-              v-on:click="renameSnippet()"
-            ></ButtonControl>
+              :label="renameSnippetLabel"
+              :inline="true"
+              :disabled="availableSnippets.length === 0 || currentSnippetText === availableSnippets[currentItem]"
+              @click="renameSnippet()"
+            />
           </p>
           <CodeEditor
-            ref="code-editor"
+            ref="codeEditor"
             v-model="editorContents"
-            v-bind:mode="'markdown-snippets'"
-            v-bind:readonly="currentItem < 0"
-          ></CodeEditor>
+            :mode="'markdown-snippets'"
+            :readonly="currentItem < 0"
+          />
           <!-- This div is used to keep the buttons in a line despite the flex -->
           <div class="save-asset-file">
             <ButtonControl
-              v-bind:primary="true"
-              v-bind:label="saveButtonLabel"
-              v-bind:inline="true"
-              v-bind:disabled="currentItem < 0 || ($refs['code-editor'] != null && ($refs['code-editor'] as any).isClean())"
-              v-on:click="saveSnippet()"
-            ></ButtonControl>
-            <span v-if="savingStatus !== ''" class="saving-status">{{ savingStatus }}</span>
+              :primary="true"
+              :label="saveButtonLabel"
+              :inline="true"
+              :disabled="currentItem < 0 || (codeEditor != null && codeEditor.isClean())"
+              @click="saveSnippet()"
+            />
+            <span
+              v-if="savingStatus !== ''"
+              class="saving-status"
+            >{{ savingStatus }}</span>
           </div>
         </template>
       </div>
@@ -102,6 +111,14 @@ import ZtrAdmonition from 'source/common/vue/ZtrAdmonition.vue'
 
 const ipcRenderer = window.ipc
 
+// The mounted CodeEditor instance. The previous code called
+// CodeEditor.value on the imported component object, which is always
+// undefined at runtime, so markClean()/isClean() never ran.
+// NOTE: This mirrors CodeEditor.vue's defineExpose surface; the SFC's own
+// instance type is not resolvable from here.
+interface CodeEditorAPI { isClean: () => boolean, markClean: () => void }
+const codeEditor = ref<CodeEditorAPI | null>(null)
+
 const noSnippetsMessage = trans('No snippet selected.')
 const saveButtonLabel = trans('Save')
 const renameSnippetLabel = trans('Rename snippet')
@@ -119,7 +136,7 @@ watch(currentItem, () => {
 })
 
 watch(editorContents, () => {
-  if (CodeEditor.value != null && CodeEditor.value.isClean() === true) {
+  if (codeEditor.value != null && codeEditor.value.isClean()) {
     savingStatus.value = ''
   } else {
     savingStatus.value = trans('Unsaved changes')
@@ -138,7 +155,7 @@ const offCallback = ipcRenderer.on('shortcut', (event, shortcut) => {
 onUnmounted(() => { offCallback() })
 
 function updateAvailableSnippets (selectAfterUpdate?: string): void {
-  ipcRenderer.invoke('assets-provider', { command: 'list-snippets' } as AssetsProviderIPCAPI)
+  ipcRenderer.invoke('assets-provider', { command: 'list-snippets' })
     .then(data => {
       availableSnippets.value = data
       if (typeof selectAfterUpdate === 'string' && availableSnippets.value.includes(selectAfterUpdate)) {
@@ -152,7 +169,7 @@ function updateAvailableSnippets (selectAfterUpdate?: string): void {
 function loadState (): void {
   if (availableSnippets.value.length === 0) {
     editorContents.value = ''
-    CodeEditor.value?.markClean()
+    codeEditor.value?.markClean()
     savingStatus.value = ''
     currentSnippetText.value = ''
     currentItem.value = -1
@@ -170,10 +187,10 @@ function loadState (): void {
     payload: {
       name: availableSnippets.value[currentItem.value]
     }
-  } as AssetsProviderIPCAPI)
+  })
     .then(data => {
       editorContents.value = data
-      CodeEditor.value?.markClean()
+      codeEditor.value?.markClean()
       savingStatus.value = ''
       currentSnippetText.value = availableSnippets.value[currentItem.value]
     })

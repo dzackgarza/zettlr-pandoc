@@ -59,14 +59,25 @@ import PersistentDataContainer from '@common/modules/persistent-data-container'
 import { getCLIArgument, LAUNCH_MINIMIZED } from '@providers/cli-provider'
 import type { PasteModalResult } from '../commands/save-image-from-clipboard'
 
-export interface RequestFilesIPCAPI {
-  filters: FileFilter[],
-  multiSelection: boolean
+// 'request-files' and 'close-all' carry no command property: each channel
+// serves exactly one operation, so its contract is a single request/response
+// pair rather than a command map.
+export type RequestFilesIPCContract = {
+  request: { filters: FileFilter[], multiSelection: boolean }
+  response: string[]
 }
 
-export interface CloseAllIPCAPI {
-  rootType: 'workspace'|'file'
+export type RequestFilesIPCAPI = RequestFilesIPCContract['request']
+
+export type CloseAllIPCContract = {
+  request: { rootType: 'workspace'|'file' }
+  response: boolean
 }
+
+export type CloseAllIPCAPI = CloseAllIPCContract['request']
+
+// 'request-dir' takes no message at all, so it owns a response type only.
+export type RequestDirIPCResponse = string[]
 
 export type WindowControlsIPCAPI = IPCAPI<{
   'win-maximise': unknown

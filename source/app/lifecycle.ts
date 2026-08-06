@@ -28,6 +28,14 @@ import { app, ipcMain } from 'electron'
 import { attachAppNavigationHandlers } from './util/attach-app-navigation-handlers'
 import { loadMathJaxMacros, mathJaxMacrosPath, seedDefaultMacros } from './util/load-mathjax-macros'
 
+/**
+ * What the bare 'mathjax-macros' invoke channel answers with — the loader's
+ * own signature. The handler is registered in bootApplication() below;
+ * composed into the renderer's invoke type in
+ * source/types/renderer/ipc-bridge.ts.
+ */
+export type MathJaxMacrosIPCResponse = Awaited<ReturnType<typeof loadMathJaxMacros>>
+
 // Statistics: Record the uptime of the application
 let upTimestamp: number
 
@@ -104,7 +112,7 @@ export async function bootApplication (): Promise<AppServiceContainer> {
   try {
     const version = await getProgramVersion('pandoc')
     process.env.PANDOC_VERSION = String(version)
-  } catch (err) {
+  } catch {
     // No Pandoc available.
   }
 

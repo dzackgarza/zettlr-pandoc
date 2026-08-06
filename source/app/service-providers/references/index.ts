@@ -73,7 +73,7 @@
 
 import { ipcMain } from 'electron'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
-import ProviderContract from '../provider-contract'
+import ProviderContract, { type IPCMessage } from '../provider-contract'
 import type LogProvider from '@providers/log'
 import type { FSALEventPayload } from '../fsal'
 import type { WorkspaceReferenceEdit, WorkspaceTextEdit } from '@dts/common/references'
@@ -114,7 +114,14 @@ interface PendingUndo {
  * the single owner of this type; the renderer bridge imports it so a wrong
  * command or payload fails to compile at the call site.
  */
-export type ReferenceProviderIPCAPI = { command: 'get-snapshot', payload?: undefined }
+export type ReferenceProviderIPCContract = {
+  'get-snapshot': {
+    request: { payload?: undefined }
+    response: WorkspaceReferenceState
+  }
+}
+
+export type ReferenceProviderIPCAPI = IPCMessage<ReferenceProviderIPCContract>
 
 /**
  * The slice of the document authority (the documents provider) this provider

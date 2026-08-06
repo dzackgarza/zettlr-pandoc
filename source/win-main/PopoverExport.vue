@@ -1,39 +1,43 @@
 <template>
-  <PopoverWrapper v-bind:target="target" v-on:close="$emit('close')">
+  <PopoverWrapper
+    :target="target"
+    @close="$emit('close')"
+  >
     <div class="toolbar-export">
       <h3>Export</h3>
       <p><strong>{{ filename }}</strong></p>
       <SelectControl
         v-model="format"
-        v-bind:label="formatLabel"
-        v-bind:options="availableFormats"
-      ></SelectControl>
+        :label="formatLabel"
+        :options="availableFormats"
+      />
       <ExportConfigSummary
-        v-bind:filters="exportSummary.filters"
-        v-bind:template="exportSummary.template"
-        v-bind:data-dir="exportSummary.dataDir"
-        v-bind:script-info="exportSummary.scriptInfo"
-      ></ExportConfigSummary>
+        :filters="exportSummary.filters"
+        :template="exportSummary.template"
+        :data-dir="exportSummary.dataDir"
+        :script-info="exportSummary.scriptInfo"
+      />
       <!-- The choice of working directory vs. temporary applies to all exporters -->
       <hr>
       <RadioControl
         v-model="exportDirectory"
-        v-bind:options="{
+        :options="{
           'temp': tempDirLabel,
           'cwd': cwdLabel,
           'ask': askLabel
         }"
-      ></RadioControl>
+      />
       <hr>
       <CheckboxControl
         v-model="autoOpenExport"
-        v-bind:label="autoOpenLabel"
-        v-bind:name="'open-automatically-checkbox'"
-      ></CheckboxControl>
+        :label="autoOpenLabel"
+        :name="'open-automatically-checkbox'"
+      />
       <!-- Add the exporting button -->
       <button
         ref="exportButton"
-        v-bind:disabled="isExporting" v-on:click="doExport"
+        :disabled="isExporting"
+        @click="doExport"
       >
         {{ exportButtonLabel }}
       </button>
@@ -62,7 +66,7 @@ import SelectControl from '@common/vue/form/elements/SelectControl.vue'
 import CheckboxControl from '@common/vue/form/elements/CheckboxControl.vue'
 import ExportConfigSummary from './ExportConfigSummary.vue'
 import { ref, computed, watch, onMounted } from 'vue'
-import type { AssetsProviderIPCAPI, PandocProfileMetadata } from '@providers/assets'
+import type { PandocProfileMetadata } from '@providers/assets'
 import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import { trans } from '@common/i18n-renderer'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
@@ -84,7 +88,7 @@ const PREVIOUSLY_SELECTED_PROFILE_LIMIT = 50
 
 const exportButton = ref<HTMLButtonElement|null>(null)
 
-ipcRenderer.invoke('assets-provider', { command: 'list-export-profiles' } as AssetsProviderIPCAPI)
+ipcRenderer.invoke('assets-provider', { command: 'list-export-profiles' })
   .then((defaults: PandocProfileMetadata[]) => {
     // Save all the exporter information into the array. The computed
     // properties will take the info from that array and re-compute based
@@ -233,7 +237,7 @@ function doExport (): void {
     ipcRenderer.invoke('application', {
       command: 'export',
       payload: {
-        profile: JSON.parse(JSON.stringify(profile)),
+        profile: JSON.parse(JSON.stringify(profile)) as PandocProfileMetadata,
         exportTo: exportDirectory.value,
         file: props.filePath
       } satisfies ExportIPCAPI

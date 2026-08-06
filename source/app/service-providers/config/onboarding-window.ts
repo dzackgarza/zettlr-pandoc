@@ -27,6 +27,7 @@
 import type LogProvider from '@providers/log'
 import { BrowserWindow, type BrowserWindowConstructorOptions, ipcMain } from 'electron'
 import type ConfigProvider from '.'
+import type { IPCMessage } from '@providers/provider-contract'
 import { loadData } from '@common/i18n-main'
 import setWindowChrome from '../windows/set-window-chrome'
 import attachLogger from '../windows/attach-logger'
@@ -35,11 +36,18 @@ export interface OnboardingIPCCloseMessage {
   command: 'close'
 }
 
-export interface OnboardingIPCSetAppLangMessage {
-  command: 'set-app-lang'
-  language: string
+/** 'set-app-lang' carries its language at the message's top level. */
+export type OnboardingIPCContract = {
+  'set-app-lang': {
+    request: { language: string }
+    response: undefined
+  }
 }
 
+export type OnboardingIPCSetAppLangMessage = IPCMessage<OnboardingIPCContract>
+
+// 'close' rides ipcMain.on, not invoke, so it is not part of the invoke
+// contract above.
 export type OnboardingIPCMessage = OnboardingIPCCloseMessage |
   OnboardingIPCSetAppLangMessage
 
@@ -82,7 +90,7 @@ export async function showOnboardingWindow (config: ConfigProvider, logger: LogP
 
   onboardingWindow.loadURL(effectiveUrl.toString())
     .catch(e => {
-      logger.error(`Could not load URL ${ONBOARDING_WEBPACK_ENTRY}: ${e.message as string}`, e)
+      logger.error(`Could not load URL ${ONBOARDING_WEBPACK_ENTRY}: ${e instanceof Error ? e.message : 'unknown error'}`, e)
     })
 
   onboardingWindow.once('ready-to-show', () => {

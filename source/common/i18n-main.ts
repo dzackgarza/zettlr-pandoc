@@ -23,6 +23,13 @@ let i18nData: GetTextTranslations|undefined
 let handlerAttached = false
 
 /**
+ * What the bare 'i18n' invoke channel answers with: the module state the
+ * handler below returns. Composed into the renderer's invoke type in
+ * source/types/renderer/ipc-bridge.ts.
+ */
+export type I18nIPCResponse = typeof i18nData
+
+/**
  * Call this function during boot to load the translation data immediately after
  * start so that the translations are available. NOTE: This function produces a
  * side-effect in that it sets the local module variable i18nData
@@ -34,7 +41,7 @@ export async function loadData (lang: string): Promise<Candidate & LangFileMetad
 
   // Also make the data available to renderers who request the i18n data
   if (!handlerAttached) {
-    ipcMain.handle('i18n', (event) => { return i18nData })
+    ipcMain.handle('i18n', () => { return i18nData })
     handlerAttached = true
   }
 

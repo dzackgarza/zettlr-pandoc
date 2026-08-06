@@ -20,7 +20,6 @@ import type { Extension } from '@codemirror/state'
 import { type ExParams, vim, Vim, type CodeMirror } from '@replit/codemirror-vim'
 import { configField } from '../util/configuration'
 import { editorMetadataFacet } from './editor-metadata'
-import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
 import { trans } from '@common/i18n-renderer'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
 import showToast from '@common/util/show-toast'
@@ -78,7 +77,7 @@ async function write (cm: CodeMirror, _params: ExParams): Promise<boolean> {
  *
  * @return  {Promise<void>}             Returns the IPC promise
  */
-function quit (cm: CodeMirror, _params: ExParams): Promise<void> {
+async function quit (cm: CodeMirror, _params: ExParams): Promise<void> {
   // Grab the required information from the editor state
   const filePath = cm.cm6.state.field(configField).metadata.path
   const { leafId, windowId } = cm.cm6.state.facet(editorMetadataFacet)
@@ -88,15 +87,14 @@ function quit (cm: CodeMirror, _params: ExParams): Promise<void> {
   }
 
   // Request closing of the editor with main
-  return ipcRenderer.invoke('documents-provider', {
+  await ipcRenderer.invoke('documents-provider', {
     command: 'close-file',
     payload: {
       path: filePath,
       windowId: windowId,
       leafId: leafId
     }
-  } as DocumentManagerIPCAPI)
-    .catch(e => console.error(e))
+  }).catch(e => console.error(e))
 }
 
 // replit's API seems a bit less elegant than the CodeMirror one, but I think

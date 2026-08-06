@@ -45,7 +45,7 @@ import SaveImageFromClipboard from './save-image-from-clipboard'
 import TutorialOpen from './tutorial-open'
 import UpdateProjectProperties from './update-project-properties'
 import UpdateUserDictionary from './update-user-dictionary'
-import ProviderContract from '@providers/provider-contract'
+import ProviderContract, { type IPCMessage } from '@providers/provider-contract'
 import { type AppServiceContainer } from 'source/app/app-service-container'
 import type ZettlrCommand from './zettlr-command'
 import { clipboard, ipcMain, nativeImage } from 'electron'
@@ -60,13 +60,21 @@ import type { CustomExportIPCAPI, ExportIPCAPI } from './export'
 import type { ForceOpenAPI } from './force-open'
 import type { SaveImageFromClipboardAPI } from './save-image-from-clipboard'
 import type { DirSettingsCommandAPI } from './dir-settings'
-import type { TikzRenderRequest } from 'source/app/util/tikz-render'
-import type { LanguageToolLinterRequest } from './language-tool'
+import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-render'
+import type { LanguageToolLinterRequest, LanguageToolLinterResponse } from './language-tool'
 import type { LanguageToolIgnoredRuleEntry } from '../config/get-config-template'
 import type { ProgrammaticallyOpenableWindows } from './open-aux-window'
+import type { FindFileAndReturnMetadataResult } from './file-find-and-return-meta-data'
 import type { DocumentType } from '@dts/common/documents'
 import type { WorkspaceReferenceEdit } from '@dts/common/references'
-import type { ProjectSettings } from '@dts/common/fsal'
+import type { MDFileDescriptor, ProjectSettings } from '@dts/common/fsal'
+import type {
+  CommitRenameOutcome,
+  ReferenceRenamePreview,
+  UndoRenameOutcome
+} from '@common/pandoc-util/compute-reference-edits'
+import type { FormatResult } from '@common/modules/markdown-editor/commands/format-document'
+import type { LinkPreviewResult } from '@common/util/fetch-link-preview'
 
 export const commands = [
   DirDelete,
@@ -110,56 +118,207 @@ export const commands = [
 
 /**
  * The wire contract of the 'application' ipc channel: every command the
- * renderer may run through CommandProvider.run(), with its payload. This
- * union is the single owner of the channel's request shape; the renderer
- * bridge imports it so a wrong command or payload fails to compile at the
- * call site. When a new command becomes renderer-invokable, add it here.
+ * renderer may run through CommandProvider.run(), with its payload and the
+ * response that running it resolves to. This map is the single owner of the
+ * channel's request AND response shape; the renderer's invoke type is
+ * composed from it, so a wrong command, payload or response assumption fails
+ * to compile at the call site. When a new command becomes renderer-invokable,
+ * add it here.
+ *
+ * A `response: unknown` records that the command dispatches to
+ * `ZettlrCommand.run()`, whose static type is `Promise<unknown>` — that is the
+ * handler's honest static type today, not a gap to be guessed at. Narrow one
+ * only by narrowing the command it dispatches to.
  */
-export type ApplicationIPCAPI =
-  | { command: 'add-language-tool-ignore-rule', payload: LanguageToolIgnoredRuleEntry }
-  | { command: 'commit-reference-rename', payload: { edit: WorkspaceReferenceEdit } }
-  | { command: 'custom-export', payload: CustomExportIPCAPI }
-  | { command: 'dir-delete', payload: { path: string } }
-  | { command: 'dir-new', payload: { path: string, name?: string } }
-  | { command: 'dir-new-project', payload: { path: string } }
-  | { command: 'dir-project-export', payload: string }
-  | { command: 'dir-remove-project', payload: { path: string } }
-  | { command: 'dir-rename', payload: { path: string, name: string } }
-  | { command: 'dir-sort', payload: { path: string, sorting: string } }
-  | { command: 'export', payload: ExportIPCAPI }
-  | { command: 'fetch-link-preview', payload: string }
-  | { command: 'file-find-and-return-meta-data', payload: string }
-  | { command: 'file-delete', payload: { path: string } }
-  | { command: 'file-duplicate', payload: { path: string, windowId: string, leafId?: string, name?: string } }
-  | { command: 'file-new', payload: { path?: string, name?: string, type?: DocumentType } }
-  | { command: 'file-rename', payload: { path: string, name: string } }
-  | { command: 'find-exact', payload: string }
-  | { command: 'force-open', payload: ForceOpenAPI }
-  | { command: 'format-document', payload: string }
-  | { command: 'get-available-dictionaries', payload?: undefined }
-  | { command: 'get-available-languages', payload?: undefined }
-  | { command: 'get-file-contents', payload: string }
-  | { command: 'open-attachment', payload: { citekey: string, filePath: string } }
-  | { command: 'open-aux-window', payload: { window: ProgrammaticallyOpenableWindows, hash?: string } }
-  | { command: 'open-preferences', payload?: undefined }
-  | { command: 'open-project-preferences', payload: string }
-  | { command: 'open-stats-window', payload?: undefined }
-  | { command: 'open-update-window', payload?: undefined }
-  | { command: 'preview-reference-rename', payload: { oldKey: string, newKey: string } }
-  | { command: 'print', payload?: string }
-  | { command: 'rename-tag', payload: { oldName: string, newName: string } }
-  | { command: 'request-move', payload: { from: string, to: string } }
-  | { command: 'root-close', payload: string }
-  | { command: 'root-open-workspaces', payload?: undefined }
-  | { command: 'root-open-files', payload?: undefined }
-  | { command: 'roots-add', payload: string[] }
-  | { command: 'run-language-tool', payload: LanguageToolLinterRequest }
-  | { command: 'save-image-from-clipboard', payload: SaveImageFromClipboardAPI | { startPath: string } }
-  | { command: 'set-directory-setting', payload: DirSettingsCommandAPI }
-  | { command: 'sort-workspaces', payload: string[] }
-  | { command: 'tikz-render', payload: TikzRenderRequest }
-  | { command: 'undo-reference-rename', payload?: undefined }
-  | { command: 'update-project-properties', payload: { path: string, properties: ProjectSettings } }
+export type ApplicationIPCContract = {
+  'add-language-tool-ignore-rule': {
+    request: { payload: LanguageToolIgnoredRuleEntry }
+    response: unknown
+  }
+  'commit-reference-rename': {
+    request: { payload: { edit: WorkspaceReferenceEdit } }
+    response: CommitRenameOutcome
+  }
+  'custom-export': {
+    request: { payload: CustomExportIPCAPI }
+    response: unknown
+  }
+  'dir-delete': {
+    request: { payload: { path: string } }
+    response: unknown
+  }
+  'dir-new': {
+    request: { payload: { path: string, name?: string } }
+    response: unknown
+  }
+  'dir-new-project': {
+    request: { payload: { path: string } }
+    response: unknown
+  }
+  'dir-project-export': {
+    request: { payload: string }
+    response: unknown
+  }
+  'dir-remove-project': {
+    request: { payload: { path: string } }
+    response: unknown
+  }
+  'dir-rename': {
+    request: { payload: { path: string, name: string } }
+    response: unknown
+  }
+  'dir-sort': {
+    request: { payload: { path: string, sorting: string } }
+    response: unknown
+  }
+  'export': {
+    request: { payload: ExportIPCAPI }
+    response: unknown
+  }
+  'fetch-link-preview': {
+    request: { payload: string }
+    response: LinkPreviewResult|undefined
+  }
+  'file-find-and-return-meta-data': {
+    request: { payload: string }
+    response: FindFileAndReturnMetadataResult|undefined
+  }
+  'file-delete': {
+    request: { payload: { path: string } }
+    response: unknown
+  }
+  'file-duplicate': {
+    request: { payload: { path: string, windowId: string, leafId?: string, name?: string } }
+    response: unknown
+  }
+  'file-new': {
+    request: { payload: { path?: string, name?: string, type?: DocumentType } }
+    response: unknown
+  }
+  'file-rename': {
+    request: { payload: { path: string, name: string } }
+    response: unknown
+  }
+  'find-exact': {
+    request: { payload: string }
+    response: MDFileDescriptor|undefined
+  }
+  'force-open': {
+    request: { payload: ForceOpenAPI }
+    response: unknown
+  }
+  'format-document': {
+    request: { payload: string }
+    response: FormatResult
+  }
+  // Answered inline by run(): enumDictFiles().map(elem => elem.tag).
+  'get-available-dictionaries': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+  // Answered inline by run(): enumLangFiles().map(elem => elem.tag).
+  'get-available-languages': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+  // Answered inline by run(): fsal.loadAnySupportedFile(), Promise<string>.
+  'get-file-contents': {
+    request: { payload: string }
+    response: string
+  }
+  'open-attachment': {
+    request: { payload: { citekey: string, filePath: string } }
+    response: unknown
+  }
+  'open-aux-window': {
+    request: { payload: { window: ProgrammaticallyOpenableWindows, hash?: string } }
+    response: unknown
+  }
+  // Answered inline by run(): shows the window, then returns true.
+  'open-preferences': {
+    request: { payload?: undefined }
+    response: boolean
+  }
+  // Answered inline by run(): shows the window and falls through without
+  // returning, so invoke() resolves to undefined.
+  'open-project-preferences': {
+    request: { payload: string }
+    response: undefined
+  }
+  // Answered inline by run(): shows the window, then returns true.
+  'open-stats-window': {
+    request: { payload?: undefined }
+    response: boolean
+  }
+  // Answered inline by run(): shows the window and falls through without
+  // returning, so invoke() resolves to undefined.
+  'open-update-window': {
+    request: { payload?: undefined }
+    response: undefined
+  }
+  'preview-reference-rename': {
+    request: { payload: { oldKey: string, newKey: string } }
+    response: ReferenceRenamePreview
+  }
+  'print': {
+    request: { payload?: string }
+    response: unknown
+  }
+  'rename-tag': {
+    request: { payload: { oldName: string, newName: string } }
+    response: unknown
+  }
+  'request-move': {
+    request: { payload: { from: string, to: string } }
+    response: unknown
+  }
+  'root-close': {
+    request: { payload: string }
+    response: unknown
+  }
+  'root-open-workspaces': {
+    request: { payload?: undefined }
+    response: unknown
+  }
+  'root-open-files': {
+    request: { payload?: undefined }
+    response: unknown
+  }
+  'roots-add': {
+    request: { payload: string[] }
+    response: unknown
+  }
+  'run-language-tool': {
+    request: { payload: LanguageToolLinterRequest }
+    response: LanguageToolLinterResponse
+  }
+  'save-image-from-clipboard': {
+    request: { payload: SaveImageFromClipboardAPI | { startPath: string } }
+    response: string|undefined
+  }
+  'set-directory-setting': {
+    request: { payload: DirSettingsCommandAPI }
+    response: unknown
+  }
+  'sort-workspaces': {
+    request: { payload: string[] }
+    response: unknown
+  }
+  'tikz-render': {
+    request: { payload: TikzRenderRequest }
+    response: TikzRenderResult
+  }
+  'undo-reference-rename': {
+    request: { payload?: undefined }
+    response: UndoRenameOutcome
+  }
+  'update-project-properties': {
+    request: { payload: { path: string, properties: ProjectSettings } }
+    response: unknown
+  }
+}
+
+export type ApplicationIPCAPI = IPCMessage<ApplicationIPCContract>
 
 export default class CommandProvider extends ProviderContract {
   private readonly _commands: ZettlrCommand[]

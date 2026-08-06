@@ -18,12 +18,24 @@ import { app, ipcMain, shell } from 'electron'
 import { promises as fs } from 'fs'
 import YAML from 'yaml'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
-import ProviderContract, { type IPCAPI } from '../provider-contract'
+import ProviderContract, { type IPCMessage } from '../provider-contract'
 import type LogProvider from '../log'
 import { getCustomProfiles } from '@providers/commands/exporter'
 import { getAppServiceContainer, isAppServiceContainerReady } from '../../app-service-container'
 import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import { parseReaderWriter } from '@common/pandoc-util/parse-reader-writer'
+
+function isRecord (value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Reads a string property off a parsed YAML document, if it has one.
+ */
+function stringProperty (doc: Record<string, unknown>, key: string): string|undefined {
+  const value = doc[key]
+  return typeof value === 'string' ? value : undefined
+}
 
 export interface PandocProfileMetadata {
   /**
@@ -59,29 +71,96 @@ export interface PandocProfileMetadata {
   template?: string
 }
 
-export type AssetsProviderIPCAPI = IPCAPI<{
-  'get-filter': { filename: string },
-  'set-filter': { filename: string, contents: string },
-  'rename-filter': { oldName: string, newName: string },
-  'remove-filter': { filename: string },
-  'list-filter': unknown,
-  'list-protected-filter': unknown,
-  'get-defaults-file': { filename: string }
-  'set-defaults-file': { filename: string, contents: string }
-  'rename-defaults-file': { oldName: string, newName: string }
-  'remove-defaults-file': { filename: string }
-  'get-snippet': { name: string }
-  'remove-snippet': { name: string }
-  'rename-snippet': { name: string, newName: string }
-  'set-snippet': { name: string, contents: string }
-  'list-defaults': unknown
-  'list-export-profiles': unknown
-  'list-available-filters': unknown
-  'open-defaults-directory': unknown
-  'open-snippets-directory': unknown
-  'open-filter-directory': unknown
-  'list-snippets': unknown
-}>
+export type AssetsProviderIPCContract = {
+  'get-filter': {
+    request: { payload: { filename: string } }
+    response: string
+  }
+  'set-filter': {
+    request: { payload: { filename: string, contents: string } }
+    response: boolean
+  }
+  'rename-filter': {
+    request: { payload: { oldName: string, newName: string } }
+    response: boolean
+  }
+  'remove-filter': {
+    request: { payload: { filename: string } }
+    response: boolean
+  }
+  'list-filter': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+  'list-protected-filter': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+  'get-defaults-file': {
+    request: { payload: { filename: string } }
+    response: string
+  }
+  'set-defaults-file': {
+    request: { payload: { filename: string, contents: string } }
+    response: boolean
+  }
+  'rename-defaults-file': {
+    request: { payload: { oldName: string, newName: string } }
+    response: boolean
+  }
+  'remove-defaults-file': {
+    request: { payload: { filename: string } }
+    response: boolean
+  }
+  'get-snippet': {
+    request: { payload: { name: string } }
+    response: string
+  }
+  'remove-snippet': {
+    request: { payload: { name: string } }
+    response: boolean
+  }
+  'rename-snippet': {
+    request: { payload: { name: string, newName: string } }
+    response: boolean
+  }
+  'set-snippet': {
+    request: { payload: { name: string, contents: string } }
+    response: boolean
+  }
+  'list-defaults': {
+    request: { payload?: undefined }
+    response: PandocProfileMetadata[]
+  }
+  'list-export-profiles': {
+    request: { payload?: undefined }
+    response: PandocProfileMetadata[]
+  }
+  'list-available-filters': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+  // The open-*-directory commands answer with shell.openPath's error string,
+  // empty when the directory opened.
+  'open-defaults-directory': {
+    request: { payload?: undefined }
+    response: string
+  }
+  'open-snippets-directory': {
+    request: { payload?: undefined }
+    response: string
+  }
+  'open-filter-directory': {
+    request: { payload?: undefined }
+    response: string
+  }
+  'list-snippets': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+}
+
+export type AssetsProviderIPCAPI = IPCMessage<AssetsProviderIPCContract>
 
 export default class AssetsProvider extends ProviderContract {
   /**
@@ -152,7 +231,7 @@ export default class AssetsProvider extends ProviderContract {
         this._logger.info(`[Assets Provider] Opening path ${this._filterPath}`)
         return await shell.openPath(this._filterPath)
       } else if (command === 'get-defaults-file') {
-        return await this.getDefaultsFile(payload.filename, true)
+        return await this.getDefaultsFileContents(payload.filename)
       } else if (command === 'set-defaults-file') {
         return await this.setDefaultsFile(payload.filename, payload.contents, true)
       } else if (command === 'rename-defaults-file') {
@@ -207,7 +286,7 @@ export default class AssetsProvider extends ProviderContract {
       const absolutePath = path.join(this._defaultsPath, file)
       try {
         await fs.lstat(absolutePath)
-      } catch (err) {
+      } catch {
         this._logger.warning(`[Assets Provider] Required defaults file ${file} not found. Copying ...`)
         await fs.copyFile(path.join(__dirname, './assets/defaults', file), absolutePath)
       }
@@ -228,7 +307,7 @@ export default class AssetsProvider extends ProviderContract {
           this._logger.warning(`[Assets Provider] Found outdated filter ${file}; copying ...`)
           await fs.copyFile(path.join(__dirname, './assets/lua-filter', file), absolutePath)
         }
-      } catch (err) {
+      } catch {
         this._logger.warning(`[Assets Provider] Required filter ${file} not found. Copying ...`)
         await fs.copyFile(path.join(__dirname, './assets/lua-filter', file), absolutePath)
       }
@@ -422,18 +501,30 @@ export default class AssetsProvider extends ProviderContract {
   //////////////////////////////////////////////////////////////////////////////
 
   /**
-   * Gets the defaults file for a given writer
+   * Gets the verbatim contents of a defaults file
    *
-   * @param   {string}             filename   The profile's filename
-   * @param   {boolean}            verbatim   If false, the contents will be serialized to YAML
+   * @param   {string}            filename   The profile's filename
    *
-   * @return  {Promise<any>}    The defaults (parsed from YAML)
+   * @return  {Promise<string>}              The unparsed YAML source
    */
-  async getDefaultsFile (filename: string, verbatim: boolean = false): Promise<any|string> {
+  async getDefaultsFileContents (filename: string): Promise<string> {
     const absPath = path.join(this._defaultsPath, filename)
-    const yaml = await fs.readFile(absPath, { encoding: 'utf-8' })
-    // Either return the string contents or a JavaScript object
-    return (verbatim) ? yaml : YAML.parse(yaml)
+    return await fs.readFile(absPath, { encoding: 'utf-8' })
+  }
+
+  /**
+   * Gets the defaults file for a given writer, parsed from YAML
+   *
+   * @param   {string}                             filename   The profile's filename
+   *
+   * @return  {Promise<Record<string, unknown>>}               The parsed defaults
+   */
+  async getDefaultsFile (filename: string): Promise<Record<string, unknown>> {
+    const parsed: unknown = YAML.parse(await this.getDefaultsFileContents(filename))
+    if (!isRecord(parsed)) {
+      throw new Error(`Defaults file ${filename} does not contain a YAML mapping.`)
+    }
+    return parsed
   }
 
   /**
@@ -565,25 +656,28 @@ export default class AssetsProvider extends ProviderContract {
       const absolutePath = path.join(this._defaultsPath, file)
       try {
         const contents = await fs.readFile(absolutePath, { encoding: 'utf-8' })
-        const yaml = YAML.parse(contents)
+        const yaml: unknown = YAML.parse(contents)
+        if (!isRecord(yaml)) {
+          throw new Error(`Profile ${file} does not contain a YAML mapping.`)
+        }
 
         // A defaults file needs to fulfill three conditions in order to be
         // considered valid: (1) has a writer, (2) has a reader, (3) either
         // reader or writer must be a supported Markdown format.
-        const hasWriter = yaml.writer !== undefined
-        const hasReader = yaml.reader !== undefined
-        const validWriter = hasWriter && SUPPORTED_READERS.includes(parseReaderWriter(yaml.writer as string).name)
-        const validReader = hasReader && SUPPORTED_READERS.includes(parseReaderWriter(yaml.reader as string).name)
+        const writer = stringProperty(yaml, 'writer')
+        const reader = stringProperty(yaml, 'reader')
+        const validWriter = writer !== undefined && SUPPORTED_READERS.includes(parseReaderWriter(writer).name)
+        const validReader = reader !== undefined && SUPPORTED_READERS.includes(parseReaderWriter(reader).name)
 
         profiles.push({
           name: file,
-          writer: yaml.writer,
-          reader: yaml.reader,
-          isInvalid: !(hasWriter && hasReader && (validWriter || validReader)),
+          writer: writer ?? '',
+          reader: reader ?? '',
+          isInvalid: !(writer !== undefined && reader !== undefined && (validWriter || validReader)),
           isProtected: this._protectedDefaults.includes(file),
-          template: typeof yaml.template === 'string' ? yaml.template : undefined
+          template: stringProperty(yaml, 'template')
         })
-      } catch (err) {
+      } catch {
         this._logger.warning(`[Assets Provider] Installed profile ${file} had an error and could not be parsed`)
         profiles.push({
           name: file,
