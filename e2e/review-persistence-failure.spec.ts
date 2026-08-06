@@ -427,7 +427,10 @@ describe('a review that cannot be persisted', function () {
         await window.ipc.invoke('documents:save-file', { path: pathInPage }),
       activePath
     )
-    assert.ok(isRecord(refused) && refused.ok === false && isRecord(refused.refusal))
+    assert.ok(
+      isRecord(refused) && !refused.ok && isRecord(refused.refusal),
+      `the save must refuse with a reason: ${JSON.stringify(refused)}`
+    )
     assert.equal(refused.refusal.reason, 'review-not-persisted')
     assert.equal(
       await readFile(activePath, 'utf8'),
