@@ -309,6 +309,38 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     expectedWorkingSha256: sha256Text(""),
   };
 
+  /**
+   * Break the one seam every review transaction persists through, and hand
+   * back the restore. This is the store the provider actually writes to —
+   * not a module mock — so the failure reaches exactly the code path a full
+   * disk would.
+   */
+  function breakSidecarWrites(): () => void {
+    const original = ReviewSidecarStore.prototype.write;
+    ReviewSidecarStore.prototype.write = async () => {
+      throw new Error("injected sidecar write failure");
+    };
+    return () => {
+      ReviewSidecarStore.prototype.write = original;
+    };
+  }
+
+  /**
+   * Everything a committed review can be observed through, as bytes. A
+   * refused mutation must leave this identical — asserting a field at a
+   * time is what lets an unasserted field move unnoticed.
+   */
+  function projections(docId: string): string {
+    const workingText = provider.readWorkingText(docId) ?? "";
+    return JSON.stringify({
+      workingText,
+      buffer: provider.readLiveBuffer(docId),
+      review: provider.reviewStore.getReview(docId),
+      status: provider.reviewStatus(docId),
+      chunks: provider.reviewStore.getOutstandingChunks(docId, workingText),
+    });
+  }
+
   /** A JSON request body, with the content type the routes declare. */
   function jsonBody(value: unknown): { body: string; headers: Record<string, string> } {
     return {
@@ -849,6 +881,40 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(JSON.parse(conflicting.body).error.code, "IDEMPOTENCY_CONFLICT");
   });
 
+  it("answers a replayed proposal with the original response and applies nothing", async function () {
+    // The ledger's other half. Once the first submission landed, the baseline
+    // this body carries is stale — so a route that forwarded the replay
+    // instead of answering it would refuse the agent's own retry, and an
+    // agent that lost the response has no way to ask what happened.
+    const filePath = path.join(scratch, "idempotent-replay.md");
+    const original = "alpha\nbeta\n";
+    const docId = await openFile(filePath, original);
+    const body = proposalBody(
+      docId,
+      [{ description: "caps alpha", patch: makePatch(original, "ALPHA\nbeta\n") }],
+      "replayed-key",
+    );
+
+    const first = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      body,
+      headers: jsonHeaders,
+    });
+    assert.equal(first.status, 200, first.body);
+    const afterFirst = projections(docId);
+
+    const replayed = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
+      body,
+      headers: jsonHeaders,
+    });
+    assert.equal(replayed.status, 200, replayed.body);
+    assert.equal(
+      replayed.body,
+      first.body,
+      "a replayed request must repeat the original response byte for byte",
+    );
+    assert.equal(projections(docId), afterFirst, "a replay must not apply a second packet");
+  });
+
   it("does not expose an ETag for reference reads, and answers the review baseline", async function () {
     const filePath = path.join(scratch, "reference.md");
     const docId = await openFile(filePath, "alpha\n");
@@ -1001,6 +1067,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         claims: [{ description: "not a diff", patch: "this is not a unified diff\n" }],
         baseline: undefined,
         generation: undefined,
+        inject: undefined,
       },
       {
         name: "non-applicable patch",
@@ -1011,6 +1078,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         ],
         baseline: undefined,
         generation: undefined,
+        inject: undefined,
       },
       {
         name: "stale baselineSha256",
@@ -1019,6 +1087,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         claims: [{ description: "caps alpha", patch: makePatch(diskText, proposed) }],
         baseline: sha256Text("text this file never held\n"),
         generation: undefined,
+        inject: undefined,
       },
       {
         name: "stale expectedReviewGeneration",
@@ -1027,6 +1096,20 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         claims: [{ description: "caps alpha", patch: makePatch(diskText, proposed) }],
         baseline: undefined,
         generation: 7,
+        inject: undefined,
+      },
+      {
+        // The one refusal that happens AFTER the claims applied cleanly: the
+        // review exists in memory and only its durability fails. The
+        // acquisition still has to unwind, or a full disk leaves the user
+        // holding an undurable review of a file nobody opened.
+        name: "sidecar write failure",
+        status: 500,
+        code: "PERSISTENCE_FAILED",
+        claims: [{ description: "caps alpha", patch: makePatch(diskText, proposed) }],
+        baseline: undefined,
+        generation: undefined,
+        inject: breakSidecarWrites,
       },
     ];
 
@@ -1040,6 +1123,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         (await httpRequest("GET", `/v1/documents/${docId}/content`)).body,
       ) as ReadDocumentResponse;
 
+      // Nothing happened, so nothing may be announced: an agent watching the
+      // stream must not be told about a proposal that was refused.
+      const announced: AgentEvent[] = [];
+      const listener = (event: AgentEvent): void => void announced.push(event);
+      provider.agentEvents.on("*", listener);
+
+      const restore = refusal.inject?.();
       const response = await httpRequest("POST", `/v1/documents/${docId}/proposals`, {
         body: JSON.stringify({
           baselineSha256: refusal.baseline ?? read.revision.sha256,
@@ -1049,8 +1139,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         }),
         headers: { "content-type": "application/json" },
       });
+      restore?.();
+      provider.agentEvents.off("*", listener);
+
       assert.equal(response.status, refusal.status, `${refusal.name}: ${response.body}`);
       assert.equal(JSON.parse(response.body).error.code, refusal.code, refusal.name);
+      assert.deepEqual(announced, [], `${refusal.name} must announce nothing`);
 
       // No review anywhere — neither live nor detached to a sidecar.
       const reviews = JSON.parse((await httpRequest("GET", "/v1/reviews")).body) as {
@@ -1870,6 +1964,79 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       current.generation,
       "a refused decision burns no generation",
     );
+  });
+
+  it("refuses every review mutation route whose precondition is stale", async function () {
+    // The precondition check is one function, and the two specs above prove
+    // it. What they cannot prove is that each of the six routes forwards
+    // what the caller actually wrote: a route that dropped the working hash,
+    // or filled in the current generation for the caller, would pass every
+    // test of the check itself and silently decide against text the caller
+    // never saw. So each route is driven here with each kind of stale fence.
+    const filePath = path.join(scratch, "precondition-routes.md");
+    const original = "alpha\nx\ny\nz\nbeta\n";
+    const proposed = "ALPHA\nx\ny\nz\nBETA\n";
+    const docId = await openFile(filePath, original);
+    const submitted = await submitClaim(docId, makePatch(original, proposed), "precondition-routes");
+    assert.ok(submitted.ok, JSON.stringify(submitted));
+
+    const reviewId = submitted.reviewId;
+    const chunks = provider.reviewStore.getOutstandingChunks(
+      docId,
+      provider.readWorkingText(docId) ?? "",
+    )!;
+    assert.equal(chunks.length, 2);
+
+    const live = livePrecondition(reviewId);
+    const routes = [
+      { name: "accept", path: `/v1/reviews/${reviewId}/chunks/${chunks[0].chunkId}/accept` },
+      { name: "reject", path: `/v1/reviews/${reviewId}/chunks/${chunks[0].chunkId}/reject` },
+      { name: "hold", path: `/v1/reviews/${reviewId}/chunks/${chunks[0].chunkId}/hold` },
+      { name: "accept-all", path: `/v1/reviews/${reviewId}/accept-all` },
+      { name: "clear", path: `/v1/reviews/${reviewId}/clear` },
+      { name: "retract", path: `/v1/proposals/${submitted.packetIds[0]}/retract` },
+    ];
+    const staleFences = [
+      {
+        name: "overtaken generation",
+        code: "REVIEW_GENERATION_MISMATCH",
+        precondition: {
+          ...live,
+          expectedReviewGeneration: live.expectedReviewGeneration + 1,
+        },
+      },
+      {
+        name: "working text the document never held",
+        code: "REVISION_MISMATCH",
+        precondition: {
+          ...live,
+          expectedWorkingSha256: sha256Text("text this document never held\n"),
+        },
+      },
+    ];
+
+    // Every route is refused against the SAME committed state, so a route
+    // that let one refusal through would be caught by the next one's
+    // comparison as much as by its own.
+    const before = projections(docId);
+    for (const route of routes) {
+      for (const fence of staleFences) {
+        const where = `${route.name} / ${fence.name}`;
+        const response = await httpRequest("POST", route.path, jsonBody(fence.precondition));
+        assert.equal(response.status, 409, `${where}: ${response.body}`);
+        assert.equal(JSON.parse(response.body).error.code, fence.code, where);
+        assert.equal(projections(docId), before, `${where} must move nothing`);
+      }
+    }
+
+    // And the fence is the only thing that refused them: the same review
+    // still accepts a decision carrying the precondition it really holds.
+    const accepted = await httpRequest(
+      "POST",
+      `/v1/reviews/${reviewId}/chunks/${chunks[0].chunkId}/accept`,
+      jsonBody(livePrecondition(reviewId)),
+    );
+    assert.equal(accepted.status, 200, accepted.body);
   });
 
   it("POST /v1/reviews/{id}/chunks/{chunkId}/accept and /reject decide through the provider", async function () {
@@ -3385,38 +3552,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
   // ==========================================================================
   describe("review persistence failure", function () {
-    /**
-     * Break the one seam every review transaction persists through, and hand
-     * back the restore. This is the store the provider actually writes to —
-     * not a module mock — so the failure reaches exactly the code path a full
-     * disk would.
-     */
-    function breakSidecarWrites(): () => void {
-      const original = ReviewSidecarStore.prototype.write;
-      ReviewSidecarStore.prototype.write = async () => {
-        throw new Error("injected sidecar write failure");
-      };
-      return () => {
-        ReviewSidecarStore.prototype.write = original;
-      };
-    }
-
-    /**
-     * Everything a committed review can be observed through, as bytes. A
-     * refused mutation must leave this identical — asserting a field at a
-     * time is what lets an unasserted field move unnoticed.
-     */
-    function projections(docId: string): string {
-      const workingText = provider.readWorkingText(docId) ?? "";
-      return JSON.stringify({
-        workingText,
-        buffer: provider.readLiveBuffer(docId),
-        review: provider.reviewStore.getReview(docId),
-        status: provider.reviewStatus(docId),
-        chunks: provider.reviewStore.getOutstandingChunks(docId, workingText),
-      });
-    }
-
     async function persistedSidecar(filePath: string): Promise<string | undefined> {
       const sidecar = await sidecars.read(filePath);
       return sidecar === undefined ? undefined : JSON.stringify(sidecar);

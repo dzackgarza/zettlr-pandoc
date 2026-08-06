@@ -129,12 +129,28 @@ function editOf (preview: ReferenceRenamePreview, label: string): WorkspaceRefer
   return (preview as Extract<ReferenceRenamePreview, { status: 'ok' }>).edit
 }
 
+/**
+ * How the document authority fails the NEXT application it is asked for. The
+ * authority is a seam the provider is constructed with, so these are the real
+ * ways the real seam can betray a transaction, not a stubbed filesystem:
+ *
+ * - `throw`:          the authority cannot apply the edits at all
+ * - `unacknowledged`: it applies them but names fewer buffers than it was given
+ * - `divergent`:      it names every buffer but holds different text than the
+ *                     transaction computed (a keystroke landed mid-flight)
+ */
+type AuthorityFault = 'none'|'throw'|'unacknowledged'|'divergent'
+
 /** One scratch workspace: fixture copy, provider, FSAL seam, live Halphen buffer. */
 interface ScratchWorkspace {
   root: string
   provider: ReferenceProvider
   /** The real 'application'-channel command chain over this provider (B7) */
   command: RenameReference
+  /** Where this provider journals; the rollback's own application is normal. */
+  journalFile: string
+  /** Consumed by the next authority application, then cleared. */
+  authorityFault: { next: AuthorityFault }
   /**
    * The document authority's open buffer map behind the injected
    * readMarkdownBufferContent seam (issue #53): a path present here IS an
@@ -154,7 +170,7 @@ interface ScratchWorkspace {
   originals: Map<string, string>
 }
 
-async function setUpScratchWorkspace (): Promise<ScratchWorkspace> {
+async function setUpScratchWorkspace (journalDirectory: string = userData): Promise<ScratchWorkspace> {
   const root = await mkdtemp(path.join(tmpdir(), 'zettlr-reference-rename-'))
   await cp(FIXTURE_ROOT, root, { recursive: true })
 
@@ -174,6 +190,7 @@ async function setUpScratchWorkspace (): Promise<ScratchWorkspace> {
 
   const seam = new EventEmitter()
   const authorityBuffers = new Map<string, string>()
+  const authorityFault: { next: AuthorityFault } = { next: 'none' }
   const scheduled: Array<{ callback: () => void, cancelled: boolean }> = []
   const provider = new ReferenceProvider(
     new LogProvider(),
@@ -182,6 +199,13 @@ async function setUpScratchWorkspace (): Promise<ScratchWorkspace> {
       readMarkdownBufferContent: (filePath: string) => authorityBuffers.get(filePath),
       applyWorkspaceTextEdits: async (edits: WorkspaceTextEdit[]) => {
         const paths = [...new Set(edits.map(edit => edit.documentPath))]
+        // One fault per application: the rollback's own restoring application
+        // must run normally, or the test would prove nothing about recovery.
+        const fault = authorityFault.next
+        authorityFault.next = 'none'
+        if (fault === 'throw') {
+          throw new Error('the document authority could not apply the transaction')
+        }
         for (const documentPath of paths) {
           const content = authorityBuffers.get(documentPath)
           assert(content !== undefined, `Workspace edit names unopened authority buffer ${documentPath}`)
@@ -190,11 +214,16 @@ async function setUpScratchWorkspace (): Promise<ScratchWorkspace> {
             applyEdits(content, edits.filter(edit => edit.documentPath === documentPath))
           )
         }
-        return paths
+        if (fault === 'divergent') {
+          for (const documentPath of paths) {
+            authorityBuffers.set(documentPath, `${authorityBuffers.get(documentPath) ?? ''}A keystroke that landed mid-transaction.\n`)
+          }
+        }
+        return fault === 'unacknowledged' ? [] : paths
       }
     },
     500,
-    userData,
+    journalDirectory,
     {
       schedule: (callback: () => void, _delayMs: number) => {
         const task = { callback, cancelled: false }
@@ -227,7 +256,17 @@ async function setUpScratchWorkspace (): Promise<ScratchWorkspace> {
   provider.reportAuthorityBuffer(paths.halphen)
   fireScheduled()
 
-  return { root, provider, command, authorityBuffers, fireScheduled, paths, originals }
+  return {
+    root,
+    provider,
+    command,
+    journalFile: path.join(journalDirectory, 'workspace-edit-journal.json'),
+    authorityFault,
+    authorityBuffers,
+    fireScheduled,
+    paths,
+    originals
+  }
 }
 
 /** Byte-compares every workspace file against the expected content map. */
@@ -501,10 +540,20 @@ describe('Workspace edit transaction rollback and recovery', function () {
       const preview = await scratch.command.run('preview-reference-rename', { oldKey: OLD_KEY, newKey: NEW_KEY }) as ReferenceRenamePreview
       const edit = editOf(preview, 'rollback-path preview')
 
+      // The transaction installs closed files in the order the edit fences
+      // them, so this is what makes ProjectB a LATER installation. Asserted,
+      // not assumed: were Other_Paper.md installed first, this spec would
+      // silently become the empty-rollback case instead of the loaded one.
+      const closedOrder = Object.keys(edit.expectedSourceHashes)
+        .filter(documentPath => documentPath !== scratch.paths.halphen)
+      assert.ok(
+        closedOrder.indexOf(scratch.paths.otherPaper) > 0,
+        `the injected failure must follow at least one installation, got ${JSON.stringify(closedOrder)}`
+      )
+
       // Real failure injection, no filesystem mock: ProjectB becomes
       // unwritable, so write-file-atomic cannot stage its temp file there.
-      // Other_Paper.md is installed after Theorems.md and Standalone_Notes.md,
-      // so the transaction fails with earlier installations already on disk.
+      // The transaction fails with earlier installations already on disk.
       chmodSync(path.join(scratch.root, 'ProjectB'), 0o555)
 
       await assert.rejects(
@@ -530,6 +579,142 @@ describe('Workspace edit transaction rollback and recovery', function () {
       // Nothing was recorded to undo: the failed commit never applied.
       const undone = await scratch.command.run('undo-reference-rename', undefined) as UndoRenameOutcome
       assert.deepEqual(undone, { status: 'no-pending-undo' })
+    })
+  })
+
+  describe('a failed open-buffer commit rolls the whole transaction back', function () {
+    let scratch: ScratchWorkspace
+
+    before(async function () {
+      scratch = await setUpScratchWorkspace()
+    })
+
+    after(async function () {
+      await scratch.provider.shutdown()
+      await rm(scratch.root, { recursive: true, force: true })
+    })
+
+    it('leaves every closed file untouched when the authority cannot apply the open buffers', async function () {
+      const preview = await scratch.command.run('preview-reference-rename', { oldKey: OLD_KEY, newKey: NEW_KEY }) as ReferenceRenamePreview
+      const edit = editOf(preview, 'authority-failure preview')
+
+      scratch.authorityFault.next = 'throw'
+      await assert.rejects(
+        async () => await scratch.command.run('commit-reference-rename', { edit }),
+        'an open-buffer application the authority refuses must fail loudly'
+      )
+
+      // The open buffers are the transaction's FIRST mutation, so a closed
+      // file holding renamed bytes here means the installations ran before
+      // the half that just failed.
+      assertWorkspaceBytes(scratch, scratch.originals, 'after a refused open-buffer commit')
+      assert.equal(
+        scratch.authorityBuffers.get(scratch.paths.halphen),
+        scratch.originals.get(scratch.paths.halphen),
+        'the open buffer must hold its pre-transaction text'
+      )
+      assert.equal(existsSync(scratch.journalFile), false, 'a completed rollback deletes its journal')
+
+      const undone = await scratch.command.run('undo-reference-rename', undefined) as UndoRenameOutcome
+      assert.deepEqual(undone, { status: 'no-pending-undo' }, 'a failed commit records nothing to undo')
+    })
+  })
+
+  describe('an open-buffer application the authority did not truly perform', function () {
+    const workspaces: ScratchWorkspace[] = []
+
+    after(async function () {
+      for (const scratch of workspaces) {
+        await scratch.provider.shutdown()
+        await rm(scratch.root, { recursive: true, force: true })
+      }
+    })
+
+    // Two distinct betrayals, each with its own refusal in the transaction:
+    // the acknowledgement list is short, or the text behind it is not the
+    // text the transaction computed. Without both checks a commit reports
+    // success while the user's open pane holds something else entirely.
+    const cases = [
+      {
+        fault: 'unacknowledged' as const,
+        title: 'names fewer buffers than the transaction handed it'
+      },
+      {
+        fault: 'divergent' as const,
+        title: 'holds different content than the transaction computed'
+      }
+    ]
+
+    for (const { fault, title } of cases) {
+      it(`rolls back when the authority ${title}`, async function () {
+        const scratch = await setUpScratchWorkspace()
+        workspaces.push(scratch)
+
+        const preview = await scratch.command.run('preview-reference-rename', { oldKey: OLD_KEY, newKey: NEW_KEY }) as ReferenceRenamePreview
+        const edit = editOf(preview, `${fault} preview`)
+
+        scratch.authorityFault.next = fault
+        await assert.rejects(
+          async () => await scratch.command.run('commit-reference-rename', { edit }),
+          `${fault}: an unverified open-buffer application must not be reported as applied`
+        )
+
+        assertWorkspaceBytes(scratch, scratch.originals, `after a ${fault} commit`)
+        assert.equal(
+          scratch.authorityBuffers.get(scratch.paths.halphen),
+          scratch.originals.get(scratch.paths.halphen),
+          `${fault}: the rollback must restore the mutated buffer byte-exactly`
+        )
+        assert.equal(existsSync(scratch.journalFile), false, `${fault}: a completed rollback deletes its journal`)
+
+        const undone = await scratch.command.run('undo-reference-rename', undefined) as UndoRenameOutcome
+        assert.deepEqual(undone, { status: 'no-pending-undo' })
+      })
+    }
+  })
+
+  describe('the journal is written before anything is mutated', function () {
+    let scratch: ScratchWorkspace
+    let journalDirectory: string
+
+    before(async function () {
+      journalDirectory = await mkdtemp(path.join(tmpdir(), 'zettlr-reference-journal-dir-'))
+      scratch = await setUpScratchWorkspace(journalDirectory)
+    })
+
+    after(async function () {
+      chmodSync(journalDirectory, 0o755)
+      await scratch.provider.shutdown()
+      await rm(scratch.root, { recursive: true, force: true })
+      await rm(journalDirectory, { recursive: true, force: true })
+    })
+
+    it('mutates nothing when the journal cannot be written', async function () {
+      if (process.getuid?.() === 0) {
+        this.skip() // root ignores the directory permission this injection needs
+      }
+
+      const preview = await scratch.command.run('preview-reference-rename', { oldKey: OLD_KEY, newKey: NEW_KEY }) as ReferenceRenamePreview
+      const edit = editOf(preview, 'journal-failure preview')
+
+      // The journal is the only thing standing between a crash mid-install
+      // and an unrecoverable workspace. A transaction that mutates before it
+      // exists cannot be recovered at the next startup, so the write has to
+      // come first — and its failure has to abort the whole commit.
+      chmodSync(journalDirectory, 0o555)
+
+      await assert.rejects(
+        async () => await scratch.command.run('commit-reference-rename', { edit }),
+        'a transaction that cannot journal must fail loudly'
+      )
+
+      assertWorkspaceBytes(scratch, scratch.originals, 'after a commit that could not journal')
+      assert.equal(
+        scratch.authorityBuffers.get(scratch.paths.halphen),
+        scratch.originals.get(scratch.paths.halphen),
+        'no buffer may be mutated before the journal exists'
+      )
+      assert.deepEqual(readdirSync(journalDirectory), [], 'the failed journal write leaves nothing behind')
     })
   })
 

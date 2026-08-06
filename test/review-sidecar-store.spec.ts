@@ -20,7 +20,16 @@
  */
 
 import { strict as assert } from "assert";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import os from "os";
 import path from "path";
 import type { ReviewSidecarData } from "source/app/service-providers/documents/review-sidecar-schema";
@@ -113,6 +122,11 @@ describe("ReviewSidecarStore", function () {
   });
 
   afterEach(function () {
+    // A permission injection that failed mid-test would otherwise leave a
+    // directory this cannot remove.
+    if (existsSync(sidecarDirectory)) {
+      chmodSync(sidecarDirectory, 0o700);
+    }
     rmSync(directory, { recursive: true, force: true });
   });
 
@@ -170,14 +184,27 @@ describe("ReviewSidecarStore", function () {
   });
 
   it("leaves the previous complete sidecar behind when a write fails", async function () {
+    if (process.getuid?.() === 0) {
+      this.skip(); // root ignores the directory permission this injection needs
+    }
     const first = sidecar(documentPath);
     await store.write(first);
 
-    // A payload JSON.stringify cannot serialize: the write throws before any
-    // byte of the target file is replaced.
-    const unserializable: ReviewSidecarData & { self?: unknown } = { ...first };
-    unserializable.self = unserializable;
-    await assert.rejects(store.write(unserializable), TypeError);
+    // The failure has to happen INSIDE the write, not before it: an
+    // unserializable payload throws in JSON.stringify and would leave the
+    // previous file whole even for a store that truncated its target in
+    // place. An unwritable directory instead refuses the staged temporary
+    // file — which is exactly what a store writing straight to the target
+    // would never need, and so would not fail on at all.
+    chmodSync(sidecarDirectory, 0o500);
+    const second: ReviewSidecarData = { ...first, workingText: "SECOND\n", generation: 2 };
+    await assert.rejects(
+      store.write(second),
+      (error: unknown) =>
+        error instanceof Error && "code" in error && error.code === "EACCES",
+      "the refused write must surface the filesystem's own structured error",
+    );
+    chmodSync(sidecarDirectory, 0o700);
 
     assert.deepEqual(await store.read(documentPath), first);
     assert.deepEqual(
