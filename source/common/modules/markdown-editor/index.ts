@@ -25,7 +25,7 @@ import { foldEffect, foldState, syntaxTree } from "@codemirror/language";
 import { closeSearchPanel, openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import {
   Compartment,
-  type EditorSelection,
+  EditorSelection,
   EditorState,
   type Extension,
   type SelectionRange,
@@ -524,17 +524,36 @@ export default class MarkdownEditor extends EventEmitter {
     if (persistentState !== undefined) {
       // Now that the correct document has been loaded, there will be content
       // and we can restore the persisted information.
+      //
+      // The persisted positions describe the BUFFER as this pane last had it,
+      // which is not necessarily what the authority hands back: a buffer whose
+      // last edits were never acknowledged is longer than the document loaded
+      // here. CodeMirror rejects a selection or a fold that points past the
+      // end, and the throw would land as a document-load error — the file
+      // would simply refuse to open, over a cursor. So bring the positions
+      // into this document instead of trusting them.
       const { scrollSnapshot, selection, foldedRanges } = persistentState;
+      const end = this._instance.state.doc.length;
 
       const effects: StateEffect<unknown>[] = [scrollSnapshot];
 
       const cursor = foldedRanges.iter();
       while (cursor.value) {
-        effects.push(foldEffect.of({ from: cursor.from, to: cursor.to }));
+        if (cursor.to <= end) {
+          effects.push(foldEffect.of({ from: cursor.from, to: cursor.to }));
+        }
         cursor.next();
       }
 
-      this._instance.dispatch({ selection, effects });
+      this._instance.dispatch({
+        selection: EditorSelection.create(
+          selection.ranges.map((range) =>
+            EditorSelection.range(Math.min(range.anchor, end), Math.min(range.head, end)),
+          ),
+          selection.mainIndex,
+        ),
+        effects,
+      });
     }
 
     // Ensure the theme switcher picks the state change up; this somehow doesn't
