@@ -266,7 +266,7 @@ export interface paths {
         };
         /**
          * Inspect a review
-         * @description Status plus review-level comments — the reviewer's channel back to you. Read the comments and the held chunks at the start of each turn and address them with new claims. Answers for every reviewId /v1/reviews lists: a detached review is served from its sidecar, with attached=false and no documentRevision.
+         * @description Status plus review-level comments — the reviewer's channel back to you. Read the comments and the chunk notes at the start of each turn and address them with new claims. Answers for every reviewId /v1/reviews lists: a detached review is served from its sidecar, with attached=false and no documentRevision.
          */
         get: operations["getReview"];
         put?: never;
@@ -306,7 +306,7 @@ export interface paths {
         };
         /**
          * Inspect current unresolved chunks
-         * @description Read this at the start of each turn. A held chunk's holdComment is the reviewer's question or objection — answer it with a revised claim in your next submission. Pending chunks are simply undecided: the reviewer accepts, rejects, and holds them in the editor, and this API offers no way to decide them for them. Answers for a detached review too, from the frozen texts in its sidecar — same content-addressed chunk ids, no documentId.
+         * @description Read this at the start of each turn. A chunk's comment is the reviewer's question or objection — answer it with a revised claim in your next submission. Every chunk here is undecided: the reviewer accepts and rejects them in the editor, and this API offers no way to decide them for them. Answers for a detached review too, from the frozen texts in its sidecar — same content-addressed chunk ids, no documentId.
          */
         get: operations["getReviewChunks"];
         put?: never;
@@ -328,7 +328,7 @@ export interface paths {
         put?: never;
         /**
          * Attach a review-level comment
-         * @description Communication without adjudication: the comment lands in the review's comment list and advances the generation, so a long-poll on the existing generation cursor wakes — that cursor IS the "what changed since my last turn" query. Answer a hold here when the answer is an argument; answer with a new claim when the answer is an edit.
+         * @description Communication without adjudication: the comment lands in the review's comment list and advances the generation, so a long-poll on the existing generation cursor wakes — that cursor IS the "what changed since my last turn" query. Answer a chunk note here when the answer is an argument; answer with a new claim when the answer is an edit.
          */
         post: operations["addReviewComment"];
         delete?: never;
@@ -400,7 +400,7 @@ export interface paths {
         };
         /**
          * Long-poll review events and status after a generation advance
-         * @description The "what changed since my last turn" query: pass the generation from your last response as afterGeneration. It answers at once if the review has already moved past that generation, otherwise blocks until a decision, hold, comment, or new packet advances it — or until waitSeconds elapses, which answers with timedOut true.
+         * @description The "what changed since my last turn" query: pass the generation from your last response as afterGeneration. It answers at once if the review has already moved past that generation, otherwise blocks until a decision, comment, or new packet advances it — or until waitSeconds elapses, which answers with timedOut true.
          */
         get: operations["waitForReviewEvents"];
         put?: never;
@@ -495,15 +495,14 @@ export interface components {
             reviewId: string;
             state: components["schemas"]["ReviewState"];
             generation: number;
-            /** @description Pending chunks only. Held chunks are excluded — they do not block saving. */
+            /** @description Chunks not yet accepted or rejected — the whole outstanding partition. */
             unresolvedChunks: number;
-            heldChunks: number;
             packetCount: number;
         };
         ReviewComment: {
             text: string;
             createdAt: string;
-            /** @description Present when this comment was salvaged from a hold whose chunk id vanished from the partition (the held region was edited, decided, cleared, or absorbed by a later claim). Hold text is never silently lost. */
+            /** @description Present when this comment was salvaged from a chunk-anchored note whose chunk id vanished from the partition (the annotated region was edited, decided, cleared, or absorbed by a later claim). Note text is never silently lost. */
             orphanedFromChunkId?: string;
         };
         EditorViewSummary: {
@@ -599,11 +598,11 @@ export interface components {
             documentRevision?: components["schemas"]["DocumentRevision"];
             reviewGeneration?: number;
             unresolvedChunks?: number;
-            /** @description review.held: the chunk that was held. */
+            /** @description review.commented: the outstanding chunk the comment is anchored to, when it is chunk-anchored. */
             chunkId?: string;
-            /** @description review.held / review.commented: the comment text, when one exists. */
+            /** @description review.commented: the comment text. */
             comment?: string;
-            /** @description review.commented: set when the comment was salvaged from a hold whose chunk id vanished from the partition. */
+            /** @description review.commented: set when the comment was salvaged from a chunk-anchored note whose chunk id vanished from the partition. */
             orphanedFromChunkId?: string;
             /** @description review.sidecar-error: what failed and why. */
             message?: string;
@@ -709,11 +708,10 @@ export interface components {
             reviewId: string;
             state: components["schemas"]["ReviewState"];
             generation: number;
-            /** @description Pending chunks only; held chunks are excluded. */
+            /** @description Chunks not yet accepted or rejected — the whole outstanding partition. */
             unresolvedChunks: number;
-            heldChunks: number;
             packetCount: number;
-            /** @description Review-level comments in creation order — attached directly via the comments route, or orphaned from holds whose chunks vanished. */
+            /** @description Review-level comments in creation order — attached directly via the comments route, or orphaned from chunk-anchored notes whose chunks vanished. */
             comments: components["schemas"]["ReviewComment"][];
             /** @description True while the reviewed document is open. A detached review is served from its sidecar: readable, but not decidable until its documentPath is opened again. */
             attached: boolean;
@@ -772,13 +770,8 @@ export interface components {
             packetIds: string[];
             /** @description Those packets' descriptions, in the same order, packets without one omitted. */
             descriptions: string[];
-            /**
-             * @description The chunk's decision state. Accepted and rejected chunks stop being disagreements and leave the partition, so only pending and held chunks exist here.
-             * @enum {string}
-             */
-            state: "pending" | "held";
-            /** @description The hold's comment, when this chunk is held with one — the reviewer's question or objection. Address it in your next claims batch. */
-            holdComment?: string;
+            /** @description The reviewer's note attached to this chunk without deciding it — a question or objection. Address it in your next claims batch. */
+            comment?: string;
             /** @description Focused zero-context unified diff of exactly this chunk. */
             patch: string;
         };

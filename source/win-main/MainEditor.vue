@@ -758,7 +758,17 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
         reviewId: input.reviewId,
         chunkId: input.chunkId,
         decision: input.decision,
-        comment: input.comment,
+        expectedReviewGeneration: input.expectedReviewGeneration,
+        expectedWorkingSha256: await syncedWorkingSha256(editor)
+      }))
+    },
+    commentChunk: async input => {
+      // Annotation, not adjudication — but the chunk id is content-addressed
+      // over the working text, so it fences exactly like a decision.
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents:comment-review-chunk', {
+        reviewId: input.reviewId,
+        chunkId: input.chunkId,
+        text: input.text,
         expectedReviewGeneration: input.expectedReviewGeneration,
         expectedWorkingSha256: await syncedWorkingSha256(editor)
       }))

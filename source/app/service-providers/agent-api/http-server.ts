@@ -64,7 +64,7 @@ import vm from "vm";
 import { parseDocument, type Document } from "yaml";
 import {
   classifyReviewState,
-  sidecarCounts,
+  sidecarUnresolvedChunks,
   reviewPatch,
   sidecarOutstandingChunks,
   toWirePacket,
@@ -1281,13 +1281,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
         return;
       }
-      const counts = sidecarCounts(detached);
+      const unresolvedChunks = sidecarUnresolvedChunks(detached);
       this.sendJson(res, 200, {
         reviewId: detached.reviewId,
-        state: classifyReviewState(detached.invalidated, counts.unresolvedChunks),
+        state: classifyReviewState(detached.invalidated, unresolvedChunks),
         generation: detached.generation,
-        unresolvedChunks: counts.unresolvedChunks,
-        heldChunks: counts.heldChunks,
+        unresolvedChunks,
         packetCount: detached.packets.length,
         comments: detached.comments,
         attached: false,
@@ -1312,8 +1311,8 @@ export default class AgentHTTPProvider extends ProviderContract {
         `Review ${reviewId} is attached to document ${documentId}, which is not open`,
       );
     }
-    // getReviewStatus just reconciled the holds, so the comments read here
-    // already include any orphans that reconciliation surfaced.
+    // The comments read here include any orphans that chunk-comment
+    // reconciliation has surfaced.
     const review = this._documents.reviewStore.getReview(documentId)!;
     this.sendJson(res, 200, {
       ...status,

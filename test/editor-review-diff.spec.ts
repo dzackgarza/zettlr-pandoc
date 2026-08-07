@@ -80,9 +80,9 @@ interface PacketView {
   refSpans: Array<{ from: number, to: number }>
 }
 
-interface HoldView {
+interface ChunkNoteView {
   chunkId: string
-  comment?: string
+  comment: string
 }
 
 interface CommentView {
@@ -92,14 +92,13 @@ interface CommentView {
 
 interface ReviewViewOptions {
   packets?: PacketView[]
-  holds?: HoldView[]
+  chunkComments?: ChunkNoteView[]
   comments?: CommentView[]
 }
 
 interface DecisionCall {
   chunkId: string
-  decision: 'accept'|'reject'|'hold'
-  comment?: string
+  decision: 'accept'|'reject'
 }
 
 interface ReviewCalls {
@@ -107,6 +106,7 @@ interface ReviewCalls {
   acceptAll: number
   clear: number
   comments: string[]
+  chunkNotes: Array<{ chunkId: string, text: string }>
 }
 
 describe('Editor review-chunk view', function () {
@@ -132,7 +132,8 @@ describe('Editor review-chunk view', function () {
       decisions: [],
       acceptAll: 0,
       clear: 0,
-      comments: []
+      comments: [],
+      chunkNotes: []
     }
     const view = new EditorView({
       parent: document.body,
@@ -143,14 +144,15 @@ describe('Editor review-chunk view', function () {
             reviewId: 'review-test',
             referenceText,
             packets: options.packets ?? [],
-            holds: options.holds ?? [],
+            chunkComments: options.chunkComments ?? [],
             comments: options.comments ?? [],
-            onDecide: async (chunkId, decision, comment) => {
-              calls.decisions.push({ chunkId, decision, comment })
+            onDecide: async (chunkId, decision) => {
+              calls.decisions.push({ chunkId, decision })
             },
             onAcceptAll: async () => { calls.acceptAll += 1 },
             onClear: async () => { calls.clear += 1 },
-            onComment: async (text) => { calls.comments.push(text) }
+            onComment: async (text) => { calls.comments.push(text) },
+            onChunkComment: async (chunkId, text) => { calls.chunkNotes.push({ chunkId, text }) }
           }),
           EditorView.updateListener.of(() => {})
         ]
@@ -179,17 +181,17 @@ describe('Editor review-chunk view', function () {
 
     const accepts = view.dom.querySelectorAll<HTMLButtonElement>('button.cm-review-diff-control.accept')
     const rejects = view.dom.querySelectorAll<HTMLButtonElement>('button.cm-review-diff-control.reject')
-    const holds = view.dom.querySelectorAll<HTMLButtonElement>('button.cm-review-diff-control.hold')
+    const commentButtons = view.dom.querySelectorAll<HTMLButtonElement>('button.cm-review-diff-control.comment')
     assert.equal(accepts.length, 2)
     assert.equal(rejects.length, 2)
-    assert.equal(holds.length, 2)
+    assert.equal(commentButtons.length, 2)
 
     accepts[0].click()
     rejects[1].click()
 
     assert.deepEqual(calls.decisions, [
-      { chunkId: chunks[0].chunkId, decision: 'accept', comment: undefined },
-      { chunkId: chunks[1].chunkId, decision: 'reject', comment: undefined }
+      { chunkId: chunks[0].chunkId, decision: 'accept' },
+      { chunkId: chunks[1].chunkId, decision: 'reject' }
     ])
     assert.equal(
       chunksOf(view).length,
@@ -198,41 +200,51 @@ describe('Editor review-chunk view', function () {
     )
   })
 
-  it('emits a trimmed hold note for the addressed chunk', function () {
+  it('emits a trimmed chunk comment for the addressed chunk without deciding it', function () {
     const { view, calls } = createReviewView('baseline\n', 'proposal\n')
     const chunk = chunksOf(view)[0]
-    const input = view.dom.querySelector<HTMLInputElement>('input.cm-holdCommentInput')
-    const hold = view.dom.querySelector<HTMLButtonElement>('button.cm-review-diff-control.hold')
+    const input = view.dom.querySelector<HTMLInputElement>('input.cm-chunkCommentInput')
+    const commentButton = view.dom.querySelector<HTMLButtonElement>('button.cm-review-diff-control.comment')
     assert.ok(input !== null)
-    assert.ok(hold !== null)
+    assert.ok(commentButton !== null)
+    assert.equal(commentButton.disabled, true, 'an empty note has nothing to submit')
 
     input.value = '  check the constant  '
-    hold.click()
+    input.dispatchEvent(new window.Event('input', { bubbles: true }))
+    assert.equal(commentButton.disabled, false)
+    commentButton.click()
 
-    assert.deepEqual(calls.decisions, [
-      { chunkId: chunk.chunkId, decision: 'hold', comment: 'check the constant' }
+    assert.deepEqual(calls.chunkNotes, [
+      { chunkId: chunk.chunkId, text: 'check the constant' }
     ])
+    assert.deepEqual(calls.decisions, [], 'a chunk comment decides nothing')
   })
 
-  it('renders a provider-supplied hold distinctly without removing its controls', function () {
+  it('renders a provider-supplied chunk comment at its controls strip', function () {
     const baseline = 'first baseline\n\nsecond baseline\n'
     const proposed = baseline.replace('first baseline', 'first proposed')
     const chunk = computeReviewChunks(baseline, proposed)[0]
     const { view } = createReviewView(baseline, proposed, {
-      holds: [{ chunkId: chunk.chunkId, comment: 'check the constant' }]
+      chunkComments: [{ chunkId: chunk.chunkId, comment: 'check the constant' }]
     })
 
-    const heldWidget = view.dom.querySelector<HTMLElement>('.cm-chunkControls.held')
-    assert.ok(heldWidget !== null)
-    assert.ok(heldWidget.textContent?.includes('Held: check the constant'))
-    assert.ok(view.dom.querySelector('.cm-heldLine') !== null)
+    const widget = view.dom.querySelector<HTMLElement>('.cm-chunkControls')
+    assert.ok(widget !== null)
     assert.equal(
-      heldWidget.querySelector<HTMLInputElement>('input.cm-holdCommentInput')?.value,
+      widget.querySelector<HTMLElement>('.cm-chunkComment')?.textContent,
       'check the constant'
     )
-    assert.ok(heldWidget.querySelector('button.accept') !== null)
-    assert.ok(heldWidget.querySelector('button.reject') !== null)
-    assert.ok(heldWidget.querySelector('button.hold') !== null)
+    assert.equal(
+      widget.querySelector<HTMLInputElement>('input.cm-chunkCommentInput')?.value,
+      'check the constant',
+      'the field is prefilled so commenting again replaces the note'
+    )
+    assert.ok(widget.querySelector('button.accept') !== null)
+    assert.ok(widget.querySelector('button.reject') !== null)
+    assert.equal(
+      widget.querySelector<HTMLButtonElement>('button.comment')?.textContent,
+      'Update comment'
+    )
   })
 
   it('shows each claim description at its own chunk and preserves it across a working-text tweak', function () {
@@ -306,7 +318,7 @@ describe('Editor review-chunk view', function () {
     assert.equal(strips.length, 1)
     assert.ok(strips[0].querySelector('button.cm-review-diff-control.accept') !== null)
     assert.ok(strips[0].querySelector('button.cm-review-diff-control.reject') !== null)
-    assert.ok(strips[0].querySelector('button.cm-review-diff-control.hold') !== null)
+    assert.ok(strips[0].querySelector('button.cm-review-diff-control.comment') !== null)
     assert.equal(
       strips[0].querySelector<HTMLElement>('.cm-chunkDescription')?.textContent,
       'Revise the wording'
@@ -481,14 +493,15 @@ describe('Editor review-chunk view', function () {
       reviewId: 'review-test',
       referenceText: baseline,
       packets: [],
-      holds: [],
+      chunkComments: [],
       comments: [],
-      onDecide: async (chunkId, decision, comment) => {
-        sink.push({ chunkId, decision, comment })
+      onDecide: async (chunkId, decision) => {
+        sink.push({ chunkId, decision })
       },
       onAcceptAll: async () => {},
       onClear: async () => {},
-      onComment: async () => {}
+      onComment: async () => {},
+      onChunkComment: async () => {}
     })
     const compartment = new Compartment()
     const view = new EditorView({
@@ -514,7 +527,7 @@ describe('Editor review-chunk view', function () {
     view.dom.querySelector<HTMLButtonElement>('button.cm-review-diff-control.accept')?.click()
     await new Promise(resolve => setTimeout(resolve, 0))
     assert.deepEqual(current, [
-      { chunkId: chunks[0].chunkId, decision: 'accept', comment: undefined }
+      { chunkId: chunks[0].chunkId, decision: 'accept' }
     ])
     assert.deepEqual(built, [], 'the retired configuration must never be called')
   })
@@ -533,7 +546,7 @@ describe('Editor review-chunk view', function () {
       reviewId: 'review-test',
       referenceText: 'baseline\n',
       packets: [],
-      holds: [],
+      chunkComments: [],
       comments: [],
       onDecide: async () => {},
       onAcceptAll: async () => {},
@@ -542,7 +555,8 @@ describe('Editor review-chunk view', function () {
         // What MainEditor does when the provider reports the review gone.
         view.dispatch({ effects: compartment.reconfigure([]) })
       },
-      onComment: async () => {}
+      onComment: async () => {},
+      onChunkComment: async () => {}
     })
     view = new EditorView({
       parent: document.body,

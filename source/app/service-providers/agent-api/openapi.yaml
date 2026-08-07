@@ -10,7 +10,7 @@ info:
 
     The working loop: orient (workspace files -> documents -> reviews ->
     chunks), submit claim-sized proposals against a freshly read content
-    hash, then next turn read the review's held chunks and comments and
+    hash, then next turn read the review's chunk comments and comments and
     answer them with new claims. Accepted material is already in the working
     text — never resubmit it. A PATCH_NOT_APPLICABLE refusal means the text
     moved under you: re-read
@@ -18,7 +18,7 @@ info:
     way.
 
 
-    You never accept, reject, hold, or discard a chunk: the reviewer disposes
+    You never accept, reject, or discard a chunk: the reviewer disposes
     of your proposals in the editor. Your moves are a revision, a comment,
     and retracting a packet of your own the reviewer has not touched yet.
   license:
@@ -53,7 +53,6 @@ components:
         - state
         - generation
         - unresolvedChunks
-        - heldChunks
         - packetCount
       properties:
         reviewId:
@@ -65,10 +64,8 @@ components:
         unresolvedChunks:
           type: integer
           description: >-
-            Pending chunks only. Held chunks are excluded — they do not block
-            saving.
-        heldChunks:
-          type: integer
+            Chunks not yet accepted or rejected — the whole outstanding
+            partition.
         packetCount:
           type: integer
     ReviewComment:
@@ -84,10 +81,10 @@ components:
         orphanedFromChunkId:
           type: string
           description: >-
-            Present when this comment was salvaged from a hold whose chunk id
-            vanished from the partition (the held region was edited, decided,
-            cleared, or absorbed by a later claim). Hold text is never
-            silently lost.
+            Present when this comment was salvaged from a chunk-anchored
+            note whose chunk id vanished from the partition (the annotated
+            region was edited, decided, cleared, or absorbed by a later
+            claim). Note text is never silently lost.
     EditorViewSummary:
       type: object
       required:
@@ -382,15 +379,17 @@ components:
           type: integer
         chunkId:
           type: string
-          description: 'review.held: the chunk that was held.'
+          description: >-
+            review.commented: the outstanding chunk the comment is anchored
+            to, when it is chunk-anchored.
         comment:
           type: string
-          description: 'review.held / review.commented: the comment text, when one exists.'
+          description: 'review.commented: the comment text.'
         orphanedFromChunkId:
           type: string
           description: >-
-            review.commented: set when the comment was salvaged from a hold
-            whose chunk id vanished from the partition.
+            review.commented: set when the comment was salvaged from a
+            chunk-anchored note whose chunk id vanished from the partition.
         message:
           type: string
           description: 'review.sidecar-error: what failed and why.'
@@ -665,7 +664,6 @@ components:
         - state
         - generation
         - unresolvedChunks
-        - heldChunks
         - packetCount
         - comments
         - attached
@@ -678,9 +676,9 @@ components:
           type: integer
         unresolvedChunks:
           type: integer
-          description: Pending chunks only; held chunks are excluded.
-        heldChunks:
-          type: integer
+          description: >-
+            Chunks not yet accepted or rejected — the whole outstanding
+            partition.
         packetCount:
           type: integer
         comments:
@@ -689,7 +687,8 @@ components:
             $ref: '#/components/schemas/ReviewComment'
           description: >-
             Review-level comments in creation order — attached directly via
-            the comments route, or orphaned from holds whose chunks vanished.
+            the comments route, or orphaned from chunk-anchored notes whose
+            chunks vanished.
         attached:
           type: boolean
           description: >-
@@ -795,7 +794,6 @@ components:
         - workingText
         - packetIds
         - descriptions
-        - state
         - patch
       properties:
         chunkId:
@@ -854,21 +852,11 @@ components:
           description: >-
             Those packets' descriptions, in the same order, packets without
             one omitted.
-        state:
-          type: string
-          enum:
-            - pending
-            - held
-          description: >-
-            The chunk's decision state. Accepted and rejected chunks stop
-            being disagreements and leave the partition, so only pending and
-            held chunks exist here.
-        holdComment:
+        comment:
           type: string
           description: >-
-            The hold's comment, when this chunk is held with one — the
-            reviewer's question or objection. Address it in your next
-            claims batch.
+            The reviewer's note attached to this chunk without deciding it —
+            a question or objection. Address it in your next claims batch.
         patch:
           type: string
           description: Focused zero-context unified diff of exactly this chunk.
@@ -1397,7 +1385,7 @@ paths:
       summary: Inspect a review
       description: >-
         Status plus review-level comments — the reviewer's channel back to
-        you. Read the comments and the held chunks at the start of each turn
+        you. Read the comments and the chunk notes at the start of each turn
         and address them with new claims. Answers for every reviewId
         /v1/reviews lists: a detached review is served from its sidecar,
         with attached=false and no documentRevision.
@@ -1451,10 +1439,10 @@ paths:
       operationId: getReviewChunks
       summary: Inspect current unresolved chunks
       description: >-
-        Read this at the start of each turn. A held chunk's holdComment is
-        the reviewer's question or objection — answer it with a revised claim
-        in your next submission. Pending chunks are simply undecided: the
-        reviewer accepts, rejects, and holds them in the editor, and this API
+        Read this at the start of each turn. A chunk's comment is the
+        reviewer's question or objection — answer it with a revised claim
+        in your next submission. Every chunk here is undecided: the
+        reviewer accepts and rejects them in the editor, and this API
         offers no way to decide them for them. Answers for a detached review
         too, from the frozen texts in its sidecar — same content-addressed
         chunk ids, no documentId.
@@ -1485,8 +1473,8 @@ paths:
         Communication without adjudication: the comment lands in the review's
         comment list and advances the generation, so a long-poll on the
         existing generation cursor wakes — that cursor IS the "what changed
-        since my last turn" query. Answer a hold here when the answer is an
-        argument; answer with a new claim when the answer is an edit.
+        since my last turn" query. Answer a chunk note here when the answer
+        is an argument; answer with a new claim when the answer is an edit.
       parameters:
         - name: reviewId
           in: path
@@ -1634,7 +1622,7 @@ paths:
         The "what changed since my last turn" query: pass the generation from
         your last response as afterGeneration. It answers at once if the
         review has already moved past that generation, otherwise blocks until
-        a decision, hold, comment, or new packet advances it — or until
+        a decision, comment, or new packet advances it — or until
         waitSeconds elapses, which answers with timedOut true.
       parameters:
         - name: reviewId

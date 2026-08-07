@@ -50,6 +50,7 @@ import type { ReviewSidecarStore } from "./review-sidecar-store";
 import {
   isTransitionError,
   prepareAcceptAll,
+  prepareChunkComment,
   prepareChunkDecision,
   prepareClear,
   prepareProposalSubmission,
@@ -57,6 +58,7 @@ import {
   prepareReviewComment,
   type AcceptAllChunksResponse,
   type AddReviewCommentResponse,
+  type ChunkCommentResponse,
   type ChunkDecision,
   type ChunkDecisionResponse,
   type ClaimInput,
@@ -77,7 +79,7 @@ import {
  * version number with no update for peers to pull.
  *
  * `change` is undefined when the candidate text already equals the live text
- * — the common case for Accept, Hold, and comment, which move no bytes.
+ * — the common case for Accept and comment, which move no bytes.
  */
 export interface PreparedDocumentMutation {
   documentId: string;
@@ -573,7 +575,7 @@ export class ReviewApplicationService {
   }
 
   /**
-   * Apply one accept/reject/hold decision to a review chunk. The renderer's
+   * Apply one accept/reject decision to a review chunk. The renderer's
    * buttons and the HTTP API both land here, so no pane ever mutates review
    * state and there is no pane report to reconcile.
    */
@@ -582,7 +584,6 @@ export class ReviewApplicationService {
     chunkId: string,
     decision: ChunkDecision,
     precondition: ReviewMutationPrecondition,
-    comment?: string,
   ): Promise<ChunkDecisionResponse | ReviewFailure> {
     return await this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
@@ -599,7 +600,6 @@ export class ReviewApplicationService {
           workingText: context.workingText,
           chunkId,
           decision,
-          comment,
         });
         if (isTransitionError(plan)) {
           if (plan.code === "CHUNK_NOT_FOUND") {
@@ -613,6 +613,41 @@ export class ReviewApplicationService {
           return { ok: false, code: plan.code, message: plan.message };
         }
         return plan;
+      });
+    });
+  }
+
+  /**
+   * Attach a comment to one outstanding chunk without deciding it. Fenced
+   * like a decision — the chunk id is content-addressed over the working
+   * text, so a note formed against a stale pane must refuse, not land on a
+   * chunk that moved.
+   */
+  public async commentChunk(
+    reviewId: string,
+    chunkId: string,
+    text: string,
+    precondition: ReviewMutationPrecondition,
+  ): Promise<ChunkCommentResponse | ReviewFailure> {
+    return await this.runKeyedByReview(reviewId, async (context) => {
+      const fence = await this.checkDiskFence(context);
+      if (!fence.ok) {
+        return fence;
+      }
+      const stale = this.checkPrecondition(context, precondition);
+      if (stale !== undefined) {
+        return stale;
+      }
+      return await this.commitReviewMutation(context, () => {
+        const plan = prepareChunkComment({
+          review: context.review,
+          workingText: context.workingText,
+          chunkId,
+          text,
+        });
+        return isTransitionError(plan)
+          ? { ok: false, code: plan.code, message: plan.message }
+          : plan;
       });
     });
   }

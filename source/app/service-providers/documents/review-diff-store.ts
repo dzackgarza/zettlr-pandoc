@@ -40,7 +40,7 @@ import type {
 } from "@dts/common/agent-api";
 import type {
   ActiveReviewState,
-  ChunkHold,
+  ChunkComment,
   ReviewPacket,
 } from "@dts/common/review-domain";
 import {
@@ -63,7 +63,6 @@ export interface ReviewStatus {
   state: ReviewState;
   generation: number;
   unresolvedChunks: number;
-  heldChunks: number;
   packetCount: number;
 }
 
@@ -147,45 +146,21 @@ export function reviewPatch(referenceText: string, workingText: string): string 
 }
 
 /**
- * The holds that still name a chunk of this partition. A hold whose chunk id
- * vanished is not reconciled here — that is a transition's job, and a read
- * must not mutate — it simply does not count.
- */
-export function countLiveHolds(
-  review: ActiveReviewState,
-  partition: readonly ReviewChunk[],
-): number {
-  const liveIds = new Set(partition.map((chunk) => chunk.chunkId));
-  return review.holds.filter((hold) => liveIds.has(hold.chunkId)).length;
-}
-
-/**
- * The pending (undecided, not held) chunk count — the one save-gate and
- * `unresolvedChunks` meaning everywhere. Held chunks are excluded: a
- * held-only review saves.
- */
-export function countPending(
-  review: ActiveReviewState,
-  partition: readonly ReviewChunk[],
-): number {
-  return partition.length - countLiveHolds(review, partition);
-}
-
-/**
  * A chunk partition dressed for the agent API: a focused zero-context patch
  * per chunk, the packets whose edits produced it (honest multi-attribution on
- * overlap; empty for a chunk only the user's own edits created), and the hold
- * state. Shared by the live store and the sidecar path below — an attached
- * and a detached review with the same texts describe their chunks identically.
+ * overlap; empty for a chunk only the user's own edits created), and the
+ * reviewer's note when one is attached. Shared by the live store and the
+ * sidecar path below — an attached and a detached review with the same texts
+ * describe their chunks identically.
  */
 function dressChunks(
   partition: readonly ReviewChunk[],
   packets: readonly ReviewPacket[],
-  holds: readonly ChunkHold[],
+  chunkComments: readonly ChunkComment[],
 ): OutstandingChunk[] {
   return partition.map((chunk) => {
     const attributed = packets.filter((packet) => chunkAttributesTo(chunk, packet.refSpans));
-    const hold = holds.find((h) => h.chunkId === chunk.chunkId);
+    const note = chunkComments.find((candidate) => candidate.chunkId === chunk.chunkId);
     return {
       chunkId: chunk.chunkId,
       referenceRange: { fromLine: chunk.refFromLine, toLine: chunk.refToLine },
@@ -194,8 +169,7 @@ function dressChunks(
       workingText: chunk.workingText,
       packetIds: attributed.map((packet) => packet.packetId),
       descriptions: attributed.map((packet) => packet.description),
-      state: hold === undefined ? ("pending" as const) : ("held" as const),
-      holdComment: hold?.comment,
+      ...(note === undefined ? {} : { comment: note.comment }),
       patch: createPatch("document", chunk.referenceText, chunk.workingText, "", "", {
         context: 0,
       }),
@@ -206,14 +180,14 @@ function dressChunks(
 /**
  * The outstanding chunks of a detached review, computed from its sidecar.
  * Both texts are frozen while the file is closed and the export reconciled
- * the holds against exactly this partition, so no live document — and no
- * reconciliation — is needed to answer.
+ * the chunk comments against exactly this partition, so no live document —
+ * and no reconciliation — is needed to answer.
  */
 export function sidecarOutstandingChunks(sidecar: ReviewSidecarData): OutstandingChunk[] {
   return dressChunks(
     computeReviewChunks(sidecar.referenceText, sidecar.workingText),
     sidecar.packets,
-    sidecar.holds,
+    sidecar.chunkComments,
   );
 }
 
@@ -232,7 +206,7 @@ export function reviewSidecar(
   pendingSave?: ReviewSidecarData["pendingSave"],
 ): ReviewSidecarData {
   return {
-    version: 2,
+    version: 3,
     reviewId: review.reviewId,
     documentPath: review.documentPath,
     referenceText: review.referenceText,
@@ -248,34 +222,27 @@ export function reviewSidecar(
       ...submission,
       packetIds: [...submission.packetIds],
     })),
-    holds: review.holds.map((hold) => ({ ...hold })),
+    chunkComments: review.chunkComments.map((note) => ({ ...note })),
     comments: review.comments.map((comment) => ({ ...comment })),
     ...(pendingSave === undefined ? {} : { pendingSave }),
   };
 }
 
 /**
- * The chunk counts of a detached review, computed from its sidecar. Nothing
- * derived is persisted: the two texts and the holds are the whole answer, and
- * a stored count is a second answer that can disagree with them.
+ * The unresolved chunk count of a detached review, computed from its sidecar.
+ * Nothing derived is persisted: the two texts are the whole answer, and a
+ * stored count is a second answer that can disagree with them.
  */
-export function sidecarCounts(sidecar: ReviewSidecarData): {
-  unresolvedChunks: number;
-  heldChunks: number;
-} {
-  const review = reviewFromSidecar("", sidecar);
-  const partition = computeReviewChunks(sidecar.referenceText, sidecar.workingText);
-  return {
-    unresolvedChunks: countPending(review, partition),
-    heldChunks: countLiveHolds(review, partition),
-  };
+export function sidecarUnresolvedChunks(sidecar: ReviewSidecarData): number {
+  return computeReviewChunks(sidecar.referenceText, sidecar.workingText).length;
 }
 
 /**
  * Rebuild a review from its sidecar under a (possibly new) documentId. The
  * inverse of reviewSidecar: same reviewId, generation, packets with their
- * attribution spans, submission ledger, holds, and comments — and because
- * chunk ids are content-addressed over the two texts, the same chunk ids.
+ * attribution spans, submission ledger, chunk comments, and comments — and
+ * because chunk ids are content-addressed over the two texts, the same
+ * chunk ids.
  */
 export function reviewFromSidecar(
   documentId: string,
@@ -295,7 +262,7 @@ export function reviewFromSidecar(
       ...submission,
       packetIds: [...submission.packetIds],
     })),
-    holds: sidecar.holds.map((hold) => ({ ...hold })),
+    chunkComments: sidecar.chunkComments.map((note) => ({ ...note })),
     comments: sidecar.comments.map((comment) => ({ ...comment })),
     diskFenceSha256: sidecar.diskFenceSha256,
     invalidated: sidecar.invalidated,
@@ -349,13 +316,12 @@ export class ReviewDiffStore {
       review.referenceText,
       normalizeText(workingText),
     );
-    const unresolvedChunks = countPending(review, partition);
+    const unresolvedChunks = partition.length;
     return {
       reviewId: review.reviewId,
       state: classifyReviewState(review.invalidated, unresolvedChunks),
       generation: review.generation,
       unresolvedChunks,
-      heldChunks: countLiveHolds(review, partition),
       packetCount: review.packets.length,
     };
   }
@@ -377,7 +343,7 @@ export class ReviewDiffStore {
     return dressChunks(
       computeReviewChunks(review.referenceText, normalizeText(workingText)),
       review.packets,
-      review.holds,
+      review.chunkComments,
     );
   }
 

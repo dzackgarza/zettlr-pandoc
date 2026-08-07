@@ -80,7 +80,7 @@ import {
   classifyReviewState,
   reviewFromSidecar,
   reviewSidecar,
-  sidecarCounts,
+  sidecarUnresolvedChunks,
   type ReviewSidecarData,
   type ReviewStatus,
 } from "./review-diff-store";
@@ -97,6 +97,7 @@ import {
   prepareWorkingTextEdit,
   type AcceptAllChunksResponse,
   type AddReviewCommentResponse,
+  type ChunkCommentResponse,
   type ChunkDecision,
   type ChunkDecisionResponse,
   type ClearReviewResponse,
@@ -444,8 +445,16 @@ export type ReviewDecisionInput = {
   reviewId: string;
   chunkId: string;
   decision: ChunkDecision;
-  /** Hold only: the optional note attached without adjudicating. */
-  comment?: string;
+} & ReviewMutationPrecondition;
+
+/**
+ * A comment attached to one outstanding chunk without deciding it. Fenced
+ * like a decision: the chunk id is content-addressed over the working text.
+ */
+export type ReviewChunkCommentInput = {
+  reviewId: string;
+  chunkId: string;
+  text: string;
 } & ReviewMutationPrecondition;
 
 /** Accepting every remaining chunk, under the same fence one decision uses. */
@@ -475,6 +484,9 @@ export type DocumentIpcHandlers = {
   "documents:decide-review-chunk": (
     input: ReviewDecisionInput,
   ) => ChunkDecisionResponse | ReviewFailure;
+  "documents:comment-review-chunk": (
+    input: ReviewChunkCommentInput,
+  ) => ChunkCommentResponse | ReviewFailure;
   "documents:accept-all-review-chunks": (
     input: ReviewAcceptAllInput,
   ) => AcceptAllChunksResponse | ReviewFailure;
@@ -709,8 +721,12 @@ export default class DocumentManager
       return await this.saveFile(input.path);
     });
     operations.handle("documents:decide-review-chunk", async (_event, input) => {
-      const { reviewId, chunkId, decision, comment, ...precondition } = input;
-      return await this.decideReviewChunk(reviewId, chunkId, decision, precondition, comment);
+      const { reviewId, chunkId, decision, ...precondition } = input;
+      return await this.decideReviewChunk(reviewId, chunkId, decision, precondition);
+    });
+    operations.handle("documents:comment-review-chunk", async (_event, input) => {
+      const { reviewId, chunkId, text, ...precondition } = input;
+      return await this.commentReviewChunk(reviewId, chunkId, text, precondition);
     });
     operations.handle("documents:accept-all-review-chunks", async (_event, input) => {
       const { reviewId, ...precondition } = input;
@@ -1267,8 +1283,8 @@ export default class DocumentManager
    * Accept an editor's collab updates into the authority buffer.
    *
    * While a review is open this is a STAGED commit: the incoming changes are
-   * applied to a local candidate, the review's holds are reconciled against
-   * that candidate, and the resulting sidecar is written BEFORE the document
+   * applied to a local candidate, the review's chunk comments are reconciled
+   * against that candidate, and the resulting sidecar is written BEFORE the document
    * takes any of it. Persistence failure leaves `doc.document`, the versions,
    * the update history and the review exactly as they were, and rejects the
    * call — the renderer's update stays unsent and is retried.
@@ -1338,10 +1354,10 @@ current contents from the editor somewhere else, and restart the application.`,
     const documentId = this.getDocumentId(filePath);
     const review = documentId === undefined ? undefined : this._reviewStore.getReview(documentId);
     // Ordinary editor typing changes the working partition without going
-    // through a review decision. Reconciling holds against the new partition
-    // is a state change like any other, so it goes through a transition —
-    // reads stay pure projections of committed state, and a hold is never
-    // silently repaired by whoever looked at it first.
+    // through a review decision. Reconciling chunk comments against the new
+    // partition is a state change like any other, so it goes through a
+    // transition — reads stay pure projections of committed state, and a
+    // note is never silently repaired by whoever looked at it first.
     const candidateWorkingText = normalizeText(candidateText.toString());
     const plan =
       review === undefined
@@ -2655,15 +2671,22 @@ current contents from the editor somewhere else, and restart the application.`,
     chunkId: string,
     decision: ChunkDecision,
     precondition: ReviewMutationPrecondition,
-    comment?: string,
   ): Promise<ChunkDecisionResponse | ReviewFailure> {
     return await this._reviewApplication.decideChunk(
       reviewId,
       chunkId,
       decision,
       precondition,
-      comment,
     );
+  }
+
+  public async commentReviewChunk(
+    reviewId: string,
+    chunkId: string,
+    text: string,
+    precondition: ReviewMutationPrecondition,
+  ): Promise<ChunkCommentResponse | ReviewFailure> {
+    return await this._reviewApplication.commentChunk(reviewId, chunkId, text, precondition);
   }
 
   public async acceptAllReviewChunks(
@@ -2810,8 +2833,7 @@ current contents from the editor somewhere else, and restart the application.`,
       documentId === undefined
         ? undefined
         : this._reviewStore.getStatus(documentId, this._workingTextOf(documentId) ?? "");
-    const openChunks = (status?.unresolvedChunks ?? 0) + (status?.heldChunks ?? 0);
-    const survivesSave = review !== undefined && openChunks > 0;
+    const survivesSave = review !== undefined && (status?.unresolvedChunks ?? 0) > 0;
     const savedSha256 = sha256Text(content);
     if (survivesSave) {
       try {
@@ -2861,9 +2883,9 @@ current contents from the editor somewhere else, and restart the application.`,
     if (documentId !== undefined && review !== undefined) {
       if (survivesSave) {
         // A save persists the document as-is and the review's status
-        // alongside it: pending and held chunks alike survive, the review
-        // stays open, and the reference retains its disagreement over the
-        // open spans, so the panes keep rendering them. The disk fence moves
+        // alongside it: the review stays open, and the reference retains its
+        // disagreement over the outstanding spans, so the panes keep
+        // rendering them. The disk fence moves
         // to the content just written — the file on disk IS this save — or
         // every later save would be refused as external drift. Only after
         // this second write, which clears pendingSave, has the save
@@ -3043,10 +3065,10 @@ current contents from the editor somewhere else, and restart the application.`,
    * So: the buffer returns to its disk bytes through the same splice path a
    * review decision uses (every open pane follows). An already-saved review
    * is the one exception: when its disk fence still matches the file, the
-   * later ordinary edit is discarded but the saved review — pending or held
-   * alike — remains in its sidecar for the close/detach path. Any other
-   * review is closed and its sidecar deleted. Only then is the document
-   * clean, because only then is the claim true.
+   * later ordinary edit is discarded but the saved review remains in its
+   * sidecar for the close/detach path. Any other review is closed and its
+   * sidecar deleted. Only then is the document clean, because only then is
+   * the claim true.
    *
    * The sidecar deletion is deliberately NOT wrapped in the error handling
    * _detachReview uses: a discard whose file removal failed leaves those
@@ -3225,13 +3247,12 @@ current contents from the editor somewhere else, and restart the application.`,
    */
   public async listDetachedReviews(): Promise<ReviewListEntry[]> {
     return (await this._detachedReviews()).map((sidecar) => {
-      const counts = sidecarCounts(sidecar);
+      const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
       return {
         reviewId: sidecar.reviewId,
-        state: classifyReviewState(sidecar.invalidated, counts.unresolvedChunks),
+        state: classifyReviewState(sidecar.invalidated, unresolvedChunks),
         generation: sidecar.generation,
-        unresolvedChunks: counts.unresolvedChunks,
-        heldChunks: counts.heldChunks,
+        unresolvedChunks,
         packetCount: sidecar.packets.length,
         documentPath: sidecar.documentPath,
         attached: false,
@@ -3259,7 +3280,7 @@ current contents from the editor somewhere else, and restart the application.`,
   /**
    * The complete review behind a detached reviewId, or undefined when no
    * closed file carries it. This is what makes a listed reviewId readable:
-   * a sidecar holds both texts, every packet with its spans, the holds and
+   * a sidecar holds both texts, every packet with its spans, the chunk comments and
    * the comments, so the review routes can answer from it without the
    * document being open.
    */
@@ -3667,14 +3688,14 @@ current contents from the editor somewhere else, and restart the application.`,
       documentPath: filePath,
       referenceText: review.referenceText,
       workingText: this.documents.find((document) => document.filePath === filePath)?.document.toString() ?? "",
-      // A packet carries its own attribution, and a hold its own identity:
-      // the pane reads them straight off the committed review.
+      // A packet carries its own attribution, and a chunk comment its own
+      // identity: the pane reads them straight off the committed review.
       packets: review.packets.map((packet) => ({
         packetId: packet.packetId,
         description: packet.description,
         refSpans: packet.refSpans.map((span) => ({ ...span })),
       })),
-      holds: review.holds.map((hold) => ({ ...hold })),
+      chunkComments: review.chunkComments.map((note) => ({ ...note })),
       comments: review.comments.map((comment) => ({ ...comment })),
     };
   }

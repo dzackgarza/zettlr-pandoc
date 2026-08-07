@@ -49,10 +49,6 @@ async function capture (window, scene) {
       background-color: var(--zettlr-editor-review-reject-bg);
       border-color: var(--zettlr-editor-review-reject-border);
     }
-    .review-diff-active button.cm-review-diff-control.hold {
-      background-color: var(--zettlr-editor-review-hold-bg);
-      border-color: var(--zettlr-editor-review-hold-border);
-    }
   </style></head><body class="${scene.dark ? 'dark' : ''}" data-dark="${scene.dark}">
     <main id="editor"></main><script src="./review-diff-visual-bundle.js"></script>
   </body></html>`

@@ -40,6 +40,7 @@ import { sha256Text } from "source/common/util/sha256";
 import {
   isTransitionError,
   prepareAcceptAll,
+  prepareChunkComment,
   prepareChunkDecision,
   prepareClear,
   prepareProposalSubmission,
@@ -134,10 +135,6 @@ class ReviewDriver {
     return this.getReviewStatus(documentId)?.unresolvedChunks ?? 0;
   }
 
-  countHeld(documentId: string): number {
-    return this.getReviewStatus(documentId)?.heldChunks ?? 0;
-  }
-
   /**
    * Open an EMPTY review — the state a document is in between "a review
    * exists here" and "a claim has landed". Production never constructs one:
@@ -163,7 +160,7 @@ class ReviewDriver {
       generation: 0,
       packets: [],
       submissions: [],
-      holds: [],
+      chunkComments: [],
       comments: [],
       diskFenceSha256: options.diskBaselineSha256,
       invalidated: false,
@@ -242,7 +239,6 @@ class ReviewDriver {
     reviewId: string,
     chunkId: string,
     decision: ChunkDecision,
-    comment?: string,
   ) {
     const review = this.store.getReview(documentId);
     if (review === undefined || review.reviewId !== reviewId) {
@@ -258,7 +254,6 @@ class ReviewDriver {
       workingText: before,
       chunkId,
       decision,
-      comment,
     });
     if (isTransitionError(plan)) {
       return plan;
@@ -267,11 +262,33 @@ class ReviewDriver {
     return {
       ...plan.response,
       generation: plan.response.reviewGeneration,
-      // Accept and hold move no document bytes; the suite applies only what
+      // Accept moves no document bytes; the suite applies only what
       // actually changed, exactly as the document authority does.
       workingText:
         plan.nextWorkingText === before ? undefined : plan.nextWorkingText,
     };
+  }
+
+  commentChunk(documentId: string, reviewId: string, chunkId: string, text: string) {
+    const review = this.store.getReview(documentId);
+    if (review === undefined || review.reviewId !== reviewId) {
+      return {
+        ok: false as const,
+        code: "REVIEW_NOT_FOUND" as const,
+        message: "No active review for this document.",
+      };
+    }
+    const plan = prepareChunkComment({
+      review,
+      workingText: this.workingTextOf(documentId),
+      chunkId,
+      text,
+    });
+    if (isTransitionError(plan)) {
+      return plan;
+    }
+    this.commit(documentId, plan);
+    return plan.response;
   }
 
   acceptAllChunks(documentId: string) {
@@ -365,7 +382,7 @@ class ReviewDriver {
     };
   }
 
-  /** The editor typed: reconcile holds against the new partition. */
+  /** The editor typed: reconcile chunk comments against the new partition. */
   reportWorkingTextEdit(documentId: string): void {
     const review = this.store.getReview(documentId);
     if (review === undefined) {
@@ -443,9 +460,9 @@ describe("review transitions over committed review state", function () {
   /**
    * The document authority took new text — a user keystroke, or the text a
    * transition just returned. Reporting it is not optional bookkeeping: a
-   * read is a pure projection of committed state, so an edit that retires a
-   * held chunk's id is reconciled here or not at all. DocumentManager does
-   * exactly this from its authority-update path.
+   * read is a pure projection of committed state, so an edit that retires an
+   * annotated chunk's id is reconciled here or not at all. DocumentManager
+   * does exactly this from its authority-update path.
    */
   function setDocumentText(documentId: string, text: string): void {
     documents.set(documentId, text);
@@ -1120,7 +1137,7 @@ describe("review transitions over committed review state", function () {
   });
 
   describe("acceptAllChunks", function () {
-    it("accepts the whole partition in one sweep, orphaning held comments", function () {
+    it("accepts the whole partition in one sweep, orphaning chunk comments", function () {
       const baseline = "alpha\nx\ny\nz\nbeta\n";
       const proposed = "ALPHA\nx\ny\nz\nBETA\n";
       openReview(DOC_ID, baseline, {
@@ -1129,16 +1146,15 @@ describe("review transitions over committed review state", function () {
       });
       const chunks = driver.getOutstandingChunks(DOC_ID)!;
       assert.equal(chunks.length, 2);
-      // Hold the second chunk with a note: the sweep must accept it anyway
-      // and keep the note as an orphaned review-level comment.
-      const held = driver.decideChunk(
+      // Annotate the second chunk: the sweep must accept it anyway and keep
+      // the note as an orphaned review-level comment.
+      const noted = driver.commentChunk(
         DOC_ID,
         driver.getReview(DOC_ID)!.reviewId,
         chunks[1].chunkId,
-        "hold",
         "still thinking",
       );
-      assert.equal(held.ok, true);
+      assert.equal(noted.ok, true);
 
       const result = driver.acceptAllChunks(DOC_ID);
       assert.equal(result.ok, true, `accept-all failed: ${JSON.stringify(result)}`);
@@ -1150,11 +1166,10 @@ describe("review transitions over committed review state", function () {
       assert.equal(documents.get(DOC_ID), proposed);
       assert.equal(driver.getReview(DOC_ID)!.referenceText, proposed);
       assert.equal(driver.countUnresolved(DOC_ID), 0);
-      assert.equal(driver.countHeld(DOC_ID), 0);
       const orphans = driver
         .getReview(DOC_ID)!
         .comments.filter((comment) => comment.orphanedFromChunkId === chunks[1].chunkId);
-      assert.equal(orphans.length, 1, "the held note must survive as an orphan");
+      assert.equal(orphans.length, 1, "the chunk note must survive as an orphan");
       assert.equal(orphans[0].text, "still thinking");
     });
 
@@ -1497,7 +1512,7 @@ describe("review transitions over committed review state", function () {
     });
   });
 
-  describe("holds and review comments", function () {
+  describe("chunk comments and review comments", function () {
     // Two separated edits → two chunks: ALPHA and BETA.
     const baseline = "alpha\nx\ny\nz\nbeta\n";
     const proposed = "ALPHA\nx\ny\nz\nBETA\n";
@@ -1505,76 +1520,73 @@ describe("review transitions over committed review state", function () {
     function openTwoChunkReview(): string {
       openReview(DOC_ID, baseline, {
         patch: makePatch(baseline, proposed),
-        clientRequestId: "req-hold",
+        clientRequestId: "req-note",
       });
       return driver.getReview(DOC_ID)!.reviewId;
     }
 
-    it("holds a chunk out of the unresolved count without touching any text", function () {
+    it("annotates a chunk without deciding it or touching any text", function () {
       const reviewId = openTwoChunkReview();
-      const held: AgentEvent[] = [];
-      driver.on("review.held", (event: AgentEvent) => held.push(event));
+      const commented: AgentEvent[] = [];
+      driver.on("review.commented", (event: AgentEvent) => commented.push(event));
       assert.equal(driver.countUnresolved(DOC_ID), 2);
 
       const chunks = driver.getOutstandingChunks(DOC_ID)!;
-      const result = driver.decideChunk(
+      const result = driver.commentChunk(
         DOC_ID,
         reviewId,
         chunks[0].chunkId,
-        "hold",
         "needs a second look",
       );
       assert.equal(result.ok, true, JSON.stringify(result));
       if (!result.ok) {
         return;
       }
-      assert.equal(result.decision, "hold");
-      assert.equal(result.workingText, undefined, "holding must not move any text");
-      assert.equal(result.unresolvedChunks, 1);
-      assert.equal(result.generation, 2, "a hold is a turn: it advances the generation");
-      assert.equal(documents.get(DOC_ID), proposed);
+      assert.equal(result.chunkId, chunks[0].chunkId);
+      assert.equal(result.reviewGeneration, 2, "a chunk note is a turn: it advances the generation");
+      assert.equal(documents.get(DOC_ID), proposed, "annotation must not move any text");
       assert.equal(driver.getReview(DOC_ID)!.referenceText, baseline);
 
-      // The chunk stays in the partition, marked held with its comment.
+      // The chunk stays outstanding, carrying its note.
       const after = driver.getOutstandingChunks(DOC_ID)!;
-      assert.equal(after.length, 2, "a held chunk remains a rendered disagreement");
-      assert.equal(after[0].state, "held");
-      assert.equal(after[0].holdComment, "needs a second look");
-      assert.equal(after[1].state, "pending");
-      assert.equal(driver.countUnresolved(DOC_ID), 1);
-      assert.equal(driver.countHeld(DOC_ID), 1);
+      assert.equal(after.length, 2, "an annotated chunk remains a rendered disagreement");
+      assert.equal(after[0].comment, "needs a second look");
+      assert.equal(after[1].comment, undefined);
+      assert.equal(driver.countUnresolved(DOC_ID), 2, "annotation changes no state");
 
-      assert.equal(held.length, 1);
-      assert.equal(held[0].chunkId, chunks[0].chunkId);
-      assert.equal(held[0].comment, "needs a second look");
-      assert.equal(held[0].reviewGeneration, 2);
-      assert.equal(held[0].unresolvedChunks, 1);
+      assert.equal(commented.length, 1);
+      assert.equal(commented[0].chunkId, chunks[0].chunkId);
+      assert.equal(commented[0].comment, "needs a second look");
+      assert.equal(commented[0].reviewGeneration, 2);
+      assert.equal(commented[0].unresolvedChunks, 2);
     });
 
-    it("holds without text, and re-holding replaces the comment", function () {
+    it("commenting an annotated chunk replaces the note", function () {
       const reviewId = openTwoChunkReview();
       const chunkId = driver.getOutstandingChunks(DOC_ID)![0].chunkId;
-      const bare = driver.decideChunk(DOC_ID, reviewId, chunkId, "hold");
-      assert.equal(bare.ok, true);
-      assert.equal(driver.getOutstandingChunks(DOC_ID)![0].holdComment, undefined);
+      const first = driver.commentChunk(DOC_ID, reviewId, chunkId, "first thought");
+      assert.equal(first.ok, true);
+      assert.equal(driver.getOutstandingChunks(DOC_ID)![0].comment, "first thought");
 
-      const reheld = driver.decideChunk(DOC_ID, reviewId, chunkId, "hold", "on reflection");
-      assert.equal(reheld.ok, true);
-      assert.equal(driver.countHeld(DOC_ID), 1, "re-holding must not duplicate the hold");
-      assert.equal(driver.getOutstandingChunks(DOC_ID)![0].holdComment, "on reflection");
+      const replaced = driver.commentChunk(DOC_ID, reviewId, chunkId, "on reflection");
+      assert.equal(replaced.ok, true);
+      assert.equal(driver.getReview(DOC_ID)!.chunkComments.length, 1, "re-commenting must not duplicate the note");
+      assert.equal(driver.getOutstandingChunks(DOC_ID)![0].comment, "on reflection");
     });
 
-    it("refuses to hold a stale chunk id", function () {
+    it("refuses to comment on a stale chunk id", function () {
       const reviewId = openTwoChunkReview();
-      const result = driver.decideChunk(DOC_ID, reviewId, "chunk-bogus", "hold");
+      const result = driver.commentChunk(DOC_ID, reviewId, "chunk-bogus", "lost");
       assert.equal(result.ok, false);
       if (!result.ok) {
         assert.equal(result.code, "CHUNK_NOT_FOUND");
       }
     });
 
-    it("reports resolved-awaiting-save for an accepted+rejected+held mix", function () {
-      // Three separated edits → three chunks; one of each decision.
+    it("keeps an annotated chunk in the unresolved count until it is decided", function () {
+      // Three separated edits → three chunks: accept one, reject one,
+      // annotate the third. The note decides nothing, so the review stays
+      // active until the annotated chunk is itself accepted.
       const wide = "alpha\nx\ny\nz\nbeta\np\nq\nr\ngamma\n";
       const wideProposed = "ALPHA\nx\ny\nz\nBETA\np\nq\nr\nGAMMA\n";
       openReview(DOC_ID, wide, {
@@ -1594,39 +1606,38 @@ describe("review transitions over committed review state", function () {
       if (rejected.ok && rejected.workingText !== undefined) {
         setDocumentText(DOC_ID, rejected.workingText);
       }
-      const heldResult = driver.decideChunk(DOC_ID, reviewId, chunks[2].chunkId, "hold", "unsure");
-      assert.equal(heldResult.ok, true);
-      if (!heldResult.ok) {
-        return;
-      }
+      const noted = driver.commentChunk(DOC_ID, reviewId, chunks[2].chunkId, "unsure");
+      assert.equal(noted.ok, true);
 
-      // The held disagreement remains, but the unresolved count reaches zero.
+      assert.equal(driver.countUnresolved(DOC_ID), 1, "an annotated chunk is still outstanding");
+      assert.equal(driver.getReviewStatus(DOC_ID)!.state, "active");
+      assert.equal(resolved.length, 0, "nothing is resolved while a chunk is outstanding");
+
+      const remaining = driver.getOutstandingChunks(DOC_ID)!;
+      assert.equal(remaining.length, 1);
+      assert.equal(remaining[0].comment, "unsure");
+      const lastAccept = driver.decideChunk(DOC_ID, reviewId, remaining[0].chunkId, "accept");
+      assert.equal(lastAccept.ok, true);
       assert.equal(driver.countUnresolved(DOC_ID), 0);
-      assert.equal(heldResult.state, "resolved-awaiting-save");
-      const status = driver.getReviewStatus(DOC_ID)!;
-      assert.equal(status.state, "resolved-awaiting-save");
-      assert.equal(status.heldChunks, 1);
+      assert.equal(driver.getReviewStatus(DOC_ID)!.state, "resolved-awaiting-save");
       assert.equal(resolved.length, 1, "pending reaching zero must announce review.resolved");
-      assert.equal(driver.getOutstandingChunks(DOC_ID)!.length, 1);
-      assert.equal(driver.getOutstandingChunks(DOC_ID)![0].state, "held");
     });
 
-    it("orphans a commented hold as a review-level comment when its chunk is edited", function () {
+    it("orphans a chunk note as a review-level comment when its chunk is edited", function () {
       const reviewId = openTwoChunkReview();
       const chunkId = driver.getOutstandingChunks(DOC_ID)![0].chunkId;
-      const heldOk = driver.decideChunk(DOC_ID, reviewId, chunkId, "hold", "keep the emphasis");
-      assert.equal(heldOk.ok, true);
+      const noted = driver.commentChunk(DOC_ID, reviewId, chunkId, "keep the emphasis");
+      assert.equal(noted.ok, true);
       const commented: AgentEvent[] = [];
       driver.on("review.commented", (event: AgentEvent) => commented.push(event));
 
-      // A user edit inside the held chunk: the content-addressed id changes
-      // and the hold dangles. The next observation reconciles it.
+      // A user edit inside the annotated chunk: the content-addressed id
+      // changes and the note dangles. The next observation reconciles it.
       setDocumentText(DOC_ID, documents.get(DOC_ID)!.replace("ALPHA", "ALPHA tweaked"));
       const after = driver.getOutstandingChunks(DOC_ID)!;
       assert.equal(after.length, 2);
-      assert.notEqual(after[0].chunkId, chunkId, "the edit must retire the held id");
-      assert.equal(after[0].state, "pending", "the reshaped chunk is no longer held");
-      assert.equal(driver.countHeld(DOC_ID), 0);
+      assert.notEqual(after[0].chunkId, chunkId, "the edit must retire the annotated id");
+      assert.equal(after[0].comment, undefined, "the reshaped chunk carries no note");
       assert.equal(driver.countUnresolved(DOC_ID), 2);
 
       // The comment is not silently lost: it surfaces at review level naming
@@ -1640,71 +1651,57 @@ describe("review transitions over committed review state", function () {
       assert.equal(commented[0].orphanedFromChunkId, chunkId);
     });
 
-    it("orphans a commented hold when the held chunk is decided", function () {
+    it("orphans a chunk note when the annotated chunk is decided", function () {
       const reviewId = openTwoChunkReview();
       const chunkId = driver.getOutstandingChunks(DOC_ID)![0].chunkId;
-      driver.decideChunk(DOC_ID, reviewId, chunkId, "hold", "second thoughts");
+      driver.commentChunk(DOC_ID, reviewId, chunkId, "second thoughts");
       const accepted = driver.decideChunk(DOC_ID, reviewId, chunkId, "accept");
       assert.equal(accepted.ok, true);
 
-      assert.equal(driver.countHeld(DOC_ID), 0);
+      assert.equal(driver.getReview(DOC_ID)!.chunkComments.length, 0);
       const review = driver.getReview(DOC_ID)!;
       assert.equal(review.comments.length, 1);
       assert.equal(review.comments[0].orphanedFromChunkId, chunkId);
     });
 
-    it("lets a textless dangling hold vanish without inventing a comment", function () {
-      const reviewId = openTwoChunkReview();
-      const chunkId = driver.getOutstandingChunks(DOC_ID)![0].chunkId;
-      driver.decideChunk(DOC_ID, reviewId, chunkId, "hold");
-      const commented: AgentEvent[] = [];
-      driver.on("review.commented", (event: AgentEvent) => commented.push(event));
-
-      setDocumentText(DOC_ID, documents.get(DOC_ID)!.replace("ALPHA", "ALPHA tweaked"));
-      assert.equal(driver.countHeld(DOC_ID), 0);
-      assert.equal(driver.getReview(DOC_ID)!.comments.length, 0);
-      assert.equal(commented.length, 0);
-    });
-
-    it("keeps a held chunk and its comment through an ordinary line shift", function () {
+    it("keeps a chunk note through an ordinary line shift", function () {
       const baseline = "alpha\n\nbeta\n\ngamma\n";
       const proposed = "alpha\n\nBETA\n\ngamma\n";
       openReview(DOC_ID, baseline, {
         patch: makePatch(baseline, proposed),
-        clientRequestId: "req-shift-hold",
+        clientRequestId: "req-shift-note",
       });
       const reviewId = driver.getReview(DOC_ID)!.reviewId;
       const before = driver.getOutstandingChunks(DOC_ID)!;
       assert.equal(before.length, 1);
-      const held = driver.decideChunk(DOC_ID, reviewId, before[0].chunkId, "hold", "keep this note");
-      assert.equal(held.ok, true, JSON.stringify(held));
+      const noted = driver.commentChunk(DOC_ID, reviewId, before[0].chunkId, "keep this note");
+      assert.equal(noted.ok, true, JSON.stringify(noted));
 
       setDocumentText(DOC_ID, "inserted\n\n" + documents.get(DOC_ID)!);
       const after = driver.getOutstandingChunks(DOC_ID)!;
       assert.equal(after.length, 2);
-      const heldAfterShift = after.find((chunk) => chunk.state === "held");
-      assert.ok(heldAfterShift !== undefined);
-      assert.equal(heldAfterShift.holdComment, "keep this note");
+      const notedAfterShift = after.find((chunk) => chunk.comment !== undefined);
+      assert.ok(notedAfterShift !== undefined);
+      assert.equal(notedAfterShift.comment, "keep this note");
       assert.equal(driver.getReview(DOC_ID)!.comments.length, 0);
     });
 
-    it("does not move a hold onto an identical sibling after its own text is edited", function () {
+    it("does not move a note onto an identical sibling after its own text is edited", function () {
       const baseline = "same\nb\nsame\n";
       const proposed = "DIFF\nb\nDIFF\n";
       openReview(DOC_ID, baseline, {
         patch: makePatch(baseline, proposed),
-        clientRequestId: "req-duplicate-hold",
+        clientRequestId: "req-duplicate-note",
       });
       const reviewId = driver.getReview(DOC_ID)!.reviewId;
       const first = driver.getOutstandingChunks(DOC_ID)![0];
-      const held = driver.decideChunk(DOC_ID, reviewId, first.chunkId, "hold", "first only");
-      assert.equal(held.ok, true, JSON.stringify(held));
+      const noted = driver.commentChunk(DOC_ID, reviewId, first.chunkId, "first only");
+      assert.equal(noted.ok, true, JSON.stringify(noted));
 
       setDocumentText(DOC_ID, documents.get(DOC_ID)!.replace("DIFF", "OTHER"));
       const after = driver.getOutstandingChunks(DOC_ID)!;
-      assert.equal(after.filter((chunk) => chunk.state === "held").length, 0);
       assert.equal(driver.getReview(DOC_ID)!.comments[0].orphanedFromChunkId, first.chunkId);
-      assert.equal(after.some((chunk) => chunk.holdComment === "first only"), false);
+      assert.equal(after.some((chunk) => chunk.comment === "first only"), false);
     });
 
     it("appends a review-level comment and advances the generation", function () {
@@ -1911,7 +1908,7 @@ describe("review transitions over committed review state", function () {
    * goes back to depending on every caller's cleanup being correct.
    */
   describe("transition purity", function () {
-    /** A review with one packet, one hold, and one comment: every container. */
+    /** A review with one packet, one chunk note, and one comment: every container. */
     function populatedReview(): { review: ActiveReviewState; workingText: string } {
       const baseline = "alpha\nx\ny\nz\nbeta\n";
       const proposed = "ALPHA\nx\ny\nz\nBETA\n";
@@ -1922,7 +1919,7 @@ describe("review transitions over committed review state", function () {
       });
       const reviewId = driver.getReview(DOC_ID)!.reviewId;
       const chunks = driver.getOutstandingChunks(DOC_ID)!;
-      driver.decideChunk(DOC_ID, reviewId, chunks[1].chunkId, "hold", "revisit");
+      driver.commentChunk(DOC_ID, reviewId, chunks[1].chunkId, "revisit");
       driver.addReviewComment(DOC_ID, "overall note");
       return {
         review: driver.getReview(DOC_ID)!,
@@ -1956,12 +1953,11 @@ describe("review transitions over committed review state", function () {
 
       prepareChunkDecision({ review, workingText, chunkId: chunks[0].chunkId, decision: "accept" });
       prepareChunkDecision({ review, workingText, chunkId: chunks[0].chunkId, decision: "reject" });
-      prepareChunkDecision({
+      prepareChunkComment({
         review,
         workingText,
         chunkId: chunks[0].chunkId,
-        decision: "hold",
-        comment: "not committed",
+        text: "not committed",
       });
       prepareAcceptAll({ review, workingText });
       prepareClear({ review, workingText });
@@ -2000,7 +1996,6 @@ describe("review transitions over committed review state", function () {
       for (const event of [
         "review.started",
         "review.changed",
-        "review.held",
         "review.resolved",
         "review.cleared",
         "review.commented",
@@ -2038,7 +2033,7 @@ describe("review transitions over committed review state", function () {
       const refused = prepareRetraction({
         review,
         workingText,
-        // Not the newest packet — a hold and a comment landed after it.
+        // Not the newest packet — a chunk note and a comment landed after it.
         packetId: review.packets[0].packetId,
       });
       assert.ok(isTransitionError(refused));

@@ -46,7 +46,7 @@ import {
   ReviewSidecarStore,
   reviewSidecarFilePath,
 } from "source/app/service-providers/documents/review-sidecar-store";
-import { sidecarCounts } from "source/app/service-providers/documents/review-diff-store";
+import { sidecarUnresolvedChunks } from "source/app/service-providers/documents/review-diff-store";
 import { sha256Text } from "source/common/util/sha256";
 import LogProvider from "source/app/service-providers/log";
 
@@ -659,7 +659,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const adjudication = [
       "acceptReviewChunk",
       "rejectReviewChunk",
-      "holdReviewChunk",
       "acceptAllReviewChunks",
       "clearReview",
     ];
@@ -2028,13 +2027,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(JSON.parse(empty.body).error.code, "INVALID_PARAMS");
   });
 
-  it("saves a review with accepted+rejected+held chunks and the held chunk survives", async function () {
-    const filePath = path.join(scratch, "rhold-save.md");
+  it("saves a review with accepted+rejected+annotated chunks and the note survives", async function () {
+    const filePath = path.join(scratch, "rnote-save.md");
     const original = "alpha\nx\ny\nz\nbeta\np\nq\nr\ngamma\n";
     const proposed = "ALPHA\nx\ny\nz\nBETA\np\nq\nr\nGAMMA\n";
     const docId = await openFile(filePath, original);
 
-    await submitClaim(docId, makePatch(original, proposed), "http-hold-save");
+    await submitClaim(docId, makePatch(original, proposed), "http-note-save");
     const review = provider.reviewStore.getReview(docId)!;
     const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
     assert.equal(chunks.length, 3);
@@ -2042,27 +2041,27 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal((await provider.decideReviewChunk(review.reviewId, chunks[0].chunkId, "accept", livePrecondition(review.reviewId))).ok, true);
     assert.equal((await provider.decideReviewChunk(review.reviewId, chunks[1].chunkId, "reject", livePrecondition(review.reviewId))).ok, true);
     assert.equal(
-      (await provider.decideReviewChunk(review.reviewId, chunks[2].chunkId, "hold", livePrecondition(review.reviewId), "gamma is undecided")).ok,
+      (await provider.commentReviewChunk(review.reviewId, chunks[2].chunkId, "gamma is undecided", livePrecondition(review.reviewId))).ok,
       true,
     );
 
-    // Held chunks do not block the save gate.
+    // An outstanding chunk does not block the save: the document persists
+    // as-is, with the review's status — the note included — alongside it.
     const saved = await provider.saveFile(filePath);
     assert.equal(saved.ok, true, JSON.stringify(saved));
     const written = normalizedRead(filePath);
     assert.equal(written, "ALPHA\nx\ny\nz\nbeta\np\nq\nr\nGAMMA\n");
 
     // The review survives: the reference retains its disagreement over the
-    // held span, the chunk is still held with its comment, and nothing was
+    // outstanding span, the chunk still carries its note, and nothing was
     // invalidated — this is what keeps the annotation rendered in the panes.
     const survivor = provider.reviewStore.getReview(docId);
-    assert.ok(survivor !== undefined, "a save with held chunks must retain the review");
+    assert.ok(survivor !== undefined, "a save with an outstanding chunk must retain the review");
     assert.equal(survivor.reviewId, review.reviewId);
     assert.equal(survivor.invalidated, false);
     const remaining = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
     assert.equal(remaining.length, 1);
-    assert.equal(remaining[0].state, "held");
-    assert.equal(remaining[0].holdComment, "gamma is undecided");
+    assert.equal(remaining[0].comment, "gamma is undecided");
     assert.equal(remaining[0].workingText, "GAMMA");
 
     // The disk fence moved to the saved content: a second save is not
@@ -2071,7 +2070,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(savedAgain.ok, true, JSON.stringify(savedAgain));
     assert.ok(provider.reviewStore.getReview(docId) !== undefined);
 
-    // Deciding the held chunk afterwards completes the review on the next save.
+    // Deciding the annotated chunk afterwards completes the review on the next save.
     assert.equal((await provider.decideReviewChunk(review.reviewId, remaining[0].chunkId, "accept", livePrecondition(review.reviewId))).ok, true);
     const finalSave = await provider.saveFile(filePath);
     assert.equal(finalSave.ok, true);
@@ -2482,7 +2481,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.ok(typeof failureMessage === "string");
       assert.match(
         failureMessage,
-        /is not a version-2 review sidecar/,
+        /is not a valid review sidecar/,
         "the documented sidecar error must name the validation failure",
       );
     });
@@ -2506,25 +2505,24 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(first.generation, 1);
       assert.equal(first.referenceText, "alpha\nbeta\n");
       assert.equal(first.workingText, "ALPHA\nbeta\n");
-      assert.equal(sidecarCounts(first).unresolvedChunks, 1);
+      assert.equal(sidecarUnresolvedChunks(first), 1);
 
-      // A decision is a mutation too: the hold and its comment reach disk.
+      // A chunk comment is a mutation too: the note reaches disk.
       const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
-      const held = await provider.decideReviewChunk(
+      const noted = await provider.commentReviewChunk(
         submitted.reviewId,
         chunks[0].chunkId,
-        "hold", livePrecondition(submitted.reviewId),
         "needs thought",
+        livePrecondition(submitted.reviewId),
       );
-      assert.equal(held.ok, true);
+      assert.equal(noted.ok, true);
       const second = (await sidecars.read(filePath))!;
       assert.equal(second.generation, 2);
       assert.deepEqual(
-        second.holds.map((hold) => hold.comment),
+        second.chunkComments.map((note) => note.comment),
         ["needs thought"],
       );
-      assert.equal(sidecarCounts(second).unresolvedChunks, 0);
-      assert.equal(sidecarCounts(second).heldChunks, 1);
+      assert.equal(sidecarUnresolvedChunks(second), 1, "annotation decides nothing");
     });
 
     it("detaches on close and reattaches on open with identical review state", async function () {
@@ -2552,8 +2550,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const reviewId = submitted.reviewId;
       const beforeChunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
       assert.equal(beforeChunks.length, 2);
-      const held = await provider.decideReviewChunk(reviewId, beforeChunks[1].chunkId, "hold", livePrecondition(reviewId), "revisit");
-      assert.equal(held.ok, true);
+      const noted = await provider.commentReviewChunk(reviewId, beforeChunks[1].chunkId, "revisit", livePrecondition(reviewId));
+      assert.equal(noted.ok, true);
       const commented = await provider.addReviewComment(provider.reviewStore.getReview(docId)!.reviewId, "overall note", livePrecondition(provider.reviewStore.getReview(docId)!.reviewId).expectedReviewGeneration);
       assert.equal(commented.ok, true);
 
@@ -2563,9 +2561,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const workingText = provider.loadedDocuments
         .find((d) => d.filePath === filePath)!
         .document.toString();
-      const chunkStatesBefore = provider.reviewStore
+      const chunkIdsBefore = provider.reviewStore
         .getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!
-        .map((chunk) => [chunk.chunkId, chunk.state]);
+        .map((chunk) => [chunk.chunkId, chunk.comment]);
 
       await provider.closeFileEverywhere(filePath);
       assert.equal(provider.reviewStore.getReview(docId), undefined);
@@ -2584,8 +2582,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.ok(detached !== undefined, "/v1/reviews must list the closed-file review");
       assert.equal(detached.attached, false);
       assert.equal(detached.documentPath, filePath);
-      assert.equal(detached.unresolvedChunks, 1);
-      assert.equal(detached.heldChunks, 1);
+      assert.equal(detached.unresolvedChunks, 2);
       assert.equal(detached.packetCount, 2);
 
       // Reattachment IS opening the file: no reattach API, no registry.
@@ -2602,11 +2599,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       );
       const afterChunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
       assert.deepEqual(
-        afterChunks.map((chunk) => [chunk.chunkId, chunk.state]),
-        chunkStatesBefore,
-        "content-addressed chunk ids and held states must survive the gap",
+        afterChunks.map((chunk) => [chunk.chunkId, chunk.comment]),
+        chunkIdsBefore,
+        "content-addressed chunk ids and chunk notes must survive the gap",
       );
-      assert.equal(afterChunks.find((chunk) => chunk.state === "held")!.holdComment, "revisit");
+      assert.equal(afterChunks.find((chunk) => chunk.comment !== undefined)!.comment, "revisit");
       assert.deepEqual(
         reattached.comments.map((comment) => comment.text),
         ["overall note"],
@@ -2801,7 +2798,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(provider.isModified(filePath), false);
     });
 
-    it("preserves a saved held review when discarding a later editor edit", async function () {
+    it("preserves a saved annotated review when discarding a later editor edit", async function () {
       const filePath = path.join(scratch, "sidecar-discard-after-save.md");
       const original = "alpha\nx\ny\nz\nbeta\n";
       const proposed = "ALPHA\nx\ny\nz\nbeta\n";
@@ -2822,8 +2819,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         return;
       }
       const chunk = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")![0];
-      assert.ok(chunk !== undefined, "the saved held review must have an outstanding chunk");
-      assert.equal((await provider.decideReviewChunk(submitted.reviewId, chunk.chunkId, "hold", livePrecondition(submitted.reviewId), "revisit")).ok, true);
+      assert.ok(chunk !== undefined, "the saved review must have an outstanding chunk");
+      assert.equal((await provider.commentReviewChunk(submitted.reviewId, chunk.chunkId, "revisit", livePrecondition(submitted.reviewId))).ok, true);
       assert.deepEqual(await provider.saveFile(filePath), { ok: true });
 
       const loaded = provider.loadedDocuments.find((document) => document.filePath === filePath)!;
@@ -2847,7 +2844,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         laterEdit,
       );
       const persistedBeforeDiscard = (await sidecars.read(filePath))!;
-      assert.equal(sidecarCounts(persistedBeforeDiscard).heldChunks, 1);
+      assert.deepEqual(
+        persistedBeforeDiscard.chunkComments.map((note) => note.comment),
+        ["revisit"],
+      );
       assert.equal(persistedBeforeDiscard.workingText, laterEdit);
 
       saveChangesResponse = 1; // "Don't save"
@@ -2860,13 +2860,18 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "closing the final owner still detaches the preserved review",
       );
       const detached = await provider.findDetachedReview(submitted.reviewId);
-      assert.ok(detached !== undefined, "discarding the later edit must keep the saved held review");
+      assert.ok(detached !== undefined, "discarding the later edit must keep the saved review");
       assert.equal(detached.workingText, proposed);
-      assert.equal(sidecarCounts(detached).heldChunks, 1);
+      assert.equal(sidecarUnresolvedChunks(detached), 1);
+      assert.deepEqual(
+        detached.chunkComments.map((note) => note.comment),
+        ["revisit"],
+        "the chunk note must survive the discard of the later edit",
+      );
     });
 
     it("preserves a saved pending review when discarding a later editor edit", async function () {
-      // The pending twin of the held case above: a save persists the document
+      // The unannotated twin of the case above: a save persists the document
       // as-is with the review's status, so the saved pending review is not
       // the user's to lose when a LATER unsaved edit is discarded.
       const filePath = path.join(scratch, "sidecar-discard-pending-save.md");
@@ -2920,15 +2925,15 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const detached = await provider.findDetachedReview(submitted.reviewId);
       assert.ok(detached !== undefined, "discarding the later edit must keep the saved pending review");
       assert.equal(detached.workingText, proposed);
-      assert.equal(sidecarCounts(detached).unresolvedChunks, 1);
-      assert.equal(sidecarCounts(detached).heldChunks, 0);
+      assert.equal(sidecarUnresolvedChunks(detached), 1);
     });
 
-    it("destroys an unsaved held review when the user discards the changes", async function () {
-      // A hold is an annotation, not durability: only a save persists a
-      // review. Held or pending alike, a review that never reached disk lives
-      // in the dirty buffer, and the user's "Don't save" throws both away.
-      const filePath = path.join(scratch, "sidecar-discard-held-unsaved.md");
+    it("destroys an unsaved annotated review when the user discards the changes", async function () {
+      // A chunk comment is annotation, not durability: only a save persists
+      // a review. A review that never reached disk lives in the dirty
+      // buffer, and the user's "Don't save" throws both away — the note
+      // with it.
+      const filePath = path.join(scratch, "sidecar-discard-noted-unsaved.md");
       const onDisk = "alpha\n";
       const docId = await openFile(filePath, onDisk);
       const windowId = provider.windowKeys()[0];
@@ -2938,7 +2943,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const submitted = await submitClaim(
         docId,
         makePatch(onDisk, "ALPHA\n"),
-        "sidecar-discard-held-unsaved-1",
+        "sidecar-discard-noted-unsaved-1",
       );
       assert.equal(submitted.ok, true);
       if (!submitted.ok) {
@@ -2946,7 +2951,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }
       const chunk = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")![0];
       assert.equal(
-        (await provider.decideReviewChunk(submitted.reviewId, chunk.chunkId, "hold", livePrecondition(submitted.reviewId), "keep me")).ok,
+        (await provider.commentReviewChunk(submitted.reviewId, chunk.chunkId, "keep me", livePrecondition(submitted.reviewId))).ok,
         true,
       );
 
@@ -2957,7 +2962,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(
         await sidecars.read(filePath),
         undefined,
-        "an unsaved held review dies with the dirty buffer it annotates",
+        "an unsaved review dies with the dirty buffer it annotates",
       );
       assert.equal(await provider.findDetachedReview(submitted.reviewId), undefined);
     });
@@ -3085,7 +3090,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.ok(provider.reviewStore.getReview(keptId) !== undefined);
     });
 
-    it("detaches a saved held review when its final window owner closes", async function () {
+    it("detaches a saved annotated review when its final window owner closes", async function () {
       const filePath = path.join(scratch, "sidecar-save-close.md");
       const original = "alpha\n";
       const docId = await openFile(filePath, original);
@@ -3100,17 +3105,17 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "sidecar-save-close-1",
       );
       if (!submitted.ok) {
-        assert.fail(`Held-review proposal was refused: ${JSON.stringify(submitted)}`);
+        assert.fail(`The proposal was refused: ${JSON.stringify(submitted)}`);
       }
       const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "");
       assert.ok(
         chunks !== undefined && chunks.length === 1,
-        "The held-review proposal must create exactly one outstanding chunk.",
+        "The proposal must create exactly one outstanding chunk.",
       );
       const chunk = chunks[0];
-      assert.ok(chunk !== undefined, "The held-review proposal produced no addressable chunk.");
+      assert.ok(chunk !== undefined, "The proposal produced no addressable chunk.");
       assert.equal(
-        (await provider.decideReviewChunk(submitted.reviewId, chunk.chunkId, "hold", livePrecondition(submitted.reviewId), "revisit")).ok,
+        (await provider.commentReviewChunk(submitted.reviewId, chunk.chunkId, "revisit", livePrecondition(submitted.reviewId))).ok,
         true,
       );
       assert.deepEqual(await provider.saveFile(filePath), { ok: true });
@@ -3128,9 +3133,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "the live review must detach when its document has no remaining owner",
       );
       const detached = await provider.findDetachedReview(submitted.reviewId);
-      assert.ok(detached !== undefined, "the held review must persist as a detached sidecar");
+      assert.ok(detached !== undefined, "the saved review must persist as a detached sidecar");
       assert.equal(detached.workingText, "ALPHA\n");
-      assert.equal(sidecarCounts(detached).heldChunks, 1);
+      assert.equal(sidecarUnresolvedChunks(detached), 1);
 
       await provider.getDocument(filePath);
       assert.equal(
@@ -3139,9 +3144,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "opening the saved file later must reattach the same review",
       );
       assert.equal(
-        provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")?.[0].state,
-        "held",
-        "the held decision must survive save, close, and reattachment",
+        provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")?.[0].comment,
+        "revisit",
+        "the chunk note must survive save, close, and reattachment",
       );
     });
 
@@ -3173,14 +3178,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const before = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
       assert.equal(before.length, 2);
       assert.equal(
-        (await provider.decideReviewChunk(reviewId, before[1].chunkId, "hold", livePrecondition(reviewId), "revisit")).ok,
+        (await provider.commentReviewChunk(reviewId, before[1].chunkId, "revisit", livePrecondition(reviewId))).ok,
         true,
       );
       assert.equal((await provider.addReviewComment(provider.reviewStore.getReview(docId)!.reviewId, "overall note", livePrecondition(provider.reviewStore.getReview(docId)!.reviewId).expectedReviewGeneration)).ok, true);
       const generation = provider.reviewStore.getReview(docId)!.generation;
       const chunksBefore = provider.reviewStore
         .getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!
-        .map((chunk) => [chunk.chunkId, chunk.state, chunk.holdComment]);
+        .map((chunk) => [chunk.chunkId, chunk.comment]);
 
       await provider.closeFileEverywhere(filePath);
       assert.equal(provider.reviewStore.getReview(docId), undefined, "the close must detach");
@@ -3199,7 +3204,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         attached: boolean;
         generation: number;
         unresolvedChunks: number;
-        heldChunks: number;
         packetCount: number;
         comments: Array<{ text: string }>;
         documentRevision?: unknown;
@@ -3207,8 +3211,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assertMatchesSchema(detailBody, "ReviewDetailResponse");
       assert.equal(detailBody.attached, false);
       assert.equal(detailBody.generation, generation);
-      assert.equal(detailBody.unresolvedChunks, 1);
-      assert.equal(detailBody.heldChunks, 1);
+      assert.equal(detailBody.unresolvedChunks, 2);
       assert.equal(detailBody.packetCount, 2);
       assert.deepEqual(
         detailBody.comments.map((comment) => comment.text),
@@ -3224,11 +3227,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(chunks.status, 200, chunks.body);
       const chunksBody = JSON.parse(chunks.body) as {
         documentId?: string;
-        chunks: Array<{ chunkId: string; state: string; holdComment?: string; descriptions: string[] }>;
+        chunks: Array<{ chunkId: string; comment?: string; descriptions: string[] }>;
       };
       assertMatchesSchema(chunksBody, "ReviewChunksResponse");
       assert.deepEqual(
-        chunksBody.chunks.map((chunk) => [chunk.chunkId, chunk.state, chunk.holdComment]),
+        chunksBody.chunks.map((chunk) => [chunk.chunkId, chunk.comment]),
         chunksBefore,
         "the detached partition must be the one the open document had",
       );
@@ -3607,7 +3610,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.notEqual(await persistedSidecar(filePath), undefined);
     });
 
-    it("refuses to save a held review whose sidecar cannot be written", async function () {
+    it("refuses to save an outstanding review whose sidecar cannot be written", async function () {
       const filePath = path.join(scratch, "persist-save.md");
       const docId = await openFile(filePath, "alpha\nbeta\n");
       const submitted = await submitClaim(
@@ -3616,14 +3619,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         "persist-save-1",
       );
       assert.ok(submitted.ok);
-      const chunkId = provider.reviewStore.getOutstandingChunks(
-        docId,
-        provider.readWorkingText(docId) ?? "",
-      )![0].chunkId;
-      assert.equal(
-        (await provider.decideReviewChunk(submitted.reviewId, chunkId, "hold", livePrecondition(submitted.reviewId), "later")).ok,
-        true,
-      );
       const before = projections(docId);
       const beforeSidecar = await persistedSidecar(filePath);
       const diskBefore = readFileSync(filePath, "utf8");

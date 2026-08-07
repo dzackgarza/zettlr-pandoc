@@ -74,7 +74,7 @@ function parseReviewSidecar(raw: string, target: string): ReviewSidecarData {
   }
   if (!validateReviewSidecar(parsed)) {
     throw new Error(
-      `Review sidecar ${target} is not a version-2 review sidecar: ` +
+      `Review sidecar ${target} is not a valid review sidecar: ` +
         (validateReviewSidecar.errors ?? [])
           .map((error) => `${error.instancePath || "/"} ${error.message ?? ""}`.trim())
           .join("; "),
@@ -107,7 +107,7 @@ export class ReviewSidecarStore {
 
   /**
    * The sidecar for a document, or undefined when none exists. A file that
-   * exists but does not parse as a version-2 sidecar throws.
+   * exists but does not parse as a current-version sidecar throws.
    */
   async read(documentPath: string): Promise<ReviewSidecarData | undefined> {
     const target = reviewSidecarFilePath(this.directory, documentPath);

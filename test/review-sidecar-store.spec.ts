@@ -43,7 +43,7 @@ const FINGERPRINT =
 
 function sidecar(documentPath: string): ReviewSidecarData {
   return {
-    version: 2,
+    version: 3,
     reviewId: "review-1",
     documentPath,
     referenceText: "alpha\n",
@@ -81,11 +81,11 @@ function sidecar(documentPath: string): ReviewSidecarData {
         },
       },
     ],
-    holds: [
+    chunkComments: [
       {
         chunkId: "chunk-1",
         comment: "check this",
-        heldAt: "2026-08-01T00:01:00.000Z",
+        commentedAt: "2026-08-01T00:01:00.000Z",
       },
     ],
     comments: [
@@ -146,7 +146,7 @@ describe("ReviewSidecarStore", function () {
     assert.deepEqual(await store.read(documentPath), expected);
   });
 
-  it("restores a valid version-2 sidecar, pendingSave included", async function () {
+  it("restores a valid sidecar, pendingSave included", async function () {
     const withPendingSave: ReviewSidecarData = {
       ...sidecar(documentPath),
       pendingSave: { beforeDiskSha256: FINGERPRINT, afterDiskSha256: FINGERPRINT },
@@ -165,7 +165,7 @@ describe("ReviewSidecarStore", function () {
 
   it("rejects a field the schema does not declare", async function () {
     persistRaw({ ...sidecar(documentPath), savedAt: "2026-08-01T00:03:00.000Z" });
-    await assert.rejects(store.read(documentPath), /not a version-2 review sidecar/);
+    await assert.rejects(store.read(documentPath), /not a valid review sidecar/);
   });
 
   it("rejects a hash that is not a sha256", async function () {
@@ -175,7 +175,7 @@ describe("ReviewSidecarStore", function () {
 
   it("rejects a version-1 sidecar rather than migrating it", async function () {
     persistRaw({ ...sidecar(documentPath), version: 1 });
-    await assert.rejects(store.read(documentPath), /not a version-2 review sidecar/);
+    await assert.rejects(store.read(documentPath), /not a valid review sidecar/);
   });
 
   it("rejects a sidecar whose payload path does not match its hashed filename", async function () {

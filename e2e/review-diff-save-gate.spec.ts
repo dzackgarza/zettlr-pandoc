@@ -460,7 +460,7 @@ describe('saving after accepting a reviewed change', function () {
     )
   })
 
-  it('keeps a held review rendered after saving it', async function () {
+  it('keeps a chunk comment rendered and agent-readable after saving', async function () {
     const activeClient = requireInitialized(running.client, 'The Agent API client must be initialized')
     const activeDocumentPath = requireInitialized(running.documentPath, 'The document path must be initialized')
     assert.ok(running.browser, 'The application must be running')
@@ -472,7 +472,7 @@ describe('saving after accepting a reviewed change', function () {
       activeDocumentPath,
       PROPOSED_PHRASE,
       STRICT_PHRASE,
-      'e2e-review-diff-save-gate-held'
+      'e2e-review-diff-save-gate-note'
     )
     const chunksPayload = await activeClient.get(`/v1/reviews/${reviewId}/chunks`)
     assert.ok(
@@ -481,50 +481,60 @@ describe('saving after accepting a reviewed change', function () {
         'chunks' in chunksPayload &&
         Array.isArray(chunksPayload.chunks) &&
         chunksPayload.chunks.length === 1,
-      `Held-review proof expected one addressable chunk: ${JSON.stringify(chunksPayload)}`
+      `Chunk-note proof expected one addressable chunk: ${JSON.stringify(chunksPayload)}`
     )
 
-    // The hold is the reviewer's, made where the reviewer makes it: the note
-    // field and Hold button on the chunk's own widget.
+    // The note is the reviewer's, made where the reviewer makes it: the
+    // comment field and button on the chunk's own widget. It decides
+    // nothing — the chunk stays outstanding.
     const chunkWidget = page.locator('.cm-chunkControls').first()
     await chunkWidget
-      .locator('input.cm-holdCommentInput')
-      .fill('Preserve this decision across save')
-    await chunkWidget.locator('button.cm-review-diff-control.hold').click()
+      .locator('input.cm-chunkCommentInput')
+      .fill('Preserve this note across save')
+    await chunkWidget.locator('button.cm-review-diff-control.comment').click()
 
-    const heldWidget = page.locator('.cm-chunkControls.held').first()
-    await heldWidget.waitFor({ state: 'visible', timeout: 20_000 })
-    assert.ok(
-      (await heldWidget.innerText()).includes('Held: Preserve this decision across save'),
-      'The held chunk must render its durable comment before save.'
+    const note = page.locator('.cm-chunkComment').first()
+    await note.waitFor({ state: 'visible', timeout: 20_000 })
+    assert.equal(
+      await note.innerText(),
+      'Preserve this note across save',
+      'The annotated chunk must render its note before save.'
     )
-    screenshots.set('review-held-before-save.png', await page.screenshot())
+    screenshots.set('review-note-before-save.png', await page.screenshot())
 
     assert.deepEqual(
       await invokeSave(page, activeDocumentPath),
       { ok: true },
-      'A held-only review must pass the save gate.'
+      'An annotated review must save as-is.'
     )
     assert.equal(
       await readFile(activeDocumentPath, 'utf8'),
       `# Review gate\n\n${STRICT_PHRASE}\n`,
-      'Saving a held review must persist its working text.'
+      'Saving an annotated review must persist its working text.'
     )
 
-    await heldWidget.waitFor({ state: 'visible', timeout: 20_000 })
-    assert.ok(
-      (await heldWidget.innerText()).includes('Held: Preserve this decision across save'),
-      'FILE_SAVED must not clear the active held review from the pane.'
+    await note.waitFor({ state: 'visible', timeout: 20_000 })
+    assert.equal(
+      await note.innerText(),
+      'Preserve this note across save',
+      'FILE_SAVED must not clear the note from the pane.'
     )
-    const detail = await activeClient.get(`/v1/reviews/${reviewId}`)
+    // The note is agent-readable on the chunk itself, and the chunk is
+    // still outstanding after the save.
+    const afterChunks = await activeClient.get(`/v1/reviews/${reviewId}/chunks`)
     assert.ok(
-      detail !== null &&
-        typeof detail === 'object' &&
-        'heldChunks' in detail &&
-        detail.heldChunks === 1,
-      `The provider must retain the held review after save: ${JSON.stringify(detail)}`
+      afterChunks !== null && typeof afterChunks === 'object' &&
+        'chunks' in afterChunks && Array.isArray(afterChunks.chunks) &&
+        afterChunks.chunks.length === 1,
+      `The chunk must stay outstanding after the save: ${JSON.stringify(afterChunks)}`
     )
-    screenshots.set('review-held-after-save.png', await page.screenshot())
+    const [annotated] = afterChunks.chunks as Array<{ comment?: unknown }>
+    assert.equal(
+      annotated.comment,
+      'Preserve this note across save',
+      'The agent must read the reviewer\'s note on the chunk itself.'
+    )
+    screenshots.set('review-note-after-save.png', await page.screenshot())
 
     await clearReviewAndFlush(page, activeDocumentPath)
   })

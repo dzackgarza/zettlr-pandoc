@@ -43,7 +43,7 @@ import type {
 } from "@dts/common/agent-api";
 import type {
   ActiveReviewState,
-  ChunkHold,
+  ChunkComment,
   ReviewPacket,
 } from "@dts/common/review-domain";
 import {
@@ -54,7 +54,6 @@ import {
 } from "@common/modules/review/review-chunks";
 import {
   classifyReviewState,
-  countPending,
   normalizeText,
 } from "./review-diff-store";
 import { sha256Text } from "@common/util/sha256";
@@ -124,7 +123,7 @@ export interface ClaimInput {
 }
 
 /** What the reviewer can decide about one chunk. */
-export type ChunkDecision = "accept" | "reject" | "hold";
+export type ChunkDecision = "accept" | "reject";
 
 /**
  * The three decision shapes are owned here rather than generated from the
@@ -147,7 +146,7 @@ export interface AcceptAllChunksResponse {
   ok: true;
   reviewId: string;
   documentId: string;
-  /** How many chunks the sweep resolved (held ones included). */
+  /** How many chunks the sweep resolved. */
   acceptedChunks: number;
   reviewGeneration: number;
   unresolvedChunks: number;
@@ -171,6 +170,15 @@ export interface AddReviewCommentResponse {
   documentId: string;
   reviewGeneration: number;
   comment: ReviewComment;
+}
+
+/** A chunk-anchored comment landed: annotation only, no state change. */
+export interface ChunkCommentResponse {
+  ok: true;
+  reviewId: string;
+  documentId: string;
+  chunkId: string;
+  reviewGeneration: number;
 }
 
 export interface RetractProposalResponse {
@@ -205,7 +213,7 @@ function cloneReview(review: ActiveReviewState): ActiveReviewState {
       packetIds: [...submission.packetIds],
       response: { ...submission.response },
     })),
-    holds: review.holds.map((hold) => ({ ...hold })),
+    chunkComments: review.chunkComments.map((note) => ({ ...note })),
     comments: review.comments.map((comment) => ({ ...comment })),
   };
 }
@@ -568,80 +576,75 @@ function remapAcrossDecision(
 }
 
 // ============================================================================
-// Hold reconciliation
+// Chunk-comment reconciliation
 // ============================================================================
 
-/** Ignore only seam newlines when matching an unchanged held edit. */
+/** Ignore only seam newlines when matching an unchanged annotated edit. */
 function trimIdentitySeams(text: string): string {
   return text.replace(/^\n+|\n+$/g, "");
 }
 
 /**
- * Reconcile a clone's holds against a partition, and draft one
- * `review.commented` event per hold whose comment was orphaned.
+ * Reconcile a clone's chunk comments against a partition, and draft one
+ * `review.commented` event per note whose text was orphaned.
  *
- * Chunk ids are content-addressed, so any change to a held chunk's text — a
- * user edit inside it, a later claim overlapping it, an explicit decision on
- * it — retires the id. A hold whose text is unchanged and merely moved is
- * reattached to the chunk that now carries it. One that cannot be placed is
- * released: a hold that carried a comment surfaces as an orphaned
- * review-level comment naming the vanished chunk, so the text is never
- * silently lost, and a textless one simply vanishes.
+ * Chunk ids are content-addressed, so any change to an annotated chunk's
+ * text — a user edit inside it, a later claim overlapping it, an explicit
+ * decision on it — retires the id. A note whose chunk text is unchanged and
+ * merely moved is reattached to the chunk that now carries it. One that
+ * cannot be placed is released as an orphaned review-level comment naming
+ * the vanished chunk, so the text is never silently lost.
  */
-function reconcileHolds(
+function reconcileChunkComments(
   review: ActiveReviewState,
   partition: readonly ReviewChunk[],
 ): AgentEventDraft[] {
   const liveIds = new Set(partition.map((chunk) => chunk.chunkId));
   const usedIds = new Set<string>();
-  const dangling: ChunkHold[] = [];
-  for (const hold of review.holds) {
-    if (liveIds.has(hold.chunkId)) {
-      usedIds.add(hold.chunkId);
+  const dangling: ChunkComment[] = [];
+  for (const note of review.chunkComments) {
+    if (liveIds.has(note.chunkId)) {
+      usedIds.add(note.chunkId);
       continue;
     }
     const candidates = partition
       .filter((chunk) => !usedIds.has(chunk.chunkId))
       .filter((chunk) =>
-        hold.referenceText !== undefined &&
-        hold.workingText !== undefined &&
-        trimIdentitySeams(chunk.referenceText) === trimIdentitySeams(hold.referenceText) &&
-        trimIdentitySeams(chunk.workingText) === trimIdentitySeams(hold.workingText),
+        note.referenceText !== undefined &&
+        note.workingText !== undefined &&
+        trimIdentitySeams(chunk.referenceText) === trimIdentitySeams(note.referenceText) &&
+        trimIdentitySeams(chunk.workingText) === trimIdentitySeams(note.workingText),
       )
       .map((chunk) => ({
         chunk,
-        distance: (hold.referenceFromLine === undefined ? 0 : Math.abs(chunk.refFromLine - hold.referenceFromLine)) +
-          (hold.workingFromLine === undefined ? 0 : Math.abs(chunk.workFromLine - hold.workingFromLine)),
+        distance: (note.referenceFromLine === undefined ? 0 : Math.abs(chunk.refFromLine - note.referenceFromLine)) +
+          (note.workingFromLine === undefined ? 0 : Math.abs(chunk.workFromLine - note.workingFromLine)),
       }))
       .sort((a, b) => a.distance - b.distance);
-    const positionedCandidates = hold.referenceFromLine === undefined
+    const positionedCandidates = note.referenceFromLine === undefined
       ? candidates
-      : candidates.filter(({ chunk }) => chunk.refFromLine === hold.referenceFromLine);
+      : candidates.filter(({ chunk }) => chunk.refFromLine === note.referenceFromLine);
     const selected = positionedCandidates.length === 1
       ? positionedCandidates[0]
       : positionedCandidates.length > 1 && positionedCandidates[0].distance < positionedCandidates[1].distance
         ? positionedCandidates[0]
         : undefined;
     if (selected !== undefined) {
-      hold.chunkId = selected.chunk.chunkId;
-      hold.referenceFromLine = selected.chunk.refFromLine;
-      hold.workingFromLine = selected.chunk.workFromLine;
-      usedIds.add(hold.chunkId);
+      note.chunkId = selected.chunk.chunkId;
+      note.referenceFromLine = selected.chunk.refFromLine;
+      note.workingFromLine = selected.chunk.workFromLine;
+      usedIds.add(note.chunkId);
     } else {
-      dangling.push(hold);
+      dangling.push(note);
     }
   }
-  review.holds = review.holds.filter((hold) => usedIds.has(hold.chunkId));
-  const unresolvedChunks = partition.length - review.holds.length;
+  review.chunkComments = review.chunkComments.filter((note) => usedIds.has(note.chunkId));
   const events: AgentEventDraft[] = [];
-  for (const hold of dangling) {
-    if (hold.comment === undefined) {
-      continue;
-    }
+  for (const note of dangling) {
     const comment: ReviewComment = {
-      text: hold.comment,
+      text: note.comment,
       createdAt: new Date().toISOString(),
-      orphanedFromChunkId: hold.chunkId,
+      orphanedFromChunkId: note.chunkId,
     };
     review.comments.push(comment);
     // Orphaning is derived bookkeeping of an edit that already happened, not
@@ -652,9 +655,9 @@ function reconcileHolds(
         reviewId: review.reviewId,
         documentId: review.documentId,
         comment: comment.text,
-        orphanedFromChunkId: hold.chunkId,
+        orphanedFromChunkId: note.chunkId,
         generation: review.generation,
-        unresolvedChunks,
+        unresolvedChunks: partition.length,
       },
     });
   }
@@ -703,7 +706,7 @@ export function prepareProposalSubmission(input: {
           generation: 0,
           packets: [],
           submissions: [],
-          holds: [],
+          chunkComments: [],
           comments: [],
           diskFenceSha256: input.diskSha256,
           invalidated: false,
@@ -754,8 +757,8 @@ export function prepareProposalSubmission(input: {
 
   const nextWorkingText = sequence.steps[sequence.steps.length - 1].textAfter;
   const partition = computeReviewChunks(next.referenceText, nextWorkingText);
-  events.push(...reconcileHolds(next, partition));
-  const unresolvedChunks = countPending(next, partition);
+  events.push(...reconcileChunkComments(next, partition));
+  const unresolvedChunks = partition.length;
 
   const response: SubmitProposalResponse = {
     packetId: packetIds[packetIds.length - 1],
@@ -795,23 +798,19 @@ export function prepareProposalSubmission(input: {
 
 /**
  * Decide a single chunk by its content-addressed id — the ONE decision path
- * for all three verbs.
+ * for both verbs.
  *
  * Accept makes the reference agree with the working text on the chunk (the
  * document does not change). Reject computes the working text with the chunk
- * restored to the reference. Hold adjudicates nothing: it attaches an
- * optional comment and takes the chunk out of the pending count, so a
- * held-only review saves while the reference retains its disagreement.
- * Re-holding a held chunk replaces its comment. A stale id — the region
- * changed since the caller read it — fails with CHUNK_NOT_FOUND rather than
- * acting on a region that no longer means what the caller thought.
+ * restored to the reference. A stale id — the region changed since the
+ * caller read it — fails with CHUNK_NOT_FOUND rather than acting on a
+ * region that no longer means what the caller thought.
  */
 export function prepareChunkDecision(input: {
   review: ActiveReviewState;
   workingText: string;
   chunkId: string;
   decision: ChunkDecision;
-  comment?: string;
 }): ReviewMutationPlan<ChunkDecisionResponse> | ReviewTransitionError {
   if (input.review.invalidated) {
     return {
@@ -823,7 +822,7 @@ export function prepareChunkDecision(input: {
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
   const partition = computeReviewChunks(next.referenceText, workingText);
-  const events = reconcileHolds(next, partition);
+  const events = reconcileChunkComments(next, partition);
   const chunk = partition.find((candidate) => candidate.chunkId === input.chunkId);
   if (chunk === undefined) {
     return {
@@ -834,73 +833,45 @@ export function prepareChunkDecision(input: {
   }
 
   let nextWorkingText = workingText;
-  let unresolvedChunks: number;
-  if (input.decision === "hold") {
-    // Upsert: holding again replaces the comment (an empty re-hold clears it).
-    next.holds = next.holds.filter((hold) => hold.chunkId !== input.chunkId);
-    next.holds.push({
-      chunkId: input.chunkId,
-      comment: input.comment,
-      heldAt: new Date().toISOString(),
-      referenceText: chunk.referenceText,
-      workingText: chunk.workingText,
-      referenceFromLine: chunk.refFromLine,
-      workingFromLine: chunk.workFromLine,
-    });
-    unresolvedChunks = partition.length - next.holds.length;
-    next.generation += 1;
-    events.push({
-      event: "review.held",
-      payload: {
-        reviewId: next.reviewId,
-        documentId: next.documentId,
-        chunkId: input.chunkId,
-        comment: input.comment,
-        generation: next.generation,
-        unresolvedChunks,
-      },
-    });
-  } else {
-    if (input.decision === "accept") {
-      const referenceLineDelta =
-        chunk.workToLine - chunk.workFromLine - (chunk.refToLine - chunk.refFromLine);
-      for (const hold of next.holds) {
-        if (hold.chunkId !== input.chunkId && hold.referenceFromLine !== undefined && hold.referenceFromLine >= chunk.refToLine) {
-          hold.referenceFromLine += referenceLineDelta;
-        }
+  if (input.decision === "accept") {
+    const referenceLineDelta =
+      chunk.workToLine - chunk.workFromLine - (chunk.refToLine - chunk.refFromLine);
+    for (const note of next.chunkComments) {
+      if (note.chunkId !== input.chunkId && note.referenceFromLine !== undefined && note.referenceFromLine >= chunk.refToLine) {
+        note.referenceFromLine += referenceLineDelta;
       }
-      next.referenceText = spliceChunk(next.referenceText, chunk, "accept");
-      // The accepted splice changed the reference's line count: spans behind
-      // it shift, spans on it are resolved and dropped.
-      remapAcrossDecision(next, chunk, referenceLineDelta);
-    } else {
-      const workingLineDelta =
-        chunk.refToLine - chunk.refFromLine - (chunk.workToLine - chunk.workFromLine);
-      for (const hold of next.holds) {
-        if (hold.chunkId !== input.chunkId && hold.workingFromLine !== undefined && hold.workingFromLine >= chunk.workToLine) {
-          hold.workingFromLine += workingLineDelta;
-        }
-      }
-      nextWorkingText = spliceChunk(workingText, chunk, "reject");
-      // The reference did not move, but the chunk's reference region is now
-      // resolved: attribution material there is dropped, so a later edit of
-      // the same lines is the editor's change, not the packet's.
-      remapAcrossDecision(next, chunk, 0);
     }
-    const decided = computeReviewChunks(next.referenceText, nextWorkingText);
-    events.push(...reconcileHolds(next, decided));
-    unresolvedChunks = countPending(next, decided);
-    next.generation += 1;
-    events.push({
-      event: "review.changed",
-      payload: {
-        reviewId: next.reviewId,
-        documentId: next.documentId,
-        generation: next.generation,
-        unresolvedChunks,
-      },
-    });
+    next.referenceText = spliceChunk(next.referenceText, chunk, "accept");
+    // The accepted splice changed the reference's line count: spans behind
+    // it shift, spans on it are resolved and dropped.
+    remapAcrossDecision(next, chunk, referenceLineDelta);
+  } else {
+    const workingLineDelta =
+      chunk.refToLine - chunk.refFromLine - (chunk.workToLine - chunk.workFromLine);
+    for (const note of next.chunkComments) {
+      if (note.chunkId !== input.chunkId && note.workingFromLine !== undefined && note.workingFromLine >= chunk.workToLine) {
+        note.workingFromLine += workingLineDelta;
+      }
+    }
+    nextWorkingText = spliceChunk(workingText, chunk, "reject");
+    // The reference did not move, but the chunk's reference region is now
+    // resolved: attribution material there is dropped, so a later edit of
+    // the same lines is the editor's change, not the packet's.
+    remapAcrossDecision(next, chunk, 0);
   }
+  const decided = computeReviewChunks(next.referenceText, nextWorkingText);
+  events.push(...reconcileChunkComments(next, decided));
+  const unresolvedChunks = decided.length;
+  next.generation += 1;
+  events.push({
+    event: "review.changed",
+    payload: {
+      reviewId: next.reviewId,
+      documentId: next.documentId,
+      generation: next.generation,
+      unresolvedChunks,
+    },
+  });
 
   if (unresolvedChunks === 0) {
     events.push({
@@ -932,10 +903,79 @@ export function prepareChunkDecision(input: {
 }
 
 /**
+ * Attach a comment to one outstanding chunk WITHOUT deciding it. Pure
+ * annotation: the chunk stays outstanding and no text moves. Commenting an
+ * already-annotated chunk replaces its note (upsert). Advances the
+ * generation — like a review-level comment, a chunk note is a deliberate
+ * turn in the conversation. When the chunk later resolves, reconciliation
+ * orphans the note into a review-level comment carrying its chunk id.
+ */
+export function prepareChunkComment(input: {
+  review: ActiveReviewState;
+  workingText: string;
+  chunkId: string;
+  text: string;
+}): ReviewMutationPlan<ChunkCommentResponse> | ReviewTransitionError {
+  if (input.review.invalidated) {
+    return {
+      ok: false,
+      code: "REVIEW_INVALIDATED",
+      message: "The review was invalidated by external disk drift.",
+    };
+  }
+  const workingText = normalizeText(input.workingText);
+  const next = cloneReview(input.review);
+  const partition = computeReviewChunks(next.referenceText, workingText);
+  const events = reconcileChunkComments(next, partition);
+  const chunk = partition.find((candidate) => candidate.chunkId === input.chunkId);
+  if (chunk === undefined) {
+    return {
+      ok: false,
+      code: "CHUNK_NOT_FOUND",
+      message: `No unresolved chunk ${input.chunkId} exists at review generation ${next.generation}.`,
+    };
+  }
+  next.chunkComments = next.chunkComments.filter((note) => note.chunkId !== input.chunkId);
+  next.chunkComments.push({
+    chunkId: input.chunkId,
+    comment: input.text,
+    commentedAt: new Date().toISOString(),
+    referenceText: chunk.referenceText,
+    workingText: chunk.workingText,
+    referenceFromLine: chunk.refFromLine,
+    workingFromLine: chunk.workFromLine,
+  });
+  next.generation += 1;
+  events.push({
+    event: "review.commented",
+    payload: {
+      reviewId: next.reviewId,
+      documentId: next.documentId,
+      chunkId: input.chunkId,
+      comment: input.text,
+      generation: next.generation,
+      unresolvedChunks: partition.length,
+    },
+  });
+  return {
+    nextReview: next,
+    nextWorkingText: workingText,
+    response: {
+      ok: true,
+      reviewId: next.reviewId,
+      documentId: next.documentId,
+      chunkId: input.chunkId,
+      reviewGeneration: next.generation,
+    },
+    events,
+  };
+}
+
+/**
  * Accept every chunk of the current partition at once: the reference becomes
  * the working text, exactly what accepting each chunk one at a time
  * converges to — the mirror of prepareClear, which is mass reject. The
- * document does not change. Held chunks are accepted too; their comments
+ * document does not change. Annotated chunks are accepted too; their notes
  * surface as orphans. One generation advance, however many chunks resolved.
  */
 export function prepareAcceptAll(input: {
@@ -964,8 +1004,8 @@ export function prepareAcceptAll(input: {
   }
   next.referenceText = workingText;
   next.generation += 1;
-  // Every hold now dangles (its chunk is resolved).
-  const events = reconcileHolds(next, []);
+  // Every chunk comment now dangles (its chunk is resolved).
+  const events = reconcileChunkComments(next, []);
   events.push(
     {
       event: "review.changed",
@@ -1014,8 +1054,8 @@ export function prepareClear(input: {
   const next = cloneReview(input.review);
   next.generation += 1;
   // Every disagreement is resolved at once: nothing remains to attribute,
-  // and every hold dangles — commented holds surface as orphans.
-  const events = reconcileHolds(next, []);
+  // and every chunk comment dangles — its text surfaces as an orphan.
+  const events = reconcileChunkComments(next, []);
   for (const packet of next.packets) {
     packet.refSpans = [];
   }
@@ -1133,8 +1173,8 @@ export function prepareRetraction(input: {
   next.generation += 1;
   const nextWorkingText = normalizeText(reverted);
   const partition = computeReviewChunks(next.referenceText, nextWorkingText);
-  const events = reconcileHolds(next, partition);
-  const unresolvedChunks = countPending(next, partition);
+  const events = reconcileChunkComments(next, partition);
+  const unresolvedChunks = partition.length;
   events.push({
     event: "proposal.retracted",
     payload: {
@@ -1165,9 +1205,9 @@ export function prepareRetraction(input: {
 /**
  * Reconcile a review against a working text that changed outside it —
  * ordinary editor typing. No decision was made, so the generation does not
- * advance and the document is not rewritten; what changes is which holds
- * still name a live chunk. Returns undefined when nothing moved, so a
- * keystroke that touches no held region costs no commit.
+ * advance and the document is not rewritten; what changes is which chunk
+ * comments still name a live chunk. Returns undefined when nothing moved, so
+ * a keystroke that touches no annotated region costs no commit.
  */
 export function prepareWorkingTextEdit(input: {
   review: ActiveReviewState;
@@ -1176,16 +1216,16 @@ export function prepareWorkingTextEdit(input: {
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
   const partition = computeReviewChunks(next.referenceText, workingText);
-  const events = reconcileHolds(next, partition);
+  const events = reconcileChunkComments(next, partition);
   const unchanged =
     events.length === 0 &&
-    next.holds.length === input.review.holds.length &&
-    next.holds.every((hold, index) => {
-      const before = input.review.holds[index];
+    next.chunkComments.length === input.review.chunkComments.length &&
+    next.chunkComments.every((note, index) => {
+      const before = input.review.chunkComments[index];
       return (
-        hold.chunkId === before.chunkId &&
-        hold.referenceFromLine === before.referenceFromLine &&
-        hold.workingFromLine === before.workingFromLine
+        note.chunkId === before.chunkId &&
+        note.referenceFromLine === before.referenceFromLine &&
+        note.workingFromLine === before.workingFromLine
       );
     });
   if (unchanged) {

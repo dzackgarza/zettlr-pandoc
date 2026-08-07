@@ -84,6 +84,8 @@ interface RaceInput {
   control: string
   /** Reference text naming the chunk whose control is clicked, if any. */
   chunk?: string
+  /** Text typed into the chunk's comment field before the click, if any. */
+  commentText?: string
 }
 
 /**
@@ -151,7 +153,7 @@ async function raceEditsWithClick (page: Page, input: RaceInput): Promise<string
     // strip after those lines in DOM order.
     const findControls = (chunk: string): Element|undefined => {
       const nodes = Array.from(
-        pane.querySelectorAll('.cm-changedLine, .cm-heldLine, .cm-chunkControls')
+        pane.querySelectorAll('.cm-changedLine, .cm-chunkControls')
       )
       const lineIndex = nodes.findIndex(node => {
         if (node.classList.contains('cm-chunkControls')) {
@@ -167,6 +169,14 @@ async function raceEditsWithClick (page: Page, input: RaceInput): Promise<string
     const scope = options.chunk === undefined ? pane : findControls(options.chunk)
     if (scope === undefined) {
       throw new Error(`No chunk widget names ${JSON.stringify(options.chunk)}`)
+    }
+    if (options.commentText !== undefined) {
+      const noteInput = scope.querySelector('input.cm-chunkCommentInput')
+      if (!(noteInput instanceof HTMLInputElement)) {
+        throw new Error('No chunk comment field to type into')
+      }
+      noteInput.value = options.commentText
+      noteInput.dispatchEvent(new Event('input', { bubbles: true }))
     }
     const button = scope.querySelector(options.control)
     if (!(button instanceof HTMLButtonElement)) {
@@ -232,7 +242,7 @@ interface ChunkView {
   chunkId: string
   referenceText: string
   workingText: string
-  state: string
+  comment?: string
 }
 
 /** The chunk partition and the fence values a decision has to bind to. */
@@ -454,7 +464,7 @@ describe('a review decision waits for the document authority', function () {
     )
   })
 
-  it('holds the edited chunk with the exact text visible at click time', async function () {
+  it('comments on the edited chunk with the exact text visible at click time', async function () {
     const activeApi = requireInitialized(api, 'the Agent API client must be initialized')
     const activePage = requireInitialized(page, 'the editor page must be initialized')
     const activeReviewId = requireInitialized(reviewId, 'the review must be open')
@@ -465,33 +475,29 @@ describe('a review decision waits for the document authority', function () {
       line: 'charlie proposed',
       edits: ['charlie proposed one', 'charlie proposed one two'],
       chunk: 'charlie original',
-      control: 'button.cm-review-diff-control.hold'
+      control: 'button.cm-review-diff-control.comment',
+      commentText: 'second thoughts'
     })
 
     const chunks = await settledChunks(activeApi, activePage, activeReviewId, list =>
-      list.some(chunk => chunk.state === 'held')
+      list.some(chunk => chunk.comment !== undefined)
     )
-    assert.equal(chunks.length, 3, 'holding adjudicates nothing, so nothing leaves')
-    // The held rendering is split: the chunk's lines carry the held marking
-    // (with the reference text inline), and its strip renders held below.
+    assert.equal(chunks.length, 3, 'a comment adjudicates nothing, so nothing leaves')
     await activePage
-      .locator('.cm-heldLine')
-      .filter({ hasText: 'charlie original' })
-      .waitFor({ state: 'visible', timeout: 30_000 })
-    await activePage
-      .locator('.cm-chunkControls.held')
+      .locator('.cm-chunkComment')
+      .filter({ hasText: 'second thoughts' })
       .waitFor({ state: 'visible', timeout: 30_000 })
     assert.deepEqual(await toastMessages(activePage), [])
-    // A hold moves no text, so the provider's working text must be, byte for
-    // byte, what was on screen when the control was clicked.
+    // A comment moves no text, so the provider's working text must be, byte
+    // for byte, what was on screen when the control was clicked.
     assert.equal(await workingText(activeApi), textAtClick)
 
-    const held = chunks.filter(chunk => chunk.state === 'held')
-    assert.equal(held.length, 1, `exactly one chunk must be held: ${JSON.stringify(chunks)}`)
+    const noted = chunks.filter(chunk => chunk.comment !== undefined)
+    assert.equal(noted.length, 1, `exactly one chunk must carry the note: ${JSON.stringify(chunks)}`)
     assert.equal(
-      held[0].workingText,
+      noted[0].workingText,
       'charlie proposed one two',
-      'the hold must name the edited chunk, not the one the pane was drawn with'
+      'the note must land on the edited chunk, not the one the pane was drawn with'
     )
   })
 
@@ -510,8 +516,8 @@ describe('a review decision waits for the document authority', function () {
 
     await waitFor(
       async () => await activeApi.get(`/v1/reviews/${activeReviewId}`),
-      value => isRecord(value) && value.unresolvedChunks === 0 && value.heldChunks === 0,
-      'the review to hold no unresolved or held chunk'
+      value => isRecord(value) && value.unresolvedChunks === 0,
+      'the review to hold no unresolved chunk'
     )
     // The review survives its last decision — it is resolved, awaiting the
     // save that closes it — so the status panel stays and reports the empty

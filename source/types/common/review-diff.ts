@@ -27,20 +27,20 @@ export interface ReviewDiffSession {
    */
   packets: ReviewPacketAttribution[];
   /**
-   * The held chunks, by content-addressed id, with their optional comments.
-   * The pane renders these visually distinct from pending chunks; a held id
-   * that no longer matches any chunk simply stops matching (the provider
-   * orphans the hold on its side — the pane never reports state back).
+   * The chunk-anchored comments, by content-addressed id. The pane renders
+   * each at its chunk's controls strip; an id that no longer matches any
+   * chunk simply stops matching (the provider orphans the note on its side —
+   * the pane never reports state back).
    */
-  holds: ReviewChunkHoldView[];
-  /** Review-level comments, including orphaned hold notes, in creation order. */
+  chunkComments: ReviewChunkCommentView[];
+  /** Review-level comments, including orphaned chunk notes, in creation order. */
   comments: ReviewComment[];
 }
 
-/** One held chunk as a pane sees it: identity plus the optional comment. */
-export interface ReviewChunkHoldView {
+/** One chunk-anchored comment as a pane sees it: identity plus the text. */
+export interface ReviewChunkCommentView {
   chunkId: string;
-  comment?: string;
+  comment: string;
   referenceText?: string;
   workingText?: string;
   referenceFromLine?: number;

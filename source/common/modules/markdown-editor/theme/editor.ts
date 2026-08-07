@@ -100,16 +100,11 @@ export interface ThemeVars {
   '--zettlr-editor-review-insert-mark-bg': string
   '--zettlr-editor-review-delete-bg': string
   '--zettlr-editor-review-delete-accent': string
-  '--zettlr-editor-review-held-line-bg': string
-  '--zettlr-editor-review-held-accent': string
-  '--zettlr-editor-review-held-text': string
   '--zettlr-editor-review-controls-bg': string
   '--zettlr-editor-review-accept-bg': string
   '--zettlr-editor-review-accept-border': string
   '--zettlr-editor-review-reject-bg': string
   '--zettlr-editor-review-reject-border': string
-  '--zettlr-editor-review-hold-bg': string
-  '--zettlr-editor-review-hold-border': string
   /** CSS `opacity` value */
   '--zettlr-editor-opacity': string|number
   /** CSS `text-decoration` value */
@@ -204,16 +199,11 @@ const reviewLight = {
   insertMarkBg: 'rgba(26, 178, 74, 0.45)',
   deleteBg: 'rgba(207, 34, 46, 0.30)',
   deleteAccent: '#cf222e',
-  heldLineBg: 'rgba(191, 135, 0, 0.20)',
-  heldAccent: '#bf8700',
-  heldText: '#7d5a00',
   controlsBg: 'rgba(128, 128, 128, 0.06)',
   acceptBg: '#1f7a45',
   acceptBorder: '#176238',
   rejectBg: '#b33a3a',
   rejectBorder: '#8e2f2f',
-  holdBg: '#a97b12',
-  holdBorder: '#855f0d',
 }
 
 const reviewDark = {
@@ -221,16 +211,11 @@ const reviewDark = {
   insertMarkBg: 'rgba(63, 185, 80, 0.48)',
   deleteBg: 'rgba(248, 81, 73, 0.38)',
   deleteAccent: '#f85149',
-  heldLineBg: 'rgba(210, 153, 34, 0.26)',
-  heldAccent: '#d29922',
-  heldText: '#f0c86e',
   controlsBg: 'rgba(128, 128, 128, 0.12)',
   acceptBg: '#2ea043',
   acceptBorder: '#238636',
   rejectBg: '#da3633',
   rejectBorder: '#b62324',
-  holdBg: '#bb8009',
-  holdBorder: '#9e6a03',
 }
 
 const opacity = 0.65
@@ -277,16 +262,11 @@ export const defaultVarsLight: ThemeVars = {
   '--zettlr-editor-review-insert-mark-bg': reviewLight.insertMarkBg,
   '--zettlr-editor-review-delete-bg': reviewLight.deleteBg,
   '--zettlr-editor-review-delete-accent': reviewLight.deleteAccent,
-  '--zettlr-editor-review-held-line-bg': reviewLight.heldLineBg,
-  '--zettlr-editor-review-held-accent': reviewLight.heldAccent,
-  '--zettlr-editor-review-held-text': reviewLight.heldText,
   '--zettlr-editor-review-controls-bg': reviewLight.controlsBg,
   '--zettlr-editor-review-accept-bg': reviewLight.acceptBg,
   '--zettlr-editor-review-accept-border': reviewLight.acceptBorder,
   '--zettlr-editor-review-reject-bg': reviewLight.rejectBg,
   '--zettlr-editor-review-reject-border': reviewLight.rejectBorder,
-  '--zettlr-editor-review-hold-bg': reviewLight.holdBg,
-  '--zettlr-editor-review-hold-border': reviewLight.holdBorder,
   '--zettlr-editor-opacity': opacity,
   '--zettlr-editor-line-decoration': linkDecoration,
 }
@@ -331,16 +311,11 @@ export const defaultVarsDark: ThemeVars = {
   '--zettlr-editor-review-insert-mark-bg': reviewDark.insertMarkBg,
   '--zettlr-editor-review-delete-bg': reviewDark.deleteBg,
   '--zettlr-editor-review-delete-accent': reviewDark.deleteAccent,
-  '--zettlr-editor-review-held-line-bg': reviewDark.heldLineBg,
-  '--zettlr-editor-review-held-accent': reviewDark.heldAccent,
-  '--zettlr-editor-review-held-text': reviewDark.heldText,
   '--zettlr-editor-review-controls-bg': reviewDark.controlsBg,
   '--zettlr-editor-review-accept-bg': reviewDark.acceptBg,
   '--zettlr-editor-review-accept-border': reviewDark.acceptBorder,
   '--zettlr-editor-review-reject-bg': reviewDark.rejectBg,
   '--zettlr-editor-review-reject-border': reviewDark.rejectBorder,
-  '--zettlr-editor-review-hold-bg': reviewDark.holdBg,
-  '--zettlr-editor-review-hold-border': reviewDark.holdBorder,
   '--zettlr-editor-opacity': opacity,
   '--zettlr-editor-line-decoration': linkDecoration,
 }

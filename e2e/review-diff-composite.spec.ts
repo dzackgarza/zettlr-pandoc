@@ -8,8 +8,8 @@
  * License: GNU GPL v3
  *
  * Description: Drives the assembled Linux app through the complete review
- *              lifecycle: ordered claims, accept/reject/hold decisions,
- *              ordinary editing, identical and blank-line edits,
+ *              lifecycle: ordered claims, accept/reject decisions, chunk
+ *              comments, ordinary editing, identical and blank-line edits,
  *              persistence/restart, exact save bytes, and disk-drift refusal.
  *
  * END HEADER
@@ -170,7 +170,7 @@ describe('review-diff closure contract composite lifecycle', function () {
     if (fixtureRoot !== undefined) {await rm(fixtureRoot, { recursive: true, force: true })}
   })
 
-  it('runs batch, mixed UI decisions, held persistence, restart, exact save, and disk-drift refusal', async function () {
+  it('runs batch, mixed UI decisions, chunk-note persistence, restart, exact save, and disk-drift refusal', async function () {
     const port = await reserveFreePort()
     const fixture = await createFixture('zettlr-review-diff-composite-', {
       documentName: 'composite.md',
@@ -232,17 +232,18 @@ describe('review-diff closure contract composite lifecycle', function () {
     await rejectedRepeated.locator('button.reject').click()
     await rejectedRepeated.waitFor({ state: 'detached' })
 
-    // Hold the display-math chunk with a comment and add a review-level note.
+    // Annotate the display-math chunk with a note and add a review-level
+    // comment. The note decides nothing: the chunk stays outstanding.
     const math = await widgetWithText(page, 'Rewrite the display-math environment')
-    const holdInput = math.locator('input.cm-holdCommentInput')
-    await holdInput.fill('check the constants')
-    await math.locator('button.hold').click()
-    await page.locator('.cm-chunkControls.held').filter({ hasText: 'Rewrite the display-math environment' }).waitFor({ state: 'visible' })
+    const noteInput = math.locator('input.cm-chunkCommentInput')
+    await noteInput.fill('check the constants')
+    await math.locator('button.comment').click()
+    await page.locator('.cm-chunkComment').filter({ hasText: 'check the constants' }).waitFor({ state: 'visible' })
     await page.locator('.cm-reviewCommentInput').fill('overall composite note')
     await page.locator('.cm-reviewCommentSubmit').click()
     await page.locator('.cm-reviewComment').filter({ hasText: 'overall composite note' }).waitFor({ state: 'visible' })
 
-    // The blank-line-only chunk is the last one left unheld. The API vouches
+    // The blank-line-only chunk is still undecided too. The API vouches
     // for it by its empty reference/working text; the reviewer resolves it
     // from its own widget, which a chunk with no text on either side must
     // still render controls for.
@@ -251,17 +252,19 @@ describe('review-diff closure contract composite lifecycle', function () {
     const blankChunk = blankChunks.chunks.find(chunk =>
       isRecord(chunk) && chunk.referenceText === '' && chunk.workingText === '')
     assert.ok(isRecord(blankChunk), 'blank-line-only proposal must remain actionable')
-    const blankWidget = page.locator('.cm-chunkControls:not(.held)')
+    const blankWidget = page.locator('.cm-chunkControls').filter({ hasText: 'Preserve the intentional blank line' })
     assert.equal(
       await blankWidget.count(),
       1,
-      'the blank chunk must be the only undecided one left to click'
+      'the blank chunk must render its own widget to click'
     )
     await blankWidget.locator('button.cm-review-diff-control.accept').click()
     await blankWidget.waitFor({ state: 'detached' })
 
-    const heldSave = await invokeSave(page, documentPath)
-    assert.deepEqual(heldSave, { ok: true })
+    // The annotated chunk is still outstanding, and the save persists the
+    // document as-is with the review — the note included — alongside it.
+    const annotatedSave = await invokeSave(page, documentPath)
+    assert.deepEqual(annotatedSave, { ok: true })
     const mixedExpected = blankProposed.replace('DIFF\n\nDIFF', 'DIFF edited\n\nsame')
     assert.equal(await readFile(documentPath, 'utf8'), mixedExpected)
 
@@ -273,7 +276,7 @@ describe('review-diff closure contract composite lifecycle', function () {
     // opening the file is what reattaches its sidecar-backed review.
     await api.post(`/v1/documents/${await workspaceDocumentId(api, documentPath)}/focus`)
     await waitForReview(page)
-    assert.ok((await page.locator('.cm-chunkControls.held').innerText()).includes('check the constants'))
+    assert.ok((await page.locator('.cm-chunkComment').innerText()).includes('check the constants'))
     const reopenedReview = await api.get(`/v1/reviews/${reviewId}`)
     assert.ok(isRecord(reopenedReview) && Array.isArray(reopenedReview.comments))
     assert.ok(reopenedReview.comments.some(comment => isRecord(comment) && comment.text === 'overall composite note'))
@@ -304,14 +307,13 @@ describe('review-diff closure contract composite lifecycle', function () {
     assert.ok(isRecord(outstanding) && Array.isArray(outstanding.chunks))
     assert.equal(outstanding.chunks.length, 1)
     assert.ok(isRecord(outstanding.chunks[0]))
-    assert.equal(outstanding.chunks[0].state, 'held')
-    assert.equal(outstanding.chunks[0].holdComment, 'check the constants')
+    assert.equal(outstanding.chunks[0].comment, 'check the constants')
     assert.ok(Array.isArray(outstanding.chunks[0].packetIds) && outstanding.chunks[0].packetIds.length > 0)
     assert.ok(Array.isArray(outstanding.chunks[0].descriptions))
     assert.ok(outstanding.chunks[0].descriptions.includes('Rewrite the display-math environment'))
 
-    // Resolve the held block through the UI and prove exact final bytes.
-    await restartedPage.locator('.cm-chunkControls.held button.accept').click()
+    // Resolve the annotated block through the UI and prove exact final bytes.
+    await restartedPage.locator('.cm-chunkControls button.accept').click()
     const resolvedSave = await invokeSave(restartedPage, documentPath)
     assert.ok(isRecord(resolvedSave) && resolvedSave.ok === true)
     assert.equal(await readFile(documentPath, 'utf8'), mixedExpected)

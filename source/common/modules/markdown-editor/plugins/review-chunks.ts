@@ -11,7 +11,8 @@
  *                  document: deleted reference spans struck through inline
  *                  at the positions they were removed from, inserted spans
  *                  highlighted in place, and one compact control strip with
- *                  the Accept/Reject/Hold decisions below each chunk.
+ *                  the Accept/Reject decisions and the chunk's comment field
+ *                  below each chunk.
  *
  *                  The pane is a VIEW. The partition is computed by the same
  *                  shared engine the provider uses, from the same two texts
@@ -44,7 +45,7 @@ import {
   computeReviewChunks,
   type ReviewChunk
 } from '@common/modules/review/review-chunks'
-import type { ReviewChunkHoldView, ReviewPacketAttribution } from '@dts/common/review-diff'
+import type { ReviewChunkCommentView, ReviewPacketAttribution } from '@dts/common/review-diff'
 import type { ReviewComment } from '@dts/common/agent-api'
 
 export interface ReviewChunksConfig {
@@ -59,19 +60,16 @@ export interface ReviewChunksConfig {
    */
   packets: ReviewPacketAttribution[]
   /**
-   * The held chunks, from the provider's broadcast. A held chunk renders
-   * visually distinct, shows its comment, and keeps all three controls — an
-   * edit inside it retires the content-addressed id, at which point it
-   * simply renders pending again (the provider orphans the hold's comment).
+   * The chunk-anchored comments, from the provider's broadcast. A note
+   * renders muted at its chunk's controls strip, like a description — an
+   * edit inside the chunk retires the content-addressed id, at which point
+   * it stops matching (the provider orphans the note's text).
    */
-  holds: ReviewChunkHoldView[]
+  chunkComments: ReviewChunkCommentView[]
   /** Review-level comments shown in the status panel. */
   comments: ReviewComment[]
-  /**
-   * Called with a chunk's content-addressed id when a control is clicked.
-   * Hold carries the optional comment typed into the chunk's note field.
-   */
-  onDecide: (chunkId: string, decision: 'accept'|'reject'|'hold', comment?: string) => Promise<void>
+  /** Called with a chunk's content-addressed id when a control is clicked. */
+  onDecide: (chunkId: string, decision: 'accept'|'reject') => Promise<void>
   /**
    * Called when the status panel's Accept-all control is clicked. The
    * provider sweeps the whole partition through its one decision path and
@@ -82,6 +80,11 @@ export interface ReviewChunksConfig {
   onClear: () => Promise<void>
   /** Called when the status panel submits a review-level comment. */
   onComment: (text: string) => Promise<void>
+  /**
+   * Called when a chunk's own comment field submits. Annotation only: the
+   * chunk stays outstanding, and commenting again replaces the note.
+   */
+  onChunkComment: (chunkId: string, text: string) => Promise<void>
 }
 
 /**
@@ -191,7 +194,7 @@ const reviewChunkKeymap = keymap.of([
 ])
 
 /**
- * The review status bar: outstanding chunks (plus held) at a glance, chunk
+ * The review status bar: outstanding chunks at a glance, chunk
  * navigation, and the mass-accept control. A module-level constructor keeps
  * the panel alive across the per-broadcast reconfigure; everything it shows
  * is re-read from the current state, and the click handlers resolve the
@@ -290,10 +293,7 @@ function reviewStatusPanel (view: EditorView): Panel {
       return
     }
     const chunks = value.chunks
-    const liveIds = new Set(chunks.map(chunk => chunk.chunkId))
-    const held = requireReviewChunksConfig(state).holds
-      .filter(hold => liveIds.has(hold.chunkId)).length
-    label.textContent = `${chunks.length} outstanding` + (held > 0 ? ` · ${held} held` : '')
+    label.textContent = `${chunks.length} outstanding`
     const done = chunks.length === 0
     previous.disabled = done
     next.disabled = done
@@ -355,12 +355,12 @@ function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
       .map(packet => packet.description)
       .filter((description): description is string => description !== undefined)
 
-    const hold = config.holds.find(h => h.chunkId === chunk.chunkId) ?? config.holds.find(h =>
-      h.referenceText !== undefined &&
-      h.workingText !== undefined &&
-      h.referenceFromLine === chunk.refFromLine &&
-      trimIdentitySeams(h.referenceText) === trimIdentitySeams(chunk.referenceText) &&
-      trimIdentitySeams(h.workingText) === trimIdentitySeams(chunk.workingText)
+    const note = config.chunkComments.find(n => n.chunkId === chunk.chunkId) ?? config.chunkComments.find(n =>
+      n.referenceText !== undefined &&
+      n.workingText !== undefined &&
+      n.referenceFromLine === chunk.refFromLine &&
+      trimIdentitySeams(n.referenceText) === trimIdentitySeams(chunk.referenceText) &&
+      trimIdentitySeams(n.workingText) === trimIdentitySeams(chunk.workingText)
     )
 
     // The deleted spans, struck through in the document flow. A negative
@@ -381,9 +381,8 @@ function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
       }
     })
 
-    const lineDecoration = hold === undefined ? changedLine : heldLine
     for (let line = chunk.workFromLine; line < chunk.workToLine && line <= doc.lines; line++) {
-      ranges.push(lineDecoration.range(doc.line(line).from))
+      ranges.push(changedLine.range(doc.line(line).from))
     }
     for (const change of changes) {
       if (change.toB > change.fromB) {
@@ -400,7 +399,7 @@ function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
     const controlsLine = Math.min(Math.max(chunk.workToLine - 1, chunk.workFromLine), doc.lines)
     ranges.push(
       Decoration.widget({
-        widget: new ChunkControlsWidget(chunk, descriptions, hold, config),
+        widget: new ChunkControlsWidget(chunk, descriptions, note, config),
         block: true,
         side: 10
       }).range(doc.line(controlsLine).to)
@@ -414,7 +413,6 @@ function trimIdentitySeams (text: string): string {
 }
 
 const changedLine = Decoration.line({ class: 'cm-changedLine' })
-const heldLine = Decoration.line({ class: 'cm-heldLine' })
 const changedText = Decoration.mark({ class: 'cm-changedText' })
 
 /**
@@ -450,17 +448,17 @@ class DeletedSpanWidget extends WidgetType {
 }
 
 /**
- * The strip below a chunk: the claim descriptions, the hold's comment, and
- * the Accept/Reject/Hold controls. One widget per chunk — the controls sit
- * in exactly one place. A held chunk renders visually distinct, shows the
- * hold's comment, and keeps every control: holding is an annotation, not an
- * adjudication.
+ * The strip below a chunk: the claim descriptions, the chunk's comment, and
+ * the Accept/Reject controls plus the comment field. One widget per chunk —
+ * the controls sit in exactly one place. A comment is an annotation, not an
+ * adjudication: the chunk stays outstanding, and the note renders muted like
+ * a description.
  */
 class ChunkControlsWidget extends WidgetType {
   constructor (
     private readonly chunk: ReviewChunk,
     private readonly descriptions: readonly string[],
-    private readonly hold: ReviewChunkHoldView|undefined,
+    private readonly note: ReviewChunkCommentView|undefined,
     private readonly config: ReviewChunksConfig
   ) {
     super()
@@ -472,15 +470,12 @@ class ChunkControlsWidget extends WidgetType {
       other.chunk.workingText === this.chunk.workingText &&
       other.config.reviewId === this.config.reviewId &&
       JSON.stringify(other.descriptions) === JSON.stringify(this.descriptions) &&
-      (other.hold === undefined) === (this.hold === undefined) &&
-      other.hold?.comment === this.hold?.comment
+      other.note?.comment === this.note?.comment
   }
 
   toDOM (view: EditorView): HTMLElement {
     const container = document.createElement('div')
-    container.className = this.hold === undefined
-      ? 'cm-chunkControls'
-      : 'cm-chunkControls held'
+    container.className = 'cm-chunkControls'
 
     // The claims this chunk implements — present at the controls, muted.
     if (this.descriptions.length > 0) {
@@ -495,20 +490,20 @@ class ChunkControlsWidget extends WidgetType {
       container.appendChild(list)
     }
 
-    if (this.hold?.comment !== undefined) {
-      const note = document.createElement('div')
-      note.className = 'cm-holdComment'
-      note.textContent = `Held: ${this.hold.comment}`
-      container.appendChild(note)
+    if (this.note !== undefined) {
+      const noteLine = document.createElement('div')
+      noteLine.className = 'cm-chunkComment'
+      noteLine.textContent = this.note.comment
+      container.appendChild(noteLine)
     }
 
     const buttons = document.createElement('div')
     buttons.className = 'cm-chunkButtons'
-    // Every control of this chunk locks together for the round trip: the three
-    // decisions are mutually exclusive, so leaving one live during another's
+    // Every control of this chunk locks together for the round trip: the
+    // actions are mutually exclusive, so leaving one live during another's
     // flight is an invitation to double-decide.
     const controls: HTMLButtonElement[] = []
-    const decide = (decision: 'accept'|'reject'|'hold', comment?: string): void => {
+    const decide = (decision: 'accept'|'reject'): void => {
       void withControlsLocked(buttons, controls, async () => {
         // Resolved at click time, like the status panel's controls: a widget
         // whose chunk did not change survives a reconfigure, so the config it
@@ -516,7 +511,7 @@ class ChunkControlsWidget extends WidgetType {
         // generation captured in it then fences the click against a review
         // state nobody is looking at any more.
         await requireReviewChunksConfig(view.state)
-          .onDecide(this.chunk.chunkId, decision, comment)
+          .onDecide(this.chunk.chunkId, decision)
       })
     }
     for (const decision of ['accept', 'reject'] as const) {
@@ -534,29 +529,40 @@ class ChunkControlsWidget extends WidgetType {
       buttons.appendChild(button)
     }
 
-    // Hold, with its minimal optional-comment affordance: one inline note
-    // field beside the button. Empty note = a bare hold; holding an already
-    // held chunk replaces the comment (the field is prefilled with it).
-    const holdButton = document.createElement('button')
-    holdButton.type = 'button'
-    holdButton.name = 'hold'
-    holdButton.className = 'cm-review-diff-control hold'
-    holdButton.textContent = this.hold === undefined ? 'Hold' : 'Update hold'
-    holdButton.title = 'Hold this change without deciding it; the note goes back to the agent'
+    // The chunk's own comment field: annotation without adjudication. The
+    // note goes back to the agent; commenting an already-annotated chunk
+    // replaces the note (the field is prefilled with it).
+    const commentButton = document.createElement('button')
+    commentButton.type = 'button'
+    commentButton.name = 'comment'
+    commentButton.className = 'cm-review-diff-control comment'
+    commentButton.textContent = this.note === undefined ? 'Comment' : 'Update comment'
+    commentButton.title = 'Attach a note to this change without deciding it; the note goes back to the agent'
     const noteInput = document.createElement('input')
     noteInput.type = 'text'
-    noteInput.className = 'cm-holdCommentInput'
-    noteInput.placeholder = 'Optional note…'
-    if (this.hold?.comment !== undefined) {
-      noteInput.value = this.hold.comment
+    noteInput.className = 'cm-chunkCommentInput'
+    noteInput.placeholder = 'Comment…'
+    if (this.note !== undefined) {
+      noteInput.value = this.note.comment
     }
-    holdButton.addEventListener('click', (event) => {
+    const syncCommentButton = (): void => {
+      commentButton.disabled = noteInput.value.trim() === ''
+    }
+    noteInput.addEventListener('input', syncCommentButton)
+    syncCommentButton()
+    commentButton.addEventListener('click', (event) => {
       event.preventDefault()
-      const note = noteInput.value.trim()
-      decide('hold', note === '' ? undefined : note)
+      const text = noteInput.value.trim()
+      if (text === '') {
+        return
+      }
+      void withControlsLocked(buttons, controls, async () => {
+        await requireReviewChunksConfig(view.state)
+          .onChunkComment(this.chunk.chunkId, text)
+      })
     })
-    controls.push(holdButton)
-    buttons.appendChild(holdButton)
+    controls.push(commentButton)
+    buttons.appendChild(commentButton)
     buttons.appendChild(noteInput)
     container.appendChild(buttons)
     return container
@@ -570,9 +576,6 @@ class ChunkControlsWidget extends WidgetType {
 const reviewChunksTheme = EditorView.baseTheme({
   '.cm-changedLine': {
     backgroundColor: 'var(--zettlr-editor-review-region-bg)'
-  },
-  '.cm-heldLine': {
-    backgroundColor: 'var(--zettlr-editor-review-held-line-bg)'
   },
   '.cm-changedText': {
     backgroundColor: 'var(--zettlr-editor-review-insert-mark-bg)',
@@ -588,17 +591,13 @@ const reviewChunksTheme = EditorView.baseTheme({
     padding: '2px 6px',
     fontSize: '0.85em'
   },
-  '.cm-chunkControls.held': {
-    backgroundColor: 'var(--zettlr-editor-review-held-line-bg)',
-    borderLeft: '3px solid var(--zettlr-editor-review-held-accent)'
-  },
-  '.cm-holdComment': {
+  '.cm-chunkComment': {
     fontSize: '0.85em',
     fontStyle: 'italic',
-    color: 'var(--zettlr-editor-review-held-text)',
+    opacity: '0.75',
     padding: '2px 0'
   },
-  '.cm-holdCommentInput': {
+  '.cm-chunkCommentInput': {
     fontSize: '0.85em',
     marginLeft: '4px',
     maxWidth: '18em'

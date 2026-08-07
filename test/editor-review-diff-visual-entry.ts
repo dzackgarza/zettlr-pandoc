@@ -54,11 +54,12 @@ async function mount (): Promise<void> {
           referenceText: baseline,
           comments: [],
           packets: [],
-          holds: [],
+          chunkComments: [],
           onDecide: async () => { /* capture harness: decisions are not exercised */ },
           onAcceptAll: async () => { /* capture harness: decisions are not exercised */ },
           onClear: async () => { /* capture harness: decisions are not exercised */ },
-          onComment: async () => { /* capture harness: comments are not exercised */ }
+          onComment: async () => { /* capture harness: comments are not exercised */ },
+          onChunkComment: async () => { /* capture harness: comments are not exercised */ }
         })
       ]
     })

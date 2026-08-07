@@ -55,8 +55,7 @@ export interface ReviewActionClient {
     reviewId: string;
     expectedReviewGeneration: number;
     chunkId: string;
-    decision: "accept" | "reject" | "hold";
-    comment?: string;
+    decision: "accept" | "reject";
   }) => Promise<void>;
   acceptAll: (input: {
     reviewId: string;
@@ -66,6 +65,12 @@ export interface ReviewActionClient {
   comment: (input: {
     reviewId: string;
     expectedReviewGeneration: number;
+    text: string;
+  }) => Promise<void>;
+  commentChunk: (input: {
+    reviewId: string;
+    expectedReviewGeneration: number;
+    chunkId: string;
     text: string;
   }) => Promise<void>;
 }
@@ -1021,7 +1026,7 @@ export default class MarkdownEditor extends EventEmitter {
       this.activeReviewDiffSession.referenceText === session.referenceText &&
       this.activeReviewDiffSession.workingText === session.workingText &&
       JSON.stringify(this.activeReviewDiffSession.packets) === JSON.stringify(session.packets) &&
-      JSON.stringify(this.activeReviewDiffSession.holds) === JSON.stringify(session.holds) &&
+      JSON.stringify(this.activeReviewDiffSession.chunkComments) === JSON.stringify(session.chunkComments) &&
       JSON.stringify(this.activeReviewDiffSession.comments) === JSON.stringify(session.comments)
     ) {
       return;
@@ -1058,21 +1063,22 @@ export default class MarkdownEditor extends EventEmitter {
       reviewId,
       referenceText: session.referenceText,
       packets: session.packets,
-      holds: session.holds,
+      chunkComments: session.chunkComments,
       comments: session.comments,
-      onDecide: async (chunkId, decision, comment) =>
+      onDecide: async (chunkId, decision) =>
         await client().decide({
           reviewId,
           expectedReviewGeneration,
           chunkId,
           decision,
-          comment,
         }),
       onAcceptAll: async () =>
         await client().acceptAll({ reviewId, expectedReviewGeneration }),
       onClear: async () => await client().clear({ reviewId, expectedReviewGeneration }),
       onComment: async (text) =>
         await client().comment({ reviewId, expectedReviewGeneration, text }),
+      onChunkComment: async (chunkId, text) =>
+        await client().commentChunk({ reviewId, expectedReviewGeneration, chunkId, text }),
     });
   }
 

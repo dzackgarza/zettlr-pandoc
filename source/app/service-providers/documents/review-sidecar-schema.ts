@@ -2,7 +2,7 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Review sidecar schema (version 2)
+ * Contains:        Review sidecar schema (version 3)
  * CVM-Role:        Model
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
@@ -14,14 +14,14 @@
  *                  had to be kept in step with the interface by hand.
  *
  *                  Nothing derived is stored. Chunk counts are a function of
- *                  the two texts and the holds; persisting them creates a
- *                  second answer to a question that already has one, and a
- *                  restored review would then disagree with itself.
+ *                  the two texts; persisting them creates a second answer to
+ *                  a question that already has one, and a restored review
+ *                  would then disagree with itself.
  *
- *                  Every object refuses unknown fields, and there is no
- *                  version-1 support: this feature is unreleased, so a
- *                  version-1 sidecar is a bug to be seen, not a shape to be
- *                  migrated.
+ *                  Every object refuses unknown fields, and only the current
+ *                  version is supported: this feature is unreleased, so an
+ *                  older sidecar is a bug to be seen loudly, not a shape to
+ *                  be migrated.
  *
  * END HEADER
  */
@@ -88,11 +88,11 @@ const ProposalSubmissionRecordSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const ChunkHoldSchema = Type.Object(
+const ChunkCommentSchema = Type.Object(
   {
     chunkId: Type.String(),
-    comment: Type.Optional(Type.String()),
-    heldAt: Type.String(),
+    comment: Type.String(),
+    commentedAt: Type.String(),
     referenceText: Type.Optional(Type.String()),
     workingText: Type.Optional(Type.String()),
     referenceFromLine: Type.Optional(Type.Integer()),
@@ -112,7 +112,7 @@ const ReviewCommentSchema = Type.Object(
 
 export const ReviewSidecarSchema = Type.Object(
   {
-    version: Type.Literal(2),
+    version: Type.Literal(3),
     reviewId: Type.String({ minLength: 1 }),
     documentPath: Type.String({ minLength: 1 }),
     referenceText: Type.String(),
@@ -122,7 +122,7 @@ export const ReviewSidecarSchema = Type.Object(
     invalidated: Type.Boolean(),
     packets: Type.Array(ReviewPacketSchema),
     submissions: Type.Array(ProposalSubmissionRecordSchema),
-    holds: Type.Array(ChunkHoldSchema),
+    chunkComments: Type.Array(ChunkCommentSchema),
     comments: Type.Array(ReviewCommentSchema),
     /**
      * Present only between a save's document write and the fence update that

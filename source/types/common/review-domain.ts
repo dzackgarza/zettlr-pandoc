@@ -59,18 +59,17 @@ export interface ProposalSubmissionRecord {
 }
 
 /**
- * A hold: a comment attached to a chunk WITHOUT adjudicating it (the comment
- * is optional — a hold without text is legal). Held chunks are excluded from
- * the save-gate count and survive a save; the reference simply retains its
- * disagreement over that span. Holds are keyed by content-addressed chunkId,
- * so an edit inside a held chunk orphans the hold: its comment surfaces as a
- * review-level ReviewComment carrying orphanedFromChunkId.
+ * A comment attached to one outstanding chunk WITHOUT deciding it: pure
+ * annotation, changing no state — the chunk stays outstanding. Keyed by
+ * content-addressed chunkId, so an edit inside the chunk orphans the note:
+ * its text surfaces as a review-level ReviewComment carrying
+ * orphanedFromChunkId, never silently lost.
  */
-export interface ChunkHold {
+export interface ChunkComment {
   chunkId: string;
-  comment?: string;
-  heldAt: string; // ISO 8601 timestamp
-  /** Snapshot used to reattach the hold when unrelated lines shift. */
+  comment: string;
+  commentedAt: string; // ISO 8601 timestamp
+  /** Snapshot used to reattach the note when unrelated lines shift. */
   referenceText?: string;
   workingText?: string;
   referenceFromLine?: number;
@@ -94,11 +93,11 @@ export interface ActiveReviewState {
   /** The idempotency ledger, in submission order. */
   submissions: ProposalSubmissionRecord[];
   /**
-   * Chunk holds, reconciled lazily against the live partition: a hold whose
-   * chunk id no longer exists is removed, and its comment (if any) moves to
+   * Chunk-anchored comments, reconciled lazily against the live partition: a
+   * note whose chunk id no longer exists is removed, and its text moves to
    * `comments` as an orphan.
    */
-  holds: ChunkHold[];
+  chunkComments: ChunkComment[];
   /** Review-level comments, in creation order. */
   comments: ReviewComment[];
   diskFenceSha256: string;

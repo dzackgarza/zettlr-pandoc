@@ -13,8 +13,8 @@
  *              directory loses its write permission, so the running app meets
  *              exactly the EACCES a full or read-only disk would give it —
  *              and drives each of the five writers through it: a proposal, a
- *              chunk decision, a held-review save, ordinary editor typing, and
- *              the detach a close performs.
+ *              chunk decision, an outstanding-review save, ordinary editor
+ *              typing, and the detach a close performs.
  *
  *              What each one owes is the same: report the failure, claim
  *              nothing, destroy nothing, leave the previous sidecar valid, and
@@ -390,20 +390,21 @@ describe('a review that cannot be persisted', function () {
     )
   })
 
-  it('refuses a held-review save it cannot persist, and writes no bytes', async function () {
+  it('refuses an outstanding-review save it cannot persist, and writes no bytes', async function () {
     const activeApi = requireInitialized(api, 'the Agent API client must be initialized')
     const activePage = requireInitialized(page, 'the editor page must be initialized')
     const activePath = requireInitialized(documentPath, 'the document path must be initialized')
     const directory = requireInitialized(sidecarDirectory, 'the sidecar directory must be known')
     const activeReviewId = requireInitialized(reviewId, 'the review must be open')
 
-    // A second claim, held: a held review is the one a save has to write
-    // through, because the save is what makes its working text durable.
+    // A second claim, annotated and left outstanding: an outstanding review
+    // is the one a save has to write through, because the save is what makes
+    // its working text durable.
     const documentId = await openDocumentId(activeApi)
     const current = await workingText(activeApi)
     await activeApi.post(`/v1/documents/${documentId}/proposals`, {
       ...(await proposalPreconditions(activeApi, documentId)),
-      clientRequestId: 'persistence-hold',
+      clientRequestId: 'persistence-note',
       claims: [
         {
           description: 'Revise bravo',
@@ -411,11 +412,11 @@ describe('a review that cannot be persisted', function () {
         }
       ]
     })
-    const held = activePage.locator('.cm-chunkControls').filter({ hasText: 'Revise bravo' })
-    await held.locator('input.cm-holdCommentInput').fill('needs a second look')
-    await held.locator('button.hold').click()
+    const noted = activePage.locator('.cm-chunkControls').filter({ hasText: 'Revise bravo' })
+    await noted.locator('input.cm-chunkCommentInput').fill('needs a second look')
+    await noted.locator('button.comment').click()
     await activePage
-      .locator('.cm-chunkControls.held')
+      .locator('.cm-chunkComment')
       .waitFor({ state: 'visible', timeout: 30_000 })
 
     const beforeDisk = await readFile(activePath, 'utf8')
@@ -458,7 +459,7 @@ describe('a review that cannot be persisted', function () {
     )
     assert.equal(await readFile(activePath, 'utf8'), await workingText(activeApi))
     await activePage
-      .locator('.cm-chunkControls.held')
+      .locator('.cm-chunkComment')
       .waitFor({ state: 'visible', timeout: 30_000 })
   })
 
@@ -494,9 +495,9 @@ describe('a review that cannot be persisted', function () {
       `the typed text stays in the buffer: a refused push destroys nothing.\n${buffer}`
     )
     assert.equal(
-      await activePage.locator('.cm-chunkControls.held').count(),
+      await activePage.locator('.cm-chunkControls').filter({ hasText: 'needs a second look' }).count(),
       1,
-      'the held review must still be rendered'
+      'the annotated chunk must still be rendered'
     )
 
     // Retry on a fresh editor: a rejected push leaves this pane's sync loop
@@ -519,7 +520,7 @@ describe('a review that cannot be persisted', function () {
     )
     await activeApi.post(`/v1/documents/${stringField(entry, 'documentId')}/focus`, {})
     await activePage
-      .locator('.cm-chunkControls.held')
+      .locator('.cm-chunkComment')
       .waitFor({ state: 'visible', timeout: 30_000 })
 
     await activePage.locator('.cm-content').click()
@@ -533,18 +534,18 @@ describe('a review that cannot be persisted', function () {
     )
 
     // Typing outside the review's chunks adds one of its own. The reviewer
-    // accepts it in the pane — the held chunk from earlier stays held — so
-    // the next scenario starts from a saved document with only that held
-    // chunk outstanding.
+    // accepts it in the pane — the annotated chunk from earlier keeps its
+    // note — so the next scenario starts from a saved document with only
+    // that annotated chunk outstanding.
     const pending = await chunkListing(activeApi, activeReviewId)
     const typed = pending.chunks.find(chunk => chunk.workingText.includes('accepted-edit'))
     assert.ok(typed !== undefined, `the typed line must be its own chunk: ${JSON.stringify(pending)}`)
-    const typedWidget = activePage.locator('.cm-chunkControls:not(.held)')
+    const typedWidget = activePage.locator('.cm-chunkControls').filter({ hasNotText: 'needs a second look' })
     await typedWidget.waitFor({ state: 'visible', timeout: 30_000 })
     assert.equal(
       await typedWidget.count(),
       1,
-      'the typed line must be the only undecided chunk to click'
+      'the typed line must be the only unannotated chunk to click'
     )
     await typedWidget.locator('button.cm-review-diff-control.accept').click()
     await typedWidget.waitFor({ state: 'detached', timeout: 30_000 })
@@ -591,7 +592,7 @@ describe('a review that cannot be persisted', function () {
     assert.equal(await reviewSummary(activeApi, activeReviewId), beforeReview)
     assert.deepEqual(await sidecarBytes(directory), beforeSidecars)
     await activePage
-      .locator('.cm-chunkControls.held')
+      .locator('.cm-chunkComment')
       .waitFor({ state: 'visible', timeout: 5_000 })
 
     await toast.first().click()
@@ -602,14 +603,14 @@ describe('a review that cannot be persisted', function () {
       'the retried close must go through once the sidecar can be written'
     )
     await activePage
-      .locator('.cm-chunkControls.held')
+      .locator('.cm-chunkComment')
       .waitFor({ state: 'detached', timeout: 30_000 })
     assert.deepEqual(
       await openDocumentIds(activeApi),
       [],
       'the retried close must actually close the document'
     )
-    // Detached, not destroyed: the held review is still on disk, which is what
+    // Detached, not destroyed: the review is still on disk, which is what
     // reattaches it the next time the file is opened.
     assert.equal(
       Object.keys(await sidecarBytes(directory)).length,

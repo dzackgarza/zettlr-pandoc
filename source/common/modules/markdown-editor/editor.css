@@ -230,11 +230,6 @@
       background-color: var(--zettlr-editor-review-reject-bg);
       border-color: var(--zettlr-editor-review-reject-border);
     }
-
-    button.cm-review-diff-control.hold {
-      background-color: var(--zettlr-editor-review-hold-bg);
-      border-color: var(--zettlr-editor-review-hold-border);
-    }
   }
 
   .cm-formatting-bar {
