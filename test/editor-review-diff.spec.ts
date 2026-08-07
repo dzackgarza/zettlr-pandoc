@@ -181,10 +181,14 @@ describe('Editor review-chunk view', function () {
 
     const accepts = view.dom.querySelectorAll<HTMLButtonElement>('button.cm-review-diff-control.accept')
     const rejects = view.dom.querySelectorAll<HTMLButtonElement>('button.cm-review-diff-control.reject')
-    const commentButtons = view.dom.querySelectorAll<HTMLButtonElement>('button.cm-review-diff-control.comment')
     assert.equal(accepts.length, 2)
     assert.equal(rejects.length, 2)
-    assert.equal(commentButtons.length, 2)
+    assert.equal(view.dom.querySelectorAll('input.cm-chunkCommentInput').length, 2)
+    assert.equal(
+      view.dom.querySelector('button.cm-review-diff-control.comment'),
+      null,
+      'the comment field IS the comment: no submit button exists'
+    )
 
     accepts[0].click()
     rejects[1].click()
@@ -200,24 +204,189 @@ describe('Editor review-chunk view', function () {
     )
   })
 
-  it('emits a trimmed chunk comment for the addressed chunk without deciding it', function () {
+  /** The debounce plus a settle margin: what a test waits for an autosave. */
+  const AUTOSAVE_WAIT_MS = 850
+
+  function tick (ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms))
+  }
+
+  function noteInputOf (view: EditorView): HTMLInputElement {
+    const input = view.dom.querySelector<HTMLInputElement>('input.cm-chunkCommentInput')
+    assert.ok(input !== null, 'the chunk must render its comment field')
+    return input
+  }
+
+  function typeInto (input: HTMLInputElement, value: string): void {
+    input.value = value
+    input.dispatchEvent(new window.Event('input', { bubbles: true }))
+  }
+
+  function dirtyDotOf (view: EditorView): HTMLElement {
+    const dot = view.dom.querySelector<HTMLElement>('.cm-chunkCommentDirty')
+    assert.ok(dot !== null, 'the comment field must render its saved/unsaved indicator')
+    return dot
+  }
+
+  it('autosaves a trimmed chunk note after a typing pause, without blur', async function () {
     const { view, calls } = createReviewView('baseline\n', 'proposal\n')
     const chunk = chunksOf(view)[0]
-    const input = view.dom.querySelector<HTMLInputElement>('input.cm-chunkCommentInput')
-    const commentButton = view.dom.querySelector<HTMLButtonElement>('button.cm-review-diff-control.comment')
-    assert.ok(input !== null)
-    assert.ok(commentButton !== null)
-    assert.equal(commentButton.disabled, true, 'an empty note has nothing to submit')
+    const input = noteInputOf(view)
+    const dot = dirtyDotOf(view)
+    assert.equal(dot.classList.contains('unsaved'), false, 'an untouched field is saved')
+    input.focus()
+    typeInto(input, '  check the constant  ')
 
-    input.value = '  check the constant  '
-    input.dispatchEvent(new window.Event('input', { bubbles: true }))
-    assert.equal(commentButton.disabled, false)
-    commentButton.click()
-
+    assert.deepEqual(calls.chunkNotes, [], 'no commit fires on the keystroke itself')
+    assert.equal(dot.classList.contains('unsaved'), true, 'divergence flips the indicator at the keystroke')
+    assert.equal(dot.title, 'Unsaved — not yet visible to agents')
+    await tick(AUTOSAVE_WAIT_MS)
     assert.deepEqual(calls.chunkNotes, [
       { chunkId: chunk.chunkId, text: 'check the constant' }
     ])
+    assert.equal(document.activeElement, input, 'autosave must not steal focus')
+    assert.equal(dot.classList.contains('unsaved'), false, 'the acknowledgment flips it back to saved')
+    assert.equal(dot.title, 'Note saved — visible to agents')
     assert.deepEqual(calls.decisions, [], 'a chunk comment decides nothing')
+  })
+
+  it('commits immediately on blur and on Enter', async function () {
+    const { view, calls } = createReviewView('baseline\n', 'proposal\n')
+    const chunk = chunksOf(view)[0]
+    const input = noteInputOf(view)
+
+    typeInto(input, 'first thought')
+    input.dispatchEvent(new window.Event('blur'))
+    await tick(0)
+    assert.deepEqual(calls.chunkNotes, [
+      { chunkId: chunk.chunkId, text: 'first thought' }
+    ], 'blur must commit without waiting out the debounce')
+
+    // The commit echo has not arrived in this harness, so the field retries
+    // on its own schedule; an Enter on a fresh view proves the immediate
+    // path independently.
+    const second = createReviewView('other baseline\n', 'other proposal\n')
+    const secondChunk = chunksOf(second.view)[0]
+    const secondInput = noteInputOf(second.view)
+    typeInto(secondInput, 'second thought')
+    secondInput.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter' }))
+    await tick(0)
+    assert.deepEqual(second.calls.chunkNotes, [
+      { chunkId: secondChunk.chunkId, text: 'second thought' }
+    ], 'Enter must commit without waiting out the debounce')
+  })
+
+  it('commits nothing when the value did not change', async function () {
+    const baseline = 'first baseline\n\nsecond baseline\n'
+    const proposed = baseline.replace('first baseline', 'first proposed')
+    const chunk = computeReviewChunks(baseline, proposed)[0]
+    const { view, calls } = createReviewView(baseline, proposed, {
+      chunkComments: [{ chunkId: chunk.chunkId, comment: 'as written' }]
+    })
+    const input = noteInputOf(view)
+    assert.equal(input.value, 'as written', 'the field is prefilled with the note')
+
+    input.dispatchEvent(new window.Event('blur'))
+    typeInto(input, '  as written ')
+    input.dispatchEvent(new window.Event('blur'))
+    await tick(AUTOSAVE_WAIT_MS)
+    assert.deepEqual(calls.chunkNotes, [], 'an unchanged note is no mutation')
+  })
+
+  it('commits an emptied field as the note\'s removal', async function () {
+    const baseline = 'first baseline\n\nsecond baseline\n'
+    const proposed = baseline.replace('first baseline', 'first proposed')
+    const chunk = computeReviewChunks(baseline, proposed)[0]
+    const { view, calls } = createReviewView(baseline, proposed, {
+      chunkComments: [{ chunkId: chunk.chunkId, comment: 'kill me' }]
+    })
+    const input = noteInputOf(view)
+
+    typeInto(input, '')
+    input.dispatchEvent(new window.Event('blur'))
+    await tick(0)
+    assert.deepEqual(calls.chunkNotes, [
+      { chunkId: chunk.chunkId, text: '' }
+    ], 'an emptied field removes the annotation')
+  })
+
+  it('keeps focus and unsent keystrokes across the commit echo redraw', async function () {
+    // The critical autosave hazard: a commit mutates the review, the
+    // broadcast reconfigures this extension, and the decoration rebuild
+    // replaces widgets whose eq() changed — which is exactly this strip,
+    // because its note changed. Replacing the DOM would eat the reviewer's
+    // focus, cursor, and every character typed since the commit fired.
+    const baseline = 'first baseline\n\nsecond baseline\n'
+    const proposed = baseline.replace('first baseline', 'first proposed')
+    const notes: Array<{ chunkId: string, text: string }> = []
+    const compartment = new Compartment()
+    const configFor = (chunkComments: ChunkNoteView[]): Parameters<typeof reviewChunksExtension>[0] => ({
+      reviewId: 'review-test',
+      referenceText: baseline,
+      packets: [],
+      chunkComments,
+      comments: [],
+      onDecide: async () => {},
+      onAcceptAll: async () => {},
+      onClear: async () => {},
+      onComment: async () => {},
+      onChunkComment: async (chunkId, text) => { notes.push({ chunkId, text }) }
+    })
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: proposed,
+        extensions: [compartment.of(reviewChunksExtension(configFor([])))]
+      })
+    })
+    views.push(view)
+    const chunk = chunksOf(view)[0]
+    const input = noteInputOf(view)
+    input.focus()
+
+    typeInto(input, 'first')
+    await tick(AUTOSAVE_WAIT_MS)
+    assert.deepEqual(notes, [{ chunkId: chunk.chunkId, text: 'first' }])
+
+    // Keep typing BEFORE the provider's echo lands...
+    typeInto(input, 'first second')
+    assert.equal(
+      dirtyDotOf(view).classList.contains('unsaved'),
+      true,
+      'the resumed typing is not agent-visible yet'
+    )
+    // ...then the echo: the broadcast MainEditor would apply, carrying the
+    // committed note. The widget's eq() changes, decorations rebuild.
+    view.dispatch({
+      effects: compartment.reconfigure(
+        reviewChunksExtension(configFor([{ chunkId: chunk.chunkId, comment: 'first' }]))
+      )
+    })
+
+    assert.equal(document.activeElement, input, 'the echo redraw must not eat focus')
+    assert.equal(input.value, 'first second', 'unsent keystrokes must survive the redraw')
+    assert.equal(
+      dirtyDotOf(view).classList.contains('unsaved'),
+      true,
+      'the in-place redraw keeps the indicator honest: still unsaved'
+    )
+    assert.equal(
+      view.dom.querySelector<HTMLElement>('.cm-chunkComment')?.textContent,
+      'first',
+      'the strip still shows the committed note in place'
+    )
+
+    // The interrupted typing commits on its own once the echo has settled.
+    await tick(AUTOSAVE_WAIT_MS)
+    assert.deepEqual(notes, [
+      { chunkId: chunk.chunkId, text: 'first' },
+      { chunkId: chunk.chunkId, text: 'first second' }
+    ])
+    assert.equal(
+      dirtyDotOf(view).classList.contains('unsaved'),
+      false,
+      'everything typed is acknowledged: saved again'
+    )
   })
 
   it('renders a provider-supplied chunk comment at its controls strip', function () {
@@ -237,14 +406,10 @@ describe('Editor review-chunk view', function () {
     assert.equal(
       widget.querySelector<HTMLInputElement>('input.cm-chunkCommentInput')?.value,
       'check the constant',
-      'the field is prefilled so commenting again replaces the note'
+      'the field is prefilled so editing it replaces the note'
     )
     assert.ok(widget.querySelector('button.accept') !== null)
     assert.ok(widget.querySelector('button.reject') !== null)
-    assert.equal(
-      widget.querySelector<HTMLButtonElement>('button.comment')?.textContent,
-      'Update comment'
-    )
   })
 
   it('shows each claim description at its own chunk and preserves it across a working-text tweak', function () {
@@ -318,7 +483,7 @@ describe('Editor review-chunk view', function () {
     assert.equal(strips.length, 1)
     assert.ok(strips[0].querySelector('button.cm-review-diff-control.accept') !== null)
     assert.ok(strips[0].querySelector('button.cm-review-diff-control.reject') !== null)
-    assert.ok(strips[0].querySelector('button.cm-review-diff-control.comment') !== null)
+    assert.ok(strips[0].querySelector('input.cm-chunkCommentInput') !== null)
     assert.equal(
       strips[0].querySelector<HTMLElement>('.cm-chunkDescription')?.textContent,
       'Revise the wording'

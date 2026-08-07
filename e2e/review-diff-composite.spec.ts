@@ -233,11 +233,12 @@ describe('review-diff closure contract composite lifecycle', function () {
     await rejectedRepeated.waitFor({ state: 'detached' })
 
     // Annotate the display-math chunk with a note and add a review-level
-    // comment. The note decides nothing: the chunk stays outstanding.
+    // comment. The note decides nothing: the chunk stays outstanding. There
+    // is no submit gesture — the field autosaves after the typing pause,
+    // and the note display appearing is the commit's own echo.
     const math = await widgetWithText(page, 'Rewrite the display-math environment')
     const noteInput = math.locator('input.cm-chunkCommentInput')
     await noteInput.fill('check the constants')
-    await math.locator('button.comment').click()
     await page.locator('.cm-chunkComment').filter({ hasText: 'check the constants' }).waitFor({ state: 'visible' })
     await page.locator('.cm-reviewCommentInput').fill('overall composite note')
     await page.locator('.cm-reviewCommentSubmit').click()

@@ -384,7 +384,9 @@ components:
             to, when it is chunk-anchored.
         comment:
           type: string
-          description: 'review.commented: the comment text.'
+          description: >-
+            review.commented: the comment text. Absent on a chunk-anchored
+            event when the reviewer removed the chunk's note.
         orphanedFromChunkId:
           type: string
           description: >-

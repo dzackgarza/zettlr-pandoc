@@ -81,10 +81,14 @@ interface RaceInput {
   /** What that line reads after the first, then the second, edit. */
   edits: [string, string]
   /** The control clicked, as a selector resolved inside the clicked pane. */
-  control: string
+  control?: string
   /** Reference text naming the chunk whose control is clicked, if any. */
   chunk?: string
-  /** Text typed into the chunk's comment field before the click, if any. */
+  /**
+   * Text committed through the chunk's comment field instead of a control
+   * click: the value is typed and Enter fires the immediate commit, in the
+   * same renderer task as the edits.
+   */
   commentText?: string
 }
 
@@ -176,7 +180,13 @@ async function raceEditsWithClick (page: Page, input: RaceInput): Promise<string
         throw new Error('No chunk comment field to type into')
       }
       noteInput.value = options.commentText
-      noteInput.dispatchEvent(new Event('input', { bubbles: true }))
+      const textAtClick = view.state.doc.toString()
+      // Enter is the field's immediate commit point, fired in this same task.
+      noteInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+      return textAtClick
+    }
+    if (options.control === undefined) {
+      throw new Error('raceEditsWithClick needs a control selector or commentText')
     }
     const button = scope.querySelector(options.control)
     if (!(button instanceof HTMLButtonElement)) {
@@ -475,7 +485,6 @@ describe('a review decision waits for the document authority', function () {
       line: 'charlie proposed',
       edits: ['charlie proposed one', 'charlie proposed one two'],
       chunk: 'charlie original',
-      control: 'button.cm-review-diff-control.comment',
       commentText: 'second thoughts'
     })
 

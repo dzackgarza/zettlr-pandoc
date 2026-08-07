@@ -81,8 +81,9 @@ export interface ReviewChunksConfig {
   /** Called when the status panel submits a review-level comment. */
   onComment: (text: string) => Promise<void>
   /**
-   * Called when a chunk's own comment field submits. Annotation only: the
-   * chunk stays outstanding, and commenting again replaces the note.
+   * Called when a chunk's own comment field commits. Annotation only: the
+   * chunk stays outstanding. Non-empty text sets or replaces the note; an
+   * empty text removes it.
    */
   onChunkComment: (chunkId: string, text: string) => Promise<void>
 }
@@ -447,12 +448,69 @@ class DeletedSpanWidget extends WidgetType {
   }
 }
 
+/** How long the chunk comment field waits after a keystroke before it commits. */
+const CHUNK_NOTE_DEBOUNCE_MS = 750
+
+interface ChunkNoteFieldState {
+  /** The note text last acknowledged by the provider (or shown at build). */
+  committed: string
+  inflight: boolean
+  timer: ReturnType<typeof setTimeout>|undefined
+  /** Re-derives the saved/unsaved indicator from the value and `committed`. */
+  syncIndicator: () => void
+}
+
+/** Reaches the field's live state from updateDOM/destroy, which only get the DOM. */
+const noteFieldState = new WeakMap<HTMLInputElement, ChunkNoteFieldState>()
+
+/**
+ * (Re)render the strip's claim descriptions and note display, in place, in
+ * front of the buttons block. Everything here is display-only, so an update
+ * can rebuild it freely — the comment input, which carries focus and unsent
+ * keystrokes, is deliberately not touched.
+ */
+function renderChunkMeta (
+  container: HTMLElement,
+  descriptions: readonly string[],
+  note: ReviewChunkCommentView|undefined
+): void {
+  for (const stale of container.querySelectorAll(':scope > .cm-chunkDescriptions, :scope > .cm-chunkComment')) {
+    stale.remove()
+  }
+  const buttons = container.querySelector(':scope > .cm-chunkButtons')
+  if (descriptions.length > 0) {
+    const list = document.createElement('div')
+    list.className = 'cm-chunkDescriptions'
+    for (const description of descriptions) {
+      const entry = document.createElement('div')
+      entry.className = 'cm-chunkDescription'
+      entry.textContent = description
+      list.appendChild(entry)
+    }
+    container.insertBefore(list, buttons)
+  }
+  if (note !== undefined) {
+    const noteLine = document.createElement('div')
+    noteLine.className = 'cm-chunkComment'
+    noteLine.textContent = note.comment
+    container.insertBefore(noteLine, buttons)
+  }
+}
+
 /**
  * The strip below a chunk: the claim descriptions, the chunk's comment, and
  * the Accept/Reject controls plus the comment field. One widget per chunk —
  * the controls sit in exactly one place. A comment is an annotation, not an
  * adjudication: the chunk stays outstanding, and the note renders muted like
  * a description.
+ *
+ * The comment field IS the annotation — there is no submit button. It
+ * autosaves after a typing pause and immediately on blur or Enter, and an
+ * emptied field removes the note. Every commit is a review mutation whose
+ * broadcast rebuilds this widget's decorations, so the update path
+ * (updateDOM) refreshes the strip IN PLACE and never replaces or rewrites
+ * the input while the reviewer is typing in it: focus, cursor, and unsent
+ * characters survive the round trip.
  */
 class ChunkControlsWidget extends WidgetType {
   constructor (
@@ -476,32 +534,13 @@ class ChunkControlsWidget extends WidgetType {
   toDOM (view: EditorView): HTMLElement {
     const container = document.createElement('div')
     container.className = 'cm-chunkControls'
-
-    // The claims this chunk implements — present at the controls, muted.
-    if (this.descriptions.length > 0) {
-      const list = document.createElement('div')
-      list.className = 'cm-chunkDescriptions'
-      for (const description of this.descriptions) {
-        const entry = document.createElement('div')
-        entry.className = 'cm-chunkDescription'
-        entry.textContent = description
-        list.appendChild(entry)
-      }
-      container.appendChild(list)
-    }
-
-    if (this.note !== undefined) {
-      const noteLine = document.createElement('div')
-      noteLine.className = 'cm-chunkComment'
-      noteLine.textContent = this.note.comment
-      container.appendChild(noteLine)
-    }
+    container.dataset.chunkId = this.chunk.chunkId
 
     const buttons = document.createElement('div')
     buttons.className = 'cm-chunkButtons'
-    // Every control of this chunk locks together for the round trip: the
-    // actions are mutually exclusive, so leaving one live during another's
-    // flight is an invitation to double-decide.
+    // The two decisions lock together for the round trip: they are mutually
+    // exclusive, so leaving one live during the other's flight is an
+    // invitation to double-decide.
     const controls: HTMLButtonElement[] = []
     const decide = (decision: 'accept'|'reject'): void => {
       void withControlsLocked(buttons, controls, async () => {
@@ -529,43 +568,116 @@ class ChunkControlsWidget extends WidgetType {
       buttons.appendChild(button)
     }
 
-    // The chunk's own comment field: annotation without adjudication. The
-    // note goes back to the agent; commenting an already-annotated chunk
-    // replaces the note (the field is prefilled with it).
-    const commentButton = document.createElement('button')
-    commentButton.type = 'button'
-    commentButton.name = 'comment'
-    commentButton.className = 'cm-review-diff-control comment'
-    commentButton.textContent = this.note === undefined ? 'Comment' : 'Update comment'
-    commentButton.title = 'Attach a note to this change without deciding it; the note goes back to the agent'
+    // The chunk's own comment field: the field is the annotation. It commits
+    // at pause points, not on every keystroke — each commit is a review
+    // mutation (generation bump, sidecar write, agent event).
     const noteInput = document.createElement('input')
     noteInput.type = 'text'
     noteInput.className = 'cm-chunkCommentInput'
     noteInput.placeholder = 'Comment…'
-    if (this.note !== undefined) {
-      noteInput.value = this.note.comment
+    noteInput.title = 'Annotate this change without deciding it; clearing the field removes the note'
+    noteInput.value = this.note?.comment ?? ''
+    // The dirty indicator answers one question: is this text agent-visible
+    // yet? Unsaved the moment the value diverges from the last acknowledged
+    // commit; saved only when the acknowledgment lands.
+    const dirtyDot = document.createElement('span')
+    dirtyDot.className = 'cm-chunkCommentDirty'
+    dirtyDot.setAttribute('role', 'img')
+    const state: ChunkNoteFieldState = {
+      committed: this.note?.comment ?? '',
+      inflight: false,
+      timer: undefined,
+      syncIndicator: () => {
+        const unsaved = noteInput.value.trim() !== state.committed
+        dirtyDot.classList.toggle('unsaved', unsaved)
+        const label = unsaved
+          ? 'Unsaved — not yet visible to agents'
+          : 'Note saved — visible to agents'
+        dirtyDot.title = label
+        dirtyDot.setAttribute('aria-label', label)
+      }
     }
-    const syncCommentButton = (): void => {
-      commentButton.disabled = noteInput.value.trim() === ''
-    }
-    noteInput.addEventListener('input', syncCommentButton)
-    syncCommentButton()
-    commentButton.addEventListener('click', (event) => {
-      event.preventDefault()
-      const text = noteInput.value.trim()
-      if (text === '') {
+    state.syncIndicator()
+    noteFieldState.set(noteInput, state)
+    const chunkId = this.chunk.chunkId
+    const tryCommit = (): void => {
+      clearTimeout(state.timer)
+      state.timer = undefined
+      const configs = view.state.facet(reviewChunksConfig)
+      if (configs.length !== 1) {
+        return // The review ended while the timer was pending.
+      }
+      const config = configs[0]
+      const current = config.chunkComments
+        .find(candidate => candidate.chunkId === chunkId)?.comment ?? ''
+      if (state.inflight || current !== state.committed) {
+        // Serialization: a commit is in flight, or its broadcast has not
+        // reached this pane yet — committing now would bind a generation
+        // that is about to be stale. Wait for the echo and retry.
+        state.timer = setTimeout(tryCommit, CHUNK_NOTE_DEBOUNCE_MS)
         return
       }
-      void withControlsLocked(buttons, controls, async () => {
-        await requireReviewChunksConfig(view.state)
-          .onChunkComment(this.chunk.chunkId, text)
-      })
+      const text = noteInput.value.trim()
+      if (text === state.committed) {
+        return // Nothing changed; no phantom mutation.
+      }
+      state.inflight = true
+      config.onChunkComment(chunkId, text)
+        .then(() => { state.committed = text })
+        .catch(err => { console.error('Chunk comment refused', err) })
+        .finally(() => {
+          state.inflight = false
+          state.syncIndicator()
+        })
+    }
+    noteInput.addEventListener('input', () => {
+      state.syncIndicator()
+      clearTimeout(state.timer)
+      state.timer = setTimeout(tryCommit, CHUNK_NOTE_DEBOUNCE_MS)
     })
-    controls.push(commentButton)
-    buttons.appendChild(commentButton)
+    noteInput.addEventListener('blur', tryCommit)
+    noteInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        tryCommit()
+      }
+    })
     buttons.appendChild(noteInput)
+    buttons.appendChild(dirtyDot)
     container.appendChild(buttons)
+    renderChunkMeta(container, this.descriptions, this.note)
     return container
+  }
+
+  /**
+   * Refresh the strip in place when only its display changed — the commit
+   * echo of this very field, or reattributed descriptions. Replacing the DOM
+   * here is what would eat the reviewer's focus and unsent keystrokes, so
+   * the input is preserved and its value is only synchronized while nobody
+   * is typing in it.
+   */
+  updateDOM (dom: HTMLElement): boolean {
+    if (dom.dataset.chunkId !== this.chunk.chunkId) {
+      return false
+    }
+    renderChunkMeta(dom, this.descriptions, this.note)
+    const input = dom.querySelector<HTMLInputElement>('input.cm-chunkCommentInput')
+    const state = input === null ? undefined : noteFieldState.get(input)
+    if (input !== null && state !== undefined && document.activeElement !== input) {
+      const value = this.note?.comment ?? ''
+      input.value = value
+      state.committed = value
+      state.syncIndicator()
+    }
+    return true
+  }
+
+  destroy (dom: HTMLElement): void {
+    const input = dom.querySelector<HTMLInputElement>('input.cm-chunkCommentInput')
+    const state = input === null ? undefined : noteFieldState.get(input)
+    if (state !== undefined) {
+      clearTimeout(state.timer)
+    }
   }
 
   ignoreEvent (): boolean {
@@ -601,6 +713,20 @@ const reviewChunksTheme = EditorView.baseTheme({
     fontSize: '0.85em',
     marginLeft: '4px',
     maxWidth: '18em'
+  },
+  '.cm-chunkCommentDirty': {
+    display: 'inline-block',
+    width: '0.5em',
+    height: '0.5em',
+    borderRadius: '50%',
+    border: '1px solid currentColor',
+    opacity: '0.25',
+    alignSelf: 'center',
+    marginLeft: '4px'
+  },
+  '.cm-chunkCommentDirty.unsaved': {
+    opacity: '1',
+    borderColor: 'var(--zettlr-editor-review-note-unsaved)'
   },
   '.cm-deletedText': {
     backgroundColor: 'var(--zettlr-editor-review-delete-bg)',

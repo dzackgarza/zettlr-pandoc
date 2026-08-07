@@ -413,8 +413,10 @@ describe('a review that cannot be persisted', function () {
       ]
     })
     const noted = activePage.locator('.cm-chunkControls').filter({ hasText: 'Revise bravo' })
+    // No submit gesture: the field autosaves after the typing pause, and the
+    // rendered note is the commit's echo — the sidecar is only broken AFTER
+    // this write has landed.
     await noted.locator('input.cm-chunkCommentInput').fill('needs a second look')
-    await noted.locator('button.comment').click()
     await activePage
       .locator('.cm-chunkComment')
       .waitFor({ state: 'visible', timeout: 30_000 })

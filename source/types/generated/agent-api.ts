@@ -600,7 +600,7 @@ export interface components {
             unresolvedChunks?: number;
             /** @description review.commented: the outstanding chunk the comment is anchored to, when it is chunk-anchored. */
             chunkId?: string;
-            /** @description review.commented: the comment text. */
+            /** @description review.commented: the comment text. Absent on a chunk-anchored event when the reviewer removed the chunk's note. */
             comment?: string;
             /** @description review.commented: set when the comment was salvaged from a chunk-anchored note whose chunk id vanished from the partition. */
             orphanedFromChunkId?: string;

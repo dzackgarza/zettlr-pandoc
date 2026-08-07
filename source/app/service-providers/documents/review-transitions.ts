@@ -903,12 +903,15 @@ export function prepareChunkDecision(input: {
 }
 
 /**
- * Attach a comment to one outstanding chunk WITHOUT deciding it. Pure
- * annotation: the chunk stays outstanding and no text moves. Commenting an
- * already-annotated chunk replaces its note (upsert). Advances the
- * generation — like a review-level comment, a chunk note is a deliberate
- * turn in the conversation. When the chunk later resolves, reconciliation
- * orphans the note into a review-level comment carrying its chunk id.
+ * Set, replace, or remove the comment on one outstanding chunk WITHOUT
+ * deciding it. Pure annotation: the chunk stays outstanding and no text
+ * moves. Non-empty text upserts the note; empty text removes it. Both
+ * advance the generation — like a review-level comment, a chunk note is a
+ * deliberate turn in the conversation — except emptying a chunk that
+ * carries no note, which is a no-op and does NOT advance the generation:
+ * nothing changed, so no phantom mutation is recorded. When the chunk later
+ * resolves, reconciliation orphans the note into a review-level comment
+ * carrying its chunk id.
  */
 export function prepareChunkComment(input: {
   review: ActiveReviewState;
@@ -935,16 +938,29 @@ export function prepareChunkComment(input: {
       message: `No unresolved chunk ${input.chunkId} exists at review generation ${next.generation}.`,
     };
   }
-  next.chunkComments = next.chunkComments.filter((note) => note.chunkId !== input.chunkId);
-  next.chunkComments.push({
+  const response = (): ChunkCommentResponse => ({
+    ok: true,
+    reviewId: next.reviewId,
+    documentId: next.documentId,
     chunkId: input.chunkId,
-    comment: input.text,
-    commentedAt: new Date().toISOString(),
-    referenceText: chunk.referenceText,
-    workingText: chunk.workingText,
-    referenceFromLine: chunk.refFromLine,
-    workingFromLine: chunk.workFromLine,
+    reviewGeneration: next.generation,
   });
+  const hadNote = next.chunkComments.some((note) => note.chunkId === input.chunkId);
+  if (input.text === "" && !hadNote) {
+    return { nextReview: next, nextWorkingText: workingText, response: response(), events };
+  }
+  next.chunkComments = next.chunkComments.filter((note) => note.chunkId !== input.chunkId);
+  if (input.text !== "") {
+    next.chunkComments.push({
+      chunkId: input.chunkId,
+      comment: input.text,
+      commentedAt: new Date().toISOString(),
+      referenceText: chunk.referenceText,
+      workingText: chunk.workingText,
+      referenceFromLine: chunk.refFromLine,
+      workingFromLine: chunk.workFromLine,
+    });
+  }
   next.generation += 1;
   events.push({
     event: "review.commented",
@@ -952,23 +968,13 @@ export function prepareChunkComment(input: {
       reviewId: next.reviewId,
       documentId: next.documentId,
       chunkId: input.chunkId,
-      comment: input.text,
+      // Absent comment = the reviewer cleared the note off this chunk.
+      ...(input.text === "" ? {} : { comment: input.text }),
       generation: next.generation,
       unresolvedChunks: partition.length,
     },
   });
-  return {
-    nextReview: next,
-    nextWorkingText: workingText,
-    response: {
-      ok: true,
-      reviewId: next.reviewId,
-      documentId: next.documentId,
-      chunkId: input.chunkId,
-      reviewGeneration: next.generation,
-    },
-    events,
-  };
+  return { nextReview: next, nextWorkingText: workingText, response: response(), events };
 }
 
 /**

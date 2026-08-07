@@ -484,14 +484,30 @@ describe('saving after accepting a reviewed change', function () {
       `Chunk-note proof expected one addressable chunk: ${JSON.stringify(chunksPayload)}`
     )
 
-    // The note is the reviewer's, made where the reviewer makes it: the
-    // comment field and button on the chunk's own widget. It decides
-    // nothing — the chunk stays outstanding.
+    // The note is the reviewer's, typed into the chunk's own field. There is
+    // no submit gesture: the reviewer types and walks away — no blur, no
+    // Enter — and the autosave must still make the note agent-visible. That
+    // is the product scenario this spec exists to prove, so the API is
+    // polled BEFORE anything else touches the pane.
     const chunkWidget = page.locator('.cm-chunkControls').first()
     await chunkWidget
       .locator('input.cm-chunkCommentInput')
       .fill('Preserve this note across save')
-    await chunkWidget.locator('button.cm-review-diff-control.comment').click()
+    const agentSeesNote = async (): Promise<boolean> => {
+      const payload = await activeClient.get(`/v1/reviews/${reviewId}/chunks`)
+      return payload !== null && typeof payload === 'object' &&
+        'chunks' in payload && Array.isArray(payload.chunks) &&
+        payload.chunks.length === 1 &&
+        (payload.chunks[0] as { comment?: unknown }).comment === 'Preserve this note across save'
+    }
+    const noteDeadline = Date.now() + 20_000
+    while (Date.now() < noteDeadline && !(await agentSeesNote())) {
+      await delay(250)
+    }
+    assert.ok(
+      await agentSeesNote(),
+      'The typed note must become agent-visible without blur or any submit gesture.'
+    )
 
     const note = page.locator('.cm-chunkComment').first()
     await note.waitFor({ state: 'visible', timeout: 20_000 })

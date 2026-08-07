@@ -105,6 +105,12 @@ export interface ThemeVars {
   '--zettlr-editor-review-accept-border': string
   '--zettlr-editor-review-reject-bg': string
   '--zettlr-editor-review-reject-border': string
+  /**
+   * CSS `<color>` value for the chunk comment field's unsaved indicator.
+   * Meta-state, not diff semantics: deliberately outside the green/red
+   * attention colors.
+   */
+  '--zettlr-editor-review-note-unsaved': string
   /** CSS `opacity` value */
   '--zettlr-editor-opacity': string|number
   /** CSS `text-decoration` value */
@@ -204,6 +210,7 @@ const reviewLight = {
   acceptBorder: '#176238',
   rejectBg: '#b33a3a',
   rejectBorder: '#8e2f2f',
+  noteUnsaved: '#9a6700',
 }
 
 const reviewDark = {
@@ -216,6 +223,7 @@ const reviewDark = {
   acceptBorder: '#238636',
   rejectBg: '#da3633',
   rejectBorder: '#b62324',
+  noteUnsaved: '#d29922',
 }
 
 const opacity = 0.65
@@ -267,6 +275,7 @@ export const defaultVarsLight: ThemeVars = {
   '--zettlr-editor-review-accept-border': reviewLight.acceptBorder,
   '--zettlr-editor-review-reject-bg': reviewLight.rejectBg,
   '--zettlr-editor-review-reject-border': reviewLight.rejectBorder,
+  '--zettlr-editor-review-note-unsaved': reviewLight.noteUnsaved,
   '--zettlr-editor-opacity': opacity,
   '--zettlr-editor-line-decoration': linkDecoration,
 }
@@ -316,6 +325,7 @@ export const defaultVarsDark: ThemeVars = {
   '--zettlr-editor-review-accept-border': reviewDark.acceptBorder,
   '--zettlr-editor-review-reject-bg': reviewDark.rejectBg,
   '--zettlr-editor-review-reject-border': reviewDark.rejectBorder,
+  '--zettlr-editor-review-note-unsaved': reviewDark.noteUnsaved,
   '--zettlr-editor-opacity': opacity,
   '--zettlr-editor-line-decoration': linkDecoration,
 }

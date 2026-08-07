@@ -1583,6 +1583,59 @@ describe("review transitions over committed review state", function () {
       }
     });
 
+    it("removes the annotation when the comment is emptied", function () {
+      const reviewId = openTwoChunkReview();
+      const chunkId = driver.getOutstandingChunks(DOC_ID)![0].chunkId;
+      const noted = driver.commentChunk(DOC_ID, reviewId, chunkId, "on reflection");
+      assert.equal(noted.ok, true);
+      const commented: AgentEvent[] = [];
+      driver.on("review.commented", (event: AgentEvent) => commented.push(event));
+      const generationBefore = driver.getReview(DOC_ID)!.generation;
+
+      const removed = driver.commentChunk(DOC_ID, reviewId, chunkId, "");
+      assert.equal(removed.ok, true, JSON.stringify(removed));
+      if (!removed.ok) {
+        return;
+      }
+      assert.equal(
+        removed.reviewGeneration,
+        generationBefore + 1,
+        "removal is a turn: it advances the generation",
+      );
+      assert.deepEqual(driver.getReview(DOC_ID)!.chunkComments, []);
+      assert.equal(driver.getOutstandingChunks(DOC_ID)![0].comment, undefined);
+      assert.equal(
+        driver.getReview(DOC_ID)!.comments.length,
+        0,
+        "an explicit removal is not an orphaning: the text was withdrawn, not displaced",
+      );
+      assert.equal(commented.length, 1);
+      assert.equal(commented[0].chunkId, chunkId);
+      assert.equal(commented[0].comment, undefined, "an absent comment field announces the removal");
+    });
+
+    it("emptying an unannotated chunk is a no-op without a generation bump", function () {
+      const reviewId = openTwoChunkReview();
+      const chunkId = driver.getOutstandingChunks(DOC_ID)![0].chunkId;
+      const commented: AgentEvent[] = [];
+      driver.on("review.commented", (event: AgentEvent) => commented.push(event));
+      const generationBefore = driver.getReview(DOC_ID)!.generation;
+
+      const result = driver.commentChunk(DOC_ID, reviewId, chunkId, "");
+      assert.equal(result.ok, true, JSON.stringify(result));
+      if (!result.ok) {
+        return;
+      }
+      assert.equal(
+        result.reviewGeneration,
+        generationBefore,
+        "nothing changed, so no phantom mutation may be recorded",
+      );
+      assert.equal(driver.getReview(DOC_ID)!.generation, generationBefore);
+      assert.deepEqual(driver.getReview(DOC_ID)!.chunkComments, []);
+      assert.equal(commented.length, 0, "a no-op announces nothing");
+    });
+
     it("keeps an annotated chunk in the unresolved count until it is decided", function () {
       // Three separated edits → three chunks: accept one, reject one,
       // annotate the third. The note decides nothing, so the review stays
