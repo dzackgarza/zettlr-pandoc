@@ -569,7 +569,7 @@ class ChunkControlsWidget extends WidgetType {
 
 const reviewChunksTheme = EditorView.baseTheme({
   '.cm-changedLine': {
-    backgroundColor: 'var(--zettlr-editor-review-insert-line-bg)'
+    backgroundColor: 'var(--zettlr-editor-review-region-bg)'
   },
   '.cm-heldLine': {
     backgroundColor: 'var(--zettlr-editor-review-held-line-bg)'

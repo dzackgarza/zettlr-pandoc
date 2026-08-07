@@ -96,7 +96,7 @@ export interface ThemeVars {
   '--zettlr-editor-pandoc-div-warning': string
   '--zettlr-editor-pandoc-div-proof': string
   /** CSS `<color>` values for the review-diff attention layer */
-  '--zettlr-editor-review-insert-line-bg': string
+  '--zettlr-editor-review-region-bg': string
   '--zettlr-editor-review-insert-mark-bg': string
   '--zettlr-editor-review-delete-bg': string
   '--zettlr-editor-review-delete-accent': string
@@ -194,9 +194,11 @@ const pandocDivDark = {
   proof: '#c3cad4',
 }
 
-// Attention layer: saturated review-diff marks that must dominate visually
+// Attention layer: saturated review-diff marks that must dominate visually.
+// The region wash is NEUTRAL by design: a suggestion carries no valence until
+// adjudicated — only the additions are green and only the removals red.
 const reviewLight = {
-  insertLineBg: 'rgba(26, 127, 55, 0.16)',
+  regionBg: 'rgba(96, 125, 139, 0.14)',
   insertMarkBg: 'rgba(26, 178, 74, 0.45)',
   deleteBg: 'rgba(207, 34, 46, 0.30)',
   deleteAccent: '#cf222e',
@@ -213,7 +215,7 @@ const reviewLight = {
 }
 
 const reviewDark = {
-  insertLineBg: 'rgba(46, 160, 67, 0.22)',
+  regionBg: 'rgba(120, 144, 156, 0.20)',
   insertMarkBg: 'rgba(63, 185, 80, 0.48)',
   deleteBg: 'rgba(248, 81, 73, 0.38)',
   deleteAccent: '#f85149',
@@ -269,7 +271,7 @@ export const defaultVarsLight: ThemeVars = {
   '--zettlr-editor-pandoc-div-task': pandocDivLight.task,
   '--zettlr-editor-pandoc-div-warning': pandocDivLight.warning,
   '--zettlr-editor-pandoc-div-proof': pandocDivLight.proof,
-  '--zettlr-editor-review-insert-line-bg': reviewLight.insertLineBg,
+  '--zettlr-editor-review-region-bg': reviewLight.regionBg,
   '--zettlr-editor-review-insert-mark-bg': reviewLight.insertMarkBg,
   '--zettlr-editor-review-delete-bg': reviewLight.deleteBg,
   '--zettlr-editor-review-delete-accent': reviewLight.deleteAccent,
@@ -323,7 +325,7 @@ export const defaultVarsDark: ThemeVars = {
   '--zettlr-editor-pandoc-div-task': pandocDivDark.task,
   '--zettlr-editor-pandoc-div-warning': pandocDivDark.warning,
   '--zettlr-editor-pandoc-div-proof': pandocDivDark.proof,
-  '--zettlr-editor-review-insert-line-bg': reviewDark.insertLineBg,
+  '--zettlr-editor-review-region-bg': reviewDark.regionBg,
   '--zettlr-editor-review-insert-mark-bg': reviewDark.insertMarkBg,
   '--zettlr-editor-review-delete-bg': reviewDark.deleteBg,
   '--zettlr-editor-review-delete-accent': reviewDark.deleteAccent,
