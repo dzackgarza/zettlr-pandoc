@@ -390,6 +390,15 @@ export default class WindowProvider extends ProviderContract {
       // documents manager about it so that it keeps the document in the config.
       if (nWindows === 1 && process.platform !== 'darwin') {
         if (!leaveAppRunning) {
+          if (!this._documents.isClean()) {
+            // Keep the window alive while the quit prompt is open. Letting the
+            // close proceed fires window-all-closed -> a second app.quit() ->
+            // a second stacked prompt, and Cancel on the prompt would leave
+            // the app running with no window. Once the prompt resolves, the
+            // re-issued quit finds the documents clean, this branch no longer
+            // prevents, and the close goes through.
+            event.preventDefault()
+          }
           app.quit()
         } else {
           window.close()

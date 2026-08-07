@@ -592,6 +592,9 @@ export default class DocumentManager
 
   private _shuttingDown: boolean;
 
+  /** True while the before-quit save-or-discard dialog is unanswered. */
+  private _quitPromptOpen: boolean;
+
   private readonly _lastEditor: {
     windowId: string | undefined;
     leafId: string | undefined;
@@ -626,6 +629,7 @@ export default class DocumentManager
     this._documentIdByPath = new Map();
     this.documents = [];
     this._shuttingDown = false;
+    this._quitPromptOpen = false;
     this._lastEditor = {
       windowId: undefined,
       leafId: undefined,
@@ -854,6 +858,15 @@ export default class DocumentManager
       if (!this.isClean()) {
         event.preventDefault();
 
+        // Re-entrancy guard: quit can be requested again while the prompt is
+        // open (window-all-closed after the last window dies, the tray, a
+        // second Ctrl+Q). Without it, each request stacks another identical
+        // dialog over the unanswered first one.
+        if (this._quitPromptOpen) {
+          return;
+        }
+        this._quitPromptOpen = true;
+
         // NOTE: We are re-implementing `askSaveChanges` here since we cannot
         // give the user the choice to cancel.
         // TODO: Once the window management logic is put here, we have better
@@ -871,6 +884,7 @@ export default class DocumentManager
         dialog
           .showMessageBox(opt)
           .then(async ({ response }) => {
+            this._quitPromptOpen = false;
             // 0 = Save, 1 = Don't save, 2 = Cancel
             if (response === 2) {
               this._app.log.verbose("User cancelled save-dialog; not quitting.");
@@ -893,6 +907,7 @@ export default class DocumentManager
             app.quit();
           })
           .catch((err) => {
+            this._quitPromptOpen = false;
             this._app.log.error("[DocumentManager] Cannot ask user to save or omit changes!", err);
           });
       } else {
