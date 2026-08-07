@@ -222,18 +222,18 @@
     }
 
     button.cm-review-diff-control.accept {
-      background-color: #1f7a45;
-      border-color: #176238;
+      background-color: var(--zettlr-editor-review-accept-bg);
+      border-color: var(--zettlr-editor-review-accept-border);
     }
 
     button.cm-review-diff-control.reject {
-      background-color: #b33a3a;
-      border-color: #8e2f2f;
+      background-color: var(--zettlr-editor-review-reject-bg);
+      border-color: var(--zettlr-editor-review-reject-border);
     }
 
     button.cm-review-diff-control.hold {
-      background-color: #a97b12;
-      border-color: #855f0d;
+      background-color: var(--zettlr-editor-review-hold-bg);
+      border-color: var(--zettlr-editor-review-hold-border);
     }
   }
 

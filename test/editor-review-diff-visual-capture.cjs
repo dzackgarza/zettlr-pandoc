@@ -42,16 +42,16 @@ async function capture (window, scene) {
       cursor: pointer;
     }
     .review-diff-active button.cm-review-diff-control.accept {
-      background-color: #1f7a45;
-      border-color: #176238;
+      background-color: var(--zettlr-editor-review-accept-bg);
+      border-color: var(--zettlr-editor-review-accept-border);
     }
     .review-diff-active button.cm-review-diff-control.reject {
-      background-color: #b33a3a;
-      border-color: #8e2f2f;
+      background-color: var(--zettlr-editor-review-reject-bg);
+      border-color: var(--zettlr-editor-review-reject-border);
     }
     .review-diff-active button.cm-review-diff-control.hold {
-      background-color: #a97b12;
-      border-color: #855f0d;
+      background-color: var(--zettlr-editor-review-hold-bg);
+      border-color: var(--zettlr-editor-review-hold-border);
     }
   </style></head><body class="${scene.dark ? 'dark' : ''}" data-dark="${scene.dark}">
     <main id="editor"></main><script src="./review-diff-visual-bundle.js"></script>

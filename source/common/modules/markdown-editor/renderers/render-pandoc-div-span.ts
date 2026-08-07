@@ -427,10 +427,7 @@ export const renderPandoc = [
     // The classes `.mark`, `.underline`, and
     // `.smallcaps` are used by pandoc spans
     '.mark .cm-pandoc-span': {
-      backgroundColor: '#ffff0080',
-    },
-    '&dark .mark .cm-pandoc-span': {
-      backgroundColor: '#ffff0060',
+      backgroundColor: 'var(--zettlr-editor-highlight-color)',
     },
     '.underline .cm-pandoc-span': {
       textDecoration: 'underline',

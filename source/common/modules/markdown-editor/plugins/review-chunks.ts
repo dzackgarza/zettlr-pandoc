@@ -569,13 +569,13 @@ class ChunkControlsWidget extends WidgetType {
 
 const reviewChunksTheme = EditorView.baseTheme({
   '.cm-changedLine': {
-    backgroundColor: 'rgba(80, 160, 80, 0.12)'
+    backgroundColor: 'var(--zettlr-editor-review-insert-line-bg)'
   },
   '.cm-heldLine': {
-    backgroundColor: 'rgba(220, 170, 40, 0.12)'
+    backgroundColor: 'var(--zettlr-editor-review-held-line-bg)'
   },
   '.cm-changedText': {
-    backgroundColor: 'rgba(80, 160, 80, 0.28)',
+    backgroundColor: 'var(--zettlr-editor-review-insert-mark-bg)',
     borderRadius: '2px'
   },
   '.cm-chunkControls': {
@@ -583,23 +583,20 @@ const reviewChunksTheme = EditorView.baseTheme({
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: '8px',
-    backgroundColor: 'rgba(128, 128, 128, 0.06)',
-    borderLeft: '3px solid rgba(200, 60, 60, 0.55)',
+    backgroundColor: 'var(--zettlr-editor-review-controls-bg)',
+    borderLeft: '3px solid var(--zettlr-editor-review-delete-accent)',
     padding: '2px 6px',
     fontSize: '0.85em'
   },
   '.cm-chunkControls.held': {
-    backgroundColor: 'rgba(220, 170, 40, 0.10)',
-    borderLeft: '3px solid rgba(220, 170, 40, 0.65)'
+    backgroundColor: 'var(--zettlr-editor-review-held-line-bg)',
+    borderLeft: '3px solid var(--zettlr-editor-review-held-accent)'
   },
   '.cm-holdComment': {
     fontSize: '0.85em',
     fontStyle: 'italic',
-    color: 'rgba(150, 110, 20, 0.95)',
+    color: 'var(--zettlr-editor-review-held-text)',
     padding: '2px 0'
-  },
-  '&dark .cm-holdComment': {
-    color: 'rgba(240, 200, 110, 0.9)'
   },
   '.cm-holdCommentInput': {
     fontSize: '0.85em',
@@ -607,8 +604,10 @@ const reviewChunksTheme = EditorView.baseTheme({
     maxWidth: '18em'
   },
   '.cm-deletedText': {
-    backgroundColor: 'rgba(200, 60, 60, 0.25)',
+    backgroundColor: 'var(--zettlr-editor-review-delete-bg)',
     textDecoration: 'line-through',
+    textDecorationThickness: '2px',
+    textDecorationColor: 'var(--zettlr-editor-review-delete-accent)',
     whiteSpace: 'pre-wrap'
   },
   '.cm-chunkDescriptions': {
