@@ -222,7 +222,7 @@ describe('Editor review-chunk view', function () {
       holds: [{ chunkId: chunk.chunkId, comment: 'check the constant' }]
     })
 
-    const heldWidget = view.dom.querySelector<HTMLElement>('.cm-deletedChunk.held')
+    const heldWidget = view.dom.querySelector<HTMLElement>('.cm-chunkControls.held')
     assert.ok(heldWidget !== null)
     assert.ok(heldWidget.textContent?.includes('Held: check the constant'))
     assert.ok(view.dom.querySelector('.cm-heldLine') !== null)
@@ -260,7 +260,7 @@ describe('Editor review-chunk view', function () {
       ]
     })
 
-    const widgets = [...view.dom.querySelectorAll<HTMLElement>('.cm-deletedChunk')]
+    const widgets = [...view.dom.querySelectorAll<HTMLElement>('.cm-chunkControls')]
     assert.deepEqual(
       widgets.map(widget =>
         [...widget.querySelectorAll('.cm-chunkDescription')].map(entry => entry.textContent)
@@ -273,23 +273,75 @@ describe('Editor review-chunk view', function () {
     view.dispatch({ changes: { from: insertAt, insert: ' (tweaked)' } })
 
     assert.equal(
-      view.dom.querySelector<HTMLElement>('.cm-deletedChunk .cm-chunkDescription')?.textContent,
+      view.dom.querySelector<HTMLElement>('.cm-chunkControls .cm-chunkDescription')?.textContent,
       'Sharpen the opening claim'
     )
   })
 
-  it('shows replaced reference text with only removed spans emphasised', function () {
+  it('renders a small replacement as inline track changes with one controls strip', function () {
     const baseline = ['alpha', '', 'the original wording stays here', ''].join('\n')
     const proposed = baseline.replace('original wording', 'revised wording')
-    const { view } = createReviewView(baseline, proposed)
+    const chunk = computeReviewChunks(baseline, proposed)[0]
+    const { view } = createReviewView(baseline, proposed, {
+      packets: [{
+        packetId: 'packet-1',
+        description: 'Revise the wording',
+        refSpans: [{ from: chunk.refFromLine, to: chunk.refToLine }]
+      }]
+    })
 
-    const deleted = view.dom.querySelector<HTMLElement>('.cm-deletedChunk .cm-deletedLines')
+    assert.equal(view.dom.querySelector('.cm-deletedChunk'), null, 'the delta renders in the document flow, not a block above it')
+    const deleted = view.dom.querySelector<HTMLElement>('del.cm-deletedText')
     assert.ok(deleted !== null)
-    assert.ok(deleted.textContent?.includes('the original wording stays here'))
-    const emphasised = deleted.querySelector<HTMLElement>('del.cm-deletedText')
-    assert.ok(emphasised !== null)
-    assert.ok(emphasised.textContent?.includes('original'))
-    assert.ok(!emphasised.textContent?.includes('stays'))
+    assert.equal(deleted.textContent, 'original')
+    const line = deleted.closest<HTMLElement>('.cm-line')
+    assert.ok(line !== null, 'the strikethrough sits inside the working line')
+    assert.equal(
+      line.textContent,
+      'the originalrevised wording stays here',
+      'the deleted span reads before its replacement, in one pass'
+    )
+
+    const strips = view.dom.querySelectorAll<HTMLElement>('.cm-chunkControls')
+    assert.equal(strips.length, 1)
+    assert.ok(strips[0].querySelector('button.cm-review-diff-control.accept') !== null)
+    assert.ok(strips[0].querySelector('button.cm-review-diff-control.reject') !== null)
+    assert.ok(strips[0].querySelector('button.cm-review-diff-control.hold') !== null)
+    assert.equal(
+      strips[0].querySelector<HTMLElement>('.cm-chunkDescription')?.textContent,
+      'Revise the wording'
+    )
+  })
+
+  it('renders a whole-line deletion as inline strikethrough with its controls strip', function () {
+    const { view } = createReviewView(
+      'prefix\nfirst removed\nsecond removed\nunchanged\n',
+      'prefix\nunchanged\n'
+    )
+
+    assert.equal(view.dom.querySelector('.cm-deletedChunk'), null)
+    const deleted = view.dom.querySelectorAll<HTMLElement>('del.cm-deletedText')
+    assert.equal(deleted.length, 1)
+    assert.equal(deleted[0].textContent, 'first removed\nsecond removed')
+    const strips = view.dom.querySelectorAll<HTMLElement>('.cm-chunkControls')
+    assert.equal(strips.length, 1)
+    assert.ok(strips[0].querySelector('button.cm-review-diff-control.accept') !== null)
+  })
+
+  it('keeps a heavy rewrite merged in the document flow', function () {
+    const { view } = createReviewView(
+      'alpha beta gamma delta\n',
+      'completely different words now\n'
+    )
+
+    assert.equal(view.dom.querySelector('.cm-deletedChunk'), null)
+    const deleted = view.dom.querySelector<HTMLElement>('del.cm-deletedText')
+    assert.equal(deleted?.textContent, 'alpha beta gamma delta')
+    const line = deleted?.closest<HTMLElement>('.cm-line')
+    assert.ok(line !== null && line !== undefined, 'the deleted span sits inside a document line')
+    const lineText = line.textContent
+    assert.ok(lineText !== null && lineText.includes('completely different words now'))
+    assert.equal(view.dom.querySelectorAll('.cm-chunkControls').length, 1)
   })
 
   it('suppresses live-preview rendering only over a range carrying a review chunk', function () {
@@ -448,13 +500,13 @@ describe('Editor review-chunk view', function () {
     })
     views.push(view)
     const chunks = chunksOf(view)
-    const widgetBefore = view.dom.querySelector('.cm-deletedChunk')
+    const widgetBefore = view.dom.querySelector('.cm-chunkControls')
 
     view.dispatch({
       effects: compartment.reconfigure(reviewChunksExtension(configFor(current)))
     })
     assert.equal(
-      view.dom.querySelector('.cm-deletedChunk'),
+      view.dom.querySelector('.cm-chunkControls'),
       widgetBefore,
       'the untouched chunk must keep its widget, or this proves nothing'
     )

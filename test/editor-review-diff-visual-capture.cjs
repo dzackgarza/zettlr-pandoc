@@ -22,10 +22,6 @@ async function capture (window, scene) {
     .cm-editor { min-height: 620px; height: 620px; font-size: 16px; line-height: 1.45; }
     .cm-scroller { padding: 18px 18px 48px; overflow-x: hidden; }
     .cm-content { overflow-wrap: anywhere; }
-    .review-diff-active .cm-deletedChunk {
-      box-sizing: border-box;
-      padding-inline-end: 150px;
-    }
     .review-diff-active .cm-chunkButtons {
       display: inline-flex;
       flex-wrap: wrap;
@@ -52,6 +48,10 @@ async function capture (window, scene) {
     .review-diff-active button.cm-review-diff-control.reject {
       background-color: #b33a3a;
       border-color: #8e2f2f;
+    }
+    .review-diff-active button.cm-review-diff-control.hold {
+      background-color: #a97b12;
+      border-color: #855f0d;
     }
   </style></head><body class="${scene.dark ? 'dark' : ''}" data-dark="${scene.dark}">
     <main id="editor"></main><script src="./review-diff-visual-bundle.js"></script>

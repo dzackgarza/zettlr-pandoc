@@ -107,7 +107,7 @@ async function waitForReview (page: Page): Promise<void> {
 }
 
 async function widgetWithText (page: Page, text: string): Promise<Locator> {
-  const widget = page.locator('.cm-deletedChunk').filter({ hasText: text }).first()
+  const widget = page.locator('.cm-chunkControls').filter({ hasText: text }).first()
   await widget.waitFor({ state: 'visible', timeout: 20_000 })
   return widget
 }
@@ -137,7 +137,7 @@ async function readPreconditions (
   }
 }
 
-async function submitBatch (api: AgentClient, filePath: string, claims: Array<{ description: string, patch: string }>): Promise<string> {
+async function submitBatch (api: AgentClient, claims: Array<{ description: string, patch: string }>): Promise<string> {
   const documentId = documentIdOf(await api.get('/v1/documents'))
   const result = await api.post(`/v1/documents/${documentId}/proposals`, {
     ...(await readPreconditions(api, documentId)),
@@ -193,7 +193,7 @@ describe('review-diff closure contract composite lifecycle', function () {
     const step2 = step1.replace('same\n\nsame', 'DIFF\n\nDIFF')
     const proposed = step2.replace('x = 1', 'x = 7').replace('y = 2', 'y = 8')
     const blankProposed = proposed.replace('tail\n', 'tail\n\n')
-    const reviewId = await submitBatch(api, documentPath, [
+    const reviewId = await submitBatch(api, [
       { description: 'Revise alpha wording', patch: patch(documentPath, BASELINE, step1) },
       { description: 'Change both repeated occurrences', patch: patch(documentPath, step1, step2) },
       { description: 'Rewrite the display-math environment', patch: patch(documentPath, step2, proposed) },
@@ -204,13 +204,14 @@ describe('review-diff closure contract composite lifecycle', function () {
     // two identical occurrences; every packet still retains its description.
     assert.equal(await page.locator('.cm-chunkDescription').count(), 5)
 
-    // Accept alpha through its real widget.
-    await (await widgetWithText(page, 'alpha baseline')).locator('button.accept').click()
-    await page.locator('.cm-deletedChunk').filter({ hasText: 'alpha baseline' }).waitFor({ state: 'detached' })
+    // Accept alpha through its real widget. The controls strip names its
+    // chunk by the claim description, not the replaced reference text.
+    await (await widgetWithText(page, 'Revise alpha wording')).locator('button.accept').click()
+    await page.locator('.cm-chunkControls').filter({ hasText: 'Revise alpha wording' }).waitFor({ state: 'detached' })
 
     // Edit the repeated proposal in the ordinary editor, then accept the
     // edited proposal: the provider must accept the bytes now displayed.
-    const repeatedWidgets = page.locator('.cm-deletedChunk').filter({ hasText: 'same' })
+    const repeatedWidgets = page.locator('.cm-chunkControls').filter({ hasText: 'Change both repeated occurrences' })
     await repeatedWidgets.nth(1).waitFor({ state: 'visible' })
     const diffLine = page.locator('.cm-line').filter({ hasText: 'DIFF' }).first()
     await diffLine.click()
@@ -232,11 +233,11 @@ describe('review-diff closure contract composite lifecycle', function () {
     await rejectedRepeated.waitFor({ state: 'detached' })
 
     // Hold the display-math chunk with a comment and add a review-level note.
-    const math = await widgetWithText(page, 'x = 1')
+    const math = await widgetWithText(page, 'Rewrite the display-math environment')
     const holdInput = math.locator('input.cm-holdCommentInput')
     await holdInput.fill('check the constants')
     await math.locator('button.hold').click()
-    await page.locator('.cm-deletedChunk.held').filter({ hasText: 'x = 1' }).waitFor({ state: 'visible' })
+    await page.locator('.cm-chunkControls.held').filter({ hasText: 'Rewrite the display-math environment' }).waitFor({ state: 'visible' })
     await page.locator('.cm-reviewCommentInput').fill('overall composite note')
     await page.locator('.cm-reviewCommentSubmit').click()
     await page.locator('.cm-reviewComment').filter({ hasText: 'overall composite note' }).waitFor({ state: 'visible' })
@@ -250,7 +251,7 @@ describe('review-diff closure contract composite lifecycle', function () {
     const blankChunk = blankChunks.chunks.find(chunk =>
       isRecord(chunk) && chunk.referenceText === '' && chunk.workingText === '')
     assert.ok(isRecord(blankChunk), 'blank-line-only proposal must remain actionable')
-    const blankWidget = page.locator('.cm-deletedChunk:not(.held)')
+    const blankWidget = page.locator('.cm-chunkControls:not(.held)')
     assert.equal(
       await blankWidget.count(),
       1,
@@ -272,7 +273,7 @@ describe('review-diff closure contract composite lifecycle', function () {
     // opening the file is what reattaches its sidecar-backed review.
     await api.post(`/v1/documents/${await workspaceDocumentId(api, documentPath)}/focus`)
     await waitForReview(page)
-    assert.ok((await page.locator('.cm-deletedChunk.held').innerText()).includes('check the constants'))
+    assert.ok((await page.locator('.cm-chunkControls.held').innerText()).includes('check the constants'))
     const reopenedReview = await api.get(`/v1/reviews/${reviewId}`)
     assert.ok(isRecord(reopenedReview) && Array.isArray(reopenedReview.comments))
     assert.ok(reopenedReview.comments.some(comment => isRecord(comment) && comment.text === 'overall composite note'))
@@ -310,7 +311,7 @@ describe('review-diff closure contract composite lifecycle', function () {
     assert.ok(outstanding.chunks[0].descriptions.includes('Rewrite the display-math environment'))
 
     // Resolve the held block through the UI and prove exact final bytes.
-    await restartedPage.locator('.cm-deletedChunk.held button.accept').click()
+    await restartedPage.locator('.cm-chunkControls.held button.accept').click()
     const resolvedSave = await invokeSave(restartedPage, documentPath)
     assert.ok(isRecord(resolvedSave) && resolvedSave.ok === true)
     assert.equal(await readFile(documentPath, 'utf8'), mixedExpected)

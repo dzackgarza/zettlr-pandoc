@@ -145,11 +145,26 @@ async function raceEditsWithClick (page: Page, input: RaceInput): Promise<string
     if (pane === null) {
       throw new Error('The editor content is not inside a .cm-editor')
     }
-    const scope = options.chunk === undefined
-      ? pane
-      : Array.from(pane.querySelectorAll('.cm-deletedChunk')).find(
-        widget => widget.textContent?.includes(options.chunk as string)
+    // The reference text renders inline inside the chunk's changed lines
+    // (the deleted span sits at its removal position, so the line's text
+    // contains it), and the chunk's controls are the next .cm-chunkControls
+    // strip after those lines in DOM order.
+    const findControls = (chunk: string): Element|undefined => {
+      const nodes = Array.from(
+        pane.querySelectorAll('.cm-changedLine, .cm-heldLine, .cm-chunkControls')
       )
+      const lineIndex = nodes.findIndex(node => {
+        if (node.classList.contains('cm-chunkControls')) {
+          return false
+        }
+        const text = node.textContent
+        return text !== null && text.includes(chunk)
+      })
+      return lineIndex === -1
+        ? undefined
+        : nodes.slice(lineIndex + 1).find(node => node.classList.contains('cm-chunkControls'))
+    }
+    const scope = options.chunk === undefined ? pane : findControls(options.chunk)
     if (scope === undefined) {
       throw new Error(`No chunk widget names ${JSON.stringify(options.chunk)}`)
     }
@@ -314,7 +329,7 @@ async function settledChunks (
     'the provider to commit the decision'
   )
   await waitFor(
-    async () => await page.locator('.cm-deletedChunk').count(),
+    async () => await page.locator('.cm-chunkControls').count(),
     count => count === chunks.length,
     `the pane to redraw ${chunks.length} chunk widget(s)`
   )
@@ -457,9 +472,14 @@ describe('a review decision waits for the document authority', function () {
       list.some(chunk => chunk.state === 'held')
     )
     assert.equal(chunks.length, 3, 'holding adjudicates nothing, so nothing leaves')
+    // The held rendering is split: the chunk's lines carry the held marking
+    // (with the reference text inline), and its strip renders held below.
     await activePage
-      .locator('.cm-deletedChunk.held')
+      .locator('.cm-heldLine')
       .filter({ hasText: 'charlie original' })
+      .waitFor({ state: 'visible', timeout: 30_000 })
+    await activePage
+      .locator('.cm-chunkControls.held')
       .waitFor({ state: 'visible', timeout: 30_000 })
     assert.deepEqual(await toastMessages(activePage), [])
     // A hold moves no text, so the provider's working text must be, byte for
@@ -497,7 +517,7 @@ describe('a review decision waits for the document authority', function () {
     // save that closes it — so the status panel stays and reports the empty
     // partition. What must be gone is every chunk widget.
     await waitFor(
-      async () => await activePage.locator('.cm-deletedChunk').count(),
+      async () => await activePage.locator('.cm-chunkControls').count(),
       count => count === 0,
       'every chunk widget to leave the pane'
     )
@@ -614,7 +634,7 @@ describe('a review decision waits for the document authority', function () {
     assert.equal(beforeDecision.chunks.length, 1)
     // One chunk, drawn in both panes.
     await waitFor(
-      async () => await activePage.locator('.cm-deletedChunk').count(),
+      async () => await activePage.locator('.cm-chunkControls').count(),
       count => count === 2,
       'both panes to draw the chunk'
     )

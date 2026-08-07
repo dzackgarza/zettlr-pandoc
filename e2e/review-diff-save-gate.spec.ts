@@ -443,13 +443,13 @@ describe('saving after accepting a reviewed change', function () {
 
     // The hold is the reviewer's, made where the reviewer makes it: the note
     // field and Hold button on the chunk's own widget.
-    const chunkWidget = page.locator('.cm-deletedChunk').first()
+    const chunkWidget = page.locator('.cm-chunkControls').first()
     await chunkWidget
       .locator('input.cm-holdCommentInput')
       .fill('Preserve this decision across save')
     await chunkWidget.locator('button.cm-review-diff-control.hold').click()
 
-    const heldWidget = page.locator('.cm-deletedChunk.held').first()
+    const heldWidget = page.locator('.cm-chunkControls.held').first()
     await heldWidget.waitFor({ state: 'visible', timeout: 20_000 })
     assert.ok(
       (await heldWidget.innerText()).includes('Held: Preserve this decision across save'),

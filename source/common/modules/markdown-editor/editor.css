@@ -200,11 +200,6 @@
   }
 
   &.review-diff-active {
-    .cm-deletedChunk {
-      box-sizing: border-box;
-      padding-inline-end: 150px;
-    }
-
     .cm-chunkButtons {
       display: inline-flex;
       flex-wrap: wrap;
@@ -234,6 +229,11 @@
     button.cm-review-diff-control.reject {
       background-color: #b33a3a;
       border-color: #8e2f2f;
+    }
+
+    button.cm-review-diff-control.hold {
+      background-color: #a97b12;
+      border-color: #855f0d;
     }
   }
 

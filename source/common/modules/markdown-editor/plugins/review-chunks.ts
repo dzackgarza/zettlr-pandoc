@@ -7,11 +7,11 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Renders review chunks as decorations over the live
- *                  document: the changed lines highlighted, the replaced
- *                  reference lines in a block widget above them, word-level
- *                  emphasis on what actually differs, and one Accept/Reject
- *                  control pair per chunk.
+ * Description:     Renders review chunks as track changes over the live
+ *                  document: deleted reference spans struck through inline
+ *                  at the positions they were removed from, inserted spans
+ *                  highlighted in place, and one compact control strip with
+ *                  the Accept/Reject/Hold decisions below each chunk.
  *
  *                  The pane is a VIEW. The partition is computed by the same
  *                  shared engine the provider uses, from the same two texts
@@ -345,7 +345,8 @@ function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
       : doc.length
 
     // Word-level diff between the two sides, for display only. The insert
-    // side is marked inside the document; the delete side inside the widget.
+    // side is marked inside the document; the delete side renders as inline
+    // strikethrough widgets at the positions the text was removed from.
     const changes = presentableDiff(chunk.referenceText, chunk.workingText)
 
     // The claims this chunk came from, in packet application order.
@@ -362,13 +363,23 @@ function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
       trimIdentitySeams(h.workingText) === trimIdentitySeams(chunk.workingText)
     )
 
-    ranges.push(
-      Decoration.widget({
-        widget: new DeletedLinesWidget(chunk, changes, descriptions, hold, config),
-        block: true,
-        side: -10
-      }).range(anchor)
-    )
+    // The deleted spans, struck through in the document flow. A negative
+    // side keeps a deleted span before an inserted one starting at the same
+    // position, so a replacement reads old-then-new, like tracked changes.
+    changes.forEach((change, changeIndex) => {
+      if (change.toA > change.fromA) {
+        ranges.push(
+          Decoration.widget({
+            widget: new DeletedSpanWidget(
+              chunk.chunkId,
+              chunk.referenceText.slice(change.fromA, change.toA),
+              changeIndex
+            ),
+            side: -1
+          }).range(Math.min(anchor + change.fromB, doc.length))
+        )
+      }
+    })
 
     const lineDecoration = hold === undefined ? changedLine : heldLine
     for (let line = chunk.workFromLine; line < chunk.workToLine && line <= doc.lines; line++) {
@@ -383,6 +394,17 @@ function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
         }
       }
     }
+
+    // The controls strip sits below the chunk: after its last working line,
+    // or after the line carrying the strikethrough for a pure deletion.
+    const controlsLine = Math.min(Math.max(chunk.workToLine - 1, chunk.workFromLine), doc.lines)
+    ranges.push(
+      Decoration.widget({
+        widget: new ChunkControlsWidget(chunk, descriptions, hold, config),
+        block: true,
+        side: 10
+      }).range(doc.line(controlsLine).to)
+    )
   }
   return { chunks, decorations: Decoration.set(ranges, true) }
 }
@@ -396,17 +418,47 @@ const heldLine = Decoration.line({ class: 'cm-heldLine' })
 const changedText = Decoration.mark({ class: 'cm-changedText' })
 
 /**
- * The block above a chunk: the reference lines this chunk replaces (empty for
- * a pure insertion), with the removed spans emphasised, and the
- * Accept/Reject/Hold controls. One widget per chunk — the controls sit in
- * exactly one place. A held chunk renders visually distinct, shows the
+ * One deleted span, struck through inline at the working-side position the
+ * text was removed from. Display only: the widget swallows every event, and
+ * the adjudication lives in the chunk's controls strip.
+ */
+class DeletedSpanWidget extends WidgetType {
+  constructor (
+    private readonly chunkId: string,
+    private readonly deletedText: string,
+    private readonly changeIndex: number
+  ) {
+    super()
+  }
+
+  eq (other: DeletedSpanWidget): boolean {
+    return other.chunkId === this.chunkId &&
+      other.deletedText === this.deletedText &&
+      other.changeIndex === this.changeIndex
+  }
+
+  toDOM (): HTMLElement {
+    const del = document.createElement('del')
+    del.className = 'cm-deletedText'
+    del.textContent = this.deletedText
+    return del
+  }
+
+  ignoreEvent (): boolean {
+    return true
+  }
+}
+
+/**
+ * The strip below a chunk: the claim descriptions, the hold's comment, and
+ * the Accept/Reject/Hold controls. One widget per chunk — the controls sit
+ * in exactly one place. A held chunk renders visually distinct, shows the
  * hold's comment, and keeps every control: holding is an annotation, not an
  * adjudication.
  */
-class DeletedLinesWidget extends WidgetType {
+class ChunkControlsWidget extends WidgetType {
   constructor (
     private readonly chunk: ReviewChunk,
-    private readonly changes: ReturnType<typeof presentableDiff>,
     private readonly descriptions: readonly string[],
     private readonly hold: ReviewChunkHoldView|undefined,
     private readonly config: ReviewChunksConfig
@@ -414,7 +466,7 @@ class DeletedLinesWidget extends WidgetType {
     super()
   }
 
-  eq (other: DeletedLinesWidget): boolean {
+  eq (other: ChunkControlsWidget): boolean {
     return other.chunk.chunkId === this.chunk.chunkId &&
       other.chunk.referenceText === this.chunk.referenceText &&
       other.chunk.workingText === this.chunk.workingText &&
@@ -427,12 +479,8 @@ class DeletedLinesWidget extends WidgetType {
   toDOM (view: EditorView): HTMLElement {
     const container = document.createElement('div')
     container.className = this.hold === undefined
-      ? 'cm-deletedChunk'
-      : 'cm-deletedChunk held'
-
-    if (this.chunk.referenceText !== '') {
-      container.appendChild(this.renderDeletedText())
-    }
+      ? 'cm-chunkControls'
+      : 'cm-chunkControls held'
 
     // The claims this chunk implements — present at the controls, muted.
     if (this.descriptions.length > 0) {
@@ -514,30 +562,6 @@ class DeletedLinesWidget extends WidgetType {
     return container
   }
 
-  /** The reference lines, with the spans absent from the working side marked. */
-  private renderDeletedText (): HTMLElement {
-    const pre = document.createElement('div')
-    pre.className = 'cm-deletedLines'
-    const text = this.chunk.referenceText
-    let position = 0
-    for (const change of this.changes) {
-      if (change.fromA > position) {
-        pre.appendChild(document.createTextNode(text.slice(position, change.fromA)))
-      }
-      if (change.toA > change.fromA) {
-        const del = document.createElement('del')
-        del.className = 'cm-deletedText'
-        del.textContent = text.slice(change.fromA, change.toA)
-        pre.appendChild(del)
-      }
-      position = Math.max(position, change.toA)
-    }
-    if (position < text.length) {
-      pre.appendChild(document.createTextNode(text.slice(position)))
-    }
-    return pre
-  }
-
   ignoreEvent (): boolean {
     return true
   }
@@ -554,12 +578,17 @@ const reviewChunksTheme = EditorView.baseTheme({
     backgroundColor: 'rgba(80, 160, 80, 0.28)',
     borderRadius: '2px'
   },
-  '.cm-deletedChunk': {
-    backgroundColor: 'rgba(200, 60, 60, 0.08)',
+  '.cm-chunkControls': {
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '8px',
+    backgroundColor: 'rgba(128, 128, 128, 0.06)',
     borderLeft: '3px solid rgba(200, 60, 60, 0.55)',
-    padding: '2px 6px'
+    padding: '2px 6px',
+    fontSize: '0.85em'
   },
-  '.cm-deletedChunk.held': {
+  '.cm-chunkControls.held': {
     backgroundColor: 'rgba(220, 170, 40, 0.10)',
     borderLeft: '3px solid rgba(220, 170, 40, 0.65)'
   },
@@ -577,17 +606,10 @@ const reviewChunksTheme = EditorView.baseTheme({
     marginLeft: '4px',
     maxWidth: '18em'
   },
-  '.cm-deletedLines': {
-    whiteSpace: 'pre-wrap',
-    fontFamily: 'inherit',
-    color: 'rgba(140, 40, 40, 0.9)'
-  },
-  '&dark .cm-deletedLines': {
-    color: 'rgba(240, 160, 160, 0.9)'
-  },
   '.cm-deletedText': {
     backgroundColor: 'rgba(200, 60, 60, 0.25)',
-    textDecoration: 'line-through'
+    textDecoration: 'line-through',
+    whiteSpace: 'pre-wrap'
   },
   '.cm-chunkDescriptions': {
     fontSize: '0.85em',
