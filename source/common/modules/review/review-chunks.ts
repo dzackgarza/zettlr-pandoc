@@ -29,9 +29,13 @@
  *
  *                  1. Atomic blocks decide whole. A chunk starting or ending
  *                     strictly inside an atomic block ($$ display math, a
- *                     code fence, a ::: fenced div) extends to the block's
- *                     edges, and chunks inside one block merge — one
- *                     environment, one decision, controls at its edge. A
+ *                     code fence) extends to the block's edges, and chunks
+ *                     inside one block merge — one syntactic object, one
+ *                     decision, controls at its edge. Prose containers
+ *                     (::: fenced divs) are NOT atomic: their interior is
+ *                     ordinary markdown, and in Pandoc math writing all
+ *                     prose lives inside one, so div atomicity would
+ *                     collapse every review to whole-environment swaps. A
  *                     boundary is atomic if it is inside a block in EITHER
  *                     text, so a fence the edit inserts or removes still
  *                     protects the region.
@@ -272,7 +276,7 @@ interface ChunkRange {
   workTo: number;
 }
 
-type BlockKind = "math" | "code" | "div";
+type BlockKind = "math" | "code";
 
 /** One atomic block: its kind and the lines it covers, fences included. */
 interface AtomicBlock {
@@ -286,12 +290,11 @@ function isBlank(line: string): boolean {
 }
 
 /**
- * The atomic blocks of a text: $$ or \\[...\\] display math, ``` / ~~~ code fences, and
- * ::: fenced divs, as 1-based half-open line spans covering their fences. A
- * single scanner state means blocks cannot nest across kinds — a $$ inside a
- * code fence is code, a fence inside a div belongs to the div. An
- * unterminated block runs to the end of the document: exactly the
- * half-applied mega-patch case the policies exist for.
+ * The atomic blocks of a text: $$ or \\[...\\] display math and ``` / ~~~
+ * code fences, as 1-based half-open line spans covering their fences. A
+ * single scanner state means blocks cannot nest across kinds — a $$ inside
+ * a code fence is code. An unterminated block runs to the end of the
+ * document: exactly the half-applied mega-patch case the policies exist for.
  */
 function atomicBlocks(lines: readonly string[]): AtomicBlock[] {
   const blocks: AtomicBlock[] = [];
@@ -300,7 +303,6 @@ function atomicBlocks(lines: readonly string[]): AtomicBlock[] {
     // and no shorter, so a ``` inside a ```` block is content, not the end.
     | { kind: "code"; from: number; fence: string }
     | { kind: "math"; from: number; close: "$$" | "\\]" }
-    | { kind: "div"; from: number; depth: number }
     | null = null;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -327,12 +329,6 @@ function atomicBlocks(lines: readonly string[]): AtomicBlock[] {
         } else {
           open = { kind: "math", from: lineNo, close: "\\]" };
         }
-        continue;
-      }
-      // A Pandoc div opens with ::: plus attributes; a bare ::: outside any
-      // div is a stray closer and opens nothing.
-      if (/^:{3,}/.test(trimmed) && /[^:\s]/.test(trimmed)) {
-        open = { kind: "div", from: lineNo, depth: 1 };
       }
       continue;
     }
@@ -353,17 +349,6 @@ function atomicBlocks(lines: readonly string[]): AtomicBlock[] {
         if (trimmed.endsWith(open.close)) {
           blocks.push({ kind: "math", from: open.from, to: lineNo + 1 });
           open = null;
-        }
-        break;
-      }
-      case "div": {
-        if (/^:{3,}/.test(trimmed)) {
-          if (/[^:\s]/.test(trimmed)) {
-            open.depth += 1;
-          } else if (--open.depth === 0) {
-            blocks.push({ kind: "div", from: open.from, to: lineNo + 1 });
-            open = null;
-          }
         }
         break;
       }

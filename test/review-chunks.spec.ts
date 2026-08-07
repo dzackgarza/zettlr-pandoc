@@ -299,21 +299,32 @@ describe("computeReviewChunks block-aware boundaries", function () {
     );
   });
 
-  it("keeps a fenced div atomic", function () {
+  it("chunks prose inside a fenced div at edit granularity", function () {
+    // A ::: div is a prose environment (lemma, proof, remark) — in Pandoc
+    // math writing ALL text lives inside one. Treating it as atomic collapses
+    // every review to whole-environment replacements, so two one-word edits
+    // in one remark must stay two separately adjudicable chunks.
     const reference = [
       "before", "",
-      "::: {.theorem}", "claim one", "claim two", "::: ",
+      "::: {.remark}", "sentence one stands here.", "", "sentence two stands here.", ":::",
       "", "after",
     ].join("\n");
     const working = reference
-      .replace("claim one", "claim ONE")
-      .replace("claim two", "claim TWO");
+      .replace("sentence one stands", "sentence one STANDS")
+      .replace("sentence two stands", "sentence two STANDS");
     const chunks = computeReviewChunks(reference, working);
-    assert.equal(chunks.length, 1, "one fenced div, one decision");
+    assert.equal(chunks.length, 2, "two edits, two decisions");
     assert.deepEqual(
       [chunks[0].refFromLine, chunks[0].refToLine],
-      [3, 7],
-      "the chunk must cover the fenced div edge to edge",
+      [4, 5],
+      "the first chunk must cover only its edited sentence",
+    );
+    // The seam split hands the shared blank line to the trailing chunk, so
+    // the second chunk starts at the seam (line 5), not at its sentence.
+    assert.deepEqual(
+      [chunks[1].refFromLine, chunks[1].refToLine],
+      [5, 7],
+      "the second chunk must cover only the seam and its edited sentence",
     );
   });
 
