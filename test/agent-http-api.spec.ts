@@ -2078,7 +2078,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(provider.reviewStore.getReview(docId), undefined);
   });
 
-  it("refuses to save an unresolved review, and refuses again once the disk drifted", async function () {
+  it("saves a pending review as-is, and refuses only once the disk drifted", async function () {
     const filePath = path.join(scratch, "save-gate.md");
     const original = "alpha\nx\ny\nz\nbeta\n";
     const proposed = "ALPHA\nx\ny\nz\nBETA\n";
@@ -2089,12 +2089,21 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const chunks = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")!;
     assert.equal(chunks.length, 2);
 
-    // An undecided chunk closes the gate: the buffer here is a mixture of
-    // baseline and proposed content, and that mixture must not reach the disk.
-    const refused = await provider.saveFile(filePath);
-    assert.ok(!refused.ok, "an unresolved review must refuse the save");
-    assert.equal(refused.refusal?.reason, "unresolved-chunks");
-    assert.equal(normalizedRead(filePath), original, "the baseline on disk must be untouched");
+    // Pending chunks do not block a save: the document is persisted as-is —
+    // proposal included — and the review's status is persisted alongside it.
+    const saved = await provider.saveFile(filePath);
+    assert.equal(saved.ok, true, JSON.stringify(saved));
+    assert.equal(normalizedRead(filePath), proposed, "the save must write the working text as-is");
+    const survivor = provider.reviewStore.getReview(docId);
+    assert.ok(survivor !== undefined, "a save with pending chunks must retain the review");
+    assert.equal(survivor.reviewId, review.reviewId);
+    assert.equal(survivor.generation, review.generation);
+    assert.equal(provider.reviewStatus(docId)?.unresolvedChunks, 2);
+    // The disk fence moved to the saved content: a fresh save is clean, not
+    // external drift, and the review survives it too.
+    const savedAgain = await provider.saveFile(filePath);
+    assert.equal(savedAgain.ok, true, JSON.stringify(savedAgain));
+    assert.ok(provider.reviewStore.getReview(docId) !== undefined);
 
     // Resolve every chunk, then let the file drift on disk underneath the
     // review — the case where stored positions would otherwise overwrite
@@ -2854,6 +2863,103 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.ok(detached !== undefined, "discarding the later edit must keep the saved held review");
       assert.equal(detached.workingText, proposed);
       assert.equal(sidecarCounts(detached).heldChunks, 1);
+    });
+
+    it("preserves a saved pending review when discarding a later editor edit", async function () {
+      // The pending twin of the held case above: a save persists the document
+      // as-is with the review's status, so the saved pending review is not
+      // the user's to lose when a LATER unsaved edit is discarded.
+      const filePath = path.join(scratch, "sidecar-discard-pending-save.md");
+      const original = "alpha\nx\ny\nz\nbeta\n";
+      const proposed = "ALPHA\nx\ny\nz\nbeta\n";
+      const laterEdit = "ALPHA\nx\ny\nz\nBETA edited\n";
+      const docId = await openFile(filePath, original);
+      const windowId = provider.windowKeys()[0];
+      const leafId = provider.leafIds(windowId)[0];
+      assert.equal(await provider.openFile(windowId, leafId, filePath, true), true);
+      provider.newWindow();
+
+      const submitted = await submitClaim(
+        docId,
+        makePatch(original, proposed),
+        "sidecar-discard-pending-save-1",
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+      // No decision at all: the chunk stays pending across the save.
+      assert.deepEqual(await provider.saveFile(filePath), { ok: true });
+      assert.equal(readFileSync(filePath, "utf8"), proposed);
+
+      const loaded = provider.loadedDocuments.find((document) => document.filePath === filePath)!;
+      const pushUpdates = Object.getOwnPropertyDescriptor(
+        Object.getPrototypeOf(provider),
+        "pushUpdates",
+      )?.value as
+        | ((filePath: string, version: number, updates: SerializedUpdate[]) => Promise<boolean>)
+        | undefined;
+      assert.equal(typeof pushUpdates, "function", "the authority update seam must exist");
+      if (pushUpdates === undefined) {
+        return;
+      }
+      const update: SerializedUpdate = {
+        clientID: "discard-pending-save-test",
+        changes: ChangeSet.of([{ from: 12, to: 17, insert: "BETA edited\n" }], 17).toJSON(),
+      };
+      assert.equal(await pushUpdates.call(provider, filePath, loaded.currentVersion, [update]), true);
+      assert.equal(
+        provider.loadedDocuments.find((document) => document.filePath === filePath)!.document.toString(),
+        laterEdit,
+      );
+
+      saveChangesResponse = 1; // "Don't save"
+      assert.equal(await provider.askUserToCloseWindow(windowId), true);
+
+      assert.equal(readFileSync(filePath, "utf8"), proposed);
+      const detached = await provider.findDetachedReview(submitted.reviewId);
+      assert.ok(detached !== undefined, "discarding the later edit must keep the saved pending review");
+      assert.equal(detached.workingText, proposed);
+      assert.equal(sidecarCounts(detached).unresolvedChunks, 1);
+      assert.equal(sidecarCounts(detached).heldChunks, 0);
+    });
+
+    it("destroys an unsaved held review when the user discards the changes", async function () {
+      // A hold is an annotation, not durability: only a save persists a
+      // review. Held or pending alike, a review that never reached disk lives
+      // in the dirty buffer, and the user's "Don't save" throws both away.
+      const filePath = path.join(scratch, "sidecar-discard-held-unsaved.md");
+      const onDisk = "alpha\n";
+      const docId = await openFile(filePath, onDisk);
+      const windowId = provider.windowKeys()[0];
+      const leafId = provider.leafIds(windowId)[0];
+      assert.equal(await provider.openFile(windowId, leafId, filePath, true), true);
+
+      const submitted = await submitClaim(
+        docId,
+        makePatch(onDisk, "ALPHA\n"),
+        "sidecar-discard-held-unsaved-1",
+      );
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        return;
+      }
+      const chunk = provider.reviewStore.getOutstandingChunks(docId, provider.readWorkingText(docId) ?? "")![0];
+      assert.equal(
+        (await provider.decideReviewChunk(submitted.reviewId, chunk.chunkId, "hold", livePrecondition(submitted.reviewId), "keep me")).ok,
+        true,
+      );
+
+      saveChangesResponse = 1; // "Don't save"
+      assert.equal(await provider.closeFile(windowId, leafId, filePath), true);
+
+      assert.equal(readFileSync(filePath, "utf8"), onDisk, "a discard must not write to disk");
+      assert.equal(
+        await sidecars.read(filePath),
+        undefined,
+        "an unsaved held review dies with the dirty buffer it annotates",
+      );
+      assert.equal(await provider.findDetachedReview(submitted.reviewId), undefined);
     });
 
     it("puts the buffer back on current disk content when the close prompt discards", async function () {

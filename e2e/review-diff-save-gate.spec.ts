@@ -41,6 +41,8 @@ const SNC_PHRASE = 'An SNC divisor bounds the fibre.'
 const DOCUMENT_CONTENTS = `# Review gate\n\n${ORIGINAL_PHRASE}\n`
 /** What is on disk once the first test's accepted save has landed. */
 const SAVED_CONTENTS = `# Review gate\n\n${PROPOSED_PHRASE}\n`
+/** What is on disk once a pending review's save has landed its proposal. */
+const PENDING_SAVED_CONTENTS = `# Review gate\n\n${STRICT_PHRASE}\n`
 const ARTIFACT_DIRECTORY = path.join(
   tmpdir(),
   'zettlr-review-diff-save-gate-e2e-latest'
@@ -145,6 +147,44 @@ function documentIdOf (payload: unknown): string {
   return documentId as string
 }
 
+/**
+ * The documentId for a path that may currently be closed: /v1/documents lists
+ * only open documents, so reopening resolves through the workspace listing.
+ */
+async function workspaceDocumentId (
+  client: AgentClient,
+  documentPath: string
+): Promise<string> {
+  const payload = await client.get('/v1/workspace/files')
+  assert.ok(
+    payload !== null && typeof payload === 'object' && 'files' in payload &&
+      Array.isArray(payload.files),
+    `Workspace listing had no files array: ${JSON.stringify(payload)}`
+  )
+  const entry = (payload.files as Array<{ path?: unknown, documentId?: unknown }>)
+    .find(file => file.path === documentPath)
+  assert.ok(
+    entry !== undefined && typeof entry.documentId === 'string',
+    `Workspace listing carried no documentId for ${documentPath}: ${JSON.stringify(payload)}`
+  )
+  return entry.documentId
+}
+
+/** The two review-detail fields the pending-save proofs compare across saves. */
+async function reviewCounts (
+  client: AgentClient,
+  reviewId: string
+): Promise<{ unresolvedChunks: number, generation: number }> {
+  const detail = await client.get(`/v1/reviews/${reviewId}`)
+  assert.ok(
+    detail !== null && typeof detail === 'object' &&
+      'unresolvedChunks' in detail && typeof detail.unresolvedChunks === 'number' &&
+      'generation' in detail && typeof detail.generation === 'number',
+    `Review detail carried no counts: ${JSON.stringify(detail)}`
+  )
+  return { unresolvedChunks: detail.unresolvedChunks, generation: detail.generation }
+}
+
 function buildPatch (documentPath: string, from: string, to: string): string {
   return (
     `--- ${documentPath}\n` +
@@ -159,7 +199,8 @@ function buildPatch (documentPath: string, from: string, to: string): string {
 
 /**
  * Submits a proposal and waits for its chunk to render, leaving it unresolved.
- * Both refusal tests need exactly this state; the accept path is what differs.
+ * Every pending-review test needs exactly this state; what happens to the
+ * pending chunk afterwards is what differs.
  */
 async function openReview (
   client: AgentClient,
@@ -334,6 +375,8 @@ describe('saving after accepting a reviewed change', function () {
     screenshots: new Map<string, Buffer>()
   }
   const { rendererEvents, screenshots } = running
+  /** Set by the pending-save test; the reopen test proves it reattaches. */
+  let pendingReviewId: string | undefined
 
   before(async function () {
     await boot(running, this.timeout())
@@ -486,52 +529,116 @@ describe('saving after accepting a reviewed change', function () {
     await clearReviewAndFlush(page, activeDocumentPath)
   })
 
-  it('refuses an unresolved review with a typed reason, not a modal', async function () {
+  it('saves a pending review as-is and keeps it open', async function () {
     const activeClient = requireInitialized(running.client, 'The Agent API client must be initialized')
+    const activeFixtureRoot = requireInitialized(running.fixtureRoot, 'The fixture root must be initialized')
     const activeDocumentPath = requireInitialized(running.documentPath, 'The document path must be initialized')
     assert.ok(running.browser, 'The application must be running')
     const page = await findEditorPage(running.browser, this.timeout())
 
     // The previous test completed its review, so this opens a fresh one and
-    // deliberately leaves the chunk unresolved.
-    await openReview(
+    // deliberately leaves the chunk unresolved. Saving persists the document
+    // as-is — proposal included — and the review's status alongside it.
+    pendingReviewId = await openReview(
       activeClient,
       page,
       activeDocumentPath,
       PROPOSED_PHRASE,
       STRICT_PHRASE,
-      'e2e-review-diff-save-gate-unresolved'
+      'e2e-review-diff-save-gate-pending'
     )
 
-    const contentsBefore = await readFile(activeDocumentPath, 'utf8')
+    const before = await reviewCounts(activeClient, pendingReviewId)
+    assert.equal(before.unresolvedChunks, 1, 'The pending chunk must be open before the save.')
 
-    // This resolving at all is the non-modal contract: a blocking
-    // dialog.showErrorBox in the gate would leave this promise pending forever.
-    // The reason travels with the result so the renderer can name it.
     const saved = await invokeSave(page, activeDocumentPath)
     assert.deepEqual(
       saved,
-      {
-        ok: false,
-        refusal: {
-          reason: 'unresolved-chunks',
-          message: 'Accept, reject, or hold every chunk before saving this review.'
-        }
-      },
-      'The provider must refuse an unresolved review with a typed reason.'
+      { ok: true },
+      'The provider refused to save a pending review. Gate closures logged:\n' +
+        `${saveGateClosures(await readAppLog(activeFixtureRoot))}\n` +
+        outputTail(running.getOutput())
     )
-    screenshots.set('save-refused.png', await page.screenshot())
-
     assert.equal(
       await readFile(activeDocumentPath, 'utf8'),
-      contentsBefore,
-      'A refused save must not touch the file.'
+      PENDING_SAVED_CONTENTS,
+      'The saved file must contain exactly the working text, proposal included.'
+    )
+    screenshots.set('pending-save.png', await page.screenshot())
+
+    // The review is untouched by the save: same pending chunk, same
+    // generation, and the pane still renders its decidable widget.
+    const after = await reviewCounts(activeClient, pendingReviewId)
+    assert.equal(after.unresolvedChunks, 1, 'The pending chunk must survive the save.')
+    assert.equal(after.generation, before.generation, 'A save must not advance the review generation.')
+    await page
+      .locator('button.cm-review-diff-control.accept')
+      .first()
+      .waitFor({ state: 'visible', timeout: 20_000 })
+    assert.equal(
+      await page.locator('#zettlr-toast-container .zettlr-toast.error').count(),
+      0,
+      'Saving a pending review must not raise an error toast.'
+    )
+
+    // The fence moved to the saved content, so the document is clean: a fresh
+    // save is not refused as external drift and the review survives it too.
+    assert.deepEqual(
+      await invokeSave(page, activeDocumentPath),
+      { ok: true },
+      'A second save of the already-saved pending review must succeed.'
+    )
+    assert.equal(
+      (await reviewCounts(activeClient, pendingReviewId)).unresolvedChunks,
+      1,
+      'The pending chunk must survive the second save as well.'
+    )
+  })
+
+  it('reattaches the saved pending review when the document reopens', async function () {
+    const activeClient = requireInitialized(running.client, 'The Agent API client must be initialized')
+    const activeDocumentPath = requireInitialized(running.documentPath, 'The document path must be initialized')
+    const savedReviewId = requireInitialized(pendingReviewId, 'The previous test must have saved a pending review')
+    assert.ok(running.browser, 'The application must be running')
+    const page = await findEditorPage(running.browser, this.timeout())
+
+    // The document was saved with its pending review, so closing it is free —
+    // this is exactly what the old refusal made impossible: putting a pending
+    // review down and coming back to it later.
+    await page.evaluate(
+      async ([pathInPage]) =>
+        await window.ipc.invoke('documents-provider', {
+          command: 'close-file-everywhere',
+          payload: { path: pathInPage }
+        }),
+      [activeDocumentPath]
+    )
+    await page
+      .locator('button.cm-review-diff-control.accept')
+      .first()
+      .waitFor({ state: 'detached', timeout: 20_000 })
+
+    // Focus is the operation that deliberately takes a pane, and opening the
+    // file is what reattaches its sidecar-backed review.
+    const documentId = await workspaceDocumentId(activeClient, activeDocumentPath)
+    await activeClient.post(`/v1/documents/${documentId}/focus`, {})
+    await page
+      .locator('button.cm-review-diff-control.accept')
+      .first()
+      .waitFor({ state: 'visible', timeout: 30_000 })
+    screenshots.set('pending-review-reattached.png', await page.screenshot())
+
+    const reattached = await reviewCounts(activeClient, savedReviewId)
+    assert.equal(
+      reattached.unresolvedChunks,
+      1,
+      'The reopened document must reattach the review with its pending chunk intact.'
     )
 
     await clearReviewAndFlush(page, activeDocumentPath)
   })
 
-  it('shows the refusal on a dismissable toast when the user saves with :w', async function () {
+  it('saves a pending review through the vim :w gesture without an error toast', async function () {
     const activeClient = requireInitialized(running.client, 'The Agent API client must be initialized')
     const activeDocumentPath = requireInitialized(running.documentPath, 'The document path must be initialized')
     assert.ok(running.browser, 'The application must be running')
@@ -551,37 +658,37 @@ describe('saving after accepting a reviewed change', function () {
     // A real save gesture, all the way through the renderer: the vim `:w` Ex
     // command runs in the editor, calls the same save IPC, and owns the
     // presentation of whatever comes back. Nothing here reaches into the
-    // provider, so this is what proves the refusal is visible to a user.
+    // provider, so this is what proves a user's own save gesture now succeeds
+    // on a pending review.
     await page.locator('.cm-content').click()
     await page.keyboard.press('Escape')
     await page.keyboard.type(':w')
     await page.keyboard.press('Enter')
 
-    const toast = page.locator('#zettlr-toast-container .zettlr-toast.error')
-    await toast.first().waitFor({ state: 'visible', timeout: 20_000 })
-    screenshots.set('refusal-toast.png', await page.screenshot())
-    // First span is the message; the second is the ✕ dismiss affordance.
-    assert.equal(
-      await toast.first().locator('span').first().innerText(),
-      'Accept, reject, or hold every chunk before saving this review.',
-      'The toast must name the provider\'s reason, not a generic failure.'
-    )
+    const expected = `# Review gate\n\n${SNC_PHRASE}\n`
+    const deadline = Date.now() + 20_000
+    while (Date.now() < deadline) {
+      if (await readFile(activeDocumentPath, 'utf8') === expected) {
+        break
+      }
+      await delay(250)
+    }
     assert.equal(
       await readFile(activeDocumentPath, 'utf8'),
-      SAVED_CONTENTS,
-      'The refused :w must not touch the file.'
+      expected,
+      'The :w save must write the pending working text as-is.'
     )
-
-    // Dismissable is the whole point of the redesign: the modal this replaced
-    // could not be closed from inside the app, which is how a refused save
-    // froze the window.
-    await toast.first().click()
-    await toast.first().waitFor({ state: 'detached', timeout: 5_000 })
     assert.equal(
-      await toast.count(),
+      await page.locator('#zettlr-toast-container .zettlr-toast.error').count(),
       0,
-      'The refusal toast must dismiss on click.'
+      'Saving a pending review with :w must not raise an error toast.'
     )
+    // The review is still open and decidable after the gesture.
+    await page
+      .locator('button.cm-review-diff-control.accept')
+      .first()
+      .waitFor({ state: 'visible', timeout: 20_000 })
+    screenshots.set('pending-save-vim-write.png', await page.screenshot())
 
     await clearReviewAndFlush(page, activeDocumentPath)
   })

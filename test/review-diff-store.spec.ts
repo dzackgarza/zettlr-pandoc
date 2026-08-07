@@ -1510,7 +1510,7 @@ describe("review transitions over committed review state", function () {
       return driver.getReview(DOC_ID)!.reviewId;
     }
 
-    it("holds a chunk out of the save-gate count without touching any text", function () {
+    it("holds a chunk out of the unresolved count without touching any text", function () {
       const reviewId = openTwoChunkReview();
       const held: AgentEvent[] = [];
       driver.on("review.held", (event: AgentEvent) => held.push(event));
@@ -1600,7 +1600,7 @@ describe("review transitions over committed review state", function () {
         return;
       }
 
-      // The held disagreement remains, but nothing blocks the save gate.
+      // The held disagreement remains, but the unresolved count reaches zero.
       assert.equal(driver.countUnresolved(DOC_ID), 0);
       assert.equal(heldResult.state, "resolved-awaiting-save");
       const status = driver.getReviewStatus(DOC_ID)!;

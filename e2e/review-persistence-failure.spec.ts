@@ -532,10 +532,10 @@ describe('a review that cannot be persisted', function () {
       'the acknowledged update must already be in the sidecar'
     )
 
-    // Typing outside the review's chunks adds one of its own, and an
-    // unresolved chunk closes the save gate. The reviewer accepts it in the
-    // pane — the held chunk from earlier stays held — so the next scenario
-    // starts from a saved document with only that held chunk outstanding.
+    // Typing outside the review's chunks adds one of its own. The reviewer
+    // accepts it in the pane — the held chunk from earlier stays held — so
+    // the next scenario starts from a saved document with only that held
+    // chunk outstanding.
     const pending = await chunkListing(activeApi, activeReviewId)
     const typed = pending.chunks.find(chunk => chunk.workingText.includes('accepted-edit'))
     assert.ok(typed !== undefined, `the typed line must be its own chunk: ${JSON.stringify(pending)}`)

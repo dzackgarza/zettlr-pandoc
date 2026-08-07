@@ -1673,7 +1673,7 @@ current contents from the editor somewhere else, and restart the application.`,
       // 0 = Save, 1 = Don't save, 2 = Cancel
       if (result.response === 1) {
         await this._discardChanges(openFile);
-        // A saved held review may survive the discard of a later edit. The
+        // A saved review may survive the discard of a later edit. The
         // document is about to leave the live registry, so detach that
         // preserved review before removing its working-text resolver.
         try {
@@ -2708,28 +2708,9 @@ current contents from the editor somewhere else, and restart the application.`,
       return undefined;
     }
 
-    // One engine counts the unresolved chunks — the same partition the panes
-    // draw their widgets from — so this count can never exceed what is
-    // clickable on screen. The old second check (reference !== working while
-    // the count says zero) is gone because it is unreachable: the count is
-    // derived from exactly those two texts, and it is zero iff they agree.
-    const unresolvedChunks =
-      this._reviewStore.getStatus(docId, this._workingTextOf(docId) ?? "")
-        ?.unresolvedChunks ?? 0;
-    if (unresolvedChunks > 0) {
-      this._app.log.warning(
-        `[DocumentManager] Save gate closed for ${filePath}: ` +
-          `${unresolvedChunks} unresolved chunk(s) at generation ` +
-          `${review.generation}`,
-      );
-      return {
-        reason: "unresolved-chunks",
-        message: trans(
-          "Accept, reject, or hold every chunk before saving this review.",
-        ),
-      };
-    }
-
+    // Pending chunks do not block a save: saving persists the document as-is
+    // and the review's status alongside it, so a pending review can be closed
+    // and revisited later. The only refusal left is external drift.
     const diskContents = await this._app.fsal.loadAnySupportedFile(filePath);
     if (sha256Text(normalizeText(diskContents)) !== review.diskFenceSha256) {
       this._app.log.warning(
@@ -2818,19 +2799,19 @@ current contents from the editor somewhere else, and restart the application.`,
       doc.lastSavedCharCount = newCharCount;
     }
 
-    // 8.6: a held review's sidecar records the save it is about to survive
-    // BEFORE the document write, naming both hashes. A process that exits
-    // between the two writes is then recoverable: reattachment reads the file
-    // and can tell which of them landed. The fence itself does not move until
-    // the document write returns.
+    // 8.6: a surviving review's sidecar records the save it is about to
+    // survive BEFORE the document write, naming both hashes. A process that
+    // exits between the two writes is then recoverable: reattachment reads
+    // the file and can tell which of them landed. The fence itself does not
+    // move until the document write returns.
     const documentId = this.getDocumentId(filePath);
     const review = documentId === undefined ? undefined : this._reviewStore.getReview(documentId);
-    const heldChunks =
+    const status =
       documentId === undefined
-        ? 0
-        : (this._reviewStore.getStatus(documentId, this._workingTextOf(documentId) ?? "")
-            ?.heldChunks ?? 0);
-    const survivesSave = review !== undefined && heldChunks > 0;
+        ? undefined
+        : this._reviewStore.getStatus(documentId, this._workingTextOf(documentId) ?? "");
+    const openChunks = (status?.unresolvedChunks ?? 0) + (status?.heldChunks ?? 0);
+    const survivesSave = review !== undefined && openChunks > 0;
     const savedSha256 = sha256Text(content);
     if (survivesSave) {
       try {
@@ -2879,12 +2860,14 @@ current contents from the editor somewhere else, and restart the application.`,
     this._app.log.info(`[DocumentManager] File ${filePath} saved.`);
     if (documentId !== undefined && review !== undefined) {
       if (survivesSave) {
-        // Held chunks survive a save: the review stays open and the reference
-        // retains its disagreement over the held spans, so the panes keep
-        // rendering them. The disk fence moves to the content just written —
-        // the file on disk IS this save — or every later save would be
-        // refused as external drift. Only after this second write, which
-        // clears pendingSave, has the save succeeded.
+        // A save persists the document as-is and the review's status
+        // alongside it: pending and held chunks alike survive, the review
+        // stays open, and the reference retains its disagreement over the
+        // open spans, so the panes keep rendering them. The disk fence moves
+        // to the content just written — the file on disk IS this save — or
+        // every later save would be refused as external drift. Only after
+        // this second write, which clears pendingSave, has the save
+        // succeeded.
         const fenced = { ...review, diskFenceSha256: savedSha256 };
         try {
           await this._reviewSidecars.write(
@@ -2904,7 +2887,8 @@ current contents from the editor somewhere else, and restart the application.`,
           documentId,
         });
         this._reviewStore.removeReview(documentId);
-        // Explicit resolution: a completed review leaves no residue. A
+        // Only a fully decided review completes on save: every chunk is
+        // accepted or rejected, so the review leaves no residue. A
         // deletion that fails leaves a sidecar whose two texts already agree,
         // and reattachment cleans that up rather than restoring a review with
         // nothing left to decide.
@@ -3057,12 +3041,12 @@ current contents from the editor somewhere else, and restart the application.`,
    * with no signal that anything had been resurrected.
    *
    * So: the buffer returns to its disk bytes through the same splice path a
-   * review decision uses (every open pane follows). An already-saved held
-   * review is the one exception: when its disk fence still matches the file,
-   * the later ordinary edit is discarded but the held review remains in its
-   * sidecar for the close/detach path. Any other review is closed and its
-   * sidecar deleted. Only then is the document clean, because only then is the
-   * claim true.
+   * review decision uses (every open pane follows). An already-saved review
+   * is the one exception: when its disk fence still matches the file, the
+   * later ordinary edit is discarded but the saved review — pending or held
+   * alike — remains in its sidecar for the close/detach path. Any other
+   * review is closed and its sidecar deleted. Only then is the document
+   * clean, because only then is the claim true.
    *
    * The sidecar deletion is deliberately NOT wrapped in the error handling
    * _detachReview uses: a discard whose file removal failed leaves those
@@ -3085,13 +3069,18 @@ current contents from the editor somewhere else, and restart the application.`,
     const diskContents = await this._app.fsal.loadAnySupportedFile(doc.filePath);
     const review = this._reviewStore.getReview(doc.documentId);
     const persisted = review === undefined ? undefined : await this._reviewSidecars.read(doc.filePath);
+    const normalizedDisk = normalizeText(diskContents);
     const preserveSavedReview =
       review !== undefined &&
       persisted !== undefined &&
       persisted.reviewId === review.reviewId &&
       !persisted.invalidated &&
-      sidecarCounts(persisted).heldChunks > 0 &&
-      persisted.diskFenceSha256 === sha256Text(normalizeText(diskContents));
+      persisted.diskFenceSha256 === sha256Text(normalizedDisk) &&
+      // A save the review survived wrote the working text — which disagrees
+      // with the reference exactly over the open chunks — to disk. Disk equal
+      // to the reference therefore means no such save happened: the review
+      // annotates only the dirty buffer being thrown away, and dies with it.
+      normalizedDisk !== persisted.referenceText;
 
     if (!preserveSavedReview) {
       await this._reviewSidecars.delete(doc.filePath);

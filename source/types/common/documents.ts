@@ -116,7 +116,6 @@ export enum DP_EVENTS {
  * renderer bundle, which fails the webpack build outright.
  */
 export type SaveRefusalReason =
-  | 'unresolved-chunks'
   | 'disk-changed'
   // The review could not be written through, so the close was aborted and
   // the document is still open with its review intact.
