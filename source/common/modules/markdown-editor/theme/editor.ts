@@ -198,7 +198,9 @@ const pandocDivDark = {
 // The region wash is NEUTRAL by design: a suggestion carries no valence until
 // adjudicated — only the additions are green and only the removals red.
 const reviewLight = {
-  regionBg: 'rgba(96, 125, 139, 0.14)',
+  // Warm taupe, audited: >=6 dE2000 from every env surface both ways (the
+  // cool grays sit sub-JND from the slate/blue/cyan surfaces in light mode).
+  regionBg: 'rgba(94, 83, 75, 0.22)',
   insertMarkBg: 'rgba(26, 178, 74, 0.45)',
   deleteBg: 'rgba(207, 34, 46, 0.30)',
   deleteAccent: '#cf222e',
@@ -215,7 +217,7 @@ const reviewLight = {
 }
 
 const reviewDark = {
-  regionBg: 'rgba(120, 144, 156, 0.20)',
+  regionBg: 'rgba(200, 187, 178, 0.20)',
   insertMarkBg: 'rgba(63, 185, 80, 0.48)',
   deleteBg: 'rgba(248, 81, 73, 0.38)',
   deleteAccent: '#f85149',
