@@ -40,9 +40,18 @@ launch-desktop *files: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py" --kill
     "{{justfile_directory()}}/node_modules/.bin/electron-forge" start -- "$@"
 
-# Build a packaged Linux x64 app into out/Zettlr-Pandoc-linux-x64/.
+# Build a packaged Linux x64 app into out/Zettlr-Pandoc-linux-x64/ and stamp
+# it with the source fingerprint it was built from. The fingerprint is taken
+# BEFORE the build: an edit made while webpack runs must read as stale, never
+# as already-built. The desktop launcher skips the rebuild when the stamp
+# still matches.
 package: sync-dependencies
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd -- "{{justfile_directory()}}"
+    fingerprint=$(./scripts/desktop/zettlr-pandoc-source-fingerprint .)
     {{bun}} run package:linux-x64
+    printf '%s\n' "$fingerprint" > out/Zettlr-Pandoc-linux-x64/.source-fingerprint
 
 # Run the packaged binary (build it first with `just package`).
 run-packaged:

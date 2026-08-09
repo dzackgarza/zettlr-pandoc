@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Print a content fingerprint of the repository's buildable source: the
+# commit, every tracked modification (staged or not, including deletions),
+# and the name and content of every untracked non-ignored file. Anything
+# that could change the built app changes this output; ignored artifacts
+# (node_modules, out/, caches) do not. The desktop launcher compares this
+# against the stamp of the last packaged build to decide whether an honest
+# launch needs a rebuild.
+set -euo pipefail
+
+repo="${1:?usage: zettlr-pandoc-source-fingerprint <repo>}"
+
+for required_command in cut git sha256sum xargs; do
+  if ! command -v "$required_command" >/dev/null 2>&1; then
+    printf 'Required command is unavailable: %s\n' "$required_command" >&2
+    exit 1
+  fi
+done
+
+{
+  git -C "$repo" rev-parse HEAD
+  git -C "$repo" diff HEAD
+  git -C "$repo" ls-files --others --exclude-standard -z |
+    (cd -- "$repo" && xargs -0 -r sha256sum)
+} | sha256sum | cut -d' ' -f1
