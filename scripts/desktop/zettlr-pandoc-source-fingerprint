@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Print a content fingerprint of the repository's buildable source: the
-# commit, every tracked modification (staged or not, including deletions),
-# and the name and content of every untracked non-ignored file. Anything
-# that could change the built app changes this output; ignored artifacts
-# (node_modules, out/, caches) do not. The desktop launcher compares this
-# against the stamp of the last packaged build to decide whether an honest
-# launch needs a rebuild.
+# Print a content fingerprint of the repository's PACKAGED-APP inputs: the
+# index state, every uncommitted tracked modification, and the name and
+# content of every untracked non-ignored file — excluding trees that never
+# enter the packaged build (unit tests, e2e specs, the launcher scripts
+# themselves, CI config). A change there does not make the packaged app
+# stale, so it must not trigger a rebuild; anything not explicitly excluded
+# counts as a build input, so an unknown new path errs toward rebuilding.
+# The desktop launcher compares this against the stamp of the last packaged
+# build to decide whether an honest launch needs a rebuild.
 set -euo pipefail
 
 repo="${1:?usage: zettlr-pandoc-source-fingerprint <repo>}"
@@ -17,9 +19,22 @@ for required_command in cut git sha256sum xargs; do
   fi
 done
 
+# Trees with no path into the packaged app. static/ and resources/ are NOT
+# here — webpack copies them into the bundle.
+excludes=(
+  ':(exclude)test'
+  ':(exclude)e2e'
+  ':(exclude)scripts/desktop'
+  ':(exclude).github'
+)
+
 {
-  git -C "$repo" rev-parse HEAD
-  git -C "$repo" diff HEAD
-  git -C "$repo" ls-files --others --exclude-standard -z |
+  # The index: mode, blob id, and path of every tracked build input. This is
+  # what changes on a commit or a staged edit — no file contents are read.
+  git -C "$repo" ls-files -s -z -- . "${excludes[@]}"
+  # Unstaged tracked modifications, including deletions.
+  git -C "$repo" diff -- . "${excludes[@]}"
+  # Untracked non-ignored files, content-hashed.
+  git -C "$repo" ls-files --others --exclude-standard -z -- . "${excludes[@]}" |
     (cd -- "$repo" && xargs -0 -r sha256sum)
 } | sha256sum | cut -d' ' -f1
