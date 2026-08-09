@@ -1026,8 +1026,7 @@ export default class MarkdownEditor extends EventEmitter {
       this.activeReviewDiffSession.referenceText === session.referenceText &&
       this.activeReviewDiffSession.workingText === session.workingText &&
       JSON.stringify(this.activeReviewDiffSession.packets) === JSON.stringify(session.packets) &&
-      JSON.stringify(this.activeReviewDiffSession.chunkComments) === JSON.stringify(session.chunkComments) &&
-      JSON.stringify(this.activeReviewDiffSession.comments) === JSON.stringify(session.comments)
+      JSON.stringify(this.activeReviewDiffSession.chunkComments) === JSON.stringify(session.chunkComments)
     ) {
       return;
     }
@@ -1064,7 +1063,6 @@ export default class MarkdownEditor extends EventEmitter {
       referenceText: session.referenceText,
       packets: session.packets,
       chunkComments: session.chunkComments,
-      comments: session.comments,
       onDecide: async (chunkId, decision) =>
         await client().decide({
           reviewId,

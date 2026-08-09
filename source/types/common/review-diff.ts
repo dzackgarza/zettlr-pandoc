@@ -1,4 +1,3 @@
-import type { ReviewComment } from './agent-api'
 
 /**
  * What a renderer pane needs to DISPLAY a review: the provider-owned merge
@@ -33,8 +32,6 @@ export interface ReviewDiffSession {
    * the pane never reports state back).
    */
   chunkComments: ReviewChunkCommentView[];
-  /** Review-level comments, including orphaned chunk notes, in creation order. */
-  comments: ReviewComment[];
 }
 
 /** One chunk-anchored comment as a pane sees it: identity plus the text. */

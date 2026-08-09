@@ -3711,7 +3711,6 @@ current contents from the editor somewhere else, and restart the application.`,
         refSpans: packet.refSpans.map((span) => ({ ...span })),
       })),
       chunkComments: review.chunkComments.map((note) => ({ ...note })),
-      comments: review.comments.map((comment) => ({ ...comment })),
     };
   }
 

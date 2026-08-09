@@ -85,15 +85,9 @@ interface ChunkNoteView {
   comment: string
 }
 
-interface CommentView {
-  text: string
-  createdAt: string
-}
-
 interface ReviewViewOptions {
   packets?: PacketView[]
   chunkComments?: ChunkNoteView[]
-  comments?: CommentView[]
 }
 
 interface DecisionCall {
@@ -145,7 +139,6 @@ describe('Editor review-chunk view', function () {
             referenceText,
             packets: options.packets ?? [],
             chunkComments: options.chunkComments ?? [],
-            comments: options.comments ?? [],
             onDecide: async (chunkId, decision) => {
               calls.decisions.push({ chunkId, decision })
             },
@@ -325,7 +318,6 @@ describe('Editor review-chunk view', function () {
       referenceText: baseline,
       packets: [],
       chunkComments,
-      comments: [],
       onDecide: async () => {},
       onAcceptAll: async () => {},
       onClear: async () => {},
@@ -660,7 +652,6 @@ describe('Editor review-chunk view', function () {
       referenceText: baseline,
       packets: [],
       chunkComments: [],
-      comments: [],
       onDecide: async (chunkId, decision) => {
         sink.push({ chunkId, decision })
       },
@@ -713,7 +704,6 @@ describe('Editor review-chunk view', function () {
       referenceText: 'baseline\n',
       packets: [],
       chunkComments: [],
-      comments: [],
       onDecide: async () => {},
       onAcceptAll: async () => {},
       onClear: async () => {
@@ -750,14 +740,8 @@ describe('Editor review-chunk view', function () {
     )
   })
 
-  it('emits trimmed review comments and renders comments supplied by the provider', function () {
-    const { view, calls } = createReviewView('baseline', 'proposal', {
-      comments: [{ text: 'existing note', createdAt: '2026-08-04T00:00:00.000Z' }]
-    })
-    assert.equal(
-      view.dom.querySelector<HTMLElement>('.cm-reviewComment')?.textContent,
-      'existing note'
-    )
+  it('emits trimmed review comments and never renders committed ones', function () {
+    const { view, calls } = createReviewView('baseline', 'proposal')
 
     const input = view.dom.querySelector<HTMLInputElement>('.cm-reviewCommentInput')
     const submit = view.dom.querySelector<HTMLButtonElement>('.cm-reviewCommentSubmit')
@@ -769,9 +753,9 @@ describe('Editor review-chunk view', function () {
 
     assert.deepEqual(calls.comments, ['overall note'])
     assert.equal(
-      view.dom.querySelectorAll('.cm-reviewComment').length,
-      1,
-      'the view waits for the provider broadcast before adding the submitted comment'
+      view.dom.querySelector('.cm-reviewComment'),
+      null,
+      'committed comments are the agent\'s data: the panel never lists them'
     )
   })
 

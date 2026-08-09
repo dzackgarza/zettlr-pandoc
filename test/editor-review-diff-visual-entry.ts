@@ -52,7 +52,6 @@ async function mount (): Promise<void> {
         reviewChunksExtension({
           reviewId: 'visual-capture',
           referenceText: baseline,
-          comments: [],
           packets: [],
           chunkComments: [],
           onDecide: async () => { /* capture harness: decisions are not exercised */ },

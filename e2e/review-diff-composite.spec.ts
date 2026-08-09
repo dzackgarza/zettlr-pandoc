@@ -242,7 +242,12 @@ describe('review-diff closure contract composite lifecycle', function () {
     await math.locator('.cm-chunkCommentDirty:not(.unsaved)').waitFor({ state: 'visible' })
     await page.locator('.cm-reviewCommentInput').fill('overall composite note')
     await page.locator('.cm-reviewCommentSubmit').click()
-    await page.locator('.cm-reviewComment').filter({ hasText: 'overall composite note' }).waitFor({ state: 'visible' })
+    // The field clears only once the comment is committed — committed
+    // comments render nowhere; they are read back through the API below.
+    await page.waitForFunction(() => {
+      const input = document.querySelector<HTMLInputElement>('.cm-reviewCommentInput')
+      return input !== null && input.value === ''
+    })
 
     // The blank-line-only chunk is still undecided too. The API vouches
     // for it by its empty reference/working text; the reviewer resolves it

@@ -46,7 +46,6 @@ import {
   type ReviewChunk
 } from '@common/modules/review/review-chunks'
 import type { ReviewChunkCommentView, ReviewPacketAttribution } from '@dts/common/review-diff'
-import type { ReviewComment } from '@dts/common/agent-api'
 
 export interface ReviewChunksConfig {
   reviewId: string
@@ -66,8 +65,6 @@ export interface ReviewChunksConfig {
    * it stops matching (the provider orphans the note's text).
    */
   chunkComments: ReviewChunkCommentView[]
-  /** Review-level comments shown in the status panel. */
-  comments: ReviewComment[]
   /** Called with a chunk's content-addressed id when a control is clicked. */
   onDecide: (chunkId: string, decision: 'accept'|'reject') => Promise<void>
   /**
@@ -255,8 +252,8 @@ function reviewStatusPanel (view: EditorView): Panel {
       runPanelAction(async () => { await config.onClear() })
     }
   )
-  const commentList = document.createElement('div')
-  commentList.className = 'cm-reviewComments'
+  // Committed comments render nowhere: they are the agent's data. The panel
+  // only offers the input for writing a new one.
   const commentInput = document.createElement('input')
   commentInput.type = 'text'
   commentInput.className = 'cm-reviewCommentInput'
@@ -281,7 +278,7 @@ function reviewStatusPanel (view: EditorView): Panel {
     commentSubmit.disabled = commentInput.value.trim() === ''
   })
   commentSubmit.disabled = true
-  dom.append(previous, next, label, acceptAll, clear, commentList, commentInput, commentSubmit)
+  dom.append(previous, next, label, acceptAll, clear, commentInput, commentSubmit)
 
   const render = (state: EditorState): void => {
     // The panel outlives the review by a tick: a mass action that ends the
@@ -301,12 +298,6 @@ function reviewStatusPanel (view: EditorView): Panel {
     acceptAll.disabled = done || busy
     clear.disabled = done || busy
     commentSubmit.disabled = busy || commentInput.value.trim() === ''
-    commentList.replaceChildren(...requireReviewChunksConfig(state).comments.map(comment => {
-      const entry = document.createElement('div')
-      entry.className = 'cm-reviewComment'
-      entry.textContent = comment.text
-      return entry
-    }))
   }
   render(view.state)
 
