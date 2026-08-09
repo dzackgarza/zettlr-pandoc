@@ -314,7 +314,12 @@ export function reviewChunksExtension (config: ReviewChunksConfig): Extension[] 
   return [
     reviewChunksConfig.of(config),
     reviewChunksField,
-    showPanel.of(reviewStatusPanel),
+    // The panel exists to act on outstanding chunks, so it leaves with the
+    // last one. The review itself survives its last decision — resolved,
+    // awaiting the save that closes it — but that state is the agent's to
+    // read; a bar of dead controls over "0 outstanding" serves no one.
+    showPanel.compute([reviewChunksField], state =>
+      state.field(reviewChunksField).chunks.length > 0 ? reviewStatusPanel : null),
     reviewChunkKeymap,
     reviewChunksTheme
   ]

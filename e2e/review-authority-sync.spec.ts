@@ -532,17 +532,16 @@ describe('a review decision waits for the document authority', function () {
       'the review to hold no unresolved chunk'
     )
     // The review survives its last decision — it is resolved, awaiting the
-    // save that closes it — so the status panel stays and reports the empty
-    // partition. What must be gone is every chunk widget.
+    // save that closes it — but that state is the agent's to read: with
+    // nothing outstanding, every chunk widget AND the status panel leave.
     await waitFor(
       async () => await activePage.locator('.cm-chunkControls').count(),
       count => count === 0,
       'every chunk widget to leave the pane'
     )
-    assert.equal(
-      await activePage.locator('.cm-reviewStatusLabel').innerText(),
-      '0 outstanding'
-    )
+    await activePage
+      .locator('.cm-reviewStatusPanel')
+      .waitFor({ state: 'detached', timeout: 30_000 })
     assert.deepEqual(await toastMessages(activePage), [])
     assert.equal(
       await workingText(activeApi),

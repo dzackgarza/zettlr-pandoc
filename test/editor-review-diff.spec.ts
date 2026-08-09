@@ -689,6 +689,45 @@ describe('Editor review-chunk view', function () {
     assert.deepEqual(built, [], 'the retired configuration must never be called')
   })
 
+  it('unmounts the status panel once nothing is outstanding', function () {
+    // The provider's accept-echo moves the reference onto the working text:
+    // the review survives, resolved and awaiting its save, but the panel is
+    // chunk controls and must leave with the last chunk.
+    const compartment = new Compartment()
+    const configFor = (referenceText: string): Parameters<typeof reviewChunksExtension>[0] => ({
+      reviewId: 'review-test',
+      referenceText,
+      packets: [],
+      chunkComments: [],
+      onDecide: async () => {},
+      onAcceptAll: async () => {},
+      onClear: async () => {},
+      onComment: async () => {},
+      onChunkComment: async () => {}
+    })
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: 'proposal\n',
+        extensions: [compartment.of(reviewChunksExtension(configFor('baseline\n')))]
+      })
+    })
+    views.push(view)
+    assert.ok(
+      view.dom.querySelector('.cm-reviewStatusPanel') !== null,
+      'an outstanding chunk mounts the panel'
+    )
+
+    view.dispatch({
+      effects: compartment.reconfigure(reviewChunksExtension(configFor('proposal\n')))
+    })
+    assert.equal(
+      view.dom.querySelector('.cm-reviewStatusPanel'),
+      null,
+      'a resolved review shows no bar of dead controls'
+    )
+  })
+
   it('lets a mass action end the review without an unhandled rejection', async function () {
     // Rejecting the last chunks ends the review, and the provider's broadcast
     // takes this extension out of the state. The panel's post-action render
