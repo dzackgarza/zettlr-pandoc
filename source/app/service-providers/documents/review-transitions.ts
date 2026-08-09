@@ -594,10 +594,17 @@ function trimIdentitySeams(text: string): string {
  * merely moved is reattached to the chunk that now carries it. One that
  * cannot be placed is released as an orphaned review-level comment naming
  * the vanished chunk, so the text is never silently lost.
+ *
+ * The orphan is the agent's record, not the reviewer's: it carries the
+ * note's snapshot of the chunk's two texts, and — when this reconciliation
+ * ran because of a decision — which way the chunk went. Without those, a
+ * caller reading the comment after the fact would know only that a chunk id
+ * once existed.
  */
 function reconcileChunkComments(
   review: ActiveReviewState,
   partition: readonly ReviewChunk[],
+  decision?: ChunkDecision,
 ): AgentEventDraft[] {
   const liveIds = new Set(partition.map((chunk) => chunk.chunkId));
   const usedIds = new Set<string>();
@@ -645,6 +652,9 @@ function reconcileChunkComments(
       text: note.comment,
       createdAt: new Date().toISOString(),
       orphanedFromChunkId: note.chunkId,
+      decision,
+      referenceText: note.referenceText,
+      workingText: note.workingText,
     };
     review.comments.push(comment);
     // Orphaning is derived bookkeeping of an edit that already happened, not
@@ -860,7 +870,7 @@ export function prepareChunkDecision(input: {
     remapAcrossDecision(next, chunk, 0);
   }
   const decided = computeReviewChunks(next.referenceText, nextWorkingText);
-  events.push(...reconcileChunkComments(next, decided));
+  events.push(...reconcileChunkComments(next, decided, input.decision));
   const unresolvedChunks = decided.length;
   next.generation += 1;
   events.push({
@@ -1011,7 +1021,7 @@ export function prepareAcceptAll(input: {
   next.referenceText = workingText;
   next.generation += 1;
   // Every chunk comment now dangles (its chunk is resolved).
-  const events = reconcileChunkComments(next, []);
+  const events = reconcileChunkComments(next, [], "accept");
   events.push(
     {
       event: "review.changed",
@@ -1061,7 +1071,7 @@ export function prepareClear(input: {
   next.generation += 1;
   // Every disagreement is resolved at once: nothing remains to attribute,
   // and every chunk comment dangles — its text surfaces as an orphan.
-  const events = reconcileChunkComments(next, []);
+  const events = reconcileChunkComments(next, [], "reject");
   for (const packet of next.packets) {
     packet.refSpans = [];
   }

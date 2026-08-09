@@ -1171,6 +1171,7 @@ describe("review transitions over committed review state", function () {
         .comments.filter((comment) => comment.orphanedFromChunkId === chunks[1].chunkId);
       assert.equal(orphans.length, 1, "the chunk note must survive as an orphan");
       assert.equal(orphans[0].text, "still thinking");
+      assert.equal(orphans[0].decision, "accept", "the sweep is a decision, and the orphan says so");
     });
 
     it("refuses without an active review", function () {
@@ -1699,6 +1700,11 @@ describe("review transitions over committed review state", function () {
       assert.equal(review.comments.length, 1);
       assert.equal(review.comments[0].text, "keep the emphasis");
       assert.equal(review.comments[0].orphanedFromChunkId, chunkId);
+      assert.equal(
+        review.comments[0].decision,
+        undefined,
+        "an edit is not a decision: the orphan must not claim one",
+      );
       assert.equal(commented.length, 1);
       assert.equal(commented[0].comment, "keep the emphasis");
       assert.equal(commented[0].orphanedFromChunkId, chunkId);
@@ -1706,15 +1712,29 @@ describe("review transitions over committed review state", function () {
 
     it("orphans a chunk note when the annotated chunk is decided", function () {
       const reviewId = openTwoChunkReview();
-      const chunkId = driver.getOutstandingChunks(DOC_ID)![0].chunkId;
-      driver.commentChunk(DOC_ID, reviewId, chunkId, "second thoughts");
-      const accepted = driver.decideChunk(DOC_ID, reviewId, chunkId, "accept");
+      const [first, second] = driver.getOutstandingChunks(DOC_ID)!;
+      driver.commentChunk(DOC_ID, reviewId, first.chunkId, "second thoughts");
+      const accepted = driver.decideChunk(DOC_ID, reviewId, first.chunkId, "accept");
       assert.equal(accepted.ok, true);
 
       assert.equal(driver.getReview(DOC_ID)!.chunkComments.length, 0);
       const review = driver.getReview(DOC_ID)!;
       assert.equal(review.comments.length, 1);
-      assert.equal(review.comments[0].orphanedFromChunkId, chunkId);
+      assert.equal(review.comments[0].orphanedFromChunkId, first.chunkId);
+      // The orphan is the agent's record of what was decided and said: it
+      // names the verb and carries the annotated chunk's two texts.
+      assert.equal(review.comments[0].decision, "accept");
+      assert.equal(review.comments[0].referenceText, first.referenceText);
+      assert.equal(review.comments[0].workingText, first.workingText);
+
+      driver.commentChunk(DOC_ID, reviewId, second.chunkId, "no thanks");
+      const rejected = driver.decideChunk(DOC_ID, reviewId, second.chunkId, "reject");
+      assert.equal(rejected.ok, true);
+      const rejectedOrphan = driver
+        .getReview(DOC_ID)!
+        .comments.find((comment) => comment.orphanedFromChunkId === second.chunkId);
+      assert.equal(rejectedOrphan?.decision, "reject");
+      assert.equal(rejectedOrphan?.workingText, second.workingText);
     });
 
     it("keeps a chunk note through an ordinary line shift", function () {

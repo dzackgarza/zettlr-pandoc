@@ -504,6 +504,15 @@ export interface components {
             createdAt: string;
             /** @description Present when this comment was salvaged from a chunk-anchored note whose chunk id vanished from the partition (the annotated region was edited, decided, cleared, or absorbed by a later claim). Note text is never silently lost. */
             orphanedFromChunkId?: string;
+            /**
+             * @description Present when the orphaning event was a decision: what happened to the chunk this comment annotated. Absent when the chunk dissolved through an ordinary edit.
+             * @enum {string}
+             */
+            decision?: "accept" | "reject";
+            /** @description The annotated chunk's reference-side text, snapshotted when the note was written. Lets a caller reconstruct what the comment was about without replaying the document history. */
+            referenceText?: string;
+            /** @description The annotated chunk's working-side text, snapshotted when the note was written. */
+            workingText?: string;
         };
         EditorViewSummary: {
             viewId: string;

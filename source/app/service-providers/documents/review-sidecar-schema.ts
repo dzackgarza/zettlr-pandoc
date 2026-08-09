@@ -106,6 +106,11 @@ const ReviewCommentSchema = Type.Object(
     text: Type.String(),
     createdAt: Type.String(),
     orphanedFromChunkId: Type.Optional(Type.String()),
+    decision: Type.Optional(
+      Type.Union([Type.Literal("accept"), Type.Literal("reject")]),
+    ),
+    referenceText: Type.Optional(Type.String()),
+    workingText: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
