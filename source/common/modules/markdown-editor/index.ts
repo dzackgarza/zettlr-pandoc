@@ -1015,7 +1015,6 @@ export default class MarkdownEditor extends EventEmitter {
     if (this._instance.state.doc.toString() !== session.workingText) {
       this.pendingReviewDiffSession = session;
       this.activeReviewDiffSession = null;
-      this._instance.dom.classList.remove("review-diff-active");
       this._instance.dispatch({ effects: this.reviewDiffCompartment.reconfigure([]) });
       return;
     }
@@ -1032,7 +1031,9 @@ export default class MarkdownEditor extends EventEmitter {
     }
 
     this.activeReviewDiffSession = session;
-    this._instance.dom.classList.add("review-diff-active");
+    // The review-diff-active styling scope rides in the extension itself
+    // (an editorAttributes facet), so installing the compartment is what
+    // styles the pane — nothing here to keep in sync.
     this._instance.dispatch({
       effects: this.reviewDiffCompartment.reconfigure(this.buildReviewExtension(session)),
     });
@@ -1101,7 +1102,6 @@ export default class MarkdownEditor extends EventEmitter {
 
     this.activeReviewDiffSession = null;
     this.pendingReviewDiffSession = null;
-    this._instance.dom.classList.remove("review-diff-active");
     this._instance.dispatch({
       effects: this.reviewDiffCompartment.reconfigure([]),
     });

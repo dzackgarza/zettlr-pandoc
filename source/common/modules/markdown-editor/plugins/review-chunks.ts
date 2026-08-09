@@ -314,6 +314,12 @@ export function reviewChunksExtension (config: ReviewChunksConfig): Extension[] 
   return [
     reviewChunksConfig.of(config),
     reviewChunksField,
+    // The styling scope for every review control, declared as an editor
+    // attribute so CodeMirror itself maintains it. Added by hand via
+    // classList it was silently wiped whenever CodeMirror re-synced the
+    // element's class attribute (a resize re-measure, a focus change) —
+    // the controls kept working but dropped to unstyled buttons.
+    EditorView.editorAttributes.of({ class: 'review-diff-active' }),
     // The panel exists to act on outstanding chunks, so it leaves with the
     // last one. The review itself survives its last decision — resolved,
     // awaiting the save that closes it — but that state is the agent's to

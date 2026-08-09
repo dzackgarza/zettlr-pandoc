@@ -63,7 +63,6 @@ async function mount (): Promise<void> {
       ]
     })
   })
-  view.dom.classList.add('review-diff-active')
   view.focus()
 
   window.reviewDiffVisualDiagnostics = () => {

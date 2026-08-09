@@ -689,6 +689,47 @@ describe('Editor review-chunk view', function () {
     assert.deepEqual(built, [], 'the retired configuration must never be called')
   })
 
+  it('carries the styling scope as an editor attribute owned by CodeMirror', function () {
+    // The class used to be added by hand on view.dom, where CodeMirror's
+    // attribute syncing wiped it on the next re-measure or focus change:
+    // the controls kept working but dropped to unstyled buttons. Declared
+    // as an editorAttributes facet, CodeMirror itself maintains it.
+    const compartment = new Compartment()
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: 'proposal\n',
+        extensions: [compartment.of(reviewChunksExtension({
+          reviewId: 'review-test',
+          referenceText: 'baseline\n',
+          packets: [],
+          chunkComments: [],
+          onDecide: async () => {},
+          onAcceptAll: async () => {},
+          onClear: async () => {},
+          onComment: async () => {},
+          onChunkComment: async () => {}
+        }))]
+      })
+    })
+    views.push(view)
+    assert.ok(
+      view.dom.classList.contains('review-diff-active'),
+      'mounting the review extension is what styles the pane'
+    )
+    view.dispatch({ changes: { from: 0, insert: 'x' } })
+    assert.ok(
+      view.dom.classList.contains('review-diff-active'),
+      'the class survives updates because CodeMirror owns it'
+    )
+    view.dispatch({ effects: compartment.reconfigure([]) })
+    assert.equal(
+      view.dom.classList.contains('review-diff-active'),
+      false,
+      'removing the review removes its styling scope with it'
+    )
+  })
+
   it('unmounts the status panel once nothing is outstanding', function () {
     // The provider's accept-echo moves the reference onto the working text:
     // the review survives, resolved and awaiting its save, but the panel is
