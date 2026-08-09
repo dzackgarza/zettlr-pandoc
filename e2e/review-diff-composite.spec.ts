@@ -235,11 +235,11 @@ describe('review-diff closure contract composite lifecycle', function () {
     // Annotate the display-math chunk with a note and add a review-level
     // comment. The note decides nothing: the chunk stays outstanding. There
     // is no submit gesture — the field autosaves after the typing pause,
-    // and the note display appearing is the commit's own echo.
+    // and the saved indicator is the commit's own acknowledgment.
     const math = await widgetWithText(page, 'Rewrite the display-math environment')
     const noteInput = math.locator('input.cm-chunkCommentInput')
     await noteInput.fill('check the constants')
-    await page.locator('.cm-chunkComment').filter({ hasText: 'check the constants' }).waitFor({ state: 'visible' })
+    await math.locator('.cm-chunkCommentDirty:not(.unsaved)').waitFor({ state: 'visible' })
     await page.locator('.cm-reviewCommentInput').fill('overall composite note')
     await page.locator('.cm-reviewCommentSubmit').click()
     await page.locator('.cm-reviewComment').filter({ hasText: 'overall composite note' }).waitFor({ state: 'visible' })
@@ -277,7 +277,12 @@ describe('review-diff closure contract composite lifecycle', function () {
     // opening the file is what reattaches its sidecar-backed review.
     await api.post(`/v1/documents/${await workspaceDocumentId(api, documentPath)}/focus`)
     await waitForReview(page)
-    assert.ok((await page.locator('.cm-chunkComment').innerText()).includes('check the constants'))
+    assert.equal(
+      await (await widgetWithText(page, 'Rewrite the display-math environment'))
+        .locator('input.cm-chunkCommentInput').inputValue(),
+      'check the constants',
+      'the reattached review restores the note into its field'
+    )
     const reopenedReview = await api.get(`/v1/reviews/${reviewId}`)
     assert.ok(isRecord(reopenedReview) && Array.isArray(reopenedReview.comments))
     assert.ok(reopenedReview.comments.some(comment => isRecord(comment) && comment.text === 'overall composite note'))

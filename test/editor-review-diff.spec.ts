@@ -371,9 +371,9 @@ describe('Editor review-chunk view', function () {
       'the in-place redraw keeps the indicator honest: still unsaved'
     )
     assert.equal(
-      view.dom.querySelector<HTMLElement>('.cm-chunkComment')?.textContent,
-      'first',
-      'the strip still shows the committed note in place'
+      view.dom.querySelector<HTMLElement>('.cm-chunkComment'),
+      null,
+      'the field is the note\'s only rendering — the echo must not append a copy to the strip'
     )
 
     // The interrupted typing commits on its own once the echo has settled.
@@ -389,7 +389,7 @@ describe('Editor review-chunk view', function () {
     )
   })
 
-  it('renders a provider-supplied chunk comment at its controls strip', function () {
+  it('shows a provider-supplied chunk comment only in the comment field', function () {
     const baseline = 'first baseline\n\nsecond baseline\n'
     const proposed = baseline.replace('first baseline', 'first proposed')
     const chunk = computeReviewChunks(baseline, proposed)[0]
@@ -400,13 +400,14 @@ describe('Editor review-chunk view', function () {
     const widget = view.dom.querySelector<HTMLElement>('.cm-chunkControls')
     assert.ok(widget !== null)
     assert.equal(
-      widget.querySelector<HTMLElement>('.cm-chunkComment')?.textContent,
-      'check the constant'
-    )
-    assert.equal(
       widget.querySelector<HTMLInputElement>('input.cm-chunkCommentInput')?.value,
       'check the constant',
       'the field is prefilled so editing it replaces the note'
+    )
+    assert.equal(
+      widget.querySelector<HTMLElement>('.cm-chunkComment'),
+      null,
+      'the note is not duplicated into the strip alongside the claim descriptions'
     )
     assert.ok(widget.querySelector('button.accept') !== null)
     assert.ok(widget.querySelector('button.reject') !== null)

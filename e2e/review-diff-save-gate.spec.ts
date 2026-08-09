@@ -509,12 +509,10 @@ describe('saving after accepting a reviewed change', function () {
       'The typed note must become agent-visible without blur or any submit gesture.'
     )
 
-    const note = page.locator('.cm-chunkComment').first()
-    await note.waitFor({ state: 'visible', timeout: 20_000 })
     assert.equal(
-      await note.innerText(),
+      await chunkWidget.locator('input.cm-chunkCommentInput').inputValue(),
       'Preserve this note across save',
-      'The annotated chunk must render its note before save.'
+      'The field keeps the note — its only rendering — before save.'
     )
     screenshots.set('review-note-before-save.png', await page.screenshot())
 
@@ -529,9 +527,8 @@ describe('saving after accepting a reviewed change', function () {
       'Saving an annotated review must persist its working text.'
     )
 
-    await note.waitFor({ state: 'visible', timeout: 20_000 })
     assert.equal(
-      await note.innerText(),
+      await chunkWidget.locator('input.cm-chunkCommentInput').inputValue(),
       'Preserve this note across save',
       'FILE_SAVED must not clear the note from the pane.'
     )

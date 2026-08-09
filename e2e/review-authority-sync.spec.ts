@@ -492,10 +492,13 @@ describe('a review decision waits for the document authority', function () {
       list.some(chunk => chunk.comment !== undefined)
     )
     assert.equal(chunks.length, 3, 'a comment adjudicates nothing, so nothing leaves')
-    await activePage
-      .locator('.cm-chunkComment')
-      .filter({ hasText: 'second thoughts' })
-      .waitFor({ state: 'visible', timeout: 30_000 })
+    // The field keeps the keystrokes either way; the saved indicator on the
+    // same widget is what proves the note's commit was acknowledged.
+    await activePage.waitForFunction(() =>
+      Array.from(document.querySelectorAll<HTMLInputElement>('input.cm-chunkCommentInput'))
+        .some(input => input.value === 'second thoughts' &&
+          input.parentElement?.querySelector('.cm-chunkCommentDirty:not(.unsaved)') !== null),
+    undefined, { timeout: 30_000 })
     assert.deepEqual(await toastMessages(activePage), [])
     // A comment moves no text, so the provider's working text must be, byte
     // for byte, what was on screen when the control was clicked.

@@ -414,11 +414,11 @@ describe('a review that cannot be persisted', function () {
     })
     const noted = activePage.locator('.cm-chunkControls').filter({ hasText: 'Revise bravo' })
     // No submit gesture: the field autosaves after the typing pause, and the
-    // rendered note is the commit's echo — the sidecar is only broken AFTER
-    // this write has landed.
+    // saved indicator is the commit's acknowledgment — the sidecar is only
+    // broken AFTER this write has landed.
     await noted.locator('input.cm-chunkCommentInput').fill('needs a second look')
-    await activePage
-      .locator('.cm-chunkComment')
+    await noted
+      .locator('.cm-chunkCommentDirty:not(.unsaved)')
       .waitFor({ state: 'visible', timeout: 30_000 })
 
     const beforeDisk = await readFile(activePath, 'utf8')
@@ -460,9 +460,11 @@ describe('a review that cannot be persisted', function () {
       'the same save must succeed once the sidecar can be written'
     )
     assert.equal(await readFile(activePath, 'utf8'), await workingText(activeApi))
-    await activePage
-      .locator('.cm-chunkComment')
-      .waitFor({ state: 'visible', timeout: 30_000 })
+    assert.equal(
+      await noted.locator('input.cm-chunkCommentInput').inputValue(),
+      'needs a second look',
+      'the note stays in its field — its only rendering — after the save'
+    )
   })
 
   it('rejects an editor update it cannot acknowledge, and keeps the authority text', async function () {
@@ -497,7 +499,7 @@ describe('a review that cannot be persisted', function () {
       `the typed text stays in the buffer: a refused push destroys nothing.\n${buffer}`
     )
     assert.equal(
-      await activePage.locator('.cm-chunkControls').filter({ hasText: 'needs a second look' }).count(),
+      await activePage.locator('.cm-chunkControls').filter({ hasText: 'Revise bravo' }).count(),
       1,
       'the annotated chunk must still be rendered'
     )
@@ -521,9 +523,15 @@ describe('a review that cannot be persisted', function () {
       file => isRecord(file) && file.path === activePath
     )
     await activeApi.post(`/v1/documents/${stringField(entry, 'documentId')}/focus`, {})
-    await activePage
-      .locator('.cm-chunkComment')
+    const reopened = activePage.locator('.cm-chunkControls').filter({ hasText: 'Revise bravo' })
+    await reopened
+      .locator('input.cm-chunkCommentInput')
       .waitFor({ state: 'visible', timeout: 30_000 })
+    assert.equal(
+      await reopened.locator('input.cm-chunkCommentInput').inputValue(),
+      'needs a second look',
+      'the reattached review restores the note into its field'
+    )
 
     await activePage.locator('.cm-content').click()
     await activePage.keyboard.press('Control+End')
@@ -542,7 +550,7 @@ describe('a review that cannot be persisted', function () {
     const pending = await chunkListing(activeApi, activeReviewId)
     const typed = pending.chunks.find(chunk => chunk.workingText.includes('accepted-edit'))
     assert.ok(typed !== undefined, `the typed line must be its own chunk: ${JSON.stringify(pending)}`)
-    const typedWidget = activePage.locator('.cm-chunkControls').filter({ hasNotText: 'needs a second look' })
+    const typedWidget = activePage.locator('.cm-chunkControls').filter({ hasNotText: 'Revise bravo' })
     await typedWidget.waitFor({ state: 'visible', timeout: 30_000 })
     assert.equal(
       await typedWidget.count(),
@@ -594,7 +602,7 @@ describe('a review that cannot be persisted', function () {
     assert.equal(await reviewSummary(activeApi, activeReviewId), beforeReview)
     assert.deepEqual(await sidecarBytes(directory), beforeSidecars)
     await activePage
-      .locator('.cm-chunkComment')
+      .locator('input.cm-chunkCommentInput')
       .waitFor({ state: 'visible', timeout: 5_000 })
 
     await toast.first().click()
@@ -605,7 +613,7 @@ describe('a review that cannot be persisted', function () {
       'the retried close must go through once the sidecar can be written'
     )
     await activePage
-      .locator('.cm-chunkComment')
+      .locator('input.cm-chunkCommentInput')
       .waitFor({ state: 'detached', timeout: 30_000 })
     assert.deepEqual(
       await openDocumentIds(activeApi),

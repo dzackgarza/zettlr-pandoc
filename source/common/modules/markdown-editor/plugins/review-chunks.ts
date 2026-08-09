@@ -464,17 +464,18 @@ interface ChunkNoteFieldState {
 const noteFieldState = new WeakMap<HTMLInputElement, ChunkNoteFieldState>()
 
 /**
- * (Re)render the strip's claim descriptions and note display, in place, in
- * front of the buttons block. Everything here is display-only, so an update
- * can rebuild it freely — the comment input, which carries focus and unsent
- * keystrokes, is deliberately not touched.
+ * (Re)render the strip's claim descriptions, in place, in front of the
+ * buttons block. Everything here is display-only, so an update can rebuild
+ * it freely — the comment input, which carries focus and unsent keystrokes,
+ * is deliberately not touched. The chunk's note renders nowhere but that
+ * input: it is the reviewer's annotation, not part of the review, and a
+ * second copy in the strip would shift the layout on every autosave.
  */
 function renderChunkMeta (
   container: HTMLElement,
-  descriptions: readonly string[],
-  note: ReviewChunkCommentView|undefined
+  descriptions: readonly string[]
 ): void {
-  for (const stale of container.querySelectorAll(':scope > .cm-chunkDescriptions, :scope > .cm-chunkComment')) {
+  for (const stale of container.querySelectorAll(':scope > .cm-chunkDescriptions')) {
     stale.remove()
   }
   const buttons = container.querySelector(':scope > .cm-chunkButtons')
@@ -489,20 +490,14 @@ function renderChunkMeta (
     }
     container.insertBefore(list, buttons)
   }
-  if (note !== undefined) {
-    const noteLine = document.createElement('div')
-    noteLine.className = 'cm-chunkComment'
-    noteLine.textContent = note.comment
-    container.insertBefore(noteLine, buttons)
-  }
 }
 
 /**
- * The strip below a chunk: the claim descriptions, the chunk's comment, and
- * the Accept/Reject controls plus the comment field. One widget per chunk —
- * the controls sit in exactly one place. A comment is an annotation, not an
- * adjudication: the chunk stays outstanding, and the note renders muted like
- * a description.
+ * The strip below a chunk: the claim descriptions and the Accept/Reject
+ * controls plus the comment field. One widget per chunk — the controls sit
+ * in exactly one place. A comment is an annotation, not an adjudication:
+ * the chunk stays outstanding, and the field is the note's only rendering —
+ * the strip never repeats it.
  *
  * The comment field IS the annotation — there is no submit button. It
  * autosaves after a typing pause and immediately on blur or Enter, and an
@@ -645,7 +640,7 @@ class ChunkControlsWidget extends WidgetType {
     buttons.appendChild(noteInput)
     buttons.appendChild(dirtyDot)
     container.appendChild(buttons)
-    renderChunkMeta(container, this.descriptions, this.note)
+    renderChunkMeta(container, this.descriptions)
     return container
   }
 
@@ -660,7 +655,7 @@ class ChunkControlsWidget extends WidgetType {
     if (dom.dataset.chunkId !== this.chunk.chunkId) {
       return false
     }
-    renderChunkMeta(dom, this.descriptions, this.note)
+    renderChunkMeta(dom, this.descriptions)
     const input = dom.querySelector<HTMLInputElement>('input.cm-chunkCommentInput')
     const state = input === null ? undefined : noteFieldState.get(input)
     if (input !== null && state !== undefined && document.activeElement !== input) {
@@ -702,12 +697,6 @@ const reviewChunksTheme = EditorView.baseTheme({
     borderLeft: '3px solid var(--zettlr-editor-review-delete-accent)',
     padding: '2px 6px',
     fontSize: '0.85em'
-  },
-  '.cm-chunkComment': {
-    fontSize: '0.85em',
-    fontStyle: 'italic',
-    opacity: '0.75',
-    padding: '2px 0'
   },
   '.cm-chunkCommentInput': {
     fontSize: '0.85em',
