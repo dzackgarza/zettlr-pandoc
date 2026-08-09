@@ -46,9 +46,6 @@ rules.push({
 
 module.exports = {
   module: { rules },
-  // Persist compilation across builds: an unchanged module is a cache hit,
-  // so a rebuild after a small edit pays for the edit, not the whole tree.
-  cache: { type: 'filesystem', buildDependencies: { config: [__filename] } },
   // The following line of code serves two purposes: While we're in develop
   // (NODE_ENV = develop), emit source maps so we have an easy time finding the
   // origin of bugs or performance bottlenecks. But since source maps are a

@@ -18,9 +18,6 @@ module.exports = {
   // Main entry point: the file that runs in the main process
   entry: "./source/main.ts",
   mode: process.env.NODE_ENV === "production" ? "production" : "development",
-  // Persist compilation across builds: an unchanged module is a cache hit,
-  // so a rebuild after a small edit pays for the edit, not the whole tree.
-  cache: { type: "filesystem", buildDependencies: { config: [__filename] } },
   module: { rules },
   plugins: [
     new CopyWebpackPlugin({
