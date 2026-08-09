@@ -22,14 +22,8 @@ async function capture (window, scene) {
     .cm-editor { min-height: 620px; height: 620px; font-size: 16px; line-height: 1.45; }
     .cm-scroller { padding: 18px 18px 48px; overflow-x: hidden; }
     .cm-content { overflow-wrap: anywhere; }
-    .review-diff-active .cm-chunkButtons {
-      display: inline-flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      justify-content: flex-end;
-      max-width: min(220px, 45vw);
-    }
     .review-diff-active button.cm-review-diff-control {
+      white-space: nowrap;
       min-width: 64px;
       height: 24px;
       padding: 0 8px;

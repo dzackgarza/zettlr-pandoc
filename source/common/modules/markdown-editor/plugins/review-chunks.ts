@@ -535,10 +535,13 @@ class ChunkControlsWidget extends WidgetType {
 
     const buttons = document.createElement('div')
     buttons.className = 'cm-chunkButtons'
+    // One row, reading left to right as the reviewer acts: the annotation
+    // field, its saved indicator, then the two decisions at the end.
     // The two decisions lock together for the round trip: they are mutually
     // exclusive, so leaving one live during the other's flight is an
     // invitation to double-decide.
     const controls: HTMLButtonElement[] = []
+    const decisionButtons: HTMLButtonElement[] = []
     const decide = (decision: 'accept'|'reject'): void => {
       void withControlsLocked(buttons, controls, async () => {
         // Resolved at click time, like the status panel's controls: a widget
@@ -562,7 +565,7 @@ class ChunkControlsWidget extends WidgetType {
         decide(decision)
       })
       controls.push(button)
-      buttons.appendChild(button)
+      decisionButtons.push(button)
     }
 
     // The chunk's own comment field: the field is the annotation. It commits
@@ -639,8 +642,7 @@ class ChunkControlsWidget extends WidgetType {
         tryCommit()
       }
     })
-    buttons.appendChild(noteInput)
-    buttons.appendChild(dirtyDot)
+    buttons.append(noteInput, dirtyDot, ...decisionButtons)
     container.appendChild(buttons)
     renderChunkMeta(container, this.descriptions)
     return container
@@ -694,16 +696,32 @@ const reviewChunksTheme = EditorView.baseTheme({
     display: 'flex',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: '8px',
+    justifyContent: 'flex-end',
+    gap: '4px 8px',
     backgroundColor: 'var(--zettlr-editor-review-controls-bg)',
     borderLeft: '3px solid var(--zettlr-editor-review-delete-accent)',
-    padding: '2px 6px',
+    padding: '4px 8px',
     fontSize: '0.85em'
   },
+  '.cm-chunkButtons': {
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'nowrap',
+    gap: '6px',
+    marginLeft: 'auto'
+  },
   '.cm-chunkCommentInput': {
+    font: 'inherit',
     fontSize: '0.85em',
-    marginLeft: '4px',
-    maxWidth: '18em'
+    flex: '0 1 18em',
+    minWidth: '8em',
+    height: '24px',
+    boxSizing: 'border-box',
+    padding: '0 8px',
+    border: '1px solid var(--zettlr-editor-review-controls-border, rgba(128, 128, 128, 0.45))',
+    borderRadius: '4px',
+    background: 'transparent',
+    color: 'inherit'
   },
   '.cm-chunkCommentDirty': {
     display: 'inline-block',
@@ -727,20 +745,36 @@ const reviewChunksTheme = EditorView.baseTheme({
     whiteSpace: 'pre-wrap'
   },
   '.cm-chunkDescriptions': {
+    flex: '1 1 100%',
     fontSize: '0.85em',
     opacity: '0.75',
-    fontStyle: 'italic',
-    padding: '2px 0'
+    fontStyle: 'italic'
   },
   '.cm-reviewStatusPanel': {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
+    flexWrap: 'wrap',
+    gap: '4px 8px',
     padding: '4px 8px',
     fontSize: '0.85em'
   },
+  '.cm-reviewStatusPanel button': {
+    whiteSpace: 'nowrap'
+  },
+  '.cm-reviewCommentInput': {
+    font: 'inherit',
+    fontSize: '0.85em',
+    flex: '1 1 10em',
+    minWidth: '7em',
+    maxWidth: '18em',
+    height: '24px',
+    boxSizing: 'border-box',
+    padding: '0 8px',
+    borderRadius: '4px'
+  },
   '.cm-reviewStatusLabel': {
     opacity: '0.8',
-    marginLeft: 'auto'
+    marginLeft: 'auto',
+    whiteSpace: 'nowrap'
   }
 })
