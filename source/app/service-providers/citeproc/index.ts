@@ -16,7 +16,7 @@
 
 import CSL from 'citeproc'
 import { FSWatcher } from 'chokidar'
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import { promises as fs, readFileSync, constants as FS_CONSTANTS } from 'fs'
 import path from 'path'
 import { trans } from '@common/i18n-main'
@@ -342,7 +342,11 @@ export default class CiteprocProvider extends ProviderContract {
       throw new Error(`File "${databasePath}" does not exist or is not visible to the app.`)
     }
 
-    const record = await loadDatabase(databasePath, this._logger)
+    const record = await loadDatabase(
+      databasePath,
+      this._logger,
+      path.join(app.getPath('userData'), 'citeproc-cache')
+    )
 
     // Add the database to the list of available databases
     this.databases.set(databasePath, record)

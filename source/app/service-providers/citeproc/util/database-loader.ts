@@ -19,7 +19,99 @@ import { BibLatexParser, CSLExporter } from 'biblatex-csl-converter'
 import YAML from 'yaml'
 import { promises as fs } from 'fs'
 import path from 'path'
+import writeFileAtomic from 'write-file-atomic'
+import { sha256Text } from '@common/util/sha256'
 import type LogProvider from '../../log'
+
+/**
+ * Bump when the cached record's shape or the parser producing it changes:
+ * a version mismatch is a cache miss, never an error.
+ */
+const BIB_CACHE_VERSION = 1
+
+/** What a .bib parse costs is what this file exists to avoid re-paying. */
+interface BibCacheFile {
+  version: number
+  sourceSha256: string
+  type: DatabaseRecord['type']
+  cslData: DatabaseRecord['cslData']
+  bibtexAttachments: DatabaseRecord['bibtexAttachments']
+}
+
+/** One cache file per database, keyed by the canonical database path. */
+function bibCachePath (cacheDir: string, databasePath: string): string {
+  return path.join(cacheDir, `${sha256Text(path.resolve(databasePath))}.json`)
+}
+
+/**
+ * The cached parse of this exact source text, or undefined on any miss —
+ * absent file, older version, or a source hash that no longer matches. A
+ * cache never fails: whatever is wrong with it, the parser is the answer.
+ */
+async function readBibCache (
+  cacheDir: string,
+  databasePath: string,
+  sourceSha256: string,
+  logger?: LogProvider
+): Promise<DatabaseRecord|undefined> {
+  let raw: string
+  try {
+    raw = await fs.readFile(bibCachePath(cacheDir, databasePath), 'utf8')
+  } catch {
+    return undefined // No cache yet: the ordinary first-run miss.
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    logger?.warning(`[Citeproc] Ignoring unreadable parse cache for ${databasePath}; re-parsing.`)
+    return undefined
+  }
+  if (
+    typeof parsed !== 'object' || parsed === null ||
+    !('version' in parsed) || !('sourceSha256' in parsed) || !('type' in parsed) ||
+    !('cslData' in parsed) || !('bibtexAttachments' in parsed)
+  ) {
+    logger?.warning(`[Citeproc] Ignoring malformed parse cache for ${databasePath}; re-parsing.`)
+    return undefined
+  }
+  const cache = parsed as BibCacheFile
+  if (cache.version !== BIB_CACHE_VERSION || cache.sourceSha256 !== sourceSha256) {
+    return undefined // The database (or the cache format) moved on.
+  }
+  logger?.info(`Loaded database ${path.basename(databasePath)} from parse cache (${Object.keys(cache.cslData).length} items).`)
+  return {
+    path: databasePath,
+    type: cache.type,
+    cslData: cache.cslData,
+    bibtexAttachments: cache.bibtexAttachments
+  }
+}
+
+/** Persist a finished parse so the next boot loads JSON instead of parsing. */
+async function writeBibCache (
+  cacheDir: string,
+  databasePath: string,
+  sourceSha256: string,
+  record: DatabaseRecord,
+  logger?: LogProvider
+): Promise<void> {
+  const payload: BibCacheFile = {
+    version: BIB_CACHE_VERSION,
+    sourceSha256,
+    type: record.type,
+    cslData: record.cslData,
+    bibtexAttachments: record.bibtexAttachments
+  }
+  try {
+    await fs.mkdir(cacheDir, { recursive: true })
+    await writeFileAtomic(bibCachePath(cacheDir, databasePath), JSON.stringify(payload))
+  } catch (err) {
+    // A failed cache write costs the next boot a parse, nothing more — but
+    // it should not fail THIS load, which already has its record.
+    logger?.warning(`[Citeproc] Could not write parse cache for ${databasePath}: ${String(err)}`)
+  }
+}
 
 /**
  * Load the provided database into a DatabaseRecord.
@@ -28,7 +120,7 @@ import type LogProvider from '../../log'
  *
  * @return  {Promise<DatabaseRecord>}                The DatabaseRecord.
  */
-export async function loadDatabase (databasePath: string, logger?: LogProvider): Promise<DatabaseRecord> {
+export async function loadDatabase (databasePath: string, logger?: LogProvider, cacheDir?: string): Promise<DatabaseRecord> {
   const filenameExtension = path.extname(databasePath).toLowerCase()
   switch (filenameExtension) {
     case '.json':
@@ -38,17 +130,35 @@ export async function loadDatabase (databasePath: string, logger?: LogProvider):
     case '.yaml':
       logger?.info(`Loading database ${path.basename(databasePath)} as CSL YAML.`)
       return await loadYAML(databasePath, logger)
-    case '.bib':
+    case '.bib': {
+      // Parsing a large .bib is by far the most expensive step of app boot
+      // (a 2.4 MB library measured ~25 s), so the finished parse is cached
+      // against the file's content hash: an unchanged database loads as
+      // JSON in milliseconds, an edited one re-parses.
+      const data = await fs.readFile(databasePath, 'utf8')
+      const sourceSha256 = sha256Text(data)
+      if (cacheDir !== undefined) {
+        const cached = await readBibCache(cacheDir, databasePath, sourceSha256, logger)
+        if (cached !== undefined) {
+          return cached
+        }
+      }
       // NOTE: ASSUMPTION: Since BibTeX and BibLaTeX share the same file
       // endings, we first attempt to load it as BibLaTeX and if it throws we
       // fall back to BibTeX.
+      let record: DatabaseRecord
       try {
         logger?.info(`Loading database ${path.basename(databasePath)} as BibLaTeX.`)
-        return await loadBibLaTeX(databasePath, logger)
-      } catch (err) {
+        record = await loadBibLaTeX(databasePath, data, logger)
+      } catch {
         logger?.info(`Loading database ${path.basename(databasePath)} as BibLaTeX failed. Falling back to loading as BibTeX.`)
-        return await loadBibTeX(databasePath, logger)
+        record = await loadBibTeX(databasePath, data, logger)
       }
+      if (cacheDir !== undefined) {
+        await writeBibCache(cacheDir, databasePath, sourceSha256, record, logger)
+      }
+      return record
+    }
     default:
       throw new Error(`Could not load database ${databasePath}: Unknown extension`)
   }
@@ -71,7 +181,7 @@ async function loadJSON (databasePath: string, logger?: LogProvider): Promise<Da
 
   const data = await fs.readFile(databasePath, 'utf8')
 
-  const parsedData = JSON.parse(data)
+  const parsedData: unknown = JSON.parse(data)
 
   if (!Array.isArray(parsedData)) {
     throw new Error(`Cannot parse CSL JSON database ${databasePath}: JSON was not an array.`)
@@ -127,15 +237,20 @@ async function loadYAML (databasePath: string, logger?: LogProvider): Promise<Da
   // First read in the database file
   const data = await fs.readFile(databasePath, 'utf8')
 
-  let yamlData = YAML.parse(data)
-  if ('references' in yamlData) {
-    yamlData = yamlData.references // CSL YAML is stored in `references`
-  } else if (!Array.isArray(yamlData)) {
+  let yamlData: unknown = YAML.parse(data)
+  if (typeof yamlData === 'object' && yamlData !== null && 'references' in yamlData) {
+    yamlData = (yamlData as { references: unknown }).references // CSL YAML is stored in `references`
+  }
+  if (!Array.isArray(yamlData)) {
     throw new Error('The CSL YAML file did not contain valid contents.')
   }
 
-  for (const item of yamlData) {
-    record.cslData[item.id] = item
+  for (const item of yamlData as unknown[]) {
+    if (!(item instanceof Object) || !('id' in item) || typeof item.id !== 'string') {
+      logger?.error('[Citeproc] Refusing to load CSL YAML item: missing string id.', item)
+      continue
+    }
+    record.cslData[item.id] = item as CSLItem
   }
 
   logger?.info(`CSL JSON database loaded, ${Object.keys(record.cslData).length} items.`)
@@ -150,16 +265,13 @@ async function loadYAML (databasePath: string, logger?: LogProvider): Promise<Da
  *
  * @return  {Promise<DatabaseRecord>}                The record
  */
-async function loadBibTeX (databasePath: string, logger?: LogProvider): Promise<DatabaseRecord> {
+async function loadBibTeX (databasePath: string, data: string, logger?: LogProvider): Promise<DatabaseRecord> {
   const record: DatabaseRecord = {
     path: databasePath,
     type: 'bibtex',
     cslData: {},
     bibtexAttachments: {}
   }
-
-  // First read in the database file
-  const data = await fs.readFile(databasePath, 'utf8')
 
   for (const item of parseBibTex(data)) {
     record.cslData[item.id] = item
@@ -181,15 +293,13 @@ async function loadBibTeX (databasePath: string, logger?: LogProvider): Promise<
  *
  * @return  {Promise<DatabaseRecord>}                The record
  */
-async function loadBibLaTeX (databasePath: string, logger?: LogProvider): Promise<DatabaseRecord> {
+async function loadBibLaTeX (databasePath: string, data: string, logger?: LogProvider): Promise<DatabaseRecord> {
   const record: DatabaseRecord = {
     path: databasePath,
     type: 'biblatex',
     cslData: {},
     bibtexAttachments: {}
   }
-
-  const data = await fs.readFile(databasePath, 'utf8')
 
   const parser = new BibLatexParser(data, { processUnexpected: true, processUnknown: true })
   const bib = await parser.parseAsync()
