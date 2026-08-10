@@ -127,20 +127,14 @@ setup-ci:
 # local test content only, so run unsandboxed rather than requiring sudo
 # provisioning for the test suite.
 capture-pandoc-divs output: sync-dependencies
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    mkdir -p "{{output}}"
-    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-pandoc-div-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/pandoc-div-visual-bundle.js"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/editor-pandoc-div-visual-capture.cjs" "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" pandoc-divs "{{output}}"
 
 # Capture the widget-indent scenes (issue #15) in isolated offscreen Electron:
 # math widgets on visually indented list lines, plus the blockquote/div
 # regression scenes. Writes screenshots and per-scene diagnostics JSON.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
 capture-widget-indent output: sync-dependencies
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    mkdir -p "{{output}}"
-    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-widget-indent-visual-entry.ts" --bundle --platform=browser --format=iife --loader:.svg=dataurl --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/widget-indent-visual-bundle.js"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/editor-widget-indent-visual-capture.cjs" "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" widget-indent "{{output}}"
 
 # Capture the TikZ editor scenes (issue #14) in isolated offscreen Electron:
 # inline figures rendered by the REAL toolchain (pandoc + pdflatex + pdf2svg
@@ -148,28 +142,19 @@ capture-widget-indent output: sync-dependencies
 # click-to-zoom lightbox reusing ImageViewer. Requires pdflatex and pdf2svg.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
 capture-tikz output: sync-dependencies
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    mkdir -p "{{output}}"
-    node "{{justfile_directory()}}/test/editor-tikz-visual-build.cjs" "{{output}}"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/editor-tikz-visual-capture.cjs" "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" tikz "{{output}}"
 
 # Capture the real Pandoc quick-reference Vue component in isolated Electron.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
 capture-pandoc-help output: sync-dependencies
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    mkdir -p "{{output}}"
-    node "{{justfile_directory()}}/test/pandoc-quick-help-visual-build.cjs" "{{output}}"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/pandoc-quick-help-visual-capture.cjs" "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" pandoc-help "{{output}}"
 
 # Capture the Mod-P reference search overlay in isolated Electron: bundles the
 # probe entry with the production renderer webpack config, drives the real
 # fixture-backed overlay, and writes screenshots plus the probe result JSON.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
 capture-reference-search output: sync-dependencies
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    mkdir -p "{{output}}"
-    node "{{justfile_directory()}}/test/reference-search-overlay-build.cjs" "{{output}}"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --ozone-platform=x11 --disable-gpu --no-sandbox "{{justfile_directory()}}/test/reference-search-overlay-probe.cjs" "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-search "{{output}}"
 
 # Capture the reference chip presentation in isolated offscreen Electron
 # (issue #1 Phase 4). Follows the capture-pandoc-divs pattern; the entry and
@@ -181,11 +166,7 @@ capture-reference-search output: sync-dependencies
 # local test content only, so run unsandboxed rather than requiring sudo
 # provisioning for the test suite.
 capture-reference-chips output: sync-dependencies
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    test -f "{{justfile_directory()}}/test/editor-reference-chips-visual-entry.ts" || { echo "FATAL: test/editor-reference-chips-visual-entry.ts does not exist yet (Phase 4 green work)"; exit 1; }
-    mkdir -p "{{output}}"
-    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-reference-chips-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/reference-chips-visual-bundle.js"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/editor-reference-chips-visual-capture.cjs" "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-chips "{{output}}"
 
 # Capture the combined `@` completion popup in isolated offscreen Electron
 # (issue #1, ledger C4): citation entries and typed label entries together,
@@ -194,10 +175,7 @@ capture-reference-chips output: sync-dependencies
 # capture-reference-chips esbuild pattern. This never starts Forge, a dev
 # server, xdg-open, or the system browser.
 capture-reference-completion output: sync-dependencies
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    mkdir -p "{{output}}"
-    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/reference-completion-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/reference-completion-visual-bundle.js"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --ozone-platform=x11 --disable-gpu --no-sandbox "{{justfile_directory()}}/test/reference-completion-visual-capture.cjs" "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-completion "{{output}}"
 
 # Capture the reference hover tooltip presentation in isolated offscreen
 # Electron (issue #1 Phase 4). Follows the capture-pandoc-divs pattern; the
@@ -209,11 +187,7 @@ capture-reference-completion output: sync-dependencies
 # local test content only, so run unsandboxed rather than requiring sudo
 # provisioning for the test suite.
 capture-reference-hover output: sync-dependencies
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    test -f "{{justfile_directory()}}/test/reference-hover-visual-entry.ts" || { echo "FATAL: test/reference-hover-visual-entry.ts does not exist yet (Phase 4 green work)"; exit 1; }
-    mkdir -p "{{output}}"
-    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/reference-hover-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/reference-hover-visual-bundle.js"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --no-sandbox "{{justfile_directory()}}/test/reference-hover-visual-capture.cjs" "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-hover "{{output}}"
 
 # Capture the Phase 5 reference navigation scenes (edit-first reveal, fold +
 # scroll capture state, Mod-click states) in isolated offscreen Electron.
@@ -222,10 +196,7 @@ capture-reference-hover output: sync-dependencies
 # screenshots the test spec drives. This never starts Forge, a dev server,
 # xdg-open, or the system browser.
 capture-reference-navigation output: sync-dependencies
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    mkdir -p "{{output}}"
-    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/reference-navigation-entry.ts" --bundle --platform=browser --format=iife --define:process.platform='"linux"' --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/reference-navigation-bundle.js"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --ozone-platform=x11 --disable-gpu --no-sandbox "{{justfile_directory()}}/test/reference-navigation-probe.cjs" "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-navigation "{{output}}"
 
 # Capture the REAL toolbar Back/Forward navigation controls (issue #1
 # Phase 5; ledger C4) in enabled and disabled states: bundles the entry with
@@ -234,10 +205,7 @@ capture-reference-navigation output: sync-dependencies
 # isolated offscreen Electron. This never starts Forge, a dev server,
 # xdg-open, or the system browser.
 capture-navigation-controls output: sync-dependencies
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    mkdir -p "{{output}}"
-    node "{{justfile_directory()}}/test/reference-navigation-controls-build.cjs" "{{output}}"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --ozone-platform=x11 --disable-gpu --no-sandbox "{{justfile_directory()}}/test/reference-navigation-controls-capture.cjs" "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" navigation-controls "{{output}}"
 
 # Capture the rename-preview dialog scenes (issue #1, review A4: the
 # contract's "rename preview" capture) in isolated offscreen Electron:
@@ -246,19 +214,13 @@ capture-navigation-controls output: sync-dependencies
 # preview/cancel/apply screenshots plus the probe result JSON. This never
 # starts Forge, a dev server, xdg-open, or the system browser.
 capture-rename-preview output: sync-dependencies
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    mkdir -p "{{output}}"
-    node "{{justfile_directory()}}/test/reference-rename-preview-build.cjs" "{{output}}"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --ozone-platform=x11 --disable-gpu --no-sandbox "{{justfile_directory()}}/test/reference-rename-preview-probe.cjs" "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" rename-preview "{{output}}"
 
 # Capture the issue #34 review-diff accept/reject interface in isolated
 # offscreen Electron at desktop and narrow widths, light and dark.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
 capture-review-diff output: sync-dependencies
-    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    mkdir -p "{{output}}"
-    "{{justfile_directory()}}/node_modules/.bin/esbuild" "{{justfile_directory()}}/test/editor-review-diff-visual-entry.ts" --bundle --platform=browser --format=iife --tsconfig="{{justfile_directory()}}/tsconfig.json" --outfile="{{output}}/review-diff-visual-bundle.js"
-    xvfb-run -a "{{justfile_directory()}}/node_modules/.bin/electron" --ozone-platform=x11 --disable-gpu --no-sandbox "{{justfile_directory()}}/test/editor-review-diff-visual-capture.cjs" "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" review-diff "{{output}}"
 
 # Run a real export headlessly (no GUI), via the app's own makeExport with the
 # exact profile list the GUI sees (userData/defaults + custom profiles). Proves
