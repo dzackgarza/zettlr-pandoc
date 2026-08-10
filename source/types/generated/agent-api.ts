@@ -600,13 +600,16 @@ export interface components {
             error: components["schemas"]["AgentError"];
         };
         AgentEvent: {
-            event: string;
+            /** @enum {string} */
+            event: "focus.changed" | "document.changed" | "document.closed" | "review.started" | "review.changed" | "review.resolved" | "review.commented" | "review.cleared" | "review.invalidated" | "review.completed" | "review.discarded" | "review.sidecar-error" | "proposal.applied" | "proposal.retracted";
             timestamp: string;
             reviewId?: string;
             documentId?: string;
             documentRevision?: components["schemas"]["DocumentRevision"];
             reviewGeneration?: number;
             unresolvedChunks?: number;
+            /** @description proposal.applied and proposal.retracted: the packet affected by the event. */
+            packetId?: string;
             /** @description review.commented: the outstanding chunk the comment is anchored to, when it is chunk-anchored. */
             chunkId?: string;
             /** @description review.commented: the comment text. Absent on a chunk-anchored event when the reviewer removed the chunk's note. */

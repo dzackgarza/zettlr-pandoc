@@ -340,14 +340,8 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     this._server = http.createServer(handler);
 
-    // A bind failure must not take the editor down with it. This provider is
-    // enabled by default, and AppServiceContainer._informativeBoot rethrows
-    // whatever boot rejects with — so before this, any unrelated process holding
-    // the port meant Zettlr itself refused to launch. The API is optional; the
-    // editor is not. Report the collision at error level, name the remedy, and
-    // continue without a listener rather than substituting a different port
-    // (a silently-moved endpoint is worse than an absent one: every configured
-    // agent would keep talking to whatever now answers on the expected port).
+    // An enabled API without a listener is a broken application state. Do not
+    // start the editor with a missing endpoint that clients believe exists.
     const listenError = await new Promise<NodeJS.ErrnoException | undefined>((resolve) => {
       this._server!.once("error", (error: NodeJS.ErrnoException) => {
         resolve(error);
@@ -360,17 +354,7 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     if (listenError !== undefined) {
       this._server = undefined;
-      if (listenError.code !== "EADDRINUSE") {
-        throw listenError;
-      }
-      this._log.error(
-        `[AgentHTTPProvider] Port ${config.port} on 127.0.0.1 is already in use, so the ` +
-          "Agent API is NOT running for this session. The editor started normally. " +
-          "Change agentApi.port in the configuration, or stop the process holding it " +
-          `(lsof -nP -iTCP:${config.port} -sTCP:LISTEN).`,
-        listenError,
-      );
-      return;
+      throw listenError;
     }
 
     // Subscribe to committed review events
@@ -780,14 +764,15 @@ export default class AgentHTTPProvider extends ProviderContract {
       }
     }
     const context: EditorContext = {
-      focusedView: focusedView
-        ? {
-            viewId: focusedView.viewId,
-            windowId: focusedView.windowId,
-            leafId: focusedView.leafId,
-            documentId: focusedView.documentId ?? "",
-          }
-        : undefined,
+      focusedView:
+        focusedView === undefined || focusedView.documentId === undefined
+          ? undefined
+          : {
+              viewId: focusedView.viewId,
+              windowId: focusedView.windowId,
+              leafId: focusedView.leafId,
+              documentId: focusedView.documentId,
+            },
       focusedDocument: focusedDocSummary,
       openDocuments,
     };
@@ -1340,10 +1325,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       });
       return;
     }
-    const diff = this._documents.reviewStore.getReviewDiff(
-      documentId,
-      this._documents.readWorkingText(documentId) ?? "",
-    );
+    const workingText = this._documents.readWorkingText(documentId);
+    if (workingText === undefined) {
+      this.sendError(res, 409, "DOCUMENT_CLOSED", "The reviewed document is not open.");
+      return;
+    }
+    const diff = this._documents.reviewStore.getReviewDiff(documentId, workingText);
     if (diff === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
       return;
@@ -1446,10 +1433,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       });
       return;
     }
-    const chunks = this._documents.reviewStore.getOutstandingChunks(
-      documentId,
-      this._documents.readWorkingText(documentId) ?? "",
-    );
+    const workingText = this._documents.readWorkingText(documentId);
+    if (workingText === undefined) {
+      this.sendError(res, 409, "DOCUMENT_CLOSED", "The reviewed document is not open.");
+      return;
+    }
+    const chunks = this._documents.reviewStore.getOutstandingChunks(documentId, workingText);
     if (chunks === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
       return;
@@ -1462,7 +1451,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       // The precondition a decision on any of these chunks must carry. A
       // detached review has no live buffer and so publishes none: it accepts
       // no decisions until its file is reopened.
-      workingSha256: sha256Text(this._documents.readWorkingText(documentId) ?? ""),
+      workingSha256: sha256Text(workingText),
       chunks,
     });
   }

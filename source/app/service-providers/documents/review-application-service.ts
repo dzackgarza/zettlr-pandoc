@@ -35,6 +35,8 @@ import { Mutex } from "async-mutex";
 import type { ChangeSet, Text } from "@codemirror/state";
 import type {
   AgentErrorCode,
+  AgentEvent,
+  AgentEventType,
   SubmitProposalResponse,
 } from "@dts/common/agent-api";
 import type { SerializedUpdate } from "@dts/common/documents";
@@ -43,10 +45,12 @@ import {
   proposalRequestFingerprint,
   reviewSidecar,
   normalizeText,
-  type ReviewDiffStore,
+  ReviewDiffStore,
+  type ReviewDiffStore as ReviewDiffStoreType,
 } from "./review-diff-store";
 import { sha256Text } from "@common/util/sha256";
-import type { ReviewSidecarStore } from "./review-sidecar-store";
+import { ReviewSidecarStore } from "./review-sidecar-store";
+import type { ReviewSidecarData } from "./review-sidecar-schema";
 import {
   isTransitionError,
   prepareAcceptAll,
@@ -161,11 +165,24 @@ export interface ReviewMutationPrecondition {
 
 interface ReviewApplicationDependencies {
   authority: ReviewDocumentAuthority;
-  reviews: ReviewDiffStore;
-  sidecars: ReviewSidecarStore;
-  emit: (event: string, payload: Record<string, unknown>) => void;
+  sidecarDirectory: string;
+  emit: (event: AgentEventType, payload: AgentEventPayload) => void;
   warn: (message: string) => void;
 }
+
+export type ReviewStoreView = Pick<
+  ReviewDiffStoreType,
+  | "getReview"
+  | "findReviewByReviewId"
+  | "listReviews"
+  | "getStatus"
+  | "getOutstandingChunks"
+  | "getReviewDiff"
+>;
+
+export type AgentEventPayload = Partial<Omit<AgentEvent, "event" | "timestamp">> & {
+  generation?: number;
+};
 
 /** The context a mutation is prepared against, read under the lock. */
 interface MutationContext {
@@ -193,8 +210,41 @@ export class ReviewApplicationService {
    * interleave a read against another's half-applied commit.
    */
   private readonly locks = new Map<string, Mutex>();
+  private readonly reviews = new ReviewDiffStore();
+  private readonly sidecars: ReviewSidecarStore;
 
-  constructor(private readonly deps: ReviewApplicationDependencies) {}
+  constructor(private readonly deps: ReviewApplicationDependencies) {
+    this.sidecars = new ReviewSidecarStore(deps.sidecarDirectory);
+  }
+
+  /** Read projections and persistence are owned by this service. */
+  public get reviewStore(): ReviewStoreView {
+    return this.reviews;
+  }
+
+  public replaceReview(documentId: string, review: ActiveReviewState): void {
+    this.reviews.replaceReview(documentId, review);
+  }
+
+  public removeReview(documentId: string): void {
+    this.reviews.removeReview(documentId);
+  }
+
+  public async readSidecar(documentPath: string): Promise<ReviewSidecarData | undefined> {
+    return await this.sidecars.read(documentPath);
+  }
+
+  public async writeSidecar(sidecar: ReviewSidecarData): Promise<void> {
+    await this.sidecars.write(sidecar);
+  }
+
+  public async deleteSidecar(documentPath: string): Promise<void> {
+    await this.sidecars.delete(documentPath);
+  }
+
+  public async listSidecars(): Promise<ReviewSidecarData[]> {
+    return await this.sidecars.list();
+  }
 
   private lockFor(documentId: string): Mutex {
     const existing = this.locks.get(documentId);
@@ -247,9 +297,9 @@ export class ReviewApplicationService {
 
     try {
       if (plan.nextReview === undefined) {
-        await this.deps.sidecars.delete(context.documentPath);
+        await this.sidecars.delete(context.documentPath);
       } else {
-        await this.deps.sidecars.write(
+        await this.sidecars.write(
           reviewSidecar(plan.nextReview, plan.nextWorkingText),
         );
       }
@@ -258,9 +308,9 @@ export class ReviewApplicationService {
     }
 
     if (plan.nextReview === undefined) {
-      this.deps.reviews.removeReview(context.documentId);
+      this.reviews.removeReview(context.documentId);
     } else {
-      this.deps.reviews.replaceReview(context.documentId, plan.nextReview);
+      this.reviews.replaceReview(context.documentId, plan.nextReview);
     }
     this.deps.authority.commitWorkingTextReplacement(prepared);
 
@@ -284,7 +334,7 @@ export class ReviewApplicationService {
    * document is closed cannot be decided — closing detaches it to a sidecar.
    */
   private contextForReview(reviewId: string): MutationContext | ReviewFailure {
-    const review = this.deps.reviews.findReviewByReviewId(reviewId);
+    const review = this.reviews.findReviewByReviewId(reviewId);
     if (review === undefined) {
       return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
     }
@@ -393,11 +443,11 @@ export class ReviewApplicationService {
   ): Promise<ReviewFailure> {
     const invalidated: ActiveReviewState = { ...context.review, invalidated: true };
     try {
-      await this.deps.sidecars.write(reviewSidecar(invalidated, context.workingText));
+      await this.sidecars.write(reviewSidecar(invalidated, context.workingText));
     } catch (error) {
       return persistenceFailure("the drift invalidation", error);
     }
-    this.deps.reviews.replaceReview(context.documentId, invalidated);
+    this.reviews.replaceReview(context.documentId, invalidated);
     this.deps.emit("review.invalidated", {
       reviewId: invalidated.reviewId,
       documentId: context.documentId,
@@ -462,7 +512,7 @@ export class ReviewApplicationService {
     // the review that recorded it exists. A review that completed or was
     // discarded retired its clientRequestIds with it, and the replay is then
     // an ordinary new request judged on its own preconditions.
-    const activeReview = this.deps.reviews.getReview(input.documentId);
+    const activeReview = this.reviews.getReview(input.documentId);
     const prior = activeReview?.submissions.find(
       (submission) => submission.clientRequestId === input.clientRequestId,
     );
@@ -561,11 +611,11 @@ export class ReviewApplicationService {
       plan.nextWorkingText,
     );
     try {
-      await this.deps.sidecars.write(reviewSidecar(plan.nextReview!, plan.nextWorkingText));
+      await this.sidecars.write(reviewSidecar(plan.nextReview!, plan.nextWorkingText));
     } catch (error) {
       return persistenceFailure("the proposal", error);
     }
-    this.deps.reviews.replaceReview(input.documentId, plan.nextReview!);
+    this.reviews.replaceReview(input.documentId, plan.nextReview!);
     this.deps.authority.commitWorkingTextReplacement(prepared);
     for (const draft of plan.events) {
       this.deps.emit(draft.event, draft.payload);
@@ -738,7 +788,7 @@ export class ReviewApplicationService {
   > {
     // Reviews and their packets are few; a scan is cheaper to keep correct
     // than an index every mutation must remember to maintain.
-    const owner = this.deps.reviews
+    const owner = this.reviews
       .listReviews()
       .find((candidate) =>
         candidate.packets.some((packet) => packet.packetId === packetId),
@@ -785,7 +835,7 @@ export class ReviewApplicationService {
    */
   public async invalidateOnDiskDrift(documentId: string): Promise<void> {
     await this.withDocumentLock(documentId, async () => {
-      const review = this.deps.reviews.getReview(documentId);
+      const review = this.reviews.getReview(documentId);
       const documentPath = this.deps.authority.resolveDocumentPath(documentId);
       const workingText = this.deps.authority.readWorkingText(documentId);
       if (
@@ -812,7 +862,7 @@ export class ReviewApplicationService {
     reviewId: string,
     run: (context: MutationContext) => Promise<T | ReviewFailure>,
   ): Promise<T | ReviewFailure> {
-    const located = this.deps.reviews.findReviewByReviewId(reviewId);
+    const located = this.reviews.findReviewByReviewId(reviewId);
     if (located === undefined) {
       return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
     }

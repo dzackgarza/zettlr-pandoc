@@ -36,6 +36,8 @@ import {
 } from "diff";
 import path from "path";
 import type {
+  AgentEvent,
+  AgentEventType,
   DocumentRevision,
   ReviewComment,
   ReviewState,
@@ -68,8 +70,8 @@ import { sha256Text } from "@common/util/sha256";
  * a plan that is never committed must announce nothing.
  */
 export interface AgentEventDraft {
-  event: string;
-  payload: Record<string, unknown>;
+  event: AgentEventType;
+  payload: Partial<Omit<AgentEvent, "event" | "timestamp">> & { generation?: number };
 }
 
 /**

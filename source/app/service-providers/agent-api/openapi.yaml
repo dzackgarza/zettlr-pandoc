@@ -383,6 +383,21 @@ components:
       properties:
         event:
           type: string
+          enum:
+            - focus.changed
+            - document.changed
+            - document.closed
+            - review.started
+            - review.changed
+            - review.resolved
+            - review.commented
+            - review.cleared
+            - review.invalidated
+            - review.completed
+            - review.discarded
+            - review.sidecar-error
+            - proposal.applied
+            - proposal.retracted
         timestamp:
           type: string
         reviewId:
@@ -395,6 +410,10 @@ components:
           type: integer
         unresolvedChunks:
           type: integer
+        packetId:
+          type: string
+          description: >-
+            proposal.applied and proposal.retracted: the packet affected by the event.
         chunkId:
           type: string
           description: >-
