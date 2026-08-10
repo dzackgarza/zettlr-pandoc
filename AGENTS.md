@@ -94,12 +94,11 @@ Desktop entry → wrapper → splash → boot script:
 - `~/.local/bin/zettlr-pandoc-dev` and `zettlr-pandoc-boot` are symlinks to the
   repo-owned scripts. The wrapper opens the floating kitty boot splash
   (Hyprland float/center via `hyprctl dispatch`).
-- `zettlr-pandoc-boot` is the actual launcher. It delegates to
-  `just launch-desktop`,
-  so lockfile synchronization and all other recipe prerequisites run before
-  Electron Forge. It retains focus-if-running (intentional — do not "fix"),
-  MathJax-macro refresh (below), Hyprland window-class detection (`class == zettlr-pandoc`),
-  fail-loud on timeout. It deliberately does **not** use the packaged build.
+- `zettlr-pandoc-boot` is the actual launcher. It refreshes MathJax macros, then
+  starts the verified packaged build through `just package` when the source
+  fingerprint is stale. It retains focus-if-running (intentional — do not
+  "fix"), Hyprland window-class detection (`class == zettlr-pandoc`), and
+  fail-loud behavior on build or launch failure.
 - Launcher log: `~/.cache/zettlr-pandoc-dev.log`.
 
 ## System-specific integrations
