@@ -32,7 +32,6 @@ import type {
   AgentErrorResponse,
   DocumentSummary,
   EditorContext,
-  EditorViewSummary,
   PingResponse,
   ReadDocumentResponse,
   ReadSide,
@@ -46,7 +45,7 @@ import type {
   WorkspaceDocumentEntry,
   WorkspaceFileEntry,
 } from "@dts/common/agent-api";
-import { DocumentType, DP_EVENTS } from "@dts/common/documents";
+import { DP_EVENTS } from "@dts/common/documents";
 import type DocumentManager from "@providers/documents";
 import type { ReviewFailure } from "@providers/documents/review-application-service";
 import type LogProvider from "@providers/log";
@@ -71,9 +70,9 @@ import {
 } from "@providers/documents/review-diff-store";
 import { sha256Text } from "@common/util/sha256";
 import makeSearchRegex from "source/common/util/make-search-regex";
+import AgentDocumentQueries from "./document-queries";
+import AgentEventDelivery, { EVENT_REPLAY_BUFFER_SIZE } from "./event-delivery";
 
-const SSE_REPLAY_BUFFER_SIZE = 100;
-const SSE_HEARTBEAT_MS = 15000;
 const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
 
 /**
@@ -84,8 +83,6 @@ const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
  * serves no one.
  */
 const REQUEST_BODY_DEADLINE_MS = 30_000;
-
-type BufferedAgentEvent = AgentEvent & { id: string };
 
 /** The payload shape the document-provider events this server subscribes to carry. */
 interface DocumentEventContext {
@@ -229,10 +226,8 @@ export interface AgentApiHost {
 export default class AgentHTTPProvider extends ProviderContract {
   private _server: http.Server | undefined;
   private _instanceId: string;
-  private _sseClients: Set<http.ServerResponse> = new Set();
-  private _eventReplayBuffer: BufferedAgentEvent[] = [];
-  private _eventSequence = 1;
-  private _sseHeartbeat: NodeJS.Timeout | undefined;
+  private readonly _queries: AgentDocumentQueries;
+  private readonly _eventDelivery: AgentEventDelivery;
   /**
    * The committed specification, parsed once at construction. Per-request
    * copies get their `servers` entry set on the parsed document rather than
@@ -263,6 +258,8 @@ export default class AgentHTTPProvider extends ProviderContract {
   ) {
     super();
     this._instanceId = crypto.randomUUID();
+    this._queries = new AgentDocumentQueries(_documents, _app, _log);
+    this._eventDelivery = new AgentEventDelivery((event) => this.enrichAgentEvent(event));
     // Load the OpenAPI YAML spec (dev: sibling to this file; packaged: assets/openapi.yaml)
     const candidatePaths = [
       path.join(__dirname, "openapi.yaml"),
@@ -359,7 +356,7 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     // Subscribe to committed review events
     this._documents.agentEvents.on("*", (event: AgentEvent) => {
-      this.broadcastSseEvent(event);
+      this._eventDelivery.broadcast(event);
     });
 
     // Subscribe to document-level events
@@ -393,7 +390,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         );
         return;
       }
-      this.broadcastSseEvent({
+      this._eventDelivery.broadcast({
         event: agentEvent,
         timestamp: new Date().toISOString(),
         documentId: filePath !== undefined ? this._documents.getDocumentId(filePath) : undefined,
@@ -407,15 +404,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   async shutdown(): Promise<void> {
-    // Close all SSE clients
-    for (const res of this._sseClients) {
-      res.end();
-    }
-    this._sseClients.clear();
-    if (this._sseHeartbeat !== undefined) {
-      clearInterval(this._sseHeartbeat);
-      this._sseHeartbeat = undefined;
-    }
+    this._eventDelivery.shutdown();
 
     if (this._server !== undefined) {
       await new Promise<void>((resolve) => {
@@ -643,13 +632,13 @@ export default class AgentHTTPProvider extends ProviderContract {
           retractionSupport: true,
           maxRequestSize: MAX_REQUEST_BODY_BYTES,
           eventStreamSupport: true,
-          eventReplayBufferSize: SSE_REPLAY_BUFFER_SIZE,
+          eventReplayBufferSize: EVENT_REPLAY_BUFFER_SIZE,
           applicationVersion: app.getVersion(),
           instanceId: this._instanceId,
         }),
       getContext: (_c, _req, res) => this.handleGetContext(res),
       listViews: (_c, _req, res) => this.handleGetViews(res),
-      subscribeEvents: (_c, req, res) => this.handleSseSubscription(req, res),
+      subscribeEvents: (_c, req, res) => this._eventDelivery.subscribe(req, res),
 
       listWorkspaces: (_c, _req, res) => this.handleGetWorkspaces(res),
       listWorkspaceFiles: (_c, _req, res) => this.handleListWorkspaceFiles(res),
@@ -754,11 +743,11 @@ export default class AgentHTTPProvider extends ProviderContract {
     const focusedView = this._documents.getFocusedView();
     const focusedDocSummary =
       focusedView?.documentId !== undefined
-        ? await this.getDocumentSummary(focusedView.documentId)
+        ? await this._queries.getDocumentSummary(focusedView.documentId)
         : undefined;
     const openDocuments: DocumentSummary[] = [];
     for (const doc of this._documents.loadedDocuments) {
-      const summary = await this.getDocumentSummary(doc.documentId);
+      const summary = await this._queries.getDocumentSummary(doc.documentId);
       if (summary !== undefined) {
         openDocuments.push(summary);
       }
@@ -782,7 +771,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   private async handleListDocuments(res: http.ServerResponse): Promise<void> {
     const documents: DocumentSummary[] = [];
     for (const doc of this._documents.loadedDocuments) {
-      const summary = await this.getDocumentSummary(doc.documentId);
+      const summary = await this._queries.getDocumentSummary(doc.documentId);
       if (summary !== undefined) {
         documents.push(summary);
       }
@@ -873,7 +862,7 @@ export default class AgentHTTPProvider extends ProviderContract {
               continue;
             }
           }
-          const summary = await this.getDocumentSummary(documentId);
+          const summary = await this._queries.getDocumentSummary(documentId);
           documents.push(summary === undefined
             ? {
                 documentId,
@@ -893,7 +882,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleGetDocument(res: http.ServerResponse, documentId: string): Promise<void> {
-    const summary = await this.getDocumentSummary(documentId);
+    const summary = await this._queries.getDocumentSummary(documentId);
     if (summary === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
@@ -907,7 +896,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    if (!(await this.isDocumentOpenableInCurrentWorkspaces(filePath))) {
+    if (!(await this._queries.isOpenable(filePath))) {
       this.sendError(
         res,
         404,
@@ -963,7 +952,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    if (!(await this.isDocumentOpenableInCurrentWorkspaces(filePath))) {
+    if (!(await this._queries.isOpenable(filePath))) {
       this.sendError(
         res,
         404,
@@ -1026,7 +1015,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     const waitSeconds = query.waitSeconds ?? query.wait ?? 30;
     const afterGeneration = query.afterGeneration ?? 0;
 
-    const documentId = this.findDocumentIdByReviewId(reviewId);
+    const documentId = this._queries.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
       // A detached review's generation cannot advance — nothing can decide
       // its chunks while its file is closed — so waiting on it would be
@@ -1154,7 +1143,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     // is checked here for the same reason the read route checks it — an id is
     // not authorization, and nothing else stands between a loopback client and
     // an arbitrary path on disk.
-    if (!(await this.isDocumentOpenableInCurrentWorkspaces(filePath))) {
+    if (!(await this._queries.isOpenable(filePath))) {
       this.sendError(
         res,
         404,
@@ -1259,7 +1248,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleGetReview(res: http.ServerResponse, reviewId: string): Promise<void> {
-    const documentId = this.findDocumentIdByReviewId(reviewId);
+    const documentId = this._queries.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
       const detached = await this._documents.findDetachedReview(reviewId);
       if (detached === undefined) {
@@ -1311,7 +1300,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: http.ServerResponse,
     reviewId: string,
   ): Promise<void> {
-    const documentId = this.findDocumentIdByReviewId(reviewId);
+    const documentId = this._queries.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
       const detached = await this._documents.findDetachedReview(reviewId);
       if (detached === undefined) {
@@ -1383,7 +1372,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     text: string,
     expectedReviewGeneration: number,
   ): Promise<void> {
-    const documentId = this.findDocumentIdByReviewId(reviewId);
+    const documentId = this._queries.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
       await this.sendReviewLookupFailure(res, reviewId);
       return;
@@ -1419,7 +1408,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: http.ServerResponse,
     reviewId: string,
   ): Promise<void> {
-    const documentId = this.findDocumentIdByReviewId(reviewId);
+    const documentId = this._queries.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
       const detached = await this._documents.findDetachedReview(reviewId);
       if (detached === undefined) {
@@ -1460,7 +1449,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: http.ServerResponse,
     reviewId: string,
   ): Promise<void> {
-    const documentId = this.findDocumentIdByReviewId(reviewId);
+    const documentId = this._queries.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
       const detached = await this._documents.findDetachedReview(reviewId);
       if (detached === undefined) {
@@ -1515,92 +1504,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
   }
 
-  // ==========================================================================
-  // SSE event streaming
-  // ==========================================================================
-
-  private handleSseSubscription(req: http.IncomingMessage, res: http.ServerResponse): void {
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
-    const afterEventId = this.parseLastEventId(req.headers["last-event-id"]);
-    const start = this.eventReplayStartIndex(afterEventId);
-    if (start < this._eventReplayBuffer.length) {
-      for (const event of this._eventReplayBuffer.slice(start)) {
-        this.writeSseEnvelope(res, event);
-      }
-    } else {
-      res.write(": connected\n\n");
-    }
-    this._sseClients.add(res);
-
-    if (this._sseHeartbeat === undefined) {
-      this._sseHeartbeat = setInterval(() => {
-        for (const client of this._sseClients) {
-          if (!client.writableEnded) {
-            client.write(": heartbeat\n\n");
-          }
-        }
-      }, SSE_HEARTBEAT_MS);
-    }
-    res.on("close", () => {
-      this._sseClients.delete(res);
-      if (this._sseClients.size === 0 && this._sseHeartbeat !== undefined) {
-        clearInterval(this._sseHeartbeat);
-        this._sseHeartbeat = undefined;
-      }
-    });
-  }
-
-  private broadcastSseEvent(event: AgentEvent): void {
-    const stampedEvent = this.buildSseEvent(event);
-    // Add to replay buffer
-    this._eventReplayBuffer.push(stampedEvent);
-    if (this._eventReplayBuffer.length > SSE_REPLAY_BUFFER_SIZE) {
-      this._eventReplayBuffer.shift();
-    }
-    for (const res of this._sseClients) {
-      if (!res.writableEnded) {
-        this.writeSseEnvelope(res, stampedEvent);
-      }
-    }
-  }
-
-  private parseLastEventId(header: string | string[] | undefined): number | undefined {
-    if (header === undefined) {
-      return undefined;
-    }
-    const candidate = Array.isArray(header) ? header[0] : header;
-    const parsed = parseInt(candidate, 10);
-    return Number.isInteger(parsed) ? parsed : undefined;
-  }
-
-  private eventReplayStartIndex(afterEventId: number | undefined): number {
-    if (afterEventId === undefined || this._eventReplayBuffer.length === 0) {
-      return 0;
-    }
-    for (let i = 0; i < this._eventReplayBuffer.length; i++) {
-      if (parseInt(this._eventReplayBuffer[i].id, 10) > afterEventId) {
-        return i;
-      }
-    }
-    return this._eventReplayBuffer.length;
-  }
-
-  private writeSseEnvelope(res: http.ServerResponse, event: BufferedAgentEvent): void {
-    const data = JSON.stringify(event);
-    res.write(`id: ${event.id}\n`);
-    if (event.event !== undefined) {
-      res.write(`event: ${event.event}\n`);
-    }
-    res.write(`data: ${data}\n\n`);
-  }
-
-  private buildSseEvent(event: AgentEvent): BufferedAgentEvent {
-    const id = `${this._eventSequence}`;
-    this._eventSequence += 1;
+  private enrichAgentEvent(event: AgentEvent): AgentEvent {
     const enriched: AgentEvent = { ...event };
     if (enriched.documentId !== undefined) {
       const filePath = this._documents.getDocumentPath(enriched.documentId);
@@ -1625,156 +1529,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
       }
     }
-    return {
-      ...enriched,
-      id,
-    };
+    return enriched;
   }
 
   // ==========================================================================
   // Helpers
   // ==========================================================================
-
-  /**
-   * Collects the editor views a document is currently open in, keyed the same
-   * way as GET /v1/views.
-   */
-  private async getViewsForDocument(documentId: string): Promise<EditorViewSummary[]> {
-    const focusedView = this._documents.getFocusedView();
-    const views: EditorViewSummary[] = [];
-    await this._documents.forEachLeaf(async (tabMan, windowId, leafId) => {
-      const isOpenHere = tabMan.openFiles.some(
-        (openFile) => this._documents.getDocumentId(openFile.path) === documentId,
-      );
-      if (!isOpenHere) {
-        return false;
-      }
-      const isFocused =
-        focusedView !== undefined &&
-        focusedView.windowId === windowId &&
-        focusedView.leafId === leafId;
-      views.push({
-        viewId: `view-${windowId}-${leafId}`,
-        windowId,
-        leafId,
-        focused: isFocused,
-        active:
-          tabMan.activeFile !== null &&
-          this._documents.getDocumentId(tabMan.activeFile.path) === documentId,
-      });
-      return false;
-    });
-    return views;
-  }
-
-  private async getDocumentSummary(documentId: string): Promise<DocumentSummary | undefined> {
-    const filePath = this._documents.getDocumentPath(documentId);
-    if (filePath === undefined) {
-      return undefined;
-    }
-    const doc = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
-    if (doc === undefined) {
-      return undefined;
-    }
-    const content = doc.document.toString();
-    const lines = content.split("\n");
-    const reviewStatus = this._documents.reviewStatus(documentId);
-    return {
-      documentId,
-      uri: `safe-file://${filePath}`,
-      path: filePath,
-      name: path.basename(filePath),
-      // The wire contract is "markdown" | "code", not the internal enum ordinal.
-      type: doc.type === DocumentType.Markdown ? "markdown" : "code",
-      dirty: doc.currentVersion !== doc.lastSavedVersion,
-      revision: { sha256: sha256Text(content) },
-      lineCount: lines.length,
-      byteLength: Buffer.byteLength(content, "utf8"),
-      views: await this.getViewsForDocument(documentId),
-      review: reviewStatus ?? undefined,
-    };
-  }
-
-  private async isDocumentOpenableInCurrentWorkspaces(filePath: string): Promise<boolean> {
-    const workspaces = this._app.config.get().app.openWorkspaces;
-    if (workspaces.length === 0) {
-      // An empty workspace list is not "every file on disk is in scope". A
-      // fresh profile opens no workspace, so answering true here let any
-      // loopback client POST an absolute path and then read the file back.
-      // What is legitimately in scope with no workspace configured is what the
-      // editor already holds — the user opened those documents itself. A path
-      // nobody has opened stays out of reach.
-      //
-      // `getDocumentId` is not that test: `_documentIdByPath` is a permanent
-      // assignment cache that closing a document never clears, and listing a
-      // workspace assigns an id to every file in it. Asking what is loaded
-      // right now is the question this predicate actually has.
-      return this._documents.loadedDocuments.some((doc) => doc.filePath === filePath);
-    }
-    for (const workspacePath of workspaces) {
-      if (await this.isDocumentOpenableInWorkspace(filePath, workspacePath)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private async isDocumentOpenableInWorkspace(
-    filePath: string,
-    workspacePath: string,
-  ): Promise<boolean> {
-    // Canonicalize the requested path so a symlink inside a workspace cannot
-    // point the containment check at a file outside it. A path realpath cannot
-    // resolve — nonexistent, a dangling link, a component that is not a
-    // directory, or one this process may not traverse — is a path this
-    // predicate cannot prove inside any workspace, and refusal is the only
-    // safe answer a containment check can give for it.
-    let canonicalFilePath: string;
-    try {
-      canonicalFilePath = await fs.promises.realpath(filePath);
-    } catch {
-      return false;
-    }
-
-    // A configured workspace can be deleted or unmounted while the editor
-    // runs, and realpath then rejects with ENOENT. Letting that escape turned
-    // every openability check into a bare 500 whose message named neither the
-    // path nor the reason, so the only diagnosis was reading the app log and
-    // guessing which of several workspaces was gone. A vanished workspace
-    // cannot contain the file, which is the answer this predicate owes its
-    // caller; anything else is a real fault and still propagates.
-    let canonicalWorkspacePath: string;
-    try {
-      canonicalWorkspacePath = await fs.promises.realpath(workspacePath);
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT" && code !== "ENOTDIR") {
-        throw error;
-      }
-      this._log.warning(
-        `[AgentHTTPProvider] Configured workspace ${workspacePath} could not be resolved ` +
-          `(${code}); treating it as not containing ${filePath}. The workspace is ` +
-          "probably deleted or unmounted.",
-      );
-      return false;
-    }
-    const relativePath = path.relative(canonicalWorkspacePath, canonicalFilePath);
-    return (
-      relativePath === "" ||
-      (!relativePath.startsWith(`..${path.sep}`) &&
-        relativePath !== ".." &&
-        !path.isAbsolute(relativePath))
-    );
-  }
-
-  private findDocumentIdByReviewId(reviewId: string): string | undefined {
-    for (const r of this._documents.reviewStore.listReviews()) {
-      if (r.reviewId === reviewId) {
-        return r.documentId;
-      }
-    }
-    return undefined;
-  }
 
   /**
    * Reads the request body, bounded in size and time. The promise settles
