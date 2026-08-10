@@ -93,10 +93,12 @@ def build_and_verify() -> None:
             cwd=REPO, capture_output=True, text=True, timeout=BUILD_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
         fail(
             f"build TIMED OUT after {BUILD_TIMEOUT_S}s -- webpack hung and produced "
             f"no fresh artifact",
-            exc.stdout or "", exc.stderr or "",
+            stdout, stderr,
         )
 
     if result.returncode != 0:
