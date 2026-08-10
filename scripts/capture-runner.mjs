@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { spawnSync } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
@@ -92,10 +93,10 @@ if (capture === undefined || output === undefined) {
 }
 
 run("python3", [path.join(root, "scripts", "assert-dev-server-stopped.py")]);
-run("mkdir", ["-p", output]);
+mkdirSync(output, { recursive: true });
 
 if (capture.build !== undefined) {
-  run("node", [path.join(root, capture.build), output]);
+  run(process.execPath, [path.join(root, capture.build), output]);
 } else {
   const args = [
     path.join(root, capture.entry),
