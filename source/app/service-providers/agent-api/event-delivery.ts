@@ -15,7 +15,7 @@
  */
 
 import type { AgentEvent } from "@dts/common/agent-api";
-import http from "http";
+import type http from "http";
 
 export const EVENT_REPLAY_BUFFER_SIZE = 100;
 const HEARTBEAT_MS = 15000;
