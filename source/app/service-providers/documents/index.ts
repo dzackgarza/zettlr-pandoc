@@ -49,7 +49,6 @@ import type {
   AgentEvent,
   AgentEventType,
   ProposalClaim,
-  ReviewListEntry,
 } from "@dts/common/agent-api";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import type { ActiveReviewState } from "@dts/common/review-domain";
@@ -77,10 +76,8 @@ import { v4 as uuid4 } from "uuid";
 import { type AppServiceContainer } from "../../app-service-container";
 import { DocumentTree, type DTLeaf } from "./document-tree";
 import {
-  classifyReviewState,
   reviewFromSidecar,
   reviewSidecar,
-  sidecarUnresolvedChunks,
   type ReviewSidecarData,
   type ReviewStatus,
 } from "./review-diff-store";
@@ -91,6 +88,7 @@ import {
   type ReviewDocumentAuthority,
   type ReviewFailure,
   type ReviewMutationPrecondition,
+  type ReviewQueryPort,
   type SubmittedProposal,
 } from "./review-application-service";
 import {
@@ -3264,77 +3262,6 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * The sidecar-backed reviews whose files are currently closed, shaped for
-   * GET /v1/reviews. A loaded document's sidecar is excluded — its
-   * in-memory review is the live entry for the same fact.
-   */
-  public async listDetachedReviews(): Promise<ReviewListEntry[]> {
-    return (await this._detachedReviews()).map((sidecar) => {
-      const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
-      return {
-        reviewId: sidecar.reviewId,
-        state: classifyReviewState(sidecar.invalidated, unresolvedChunks),
-        generation: sidecar.generation,
-        unresolvedChunks,
-        packetCount: sidecar.packets.length,
-        documentPath: sidecar.documentPath,
-        attached: false,
-      };
-    });
-  }
-
-  /**
-   * The sidecars behind the detached reviews — the exact set
-   * listDetachedReviews enumerates. Every reviewId lookup that misses the
-   * live store resolves against this same set, so an id the listing hands
-   * out is addressable and an id it withholds (a sidecar shadowed by its
-   * open document) is not.
-   */
-  // ponytail: rereads every sidecar file per call. Cache it when a workspace
-  // with hundreds of detached reviews makes the scan show up.
-  private async _detachedReviews(): Promise<ReviewSidecarData[]> {
-    return (await this._reviewApplication.listSidecars()).filter((sidecar) =>
-        this.documents.every(
-          (doc) => path.resolve(doc.filePath) !== path.resolve(sidecar.documentPath),
-        ),
-      );
-  }
-
-  /**
-   * The complete review behind a detached reviewId, or undefined when no
-   * closed file carries it. This is what makes a listed reviewId readable:
-   * a sidecar holds both texts, every packet with its spans, the chunk comments and
-   * the comments, so the review routes can answer from it without the
-   * document being open.
-   */
-  public async findDetachedReview(reviewId: string): Promise<ReviewSidecarData | undefined> {
-    return (await this._detachedReviews()).find((sidecar) => sidecar.reviewId === reviewId);
-  }
-
-  /**
-   * Why a reviewId did not resolve in the live store. A detached review is
-   * not missing — /v1/reviews just vouched for it — it is unworkable until
-   * its file is open again, which is a conflict, not a 404.
-   */
-  public async reviewLookupFailure(reviewId: string): Promise<{
-    ok: false;
-    code: AgentErrorCode;
-    message: string;
-  }> {
-    const detached = await this.findDetachedReview(reviewId);
-    if (detached !== undefined) {
-      return {
-        ok: false,
-        code: "DOCUMENT_CLOSED",
-        message:
-          `The reviewed document ${detached.documentPath} is not open. ` +
-          "Open it to reattach this review, then decide its chunks.",
-      };
-    }
-    return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
-  }
-
-  /**
    * Get the file path for a documentId.
    */
   public getDocumentPath(documentId: string): string | undefined {
@@ -3344,6 +3271,16 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     }
     return undefined;
+  }
+
+  public isDocumentOpen(documentPath: string): boolean {
+    return this.documents.some(
+      (document) => path.resolve(document.filePath) === path.resolve(documentPath),
+    );
+  }
+
+  public async readSupportedFile(filePath: string): Promise<string> {
+    return await this._app.fsal.loadAnySupportedFile(filePath);
   }
 
   /**
@@ -3433,53 +3370,6 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Both sides of a document for the read route, whether or not it is open.
-   * A closed file answers from its sidecar when it has one and from disk
-   * otherwise; neither path loads the document or touches a renderer pane,
-   * so reading a workspace file costs nothing and leaves nothing behind.
-   *
-   * A sidecar that cannot be read throws. Answering with the disk text
-   * instead would present a corrupt review's document as an unreviewed one
-   * — the exact state the sidecar exists to make impossible.
-   */
-  public async readDocumentSides(documentId: string): Promise<
-    | {
-        attached: boolean;
-        working: string;
-        reference: string;
-        reviewGeneration: number;
-      }
-    | undefined
-  > {
-    const filePath = this.getDocumentPath(documentId);
-    if (filePath === undefined) {
-      return undefined;
-    }
-    const doc = this.documents.find((d) => d.filePath === filePath);
-    if (doc !== undefined) {
-      const working = doc.document.toString();
-      const review = this._reviewApplication.reviewStore.getReview(documentId);
-      return {
-        attached: true,
-        working,
-        reference: review === undefined ? working : review.referenceText,
-        reviewGeneration: review === undefined ? 0 : review.generation,
-      };
-    }
-    const sidecar = await this._reviewApplication.readSidecar(filePath);
-    if (sidecar !== undefined) {
-      return {
-        attached: false,
-        working: sidecar.workingText,
-        reference: sidecar.referenceText,
-        reviewGeneration: sidecar.generation,
-      };
-    }
-    const disk = normalizeText(await this._app.fsal.loadAnySupportedFile(filePath));
-    return { attached: false, working: disk, reference: disk, reviewGeneration: 0 };
-  }
-
-  /**
    * Submit an ordered claim sequence against a baseline content hash: applied
    * sequentially and atomically (all-or-nothing), one packet per claim.
    */
@@ -3521,17 +3411,19 @@ current contents from the editor somewhere else, and restart the application.`,
       // the file closed; the sidecar still carries them, and the refusal it
       // earns is the same one every reviewId route gives — the file is shut,
       // not the packet missing. Clearing is shut too, so say so.
-      const detached = (await this._detachedReviews()).find((sidecar) =>
-        sidecar.packets.some((packet) => packet.packetId === packetId),
+      const detached = (await this._reviewApplication.listReviewQueries()).find(
+        (query) =>
+          !query.attached &&
+          query.sidecar.packets.some((packet) => packet.packetId === packetId),
       );
-      if (detached !== undefined) {
+      if (detached !== undefined && !detached.attached) {
         return {
           ok: false,
           code: "DOCUMENT_CLOSED",
           message:
-            `The reviewed document ${detached.documentPath} is not open. ` +
+            `The reviewed document ${detached.sidecar.documentPath} is not open. ` +
             "Open it to reattach this review, then retract this packet.",
-          reviewId: detached.reviewId,
+          reviewId: detached.sidecar.reviewId,
           canClearUnresolved: false,
         };
       }
@@ -3544,6 +3436,11 @@ current contents from the editor somewhere else, and restart the application.`,
    */
   public get reviewStore(): ReviewApplicationService["reviewStore"] {
     return this._reviewApplication.reviewStore;
+  }
+
+  /** Read-only review projections for transport providers. */
+  public get reviewQueries(): ReviewQueryPort {
+    return this._reviewApplication;
   }
 
   /**
@@ -3561,11 +3458,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * no caller can project a review against a text it does not have.
    */
   public reviewStatus(documentId: string): ReviewStatus | undefined {
-    const workingText = this._workingTextOf(documentId);
-    if (workingText === undefined) {
-      return undefined;
-    }
-    return this._reviewApplication.reviewStore.getStatus(documentId, workingText);
+    return this._reviewApplication.getStatus(documentId);
   }
 
   /**

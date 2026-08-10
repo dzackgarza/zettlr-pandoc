@@ -46,6 +46,7 @@ import {
   reviewSidecar,
   normalizeText,
   ReviewDiffStore,
+  type ReviewStatus,
   type ReviewDiffStore as ReviewDiffStoreType,
 } from "./review-diff-store";
 import { sha256Text } from "@common/util/sha256";
@@ -101,6 +102,8 @@ export interface PreparedDocumentMutation {
 /** What this service is allowed to ask of the document authority. */
 export interface ReviewDocumentAuthority {
   resolveDocumentPath: (documentId: string) => string | undefined;
+
+  isDocumentOpen: (documentPath: string) => boolean;
 
   acquireDocument: (documentId: string) => Promise<{
     documentId: string;
@@ -180,6 +183,36 @@ export type ReviewStoreView = Pick<
   | "getReviewDiff"
 >;
 
+export interface AttachedReviewQuery {
+  attached: true;
+  documentId: string;
+  documentPath: string;
+  review: ActiveReviewState;
+  status: ReviewStatus;
+  workingText: string;
+}
+
+export interface DetachedReviewQuery {
+  attached: false;
+  sidecar: ReviewSidecarData;
+}
+
+export type ReviewQuery = AttachedReviewQuery | DetachedReviewQuery;
+
+/** Read-only review queries exposed to transport adapters. */
+export interface ReviewQueryPort {
+  getStatus: (documentId: string) => ReviewStatus | undefined;
+  getReview: (documentId: string) => ActiveReviewState | undefined;
+  getReviewDiff: (documentId: string) => string | undefined;
+  getOutstandingChunks: (
+    documentId: string,
+  ) => ReturnType<ReviewDiffStoreType["getOutstandingChunks"]>;
+  findDocumentIdByReviewId: (reviewId: string) => string | undefined;
+  findReviewQuery: (reviewId: string) => Promise<ReviewQuery | undefined>;
+  listReviewQueries: () => Promise<ReviewQuery[]>;
+  readSidecar: (documentPath: string) => Promise<ReviewSidecarData | undefined>;
+}
+
 export type AgentEventPayload = Partial<Omit<AgentEvent, "event" | "timestamp">> & {
   generation?: number;
 };
@@ -220,6 +253,95 @@ export class ReviewApplicationService {
   /** Read projections and persistence are owned by this service. */
   public get reviewStore(): ReviewStoreView {
     return this.reviews;
+  }
+
+  public getStatus(documentId: string): ReviewStatus | undefined {
+    const workingText = this.deps.authority.readWorkingText(documentId);
+    return workingText === undefined
+      ? undefined
+      : this.reviews.getStatus(documentId, workingText);
+  }
+
+  public getReview(documentId: string): ActiveReviewState | undefined {
+    return this.reviews.getReview(documentId);
+  }
+
+  public getReviewDiff(documentId: string): string | undefined {
+    const workingText = this.deps.authority.readWorkingText(documentId);
+    return workingText === undefined
+      ? undefined
+      : this.reviews.getReviewDiff(documentId, workingText);
+  }
+
+  public getOutstandingChunks(
+    documentId: string,
+  ): ReturnType<ReviewDiffStoreType["getOutstandingChunks"]> {
+    const workingText = this.deps.authority.readWorkingText(documentId);
+    return workingText === undefined
+      ? undefined
+      : this.reviews.getOutstandingChunks(documentId, workingText);
+  }
+
+  public findDocumentIdByReviewId(reviewId: string): string | undefined {
+    return this.reviews.findReviewByReviewId(reviewId)?.documentId;
+  }
+
+  private attachedReviewQuery(review: ActiveReviewState): AttachedReviewQuery | undefined {
+    const documentPath = this.deps.authority.resolveDocumentPath(review.documentId);
+    const workingText = this.deps.authority.readWorkingText(review.documentId);
+    if (documentPath === undefined || workingText === undefined) {
+      return undefined;
+    }
+    const status = this.reviews.getStatus(review.documentId, workingText);
+    if (status === undefined) {
+      throw new Error(`Review ${review.reviewId} has no status for ${review.documentId}`);
+    }
+    return {
+      attached: true,
+      documentId: review.documentId,
+      documentPath,
+      review,
+      status,
+      workingText,
+    };
+  }
+
+  private async detachedReviewQueries(): Promise<DetachedReviewQuery[]> {
+    const sidecars = await this.sidecars.list();
+    return sidecars
+      .filter((sidecar) => !this.deps.authority.isDocumentOpen(sidecar.documentPath))
+      .map((sidecar) => ({ attached: false as const, sidecar }));
+  }
+
+  public async findReviewQuery(reviewId: string): Promise<ReviewQuery | undefined> {
+    const active = this.reviews.findReviewByReviewId(reviewId);
+    if (active !== undefined) {
+      const attached = this.attachedReviewQuery(active);
+      if (attached === undefined) {
+        throw new Error(
+          `Review ${reviewId} is attached to a document that is not open`,
+        );
+      }
+      return attached;
+    }
+    return (await this.detachedReviewQueries()).find(
+      (query) => query.sidecar.reviewId === reviewId,
+    );
+  }
+
+  public async listReviewQueries(): Promise<ReviewQuery[]> {
+    const queries: ReviewQuery[] = [];
+    for (const review of this.reviews.listReviews()) {
+      const attached = this.attachedReviewQuery(review);
+      if (attached === undefined) {
+        throw new Error(
+          `Review ${review.reviewId} is attached to a document that is not open`,
+        );
+      }
+      queries.push(attached);
+    }
+    queries.push(...(await this.detachedReviewQueries()));
+    return queries;
   }
 
   public replaceReview(documentId: string, review: ActiveReviewState): void {

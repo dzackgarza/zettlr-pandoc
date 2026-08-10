@@ -476,6 +476,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   const sidecarDirectory = path.join(app.getPath("userData"), "review-sidecars");
   const sidecars = new ReviewSidecarStore(sidecarDirectory);
 
+  async function findDetachedReview(reviewId: string) {
+    const query = await provider.reviewQueries.findReviewQuery(reviewId);
+    return query !== undefined && !query.attached ? query.sidecar : undefined;
+  }
+
   beforeEach(async function () {
     scratch = mkdtempSync(path.join(os.tmpdir(), "zettlr-http-api-"));
     openWorkspaces = [scratch];
@@ -2838,7 +2843,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         undefined,
         "closing the final owner still detaches the preserved review",
       );
-      const detached = await provider.findDetachedReview(submitted.reviewId);
+      const detached = await findDetachedReview(submitted.reviewId);
       assert.ok(detached !== undefined, "discarding the later edit must keep the saved review");
       assert.equal(detached.workingText, proposed);
       assert.equal(sidecarUnresolvedChunks(detached), 1);
@@ -2901,7 +2906,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(await provider.askUserToCloseWindow(windowId), true);
 
       assert.equal(readFileSync(filePath, "utf8"), proposed);
-      const detached = await provider.findDetachedReview(submitted.reviewId);
+      const detached = await findDetachedReview(submitted.reviewId);
       assert.ok(detached !== undefined, "discarding the later edit must keep the saved pending review");
       assert.equal(detached.workingText, proposed);
       assert.equal(sidecarUnresolvedChunks(detached), 1);
@@ -2943,7 +2948,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         undefined,
         "an unsaved review dies with the dirty buffer it annotates",
       );
-      assert.equal(await provider.findDetachedReview(submitted.reviewId), undefined);
+      assert.equal(await findDetachedReview(submitted.reviewId), undefined);
     });
 
     it("puts the buffer back on current disk content when the close prompt discards", async function () {
@@ -3111,7 +3116,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         undefined,
         "the live review must detach when its document has no remaining owner",
       );
-      const detached = await provider.findDetachedReview(submitted.reviewId);
+      const detached = await findDetachedReview(submitted.reviewId);
       assert.ok(detached !== undefined, "the saved review must persist as a detached sidecar");
       assert.equal(detached.workingText, "ALPHA\n");
       assert.equal(sidecarUnresolvedChunks(detached), 1);

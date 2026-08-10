@@ -14,15 +14,82 @@
  */
 
 import type {
+  EditorContext,
   DocumentSummary,
   EditorViewSummary,
+  ReadDocumentResponse,
+  ReadSide,
+  SearchDocumentRequest,
+  SearchDocumentResponse,
+  ViewSummary,
+  WorkspaceDocumentEntry,
+  WorkspaceFileEntry,
 } from "@dts/common/agent-api";
 import { DocumentType } from "@dts/common/documents";
 import type DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
+import type { ReviewQueryPort } from "@providers/documents/review-application-service";
 import fs from "fs";
 import path from "path";
+import vm from "vm";
 import { sha256Text } from "@common/util/sha256";
+import makeSearchRegex from "source/common/util/make-search-regex";
+import { normalizeText } from "@providers/documents/review-diff-store";
+
+const SEARCH_CONTEXT_DEFAULT = 3;
+const SEARCH_DEADLINE_MS = 1000;
+export const MAX_SEARCH_HITS = 1000;
+
+export class SearchPatternError extends Error {
+  constructor() {
+    super("Invalid search pattern");
+  }
+}
+
+export class SearchTimeoutError extends Error {
+  constructor() {
+    super("Search timed out");
+  }
+}
+
+function collectSearchHits(
+  lines: string[],
+  searchRegex: RegExp,
+  contextSize: number,
+  maxHits: number,
+): { hits: SearchDocumentResponse["hits"]; truncated: boolean } {
+  const hits: SearchDocumentResponse["hits"] = [];
+  let truncated = false;
+  for (let i = 0; i < lines.length; i++) {
+    searchRegex.lastIndex = 0;
+    let match: RegExpExecArray | null = searchRegex.exec(lines[i]);
+    while (match !== null) {
+      const found = match.index;
+      const hitLength = match[0].length;
+      if (hitLength === 0) {
+        searchRegex.lastIndex += 1;
+        match = searchRegex.exec(lines[i]);
+        continue;
+      }
+      if (hits.length >= maxHits) {
+        truncated = true;
+        return { hits, truncated };
+      }
+      hits.push({
+        line: i + 1,
+        column: found + 1,
+        length: hitLength,
+        contextBefore: lines.slice(Math.max(0, i - contextSize), i).join("\n"),
+        contextAfter: lines.slice(i + 1, Math.min(lines.length, i + 1 + contextSize)).join("\n"),
+      });
+      if (searchRegex.lastIndex >= lines[i].length) {
+        break;
+      }
+      match = searchRegex.exec(lines[i]);
+    }
+  }
+  return { hits, truncated };
+}
 
 export interface AgentDocumentQueryHost {
   config: {
@@ -33,6 +100,7 @@ export interface AgentDocumentQueryHost {
 export default class AgentDocumentQueries {
   constructor(
     private readonly documents: DocumentManager,
+    private readonly reviews: ReviewQueryPort,
     private readonly app: AgentDocumentQueryHost,
     private readonly log: LogProvider,
   ) {}
@@ -47,7 +115,7 @@ export default class AgentDocumentQueries {
       return undefined;
     }
     const content = document.document.toString();
-    const review = this.documents.reviewStatus(documentId);
+    const review = this.reviews.getStatus(documentId);
     return {
       documentId,
       uri: `safe-file://${filePath}`,
@@ -91,6 +159,225 @@ export default class AgentDocumentQueries {
     return views;
   }
 
+  public async listDocuments(): Promise<DocumentSummary[]> {
+    const documents: DocumentSummary[] = [];
+    for (const document of this.documents.loadedDocuments) {
+      const summary = await this.getDocumentSummary(document.documentId);
+      if (summary !== undefined) {
+        documents.push(summary);
+      }
+    }
+    return documents;
+  }
+
+  public async getContext(): Promise<EditorContext> {
+    const focusedView = this.documents.getFocusedView();
+    const focusedDocument =
+      focusedView?.documentId === undefined
+        ? undefined
+        : await this.getDocumentSummary(focusedView.documentId);
+    return {
+      focusedView:
+        focusedView === undefined || focusedView.documentId === undefined
+          ? undefined
+          : {
+              viewId: focusedView.viewId,
+              windowId: focusedView.windowId,
+              leafId: focusedView.leafId,
+              documentId: focusedView.documentId,
+            },
+      focusedDocument,
+      openDocuments: await this.listDocuments(),
+    };
+  }
+
+  public async listViews(): Promise<ViewSummary[]> {
+    const focusedView = this.documents.getFocusedView();
+    const views: ViewSummary[] = [];
+    await this.documents.forEachLeaf(async (tabMan, windowId, leafId) => {
+      const activePath = tabMan.activeFile?.path;
+      const isFocused =
+        focusedView !== undefined &&
+        focusedView.windowId === windowId &&
+        focusedView.leafId === leafId;
+      views.push({
+        viewId: `view-${windowId}-${leafId}`,
+        windowId,
+        leafId,
+        documentId:
+          activePath === undefined ? undefined : this.documents.getDocumentId(activePath),
+        focused: isFocused,
+        active: isFocused,
+        documents: tabMan.openFiles.map((openFile) => ({
+          documentId: this.documents.getDocumentId(openFile.path),
+          path: openFile.path,
+        })),
+      });
+      return false;
+    });
+    return views;
+  }
+
+  public listWorkspaces(): Array<{ workspaceId: string; path: string }> {
+    return this.app.config.get().app.openWorkspaces.map((workspacePath) => ({
+      workspaceId: workspacePath,
+      path: workspacePath,
+    }));
+  }
+
+  public async listWorkspaceFiles(): Promise<WorkspaceFileEntry[]> {
+    const files: WorkspaceFileEntry[] = [];
+    for (const workspacePath of this.app.config.get().app.openWorkspaces) {
+      for (const filePath of await this.documents.getFilesForWorkspace(workspacePath)) {
+        files.push({
+          documentId: this.documents.ensureDocumentId(filePath),
+          path: filePath,
+          name: path.basename(filePath),
+          workspaceId: workspacePath,
+          open: this.documents.loadedDocuments.some((document) => document.filePath === filePath),
+        });
+      }
+    }
+    return files;
+  }
+
+  public async listWorkspaceDocuments(
+    workspacePath: string,
+    query: string | undefined,
+  ): Promise<{ workspaceId: string; documents: WorkspaceDocumentEntry[] } | undefined> {
+    if (!this.app.config.get().app.openWorkspaces.includes(workspacePath)) {
+      return undefined;
+    }
+    const normalizedQuery = query === undefined ? "" : query.toLowerCase().trim();
+    const documents: WorkspaceDocumentEntry[] = [];
+    for (const documentPath of await this.documents.getFilesForWorkspace(workspacePath)) {
+      const documentId = this.documents.ensureDocumentId(documentPath);
+      if (normalizedQuery.length > 0 && !documentPath.toLowerCase().includes(normalizedQuery)) {
+        continue;
+      }
+      const summary = await this.getDocumentSummary(documentId);
+      documents.push(
+        summary === undefined
+          ? {
+              documentId,
+              uri: `safe-file://${documentPath}`,
+              path: documentPath,
+              name: path.basename(documentPath),
+              workspaceId: workspacePath,
+              loaded: false,
+            }
+          : { ...summary, workspaceId: workspacePath, loaded: true },
+      );
+    }
+    return { workspaceId: workspacePath, documents };
+  }
+
+  public async readDocumentContent(
+    documentId: string,
+    side: ReadSide,
+    startLine: number,
+    endLine: number,
+  ): Promise<ReadDocumentResponse | "OUTSIDE_WORKSPACE" | undefined> {
+    const filePath = this.documents.getDocumentPath(documentId);
+    if (filePath === undefined) {
+      return undefined;
+    }
+    if (!(await this.isOpenable(filePath))) {
+      return "OUTSIDE_WORKSPACE";
+    }
+
+    const document = this.documents.loadedDocuments.find(
+      (candidate) => candidate.filePath === filePath,
+    );
+    let attached = false;
+    let working: string;
+    let reference: string;
+    let reviewGeneration = 0;
+    if (document !== undefined) {
+      attached = true;
+      working = document.document.toString();
+      const review = this.reviews.getReview(documentId);
+      reference = review?.referenceText ?? working;
+      reviewGeneration = review?.generation ?? 0;
+    } else {
+      const sidecar = await this.reviews.readSidecar(filePath);
+      if (sidecar !== undefined) {
+        working = sidecar.workingText;
+        reference = sidecar.referenceText;
+        reviewGeneration = sidecar.generation;
+      } else {
+        working = normalizeText(await this.documents.readSupportedFile(filePath));
+        reference = working;
+      }
+    }
+
+    const text = side === "working" ? working : reference;
+    const lines = text.split("\n");
+    const totalLines = lines.length;
+    const safeStartLine = Math.max(1, Math.min(startLine, totalLines));
+    const safeEndLine = Math.max(safeStartLine, Math.min(endLine, totalLines));
+    return {
+      documentId,
+      attached,
+      side,
+      revision: { sha256: sha256Text(text) },
+      reviewGeneration,
+      range: {
+        startLine: safeStartLine,
+        endLine: safeEndLine,
+        totalLines,
+      },
+      content: lines.slice(safeStartLine - 1, safeEndLine).join("\n"),
+      truncated: safeEndLine < totalLines,
+    };
+  }
+
+  public searchDocument(
+    documentId: string,
+    request: SearchDocumentRequest,
+  ): SearchDocumentResponse | undefined {
+    const document = this.documents.loadedDocuments.find(
+      (candidate) => candidate.documentId === documentId,
+    );
+    if (document === undefined) {
+      return undefined;
+    }
+    let searchRegex: RegExp;
+    try {
+      searchRegex = makeSearchRegex(request.literal, "g");
+    } catch {
+      throw new SearchPatternError();
+    }
+    const content = document.document.toString();
+    const lines = content.split("\n");
+    const contextSize = request.context ?? SEARCH_CONTEXT_DEFAULT;
+    let collected: ReturnType<typeof collectSearchHits>;
+    try {
+      collected = vm.runInNewContext(
+        "collectSearchHits(lines, searchRegex, contextSize, maxHits)",
+        {
+          collectSearchHits,
+          lines,
+          searchRegex,
+          contextSize,
+          maxHits: MAX_SEARCH_HITS,
+        },
+        { timeout: SEARCH_DEADLINE_MS },
+      ) as ReturnType<typeof collectSearchHits>;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ERR_SCRIPT_EXECUTION_TIMEOUT") {
+        throw new SearchTimeoutError();
+      }
+      throw error;
+    }
+    return {
+      documentId,
+      revision: { sha256: sha256Text(content) },
+      hits: collected.hits,
+      truncated: collected.truncated,
+    };
+  }
+
   public async isOpenable(filePath: string): Promise<boolean> {
     const workspaces = this.app.config.get().app.openWorkspaces;
     if (workspaces.length === 0) {
@@ -102,15 +389,6 @@ export default class AgentDocumentQueries {
       }
     }
     return false;
-  }
-
-  public findDocumentIdByReviewId(reviewId: string): string | undefined {
-    for (const review of this.documents.reviewStore.listReviews()) {
-      if (review.reviewId === reviewId) {
-        return review.documentId;
-      }
-    }
-    return undefined;
   }
 
   private async isOpenableInWorkspace(

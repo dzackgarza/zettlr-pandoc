@@ -30,20 +30,13 @@ import type {
   AgentError,
   AgentErrorCode,
   AgentErrorResponse,
-  DocumentSummary,
-  EditorContext,
   PingResponse,
-  ReadDocumentResponse,
   ReadSide,
   ReviewEventsResponse,
   ReviewListEntry,
   ReviewMutationPrecondition,
   SearchDocumentRequest,
-  SearchHit,
   SubmitProposalRequest,
-  ViewSummary,
-  WorkspaceDocumentEntry,
-  WorkspaceFileEntry,
 } from "@dts/common/agent-api";
 import { DP_EVENTS } from "@dts/common/documents";
 import type DocumentManager from "@providers/documents";
@@ -59,7 +52,6 @@ import OpenAPIBackend, {
   type Document as OpenApiDefinition,
 } from "openapi-backend";
 import path from "path";
-import vm from "vm";
 import { parseDocument, type Document } from "yaml";
 import {
   classifyReviewState,
@@ -69,9 +61,13 @@ import {
   toWirePacket,
 } from "@providers/documents/review-diff-store";
 import { sha256Text } from "@common/util/sha256";
-import makeSearchRegex from "source/common/util/make-search-regex";
-import AgentDocumentQueries from "./document-queries";
+import AgentDocumentQueries, {
+  SearchPatternError,
+  SearchTimeoutError,
+} from "./document-queries";
 import AgentEventDelivery, { EVENT_REPLAY_BUFFER_SIZE } from "./event-delivery";
+
+export { MAX_SEARCH_HITS } from "./document-queries";
 
 const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
 
@@ -129,80 +125,6 @@ type OperationContext<Id extends keyof AgentApiOperations, Body = unknown> = Con
 /** The generated operations write `never` for a parameter section an operation has none of. */
 type OrEmpty<T> = [NonNullable<T>] extends [never] ? Record<string, never> : NonNullable<T>;
 
-/** The spec's published default for the search request's `context`. */
-const SEARCH_CONTEXT_DEFAULT = 3;
-
-/**
- * The search endpoint accepts raw regular expressions, and this server runs on
- * the Electron main process: a catastrophic pattern left unbounded does not
- * slow one request down, it freezes the editor. openapi.yaml caps the pattern
- * length and the per-hit context; this deadline bounds evaluation.
- *
- * A deadline polled between lines would be a lie for the one input class it
- * exists to survive: `/(a+)+$/` against a single non-matching line of a's
- * backtracks exponentially inside one `exec` call, and no loop condition runs
- * again until that call returns — minutes to never, with SEARCH_TIMEOUT
- * unreachable. So the whole match loop is entered through `vm` with a
- * `timeout`, which arms V8's execution terminator: V8 honours termination
- * from inside regex evaluation, so the ceiling holds for any pattern, not
- * just the ones that happen to yield between lines. The `vm` boundary is a
- * pre-emption device here, not a security boundary — the pattern is still
- * compiled and matched by this realm's code.
- */
-const SEARCH_DEADLINE_MS = 1000;
-
-/**
- * A frequent pattern can produce an unbounded number of hits even when its
- * regex evaluation finishes quickly. The endpoint returns a prefix in
- * document order and marks that prefix so callers can choose a narrower
- * search rather than receiving an unbounded main-process response.
- */
-export const MAX_SEARCH_HITS = 1000;
-
-/**
- * The match loop, factored out so it can be entered as one interruptible
- * call. Runs to completion or is terminated mid-`exec`; a terminated run
- * abandons this array, so partial hits never reach a response.
- */
-function collectSearchHits(
-  lines: string[],
-  searchRegex: RegExp,
-  contextSize: number,
-  maxHits: number,
-): { hits: SearchHit[]; truncated: boolean } {
-  const hits: SearchHit[] = [];
-  let truncated = false;
-  for (let i = 0; i < lines.length; i++) {
-    searchRegex.lastIndex = 0;
-    let match: RegExpExecArray | null = searchRegex.exec(lines[i]);
-    while (match !== null) {
-      const found = match.index;
-      const hitLength = match[0].length;
-      if (hitLength === 0) {
-        searchRegex.lastIndex += 1;
-        match = searchRegex.exec(lines[i]);
-        continue;
-      }
-      if (hits.length >= maxHits) {
-        truncated = true;
-        return { hits, truncated };
-      }
-      hits.push({
-        line: i + 1,
-        column: found + 1,
-        length: hitLength,
-        contextBefore: lines.slice(Math.max(0, i - contextSize), i).join("\n"),
-        contextAfter: lines.slice(i + 1, Math.min(lines.length, i + 1 + contextSize)).join("\n"),
-      });
-      if (searchRegex.lastIndex >= lines[i].length) {
-        break;
-      }
-      match = searchRegex.exec(lines[i]);
-    }
-  }
-  return { hits, truncated };
-}
-
 // ============================================================================
 // AgentHTTPProvider
 // ============================================================================
@@ -258,7 +180,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   ) {
     super();
     this._instanceId = crypto.randomUUID();
-    this._queries = new AgentDocumentQueries(_documents, _app, _log);
+    this._queries = new AgentDocumentQueries(_documents, _documents.reviewQueries, _app, _log);
     this._eventDelivery = new AgentEventDelivery((event) => this.enrichAgentEvent(event));
     // Load the OpenAPI YAML spec (dev: sibling to this file; packaged: assets/openapi.yaml)
     const candidatePaths = [
@@ -740,78 +662,19 @@ export default class AgentHTTPProvider extends ProviderContract {
   // ==========================================================================
 
   private async handleGetContext(res: http.ServerResponse): Promise<void> {
-    const focusedView = this._documents.getFocusedView();
-    const focusedDocSummary =
-      focusedView?.documentId !== undefined
-        ? await this._queries.getDocumentSummary(focusedView.documentId)
-        : undefined;
-    const openDocuments: DocumentSummary[] = [];
-    for (const doc of this._documents.loadedDocuments) {
-      const summary = await this._queries.getDocumentSummary(doc.documentId);
-      if (summary !== undefined) {
-        openDocuments.push(summary);
-      }
-    }
-    const context: EditorContext = {
-      focusedView:
-        focusedView === undefined || focusedView.documentId === undefined
-          ? undefined
-          : {
-              viewId: focusedView.viewId,
-              windowId: focusedView.windowId,
-              leafId: focusedView.leafId,
-              documentId: focusedView.documentId,
-            },
-      focusedDocument: focusedDocSummary,
-      openDocuments,
-    };
-    this.sendJson(res, 200, context);
+    this.sendJson(res, 200, await this._queries.getContext());
   }
 
   private async handleListDocuments(res: http.ServerResponse): Promise<void> {
-    const documents: DocumentSummary[] = [];
-    for (const doc of this._documents.loadedDocuments) {
-      const summary = await this._queries.getDocumentSummary(doc.documentId);
-      if (summary !== undefined) {
-        documents.push(summary);
-      }
-    }
-    this.sendJson(res, 200, { documents });
+    this.sendJson(res, 200, { documents: await this._queries.listDocuments() });
   }
 
   private async handleGetViews(res: http.ServerResponse): Promise<void> {
-    const focusedView = this._documents.getFocusedView();
-    const views: ViewSummary[] = [];
-    await this._documents.forEachLeaf(async (tabMan, windowId, leafId) => {
-      const activePath = tabMan.activeFile?.path;
-      const isFocused =
-        focusedView !== undefined &&
-        focusedView.windowId === windowId &&
-        focusedView.leafId === leafId;
-      views.push({
-        viewId: `view-${windowId}-${leafId}`,
-        windowId,
-        leafId,
-        documentId:
-          activePath !== undefined ? this._documents.getDocumentId(activePath) : undefined,
-        focused: isFocused,
-        active: isFocused,
-        documents: tabMan.openFiles.map((openFile) => ({
-          documentId: this._documents.getDocumentId(openFile.path),
-          path: openFile.path,
-        })),
-      });
-      return false;
-    });
-    this.sendJson(res, 200, { views });
+    this.sendJson(res, 200, { views: await this._queries.listViews() });
   }
 
   private handleGetWorkspaces(res: http.ServerResponse): void {
-    const workspaces = this._app.config.get().app.openWorkspaces.map((workspacePath) => ({
-      workspaceId: workspacePath,
-      path: workspacePath,
-    }));
-    this.sendJson(res, 200, { workspaces });
+    this.sendJson(res, 200, { workspaces: this._queries.listWorkspaces() });
   }
 
   /**
@@ -821,64 +684,24 @@ export default class AgentHTTPProvider extends ProviderContract {
    * route over that walk, not a subsystem.
    */
   private async handleListWorkspaceFiles(res: http.ServerResponse): Promise<void> {
-    const files: WorkspaceFileEntry[] = [];
-    for (const workspacePath of this._app.config.get().app.openWorkspaces) {
-      for (const filePath of await this._documents.getFilesForWorkspace(workspacePath)) {
-        files.push({
-          documentId: this._documents.ensureDocumentId(filePath),
-          path: filePath,
-          name: path.basename(filePath),
-          workspaceId: workspacePath,
-          open: this._documents.loadedDocuments.some((doc) => doc.filePath === filePath),
-        });
-      }
-    }
-    this.sendJson(res, 200, { files });
+    this.sendJson(res, 200, { files: await this._queries.listWorkspaceFiles() });
   }
 
-  private handleListWorkspaceDocuments(
+  private async handleListWorkspaceDocuments(
     res: http.ServerResponse,
     workspaceId: string,
     query: string | undefined,
-  ): void {
-    const workspacePath = workspaceId;
-    const knownWorkspaces = this._app.config.get().app.openWorkspaces;
-    if (!knownWorkspaces.includes(workspacePath)) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
-      return;
+  ): Promise<void> {
+    try {
+      const documents = await this._queries.listWorkspaceDocuments(workspaceId, query);
+      if (documents === undefined) {
+        this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
+        return;
+      }
+      this.sendJson(res, 200, documents);
+    } catch {
+      this.sendError(res, 500, "INTERNAL_ERROR", "Unable to list workspace documents");
     }
-
-    const normalizedQuery = query === undefined ? "" : query.toLowerCase().trim();
-    const documents: WorkspaceDocumentEntry[] = [];
-
-    this._documents
-      .getFilesForWorkspace(workspacePath)
-      .then(async (paths) => {
-        for (const documentPath of paths) {
-          const documentId = this._documents.ensureDocumentId(documentPath);
-          if (normalizedQuery.length > 0) {
-            const haystack = documentPath.toLowerCase();
-            if (!haystack.includes(normalizedQuery)) {
-              continue;
-            }
-          }
-          const summary = await this._queries.getDocumentSummary(documentId);
-          documents.push(summary === undefined
-            ? {
-                documentId,
-                uri: `safe-file://${documentPath}`,
-                path: documentPath,
-                name: path.basename(documentPath),
-                workspaceId,
-                loaded: false,
-              }
-            : { ...summary, workspaceId, loaded: true });
-        }
-        this.sendJson(res, 200, { workspaceId, documents });
-      })
-      .catch(() => {
-        this.sendError(res, 500, "INTERNAL_ERROR", "Unable to list workspace documents");
-      });
   }
 
   private async handleGetDocument(res: http.ServerResponse, documentId: string): Promise<void> {
@@ -921,38 +744,28 @@ export default class AgentHTTPProvider extends ProviderContract {
     documentId: string,
     query: { side?: ReadSide; startLine?: number; endLine?: number },
   ): Promise<void> {
-    const applyRange = (
-      text: string,
-      lineCount: number,
-      startLine: number,
-      endLine: number,
-    ): {
-      content: string;
-      startLine: number;
-      endLine: number;
-      truncated: boolean;
-    } => {
-      const safeStartLine = Math.max(1, Math.min(startLine, lineCount));
-      const safeEndLine = Math.max(safeStartLine, Math.min(endLine, lineCount));
-      const lines = text.split("\n");
-      return {
-        content: lines.slice(safeStartLine - 1, safeEndLine).join("\n"),
-        startLine: safeStartLine,
-        endLine: safeEndLine,
-        truncated: safeEndLine < lineCount,
-      };
-    };
-
     // openapi.yaml declares `side` optional with `default: working`. A
     // request parameter's default describes what the server assumes when the
     // caller omits it, so this is where it is applied.
     const side = query.side ?? "working";
-    const filePath = this._documents.getDocumentPath(documentId);
-    if (filePath === undefined) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
+    let response;
+    try {
+      response = await this._queries.readDocumentContent(
+        documentId,
+        side,
+        query.startLine ?? 1,
+        query.endLine ?? Number.MAX_SAFE_INTEGER,
+      );
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
       return;
     }
-    if (!(await this._queries.isOpenable(filePath))) {
+    if (response === "OUTSIDE_WORKSPACE") {
       this.sendError(
         res,
         404,
@@ -961,44 +774,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       );
       return;
     }
-
-    let sides;
-    try {
-      sides = await this._documents.readDocumentSides(documentId);
-    } catch (err) {
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        err instanceof Error ? err.message : String(err),
-      );
-      return;
-    }
-    if (sides === undefined) {
+    if (response === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-
-    // The whole side is the external identity: the hash a proposal binds to
-    // is the document's, never the requested slice's.
-    const text = side === "working" ? sides.working : sides.reference;
-    const lineCount = text.split("\n").length;
-    const range = applyRange(text, lineCount, query.startLine ?? 1, query.endLine ?? lineCount);
-
-    const response: ReadDocumentResponse = {
-      documentId,
-      attached: sides.attached,
-      side,
-      revision: { sha256: sha256Text(text) },
-      reviewGeneration: sides.reviewGeneration,
-      range: {
-        startLine: range.startLine,
-        endLine: range.endLine,
-        totalLines: lineCount,
-      },
-      content: range.content,
-      truncated: range.truncated,
-    };
     if (side === "working") {
       res.setHeader("ETag", `"sha256:${response.revision.sha256}"`);
     }
@@ -1015,16 +794,17 @@ export default class AgentHTTPProvider extends ProviderContract {
     const waitSeconds = query.waitSeconds ?? query.wait ?? 30;
     const afterGeneration = query.afterGeneration ?? 0;
 
-    const documentId = this._queries.findDocumentIdByReviewId(reviewId);
-    if (documentId === undefined) {
+    const reviewQuery = await this._documents.reviewQueries.findReviewQuery(reviewId);
+    if (reviewQuery === undefined || !reviewQuery.attached) {
       // A detached review's generation cannot advance — nothing can decide
       // its chunks while its file is closed — so waiting on it would be
       // waiting forever. The refusal names the file to open instead.
       await this.sendReviewLookupFailure(res, reviewId);
       return;
     }
+    const documentId = reviewQuery.documentId;
 
-    const current = this._documents.reviewStatus(documentId);
+    const current = this._documents.reviewQueries.getStatus(documentId);
     if (current !== undefined && current.generation > afterGeneration) {
       this.sendJson(res, 200, {
         reviewId,
@@ -1056,7 +836,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
       if (event.reviewGeneration !== undefined && event.reviewGeneration > afterGeneration) {
-        const status = this._documents.reviewStatus(documentId);
+        const status = this._documents.reviewQueries.getStatus(documentId);
         finish({
           reviewId,
           status,
@@ -1068,7 +848,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     this._documents.agentEvents.on("*", listener);
     res.on("close", cleanup);
     timeout = setTimeout(() => {
-      const status = this._documents.reviewStatus(documentId);
+      const status = this._documents.reviewQueries.getStatus(documentId);
       finish({
         reviewId,
         status,
@@ -1082,46 +862,30 @@ export default class AgentHTTPProvider extends ProviderContract {
     documentId: string,
     searchRequest: SearchDocumentRequest,
   ): void {
-    const result = this._documents.readLiveBuffer(documentId);
+    let result;
+    try {
+      result = this._queries.searchDocument(documentId, searchRequest);
+    } catch (error) {
+      if (error instanceof SearchPatternError) {
+        this.sendError(res, 400, "INVALID_PARAMS", error.message);
+        return;
+      }
+      if (error instanceof SearchTimeoutError) {
+        this.sendError(
+          res,
+          422,
+          "SEARCH_TIMEOUT",
+          "Search did not finish within the server deadline; simplify the pattern",
+        );
+        return;
+      }
+      throw error;
+    }
     if (result === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    const lines = result.content.split("\n");
-    const contextSize = searchRequest.context ?? SEARCH_CONTEXT_DEFAULT;
-    const maxHits = MAX_SEARCH_HITS;
-    let searchRegex: RegExp;
-    try {
-      searchRegex = makeSearchRegex(searchRequest.literal, "g");
-    } catch {
-      this.sendError(res, 400, "INVALID_PARAMS", "Invalid search pattern");
-      return;
-    }
-    let collected: { hits: SearchHit[]; truncated: boolean };
-    try {
-      collected = vm.runInNewContext(
-        "collectSearchHits(lines, searchRegex, contextSize, maxHits)",
-        { collectSearchHits, lines, searchRegex, contextSize, maxHits },
-        { timeout: SEARCH_DEADLINE_MS },
-      ) as { hits: SearchHit[]; truncated: boolean };
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ERR_SCRIPT_EXECUTION_TIMEOUT") {
-        throw err;
-      }
-      this.sendError(
-        res,
-        422,
-        "SEARCH_TIMEOUT",
-        `Search did not finish within ${SEARCH_DEADLINE_MS} ms; simplify the pattern`,
-      );
-      return;
-    }
-    this.sendJson(res, 200, {
-      documentId,
-      revision: { sha256: result.sha256 },
-      hits: collected.hits,
-      truncated: collected.truncated,
-    });
+    this.sendJson(res, 200, result);
   }
 
   private async handleSubmitProposal(
@@ -1208,24 +972,29 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleListReviews(res: http.ServerResponse): Promise<void> {
-    // Open-document reviews, then the sidecar-backed reviews whose files
-    // are closed — one list, discriminated by `attached`.
-    const reviews: ReviewListEntry[] = [
-      ...this._documents.reviewStore.listReviews().flatMap((review) => {
-        const status = this._documents.reviewStatus(review.documentId);
-        return status === undefined
-          ? []
-          : [
-              {
-                ...status,
-                documentId: review.documentId,
-                documentPath: review.documentPath,
-                attached: true,
-              },
-            ];
-      }),
-      ...(await this._documents.listDetachedReviews()),
-    ];
+    const reviews: ReviewListEntry[] = (await this._documents.reviewQueries.listReviewQueries()).map(
+      (query) => {
+        if (query.attached) {
+          return {
+            ...query.status,
+            documentId: query.documentId,
+            documentPath: query.documentPath,
+            attached: true,
+          };
+        }
+        const { sidecar } = query;
+        const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
+        return {
+          reviewId: sidecar.reviewId,
+          state: classifyReviewState(sidecar.invalidated, unresolvedChunks),
+          generation: sidecar.generation,
+          unresolvedChunks,
+          packetCount: sidecar.packets.length,
+          documentPath: sidecar.documentPath,
+          attached: false,
+        };
+      },
+    );
     this.sendJson(res, 200, { reviews });
   }
 
@@ -1238,61 +1007,56 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: http.ServerResponse,
     reviewId: string,
   ): Promise<void> {
-    const failure = await this._documents.reviewLookupFailure(reviewId);
+    const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
+    if (query === undefined) {
+      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found.");
+      return;
+    }
+    if (!query.attached) {
+      this.sendError(
+        res,
+        409,
+        "DOCUMENT_CLOSED",
+        `The reviewed document ${query.sidecar.documentPath} is not open. ` +
+          "Open it to reattach this review, then decide its chunks.",
+      );
+      return;
+    }
     this.sendError(
       res,
-      failure.code === "DOCUMENT_CLOSED" ? 409 : 404,
-      failure.code,
-      failure.message,
+      404,
+      "REVIEW_NOT_FOUND",
+      "Review not found.",
     );
   }
 
   private async handleGetReview(res: http.ServerResponse, reviewId: string): Promise<void> {
-    const documentId = this._queries.findDocumentIdByReviewId(reviewId);
-    if (documentId === undefined) {
-      const detached = await this._documents.findDetachedReview(reviewId);
-      if (detached === undefined) {
-        this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
-        return;
-      }
-      const unresolvedChunks = sidecarUnresolvedChunks(detached);
+    const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
+    if (query === undefined) {
+      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      return;
+    }
+    if (!query.attached) {
+      const { sidecar } = query;
+      const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
       this.sendJson(res, 200, {
-        reviewId: detached.reviewId,
-        state: classifyReviewState(detached.invalidated, unresolvedChunks),
-        generation: detached.generation,
+        reviewId: sidecar.reviewId,
+        state: classifyReviewState(sidecar.invalidated, unresolvedChunks),
+        generation: sidecar.generation,
         unresolvedChunks,
-        packetCount: detached.packets.length,
-        comments: detached.comments,
+        packetCount: sidecar.packets.length,
+        comments: sidecar.comments,
         attached: false,
       });
       return;
     }
-    const status = this._documents.reviewStatus(documentId);
-    if (status === undefined) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
-      return;
-    }
-    const filePath = this._documents.getDocumentPath(documentId);
-    const doc =
-      filePath !== undefined
-        ? this._documents.loadedDocuments.find((d) => d.filePath === filePath)
-        : undefined;
-    if (doc === undefined) {
-      // A review in the live store whose document is not open is a
-      // lifecycle bug — closing a file detaches its review to a sidecar.
-      // Inventing a revision here would report a document state nobody has.
-      throw new Error(
-        `Review ${reviewId} is attached to document ${documentId}, which is not open`,
-      );
-    }
-    // The comments read here include any orphans that chunk-comment
-    // reconciliation has surfaced.
-    const review = this._documents.reviewStore.getReview(documentId)!;
+    // The owner supplies the live text and review together. This cannot
+    // fabricate a revision for a closed document.
     this.sendJson(res, 200, {
-      ...status,
-      comments: review.comments,
+      ...query.status,
+      comments: query.review.comments,
       attached: true,
-      documentRevision: { sha256: sha256Text(doc.document.toString()) },
+      documentRevision: { sha256: sha256Text(query.workingText) },
     });
   }
 
@@ -1300,36 +1064,30 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: http.ServerResponse,
     reviewId: string,
   ): Promise<void> {
-    const documentId = this._queries.findDocumentIdByReviewId(reviewId);
-    if (documentId === undefined) {
-      const detached = await this._documents.findDetachedReview(reviewId);
-      if (detached === undefined) {
-        this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
-        return;
-      }
+    const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
+    if (query === undefined) {
+      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      return;
+    }
+    if (!query.attached) {
+      const { sidecar } = query;
       this.sendJson(res, 200, {
-        reviewId: detached.reviewId,
-        patch: reviewPatch(detached.referenceText, detached.workingText),
-        generation: detached.generation,
+        reviewId: sidecar.reviewId,
+        patch: reviewPatch(sidecar.referenceText, sidecar.workingText),
+        generation: sidecar.generation,
       });
       return;
     }
-    const workingText = this._documents.readWorkingText(documentId);
-    if (workingText === undefined) {
-      this.sendError(res, 409, "DOCUMENT_CLOSED", "The reviewed document is not open.");
-      return;
-    }
-    const diff = this._documents.reviewStore.getReviewDiff(documentId, workingText);
+    const diff = this._documents.reviewQueries.getReviewDiff(query.documentId);
     if (diff === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
       return;
     }
-    const review = this._documents.reviewStore.getReview(documentId)!;
     this.sendJson(res, 200, {
-      reviewId: review.reviewId,
-      documentId,
+      reviewId: query.review.reviewId,
+      documentId: query.documentId,
       patch: diff,
-      generation: review.generation,
+      generation: query.review.generation,
     });
   }
 
@@ -1372,7 +1130,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     text: string,
     expectedReviewGeneration: number,
   ): Promise<void> {
-    const documentId = this._queries.findDocumentIdByReviewId(reviewId);
+    const documentId = this._documents.reviewQueries.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
       await this.sendReviewLookupFailure(res, reviewId);
       return;
@@ -1408,39 +1166,33 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: http.ServerResponse,
     reviewId: string,
   ): Promise<void> {
-    const documentId = this._queries.findDocumentIdByReviewId(reviewId);
-    if (documentId === undefined) {
-      const detached = await this._documents.findDetachedReview(reviewId);
-      if (detached === undefined) {
-        this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
-        return;
-      }
+    const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
+    if (query === undefined) {
+      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      return;
+    }
+    if (!query.attached) {
+      const { sidecar } = query;
       this.sendJson(res, 200, {
-        reviewId: detached.reviewId,
-        generation: detached.generation,
-        chunks: sidecarOutstandingChunks(detached),
+        reviewId: sidecar.reviewId,
+        generation: sidecar.generation,
+        chunks: sidecarOutstandingChunks(sidecar),
       });
       return;
     }
-    const workingText = this._documents.readWorkingText(documentId);
-    if (workingText === undefined) {
-      this.sendError(res, 409, "DOCUMENT_CLOSED", "The reviewed document is not open.");
-      return;
-    }
-    const chunks = this._documents.reviewStore.getOutstandingChunks(documentId, workingText);
+    const chunks = this._documents.reviewQueries.getOutstandingChunks(query.documentId);
     if (chunks === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
       return;
     }
-    const review = this._documents.reviewStore.getReview(documentId)!;
     this.sendJson(res, 200, {
-      reviewId: review.reviewId,
-      documentId,
-      generation: review.generation,
+      reviewId: query.review.reviewId,
+      documentId: query.documentId,
+      generation: query.review.generation,
       // The precondition a decision on any of these chunks must carry. A
       // detached review has no live buffer and so publishes none: it accepts
       // no decisions until its file is reopened.
-      workingSha256: sha256Text(workingText),
+      workingSha256: sha256Text(query.workingText),
       chunks,
     });
   }
@@ -1449,30 +1201,25 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: http.ServerResponse,
     reviewId: string,
   ): Promise<void> {
-    const documentId = this._queries.findDocumentIdByReviewId(reviewId);
-    if (documentId === undefined) {
-      const detached = await this._documents.findDetachedReview(reviewId);
-      if (detached === undefined) {
-        this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
-        return;
-      }
-      this.sendJson(res, 200, {
-        reviewId: detached.reviewId,
-        // A stored packet carries its reference spans and no patch format;
-        // the wire packet is the ledger entry with the format stamped on.
-        packets: detached.packets.map(toWirePacket),
-      });
-      return;
-    }
-    const review = this._documents.reviewStore.getReview(documentId);
-    if (review === undefined) {
+    const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
+    if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
       return;
     }
+    if (!query.attached) {
+      const { sidecar } = query;
+      this.sendJson(res, 200, {
+        reviewId: sidecar.reviewId,
+        // A stored packet carries its reference spans and no patch format;
+        // the wire packet is the ledger entry with the format stamped on.
+        packets: sidecar.packets.map(toWirePacket),
+      });
+      return;
+    }
     this.sendJson(res, 200, {
-      reviewId: review.reviewId,
-      documentId,
-      packets: review.packets.map(toWirePacket),
+      reviewId: query.review.reviewId,
+      documentId: query.documentId,
+      packets: query.review.packets.map(toWirePacket),
     });
   }
 
@@ -1515,7 +1262,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       if (document !== undefined && enriched.documentRevision === undefined) {
         enriched.documentRevision = { sha256: sha256Text(document.document.toString()) };
       }
-      const review = this._documents.reviewStore.getReview(enriched.documentId);
+      const review = this._documents.reviewQueries.getReview(enriched.documentId);
       if (review !== undefined) {
         if (enriched.reviewId === undefined) {
           enriched.reviewId = review.reviewId;
@@ -1525,7 +1272,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         if (enriched.unresolvedChunks === undefined) {
           enriched.unresolvedChunks =
-            this._documents.reviewStatus(enriched.documentId)?.unresolvedChunks;
+          this._documents.reviewQueries.getStatus(enriched.documentId)?.unresolvedChunks;
         }
       }
     }

@@ -48,6 +48,10 @@ class DocumentAuthority implements ReviewDocumentAuthority {
     return documentId === DOCUMENT_ID && this.open ? DOCUMENT_PATH : undefined;
   }
 
+  isDocumentOpen(documentPath: string): boolean {
+    return documentPath === DOCUMENT_PATH && this.open;
+  }
+
   close(): void {
     this.open = false;
   }
