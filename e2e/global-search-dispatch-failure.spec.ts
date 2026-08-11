@@ -58,6 +58,9 @@ const PROJECT_SETTINGS = {
   color: null
 }
 
+const SEARCH_CORPUS_FILES = 128
+const SEARCHABLE_PADDING = 'ordinary words '.repeat(120)
+
 /** The pane's Search button — 'Cancel' and 'Clear search' sit beside it. */
 function searchButton (page: Page): Locator {
   return page.locator(PANE).getByRole('button', { name: 'Search', exact: true })
@@ -95,16 +98,13 @@ async function boot (fixture: RunningFixture, timeoutMs: number): Promise<void> 
   fixture.projectSettingsFile = projectSettingsFile
   await writeFile(projectSettingsFile, JSON.stringify(PROJECT_SETTINGS), 'utf8')
 
-  const searchablePadding = 'ordinary words '.repeat(600)
-  await Promise.all(
-    Array.from({ length: 800 }, async (_, index) => {
-      await writeFile(
-        path.join(workspace, `search-corpus-${String(index).padStart(3, '0')}.md`),
-        `# Corpus ${index}\n\n${searchablePadding}\n`,
-        'utf8'
-      )
-    })
-  )
+  for (let index = 0; index < SEARCH_CORPUS_FILES; index += 1) {
+    await writeFile(
+      path.join(workspace, `search-corpus-${String(index).padStart(3, '0')}.md`),
+      `# Corpus ${index}\n\n${SEARCHABLE_PADDING}\n`,
+      'utf8'
+    )
+  }
   await writeFile(
     path.join(workspace, 'replacement-hit.md'),
     '# Replacement\n\nreplacementtoken appears here.\n',
@@ -248,7 +248,7 @@ async function waitForProjectTitle (
 }
 
 describe('global-search and project-properties failure recovery', function () {
-  this.timeout(600_000)
+  this.timeout(300_000)
 
   const running: RunningFixture = {
     appProcess: undefined,

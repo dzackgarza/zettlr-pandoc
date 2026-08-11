@@ -4,7 +4,7 @@
 // tab is findable while scanning — is only testable against a row of tabs, in
 // both themes. Screenshots land in the artifact directory for inspection.
 import { strict as assert } from 'node:assert'
-import { writeFile } from 'node:fs/promises'
+import { rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { ChildProcess } from 'node:child_process'
 import type { Browser, Page } from 'playwright'
@@ -118,6 +118,7 @@ for (const theme of ['light', 'dark'] as const) {
       const artifactDirectory: string = theme === 'dark'
         ? path.join(ARTIFACTS_ROOT, 'dark')
         : path.join(ARTIFACTS_ROOT, 'light')
+      await shutdown(fixture.browser, fixture.appProcess)
       await preserveArtifacts(
         artifactDirectory,
         fixture.fixtureRoot,
@@ -125,7 +126,9 @@ for (const theme of ['light', 'dark'] as const) {
         fixture.rendererEvents,
         fixture.screenshots
       )
-      await shutdown(fixture.browser, fixture.appProcess)
+      if (fixture.fixtureRoot !== undefined) {
+        await rm(fixture.fixtureRoot, { recursive: true, force: true })
+      }
       assertCleanExit(fixture.getOutput())
     })
 

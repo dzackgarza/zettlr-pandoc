@@ -516,26 +516,39 @@ export async function attach (
   options: LaunchOptions = {}
 ): Promise<RunningApp> {
   const appProcess = await launchElectron(configDirectory, options)
-  let processOutput = ''
-  const appendOutput = (chunk: Buffer): void => {
-    processOutput = `${processOutput}${chunk.toString()}`.slice(-200_000)
-  }
-  appProcess.stdout?.on('data', appendOutput)
-  appProcess.stderr?.on('data', appendOutput)
+  let attached = false
+  let browser: Browser | undefined
+  const running = (async (): Promise<RunningApp> => {
+    let processOutput = ''
+    const appendOutput = (chunk: Buffer): void => {
+      processOutput = `${processOutput}${chunk.toString()}`.slice(-200_000)
+    }
+    appProcess.stdout?.on('data', appendOutput)
+    appProcess.stderr?.on('data', appendOutput)
 
-  const devToolsUrl = await waitForDevTools(
-    appProcess,
-    () => processOutput,
-    timeoutMs
-  )
-  await waitForApplicationBoot(appProcess, () => processOutput, timeoutMs)
-  const browser = await chromium.connectOverCDP(devToolsUrl)
-  for (const context of browser.contexts()) {
-    context.pages().forEach(page => observeRenderer(page, rendererEvents))
-    context.on('page', page => observeRenderer(page, rendererEvents))
-  }
+    const devToolsUrl = await waitForDevTools(
+      appProcess,
+      () => processOutput,
+      timeoutMs
+    )
+    await waitForApplicationBoot(appProcess, () => processOutput, timeoutMs)
+    const connectedBrowser = await chromium.connectOverCDP(devToolsUrl)
+    browser = connectedBrowser
+    for (const context of connectedBrowser.contexts()) {
+      context.pages().forEach(page => observeRenderer(page, rendererEvents))
+      context.on('page', page => observeRenderer(page, rendererEvents))
+    }
 
-  return { appProcess, browser, getOutput: () => processOutput }
+    attached = true
+    return { appProcess, browser: connectedBrowser, getOutput: () => processOutput }
+  })()
+
+  return await running.finally(async () => {
+    if (!attached) {
+      await browser?.close()
+      await stopProcess(appProcess)
+    }
+  })
 }
 
 export async function shutdown (
