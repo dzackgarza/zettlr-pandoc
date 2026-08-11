@@ -108,6 +108,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   let provider: DocumentManager;
   let httpProvider: AgentHTTPProvider;
   let httpPort: number;
+  let saveDialogResponse = 2;
+  let peerServers: http.Server[] = [];
   // The configured workspace set, read live by the config seam so a test can
   // exercise the no-workspace-open profile the app ships with.
   let openWorkspaces: string[] = [];
@@ -206,7 +208,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       },
       windows: {
         askSaveChanges: async (_detail?: string) => ({
-          response: 2,
+          response: saveDialogResponse,
           checkboxChecked: false,
         }),
         getFirstMainWindow: () => undefined,
@@ -327,6 +329,20 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   });
 
   afterEach(async function () {
+    for (const peerServer of peerServers) {
+      peerServer.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        peerServer.close((error) => {
+          if (error === undefined) {
+            resolve();
+          } else {
+            reject(error);
+          }
+        });
+      });
+    }
+    peerServers = [];
+    saveDialogResponse = 2;
     await httpProvider.shutdown();
     await provider.shutdown();
     rmSync(scratch, { recursive: true, force: true });
@@ -742,6 +758,86 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     };
     assert.deepEqual(chunkBody.chunks.map((chunk) => chunk.workingText), [revised.trimEnd()]);
     assert.deepEqual(chunkBody.chunks[0].descriptions, ["standalone CLI proposition"]);
+  });
+
+  it("rejects an incompatible Agent API before any mutating request", async function () {
+    const requestPaths: string[] = [];
+    const incompatiblePeer = http.createServer((request, response) => {
+      requestPaths.push(request.url ?? "");
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ protocolVersion: "999.0" }));
+    });
+    peerServers.push(incompatiblePeer);
+    await new Promise<void>((resolve) => {
+      incompatiblePeer.listen(0, "127.0.0.1", resolve);
+    });
+    const address = incompatiblePeer.address();
+    assert.ok(address !== null && typeof address !== "string");
+
+    const filePath = path.join(scratch, "incompatible-protocol.md");
+    const patchPath = path.join(scratch, "incompatible-protocol.diff");
+    writeFileSync(filePath, "before\n", "utf8");
+    writeFileSync(patchPath, "a non-empty proposition\n", "utf8");
+
+    const result = await runReviewDiffCli([
+      "--document",
+      filePath,
+      "--patch",
+      patchPath,
+      "--description",
+      "incompatible protocol",
+      "--port",
+      String(address.port),
+    ]);
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    const refusal = JSON.parse(result.stderr) as {
+      ok: boolean;
+      error: { code: string };
+    };
+    assert.equal(refusal.ok, false);
+    assert.equal(refusal.error.code, "PROTOCOL_VERSION_UNSUPPORTED");
+    assert.deepEqual(requestPaths, ["/v1/ping"]);
+  });
+
+  it("detaches a saved pending review before closing its final pane", async function () {
+    const filePath = path.join(scratch, "save-close-review.md");
+    writeFileSync(filePath, "before\n", "utf8");
+    const windowId = provider.windowKeys()[0];
+    const leafId = provider.leafIds(windowId)[0];
+    assert.ok(leafId !== undefined);
+    await provider.getDocument(filePath);
+    assert.equal(await provider.openFile(windowId, leafId, filePath), true);
+    const documentId = provider.getDocumentId(filePath);
+    assert.ok(documentId !== undefined);
+
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text("before\n"),
+      [
+        {
+          description: "save-close review",
+          patch: createPatch("document", "before\n", "after\n", "", "", { context: 0 }),
+        },
+      ],
+      "save-close-review",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The review proposal was refused: ${submitted.code}`);
+    }
+
+    saveDialogResponse = 0;
+    assert.equal(await provider.closeFile(windowId, leafId, filePath), true);
+    assert.equal(provider.loadedDocuments.length, 0);
+    assert.equal(provider.reviewQueries.getReview(documentId), undefined);
+
+    const reopenedLeafId = provider.leafIds(windowId)[0];
+    assert.ok(reopenedLeafId !== undefined);
+    await provider.getDocument(filePath);
+    assert.equal(await provider.openFile(windowId, reopenedLeafId, filePath), true);
+    assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 1);
+    assert.equal(provider.reviewQueries.getReview(documentId)?.reviewId, submitted.reviewId);
   });
 
   it("returns a patch refusal without opening an unopened document", async function () {

@@ -1695,6 +1695,15 @@ current contents from the editor somewhere else, and restart the application.`,
           this._announceSaveRefusal(filePath, saved);
           return false;
         }
+        // The save persists the review, but the final pane is leaving the
+        // live registry. Detach before the splice so closed-file API reads do
+        // not observe a review whose working-text authority is gone.
+        try {
+          await this._detachReview(openFile.documentId);
+        } catch (err) {
+          this._announceDetachFailure(filePath, err);
+          return false;
+        }
       } else {
         // Don't close the file
         this._app.log.info("[Document Manager] Not closing file, as the user did not want that.");
