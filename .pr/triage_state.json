@@ -2,9 +2,9 @@
  "repo": "dzackgarza/zettlr-pandoc",
  "pr": 55,
  "counts": {
-  "CLOSED": 453,
-  "OPEN-PENDING": 56,
-  "NEW": 77,
+  "CLOSED": 454,
+  "OPEN-PENDING": 55,
+  "NEW": 85,
   "RE-RAISED": 1
  },
  "converged": false,
@@ -5974,9 +5974,9 @@
    "thread_id": "PRRT_kwDOTcO3zM6Wk-Ni",
    "path": "source/app/service-providers/agent-api/http-server.ts",
    "line": null,
-   "resolved": false,
+   "resolved": true,
    "outdated": true,
-   "state": "OPEN-PENDING",
+   "state": "CLOSED",
    "disp": {
     "verdict": "accepted with modified remediation",
     "has_verification": false,
@@ -7359,6 +7359,86 @@
    "thread_id": "PRRT_kwDOTcO3zM6YXAv6",
    "path": "source/common/modules/markdown-editor/index.ts",
    "line": 1062,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:571f0ed9a7168a6b",
+   "thread_id": "PRRT_kwDOTcO3zM6YXVfu",
+   "path": "source/common/modules/markdown-editor/plugins/review-chunks.ts",
+   "line": 142,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:e572a3e42372046c",
+   "thread_id": "PRRT_kwDOTcO3zM6YXVgH",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": 205,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:571f0ed9a7168a6b",
+   "thread_id": "PRRT_kwDOTcO3zM6YXVgW",
+   "path": "source/common/modules/markdown-editor/plugins/review-chunks.ts",
+   "line": 337,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:9584f9966b157213",
+   "thread_id": "PRRT_kwDOTcO3zM6YXVge",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": 253,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:0bed2fc0fb3041e6",
+   "thread_id": "PRRT_kwDOTcO3zM6YXVgl",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": 239,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:9584f9966b157213",
+   "thread_id": "PRRT_kwDOTcO3zM6YXVgt",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": 239,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:9584f9966b157213",
+   "thread_id": "PRRT_kwDOTcO3zM6YXVg4",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": 1,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:71e5296dfff920d42185b09cd3f04663e1ae8ff87c2ff15fe176e2f3a48bb262",
+   "thread_id": "PRRT_kwDOTcO3zM6YXVoY",
+   "path": "source/common/modules/markdown-editor/plugins/review-chunks.ts",
+   "line": 337,
    "resolved": false,
    "outdated": false,
    "state": "NEW",
