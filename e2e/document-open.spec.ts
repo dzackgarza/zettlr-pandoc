@@ -242,6 +242,11 @@ describe('opening a Markdown document', function () {
       '.reference-search-overlay[data-search-mode="citing-locations"]'
     )
     await overlay.waitFor({ state: 'visible', timeout: 20_000 })
+    assert.equal(
+      await overlay.locator('input[aria-label="Definition search query"]').inputValue(),
+      'sec:terminology',
+      'The badge key must survive the editor-to-overlay relay.'
+    )
     const locations = overlay.locator('[data-occurrence-path]')
     assert.equal(
       await locations.count(),
