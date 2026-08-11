@@ -470,6 +470,7 @@ export async function launchElectron (
   const childEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     NODE_ENV: 'develop',
+    ZETTLR_E2E: '1',
     ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
     ZETTLR_FORGE_LOGGER_PORT: String(loggerPort)
   }
