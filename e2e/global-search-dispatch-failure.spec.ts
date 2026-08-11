@@ -302,6 +302,20 @@ describe('global-search and project-properties failure recovery', function () {
     assert.ok(running.browser, 'The application must be running')
     const mainPage = await findEditorPage(running.browser, this.timeout())
 
+    // The preceding search test leaves the shared split view on Global Search.
+    // Select File Manager through its real toolbar control before opening the
+    // workspace context menu.
+    const fileManagerButton = mainPage.locator(
+      '#toolbar-toggle-file-manager button[title="Toggle File Manager"]'
+    )
+    if (!(await mainPage.locator('#file-manager').isVisible())) {
+      await fileManagerButton.click()
+      await mainPage.locator('#file-manager').waitFor({
+        state: 'visible',
+        timeout: 10_000
+      })
+    }
+
     // Reach Project Settings through the directory's real context-menu path.
     // On Linux the menu is rendered in the same Electron page, so the native
     // right-click event and the production menu callback are both observable.
