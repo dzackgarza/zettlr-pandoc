@@ -302,19 +302,25 @@ describe('global-search and project-properties failure recovery', function () {
     assert.ok(running.browser, 'The application must be running')
     const mainPage = await findEditorPage(running.browser, this.timeout())
 
-    // The visible Project Settings button dispatches this exact production
-    // application command from PopoverDirProps. Its containing directory
-    // popover is reached from an Electron native context menu, which CDP
-    // cannot select; enter at the command boundary, then drive the real
-    // project-properties window and controls.
-    await mainPage.evaluate(
-      async ([directoryPath]) =>
-        await window.ipc.invoke('application', {
-          command: 'open-project-preferences',
-          payload: directoryPath
-        }),
-      [workspace]
+    // Reach Project Settings through the directory's real context-menu path.
+    // On Linux the menu is rendered in the same Electron page, so the native
+    // right-click event and the production menu callback are both observable.
+    const workspaceItem = mainPage.locator(
+      `.tree-item.directory[data-path=${JSON.stringify(workspace)}]`
     )
+    await workspaceItem.waitFor({ state: 'visible', timeout: 30_000 })
+    await workspaceItem.click({ button: 'right' })
+    const propertiesItem = mainPage.locator(
+      '.application-menu .menu-item[data-id="menu.properties"]'
+    )
+    await propertiesItem.waitFor({ state: 'visible', timeout: 10_000 })
+    await propertiesItem.click()
+    const projectSettingsButton = mainPage.getByRole('button', {
+      name: 'Project Settings…',
+      exact: true
+    })
+    await projectSettingsButton.waitFor({ state: 'visible', timeout: 10_000 })
+    await projectSettingsButton.click()
 
     const propertiesPage = await findProjectPropertiesPage(
       running.browser,
