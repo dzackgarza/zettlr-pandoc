@@ -551,6 +551,35 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assertMatchesSchema(body, "PingResponse");
   });
 
+  it("preserves workspace walk failures in the HTTP error detail", async function () {
+    const invalidWorkspace = path.join(scratch, "not-a-directory");
+    writeFileSync(invalidWorkspace, "workspace path is a file\n", "utf8");
+    openWorkspaces = [invalidWorkspace];
+
+    const response = await httpRequest("GET", "/v1/workspace/files");
+    assert.equal(response.status, 500);
+    const body = JSON.parse(response.body) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(body.error.code, "INTERNAL_ERROR");
+    assert.match(body.error.message, /ENOTDIR|not a directory/i);
+    assert.ok(body.error.message.includes(invalidWorkspace));
+    assertMatchesSchema(body, "AgentErrorResponse");
+
+    const documents = await httpRequest(
+      "GET",
+      `/v1/workspaces/${encodeURIComponent(invalidWorkspace)}/documents`,
+    );
+    assert.equal(documents.status, 500);
+    const documentsBody = JSON.parse(documents.body) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(documentsBody.error.code, "INTERNAL_ERROR");
+    assert.match(documentsBody.error.message, /ENOTDIR|not a directory/i);
+    assert.ok(documentsBody.error.message.includes(invalidWorkspace));
+    assertMatchesSchema(documentsBody, "AgentErrorResponse");
+  });
+
   it("GET /v1/capabilities reports supported features", async function () {
     const response = await httpRequest("GET", "/v1/capabilities");
     assert.equal(response.status, 200);

@@ -684,7 +684,16 @@ export default class AgentHTTPProvider extends ProviderContract {
    * route over that walk, not a subsystem.
    */
   private async handleListWorkspaceFiles(res: http.ServerResponse): Promise<void> {
-    this.sendJson(res, 200, { files: await this._queries.listWorkspaceFiles() });
+    try {
+      this.sendJson(res, 200, { files: await this._queries.listWorkspaceFiles() });
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
 
   private async handleListWorkspaceDocuments(
@@ -699,8 +708,13 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
       this.sendJson(res, 200, documents);
-    } catch {
-      this.sendError(res, 500, "INTERNAL_ERROR", "Unable to list workspace documents");
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 
