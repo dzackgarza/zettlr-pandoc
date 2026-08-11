@@ -147,6 +147,30 @@ describe('opening a Markdown document', function () {
       state: 'visible',
       timeout: this.timeout(),
     })
+    const diskDocument = await readFile(
+      requireInitialized(documentPath, 'The document path must be initialized'),
+      'utf8'
+    )
+    await page.waitForFunction(
+      expected => {
+        const content = document.querySelector('.cm-content')
+        if (content === null) {
+          return false
+        }
+        const tile = (
+          content as HTMLElement & {
+            cmTile?: {
+              root?: {
+                view?: { state?: { doc?: { toString(): string } } }
+              }
+            }
+          }
+        ).cmTile
+        return tile?.root?.view?.state?.doc?.toString() === expected
+      },
+      diskDocument,
+      { timeout: this.timeout() }
+    )
     const renderedText = await editor.innerText()
     const editorDocument = await editor.evaluate(content => {
       const tile = (
@@ -166,11 +190,6 @@ describe('opening a Markdown document', function () {
       }
       return documentText
     })
-    const diskDocument = await readFile(
-      requireInitialized(documentPath, 'The document path must be initialized'),
-      'utf8'
-    )
-
     assert.equal(
       editorDocument,
       diskDocument,
