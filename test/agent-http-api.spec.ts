@@ -21,6 +21,8 @@ import { parse as parseYaml } from "yaml";
 import { type ReadDocumentResponse } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
+import { spawn } from "child_process";
+import { createPatch } from "diff";
 import {
   mkdirSync,
   mkdtempSync,
@@ -275,6 +277,26 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         req.write(options.body);
       }
       req.end();
+    });
+  }
+
+  function runReviewDiffCli(args: string[]): Promise<{
+    code: number | null;
+    stdout: string;
+    stderr: string;
+  }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [path.join(__dirname, "../scripts/desktop/zettlr-pandoc-review-diff"), ...args],
+        { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));
+      child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
+      child.on("error", reject);
+      child.on("close", (code) => resolve({ code, stdout, stderr }));
     });
   }
 
@@ -640,6 +662,95 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       req.end();
     });
     assert.equal(contentType, "text/event-stream");
+  });
+
+  it("submits a review through the standalone external CLI process", async function () {
+    const filePath = path.join(scratch, "cli-review.md");
+    const original = "before\n";
+    const revised = "after\n";
+    const documentId = await openFile(filePath, original);
+    const patchPath = path.join(scratch, "cli-review.diff");
+    writeFileSync(
+      patchPath,
+      createPatch("document", original, revised, "", "", { context: 0 }),
+      "utf8",
+    );
+
+    const result = await runReviewDiffCli([
+      "--document",
+      filePath,
+      "--patch",
+      patchPath,
+      "--description",
+      "standalone CLI proposition",
+      "--port",
+      String(httpPort),
+      "--baseline-sha256",
+      sha256Text(original),
+    ]);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    const submitted = JSON.parse(result.stdout) as {
+      ok: boolean;
+      documentId: string;
+      reviewId: string;
+      packetIds: string[];
+      unresolvedChunks: number;
+    };
+    assert.equal(submitted.ok, true);
+    assert.equal(submitted.documentId, documentId);
+    assert.equal(submitted.packetIds.length, 1);
+    assert.equal(submitted.unresolvedChunks, 1);
+
+    const content = await httpRequest("GET", `/v1/documents/${documentId}/content`);
+    assert.equal(content.status, 200);
+    assert.equal((JSON.parse(content.body) as ReadDocumentResponse).content, revised);
+
+    const chunks = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}/chunks`);
+    assert.equal(chunks.status, 200);
+    const chunkBody = JSON.parse(chunks.body) as {
+      chunks: Array<{ descriptions: string[]; workingText: string }>;
+    };
+    assert.deepEqual(chunkBody.chunks.map((chunk) => chunk.workingText), [revised.trimEnd()]);
+    assert.deepEqual(chunkBody.chunks[0].descriptions, ["standalone CLI proposition"]);
+  });
+
+  it("returns a patch refusal without opening an unopened document", async function () {
+    const filePath = path.join(scratch, "cli-malformed.md");
+    writeFileSync(filePath, "unchanged\n", "utf8");
+    const patchPath = path.join(scratch, "cli-malformed.diff");
+    writeFileSync(patchPath, "not a unified diff\n", "utf8");
+
+    const result = await runReviewDiffCli([
+      "--document",
+      filePath,
+      "--patch",
+      patchPath,
+      "--description",
+      "malformed proposition",
+      "--port",
+      String(httpPort),
+    ]);
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    const refusal = JSON.parse(result.stderr) as {
+      ok: boolean;
+      error: { code: string; status: number };
+    };
+    assert.equal(refusal.ok, false);
+    assert.equal(refusal.error.code, "PATCH_INVALID");
+    assert.equal(refusal.error.status, 400);
+
+    const documents = JSON.parse((await httpRequest("GET", "/v1/documents")).body) as {
+      documents: Array<{ path: string }>;
+    };
+    assert.equal(documents.documents.some((document) => document.path === filePath), false);
+    const content = await httpRequest("GET", "/v1/workspace/files");
+    assert.equal(content.status, 200);
+    const files = JSON.parse(content.body) as { files: Array<{ path: string; open: boolean }> };
+    const file = files.files.find((entry) => entry.path === filePath);
+    assert.ok(file !== undefined);
+    assert.equal(file.open, false);
   });
 
   describe("request body lifecycle", function () {
