@@ -100,6 +100,45 @@ export async function waitForDevTools (
   })
 }
 
+export async function waitForApplicationBoot (
+  appProcess: ChildProcess,
+  getOutput: () => string,
+  timeoutMs: number
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(
+        new Error(
+          `The application did not complete boot within ${timeoutMs}ms.\n${outputTail(getOutput())}`
+        )
+      )
+    }, timeoutMs)
+
+    const inspectOutput = (): void => {
+      if (getOutput().includes('[AppServiceContainer] Boot successful!')) {
+        clearTimeout(timeout)
+        resolve()
+      }
+    }
+
+    inspectOutput()
+    appProcess.stdout?.on('data', inspectOutput)
+    appProcess.stderr?.on('data', inspectOutput)
+    appProcess.once('error', (error) => {
+      clearTimeout(timeout)
+      reject(error)
+    })
+    appProcess.once('exit', (code, signal) => {
+      clearTimeout(timeout)
+      reject(
+        new Error(
+          `Electron exited before completing boot (code=${String(code)}, signal=${String(signal)}).\n${outputTail(getOutput())}`
+        )
+      )
+    })
+  })
+}
+
 export async function findEditorPage (
   browser: Browser,
   timeoutMs: number
@@ -489,6 +528,7 @@ export async function attach (
     () => processOutput,
     timeoutMs
   )
+  await waitForApplicationBoot(appProcess, () => processOutput, timeoutMs)
   const browser = await chromium.connectOverCDP(devToolsUrl)
   for (const context of browser.contexts()) {
     context.pages().forEach(page => observeRenderer(page, rendererEvents))

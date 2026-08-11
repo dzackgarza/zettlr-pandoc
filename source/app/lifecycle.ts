@@ -23,7 +23,7 @@ import { getProgramVersion } from './util/get-program-version'
 
 // Developer tools
 import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
-import { AppServiceContainer, getAppServiceContainer, setAppServiceContainer } from './app-service-container'
+import { AppServiceContainer, getAppServiceContainer, isAppServiceContainerReady, setAppServiceContainer } from './app-service-container'
 import { app, ipcMain } from 'electron'
 import { attachAppNavigationHandlers } from './util/attach-app-navigation-handlers'
 import { loadMathJaxMacros, mathJaxMacrosPath, seedDefaultMacros } from './util/load-mathjax-macros'
@@ -125,6 +125,9 @@ export async function bootApplication (): Promise<AppServiceContainer> {
  * @return  {Promise<void>}  Resolves always
  */
 export async function shutdownApplication (): Promise<void> {
+  if (!isAppServiceContainerReady()) {
+    return
+  }
   const appServiceContainer = getAppServiceContainer()
   const log = appServiceContainer.log
   log.info(`さようなら！ Shutting down at ${(new Date()).toString()}`)

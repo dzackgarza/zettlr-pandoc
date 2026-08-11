@@ -46,6 +46,7 @@ import {
   reviewSidecar,
   normalizeText,
   ReviewDiffStore,
+  reviewFromSidecar,
   type ReviewStatus,
   type ReviewDiffStore as ReviewDiffStoreType,
 } from "./review-diff-store";
@@ -61,6 +62,7 @@ import {
   prepareProposalSubmission,
   prepareRetraction,
   prepareReviewComment,
+  prepareWorkingTextEdit,
   type AcceptAllChunksResponse,
   type AddReviewCommentResponse,
   type ChunkCommentResponse,
@@ -213,6 +215,19 @@ export interface ReviewQueryPort {
   readSidecar: (documentPath: string) => Promise<ReviewSidecarData | undefined>;
 }
 
+export interface ReviewSavePreparation {
+  documentId: string;
+  documentPath: string;
+  reviewId: string;
+  workingText: string;
+  survivesSave: boolean;
+}
+
+export interface ReattachedReview {
+  review: ActiveReviewState;
+  workingText: string;
+}
+
 export type AgentEventPayload = Partial<Omit<AgentEvent, "event" | "timestamp">> & {
   generation?: number;
 };
@@ -344,28 +359,233 @@ export class ReviewApplicationService {
     return queries;
   }
 
-  public replaceReview(documentId: string, review: ActiveReviewState): void {
-    this.reviews.replaceReview(documentId, review);
+  /**
+   * Commit an editor text update and its review reconciliation as one review
+   * transaction. The callback updates the document authority only after the
+   * sidecar write succeeds.
+   */
+  public async applyWorkingTextEdit(
+    documentId: string,
+    workingText: string,
+    commitDocument: () => void,
+  ): Promise<void> {
+    await this.withDocumentLock(documentId, async () => {
+      await this.applyWorkingTextEditLocked(documentId, workingText, commitDocument);
+    });
   }
 
-  public removeReview(documentId: string): void {
+  /** The same operation for a caller that already holds this document lock. */
+  public async applyWorkingTextEditLocked(
+    documentId: string,
+    workingText: string,
+    commitDocument: () => void,
+  ): Promise<void> {
+    const review = this.reviews.getReview(documentId);
+    if (review === undefined) {
+      commitDocument();
+      return;
+    }
+
+    const plan = prepareWorkingTextEdit({
+      review,
+      workingText: normalizeText(workingText),
+    });
+    try {
+      await this.sidecars.write(
+        reviewSidecar(plan?.nextReview ?? review, normalizeText(workingText)),
+      );
+    } catch (error) {
+      throw new Error(
+        `The review could not be persisted before the editor update: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    commitDocument();
+    if (plan !== undefined) {
+      this.reviews.replaceReview(documentId, plan.nextReview!);
+      for (const draft of plan.events) {
+        this.deps.emit(draft.event, draft.payload);
+      }
+    }
+    this.deps.authority.broadcastReviewState(documentId);
+  }
+
+  /** Persist the pending-save fence before the document write begins. */
+  public async prepareSave(
+    documentId: string,
+    savedSha256: string,
+  ): Promise<ReviewSavePreparation | undefined> {
+    const review = this.reviews.getReview(documentId);
+    if (review === undefined) {
+      return undefined;
+    }
+    const workingText = this.deps.authority.readWorkingText(documentId);
+    if (workingText === undefined) {
+      throw new Error(`Review ${review.reviewId} has no open document ${documentId}`);
+    }
+    const status = this.reviews.getStatus(documentId, workingText);
+    const survivesSave = (status?.unresolvedChunks ?? 0) > 0;
+    if (survivesSave) {
+      await this.sidecars.write(
+        reviewSidecar(review, workingText, {
+          beforeDiskSha256: review.diskFenceSha256,
+          afterDiskSha256: savedSha256,
+        }),
+      );
+    }
+    return {
+      documentId,
+      documentPath: review.documentPath,
+      reviewId: review.reviewId,
+      workingText,
+      survivesSave,
+    };
+  }
+
+  /** Complete the review half of a successful document save. */
+  public async completeSave(
+    preparation: ReviewSavePreparation,
+    savedSha256: string,
+  ): Promise<void> {
+    const review = this.reviews.getReview(preparation.documentId);
+    if (review === undefined || review.reviewId !== preparation.reviewId) {
+      throw new Error(`Review ${preparation.reviewId} changed during save`);
+    }
+    if (preparation.survivesSave) {
+      const fenced = { ...review, diskFenceSha256: savedSha256 };
+      await this.sidecars.write(reviewSidecar(fenced, preparation.workingText));
+      this.reviews.replaceReview(preparation.documentId, fenced);
+      return;
+    }
+
+    this.reviews.removeReview(preparation.documentId);
+    this.deps.authority.broadcastReviewCleared(
+      preparation.documentId,
+      preparation.reviewId,
+    );
+    this.deps.emit("review.completed", {
+      reviewId: preparation.reviewId,
+      documentId: preparation.documentId,
+    });
+    try {
+      await this.sidecars.delete(preparation.documentPath);
+    } catch (error) {
+      this.deps.warn(
+        `Review sidecar delete failed for ${preparation.documentPath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /** Persist and remove a review when its document detaches. */
+  public async detachReview(documentId: string): Promise<void> {
+    const review = this.reviews.getReview(documentId);
+    if (review !== undefined) {
+      if (review.invalidated) {
+        await this.sidecars.delete(review.documentPath);
+      } else {
+        const workingText = this.deps.authority.readWorkingText(documentId);
+        if (workingText === undefined) {
+          throw new Error(`Review ${review.reviewId} has no open document ${documentId}`);
+        }
+        await this.sidecars.write(reviewSidecar(review, workingText));
+      }
+      this.reviews.removeReview(documentId);
+    }
+  }
+
+  /** Discard dirty editor bytes without fabricating a review projection. */
+  public async discardReview(
+    documentId: string,
+    documentPath: string,
+    diskText: string,
+  ): Promise<void> {
+    const review = this.reviews.getReview(documentId);
+    const persisted = review === undefined
+      ? undefined
+      : await this.sidecars.read(documentPath);
+    const normalizedDisk = normalizeText(diskText);
+    const preserveSavedReview =
+      review !== undefined &&
+      persisted !== undefined &&
+      persisted.reviewId === review.reviewId &&
+      !persisted.invalidated &&
+      persisted.diskFenceSha256 === sha256Text(normalizedDisk) &&
+      normalizedDisk !== persisted.referenceText;
+
+    if (preserveSavedReview) {
+      return;
+    }
+    await this.sidecars.delete(documentPath);
+    if (review === undefined) {
+      return;
+    }
     this.reviews.removeReview(documentId);
+    this.deps.emit("review.discarded", { reviewId: review.reviewId, documentId });
+    this.deps.authority.broadcastReviewCleared(documentId, review.reviewId);
+  }
+
+  /** Read, verify, and attach a detached review to an open document. */
+  public async reattachReview(
+    documentId: string,
+    documentPath: string,
+    diskText: string,
+  ): Promise<ReattachedReview | undefined> {
+    let sidecar = await this.sidecars.read(documentPath);
+    if (sidecar === undefined) {
+      return undefined;
+    }
+    const diskSha256 = sha256Text(normalizeText(diskText));
+    if (sidecar.pendingSave !== undefined) {
+      const pendingSave = sidecar.pendingSave;
+      const fence =
+        diskSha256 === pendingSave.afterDiskSha256
+          ? pendingSave.afterDiskSha256
+          : diskSha256 === pendingSave.beforeDiskSha256
+            ? pendingSave.beforeDiskSha256
+            : undefined;
+      if (fence === undefined) {
+        await this.discardDriftedSidecar(documentId, documentPath, sidecar);
+        return undefined;
+      }
+      sidecar = { ...sidecar, diskFenceSha256: fence };
+      delete sidecar.pendingSave;
+      await this.sidecars.write(sidecar);
+    } else if (diskSha256 !== sidecar.diskFenceSha256) {
+      await this.discardDriftedSidecar(documentId, documentPath, sidecar);
+      return undefined;
+    }
+
+    if (sidecar.referenceText === sidecar.workingText) {
+      await this.sidecars.delete(documentPath);
+      return undefined;
+    }
+    const review = reviewFromSidecar(documentId, sidecar);
+    this.reviews.replaceReview(documentId, review);
+    this.deps.authority.broadcastReviewState(documentId);
+    return { review, workingText: sidecar.workingText };
+  }
+
+  private async discardDriftedSidecar(
+    documentId: string,
+    documentPath: string,
+    sidecar: ReviewSidecarData,
+  ): Promise<void> {
+    await this.sidecars.delete(documentPath);
+    this.deps.warn(
+      `Review ${sidecar.reviewId} for ${documentPath} was discarded after disk drift.`,
+    );
+    this.deps.emit("review.invalidated", {
+      reviewId: sidecar.reviewId,
+      documentId,
+    });
   }
 
   public async readSidecar(documentPath: string): Promise<ReviewSidecarData | undefined> {
     return await this.sidecars.read(documentPath);
-  }
-
-  public async writeSidecar(sidecar: ReviewSidecarData): Promise<void> {
-    await this.sidecars.write(sidecar);
-  }
-
-  public async deleteSidecar(documentPath: string): Promise<void> {
-    await this.sidecars.delete(documentPath);
-  }
-
-  public async listSidecars(): Promise<ReviewSidecarData[]> {
-    return await this.sidecars.list();
   }
 
   private lockFor(documentId: string): Mutex {

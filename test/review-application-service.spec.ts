@@ -40,7 +40,7 @@ class DocumentAuthority implements ReviewDocumentAuthority {
   private version = 0;
   private open = true;
 
-  constructor(private readonly diskText: string) {
+  constructor(private diskText: string) {
     this.text = Text.of(diskText.split("\n"));
   }
 
@@ -54,6 +54,14 @@ class DocumentAuthority implements ReviewDocumentAuthority {
 
   close(): void {
     this.open = false;
+  }
+
+  reopen(): void {
+    this.open = true;
+  }
+
+  setDiskText(text: string): void {
+    this.diskText = text;
   }
 
   async acquireDocument(documentId: string) {
@@ -231,5 +239,69 @@ describe("ReviewApplicationService", function () {
       return;
     }
     assert.equal(result.code, "DOCUMENT_CLOSED");
+  });
+
+  it("owns editor reconciliation, save fencing, and detached reattachment", async function () {
+    const baseline = "alpha\nbeta\n";
+    const proposed = "ALPHA\nbeta\n";
+    const edited = "ALPHA\nBETA edited\n";
+    const authority = new DocumentAuthority(baseline);
+    const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
+    const service = new ReviewApplicationService({
+      authority,
+      sidecarDirectory,
+      emit: () => undefined,
+      warn: () => undefined,
+    });
+    const submitted = await service.submitProposal({
+      documentId: DOCUMENT_ID,
+      baselineSha256: sha256Text(baseline),
+      claims: [{ patch: makePatch(baseline, proposed), description: "capitalize" }],
+      clientRequestId: "request-lifecycle",
+      expectedReviewGeneration: 0,
+    });
+    assert.equal(submitted.ok, true);
+    if (!submitted.ok) {
+      return;
+    }
+
+    const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, edited);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, edited, () => {
+      authority.commitWorkingTextReplacement(prepared);
+    });
+    assert.equal(authority.readWorkingText(DOCUMENT_ID), edited);
+    assert.equal((await service.readSidecar(DOCUMENT_PATH))?.workingText, edited);
+
+    const save = await service.prepareSave(DOCUMENT_ID, sha256Text(proposed));
+    assert.ok(save !== undefined);
+    assert.equal((await service.readSidecar(DOCUMENT_PATH))?.pendingSave?.afterDiskSha256, sha256Text(proposed));
+    await service.completeSave(save!, sha256Text(proposed));
+    assert.equal((await service.readSidecar(DOCUMENT_PATH))?.pendingSave, undefined);
+
+    await service.detachReview(DOCUMENT_ID);
+    assert.equal(service.getReview(DOCUMENT_ID), undefined);
+    authority.close();
+    authority.reopen();
+    const restored = await service.reattachReview(DOCUMENT_ID, DOCUMENT_PATH, proposed);
+    assert.equal(restored?.workingText, edited);
+    assert.equal(service.getReview(DOCUMENT_ID)?.reviewId, submitted.reviewId);
+
+    await service.discardReview(DOCUMENT_ID, DOCUMENT_PATH, baseline);
+    assert.equal(service.getReview(DOCUMENT_ID), undefined);
+    assert.equal(await service.readSidecar(DOCUMENT_PATH), undefined);
+
+    authority.setDiskText(edited);
+    const secondSubmission = await service.submitProposal({
+      documentId: DOCUMENT_ID,
+      baselineSha256: sha256Text(edited),
+      claims: [{ patch: makePatch(edited, "ALPHA\nBETA again\n"), description: "edit again" }],
+      clientRequestId: "request-lifecycle-second",
+      expectedReviewGeneration: 0,
+    });
+    assert.equal(secondSubmission.ok, true);
+    await service.detachReview(DOCUMENT_ID);
+    assert.equal(service.getReview(DOCUMENT_ID), undefined);
+    await service.discardReview(DOCUMENT_ID, DOCUMENT_PATH, baseline);
+    assert.equal(await service.readSidecar(DOCUMENT_PATH), undefined);
   });
 });
