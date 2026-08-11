@@ -181,6 +181,27 @@ describe('opening a file while the app is already running', function () {
     // The tab is the affordance; being the active document with the bytes from
     // disk in it is what "opens that document" means.
     const editor = editorPage.locator('.cm-content')
+    const deliveredContents = await readFile(deliveredPath, 'utf8')
+    await editorPage.waitForFunction(
+      expected => {
+        const content = document.querySelector('.cm-content')
+        if (content === null) {
+          return false
+        }
+        const tile = (
+          content as HTMLElement & {
+            cmTile?: {
+              root?: {
+                view?: { state?: { doc?: { toString(): string } } }
+              }
+            }
+          }
+        ).cmTile
+        return tile?.root?.view?.state?.doc?.toString() === expected
+      },
+      deliveredContents,
+      { timeout: 60_000 }
+    )
     const activeDocument = await editor.evaluate(content => {
       const tile = (
         content as HTMLElement & {
@@ -195,7 +216,7 @@ describe('opening a file while the app is already running', function () {
     })
     assert.equal(
       activeDocument,
-      await readFile(deliveredPath, 'utf8'),
+      deliveredContents,
       `The delivered file must be the active document.\n${outputTail(getOutput())}`
     )
     assert.ok(
