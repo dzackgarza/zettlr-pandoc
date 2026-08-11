@@ -2,8 +2,8 @@
  "repo": "dzackgarza/zettlr-pandoc",
  "pr": 55,
  "counts": {
-  "CLOSED": 454,
-  "OPEN-PENDING": 55,
+  "CLOSED": 455,
+  "OPEN-PENDING": 54,
   "NEW": 85,
   "RE-RAISED": 1
  },
@@ -5959,9 +5959,9 @@
    "thread_id": "PRRT_kwDOTcO3zM6Wk944",
    "path": "e2e/global-search-dispatch-failure.spec.ts",
    "line": 1,
-   "resolved": false,
+   "resolved": true,
    "outdated": false,
-   "state": "OPEN-PENDING",
+   "state": "CLOSED",
    "disp": {
     "verdict": "accepted with modified remediation",
     "has_verification": false,
