@@ -469,6 +469,37 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
   });
 
+  it("declares every submitProposal response status in the served OpenAPI", async function () {
+    const document = JSON.parse((await httpRequest("GET", "/openapi.json")).body) as {
+      paths: Record<
+        string,
+        {
+          post?: {
+            responses?: Record<
+              string,
+              {
+                content?: {
+                  "application/json"?: { schema?: { $ref?: string } };
+                };
+              }
+            >;
+          };
+        }
+      >;
+    };
+    const responses = document.paths["/v1/documents/{documentId}/proposals"]?.post?.responses;
+    assert.ok(responses !== undefined, "submitProposal must publish responses");
+
+    assert.ok(responses["200"] !== undefined, "submitProposal must declare success");
+    for (const status of ["400", "404", "409", "412", "500"]) {
+      assert.equal(
+        responses[status]?.content?.["application/json"]?.schema?.$ref,
+        "#/components/schemas/AgentErrorResponse",
+        `submitProposal ${status} must declare AgentErrorResponse`,
+      );
+    }
+  });
+
   it("answers a request target that is not a URL instead of dying on it", async function () {
     // Absolute-form request targets are legal HTTP/1.1 and Node hands them to
     // the handler verbatim, so `new URL(req.url, ...)` refuses input that the

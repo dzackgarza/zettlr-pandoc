@@ -1202,6 +1202,15 @@ export interface operations {
                     "application/json": components["schemas"]["AgentErrorResponse"];
                 };
             };
+            /** @description The document does not exist or is outside the configured workspace scope. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
             /** @description Review generation conflict */
             409: {
                 headers: {
@@ -1213,6 +1222,15 @@ export interface operations {
             };
             /** @description Stale revision (ETag mismatch) */
             412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description The proposal could not be persisted or the server could not complete the submission. */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1401,6 +1401,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+        '404':
+          description: >-
+            The document does not exist or is outside the configured workspace
+            scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '500':
+          description: >-
+            The proposal could not be persisted or the server could not
+            complete the submission.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews:
     get:
       operationId: listReviews
