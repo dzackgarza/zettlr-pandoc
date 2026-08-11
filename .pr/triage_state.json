@@ -2,9 +2,9 @@
  "repo": "dzackgarza/zettlr-pandoc",
  "pr": 55,
  "counts": {
-  "CLOSED": 438,
-  "OPEN-PENDING": 51,
-  "NEW": 83,
+  "CLOSED": 445,
+  "OPEN-PENDING": 54,
+  "NEW": 80,
   "RE-RAISED": 1
  },
  "converged": false,
@@ -5811,48 +5811,73 @@
    "line": 7,
    "resolved": false,
    "outdated": false,
-   "state": "NEW",
-   "disp": null
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:bb396170061b930bceb3782f3dd82fc15986d1fed270fce50a9547da8c3a9ab9",
    "thread_id": "PRRT_kwDOTcO3zM6Wk7Rz",
    "path": "source/app/service-providers/documents/index.ts",
    "line": 39,
-   "resolved": false,
+   "resolved": true,
    "outdated": false,
-   "state": "NEW",
-   "disp": null
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:3ce9f6b5abb5a5890ced97339b8e4c8d8fafd317f879d630617754829707cd64",
    "thread_id": "PRRT_kwDOTcO3zM6Wk7R2",
    "path": "source/app/service-providers/agent-api/http-server.ts",
    "line": 467,
-   "resolved": false,
+   "resolved": true,
    "outdated": false,
-   "state": "NEW",
-   "disp": null
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:ee518897d405557d5d11f10a67a73f983b31f2c6af4d6eaa169e6f8edd047e68",
    "thread_id": "PRRT_kwDOTcO3zM6Wk7R4",
    "path": "source/global.d.ts",
    "line": 160,
-   "resolved": false,
+   "resolved": true,
    "outdated": false,
-   "state": "NEW",
-   "disp": null
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:8a8915691271680b9e1426d7ed7d1ae8dfe9ba061b7167bcfc13b011e7014d44",
    "thread_id": "PRRT_kwDOTcO3zM6Wk7R7",
    "path": "e2e/document-open.spec.ts",
    "line": 1,
-   "resolved": false,
+   "resolved": true,
    "outdated": false,
-   "state": "NEW",
-   "disp": null
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:c74f3d0b6c8d77bc455e5ded318ac4a77123cd470e8fcfa62cc7ad8e8cd25cdf",
@@ -5861,8 +5886,13 @@
    "line": null,
    "resolved": false,
    "outdated": true,
-   "state": "NEW",
-   "disp": null
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:d94b722ebb253de14de5723c31e6110e16d0d3383f4bb3073d0e5a9594933cf7",
@@ -5871,38 +5901,58 @@
    "line": 39,
    "resolved": false,
    "outdated": false,
-   "state": "NEW",
-   "disp": null
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:debe5662430da872ee3e65c620bad90d8747eb1818398e822129b9f1e4d96903",
    "thread_id": "PRRT_kwDOTcO3zM6Wk7SD",
    "path": "source/app/service-providers/agent-api/http-server.ts",
    "line": 453,
-   "resolved": false,
+   "resolved": true,
    "outdated": false,
-   "state": "NEW",
-   "disp": null
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:36fe87f81f483d1aa21d7a334279ac814c796e0432a832cccee658b8dab7b3f0",
    "thread_id": "PRRT_kwDOTcO3zM6Wk94u",
    "path": "test/agent-http-api.spec.ts",
    "line": null,
-   "resolved": false,
+   "resolved": true,
    "outdated": true,
-   "state": "NEW",
-   "disp": null
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:a1a8a1cf5426b577c321f3173879fca40d4da85fa6f457184982e2197162dbc5",
    "thread_id": "PRRT_kwDOTcO3zM6Wk94y",
    "path": "test/reference-rename-authority.spec.ts",
    "line": 20,
-   "resolved": false,
+   "resolved": true,
    "outdated": true,
-   "state": "NEW",
-   "disp": null
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:5b446e0f6d6cbb2387743cb57c0d917ed8d195650de37650962afa29b4ee6aaa",
@@ -7119,6 +7169,76 @@
    "thread_id": "PRRT_kwDOTcO3zM6YMpb4",
    "path": "scripts/desktop/zettlr-pandoc-boot",
    "line": 165,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:090528fa4877791d",
+   "thread_id": "PRRT_kwDOTcO3zM6YWiUc",
+   "path": "source/app/service-providers/log/index.ts",
+   "line": 201,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:904ae940dcee0bec",
+   "thread_id": "PRRT_kwDOTcO3zM6YWiUo",
+   "path": "source/app/service-providers/agent-api/event-delivery.ts",
+   "line": 121,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:532ceb40ad484528",
+   "thread_id": "PRRT_kwDOTcO3zM6YWiU3",
+   "path": "source/app/service-providers/agent-api/document-queries.ts",
+   "line": 156,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:7dfdb8bc13513df6",
+   "thread_id": "PRRT_kwDOTcO3zM6YWiVC",
+   "path": "source/app/service-providers/assets/index.ts",
+   "line": 174,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:7c0e33894f811d803e716c2e2d933e178add69ca3da333b1212248157297c5aa",
+   "thread_id": "PRRT_kwDOTcO3zM6YWibw",
+   "path": "source/app/service-providers/agent-api/event-delivery.ts",
+   "line": 111,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:2ed3e5e06251f7b6ea803650be728b295fdf621a6045427c5b2196815cafc93c",
+   "thread_id": "PRRT_kwDOTcO3zM6YWibz",
+   "path": "test/agent-http-api.spec.ts",
+   "line": 637,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:82eb516efeb42ea4ce41296d2e97ad9d67897331bdbc415391b8551d7141f84a",
+   "thread_id": "PRRT_kwDOTcO3zM6YWib2",
+   "path": "source/app/service-providers/agent-api/document-queries.ts",
+   "line": 153,
    "resolved": false,
    "outdated": false,
    "state": "NEW",
