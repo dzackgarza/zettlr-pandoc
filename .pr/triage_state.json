@@ -2,8 +2,8 @@
  "repo": "dzackgarza/zettlr-pandoc",
  "pr": 55,
  "counts": {
-  "CLOSED": 445,
-  "OPEN-PENDING": 54,
+  "CLOSED": 446,
+  "OPEN-PENDING": 53,
   "NEW": 80,
   "RE-RAISED": 1
  },
@@ -5144,9 +5144,9 @@
    "thread_id": "PRRT_kwDOTcO3zM6WSwck",
    "path": "source/app/service-providers/cli-provider.ts",
    "line": 91,
-   "resolved": false,
+   "resolved": true,
    "outdated": false,
-   "state": "OPEN-PENDING",
+   "state": "CLOSED",
    "disp": {
     "verdict": "accepted as written",
     "has_verification": false,
