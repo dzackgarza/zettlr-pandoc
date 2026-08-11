@@ -1,0 +1,7128 @@
+{
+ "repo": "dzackgarza/zettlr-pandoc",
+ "pr": 55,
+ "counts": {
+  "CLOSED": 437,
+  "OPEN-PENDING": 52,
+  "NEW": 83,
+  "RE-RAISED": 1
+ },
+ "converged": false,
+ "records": [
+  {
+   "key": "ct:c1e457c2caeabfa2",
+   "thread_id": "PRRT_kwDOTcO3zM6VfEUu",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:5c6030d4eac77dd1",
+   "thread_id": "PRRT_kwDOTcO3zM6VfEUy",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:f6dacd5215b70c53",
+   "thread_id": "PRRT_kwDOTcO3zM6VfEU1",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:d76aac2a7cd129b9",
+   "thread_id": "PRRT_kwDOTcO3zM6VfQdz",
+   "path": "test/editor-review-diff.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:1aaf371831a525316cbfeec2be3a1638a453d1f770c4d4b09d0545f4c75cd6e4",
+   "thread_id": "PRRT_kwDOTcO3zM6VfQgM",
+   "path": "source/win-main/ReferenceSearchOverlay.vue",
+   "line": 2,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:ccfc21f803b2d8bec3c4719a2ad70ea7ab03f42a2997e1a2dde68395f3397499",
+   "thread_id": "PRRT_kwDOTcO3zM6VfQgT",
+   "path": "source/app/service-providers/commands/index.ts",
+   "line": 56,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:d87235c82f76e6dcd796d1f592e3809dc019e5d6ea629d18c43d9314142b7da3",
+   "thread_id": "PRRT_kwDOTcO3zM6VfQgX",
+   "path": "source/common/modules/markdown-editor/index.ts",
+   "line": 21,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:f3e80dfd891de231341c9ed54a4031dbec7515ed586fcc7e688eff0d7c0e0db9",
+   "thread_id": "PRRT_kwDOTcO3zM6VfQgd",
+   "path": "source/app/service-providers/log/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:a95e77a704aeed5a5e13541db28e1677798cd771c97d112c810c3320de6f39ed",
+   "thread_id": "PRRT_kwDOTcO3zM6VfQgg",
+   "path": "source/common/modules/markdown-editor/index.ts",
+   "line": 21,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:008502a85a988d62a678b8b37db21b296aa2423017da93cc142c63f4ef614860",
+   "thread_id": "PRRT_kwDOTcO3zM6VfQgk",
+   "path": "source/win-main/GlobalSearch.vue",
+   "line": 6,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:67d07c5a09db831940107544d185166510d0b62745afcb9b132090e999f21d85",
+   "thread_id": "PRRT_kwDOTcO3zM6VfQgo",
+   "path": "test/editor-review-diff.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:b0f98631b708a1f903d6cc1799f15e7e9d3edd7711e2343c9dd5d54732951823",
+   "thread_id": "PRRT_kwDOTcO3zM6Vfc1v",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:ccf51768c2ee1bbf03122bcc585192a36c0c64d674a53cbb57f6ea8f72e91c8e",
+   "thread_id": "PRRT_kwDOTcO3zM6Vfc12",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:b79eb37bf6782f8a45831ec6d36413bea395c7d1bb8b160a05f362702e96b379",
+   "thread_id": "PRRT_kwDOTcO3zM6Vfc17",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:cc9f82d1b857743c",
+   "thread_id": "PRRT_kwDOTcO3zM6Vfdp2",
+   "path": "test/agent-http-api.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:ba8c5827d6f3599b02b6491a2f8f2c3f39f9ee1281c8143340949f1f80b8f50d",
+   "thread_id": "PRRT_kwDOTcO3zM6Vfdsi",
+   "path": "test/agent-http-api.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:86ddca7e4b0a688a29c7e755d3546b2a0cdb72ea9330061fed2e385a85bb88f9",
+   "thread_id": "PRRT_kwDOTcO3zM6Vfdso",
+   "path": "test/agent-http-api-e2e-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:a3f6e6489400a2fb",
+   "thread_id": "PRRT_kwDOTcO3zM6Vh4kH",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": 115,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:b556bb1088d22e1d",
+   "thread_id": "PRRT_kwDOTcO3zM6Vh4kI",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:f43efb25933aaa15",
+   "thread_id": "PRRT_kwDOTcO3zM6Vh4kK",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6Vh57r",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:9cbc45d8b19661fa",
+   "thread_id": "PRRT_kwDOTcO3zM6Vh571",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:d63b64df2c53a28c43f03861de691104f2afc9d89037182bf679e949fb418694",
+   "thread_id": "PRRT_kwDOTcO3zM6Vh5_P",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": 114,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:26677b28e1c788dd2d3fbe9ff3eed696b52e6f20338c0fd713879daf3dd9d568",
+   "thread_id": "PRRT_kwDOTcO3zM6Vh5_U",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:d6adf4ee57fbfde7",
+   "thread_id": "PRRT_kwDOTcO3zM6Vh-9k",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:938e13fe34780d0c",
+   "thread_id": "PRRT_kwDOTcO3zM6Vh-9q",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": 343,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:39861d0359a50d63b0d4b6129f1cf8636e14dbd47ca137df72d9c50d3f9821b1",
+   "thread_id": "PRRT_kwDOTcO3zM6ViAdA",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": 110,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:051a2f4e66fa8408701d655c0819a31792bf029834f3cc27cef0f1681bb1791f",
+   "thread_id": "PRRT_kwDOTcO3zM6ViAdE",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 1311,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:5037da57ec68427abaaf1be9cde1fb5ded682801f7b790a2efff6bf50e732e61",
+   "thread_id": "PRRT_kwDOTcO3zM6ViAdF",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": 44,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:924bcb3472561269",
+   "thread_id": "PRRT_kwDOTcO3zM6ViDAz",
+   "path": "source/app/service-providers/cli-provider.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:438dd3c39923204e",
+   "thread_id": "PRRT_kwDOTcO3zM6ViDA_",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:3d392a2be65b4acd",
+   "thread_id": "PRRT_kwDOTcO3zM6ViDBH",
+   "path": "e2e/open-file-in-running-instance.spec.ts",
+   "line": 60,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:07565a771743bdf9b71f753bb766183bce46b890e70598e4707c1702628f1247",
+   "thread_id": "PRRT_kwDOTcO3zM6ViDDA",
+   "path": "test/editor-reference-badges.spec.ts",
+   "line": 251,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:1978c7631f18ded58dca3c05c7afa5aaf9baa5c9a9e09fd1a3fda4c4e9f686e6",
+   "thread_id": "PRRT_kwDOTcO3zM6ViDDD",
+   "path": "source/app/service-providers/cli-provider.ts",
+   "line": 23,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:2e0036667c5b7c55019e604bcf5ab60272828bc639c4b32dd8c826385192b16c",
+   "thread_id": "PRRT_kwDOTcO3zM6ViDDI",
+   "path": "e2e/open-file-in-running-instance.spec.ts",
+   "line": 44,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:788cda858b2436dd",
+   "thread_id": "PRRT_kwDOTcO3zM6ViKXb",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:b38a02b8e9cab2c0",
+   "thread_id": "PRRT_kwDOTcO3zM6ViKXf",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:6d654ba78113eb5a",
+   "thread_id": "PRRT_kwDOTcO3zM6ViKXh",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:b1e1be3f1016934e61e8294058e04942fc20427632282b907dcdbfc9b19858da",
+   "thread_id": "PRRT_kwDOTcO3zM6ViLCq",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:c5a4c788aee3599885efe8f8ab234747075dae380e62e328c58c714c19b3bb4d",
+   "thread_id": "PRRT_kwDOTcO3zM6ViLCv",
+   "path": "source/win-main/GlobalSearch.vue",
+   "line": 506,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:6e4cd1151a6b1a901304aa4e28d27ac950c291ea40e8e5bd471a60f01b09bec5",
+   "thread_id": "PRRT_kwDOTcO3zM6ViLCx",
+   "path": "source/win-main/EditorPane.vue",
+   "line": 61,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:3d26334121ff2afadc9de9372544d3dbf5cdbd36e2b72ff4a185768e3cd3e4af",
+   "thread_id": "PRRT_kwDOTcO3zM6ViLC1",
+   "path": "source/app/service-providers/cli-provider.ts",
+   "line": 20,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:7d53f78c5ca142c8",
+   "thread_id": "PRRT_kwDOTcO3zM6ViRNz",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 1317,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:5e1d960c7f51dfee",
+   "thread_id": "PRRT_kwDOTcO3zM6ViRN4",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": 48,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "investigate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:922676fc8d8eefb6",
+   "thread_id": "PRRT_kwDOTcO3zM6ViYOP",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 1499,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:0a1ea3b06d5e58164b2fc32c51e67b3bdfa180d935e22341de64e688c909c9b7",
+   "thread_id": "PRRT_kwDOTcO3zM6ViYPR",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 1675,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:ad9d06c0d33c822b7c1649651df5b47cee37a82b4d933480ab32b88db60a3760",
+   "thread_id": "PRRT_kwDOTcO3zM6ViYPX",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 1309,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:afc0fe9a4a42d201",
+   "thread_id": "PRRT_kwDOTcO3zM6VmA4b",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:d795657d9bd2e03f",
+   "thread_id": "PRRT_kwDOTcO3zM6VmA4d",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:e22063c7ea75dd79",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD9r",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:22ed9dea674e7821",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD9u",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:a05bb750f5c62f43",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD9x",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:a332b0be108ad27f",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD9z",
+   "path": "source/app/service-providers/provider-contract.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:db1093b1f15101ba",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD92",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:e2ba62addd041a2c",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD95",
+   "path": "source/win-project-properties/App.vue",
+   "line": 419,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:7ad1ccd199d76b8d",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD99",
+   "path": "scripts/desktop/zettlr-pandoc-open-in-running",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:397a8d912a14e8c6",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-A",
+   "path": "e2e/dirty-buffer-indicator.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:a7317acc993ca869",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-F",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:a332caf09aa25411",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-H",
+   "path": "test/reference-provider-shell.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:41cbfaf5aaf8238b",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-K",
+   "path": "source/common/modules/markdown-editor/util/range-in-preview-suppression.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:b094066709610fca",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-M",
+   "path": "e2e/support/electron-app.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:e69f60badb295ee6",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-N",
+   "path": "source/app/service-providers/documents/review-diff-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:a6e3808d0d8e7f8b",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-P",
+   "path": "source/app/service-providers/commands/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:bef67dc0b7b83d1e",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-R",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": 507,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:630d27a08b8c9fc0",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-S",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:02db91a49bb4f6a9",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-U",
+   "path": "source/win-main/sidebar/OtherFilesTab.vue",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:96d445ad94d0cdb2",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-W",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:b7f84b57078cae9d",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-Y",
+   "path": "source/app/service-providers/menu/menu-dependencies.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:a22b0dcf68eb65bd",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-a",
+   "path": "source/win-main/DocumentTabs.vue",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:6e203c8073a3a3cc",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-b",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:6d9953c76d36b33e",
+   "thread_id": "PRRT_kwDOTcO3zM6VmD-c",
+   "path": "e2e/agent-api-auth.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:8dd728c25e499d49",
+   "thread_id": "PRRT_kwDOTcO3zM6VncSf",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:324b12601b20d691",
+   "thread_id": "PRRT_kwDOTcO3zM6VncSh",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:87954dee4f206f7e",
+   "thread_id": "PRRT_kwDOTcO3zM6Vneki",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:f369c4999b770c40",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnekj",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:f986a98abc9942e3",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnekm",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:1ecc336524b42e93",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnekn",
+   "path": "source/app/service-providers/commands/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:2b9f542d6f234f16",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnekq",
+   "path": "source/types/common/agent-api.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:5363624969a4fb2d",
+   "thread_id": "PRRT_kwDOTcO3zM6Vneku",
+   "path": "source/common/modules/markdown-editor/util/range-in-preview-suppression.ts",
+   "line": 39,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:9c59f03522b21ada",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnekw",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:452c1dd9206336e2",
+   "thread_id": "PRRT_kwDOTcO3zM6Vneky",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:7da3d74068ed66db",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnek0",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 1960,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:add8d6fda873a0f0",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnek2",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:4c8e2997cd117ed5",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnek3",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:680d4fc20fcbb5ec",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnek4",
+   "path": "source/win-main/GlobalSearch.vue",
+   "line": 451,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:9ab5603453076a75",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnek5",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:b8f5a6f3850d98f7",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnek8",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:61ecdce8fdd7d4c7",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnek-",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": 507,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:cdb873d303f1390d",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelB",
+   "path": "source/types/renderer/ipc-bridge.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:4c84c14559ffae1f",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelD",
+   "path": "source/types/renderer/ipc-bridge.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:e9b35b56d1a1faf4",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelE",
+   "path": "source/app/service-providers/commands/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:a19b919d2d473424",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelF",
+   "path": "source/app/service-providers/commands/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:1c38a7c05ebcf032",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelG",
+   "path": "e2e/support/electron-app.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:7622c38f3385064e",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelI",
+   "path": "source/app/app-service-container.ts",
+   "line": 159,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:77ffbb210bc6fb71",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelK",
+   "path": "source/common/modules/markdown-editor/index.ts",
+   "line": 1038,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:9e480ab200c202f0",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelL",
+   "path": "source/app/service-providers/commands/rename-reference.ts",
+   "line": 86,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:8b75d1470b966bda",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelO",
+   "path": "source/app/service-providers/commands/rename-reference.ts",
+   "line": 81,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:8338afd8517fb5c1",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelP",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:35ac49106f8b2672",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelR",
+   "path": "test/pandoc-quick-help-references.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:a499f4ef83c5e224",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelT",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": 123,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:dab2a4b8c83cd39a",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelV",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:91fb956b0912ecd6",
+   "thread_id": "PRRT_kwDOTcO3zM6VnelZ",
+   "path": "source/win-main/DocumentTabs.vue",
+   "line": 1021,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:075f0d3649f9dc52",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnelb",
+   "path": "source/win-main/DocumentTabs.vue",
+   "line": 48,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:beaf96317d4926a6",
+   "thread_id": "PRRT_kwDOTcO3zM6Vneld",
+   "path": "source/common/modules/markdown-editor/util/range-in-preview-suppression.ts",
+   "line": 60,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:37134fcd38e08d17",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnelg",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:60dac79d76e02e07",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnelh",
+   "path": "source/app/service-providers/menu/menu.darwin.ts",
+   "line": 228,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:f6ae196f86af9313",
+   "thread_id": "PRRT_kwDOTcO3zM6Vneli",
+   "path": "e2e/dirty-buffer-indicator.spec.ts",
+   "line": 77,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:e41ff58e465ed1a3",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnelk",
+   "path": "e2e/open-file-in-running-instance.spec.ts",
+   "line": 158,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:c395db56a541c060",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnell",
+   "path": "source/app/service-providers/windows/index.ts",
+   "line": 426,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:e11d534b7994e9c8",
+   "thread_id": "PRRT_kwDOTcO3zM6Vneln",
+   "path": "e2e/review-diff-save-gate.spec.ts",
+   "line": 328,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:ca59951411aca51d",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnelo",
+   "path": "source/common/modules/markdown-editor/plugins/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:5086a2b6e7403388",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnelp",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:c284c057be430e06",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnelq",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:7d53f78c5ca142c8",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnf4v",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:5e1d960c7f51dfee",
+   "thread_id": "PRRT_kwDOTcO3zM6Vnf40",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": 42,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6VnhV1",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:438dd3c39923204e",
+   "thread_id": "PRRT_kwDOTcO3zM6VnhV7",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:447f54fc5180dba09c6cebd88984cfcfc63f89005bc2afcfd9a967b5e86def83",
+   "thread_id": "PRRT_kwDOTcO3zM6Vn_OS",
+   "path": "source/win-main/App.vue",
+   "line": 826,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:7aaa6061ddd54ce6",
+   "thread_id": "PRRT_kwDOTcO3zM6VoDCB",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:da6ede8da37775a4e56c4e442aa77eb50cf3db9e26fad9b6a60ba0bcc01c0066",
+   "thread_id": "PRRT_kwDOTcO3zM6VoDCq",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:2f7fe50d979312f5",
+   "thread_id": "PRRT_kwDOTcO3zM6VpB0T",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 1962,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:546b14ad97e63190",
+   "thread_id": "PRRT_kwDOTcO3zM6VpB0U",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d3e88f49c7d5b8a7",
+   "thread_id": "PRRT_kwDOTcO3zM6VpB0W",
+   "path": "source/app/service-providers/log/index.ts",
+   "line": 293,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:7d53f78c5ca142c8",
+   "thread_id": "PRRT_kwDOTcO3zM6VpE3w",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:29033f1e39a4ba51",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF2t",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:ba22077758fd3b54",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF2u",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 3383,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:ae65aa5b99349f39",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF2y",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:4d2cb62c942b977a",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF21",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:0e03fdf58987969f",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF22",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:c438469fe03ab22b",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF24",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": 583,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:faa3398b7200f5a1",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF29",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:31aec3b5e9873f73",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3A",
+   "path": "source/app/app-service-container.ts",
+   "line": 159,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:630c510549bed2f4",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3C",
+   "path": "source/win-main/DocumentTabs.vue",
+   "line": 397,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:fa8cad612c4314cf",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3F",
+   "path": "source/win-main/GlobalSearch.vue",
+   "line": 451,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:fd2f23c48665f3b8",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3K",
+   "path": "source/app/service-providers/documents/review-diff-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:f2601c1de86e7ec4",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3N",
+   "path": "source/types/common/agent-api.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:c301aea2f3782ab9",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3P",
+   "path": "source/types/common/agent-api.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:3769cf2c7951eacd",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3Q",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:1e0756771621ec02",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3S",
+   "path": "source/types/renderer/ipc-bridge.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:a4c3c4154d4b940b",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3U",
+   "path": "test/pandoc-quick-help-references.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:9fa06d46b9917d75",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3V",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:adcd1426de9d9620",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3W",
+   "path": "e2e/support/electron-app.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:a2b6c15dc3dff348",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3X",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": 507,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:120d67dc70b3977e",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3Z",
+   "path": "source/common/util/pandoc-quick-reference.ts",
+   "line": 21,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:959c423e2ab63115",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3b",
+   "path": "test/reference-family-display.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d38b77fe5e2c3ecc",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3c",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:cd7f23169936100a",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3f",
+   "path": "source/types/common/agent-api.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:e3b399376f30fff0",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3h",
+   "path": "test/agent-http-api-e2e-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:ef90cdcdf4ffda8f",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3i",
+   "path": "e2e/global-search-dispatch-failure.spec.ts",
+   "line": 281,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:add672f5e614a0ca",
+   "thread_id": "PRRT_kwDOTcO3zM6VpF3j",
+   "path": "test/reference-rename-authority.spec.ts",
+   "line": 163,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:9fbb7f396d90f1ef914437eb86f26e4db83793c4a22cfa1d6f5884ed14b083e5",
+   "thread_id": "PRRT_kwDOTcO3zM6VpJ4w",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:2d4a8352cbc7d388",
+   "thread_id": "PRRT_kwDOTcO3zM6VpMbS",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:1da7162d2f600ae6",
+   "thread_id": "PRRT_kwDOTcO3zM6VpMbU",
+   "path": "e2e/support/electron-app.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d36aa19f9f00eba0",
+   "thread_id": "PRRT_kwDOTcO3zM6VpMbY",
+   "path": "test/ipc-type-contracts.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:a7dedf8ab061207793bb8cfcdca43dc74be4a940be1422a51ca74c965363c9d0",
+   "thread_id": "PRRT_kwDOTcO3zM6VpMcO",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:339dd973455f40770d702eb0b009dec97788add8a8297243af9fdbc7e9caf366",
+   "thread_id": "PRRT_kwDOTcO3zM6VpMcR",
+   "path": "test/ipc-type-contracts.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:dffe304559f3f3773e00719647f045860be1635075d94feb5b9d835b9ad8f0ac",
+   "thread_id": "PRRT_kwDOTcO3zM6VpMcV",
+   "path": "e2e/support/electron-app.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:7aaa6061ddd54ce6",
+   "thread_id": "PRRT_kwDOTcO3zM6VpPw6",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6VpPw8",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:73d365031e8f27a2",
+   "thread_id": "PRRT_kwDOTcO3zM6VpPw-",
+   "path": "e2e/open-file-in-running-instance.spec.ts",
+   "line": 90,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:460cc5b4067e3760",
+   "thread_id": "PRRT_kwDOTcO3zM6VpPw_",
+   "path": "e2e/support/electron-app.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:f4320734ec4fb77f",
+   "thread_id": "PRRT_kwDOTcO3zM6VpPxB",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:922676fc8d8eefb6",
+   "thread_id": "PRRT_kwDOTcO3zM6VpPxD",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:96893991a71eaa6c14d6513dbb1108f07a7a442a898a18fe28e2f0509a8a1c89",
+   "thread_id": "PRRT_kwDOTcO3zM6VpPxt",
+   "path": "e2e/support/electron-app.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:89bb496a10fab380f91d78e08f73bfef0d65b127de20b86ad4e2e740d49f3627",
+   "thread_id": "PRRT_kwDOTcO3zM6VpPxu",
+   "path": "e2e/open-file-in-running-instance.spec.ts",
+   "line": 62,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:c98b62844d913579",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFD",
+   "path": "source/app/service-providers/commands/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:9da49fa030c727eb",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFE",
+   "path": "source/types/common/review-diff.ts",
+   "line": 7,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:c99eea5ca83e92e6",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFF",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:d7e2dccf4a4ee1a1",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFG",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d3056d309580a79d",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFI",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:53532c09de37da62",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFJ",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:2b9a9ba3c284cc2c",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFK",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:f4aad5de0c259fd3",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFL",
+   "path": "source/app/app-service-container.ts",
+   "line": 159,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:ac839b65375ff229",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFM",
+   "path": "source/app/service-providers/log/index.ts",
+   "line": 45,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:4f796cd1e3f6e485",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFN",
+   "path": "scripts/assert-dev-server-stopped.py",
+   "line": 90,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:9ef3a5d4ed72e1ee",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFO",
+   "path": "source/win-main/DocumentTabs.vue",
+   "line": 396,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:bf4fc6fbe3455bbf",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFT",
+   "path": "source/common/modules/markdown-editor/util/range-in-preview-suppression.ts",
+   "line": 60,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:40a8b1be36bdc82f",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFU",
+   "path": "source/win-main/GlobalSearch.vue",
+   "line": 513,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:3caa47de276ee2e5",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFV",
+   "path": "test/pandoc-quick-help-references.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:ae07dd0c59c852d1",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFW",
+   "path": "test/reference-family-display.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:b7be83dd78f7f487",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFY",
+   "path": "source/app/service-providers/commands/rename-reference.ts",
+   "line": 86,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:0b7803abe49405b7",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFZ",
+   "path": "source/app/service-providers/commands/rename-reference.ts",
+   "line": 81,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:ce3db9128dd82a98",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFb",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": 116,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:99215a78bf7d8cd6",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFc",
+   "path": "source/types/common/agent-api.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:e128f02c58caf206",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFe",
+   "path": "source/app/service-providers/documents/review-diff-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:676fbe6ed062cbfd",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFg",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:34343af64529b77f",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFi",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:12ab23b0e8aeca58",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFl",
+   "path": "e2e/review-diff-save-gate.spec.ts",
+   "line": 328,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:50aef313d6b1e5e0",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFn",
+   "path": "test/agent-http-api-e2e-cross-process.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:a96762340a1fd922",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFp",
+   "path": "source/common/modules/markdown-editor/plugins/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:c8f4395b7b4ef077",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFr",
+   "path": "source/common/modules/markdown-editor/plugins/review-chunks.ts",
+   "line": 523,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:11c98a993960d94a",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFt",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:3e8b662d814b59b1",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFv",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:ad6b2871b0bd969a",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQFy",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:be8b2e957abd9761",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQF1",
+   "path": "source/app/service-providers/log/index.ts",
+   "line": 371,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:27ddc53124c4f867",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQF3",
+   "path": "source/common/modules/markdown-editor/index.ts",
+   "line": 1038,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "investigate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:024987bddb33f722",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQF6",
+   "path": "scripts/desktop/zettlr-pandoc-open-in-running",
+   "line": 19,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:57858cc8279a1b29",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQF7",
+   "path": "source/common/util/pandoc-quick-reference.ts",
+   "line": 21,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:3fc09ae77b095d8a",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQF9",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:5b89ed7715cd1b65",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQF-",
+   "path": "e2e/command-provider-unregistered-command.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:856b70934f973c77",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQGB",
+   "path": "justfile",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:f12f886e1171e6aa",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQGC",
+   "path": "test/agent-http-api-e2e-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:8a54d933e3f3d8d9",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQGD",
+   "path": "test/log-provider-write-failure.spec.ts",
+   "line": 94,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:cc55faa16fdc369c",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQGE",
+   "path": "e2e/open-file-in-running-instance.spec.ts",
+   "line": 250,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:c167368e679fa8535cc51a5d980865c459c0110466810ac1595bca29191c40ca",
+   "thread_id": "PRRT_kwDOTcO3zM6VpQKi",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d8b8a6f230afe5bb",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTMx",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": 128,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:06f342363a0f7899",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTMz",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:a9acd4a420bb9e94",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTM2",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:7bdb161ccbaa2f84",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTM3",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:b66b1fcf127340e5",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTM5",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:1ddb69171a1c5f35",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTM8",
+   "path": "source/common/modules/markdown-editor/util/range-in-preview-suppression.ts",
+   "line": 64,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:0682622f213e1a22",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTM9",
+   "path": "source/app/app-service-container.ts",
+   "line": 159,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:ced71035768ad897",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTM_",
+   "path": "source/win-main/DocumentTabs.vue",
+   "line": 48,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:3fdb526a557be896",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNC",
+   "path": "source/win-main/sidebar/ReferencesTab.vue",
+   "line": 148,
+   "resolved": false,
+   "outdated": true,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:c5dc38b656720023",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNP",
+   "path": "e2e/dirty-buffer-indicator.spec.ts",
+   "line": 126,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:b69ce0672976f489",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNR",
+   "path": "source/win-main/App.vue",
+   "line": 844,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:4196dd5eb03c1cd2",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNS",
+   "path": "test/pandoc-quick-help-references.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:48e77fc65375fe48",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNT",
+   "path": "test/menu-config-type-contract.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:e82dbcfc664b3440",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNU",
+   "path": "e2e/review-diff-save-gate.spec.ts",
+   "line": 328,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:5f5dd7f7b95a8097",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNV",
+   "path": "e2e/open-file-in-running-instance.spec.ts",
+   "line": 58,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:8b489392b7dd371c",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNX",
+   "path": "e2e/open-file-in-running-instance.spec.ts",
+   "line": 142,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:009f8d8f4d000864",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNZ",
+   "path": "source/types/renderer/ipc-bridge.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:6f77aafe6bcb6e88",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNa",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 3383,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:8a46cd18d5a32857",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNc",
+   "path": "source/app/service-providers/documents/review-diff-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:fdec729354693916",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNd",
+   "path": "justfile",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:d5c5de25ed12426d",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNf",
+   "path": "e2e/support/electron-app.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:92c17cb9b8832489",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNg",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": 507,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:4159f0d5b1acb259",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNh",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:096742656f3fadb6",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNi",
+   "path": "source/win-project-properties/App.vue",
+   "line": 443,
+   "resolved": false,
+   "outdated": true,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:fcd171e1f75e047f",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNk",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:18b618538ff60271",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNl",
+   "path": "source/app/service-providers/documents/review-diff-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:f95aa7181ba93e1e",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNm",
+   "path": "source/app/service-providers/documents/review-diff-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:cdd3cf6fe034b1cc",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNn",
+   "path": "source/types/common/review-diff.ts",
+   "line": 57,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:54af6d1c2e212e31",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNo",
+   "path": "source/common/util/pandoc-quick-reference.ts",
+   "line": 21,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:8c738170e3e9d918",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNp",
+   "path": "source/win-main/util/recoverable-reference-errors.ts",
+   "line": 59,
+   "resolved": false,
+   "outdated": true,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:6040dae55fa23912",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNq",
+   "path": "scripts/desktop/zettlr-pandoc-open-in-running",
+   "line": 19,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:499b6f461949765d",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNs",
+   "path": "source/app/service-providers/commands/rename-reference.ts",
+   "line": 81,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:02029585aa03c477",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNw",
+   "path": "test/reference-family-display.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:5c9ac2cfcd895530",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTNz",
+   "path": "source/common/modules/markdown-editor/util/when-authority-synced.ts",
+   "line": 42,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:f75597341368482d",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTN1",
+   "path": "source/common/modules/markdown-editor/plugins/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:0e0bb4df454a9c81",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTN3",
+   "path": "e2e/agent-api-auth.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:a74a3e3d4529bdeb",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTN5",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:d44cb82b9704ad03",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTN7",
+   "path": "test/review-diff-cli.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:93f85c25e872e2bd",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTN-",
+   "path": "test/review-diff-cli.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:b3522a177c49a8ac",
+   "thread_id": "PRRT_kwDOTcO3zM6VpTOA",
+   "path": "source/app/service-providers/windows/index.ts",
+   "line": 432,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:554add716a1cb816",
+   "thread_id": "PRRT_kwDOTcO3zM6VpUDI",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:a1c32080c42f463e2df9f0217a2a20796f9f403985324033a0447fb9c44484b1",
+   "thread_id": "PRRT_kwDOTcO3zM6VpUEY",
+   "path": "test/editor-review-diff.spec.ts",
+   "line": 120,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:705eb04e1a46b2f1",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpK",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:2f64dc1d63cc634a",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpN",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:f3b1cabd8bca13b2",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpP",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:b9dc671cbea8e52d",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpR",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:a397e43898f5f6a7",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpS",
+   "path": "source/app/service-providers/commands/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:0da316e4333242d0",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpZ",
+   "path": "source/main.ts",
+   "line": 95,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:88755fbf9b48c0de",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpb",
+   "path": "source/app/service-providers/log/index.ts",
+   "line": 286,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:0c4a8e194e3cae85",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpc",
+   "path": "scripts/assert-dev-server-stopped.py",
+   "line": 22,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:a2e9dda3b82f6b23",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpd",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d6d4944c716055a8",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpe",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:7a431b8f05da2adc",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpf",
+   "path": "source/win-main/sidebar/ReferencesTab.vue",
+   "line": 148,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:8eac8dc668e45141",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpi",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:7b1d0bd35c6e53c2",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpj",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": 251,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:e3ef9ac6ad0320a0",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpl",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:57c1f9a079248209",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpm",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": 128,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:524b2831a2a830ba",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpq",
+   "path": "source/app/app-service-container.ts",
+   "line": 159,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:9cc279cf0117fd84",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpt",
+   "path": "source/types/renderer/ipc-bridge.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:ee823260e1606b92",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpv",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 3369,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:a80409738d99fafb",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYpy",
+   "path": "source/app/service-providers/documents/review-diff-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:cb117488cb1bdcc0",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYp0",
+   "path": "test/pandoc-quick-help-references.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:c4d00b79dc3519a3",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYp1",
+   "path": "e2e/support/electron-app.ts",
+   "line": 468,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:f9894a0643a8b95f",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYp2",
+   "path": "source/types/common/agent-api.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:5856cb5759203cea",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYp3",
+   "path": "source/app/service-providers/commands/rename-reference.ts",
+   "line": 81,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:340936389f6b9b4e",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYp5",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d0b5c76baae0ddd2",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYp7",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:1fc9da4ac3ed4bc8",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYp8",
+   "path": "source/app/service-providers/documents/review-diff-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:327859e2945e520a",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYp9",
+   "path": "test/reference-family-display.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:6acb084ec2ea7bcf",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYp_",
+   "path": "e2e/review-diff-save-gate.spec.ts",
+   "line": 328,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:45d762683632ad1a",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYqA",
+   "path": "test/agent-http-api-e2e-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:0cc7d72d4780580c",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYqC",
+   "path": "test/review-diff-cli.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:2dcfe31bb84cabf8",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYqD",
+   "path": "test/agent-http-api-e2e-cross-process.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:a389facdb237ce19",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYqE",
+   "path": "e2e/agent-api-auth.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:78dd5d85c33e184c",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYqF",
+   "path": "e2e/open-file-in-running-instance.spec.ts",
+   "line": 47,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:0203c40f403f2251",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYqG",
+   "path": "source/app/service-providers/menu/menu-dependencies.ts",
+   "line": 33,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:7716cfbdba68818f",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYqI",
+   "path": "source/common/modules/markdown-editor/util/when-authority-synced.ts",
+   "line": 56,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:b75428ea7bf84962",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYqK",
+   "path": "source/types/common/agent-api.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:1d7ecdffdf4dfdf7",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYqN",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:94c07fa1b66fb901",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYqP",
+   "path": "source/types/renderer/ipc-bridge.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:6aff92f482f10903",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYqR",
+   "path": "source/app/service-providers/menu/menu.darwin.ts",
+   "line": 229,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:e5314ec3b90abc3c",
+   "thread_id": "PRRT_kwDOTcO3zM6VpYqS",
+   "path": "test/reference-search-overlay.spec.ts",
+   "line": 169,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:2af7e37c86a46cfc",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJA",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 1960,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:841f1f051bb2b933",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJE",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:178bde5bbbcefce4",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJG",
+   "path": "source/app/service-providers/config/get-config-template.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:db1d96b845a4df93",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJJ",
+   "path": "source/common/modules/markdown-editor/util/when-authority-synced.ts",
+   "line": 57,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:379ac928f01b3e80",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJM",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:98bbe4b6bec19e52",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJO",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:3f4cb149a443dfb3",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJT",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:942c9f64023a8a36",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJY",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:50ebb35510477afd",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJa",
+   "path": "source/types/common/agent-api.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:7a777d9a634ecf8b",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJc",
+   "path": "source/types/common/agent-api.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:4b152c53f43b0348",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJe",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:c04259204407202b",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJg",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 3371,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:61d6333502be589c",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJj",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:e88138da9e741bfe",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJk",
+   "path": "source/common/modules/markdown-editor/plugins/review-chunks.ts",
+   "line": 523,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:12dd4e41dde57300",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJm",
+   "path": "source/app/service-providers/log/index.ts",
+   "line": 45,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:e732d076bec52632",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJn",
+   "path": "source/app/app-service-container.ts",
+   "line": 159,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:9069c0587f4fcde5",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJo",
+   "path": "source/win-main/sidebar/ReferencesTab.vue",
+   "line": 148,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:8c3fbcc19d9ccaea",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJr",
+   "path": "source/common/util/pandoc-quick-reference.ts",
+   "line": 28,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:52698d3133789685",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJt",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": 128,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:c1fefe0901203481",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJu",
+   "path": "test/pandoc-quick-help-references.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:6704e17a5419b392",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJx",
+   "path": "source/common/modules/markdown-editor/index.ts",
+   "line": 1038,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:1d81b0ae99b5d813",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJy",
+   "path": "source/app/service-providers/documents/review-diff-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:bdfe69533fabb671",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJ0",
+   "path": "source/win-main/DocumentTabs.vue",
+   "line": 397,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:e16b5348421a8461",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJ1",
+   "path": "source/common/modules/markdown-editor/util/range-in-preview-suppression.ts",
+   "line": 60,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:c22812a07a6ac1a8",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJ2",
+   "path": "e2e/review-diff-save-gate.spec.ts",
+   "line": 328,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:33ed976cef1624b4",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJ3",
+   "path": "e2e/agent-api-auth.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:774cf6f40f265a65",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJ8",
+   "path": "test/review-diff-cli.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:10b4abaff8615ff9",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJ-",
+   "path": "test/agent-http-api-e2e-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:0fcab98c60828e0a",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmJ_",
+   "path": "e2e/dirty-buffer-indicator.spec.ts",
+   "line": 147,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:61fdcc5336f989c4",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmKA",
+   "path": "source/common/util/pandoc-quick-reference.ts",
+   "line": 123,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:40adfeb0ac124105",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmKC",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:e8c32cf2f379ded6",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmKD",
+   "path": "source/types/common/agent-api.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:fb6f90167358868e",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmKF",
+   "path": "test/ipc-type-contracts.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:304a3fc0770f97ee",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmKH",
+   "path": "e2e/support/electron-app.ts",
+   "line": 42,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:4d1c3560fcc339d5",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmKK",
+   "path": "test/review-diff-cli.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:f02df0d0857b8b47",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmKL",
+   "path": "e2e/global-search-dispatch-failure.spec.ts",
+   "line": 274,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:7e9f24b5250fa034",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmKM",
+   "path": "test/headless-electron-harness.cjs",
+   "line": 38,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:b5a98fe7c47651df",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmKN",
+   "path": "source/app/service-providers/menu/font-zoom.ts",
+   "line": 26,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:0339e8140a8ead14",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmKO",
+   "path": "test/agent-http-api-e2e-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:962701cc4e51fb86",
+   "thread_id": "PRRT_kwDOTcO3zM6VpmKP",
+   "path": "test/menu-file-navigation.spec.ts",
+   "line": 149,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:4cf36715fae44fe215239abb692921fb9379992115780381effb0cdcbe7f407e",
+   "thread_id": "PRRT_kwDOTcO3zM6Vpp2M",
+   "path": "source/win-main/MainEditor.vue",
+   "line": 44,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:6671f7e7549576b5b43f2f647e1ac3acdb6e4a5865363445fbcd07e78f343996",
+   "thread_id": "PRRT_kwDOTcO3zM6Vpqg2",
+   "path": "test/reference-provider-shell.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:00250bf4645d71784e8d05d050f7d8c9dab794a447cbfcbd3fc99b3d0ddbf237",
+   "thread_id": "PRRT_kwDOTcO3zM6Vpqg4",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:90f07f4a3219fcb99a3a13c4c748504e1ab4dc8a310bc0b494917f05fdc40c66",
+   "thread_id": "PRRT_kwDOTcO3zM6Vpqg5",
+   "path": "e2e/agent-api-auth.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:9584f9966b157213",
+   "thread_id": "PRRT_kwDOTcO3zM6VpxrH",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:0bed2fc0fb3041e6",
+   "thread_id": "PRRT_kwDOTcO3zM6VpxrK",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:9584f9966b157213",
+   "thread_id": "PRRT_kwDOTcO3zM6VpxrL",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:9584f9966b157213",
+   "thread_id": "PRRT_kwDOTcO3zM6VpxrO",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:4b517c2a95c4e7b76eb4434dd0f061be0b062d49eced695dc27b35c65bee2440",
+   "thread_id": "PRRT_kwDOTcO3zM6Vpxs6",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:450078a361d777f83dd4bd58fc9b2769bc429d165a6ee22a3550b9b56c99c9c6",
+   "thread_id": "PRRT_kwDOTcO3zM6Vpxs7",
+   "path": "source/win-main/App.vue",
+   "line": 191,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:eabd19f7dd4f784b",
+   "thread_id": "PRRT_kwDOTcO3zM6Vp9fX",
+   "path": "source/global.d.ts",
+   "line": 178,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:b9d290d32cc133f809f9a9cc4417cba48c3e6502299dda044caea828937e76c9",
+   "thread_id": "PRRT_kwDOTcO3zM6Vp9gP",
+   "path": "source/global.d.ts",
+   "line": 178,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:9373d3045a4fdefcb42529b3beab5396bafe87f0eb345fc8e30303a5d2873118",
+   "thread_id": "PRRT_kwDOTcO3zM6Vp9gQ",
+   "path": "source/app/service-providers/windows/index.ts",
+   "line": 425,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:b4b16d815c74005d059b3769d2c6a5eb9f1c584e8d2c64f47bd5c8cbaab045d8",
+   "thread_id": "PRRT_kwDOTcO3zM6VqCz2",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:3ad15c0c08fdd6ed002276cbfda8a9b9e558c9cbb65952facb943e96329766de",
+   "thread_id": "PRRT_kwDOTcO3zM6VqCz4",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 39,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:2d4a8352cbc7d388",
+   "thread_id": "PRRT_kwDOTcO3zM6VqlWB",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:37e3251e5b803dba",
+   "thread_id": "PRRT_kwDOTcO3zM6VqlWJ",
+   "path": "test/desktop-launcher-argument-chain.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:6304adcedc2a6e1bdd014acb5a9f2599aafd2bbbd9ea843aff437718f4f6689d",
+   "thread_id": "PRRT_kwDOTcO3zM6VqlXc",
+   "path": "test/desktop-launcher-argument-chain.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:7aaa6061ddd54ce6",
+   "thread_id": "PRRT_kwDOTcO3zM6VqtPa",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:2df7a99b79d07977",
+   "thread_id": "PRRT_kwDOTcO3zM6VqtPc",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:9584f9966b157213",
+   "thread_id": "PRRT_kwDOTcO3zM6VqtPh",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:0bed2fc0fb3041e6",
+   "thread_id": "PRRT_kwDOTcO3zM6VqtPl",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:9584f9966b157213",
+   "thread_id": "PRRT_kwDOTcO3zM6VqtPq",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:922676fc8d8eefb6",
+   "thread_id": "PRRT_kwDOTcO3zM6VqtPt",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:074cd710011c02ad0102ef344ecfc43356ad67697b449632ffe9efffcb7f065c",
+   "thread_id": "PRRT_kwDOTcO3zM6VqtQO",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:fced50d8229c3b59",
+   "thread_id": "PRRT_kwDOTcO3zM6Vq7MS",
+   "path": "test/editor-review-diff.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:dacb856d9907954f",
+   "thread_id": "PRRT_kwDOTcO3zM6VtpVV",
+   "path": "test/ipc-type-contracts.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:4d5f81b5a330266afa480f67e2fc2815fe5e5b2a21adfee5cb9b647d43b2f1b6",
+   "thread_id": "PRRT_kwDOTcO3zM6VtpWJ",
+   "path": "test/ipc-type-contracts.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:e572a3e42372046c",
+   "thread_id": "PRRT_kwDOTcO3zM6Vtt9h",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:7aaa6061ddd54ce6",
+   "thread_id": "PRRT_kwDOTcO3zM6Vtt9o",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:9584f9966b157213",
+   "thread_id": "PRRT_kwDOTcO3zM6Vtt9r",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:b98258c51d7cdb87",
+   "thread_id": "PRRT_kwDOTcO3zM6Vtt9t",
+   "path": "test/desktop-launcher-argument-chain.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:18e6ddd074eb0c84e19ab86f93dd88ddaff98ace6e7ad9fbf84a4daadfe9dbb9",
+   "thread_id": "PRRT_kwDOTcO3zM6Vtt_B",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:2a90bae97bc347c6147b50a6b04baf68011133abfaae80958f929b2f86c8aa9c",
+   "thread_id": "PRRT_kwDOTcO3zM6Vtt_C",
+   "path": "test/desktop-launcher-argument-chain.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:5dd046a00cd9e2b3",
+   "thread_id": "PRRT_kwDOTcO3zM6VuKwP",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:dacb856d9907954f",
+   "thread_id": "PRRT_kwDOTcO3zM6VuKwV",
+   "path": "test/ipc-type-contracts.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d36aa19f9f00eba0",
+   "thread_id": "PRRT_kwDOTcO3zM6VuKwZ",
+   "path": "test/ipc-type-contracts.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:64306332eb6606290d8a485a48e984f65fa56217ad604191a5c91d8c0bc0b537",
+   "thread_id": "PRRT_kwDOTcO3zM6VuKy-",
+   "path": "scripts/desktop/zettlr-pandoc-review-diff",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:2df7a99b79d07977",
+   "thread_id": "PRRT_kwDOTcO3zM6VuTW3",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:83bd8443685e99ee",
+   "thread_id": "PRRT_kwDOTcO3zM6VuTW5",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:e20d60a0b0517b46",
+   "thread_id": "PRRT_kwDOTcO3zM6VuTW9",
+   "path": "e2e/agent-api-auth.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:329b34309b5ce60dc04408ffe743923fe17675dfe73aca940a0186786924e000",
+   "thread_id": "PRRT_kwDOTcO3zM6VuTYT",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:3f2018d4c5c485751d5ba0ab65146e8733e60733679bd0af66e42443ccbde341",
+   "thread_id": "PRRT_kwDOTcO3zM6VuTYU",
+   "path": "e2e/agent-api-auth.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:990502c27f8b1ce4",
+   "thread_id": "PRRT_kwDOTcO3zM6WRO0t",
+   "path": "AGENTS.md",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:4c2b58ab75d7e4a9412f5c2ab12edf6bae27b41ecd447a19e08c67ea92fb14c5",
+   "thread_id": "PRRT_kwDOTcO3zM6WRO5u",
+   "path": "AGENTS.md",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:2b538aea0da27cce",
+   "thread_id": "PRRT_kwDOTcO3zM6WRPE3",
+   "path": "e2e/agent-api-auth.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:a238dbfc0a872a1f974cc8e3869c9a141328e234d19e5b77b3187a710b4d539e",
+   "thread_id": "PRRT_kwDOTcO3zM6WRPKE",
+   "path": "e2e/agent-api-auth.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:b8c0856a95a6e4ec60e5e51425c43ae05222dc8e90e22fb2cec9cae1ee67b8f8",
+   "thread_id": "PRRT_kwDOTcO3zM6WSI2R",
+   "path": "source/app/service-providers/cli-provider.ts",
+   "line": 23,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:b4a3c0020672eab87c9f40f5e214011112e4928585805d11094dab42149ca799",
+   "thread_id": "PRRT_kwDOTcO3zM6WSQss",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:ae524fe2d00abc266aa17700f2276c97abdad1ba28d8270da76a9c5256d304ff",
+   "thread_id": "PRRT_kwDOTcO3zM6WSUbZ",
+   "path": "test/agent-http-api-e2e-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:860b124b5ff6e89bfcfdeb44cea80ceaa4e470cded18253bfaffb7265a2a96a7",
+   "thread_id": "PRRT_kwDOTcO3zM6WSUbh",
+   "path": "test/agent-http-api-e2e-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:077f303be7ee4797c501b9542be2a8bf43527f5e3516b2d5ae7f1aec83d53fd0",
+   "thread_id": "PRRT_kwDOTcO3zM6WSW9D",
+   "path": "source/app/service-providers/log/index.ts",
+   "line": 379,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:75b453bd1d2c2bc48bdf14d4f73711bcee434ce45a29d71fb04481460adaf295",
+   "thread_id": "PRRT_kwDOTcO3zM6WSW9L",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": 114,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:e1493bf3ff08ec133af7313ad9afcfcf206ebaf94560106a30258c49242c3c11",
+   "thread_id": "PRRT_kwDOTcO3zM6WSekf",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 182,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:9284ceaac783cc77dc536f71418bc86c5f265c8f6e85602ed5b36b45d2ed1eaf",
+   "thread_id": "PRRT_kwDOTcO3zM6WSeki",
+   "path": "AGENTS.md",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:ca65515d67303570fad584795ead66ac3439e22e62efd1a50a3dc016c46c7409",
+   "thread_id": "PRRT_kwDOTcO3zM6WSekq",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:ae24cb80673d4d1807a6c6e6c02be0ef13deb9fcee6ec0f1f50b51bf3b38fccf",
+   "thread_id": "PRRT_kwDOTcO3zM6WSf9u",
+   "path": "test/agent-http-api-e2e-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:660193a7ae71f05dfacf9ff78b78684dc02f6b7040578dbad9ca2e13be89a3fa",
+   "thread_id": "PRRT_kwDOTcO3zM6WSf9z",
+   "path": "source/types/common/agent-api.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:68911d0b05e84e994479d8d966ff03526ffe8376c1f9d69b63c797fa50cb582f",
+   "thread_id": "PRRT_kwDOTcO3zM6WSg8E",
+   "path": "e2e/review-diff-save-gate.spec.ts",
+   "line": 327,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:b543e28542e4e8b28e2426c61a7fe37d9fa633010eb61569985f34c5b4d50d50",
+   "thread_id": "PRRT_kwDOTcO3zM6WSjCZ",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:55e94e9315eda46e2441c885d579659c82f80000b76774d4405eaa7232f11afa",
+   "thread_id": "PRRT_kwDOTcO3zM6WSkCB",
+   "path": "source/app/service-providers/cli-provider.ts",
+   "line": 91,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:07f7641effb8525f79cbd03e24a015bf875b296856350b81323a5aa239b224b0",
+   "thread_id": "PRRT_kwDOTcO3zM6WSq5L",
+   "path": "e2e/review-diff-save-gate.spec.ts",
+   "line": 328,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:4892f5715d3bbe803be698530dc86b09b90366305106505271c78ae39a7c9ebf",
+   "thread_id": "PRRT_kwDOTcO3zM6WSq6a",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 182,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:76d2b4a6a7376a23a5a08f7a6cc2e9ef82f41f303755917013f33047799a304d",
+   "thread_id": "PRRT_kwDOTcO3zM6WSrZQ",
+   "path": "source/app/service-providers/config/get-config-template.ts",
+   "line": 618,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:a7789a230b5406874a602022778b9daa25a224dd660c2db46fb37016c56a6aba",
+   "thread_id": "PRRT_kwDOTcO3zM6WSrZV",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 453,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:7d823da91eccaafda1e76d2e9e887f2cbc5b77214be6f757b6c63032efe3200a",
+   "thread_id": "PRRT_kwDOTcO3zM6WSulp",
+   "path": "scripts/desktop/zettlr-pandoc-open-in-running",
+   "line": 24,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:9f2ee921f075c271e7b396e2fd6cc1c0688fb07a363c1ab0f592601674c009c9",
+   "thread_id": "PRRT_kwDOTcO3zM6WSwck",
+   "path": "source/app/service-providers/cli-provider.ts",
+   "line": 91,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:1dd47725c296fb434229f90c6705649d9e76da091c9963d4fc160920e7460932",
+   "thread_id": "PRRT_kwDOTcO3zM6WSwco",
+   "path": "e2e/document-open.spec.ts",
+   "line": 1,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:972cb1ec91735aab267e70bdce175f491b6c808a103bc948ef026f12c3455af3",
+   "thread_id": "PRRT_kwDOTcO3zM6WSwcq",
+   "path": "e2e/support/electron-app.ts",
+   "line": 441,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:95c6f1cdbc107d84487c634f3e7cb78a20f58ad27c70d8a6ba1c02dac8ddb0ed",
+   "thread_id": "PRRT_kwDOTcO3zM6WSwcy",
+   "path": "source/app/service-providers/agent-api/openapi.yaml",
+   "line": 1393,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:d3899d66d1a5eef1047b0e5989a339322a3934a8df07004ea89b7c527822c97d",
+   "thread_id": "PRRT_kwDOTcO3zM6WSwc0",
+   "path": "source/global.d.ts",
+   "line": 160,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:301e20890526ef0be1b677dbf04abab42a9c19d2341da2d999f21528a8a6be4a",
+   "thread_id": "PRRT_kwDOTcO3zM6WSwc4",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:ab37e593a1ae6db33acab69bf686da23343b7b8e7f283ecf4623f1049ddc81c7",
+   "thread_id": "PRRT_kwDOTcO3zM6WSwc6",
+   "path": "source/app/service-providers/references/index.ts",
+   "line": 228,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:278035c6e16581f42cace4056829d3b0f97bf205428644a0628d6edfe359e7e8",
+   "thread_id": "PRRT_kwDOTcO3zM6WSywX",
+   "path": "test/agent-http-api.spec.ts",
+   "line": 823,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:299c05d641f5b9e1c64d63091c11a2fc3411af1e73a449990647985767c19dbb",
+   "thread_id": "PRRT_kwDOTcO3zM6WS1mn",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 145,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:c2254877ba0b715f89cf388a6c18d1a40f181c389ac49484f82f0d49d0d1caa4",
+   "thread_id": "PRRT_kwDOTcO3zM6WS24U",
+   "path": "e2e/document-open.spec.ts",
+   "line": 367,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:0b71d4c5c99c03d423e208952899a10ebce45a544348271f859846826251e50d",
+   "thread_id": "PRRT_kwDOTcO3zM6WS24b",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:39fbf3555d5671cab55ea135e2dc9b12143e9fc9ce42a3299901dc44b151f8e4",
+   "thread_id": "PRRT_kwDOTcO3zM6WS3aM",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 453,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:8b212945da48d9c16155ba3a20225840ccaa5beebc51b289fd0ddede344f7f3c",
+   "thread_id": "PRRT_kwDOTcO3zM6WS4xb",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:a4b64b695393719993453dcaf8d8462ad7fd77802fee66a65e54361a858c9264",
+   "thread_id": "PRRT_kwDOTcO3zM6WS5VP",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": 112,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:4f0fe56afdd02c4991d4ce6a7c9317f3a3a83ad82a2b2ac71d8c616dac6001e5",
+   "thread_id": "PRRT_kwDOTcO3zM6WS5td",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:514a30c16d4c5324be6c3608e1d20045cbd97eabfb61427f24568a0d055baf7d",
+   "thread_id": "PRRT_kwDOTcO3zM6WS-Tf",
+   "path": "source/app/service-providers/agent-api/openapi.yaml",
+   "line": 1727,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:a1719577bb6792e117f648ddc9f4268787efb873c32e06afe05a6a864a70866c",
+   "thread_id": "PRRT_kwDOTcO3zM6WS-Tr",
+   "path": "justfile",
+   "line": 60,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:0f26fbe51392d901f816c0877112447632ab0b1b224418d5a8a6bcf33f478d2b",
+   "thread_id": "PRRT_kwDOTcO3zM6WS-Tz",
+   "path": "source/common/util/pandoc-quick-reference.ts",
+   "line": 232,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:ea9ac653cb3fbb517be934deeaf0ad728e81bb32c04bf8153340e745a210ff8f",
+   "thread_id": "PRRT_kwDOTcO3zM6WS-T4",
+   "path": "e2e/document-open.spec.ts",
+   "line": 344,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:efeadf8f210f212b7838c72f2f2d0c761a601761a9e543be5b05685836d5cce3",
+   "thread_id": "PRRT_kwDOTcO3zM6WTAeH",
+   "path": "source/common/util/pandoc-quick-reference.ts",
+   "line": 18,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:1cf497b379d26c99",
+   "thread_id": "PRRT_kwDOTcO3zM6WTEFW",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:7dec4819c7c43790",
+   "thread_id": "PRRT_kwDOTcO3zM6WTEFp",
+   "path": "e2e/document-open.spec.ts",
+   "line": 372,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:cf10a9c614437300",
+   "thread_id": "PRRT_kwDOTcO3zM6WTEF5",
+   "path": "e2e/review-diff-composite.spec.ts",
+   "line": 16,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:e07e7aa7e6904457",
+   "thread_id": "PRRT_kwDOTcO3zM6WTEGC",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:922676fc8d8eefb6",
+   "thread_id": "PRRT_kwDOTcO3zM6WTEGH",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:fced50d8229c3b59",
+   "thread_id": "PRRT_kwDOTcO3zM6WTEGM",
+   "path": "test/editor-review-diff.spec.ts",
+   "line": 74,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:a4d13e975b007e490616f91356d20ff08104e08cb4ae12488effe5ccf5e54f32",
+   "thread_id": "PRRT_kwDOTcO3zM6WTEMI",
+   "path": "e2e/review-diff-composite.spec.ts",
+   "line": 5,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:409cafc1f63b679399b03ac362d79384444a9551c325594a6ffc19eb04d6c5ef",
+   "thread_id": "PRRT_kwDOTcO3zM6WTLOk",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:39e8a14cf5d285a55c472921cc11fa78cc64ed4d3a2e4bf34fa1e02c65dcf2d7",
+   "thread_id": "PRRT_kwDOTcO3zM6WTLwQ",
+   "path": "justfile",
+   "line": 62,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "ct:72aba1041fa84344",
+   "thread_id": "PRRT_kwDOTcO3zM6WTesh",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": 597,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6WTesr",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 998,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:922676fc8d8eefb6",
+   "thread_id": "PRRT_kwDOTcO3zM6WTesu",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 1032,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6WTes1",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:922676fc8d8eefb6",
+   "thread_id": "PRRT_kwDOTcO3zM6WTes-",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 1333,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:f054ed34bb7a1376445112705083e189d5a36f65d9fec93f01ef3396fc7e0050",
+   "thread_id": "PRRT_kwDOTcO3zM6WTe1D",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": 578,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:cb9dfb12bbeb6fe9848aa9d829a49455bccae692d7002313423f1735da72e03f",
+   "thread_id": "PRRT_kwDOTcO3zM6WkiV2",
+   "path": ".github/workflows/pr55-remediation-apply.yml",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:4539c9b4fef4092334d94549d47fb24b67602cb7e73f6028ba9cf9e2431db84f",
+   "thread_id": "PRRT_kwDOTcO3zM6WkpFK",
+   "path": "source/types/common/agent-api.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:8143bf3034b09a2a08b9241bde1ec81c060157832ef7c40e68b82fb40214d6ee",
+   "thread_id": "PRRT_kwDOTcO3zM6Wkrm1",
+   "path": ".github/workflows/pr55-remediation-apply.yml",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:12e5fa5ad179938acaa590a0d73e3add18dc8af2ff4e6bcf1a061a9a0c0e4753",
+   "thread_id": "PRRT_kwDOTcO3zM6Wkrm6",
+   "path": "source/app/service-providers/cli-provider.ts",
+   "line": 52,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:eb79026fced5a57446ec6cc1921eee7d44deabf52d789048f42f538661e64bec",
+   "thread_id": "PRRT_kwDOTcO3zM6WkxMU",
+   "path": "e2e/review-diff-save-gate.spec.ts",
+   "line": 328,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:6a9477917fd84e0c39873e00d527fb404adc15025ea45e4fb591c58bbf61d0cc",
+   "thread_id": "PRRT_kwDOTcO3zM6WkxMk",
+   "path": ".mocharc.js",
+   "line": 10,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:475a2224312cf50193053119d4d404a2d6ceb36f0e4fadc6a04de31f80b41ee2",
+   "thread_id": "PRRT_kwDOTcO3zM6WkzWD",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 416,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:56dc7490f842c23a748f29baf93e9a367829f5f97ce31874f59b8f2ee6eda47f",
+   "thread_id": "PRRT_kwDOTcO3zM6WkzWF",
+   "path": "e2e/support/electron-app.ts",
+   "line": 42,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:c89a4e04489dcf7877b6d69e711c86c7e24177530ba249a9e09ead8db845e71e",
+   "thread_id": "PRRT_kwDOTcO3zM6WkzWI",
+   "path": "test/agent-http-api.spec.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "investigate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:9bebdc882395be48bd23ae520df5acc6ab49c4cb5c4be545ba351ccdb047ccb9",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk01n",
+   "path": ".github/workflows/pr55-remediation-apply.yml",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:1aa24ca1d67bef3b4d513abde59c449b2f51583f4eeab68bc6cd5774b1439533",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk01r",
+   "path": "source/app/service-providers/agent-api/openapi.yaml",
+   "line": 1,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:2f8db96cb99f6849cb2906ca210a5e2b6f9e8c3766c4876eb1877073e3677023",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk01w",
+   "path": "e2e/dirty-buffer-indicator.spec.ts",
+   "line": 25,
+   "resolved": false,
+   "outdated": false,
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "investigate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:f1f35b0c05b0d99f2eeb5b9933c5f48bed324d5287369f4be91fcf51e5a86d4d",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk7Ru",
+   "path": "source/app/service-providers/cli-provider.ts",
+   "line": 52,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
+  },
+  {
+   "key": "fp:bdf9a53fd78e37620b4630f627d353e00ca4abfa354448125500edcc9da6e914",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk7Rx",
+   "path": "source/app/service-providers/documents/review-diff-store.ts",
+   "line": 7,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:bb396170061b930bceb3782f3dd82fc15986d1fed270fce50a9547da8c3a9ab9",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk7Rz",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 39,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:3ce9f6b5abb5a5890ced97339b8e4c8d8fafd317f879d630617754829707cd64",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk7R2",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 467,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:ee518897d405557d5d11f10a67a73f983b31f2c6af4d6eaa169e6f8edd047e68",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk7R4",
+   "path": "source/global.d.ts",
+   "line": 160,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:8a8915691271680b9e1426d7ed7d1ae8dfe9ba061b7167bcfc13b011e7014d44",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk7R7",
+   "path": "e2e/document-open.spec.ts",
+   "line": 1,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:c74f3d0b6c8d77bc455e5ded318ac4a77123cd470e8fcfa62cc7ad8e8cd25cdf",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk7R-",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:d94b722ebb253de14de5723c31e6110e16d0d3383f4bb3073d0e5a9594933cf7",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk7SB",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 39,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:debe5662430da872ee3e65c620bad90d8747eb1818398e822129b9f1e4d96903",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk7SD",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 453,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:36fe87f81f483d1aa21d7a334279ac814c796e0432a832cccee658b8dab7b3f0",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk94u",
+   "path": "test/agent-http-api.spec.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:a1a8a1cf5426b577c321f3173879fca40d4da85fa6f457184982e2197162dbc5",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk94y",
+   "path": "test/reference-rename-authority.spec.ts",
+   "line": 20,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:5b446e0f6d6cbb2387743cb57c0d917ed8d195650de37650962afa29b4ee6aaa",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk944",
+   "path": "e2e/global-search-dispatch-failure.spec.ts",
+   "line": 1,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:a1e3440efae162f9a727dadf1235555e3d719c2dd6cbf64f022569f2d6b31776",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk-Ni",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:283ff1caabd578f79b834ee49986383daaa19e5101bfbda23d1fe837d30341f0",
+   "thread_id": "PRRT_kwDOTcO3zM6Wk_lX",
+   "path": "source/main.ts",
+   "line": 22,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:84f5c2d21eec288bbb90b92d0f5a9f36cd044ce91e963bfa5249653d12473aec",
+   "thread_id": "PRRT_kwDOTcO3zM6WlAbf",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:8981a36d3fbec5c1dfe84488517a039581f426dabe2f0d94be235e589db5e26a",
+   "thread_id": "PRRT_kwDOTcO3zM6WlF3P",
+   "path": "source/app/service-providers/cli-provider.ts",
+   "line": 20,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:5bd63e502dd6e1b4b483c7ad9ccfaf9b0a46b757f4be60807068bbd3421ab489",
+   "thread_id": "PRRT_kwDOTcO3zM6WlKP6",
+   "path": "test/agent-http-api.spec.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:77f51a574cc103f8",
+   "thread_id": "PRRT_kwDOTcO3zM6WlK0-",
+   "path": ".github/workflows/pr55-remediation-apply.yml",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:c8da04a7a529145a",
+   "thread_id": "PRRT_kwDOTcO3zM6WlK1M",
+   "path": "justfile",
+   "line": 62,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:db8beb172161f616",
+   "thread_id": "PRRT_kwDOTcO3zM6WlK1Y",
+   "path": ".mocharc.js",
+   "line": 10,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:818636039cce86b5",
+   "thread_id": "PRRT_kwDOTcO3zM6WlK1l",
+   "path": "e2e/review-diff-save-gate.spec.ts",
+   "line": 328,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:24f44b342cfbdc15",
+   "thread_id": "PRRT_kwDOTcO3zM6WlR4B",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:7b1f94d085ef955261c69bf0f9496be3c0ee74b6a35a1b6ee5ce52d07ba2eb44",
+   "thread_id": "PRRT_kwDOTcO3zM6WlR9f",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:4bbc9b84815e9e21",
+   "thread_id": "PRRT_kwDOTcO3zM6Wmtoi",
+   "path": "e2e/support/electron-app.ts",
+   "line": 62,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:2f974c4c8e72c6b4",
+   "thread_id": "PRRT_kwDOTcO3zM6WmtrO",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:c6079c1df873bbeebc2a4da420b7f4353f0c0605a94ad0ea17422eb5062fe125",
+   "thread_id": "PRRT_kwDOTcO3zM6WmtvH",
+   "path": "e2e/support/electron-app.ts",
+   "line": 42,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:0216152662c2a74454a4e3680b1288ce0c50b9445eb49b51f45e61bb8c2b0105",
+   "thread_id": "PRRT_kwDOTcO3zM6WotOe",
+   "path": "source/types/common/agent-api.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:b525800bed206d51",
+   "thread_id": "PRRT_kwDOTcO3zM6Wo765",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:2f974c4c8e72c6b4",
+   "thread_id": "PRRT_kwDOTcO3zM6Wo77I",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:2df7a99b79d07977",
+   "thread_id": "PRRT_kwDOTcO3zM6Wo77W",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 2638,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:24f44b342cfbdc15",
+   "thread_id": "PRRT_kwDOTcO3zM6Wo77i",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:4119cb03964532f1",
+   "thread_id": "PRRT_kwDOTcO3zM6Wo77q",
+   "path": "scripts/desktop/zettlr-pandoc-open-in-running",
+   "line": 50,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:a68b73f8989c868e9b0a1f4a2faf633d62e870eb7a452c88f498fdaeeec7e554",
+   "thread_id": "PRRT_kwDOTcO3zM6Wo8D-",
+   "path": "scripts/desktop/zettlr-pandoc-open-in-running",
+   "line": 20,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:922676fc8d8eefb6",
+   "thread_id": "PRRT_kwDOTcO3zM6Wo_bN",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:554add716a1cb816",
+   "thread_id": "PRRT_kwDOTcO3zM6Wo_bY",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:d9815b426fb334ed251c772509d9c8578b63d09ed436b937d1e50ac58ae3b442",
+   "thread_id": "PRRT_kwDOTcO3zM6WpHW6",
+   "path": "test/agent-http-api.spec.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:646ad64150108719aefeb6a9185a3741e8489e20c6402b0ce7348addbdddb39e",
+   "thread_id": "PRRT_kwDOTcO3zM6Wpirv",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 1324,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:b221e6659a9cfd99",
+   "thread_id": "PRRT_kwDOTcO3zM6Wpyiw",
+   "path": "source/types/renderer/ipc-bridge.ts",
+   "line": 140,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6Wpyi6",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:1cf497b379d26c99",
+   "thread_id": "PRRT_kwDOTcO3zM6WpyjB",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 3145,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:24f44b342cfbdc15",
+   "thread_id": "PRRT_kwDOTcO3zM6WpyjO",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:922676fc8d8eefb6",
+   "thread_id": "PRRT_kwDOTcO3zM6WpyjY",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:b60e0573136f864ccef4918a89477142ae13debf79f914ec163e26251aaebe60",
+   "thread_id": "PRRT_kwDOTcO3zM6Wpynn",
+   "path": "source/app/service-providers/agent-api/openapi.yaml",
+   "line": 1381,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:281475dbd696b382cb8ea048ba9c48c9bdd65efc45232569d2a585b80c22c8eb",
+   "thread_id": "PRRT_kwDOTcO3zM6Wpynu",
+   "path": "source/types/renderer/ipc-bridge.ts",
+   "line": 1,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:319633a76ef8f11c3266f99d326cf0979b6069b0ab20ccc07b6b5821c41be688",
+   "thread_id": "PRRT_kwDOTcO3zM6Wpyn4",
+   "path": "e2e/document-open.spec.ts",
+   "line": 341,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:6d5e00995b243afd3b6caf42d0e125577273a14d299654e7625f752bc90430d0",
+   "thread_id": "PRRT_kwDOTcO3zM6Wpyn-",
+   "path": "test/agent-http-api.spec.ts",
+   "line": 88,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:438dd3c39923204e",
+   "thread_id": "PRRT_kwDOTcO3zM6WqS8p",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": 53,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6WqS83",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:3b9ce99fb20ad7b8dfe8e76c30591e51e9a08f16a78842f8a5057f0be086e4c2",
+   "thread_id": "PRRT_kwDOTcO3zM6WqTDJ",
+   "path": "source/app/service-providers/cli-provider.ts",
+   "line": 20,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:a72d09e476459301038c0df633aa6c11d0685d22249ce855aa14ab8f162efdc8",
+   "thread_id": "PRRT_kwDOTcO3zM6WqTDN",
+   "path": "package.json",
+   "line": 42,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:ff87f6f14f7317b9",
+   "thread_id": "PRRT_kwDOTcO3zM6Wqcau",
+   "path": "package.json",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:5e1d960c7f51dfee",
+   "thread_id": "PRRT_kwDOTcO3zM6WqcbE",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:80f110f5998a11d3f0c99e19b4a69589eba17422ae78e7608a7e486e21998e8a",
+   "thread_id": "PRRT_kwDOTcO3zM6WqchP",
+   "path": "package.json",
+   "line": 97,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:ddef07366af8dc6c422c76218272654cda2be50ef7e8f0f6bd7df3fdcde695d9",
+   "thread_id": "PRRT_kwDOTcO3zM6WqchR",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 413,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:ec6f9b28ed68db74",
+   "thread_id": "PRRT_kwDOTcO3zM6Ww8lP",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": 705,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:ed7c7fbd54ef7829",
+   "thread_id": "PRRT_kwDOTcO3zM6Ww8lh",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:5e1d960c7f51dfee",
+   "thread_id": "PRRT_kwDOTcO3zM6Ww8lo",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:922676fc8d8eefb6",
+   "thread_id": "PRRT_kwDOTcO3zM6Ww8l1",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:ce52d5b0e921b304a25aa1347a99ee86b3371b5b19d3933405cf2a8dae9757b4",
+   "thread_id": "PRRT_kwDOTcO3zM6Ww8nI",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:6c2565510ccf7b8b1f31198d0337e00797a5d65428b309375ffd724c928e2b26",
+   "thread_id": "PRRT_kwDOTcO3zM6Ww8nK",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": 690,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6WxFxB",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:7abcb109ff7a20bd",
+   "thread_id": "PRRT_kwDOTcO3zM6WyIha",
+   "path": "source/app/service-providers/documents/review-application-service.ts",
+   "line": 1145,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:a432f24871cc9159",
+   "thread_id": "PRRT_kwDOTcO3zM6WyIiY",
+   "path": "source/app/service-providers/documents/review-transitions.ts",
+   "line": 88,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:5e1d960c7f51dfee",
+   "thread_id": "PRRT_kwDOTcO3zM6WyIio",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": 44,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:922676fc8d8eefb6",
+   "thread_id": "PRRT_kwDOTcO3zM6WyIi9",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:4ddef9ead1c8cebb39c353de58bece144673bea3d123514bfdba497306020419",
+   "thread_id": "PRRT_kwDOTcO3zM6WyImF",
+   "path": "source/app/service-providers/documents/review-application-service.ts",
+   "line": 1138,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:4d6f69b9963b2010b21e04ff33a2df2f39d2620ade9457d4882b521b1f675b19",
+   "thread_id": "PRRT_kwDOTcO3zM6WyImJ",
+   "path": "source/app/service-providers/documents/review-transitions.ts",
+   "line": 83,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:628665257c84b5eb",
+   "thread_id": "PRRT_kwDOTcO3zM6WyOtt",
+   "path": "scripts/desktop/zettlr-pandoc-open-in-running",
+   "line": 57,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:2df7a99b79d07977",
+   "thread_id": "PRRT_kwDOTcO3zM6WyOuD",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:438dd3c39923204e",
+   "thread_id": "PRRT_kwDOTcO3zM6WyOuL",
+   "path": "source/app/service-providers/documents/review-sidecar-store.ts",
+   "line": 56,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:1cf497b379d26c99",
+   "thread_id": "PRRT_kwDOTcO3zM6WyOuU",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:24f44b342cfbdc15",
+   "thread_id": "PRRT_kwDOTcO3zM6WyOuh",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:8bd0468f6adbc353",
+   "thread_id": "PRRT_kwDOTcO3zM6WyOur",
+   "path": "e2e/review-diff-composite.spec.ts",
+   "line": 328,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:3d392a2be65b4acd",
+   "thread_id": "PRRT_kwDOTcO3zM6WyOux",
+   "path": "e2e/open-file-in-running-instance.spec.ts",
+   "line": 221,
+   "resolved": false,
+   "outdated": false,
+   "state": "RE-RAISED",
+   "disp": null
+  },
+  {
+   "key": "fp:0dd5cb3cade22020210e688bc28c2fa53c778f4c0911e347628d2034fa8886f0",
+   "thread_id": "PRRT_kwDOTcO3zM6WyO0e",
+   "path": "source/app/service-providers/cli-provider.ts",
+   "line": 20,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:275258a11108e25226c480fe2adefc99a4b2bbec4455baf9b900939b1e7a0082",
+   "thread_id": "PRRT_kwDOTcO3zM6WyO0j",
+   "path": "source/global.d.ts",
+   "line": 160,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:c987b8e72fe9c33b5b7d871aeda7e5764c0bc1cf51acf65d5eba7a2f6cacac25",
+   "thread_id": "PRRT_kwDOTcO3zM6WyO0m",
+   "path": "scripts/desktop/zettlr-pandoc-open-in-running",
+   "line": 1,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:fa571c563d246a383dcab54753704da22b4faf08e5a8117fcedec117e69f7420",
+   "thread_id": "PRRT_kwDOTcO3zM6WyO0q",
+   "path": "e2e/open-file-in-running-instance.spec.ts",
+   "line": 1,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:1fb76b9013aef5718d7d2cc2b017215329d9b9972ad18e8d4990adc831e3d11e",
+   "thread_id": "PRRT_kwDOTcO3zM6WyO0u",
+   "path": "source/app/service-providers/documents/review-diff-store.ts",
+   "line": 80,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:e6109524f1df1e2644357dcfae1da1169c0391b148bfc5cc198faa925520a850",
+   "thread_id": "PRRT_kwDOTcO3zM6WyO0x",
+   "path": "e2e/review-diff-composite.spec.ts",
+   "line": 1,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:7abcb109ff7a20bd",
+   "thread_id": "PRRT_kwDOTcO3zM6W8AvD",
+   "path": "source/app/service-providers/documents/review-application-service.ts",
+   "line": 1052,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6W8AvJ",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 436,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:61cb58a3772bf607",
+   "thread_id": "PRRT_kwDOTcO3zM6W8AvM",
+   "path": "source/app/service-providers/commands/index.ts",
+   "line": 205,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:554add716a1cb816",
+   "thread_id": "PRRT_kwDOTcO3zM6W8AvP",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6W91rr",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:de947e4fe7ecc0d1",
+   "thread_id": "PRRT_kwDOTcO3zM6W91r0",
+   "path": "source/app/service-providers/agent-api/openapi.yaml",
+   "line": 1352,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:a3eca82ee014dbec",
+   "thread_id": "PRRT_kwDOTcO3zM6W91r8",
+   "path": "source/app/service-providers/documents/review-diff-store.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d4ba90b4dfddbc02",
+   "thread_id": "PRRT_kwDOTcO3zM6W91sF",
+   "path": "source/app/service-providers/references/workspace-edit-transaction.ts",
+   "line": 210,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6W91sK",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "fp:28088d440ef5d0424d19a0b6a104caf2b4518542ca427662dfed0413c5a63e4b",
+   "thread_id": "PRRT_kwDOTcO3zM6W91vx",
+   "path": "source/app/service-providers/references/workspace-edit-transaction.ts",
+   "line": 205,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:7dfdb8bc13513df6",
+   "thread_id": "PRRT_kwDOTcO3zM6W-Bzw",
+   "path": "source/app/service-providers/assets/index.ts",
+   "line": 174,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:72aba1041fa84344",
+   "thread_id": "PRRT_kwDOTcO3zM6XOMaY",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": 612,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:d18e1d1873a6238d",
+   "thread_id": "PRRT_kwDOTcO3zM6XOMan",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 657,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:f465518c68a67afe",
+   "thread_id": "PRRT_kwDOTcO3zM6XOMas",
+   "path": "source/app/service-providers/agent-api/openapi.yaml",
+   "line": 1413,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6XOMa1",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:28f7bb45c4c440c0",
+   "thread_id": "PRRT_kwDOTcO3zM6XOMa8",
+   "path": "scripts/desktop/zettlr-pandoc-open-in-running",
+   "line": 53,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:e8d5d7e6a4076db445cb3458462373738358171cd07cb9f31933ebb1d7d74889",
+   "thread_id": "PRRT_kwDOTcO3zM6XOMcj",
+   "path": "package.json",
+   "line": 39,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:128ecfcb4716c82f8e91b1603f87857dae59a0e9f4a31f8e79416a35c4a4b96b",
+   "thread_id": "PRRT_kwDOTcO3zM6XOMcl",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 593,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:9c2af58f797860a9b034a5008d053ae641d328b9d16101ea0aa05bd6e8b254de",
+   "thread_id": "PRRT_kwDOTcO3zM6XOMcn",
+   "path": "package.json",
+   "line": 39,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:58cc7db1c658a8351f43e65f1f76a312e0ce950517b8d05b31e415b1c75a68e1",
+   "thread_id": "PRRT_kwDOTcO3zM6XOMcq",
+   "path": "source/common/modules/markdown-editor/renderers/render-reference-definitions.ts",
+   "line": 55,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:f8c8b5beeb1387f7fd61b606fcec4a3cd04f3455ffa37b1cf61259e4eec7e024",
+   "thread_id": "PRRT_kwDOTcO3zM6XOMcv",
+   "path": "scripts/desktop/zettlr-pandoc-open-in-running",
+   "line": 1,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:6204cc189eb95e6f",
+   "thread_id": "PRRT_kwDOTcO3zM6XOhDl",
+   "path": "test/review-diff-store.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:a432f24871cc9159",
+   "thread_id": "PRRT_kwDOTcO3zM6XOhDy",
+   "path": "source/app/service-providers/documents/review-transitions.ts",
+   "line": 91,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:922676fc8d8eefb6",
+   "thread_id": "PRRT_kwDOTcO3zM6XOhEA",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 1007,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:2f974c4c8e72c6b4",
+   "thread_id": "PRRT_kwDOTcO3zM6XOhEP",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 1313,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:7dfdb8bc13513df6",
+   "thread_id": "PRRT_kwDOTcO3zM6XOhEY",
+   "path": "source/app/service-providers/assets/index.ts",
+   "line": 174,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:84e15de13669e59044d1f3db4608f8daab1fa52710b7a55acf5715c03d549a95",
+   "thread_id": "PRRT_kwDOTcO3zM6XOhJp",
+   "path": "test/review-diff-store.spec.ts",
+   "line": null,
+   "resolved": false,
+   "outdated": true,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:7dfdb8bc13513df6",
+   "thread_id": "PRRT_kwDOTcO3zM6XPPh5",
+   "path": "source/app/service-providers/assets/index.ts",
+   "line": 174,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:a0569d66b8a8fce3",
+   "thread_id": "PRRT_kwDOTcO3zM6X3u15",
+   "path": "source/app/service-providers/documents/review-application-service.ts",
+   "line": 1017,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:6204cc189eb95e6f",
+   "thread_id": "PRRT_kwDOTcO3zM6X3u2d",
+   "path": "test/review-diff-store.spec.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:a432f24871cc9159",
+   "thread_id": "PRRT_kwDOTcO3zM6X3u2q",
+   "path": "source/app/service-providers/documents/review-transitions.ts",
+   "line": 92,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:82921198dd809a29",
+   "thread_id": "PRRT_kwDOTcO3zM6X3u2y",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": 124,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:2f974c4c8e72c6b4",
+   "thread_id": "PRRT_kwDOTcO3zM6X3u3B",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 1310,
+   "resolved": true,
+   "outdated": false,
+   "state": "CLOSED",
+   "disp": null
+  },
+  {
+   "key": "ct:7dfdb8bc13513df6",
+   "thread_id": "PRRT_kwDOTcO3zM6X3u3R",
+   "path": "source/app/service-providers/assets/index.ts",
+   "line": 174,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:bf59887b923145f7b33dae95fb1e2045c9f83107bdbdd86785aae741c01ed0e0",
+   "thread_id": "PRRT_kwDOTcO3zM6X3u3r",
+   "path": "source/app/service-providers/log/index.ts",
+   "line": 91,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:0bb874b2d323fe6f",
+   "thread_id": "PRRT_kwDOTcO3zM6YMOIj",
+   "path": "test/review-sidecar-store.spec.ts",
+   "line": 189,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:6204cc189eb95e6f",
+   "thread_id": "PRRT_kwDOTcO3zM6YMOIq",
+   "path": "test/review-diff-store.spec.ts",
+   "line": 66,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:a0569d66b8a8fce3",
+   "thread_id": "PRRT_kwDOTcO3zM6YMOI3",
+   "path": "source/app/service-providers/documents/review-application-service.ts",
+   "line": 625,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:85ebbf9b27436d4d",
+   "thread_id": "PRRT_kwDOTcO3zM6YMOJB",
+   "path": "e2e/document-open.spec.ts",
+   "line": 353,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6YMOJI",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 543,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:1da7162d2f600ae6",
+   "thread_id": "PRRT_kwDOTcO3zM6YMOJM",
+   "path": "e2e/support/electron-app.ts",
+   "line": 334,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:6691128b274a4fcb",
+   "thread_id": "PRRT_kwDOTcO3zM6YMOJT",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": 704,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:7dfdb8bc13513df6",
+   "thread_id": "PRRT_kwDOTcO3zM6YMOJW",
+   "path": "source/app/service-providers/assets/index.ts",
+   "line": 174,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:a432f24871cc9159",
+   "thread_id": "PRRT_kwDOTcO3zM6YMOJa",
+   "path": "source/app/service-providers/documents/review-transitions.ts",
+   "line": 90,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:d0bbdbb3a961a453bb0464bef6d1a6c2d23b0d4f1caa6924a6c64baf83cd789c",
+   "thread_id": "PRRT_kwDOTcO3zM6YMOOO",
+   "path": "test/review-sidecar-store.spec.ts",
+   "line": 186,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "fp:7fe6ffc32203f8d10918276b51472b0740cdf0615b4b6722a1ddc570b2d5d618",
+   "thread_id": "PRRT_kwDOTcO3zM6YMOOU",
+   "path": "source/common/modules/review/review-chunks.ts",
+   "line": 690,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:20fb502a4ddb5309",
+   "thread_id": "PRRT_kwDOTcO3zM6YMpaK",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": 125,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:b525800bed206d51",
+   "thread_id": "PRRT_kwDOTcO3zM6YMpap",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 915,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:d18e1d1873a6238d",
+   "thread_id": "PRRT_kwDOTcO3zM6YMpa3",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 762,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:a3eca82ee014dbec",
+   "thread_id": "PRRT_kwDOTcO3zM6YMpbI",
+   "path": "source/app/service-providers/documents/review-diff-store.ts",
+   "line": 150,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:24f44b342cfbdc15",
+   "thread_id": "PRRT_kwDOTcO3zM6YMpbY",
+   "path": "source/app/service-providers/documents/index.ts",
+   "line": 2989,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:d0882318e0fbeab9",
+   "thread_id": "PRRT_kwDOTcO3zM6YMpbo",
+   "path": "source/app/service-providers/agent-api/http-server.ts",
+   "line": 1243,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  },
+  {
+   "key": "ct:83bd8443685e99ee",
+   "thread_id": "PRRT_kwDOTcO3zM6YMpb4",
+   "path": "scripts/desktop/zettlr-pandoc-boot",
+   "line": 165,
+   "resolved": false,
+   "outdated": false,
+   "state": "NEW",
+   "disp": null
+  }
+ ]
+}
