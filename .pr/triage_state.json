@@ -2,9 +2,9 @@
  "repo": "dzackgarza/zettlr-pandoc",
  "pr": 55,
  "counts": {
-  "CLOSED": 446,
-  "OPEN-PENDING": 53,
-  "NEW": 80,
+  "CLOSED": 453,
+  "OPEN-PENDING": 56,
+  "NEW": 70,
   "RE-RAISED": 1
  },
  "converged": false,
@@ -5159,9 +5159,9 @@
    "thread_id": "PRRT_kwDOTcO3zM6WSwco",
    "path": "e2e/document-open.spec.ts",
    "line": 1,
-   "resolved": false,
+   "resolved": true,
    "outdated": false,
-   "state": "OPEN-PENDING",
+   "state": "CLOSED",
    "disp": {
     "verdict": "accepted as written",
     "has_verification": false,
@@ -5961,8 +5961,13 @@
    "line": 1,
    "resolved": false,
    "outdated": false,
-   "state": "NEW",
-   "disp": null
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:a1e3440efae162f9a727dadf1235555e3d719c2dd6cbf64f022569f2d6b31776",
@@ -5971,28 +5976,43 @@
    "line": null,
    "resolved": false,
    "outdated": true,
-   "state": "NEW",
-   "disp": null
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:283ff1caabd578f79b834ee49986383daaa19e5101bfbda23d1fe837d30341f0",
    "thread_id": "PRRT_kwDOTcO3zM6Wk_lX",
    "path": "source/main.ts",
    "line": 22,
-   "resolved": false,
+   "resolved": true,
    "outdated": false,
-   "state": "NEW",
-   "disp": null
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:84f5c2d21eec288bbb90b92d0f5a9f36cd044ce91e963bfa5249653d12473aec",
    "thread_id": "PRRT_kwDOTcO3zM6WlAbf",
    "path": "source/app/service-providers/agent-api/http-server.ts",
    "line": null,
-   "resolved": false,
+   "resolved": true,
    "outdated": true,
-   "state": "NEW",
-   "disp": null
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "outdated",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:8981a36d3fbec5c1dfe84488517a039581f426dabe2f0d94be235e589db5e26a",
@@ -6001,8 +6021,13 @@
    "line": 20,
    "resolved": false,
    "outdated": false,
-   "state": "NEW",
-   "disp": null
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted with modified remediation",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:5bd63e502dd6e1b4b483c7ad9ccfaf9b0a46b757f4be60807068bbd3421ab489",
@@ -6011,8 +6036,13 @@
    "line": null,
    "resolved": false,
    "outdated": true,
-   "state": "NEW",
-   "disp": null
+   "state": "OPEN-PENDING",
+   "disp": {
+    "verdict": "accepted as written",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "ct:77f51a574cc103f8",
@@ -6039,10 +6069,15 @@
    "thread_id": "PRRT_kwDOTcO3zM6WlK1Y",
    "path": ".mocharc.js",
    "line": 10,
-   "resolved": false,
+   "resolved": true,
    "outdated": false,
-   "state": "NEW",
-   "disp": null
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "ct:818636039cce86b5",
@@ -6069,20 +6104,30 @@
    "thread_id": "PRRT_kwDOTcO3zM6WlR9f",
    "path": "source/app/service-providers/documents/index.ts",
    "line": null,
-   "resolved": false,
+   "resolved": true,
    "outdated": true,
-   "state": "NEW",
-   "disp": null
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "rejected",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "ct:4bbc9b84815e9e21",
    "thread_id": "PRRT_kwDOTcO3zM6Wmtoi",
    "path": "e2e/support/electron-app.ts",
    "line": 62,
-   "resolved": false,
+   "resolved": true,
    "outdated": false,
-   "state": "NEW",
-   "disp": null
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "ct:2f974c4c8e72c6b4",
@@ -6099,10 +6144,15 @@
    "thread_id": "PRRT_kwDOTcO3zM6WmtvH",
    "path": "e2e/support/electron-app.ts",
    "line": 42,
-   "resolved": false,
+   "resolved": true,
    "outdated": false,
-   "state": "NEW",
-   "disp": null
+   "state": "CLOSED",
+   "disp": {
+    "verdict": "duplicate",
+    "has_verification": false,
+    "commit": null,
+    "by": "dzackgarza"
+   }
   },
   {
    "key": "fp:0216152662c2a74454a4e3680b1288ce0c50b9445eb49b51f45e61bb8c2b0105",
