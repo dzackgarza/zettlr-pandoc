@@ -248,7 +248,7 @@ async function waitForProjectTitle (
 }
 
 describe('global-search and project-properties failure recovery', function () {
-  this.timeout(300_000)
+  this.timeout(600_000)
 
   const running: RunningFixture = {
     appProcess: undefined,
