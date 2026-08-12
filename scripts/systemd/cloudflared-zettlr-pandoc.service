@@ -1,0 +1,15 @@
+[Unit]
+Description=Cloudflare tunnel for the Zettlr-Pandoc Agent API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/bin/cloudflared --no-autoupdate --config %h/.cloudflared/zettlr-pandoc-laptop.yml tunnel run
+Restart=on-failure
+RestartSec=5s
+# The tunnel may outlive the editor: the hostname will return 502 instead of stale
+# content while the origin is restarting.
+
+[Install]
+WantedBy=default.target

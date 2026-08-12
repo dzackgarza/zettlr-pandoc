@@ -1,5 +1,6 @@
 # Launch the MathJax-rendering fork spike.
 bun := "bun"
+zettlr_agent_tunnel_service := "cloudflared-zettlr-pandoc.service"
 
 # ai-review-ci contract consumed by doctor and the shared workflow triggers.
 ai_review_ci_schema_version := "1"
@@ -21,6 +22,23 @@ sync-dependencies:
 # Install the repo-owned Hyprland desktop launcher into ~/.local.
 install-desktop-launcher:
     bash "{{justfile_directory()}}/scripts/install-desktop-launcher.sh"
+
+# Install the repo-owned systemd user service for the Agent API tunnel.
+install-systemd-tunnel:
+    bash "{{justfile_directory()}}/scripts/install-systemd-tunnel.sh"
+
+# Enable and start the Agent API tunnel service.
+start-systemd-tunnel:
+    systemctl --user daemon-reload
+    systemctl --user enable --now "{{zettlr_agent_tunnel_service}}"
+
+# Stop and disable the Agent API tunnel service.
+stop-systemd-tunnel:
+    systemctl --user disable --now "{{zettlr_agent_tunnel_service}}"
+
+# Inspect the tunnel service state.
+status-systemd-tunnel:
+    systemctl --user status "{{zettlr_agent_tunnel_service}}" --no-pager
 
 # Launch the app in develop mode (webpack dev server + Electron).
 # Free the dev ports first: a launch that was killed (or whose app was never
