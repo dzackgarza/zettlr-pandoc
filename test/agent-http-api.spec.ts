@@ -496,6 +496,80 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
   });
 
+  it("serves a projection the Action importer will accept", async function () {
+    // The Custom GPT builder refuses the whole document over two limits that
+    // no OpenAPI validator enforces: an operation description above 300
+    // characters, and an object schema that declares neither properties nor
+    // additionalProperties (it cannot tell what the free-form body is). Both
+    // are checked on the served bytes, because that is what the builder
+    // fetches — a description written past the limit in openapi.yaml makes
+    // the Action uninstallable, not merely verbose.
+    const ACTION_DESCRIPTION_LIMIT = 300;
+    type JsonValue =
+      | string
+      | number
+      | boolean
+      | null
+      | JsonValue[]
+      | { [key: string]: JsonValue };
+    const document = JSON.parse((await httpRequest("GET", "/openapi-actions.json")).body) as {
+      paths: Record<
+        string,
+        Record<string, { operationId?: string; description?: string }>
+      >;
+    } & JsonValue;
+    const operations = Object.entries(document.paths).flatMap(([route, methods]) =>
+      Object.entries(methods).map(([method, operation]) => ({ route, method, operation })),
+    );
+    // The enumeration reads real operations: a selector that found none would
+    // satisfy the emptiness assertions below on its own.
+    assert.ok(
+      operations.some(
+        ({ operation }) =>
+          operation.operationId === "submitProposal" &&
+          (operation.description ?? "").length > 0,
+      ),
+      "the projection must carry the described operations this checks",
+    );
+
+    assert.deepEqual(
+      operations
+        .filter(
+          ({ operation }) =>
+            (operation.description ?? "").length > ACTION_DESCRIPTION_LIMIT,
+        )
+        .map(
+          ({ route, operation }) =>
+            `${route} ${operation.operationId ?? "?"}: ${(operation.description ?? "").length}`,
+        ),
+      [],
+      `operation descriptions must fit ${ACTION_DESCRIPTION_LIMIT} characters`,
+    );
+
+    const undeclaredObjects: string[] = [];
+    const walk = (node: JsonValue, where: string): void => {
+      if (node === null || typeof node !== "object") return;
+      if (Array.isArray(node)) {
+        node.forEach((item, index) => walk(item, `${where}[${index}]`));
+        return;
+      }
+      if (
+        node.type === "object" &&
+        !("properties" in node) &&
+        !("additionalProperties" in node)
+      ) {
+        undeclaredObjects.push(where);
+      }
+      for (const [key, value] of Object.entries(node)) walk(value, `${where}.${key}`);
+    };
+    walk(document, "");
+    assert.deepEqual(
+      undeclaredObjects,
+      [],
+      "an object schema must declare properties or additionalProperties",
+    );
+  });
+
   it("publishes no adjudication operation in either served document", async function () {
     // The product boundary: an agent submits revisions and may comment on
     // them; disposing of a chunk is the reviewer's, through the editor. A

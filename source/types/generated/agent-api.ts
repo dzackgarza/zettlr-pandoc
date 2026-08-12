@@ -189,7 +189,7 @@ export interface paths {
         };
         /**
          * Read working or reference text by line slice
-         * @description Answers for every documentId GET /v1/workspace/files returns, whether or not the file is open; reading never opens a file or moves the user's focus. side=working is the text your next patch must match, with every accepted change already in it, and the side whose revision hash a proposal needs. side=reference is the review baseline, identical to working until a review exists. A closed file answers from its detached review when it has one and from disk otherwise. Re-read working before each new proposal, and diff it against what you proposed to detect an acceptance the reviewer tweaked.
+         * @description Answers for every documentId GET /v1/workspace/files returns, whether or not the file is open; reading never opens a file or moves the user's focus. A closed file answers from its detached review when it has one and from disk otherwise. Re-read the working side before each new proposal.
          */
         get: operations["readDocumentContent"];
         put?: never;
@@ -228,7 +228,7 @@ export interface paths {
         put?: never;
         /**
          * Submit an ordered batch of exact unified-diff claims
-         * @description The batch binds to the one baselineSha256 in the body. It applies sequentially and atomically server-side: every claim applies with zero fuzz to its predecessor's text or the whole batch is refused with nothing applied, and each claim becomes its own packet (packetIds maps them in claim order). Submit claim-sized entries — one logical decision each. Accepted material is already in the working text; do not resubmit it. The reviewer may edit a proposed chunk before accepting it, so diff your proposal against the final text if you care whether acceptance was verbatim.
+         * @description The batch binds to the one baselineSha256 in the body and applies all-or-nothing; packetIds maps its packets in claim order. Accepted material is already in the working text — do not resubmit it. The reviewer may edit a chunk before accepting it, so diff your proposal against the final text.
          */
         post: operations["submitProposal"];
         delete?: never;
@@ -266,7 +266,7 @@ export interface paths {
         };
         /**
          * Inspect a review
-         * @description Status plus review-level comments — the reviewer's channel back to you. Read the comments and the chunk notes at the start of each turn and address them with new claims. Answers for every reviewId /v1/reviews lists: a detached review is served from its sidecar, with attached=false and no documentRevision.
+         * @description Status plus review-level comments — the reviewer's channel back to you. Read them and the chunk notes at the start of each turn, and address them with new claims. Answers for every reviewId /v1/reviews lists: a detached review is served from its sidecar, with attached=false and no documentRevision.
          */
         get: operations["getReview"];
         put?: never;
@@ -306,7 +306,7 @@ export interface paths {
         };
         /**
          * Inspect current unresolved chunks
-         * @description Read this at the start of each turn. A chunk's comment is the reviewer's question or objection — answer it with a revised claim in your next submission. Every chunk here is undecided: the reviewer accepts and rejects them in the editor, and this API offers no way to decide them for them. Answers for a detached review too, from the frozen texts in its sidecar — same content-addressed chunk ids, no documentId.
+         * @description Read this at the start of each turn. A chunk's comment is the reviewer's question or objection — answer it with a revised claim in your next submission. Every chunk here is undecided: the reviewer accepts and rejects them in the editor, and this API offers no way to decide them for them.
          */
         get: operations["getReviewChunks"];
         put?: never;
@@ -328,7 +328,7 @@ export interface paths {
         put?: never;
         /**
          * Attach a review-level comment
-         * @description Communication without adjudication: the comment lands in the review's comment list and advances the generation, so a long-poll on the existing generation cursor wakes — that cursor IS the "what changed since my last turn" query. Answer a chunk note here when the answer is an argument; answer with a new claim when the answer is an edit.
+         * @description Communication without adjudication: the comment lands in the review's comment list and advances the generation, so a long-poll on the existing generation cursor wakes. Answer a chunk note here when the answer is an argument; answer with a new claim when the answer is an edit.
          */
         post: operations["addReviewComment"];
         delete?: never;
@@ -400,7 +400,7 @@ export interface paths {
         };
         /**
          * Long-poll review events and status after a generation advance
-         * @description The "what changed since my last turn" query: pass the generation from your last response as afterGeneration. It answers at once if the review has already moved past that generation, otherwise blocks until a decision, comment, or new packet advances it — or until waitSeconds elapses, which answers with timedOut true.
+         * @description The "what changed since my last turn" query: pass your last response's generation as afterGeneration. It answers at once if the review already moved past that generation, otherwise blocks until a decision, comment, or packet advances it — or until waitSeconds elapses, answering with timedOut true.
          */
         get: operations["waitForReviewEvents"];
         put?: never;
@@ -892,7 +892,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -912,7 +914,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -1085,6 +1089,7 @@ export interface operations {
     readDocumentContent: {
         parameters: {
             query?: {
+                /** @description working is the text your next patch must match, with every accepted change already in it, and the side whose revision hash a proposal needs; diff it against what you proposed to detect an acceptance the reviewer tweaked. reference is the review baseline, identical to working until a review exists. */
                 side?: "working" | "reference";
                 startLine?: number;
                 endLine?: number;
@@ -1333,7 +1338,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description The unresolved chunks. A detached review answers from the frozen texts in its sidecar — same content-addressed chunk ids, no documentId. */
             200: {
                 headers: {
                     [name: string]: unknown;
