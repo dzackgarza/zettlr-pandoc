@@ -74,6 +74,12 @@ const captures = {
     driver: "test/editor-review-diff-visual-capture.cjs",
     electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
   },
+  "readme-demos": {
+    entry: "test/readme-demo-entry.ts",
+    bundle: "readme-demo-bundle.js",
+    driver: "test/readme-demo-capture.cjs",
+    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+  },
 };
 
 function run(command, args) {
