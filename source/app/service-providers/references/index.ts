@@ -48,7 +48,7 @@
  *                    (commands/rename-reference.ts), which calls the
  *                    provider methods directly. That chain is locked by
  *                    test/reference-rename-atomicity.spec.ts and
- *                    test/reference-rename-undo-route.spec.ts.
+ *                    test/reference-rename-authority.spec.ts.
  *
  *                  - boot() subscribes to the injected FSAL's 'fsal-event':
  *                    'add'/'change' events carrying a markdown file

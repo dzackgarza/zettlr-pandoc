@@ -92,13 +92,15 @@ def build_and_verify() -> None:
         result = subprocess.run(
             ["bun", "run", "package:linux-x64"],
             cwd=REPO, capture_output=True, text=True, timeout=BUILD_TIMEOUT_S,
-            # Forge's interactive spinner renderer intermittently dies during
-            # "Building webpack bundles" when its output is a pipe, exiting 0
-            # with no fresh asar -- the exact swallowed mode this script
-            # exists to catch (reproduced 2026-08-12: three piped runs failed,
-            # the CI renderer completed and surfaced webpack output). CI=1
-            # selects listr's verbose renderer, which neither draws to a TTY
-            # nor swallows the failure.
+            # CI=1 selects listr's verbose renderer so piped logs carry real
+            # task output instead of spinner frames. It does NOT prevent the
+            # swallowed mode: that is forge's commander-spawned `package`
+            # subcommand forwarding a child SIGNAL death as process.exit(null)
+            # -> exit 0. Diagnosed 2026-08-12: earlyoom SIGTERMed the ~7 GB
+            # webpack compile under memory pressure and the build chain
+            # reported success with no fresh asar. The freshness check below
+            # is what catches it; on BUILD BROKEN, check `journalctl -u
+            # earlyoom` before suspecting webpack.
             env={**os.environ, "CI": "1"},
         )
     except subprocess.TimeoutExpired as exc:
