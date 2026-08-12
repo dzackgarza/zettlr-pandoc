@@ -14,6 +14,30 @@ For installation, features, and general use, see the [Zettlr repository](https:/
 - **Every export goes through Pandoc.** HTML, LaTeX, and PDF all run through Pandoc, so your configured filters and templates always apply and exported math matches what you see in the editor.
   (The upstream Chromium "Simple PDF" export, which bypassed Pandoc and silently ignored filters and templates, has been removed.)
 
+## What it looks like
+
+Everything below is captured from the real editor renderers; `just readme-demos <dir>` regenerates all of it.
+
+### Math renders as you type
+
+Math shows its LaTeX source while the cursor is inside it and renders with MathJax the moment the cursor leaves — including your own macros (here `\RR`):
+
+![Typing inline and display math with live MathJax rendering](resources/screenshots/math-typing.gif)
+
+### Theorem environments
+
+Pandoc fenced divs (`::: theorem`, `::: proof`, …) render as styled environments while the document stays plain Pandoc markdown:
+
+![Typing theorem and proof environments](resources/screenshots/amsthm-typing.gif)
+
+![The theorem environment family: theorem, definition, remark, problem, warning, proof](resources/screenshots/env-gallery.png)
+
+### Reviewing external edit propositions
+
+An external tool (an agent, a script — see [External review propositions](#external-review-propositions)) can propose edits to the open document. Each changed chunk is adjudicated in the editor: accept it, annotate it with a comment, or reject it to restore the original text:
+
+![Accepting, commenting on, and rejecting review chunks](resources/screenshots/review-flow.gif)
+
 ## MathJax macros
 
 On first run the app writes a default set of standard macros to a single file in its configuration directory, which you can edit directly:
