@@ -20,6 +20,7 @@ export const DATA_DIR = 'data-dir'
 export const DISABLE_HARDWARE_ACCELERATION = 'disable-hardware-acceleration'
 export const CLEAR_CACHE = 'clear-cache'
 export const LAUNCH_MINIMIZED = 'launch-minimized'
+export const OPEN_IN_RUNNING_INSTANCE = 'open-in-running-instance'
 
 /**
  * This function returns whether or not a predefined argument was passed to the zettlr executable.
@@ -50,6 +51,9 @@ export function getCLIArgument (key: string): string | boolean | undefined {
     }
     case LAUNCH_MINIMIZED: {
       return process.argv.includes('--launch-minimized') || process.argv.includes('-m')
+    }
+    case OPEN_IN_RUNNING_INSTANCE: {
+      return process.argv.includes('--open-in-running-instance')
     }
   }
   return undefined
@@ -87,6 +91,7 @@ function showHelp (): void {
   console.log('    --disable-hardware-acceleration   Disables hardware acceleration')
   console.log('    --data-dir=FILEPATH               Use FILEPATH as the appData directory')
   console.log('-m  --launch-minimized                Start Zettlr mimimized to the tray/menu bar')
+  console.log('    --open-in-running-instance        Open the files in an already running Zettlr and exit; fail if none is running')
 }
 
 /**

@@ -15,7 +15,7 @@
 
 import { DP_EVENTS, type DocumentType, type SerializedUpdate } from '@dts/common/documents'
 import { type DocumentAuthorityAPI } from '..'
-import type { DocumentAuthorityIPCAPI } from 'source/app/service-providers/documents'
+import type { DocumentsUpdateContext } from 'source/app/service-providers/documents'
 
 const ipcRenderer = window.ipc
 
@@ -27,7 +27,7 @@ async function pullUpdates (filePath: string, version: number): Promise<false|Se
   // a dozen IPC calls are hanging in the air with no resolution in sight.
   return await new Promise((resolve, reject) => {
     // Begin listening for the correct event
-    const stopListening = ipcRenderer.on('documents-update', (evt, payload) => {
+    const stopListening = ipcRenderer.on('documents-update', (evt, payload: { event: DP_EVENTS, context: DocumentsUpdateContext }) => {
       const { event, context } = payload
       if (event !== DP_EVENTS.CHANGE_FILE_STATUS || context.filePath !== filePath) {
         return
@@ -36,7 +36,7 @@ async function pullUpdates (filePath: string, version: number): Promise<false|Se
       ipcRenderer.invoke('documents-authority', {
         command: 'pull-updates',
         payload: { filePath, version }
-      } as DocumentAuthorityIPCAPI)
+      })
         .then((result: false|SerializedUpdate[]) => {
           // Clean up to not pollute the event listener with millions of callbacks
           stopListening()
@@ -52,7 +52,7 @@ function pushUpdates (filePath: string, version: number, updates: SerializedUpda
   return ipcRenderer.invoke('documents-authority', {
     command: 'push-updates',
     payload: { filePath, version, updates }
-  } as DocumentAuthorityIPCAPI)
+  })
 }
 
 function fetchDoc (filePath: string): Promise<{ content: string, type: DocumentType, startVersion: number }> {
@@ -60,7 +60,7 @@ function fetchDoc (filePath: string): Promise<{ content: string, type: DocumentT
   return ipcRenderer.invoke('documents-authority', {
     command: 'get-document',
     payload: { filePath }
-  } as DocumentAuthorityIPCAPI)
+  })
 }
 
 /**

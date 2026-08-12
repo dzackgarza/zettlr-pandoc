@@ -55,10 +55,7 @@
 
 import { EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import { type EditorState } from '@codemirror/state'
-import {
-  type ReferenceOccurrence,
-  type SourceRange
-} from '@dts/common/references'
+import { type SourceRange } from '@dts/common/references'
 import { workspaceReferencesField, workspaceReferencesUpdate } from '../plugins/workspace-references-field'
 import { openReferenceSearchEffect } from '../plugins/reference-search-effect'
 
@@ -80,9 +77,8 @@ interface BadgeGroup {
 function buildBadgeGroup (
   view: EditorView,
   key: string,
-  occurrences: ReferenceOccurrence[]
+  citingCount: number
 ): HTMLElement {
-  const citingCount = occurrences.length
   const group = document.createElement('span')
   group.classList.add('reference-badge-group')
 
@@ -98,10 +94,11 @@ function buildBadgeGroup (
   count.dataset.citingCount = String(citingCount)
   count.textContent = citingCount === 1 ? '1 reference' : `${citingCount} references`
   count.addEventListener('click', () => {
-    // The same signal family as Mod-P, keyed to this definition: the shared
-    // overlay opens populated with its workspace citing locations.
+    // The same signal family as Mod-P, keyed to this definition: App.vue
+    // opens the shared overlay over the provider's freshly fetched merged
+    // snapshot — the single owner of the citing-locations fact (issue #46).
     view.dispatch({
-      effects: openReferenceSearchEffect.of({ key, occurrences })
+      effects: openReferenceSearchEffect.of({ key })
     })
   })
   group.appendChild(count)
@@ -179,11 +176,8 @@ class ReferenceDefinitionBadges {
     }
 
     for (const definition of references.snapshot.definitions) {
-      const occurrences = references.workspaceOccurrences.filter(
-        occurrence => occurrence.key === definition.key
-      )
       const citingCount = citingCounts.get(definition.key) ?? 0
-      const dom = buildBadgeGroup(this.view, definition.key, occurrences)
+      const dom = buildBadgeGroup(this.view, definition.key, citingCount)
       this.container.appendChild(dom)
       this.groups.push({ key: definition.key, citingCount, range: { ...definition.range }, dom })
     }

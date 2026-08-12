@@ -93,7 +93,7 @@ export const useLRTStore = defineStore('lrt', () => {
       throw new Error(`Could not delete task ${id}: Not found.`)
     }
 
-    ipcRenderer.invoke('lrt-provider', { command: 'delete-task', payload: { id: task.id } } as LRTIPCSyncMessage)
+    ipcRenderer.invoke('lrt-provider', { command: 'delete-task', payload: { id: task.id } } as LRTIPCAsyncMessage)
       .catch(err => console.error('Could not delete task', err))
   }
 

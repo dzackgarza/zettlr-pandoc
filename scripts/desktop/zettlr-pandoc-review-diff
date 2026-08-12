@@ -1,0 +1,291 @@
+#!/usr/bin/env node
+"use strict";
+
+/**
+ * Submit one external review proposition to a running Zettlr-Pandoc instance.
+ *
+ * The CLI knows only the documented Agent API. Patch parsing and application
+ * stay in the server, which is the one authoritative review validator.
+ */
+
+const crypto = require("crypto");
+const fs = require("fs");
+const http = require("http");
+const path = require("path");
+
+const PROGRAM = path.basename(process.argv[1] ?? "zettlr-pandoc-review-diff");
+const AGENT_API_PROTOCOL_VERSION = "1.0.0";
+const REQUEST_TIMEOUT_MS = 30_000;
+const KNOWN_OPTIONS = new Set([
+  "document",
+  "patch",
+  "description",
+  "baseline-sha256",
+  "port",
+]);
+
+function usage() {
+  return [
+    `Usage: ${PROGRAM} --document FILE --patch FILE --description TEXT --port N [options]`,
+    "",
+    "Submit one unified-diff proposition to the running Zettlr-Pandoc editor.",
+    "The editor validates and applies the patch, then focuses the review.",
+    "",
+    "Required:",
+    "  --document FILE       Target document path.",
+    "  --patch FILE          Unified-diff proposition file.",
+    "  --description TEXT    Provenance shown with the review chunk.",
+    "  --port N              Agent API loopback port.",
+    "",
+    "Optional:",
+    "  --baseline-sha256 HEX Expected SHA-256 of the working document.",
+    "  -h, --help            Show this help.",
+  ].join("\n");
+}
+
+function fail(code, message, status, exitCode = 1) {
+  const error = { code, message };
+  if (status !== undefined) {
+    error.status = status;
+  }
+  process.stderr.write(`${JSON.stringify({ ok: false, error })}\n`);
+  process.exit(exitCode);
+}
+
+function parseArguments(argv) {
+  const options = Object.create(null);
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === "-h" || argument === "--help") {
+      process.stdout.write(`${usage()}\n`);
+      process.exit(0);
+    }
+    if (!argument.startsWith("--")) {
+      fail("INVALID_INVOCATION", `Unexpected argument: ${argument}\n\n${usage()}`, undefined, 2);
+    }
+    const equals = argument.indexOf("=");
+    const name = equals === -1 ? argument.slice(2) : argument.slice(2, equals);
+    if (!KNOWN_OPTIONS.has(name)) {
+      fail("INVALID_INVOCATION", `Unknown option: --${name}\n\n${usage()}`, undefined, 2);
+    }
+    if (options[name] !== undefined) {
+      fail("INVALID_INVOCATION", `Option --${name} was given more than once`, undefined, 2);
+    }
+    const value = equals === -1 ? argv[index + 1] : argument.slice(equals + 1);
+    if (value === undefined || value.startsWith("--")) {
+      fail("INVALID_INVOCATION", `Option --${name} requires a value`, undefined, 2);
+    }
+    options[name] = value;
+    if (equals === -1) {
+      index += 1;
+    }
+  }
+  for (const name of ["document", "patch", "description", "port"]) {
+    if (options[name] === undefined || options[name].length === 0) {
+      fail("INVALID_INVOCATION", `Option --${name} is required\n\n${usage()}`, undefined, 2);
+    }
+  }
+  return options;
+}
+
+function requireRecord(value, label, status) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    fail("PROTOCOL_ERROR", `${label} must be an object`, status);
+  }
+  return value;
+}
+
+function requireString(value, label, status) {
+  if (typeof value !== "string") {
+    fail("PROTOCOL_ERROR", `${label} must be a string`, status);
+  }
+  return value;
+}
+
+function requireInteger(value, label, status) {
+  if (!Number.isInteger(value)) {
+    fail("PROTOCOL_ERROR", `${label} must be an integer`, status);
+  }
+  return value;
+}
+
+function requireArray(value, label, status) {
+  if (!Array.isArray(value)) {
+    fail("PROTOCOL_ERROR", `${label} must be an array`, status);
+  }
+  return value;
+}
+
+function refusal(response, context) {
+  const body = requireRecord(response.body, `${context} response`, response.status);
+  const error = requireRecord(body.error, `${context} error`, response.status);
+  const code = requireString(error.code, `${context} error code`, response.status);
+  const message = requireString(error.message, `${context} error message`, response.status);
+  fail(code, `${context}: ${message}`, response.status);
+}
+
+function success(response, expectedStatus, context) {
+  if (response.status !== expectedStatus) {
+    refusal(response, context);
+  }
+  return requireRecord(response.body, `${context} response`, response.status);
+}
+
+function request(port, method, requestPath, body) {
+  return new Promise((resolve, reject) => {
+    const payload = body === undefined ? undefined : JSON.stringify(body);
+    const headers = payload === undefined
+      ? {}
+      : {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(payload, "utf8"),
+        };
+    const request = http.request(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path: requestPath,
+        method,
+        headers,
+        timeout: REQUEST_TIMEOUT_MS,
+      },
+      (response) => {
+        let text = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          text += chunk;
+        });
+        response.on("end", () => {
+          const parsed = text.length === 0 ? undefined : JSON.parse(text);
+          resolve({ status: response.statusCode ?? 0, body: parsed });
+        });
+      },
+    );
+    request.on("timeout", () => request.destroy(new Error("Agent API request timed out")));
+    request.on("error", reject);
+    if (payload !== undefined) {
+      request.write(payload);
+    }
+    request.end();
+  });
+}
+
+async function main() {
+  const options = parseArguments(process.argv.slice(2));
+  const port = Number(options.port);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    fail("INVALID_INVOCATION", `Option --port must be a TCP port number: ${options.port}`, undefined, 2);
+  }
+  if (options["baseline-sha256"] !== undefined && !/^[0-9a-f]{64}$/.test(options["baseline-sha256"])) {
+    fail("INVALID_INVOCATION", "Option --baseline-sha256 must contain 64 lowercase hexadecimal characters", undefined, 2);
+  }
+
+  const documentPath = path.resolve(options.document);
+  const patchPath = path.resolve(options.patch);
+  if (!fs.existsSync(patchPath) || !fs.statSync(patchPath).isFile()) {
+    fail("INPUT_NOT_FILE", `Patch file does not exist: ${patchPath}`, undefined, 2);
+  }
+  const patch = fs.readFileSync(patchPath, "utf8");
+  if (patch.length === 0) {
+    fail("INPUT_EMPTY", `Patch file is empty: ${patchPath}`, undefined, 2);
+  }
+
+  const ping = success(
+    await request(port, "GET", "/v1/ping"),
+    200,
+    "Agent API ping",
+  );
+  const protocolVersion = requireString(
+    ping.protocolVersion,
+    "Agent API protocol version",
+    200,
+  );
+  if (protocolVersion !== AGENT_API_PROTOCOL_VERSION) {
+    fail(
+      "PROTOCOL_VERSION_UNSUPPORTED",
+      `Agent API protocol ${protocolVersion} is incompatible with ${AGENT_API_PROTOCOL_VERSION}`,
+      200,
+    );
+  }
+
+  const listed = success(
+    await request(port, "GET", "/v1/workspace/files"),
+    200,
+    "workspace file listing",
+  );
+  const files = requireArray(listed.files, "workspace file listing files", 200);
+  let documentId;
+  for (const [index, entry] of files.entries()) {
+    const file = requireRecord(entry, `workspace file ${index}`, 200);
+    const filePath = requireString(file.path, `workspace file ${index} path`, 200);
+    if (filePath === documentPath) {
+      documentId = requireString(file.documentId, `workspace file ${index} documentId`, 200);
+      break;
+    }
+  }
+  if (documentId === undefined) {
+    fail("DOCUMENT_NOT_FOUND", `Document is not in a configured workspace: ${documentPath}`, 404);
+  }
+
+  const content = success(
+    await request(port, "GET", `/v1/documents/${encodeURIComponent(documentId)}/content?side=working`),
+    200,
+    "working document read",
+  );
+  const revision = requireRecord(content.revision, "working document revision", 200);
+  const workingSha256 = requireString(revision.sha256, "working document revision SHA-256", 200);
+  const reviewGeneration = requireInteger(content.reviewGeneration, "working document review generation", 200);
+  const declaredSha256 = options["baseline-sha256"];
+  if (declaredSha256 !== undefined && declaredSha256 !== workingSha256) {
+    fail(
+      "REVISION_MISMATCH",
+      `The working document does not match --baseline-sha256 for ${documentPath}`,
+      412,
+    );
+  }
+
+  const proposal = success(
+    await request(
+      port,
+      "POST",
+      `/v1/documents/${encodeURIComponent(documentId)}/proposals`,
+      {
+        baselineSha256: declaredSha256 ?? workingSha256,
+        expectedReviewGeneration: reviewGeneration,
+        clientRequestId: crypto.randomUUID(),
+        claims: [{ description: options.description, patch }],
+      },
+    ),
+    200,
+    "review proposal submission",
+  );
+  const reviewId = requireString(proposal.reviewId, "review proposal reviewId", 200);
+  const packetIds = requireArray(proposal.packetIds, "review proposal packetIds", 200)
+    .map((packetId, index) => requireString(packetId, `review proposal packetIds[${index}]`, 200));
+
+  const focused = success(
+    await request(port, "POST", `/v1/documents/${encodeURIComponent(documentId)}/focus`),
+    200,
+    "review document focus",
+  );
+  if (focused.focused !== true) {
+    fail("PROTOCOL_ERROR", "Review document focus did not report focused=true", 200);
+  }
+
+  process.stdout.write(
+    `${JSON.stringify({
+      ok: true,
+      documentId,
+      reviewId,
+      packetIds,
+      unresolvedChunks: requireInteger(proposal.unresolvedChunks, "review proposal unresolvedChunks", 200),
+      state: requireString(proposal.state, "review proposal state", 200),
+    })}\n`,
+  );
+}
+
+process.on("unhandledRejection", (error) => {
+  fail("CLI_FAILURE", error instanceof Error ? error.message : String(error));
+});
+
+void main();

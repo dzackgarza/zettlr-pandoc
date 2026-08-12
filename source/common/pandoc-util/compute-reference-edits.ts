@@ -95,20 +95,18 @@ export type ReferenceRenamePreview =
  * The wire outcome of ReferenceProvider's 'commit-rename' command.
  *
  * BOUNDARY SPLIT: the provider can only write CLOSED files itself (atomic
- * temp+rename in the file's own directory). Open buffers belong to the
- * renderer's live CodeMirror instances, which the main process cannot
- * reach — so an applied commit RETURNS the open-buffer edits as
- * `openBufferTransactions` and the RENDERER applies them as CodeMirror
- * transactions (leaving the buffers dirty/unsaved) and re-reports the live
- * snapshot. A conflict outcome means NOTHING was applied anywhere.
+ * temp+rename in the file's own directory). Open buffers are applied by the
+ * central document authority, which records collab updates for every renderer
+ * pane and acknowledges every touched path before success is returned. A
+ * conflict outcome means NOTHING was applied anywhere.
  */
 export type CommitRenameOutcome =
   | {
     status: 'applied'
     /** Closed documents atomically rewritten on disk by the provider */
     closedFilesWritten: string[]
-    /** Open-buffer edits the renderer must apply as CodeMirror transactions */
-    openBufferTransactions: WorkspaceTextEdit[]
+    /** Open documents whose authority updates were acknowledged */
+    openBuffersUpdated: string[]
   }
   | { status: 'conflict', conflict: { status: 'conflict', documentPath: string, expectedSourceHash: string, actualSourceHash: string } }
 
@@ -122,7 +120,7 @@ export type UndoRenameOutcome =
   | {
     status: 'applied'
     closedFilesWritten: string[]
-    openBufferTransactions: WorkspaceTextEdit[]
+    openBuffersUpdated: string[]
   }
   | { status: 'conflict', conflict: { status: 'conflict', documentPath: string, expectedSourceHash: string, actualSourceHash: string } }
   | { status: 'no-pending-undo' }

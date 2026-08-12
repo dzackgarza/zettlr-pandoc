@@ -18,32 +18,55 @@ import { app, ipcMain, shell } from 'electron'
 import { promises as fs } from 'fs'
 import YAML from 'yaml'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
-import ProviderContract, { type IPCAPI } from '../provider-contract'
+import ProviderContract, { type IPCMessage } from '../provider-contract'
 import type LogProvider from '../log'
 import { getCustomProfiles } from '@providers/commands/exporter'
 import { getAppServiceContainer, isAppServiceContainerReady } from '../../app-service-container'
 import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import { parseReaderWriter } from '@common/pandoc-util/parse-reader-writer'
 
-export interface PandocProfileMetadata {
+function isRecord (value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * What a parsed YAML document holds under a key. A key the user wrote with the
+ * wrong kind of value is its own case: it must never read as an absent key.
+ */
+type YamlString =
+  { kind: 'absent' } |
+  { kind: 'string', value: string } |
+  { kind: 'malformed', observed: string }
+
+/**
+ * Names the kind of value a YAML document holds, for use in a diagnostic.
+ */
+function describeValue (value: unknown): string {
+  if (value === null) {
+    return 'null'
+  }
+  return Array.isArray(value) ? 'a list' : `a ${typeof value}`
+}
+
+/**
+ * Reads a string property off a parsed YAML document.
+ */
+function stringProperty (doc: Record<string, unknown>, key: string): YamlString {
+  const value = doc[key]
+  if (value === undefined) {
+    return { kind: 'absent' }
+  }
+
+  return typeof value === 'string'
+    ? { kind: 'string', value }
+    : { kind: 'malformed', observed: describeValue(value) }
+}
+
+interface PandocProfileBase {
   /**
    * The filename of the defaults file
    */
   name: string
-  /**
-   * The writer, can be an empty string
-   */
-  writer: string
-  /**
-   * The reader, can be an empty string
-   */
-  reader: string
-  /**
-   * Since Zettlr has a few requirements, we must have writers and readers.
-   * While we strive to even support unknown readers and writers, those fields
-   * at least have to have a value. If any hasn't, isInvalid will be true.
-   */
-  isInvalid: boolean
   /**
    * Zettlr ships with a few profiles by default. In order to ensure that there
    * is always a set of minimal profiles to export and import to, Zettlr will
@@ -52,6 +75,23 @@ export interface PandocProfileMetadata {
    * some misconceptions, i.e. why certain files cannot be deleted.
    */
   isProtected?: boolean
+}
+
+/**
+ * A profile Zettlr can run. It declares both a reader and a writer, and at
+ * least one of the two is a format Zettlr itself speaks. Only this variant may
+ * reach the exporter or the importer.
+ */
+export interface ValidPandocProfile extends PandocProfileBase {
+  isInvalid: false
+  /**
+   * The writer the profile declares, verbatim
+   */
+  writer: string
+  /**
+   * The reader the profile declares, verbatim
+   */
+  reader: string
   /**
    * The Pandoc template the profile declares (resolved by name from the Pandoc
    * data directory), if any. Surfaced for export observability.
@@ -59,29 +99,111 @@ export interface PandocProfileMetadata {
   template?: string
 }
 
-export type AssetsProviderIPCAPI = IPCAPI<{
-  'get-filter': { filename: string },
-  'set-filter': { filename: string, contents: string },
-  'rename-filter': { oldName: string, newName: string },
-  'remove-filter': { filename: string },
-  'list-filter': unknown,
-  'list-protected-filter': unknown,
-  'get-defaults-file': { filename: string }
-  'set-defaults-file': { filename: string, contents: string }
-  'rename-defaults-file': { oldName: string, newName: string }
-  'remove-defaults-file': { filename: string }
-  'get-snippet': { name: string }
-  'remove-snippet': { name: string }
-  'rename-snippet': { name: string, newName: string }
-  'set-snippet': { name: string, contents: string }
-  'list-defaults': unknown
-  'list-export-profiles': unknown
-  'list-available-filters': unknown
-  'open-defaults-directory': unknown
-  'open-snippets-directory': unknown
-  'open-filter-directory': unknown
-  'list-snippets': unknown
-}>
+/**
+ * A defaults file Zettlr cannot run. It carries no reader and no writer,
+ * because neither could be established; `reason` states what stopped it. The
+ * defaults editor still lists these so that the user can repair them.
+ */
+export interface InvalidPandocProfile extends PandocProfileBase {
+  isInvalid: true
+  /**
+   * What made the profile unusable, as observed while reading the file
+   */
+  reason: string
+}
+
+export type PandocProfileMetadata = ValidPandocProfile|InvalidPandocProfile
+
+export type AssetsProviderIPCContract = {
+  'get-filter': {
+    request: { payload: { filename: string } }
+    response: string
+  }
+  'set-filter': {
+    request: { payload: { filename: string, contents: string } }
+    response: boolean
+  }
+  'rename-filter': {
+    request: { payload: { oldName: string, newName: string } }
+    response: boolean
+  }
+  'remove-filter': {
+    request: { payload: { filename: string } }
+    response: boolean
+  }
+  'list-filter': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+  'list-protected-filter': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+  'get-defaults-file': {
+    request: { payload: { filename: string } }
+    response: string
+  }
+  'set-defaults-file': {
+    request: { payload: { filename: string, contents: string } }
+    response: boolean
+  }
+  'rename-defaults-file': {
+    request: { payload: { oldName: string, newName: string } }
+    response: boolean
+  }
+  'remove-defaults-file': {
+    request: { payload: { filename: string } }
+    response: boolean
+  }
+  'get-snippet': {
+    request: { payload: { name: string } }
+    response: string
+  }
+  'remove-snippet': {
+    request: { payload: { name: string } }
+    response: boolean
+  }
+  'rename-snippet': {
+    request: { payload: { name: string, newName: string } }
+    response: boolean
+  }
+  'set-snippet': {
+    request: { payload: { name: string, contents: string } }
+    response: boolean
+  }
+  'list-defaults': {
+    request: { payload?: undefined }
+    response: PandocProfileMetadata[]
+  }
+  'list-export-profiles': {
+    request: { payload?: undefined }
+    response: PandocProfileMetadata[]
+  }
+  'list-available-filters': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+  // The open-*-directory commands answer with shell.openPath's error string,
+  // empty when the directory opened.
+  'open-defaults-directory': {
+    request: { payload?: undefined }
+    response: string
+  }
+  'open-snippets-directory': {
+    request: { payload?: undefined }
+    response: string
+  }
+  'open-filter-directory': {
+    request: { payload?: undefined }
+    response: string
+  }
+  'list-snippets': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+}
+
+export type AssetsProviderIPCAPI = IPCMessage<AssetsProviderIPCContract>
 
 export default class AssetsProvider extends ProviderContract {
   /**
@@ -152,7 +274,7 @@ export default class AssetsProvider extends ProviderContract {
         this._logger.info(`[Assets Provider] Opening path ${this._filterPath}`)
         return await shell.openPath(this._filterPath)
       } else if (command === 'get-defaults-file') {
-        return await this.getDefaultsFile(payload.filename, true)
+        return await this.getDefaultsFileContents(payload.filename)
       } else if (command === 'set-defaults-file') {
         return await this.setDefaultsFile(payload.filename, payload.contents, true)
       } else if (command === 'rename-defaults-file') {
@@ -207,7 +329,7 @@ export default class AssetsProvider extends ProviderContract {
       const absolutePath = path.join(this._defaultsPath, file)
       try {
         await fs.lstat(absolutePath)
-      } catch (err) {
+      } catch {
         this._logger.warning(`[Assets Provider] Required defaults file ${file} not found. Copying ...`)
         await fs.copyFile(path.join(__dirname, './assets/defaults', file), absolutePath)
       }
@@ -228,7 +350,7 @@ export default class AssetsProvider extends ProviderContract {
           this._logger.warning(`[Assets Provider] Found outdated filter ${file}; copying ...`)
           await fs.copyFile(path.join(__dirname, './assets/lua-filter', file), absolutePath)
         }
-      } catch (err) {
+      } catch {
         this._logger.warning(`[Assets Provider] Required filter ${file} not found. Copying ...`)
         await fs.copyFile(path.join(__dirname, './assets/lua-filter', file), absolutePath)
       }
@@ -422,18 +544,34 @@ export default class AssetsProvider extends ProviderContract {
   //////////////////////////////////////////////////////////////////////////////
 
   /**
-   * Gets the defaults file for a given writer
+   * Gets the verbatim contents of a defaults file
    *
-   * @param   {string}             filename   The profile's filename
-   * @param   {boolean}            verbatim   If false, the contents will be serialized to YAML
+   * @param   {string}            filename   The profile's filename
    *
-   * @return  {Promise<any>}    The defaults (parsed from YAML)
+   * @return  {Promise<string>}              The unparsed YAML source
    */
-  async getDefaultsFile (filename: string, verbatim: boolean = false): Promise<any|string> {
+  async getDefaultsFileContents (filename: string): Promise<string> {
     const absPath = path.join(this._defaultsPath, filename)
-    const yaml = await fs.readFile(absPath, { encoding: 'utf-8' })
-    // Either return the string contents or a JavaScript object
-    return (verbatim) ? yaml : YAML.parse(yaml)
+    return await fs.readFile(absPath, { encoding: 'utf-8' })
+  }
+
+  /**
+   * Gets the defaults file for a given writer, parsed from YAML
+   *
+   * @param   {string}                             filename   The profile's filename
+   *
+   * @return  {Promise<Record<string, unknown>>}               The parsed defaults
+   */
+  async getDefaultsFile (filename: string): Promise<Record<string, unknown>> {
+    const parsed: unknown = YAML.parse(await this.getDefaultsFileContents(filename))
+    if (!isRecord(parsed)) {
+      // Not an invariant: listDefaults read the file when it built the profile
+      // list, but this reads it again, and the user can have saved a broken
+      // file in between. The message therefore goes to the user, who is the
+      // only one who can fix it.
+      throw new Error(`Defaults file ${filename} holds ${describeValue(parsed)} where a YAML mapping was expected. Repair the profile in the Assets Manager.`)
+    }
+    return parsed
   }
 
   /**
@@ -562,40 +700,89 @@ export default class AssetsProvider extends ProviderContract {
     const defaultsFiles = await fs.readdir(this._defaultsPath)
     const defaults = defaultsFiles.filter(file => /\.ya?ml$/.test(file))
     for (const file of defaults) {
-      const absolutePath = path.join(this._defaultsPath, file)
-      try {
-        const contents = await fs.readFile(absolutePath, { encoding: 'utf-8' })
-        const yaml = YAML.parse(contents)
-
-        // A defaults file needs to fulfill three conditions in order to be
-        // considered valid: (1) has a writer, (2) has a reader, (3) either
-        // reader or writer must be a supported Markdown format.
-        const hasWriter = yaml.writer !== undefined
-        const hasReader = yaml.reader !== undefined
-        const validWriter = hasWriter && SUPPORTED_READERS.includes(parseReaderWriter(yaml.writer as string).name)
-        const validReader = hasReader && SUPPORTED_READERS.includes(parseReaderWriter(yaml.reader as string).name)
-
-        profiles.push({
-          name: file,
-          writer: yaml.writer,
-          reader: yaml.reader,
-          isInvalid: !(hasWriter && hasReader && (validWriter || validReader)),
-          isProtected: this._protectedDefaults.includes(file),
-          template: typeof yaml.template === 'string' ? yaml.template : undefined
-        })
-      } catch (err) {
-        this._logger.warning(`[Assets Provider] Installed profile ${file} had an error and could not be parsed`)
-        profiles.push({
-          name: file,
-          writer: '',
-          reader: '',
-          isInvalid: true,
-          isProtected: this._protectedDefaults.includes(file)
-        })
+      const profile = await this.readProfile(file)
+      if (profile.isInvalid) {
+        this._logger.warning(`[Assets Provider] Installed profile ${file} is unusable: ${profile.reason}`)
       }
+      profiles.push(profile)
     }
 
     return profiles
+  }
+
+  /**
+   * Reads one defaults file and decides, once and here, which kind of profile
+   * it is. Every way a defaults file can fall short of a usable profile — it
+   * cannot be read, it is not YAML, it is not a mapping, it declares no reader
+   * or writer, it declares one of them as something other than a string, or it
+   * speaks no format Zettlr knows — is a case the user can produce by editing
+   * the file, so each returns the invalid variant with its own reason. The
+   * invalid variant carries no reader and no writer at all.
+   *
+   * @param   {string}                            file  The defaults filename
+   *
+   * @return  {Promise<PandocProfileMetadata>}          The parsed profile
+   */
+  private async readProfile (file: string): Promise<PandocProfileMetadata> {
+    const isProtected = this._protectedDefaults.includes(file)
+    const invalid = (reason: string): InvalidPandocProfile => {
+      return { name: file, isProtected, isInvalid: true, reason }
+    }
+
+    let contents: string
+    try {
+      contents = await fs.readFile(path.join(this._defaultsPath, file), { encoding: 'utf-8' })
+    } catch (err: unknown) {
+      return invalid(`the file could not be read: ${err instanceof Error ? err.message : 'unknown error'}`)
+    }
+
+    let parsed: unknown
+    try {
+      parsed = YAML.parse(contents)
+    } catch (err: unknown) {
+      return invalid(`the file is not valid YAML: ${err instanceof Error ? err.message : 'unknown error'}`)
+    }
+
+    if (!isRecord(parsed)) {
+      return invalid(`the file holds ${describeValue(parsed)} where a YAML mapping was expected`)
+    }
+
+    const writer = stringProperty(parsed, 'writer')
+    const reader = stringProperty(parsed, 'reader')
+    const template = stringProperty(parsed, 'template')
+
+    if (writer.kind === 'malformed') {
+      return invalid(`the writer is ${writer.observed}, but it must be a string`)
+    }
+
+    if (reader.kind === 'malformed') {
+      return invalid(`the reader is ${reader.observed}, but it must be a string`)
+    }
+
+    if (template.kind === 'malformed') {
+      return invalid(`the template is ${template.observed}, but it must be a string`)
+    }
+
+    if (writer.kind === 'absent' || reader.kind === 'absent') {
+      return invalid('the profile declares no reader, no writer, or neither')
+    }
+
+    // Zettlr can only use a profile if one of its two ends speaks one of
+    // Zettlr's own formats, since one end is always a Zettlr document.
+    const readsZettlr = SUPPORTED_READERS.includes(parseReaderWriter(reader.value).name)
+    const writesZettlr = SUPPORTED_READERS.includes(parseReaderWriter(writer.value).name)
+    if (!readsZettlr && !writesZettlr) {
+      return invalid(`neither the reader "${reader.value}" nor the writer "${writer.value}" is a format Zettlr supports`)
+    }
+
+    return {
+      name: file,
+      isProtected,
+      isInvalid: false,
+      writer: writer.value,
+      reader: reader.value,
+      template: template.kind === 'string' ? template.value : undefined
+    }
   }
 
   //////////////////////////////////////////////////////////////////////////////

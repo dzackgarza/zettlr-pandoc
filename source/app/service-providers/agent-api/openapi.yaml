@@ -1,12 +1,26 @@
-openapi: 3.1.1
+openapi: 3.1.0
 info:
   title: Zettlr-Pandoc Editor Agent API
   version: 1.0.0
-  description: 'HTTP REST API for the Zettlr-Pandoc editor agent. Provides live document
-    reads, proposal submission, review inspection, and Server-Sent Events. The Electron
-    main process owns all agent-visible state.
+  description: >-
+    HTTP REST API for the Zettlr-Pandoc editor agent. Provides live document
+    reads, proposal submission, review inspection, and Server-Sent Events. The
+    Electron main process owns all agent-visible state.
 
-    '
+
+    The working loop: orient (workspace files -> documents -> reviews ->
+    chunks), submit claim-sized proposals against a freshly read content
+    hash, then next turn read the review's chunk comments and comments and
+    answer them with new claims. Accepted material is already in the working
+    text — never resubmit it. A PATCH_NOT_APPLICABLE refusal means the text
+    moved under you: re-read
+    the working side and rebuild against it, because a retry fails the same
+    way.
+
+
+    You never accept, reject, or discard a chunk: the reviewer disposes
+    of your proposals in the editor. Your moves are a revision, a comment,
+    and retracting a packet of your own the reviewer has not touched yet.
   license:
     name: GPL-3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
@@ -17,14 +31,21 @@ components:
   schemas:
     DocumentRevision:
       type: object
+      additionalProperties: false
       required:
-        - version
         - sha256
       properties:
-        version:
-          type: integer
         sha256:
           type: string
+          pattern: '^[0-9a-f]{64}$'
+    ReviewState:
+      type: string
+      enum:
+        - active
+        - resolved-awaiting-save
+        - completed
+        - cleared
+        - invalidated
     ReviewSummary:
       type: object
       required:
@@ -37,19 +58,70 @@ components:
         reviewId:
           type: string
         state:
-          type: string
-          enum:
-            - active
-            - resolved-awaiting-save
-            - completed
-            - cleared
-            - invalidated
+          $ref: '#/components/schemas/ReviewState'
         generation:
           type: integer
         unresolvedChunks:
           type: integer
+          description: >-
+            Chunks not yet accepted or rejected — the whole outstanding
+            partition.
         packetCount:
           type: integer
+    ReviewComment:
+      type: object
+      required:
+        - text
+        - createdAt
+      properties:
+        text:
+          type: string
+        createdAt:
+          type: string
+        orphanedFromChunkId:
+          type: string
+          description: >-
+            Present when this comment was salvaged from a chunk-anchored
+            note whose chunk id vanished from the partition (the annotated
+            region was edited, decided, cleared, or absorbed by a later
+            claim). Note text is never silently lost.
+        decision:
+          type: string
+          enum: [accept, reject]
+          description: >-
+            Present when the orphaning event was a decision: what happened
+            to the chunk this comment annotated. Absent when the chunk
+            dissolved through an ordinary edit.
+        referenceText:
+          type: string
+          description: >-
+            The annotated chunk's reference-side text, snapshotted when the
+            note was written. Lets a caller reconstruct what the comment
+            was about without replaying the document history.
+        workingText:
+          type: string
+          description: >-
+            The annotated chunk's working-side text, snapshotted when the
+            note was written.
+    EditorViewSummary:
+      type: object
+      required:
+        - viewId
+        - windowId
+        - leafId
+        - focused
+        - active
+      properties:
+        viewId:
+          type: string
+        windowId:
+          type: string
+        leafId:
+          type: string
+        focused:
+          type: boolean
+        active:
+          type: boolean
     DocumentSummary:
       type: object
       required:
@@ -88,7 +160,7 @@ components:
         views:
           type: array
           items:
-            type: object
+            $ref: '#/components/schemas/EditorViewSummary'
         review:
           $ref: '#/components/schemas/ReviewSummary'
     EditorContext:
@@ -106,27 +178,32 @@ components:
         - openDocuments
     ReadDocumentResponse:
       type: object
+      additionalProperties: false
       required:
         - documentId
+        - attached
         - side
         - revision
+        - reviewGeneration
         - range
         - content
         - truncated
       properties:
         documentId:
           type: string
+        attached:
+          type: boolean
+          description: Whether the document currently has a live authority buffer.
         side:
           type: string
           enum:
             - working
             - reference
-        snapshot:
-          type: string
         revision:
           $ref: '#/components/schemas/DocumentRevision'
         reviewGeneration:
           type: integer
+          minimum: 0
         range:
           type: object
           required:
@@ -144,29 +221,76 @@ components:
           type: string
         truncated:
           type: boolean
-    SubmitProposalRequest:
+    ProposalClaim:
       type: object
+      description: >-
+        One logical decision — the smallest change a reviewer can accept or
+        reject on its own. Do not bundle unrelated edits into one claim.
       required:
-        - snapshot
-        - patchFormat
+        - description
         - patch
       properties:
-        snapshot:
-          type: string
-        patchFormat:
-          type: string
-          enum:
-            - unified-diff
-        patch:
-          type: string
         description:
           type: string
+          minLength: 1
+          description: >-
+            Self-contained prose shown to the reviewer at the chunks this
+            claim produced: what is wrong, what the patch changes, and why —
+            enough to adjudicate without re-deriving the diagnosis.
+        patch:
+          type: string
+          minLength: 1
+          description: >-
+            Unified diff implementing exactly this claim. Name the target in
+            the ---/+++ headers as the literal `document` or as the
+            document's absolute path (a git-style a/ or b/ prefix is
+            allowed); any other filename, a create/delete/rename/binary/mode
+            patch, or a diff that leaves the text unchanged is PATCH_INVALID.
+    SubmitProposalRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - baselineSha256
+        - expectedReviewGeneration
+        - clientRequestId
+        - claims
+      properties:
+        baselineSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: >-
+            SHA-256 returned by the most recent working-content read. It pins
+            the exact text the patches must apply to; a stale hash is refused
+            as REVISION_MISMATCH.
         expectedReviewGeneration:
           type: integer
+          minimum: 0
+          description: >-
+            Zero when no review exists; otherwise the generation returned by
+            the most recent review or chunk read.
+        clientRequestId:
+          type: string
+          minLength: 1
+          description: >-
+            Client-chosen unique string. Replaying it returns the original
+            packet rather than applying the patch twice; reusing it for a
+            different request is refused as IDEMPOTENCY_CONFLICT.
+        claims:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ProposalClaim'
+          description: >-
+            Ordered claim sequence applied against the ONE baseline,
+            sequentially and atomically: claim k applies with zero fuzz to
+            the text claim k-1 produced, all-or-nothing, and each claim
+            becomes its own packet. Send one entry per logical decision —
+            that gives the reviewer separately decidable packets.
     SubmitProposalResponse:
       type: object
       required:
         - packetId
+        - packetIds
         - reviewId
         - documentId
         - documentRevision
@@ -176,6 +300,16 @@ components:
       properties:
         packetId:
           type: string
+          description: >-
+            The newest packet of this submission (the retractable one) —
+            the last element of packetIds.
+        packetIds:
+          type: array
+          items:
+            type: string
+          description: >-
+            One packet per claim, in claim order; a single-patch submission
+            has exactly one.
         reviewId:
           type: string
         documentId:
@@ -187,12 +321,13 @@ components:
         unresolvedChunks:
           type: integer
         state:
-          type: string
+          $ref: '#/components/schemas/ReviewState'
     AgentError:
       type: object
       required:
         - code
         - message
+      additionalProperties: false
       properties:
         code:
           type: string
@@ -209,13 +344,37 @@ components:
             - PATCH_INVALID
             - PATCH_NOT_APPLICABLE
             - PACKET_NOT_RETRACTABLE
+            - CHUNK_NOT_FOUND
             - IDEMPOTENCY_CONFLICT
             - REQUEST_TOO_LARGE
+            - REQUEST_BODY_TIMEOUT
+            - SEARCH_TIMEOUT
             - METHOD_NOT_FOUND
             - INVALID_PARAMS
+            - PERSISTENCE_FAILED
             - INTERNAL_ERROR
         message:
           type: string
+        documentId:
+          type: string
+        expected:
+          $ref: '#/components/schemas/DocumentRevision'
+        actual:
+          $ref: '#/components/schemas/DocumentRevision'
+        reviewId:
+          type: string
+        reviewGeneration:
+          type: integer
+          description: >-
+            REVIEW_GENERATION_MISMATCH: the generation the review is actually
+            at, so the caller can re-read from exactly there.
+    AgentErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          $ref: '#/components/schemas/AgentError'
     AgentEvent:
       type: object
       required:
@@ -224,6 +383,21 @@ components:
       properties:
         event:
           type: string
+          enum:
+            - focus.changed
+            - document.changed
+            - document.closed
+            - review.started
+            - review.changed
+            - review.resolved
+            - review.commented
+            - review.cleared
+            - review.invalidated
+            - review.completed
+            - review.discarded
+            - review.sidecar-error
+            - proposal.applied
+            - proposal.retracted
         timestamp:
           type: string
         reviewId:
@@ -236,6 +410,28 @@ components:
           type: integer
         unresolvedChunks:
           type: integer
+        packetId:
+          type: string
+          description: >-
+            proposal.applied and proposal.retracted: the packet affected by the event.
+        chunkId:
+          type: string
+          description: >-
+            review.commented: the outstanding chunk the comment is anchored
+            to, when it is chunk-anchored.
+        comment:
+          type: string
+          description: >-
+            review.commented: the comment text. Absent on a chunk-anchored
+            event when the reviewer removed the chunk's note.
+        orphanedFromChunkId:
+          type: string
+          description: >-
+            review.commented: set when the comment was salvaged from a
+            chunk-anchored note whose chunk id vanished from the partition.
+        message:
+          type: string
+          description: 'review.sidecar-error: what failed and why.'
         id:
           type: string
           description: Server-generated event sequence identifier.
@@ -243,25 +439,11 @@ components:
       type: object
       required:
         - reviewId
-        - status
       properties:
         reviewId:
           type: string
         status:
-          type: object
-          properties:
-            reviewId:
-              type: string
-            state:
-              type: string
-            generation:
-              type: integer
-            unresolvedChunks:
-              type: integer
-            packetCount:
-              type: integer
-            documentRevision:
-              $ref: '#/components/schemas/DocumentRevision'
+          $ref: '#/components/schemas/ReviewSummary'
         events:
           type: array
           items:
@@ -276,8 +458,6 @@ components:
         - windowId
         - leafId
         - documentId
-        - focused
-        - active
       properties:
         viewId:
           type: string
@@ -286,14 +466,6 @@ components:
         leafId:
           type: string
         documentId:
-          type: string
-        focused:
-          type: boolean
-        active:
-          type: boolean
-        documentPath:
-          type: string
-        focusedAt:
           type: string
     ViewSummary:
       type: object
@@ -321,7 +493,6 @@ components:
           items:
             type: object
             required:
-              - documentId
               - path
             properties:
               documentId:
@@ -402,7 +573,7 @@ components:
         views:
           type: array
           items:
-            $ref: '#/components/schemas/ViewSummary'
+            $ref: '#/components/schemas/EditorViewSummary'
         review:
           $ref: '#/components/schemas/ReviewSummary'
     UnloadedWorkspaceDocumentSummary:
@@ -434,7 +605,7 @@ components:
       oneOf:
         - $ref: '#/components/schemas/LoadedWorkspaceDocumentSummary'
         - $ref: '#/components/schemas/UnloadedWorkspaceDocumentSummary'
-    WorkspaceOpenDocumentResponse:
+    FocusDocumentResponse:
       type: object
       required:
         - focused
@@ -442,6 +613,7 @@ components:
       properties:
         focused:
           type: boolean
+          const: true
         documentId:
           type: string
     WorkspaceDocumentsResponse:
@@ -456,23 +628,53 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WorkspaceDocumentSummary'
+    WorkspaceFileEntry:
+      type: object
+      required:
+        - documentId
+        - path
+        - name
+        - workspaceId
+        - open
+      properties:
+        documentId:
+          type: string
+        path:
+          type: string
+        name:
+          type: string
+        workspaceId:
+          type: string
+        open:
+          type: boolean
+          description: Whether the file is currently loaded in the editor.
+    WorkspaceFilesResponse:
+      type: object
+      required:
+        - files
+      properties:
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceFileEntry'
     SearchDocumentResponse:
       type: object
       required:
         - documentId
-        - snapshot
         - revision
         - hits
         - truncated
       properties:
         documentId:
           type: string
-        snapshot:
-          type: string
         revision:
           $ref: '#/components/schemas/DocumentRevision'
         hits:
           type: array
+          maxItems: 1000
+          description: >-
+            Search hits in document order. At most 1000 hits are returned; a
+            true truncated field means more matching hits were present.
           items:
             type: object
             required:
@@ -502,25 +704,45 @@ components:
         - generation
         - unresolvedChunks
         - packetCount
-        - documentRevision
+        - comments
+        - attached
       properties:
         reviewId:
           type: string
         state:
-          type: string
+          $ref: '#/components/schemas/ReviewState'
         generation:
           type: integer
         unresolvedChunks:
           type: integer
+          description: >-
+            Chunks not yet accepted or rejected — the whole outstanding
+            partition.
         packetCount:
           type: integer
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewComment'
+          description: >-
+            Review-level comments in creation order — attached directly via
+            the comments route, or orphaned from chunk-anchored notes whose
+            chunks vanished.
+        attached:
+          type: boolean
+          description: >-
+            True while the reviewed document is open. A detached review is
+            served from its sidecar: readable, but not decidable until its
+            documentPath is opened again.
         documentRevision:
           $ref: '#/components/schemas/DocumentRevision'
+          description: >-
+            The open document's revision. Absent for a detached review —
+            there is no open document to revise.
     ReviewDiffResponse:
       type: object
       required:
         - reviewId
-        - documentId
         - patch
         - generation
       properties:
@@ -528,6 +750,7 @@ components:
           type: string
         documentId:
           type: string
+          description: Absent for a detached review, whose file is closed.
         patch:
           type: string
         generation:
@@ -536,7 +759,6 @@ components:
       type: object
       required:
         - reviewId
-        - documentId
         - generation
         - chunks
       properties:
@@ -544,8 +766,18 @@ components:
           type: string
         documentId:
           type: string
+          description: Absent for a detached review, whose file is closed.
         generation:
           type: integer
+        workingSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: >-
+            SHA-256 of the working text these chunks were partitioned from —
+            the `expectedWorkingSha256` a retraction of one of the packets
+            behind them must carry. Absent for a detached review, which has
+            no live buffer and accepts no mutation until its file is
+            reopened.
         chunks:
           type: array
           items:
@@ -554,33 +786,17 @@ components:
       type: object
       required:
         - reviewId
-        - documentId
         - packets
       properties:
         reviewId:
           type: string
         documentId:
           type: string
+          description: Absent for a detached review, whose file is closed.
         packets:
           type: array
           items:
             $ref: '#/components/schemas/ProposalPacket'
-    ClearReviewResponse:
-      type: object
-      required:
-        - reviewId
-        - documentId
-        - state
-        - documentRevision
-      properties:
-        reviewId:
-          type: string
-        documentId:
-          type: string
-        state:
-          type: string
-        documentRevision:
-          $ref: '#/components/schemas/DocumentRevision'
     RetractProposalResponse:
       type: object
       required:
@@ -594,6 +810,7 @@ components:
       properties:
         retracted:
           type: boolean
+          const: true
         packetId:
           type: string
         reviewId:
@@ -610,16 +827,27 @@ components:
       type: object
       required:
         - chunkId
-        - generation
         - referenceRange
         - workingRange
+        - referenceText
+        - workingText
+        - packetIds
+        - descriptions
         - patch
       properties:
         chunkId:
           type: string
-        generation:
-          type: integer
+          description: >-
+            Content-addressed identity: stable while the chunk's own text is
+            untouched, so deciding one chunk does not invalidate the ids of
+            the others. A decision against an id whose region has since
+            changed fails with CHUNK_NOT_FOUND.
         referenceRange:
+          description: >-
+            1-based, half-open: the chunk covers lines [fromLine, toLine).
+            fromLine equal to toLine marks an empty side (a pure insertion
+            has an empty reference range; a pure deletion an empty working
+            range). Ranges of distinct chunks never overlap.
           type: object
           required:
             - fromLine
@@ -639,8 +867,96 @@ components:
               type: integer
             toLine:
               type: integer
+        referenceText:
+          type: string
+          description: The reference-side lines, newline-joined; empty for a pure insertion.
+        workingText:
+          type: string
+          description: The working-side lines, newline-joined; empty for a pure deletion.
+        packetIds:
+          type: array
+          items:
+            type: string
+          description: >-
+            The packets whose edits produced this chunk, in application
+            order — every packet whose recorded edit spans still touch the
+            chunk's reference range. Overlapping claims attribute together;
+            a chunk the user tweaked keeps the attribution of the claim it
+            grew from; a chunk only the user's own edits created carries
+            none.
+        descriptions:
+          type: array
+          items:
+            type: string
+          description: >-
+            Those packets' descriptions, in the same order, packets without
+            one omitted.
+        comment:
+          type: string
+          description: >-
+            The reviewer's note attached to this chunk without deciding it —
+            a question or objection. Address it in your next claims batch.
         patch:
           type: string
+          description: Focused zero-context unified diff of exactly this chunk.
+    ReviewMutationPrecondition:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedReviewGeneration
+        - expectedWorkingSha256
+      properties:
+        expectedReviewGeneration:
+          type: integer
+          minimum: 0
+          description: >-
+            The review generation this request was formed against — the
+            `generation` of the chunk list, diff, or status you read. Every
+            review mutation advances it, including the reviewer's decisions,
+            so a request that carries a stale one was formed before somebody
+            else's mutation landed and is refused as
+            REVIEW_GENERATION_MISMATCH.
+        expectedWorkingSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: >-
+            SHA-256 of the working text this request was formed against —
+            `workingSha256` from GET /v1/reviews/{reviewId}/chunks. Binding
+            the request to the exact bytes makes an edit between the read and
+            the request a REVISION_MISMATCH refusal instead of a retraction
+            landing on text the caller never saw.
+    AddReviewCommentRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedReviewGeneration
+        - text
+      properties:
+        expectedReviewGeneration:
+          type: integer
+          minimum: 0
+          description: >-
+            See ReviewMutationPrecondition. A comment moves no document text,
+            so it carries no working hash.
+        text:
+          type: string
+          minLength: 1
+    ReviewCommentResponse:
+      type: object
+      required:
+        - reviewId
+        - documentId
+        - reviewGeneration
+        - comment
+      properties:
+        reviewId:
+          type: string
+        documentId:
+          type: string
+        reviewGeneration:
+          type: integer
+        comment:
+          $ref: '#/components/schemas/ReviewComment'
     ProposalPacket:
       type: object
       required:
@@ -650,6 +966,7 @@ components:
         - appliedAt
         - patchFormat
         - patch
+        - applicationGeneration
       properties:
         packetId:
           type: string
@@ -665,6 +982,9 @@ components:
           type: string
         patch:
           type: string
+        applicationGeneration:
+          type: integer
+          description: The review generation this packet's application produced.
     PingResponse:
       type: object
       required:
@@ -716,12 +1036,53 @@ components:
           type: string
         instanceId:
           type: string
+    DocumentListResponse:
+      type: object
+      required:
+        - documents
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocumentSummary'
+    ReviewListEntry:
+      allOf:
+        - $ref: '#/components/schemas/ReviewSummary'
+        - type: object
+          required:
+            - documentPath
+            - attached
+          properties:
+            documentId:
+              type: string
+              description: >-
+                Present for a review attached to an open document; absent
+                for a detached (sidecar-backed) review whose file is
+                closed.
+            documentPath:
+              type: string
+              description: The absolute path of the reviewed file.
+            attached:
+              type: boolean
+              description: >-
+                True while the reviewed document is open; false for a
+                review persisted in its sidecar after the file closed.
+                There is no reattach API — opening the file is the
+                reattachment.
+    ReviewListResponse:
+      type: object
+      required:
+        - reviews
+      properties:
+        reviews:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewListEntry'
 paths:
   /openapi.yaml:
     get:
       operationId: getOpenApiSpec
       summary: Serve the OpenAPI specification
-      security: []
       responses:
         '200':
           description: OpenAPI YAML document
@@ -729,6 +1090,38 @@ paths:
             application/yaml:
               schema:
                 type: string
+  /openapi.json:
+    get:
+      operationId: getOpenApiSpecJson
+      summary: Serve the OpenAPI specification as JSON
+      description: >-
+        The identical document, parsed from the YAML per request so the two
+        encodings cannot disagree. Offered because schema importers are not
+        uniformly willing to read YAML.
+      responses:
+        '200':
+          description: OpenAPI JSON document
+          content:
+            application/json:
+              schema:
+                type: object
+  /openapi-actions.json:
+    get:
+      operationId: getOpenApiActionsJson
+      summary: Serve the OpenAPI specification as JSON without the SSE route
+      description: >-
+        Action-compatible projection without the SSE route. Derived per request
+        from the same document, dropping only /v1/events, which is
+        Server-Sent Events: an Action cannot consume it and waits on it
+        forever. The long-poll route /v1/reviews/{reviewId}/events is an
+        ordinary request and remains.
+      responses:
+        '200':
+          description: OpenAPI JSON document
+          content:
+            application/json:
+              schema:
+                type: object
   /health:
     get:
       operationId: health
@@ -783,12 +1176,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  documents:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/DocumentSummary'
+                $ref: '#/components/schemas/DocumentListResponse'
       parameters:
         - name: state
           in: query
@@ -800,29 +1188,6 @@ paths:
             default: open
           description: Reserved document-state filter for clients. Only open is currently
             supported.
-    post:
-      operationId: openDocument
-      summary: Open a server-local file URI
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - uri
-              properties:
-                uri:
-                  type: string
-      responses:
-        '201':
-          description: Document opened
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DocumentSummary'
-        '404':
-          description: File not found
   /v1/documents/{documentId}:
     get:
       operationId: getDocument
@@ -842,6 +1207,10 @@ paths:
                 $ref: '#/components/schemas/DocumentSummary'
         '404':
           description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/documents/{documentId}/focus:
     post:
       operationId: focusDocument
@@ -855,10 +1224,30 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FocusDocumentResponse'
+        '404':
+          description: Document not found or outside configured workspace scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/documents/{documentId}/content:
     get:
       operationId: readDocumentContent
-      summary: Read live working or reference text by line slice
+      summary: Read working or reference text by line slice
+      description: >-
+        Answers for every documentId GET /v1/workspace/files returns, whether
+        or not the file is open; reading never opens a file or moves the
+        user's focus. side=working is the text your next patch must match,
+        with every accepted change already in it, and the side whose revision
+        hash a proposal needs. side=reference is the review baseline,
+        identical to working until a review exists. A closed file answers
+        from its detached review when it has one and from disk otherwise.
+        Re-read working before each new proposal, and diff it against what
+        you proposed to detect an acceptance the reviewer tweaked.
       parameters:
         - name: documentId
           in: path
@@ -894,6 +1283,10 @@ paths:
                 $ref: '#/components/schemas/ReadDocumentResponse'
         '404':
           description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/documents/{documentId}/search:
     post:
       operationId: searchDocument
@@ -915,9 +1308,18 @@ paths:
               properties:
                 literal:
                   type: string
+                  maxLength: 512
                 context:
                   type: integer
                   default: 3
+                  minimum: 0
+                  maximum: 100
+                  description: >-
+                    Lines of surrounding text returned on each side of every
+                    hit. Every hit carries its own copy, so this multiplies
+                    the response by the number of hits and is capped rather
+                    than open-ended; a context outside this range is refused
+                    with INVALID_PARAMS.
       responses:
         '200':
           description: OK
@@ -925,28 +1327,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SearchDocumentResponse'
+        '400':
+          description: >-
+            Invalid, unparseable, or over-length search pattern, or a context
+            outside the declared range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '422':
+          description: >-
+            Pattern evaluation exceeded the server's time budget
+            (SEARCH_TIMEOUT). The budget bounds the whole match, including a
+            single catastrophically backtracking execution, so an identical
+            retry costs the same wall time and fails again: simplify the
+            pattern instead.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/documents/{documentId}/proposals:
     post:
       operationId: submitProposal
-      summary: Submit an exact unified-diff packet
+      summary: Submit an ordered batch of exact unified-diff claims
+      description: >-
+        The batch binds to the one baselineSha256 in the body. It applies
+        sequentially and atomically server-side: every claim applies with
+        zero fuzz to its predecessor's text or the whole batch is
+        refused with nothing applied, and each claim becomes its own
+        packet (packetIds maps them in claim order). Submit claim-sized
+        entries — one logical decision each. Accepted material is already in
+        the working text; do not resubmit it. The reviewer may edit a
+        proposed chunk before accepting it, so diff your proposal against the
+        final text if you care whether acceptance was verbatim.
       parameters:
         - name: documentId
           in: path
-          required: true
-          schema:
-            type: string
-        - name: If-Match
-          in: header
-          required: true
-          schema:
-            type: string
-            pattern: '^"sha256:[a-f0-9]{64}"$'
-            example: '"sha256:eab7fc1cf8e249b7945b96314a70137425dd5cecc2ce84de93be0e4f493a7f20"'
-          description: >-
-            ETag from the document read: the revision.sha256 of the same read that
-            produced the snapshot, as the quoted string "sha256:<hex>".
-        - name: Idempotency-Key
-          in: header
           required: true
           schema:
             type: string
@@ -965,30 +1381,69 @@ paths:
                 $ref: '#/components/schemas/SubmitProposalResponse'
         '412':
           description: Stale revision (ETag mismatch)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
         '409':
           description: Review generation conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
         '400':
-          description: Invalid or non-applicable patch
+          description: >-
+            Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the
+            document drifted from the text you built against: re-read the
+            working content and rebuild the patch against it — a blind retry
+            fails identically.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '404':
+          description: >-
+            The document does not exist or is outside the configured workspace
+            scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '500':
+          description: >-
+            The proposal could not be persisted or the server could not
+            complete the submission.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews:
     get:
       operationId: listReviews
-      summary: List all active reviews
+      summary: List all reviews, attached and detached
+      description: >-
+        Reviews attached to open documents, plus detached (sidecar-backed)
+        reviews on files that are currently closed. A returning turn starts
+        here: this is every review still carrying outstanding state, on files
+        nobody has open included. A detached review reattaches by opening its
+        documentPath.
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  reviews:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ReviewSummary'
+                $ref: '#/components/schemas/ReviewListResponse'
   /v1/reviews/{reviewId}:
     get:
       operationId: getReview
       summary: Inspect a review
+      description: >-
+        Status plus review-level comments — the reviewer's channel back to
+        you. Read the comments and the chunk notes at the start of each turn
+        and address them with new claims. Answers for every reviewId
+        /v1/reviews lists: a detached review is served from its sidecar,
+        with attached=false and no documentRevision.
       parameters:
         - name: reviewId
           in: path
@@ -1004,10 +1459,17 @@ paths:
                 $ref: '#/components/schemas/ReviewDetailResponse'
         '404':
           description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews/{reviewId}/diff:
     get:
       operationId: getReviewDiff
       summary: Retrieve the complete unresolved composite diff
+      description: >-
+        Answers for a detached review too, from the frozen texts in its
+        sidecar; that response carries no documentId.
       parameters:
         - name: reviewId
           in: path
@@ -1023,10 +1485,22 @@ paths:
                 $ref: '#/components/schemas/ReviewDiffResponse'
         '404':
           description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews/{reviewId}/chunks:
     get:
       operationId: getReviewChunks
       summary: Inspect current unresolved chunks
+      description: >-
+        Read this at the start of each turn. A chunk's comment is the
+        reviewer's question or objection — answer it with a revised claim
+        in your next submission. Every chunk here is undecided: the
+        reviewer accepts and rejects them in the editor, and this API
+        offers no way to decide them for them. Answers for a detached review
+        too, from the frozen texts in its sidecar — same content-addressed
+        chunk ids, no documentId.
       parameters:
         - name: reviewId
           in: path
@@ -1042,10 +1516,73 @@ paths:
                 $ref: '#/components/schemas/ReviewChunksResponse'
         '404':
           description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/reviews/{reviewId}/comments:
+    post:
+      operationId: addReviewComment
+      summary: Attach a review-level comment
+      description: >-
+        Communication without adjudication: the comment lands in the review's
+        comment list and advances the generation, so a long-poll on the
+        existing generation cursor wakes — that cursor IS the "what changed
+        since my last turn" query. Answer a chunk note here when the answer
+        is an argument; answer with a new claim when the answer is an edit.
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddReviewCommentRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewCommentResponse'
+        '404':
+          description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '400':
+          description: Missing or empty comment text
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: >-
+            DOCUMENT_CLOSED — the review is detached: it exists, and
+            /v1/reviews lists it, but a comment cannot land while its file is
+            closed. Open its documentPath to reattach it.
+            Also REVISION_MISMATCH when expectedWorkingSha256 does not
+            match the live working text, and REVIEW_GENERATION_MISMATCH
+            when expectedReviewGeneration is not the review's current
+            generation; the error carries the actual revision and
+            generation, and neither refusal mutates anything.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+
   /v1/reviews/{reviewId}/packets:
     get:
       operationId: getReviewPackets
       summary: Inspect the proposal-packet ledger
+      description: >-
+        Answers for a detached review too, from its sidecar's ledger; that
+        response carries no documentId.
       parameters:
         - name: reviewId
           in: path
@@ -1061,25 +1598,10 @@ paths:
                 $ref: '#/components/schemas/ReviewPacketsResponse'
         '404':
           description: Review not found
-  /v1/reviews/{reviewId}/clear:
-    post:
-      operationId: clearReview
-      summary: Discard unresolved suggestions while preserving accepted changes
-      parameters:
-        - name: reviewId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ClearReviewResponse'
-        '404':
-          description: Review not found
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/proposals/{packetId}/retract:
     post:
       operationId: retractProposal
@@ -1090,6 +1612,12 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewMutationPrecondition'
       responses:
         '200':
           description: OK
@@ -1098,7 +1626,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/RetractProposalResponse'
         '409':
-          description: Packet not retractable
+          description: >-
+            PACKET_NOT_RETRACTABLE when the packet is live but no longer the
+            retractable one: the error carries the owning reviewId, and the
+            suggestions stay up for the reviewer to dispose of. A packet the
+            reviewer has already adjudicated is never retractable — the
+            decision advanced the generation the packet was applied at.
+            DOCUMENT_CLOSED when the packet belongs to a detached review (one
+            listReviews reports with attached: false): the message names the
+            file to open.
+            Also REVISION_MISMATCH when expectedWorkingSha256 does not
+            match the live working text, and REVIEW_GENERATION_MISMATCH
+            when expectedReviewGeneration is not the review's current
+            generation; the error carries the actual revision and
+            generation, and neither refusal mutates anything.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+
   /v1/events:
     get:
       operationId: subscribeEvents
@@ -1127,6 +1673,12 @@ paths:
     get:
       operationId: waitForReviewEvents
       summary: Long-poll review events and status after a generation advance
+      description: >-
+        The "what changed since my last turn" query: pass the generation from
+        your last response as afterGeneration. It answers at once if the
+        review has already moved past that generation, otherwise blocks until
+        a decision, comment, or new packet advances it — or until
+        waitSeconds elapses, which answers with timedOut true.
       parameters:
         - name: reviewId
           in: path
@@ -1164,6 +1716,19 @@ paths:
                 $ref: '#/components/schemas/ReviewEventsResponse'
         '404':
           description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: >-
+            DOCUMENT_CLOSED — the review is detached, so nothing can advance
+            its generation and the wait would never end. Open its
+            documentPath to reattach it, then poll.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/views:
     get:
       operationId: listViews
@@ -1175,6 +1740,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ViewsResponse'
+  /v1/workspace/files:
+    get:
+      operationId: listWorkspaceFiles
+      summary: List every file across the configured workspaces
+      description: >-
+        The agent's orientation entry point — all files the editor can see,
+        open or not, flat across every configured workspace. Orient in this
+        order: workspace files -> documents -> reviews -> chunks.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceFilesResponse'
   /v1/workspaces:
     get:
       operationId: listWorkspaces
@@ -1211,29 +1791,7 @@ paths:
                 $ref: '#/components/schemas/WorkspaceDocumentsResponse'
         '404':
           description: Workspace not found
-  /v1/workspaces/{workspaceId}/documents/{documentId}/open:
-    post:
-      operationId: openWorkspaceDocument
-      summary: Open or focus a document in a workspace
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: documentId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkspaceOpenDocumentResponse'
-        '401':
-          description: Unauthorized workspace access
-        '404':
-          description: Workspace not found or document unavailable in workspace
+                $ref: '#/components/schemas/AgentErrorResponse'

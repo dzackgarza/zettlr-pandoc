@@ -35,8 +35,29 @@
  * ```
  */
 export type IPCAPI<T> = {
-  [K in keyof T]: { command: K, payload: T[K] }
+  // Commands declared with an `unknown` payload take no payload at all; the
+  // property is optional for them so call sites can send the bare command.
+  [K in keyof T]: unknown extends T[K]
+    ? { command: K, payload?: undefined }
+    : { command: K, payload: T[K] }
 }[keyof T] // This last thing is required to get from key->value to value only.
+
+/**
+ * A provider's owned IPC contract: for each command, the message fields
+ * beside `command` (usually `{ payload: X }`, or `{ payload?: undefined }`
+ * for commands without one) and the handler's response. Declared next to the
+ * ipcMain.handle() that implements it; the renderer's window.ipc.invoke type
+ * is composed from these maps in source/types/renderer/ipc-bridge.ts.
+ */
+export type IPCContract = Record<string, { request: object, response: unknown }>
+
+/**
+ * The message union of a contract — what ipcMain.handle() receives and
+ * window.ipc.invoke() sends.
+ */
+export type IPCMessage<T extends IPCContract> = {
+  [K in keyof T]: { command: K } & T[K]['request']
+}[keyof T]
 
 export default abstract class ProviderContract {
   /**

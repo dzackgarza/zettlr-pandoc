@@ -66,7 +66,7 @@
  * END HEADER
  */
 
-import FormBuilder, { type FormSchema, type Fieldset } from '@common/vue/form/FormBuilder.vue'
+import FormBuilder from '@common/vue/form/FormBuilder.vue'
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
 import { trans } from '@common/i18n-renderer'
 
@@ -80,7 +80,7 @@ import { getAdvancedFields } from './schema/advanced'
 import { ref, computed, watch, onMounted, onBeforeMount } from 'vue'
 import { resolveLangCode } from '@common/util/map-lang-code'
 import SplitView from '@common/vue/window/SplitView.vue'
-import SelectableList, { type SelectableListItem } from '@common/vue/form/elements/SelectableList.vue'
+import SelectableList from '@common/vue/form/elements/SelectableList.vue'
 import TextControl from '@common/vue/form/elements/TextControl.vue'
 import { getAppearanceFields } from './schema/appearance'
 import { getFileManagerFields } from './schema/file-manager'
@@ -89,10 +89,25 @@ import { getSnippetsFields } from './schema/snippets'
 import { useConfigStore } from 'source/pinia'
 import { PreferencesGroups } from './schema/_preferences-groups'
 
-export type PreferencesFieldset = Fieldset & { group: PreferencesGroups }
-
 const ipcRenderer = window.ipc
 const configStore = useConfigStore()
+
+interface PreferencesCategoryFieldset {
+  group?: PreferencesGroups
+  title: string
+  help?: string
+  fields: unknown[]
+}
+
+interface PreferencesListItem {
+  displayText: string
+  infoString?: string
+  icon?: string
+}
+
+function isStringArray (value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string')
+}
 
 const hasVibrancy = computed(() => configStore.config.window.vibrancy && process.platform === 'darwin')
 
@@ -111,10 +126,10 @@ const config = computed(() => configStore.config)
 const noResultsMessage = computed(() => trans('No results for "%s"', query.value))
 const searchPlaceholder = trans('Search')
 
-const schema = computed<FormSchema>(() => {
+const schema = computed(() => {
   return {
     fieldsets: filteredFieldsets.value,
-    getFieldsetCategory: (fieldset: Fieldset) => {
+    getFieldsetCategory: (fieldset: PreferencesCategoryFieldset) => {
       if (query.value === '') {
         return undefined
       }
@@ -132,7 +147,7 @@ const schema = computed<FormSchema>(() => {
 
 const selectedItem = computed(() => query.value === '' ? currentGroup.value : -1)
 
-const fieldsets = computed<Fieldset[]>(() => {
+const fieldsets = computed(() => {
   return [
     ...getAdvancedFields(configStore.config),
     ...getAppearanceFields(configStore.config),
@@ -189,7 +204,7 @@ const filteredFieldsets = computed(() => {
   })
 })
 
-const groups = computed<Array<SelectableListItem & { id: PreferencesGroups }>>(() => {
+const groups = computed<Array<PreferencesListItem & { id: PreferencesGroups }>>(() => {
   return [
     {
       displayText: trans('General'),
@@ -315,6 +330,10 @@ function handleInput (prop: string, val: unknown): void {
   // We do have an easy time here
   if (prop === 'userDictionaryContents') {
     // The user dictionary is not handled by the config
+    if (!isStringArray(val)) {
+      console.error(new TypeError('The user dictionary form value was not a string array.'))
+      return
+    }
     ipcRenderer.invoke('dictionary-provider', {
       command: 'set-user-dictionary',
       payload: val
@@ -394,6 +413,9 @@ function populateDynamicValues (): void {
     command: 'get-user-dictionary'
   })
     .then((dictionary) => {
+      if (!isStringArray(dictionary)) {
+        throw new TypeError('The dictionary provider returned a non-string array.')
+      }
       userDictionaryContents.value = dictionary
     })
     .catch(err => console.error(err))

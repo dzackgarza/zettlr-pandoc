@@ -191,7 +191,7 @@ import PopoverTable from './PopoverTable.vue'
 import PopoverDocInfo from './PopoverDocInfo.vue'
 import PopoverPandoc from './PopoverPandoc.vue'
 import PandocQuickHelp from './PandocQuickHelp.vue'
-import ReferenceSearchOverlay, { type ReferenceJumpIntent } from './ReferenceSearchOverlay.vue'
+import ReferenceSearchOverlay from './ReferenceSearchOverlay.vue'
 import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
 import type {
   ConfirmReferenceLabelOutcome,
@@ -199,7 +199,12 @@ import type {
 } from '@common/modules/markdown-editor/plugins/create-reference-label'
 import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
 import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
-import { type CreateReferenceLabelDialogPrompt } from './MainEditor.vue'
+import type {
+  CreateReferenceLabelDialogPrompt,
+  EditorCommands,
+  PomodoroConfig,
+  ReferenceJumpIntent
+} from './component-contracts'
 import showToast from '@common/util/show-toast'
 import { trans } from '@common/i18n-renderer'
 import localiseNumber from '@common/util/localise-number'
@@ -227,7 +232,6 @@ import type { ConfigOptions } from 'source/app/service-providers/config/get-conf
 import { type AnyDescriptor } from 'source/types/common/fsal'
 import type { ProjectRootSpec, ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
-import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
 import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from '@dts/common/documents'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
 import { TaskStatus } from 'source/pinia/lrt-store'
@@ -353,9 +357,11 @@ function openReferenceSearch (request: ReferenceSearchRequest = null): void {
         return // The boundary surfaced the closable toast; nothing to open.
       }
       referenceSearchDefinitions.value = outcome.value.snapshots.flatMap(snapshot => snapshot.definitions)
-      referenceSearchOccurrences.value = request === null
-        ? outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
-        : request.occurrences
+      // ONE owner for the citing-locations fact (issues #53, #46): both
+      // modes read the provider's freshly fetched merged snapshot, whose
+      // live overlays the document authority feeds on load and edit. The
+      // keyed request names only the key; the overlay filters these rows.
+      referenceSearchOccurrences.value = outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
       referenceSearchRequest.value = request
       referenceSearchProjectRoots.value = collectProjectRoots()
       referenceSearchActiveDocumentPath.value = documentTreeStore.lastLeafActiveFile?.path
@@ -465,86 +471,21 @@ function handleReferenceJump (intent: ReferenceJumpIntent): void {
       newTab: false,
       targetRange: intent.range
     }
-  } as DocumentManagerIPCAPI)
+  })
     .catch(err => console.error(err))
-}
-
-export interface PomodoroConfig {
-  currentEffectFile: string
-  soundEffect: HTMLAudioElement
-  intervalHandle: ReturnType<typeof setInterval>|undefined
-  popover: any
-  durations: {
-    task: number
-    short: number
-    long: number
-  }
-  phase: {
-    type: 'task'|'short'|'long'
-    elapsed: number
-  }
-  counter: {
-    task: number
-    short: number
-    long: number
-  }
-  colour: {
-    task: string
-    short: string
-    long: string
-  }
 }
 
 const pomodoro = ref<PomodoroConfig>({
   currentEffectFile: glassFile,
   soundEffect: new Audio(glassFile),
   intervalHandle: undefined,
-  popover: undefined,
   durations: { task: 1500, short: 300, long: 1200 },
   phase: { type: 'task', elapsed: 0 },
   counter: { task: 0, short: 0, long: 0 },
   colour: { task: '#ff3366', short: '#ddff00', long: '#33ffcc' }
 })
 
-/**
- * Okay, hear me out. We have the following situation: We have a toolbar, and
- * external components that want to tell the main editor to do something. But
- * Vue doesn't have a concept of events being passed down to child components
- * and since editors may now be nested arbitrarily deep, we have no direct way
- * of accessing the editors and tell them to do something. Basically, Vue's data
- * flow goes like this: Events flow up, and props flow down. That's it. So we're
- * using this hacky solution "misusing" props as events. This interface
- * represents all the potential editor commands that can be issued. The last
- * property can contain arbitrary data if required by the command. We'll be
- * passing this struct as a prop down to every EditorBranch and EditorPane into
- * the main editor components. Every editor instance then listens to these
- * events by watching property changes (i.e. when moveSection switches from true
- * to false) and testing if they are the last editor (the only identifying info
- * we can store in the state to not break things due to Vue's aggressive
- * reactivity). Then, the editors can act based on this info.
- *
- * One example:
- * 1. The app receives a jump to line-command. It then writes the necessary info
- *    (in this case, which line to jump to) into the `data` prop. That is not
- *    watched by the editors, but since it's part of the data structure, it will
- *    silently update in the background.
- * 2. Then, the app switches the jumpToLine-property (false->true or otherwise).
- *    Since that sub-property is being watched by the editors, it will trigger
- *    the watcher that then checks the lastLeafId in the state. If that
- *    corresponds to the editor's leaf ID, the editor calls the appropriate
- *    function locally, and executes the command, providing the data.
- */
-export interface EditorCommands {
-  jumpToLine: boolean
-  moveSection: boolean
-  addKeywords: boolean
-  replaceSelection: boolean
-  insertPandoc: boolean
-  executeCommand: boolean
-  data: any
-}
-
-// Editor commands state
+// Editor commands state (the prop-as-event bus; see component-contracts.ts)
 const editorCommands = ref<EditorCommands>({
   jumpToLine: false,
   moveSection: false,
@@ -845,9 +786,21 @@ const toolbarControls = computed<ToolbarControl[]>(() => {
   ] satisfies ToolbarControl[]
 })
 
-const editorSidebarSplitComponent = ref<typeof SplitView|null>(null)
-const fileManagerSplitComponent = ref<typeof SplitView|null>(null)
-const globalSearchComponent = ref<typeof GlobalSearch|null>(null)
+/** The surface SplitView.vue exposes to its template refs. */
+interface SplitViewHandle {
+  hideView: (viewNumber: 1|2) => void
+  unhide: () => void
+}
+
+/** The surface GlobalSearch.vue exposes to its template refs. */
+interface GlobalSearchHandle {
+  focusQueryInput: () => void
+  startSearch: (overrideQuery?: string) => void
+}
+
+const editorSidebarSplitComponent = ref<SplitViewHandle|null>(null)
+const fileManagerSplitComponent = ref<SplitViewHandle|null>(null)
+const globalSearchComponent = ref<GlobalSearchHandle|null>(null)
 const paneConfiguration = computed(() => documentTreeStore.paneStructure)
 const lastLeafId = computed(() => documentTreeStore.lastLeafId)
 const distractionFree = computed<boolean>(() => windowStateStore.distractionFreeMode !== undefined)
@@ -857,6 +810,24 @@ const distractionFree = computed<boolean>(() => windowStateStore.distractionFree
 // provider whenever the focused leaf or its documents change.
 const canGoBack = ref(false)
 const canGoForward = ref(false)
+
+/**
+ * Asks the documents provider to move the focused pane one step through its
+ * session history. Without a focused pane there is no history to move in.
+ *
+ * @param   {'navigate-back'|'navigate-forward'}  command  The direction
+ */
+function navigateHistory (command: 'navigate-back'|'navigate-forward'): void {
+  const leafId = lastLeafId.value
+  if (leafId === undefined) {
+    return // No pane has been focused yet; there is no history to navigate
+  }
+
+  ipcRenderer.invoke('documents-provider', {
+    command,
+    payload: { windowId, leafId }
+  }).catch(err => console.error(err))
+}
 
 function refreshNavigationState (): void {
   const leafId = lastLeafId.value
@@ -869,8 +840,8 @@ function refreshNavigationState (): void {
   ipcRenderer.invoke('documents-provider', {
     command: 'get-navigation-state',
     payload: { windowId, leafId }
-  } as DocumentManagerIPCAPI)
-    .then((state: { canGoBack: boolean, canGoForward: boolean }) => {
+  })
+    .then(state => {
       canGoBack.value = state.canGoBack
       canGoForward.value = state.canGoForward
     })
@@ -967,8 +938,8 @@ onMounted(() => {
         command: 'get-descriptor',
         payload: documentTreeStore.lastLeafActiveFile.path
       })
-        .then((descriptor: AnyDescriptor|undefined) => {
-          if (descriptor?.type === 'file' && descriptor?.id !== '') {
+        .then((descriptor: AnyDescriptor|AnyDescriptor[]|undefined) => {
+          if (descriptor !== undefined && !Array.isArray(descriptor) && descriptor.type === 'file' && descriptor.id !== '') {
             navigator.clipboard.writeText(descriptor.id).catch(err => console.error(err))
           }
         })
@@ -1004,21 +975,9 @@ onMounted(() => {
           .catch(err => console.error(err))
       }
     } else if (shortcut === 'navigate-back') {
-      ipcRenderer.invoke('documents-provider', {
-        command: 'navigate-back',
-        payload: {
-          windowId,
-          leafId: lastLeafId.value
-        }
-      } as DocumentManagerIPCAPI).catch(err => console.error(err))
+      navigateHistory('navigate-back')
     } else if (shortcut === 'navigate-forward') {
-      ipcRenderer.invoke('documents-provider', {
-        command: 'navigate-forward',
-        payload: {
-          windowId,
-          leafId: lastLeafId.value
-        }
-      } as DocumentManagerIPCAPI).catch(err => console.error(err))
+      navigateHistory('navigate-forward')
     }
   })
 
@@ -1035,7 +994,7 @@ onMounted(() => {
 
   // Check if there is an update available.
   ipcRenderer.invoke('update-provider', { command: 'update-status' })
-    .then((state: UpdateState) => {
+    .then(state => {
       isUpdateAvailable.value = state.updateAvailable
     })
     .catch(err => console.error(err))
@@ -1058,8 +1017,8 @@ function editorSidebarSplitComponentResized (sizes: [number, number]): void {
 
 function insertTable (spec: { rows: number, cols: number }): void {
   // Generate a simple table based on the info, and insert it.
-  const align: Array<'center'|'left'|'right'|null> = Array(spec.cols).fill(null)
-  const row = (): string[] => Array(spec.cols).fill('')
+  const align = new Array<'center'|'left'|'right'|null>(spec.cols).fill(null)
+  const row = (): string[] => new Array<string>(spec.cols).fill('')
   const ast: string[][] = Array.from({ length: spec.rows }, row)
 
   editorCommands.value.data = buildPipeMarkdownTable(ast, align)
@@ -1109,7 +1068,7 @@ function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
     ipcRenderer.invoke('documents-provider', {
       command: 'open-file',
       payload: { path: filePath, windowId, leafId: containingLeaf.id }
-    } as DocumentManagerIPCAPI)
+    })
       .then(() => {
         // Re-execute the jtl command
         setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME)
@@ -1129,7 +1088,7 @@ function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
       leafId: lastLeafId.value,
       newTab
     }
-  } as DocumentManagerIPCAPI)
+  })
     .then(() => {
       // Re-execute the jtl command
       setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME)
@@ -1152,13 +1111,6 @@ function startGlobalSearch (terms: string): void {
     .catch(err => console.error(err))
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function toggleFileList (): void {
-  // This event can be used by various components to ask the file manager to
-  // toggle its file list visibility
-  fileManagerSplitComponent.value?.toggleFileList()
-}
-
 function handleClick (clickedID?: string): void {
   if (clickedID === 'root-open-workspaces') {
     ipcRenderer.invoke('application', { command: 'root-open-workspaces' })
@@ -1173,24 +1125,12 @@ function handleClick (clickedID?: string): void {
     if (!canGoBack.value) {
       return // The control renders disabled; never navigate past the boundary
     }
-    ipcRenderer.invoke('documents-provider', {
-      command: 'navigate-back',
-      payload: {
-        windowId,
-        leafId: lastLeafId.value
-      }
-    } as DocumentManagerIPCAPI).catch(err => console.error(err))
+    navigateHistory('navigate-back')
   } else if (clickedID === 'next-file') {
     if (!canGoForward.value) {
       return // The control renders disabled; never navigate past the boundary
     }
-    ipcRenderer.invoke('documents-provider', {
-      command: 'navigate-forward',
-      payload: {
-        windowId,
-        leafId: lastLeafId.value
-      }
-    } as DocumentManagerIPCAPI).catch(err => console.error(err))
+    navigateHistory('navigate-forward')
   } else if (clickedID === 'export') {
     showExportPopover.value = !showExportPopover.value
   } else if (clickedID === 'show-stats') {
@@ -1304,19 +1244,6 @@ function pomodoroTick (): void {
     }
 
     pomodoro.value.soundEffect.play().catch(_e => { /* We will be getting errors when pausing quickly */ })
-  }
-
-  // Finally handle the popover logic
-  if (pomodoro.value.popover !== undefined && pomodoro.value.popover.isClosed() === false) {
-    // The popover is visible, so let's update the data. Good thing is, we
-    // only really need to update two things: The current task, and the
-    // elapsed time.
-    pomodoro.value.popover.updateData({
-      internalCurrentPhase: pomodoro.value.phase.type,
-      internalElapsed: pomodoro.value.phase.elapsed
-    })
-  } else if (pomodoro.value.popover !== undefined && pomodoro.value.popover.isClosed() === true) {
-    pomodoro.value.popover = undefined // Cleanup
   }
 }
 

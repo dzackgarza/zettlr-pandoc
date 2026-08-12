@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import subprocess
 import sys
@@ -29,11 +30,19 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 ASAR = REPO / "out" / "Zettlr-Pandoc-linux-x64" / "resources" / "app.asar"
 BUILD_TIMEOUT_S = 600
 MIN_PLAUSIBLE_ASAR_MB = 10  # a real build is ~100 MB; anything tiny is broken
+STAMP = REPO / "out" / "Zettlr-Pandoc-linux-x64" / ".source-fingerprint"
 
 
 def head_short_hash() -> str:
     return subprocess.run(
         ["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+
+def source_fingerprint() -> str:
+    return subprocess.run(
+        [str(REPO / "scripts" / "desktop" / "zettlr-pandoc-source-fingerprint"), str(REPO)],
         capture_output=True, text=True, check=True,
     ).stdout.strip()
 
@@ -77,24 +86,37 @@ def verify_artifact(build_out: str = "", build_err: str = "") -> None:
 
 def build_and_verify() -> None:
     print(f"[verify-build] running production build (timeout {BUILD_TIMEOUT_S}s)...")
-    start = time.time()
+    fingerprint = source_fingerprint()
+    start = time.time_ns()
     try:
         result = subprocess.run(
-            ["npx", "-y", "@yarnpkg/cli-dist@4.11.0", "run", "package"],
+            ["bun", "run", "package:linux-x64"],
             cwd=REPO, capture_output=True, text=True, timeout=BUILD_TIMEOUT_S,
+            # CI=1 selects listr's verbose renderer so piped logs carry real
+            # task output instead of spinner frames. It does NOT prevent the
+            # swallowed mode: that is forge's commander-spawned `package`
+            # subcommand forwarding a child SIGNAL death as process.exit(null)
+            # -> exit 0. Diagnosed 2026-08-12: earlyoom SIGTERMed the ~7 GB
+            # webpack compile under memory pressure and the build chain
+            # reported success with no fresh asar. The freshness check below
+            # is what catches it; on BUILD BROKEN, check `journalctl -u
+            # earlyoom` before suspecting webpack.
+            env={**os.environ, "CI": "1"},
         )
     except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
         fail(
             f"build TIMED OUT after {BUILD_TIMEOUT_S}s -- webpack hung and produced "
             f"no fresh artifact",
-            exc.stdout or "", exc.stderr or "",
+            stdout, stderr,
         )
 
     if result.returncode != 0:
         fail(f"build exited {result.returncode}", result.stdout, result.stderr)
 
     # Exit 0 is NOT proof: the whole point is that a swallowed failure exits 0.
-    if not ASAR.exists() or ASAR.stat().st_mtime < start:
+    if not ASAR.exists() or ASAR.stat().st_mtime_ns < start:
         fail(
             "build exited 0 but app.asar was NOT (re)written during this build -- "
             "the swallowed-webpack-failure mode",
@@ -102,6 +124,8 @@ def build_and_verify() -> None:
         )
 
     verify_artifact(result.stdout, result.stderr)
+    STAMP.write_text(fingerprint + "\n")
+    print(f"[verify-build] wrote source fingerprint to {STAMP}")
 
 
 def main() -> None:

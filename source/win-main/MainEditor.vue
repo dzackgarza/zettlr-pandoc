@@ -44,7 +44,7 @@
 import MarkdownEditor, { type EditorViewPersistentState } from '@common/modules/markdown-editor'
 
 import { ref, computed, onMounted, onBeforeUnmount, watch, toRef, onUpdated } from 'vue'
-import { type EditorCommands } from './App.vue'
+import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
 import { hasMarkdownExt } from '@common/util/file-extention-checks'
 import { DP_EVENTS, type OpenDocument } from '@dts/common/documents'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
@@ -56,19 +56,17 @@ import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ip
 import { ipcMarkdownFormatter, surfaceFormatResult } from '@common/modules/markdown-editor/commands/format-document-ipc'
 import { useConfigStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { isAbsolutePath, pathBasename, pathDirname, resolvePath } from '@common/util/renderer-path-polyfill'
-import type { DocumentManagerIPCAPI, DocumentsUpdateContext, SaveFileResult } from 'source/app/service-providers/documents'
-import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
+import type { DocumentsUpdateContext } from 'source/app/service-providers/documents'
 import type { ProjectInfo } from 'source/common/modules/markdown-editor/plugins/project-info-field'
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
 import type { DocumentLocation, ProjectRootSpec, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
-import type { ReviewDiffSession, ReviewDiffStatus } from '@dts/common/review-diff'
+import type { ReviewDiffSession } from '@dts/common/review-diff'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
-import { extractReferences } from '@common/pandoc-util/extract-references'
 import { annotateCompletionEntries } from '@common/pandoc-util/project-reference-status'
-import { resolveWorkspace } from '@common/pandoc-util/resolve-references'
 import { trans } from '@common/i18n-renderer'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import showToast from '@common/util/show-toast'
+import { sha256Text } from '@common/util/sha256'
 import type { ReferenceKeyEditPromptIntent } from '@common/modules/markdown-editor/plugins/reference-key-edit-prompt'
 import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
 import {
@@ -77,10 +75,6 @@ import {
   type CreateReferenceLabelIntent,
   type CreateReferenceLabelRequest
 } from '@common/modules/markdown-editor/plugins/create-reference-label'
-import {
-  createLiveBufferReporter,
-  type LiveBufferScheduler
-} from '@common/modules/markdown-editor/util/live-buffer-reporter'
 import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
 import { runRecoverably } from '@common/util/run-recoverably'
 import surfaceDocumentLoadError, {
@@ -99,32 +93,10 @@ import type { WorkspaceReferenceEdit } from '@dts/common/references'
 
 const ipcRenderer = window.ipc
 
-// ——— Live-buffer reporting (issue #1 Phase 8) ———
-// Module-owned so the state survives editor remounts and pane switches: one
-// reporter per window plus one monotonic generation counter per document.
-// The reporter debounces per document and delivers the shared-extractor
-// snapshot to the reference provider ('report-live-buffer'), so unsaved
-// buffers reach the merged workspace state; closing/switching a document
-// drops its overlay immediately ('drop-live-buffer').
-const liveBufferGenerations = new Map<string, number>()
-
-function nextLiveBufferGeneration (documentPath: string): number {
-  const next = (liveBufferGenerations.get(documentPath) ?? 0) + 1
-  liveBufferGenerations.set(documentPath, next)
-  return next
-}
-
-const liveBufferScheduler: LiveBufferScheduler = {
-  schedule: (callback, delayMs) => {
-    const handle = setTimeout(callback, delayMs)
-    return { cancel: () => { clearTimeout(handle) } }
-  }
-}
-
-const liveBufferReporter = createLiveBufferReporter(
-  async (channel, message) => await ipcRenderer.invoke(channel, message),
-  liveBufferScheduler
-)
+// Live-buffer reference state is owned by MAIN (issue #53): the document
+// authority already streams every edit in through collab push-updates, and
+// the references provider derives the live overlay from that authority
+// text. This window reports nothing and keeps no per-document counters.
 
 // This function overwrites the getBibliographyForDescriptor function to ensure
 // the library is always absolute. We have to do it this ridiculously since the
@@ -149,22 +121,6 @@ const props = defineProps<{
   file: OpenDocument
   persistentStateMap: Map<string, EditorViewPersistentState>
 }>()
-
-/**
- * The relayed create-label request App.vue mounts the dialog over: the
- * context-fixed family, the editable slug proposal, and the closure that
- * performs the insertion in the invoking editor once the dialog confirms a
- * key (clipboard write and toast are App.vue's half). The closure re-resolves
- * the target against the CURRENT document at confirm time (issue #1 Phase 8:
- * confirmReferenceLabelInsertion) and returns the typed outcome — a stale
- * outcome means NOTHING was inserted and App.vue surfaces it as a closable
- * toast.
- */
-export interface CreateReferenceLabelDialogPrompt {
-  family: CreateReferenceLabelRequest['family']
-  proposedSlug: string
-  applyCreate: (intent: CreateReferenceLabelIntent) => ConfirmReferenceLabelOutcome
-}
 
 const emit = defineEmits<{
   (e: 'globalSearch', query: string): void
@@ -219,7 +175,7 @@ function applyPendingNavigation (): void {
   }
 }
 
-function applyReviewDiffSession (session: ReviewDiffSession, reviewGeneration?: number): void {
+function applyReviewDiffSession (session: ReviewDiffSession): void {
   if (session.documentPath !== props.file.path) {
     return
   }
@@ -230,15 +186,41 @@ function applyReviewDiffSession (session: ReviewDiffSession, reviewGeneration?: 
   }
 
   pendingReviewDiffSession = null
-  currentEditor.startReviewDiffSession(session, reviewGeneration)
+  currentEditor.startReviewDiffSession(session)
+}
+
+/**
+ * The working-text hash a review decision is bound to. The sync comes first:
+ * hashing before the pane's pending edits have reached the document authority
+ * would bind text main has not been told about, and main would then refuse a
+ * decision that was in fact current.
+ */
+async function syncedWorkingSha256 (editor: MarkdownEditor): Promise<string> {
+  await editor.whenSynced()
+  return sha256Text(editor.value)
+}
+
+/**
+ * Surfaces a refused review mutation. Success changes nothing locally — the
+ * provider's broadcast is the only thing that moves review state in this pane
+ * — so this is the whole of the response handling. A refusal is toasted and
+ * rethrown, which is what tells the widget to hand its controls back.
+ */
+function throwOnReviewRefusal (
+  result: { ok: true }|{ ok: false, message: string }
+): void {
+  if (!result.ok) {
+    showToast(trans(result.message), 'error')
+    throw new Error(result.message)
+  }
 }
 
 function fetchActiveReviewDiffSession (): void {
   ipcRenderer.invoke('documents-provider', {
     command: 'get-review-diff-session',
     payload: { path: props.file.path }
-  } as DocumentManagerIPCAPI)
-    .then((session: ReviewDiffSession|undefined) => {
+  })
+    .then(session => {
       if (session !== undefined) {
         applyReviewDiffSession(session)
       }
@@ -280,11 +262,8 @@ ipcRenderer.on('shortcut', (event, command) => {
   if (command === 'save-file') {
     // Main is telling us to save, so tell main to save the current file.
     const doSave = (): void => {
-      ipcRenderer.invoke('documents-provider', {
-        command: 'save-file',
-        payload: { path: props.file.path }
-      } as DocumentManagerIPCAPI)
-        .then((result: SaveFileResult) => {
+      ipcRenderer.invoke('documents:save-file', { path: props.file.path })
+        .then(result => {
           if (result.ok) {
             return
           }
@@ -307,17 +286,33 @@ ipcRenderer.on('shortcut', (event, command) => {
     // over the buffer first and wait for the format's collab update to reach the
     // document authority, so the on-disk write sees the formatted bytes. The
     // format is a single undo step, so one undo reverts an unwanted auto-format.
+    //
+    // A formatter that reports a typed failure (flowmark absent, bad exit) left
+    // the buffer untouched, surfaceFormatResult tells the author why, and the
+    // save proceeds on the unchanged text. But if the format DID change the
+    // buffer and whenSynced cannot promise those bytes reached the authority,
+    // saving would write the pre-format text and report an ordinary success —
+    // the author would find out by diffing the file. Refuse the save and say so
+    // instead; the buffer keeps the formatted text and pressing save again
+    // retries the whole thing.
     if (configStore.config.editor.formatOnSave && isMarkdown.value && currentEditor !== undefined) {
       const editor = currentEditor
       editor.runFormatter(ipcMarkdownFormatter)
         .then(async result => {
           surfaceFormatResult(result)
           await editor.whenSynced()
-        })
-        .then(doSave)
-        .catch(e => {
-          console.error('Format-on-save failed; saving unformatted', e)
           doSave()
+        })
+        .catch(e => {
+          console.error(`[MainEditor] Format-on-save for ${props.file.path} did not complete; the file was NOT saved`, e)
+          showToast(
+            trans(
+              'Could not save "%s": format-on-save did not complete, so nothing was written. Press save again.',
+              pathBasename(props.file.path)
+            ),
+            'error',
+            12000
+          )
         })
     } else {
       doSave()
@@ -375,12 +370,11 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     currentEditor?.clearReviewDiffSession()
     currentEditor?.reload().catch(reportDocumentLoadError)
   } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
-    currentEditor?.clearReviewDiffSession()
     // The file has been saved to disk. This means we should probably update the
     // descriptor to know of, e.g., library changes.
     ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: props.file.path })
-      .then((descriptor: MDFileDescriptor|CodeFileDescriptor|undefined) => {
-        if (descriptor === undefined) {
+      .then(descriptor => {
+        if (descriptor === undefined || Array.isArray(descriptor) || (descriptor.type !== 'file' && descriptor.type !== 'code')) {
           throw new Error(`Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`)
         }
 
@@ -405,7 +399,7 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     context.filePath === props.file.path &&
     context.reviewCleared === true
   ) {
-    // Provider closed or completed the review — exit review mode (spec section 13)
+    // Provider closed or completed the review — exit review mode
     currentEditor?.clearReviewDiffSession(context.reviewId)
   } else if (
     event === DP_EVENTS.REVIEW_DIFF &&
@@ -413,10 +407,7 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     context.reviewDiffSession !== undefined &&
     !(context.windowId === props.windowId && context.leafId === props.leafId)
   ) {
-    applyReviewDiffSession(
-      context.reviewDiffSession,
-      context.reviewState?.generation,
-    )
+    applyReviewDiffSession(context.reviewDiffSession)
   }
 })
 
@@ -439,9 +430,6 @@ onBeforeUnmount(() => {
     props.persistentStateMap.set(props.file.path, currentEditor.persistentState)
     // Clear out the table of contents before unmounting the component.
     windowStateStore.tableOfContents = undefined
-    // The closed buffer's live overlay dies with it: the provider reverts
-    // to the saved FSAL snapshot immediately (issue #1 Phase 8).
-    liveBufferReporter.dropDocument(currentEditor.documentPath)
     currentEditor.unmount()
   }
 })
@@ -458,10 +446,8 @@ onUpdated(() => {
   const currentFilePath = currentEditor.documentPath
   if (currentFilePath !== props.activeFile?.path) {
     // File path has changed -> unmount and remount (duplicate code from
-    // onMounted and onBeforeUnmount hooks). The switched-away buffer's live
-    // overlay drops immediately (issue #1 Phase 8).
+    // onMounted and onBeforeUnmount hooks).
     props.persistentStateMap.set(currentFilePath, currentEditor.persistentState)
-    liveBufferReporter.dropDocument(currentFilePath)
     currentEditor.unmount()
     loadDocument().catch(reportDocumentLoadError)
   }
@@ -611,10 +597,14 @@ workspaceStore.$subscribe(() => {
 
 // External commands/"event" system
 watch(toRef(props.editorCommands, 'jumpToLine'), () => {
-  const { filePath, lineNumber } = props.editorCommands.data
+  const data = props.editorCommands.data
+  if (typeof data !== 'object' || data === undefined || !('filePath' in data)) {
+    return // The toggled command carried no jump payload
+  }
+
   // Execute a jtl-command if the current displayed file is the correct one
-  if (filePath === props.file.path && typeof lineNumber === 'number') {
-    jtl(lineNumber)
+  if (data.filePath === props.file.path) {
+    jtl(data.lineNumber)
   }
 })
 
@@ -623,9 +613,9 @@ watch(toRef(props.editorCommands, 'moveSection'), () => {
     return
   }
 
-  const { from, to } = props.editorCommands.data
-  if (typeof from === 'number' && typeof to === 'number') {
-    currentEditor?.moveSection(from, to)
+  const data = props.editorCommands.data
+  if (typeof data === 'object' && data !== undefined && 'from' in data) {
+    currentEditor?.moveSection(data.from, data.to)
   }
 })
 
@@ -646,8 +636,11 @@ watch(toRef(props.editorCommands, 'executeCommand'), () => {
     return
   }
 
-  const command: string = props.editorCommands.data
-  currentEditor.runCommand(command)
+  const data = props.editorCommands.data
+  if (typeof data !== 'string') {
+    return // The toggled command carried no command identifier
+  }
+  currentEditor.runCommand(data)
   currentEditor.focus()
 })
 
@@ -662,8 +655,11 @@ watch(toRef(props.editorCommands, 'replaceSelection'), () => {
     return
   }
 
-  const textToInsert: string = props.editorCommands.data
-  currentEditor?.replaceSelection(textToInsert)
+  const data = props.editorCommands.data
+  if (typeof data !== 'string') {
+    return // The toggled command carried no text payload
+  }
+  currentEditor?.replaceSelection(data)
 })
 
 watch(toRef(props.editorCommands, 'insertPandoc'), () => {
@@ -677,9 +673,12 @@ watch(toRef(props.editorCommands, 'insertPandoc'), () => {
     return
   }
 
-  const { type, attributes } = props.editorCommands.data
-  if ((type === 'div' || type === 'span') && typeof attributes === 'string') {
-    currentEditor?.insertPandocDivOrSpan(type as 'div'|'span', attributes)
+  const data = props.editorCommands.data
+  if (
+    typeof data === 'object' && data !== undefined && 'type' in data &&
+    (data.type === 'div' || data.type === 'span')
+  ) {
+    currentEditor?.insertPandocDivOrSpan(data.type, data.attributes)
     currentEditor?.focus()
   }
 })
@@ -738,18 +737,6 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   editor.on('change', () => {
     if (currentEditor === editor) {
       windowStateStore.tableOfContents = currentEditor.tableOfContents
-
-      // Report the changed live buffer to the reference provider (issue #1
-      // Phase 8): debounced per document, monotonic generations, the same
-      // shared extractor FSAL uses. Markdown documents only — code files
-      // never contribute reference snapshots.
-      if (isMarkdown.value) {
-        liveBufferReporter.reportChange(
-          editor.documentPath,
-          editor.value,
-          nextLiveBufferGeneration(editor.documentPath)
-        )
-      }
     }
   })
 
@@ -759,23 +746,56 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     }
   })
 
-  editor.on('review-diff-status', (status: ReviewDiffStatus) => {
-    ipcRenderer.invoke('documents-provider', {
-      command: 'set-review-diff-status',
-      // Spread the whole status: hand-listing these fields is what silently
-      // dropped reviewGeneration and disabled the main-process staleness guard.
-      payload: { ...status, path: status.filePath }
-    } as DocumentManagerIPCAPI)
-      .then(accepted => {
-        if (accepted !== true) {
-          fetchActiveReviewDiffSession()
-        }
-      })
-      .catch(err => console.error('Could not update review-diff status', err))
-  })
-
-  editor.on('review-diff-error', (message: string) => {
-    showToast(trans(message), 'error')
+  // The pane's one path to a review decision. Nothing here mutates review
+  // state: the provider owns it, and its broadcast is what redraws the
+  // widgets. Every call binds the decision to the generation the widgets were
+  // drawn from and to the exact bytes the reviewer is looking at, so a
+  // decision formed against a stale pane is refused instead of landing on a
+  // chunk that moved.
+  editor.setReviewActionClient({
+    decide: async input => {
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents:decide-review-chunk', {
+        reviewId: input.reviewId,
+        chunkId: input.chunkId,
+        decision: input.decision,
+        expectedReviewGeneration: input.expectedReviewGeneration,
+        expectedWorkingSha256: await syncedWorkingSha256(editor)
+      }))
+    },
+    commentChunk: async input => {
+      // Annotation, not adjudication — but the chunk id is content-addressed
+      // over the working text, so it fences exactly like a decision.
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents:comment-review-chunk', {
+        reviewId: input.reviewId,
+        chunkId: input.chunkId,
+        text: input.text,
+        expectedReviewGeneration: input.expectedReviewGeneration,
+        expectedWorkingSha256: await syncedWorkingSha256(editor)
+      }))
+    },
+    acceptAll: async input => {
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents:accept-all-review-chunks', {
+        reviewId: input.reviewId,
+        expectedReviewGeneration: input.expectedReviewGeneration,
+        expectedWorkingSha256: await syncedWorkingSha256(editor)
+      }))
+    },
+    clear: async input => {
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents:clear-review', {
+        reviewId: input.reviewId,
+        expectedReviewGeneration: input.expectedReviewGeneration,
+        expectedWorkingSha256: await syncedWorkingSha256(editor)
+      }))
+    },
+    comment: async input => {
+      // A comment adjudicates nothing and moves no text, so it fences on the
+      // review generation alone and needs no sync.
+      throwOnReviewRefusal(await ipcRenderer.invoke('documents:add-review-comment', {
+        reviewId: input.reviewId,
+        text: input.text,
+        expectedReviewGeneration: input.expectedReviewGeneration
+      }))
+    }
   })
 
   editor.on('focus', () => {
@@ -785,7 +805,7 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
         leafId: props.leafId,
         windowId: props.windowId
       }
-    } as DocumentManagerIPCAPI).catch(err => console.error(err))
+    }).catch(err => console.error(err))
 
     // NOTE: The lastLeafId will be changed in the documentTreeStore in response
     // to an event from main (DP_EVENTS.ACTIVE_FILE) which will be emitted as a
@@ -900,8 +920,8 @@ async function loadDocument (): Promise<void> {
 
   maybeHighlightSearchResults()
 
-  const descriptor: MDFileDescriptor|CodeFileDescriptor|undefined = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: props.file.path })
-  if (descriptor === undefined) {
+  const descriptor = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: props.file.path })
+  if (descriptor === undefined || Array.isArray(descriptor) || (descriptor.type !== 'file' && descriptor.type !== 'code')) {
     throw new Error(`Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`)
   }
 
@@ -936,49 +956,74 @@ function jtl (lineNumber: number): void {
   currentEditor?.jtl(lineNumber)
 }
 
+/** A CSL name field: persons carry family names, institutions a literal. */
+interface CSLNameField {
+  family?: unknown
+  literal?: unknown
+}
+
+/** Narrows a CSL item's author/editor field to a usable name list. */
+function isNameList (value: unknown): value is CSLNameField[] {
+  return Array.isArray(value) && value.every(entry => typeof entry === 'object' && entry !== null)
+}
+
+/** The year (or literal date) of a CSL item's issued field, if present. */
+function formatIssuedDate (issued: unknown): string {
+  if (typeof issued !== 'object' || issued === null) {
+    return ''
+  }
+
+  const dateParts = (issued as { 'date-parts'?: unknown })['date-parts']
+  if (Array.isArray(dateParts) && Array.isArray(dateParts[0])) {
+    const year: unknown = dateParts[0][0]
+    if (typeof year === 'number' || typeof year === 'string') {
+      return ` (${year})`
+    }
+  }
+
+  const literal = (issued as { literal?: unknown }).literal
+  if (typeof literal === 'string' || typeof literal === 'number') {
+    return ` (${literal})`
+  }
+
+  return ''
+}
+
 async function updateCitationKeys (library: string): Promise<void> {
-  const items: Array<{ citekey: string, displayText: string }> = (await ipcRenderer.invoke('citeproc-provider', {
+  const items = (await ipcRenderer.invoke('citeproc-provider', {
     command: 'get-items',
     payload: { database: library }
-  } as CiteprocProviderIPCAPI))
-    .map((item: CSLItem) => {
+  }))
+    .map(item => {
       // Get a rudimentary author list. Precedence are authors, then editors.
       // Fallback: Container title.
       let authors = ''
-      const authorSrc = item.author !== undefined && Array.isArray(item.author)
+      const authorSrc = isNameList(item.author)
         ? item.author
-        : item.editor !== undefined && Array.isArray(item.editor) ? item.editor : []
+        : isNameList(item.editor) ? item.editor : []
 
       if (authorSrc.length > 0) {
         authors = authorSrc.map(author => {
-          if (author.family !== undefined) {
+          if (typeof author.family === 'string') {
             return author.family
-          } else if (author.literal !== undefined) {
+          } else if (typeof author.literal === 'string') {
             return author.literal
           } else {
             return undefined
           }
         }).filter(elem => elem !== undefined).join(', ')
-      } else if (item['container-title'] !== undefined && typeof item['container-title'] === 'string') {
+      } else if (typeof item['container-title'] === 'string') {
         authors = item['container-title']
       }
 
       let title = ''
-      if (item.title !== undefined && typeof item.title === 'string') {
+      if (typeof item.title === 'string') {
         title = item.title
-      } else if (item['container-title'] !== undefined && typeof item['container-title'] === 'string') {
+      } else if (typeof item['container-title'] === 'string') {
         title = item['container-title']
       }
 
-      let date = ''
-      if (item.issued != undefined && typeof item.issued === 'object') {
-        if ('date-parts' in item.issued && Array.isArray(item.issued['date-parts'])) {
-          const year = item.issued['date-parts'][0][0]
-          date = ` (${year})`
-        } else if ('literal' in item.issued) {
-          date = ` (${item.issued.literal})`
-        }
-      }
+      const date = formatIssuedDate(item.issued)
 
       // This is just a very crude representation of the citations.
       return {
@@ -1051,18 +1096,18 @@ async function updateReferenceEntries (): Promise<void> {
     return
   }
 
-  // Additionally feed the resolved workspace reference view (issue #1
-  // Phase 4): the current document's snapshot comes from a live extraction
-  // of the local buffer (exact live ranges), which replaces the provider's
-  // saved snapshot inside the merged workspace view.
-  const liveSnapshot = extractReferences(props.file.path, currentEditor.value)
+  // The main-process reference provider owns the live buffer overlay. Do not
+  // extract a parallel snapshot from the renderer: that would let an editor
+  // pane diverge from the authority used by citing and rename operations.
+  const liveSnapshot = state.snapshots.find(candidate => candidate.documentPath === props.file.path)
+  if (liveSnapshot === undefined) {
+    return
+  }
   const workspace = state.snapshots
-    .filter(candidate => candidate.documentPath !== props.file.path)
-    .concat([liveSnapshot])
   currentEditor.setWorkspaceReferences({
     snapshot: liveSnapshot,
     workspaceOccurrences: workspace.flatMap(candidate => candidate.occurrences),
-    resolutions: resolveWorkspace(workspace),
+    resolutions: state.resolutions,
     projectRoots
   })
 }
@@ -1211,9 +1256,11 @@ function cancelWorkspaceRename (): void {
 
 /**
  * Applies the previewed workspace rename (the dialog's Apply all): the
- * hash-fenced atomic commit, this document's returned open-buffer
- * transactions, and the confirmation toast carrying the reachable Undo
- * (issue #1, review A5 / US-17). Conflicts surface as closable toasts.
+ * hash-fenced atomic commit and the confirmation toast carrying the
+ * reachable Undo (issue #1, review A5 / US-17). The central document
+ * authority applies every open-buffer transaction and acknowledges it
+ * before the command returns; every renderer receives the resulting collab
+ * update. Conflicts surface as closable toasts.
  */
 async function applyWorkspaceRename (): Promise<void> {
   const prompt = renamePreviewPrompt.value
@@ -1237,20 +1284,6 @@ async function applyWorkspaceRename (): Promise<void> {
     return
   }
 
-  // Renderer half of the boundary split: apply this document's returned
-  // open-buffer transactions (the buffer stays dirty/unsaved). When this
-  // document was committed as a closed-file disk write instead, replay the
-  // same edits locally so the buffer matches the rewritten disk content.
-  const ownEdits = (outcome.openBufferTransactions.length > 0
-    ? outcome.openBufferTransactions
-    : edit.edits
-  ).filter(e => e.documentPath === intent.documentPath)
-  if (ownEdits.length > 0) {
-    view.dispatch({
-      changes: ownEdits.map(e => ({ from: e.range.from, to: e.range.to, insert: e.insert }))
-    })
-  }
-
   showToast(
     trans(
       'Renamed %s to %s across %s documents.',
@@ -1263,7 +1296,7 @@ async function applyWorkspaceRename (): Promise<void> {
     {
       label: trans('Undo'),
       onAction: () => {
-        undoWorkspaceRename(intent.documentPath).catch(err => console.error('Workspace rename undo failed', err))
+        undoWorkspaceRename().catch(err => console.error('Workspace rename undo failed', err))
       }
     }
   )
@@ -1272,16 +1305,14 @@ async function applyWorkspaceRename (): Promise<void> {
 /**
  * Invokes the production rename-undo route (issue #1, review A5): the
  * 'application' channel's 'undo-reference-rename' command reaches the
- * reference provider's one-shot, hash-fenced undoRename(). An applied undo
- * replays this document's returned open-buffer transactions; conflicts and
- * a consumed record surface as closable toasts.
- *
- * @param   {string}  documentPath  The invoking document (own-edit replay)
+ * reference provider's one-shot, hash-fenced undoRename(). The document
+ * authority applies and acknowledges every open-buffer inverse before the
+ * command returns; conflicts and a consumed record surface as closable
+ * toasts.
  */
-async function undoWorkspaceRename (documentPath: string): Promise<void> {
+async function undoWorkspaceRename (): Promise<void> {
   const outcome: UndoRenameOutcome = await ipcRenderer.invoke('application', {
-    command: 'undo-reference-rename',
-    payload: {}
+    command: 'undo-reference-rename'
   })
 
   if (outcome.status === 'no-pending-undo') {
@@ -1295,14 +1326,6 @@ async function undoWorkspaceRename (documentPath: string): Promise<void> {
       outcome.conflict.documentPath
     ), 'error')
     return
-  }
-
-  const view = currentEditor?.instance
-  const ownEdits = outcome.openBufferTransactions.filter(e => e.documentPath === documentPath)
-  if (view !== undefined && ownEdits.length > 0) {
-    view.dispatch({
-      changes: ownEdits.map(e => ({ from: e.range.from, to: e.range.to, insert: e.insert }))
-    })
   }
 
   showToast(trans('Workspace rename undone.'))

@@ -165,6 +165,9 @@ export async function defaultMenu (view: EditorView, node: SyntaxNode, coords: {
       label: trans('Add to dictionary'),
       type: 'normal',
       action () {
+        if (misspelledWord === undefined) {
+          return // The context menu was built without a word under the cursor
+        }
         ipcRenderer.invoke(
           'dictionary-provider',
           { command: 'add', terms: [misspelledWord] }

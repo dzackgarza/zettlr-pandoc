@@ -47,7 +47,7 @@ kitty \
   -o background_opacity=0.96 \
   -o cursor_blink_interval=0 \
   -o confirm_os_window_close=0 \
-  "$boot" &
+  "$boot" "$@" &
 kitty_pid=$!
 
 address=

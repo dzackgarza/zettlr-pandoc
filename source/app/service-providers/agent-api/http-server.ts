@@ -21,43 +21,64 @@
  * END HEADER
  */
 
-import {
-  AGENT_API_PROTOCOL_VERSION,
-  type AgentEvent,
-  type AgentEventType,
-  type DocumentSummary,
-  type EditorContext,
-  type EditorViewSummary,
-  type AgentApiResponseBody,
-  type AgentError,
-  type AgentErrorCode,
-  type AgentErrorResponse,
-  type ReadDocumentResponse,
-  type SubmitProposalRequest,
-  type ReadSide,
-  type ReviewEventsResponse,
-  type OpenDocumentRequest,
-  type SearchHit,
-  type WorkspaceDocumentEntry,
-  type ViewSummary,
+import type {
+  AgentApiOperations,
+  AgentApiResponseBody,
+  AgentEvent,
+  AgentEventType,
+  AddReviewCommentRequest,
+  AgentError,
+  AgentErrorCode,
+  AgentErrorResponse,
+  PingResponse,
+  ReadSide,
+  ReviewEventsResponse,
+  ReviewListEntry,
+  ReviewMutationPrecondition,
+  SearchDocumentRequest,
+  SubmitProposalRequest,
 } from "@dts/common/agent-api";
-import { DocumentType, DP_EVENTS } from "@dts/common/documents";
-import DocumentManager from "@providers/documents";
+import { DP_EVENTS } from "@dts/common/documents";
+import type DocumentManager from "@providers/documents";
+import type { ReviewFailure } from "@providers/documents/review-application-service";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import crypto from "crypto";
 import { app } from "electron";
 import fs from "fs";
 import http from "http";
+import OpenAPIBackend, {
+  type Context,
+  type Document as OpenApiDefinition,
+} from "openapi-backend";
 import path from "path";
-import { sha256Text } from "@providers/documents/review-diff-store";
-import makeSearchRegex from "source/common/util/make-search-regex";
+import { parseDocument, type Document } from "yaml";
+import {
+  classifyReviewState,
+  sidecarUnresolvedChunks,
+  reviewPatch,
+  sidecarOutstandingChunks,
+  toWirePacket,
+} from "@providers/documents/review-diff-store";
+import { sha256Text } from "@common/util/sha256";
+import AgentDocumentQueries, {
+  SearchPatternError,
+  SearchTimeoutError,
+} from "./document-queries";
+import AgentEventDelivery, { EVENT_REPLAY_BUFFER_SIZE } from "./event-delivery";
 
-const SSE_REPLAY_BUFFER_SIZE = 100;
-const SSE_HEARTBEAT_MS = 15000;
+export { MAX_SEARCH_HITS } from "./document-queries";
+
 const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
 
-type BufferedAgentEvent = AgentEvent & { id: string };
+/**
+ * How long a request gets to finish transmitting its body before the read is
+ * abandoned with REQUEST_BODY_TIMEOUT. Generous for a loopback API — a local
+ * client delivers even the 25 MB maximum in well under a second — so a read
+ * that trips this was never going to complete, and holding its buffers longer
+ * serves no one.
+ */
+const REQUEST_BODY_DEADLINE_MS = 30_000;
 
 /** The payload shape the document-provider events this server subscribes to carry. */
 interface DocumentEventContext {
@@ -70,137 +91,39 @@ class RequestTooLargeError extends Error {
   }
 }
 
-
-/**
- * Request decoding happens exactly once, here, at the owned HTTP boundary.
- * Handlers downstream receive declared types and never inspect raw JSON, so a
- * missing or wrong-typed field is a 400 at the edge rather than an `unknown`
- * threaded through the request path.
- */
-type Decoded<T> = { ok: true; value: T } | { ok: false; message: string };
-
-function decodeJsonObject(body: string): Decoded<Record<string, unknown>> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    return { ok: false, message: "Invalid JSON body" };
+/** The client stalled past the body deadline without finishing its request. */
+class RequestBodyTimeoutError extends Error {
+  constructor() {
+    super("Request body was not received within the deadline");
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return { ok: false, message: "Invalid JSON body" };
-  }
-  return { ok: true, value: parsed as Record<string, unknown> };
-}
-
-function decodeOpenDocumentRequest(body: string): Decoded<OpenDocumentRequest> {
-  const raw = decodeJsonObject(body);
-  if (!raw.ok) {
-    return raw;
-  }
-  const { uri } = raw.value;
-  if (typeof uri !== "string") {
-    return { ok: false, message: "uri is required and must be a string" };
-  }
-  return { ok: true, value: { uri } };
 }
 
 /**
- * Decodes the `side` query parameter into a total ReadSide. The spec declares it
- * optional with `default: working`, so an absent parameter is the contract's
- * value rather than a runtime guess, and an unrecognized one is refused here
- * instead of being silently read as `working`.
+ * The connection died before the body completed. There is no caller left to
+ * answer, so the dispatcher drops the exchange instead of manufacturing a 500
+ * into a dead socket.
  */
-function decodeReadSide(raw: string | null): Decoded<ReadSide> {
-  if (raw === null) {
-    return { ok: true, value: "working" };
+class RequestAbandonedError extends Error {
+  constructor() {
+    super("Client disconnected before the request body completed");
   }
-  if (raw !== "working" && raw !== "reference") {
-    return { ok: false, message: "side must be working or reference" };
-  }
-  return { ok: true, value: raw };
 }
+
 
 /**
- * The spec declares `context` optional with `default: 3`. That default is part
- * of the published contract, so it is applied here, once, at the boundary that
- * owns request decoding — and the decoded type carries a total `context`, so no
- * handler downstream can substitute a different value for a missing one.
+ * What openapi-backend hands a handler once it has matched the request against
+ * the document and validated it. Its own Context types params, query and body
+ * as `any`; naming the operation here recovers the shapes the document already
+ * declares, so a handler reads validated values rather than `any`.
  */
-export interface DecodedSearchDocumentRequest {
-  literal: string;
-  context: number;
-}
+type OperationContext<Id extends keyof AgentApiOperations, Body = unknown> = Context<
+  Body,
+  OrEmpty<AgentApiOperations[Id]["parameters"]["path"]>,
+  OrEmpty<AgentApiOperations[Id]["parameters"]["query"]>
+>;
 
-const SEARCH_CONTEXT_DEFAULT = 3;
-
-function decodeSearchDocumentRequest(
-  body: string,
-): Decoded<DecodedSearchDocumentRequest> {
-  const raw = decodeJsonObject(body);
-  if (!raw.ok) {
-    return raw;
-  }
-  const { literal, context } = raw.value;
-  if (typeof literal !== "string") {
-    return { ok: false, message: "literal is required and must be a string" };
-  }
-  if (context === undefined) {
-    return { ok: true, value: { literal, context: SEARCH_CONTEXT_DEFAULT } };
-  }
-  if (typeof context !== "number" || !Number.isInteger(context) || context < 0) {
-    return { ok: false, message: "context must be a non-negative integer" };
-  }
-  return { ok: true, value: { literal, context } };
-}
-
-/**
- * Field predicates written as type guards, so a decoder narrows its own values
- * instead of asserting them afterwards: `snapshot as string` would compile even
- * if the check above it were deleted.
- */
-function isString(value: unknown): value is string {
-  return typeof value === "string";
-}
-
-function isOptionalString(value: unknown): value is string | undefined {
-  return value === undefined || typeof value === "string";
-}
-
-function isOptionalInteger(value: unknown): value is number | undefined {
-  return value === undefined || (typeof value === "number" && Number.isInteger(value));
-}
-
-function decodeSubmitProposalRequest(body: string): Decoded<SubmitProposalRequest> {
-  const raw = decodeJsonObject(body);
-  if (!raw.ok) {
-    return raw;
-  }
-  const { snapshot, patchFormat, patch, description, expectedReviewGeneration } = raw.value;
-  if (patchFormat !== "unified-diff") {
-    return {
-      ok: false,
-      message: isString(patchFormat)
-        ? "Unsupported patch format"
-        : "patchFormat is required and must be unified-diff",
-    };
-  }
-  if (!isString(snapshot)) {
-    return { ok: false, message: "snapshot is required and must be a string" };
-  }
-  if (!isString(patch)) {
-    return { ok: false, message: "patch is required and must be a string" };
-  }
-  if (!isOptionalString(description)) {
-    return { ok: false, message: "description must be a string" };
-  }
-  if (!isOptionalInteger(expectedReviewGeneration)) {
-    return { ok: false, message: "expectedReviewGeneration must be an integer" };
-  }
-  return {
-    ok: true,
-    value: { snapshot, patchFormat, patch, description, expectedReviewGeneration },
-  };
-}
+/** The generated operations write `never` for a parameter section an operation has none of. */
+type OrEmpty<T> = [NonNullable<T>] extends [never] ? Record<string, never> : NonNullable<T>;
 
 // ============================================================================
 // AgentHTTPProvider
@@ -222,41 +145,108 @@ export interface AgentApiHost {
   };
 }
 
+/**
+ * The endpoint-discovery file, written into userData next to config.json once
+ * the listener is bound (the same pattern as Chromium's DevToolsActivePort).
+ * It holds the actual bound port, which is the only way a client can learn
+ * the endpoint when the config requests a kernel-assigned port (`port: 0`).
+ */
+export const AGENT_API_PORT_FILE = "agent-api.port";
+
 export default class AgentHTTPProvider extends ProviderContract {
   private _server: http.Server | undefined;
+  /** Set once the port file exists; shutdown removes exactly what boot wrote. */
+  private _portFilePath: string | undefined;
   private _instanceId: string;
-  private _sseClients: Set<http.ServerResponse> = new Set();
-  private _eventReplayBuffer: BufferedAgentEvent[] = [];
-  private _eventSequence = 1;
-  private _sseHeartbeat: NodeJS.Timeout | undefined;
-  private _openApiYaml = "";
+  private readonly _queries: AgentDocumentQueries;
+  private readonly _eventDelivery: AgentEventDelivery;
+  /**
+   * The committed specification, parsed once at construction. Per-request
+   * copies get their `servers` entry set on the parsed document rather than
+   * spliced into its text: the origin comes off the wire, and a request-shaped
+   * string written into YAML text can produce a document that no longer
+   * parses.
+   */
+  private readonly _openApiSpecification: Document;
+  /**
+   * The router. Every route, path parameter, query parameter and request body
+   * this server accepts comes from the OpenAPI document through this instance;
+   * there is no second route table to keep in step with it.
+   */
+  private readonly _api: OpenAPIBackend;
+  /** The published protocol version — `info.version` of the document. */
+  private readonly _protocolVersion: string;
 
   constructor(
     private readonly _log: LogProvider,
     private readonly _documents: DocumentManager,
     private readonly _app: AgentApiHost,
+    /**
+     * Injectable so the request-body lifecycle tests can exercise the
+     * deadline without stalling for tens of real seconds. Production callers
+     * pass nothing.
+     */
+    private readonly _bodyDeadlineMs: number = REQUEST_BODY_DEADLINE_MS,
   ) {
     super();
     this._instanceId = crypto.randomUUID();
+    this._queries = new AgentDocumentQueries(_documents, _documents.reviewQueries, _app, _log);
+    this._eventDelivery = new AgentEventDelivery((event) => this.enrichAgentEvent(event));
     // Load the OpenAPI YAML spec (dev: sibling to this file; packaged: assets/openapi.yaml)
     const candidatePaths = [
       path.join(__dirname, "openapi.yaml"),
       path.join(__dirname, "assets", "openapi.yaml"),
     ];
     let lastReadError: unknown;
+    let specificationText = "";
     for (const p of candidatePaths) {
       try {
-        this._openApiYaml = fs.readFileSync(p, "utf8");
+        specificationText = fs.readFileSync(p, "utf8");
         break;
       } catch (error) {
         lastReadError = error;
       }
     }
-    if (this._openApiYaml.length === 0) {
+    if (specificationText.length === 0) {
       throw new Error("Agent API OpenAPI specification is required", {
         cause: lastReadError,
       });
     }
+    // Parsed here and nowhere else. A malformed committed document is a build
+    // fault and stops this provider at construction, where the failure is the
+    // author's and is loud; per request it would be a caller's 500 at best,
+    // and this file is the one input that is not caller-controlled.
+    this._openApiSpecification = parseDocument(specificationText);
+    if (this._openApiSpecification.errors.length > 0) {
+      throw new Error(
+        `Agent API OpenAPI specification is not valid YAML: ${this._openApiSpecification.errors
+          .map((error) => error.message)
+          .join("; ")}`,
+      );
+    }
+    const definition = this._openApiSpecification.toJS() as OpenApiDefinition;
+    const version = definition.info?.version;
+    if (typeof version !== "string" || version.length === 0) {
+      throw new Error("Agent API OpenAPI specification declares no info.version");
+    }
+    this._protocolVersion = version;
+    this._api = new OpenAPIBackend({
+      definition,
+      // strict: a handler named for an operation this document does not
+      // declare is a build fault, and stops the provider where the failure is
+      // the author's rather than becoming a route nobody can reach.
+      strict: true,
+      // quick: skips openapi-backend's own definition check, which validates
+      // against the OpenAPI 3.0 metaschema only. This document is 3.1 and uses
+      // 3.1 keywords (`const`), so that check reports valid declarations as
+      // errors. Generation of the wire types is what fails on a malformed
+      // document.
+      quick: true,
+      // Query and path parameters arrive as strings. The document says which
+      // are integers, so the validator is what turns them into numbers.
+      coerceTypes: true,
+      handlers: this.operationHandlers(),
+    });
   }
 
   async boot(): Promise<void> {
@@ -269,48 +259,57 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
 
+    // Compiles the document's route table and validation schemas. Done before
+    // the listener binds, so the first request does not pay for it.
+    await this._api.init();
+
     const handler = (req: http.IncomingMessage, res: http.ServerResponse) => {
       this.handleRequest(req, res);
     };
 
     this._server = http.createServer(handler);
 
-    // A bind failure must not take the editor down with it. This provider is
-    // enabled by default, and AppServiceContainer._informativeBoot rethrows
-    // whatever boot rejects with — so before this, any unrelated process holding
-    // the port meant Zettlr itself refused to launch. The API is optional; the
-    // editor is not. Report the collision at error level, name the remedy, and
-    // continue without a listener rather than substituting a different port
-    // (a silently-moved endpoint is worse than an absent one: every configured
-    // agent would keep talking to whatever now answers on the expected port).
+    // An enabled API without a listener is a broken application state. Do not
+    // start the editor with a missing endpoint that clients believe exists.
     const listenError = await new Promise<NodeJS.ErrnoException | undefined>((resolve) => {
       this._server!.once("error", (error: NodeJS.ErrnoException) => {
         resolve(error);
       });
       this._server!.listen(config.port, "127.0.0.1", () => {
-        this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${config.port}`);
         resolve(undefined);
       });
     });
 
     if (listenError !== undefined) {
       this._server = undefined;
-      if (listenError.code !== "EADDRINUSE") {
-        throw listenError;
-      }
-      this._log.error(
-        `[AgentHTTPProvider] Port ${config.port} on 127.0.0.1 is already in use, so the ` +
-          "Agent API is NOT running for this session. The editor started normally. " +
-          "Change agentApi.port in the configuration, or stop the process holding it " +
-          `(lsof -nP -iTCP:${config.port} -sTCP:LISTEN).`,
-        listenError,
-      );
-      return;
+      throw listenError;
     }
 
-    // Subscribe to review store events
-    this._documents.reviewStore.on("*", (event: AgentEvent) => {
-      this.broadcastSseEvent(event);
+    // The bind owner is the only process that knows the port when the config
+    // requests a kernel-assigned one (`port: 0`), so publish the actual bound
+    // port where clients of this instance can read it. A discovery file that
+    // cannot be written is a broken endpoint contract, exactly like a refused
+    // bind: fail the boot rather than run an instance nobody can find.
+    const address = this._server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("Agent API listener reports no TCP address");
+    }
+    const boundPort = address.port;
+    this._portFilePath = path.join(app.getPath("userData"), AGENT_API_PORT_FILE);
+    try {
+      await fs.promises.writeFile(this._portFilePath, `${boundPort}\n`, "utf8");
+    } catch (error) {
+      await this.shutdown();
+      throw new Error(
+        `Agent API could not publish its endpoint to ${this._portFilePath}`,
+        { cause: error },
+      );
+    }
+    this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${boundPort}`);
+
+    // Subscribe to committed review events
+    this._documents.agentEvents.on("*", (event: AgentEvent) => {
+      this._eventDelivery.broadcast(event);
     });
 
     // Subscribe to document-level events
@@ -344,7 +343,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         );
         return;
       }
-      this.broadcastSseEvent({
+      this._eventDelivery.broadcast({
         event: agentEvent,
         timestamp: new Date().toISOString(),
         documentId: filePath !== undefined ? this._documents.getDocumentId(filePath) : undefined,
@@ -358,15 +357,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   async shutdown(): Promise<void> {
-    // Close all SSE clients
-    for (const res of this._sseClients) {
-      res.end();
-    }
-    this._sseClients.clear();
-    if (this._sseHeartbeat !== undefined) {
-      clearInterval(this._sseHeartbeat);
-      this._sseHeartbeat = undefined;
-    }
+    this._eventDelivery.shutdown();
 
     if (this._server !== undefined) {
       await new Promise<void>((resolve) => {
@@ -374,28 +365,112 @@ export default class AgentHTTPProvider extends ProviderContract {
       });
       this._server = undefined;
     }
+
+    if (this._portFilePath !== undefined) {
+      // force: a crash-then-restart cycle may already have replaced the file;
+      // absence at shutdown is a legal state, not a failure to report.
+      await fs.promises.rm(this._portFilePath, { force: true });
+      this._portFilePath = undefined;
+    }
   }
 
   // ==========================================================================
   // Request handling
   // ==========================================================================
 
+  /**
+   * A per-request copy of the specification with `servers` rewritten to the
+   * origin the request arrived on. The caller owns the encoding, and may drop
+   * routes from the copy before serializing it.
+   *
+   * The committed document names the loopback endpoint, which is correct for
+   * the file and wrong for anyone who reached this server another way: a
+   * schema consumer builds its calls from `servers`, so an importer behind a
+   * tunnel would emit requests to its own 127.0.0.1. Answering with the Host it
+   * was asked on makes the document self-describing from either side, and
+   * removes the step where a copy is edited by hand and then drifts.
+   *
+   * The scheme is derived from the host rather than from X-Forwarded-Proto,
+   * which is a client-supplied header on a server that also answers loopback
+   * directly: anything that is not loopback reached this process through a
+   * proxy that terminates TLS.
+   *
+   * The entry is set on a copy of the parsed document, so the Host header is a
+   * value in a YAML node and never text in a YAML file. Spliced as text it was
+   * neither: `Host: example.com: x` is a legal header that turned the
+   * specification into a document that no longer parsed, and the parse ran in
+   * this process after the 200 had already gone out.
+   */
+  private specificationForRequest(req: http.IncomingMessage): Document {
+    const specification = this._openApiSpecification.clone();
+    const host = req.headers.host;
+    if (host !== undefined) {
+      const isLoopback = /^(127\.0\.0\.1|\[::1\]|localhost)(:\d+)?$/.test(host);
+      specification.set("servers", [
+        {
+          url: `${isLoopback ? "http" : "https"}://${host}`,
+          description: "The endpoint this specification was fetched from",
+        },
+      ]);
+    }
+    return specification;
+  }
+
+  /**
+   * The synchronous boundary between Node's request callback and this
+   * provider. Everything below runs on the Electron main process' stack: a
+   * throw that escapes this frame is an uncaught exception, and the editor —
+   * not the request — is what ends. One malformed request target
+   * (`GET http://[ HTTP/1.1` is legal absolute form, and `new URL` refuses it)
+   * was enough. So no request leaves here unanswered or unlogged.
+   */
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
-    // Serve the OpenAPI spec
-    if (req.url === "/openapi.yaml" && req.method === "GET") {
-      res.writeHead(200, { "Content-Type": "application/yaml" });
-      res.end(this._openApiYaml);
+    const method = req.method;
+    const requestUrl = req.url;
+    if (method === undefined || requestUrl === undefined) {
+      this._log.error(
+        "[AgentHTTPProvider] Node delivered an HTTP request without a method or URL.",
+      );
+      this.sendError(
+        res,
+        400,
+        "INVALID_PARAMS",
+        "HTTP method and request target are required",
+      );
       return;
     }
-
-    // Route dispatch
-    const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    const pathname = url.pathname;
-    const method = req.method ?? "GET";
-
-    this.dispatch(req, res, method, pathname, url).catch((err) => {
+    // The async wrapper is what makes a handler that throws synchronously
+    // arrive in the same catch as one that rejects.
+    void this.dispatch(req, res, method, requestUrl).catch((err) => {
+      const pathname = requestUrl.split("?")[0];
       if (err instanceof RequestTooLargeError) {
+        this._log.warning(
+          `[AgentHTTPProvider] Refused oversized ${method} ${pathname} with REQUEST_TOO_LARGE`,
+        );
+        res.setHeader("Connection", "close");
         this.sendError(res, 413, "REQUEST_TOO_LARGE", "Request body exceeds the API limit");
+        return;
+      }
+      if (err instanceof RequestBodyTimeoutError) {
+        // The request's body framing never completed, so this connection
+        // cannot carry another exchange. Declaring the close makes Node tear
+        // the socket down once the 408 has flushed to the stalled client.
+        res.setHeader("Connection", "close");
+        this.sendError(
+          res,
+          408,
+          "REQUEST_BODY_TIMEOUT",
+          `Request body was not received within ${this._bodyDeadlineMs} ms`,
+        );
+        return;
+      }
+      if (err instanceof RequestAbandonedError) {
+        // The client hung up mid-body. There is no one left to answer and
+        // nothing failed on this side; an error logged here would be an
+        // invented fault.
+        this._log.verbose(
+          `[AgentHTTPProvider] Client disconnected before finishing ${method} ${pathname}; dropped the body read`,
+        );
         return;
       }
       this._log.error(`[AgentHTTPProvider] Unhandled error: ${err}`);
@@ -403,139 +478,221 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
+  /**
+   * The raw-Node half of the exchange: read the body once, hand the request to
+   * the router, and let the matched operation's handler answer on `res`.
+   * Everything the OpenAPI document can decide — which operation this is, its
+   * path and query parameters, whether the body satisfies the schema — is
+   * decided by openapi-backend from that document.
+   */
   private async dispatch(
     req: http.IncomingMessage,
     res: http.ServerResponse,
     method: string,
-    pathname: string,
-    url: URL,
+    requestUrl: string,
   ): Promise<void> {
-    // Health/system routes
-    if (pathname === "/health" && method === "GET") {
-      return this.sendJson(res, 200, {
-        protocolVersion: AGENT_API_PROTOCOL_VERSION,
-        instanceId: this._instanceId,
-        pid: process.pid,
-      });
+    const url = new URL(requestUrl, "http://127.0.0.1");
+    const rawBody = await this.readBody(req);
+    let body: unknown;
+    if (rawBody.trim().length > 0) {
+      try {
+        body = JSON.parse(rawBody);
+      } catch {
+        // Parsed here, once, because the router only receives what parsed.
+        this.sendError(res, 400, "INVALID_PARAMS", "Invalid JSON body");
+        return;
+      }
     }
-    if (pathname === "/v1/ping" && method === "GET") {
-      return this.sendJson(res, 200, {
-        protocolVersion: AGENT_API_PROTOCOL_VERSION,
-        instanceId: this._instanceId,
-        pid: process.pid,
-      });
-    }
-    if (pathname === "/v1/capabilities" && method === "GET") {
-      return this.sendJson(res, 200, {
-        protocolVersion: AGENT_API_PROTOCOL_VERSION,
-        supportedPatchFormats: ["unified-diff"],
-        reviewSupport: true,
-        retractionSupport: true,
-        maxRequestSize: 25 * 1024 * 1024,
-        eventStreamSupport: true,
-        eventReplayBufferSize: SSE_REPLAY_BUFFER_SIZE,
-        applicationVersion: app.getVersion(),
-        instanceId: this._instanceId,
-      });
-    }
-    if (pathname === "/v1/context" && method === "GET") {
-      return this.handleGetContext(res);
-    }
-    if (pathname === "/v1/views" && method === "GET") {
-      return this.handleGetViews(res);
-    }
-    if (pathname === "/v1/workspaces" && method === "GET") {
-      return this.handleGetWorkspaces(res);
-    }
-    if (pathname === "/v1/documents" && method === "GET") {
-      return this.handleListDocuments(res, url);
-    }
-    if (pathname === "/v1/documents" && method === "POST") {
-      return this.handleOpenDocument(req, res);
-    }
-    if (pathname === "/v1/events" && method === "GET") {
-      return this.handleSseSubscription(req, res);
-    }
-
-    const workspaceOpenMatch = pathname.match(
-      /^\/v1\/workspaces\/([^/]+)\/documents\/([^/]+)\/open$/,
+    await this._api.handleRequest(
+      {
+        method,
+        path: url.pathname,
+        query: url.search,
+        headers: req.headers as Record<string, string | string[]>,
+        body,
+      },
+      req,
+      res,
     );
-    if (workspaceOpenMatch !== null && method === "POST") {
-      return this.handleOpenDocumentInWorkspace(
-        res,
-        decodeURIComponent(workspaceOpenMatch[1]),
-        decodeURIComponent(workspaceOpenMatch[2]),
-      );
-    }
-    const workspaceDocumentsMatch = pathname.match(/^\/v1\/workspaces\/([^/]+)\/documents(\/.*)?$/);
-    if (workspaceDocumentsMatch !== null) {
-      const workspaceId = decodeURIComponent(workspaceDocumentsMatch[1]);
-      const workspaceSubPath = workspaceDocumentsMatch[2];
-      if ((workspaceSubPath === undefined || workspaceSubPath === "/") && method === "GET") {
-        return this.handleListWorkspaceDocuments(res, url, workspaceId);
-      }
-    }
+  }
 
-    // Document-scoped routes: /v1/documents/{documentId}...
-    const docMatch = pathname.match(/^\/v1\/documents\/([^/]+)(\/.*)?$/);
-    if (docMatch !== null) {
-      const documentId = decodeURIComponent(docMatch[1]);
-      const subPath = docMatch[2];
+  /** Identity and instance facts, shared by /health and /v1/ping. */
+  private instanceIdentity(): PingResponse {
+    return {
+      protocolVersion: this._protocolVersion,
+      instanceId: this._instanceId,
+      pid: process.pid,
+    };
+  }
 
-      if (subPath === undefined && method === "GET") {
-        return this.handleGetDocument(res, documentId);
-      }
-      if (subPath === "/focus" && method === "POST") {
-        return this.handleFocusDocument(res, documentId);
-      }
-      if (subPath === "/content" && method === "GET") {
-        return this.handleReadContent(res, documentId, url);
-      }
-      if (subPath === "/search" && method === "POST") {
-        return this.handleSearch(req, res, documentId);
-      }
-      if (subPath === "/proposals" && method === "POST") {
-        return this.handleSubmitProposal(req, res, documentId);
-      }
-    }
+  /**
+   * The same document in two encodings, because importers are not uniformly
+   * willing to read YAML: the Custom GPT builder fetched the YAML URL and
+   * silently did nothing, while it accepted an otherwise equivalent JSON
+   * document served as application/json. YAML remains the committed source —
+   * both encodings are written from the one parsed document, so the two
+   * cannot disagree.
+   */
+  private serveSpecification(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    asJson: boolean,
+  ): void {
+    // Built before anything is committed to the wire: a body that failed
+    // half-written would leave a 200 already sent and nothing to correct
+    // it with.
+    const specification = this.specificationForRequest(req);
+    res.writeHead(200, {
+      "Content-Type": asJson ? "application/json" : "application/yaml",
+    });
+    res.end(
+      asJson ? JSON.stringify(specification.toJSON(), null, 2) : specification.toString(),
+    );
+  }
 
-    // Review-scoped routes: /v1/reviews/{reviewId}...
-    const reviewMatch = pathname.match(/^\/v1\/reviews\/([^/]+)(\/.*)?$/);
-    if (reviewMatch !== null) {
-      const reviewId = decodeURIComponent(reviewMatch[1]);
-      const subPath = reviewMatch[2];
+  /**
+   * The same document minus the one route an Action cannot consume:
+   * /v1/events is Server-Sent Events, and an importer that calls it waits on
+   * it forever. Derived here from the parsed document rather than by a
+   * command that curls this server and edits the result, so there is no
+   * second copy of the contract to keep in step. The long-poll route
+   * /v1/reviews/{reviewId}/events is an ordinary request and stays.
+   */
+  private serveActionSpecification(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    const specification = this.specificationForRequest(req);
+    specification.deleteIn(["paths", "/v1/events"]);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(specification.toJSON(), null, 2));
+  }
 
-      if (subPath === undefined && method === "GET") {
-        return this.handleGetReview(res, reviewId);
-      }
-      if (subPath === "/diff" && method === "GET") {
-        return this.handleGetReviewDiff(res, reviewId);
-      }
-      if (subPath === "/chunks" && method === "GET") {
-        return this.handleGetReviewChunks(res, reviewId);
-      }
-      if (subPath === "/packets" && method === "GET") {
-        return this.handleGetReviewPackets(res, reviewId);
-      }
-      if (subPath === "/clear" && method === "POST") {
-        return this.handleClearReview(res, reviewId);
-      }
-      if (subPath === "/events" && method === "GET") {
-        return this.handleWaitForReviewEvents(res, reviewId, url);
-      }
-    }
+  /**
+   * One handler per operationId the document declares. Registered in strict
+   * mode, so a name here that the document does not declare stops the provider
+   * at construction instead of quietly never being reached.
+   */
+  private operationHandlers(): Record<
+    string,
+    (context: Context, req: http.IncomingMessage, res: http.ServerResponse) => unknown
+  > {
+    return {
+      getOpenApiSpec: (_c, req, res) => this.serveSpecification(req, res, false),
+      getOpenApiSpecJson: (_c, req, res) => this.serveSpecification(req, res, true),
+      getOpenApiActionsJson: (_c, req, res) => this.serveActionSpecification(req, res),
 
-    if (pathname === "/v1/reviews" && method === "GET") {
-      return this.handleListReviews(res);
-    }
+      health: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
+      ping: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
+      getCapabilities: (_c, _req, res) =>
+        this.sendJson(res, 200, {
+          protocolVersion: this._protocolVersion,
+          supportedPatchFormats: ["unified-diff"],
+          reviewSupport: true,
+          retractionSupport: true,
+          maxRequestSize: MAX_REQUEST_BODY_BYTES,
+          eventStreamSupport: true,
+          eventReplayBufferSize: EVENT_REPLAY_BUFFER_SIZE,
+          applicationVersion: app.getVersion(),
+          instanceId: this._instanceId,
+        }),
+      getContext: (_c, _req, res) => this.handleGetContext(res),
+      listViews: (_c, _req, res) => this.handleGetViews(res),
+      subscribeEvents: (_c, req, res) => this._eventDelivery.subscribe(req, res),
 
-    // Proposal retraction: /v1/proposals/{packetId}/retract
-    const retractMatch = pathname.match(/^\/v1\/proposals\/([^/]+)\/retract$/);
-    if (retractMatch !== null && method === "POST") {
-      return this.handleRetractProposal(res, decodeURIComponent(retractMatch[1]));
-    }
+      listWorkspaces: (_c, _req, res) => this.handleGetWorkspaces(res),
+      listWorkspaceFiles: (_c, _req, res) => this.handleListWorkspaceFiles(res),
+      listWorkspaceDocuments: (
+        c: OperationContext<"listWorkspaceDocuments">,
+        _req,
+        res: http.ServerResponse,
+      ) =>
+        this.handleListWorkspaceDocuments(
+          res,
+          c.request.params.workspaceId,
+          c.request.query.query,
+        ),
 
-    this.sendError(res, 404, "METHOD_NOT_FOUND", `No route for ${method} ${pathname}`);
+      listDocuments: (_c, _req, res) => this.handleListDocuments(res),
+      getDocument: (c: OperationContext<"getDocument">, _req, res: http.ServerResponse) =>
+        this.handleGetDocument(res, c.request.params.documentId),
+      focusDocument: (c: OperationContext<"focusDocument">, _req, res: http.ServerResponse) =>
+        this.handleFocusDocument(res, c.request.params.documentId),
+      readDocumentContent: (
+        c: OperationContext<"readDocumentContent">,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleReadContent(res, c.request.params.documentId, c.request.query),
+      searchDocument: (
+        c: OperationContext<"searchDocument", SearchDocumentRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleSearch(res, c.request.params.documentId, c.request.requestBody),
+      submitProposal: (
+        c: OperationContext<"submitProposal", SubmitProposalRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleSubmitProposal(res, c.request.params.documentId, c.request.requestBody),
+
+      listReviews: (_c, _req, res) => this.handleListReviews(res),
+      getReview: (c: OperationContext<"getReview">, _req, res: http.ServerResponse) =>
+        this.handleGetReview(res, c.request.params.reviewId),
+      getReviewDiff: (c: OperationContext<"getReviewDiff">, _req, res: http.ServerResponse) =>
+        this.handleGetReviewDiff(res, c.request.params.reviewId),
+      getReviewChunks: (c: OperationContext<"getReviewChunks">, _req, res: http.ServerResponse) =>
+        this.handleGetReviewChunks(res, c.request.params.reviewId),
+      getReviewPackets: (c: OperationContext<"getReviewPackets">, _req, res: http.ServerResponse) =>
+        this.handleGetReviewPackets(res, c.request.params.reviewId),
+      addReviewComment: (
+        c: OperationContext<"addReviewComment", AddReviewCommentRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) =>
+        this.handleAddReviewComment(
+          res,
+          c.request.params.reviewId,
+          c.request.requestBody.text,
+          c.request.requestBody.expectedReviewGeneration,
+        ),
+      waitForReviewEvents: (
+        c: OperationContext<"waitForReviewEvents">,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleWaitForReviewEvents(res, c.request.params.reviewId, c.request.query),
+
+      retractProposal: (
+        c: OperationContext<"retractProposal", ReviewMutationPrecondition>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleRetractProposal(res, c.request.params.packetId, c.request.requestBody),
+
+      /**
+       * The document decided the request was malformed. Its Ajv errors name
+       * the offending field, which is more than the hand-written decoders
+       * could say about a body they refused wholesale.
+       */
+      validationFail: (c: Context, _req: http.IncomingMessage, res: http.ServerResponse) =>
+        this.sendError(
+          res,
+          400,
+          "INVALID_PARAMS",
+          (c.validation.errors ?? [])
+            .map((error) =>
+              typeof error === "string"
+                ? error
+                : `${error.instancePath} ${error.message}`.trim(),
+            )
+            .join("; ") || "Request does not match the published schema",
+        ),
+
+      notFound: (c: Context, req: http.IncomingMessage, res: http.ServerResponse) =>
+        this.sendError(
+          res,
+          404,
+          "METHOD_NOT_FOUND",
+          `No route for ${req.method} ${c.request.path}`,
+        ),
+    };
   }
 
   // ==========================================================================
@@ -543,205 +700,64 @@ export default class AgentHTTPProvider extends ProviderContract {
   // ==========================================================================
 
   private async handleGetContext(res: http.ServerResponse): Promise<void> {
-    const focusedView = this._documents.getFocusedView();
-    const focusedDocSummary =
-      focusedView?.documentId !== undefined
-        ? await this.getDocumentSummary(focusedView.documentId)
-        : undefined;
-    const openDocuments: DocumentSummary[] = [];
-    for (const doc of this._documents.loadedDocuments) {
-      const summary = await this.getDocumentSummary(doc.documentId);
-      if (summary !== undefined) {
-        openDocuments.push(summary);
-      }
-    }
-    const context: EditorContext = {
-      focusedView: focusedView
-        ? {
-            viewId: focusedView.viewId,
-            windowId: focusedView.windowId,
-            leafId: focusedView.leafId,
-            documentId: focusedView.documentId ?? "",
-          }
-        : undefined,
-      focusedDocument: focusedDocSummary,
-      openDocuments,
-    };
-    this.sendJson(res, 200, context);
+    this.sendJson(res, 200, await this._queries.getContext());
   }
 
-  private async handleListDocuments(res: http.ServerResponse, url: URL): Promise<void> {
-    const state = url.searchParams.get("state");
-    if (state !== null && state !== "open") {
-      this.sendError(res, 400, "INVALID_PARAMS", "Unsupported state filter");
-      return;
-    }
-
-    const documents: DocumentSummary[] = [];
-    for (const doc of this._documents.loadedDocuments) {
-      const summary = await this.getDocumentSummary(doc.documentId);
-      if (summary !== undefined) {
-        documents.push(summary);
-      }
-    }
-    this.sendJson(res, 200, { documents });
+  private async handleListDocuments(res: http.ServerResponse): Promise<void> {
+    this.sendJson(res, 200, { documents: await this._queries.listDocuments() });
   }
 
   private async handleGetViews(res: http.ServerResponse): Promise<void> {
-    const focusedView = this._documents.getFocusedView();
-    const views: ViewSummary[] = [];
-    await this._documents.forEachLeaf(async (tabMan, windowId, leafId) => {
-      const activePath = tabMan.activeFile?.path;
-      const isFocused =
-        focusedView !== undefined &&
-        focusedView.windowId === windowId &&
-        focusedView.leafId === leafId;
-      views.push({
-        viewId: `view-${windowId}-${leafId}`,
-        windowId,
-        leafId,
-        documentId:
-          activePath !== undefined ? this._documents.getDocumentId(activePath) : undefined,
-        focused: isFocused,
-        active: isFocused,
-        documents: tabMan.openFiles.map((openFile) => ({
-          documentId: this._documents.getDocumentId(openFile.path),
-          path: openFile.path,
-        })),
-      });
-      return false;
-    });
-    this.sendJson(res, 200, { views });
+    this.sendJson(res, 200, { views: await this._queries.listViews() });
   }
 
   private handleGetWorkspaces(res: http.ServerResponse): void {
-    const workspaces = this._app.config.get().app.openWorkspaces.map((workspacePath) => ({
-      workspaceId: workspacePath,
-      path: workspacePath,
-    }));
-    this.sendJson(res, 200, { workspaces });
+    this.sendJson(res, 200, { workspaces: this._queries.listWorkspaces() });
   }
 
-  private handleListWorkspaceDocuments(
-    res: http.ServerResponse,
-    url: URL,
-    workspaceId: string,
-  ): void {
-    const workspacePath = decodeURIComponent(workspaceId);
-    const knownWorkspaces = this._app.config.get().app.openWorkspaces;
-    if (!knownWorkspaces.includes(workspacePath)) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
-      return;
-    }
-
-    const query = url.searchParams.get("query");
-    const normalizedQuery = query === null ? "" : query.toLowerCase().trim();
-    const documents: WorkspaceDocumentEntry[] = [];
-
-    this._documents
-      .getFilesForWorkspace(workspacePath)
-      .then(async (paths) => {
-        for (const documentPath of paths) {
-          const documentId = this._documents.ensureDocumentId(documentPath);
-          if (normalizedQuery.length > 0) {
-            const haystack = documentPath.toLowerCase();
-            if (!haystack.includes(normalizedQuery)) {
-              continue;
-            }
-          }
-          const summary = await this.getDocumentSummary(documentId);
-          documents.push(summary === undefined
-            ? {
-                documentId,
-                uri: `safe-file://${documentPath}`,
-                path: documentPath,
-                name: path.basename(documentPath),
-                workspaceId,
-                loaded: false,
-              }
-            : { ...summary, workspaceId, loaded: true });
-        }
-        this.sendJson(res, 200, { workspaceId, documents });
-      })
-      .catch(() => {
-        this.sendError(res, 500, "INTERNAL_ERROR", "Unable to list workspace documents");
-      });
-  }
-
-  private async handleOpenDocumentInWorkspace(
-    res: http.ServerResponse,
-    workspaceId: string,
-    documentId: string,
-  ): Promise<void> {
-    const workspacePath = decodeURIComponent(workspaceId);
-    const knownWorkspaces = this._app.config.get().app.openWorkspaces;
-    if (!knownWorkspaces.includes(workspacePath)) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
-      return;
-    }
-    const filePath = this._documents.getDocumentPath(documentId);
-    if (filePath === undefined || !this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document is not part of workspace");
-      return;
-    }
-    await this._documents.openFile(undefined, undefined, filePath, true);
-    this.sendJson(res, 200, { focused: true, documentId });
-  }
-
-  private async handleOpenDocument(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): Promise<void> {
-    const body = await this.readBody(req);
-    const decoded = decodeOpenDocumentRequest(body);
-    if (!decoded.ok) {
-      this.sendError(res, 400, "INVALID_PARAMS", decoded.message);
-      return;
-    }
-    const request = decoded.value;
-    const resolveOpenPath = (uri: string): string | undefined => {
-      try {
-        const parsedUri = new URL(uri);
-        if (parsedUri.protocol !== "safe-file:" && parsedUri.protocol !== "file:") {
-          throw new Error("Unsupported protocol");
-        }
-
-        let filePath = decodeURIComponent(parsedUri.pathname);
-        if (process.platform === "win32" && /^\/[A-Za-z]:/.test(filePath)) {
-          filePath = filePath.slice(1);
-        }
-        return path.resolve(filePath);
-      } catch {
-        return path.isAbsolute(uri) ? path.resolve(uri) : undefined;
-      }
-    };
-
-    const filePath = resolveOpenPath(request.uri);
-    if (filePath === undefined || !this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Path is outside configured workspace scope");
-      return;
-    }
+  /**
+   * GET /v1/workspace/files — the orientation loop's first question: what
+   * exists. Every file across the configured workspaces, flat, open or not.
+   * Main already walks directories for the workspace listings; this is a
+   * route over that walk, not a subsystem.
+   */
+  private async handleListWorkspaceFiles(res: http.ServerResponse): Promise<void> {
     try {
-      await this._documents.getDocument(filePath);
-    } catch {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "File not found");
-      return;
+      this.sendJson(res, 200, { files: await this._queries.listWorkspaceFiles() });
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
     }
-    const docId = this._documents.getDocumentId(filePath);
-    if (docId === undefined) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Could not open document");
-      return;
+  }
+
+  private async handleListWorkspaceDocuments(
+    res: http.ServerResponse,
+    workspaceId: string,
+    query: string | undefined,
+  ): Promise<void> {
+    try {
+      const documents = await this._queries.listWorkspaceDocuments(workspaceId, query);
+      if (documents === undefined) {
+        this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
+        return;
+      }
+      this.sendJson(res, 200, documents);
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
     }
-    const summary = await this.getDocumentSummary(docId);
-    if (summary === undefined) {
-      this.sendError(res, 500, "INTERNAL_ERROR", "Document opened but could not be summarized");
-      return;
-    }
-    this.sendJson(res, 201, summary);
   }
 
   private async handleGetDocument(res: http.ServerResponse, documentId: string): Promise<void> {
-    const summary = await this.getDocumentSummary(documentId);
+    const summary = await this._queries.getDocumentSummary(documentId);
     if (summary === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
@@ -755,7 +771,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    if (!this.isDocumentOpenableInCurrentWorkspaces(filePath)) {
+    if (!(await this._queries.isOpenable(filePath))) {
       this.sendError(
         res,
         404,
@@ -769,143 +785,78 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, { focused: true, documentId });
   }
 
-  private handleReadContent(res: http.ServerResponse, documentId: string, url: URL): void {
-    const parseLine = (input: string | null): number | undefined => {
-      if (input === null) {
-        return undefined;
-      }
-      const parsed = parseInt(input, 10);
-      if (!Number.isInteger(parsed) || parsed <= 0) {
-        return undefined;
-      }
-      return parsed;
-    };
-
-    const applyRange = (
-      text: string,
-      lineCount: number,
-      startLine: number,
-      endLine: number,
-    ): {
-      content: string;
-      startLine: number;
-      endLine: number;
-      truncated: boolean;
-    } => {
-      const safeStartLine = Math.max(1, Math.min(startLine, lineCount));
-      const safeEndLine = Math.max(safeStartLine, Math.min(endLine, lineCount));
-      const lines = text.split("\n");
-      return {
-        content: lines.slice(safeStartLine - 1, safeEndLine).join("\n"),
-        startLine: safeStartLine,
-        endLine: safeEndLine,
-        truncated: safeEndLine < lineCount,
-      };
-    };
-
-    const decodedSide = decodeReadSide(url.searchParams.get("side"));
-    if (!decodedSide.ok) {
-      this.sendError(res, 400, "INVALID_PARAMS", decodedSide.message);
+  /**
+   * The read route answers for every documentId the workspace listing hands
+   * out, open or closed. Workspace containment is checked here rather than
+   * left to the buffer lookup: with no document loaded there is nothing else
+   * standing between a loopback client and an arbitrary path on disk.
+   */
+  private async handleReadContent(
+    res: http.ServerResponse,
+    documentId: string,
+    query: { side?: ReadSide; startLine?: number; endLine?: number },
+  ): Promise<void> {
+    // openapi.yaml declares `side` optional with `default: working`. A
+    // request parameter's default describes what the server assumes when the
+    // caller omits it, so this is where it is applied.
+    const side = query.side ?? "working";
+    let response;
+    try {
+      response = await this._queries.readDocumentContent(
+        documentId,
+        side,
+        query.startLine ?? 1,
+        query.endLine ?? Number.MAX_SAFE_INTEGER,
+      );
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
       return;
     }
-    const side = decodedSide.value;
-    const startLine = url.searchParams.get("startLine");
-    const endLine = url.searchParams.get("endLine");
-
-    const result = this._documents.readLiveBuffer(documentId, undefined, undefined);
-    if (result === undefined) {
+    if (response === "OUTSIDE_WORKSPACE") {
+      this.sendError(
+        res,
+        404,
+        "DOCUMENT_NOT_FOUND",
+        "Document is outside configured workspace scope",
+      );
+      return;
+    }
+    if (response === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-
-    const requestedStartLine = parseLine(startLine) ?? 1;
-    const requestedEndLine = parseLine(endLine) ?? result.lineCount;
-
-    let content = result.content;
-    let rangeLineCount = result.lineCount;
-    let reviewGeneration: number | undefined;
-    const review = this._documents.reviewStore.getReview(documentId);
-    if (review !== undefined) {
-      reviewGeneration = review.generation;
-    }
-
-    let range = applyRange(result.content, result.lineCount, requestedStartLine, requestedEndLine);
-    let revision = { version: result.version, sha256: result.sha256 };
-
-    if (side === "reference") {
-      if (review !== undefined) {
-        const referenceLines = review.referenceText.split("\n");
-        rangeLineCount = referenceLines.length;
-        const referenceRangeEnd = Math.min(requestedEndLine, rangeLineCount);
-        range = applyRange(
-          review.referenceText,
-          rangeLineCount,
-          requestedStartLine,
-          referenceRangeEnd,
-        );
-        reviewGeneration = review.generation;
-        revision = { version: review.generation, sha256: sha256Text(review.referenceText) };
-      }
-    }
-
-    content = range.content;
-
-    const response: ReadDocumentResponse = {
-      documentId,
-      side,
-      revision,
-      reviewGeneration,
-      range: {
-        startLine: range.startLine,
-        endLine: range.endLine,
-        totalLines: rangeLineCount,
-      },
-      content,
-      truncated: range.truncated,
-    };
     if (side === "working") {
-      res.setHeader("ETag", `"sha256:${result.sha256}"`);
-      this.sendJson(res, 200, { ...response, snapshot: result.snapshot });
-      return;
+      res.setHeader("ETag", `"sha256:${response.revision.sha256}"`);
     }
     this.sendJson(res, 200, response);
   }
 
-  private handleWaitForReviewEvents(res: http.ServerResponse, reviewId: string, url: URL): void {
-    const parseNumber = (
-      value: string | null,
-      fallback: number,
-      min: number,
-      max: number,
-    ): number => {
-      if (value === null) {
-        return fallback;
-      }
-      const parsed = parseInt(value, 10);
-      if (!Number.isInteger(parsed)) {
-        return fallback;
-      }
-      return Math.max(min, Math.min(max, parsed));
-    };
+  private async handleWaitForReviewEvents(
+    res: http.ServerResponse,
+    reviewId: string,
+    query: { waitSeconds?: number; wait?: number; afterGeneration?: number },
+  ): Promise<void> {
+    // Both bounds and both defaults are the document's; `wait` is its
+    // deprecated alias for `waitSeconds`.
+    const waitSeconds = query.waitSeconds ?? query.wait ?? 30;
+    const afterGeneration = query.afterGeneration ?? 0;
 
-    const waitSeconds = parseNumber(
-      url.searchParams.get("waitSeconds") ?? url.searchParams.get("wait"),
-      30,
-      0,
-      120,
-    );
-    const afterGeneration = Math.max(
-      0,
-      parseNumber(url.searchParams.get("afterGeneration"), 0, 0, 2 ** 31),
-    );
-
-    const documentId = this.findDocumentIdByReviewId(reviewId);
-    if (documentId === undefined) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+    const reviewQuery = await this._documents.reviewQueries.findReviewQuery(reviewId);
+    if (reviewQuery === undefined || !reviewQuery.attached) {
+      // A detached review's generation cannot advance — nothing can decide
+      // its chunks while its file is closed — so waiting on it would be
+      // waiting forever. The refusal names the file to open instead.
+      await this.sendReviewLookupFailure(res, reviewId);
       return;
     }
+    const documentId = reviewQuery.documentId;
 
-    const current = this._documents.reviewStore.getReviewStatus(documentId);
+    const current = this._documents.reviewQueries.getStatus(documentId);
     if (current !== undefined && current.generation > afterGeneration) {
       this.sendJson(res, 200, {
         reviewId,
@@ -920,7 +871,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       if (timeout !== undefined) {
         clearTimeout(timeout);
       }
-      this._documents.reviewStore.removeListener("*", listener);
+      this._documents.agentEvents.removeListener("*", listener);
       res.removeListener("close", cleanup);
     };
     const finish = (status: ReviewEventsResponse): void => {
@@ -937,7 +888,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
       if (event.reviewGeneration !== undefined && event.reviewGeneration > afterGeneration) {
-        const status = this._documents.reviewStore.getReviewStatus(documentId);
+        const status = this._documents.reviewQueries.getStatus(documentId);
         finish({
           reviewId,
           status,
@@ -946,10 +897,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       }
     };
 
-    this._documents.reviewStore.on("*", listener);
+    this._documents.agentEvents.on("*", listener);
     res.on("close", cleanup);
     timeout = setTimeout(() => {
-      const status = this._documents.reviewStore.getReviewStatus(documentId);
+      const status = this._documents.reviewQueries.getStatus(documentId);
       finish({
         reviewId,
         status,
@@ -958,131 +909,83 @@ export default class AgentHTTPProvider extends ProviderContract {
     }, waitSeconds * 1000);
   }
 
-  private async handleSearch(
-    req: http.IncomingMessage,
+  private handleSearch(
     res: http.ServerResponse,
     documentId: string,
-  ): Promise<void> {
-    const body = await this.readBody(req);
-    const decodedSearch = decodeSearchDocumentRequest(body);
-    if (!decodedSearch.ok) {
-      this.sendError(res, 400, "INVALID_PARAMS", decodedSearch.message);
-      return;
+    searchRequest: SearchDocumentRequest,
+  ): void {
+    let result;
+    try {
+      result = this._queries.searchDocument(documentId, searchRequest);
+    } catch (error) {
+      if (error instanceof SearchPatternError) {
+        this.sendError(res, 400, "INVALID_PARAMS", error.message);
+        return;
+      }
+      if (error instanceof SearchTimeoutError) {
+        this.sendError(
+          res,
+          422,
+          "SEARCH_TIMEOUT",
+          "Search did not finish within the server deadline; simplify the pattern",
+        );
+        return;
+      }
+      throw error;
     }
-    const searchRequest = decodedSearch.value;
-    const result = this._documents.readLiveBuffer(documentId);
     if (result === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    const lines = result.content.split("\n");
-    const contextSize = searchRequest.context;
-    const hits: SearchHit[] = [];
-    let searchRegex: RegExp;
-    try {
-      searchRegex = makeSearchRegex(searchRequest.literal, "g");
-    } catch {
-      this.sendError(res, 400, "INVALID_PARAMS", "Invalid search pattern");
-      return;
-    }
-    for (let i = 0; i < lines.length; i++) {
-      searchRegex.lastIndex = 0;
-      let match: RegExpExecArray | null = searchRegex.exec(lines[i]);
-      while (match !== null) {
-        const found = match.index;
-        const hitLength = match[0].length;
-        if (hitLength === 0) {
-          searchRegex.lastIndex += 1;
-          match = searchRegex.exec(lines[i]);
-          continue;
-        }
-        hits.push({
-          line: i + 1,
-          column: found + 1,
-          length: hitLength,
-          contextBefore: lines.slice(Math.max(0, i - contextSize), i).join("\n"),
-          contextAfter: lines.slice(i + 1, Math.min(lines.length, i + 1 + contextSize)).join("\n"),
-        });
-        if (searchRegex.lastIndex >= lines[i].length) {
-          break;
-        }
-      }
-    }
-    this.sendJson(res, 200, {
-      documentId,
-      snapshot: result.snapshot,
-      revision: { version: result.version, sha256: result.sha256 },
-      hits,
-      truncated: false,
-    });
+    this.sendJson(res, 200, result);
   }
 
   private async handleSubmitProposal(
-    req: http.IncomingMessage,
     res: http.ServerResponse,
     documentId: string,
+    proposal: SubmitProposalRequest,
   ): Promise<void> {
-    // Extract concurrency headers
-    const ifMatch = req.headers["if-match"];
-    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
-
-    if (ifMatch === undefined) {
-      this.sendError(res, 400, "INVALID_PARAMS", "If-Match header is required");
-      return;
-    }
-    if (idempotencyKey === undefined) {
-      this.sendError(res, 400, "INVALID_PARAMS", "Idempotency-Key header is required");
-      return;
-    }
-
-    // Verify the ETag format first
-    const etagMatch = ifMatch.match(/^"sha256:([a-f0-9]{64})"$/i);
-    if (etagMatch === null) {
-      this.sendError(res, 400, "INVALID_PARAMS", "Invalid If-Match ETag format");
-      return;
-    }
-
-    // Read and parse the request body
-    const body = await this.readBody(req);
-    const decodedProposal = decodeSubmitProposalRequest(body);
-    if (!decodedProposal.ok) {
-      this.sendError(res, 400, "INVALID_PARAMS", decodedProposal.message);
-      return;
-    }
-    const proposal: SubmitProposalRequest = decodedProposal.value;
-    const parsedSnapshot = DocumentManager.parseSnapshotToken(proposal.snapshot);
-    if (parsedSnapshot === undefined) {
-      this.sendError(res, 400, "INVALID_PARAMS", "Invalid snapshot token");
-      return;
-    }
-    if (parsedSnapshot.documentId !== documentId) {
-      this.sendError(res, 400, "INVALID_PARAMS", "Snapshot belongs to a different document");
-      return;
-    }
-
+    // No request headers are read here. Concurrency rides in the body, because
+    // an OpenAPI consumer that generates calls from the published document
+    // drops header parameters and could never satisfy a header requirement.
     const filePath = this._documents.getDocumentPath(documentId);
     if (filePath === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    const doc = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
-    if (doc === undefined) {
-      this.sendError(res, 404, "DOCUMENT_CLOSED", "Document is no longer open");
+    // A closed workspace file is proposed against directly: the submission
+    // acquires its authority buffer and releases it again if nothing commits.
+    // That makes this route reach files the user never opened, so containment
+    // is checked here for the same reason the read route checks it — an id is
+    // not authorization, and nothing else stands between a loopback client and
+    // an arbitrary path on disk.
+    if (!(await this._queries.isOpenable(filePath))) {
+      this.sendError(
+        res,
+        404,
+        "DOCUMENT_NOT_FOUND",
+        "Document is outside configured workspace scope",
+      );
       return;
     }
-    // Submit through the same DocumentManager.submitProposal path
     const result = await this._documents.submitProposal(
-      proposal.snapshot,
-      proposal.patch,
-      idempotencyKey,
-      proposal.description,
+      documentId,
+      proposal.baselineSha256,
+      proposal.claims,
+      proposal.clientRequestId,
       proposal.expectedReviewGeneration,
-      ifMatch,
     );
 
     if (!result.ok) {
       if (result.code === "REVISION_MISMATCH") {
-        res.setHeader("ETag", `"sha256:${sha256Text(doc.document.toString())}"`);
+        // The buffer is gone when the refusal released an acquisition, and
+        // there is then no live revision to advertise. The caller re-reads
+        // the content either way; an ETag naming a buffer nobody holds would
+        // only invite a retry against a baseline that no longer exists.
+        const current = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
+        if (current !== undefined) {
+          res.setHeader("ETag", `"sha256:${sha256Text(current.document.toString())}"`);
+        }
         this.sendError(res, 412, "REVISION_MISMATCH", result.message);
       } else if (result.code === "PATCH_INVALID" || result.code === "PATCH_NOT_APPLICABLE") {
         this.sendError(res, 400, result.code, result.message);
@@ -1090,20 +993,27 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 409, "REVIEW_INVALIDATED", result.message);
       } else if (result.code === "IDEMPOTENCY_CONFLICT" || result.code === "REVIEW_GENERATION_MISMATCH") {
         this.sendError(res, 409, result.code, result.message);
+      } else if (result.code === "PERSISTENCE_FAILED") {
+        this.sendError(res, 500, "PERSISTENCE_FAILED", result.message);
       } else {
         this.sendError(res, 500, "INTERNAL_ERROR", result.message);
       }
       return;
     }
 
-    // Set the new ETag on the response
-    const newSha = sha256Text(
-      this._documents.loadedDocuments.find((d) => d.filePath === filePath)?.document.toString() ??
-        doc.document.toString(),
-    );
-    res.setHeader("ETag", `"sha256:${newSha}"`);
+    // Set the new ETag on the response. A committed review keeps its buffer
+    // loaded, so the document is there whether the caller opened it or the
+    // submission acquired it.
+    const applied = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
+    if (applied === undefined) {
+      throw new Error(
+        `Proposal ${result.reviewId} committed against ${documentId}, which is not open`,
+      );
+    }
+    res.setHeader("ETag", `"sha256:${sha256Text(applied.document.toString())}"`);
     this.sendJson(res, 200, {
       packetId: result.packetId,
+      packetIds: result.packetIds,
       reviewId: result.reviewId,
       documentId: result.documentId,
       documentRevision: result.documentRevision,
@@ -1113,112 +1023,264 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private handleListReviews(res: http.ServerResponse): void {
-    const reviews = this._documents.reviewStore.listReviews();
+  private async handleListReviews(res: http.ServerResponse): Promise<void> {
+    const reviews: ReviewListEntry[] = (await this._documents.reviewQueries.listReviewQueries()).map(
+      (query) => {
+        if (query.attached) {
+          return {
+            ...query.status,
+            documentId: query.documentId,
+            documentPath: query.documentPath,
+            attached: true,
+          };
+        }
+        const { sidecar } = query;
+        const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
+        return {
+          reviewId: sidecar.reviewId,
+          state: classifyReviewState(sidecar.invalidated, unresolvedChunks),
+          generation: sidecar.generation,
+          unresolvedChunks,
+          packetCount: sidecar.packets.length,
+          documentPath: sidecar.documentPath,
+          attached: false,
+        };
+      },
+    );
     this.sendJson(res, 200, { reviews });
   }
 
-  private handleGetReview(res: http.ServerResponse, reviewId: string): void {
-    const documentId = this.findDocumentIdByReviewId(reviewId);
-    if (documentId === undefined) {
+  /**
+   * The refusal a review route owes an id that is not in the live store:
+   * 409 when the id names a detached review (it exists — /v1/reviews just
+   * listed it — but its file is closed), 404 only when no review carries it.
+   */
+  private async sendReviewLookupFailure(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
+    const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
+    if (query === undefined) {
+      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found.");
+      return;
+    }
+    if (!query.attached) {
+      this.sendError(
+        res,
+        409,
+        "DOCUMENT_CLOSED",
+        `The reviewed document ${query.sidecar.documentPath} is not open. ` +
+          "Open it to reattach this review, then decide its chunks.",
+      );
+      return;
+    }
+    this.sendError(
+      res,
+      404,
+      "REVIEW_NOT_FOUND",
+      "Review not found.",
+    );
+  }
+
+  private async handleGetReview(res: http.ServerResponse, reviewId: string): Promise<void> {
+    const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
+    if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
       return;
     }
-    const status = this._documents.reviewStore.getReviewStatus(documentId);
-    if (status === undefined) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+    if (!query.attached) {
+      const { sidecar } = query;
+      const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
+      this.sendJson(res, 200, {
+        reviewId: sidecar.reviewId,
+        state: classifyReviewState(sidecar.invalidated, unresolvedChunks),
+        generation: sidecar.generation,
+        unresolvedChunks,
+        packetCount: sidecar.packets.length,
+        comments: sidecar.comments,
+        attached: false,
+      });
       return;
     }
-    const filePath = this._documents.getDocumentPath(documentId);
-    const doc =
-      filePath !== undefined
-        ? this._documents.loadedDocuments.find((d) => d.filePath === filePath)
-        : undefined;
+    // The owner supplies the live text and review together. This cannot
+    // fabricate a revision for a closed document.
     this.sendJson(res, 200, {
-      ...status,
-      documentRevision: doc
-        ? {
-            version: doc.currentVersion,
-            sha256: sha256Text(doc.document.toString()),
-          }
-        : { version: 0, sha256: "" },
+      ...query.status,
+      comments: query.review.comments,
+      attached: true,
+      documentRevision: { sha256: sha256Text(query.workingText) },
     });
   }
 
-  private handleGetReviewDiff(res: http.ServerResponse, reviewId: string): void {
-    const documentId = this.findDocumentIdByReviewId(reviewId);
-    if (documentId === undefined) {
+  private async handleGetReviewDiff(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
+    const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
+    if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
       return;
     }
-    const diff = this._documents.reviewStore.getReviewDiff(documentId);
+    if (!query.attached) {
+      const { sidecar } = query;
+      this.sendJson(res, 200, {
+        reviewId: sidecar.reviewId,
+        patch: reviewPatch(sidecar.referenceText, sidecar.workingText),
+        generation: sidecar.generation,
+      });
+      return;
+    }
+    const diff = this._documents.reviewQueries.getReviewDiff(query.documentId);
     if (diff === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
       return;
     }
-    const review = this._documents.reviewStore.getReview(documentId)!;
     this.sendJson(res, 200, {
-      reviewId: review.reviewId,
-      documentId,
+      reviewId: query.review.reviewId,
+      documentId: query.documentId,
       patch: diff,
-      generation: review.generation,
+      generation: query.review.generation,
     });
   }
 
-  private handleGetReviewChunks(res: http.ServerResponse, reviewId: string): void {
-    const documentId = this.findDocumentIdByReviewId(reviewId);
+  /**
+   * The refusals that mean the caller's picture of the review is stale rather
+   * than wrong: the file closed, the review was invalidated by disk drift, or
+   * a precondition named a text or generation the review has moved past. All
+   * are 409, and keeping the list in one place is what stops a code meaning
+   * 409 on one route and 400 on another.
+   */
+  private static isConflict(code: AgentErrorCode): boolean {
+    return (
+      code === "DOCUMENT_CLOSED" ||
+      code === "REVIEW_INVALIDATED" ||
+      code === "REVISION_MISMATCH" ||
+      code === "REVIEW_GENERATION_MISMATCH"
+    );
+  }
+
+  /**
+   * What a precondition refusal tells the caller to re-read from. Absent on
+   * every other refusal, which has nothing to resynchronize against.
+   */
+  private static conflictDetail(
+    result: ReviewFailure,
+  ): Omit<AgentError, "code" | "message"> | undefined {
+    return result.actual === undefined
+      ? undefined
+      : { actual: result.actual, reviewGeneration: result.reviewGeneration };
+  }
+
+  /**
+   * POST /v1/reviews/{reviewId}/comments — attach a review-level comment.
+   * No document text moves, so this goes straight to the store; the
+   * generation advance is what wakes the agent's long-poll.
+   */
+  private async handleAddReviewComment(
+    res: http.ServerResponse,
+    reviewId: string,
+    text: string,
+    expectedReviewGeneration: number,
+  ): Promise<void> {
+    const documentId = this._documents.reviewQueries.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      await this.sendReviewLookupFailure(res, reviewId);
       return;
     }
-    const chunks = this._documents.reviewStore.getOutstandingChunks(documentId);
-    if (chunks === undefined) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
-      return;
-    }
-    const review = this._documents.reviewStore.getReview(documentId)!;
-    this.sendJson(res, 200, {
-      reviewId: review.reviewId,
-      documentId,
-      generation: review.generation,
-      chunks,
-    });
-  }
-
-  private handleGetReviewPackets(res: http.ServerResponse, reviewId: string): void {
-    const documentId = this.findDocumentIdByReviewId(reviewId);
-    if (documentId === undefined) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
-      return;
-    }
-    const review = this._documents.reviewStore.getReview(documentId);
-    if (review === undefined) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
-      return;
-    }
-    this.sendJson(res, 200, {
-      reviewId: review.reviewId,
-      documentId,
-      packets: review.packets,
-    });
-  }
-
-  private handleClearReview(res: http.ServerResponse, reviewId: string): void {
-    const result = this._documents.clearReview(reviewId);
+    const result = await this._documents.addReviewComment(
+      reviewId,
+      text,
+      expectedReviewGeneration,
+    );
     if (!result.ok) {
-      this.sendError(res, 404, "REVIEW_NOT_FOUND", result.message);
+      this.sendError(
+        res,
+        AgentHTTPProvider.isConflict(result.code)
+          ? 409
+          : result.code === "PERSISTENCE_FAILED"
+            ? 500
+            : 404,
+        result.code,
+        result.message,
+        AgentHTTPProvider.conflictDetail(result),
+      );
       return;
     }
     this.sendJson(res, 200, {
       reviewId: result.reviewId,
       documentId: result.documentId,
-      state: result.state,
-      documentRevision: result.documentRevision,
+      reviewGeneration: result.reviewGeneration,
+      comment: result.comment,
     });
   }
 
-  private handleRetractProposal(res: http.ServerResponse, packetId: string): void {
-    const result = this._documents.retractProposal(packetId);
+  private async handleGetReviewChunks(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
+    const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
+    if (query === undefined) {
+      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      return;
+    }
+    if (!query.attached) {
+      const { sidecar } = query;
+      this.sendJson(res, 200, {
+        reviewId: sidecar.reviewId,
+        generation: sidecar.generation,
+        chunks: sidecarOutstandingChunks(sidecar),
+      });
+      return;
+    }
+    const chunks = this._documents.reviewQueries.getOutstandingChunks(query.documentId);
+    if (chunks === undefined) {
+      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      return;
+    }
+    this.sendJson(res, 200, {
+      reviewId: query.review.reviewId,
+      documentId: query.documentId,
+      generation: query.review.generation,
+      // The precondition a decision on any of these chunks must carry. A
+      // detached review has no live buffer and so publishes none: it accepts
+      // no decisions until its file is reopened.
+      workingSha256: sha256Text(query.workingText),
+      chunks,
+    });
+  }
+
+  private async handleGetReviewPackets(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
+    const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
+    if (query === undefined) {
+      this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
+      return;
+    }
+    if (!query.attached) {
+      const { sidecar } = query;
+      this.sendJson(res, 200, {
+        reviewId: sidecar.reviewId,
+        // A stored packet carries its reference spans and no patch format;
+        // the wire packet is the ledger entry with the format stamped on.
+        packets: sidecar.packets.map(toWirePacket),
+      });
+      return;
+    }
+    this.sendJson(res, 200, {
+      reviewId: query.review.reviewId,
+      documentId: query.documentId,
+      packets: query.review.packets.map(toWirePacket),
+    });
+  }
+
+  private async handleRetractProposal(
+    res: http.ServerResponse,
+    packetId: string,
+    precondition: ReviewMutationPrecondition,
+  ): Promise<void> {
+    const result = await this._documents.retractProposal(packetId, precondition);
     if (result.ok) {
       this.sendJson(res, 200, {
         retracted: true,
@@ -1230,99 +1292,18 @@ export default class AgentHTTPProvider extends ProviderContract {
         documentRevision: result.documentRevision,
       });
     } else {
-      this.sendError(res, 409, "PACKET_NOT_RETRACTABLE", result.message, {
+      // Two different refusals share the 409: the packet is live but no
+      // longer the retractable one, or its file is closed. Both name the
+      // review that owns the packet, which is the only thing the caller can
+      // re-read from — disposing of the suggestions is the reviewer's.
+      this.sendError(res, result.code === "PERSISTENCE_FAILED" ? 500 : 409, result.code, result.message, {
         reviewId: result.reviewId,
-        canClearUnresolved: true,
+        ...AgentHTTPProvider.conflictDetail(result),
       });
     }
   }
 
-  // ==========================================================================
-  // SSE event streaming
-  // ==========================================================================
-
-  private handleSseSubscription(req: http.IncomingMessage, res: http.ServerResponse): void {
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
-    const afterEventId = this.parseLastEventId(req.headers["last-event-id"]);
-    const start = this.eventReplayStartIndex(afterEventId);
-    if (start < this._eventReplayBuffer.length) {
-      for (const event of this._eventReplayBuffer.slice(start)) {
-        this.writeSseEnvelope(res, event);
-      }
-    } else {
-      res.write(": connected\n\n");
-    }
-    this._sseClients.add(res);
-
-    if (this._sseHeartbeat === undefined) {
-      this._sseHeartbeat = setInterval(() => {
-        for (const client of this._sseClients) {
-          if (!client.writableEnded) {
-            client.write(": heartbeat\n\n");
-          }
-        }
-      }, SSE_HEARTBEAT_MS);
-    }
-    res.on("close", () => {
-      this._sseClients.delete(res);
-      if (this._sseClients.size === 0 && this._sseHeartbeat !== undefined) {
-        clearInterval(this._sseHeartbeat);
-        this._sseHeartbeat = undefined;
-      }
-    });
-  }
-
-  private broadcastSseEvent(event: AgentEvent): void {
-    const stampedEvent = this.buildSseEvent(event);
-    // Add to replay buffer
-    this._eventReplayBuffer.push(stampedEvent);
-    if (this._eventReplayBuffer.length > SSE_REPLAY_BUFFER_SIZE) {
-      this._eventReplayBuffer.shift();
-    }
-    for (const res of this._sseClients) {
-      if (!res.writableEnded) {
-        this.writeSseEnvelope(res, stampedEvent);
-      }
-    }
-  }
-
-  private parseLastEventId(header: string | string[] | undefined): number | undefined {
-    if (header === undefined) {
-      return undefined;
-    }
-    const candidate = Array.isArray(header) ? header[0] : header;
-    const parsed = parseInt(candidate, 10);
-    return Number.isInteger(parsed) ? parsed : undefined;
-  }
-
-  private eventReplayStartIndex(afterEventId: number | undefined): number {
-    if (afterEventId === undefined || this._eventReplayBuffer.length === 0) {
-      return 0;
-    }
-    for (let i = 0; i < this._eventReplayBuffer.length; i++) {
-      if (parseInt(this._eventReplayBuffer[i].id, 10) > afterEventId) {
-        return i;
-      }
-    }
-    return this._eventReplayBuffer.length;
-  }
-
-  private writeSseEnvelope(res: http.ServerResponse, event: BufferedAgentEvent): void {
-    const data = JSON.stringify(event);
-    res.write(`id: ${event.id}\n`);
-    if (event.event !== undefined) {
-      res.write(`event: ${event.event}\n`);
-    }
-    res.write(`data: ${data}\n\n`);
-  }
-
-  private buildSseEvent(event: AgentEvent): BufferedAgentEvent {
-    const id = `${this._eventSequence}`;
-    this._eventSequence += 1;
+  private enrichAgentEvent(event: AgentEvent): AgentEvent {
     const enriched: AgentEvent = { ...event };
     if (enriched.documentId !== undefined) {
       const filePath = this._documents.getDocumentPath(enriched.documentId);
@@ -1331,12 +1312,9 @@ export default class AgentHTTPProvider extends ProviderContract {
           ? undefined
           : this._documents.loadedDocuments.find((candidate) => candidate.filePath === filePath);
       if (document !== undefined && enriched.documentRevision === undefined) {
-        enriched.documentRevision = {
-          version: document.currentVersion,
-          sha256: sha256Text(document.document.toString()),
-        };
+        enriched.documentRevision = { sha256: sha256Text(document.document.toString()) };
       }
-      const review = this._documents.reviewStore.getReview(enriched.documentId);
+      const review = this._documents.reviewQueries.getReview(enriched.documentId);
       if (review !== undefined) {
         if (enriched.reviewId === undefined) {
           enriched.reviewId = review.reviewId;
@@ -1345,14 +1323,12 @@ export default class AgentHTTPProvider extends ProviderContract {
           enriched.reviewGeneration = review.generation;
         }
         if (enriched.unresolvedChunks === undefined) {
-          enriched.unresolvedChunks = this._documents.reviewStore.countUnresolvedChunks(review);
+          enriched.unresolvedChunks =
+          this._documents.reviewQueries.getStatus(enriched.documentId)?.unresolvedChunks;
         }
       }
     }
-    return {
-      ...enriched,
-      id,
-    };
+    return enriched;
   }
 
   // ==========================================================================
@@ -1360,151 +1336,55 @@ export default class AgentHTTPProvider extends ProviderContract {
   // ==========================================================================
 
   /**
-   * Collects the editor views a document is currently open in, keyed the same
-   * way as GET /v1/views.
+   * Reads the request body, bounded in size and time. The promise settles
+   * exactly once: with the body on a completed read, RequestTooLargeError
+   * past the size cap, RequestBodyTimeoutError when the client stalls past
+   * the deadline, or RequestAbandonedError when the connection dies first —
+   * any 'error' on an incoming request stream is the transport failing
+   * mid-body, which leaves nobody to answer. Every path clears the timer and
+   * detaches all four listeners, so a request that never completes cannot
+   * hold its buffers or closure alive beyond the deadline.
    */
-  private async getViewsForDocument(documentId: string): Promise<EditorViewSummary[]> {
-    const focusedView = this._documents.getFocusedView();
-    const views: EditorViewSummary[] = [];
-    await this._documents.forEachLeaf(async (tabMan, windowId, leafId) => {
-      const isOpenHere = tabMan.openFiles.some(
-        (openFile) => this._documents.getDocumentId(openFile.path) === documentId,
-      );
-      if (!isOpenHere) {
-        return false;
-      }
-      const isFocused =
-        focusedView !== undefined &&
-        focusedView.windowId === windowId &&
-        focusedView.leafId === leafId;
-      views.push({
-        viewId: `view-${windowId}-${leafId}`,
-        windowId,
-        leafId,
-        focused: isFocused,
-        active:
-          tabMan.activeFile !== null &&
-          this._documents.getDocumentId(tabMan.activeFile.path) === documentId,
-      });
-      return false;
-    });
-    return views;
-  }
-
-  private async getDocumentSummary(documentId: string): Promise<DocumentSummary | undefined> {
-    const filePath = this._documents.getDocumentPath(documentId);
-    if (filePath === undefined) {
-      return undefined;
-    }
-    const doc = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
-    if (doc === undefined) {
-      return undefined;
-    }
-    const content = doc.document.toString();
-    const lines = content.split("\n");
-    const reviewStatus = this._documents.reviewStore.getReviewStatus(documentId);
-    return {
-      documentId,
-      uri: `safe-file://${filePath}`,
-      path: filePath,
-      name: path.basename(filePath),
-      // The wire contract is "markdown" | "code", not the internal enum ordinal.
-      type: doc.type === DocumentType.Markdown ? "markdown" : "code",
-      dirty: doc.currentVersion !== doc.lastSavedVersion,
-      revision: {
-        version: doc.currentVersion,
-        sha256: sha256Text(content),
-      },
-      lineCount: lines.length,
-      byteLength: Buffer.byteLength(content, "utf8"),
-      views: await this.getViewsForDocument(documentId),
-      review: reviewStatus ?? undefined,
-    };
-  }
-
-  private isDocumentOpenableInCurrentWorkspaces(filePath: string): boolean {
-    const workspaces = this._app.config.get().app.openWorkspaces;
-    if (workspaces.length === 0) {
-      // An empty workspace list is not "every file on disk is in scope". A
-      // fresh profile opens no workspace, so answering true here let any
-      // loopback client POST an absolute path and then read the file back.
-      // What is legitimately in scope with no workspace configured is what the
-      // editor already holds — the user opened those documents itself. A path
-      // nobody has opened stays out of reach.
-      //
-      // `getDocumentId` is not that test: `_documentIdByPath` is a permanent
-      // assignment cache that closing a document never clears, and listing a
-      // workspace assigns an id to every file in it. Asking what is loaded
-      // right now is the question this predicate actually has.
-      return this._documents.loadedDocuments.some((doc) => doc.filePath === filePath);
-    }
-    if (!fs.existsSync(filePath)) {
-      return false;
-    }
-    const canonicalFilePath = fs.realpathSync(filePath);
-    return workspaces.some((workspacePath) => {
-      // A configured workspace can be deleted or unmounted while the editor
-      // runs, and realpathSync then throws ENOENT. Letting that escape turned
-      // every openability check into a bare 500 whose message named neither the
-      // path nor the reason, so the only diagnosis was reading the app log and
-      // guessing which of several workspaces was gone. A vanished workspace
-      // cannot contain the file, which is the answer this predicate owes its
-      // caller; anything else is a real fault and still propagates.
-      let canonicalWorkspacePath: string;
-      try {
-        canonicalWorkspacePath = fs.realpathSync(workspacePath);
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code !== "ENOENT" && code !== "ENOTDIR") {
-          throw error;
-        }
-        this._log.warning(
-          `[AgentHTTPProvider] Configured workspace ${workspacePath} could not be resolved ` +
-            `(${code}); treating it as not containing ${filePath}. The workspace is ` +
-            "probably deleted or unmounted.",
-        );
-        return false;
-      }
-      const relativePath = path.relative(canonicalWorkspacePath, canonicalFilePath);
-      return relativePath === "" ||
-        (!relativePath.startsWith(`..${path.sep}`) && relativePath !== ".." && !path.isAbsolute(relativePath));
-    });
-  }
-
-  private findDocumentIdByReviewId(reviewId: string): string | undefined {
-    for (const r of this._documents.reviewStore.listReviews()) {
-      if (r.reviewId === reviewId) {
-        return r.documentId;
-      }
-    }
-    return undefined;
-  }
-
   private async readBody(req: http.IncomingMessage): Promise<string> {
-    return new Promise((resolve, reject) => {
-      let data = "";
-      let settled = false;
-      req.on("data", (chunk: Buffer) => {
-        if (settled) {
+    return await new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      let receivedBytes = 0;
+      let deadline: NodeJS.Timeout | undefined;
+      const settle = (outcome: () => void): void => {
+        clearTimeout(deadline);
+        req.removeListener("data", onData);
+        req.removeListener("end", onEnd);
+        req.removeListener("error", onError);
+        req.removeListener("close", onError);
+        outcome();
+      };
+      const onData = (chunk: Buffer): void => {
+        receivedBytes += chunk.byteLength;
+        if (receivedBytes > MAX_REQUEST_BODY_BYTES) {
+          settle(() => reject(new RequestTooLargeError()));
+          // Keep the transport alive long enough for the dispatcher to answer
+          // with its structured 413. Resuming after our listeners are removed
+          // drains and discards the remainder without retaining more buffers.
+          req.resume();
           return;
         }
-        data += chunk.toString("utf8");
-        if (Buffer.byteLength(data, "utf8") > MAX_REQUEST_BODY_BYTES) {
-          settled = true;
-          reject(new RequestTooLargeError());
-          req.destroy();
-        }
-      });
-      req.on("end", () => {
-        if (!settled) {
-          resolve(data);
-        }
-      });
-      req.on("error", (err) => {
-        if (!settled) {
-          reject(err);
-        }
-      });
+        chunks.push(chunk);
+      };
+      const onEnd = (): void => {
+        settle(() => resolve(Buffer.concat(chunks).toString("utf8")));
+      };
+      const onError = (): void => {
+        settle(() => reject(new RequestAbandonedError()));
+      };
+      deadline = setTimeout(() => {
+        // No req.destroy() here: the 408 the dispatcher answers with must
+        // still reach the stalled client before the connection is torn down.
+        settle(() => reject(new RequestBodyTimeoutError()));
+      }, this._bodyDeadlineMs);
+      req.on("data", onData);
+      req.on("end", onEnd);
+      req.on("error", onError);
+      req.on("close", onError);
     });
   }
 
@@ -1524,6 +1404,18 @@ export default class AgentHTTPProvider extends ProviderContract {
     message: string,
     detail?: Omit<AgentError, "code" | "message">,
   ): void {
+    if (res.headersSent) {
+      // The status line is already on the wire, so writeHead would throw here
+      // — inside whatever failure path called this — and take the process with
+      // it. The client gets a severed connection, which is what an incomplete
+      // body deserves; the operator gets the reason.
+      this._log.error(
+        `[AgentHTTPProvider] ${code} after the response headers were sent, so the response is ` +
+          `truncated and the connection is being closed: ${message}`,
+      );
+      res.destroy();
+      return;
+    }
     const error: AgentError = { code, message, ...detail };
     const json = JSON.stringify({ error } satisfies AgentErrorResponse);
     res.writeHead(status, {

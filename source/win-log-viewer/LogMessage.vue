@@ -1,7 +1,7 @@
 <template>
   <div
-    v-bind:class="messageClass(message.level)"
-    v-on:click.stop="toggleDetails"
+    :class="messageClass(message.level)"
+    @click.stop="toggleDetails"
   >
     <div class="timestamp">
       [{{ message.time }}]
@@ -10,7 +10,7 @@
       {{ message.message }}
       <div
         ref="details"
-        v-bind:class="{
+        :class="{
           details: true,
           hidden: !showDetails
         }"
@@ -19,7 +19,11 @@
       </div>
     </div>
     <div class="expand-details">
-      <cds-icon v-show="hasDetails" shape="angle" v-bind:direction="iconDirection"></cds-icon>
+      <cds-icon
+        v-show="hasDetails"
+        shape="angle"
+        :direction="iconDirection"
+      />
     </div>
   </div>
 </template>
@@ -61,7 +65,10 @@ const iconDirection = computed(() => showDetails.value ? 'up' : 'down')
  * @return  {boolean}  True or false depending on the existence of details
  */
 const hasDetails = computed(() => {
-  if (props.message.details === undefined) {
+  // null and undefined both mean "nothing attached". null needs naming
+  // explicitly because `typeof null === 'object'` would otherwise send it into
+  // the object branch below and throw in Object.keys.
+  if (props.message.details == null) {
     return false
   }
 
@@ -108,16 +115,16 @@ const parsedDetails = computed(() => {
       }
       ret += `[${i}]: ${val}`
     }
-  } else if (typeof detail === 'object') {
-    for (const param of Object.keys(detail)) {
-      let val = (typeof detail[param] === 'object') ? JSON.stringify(detail[param]) : String(detail[param]) + ''
+  } else if (detail !== null && typeof detail === 'object') {
+    for (const [param, value] of Object.entries(detail)) {
+      let val = (typeof value === 'object') ? JSON.stringify(value) : String(value) + ''
       if (val.length > 1000) {
         val = val.substring(0, 1000) + '… <span class="more">(' + (val.length - 1000) + ' more characters)</span>'
       }
       ret += `${param}: ${val}\n`
     }
   } else {
-    ret += `${detail}\n`
+    ret += `${String(detail)}\n`
   }
   return ret
 })

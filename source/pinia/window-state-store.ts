@@ -19,25 +19,48 @@ import type { DocumentInfo } from 'source/common/modules/markdown-editor'
 import type { ToCEntry } from 'source/common/modules/markdown-editor/plugins/toc-field'
 import { computed, ref, type Ref } from 'vue'
 import { type WritingTarget } from '@providers/targets'
-import type { AssetsProviderIPCAPI } from 'source/app/service-providers/assets'
-import type { SearchResultWrapper } from 'source/win-main/GlobalSearch.vue'
+import type { SearchResult } from 'source/app/service-providers/search'
 
 const ipcRenderer = window.ipc
+
+/**
+ * This interface describes a specific descriptor for use during file searches
+ */
+export interface FileSearchDescriptor {
+  path: string
+  relativeDirectoryPath: string
+  filename: string
+  displayName: string
+}
+
+/**
+ * This interface describes a wrapper that combines search results with
+ * metadata on the file the results describe. This store holds the search
+ * results, so it owns the wrapper contract; GlobalSearch.vue produces and
+ * renders it.
+ */
+export interface SearchResultWrapper {
+  key: string
+  file: FileSearchDescriptor
+  result: SearchResult
+  hideResultSet: boolean
+  weight: number
+}
 
 async function updateSnippets (snippets: Ref<Array<{ name: string, content: string }>>): Promise<void> {
   // Now we have to pair two types of calls to the assets provider to get all
   // snippets: First a call to list all snippets, and then one `get` call to
   // retrieve its file contents.
-  const snippetNames: string[] = await ipcRenderer.invoke('assets-provider', {
+  const snippetNames = await ipcRenderer.invoke('assets-provider', {
     command: 'list-snippets'
-  } as AssetsProviderIPCAPI)
+  })
 
   const newSnippets: Array<{ name: string, content: string }> = []
   for (const snippet of snippetNames) {
-    const content: string = await ipcRenderer.invoke('assets-provider', {
+    const content = await ipcRenderer.invoke('assets-provider', {
       command: 'get-snippet',
       payload: { name: snippet }
-    } as AssetsProviderIPCAPI)
+    })
 
     newSnippets.push({ name: snippet, content })
   }

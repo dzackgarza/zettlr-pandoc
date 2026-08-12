@@ -16,7 +16,7 @@
 import { syntaxTree } from '@codemirror/language'
 import { type RangeSet, type Range } from '@codemirror/state'
 import { type ViewUpdate, type EditorView, ViewPlugin, Decoration, type DecorationSet, WidgetType } from '@codemirror/view'
-import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
+import { rangeInPreviewSuppression, reviewSuppressionChanged } from '../util/range-in-preview-suppression'
 import type { SyntaxNode } from '@lezer/common'
 import { configField } from '../util/configuration'
 
@@ -185,7 +185,7 @@ export const renderEmphasis = ViewPlugin.fromClass(class {
   }
 
   update (update: ViewUpdate): void {
-    if (update.docChanged || update.viewportChanged || update.selectionSet) {
+    if (update.docChanged || update.viewportChanged || update.selectionSet || reviewSuppressionChanged(update)) {
       this.decorations = hideFormattingCharacters(update.view)
     }
   }

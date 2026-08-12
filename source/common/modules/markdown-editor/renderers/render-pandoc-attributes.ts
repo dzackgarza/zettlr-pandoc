@@ -24,7 +24,7 @@ import { syntaxTree } from '@codemirror/language'
 import { type Range } from '@codemirror/state'
 import { Decoration, ViewPlugin, type DecorationSet, type EditorView, type ViewUpdate } from '@codemirror/view'
 import { parsePandocAttributes } from 'source/common/pandoc-util/parse-pandoc-attributes'
-import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
+import { rangeInPreviewSuppression, reviewSuppressionChanged } from '../util/range-in-preview-suppression'
 import { configField } from '../util/configuration'
 
 function hideAttributeBlocks (view: EditorView): DecorationSet {
@@ -91,7 +91,7 @@ export const renderPandocAttributes = ViewPlugin.fromClass(class {
   }
 
   update (update: ViewUpdate): void {
-    if (update.docChanged || update.viewportChanged || update.selectionSet) {
+    if (update.docChanged || update.viewportChanged || update.selectionSet || reviewSuppressionChanged(update)) {
       this.decorations = hideAttributeBlocks(update.view)
     }
   }

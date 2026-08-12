@@ -16,11 +16,11 @@
 
 import CSL from 'citeproc'
 import { FSWatcher } from 'chokidar'
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import { promises as fs, readFileSync, constants as FS_CONSTANTS } from 'fs'
 import path from 'path'
 import { trans } from '@common/i18n-main'
-import ProviderContract, { type IPCAPI } from '../provider-contract'
+import ProviderContract, { type IPCMessage } from '../provider-contract'
 import type WindowProvider from '../windows'
 import type LogProvider from '../log'
 import type ConfigProvider from '@providers/config'
@@ -38,12 +38,25 @@ export interface DatabaseRecord {
   bibtexAttachments: Record<string, string[]|false>
 }
 
-export type CiteprocProviderIPCAPI = IPCAPI<{
-  'get-items': { database: string }
-  'get-citation': { database: string, citations: CiteItem[], composite: boolean }
-  'get-citation-sync': { database: string, citations: CiteItem[], composite: boolean }
-  'get-bibliography': { database: string, citations: string[] }
-}>
+export type CiteprocIPCContract = {
+  'get-items': {
+    request: { payload: { database: string } }
+    response: CSLItem[]
+  }
+  'get-citation': {
+    request: { payload: { database: string, citations: CiteItem[], composite: boolean } }
+    response: string|undefined
+  }
+  'get-bibliography': {
+    request: { payload: { database: string, citations: string[] } }
+    response: [BibliographyOptions, string[]]|undefined
+  }
+}
+
+// get-citation-sync rides ipcMain.on/sendSync, not invoke, so it is not part
+// of the invoke contract above.
+export type CiteprocProviderIPCAPI = IPCMessage<CiteprocIPCContract>
+  | { command: 'get-citation-sync', payload: { database: string, citations: CiteItem[], composite: boolean } }
 
 // The default style Zettlr ships with
 const DEFAULT_CHICAGO_STYLE = path.join(__dirname, './assets/csl-styles/chicago-author-date.csl')
@@ -140,7 +153,7 @@ export default class CiteprocProvider extends ProviderContract {
         // on reload (happens frequently, e.g., with Zotero). In that case,
         // simply load it.
         this.loadDatabase(affectedPath, false)
-          .catch(err => { this._logger.error(`[Citeproc] Could not reload database ${affectedPath}: ${String(err.message)}`, err) })
+          .catch(err => { this._logger.error(`[Citeproc] Could not reload database ${affectedPath}: ${err instanceof Error ? err.message : 'unknown error'}`, err) })
       } else if (db === undefined) {
         this._logger.warning(`[Citeproc] Received an event ${eventName} for path ${affectedPath}: Could not handle.`)
       } else if (eventName === 'change') {
@@ -153,7 +166,7 @@ export default class CiteprocProvider extends ProviderContract {
         this.unloadDatabase(affectedPath, false)
         this.loadDatabase(affectedPath, false)
           .then(() => broadcastIpcMessage('citeproc-database-updated', affectedPath))
-          .catch(err => { this._logger.error(`[Citeproc Provider] Error while reloading database ${affectedPath}: ${String(err.message)}`, err) })
+          .catch(err => { this._logger.error(`[Citeproc Provider] Error while reloading database ${affectedPath}: ${err instanceof Error ? err.message : 'unknown error'}`, err) })
       } else if (eventName === 'unlink') {
         this.unloadDatabase(affectedPath)
         broadcastIpcMessage('citeproc-database-updated', affectedPath)
@@ -325,11 +338,15 @@ export default class CiteprocProvider extends ProviderContract {
 
     try {
       await fs.access(databasePath, FS_CONSTANTS.F_OK|FS_CONSTANTS.R_OK)
-    } catch (err) {
+    } catch {
       throw new Error(`File "${databasePath}" does not exist or is not visible to the app.`)
     }
 
-    const record = await loadDatabase(databasePath, this._logger)
+    const record = await loadDatabase(
+      databasePath,
+      this._logger,
+      path.join(app.getPath('userData'), 'citeproc-cache')
+    )
 
     // Add the database to the list of available databases
     this.databases.set(databasePath, record)
@@ -404,10 +421,10 @@ export default class CiteprocProvider extends ProviderContract {
   onConfigUpdate (option: string): void {
     if (option === 'appLang') {
       // We have to reload the engine to reflect the new language
-      this.loadEngine().catch(err => this._logger.error(`[Citeproc Provider] Could not reload engine: ${err.message}`, err))
+      this.loadEngine().catch(err => this._logger.error(`[Citeproc Provider] Could not reload engine: ${err instanceof Error ? err.message : 'unknown error'}`, err))
     } else if (option === 'export.cslLibrary') {
       // Determine if we have to reload
-      const newValue = this._config.get('export.cslLibrary')
+      const newValue = this._config.get().export.cslLibrary
 
       if (newValue !== this.mainLibrary) {
         showNativeNotification(trans('Changes to the library file detected. Reloading …'))
@@ -421,7 +438,7 @@ export default class CiteprocProvider extends ProviderContract {
         this.loadDatabase(this.mainLibrary)
           .then(() => broadcastIpcMessage('citeproc-database-updated', CITEPROC_MAIN_DB))
           .catch(err => {
-            const msg = String(err.message)
+            const msg = err instanceof Error ? err.message : 'unknown error'
             this._logger.error(`[Citeproc Provider] Could not reload main library: ${msg}`, err)
             this._windows.showErrorMessage(trans('The citation database could not be loaded'), msg)
           })
@@ -452,7 +469,7 @@ export default class CiteprocProvider extends ProviderContract {
       // NOTE that this System function must be synchronous, so we cannot use
       // the asynchronous promises API here.
       return readFileSync(localePath, { encoding: 'utf8' })
-    } catch (err) {
+    } catch {
       // File not found -> Let the engine fall back to a default.
       return false
     }

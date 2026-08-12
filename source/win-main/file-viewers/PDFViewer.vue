@@ -3,15 +3,16 @@
     ref="pdfViewerContainer"
     class="pdf-viewer-container"
     role="region"
-    v-bind:aria-label="`PDFViewer: Currently viewing file ${pathBasename(props.file.path)}`"
-    v-on:pointerenter="acceptsClicks = true"
-    v-on:pointerleave="acceptsClicks = false"
+    :aria-label="`PDFViewer: Currently viewing file ${pathBasename(props.file.path)}`"
+    @pointerenter="acceptsClicks = true"
+    @pointerleave="acceptsClicks = false"
   >
     <iframe
       ref="iframe"
-      v-bind:src="makeValidUri(props.file.path)" view="Fit"
-      v-bind:class="{ 'pointer-events': acceptsClicks }"
-    ></iframe>
+      :src="makeValidUri(props.file.path)"
+      view="Fit"
+      :class="{ 'pointer-events': acceptsClicks }"
+    />
   </div>
 </template>
 
@@ -39,7 +40,7 @@
  * END HEADER
  */
 import type { OpenDocument } from 'source/types/common/documents'
-import type { EditorCommands } from '../App.vue'
+import type { EditorCommands } from '../component-contracts'
 import makeValidUri from 'source/common/util/make-valid-uri'
 import { ref } from 'vue'
 import { pathBasename } from 'source/common/util/renderer-path-polyfill'

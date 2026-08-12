@@ -17,8 +17,8 @@
  *                  uncloseable runtime-error overlay the contract forbids).
  *
  *                  This module lives in common/ so the markdown-editor
- *                  modules (reference navigation, the live-buffer reporter,
- *                  the @-completion append continuation) can route through
+ *                  modules (reference navigation, the @-completion append
+ *                  continuation) can route through
  *                  it; the window-level
  *                  win-main/util/recoverable-reference-errors.ts boundary
  *                  delegates here, keeping one implementation of the

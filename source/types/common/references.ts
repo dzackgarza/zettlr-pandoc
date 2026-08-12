@@ -2,7 +2,12 @@
 // (FSAL-owned saved snapshots) and the renderer (live CodeMirror
 // replacements). This is the typed model locked by issue #1.
 
-import { PANDOC_CROSSREF_PREFIXES, THEOREM_DIV_PREFIXES } from '../../common/util/pandoc-quick-reference'
+import {
+  PANDOC_CROSS_REFERENCE_EXAMPLES,
+  PANDOC_CROSSREF_PREFIXES,
+  THEOREM_FAMILY_METADATA,
+  type TheoremFamilyPrefix
+} from '../../common/util/pandoc-quick-reference'
 
 /**
  * The explicit pandoc-crossref label families supported at launch.
@@ -11,7 +16,7 @@ import { PANDOC_CROSSREF_PREFIXES, THEOREM_DIV_PREFIXES } from '../../common/uti
  * registry (PANDOC_CROSS_REFERENCE_EXAMPLES -> PANDOC_CROSSREF_PREFIXES),
  * which is the single owner of the crossref family set. The dependency
  * points this way because this module already consumes
- * THEOREM_DIV_PREFIXES from the same registry module; the reverse
+ * theorem-family metadata from the same registry module; the reverse
  * direction would create an import cycle.
  */
 export const CROSSREF_FAMILIES: readonly CrossrefFamily[] = PANDOC_CROSSREF_PREFIXES
@@ -22,9 +27,10 @@ export type CrossrefFamily = typeof PANDOC_CROSSREF_PREFIXES[number]
  * Theorem-like fenced-div label families, derived from the fixed prefix
  * registry so this model cannot drift from the export theorem filter.
  */
-export type TheoremFamily = keyof typeof THEOREM_DIV_PREFIXES
+export type TheoremFamily = TheoremFamilyPrefix
 
-export const THEOREM_FAMILIES = Object.keys(THEOREM_DIV_PREFIXES) as readonly TheoremFamily[]
+export const THEOREM_FAMILIES: readonly TheoremFamily[] =
+  THEOREM_FAMILY_METADATA.map(metadata => metadata.prefix)
 
 /**
  * Every supported reference family. Anything else (automatic heading IDs,
@@ -50,39 +56,64 @@ export function referenceFamilyOf (key: string): ReferenceFamily|undefined {
   }
 
   const family = key.slice(0, colon)
-  return (REFERENCE_FAMILIES as readonly string[]).includes(family)
-    ? family as ReferenceFamily
-    : undefined
+  for (const supportedFamily of REFERENCE_FAMILIES) {
+    if (supportedFamily === family) {
+      return supportedFamily
+    }
+  }
+
+  return undefined
 }
 
 /**
- * Display names of the explicit pandoc-crossref label families.
+ * The display name of every supported reference family, DERIVED from the two
+ * registries that own family identity and presentation.
+ *
+ * AUTHORITY: deriving by iteration — instead of joining the registries against
+ * a second, hand-maintained label table — is what makes a family ADDED to a
+ * registry arrive with a display name. Each derived record has to satisfy the
+ * shared family/display shape, and the public lookup walks those same records
+ * rather than asserting that Object.fromEntries produced an exhaustive object.
+ * A newly added registry entry therefore carries its display name through the
+ * same expression that introduces its family identity.
  */
-const CROSSREF_FAMILY_DISPLAY: Record<CrossrefFamily, string> = {
-  fig: 'Figure',
-  tbl: 'Table',
-  eq: 'Equation',
-  sec: 'Section',
-  lst: 'Listing'
+interface ReferenceFamilyDisplay {
+  family: ReferenceFamily
+  displayName: string
 }
 
+const REFERENCE_FAMILY_DISPLAYS = [
+  ...PANDOC_CROSS_REFERENCE_EXAMPLES.map(example => ({
+    family: example.prefix,
+    displayName: example.displayName
+  })),
+  ...THEOREM_FAMILY_METADATA.map(metadata => ({
+    family: metadata.prefix,
+    displayName: metadata.displayName
+  }))
+] satisfies readonly ReferenceFamilyDisplay[]
+
 /**
- * The display name of a reference family, derived from the fixed theorem
- * prefix registry ('thm' -> 'Theorem') or the crossref family map
- * ('fig' -> 'Figure'). Display names never carry a computed number:
- * numbering is owned exclusively by export tools and templates.
+ * The display name of a reference family ('thm' -> 'Theorem', 'fig' ->
+ * 'Figure'): the single authority every reference view labels its rows from.
+ * Display names never carry a computed number: numbering is owned exclusively
+ * by export tools and templates.
  *
  * @param   {ReferenceFamily}  family  The reference family
  *
  * @return  {string}                   The capitalized display name
  */
 export function referenceFamilyDisplayName (family: ReferenceFamily): string {
-  const theoremClass = (THEOREM_DIV_PREFIXES as Record<string, string|undefined>)[family]
-  if (theoremClass !== undefined) {
-    return theoremClass.charAt(0).toUpperCase() + theoremClass.slice(1)
+  for (const metadata of REFERENCE_FAMILY_DISPLAYS) {
+    if (metadata.family === family) {
+      return metadata.displayName
+    }
   }
 
-  return CROSSREF_FAMILY_DISPLAY[family as CrossrefFamily]
+  // ReferenceFamily is derived from the same two registries iterated above.
+  // Reaching this point means those authorities no longer agree, so rendering
+  // cannot fulfil its contract and must stop rather than return an empty label.
+  throw new Error(`Reference family ${family} has no display metadata`)
 }
 
 /**

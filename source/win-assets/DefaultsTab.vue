@@ -1,49 +1,52 @@
 <template>
   <SplitView
-    v-bind:initial-size-percent="[ 20, 80 ]"
-    v-bind:minimum-size-percent="[ 20, 20 ]"
-    v-bind:reset-size-percent="[ 20, 80 ]"
-    v-bind:split="'horizontal'"
-    v-bind:initial-total-width="100"
+    :initial-size-percent="[ 20, 80 ]"
+    :minimum-size-percent="[ 20, 20 ]"
+    :reset-size-percent="[ 20, 80 ]"
+    :split="'horizontal'"
+    :initial-total-width="100"
   >
     <template #view1>
       <div class="asset-container-list">
         <SelectableList
-          v-bind:items="listItems"
-          v-bind:editable="true"
-          v-bind:selected-item="currentItem"
-          v-bind:add-text-item="true"
-          v-on:select="currentItem = $event"
-          v-on:add="newDefaultsFile($event)"
-          v-on:remove="removeFile($event)"
-        ></SelectableList>
+          :items="listItems"
+          :editable="true"
+          :selected-item="currentItem"
+          :add-text-item="true"
+          @select="currentItem = $event"
+          @add="newDefaultsFile($event)"
+          @remove="removeFile($event)"
+        />
         <ButtonControl
-          v-bind:label="openDefaultsFolderLabel"
-          v-bind:inline="false"
-          v-on:click="openDefaultsDirectory"
-        ></ButtonControl>
+          :label="openDefaultsFolderLabel"
+          :inline="false"
+          @click="openDefaultsDirectory"
+        />
       </div>
     </template>
     <template #view2>
       <div class="asset-container">
-        <ZtrAdmonition type="info" class="asset-admonition">
+        <ZtrAdmonition
+          type="info"
+          class="asset-admonition"
+        >
           {{ defaultsExplanation }}
         </ZtrAdmonition>
         <p class="asset-input">
           <TextControl
             v-model="currentFilename"
             class="asset-input-name"
-            v-bind:inline="false"
-            v-bind:disabled="currentItem < 0"
-            v-on:confirm="renameFile()"
-          ></TextControl>
+            :inline="false"
+            :disabled="currentItem < 0"
+            @confirm="renameFile()"
+          />
           <ButtonControl
             class="asset-input-button"
-            v-bind:label="renameFileLabel"
-            v-bind:inline="true"
-            v-bind:disabled="visibleItems.length === 0 || currentFilename === visibleItems[currentItem].name"
-            v-on:click="renameFile()"
-          ></ButtonControl>
+            :label="renameFileLabel"
+            :inline="true"
+            :disabled="visibleItems.length === 0 || currentFilename === visibleItems[currentItem].name"
+            @click="renameFile()"
+          />
         </p>
         <ZtrAdmonition
           v-if="visibleItems.length > 0 && visibleItems[currentItem].isProtected === true"
@@ -61,18 +64,21 @@
         <CodeEditor
           ref="code-editor"
           v-model="editorContents"
-          v-bind:mode="'yaml'"
-        ></CodeEditor>
+          :mode="'yaml'"
+        />
         <!-- This div is used to keep the buttons in a line despite the flex -->
         <div class="save-asset-file">
           <ButtonControl
             class="save-button"
-            v-bind:primary="true"
-            v-bind:label="saveButtonLabel"
-            v-bind:inline="true"
-            v-on:click="saveDefaultsFile()"
-          ></ButtonControl>
-          <span v-if="savingStatus !== ''" class="saving-status">{{ savingStatus }}</span>
+            :primary="true"
+            :label="saveButtonLabel"
+            :inline="true"
+            @click="saveDefaultsFile()"
+          />
+          <span
+            v-if="savingStatus !== ''"
+            class="saving-status"
+          >{{ savingStatus }}</span>
         </div>
       </div>
     </template>
@@ -103,7 +109,7 @@ import CodeEditor from '@common/vue/CodeEditor.vue'
 import ZtrAdmonition from '@common/vue/ZtrAdmonition.vue'
 import { trans } from '@common/i18n-renderer'
 import { ref, computed, toRef, watch, onUnmounted } from 'vue'
-import type { AssetsProviderIPCAPI, PandocProfileMetadata } from '@providers/assets'
+import type { PandocProfileMetadata, ValidPandocProfile } from '@providers/assets'
 import { PANDOC_READERS, PANDOC_WRITERS, SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import sanitizeFilename from 'sanitize-filename'
 import { DateTime } from 'luxon'
@@ -156,21 +162,26 @@ const visibleItems = computed(() => {
     })
 })
 
+/**
+ * Describes the conversion a profile performs, resolving known and fully
+ * supported extensions to their display names.
+ */
+function conversionText (file: ValidPandocProfile): string {
+  const parsedReader = parseReaderWriter(file.reader)
+  const parsedWriter = parseReaderWriter(file.writer)
+  const reader = parsedReader.name in PANDOC_READERS ? PANDOC_READERS[parsedReader.name] : parsedReader.name
+  const writer = parsedWriter.name in PANDOC_WRITERS ? PANDOC_WRITERS[parsedWriter.name] : parsedWriter.name
+  return [ reader, writer ].join(' → ')
+}
+
 const listItems = computed<SelectableListItem[]>(() => {
   return visibleItems.value
     .map(file => {
-      // Try to resolve known and fully supported extensions
-      const parsedReader = parseReaderWriter(file.reader)
-      const parsedWriter = parseReaderWriter(file.writer)
-      const reader = parsedReader.name in PANDOC_READERS ? PANDOC_READERS[parsedReader.name] : parsedReader.name
-      const writer = parsedWriter.name in PANDOC_WRITERS ? PANDOC_WRITERS[parsedWriter.name] : parsedWriter.name
-      const infoString = (file.isInvalid) ? 'Invalid' : [ reader, writer ].join(' → ')
-
       return {
         displayText: file.name.substring(0, file.name.lastIndexOf('.')),
         icon: file.isProtected === true ? 'lock' : undefined,
         solidIcon: true,
-        infoString,
+        infoString: file.isInvalid ? 'Invalid' : conversionText(file),
         infoStringClass: file.isInvalid ? 'error' : undefined
       }
     })
@@ -232,7 +243,7 @@ async function loadDefaultsForState (): Promise<void> {
   const data = await ipcRenderer.invoke('assets-provider', {
     command: 'get-defaults-file',
     payload: { filename: name }
-  } as AssetsProviderIPCAPI)
+  })
 
   lastLoadedEditorContents.value = data
   editorContents.value = data
@@ -245,7 +256,7 @@ async function retrieveDefaultsFiles (): Promise<void> {
   // does not work with the custom profiles the exporter provides).
   const files: PandocProfileMetadata[] = await ipcRenderer.invoke('assets-provider', {
     command: 'list-defaults'
-  } as AssetsProviderIPCAPI)
+  })
 
   availableDefaultsFiles.value = files
   if (currentItem.value < 0) {
@@ -263,7 +274,7 @@ function saveDefaultsFile (): void {
   ipcRenderer.invoke('assets-provider', {
     command: 'set-defaults-file',
     payload: { filename: name, contents: editorContents.value }
-  } as AssetsProviderIPCAPI)
+  })
     .then(async () => {
       lastLoadedEditorContents.value = editorContents.value
       savingStatus.value = trans('Saved!')
@@ -295,7 +306,7 @@ function newDefaultsFile (newName?: string): void {
   ipcRenderer.invoke('assets-provider', {
     command: 'set-defaults-file',
     payload: { filename: newName, contents: NEW_DEFAULTS_FILE_CONTENTS }
-  } as AssetsProviderIPCAPI)
+  })
     .then(async () => {
       await retrieveDefaultsFiles() // Always make sure to pull in any changes
       const idx = visibleItems.value.findIndex(val => val.name === newName)
@@ -318,7 +329,7 @@ function renameFile (): void {
   ipcRenderer.invoke('assets-provider', {
     command: 'rename-defaults-file',
     payload: { oldName, newName }
-  } as AssetsProviderIPCAPI)
+  })
     .then(async () => {
       await retrieveDefaultsFiles() // Always make sure to pull in any changes
     })
@@ -335,7 +346,7 @@ function removeFile (idx: number): void {
   ipcRenderer.invoke('assets-provider', {
     command: 'remove-defaults-file',
     payload: { filename }
-  } as AssetsProviderIPCAPI)
+  })
     .then(async () => {
       await retrieveDefaultsFiles() // Always make sure to pull in any changes
     })
@@ -345,7 +356,7 @@ function removeFile (idx: number): void {
 function openDefaultsDirectory (): void {
   ipcRenderer.invoke('assets-provider', {
     command: 'open-defaults-directory'
-  } as AssetsProviderIPCAPI).catch(err => console.error(err))
+  }).catch(err => console.error(err))
 }
 </script>
 

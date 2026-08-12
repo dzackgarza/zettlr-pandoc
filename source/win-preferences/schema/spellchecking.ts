@@ -14,7 +14,7 @@
 
 import { trans } from '@common/i18n-renderer'
 import { mapLangCodeToName, resolveLangCode } from '@common/util/map-lang-code'
-import { type PreferencesFieldset } from '../App.vue'
+import { type PreferencesFieldset } from './types'
 import { PreferencesGroups } from './_preferences-groups'
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
 

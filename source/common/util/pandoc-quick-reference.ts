@@ -18,30 +18,35 @@ export const PANDOC_CROSS_REFERENCE_EXAMPLES = [
   {
     kind: 'figure',
     prefix: 'fig',
+    displayName: 'Figure',
     label: '![Caption](figure.png){#fig:key}',
     reference: '@fig:key',
   },
   {
     kind: 'table',
     prefix: 'tbl',
+    displayName: 'Table',
     label: ': Caption {#tbl:key}',
     reference: '@tbl:key',
   },
   {
     kind: 'equation',
     prefix: 'eq',
+    displayName: 'Equation',
     label: '$$ E = mc^2 $$ {#eq:key}',
     reference: '@eq:key',
   },
   {
     kind: 'section',
     prefix: 'sec',
+    displayName: 'Section',
     label: '## Heading {#sec:key}',
     reference: '@sec:key',
   },
   {
     kind: 'listing',
     prefix: 'lst',
+    displayName: 'Listing',
     label: '```{#lst:key}',
     reference: '@lst:key',
   },
@@ -99,31 +104,56 @@ export function isSupportedPandocCrossref (id: string): boolean {
 }
 
 /**
- * The fixed registry of referenceable theorem-like fenced-div label prefixes,
- * mapping each label prefix (as authored in `{#thm:key}`) to the fenced-div
- * class it labels (as authored in `::: {.theorem #thm:key}` and matched by the
- * export theorem filter). Proof-like divs (`proof`, `sketch`, `solution`) are
- * deliberately absent: they stay unnumbered and unreferenceable.
+ * One referenceable theorem-like family. Identity, fenced-div class, and
+ * display name are authored together so no consumer can add a family while
+ * omitting the word rendered for it.
  */
-export const THEOREM_DIV_PREFIXES = {
-  thm: 'theorem',
-  lem: 'lemma',
-  prop: 'proposition',
-  cor: 'corollary',
-  def: 'definition',
-  rmk: 'remark',
-  ex: 'example',
-  conj: 'conjecture',
-  clm: 'claim',
-  obs: 'observation',
-  qst: 'question',
-  prob: 'problem',
-  ass: 'assumption',
-  warn: 'warning',
-  exr: 'exercise',
-} as const
+export interface TheoremFamilyMetadata {
+  prefix: string
+  divClass: string
+  displayName: string
+}
 
-export const REFERENCEABLE_DIV_CLASSES = Object.values(THEOREM_DIV_PREFIXES) as readonly string[]
+/**
+ * The fixed authority for theorem-family identity and presentation.
+ * Proof-like divs (`proof`, `sketch`, `solution`) are deliberately absent:
+ * they stay unnumbered and unreferenceable.
+ */
+export const THEOREM_FAMILY_METADATA = [
+  { prefix: 'thm', divClass: 'theorem', displayName: 'Theorem' },
+  { prefix: 'lem', divClass: 'lemma', displayName: 'Lemma' },
+  { prefix: 'prop', divClass: 'proposition', displayName: 'Proposition' },
+  { prefix: 'cor', divClass: 'corollary', displayName: 'Corollary' },
+  { prefix: 'def', divClass: 'definition', displayName: 'Definition' },
+  { prefix: 'rmk', divClass: 'remark', displayName: 'Remark' },
+  { prefix: 'ex', divClass: 'example', displayName: 'Example' },
+  { prefix: 'conj', divClass: 'conjecture', displayName: 'Conjecture' },
+  { prefix: 'clm', divClass: 'claim', displayName: 'Claim' },
+  { prefix: 'obs', divClass: 'observation', displayName: 'Observation' },
+  { prefix: 'qst', divClass: 'question', displayName: 'Question' },
+  { prefix: 'prob', divClass: 'problem', displayName: 'Problem' },
+  { prefix: 'ass', divClass: 'assumption', displayName: 'Assumption' },
+  { prefix: 'warn', divClass: 'warning', displayName: 'Warning' },
+  { prefix: 'exr', divClass: 'exercise', displayName: 'Exercise' },
+] as const satisfies readonly TheoremFamilyMetadata[]
+
+export type TheoremFamilyPrefix = typeof THEOREM_FAMILY_METADATA[number]['prefix']
+
+export const REFERENCEABLE_DIV_CLASSES: readonly string[] =
+  THEOREM_FAMILY_METADATA.map(metadata => metadata.divClass)
+
+/**
+ * Returns the fenced-div class owned by a supported theorem family.
+ */
+export function theoremDivClass (prefix: TheoremFamilyPrefix): string {
+  for (const metadata of THEOREM_FAMILY_METADATA) {
+    if (metadata.prefix === prefix) {
+      return metadata.divClass
+    }
+  }
+
+  throw new Error(`Theorem family ${prefix} has no fenced-div metadata`)
+}
 
 export function isReferenceableDivClass (className: string): boolean {
   return REFERENCEABLE_DIV_CLASSES.includes(className.toLowerCase())
@@ -202,7 +232,7 @@ export const PANDOC_REFERENCE_AUTHORING_TOPICS: readonly ReferenceAuthoringTopic
  * the exact authored syntax that defines and cites it.
  */
 export interface TheoremDivExample {
-  /** The label prefix, a key of THEOREM_DIV_PREFIXES */
+  /** The authored label prefix */
   prefix: string
   /** The fenced-div class the prefix labels */
   divClass: string
@@ -214,7 +244,7 @@ export interface TheoremDivExample {
 
 /**
  * The exact fenced-div prefix examples the quick help shows — one per
- * THEOREM_DIV_PREFIXES entry (all 15; proof-like divs stay absent because
+ * theorem-family metadata entry (all 15; proof-like divs stay absent because
  * they are unreferenceable).
  *
  * CONTRACT (locked red by test/pandoc-quick-help-references.spec.ts): each
@@ -223,9 +253,9 @@ export interface TheoremDivExample {
  * `::: {.<divClass> #<prefix>:key}` and reference `@<prefix>:key`.
  */
 export const THEOREM_DIV_EXAMPLES: readonly TheoremDivExample[] =
-  Object.entries(THEOREM_DIV_PREFIXES).map(([ prefix, divClass ]) => ({
-    prefix,
-    divClass,
-    label: `::: {.${divClass} #${prefix}:key}`,
-    reference: `@${prefix}:key`,
+  THEOREM_FAMILY_METADATA.map(metadata => ({
+    prefix: metadata.prefix,
+    divClass: metadata.divClass,
+    label: `::: {.${metadata.divClass} #${metadata.prefix}:key}`,
+    reference: `@${metadata.prefix}:key`,
   }))

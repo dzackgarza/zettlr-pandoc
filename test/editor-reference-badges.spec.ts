@@ -40,11 +40,27 @@ import { extractReferences } from 'source/common/pandoc-util/extract-references'
 import { resolveWorkspace } from 'source/common/pandoc-util/resolve-references'
 import { type DocumentReferenceSnapshot } from 'source/types/common/references'
 
+/**
+ * The slice of the jsdom global surface the CodeMirror polyfills touch. The
+ * member types are chosen so typeof globalThis is directly comparable to
+ * this interface: the single type assertion below is compiler-checked
+ * against the real global surface instead of laundered through unknown.
+ * ResizeObserver is unknown because the polyfill only checks its existence
+ * before installing a no-op class.
+ */
+interface CodeMirrorPolyfillTarget {
+  requestAnimationFrame?: (callback: (time: number) => void) => unknown
+  cancelAnimationFrame?: (id: never) => void
+  ResizeObserver?: unknown
+  Range: { prototype: { getClientRects?: () => unknown, getBoundingClientRect?: () => unknown } }
+  window?: CodeMirrorPolyfillTarget
+}
+
 function polyfillJsdomForCodeMirror (): void {
-  const w = globalThis as any
+  const w = globalThis as CodeMirrorPolyfillTarget
   if (typeof w.requestAnimationFrame !== 'function') {
     w.requestAnimationFrame = (callback: (time: number) => void) => setTimeout(() => callback(Date.now()), 0)
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id)
+    w.cancelAnimationFrame = (id: ReturnType<typeof setTimeout>) => clearTimeout(id)
   }
   if (typeof w.window === 'object' && typeof w.window.requestAnimationFrame !== 'function') {
     w.window.requestAnimationFrame = w.requestAnimationFrame
@@ -234,19 +250,17 @@ describe('Reference definition badges (issue #1 Phase 4)', function () {
 
   it('emits the Mod-P signal family keyed to the definition when the count badge is clicked', function () {
     const captured: ReferenceSearchRequest[] = []
-    const { view, payload } = createEditor(THEOREMS_PATH, captured)
+    const { view } = createEditor(THEOREMS_PATH, captured)
 
     const torelli = countBadgeFor(view, 'thm:torelli')
     torelli.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
+    // The request names ONLY the key (issues #53, #46): the citing
+    // occurrences come from the provider's merged snapshot App.vue fetches
+    // at open time, never from a renderer-captured copy in the click.
     assert.deepStrictEqual(
       captured,
-      [ {
-        key: 'thm:torelli',
-        occurrences: payload.workspaceOccurrences.filter(
-          occurrence => occurrence.key === 'thm:torelli'
-        )
-      } ],
+      [ { key: 'thm:torelli' } ],
       'clicking the count badge must dispatch exactly one openReferenceSearchEffect keyed to the definition'
     )
     assert.strictEqual(torelli.dataset.citingCount, '2', 'the emitted intent belongs to the badge that shows the citing count')

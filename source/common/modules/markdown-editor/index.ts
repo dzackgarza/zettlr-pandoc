@@ -21,13 +21,11 @@
 // component for the editor itself.
 import "./editor.css";
 
-import { getSyncedVersion, sendableUpdates } from "@codemirror/collab";
 import { foldEffect, foldState, syntaxTree } from "@codemirror/language";
-import { getChunks, getOriginalDoc } from "@codemirror/merge";
 import { closeSearchPanel, openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import {
   Compartment,
-  type EditorSelection,
+  EditorSelection,
   EditorState,
   type Extension,
   type SelectionRange,
@@ -44,7 +42,38 @@ import {
   type ReferenceCompletionEntry,
   type SourceRange,
 } from "@dts/common/references";
-import type { ReviewDiffSession, ReviewDiffStatus } from "@dts/common/review-diff";
+import type { ReviewDiffSession } from "@dts/common/review-diff";
+
+/**
+ * What the pane must do with a review decision. Every method carries the
+ * review generation the widgets were drawn from; the implementation adds the
+ * hash of the text they were drawn over, and main refuses anything that no
+ * longer matches. A method rejects when the mutation was refused.
+ */
+export interface ReviewActionClient {
+  decide: (input: {
+    reviewId: string;
+    expectedReviewGeneration: number;
+    chunkId: string;
+    decision: "accept" | "reject";
+  }) => Promise<void>;
+  acceptAll: (input: {
+    reviewId: string;
+    expectedReviewGeneration: number;
+  }) => Promise<void>;
+  clear: (input: { reviewId: string; expectedReviewGeneration: number }) => Promise<void>;
+  comment: (input: {
+    reviewId: string;
+    expectedReviewGeneration: number;
+    text: string;
+  }) => Promise<void>;
+  commentChunk: (input: {
+    reviewId: string;
+    expectedReviewGeneration: number;
+    chunkId: string;
+    text: string;
+  }) => Promise<void>;
+}
 import { type TagRecord } from "@providers/tags";
 // Keymaps/Input modes
 import { emacs } from "@replit/codemirror-emacs";
@@ -103,7 +132,7 @@ import {
   type PushUpdateCallback,
   reloadStateEffect,
 } from "./plugins/remote-doc";
-import { reviewDiffMergeExtension } from "./plugins/review-diff";
+import { reviewChunksExtension } from "./plugins/review-chunks";
 import { countField, updateWordCountEffect } from "./plugins/statistics-fields";
 import { type ToCEntry, tocField } from "./plugins/toc-field";
 import { vimPlugin } from "./plugins/vim-mode";
@@ -122,6 +151,7 @@ import {
 } from "./util/configuration";
 // Utilities
 import { copyAsHTML, pasteAsPlain } from "./util/copy-paste-cut";
+import { whenAuthoritySynced } from "./util/when-authority-synced";
 
 export interface DocumentWrapper {
   path: string;
@@ -258,10 +288,11 @@ export default class MarkdownEditor extends EventEmitter {
   private workspaceReferencesCache: EditorWorkspaceReferences | null;
 
   private readonly reviewDiffCompartment: Compartment;
+
+  /** Installed by the pane that owns this editor; see setReviewActionClient. */
+  private reviewActionClient: ReviewActionClient | null = null;
   private activeReviewDiffSession: ReviewDiffSession | null;
-  private reviewDiffStatusReportInFlight: boolean;
-  /** Spec section 13: the review generation the pane last observed. */
-  private reviewDiffGeneration: number;
+  private pendingReviewDiffSession: ReviewDiffSession | null = null;
 
   /**
    * Creates a new MarkdownEditor instance associated with the given leafId and
@@ -314,8 +345,6 @@ export default class MarkdownEditor extends EventEmitter {
     this.workspaceReferencesCache = null;
     this.reviewDiffCompartment = new Compartment();
     this.activeReviewDiffSession = null;
-    this.reviewDiffStatusReportInFlight = false;
-    this.reviewDiffGeneration = 0;
 
     // Same goes for the config
     this.config = getDefaultConfig();
@@ -358,17 +387,10 @@ export default class MarkdownEditor extends EventEmitter {
         pushUpdates: this.authority.pushUpdates,
       },
       updateListener: (update) => {
-        const shouldReportReviewDiff =
-          this.activeReviewDiffSession !== null &&
-          (update.docChanged ||
-            update.transactions.some(
-              (transaction) =>
-                transaction.isUserEvent("accept") || transaction.isUserEvent("revert"),
-            ));
-
         // Listen for changes and emit events appropriately
         if (update.docChanged) {
           this.emit("change");
+          queueMicrotask(() => this.activatePendingReviewDiffSession());
         }
 
         if (update.focusChanged && this._instance.hasFocus) {
@@ -435,9 +457,6 @@ export default class MarkdownEditor extends EventEmitter {
           }
         }
 
-        if (shouldReportReviewDiff) {
-          this.queueReviewDiffStatusReport();
-        }
       },
       domEventsListeners: clickListeners({
         onWikiLink(url) {
@@ -482,7 +501,7 @@ export default class MarkdownEditor extends EventEmitter {
       this.reviewDiffCompartment.of(
         this.activeReviewDiffSession === null
           ? []
-          : reviewDiffMergeExtension(this.activeReviewDiffSession.originalText),
+          : this.buildReviewExtension(this.activeReviewDiffSession),
       ),
     );
     return extensions;
@@ -510,17 +529,36 @@ export default class MarkdownEditor extends EventEmitter {
     if (persistentState !== undefined) {
       // Now that the correct document has been loaded, there will be content
       // and we can restore the persisted information.
+      //
+      // The persisted positions describe the BUFFER as this pane last had it,
+      // which is not necessarily what the authority hands back: a buffer whose
+      // last edits were never acknowledged is longer than the document loaded
+      // here. CodeMirror rejects a selection or a fold that points past the
+      // end, and the throw would land as a document-load error — the file
+      // would simply refuse to open, over a cursor. So bring the positions
+      // into this document instead of trusting them.
       const { scrollSnapshot, selection, foldedRanges } = persistentState;
+      const end = this._instance.state.doc.length;
 
       const effects: StateEffect<unknown>[] = [scrollSnapshot];
 
       const cursor = foldedRanges.iter();
       while (cursor.value) {
-        effects.push(foldEffect.of({ from: cursor.from, to: cursor.to }));
+        if (cursor.to <= end) {
+          effects.push(foldEffect.of({ from: cursor.from, to: cursor.to }));
+        }
         cursor.next();
       }
 
-      this._instance.dispatch({ selection, effects });
+      this._instance.dispatch({
+        selection: EditorSelection.create(
+          selection.ranges.map((range) =>
+            EditorSelection.range(Math.min(range.anchor, end), Math.min(range.head, end)),
+          ),
+          selection.mainIndex,
+        ),
+        effects,
+      });
     }
 
     // Ensure the theme switcher picks the state change up; this somehow doesn't
@@ -933,9 +971,6 @@ export default class MarkdownEditor extends EventEmitter {
         });
         break;
       case "references":
-        // No-op wiring until the combined at-symbols provider joins the
-        // dispatcher (issue #1 Phase 3 green step): the dispatched effect has
-        // no consuming state field in the production extension set yet.
         this.databaseCache.references = database as ReferenceCompletionEntry[];
         this._instance.dispatch({
           effects: referencesUpdate.of(this.databaseCache.references),
@@ -958,63 +993,106 @@ export default class MarkdownEditor extends EventEmitter {
     });
   }
 
-  startReviewDiffSession(session: ReviewDiffSession, reviewGeneration?: number): void {
+  /**
+   * Installs the one thing allowed to act on a review decision. The editor
+   * raises no review events of its own: a fire-and-forget event left the
+   * click and the IPC call unordered, so a decision could reach main before
+   * the edit the reviewer made just above it. The client awaits instead, and
+   * its rejection is what hands the widget's controls back.
+   */
+  setReviewActionClient(client: ReviewActionClient): void {
+    this.reviewActionClient = client;
+  }
+
+  startReviewDiffSession(session: ReviewDiffSession): void {
     if (session.documentPath !== this.representedDocument) {
       return;
     }
 
-    const currentContent = this.value;
-    // The provider owns the document text: opening a review applies the working
-    // text authoritatively and publishes it as a collab update. This pane must
-    // therefore never write the proposed text itself. It used to, whenever the
-    // buffer still held the baseline (i.e. the provider's update had not been
-    // pulled yet) — and collab rebased that local replacement over the incoming
-    // remote one, mapping its [0, baselineLength) range onto the collapsed
-    // position while keeping its insertion. The proposal landed twice and the
-    // saved file contained the accepted text doubled. If the buffer is behind,
-    // catch up through the authority below instead of guessing locally.
-    if (currentContent !== session.currentText) {
-      this.reload()
-        .then(() => {
-          if (this.value === session.currentText) {
-            this.startReviewDiffSession(session, reviewGeneration);
-          } else {
-            this.emit(
-              "review-diff-error",
-              "The editor buffer no longer matches the review baseline.",
-            );
-          }
-        })
-        .catch((err) => console.error("Could not reload editor for review-diff session", err));
+    // Never mount controls over a renderer buffer that is not the provider's
+    // authoritative working text. The collab update will retry activation;
+    // until then the pane is ordinary editable Markdown with no stale action.
+    if (this._instance.state.doc.toString() !== session.workingText) {
+      this.pendingReviewDiffSession = session;
+      this.activeReviewDiffSession = null;
+      this._instance.dispatch({ effects: this.reviewDiffCompartment.reconfigure([]) });
       return;
     }
-
-    this.reviewDiffGeneration =
-      reviewGeneration === undefined ? session.reviewGeneration : reviewGeneration;
-
+    this.pendingReviewDiffSession = null;
     if (
       this.activeReviewDiffSession?.id === session.id &&
-      currentContent === session.currentText &&
-      this.activeReviewDiffSession.originalText === session.originalText
+      this.activeReviewDiffSession.reviewGeneration === session.reviewGeneration &&
+      this.activeReviewDiffSession.referenceText === session.referenceText &&
+      this.activeReviewDiffSession.workingText === session.workingText &&
+      JSON.stringify(this.activeReviewDiffSession.packets) === JSON.stringify(session.packets) &&
+      JSON.stringify(this.activeReviewDiffSession.chunkComments) === JSON.stringify(session.chunkComments)
     ) {
       return;
     }
 
     this.activeReviewDiffSession = session;
-    this._instance.dom.classList.add("review-diff-active");
-
-    const effects = [
-      this.reviewDiffCompartment.reconfigure(reviewDiffMergeExtension(session.originalText)),
-    ];
-
-    this._instance.dispatch({ effects });
-
-    this.queueReviewDiffStatusReport();
+    // The review-diff-active styling scope rides in the extension itself
+    // (an editorAttributes facet), so installing the compartment is what
+    // styles the pane — nothing here to keep in sync.
+    this._instance.dispatch({
+      effects: this.reviewDiffCompartment.reconfigure(this.buildReviewExtension(session)),
+    });
     this._instance.focus();
+  }
+
+  /**
+   * The review extension for a session: chunk widgets computed from the
+   * provider's merge reference against this buffer, with decisions emitted
+   * upward. MainEditor forwards them to the provider, whose next broadcast is
+   * the only thing that changes review state here.
+   */
+  private buildReviewExtension(session: ReviewDiffSession): ReturnType<typeof reviewChunksExtension> {
+    // Every callback binds the generation of the session these widgets were
+    // DRAWN from, not whatever the newest broadcast carries. That is the
+    // whole point: the decision is bound to what the reviewer was looking at
+    // when they clicked, so a session that changed underneath refuses.
+    const client = (): ReviewActionClient => {
+      if (this.reviewActionClient === null) {
+        throw new Error("no review action client is installed on this editor");
+      }
+      return this.reviewActionClient;
+    };
+    const reviewId = session.id;
+    const expectedReviewGeneration = session.reviewGeneration;
+    return reviewChunksExtension({
+      reviewId,
+      referenceText: session.referenceText,
+      packets: session.packets,
+      chunkComments: session.chunkComments,
+      onDecide: async (chunkId, decision) =>
+        await client().decide({
+          reviewId,
+          expectedReviewGeneration,
+          chunkId,
+          decision,
+        }),
+      onAcceptAll: async () =>
+        await client().acceptAll({ reviewId, expectedReviewGeneration }),
+      onClear: async () => await client().clear({ reviewId, expectedReviewGeneration }),
+      onComment: async (text) =>
+        await client().comment({ reviewId, expectedReviewGeneration, text }),
+      onChunkComment: async (chunkId, text) =>
+        await client().commentChunk({ reviewId, expectedReviewGeneration, chunkId, text }),
+    });
+  }
+
+  private activatePendingReviewDiffSession(): void {
+    const session = this.pendingReviewDiffSession;
+    if (session !== null && this._instance.state.doc.toString() === session.workingText) {
+      this.startReviewDiffSession(session);
+    }
   }
 
   clearReviewDiffSession(sessionId?: string): void {
     if (this.activeReviewDiffSession === null) {
+      if (sessionId === undefined || this.pendingReviewDiffSession?.id === sessionId) {
+        this.pendingReviewDiffSession = null;
+      }
       return;
     }
 
@@ -1023,62 +1101,10 @@ export default class MarkdownEditor extends EventEmitter {
     }
 
     this.activeReviewDiffSession = null;
-    this.reviewDiffStatusReportInFlight = false;
-    this._instance.dom.classList.remove("review-diff-active");
+    this.pendingReviewDiffSession = null;
     this._instance.dispatch({
       effects: this.reviewDiffCompartment.reconfigure([]),
     });
-  }
-
-  private queueReviewDiffStatusReport(): void {
-    if (this.reviewDiffStatusReportInFlight) {
-      return;
-    }
-
-    this.reviewDiffStatusReportInFlight = true;
-    this.whenSynced()
-      .then(() => {
-        this.reviewDiffStatusReportInFlight = false;
-        this.reportReviewDiffStatus();
-      })
-      .catch((err) => {
-        this.reviewDiffStatusReportInFlight = false;
-        console.error("Could not report review-diff status", err);
-      });
-  }
-
-  private reportReviewDiffStatus(): void {
-    const session = this.activeReviewDiffSession;
-    const chunks = getChunks(this._instance.state);
-    if (session === null || chunks === null) {
-      return;
-    }
-
-    if (sendableUpdates(this._instance.state).length > 0) {
-      this.queueReviewDiffStatusReport();
-      return;
-    }
-
-    // Accept/reject mutate CodeMirror's original document directly, not the
-    // cached session — and the cached session is what a rebuild reconstructs
-    // the merge view from. Left at the pre-decision reference it resurrects
-    // chunks the user already resolved, and the next status report sends that
-    // reverted reference back to main. Sync it here, where the live value is
-    // already being read, so the cache never trails a decision.
-    const originalText = getOriginalDoc(this._instance.state).toString();
-    this.activeReviewDiffSession = { ...session, originalText };
-
-    this.emit("review-diff-status", {
-      filePath: session.documentPath,
-      sessionId: session.id,
-      unresolvedChunks: chunks.chunks.length,
-      originalText,
-      currentText: this.value,
-      documentVersion: getSyncedVersion(this._instance.state),
-      sourceWindowId: this.windowId,
-      sourceLeafId: this.leafId,
-      reviewGeneration: this.reviewDiffGeneration,
-    } satisfies ReviewDiffStatus);
   }
 
   /* * * * * * * * * * * *
@@ -1224,23 +1250,18 @@ export default class MarkdownEditor extends EventEmitter {
 
   /**
    * Resolves once every pending change has been pushed to the document
-   * authority (there are no sendable collab updates left), or after `timeout`
-   * ms as a backstop. Callers use this to order a format-then-save: the on-disk
-   * write must see the formatted bytes, so the format's collab update has to
-   * reach main first.
+   * authority (there are no sendable collab updates left), and THROWS when
+   * `timeout` ms pass with updates still unsent. Callers use this to order a
+   * format-then-save: the on-disk write must see the formatted bytes, so the
+   * format's collab update has to reach main first, and a caller that cannot be
+   * given that ordering must hear about it instead of saving anyway.
    *
    * @param   {number}         timeout  Backstop in ms (default 2000).
    *
    * @return  {Promise<void>}
    */
   async whenSynced(timeout = 2000): Promise<void> {
-    const start = Date.now();
-    while (sendableUpdates(this._instance.state).length > 0) {
-      if (Date.now() - start > timeout) {
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+    await whenAuthoritySynced(() => this._instance.state, timeout);
   }
 
   /**

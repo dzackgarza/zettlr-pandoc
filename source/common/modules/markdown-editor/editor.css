@@ -200,20 +200,8 @@
   }
 
   &.review-diff-active {
-    .cm-deletedChunk {
-      box-sizing: border-box;
-      padding-inline-end: 150px;
-    }
-
-    .cm-chunkButtons {
-      display: inline-flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      justify-content: flex-end;
-      max-width: min(220px, 45vw);
-    }
-
     button.cm-review-diff-control {
+      white-space: nowrap;
       min-width: 64px;
       height: 24px;
       padding: 0 8px;
@@ -227,13 +215,13 @@
     }
 
     button.cm-review-diff-control.accept {
-      background-color: #1f7a45;
-      border-color: #176238;
+      background-color: var(--zettlr-editor-review-accept-bg);
+      border-color: var(--zettlr-editor-review-accept-border);
     }
 
     button.cm-review-diff-control.reject {
-      background-color: #b33a3a;
-      border-color: #8e2f2f;
+      background-color: var(--zettlr-editor-review-reject-bg);
+      border-color: var(--zettlr-editor-review-reject-border);
     }
   }
 

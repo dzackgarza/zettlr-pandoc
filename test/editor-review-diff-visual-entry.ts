@@ -1,8 +1,11 @@
-import { getChunks } from '@codemirror/merge'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
-import { reviewDiffMergeExtension } from 'source/common/modules/markdown-editor/plugins/review-diff'
+import { computeReviewChunks } from 'source/common/modules/review/review-chunks'
+import {
+  getReviewChunks,
+  reviewChunksExtension
+} from 'source/common/modules/markdown-editor/plugins/review-chunks'
 
 declare global {
   interface Window {
@@ -33,6 +36,7 @@ const proposed = baseline
   .replace('original proof sketch', 'shorter proof sketch')
 
 async function mount (): Promise<void> {
+  const chunks = computeReviewChunks(baseline, proposed)
   const dark = document.body.dataset.dark === 'true'
   const host = document.querySelector<HTMLElement>('#editor')
   if (host === null) {
@@ -47,18 +51,35 @@ async function mount (): Promise<void> {
         editorTheme,
         dark ? defaultDark : defaultLight,
         EditorView.lineWrapping,
-        reviewDiffMergeExtension(baseline)
+        reviewChunksExtension({
+          reviewId: 'visual-capture',
+          referenceText: baseline,
+          packets: [
+            {
+              packetId: 'visual-packet-1',
+              description: 'Revise the theorem statement to match the corrected constant.',
+              refSpans: [{ from: chunks[0].refFromLine, to: chunks[0].refToLine }]
+            }
+          ],
+          chunkComments: [
+            { chunkId: chunks[1].chunkId, comment: 'Checking this against the published erratum first.' }
+          ],
+          onDecide: async () => { /* capture harness: decisions are not exercised */ },
+          onAcceptAll: async () => { /* capture harness: decisions are not exercised */ },
+          onClear: async () => { /* capture harness: decisions are not exercised */ },
+          onComment: async () => { /* capture harness: comments are not exercised */ },
+          onChunkComment: async () => { /* capture harness: comments are not exercised */ }
+        })
       ]
     })
   })
-  view.dom.classList.add('review-diff-active')
   view.focus()
 
   window.reviewDiffVisualDiagnostics = () => {
-    const chunks = getChunks(view.state)
+    const chunks = getReviewChunks(view.state)
     const content = document.querySelector<HTMLElement>('.cm-content')
     return {
-      chunks: chunks?.chunks.length ?? -1,
+      chunks: chunks?.length ?? -1,
       accepts: document.querySelectorAll('button.cm-review-diff-control.accept').length,
       rejects: document.querySelectorAll('button.cm-review-diff-control.reject').length,
       contentClientWidth: content?.clientWidth,

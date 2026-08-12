@@ -23,10 +23,18 @@ import { getProgramVersion } from './util/get-program-version'
 
 // Developer tools
 import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
-import { AppServiceContainer, getAppServiceContainer, setAppServiceContainer } from './app-service-container'
+import { AppServiceContainer, getAppServiceContainer, isAppServiceContainerReady, setAppServiceContainer } from './app-service-container'
 import { app, ipcMain } from 'electron'
 import { attachAppNavigationHandlers } from './util/attach-app-navigation-handlers'
 import { loadMathJaxMacros, mathJaxMacrosPath, seedDefaultMacros } from './util/load-mathjax-macros'
+
+/**
+ * What the bare 'mathjax-macros' invoke channel answers with — the loader's
+ * own signature. The handler is registered in bootApplication() below;
+ * composed into the renderer's invoke type in
+ * source/types/renderer/ipc-bridge.ts.
+ */
+export type MathJaxMacrosIPCResponse = Awaited<ReturnType<typeof loadMathJaxMacros>>
 
 // Statistics: Record the uptime of the application
 let upTimestamp: number
@@ -104,7 +112,7 @@ export async function bootApplication (): Promise<AppServiceContainer> {
   try {
     const version = await getProgramVersion('pandoc')
     process.env.PANDOC_VERSION = String(version)
-  } catch (err) {
+  } catch {
     // No Pandoc available.
   }
 
@@ -117,6 +125,9 @@ export async function bootApplication (): Promise<AppServiceContainer> {
  * @return  {Promise<void>}  Resolves always
  */
 export async function shutdownApplication (): Promise<void> {
+  if (!isAppServiceContainerReady()) {
+    return
+  }
   const appServiceContainer = getAppServiceContainer()
   const log = appServiceContainer.log
   log.info(`さようなら！ Shutting down at ${(new Date()).toString()}`)

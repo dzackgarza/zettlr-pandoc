@@ -17,7 +17,7 @@
  */
 
 import { type RangeSet, type Range, type Extension } from '@codemirror/state'
-import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
+import { rangeInPreviewSuppression, reviewSuppressionChanged } from '../util/range-in-preview-suppression'
 import { syntaxTree } from '@codemirror/language'
 import { Decoration, type DecorationSet, ViewPlugin, type ViewUpdate, EditorView, gutter, GutterMarker } from '@codemirror/view'
 
@@ -68,7 +68,7 @@ export const renderHeadings = ViewPlugin.fromClass(class {
   }
 
   update (update: ViewUpdate): void {
-    if (update.docChanged || update.viewportChanged || update.selectionSet) {
+    if (update.docChanged || update.viewportChanged || update.selectionSet || reviewSuppressionChanged(update)) {
       this.decorations = hideHeadingMarks(update.view)
     }
   }

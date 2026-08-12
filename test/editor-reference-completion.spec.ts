@@ -36,7 +36,7 @@ import { forceParsing } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
-import { createAutocompleteSource, type AutocompletePlugin } from 'source/common/modules/markdown-editor/autocomplete'
+import { AUTOCOMPLETE_PROVIDERS, autocomplete, createAutocompleteSource, type AutocompletePlugin } from 'source/common/modules/markdown-editor/autocomplete'
 import { citations, citekeyUpdate } from 'source/common/modules/markdown-editor/autocomplete/citations'
 import { atSymbols, referencesUpdate } from 'source/common/modules/markdown-editor/autocomplete/at-symbols'
 import { codeBlocks } from 'source/common/modules/markdown-editor/autocomplete/code-blocks'
@@ -46,14 +46,30 @@ import { tags } from 'source/common/modules/markdown-editor/autocomplete/tags'
 import { snippets } from 'source/common/modules/markdown-editor/autocomplete/snippets'
 import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 import { extractReferences } from 'source/common/pandoc-util/extract-references'
-import { THEOREM_DIV_PREFIXES } from 'source/common/util/pandoc-quick-reference'
+import { referenceFamilyDisplayName } from 'source/types/common/references'
 import { type ReferenceCompletionEntry } from 'source/types/common/references'
 
+/**
+ * The slice of the jsdom global surface the CodeMirror polyfills touch. The
+ * member types are chosen so typeof globalThis is directly comparable to
+ * this interface: the single type assertion below is compiler-checked
+ * against the real global surface instead of laundered through unknown.
+ * ResizeObserver is unknown because the polyfill only checks its existence
+ * before installing a no-op class.
+ */
+interface CodeMirrorPolyfillTarget {
+  requestAnimationFrame?: (callback: (time: number) => void) => unknown
+  cancelAnimationFrame?: (id: never) => void
+  ResizeObserver?: unknown
+  Range: { prototype: { getClientRects?: () => unknown, getBoundingClientRect?: () => unknown } }
+  window?: CodeMirrorPolyfillTarget
+}
+
 function polyfillJsdomForCodeMirror (): void {
-  const w = globalThis as any
+  const w = globalThis as CodeMirrorPolyfillTarget
   if (typeof w.requestAnimationFrame !== 'function') {
     w.requestAnimationFrame = (callback: (time: number) => void) => setTimeout(() => callback(Date.now()), 0)
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id)
+    w.cancelAnimationFrame = (id) => clearTimeout(id)
   }
   if (typeof w.window === 'object' && typeof w.window.requestAnimationFrame !== 'function') {
     w.window.requestAnimationFrame = w.requestAnimationFrame
@@ -116,30 +132,11 @@ function workspaceEntries (): ReferenceCompletionEntry[] {
   })
 }
 
-const CROSSREF_DISPLAY: Record<string, string> = {
-  fig: 'Figure',
-  tbl: 'Table',
-  eq: 'Equation',
-  sec: 'Section',
-  lst: 'Listing',
-}
-
-/** The family display name of a label entry ('thm' -> 'Theorem', …). */
-function familyDisplay (family: string): string {
-  const theoremClass = (THEOREM_DIV_PREFIXES as Record<string, string>)[family]
-  if (theoremClass !== undefined) {
-    return theoremClass.charAt(0).toUpperCase() + theoremClass.slice(1)
-  }
-  const crossref = CROSSREF_DISPLAY[family]
-  assert.notStrictEqual(crossref, undefined, `unexpected reference family: ${family}`)
-  return crossref
-}
-
 /** The locked `Type — title` display text of a label completion. */
 function expectedDetail (entry: ReferenceCompletionEntry): string {
   return entry.title !== undefined
-    ? `${familyDisplay(entry.family)} — ${entry.title}`
-    : familyDisplay(entry.family)
+    ? `${referenceFamilyDisplayName(entry.family)} — ${entry.title}`
+    : referenceFamilyDisplayName(entry.family)
 }
 
 interface CompletionSurface {
@@ -374,6 +371,63 @@ describe('Combined @-symbol completion surface (issue #1 Phase 3)', function () 
       assert.deepStrictEqual(
         combined.options.slice(citationOptions.length).map(option => [ option.label, option.detail ]),
         decorated.map(entry => [ entry.key, expectedDetail(entry) ])
+      )
+    })
+  })
+
+  describe('the shipped installation of the references database', function () {
+    // Every case above assembles its own provider list and registers its own
+    // provider fields, so it proves the atSymbols CONTRACT while saying
+    // nothing about what the app actually installs. This block instead builds
+    // the state from `autocomplete` — the extension array autocomplete/index.ts
+    // exports and the editor installs verbatim — and dispatches over
+    // AUTOCOMPLETE_PROVIDERS, the exported production provider order.
+    //
+    // It is therefore the proof that the 'references' completion database is
+    // live wiring rather than a staged no-op: it turns red if atSymbols leaves
+    // AUTOCOMPLETE_PROVIDERS, if referencesUpdateField leaves atSymbols.fields
+    // (the state then carries no field for referencesUpdate to feed), or if
+    // the shipped extension array stops registering the provider fields.
+    function createShippedEditor (doc: string, anchor: number): EditorView {
+      const state = EditorState.create({
+        doc,
+        selection: { anchor },
+        extensions: [ markdownParser(), configField, autocomplete ],
+      })
+      const view = new EditorView({ state, parent: document.body })
+      assert.ok(forceParsing(view, doc.length, 5000), 'the syntax tree must be fully parsed before asserting')
+      view.dispatch({ effects: citekeyUpdate.of(CITATION_DB) })
+      views.push(view)
+      return view
+    }
+
+    it('offers workspace labels at @ after the references database is pushed', function () {
+      const doc = 'See @thm'
+      const view = createShippedEditor(doc, doc.length)
+      view.dispatch({ effects: referencesUpdate.of(workspaceEntries()) })
+
+      const surface = completionSurface(AUTOCOMPLETE_PROVIDERS, view)
+      assert.ok(surface !== null, 'the shipped provider order must apply in a citation context')
+      // No bibliography citekey matches 'thm'; both authored thm: definitions
+      // do, in fed order (ProjectA before ProjectB).
+      assert.deepStrictEqual(
+        surface.options.map(option => [ option.label, option.detail ]),
+        [
+          [ 'thm:torelli', 'Theorem — Torelli for Enriques' ],
+          [ 'thm:torelli', 'Theorem — Torelli for rational elliptic surfaces' ],
+        ]
+      )
+    })
+
+    it('leaves the @ surface at the citations it shipped with until a database arrives', function () {
+      const doc = 'See @'
+      const view = createShippedEditor(doc, doc.length)
+
+      const surface = completionSurface(AUTOCOMPLETE_PROVIDERS, view)
+      assert.ok(surface !== null, 'the shipped provider order must apply in a citation context')
+      assert.deepStrictEqual(
+        surface.options.map(option => option.label),
+        [ 'Ols04', 'Kod63', 'BHPV04' ]
       )
     })
   })

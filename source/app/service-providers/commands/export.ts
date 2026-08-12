@@ -20,10 +20,33 @@ import type { ExporterOptions } from './exporter/types'
 import { promises as fs } from 'fs'
 import path from 'path'
 import { PANDOC_WRITERS } from '@common/pandoc-util/pandoc-maps'
-import { type PandocProfileMetadata } from '@providers/assets'
+import { type ValidPandocProfile } from '@providers/assets'
 import { runShellCommand } from './exporter/run-shell-command'
 import { showNativeNotification } from '@common/util/show-notification'
 import type { AppServiceContainer } from 'source/app/app-service-container'
+
+/**
+ * Reads the `zettlr.pandoc_working_dir` override out of a file's frontmatter.
+ * The frontmatter holds whatever YAML the user wrote, so every step down to the
+ * value is checked.
+ *
+ * @param   {unknown}          frontmatter  The file's parsed frontmatter
+ *
+ * @return  {string|undefined}              The declared directory, if any
+ */
+function frontmatterWorkingDir (frontmatter: unknown): string|undefined {
+  if (!(frontmatter instanceof Object) || !('zettlr' in frontmatter)) {
+    return undefined
+  }
+
+  const { zettlr } = frontmatter
+  if (!(zettlr instanceof Object) || !('pandoc_working_dir' in zettlr)) {
+    return undefined
+  }
+
+  const workingDir = zettlr.pandoc_working_dir
+  return typeof workingDir === 'string' ? workingDir : undefined
+}
 
 export interface CustomExportIPCAPI {
   displayName: string
@@ -32,7 +55,7 @@ export interface CustomExportIPCAPI {
 
 export interface ExportIPCAPI {
   file: string,
-  profile: PandocProfileMetadata,
+  profile: ValidPandocProfile,
   exportTo: string
 }
 
@@ -138,10 +161,11 @@ export default class Export extends ZettlrCommand {
 
       // A user can override this default by providing in a frontmatter the
       // key zettlr.pandoc_working_dir: /path/to/directory
-      if (fileDescriptor.type === 'file' &&
-      typeof fileDescriptor.frontmatter?.zettlr?.pandoc_working_dir === 'string' &&
-      await this._app.fsal.isDir(fileDescriptor.frontmatter.zettlr.pandoc_working_dir as string)) {
-        exporterOptions.cwd = fileDescriptor.frontmatter.zettlr.pandoc_working_dir
+      const declaredWorkingDir = fileDescriptor.type === 'file'
+        ? frontmatterWorkingDir(fileDescriptor.frontmatter)
+        : undefined
+      if (declaredWorkingDir !== undefined && await this._app.fsal.isDir(declaredWorkingDir)) {
+        exporterOptions.cwd = declaredWorkingDir
       }
 
       switch (exportTo) {

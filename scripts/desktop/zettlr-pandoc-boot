@@ -75,6 +75,7 @@ fail() {
 
 spin_until_app_up() {
   local launch_pid="$1"
+  local spinner_label="$2"
   local start=$SECONDS
   local frame_index=0
   local frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
@@ -99,16 +100,29 @@ spin_until_app_up() {
         sed $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g; s/\r//g' |
         awk 'NF { line=$0 } END { print line }'
     )
-    printf '\r\033[K   %s  Building & starting  %.48s' "$frame" "$line"
+    printf '\r\033[K   %s  %s  %.48s' "$frame" "$spinner_label" "$line"
     sleep 0.12
   done
 }
 
 trap restore_cursor EXIT
 
-# Zettlr is single-instance. Focus the existing window instead of starting a
-# second build.
+# Zettlr is single-instance, so never start a second build here. Files go to the
+# instance that already holds the singleton lock, through a short-lived Electron
+# process that only performs the handshake (see zettlr-pandoc-open-in-running);
+# then focus the window that received them.
 if app_up; then
+  if (( $# > 0 )); then
+    if ! "$repo/scripts/desktop/zettlr-pandoc-open-in-running" "$@"; then
+      # Dwell before exiting, as fail() does. This script runs inside the splash
+      # terminal, which closes the moment it returns: a failure that exits
+      # immediately is one nobody can read, leaving the launch indistinguishable
+      # from the silent drop described in #52.
+      printf '\n   Could not open %s in the running Zettlr-Pandoc.\n\n' "$*" >&2
+      sleep 8
+      exit 1
+    fi
+  fi
   hyprctl dispatch focuswindow "class:^(${app_class})$" >/dev/null
   exit 0
 fi
@@ -130,16 +144,44 @@ if ! timeout 15 python3 "$macro_generator" \
   --json "$macro_config" >>"$log" 2>&1; then
   fail "MathJax macro refresh failed."
 fi
-printf '[boot] refreshed MathJax macros -> %s\n' "$macro_config" >>"$log"
+printf '[boot] %s refreshed MathJax macros -> %s\n' "$(date +%T)" "$macro_config" >>"$log"
 
-printf '\n   Starting \033[1mZettlr-Pandoc\033[0m from source (dev build)\n\n'
-tput civis >/dev/null 2>&1
+# Honest launches without repeat cost: the packaged build in out/ carries a
+# stamp of the source fingerprint it was built from. A matching fingerprint
+# means no commit, tracked edit, or untracked file has changed since that
+# build — run the binary as-is. Any mismatch (or missing build) repackages
+# and stamps AFTER the build succeeds, so a failed build can never be
+# mistaken for current. Hot-reload development stays on `just launch-desktop`.
+packaged_dir="$repo/out/Zettlr-Pandoc-linux-x64"
+packaged_binary="$packaged_dir/zettlr-pandoc"
+stamp_file="$packaged_dir/.source-fingerprint"
 
-# Detach the dev server and Electron into their own session so closing the
-# splash does not terminate the running app.
-setsid sh -c 'cd -- "$1" && exec just launch-desktop' sh "$repo" \
-  >>"$log" 2>&1 </dev/null &
-launch_pid=$!
+if ! fingerprint=$("$repo/scripts/desktop/zettlr-pandoc-source-fingerprint" "$repo"); then
+  fail "Could not fingerprint the repository source."
+fi
 
-spin_until_app_up "$launch_pid"
+spinner_label='Building & starting'
+if [[ -x "$packaged_binary" && -f "$stamp_file" ]] && [[ $(<"$stamp_file") == "$fingerprint" ]]; then
+  printf '\n   Starting \033[1mZettlr-Pandoc\033[0m (packaged build is current \342\200\224 no rebuild)\n\n'
+  spinner_label='Starting (no rebuild)'
+  tput civis >/dev/null 2>&1
+  printf '[boot] %s launching packaged binary (fingerprint matched, no build)\n' "$(date +%T)" >>"$log"
+  # Detach into its own session so closing the splash does not terminate
+  # the running app.
+  setsid "$packaged_binary" "$@" >>"$log" 2>&1 </dev/null &
+  launch_pid=$!
+else
+  printf '\n   Source changed \342\200\224 rebuilding \033[1mZettlr-Pandoc\033[0m before launch\n\n'
+  tput civis >/dev/null 2>&1
+  # `just package` computes and writes the stamp itself, fingerprinting
+  # BEFORE the build so a mid-build edit reads as stale on the next launch.
+  setsid sh -c '
+    repo="$1"; binary="$2"; shift 2
+    cd -- "$repo" && just package && exec "$binary" "$@"
+  ' sh "$repo" "$packaged_binary" "$@" \
+    >>"$log" 2>&1 </dev/null &
+  launch_pid=$!
+fi
+
+spin_until_app_up "$launch_pid" "$spinner_label"
 printf '\r\033[K'

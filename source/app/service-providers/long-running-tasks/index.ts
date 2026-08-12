@@ -69,7 +69,7 @@
  * END HEADER
  */
 
-import ProviderContract, { type IPCAPI } from '../provider-contract'
+import ProviderContract, { type IPCAPI, type IPCMessage } from '../provider-contract'
 import { v4 as uuid } from 'uuid'
 import type LogProvider from '../log'
 import broadcastIPCMessage from 'source/common/util/broadcast-ipc-message'
@@ -91,12 +91,20 @@ export type LRTIPCSyncMessage = IPCAPI<{
   'interact-task': { id: string }
 }>
 
-export type LRTIPCAsyncMessage = IPCAPI<{
+export type LRTIPCContract = {
   // Retrieve all tasks from main
-  'get-tasks': unknown
+  'get-tasks': {
+    request: { payload?: undefined }
+    response: LRT_JSON[]
+  }
   // Deletes a task
-  'delete-task': { id: string }
-}>
+  'delete-task': {
+    request: { payload: { id: string } }
+    response: undefined
+  }
+}
+
+export type LRTIPCAsyncMessage = IPCMessage<LRTIPCContract>
 
 export default class LongRunningTaskProvider extends ProviderContract {
   private tasks: LongRunningTask[]

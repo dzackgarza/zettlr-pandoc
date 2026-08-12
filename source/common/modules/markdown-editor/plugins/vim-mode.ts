@@ -20,7 +20,6 @@ import type { Extension } from '@codemirror/state'
 import { type ExParams, vim, Vim, type CodeMirror } from '@replit/codemirror-vim'
 import { configField } from '../util/configuration'
 import { editorMetadataFacet } from './editor-metadata'
-import type { DocumentManagerIPCAPI, SaveFileResult } from 'source/app/service-providers/documents'
 import { trans } from '@common/i18n-renderer'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
 import showToast from '@common/util/show-toast'
@@ -46,11 +45,8 @@ async function write (cm: CodeMirror, _params: ExParams): Promise<boolean> {
   // editor the same as a refused write. `quit` reads the field the same way.
   const filePath = cm.cm6.state.field(configField).metadata.path
 
-  return await ipcRenderer.invoke('documents-provider', {
-    command: 'save-file',
-    payload: { path: filePath }
-  } as DocumentManagerIPCAPI)
-    .then((result: SaveFileResult) => {
+  return await ipcRenderer.invoke('documents:save-file', { path: filePath })
+    .then(result => {
       if (result.ok) {
         return true
       }
@@ -81,7 +77,7 @@ async function write (cm: CodeMirror, _params: ExParams): Promise<boolean> {
  *
  * @return  {Promise<void>}             Returns the IPC promise
  */
-function quit (cm: CodeMirror, _params: ExParams): Promise<void> {
+async function quit (cm: CodeMirror, _params: ExParams): Promise<void> {
   // Grab the required information from the editor state
   const filePath = cm.cm6.state.field(configField).metadata.path
   const { leafId, windowId } = cm.cm6.state.facet(editorMetadataFacet)
@@ -91,21 +87,26 @@ function quit (cm: CodeMirror, _params: ExParams): Promise<void> {
   }
 
   // Request closing of the editor with main
-  return ipcRenderer.invoke('documents-provider', {
+  await ipcRenderer.invoke('documents-provider', {
     command: 'close-file',
     payload: {
       path: filePath,
       windowId: windowId,
       leafId: leafId
     }
-  } as DocumentManagerIPCAPI)
-    .catch(e => console.error(e))
+  }).catch(e => console.error(e))
 }
 
 // replit's API seems a bit less elegant than the CodeMirror one, but I think
 // this is because they also need to support older CM5 setups.
-Vim.defineEx('quit', 'q', quit)
-Vim.defineEx('write', 'w', write)
+// defineEx expects a void-returning command, so the promise is explicitly
+// discarded here: both functions already surface their own failures.
+Vim.defineEx('quit', 'q', (cm: CodeMirror, params: ExParams) => {
+  void quit(cm, params)
+})
+Vim.defineEx('write', 'w', (cm: CodeMirror, params: ExParams) => {
+  void write(cm, params)
+})
 Vim.defineEx('wq', 'wq', (cm: CodeMirror, params: ExParams) => {
   // To prevent closing a file before it is written (and, thus, risking a prompt
   // to the user), we wait until the invocation is done and only then request a

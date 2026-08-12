@@ -16,7 +16,7 @@
 import type LogProvider from '../log'
 import type ProviderContract from '../provider-contract'
 import { ipcMain } from 'electron'
-import type { IPCAPI } from '../provider-contract'
+import type { IPCMessage } from '../provider-contract'
 import { compileBooleanQuery, searchFileBoolean, type SearchResult, type SearchQueryBoolean } from './util/boolean-search'
 import type FSAL from '../fsal'
 import broadcastIPCMessage from 'source/common/util/broadcast-ipc-message'
@@ -25,10 +25,27 @@ import path from 'path'
 
 export { SearchResult, FileContentSearchResult } from './util/boolean-search'
 
-export type SearchProviderIPCAPI = IPCAPI<{
-  'start-full-text-search': { query: string, restrictToDirectory: string, caseInsensitive: boolean },
-  'cancel-search': unknown
-}>
+export type SearchProviderIPCContract = {
+  'start-full-text-search': {
+    request: { payload: { query: string, restrictToDirectory: string, caseInsensitive: boolean } }
+    response: number
+  }
+  'cancel-search': {
+    request: { payload?: undefined }
+    response: undefined
+  }
+}
+
+export type SearchProviderIPCAPI = IPCMessage<SearchProviderIPCContract>
+
+/**
+ * The messages this provider broadcasts on the 'search-provider' channel
+ * while a full-text search runs. The provider is the single owner of this
+ * type; the renderer's search UI imports it to type its listener.
+ */
+export type SearchProviderBroadcast =
+  | { type: 'search-end' }
+  | { type: 'search-result', file: string, result: SearchResult|undefined, progress: number }
 
 export class SearchProvider implements ProviderContract {
   /**

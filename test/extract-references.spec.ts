@@ -2,8 +2,8 @@ import assert from 'assert'
 import { readFileSync } from 'fs'
 import path from 'path'
 import { extractReferences, hashDocumentSource } from 'source/common/pandoc-util/extract-references'
-import { THEOREM_DIV_PREFIXES } from 'source/common/util/pandoc-quick-reference'
-import { THEOREM_FAMILIES, type ReferenceDefinition, type ReferenceFamily, type ReferenceOccurrence, type SourceRange, type TheoremFamily } from 'source/types/common/references'
+import { theoremDivClass } from 'source/common/util/pandoc-quick-reference'
+import { referenceFamilyOf, THEOREM_FAMILIES, type ReferenceDefinition, type ReferenceFamily, type ReferenceOccurrence, type SourceRange, type TheoremFamily } from 'source/types/common/references'
 
 const FIXTURE_ROOT = path.join('test', 'fixtures', 'reference-workspace')
 
@@ -52,7 +52,9 @@ function fenceBlockAt (content: string, idToken: string): string {
 }
 
 function familyOf (key: string): ReferenceFamily {
-  return key.slice(0, key.indexOf(':')) as ReferenceFamily
+  const family = referenceFamilyOf(key)
+  assert.ok(family !== undefined, `fixture key must carry a supported reference family: ${key}`)
+  return family
 }
 
 function definition (
@@ -164,7 +166,7 @@ describe('extractReferences()', function () {
 
     assert.deepStrictEqual(snapshot.definitions, THEOREM_FIXTURE_DEFINITIONS.map(entry =>
       definition(
-        fixture, entry.key, 'theorem-div', [ THEOREM_DIV_PREFIXES[entry.family] ], entry.title,
+        fixture, entry.key, 'theorem-div', [ theoremDivClass(entry.family) ], entry.title,
         divBlockAt(fixture.content, '#' + entry.key),
         'Main results'
       )

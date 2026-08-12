@@ -13,7 +13,7 @@
  */
 
 import { trans } from '@common/i18n-renderer'
-import { type PreferencesFieldset } from '../App.vue'
+import { type PreferencesFieldset } from './types'
 import { PreferencesGroups } from './_preferences-groups'
 import { ProgrammaticallyOpenableWindows } from '@providers/commands/open-aux-window'
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'

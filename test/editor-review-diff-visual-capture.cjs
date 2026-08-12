@@ -22,18 +22,8 @@ async function capture (window, scene) {
     .cm-editor { min-height: 620px; height: 620px; font-size: 16px; line-height: 1.45; }
     .cm-scroller { padding: 18px 18px 48px; overflow-x: hidden; }
     .cm-content { overflow-wrap: anywhere; }
-    .review-diff-active .cm-deletedChunk {
-      box-sizing: border-box;
-      padding-inline-end: 150px;
-    }
-    .review-diff-active .cm-chunkButtons {
-      display: inline-flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      justify-content: flex-end;
-      max-width: min(220px, 45vw);
-    }
     .review-diff-active button.cm-review-diff-control {
+      white-space: nowrap;
       min-width: 64px;
       height: 24px;
       padding: 0 8px;
@@ -46,12 +36,12 @@ async function capture (window, scene) {
       cursor: pointer;
     }
     .review-diff-active button.cm-review-diff-control.accept {
-      background-color: #1f7a45;
-      border-color: #176238;
+      background-color: var(--zettlr-editor-review-accept-bg);
+      border-color: var(--zettlr-editor-review-accept-border);
     }
     .review-diff-active button.cm-review-diff-control.reject {
-      background-color: #b33a3a;
-      border-color: #8e2f2f;
+      background-color: var(--zettlr-editor-review-reject-bg);
+      border-color: var(--zettlr-editor-review-reject-border);
     }
   </style></head><body class="${scene.dark ? 'dark' : ''}" data-dark="${scene.dark}">
     <main id="editor"></main><script src="./review-diff-visual-bundle.js"></script>

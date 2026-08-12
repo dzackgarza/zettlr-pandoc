@@ -59,14 +59,25 @@ import PersistentDataContainer from '@common/modules/persistent-data-container'
 import { getCLIArgument, LAUNCH_MINIMIZED } from '@providers/cli-provider'
 import type { PasteModalResult } from '../commands/save-image-from-clipboard'
 
-export interface RequestFilesIPCAPI {
-  filters: FileFilter[],
-  multiSelection: boolean
+// 'request-files' and 'close-all' carry no command property: each channel
+// serves exactly one operation, so its contract is a single request/response
+// pair rather than a command map.
+export type RequestFilesIPCContract = {
+  request: { filters: FileFilter[], multiSelection: boolean }
+  response: string[]
 }
 
-export interface CloseAllIPCAPI {
-  rootType: 'workspace'|'file'
+export type RequestFilesIPCAPI = RequestFilesIPCContract['request']
+
+export type CloseAllIPCContract = {
+  request: { rootType: 'workspace'|'file' }
+  response: boolean
 }
+
+export type CloseAllIPCAPI = CloseAllIPCContract['request']
+
+// 'request-dir' takes no message at all, so it owns a response type only.
+export type RequestDirIPCResponse = string[]
 
 export type WindowControlsIPCAPI = IPCAPI<{
   'win-maximise': unknown
@@ -238,7 +249,7 @@ export default class WindowProvider extends ProviderContract {
       )
     })
 
-    ipcMain.handle('request-dir', async (event, _message) => {
+    ipcMain.handle('request-dir', async (_event, _message) => {
       const focusedWindow = BrowserWindow.getFocusedWindow()
       return await this.askDir(trans('Open project folder'), focusedWindow)
     })
@@ -248,11 +259,11 @@ export default class WindowProvider extends ProviderContract {
       return await this.shouldCloseAll(rootType)
     })
 
-    this._documents.on(DP_EVENTS.CHANGE_FILE_STATUS, (_ctx: any) => {
+    this._documents.on(DP_EVENTS.CHANGE_FILE_STATUS, (_ctx: unknown) => {
       // Always update the main window's flag depending on whether the document
       // manager is clean or not
       for (const key in this._mainWindows) {
-        this.setModified(key, !this._documents.isClean(key, 'window'))
+        this.setModified(key, !this._documents.isClean(key))
       }
     })
 
@@ -321,7 +332,7 @@ export default class WindowProvider extends ProviderContract {
    * @param   {string}    evt       The event to listen to
    * @param   {Function}  callback  The callback to call
    */
-  on (evt: string, callback: (...args: any[]) => void): void {
+  on (evt: string, callback: (...args: unknown[]) => void): void {
     this._emitter.on(evt, callback)
   }
 
@@ -331,7 +342,7 @@ export default class WindowProvider extends ProviderContract {
    * @param   {string}    evt       The event to listen to
    * @param   {Function}  callback  The callback to call
    */
-  off (evt: string, callback: (...args: any[]) => void): void {
+  off (evt: string, callback: (...args: unknown[]) => void): void {
     this._emitter.off(evt, callback)
   }
 
@@ -346,6 +357,8 @@ export default class WindowProvider extends ProviderContract {
    * Listens to events on the main window
    */
   private _hookMainWindow (window: BrowserWindow): void {
+    let documentCloseReady = false
+
     // Listens to events from the window
     window.on('focus', () => {
       const key = this.getMainWindowKey(window)
@@ -355,6 +368,10 @@ export default class WindowProvider extends ProviderContract {
     })
 
     window.on('close', (event) => {
+      if (documentCloseReady) {
+        return
+      }
+
       const key = this.getMainWindowKey(window)
 
       if (key === undefined) {
@@ -373,6 +390,15 @@ export default class WindowProvider extends ProviderContract {
       // documents manager about it so that it keeps the document in the config.
       if (nWindows === 1 && process.platform !== 'darwin') {
         if (!leaveAppRunning) {
+          if (!this._documents.isClean()) {
+            // Keep the window alive while the quit prompt is open. Letting the
+            // close proceed fires window-all-closed -> a second app.quit() ->
+            // a second stacked prompt, and Cancel on the prompt would leave
+            // the app running with no window. Once the prompt resolves, the
+            // re-issued quit finds the documents clean, this branch no longer
+            // prevents, and the close goes through.
+            event.preventDefault()
+          }
           app.quit()
         } else {
           window.close()
@@ -380,13 +406,16 @@ export default class WindowProvider extends ProviderContract {
         return
       }
 
-      // Only close this window if it is safe to do so. The isClean() method will
-      // return true during shutdowns.
+      // Only close this window if it is safe to do so: unsaved changes in it
+      // get the save-or-discard prompt first. askUserToCloseWindow drops the
+      // window itself once answered, so the close it then permits comes back
+      // through here with nothing left to ask about.
       if (!this._documents.isClean(key)) {
         event.preventDefault()
         this._documents.askUserToCloseWindow(key)
           .then(canCloseWindow => {
             if (canCloseWindow) {
+              documentCloseReady = true
               window.close()
             }
           })
@@ -394,7 +423,15 @@ export default class WindowProvider extends ProviderContract {
             this._logger.error('[WindowManager] Could not ask user to close window', err)
           })
       } else {
+        event.preventDefault()
         this._documents.closeWindow(key)
+          .then(() => {
+            documentCloseReady = true
+            window.close()
+          })
+          .catch(err => {
+            this._logger.error('[WindowManager] Could not close clean window', err)
+          })
       }
     })
 

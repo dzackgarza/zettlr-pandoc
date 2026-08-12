@@ -57,7 +57,16 @@ export interface LanguageToolIgnoredRuleEntry {
 
 export interface AgentApiConfig {
   enabled: boolean;
+  /**
+   * Loopback port for the HTTP listener. `0` requests a kernel-assigned port.
+   * In every case the actual bound port is published to the `agent-api.port`
+   * file in the user-data directory once the listener is up.
+   */
   port: number;
+}
+
+export interface ReferenceConfig {
+  authorityReportDebounceMs: number;
 }
 
 export interface ConfigOptions {
@@ -67,6 +76,8 @@ export interface ConfigOptions {
   appLang: string;
   /** Agent API HTTP server configuration (OpenAPI / REST). */
   agentApi: AgentApiConfig;
+  /** Workspace-reference extraction policy. */
+  references: ReferenceConfig;
 
   darkMode: boolean;
   darkModeEditor: "match" | "light" | "dark";
@@ -611,6 +622,9 @@ export function getConfigTemplate(): ConfigOptions {
     agentApi: {
       enabled: true,
       port: 27412,
+    },
+    references: {
+      authorityReportDebounceMs: 500,
     },
   };
 }

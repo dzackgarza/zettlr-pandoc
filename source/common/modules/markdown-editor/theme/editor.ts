@@ -95,6 +95,22 @@ export interface ThemeVars {
   '--zettlr-editor-pandoc-div-task': string
   '--zettlr-editor-pandoc-div-warning': string
   '--zettlr-editor-pandoc-div-proof': string
+  /** CSS `<color>` values for the review-diff attention layer */
+  '--zettlr-editor-review-region-bg': string
+  '--zettlr-editor-review-insert-mark-bg': string
+  '--zettlr-editor-review-delete-bg': string
+  '--zettlr-editor-review-delete-accent': string
+  '--zettlr-editor-review-controls-bg': string
+  '--zettlr-editor-review-accept-bg': string
+  '--zettlr-editor-review-accept-border': string
+  '--zettlr-editor-review-reject-bg': string
+  '--zettlr-editor-review-reject-border': string
+  /**
+   * CSS `<color>` value for the chunk comment field's unsaved indicator.
+   * Meta-state, not diff semantics: deliberately outside the green/red
+   * attention colors.
+   */
+  '--zettlr-editor-review-note-unsaved': string
   /** CSS `opacity` value */
   '--zettlr-editor-opacity': string|number
   /** CSS `text-decoration` value */
@@ -157,13 +173,15 @@ const headerSize6 = '1em'
 
 const errorColor = 'var(--red-2)'
 
+// Structure layer: muted tints in hue bands (slate/purple/blue/cyan/indigo/
+// magenta) that never collide with the review attention layer (green/red/amber)
 const pandocDivLight = {
   generic: '#566170',
   result: '#74417d',
   definition: '#23638f',
-  explanation: '#356948',
-  task: '#845300',
-  warning: '#a33b2d',
+  explanation: '#1c6b7d',
+  task: '#4f4b9e',
+  warning: '#9c2b63',
   proof: '#566170',
 }
 
@@ -171,10 +189,41 @@ const pandocDivDark = {
   generic: '#c3cad4',
   result: '#d7a7df',
   definition: '#86c5f4',
-  explanation: '#8fcca5',
-  task: '#f2bd63',
-  warning: '#ff9b82',
+  explanation: '#7fd4e0',
+  task: '#a9a3ef',
+  warning: '#f48fb8',
   proof: '#c3cad4',
+}
+
+// Attention layer: saturated review-diff marks that must dominate visually.
+// The region wash is NEUTRAL by design: a suggestion carries no valence until
+// adjudicated — only the additions are green and only the removals red.
+const reviewLight = {
+  // Warm taupe, audited: >=6 dE2000 from every env surface both ways (the
+  // cool grays sit sub-JND from the slate/blue/cyan surfaces in light mode).
+  regionBg: 'rgba(94, 83, 75, 0.22)',
+  insertMarkBg: 'rgba(26, 178, 74, 0.45)',
+  deleteBg: 'rgba(207, 34, 46, 0.30)',
+  deleteAccent: '#cf222e',
+  controlsBg: 'rgba(128, 128, 128, 0.06)',
+  acceptBg: '#1f7a45',
+  acceptBorder: '#176238',
+  rejectBg: '#b33a3a',
+  rejectBorder: '#8e2f2f',
+  noteUnsaved: '#9a6700',
+}
+
+const reviewDark = {
+  regionBg: 'rgba(200, 187, 178, 0.20)',
+  insertMarkBg: 'rgba(63, 185, 80, 0.48)',
+  deleteBg: 'rgba(248, 81, 73, 0.38)',
+  deleteAccent: '#f85149',
+  controlsBg: 'rgba(128, 128, 128, 0.12)',
+  acceptBg: '#2ea043',
+  acceptBorder: '#238636',
+  rejectBg: '#da3633',
+  rejectBorder: '#b62324',
+  noteUnsaved: '#d29922',
 }
 
 const opacity = 0.65
@@ -217,6 +266,16 @@ export const defaultVarsLight: ThemeVars = {
   '--zettlr-editor-pandoc-div-task': pandocDivLight.task,
   '--zettlr-editor-pandoc-div-warning': pandocDivLight.warning,
   '--zettlr-editor-pandoc-div-proof': pandocDivLight.proof,
+  '--zettlr-editor-review-region-bg': reviewLight.regionBg,
+  '--zettlr-editor-review-insert-mark-bg': reviewLight.insertMarkBg,
+  '--zettlr-editor-review-delete-bg': reviewLight.deleteBg,
+  '--zettlr-editor-review-delete-accent': reviewLight.deleteAccent,
+  '--zettlr-editor-review-controls-bg': reviewLight.controlsBg,
+  '--zettlr-editor-review-accept-bg': reviewLight.acceptBg,
+  '--zettlr-editor-review-accept-border': reviewLight.acceptBorder,
+  '--zettlr-editor-review-reject-bg': reviewLight.rejectBg,
+  '--zettlr-editor-review-reject-border': reviewLight.rejectBorder,
+  '--zettlr-editor-review-note-unsaved': reviewLight.noteUnsaved,
   '--zettlr-editor-opacity': opacity,
   '--zettlr-editor-line-decoration': linkDecoration,
 }
@@ -257,6 +316,16 @@ export const defaultVarsDark: ThemeVars = {
   '--zettlr-editor-pandoc-div-task': pandocDivDark.task,
   '--zettlr-editor-pandoc-div-warning': pandocDivDark.warning,
   '--zettlr-editor-pandoc-div-proof': pandocDivDark.proof,
+  '--zettlr-editor-review-region-bg': reviewDark.regionBg,
+  '--zettlr-editor-review-insert-mark-bg': reviewDark.insertMarkBg,
+  '--zettlr-editor-review-delete-bg': reviewDark.deleteBg,
+  '--zettlr-editor-review-delete-accent': reviewDark.deleteAccent,
+  '--zettlr-editor-review-controls-bg': reviewDark.controlsBg,
+  '--zettlr-editor-review-accept-bg': reviewDark.acceptBg,
+  '--zettlr-editor-review-accept-border': reviewDark.acceptBorder,
+  '--zettlr-editor-review-reject-bg': reviewDark.rejectBg,
+  '--zettlr-editor-review-reject-border': reviewDark.rejectBorder,
+  '--zettlr-editor-review-note-unsaved': reviewDark.noteUnsaved,
   '--zettlr-editor-opacity': opacity,
   '--zettlr-editor-line-decoration': linkDecoration,
 }

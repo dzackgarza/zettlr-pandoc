@@ -60,7 +60,7 @@ recipe exists. Key recipes (see the `justfile` for the exact commands):
 | `just launch` | Dev mode through `scripts/test-gui/index.mjs`; uses the isolated `resources/test-cfg` profile. |
 | `just launch-desktop` | Dev mode (`electron-forge start`) with the normal user configuration. **This is the desktop path that works.** |
 | `just install-desktop-launcher` | Install the repo-owned Hyprland launcher and desktop entry under `~/.local`. |
-| `just package` | Production build (`electron-forge package`) → `app.asar`. **Currently broken** (see Build). |
+| `just package` | Production build and freshness verification (`electron-forge package`) → `app.asar`. |
 | `just verify-build` | Build, then prove the asar is fresh + built from HEAD (observability). |
 | `just verify-build-only` | Fast staleness check of the existing artifact (no rebuild). |
 | `just export-headless PDF.yaml file.md` | Run the real `makeExport` headlessly (no GUI) — debug exports. |
@@ -73,9 +73,8 @@ recipe exists. Key recipes (see the `justfile` for the exact commands):
   repository's isolated GUI-test profile.
 - **Production** — `electron-forge package` (`just package`) → `out/Zettlr-Pandoc-linux-x64/resources/app.asar`.
   webpack configs: `webpack.main.config.js` (Node/main target), `webpack.renderer.config.js`
-  (browser/renderer), assembled by `forge.config.js`. **Known-broken:** the webpack
-  stage can fail silently and exit 0 without (re)writing `app.asar`, shipping stale
-  bytes. **Do not trust its exit code.**
+  (browser/renderer), assembled by `forge.config.js`. The wrapper fails if the build
+  does not create a fresh `app.asar` from the current source fingerprint.
 - **Build observability** — `scripts/verify-build.py` (`just verify-build`). Proves the
   asar was built from the current commit via the `__GIT_COMMIT_HASH__` string that
   `DefinePlugin` bakes into the bundle (`webpack.{main,renderer}.config.js`, sourced
@@ -94,12 +93,11 @@ Desktop entry → wrapper → splash → boot script:
 - `~/.local/bin/zettlr-pandoc-dev` and `zettlr-pandoc-boot` are symlinks to the
   repo-owned scripts. The wrapper opens the floating kitty boot splash
   (Hyprland float/center via `hyprctl dispatch`).
-- `zettlr-pandoc-boot` is the actual launcher. It delegates to
-  `just launch-desktop`,
-  so lockfile synchronization and all other recipe prerequisites run before
-  Electron Forge. It retains focus-if-running (intentional — do not "fix"),
-  MathJax-macro refresh (below), Hyprland window-class detection (`class == zettlr-pandoc`),
-  fail-loud on timeout. It deliberately does **not** use the packaged build.
+- `zettlr-pandoc-boot` is the actual launcher. It refreshes MathJax macros, then
+  starts the verified packaged build through `just package` when the source
+  fingerprint is stale. It retains focus-if-running (intentional — do not
+  "fix"), Hyprland window-class detection (`class == zettlr-pandoc`), and
+  fail-loud behavior on build or launch failure.
 - Launcher log: `~/.cache/zettlr-pandoc-dev.log`.
 
 ## System-specific integrations
@@ -173,9 +171,9 @@ they must be threaded through **four** layers:
 - **Export not working?** `just export-headless PDF.yaml <file>.md` runs the literal
   `makeExport` headlessly (`scripts/harness/`, electron stubbed at `require`), building
   the same profile list the GUI sees — reproduces export bugs without the app.
-- **"App isn't showing my change"?** `just verify-build-only` — if the asar isn't
-  built from HEAD, the packaged build is stale (use `just launch`/dev mode). The
-  launcher already avoids this by running dev mode.
+- **"App isn't showing my change"?** Run `just verify-build-only`. If the asar is
+  stale, the desktop launcher runs `just package` before it starts the binary.
+  Use `just launch-desktop` for a direct development run.
 - **Editor math not rendering?** `test/editor-latex-delimiters.spec.ts` and
   `test/editor-math-widget.spec.ts` drive the parser and a real `EditorView`
   headlessly. Check `~/.config/Zettlr-Pandoc/mathjax-macros.json` has the macro
@@ -188,8 +186,8 @@ they must be threaded through **four** layers:
 
 ## Traps (details in agent-memory: `agent-memory search --scope both`)
 
-- Production `electron-forge package` can exit 0 while producing a **stale/no** asar —
-  always confirm with `just verify-build`.
+- The raw production command can report success without a fresh asar. Use `just
+  package` or `just verify-build` so the verifier checks the current fingerprint.
 - `userData/defaults` is copied once and never pruned; a **stale shipped profile** can
   shadow a custom one in the export menu.
 - `source/common/util/math-delimiters.ts` must stay CodeMirror-free (main-process
@@ -305,4 +303,4 @@ Do not make the reader excavate the missing work from beneath praise, context-se
 Nuance belongs in the evidence and blocker analysis, not in softening the completion standard.
 The review should make it easy to finish the work, not easy to feel satisfied with less than the original contract required.
 
-> Optimized tool-use workflow for agents: see [SDL.md](./SDL.md).
+> Optimized tool-use workflow for agents: follow the procedures in this file.

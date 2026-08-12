@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Hand file arguments to an already-running Zettlr-Pandoc and return.
+#
+# Electron's own single-instance lock performs the delivery. A second app
+# process using the same userData directory fails
+# app.requestSingleInstanceLock(); failing it is what ships this process' argv
+# to the instance holding the lock, which receives it as 'second-instance' and
+# runs roots-add on the files (source/main.ts). The second process then exits
+# without ever reaching app.whenReady(), so no window, dev server, or build is
+# created. --open-in-running-instance is what makes the opposite outcome loud:
+# if the lock is free, the app refuses to boot as that instance and exits
+# nonzero rather than opening a second copy nobody asked for.
+#
+# This is deliberately not `just launch-desktop`: that recipe begins by reaping
+# the live dev process (assert-dev-server-stopped.py --kill), which would tear
+# down the very instance that is supposed to receive the file.
+set -euo pipefail
+
+if (( $# == 0 )); then
+  printf 'Usage: %s [--data-dir=DIR] FILE...\n' "${0##*/}" >&2
+  exit 2
+fi
+
+for required_command in dirname readlink timeout; do
+  if ! command -v "$required_command" >/dev/null 2>&1; then
+    printf 'Required command is unavailable: %s\n' "$required_command" >&2
+    exit 1
+  fi
+done
+
+script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
+repo=$(cd -- "$(dirname -- "$script_path")/../.." && pwd -P)
+packaged_binary="$repo/out/Zettlr-Pandoc-linux-x64/zettlr-pandoc"
+
+# The handshake process runs the SAME packaged binary the boot launcher runs,
+# so the handoff never depends on a separately built (and possibly absent or
+# stale) dev webpack tree. The singleton lock is keyed by the user-data
+# directory, so the running instance receives the argv regardless of which
+# build it is.
+if [[ ! -x "$packaged_binary" ]]; then
+  printf 'The packaged app is not built: %s\nRun `just package` first.\n' "$packaged_binary" >&2
+  exit 1
+fi
+
+# The timeout is an outer cap on a handshake that never returns -- a running
+# instance answers in well under a second, and one that does not answer at all
+# must not hang the launcher.
+status=0
+timeout --kill-after=2 30 "$packaged_binary" --open-in-running-instance "$@" || status=$?
+
+if (( status == 124 || status == 137 )); then
+  printf 'The running Zettlr-Pandoc did not answer the single-instance handshake.\n' >&2
+  exit 1
+fi
+
+exit "$status"

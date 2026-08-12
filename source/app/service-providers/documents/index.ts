@@ -39,18 +39,32 @@ import {
   type SaveRefusedBroadcast,
 } from "@dts/common/documents";
 import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
-import type { DocumentLocation, SourceRange } from "@dts/common/references";
-import type { ReviewState } from "@dts/common/agent-api";
-import type { ReviewDiffSession, ReviewDiffStatus } from "@dts/common/review-diff";
+import type {
+  DocumentLocation,
+  SourceRange,
+  WorkspaceTextEdit,
+} from "@dts/common/references";
+import type {
+  AgentErrorCode,
+  AgentEvent,
+  AgentEventType,
+  ProposalClaim,
+} from "@dts/common/agent-api";
+import type { ReviewDiffSession } from "@dts/common/review-diff";
+import type { ActiveReviewState } from "@dts/common/review-domain";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
 import type { ConfigOptions } from "@providers/config/get-config-template";
-import ProviderContract, { type IPCAPI } from "@providers/provider-contract";
+import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
+import { IpcListener } from "@electron-toolkit/typed-ipc/main";
+import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
 import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions, shell } from "electron";
 import EventEmitter from "events";
 import { constants as FSConstants } from "fs";
+import { readFile } from "fs/promises";
 import path from "path";
-import { normalizeText, sha256Text } from "./review-diff-store";
+import { normalizeText } from "./review-diff-store";
+import { sha256Text } from "@common/util/sha256";
 import {
   getDocumentTypeForExtension,
   hasImageExt,
@@ -61,7 +75,29 @@ import isDir from "source/common/util/is-dir";
 import { v4 as uuid4 } from "uuid";
 import { type AppServiceContainer } from "../../app-service-container";
 import { DocumentTree, type DTLeaf } from "./document-tree";
-import { ReviewDiffStore } from "./review-diff-store";
+import {
+  type ReviewStatus,
+} from "./review-diff-store";
+import {
+  ReviewApplicationService,
+  type AgentEventPayload,
+  type PreparedDocumentMutation,
+  type ReviewDocumentAuthority,
+  type ReviewFailure,
+  type ReviewMutationPrecondition,
+  type ReviewQueryPort,
+  type ReviewSavePreparation,
+  type SubmittedProposal,
+} from "./review-application-service";
+import {
+  type AcceptAllChunksResponse,
+  type AddReviewCommentResponse,
+  type ChunkCommentResponse,
+  type ChunkDecision,
+  type ChunkDecisionResponse,
+  type ClearReviewResponse,
+  type RetractProposalResponse,
+} from "./review-transitions";
 
 type DocumentWindows = Record<string, DocumentTree>;
 type DocumentWindowsJSON = Record<string, BranchNodeJSON | LeafNodeJSON>;
@@ -107,6 +143,17 @@ type DocumentManagerApp = {
   >;
   log: Pick<AppServiceContainer["log"], "error" | "info" | "verbose" | "warning">;
   recentDocs: Pick<AppServiceContainer["recentDocs"], "add">;
+  /**
+   * The live-reference seam of the references provider (issue #53): this
+   * manager is the document authority and DRIVES the provider's live
+   * overlay at its own mutation points — load/change reports and
+   * close/move/reload drops. The provider reads the buffer text back
+   * through readMarkdownBufferContent().
+   */
+  references: {
+    reportAuthorityBuffer: (filePath: string, immediate?: boolean) => void;
+    dropAuthorityBuffer: (filePath: string) => void;
+  };
   stats: Pick<AppServiceContainer["stats"], "updateCounts">;
   windows: Pick<
     AppServiceContainer["windows"],
@@ -148,11 +195,11 @@ export interface DocumentsUpdateContext {
    * identify the source pane whose status update has already applied locally.
    */
   reviewDiffSession?: ReviewDiffSession;
-  /** Signal that a review was closed/completed/invalidated (spec section 13). */
+  /** Signal that a review was closed/completed/invalidated. */
   reviewCleared?: boolean;
   /** The reviewId that was cleared, for renderer session matching. */
   reviewId?: string;
-  /** Provider-owned review state (spec section 7). Replaces the old scalar. */
+  /** Provider-owned review state. */
   reviewState?: {
     reviewId: string;
     generation: number;
@@ -176,7 +223,7 @@ export interface DocumentsUpdateContext {
  */
 interface Document {
   /**
-   * Opaque document identifier (spec section 4). Stable for the lifetime of
+   * Opaque document identifier. Stable for the lifetime of
    * a loaded document; used as the key for all agent API operations.
    */
   documentId: string;
@@ -241,27 +288,22 @@ interface Document {
   saveTimeout: undefined | NodeJS.Timeout;
 }
 
-interface SubmittedProposalResponse {
-  ok: true;
-  packetId: string;
-  reviewId: string;
-  documentId: string;
-  documentRevision: { version: number; sha256: string };
-  reviewGeneration: number;
-  unresolvedChunks: number;
-  state: ReviewState;
-}
+export type DocumentAuthorityIPCContract = {
+  "get-document": {
+    request: { payload: { filePath: string } };
+    response: { content: string; type: DocumentType; startVersion: number };
+  };
+  "pull-updates": {
+    request: { payload: { filePath: string; version: number } };
+    response: SerializedUpdate[] | false;
+  };
+  "push-updates": {
+    request: { payload: { filePath: string; version: number; updates: SerializedUpdate[] } };
+    response: boolean;
+  };
+};
 
-interface ProposalIdempotencyRecord {
-  fingerprint: string;
-  response: SubmittedProposalResponse;
-}
-
-export type DocumentAuthorityIPCAPI = IPCAPI<{
-  "get-document": { filePath: string };
-  "pull-updates": { filePath: string; version: number };
-  "push-updates": { filePath: string; version: number; updates: SerializedUpdate[] };
-}>;
+export type DocumentAuthorityIPCAPI = IPCMessage<DocumentAuthorityIPCContract>;
 
 /**
  * Why a save was refused. The provider never presents this itself: a blocking
@@ -283,60 +325,176 @@ export { SAVE_REFUSED_CHANNEL } from "@dts/common/documents";
 // Most document manager commands require a leaf location, described by the
 // window and leaf IDs.
 type LeafLoc = { windowId: string; leafId: string };
-export type DocumentManagerIPCAPI = IPCAPI<{
-  "set-pinned": LeafLoc & { path: string; pinned: boolean };
-  "retrieve-tab-config": { windowId: string };
-  "save-file": { path: string };
+export type DocumentManagerIPCContract = {
+  "set-pinned": {
+    request: { payload: LeafLoc & { path: string; pinned: boolean } };
+    response: undefined;
+  };
+  "retrieve-tab-config": {
+    request: { payload: { windowId: string } };
+    response: LeafNodeJSON | BranchNodeJSON;
+  };
   // targetRange/sourceLocation are additive (issue #1 Phase 5): a reference
   // jump lands on targetRange in the opened document and stamps the origin
   // pane's current history entry with sourceLocation so Back can restore it.
-  "open-file": LeafLoc & {
-    path: string;
-    newTab: boolean;
-    targetRange?: SourceRange;
-    sourceLocation?: DocumentLocation;
+  // windowId/leafId/newTab are optional, exactly like the corresponding
+  // openFile() parameters: callers such as the sidebar and renderers open
+  // files without naming a pane and let the manager pick one.
+  "open-file": {
+    request: {
+      payload: {
+        path: string;
+        windowId?: string;
+        leafId?: string;
+        newTab?: boolean;
+        targetRange?: SourceRange;
+        sourceLocation?: DocumentLocation;
+      };
+    };
+    response: boolean;
   };
-  "close-file": LeafLoc & { path: string };
-  "close-file-everywhere": { path: string };
-  "get-open-workspace-files": { path: string };
-  "get-workspace-files": { path: string };
-  "sort-open-files": LeafLoc & { newOrder: string[] };
-  "get-file-modification-status": unknown;
-  "get-review-diff-session": { path: string };
-  "set-review-diff-status": Omit<ReviewDiffStatus, "filePath"> & {
-    path: string;
+  "close-file": {
+    request: { payload: LeafLoc & { path: string } };
+    response: boolean;
   };
-
+  "close-file-everywhere": {
+    request: { payload: { path: string } };
+    response: undefined;
+  };
+  "get-open-workspace-files": {
+    request: { payload: { path: string } };
+    response: string[];
+  };
+  "sort-open-files": {
+    request: { payload: LeafLoc & { newOrder: string[] } };
+    response: undefined;
+  };
+  "get-file-modification-status": {
+    request: { payload?: undefined };
+    response: string[];
+  };
+  "get-review-diff-session": {
+    request: { payload: { path: string } };
+    response: ReviewDiffSession | undefined;
+  };
   "move-file": {
-    originWindow: string;
-    targetWindow: string;
-    originLeaf: string;
-    targetLeaf: string;
-    path: string;
+    request: {
+      payload: {
+        originWindow: string;
+        targetWindow: string;
+        originLeaf: string;
+        targetLeaf: string;
+        path: string;
+      };
+    };
+    response: undefined;
   };
   "split-leaf": {
-    originWindow: string;
-    originLeaf: string;
-    direction: "horizontal" | "vertical";
-    insertion: "before" | "after";
-    path?: string;
-    fromWindow?: string;
-    fromLeaf?: string;
+    request: {
+      payload: {
+        originWindow: string;
+        originLeaf: string;
+        direction: "horizontal" | "vertical";
+        insertion: "before" | "after";
+        path?: string;
+        fromWindow?: string;
+        fromLeaf?: string;
+      };
+    };
+    response: undefined;
   };
-  "close-leaf": LeafLoc;
-  "focus-leaf": LeafLoc;
-  "set-branch-sizes": { windowId: string; branchId: string; sizes: number[] };
+  "close-leaf": { request: { payload: LeafLoc }; response: undefined };
+  "focus-leaf": { request: { payload: LeafLoc }; response: undefined };
+  "set-branch-sizes": {
+    request: { payload: { windowId: string; branchId: string; sizes: number[] } };
+    response: undefined;
+  };
   // location is additive (issue #1 Phase 5): the current DocumentLocation of
   // the navigating pane, stamped onto the current history entry before the
   // move so the opposite direction can restore it.
-  "navigate-forward": LeafLoc & { location?: DocumentLocation };
-  "navigate-back": LeafLoc & { location?: DocumentLocation };
+  "navigate-forward": {
+    request: { payload: LeafLoc & { location?: DocumentLocation } };
+    response: undefined;
+  };
+  "navigate-back": {
+    request: { payload: LeafLoc & { location?: DocumentLocation } };
+    response: undefined;
+  };
   // Additive (issue #1 Phase 5): whether the leaf's session history has
   // entries before/after the pointer (Back/Forward enabled state).
-  "get-navigation-state": LeafLoc;
-}>;
+  "get-navigation-state": {
+    request: { payload: LeafLoc };
+    response: { canGoBack: boolean; canGoForward: boolean };
+  };
+};
 
-export default class DocumentManager extends ProviderContract {
+export type DocumentManagerIPCAPI = IPCMessage<DocumentManagerIPCContract>;
+
+/** The document to save. */
+export interface SaveFileInput {
+  path: string;
+}
+
+/** One chunk decision, fenced on the generation and working text it was formed against. */
+export type ReviewDecisionInput = {
+  reviewId: string;
+  chunkId: string;
+  decision: ChunkDecision;
+} & ReviewMutationPrecondition;
+
+/**
+ * A comment attached to one outstanding chunk without deciding it. Fenced
+ * like a decision: the chunk id is content-addressed over the working text.
+ */
+export type ReviewChunkCommentInput = {
+  reviewId: string;
+  chunkId: string;
+  text: string;
+} & ReviewMutationPrecondition;
+
+/** Accepting every remaining chunk, under the same fence one decision uses. */
+export type ReviewAcceptAllInput = { reviewId: string } & ReviewMutationPrecondition;
+
+/** Discarding a review, under the same fence one decision uses. */
+export type ReviewClearInput = { reviewId: string } & ReviewMutationPrecondition;
+
+/**
+ * A comment adjudicates nothing and moves no text, so it fences on the review
+ * generation alone.
+ */
+export interface ReviewCommentInput {
+  reviewId: string;
+  text: string;
+  expectedReviewGeneration: number;
+}
+
+/**
+ * The document operations the renderer invokes on their own typed channels,
+ * one handler signature each. This provider owns the schema; the renderer
+ * bridge composes it, so a wrong payload or a changed return type is a
+ * compile error at the call site with no second map to keep in step.
+ */
+export type DocumentIpcHandlers = {
+  "documents:save-file": (input: SaveFileInput) => SaveFileResult;
+  "documents:decide-review-chunk": (
+    input: ReviewDecisionInput,
+  ) => ChunkDecisionResponse | ReviewFailure;
+  "documents:comment-review-chunk": (
+    input: ReviewChunkCommentInput,
+  ) => ChunkCommentResponse | ReviewFailure;
+  "documents:accept-all-review-chunks": (
+    input: ReviewAcceptAllInput,
+  ) => AcceptAllChunksResponse | ReviewFailure;
+  "documents:clear-review": (input: ReviewClearInput) => ClearReviewResponse | ReviewFailure;
+  "documents:add-review-comment": (
+    input: ReviewCommentInput,
+  ) => AddReviewCommentResponse | ReviewFailure;
+}
+
+export default class DocumentManager
+  extends ProviderContract
+  implements ReviewDocumentAuthority
+{
   /**
    * This array holds all open windows, here represented as document trees
    *
@@ -381,17 +539,42 @@ export default class DocumentManager extends ProviderContract {
   private readonly _remoteChangeDialogShownFor: string[];
 
   /**
-   * Provider-owned authoritative review state (spec section 7). Replaces the
-   * old _reviewDiffSessions map. The store owns referenceText, workingText,
-   * packet ledger, and review generation.
+   * Paths whose most recent remote reload failure has already been surfaced.
+   * Watchdog duplicate events must not produce duplicate renderer toasts.
+   *
+   * @var {string[]}
    */
-  private readonly _reviewStore: ReviewDiffStore;
+  private readonly _remoteChangeErrorShownFor: string[];
+
+  /**
+   * Committed review state. The store owns the merge reference, the packet
+   * ledger, and the review generation; every decision about them is a pure
+   * transition this provider prepares, persists, and commits.
+   */
+
+  /**
+   * The agent-visible event bus. The store used to be an EventEmitter and
+   * announce its own mutations, which meant a mutation was announced the
+   * instant the store changed — before the document had the working text the
+   * event described. Emission belongs to whoever commits, so it lives here.
+   */
+  public readonly agentEvents = new EventEmitter();
 
   /** Path → documentId mapping for agent API lookups. */
   private readonly _documentIdByPath: Map<string, string>;
 
-  /** Successful proposal responses, keyed by document and client idempotency key. */
-  private readonly _proposalIdempotency: Map<string, ProposalIdempotencyRecord>;
+  /**
+   * One persisted sidecar per reviewed file, in app data, keyed by canonical
+   * path. Written through on every review mutation, so closing a reviewed
+   * file (or crashing) destroys nothing; opening the file reattaches.
+   */
+
+  /**
+   * The one owner of review transactions: per-document locking,
+   * persist-before-commit ordering, and committed-event emission. Every
+   * review mutation from every transport runs through it.
+   */
+  private readonly _reviewApplication: ReviewApplicationService;
 
   /**
    * This holds all currently opened documents somewhere across the app.
@@ -401,6 +584,9 @@ export default class DocumentManager extends ProviderContract {
   private readonly documents: Document[];
 
   private _shuttingDown: boolean;
+
+  /** True while the before-quit save-or-discard dialog is unanswered. */
+  private _quitPromptOpen: boolean;
 
   private readonly _lastEditor: {
     windowId: string | undefined;
@@ -417,11 +603,21 @@ export default class DocumentManager extends ProviderContract {
     this._config = new PersistentDataContainer(containerPath, "yaml");
     this._ignoreChanges = [];
     this._remoteChangeDialogShownFor = [];
-    this._reviewStore = new ReviewDiffStore();
+    this._remoteChangeErrorShownFor = [];
+    this._reviewApplication = new ReviewApplicationService({
+      authority: this,
+      sidecarDirectory: path.join(app.getPath("userData"), "review-sidecars"),
+      emit: (event, payload) => {
+        this.emitAgentEvent(event, payload);
+      },
+      warn: (message) => {
+        this._app.log.warning(`[DocumentManager] ${message}`);
+      },
+    });
     this._documentIdByPath = new Map();
-    this._proposalIdempotency = new Map();
     this.documents = [];
     this._shuttingDown = false;
+    this._quitPromptOpen = false;
     this._lastEditor = {
       windowId: undefined,
       leafId: undefined,
@@ -458,6 +654,17 @@ export default class DocumentManager extends ProviderContract {
         );
       } else {
         this.handleRemoteChange(changedPath).catch((err: unknown) => {
+          if (this._remoteChangeErrorShownFor.includes(changedPath)) {
+            return;
+          }
+          this._remoteChangeErrorShownFor.push(changedPath);
+          setTimeout(() => {
+            const index = this._remoteChangeErrorShownFor.indexOf(changedPath);
+            if (index >= 0) {
+              this._remoteChangeErrorShownFor.splice(index, 1);
+            }
+          }, 1000);
+
           const diagnostic = errorToString(err);
           this._app.log.error(
             `[DocumentManager] Could not reload changed file ${changedPath}`,
@@ -479,14 +686,47 @@ export default class DocumentManager extends ProviderContract {
      */
     ipcMain.handle("documents-authority", async (event, message: DocumentAuthorityIPCAPI) => {
       const { command, payload } = message;
+      // Loading a document reattaches its sidecar, and an authority update
+      // rewrites the reviewed working text: both are review writers, so both
+      // take the same per-document lock every other writer takes.
       switch (command) {
         case "pull-updates":
           return await this.pullUpdates(payload.filePath, payload.version);
         case "push-updates":
           return await this.pushUpdates(payload.filePath, payload.version, payload.updates);
         case "get-document":
-          return await this.getDocument(payload.filePath);
+          return await this._reviewApplication.withDocumentLock(
+            this.ensureDocumentId(payload.filePath),
+            async () => await this.getDocument(payload.filePath),
+          );
       }
+    });
+
+    // The document operations the renderer drives on their own channels. Each
+    // one is a single typed handler, so the payload and the response are the
+    // handler's own signature rather than a branch of a multiplexer.
+    const operations = new IpcListener<DocumentIpcHandlers>();
+    operations.handle("documents:save-file", async (_event, input) => {
+      return await this.saveFile(input.path);
+    });
+    operations.handle("documents:decide-review-chunk", async (_event, input) => {
+      const { reviewId, chunkId, decision, ...precondition } = input;
+      return await this.decideReviewChunk(reviewId, chunkId, decision, precondition);
+    });
+    operations.handle("documents:comment-review-chunk", async (_event, input) => {
+      const { reviewId, chunkId, text, ...precondition } = input;
+      return await this.commentReviewChunk(reviewId, chunkId, text, precondition);
+    });
+    operations.handle("documents:accept-all-review-chunks", async (_event, input) => {
+      const { reviewId, ...precondition } = input;
+      return await this.acceptAllReviewChunks(reviewId, precondition);
+    });
+    operations.handle("documents:clear-review", async (_event, input) => {
+      const { reviewId, ...precondition } = input;
+      return await this.clearReview(reviewId, precondition);
+    });
+    operations.handle("documents:add-review-comment", async (_event, input) => {
+      return await this.addReviewComment(input.reviewId, input.text, input.expectedReviewGeneration);
     });
 
     // Finally, listen to events from the renderer
@@ -502,9 +742,6 @@ export default class DocumentManager extends ProviderContract {
         // Some main window has requested its tab/split view state
         case "retrieve-tab-config": {
           return this._windows[payload.windowId].toJSON();
-        }
-        case "save-file": {
-          return await this.saveFile(payload.path);
         }
         case "open-file": {
           const { windowId, leafId, path, newTab, targetRange, sourceLocation } = payload;
@@ -538,46 +775,11 @@ export default class DocumentManager extends ProviderContract {
           if (docId === undefined) {
             return undefined;
           }
-          const review = this._reviewStore.getReview(docId);
+          const review = this._reviewApplication.getReview(docId);
           if (review === undefined) {
             return undefined;
           }
-          // Construct legacy ReviewDiffSession for renderer compat
-          return {
-            id: review.reviewId,
-            reviewGeneration: review.generation,
-            documentPath: payload.path,
-            baselineSha256: sha256Text(review.baselineText),
-            diskBaselineSha256: review.diskFenceSha256,
-            baselineText: review.baselineText,
-            originalText: review.referenceText,
-            proposedText: review.workingText,
-            currentText: review.workingText,
-          } as ReviewDiffSession;
-        }
-        case "set-review-diff-status": {
-          const {
-            path,
-            sessionId,
-            unresolvedChunks,
-            originalText,
-            currentText,
-            documentVersion,
-            sourceWindowId,
-            sourceLeafId,
-            reviewGeneration,
-          } = payload;
-          return this.setReviewDiffStatus({
-            filePath: path,
-            sessionId,
-            unresolvedChunks,
-            originalText,
-            currentText,
-            documentVersion,
-            sourceWindowId,
-            sourceLeafId,
-            reviewGeneration,
-          });
+          return this._reviewSessionFor(payload.path, review);
         }
         case "move-file": {
           const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;
@@ -641,6 +843,15 @@ export default class DocumentManager extends ProviderContract {
       if (!this.isClean()) {
         event.preventDefault();
 
+        // Re-entrancy guard: quit can be requested again while the prompt is
+        // open (window-all-closed after the last window dies, the tray, a
+        // second Ctrl+Q). Without it, each request stacks another identical
+        // dialog over the unanswered first one.
+        if (this._quitPromptOpen) {
+          return;
+        }
+        this._quitPromptOpen = true;
+
         // NOTE: We are re-implementing `askSaveChanges` here since we cannot
         // give the user the choice to cancel.
         // TODO: Once the window management logic is put here, we have better
@@ -658,6 +869,7 @@ export default class DocumentManager extends ProviderContract {
         dialog
           .showMessageBox(opt)
           .then(async ({ response }) => {
+            this._quitPromptOpen = false;
             // 0 = Save, 1 = Don't save, 2 = Cancel
             if (response === 2) {
               this._app.log.verbose("User cancelled save-dialog; not quitting.");
@@ -673,14 +885,14 @@ export default class DocumentManager extends ProviderContract {
                   return;
                 }
               } else {
-                document.lastSavedVersion = document.currentVersion;
-                this._closeReview(document.documentId);
+                await this._discardChanges(document);
               }
             }
 
             app.quit();
           })
           .catch((err) => {
+            this._quitPromptOpen = false;
             this._app.log.error("[DocumentManager] Cannot ask user to save or omit changes!", err);
           });
       } else {
@@ -710,23 +922,29 @@ export default class DocumentManager extends ProviderContract {
     const result = await this._app.windows.askSaveChanges();
     // 0 = Save, 1 = Don't save, 2 = Cancel
     if (result.response === 1) {
-      // Mark everything as clean TODO: As of now this would mean that if the
-      // documents are open in other windows, they would still reflect the
-      // "wrong" (b/c omitted, unsaved) state!
-      for (const document of this.documents) {
-        document.lastSavedVersion = document.currentVersion;
+      // Discard, which is what the button says: the buffers go back to their
+      // disk bytes and every review over the discarded text is destroyed.
+      // Marking them clean and keeping the text was the older behaviour; a
+      // pane in another window then still showed the omitted edit, and a
+      // review's sidecar reattached it after the next restart.
+      //
+      // Only this window's documents: the prompt named this window's unsaved
+      // changes, and a discard that reached every loaded document would throw
+      // away edits the user is still holding in another window.
+      for (const document of this._windowExclusiveDocuments(windowId)) {
+        await this._discardChanges(document);
       }
 
       // If we're not shutting down, this function will only be called for when
       // the user wants to actively close a window for good
       if (!this._shuttingDown) {
-        this.closeWindow(windowId);
+        await this.closeWindow(windowId);
       }
 
       return true;
     } else if (result.response === 0) {
-      // Save all docs
-      for (const document of this.documents) {
+      // Save this window's docs — the same set the discard branch throws away.
+      for (const document of this._windowExclusiveDocuments(windowId)) {
         const saved = await this.saveFile(document.filePath);
         if (!saved.ok) {
           this._announceSaveRefusal(document.filePath, saved);
@@ -737,7 +955,7 @@ export default class DocumentManager extends ProviderContract {
       // If we're not shutting down, this function will only be called for when
       // the user wants to actively close a window for good
       if (!this._shuttingDown) {
-        this.closeWindow(windowId);
+        await this.closeWindow(windowId);
       }
 
       return true;
@@ -839,7 +1057,7 @@ export default class DocumentManager extends ProviderContract {
     this.syncToConfig();
   }
 
-  public closeWindow(windowId: string): void {
+  public async closeWindow(windowId: string): Promise<void> {
     if (this._shuttingDown) {
       return; // During shutdown only the WindowManager should close windows
     }
@@ -854,9 +1072,20 @@ export default class DocumentManager extends ProviderContract {
       // TODO: If we ever implement workspaces, etc., this safeguard won't be
       // necessary anymore.
       this._app.log.info(`[Documents Manager] Closing window ${windowId}!`);
+      for (const document of this._windowExclusiveDocuments(windowId)) {
+        try {
+          await this._detachReview(document.documentId);
+        } catch (err) {
+          this._announceDetachFailure(document.filePath, err);
+          return;
+        }
+        this.documents.splice(this.documents.indexOf(document), 1);
+        this._app.references.dropAuthorityBuffer(document.filePath);
+      }
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete this._windows[windowId];
       this.syncToConfig();
+      this.syncWatchedFilePaths();
     }
   }
 
@@ -939,7 +1168,92 @@ export default class DocumentManager extends ProviderContract {
     this.documents.push(doc);
     this.syncWatchedFilePaths();
 
-    return { content, type, startVersion: 0 };
+    // Reattachment: a sidecar for this path means a review detached here.
+    // On a verified fence this restores the buffer to the review's working
+    // text, so the content and version returned must be read AFTER it.
+    await this._reattachReviewSidecar(doc);
+
+    // The authority loaded a markdown buffer: feed the references provider's
+    // live overlay (issue #53). Reporting on LOAD — not only on the first
+    // edit — means an open document's occurrences are part of the merged
+    // reference view even when FSAL never indexed the file, and a load is
+    // a single event, so it skips the typing debounce (issue #46).
+    if (doc.type === DocumentType.Markdown) {
+      this._app.references.reportAuthorityBuffer(filePath, true);
+    }
+
+    return {
+      content: doc.document.toString(),
+      type,
+      startVersion: doc.currentVersion,
+    };
+  }
+
+  /**
+   * Load the authority buffer a proposal needs, without opening a pane.
+   *
+   * A proposal is defined against a live buffer, so submitting one against a
+   * closed workspace file has to load it. `getDocument` is the primitive that
+   * does exactly that and no more: it populates the authority, reattaches any
+   * sidecar the path carries, and creates no renderer view — so the load
+   * changes nothing the user can see until the review it carries commits.
+   *
+   * `wasAlreadyLoaded` is what a refused submission needs: only a buffer this
+   * acquisition brought in may be released again. `undefined` means the id
+   * names no path at all, which the submission below refuses on its own.
+   */
+  public async acquireDocument(documentId: string): Promise<{
+    documentId: string;
+    documentPath: string;
+    wasAlreadyLoaded: boolean;
+  }> {
+    const documentPath = this.getDocumentPath(documentId);
+    if (documentPath === undefined) {
+      throw new Error(`Cannot acquire document ${documentId}: no path is registered for it`);
+    }
+    const wasAlreadyLoaded = this.documents.some((doc) => doc.filePath === documentPath);
+    if (!wasAlreadyLoaded) {
+      await this.getDocument(documentPath);
+    }
+    return { documentId, documentPath, wasAlreadyLoaded };
+  }
+
+  /**
+   * Undo an acquisition that a refused proposal no longer justifies.
+   *
+   * A submission that commits nothing must not leave the editor holding a
+   * document nobody opened, so the buffer it acquired goes back out. The
+   * unload is non-destructive by construction: a document that gained an
+   * editor view, unsaved changes, or a review has an owner beyond this
+   * acquisition, and it is left exactly as it is.
+   */
+  public async releaseTemporaryDocument(documentId: string): Promise<void> {
+    const filePath = this.getDocumentPath(documentId);
+    if (filePath === undefined) {
+      return;
+    }
+    const doc = this.documents.find((candidate) => candidate.filePath === filePath);
+    if (doc === undefined || doc.currentVersion !== doc.lastSavedVersion) {
+      return;
+    }
+    if (this._reviewApplication.getReview(documentId) !== undefined) {
+      return;
+    }
+
+    let hasEditorView = false;
+    await this.forEachLeaf(async (tabMan) => {
+      if (tabMan.openFiles.some((openFile) => openFile.path === filePath)) {
+        hasEditorView = true;
+      }
+      return false;
+    });
+    if (hasEditorView) {
+      return;
+    }
+
+    this.documents.splice(this.documents.indexOf(doc), 1);
+    this._app.references.dropAuthorityBuffer(filePath);
+    this.syncWatchedFilePaths();
   }
 
   private async pullUpdates(filePath: string, clientVersion: number): Promise<SerializedUpdate[] | false> {
@@ -965,7 +1279,31 @@ export default class DocumentManager extends ProviderContract {
     }
   }
 
+  /**
+   * Accept an editor's collab updates into the authority buffer.
+   *
+   * While a review is open this is a STAGED commit: the incoming changes are
+   * applied to a local candidate, the review's chunk comments are reconciled
+   * against that candidate, and the resulting sidecar is written BEFORE the document
+   * takes any of it. Persistence failure leaves `doc.document`, the versions,
+   * the update history and the review exactly as they were, and rejects the
+   * call — the renderer's update stays unsent and is retried.
+   *
+   * That is what makes an acknowledgment mean something: a `true` answer here
+   * says the reviewed buffer is already on disk, not that it will be.
+   */
   private async pushUpdates(
+    filePath: string,
+    clientVersion: number,
+    clientUpdates: SerializedUpdate[],
+  ): Promise<boolean> {
+    return await this._reviewApplication.withDocumentLock(
+      this.ensureDocumentId(filePath),
+      async () => await this.pushUpdatesLocked(filePath, clientVersion, clientUpdates),
+    );
+  }
+
+  private async pushUpdatesLocked(
     filePath: string,
     clientVersion: number,
     clientUpdates: SerializedUpdate[],
@@ -986,11 +1324,12 @@ export default class DocumentManager extends ProviderContract {
     // anymore.
     clearTimeout(doc.saveTimeout);
 
+    // The candidate document: everything the updates produce, computed
+    // without touching the authority's own state.
+    let candidateText = doc.document;
     for (const update of clientUpdates) {
-      const changes = ChangeSet.fromJSON(update.changes);
-      doc.updates.push(update);
       try {
-        doc.document = changes.apply(doc.document);
+        candidateText = ChangeSet.fromJSON(update.changes).apply(candidateText);
       } catch (err: unknown) {
         dialog.showErrorBox(
           "Document out of sync",
@@ -1000,38 +1339,58 @@ current contents from the editor somewhere else, and restart the application.`,
         );
         throw err;
       }
-      doc.currentVersion = doc.minimumVersion + doc.updates.length;
-      // People are lazy, and hence there is a non-zero chance that in a few
-      // instances the currentVersion will get dangerously close to
-      // Number.MAX_SAFE_INTEGER. In that case, we need to perform a rollback to
-      // version 0 and notify all editors that have the document in question
-      // open to simply re-load it. That will cause a screen-flicker, but
-      // honestly better like this than otherwise.
-      if (doc.currentVersion === Number.MAX_SAFE_INTEGER - 1) {
-        console.warn(`Document ${filePath} has reached MAX_SAFE_INTEGER. Performing rollback ...`);
-        doc.minimumVersion = 0;
-        doc.currentVersion = doc.updates.length;
-        // TODO: Broadcast a message so that all editor instances can reload the
-        // document.
-      }
     }
-
-    // Notify all clients, they will then request the update
-    this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
-      filePath,
-      status: "modification",
-    });
-
+    const candidateUpdates = [...doc.updates, ...clientUpdates];
+    let candidateMinimumVersion = doc.minimumVersion;
+    let candidateVersion = candidateMinimumVersion + candidateUpdates.length;
+    // People are lazy, and hence there is a non-zero chance that in a few
+    // instances the currentVersion will get dangerously close to
+    // Number.MAX_SAFE_INTEGER. In that case, we need to perform a rollback to
+    // version 0 and notify all editors that have the document in question
+    // open to simply re-load it. That will cause a screen-flicker, but
+    // honestly better like this than otherwise.
+    if (candidateVersion >= Number.MAX_SAFE_INTEGER - 1) {
+      console.warn(`Document ${filePath} has reached MAX_SAFE_INTEGER. Performing rollback ...`);
+      candidateMinimumVersion = 0;
+      candidateVersion = candidateUpdates.length;
+      // TODO: Broadcast a message so that all editor instances can reload the
+      // document.
+    }
     // Drop all updates that exceed the amount of updates we allow.
-    while (doc.updates.length > MAX_VERSION_HISTORY) {
-      doc.updates.shift();
-      doc.minimumVersion += 1;
+    while (candidateUpdates.length > MAX_VERSION_HISTORY) {
+      candidateUpdates.shift();
+      candidateMinimumVersion += 1;
     }
 
-    const _docId = this.getDocumentId(filePath);
-    if (_docId !== undefined && this._reviewStore.getReview(_docId) !== undefined) {
+    const documentId = this.getDocumentId(filePath);
+    const review = documentId === undefined ? undefined : this._reviewApplication.getReview(documentId);
+    const candidateWorkingText = normalizeText(candidateText.toString());
+    const commitDocument = (): void => {
+      doc.document = candidateText;
+      doc.updates = candidateUpdates;
+      doc.minimumVersion = candidateMinimumVersion;
+      doc.currentVersion = candidateVersion;
+      this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
+        filePath,
+        status: "modification",
+      });
+      if (doc.type === DocumentType.Markdown) {
+        this._app.references.reportAuthorityBuffer(filePath);
+      }
+    };
+
+    if (documentId !== undefined && review !== undefined) {
+      await this._reviewApplication.applyWorkingTextEditLocked(
+        documentId,
+        candidateWorkingText,
+        commitDocument,
+      );
+      // A reviewed document does not autosave: the save gate owns when its
+      // bytes reach disk.
       return true;
     }
+
+    commitDocument();
 
     const autoSave = this._app.config.get().editor.autoSave;
 
@@ -1316,13 +1675,15 @@ current contents from the editor somewhere else, and restart the application.`,
       const result = await this._app.windows.askSaveChanges(detail);
       // 0 = Save, 1 = Don't save, 2 = Cancel
       if (result.response === 1) {
-        // Clear the modification flag
-        openFile.lastSavedVersion = openFile.currentVersion;
-        {
-          const _id = this.getDocumentId(filePath);
-          if (_id !== undefined) {
-            this._closeReview(_id);
-          }
+        await this._discardChanges(openFile);
+        // A saved review may survive the discard of a later edit. The
+        // document is about to leave the live registry, so detach that
+        // preserved review before removing its working-text resolver.
+        try {
+          await this._detachReview(openFile.documentId);
+        } catch (err) {
+          this._announceDetachFailure(filePath, err);
+          return false;
         }
         this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
           filePath,
@@ -1334,6 +1695,15 @@ current contents from the editor somewhere else, and restart the application.`,
           this._announceSaveRefusal(filePath, saved);
           return false;
         }
+        // The save persists the review, but the final pane is leaving the
+        // live registry. Detach before the splice so closed-file API reads do
+        // not observe a review whose working-text authority is gone.
+        try {
+          await this._detachReview(openFile.documentId);
+        } catch (err) {
+          this._announceDetachFailure(filePath, err);
+          return false;
+        }
       } else {
         // Don't close the file
         this._app.log.info("[Document Manager] Not closing file, as the user did not want that.");
@@ -1342,16 +1712,22 @@ current contents from the editor somewhere else, and restart the application.`,
 
       // Remove the file
       this.documents.splice(this.documents.indexOf(openFile), 1);
+      this._app.references.dropAuthorityBuffer(filePath);
     } else if (openFile !== undefined && numOpenInstances === 1) {
       // The file is not modified, but this is still the last instance, so we
-      // can close it without having to ask.
-      this.documents.splice(this.documents.indexOf(openFile), 1);
-      {
-        const _id = this.getDocumentId(filePath);
-        if (_id !== undefined) {
-          this._closeReview(_id);
+      // can close it without having to ask. Detach before the splice: the
+      // sidecar export reads the working text through the live document.
+      const _id = this.getDocumentId(filePath);
+      if (_id !== undefined) {
+        try {
+          await this._detachReview(_id);
+        } catch (err) {
+          this._announceDetachFailure(filePath, err);
+          return false;
         }
       }
+      this.documents.splice(this.documents.indexOf(openFile), 1);
+      this._app.references.dropAuthorityBuffer(filePath);
     }
 
     const ret = leaf.tabMan.closeFile(filePath);
@@ -1408,14 +1784,25 @@ current contents from the editor somewhere else, and restart the application.`,
       return true;
     });
 
-    // We also must splice the document out of our provider
+    // We also must splice the document out of our provider. Detach before
+    // the splice: the sidecar export reads the working text through the
+    // live document.
     const documentId = this.getDocumentId(filePath);
+    if (documentId !== undefined) {
+      try {
+        await this._detachReview(documentId);
+      } catch (err) {
+        // The file is gone from disk, so there is no reopening it to retry
+        // the export; the review stays in memory and the buffer stays loaded
+        // rather than being dropped along with the only copy of both.
+        this._announceDetachFailure(filePath, err);
+        return;
+      }
+    }
     const idx = this.documents.findIndex((doc) => doc.filePath === filePath);
     if (idx > -1) {
       this.documents.splice(idx, 1);
-    }
-    if (documentId !== undefined) {
-      this._closeReview(documentId);
+      this._app.references.dropAuthorityBuffer(filePath);
     }
 
     this.syncWatchedFilePaths();
@@ -1494,11 +1881,7 @@ current contents from the editor somewhere else, and restart the application.`,
     // resolution dialog proceeds as normal.
     const _docId = this.getDocumentId(filePath);
     if (_docId !== undefined) {
-      const _review = this._reviewStore.getReview(_docId);
-      if (_review !== undefined && !_review.invalidated) {
-        this._reviewStore.invalidateReview(_docId);
-        this._broadcastReviewCleared(filePath, _review.reviewId);
-      }
+      await this._reviewApplication.invalidateOnDiskDrift(_docId);
     }
 
     const isModified = doc.lastSavedVersion !== doc.currentVersion;
@@ -1579,6 +1962,14 @@ current contents from the editor somewhere else, and restart the application.`,
     openDoc.descriptor.dir = path.dirname(newPath);
     openDoc.descriptor.name = path.basename(newPath);
     openDoc.descriptor.ext = path.extname(newPath);
+
+    // The buffer moved with the document: its live reference overlay moves
+    // too (issue #53) — the old path's overlay dies, the new path reports
+    // immediately (a move is a single event, not a typing storm).
+    this._app.references.dropAuthorityBuffer(oldPath);
+    if (openDoc.type === DocumentType.Markdown) {
+      this._app.references.reportAuthorityBuffer(newPath, true);
+    }
 
     const leafsToNotify: Array<[string, string]> = [];
     await this.forEachLeaf(async (tabMan, windowId, leafId) => {
@@ -1749,14 +2140,27 @@ current contents from the editor somewhere else, and restart the application.`,
     // Here we basically only need to close the document and wait for the
     // renderers to reload themselves with getDocument, which will automatically
     // open the new document.
-    const idx = this.documents.findIndex((file) => file.filePath === filePath);
-    this.documents.splice(idx, 1);
-    {
-      const _id = this.getDocumentId(filePath);
-      if (_id !== undefined) {
-        this._closeReview(_id);
+    // Detach before the splice: the sidecar export reads the working text
+    // through the live document. (After external drift the review arrives
+    // here invalidated, and detaching an invalidated review deletes its
+    // sidecar — reloading from disk remains the terminal resolution.)
+    const _id = this.getDocumentId(filePath);
+    if (_id !== undefined) {
+      try {
+        await this._detachReview(_id);
+      } catch (err) {
+        // The reload is what would discard the in-memory review, so it does
+        // not happen: the buffer and the review stay, and the renderer is
+        // told why the file it saw change was not reloaded.
+        this._announceDetachFailure(filePath, err);
+        return;
       }
     }
+    const idx = this.documents.findIndex((file) => file.filePath === filePath);
+    this.documents.splice(idx, 1);
+    // The reloading renderers re-trigger getDocument, which reports the
+    // fresh buffer; until then the saved FSAL snapshot is the truth.
+    this._app.references.dropAuthorityBuffer(filePath);
     // Indicate to all affected editors that they should reload the file
     this.broadcastEvent(DP_EVENTS.FILE_REMOTELY_CHANGED, { filePath });
   }
@@ -1930,46 +2334,65 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Returns true if none of the open files have their modified flag set.
+   * True when nothing open in the given window has unsaved changes — or, with
+   * no window named, when nothing anywhere does. This is the gate in front of
+   * the close prompt, so a wrong "clean" is a prompt the user never sees.
    *
-   * @param  {string|number}  leafId  Can either contain a leafId or a window
-   *                                  index, and returns the clean state only
-   *                                  for that. If undefined, returns the total
-   *                                  clean state.
+   * It used to take a second argument choosing between a window id and a leaf
+   * id, defaulting to leaf. Both callers pass a window id and neither passed
+   * the selector, so both fell into the leaf branch, where no leaf ever
+   * carries a window's id — every window with unsaved changes answered clean,
+   * and closing one asked nothing and discarded nothing. Nothing scopes this
+   * question to a leaf, so there is no leaf mode to get wrong.
    */
-  public isClean(id?: string, which?: "window" | "leaf"): boolean {
-    const modPaths = this.documents
-      .filter((x) => this.isModified(x.filePath))
-      .map((x) => x.filePath);
-
-    if (id === undefined) {
-      // Total clean state
-      return modPaths.length === 0;
-    } else if (which === "window") {
-      // window-specific clean state
-      const allLeafs = this._windows[id].getAllLeafs();
-      for (const leaf of allLeafs) {
-        for (const file of leaf.tabMan.openFiles) {
-          if (modPaths.includes(file.path)) {
-            return false;
-          }
-        }
-      }
-    } else {
-      // leaf-specific clean state
-      for (const key in this._windows) {
-        const leaf = this._windows[key].findLeaf(id);
-        if (leaf !== undefined) {
-          for (const file of leaf.tabMan.openFiles) {
-            if (modPaths.includes(file.path)) {
-              return false;
-            }
-          }
-        }
-      }
+  public isClean(windowId?: string): boolean {
+    if (windowId !== undefined && !(windowId in this._windows)) {
+      // A window this manager has already dropped holds no documents, so it
+      // holds no unsaved changes. The close flow reaches this on purpose:
+      // askUserToCloseWindow drops the window itself, and the close it then
+      // permits runs this gate a second time.
+      return true;
     }
+    const scope =
+      windowId === undefined ? this.documents : this._windowExclusiveDocuments(windowId);
+    return scope.every((doc) => !this.isModified(doc.filePath));
+  }
 
-    return true;
+  /**
+   * The loaded documents open in a window's panes: the exact set that window's
+   * close prompt speaks for. Callers act on this set — save it, throw it away —
+   * so an id no window answers to throws by name rather than quietly resolving
+   * to "no documents", which would swallow the user's answer whole.
+   */
+  private _windowDocuments(windowId: string): Document[] {
+    const tree = this._windows[windowId];
+    if (tree === undefined) {
+      throw new Error(
+        `[DocumentManager] Cannot enumerate the documents of unknown window ${windowId}`,
+      );
+    }
+    const openPaths = new Set(
+      tree.getAllLeafs().flatMap((leaf) => leaf.tabMan.openFiles.map((file) => file.path)),
+    );
+    return this.documents.filter((doc) => openPaths.has(doc.filePath));
+  }
+
+  /**
+   * Documents whose final live owner is the named window. A window-close
+   * decision may save, discard, or unload only these buffers; any document
+   * still present in another window remains owned there.
+   */
+  private _windowExclusiveDocuments(windowId: string): Document[] {
+    const otherWindowPaths = new Set(
+      Object.entries(this._windows)
+        .filter(([otherWindowId]) => otherWindowId !== windowId)
+        .flatMap(([, tree]) =>
+          tree.getAllLeafs().flatMap((leaf) => leaf.tabMan.openFiles.map((file) => file.path)),
+        ),
+    );
+    return this._windowDocuments(windowId).filter(
+      (document) => !otherWindowPaths.has(document.filePath),
+    );
   }
 
   public async navigateForward(
@@ -2055,98 +2478,242 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Reconciles a pane's accept/reject report into the provider-owned review
-   * state. Every rejection path logs why: a refused report leaves the review's
-   * unresolved count unchanged, which closes the save gate, and without a
-   * reason the resulting deadlock is invisible in the logs.
+   * The live working text of an open document, normalized. Every review read
+   * and every transition takes this explicitly: the document authority owns
+   * the text, and a review that outlives its document is a lifecycle bug the
+   * caller must not paper over with an empty string.
    */
-  private setReviewDiffStatus(status: ReviewDiffStatus): boolean {
-    const docId = this.getDocumentId(status.filePath);
-    if (docId === undefined) {
-      this._app.log.error(
-        `[DocumentManager] Review status refused: no documentId for ${status.filePath}`,
-      );
-      return false;
+  private _workingTextOf(documentId: string): string | undefined {
+    const filePath = this.getDocumentPath(documentId);
+    if (filePath === undefined) {
+      return undefined;
     }
-    const review = this._reviewStore.getReview(docId);
-    if (review === undefined) {
-      this._app.log.error(
-        `[DocumentManager] Review status refused: no active review for ${status.filePath}`,
-      );
-      return false;
-    }
-    if (review.reviewId !== status.sessionId) {
-      this._app.log.error(
-        `[DocumentManager] Review status refused: session ${status.sessionId} does not match ` +
-          `active review ${review.reviewId} for ${status.filePath}`,
-      );
-      return false;
-    }
+    const doc = this.documents.find((d) => d.filePath === filePath);
+    return doc === undefined ? undefined : normalizeText(doc.document.toString());
+  }
 
-    // Spec section 13: guard against stale pane decisions by checking
-    // the review generation the pane observed when reporting.
-    if (status.reviewGeneration !== review.generation) {
-      // The pane's report is stale — re-broadcast the current state so the
-      // pane can update its merge reference.
-      this._app.log.warning(
-        `[DocumentManager] Review status stale: pane reported generation ` +
-          `${status.reviewGeneration}, provider is at ${review.generation}; re-broadcasting`,
-      );
-      this._broadcastReviewState(status.filePath, review);
-      return false;
+  /**
+   * Announce one committed review fact. The payload's `generation` is the
+   * wire's `reviewGeneration`; anything the emitter left implicit is filled
+   * from the committed review, so a caller never has to restate the state it
+   * just committed.
+   */
+  public emitAgentEvent(event: AgentEventType, payload: AgentEventPayload): void {
+    const { generation, ...mapped } = payload;
+    if (generation !== undefined) {
+      mapped.reviewGeneration = generation;
     }
-
-    const document = this.documents.find((doc) => doc.filePath === status.filePath);
-    if (document === undefined) {
-      this._app.log.error(
-        `[DocumentManager] Review status refused: ${status.filePath} is not an open document`,
-      );
-      return false;
-    }
-    if (document.currentVersion !== status.documentVersion) {
-      this._app.log.warning(
-        `[DocumentManager] Review status refused: pane reported document version ` +
-          `${status.documentVersion}, provider is at ${document.currentVersion}; re-broadcasting`,
-      );
-      this._broadcastReviewState(status.filePath, review);
-      return false;
-    }
-    if (document.document.toString() !== status.currentText) {
-      this._app.log.warning(
-        "[DocumentManager] Review status refused: pane text does not match the provider buffer " +
-          `for ${status.filePath}; re-broadcasting`,
-      );
-      this._broadcastReviewState(status.filePath, review);
-      return false;
-    }
-
-    // Reconcile: the renderer reports the current originalText (merge reference)
-    // and currentText (working). Update the store's referenceText to match the
-    // renderer's evolved merge reference — this is the provider-owned state
-    // synchronization point (spec section 7).
-    const changed =
-      review.referenceText !== status.originalText || review.workingText !== status.currentText;
-    if (changed) {
-      review.referenceText = status.originalText;
-      review.workingText = status.currentText;
-      review.generation += 1;
-      const unresolvedChunks = this._reviewStore.countUnresolvedChunks(review);
-      this._reviewStore.emitEvent("review.changed", {
-        reviewId: review.reviewId,
-        documentId: docId,
-        generation: review.generation,
-        unresolvedChunks,
-      });
-      if (unresolvedChunks === 0) {
-        this._reviewStore.emitEvent("review.resolved", {
-          reviewId: review.reviewId,
-          documentId: docId,
-          generation: review.generation,
-        });
+    const documentId = typeof mapped.documentId === "string" ? mapped.documentId : undefined;
+    if (documentId !== undefined) {
+      const review = this._reviewApplication.getReview(documentId);
+      const workingText = this._workingTextOf(documentId);
+      if (review !== undefined) {
+        if (!("reviewGeneration" in mapped)) {
+          mapped.reviewGeneration = review.generation;
+        }
+        if (!("unresolvedChunks" in mapped) && workingText !== undefined) {
+          mapped.unresolvedChunks =
+            this._reviewApplication.getStatus(documentId)?.unresolvedChunks;
+        }
       }
     }
-    this._broadcastReviewState(status.filePath, review);
-    return true;
+    const agentEvent: AgentEvent = {
+      ...mapped,
+      event,
+      timestamp: new Date().toISOString(),
+    };
+    this.agentEvents.emit(event, agentEvent);
+    this.agentEvents.emit("*", agentEvent);
+  }
+
+  // ==========================================================================
+  // ReviewDocumentAuthority — what the review application service may ask of
+  // the document authority, and nothing more.
+  // ==========================================================================
+
+  public resolveDocumentPath(documentId: string): string | undefined {
+    return this.getDocumentPath(documentId);
+  }
+
+  /** The document's bytes as they currently are on disk. */
+  public async readDiskText(documentPath: string): Promise<string> {
+    return await readFile(documentPath, "utf8");
+  }
+
+  /**
+   * The hash of the bytes this document was last saved from, or undefined
+   * when it is not open. This is what a first proposal fences against: the
+   * user's own unsaved edits are exactly what the baseline hash binds, so
+   * only somebody else's write may refuse the submission.
+   */
+  public readSavedDiskSha256(documentId: string): string | undefined {
+    const filePath = this.getDocumentPath(documentId);
+    const doc =
+      filePath === undefined
+        ? undefined
+        : this.documents.find((candidate) => candidate.filePath === filePath);
+    return doc === undefined ? undefined : sha256Text(normalizeText(doc.lastSavedContent));
+  }
+
+  /**
+   * Compute — but do not apply — the replacement of the live document text.
+   *
+   * Only the changed span is spliced. A whole-document replacement maps every
+   * pane's selection through a change covering the full text, which collapses
+   * cursors to the splice boundary; trimming the common prefix and suffix
+   * leaves positions outside the edit untouched.
+   *
+   * Serialization happens here because serializeChangeSet throws on a shape
+   * it does not recognize. A throw between the version bump and the push
+   * would consume a version number with no update for peers to pull — a
+   * dirty buffer that can never be saved. Committing after this cannot throw.
+   */
+  public prepareWorkingTextReplacement(
+    documentId: string,
+    nextText: string,
+  ): PreparedDocumentMutation {
+    const documentPath = this.getDocumentPath(documentId);
+    if (documentPath === undefined) {
+      throw new Error(`Cannot replace text for missing document ${documentId}`);
+    }
+    const doc = this.documents.find((d) => d.filePath === documentPath);
+    if (doc === undefined) {
+      throw new Error(`Cannot replace text for closed document ${documentId}`);
+    }
+    if (doc.document.toString() === nextText) {
+      return { documentId, documentPath, change: undefined };
+    }
+    const currentText = doc.document.toString();
+    let prefix = 0;
+    const shorter = Math.min(currentText.length, nextText.length);
+    while (prefix < shorter && currentText.charCodeAt(prefix) === nextText.charCodeAt(prefix)) {
+      prefix++;
+    }
+    let suffix = 0;
+    while (
+      suffix < shorter - prefix &&
+      currentText.charCodeAt(currentText.length - 1 - suffix) ===
+        nextText.charCodeAt(nextText.length - 1 - suffix)
+    ) {
+      suffix++;
+    }
+    const changes = ChangeSet.of(
+      [
+        {
+          from: prefix,
+          to: currentText.length - suffix,
+          insert: nextText.slice(prefix, nextText.length - suffix),
+        },
+      ],
+      doc.document.length,
+    );
+    return {
+      documentId,
+      documentPath,
+      change: {
+        changes,
+        update: { changes: serializeChangeSet(changes), clientID: "review-diff-store" },
+        nextText: Text.of(nextText.split("\n")),
+        nextVersion: doc.currentVersion + 1,
+      },
+    };
+  }
+
+  /** Apply a prepared replacement. Synchronous, and cannot throw. */
+  public commitWorkingTextReplacement(prepared: PreparedDocumentMutation): void {
+    if (prepared.change === undefined) {
+      return;
+    }
+    const doc = this.documents.find((d) => d.filePath === prepared.documentPath);
+    if (doc === undefined) {
+      return;
+    }
+    doc.document = prepared.change.nextText;
+    doc.currentVersion = prepared.change.nextVersion;
+    doc.updates.push(prepared.change.update);
+    while (doc.updates.length > MAX_VERSION_HISTORY) {
+      doc.updates.shift();
+      doc.minimumVersion += 1;
+    }
+    this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
+      filePath: prepared.documentPath,
+      status: "modification",
+    });
+
+    // A review decision changed the authority text: feed the references
+    // provider's live overlay (issue #53).
+    if (doc.type === DocumentType.Markdown) {
+      this._app.references.reportAuthorityBuffer(prepared.documentPath);
+    }
+  }
+
+  public broadcastReviewState(documentId: string): void {
+    const filePath = this.getDocumentPath(documentId);
+    if (filePath === undefined) {
+      return;
+    }
+    this._broadcastReviewState(filePath, this._reviewApplication.getReview(documentId));
+  }
+
+  public broadcastReviewCleared(documentId: string, reviewId: string): void {
+    const filePath = this.getDocumentPath(documentId);
+    if (filePath !== undefined) {
+      this._broadcastReviewCleared(filePath, reviewId);
+    }
+  }
+
+  // ==========================================================================
+  // Review mutations — one delegation each. The HTTP API and renderer IPC
+  // call these same methods; the service owns the transaction.
+  // ==========================================================================
+
+  public async decideReviewChunk(
+    reviewId: string,
+    chunkId: string,
+    decision: ChunkDecision,
+    precondition: ReviewMutationPrecondition,
+  ): Promise<ChunkDecisionResponse | ReviewFailure> {
+    return await this._reviewApplication.decideChunk(
+      reviewId,
+      chunkId,
+      decision,
+      precondition,
+    );
+  }
+
+  public async commentReviewChunk(
+    reviewId: string,
+    chunkId: string,
+    text: string,
+    precondition: ReviewMutationPrecondition,
+  ): Promise<ChunkCommentResponse | ReviewFailure> {
+    return await this._reviewApplication.commentChunk(reviewId, chunkId, text, precondition);
+  }
+
+  public async acceptAllReviewChunks(
+    reviewId: string,
+    precondition: ReviewMutationPrecondition,
+  ): Promise<AcceptAllChunksResponse | ReviewFailure> {
+    return await this._reviewApplication.acceptAllChunks(reviewId, precondition);
+  }
+
+  public async clearReview(
+    reviewId: string,
+    precondition: ReviewMutationPrecondition,
+  ): Promise<ClearReviewResponse | ReviewFailure> {
+    return await this._reviewApplication.clearReview(reviewId, precondition);
+  }
+
+  public async addReviewComment(
+    reviewId: string,
+    text: string,
+    expectedReviewGeneration: number,
+  ): Promise<AddReviewCommentResponse | ReviewFailure> {
+    return await this._reviewApplication.addReviewComment(
+      reviewId,
+      text,
+      expectedReviewGeneration,
+    );
   }
 
   /**
@@ -2160,60 +2727,14 @@ current contents from the editor somewhere else, and restart the application.`,
     if (docId === undefined) {
       return undefined;
     }
-    const review = this._reviewStore.getReview(docId);
+    const review = this._reviewApplication.getReview(docId);
     if (review === undefined) {
       return undefined;
     }
 
-    const status = this._reviewStore.getReviewStatus(docId);
-    // The gate closes for distinct reasons and the user needs to know which:
-    // unresolved chunks are their own to resolve, but a missing report or a
-    // reference/working divergence means the provider never received a pane
-    // decision — the user can accept every chunk in the editor and still be
-    // refused. A missing status is not zero chunks and not an unknown count of
-    // them; it is a review the pane has never reported on at all.
-    if (status === undefined) {
-      this._app.log.error(
-        `[DocumentManager] Save gate closed for ${filePath}: the review store holds ` +
-          `review generation ${review.generation} but no status for document ${docId}, ` +
-          "so the pane has never reported on it. Expect a missing or failed " +
-          "setReviewDiffStatus round trip.",
-      );
-      return {
-        reason: "review-out-of-sync",
-        message: trans(
-          "This review is out of sync with the editor and cannot be saved. See the log for the reason.",
-        ),
-      };
-    }
-    if (status.unresolvedChunks > 0) {
-      this._app.log.warning(
-        `[DocumentManager] Save gate closed for ${filePath}: ` +
-          `${status.unresolvedChunks} unresolved chunk(s) at generation ` +
-          `${review.generation}`,
-      );
-      return {
-        reason: "unresolved-chunks",
-        message: trans(
-          "Resolve every accept/reject chunk before saving this review.",
-        ),
-      };
-    }
-    if (review.referenceText !== review.workingText) {
-      this._app.log.error(
-        `[DocumentManager] Save gate closed for ${filePath}: no unresolved chunks, but the ` +
-          `review reference and working text still differ at generation ${review.generation}. ` +
-          "The pane's accept/reject report never reached the provider — see the refusal reason " +
-          "logged by setReviewDiffStatus.",
-      );
-      return {
-        reason: "review-out-of-sync",
-        message: trans(
-          "This review is out of sync with the editor and cannot be saved. See the log for the reason.",
-        ),
-      };
-    }
-
+    // Pending chunks do not block a save: saving persists the document as-is
+    // and the review's status alongside it, so a pending review can be closed
+    // and revisited later. The only refusal left is external drift.
     const diskContents = await this._app.fsal.loadAnySupportedFile(filePath);
     if (sha256Text(normalizeText(diskContents)) !== review.diskFenceSha256) {
       this._app.log.warning(
@@ -2231,7 +2752,20 @@ current contents from the editor somewhere else, and restart the application.`,
     return undefined;
   }
 
+  /**
+   * Save a document. Serialized against every other writer of this document:
+   * the save gate, the disk write, and the review's own resolution all have
+   * to see one consistent state, and an editor update or an agent decision
+   * arriving mid-save is exactly what would break that.
+   */
   public async saveFile(filePath: string): Promise<SaveFileResult> {
+    return await this._reviewApplication.withDocumentLock(
+      this.ensureDocumentId(filePath),
+      async () => await this._saveFileLocked(filePath),
+    );
+  }
+
+  private async _saveFileLocked(filePath: string): Promise<SaveFileResult> {
     const doc = this.documents.find((doc) => doc.filePath === filePath);
 
     if (doc === undefined) {
@@ -2289,6 +2823,25 @@ current contents from the editor somewhere else, and restart the application.`,
       doc.lastSavedCharCount = newCharCount;
     }
 
+    // 8.6: a surviving review's sidecar records the save it is about to
+    // survive BEFORE the document write, naming both hashes. A process that
+    // exits between the two writes is then recoverable: reattachment reads
+    // the file and can tell which of them landed. The fence itself does not
+    // move until the document write returns.
+    const documentId = this.getDocumentId(filePath);
+    const savedSha256 = sha256Text(content);
+    let reviewSave: ReviewSavePreparation | undefined;
+    try {
+      reviewSave =
+        documentId === undefined
+          ? undefined
+          : await this._reviewApplication.prepareSave(documentId, savedSha256);
+    } catch (err) {
+      // Nothing is written to disk: an unrecorded save is what makes the
+      // crash window unrecoverable, so the save does not start.
+      return { ok: false, refusal: this._persistenceRefusal(filePath, err) };
+    }
+
     this._ignoreChanges.push(filePath);
 
     try {
@@ -2319,15 +2872,14 @@ current contents from the editor somewhere else, and restart the application.`,
     }
 
     this._app.log.info(`[DocumentManager] File ${filePath} saved.`);
-    {
-      const _id = this.getDocumentId(filePath);
-      if (_id !== undefined) {
-        const _review = this._reviewStore.getReview(_id);
-        if (_review !== undefined) {
-          this._broadcastReviewCleared(filePath, _review.reviewId);
-        }
-        this._reviewStore.completeReview(_id);
-        this._clearProposalIdempotency(_id);
+    if (reviewSave !== undefined) {
+      try {
+        await this._reviewApplication.completeSave(reviewSave, savedSha256);
+      } catch (err) {
+        // The document IS written; only the fence update was lost. The
+        // sidecar still carries pendingSave, so reattachment settles it —
+        // but this save did not complete, and must not report that it did.
+        return { ok: false, refusal: this._persistenceRefusal(filePath, err) };
       }
     }
     this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
@@ -2351,7 +2903,7 @@ current contents from the editor somewhere else, and restart the application.`,
 
   // ==========================================================================
   // Agent API: documentId, focused-view, snapshot tokens, proposal submission
-  // (spec sections 4-7, 10)
+  //
   // ==========================================================================
 
   /**
@@ -2392,17 +2944,146 @@ current contents from the editor somewhere else, and restart the application.`,
     broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
   }
 
-  private _closeReview(documentId: string): void {
-    this._reviewStore.closeReview(documentId);
-    this._clearProposalIdempotency(documentId);
+  /**
+   * DETACH, not destroy: write the review through to its sidecar, then drop
+   * the in-memory state. Closing a reviewed file is free — reopening the
+   * file reattaches the review. Must run while the document is still in
+   * `documents`: the export needs its working text.
+   *
+   * An invalidated review is the one exception. Its in-process resolution
+   * was always destruction (the disk moved underneath it, and reloading
+   * from disk closes it), so detaching would only preserve a review that
+   * can never be decided again — the sidecar is deleted instead.
+   *
+   * A failed write ABORTS the close. It throws, the review stays in memory,
+   * the document stays open, and the sidecar keeps its previous valid state.
+   * Catching the error and closing anyway is what turned an unwritable
+   * sidecar into a silently destroyed review.
+   */
+  private async _detachReview(documentId: string): Promise<void> {
+    await this._reviewApplication.withDocumentLock(documentId, async () => {
+      await this._reviewApplication.detachReview(documentId);
+    });
   }
 
-  private _clearProposalIdempotency(documentId: string): void {
-    const prefix = `${documentId}:`;
-    for (const key of this._proposalIdempotency.keys()) {
-      if (key.startsWith(prefix)) {
-        this._proposalIdempotency.delete(key);
+  /**
+   * A close aborted because the review could not be written through. The
+   * renderer surfaces this the same way it surfaces a refused save: the
+   * document is still open, and the reason has to reach the person who asked
+   * for the close rather than only the log.
+   */
+  /** The refusal a save owes when the review could not be persisted. */
+  private _persistenceRefusal(filePath: string, err: unknown): SaveRefusal {
+    const message =
+      "The review could not be written to its sidecar, so the save did not complete: " +
+      (err instanceof Error ? err.message : String(err));
+    this._app.log.error(`[DocumentManager] Save refused for ${filePath}: ${message}`, err);
+    return { reason: "review-not-persisted", message };
+  }
+
+  private _announceDetachFailure(filePath: string, err: unknown): void {
+    const message =
+      "The review could not be written to its sidecar, so this document was left open: " +
+      (err instanceof Error ? err.message : String(err));
+    this._app.log.error(`[DocumentManager] Close aborted for ${filePath}: ${message}`, err);
+    const payload: SaveRefusedBroadcast = {
+      filePath,
+      refusal: { reason: "review-not-persisted", message },
+    };
+    broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
+  }
+
+  /**
+   * The user's "Don't save" answer, applied to one document. DESTROY, where
+   * _detachReview preserves: the bytes thrown away die everywhere this
+   * provider captured them — the buffer, the in-memory review, and the
+   * review's sidecar file.
+   *
+   * Every close prompt used to hand-roll this as
+   * `lastSavedVersion = currentVersion` plus _detachReview, and both halves
+   * reversed the decision. Silencing the dirty flag left the discarded text
+   * in the buffer, where a pane in another window still showed it and the
+   * next save would write it. Detaching wrote that same live text through to
+   * the sidecar — and since a discard writes nothing to disk, the sidecar's
+   * disk fence still matched the untouched file, so the next open verified
+   * the fence, restored the working text, and put the discarded edit back
+   * with no signal that anything had been resurrected.
+   *
+   * So: the buffer returns to its disk bytes through the same splice path a
+   * review decision uses (every open pane follows). An already-saved review
+   * is the one exception: when its disk fence still matches the file, the
+   * later ordinary edit is discarded but the saved review remains in its
+   * sidecar for the close/detach path. Any other review is closed and its
+   * sidecar deleted. Only then is the document clean, because only then is
+   * the claim true.
+   *
+   * The sidecar deletion is deliberately NOT wrapped in the error handling
+   * _detachReview uses: a discard whose file removal failed leaves those
+   * bytes reattachable, and swallowing that would reinstate the defect. It
+   * throws, and the close it was called from aborts.
+   */
+  private async _discardChanges(doc: Document): Promise<void> {
+    await this._reviewApplication.withDocumentLock(doc.documentId, async () => {
+      await this._discardChangesLocked(doc);
+    });
+  }
+
+  private async _discardChangesLocked(doc: Document): Promise<void> {
+    if (doc.currentVersion === doc.lastSavedVersion) {
+      // Nothing was thrown away here, so nothing may be destroyed here: a
+      // saved document's review is not the user's to lose at another
+      // document's prompt.
+      return;
+    }
+    const diskContents = await this._app.fsal.loadAnySupportedFile(doc.filePath);
+    await this._reviewApplication.discardReview(
+      doc.documentId,
+      doc.filePath,
+      diskContents,
+    );
+    this._applyWorkingTextToDocument(doc.filePath, diskContents);
+    doc.lastSavedContent = diskContents;
+    doc.lastSavedVersion = doc.currentVersion;
+  }
+
+  /**
+   * A sidecar failure is never swallowed: it lands in the log for the
+   * operator and on the store's event bus for the API (SSE), because the
+   * mutation that triggered it already answered its caller.
+   */
+  private _surfaceReviewSidecarError(documentId: string, action: string, err: unknown): void {
+    const message =
+      `Review sidecar ${action} failed for document ${documentId}: ` +
+      (err instanceof Error ? err.message : String(err));
+    this._app.log.error(`[DocumentManager] ${message}`, err);
+    this.emitAgentEvent("review.sidecar-error", { documentId, message });
+  }
+
+  /**
+   * Reattachment — the second half of detach, run when a document loads.
+   * Find the sidecar by canonical path, settle any interrupted save, verify
+   * the disk fence, then restore the buffer to the working text and the
+   * review to its reference. A fence mismatch is external drift observed
+   * across a gap in time instead of within a process, and gets the same
+   * terminal treatment drift-then-reload gets in-process: the review is
+   * announced invalidated and destroyed (its sidecar deleted), and the file
+   * opens with the disk content preserved.
+   */
+  private async _reattachReviewSidecar(doc: Document): Promise<void> {
+    try {
+      const restored = await this._reviewApplication.reattachReview(
+        doc.documentId,
+        doc.filePath,
+        doc.lastSavedContent,
+      );
+      if (restored === undefined) {
+        return;
       }
+      this._applyWorkingTextToDocument(doc.filePath, restored.workingText);
+    } catch (err) {
+      // The document itself is fine — open it; the broken sidecar stays on
+      // disk as evidence and keeps failing loudly until it is dealt with.
+      this._surfaceReviewSidecarError(doc.documentId, "read", err);
     }
   }
 
@@ -2416,6 +3097,16 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     }
     return undefined;
+  }
+
+  public isDocumentOpen(documentPath: string): boolean {
+    return this.documents.some(
+      (document) => path.resolve(document.filePath) === path.resolve(documentPath),
+    );
+  }
+
+  public async readSupportedFile(filePath: string): Promise<string> {
+    return await this._app.fsal.loadAnySupportedFile(filePath);
   }
 
   /**
@@ -2433,7 +3124,7 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Resolve the currently focused view (spec section 5.2).
+   * Resolve the currently focused view.
    * Returns the viewId, windowId, leafId, and documentId of the active pane.
    */
   public getFocusedView():
@@ -2460,70 +3151,9 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Create a snapshot token bound to documentId + version + content hash
-   * (spec section 4). The snapshot identifies the target during proposal
-   * submission, not the current focus.
-   */
-  public createSnapshot(
-    documentId: string,
-  ): { token: string; version: number; sha256: string } | undefined {
-    const filePath = this.getDocumentPath(documentId);
-    if (filePath === undefined) {
-      return undefined;
-    }
-    const doc = this.documents.find((d) => d.filePath === filePath);
-    if (doc === undefined) {
-      return undefined;
-    }
-    const content = doc.document.toString();
-    const sha256 = sha256Text(content);
-    const payload = JSON.stringify({
-      documentId,
-      version: doc.currentVersion,
-      sha256,
-    });
-    const encoded = Buffer.from(payload, "utf8").toString("base64url");
-    return {
-      token: `snap_v1_${encoded}`,
-      version: doc.currentVersion,
-      sha256,
-    };
-  }
-
-  /**
-   * Parse and validate a snapshot token. Returns the bound documentId,
-   * version, and sha256, or undefined if the token is malformed.
-   */
-  public static parseSnapshotToken(
-    token: string,
-  ): { documentId: string; version: number; sha256: string } | undefined {
-    if (!token.startsWith("snap_v1_")) {
-      return undefined;
-    }
-    try {
-      const encoded = token.slice("snap_v1_".length);
-      const payload = Buffer.from(encoded, "base64url").toString("utf8");
-      const parsed = JSON.parse(payload) as {
-        documentId: string;
-        version: number;
-        sha256: string;
-      };
-      if (
-        typeof parsed.documentId !== "string" ||
-        typeof parsed.version !== "number" ||
-        typeof parsed.sha256 !== "string"
-      ) {
-        return undefined;
-      }
-      return parsed;
-    } catch {
-      return undefined;
-    }
-  }
-
-  /**
-   * Read the live buffer for a document (spec section 5.3).
-   * Returns the current working text and a snapshot token.
+   * Read the live buffer for a document.
+   * Returns the current working text and its content hash — the hash a
+   * proposal sends back as its baseline.
    */
   public readLiveBuffer(
     documentId: string,
@@ -2532,8 +3162,6 @@ current contents from the editor somewhere else, and restart the application.`,
   ):
     | {
         content: string;
-        snapshot: string;
-        version: number;
         sha256: string;
         lineCount: number;
         truncated: boolean;
@@ -2553,376 +3181,273 @@ current contents from the editor somewhere else, and restart the application.`,
     let content = fullContent;
     let truncated = false;
     if (startLine !== undefined && endLine !== undefined) {
-      // CLI line ranges are one-based and inclusive (spec section 5.3)
+      // CLI line ranges are one-based and inclusive
       const start = Math.max(0, startLine - 1);
       const end = Math.min(totalLines, endLine);
       content = lines.slice(start, end).join("\n");
       truncated = end < totalLines;
     }
-    const snap = this.createSnapshot(documentId);
-    if (snap === undefined) {
-      return undefined;
-    }
     return {
       content,
-      snapshot: snap.token,
-      version: snap.version,
-      sha256: snap.sha256,
+      sha256: sha256Text(fullContent),
       lineCount: totalLines,
       truncated,
     };
   }
 
   /**
-   * Submit a proposal patch against a snapshot (spec section 6).
-   * Atomically: resolve snapshot → verify version+hash → parse patch →
-   * apply with zero fuzz → update working text → return review state.
+   * Submit an ordered claim sequence against a baseline content hash: applied
+   * sequentially and atomically (all-or-nothing), one packet per claim.
    */
   public async submitProposal(
-    snapshot: string,
-    patch: string,
+    documentId: string,
+    baselineSha256: string,
+    claims: ProposalClaim[],
     clientRequestId: string,
-    description?: string,
-    expectedReviewGeneration?: number,
-    ifMatch?: string,
+    expectedReviewGeneration: number,
+  ): Promise<SubmittedProposal | { ok: false; code: string; message: string }> {
+    return await this._reviewApplication.submitProposal({
+      documentId,
+      baselineSha256,
+      claims,
+      clientRequestId,
+      expectedReviewGeneration,
+    });
+  }
+
+  public async retractProposal(
+    packetId: string,
+    precondition: ReviewMutationPrecondition,
   ): Promise<
-    | SubmittedProposalResponse
+    | RetractProposalResponse
     | {
         ok: false;
-        code: string;
+        code: AgentErrorCode;
         message: string;
+        reviewId: string;
+        canClearUnresolved: boolean;
+        actual?: { sha256: string };
+        reviewGeneration?: number;
       }
   > {
-    const parsed = DocumentManager.parseSnapshotToken(snapshot);
-    if (parsed === undefined) {
-      return {
-        ok: false,
-        code: "PATCH_INVALID",
-        message: "Invalid snapshot token.",
-      };
-    }
-    const { documentId, version, sha256 } = parsed;
-
-    const idempotencyKey = `${documentId}:${clientRequestId}`;
-    const fingerprint = sha256Text(
-      JSON.stringify({
-        documentId,
-        snapshot,
-        patch,
-        description,
-        expectedReviewGeneration,
-      }),
-    );
-    const idempotent = this._proposalIdempotency.get(idempotencyKey);
-    if (idempotent !== undefined) {
-      if (idempotent.fingerprint !== fingerprint) {
+    const result = await this._reviewApplication.retractProposal(packetId, precondition);
+    if ("ok" in result && !result.ok && result.code === "PACKET_NOT_RETRACTABLE" && result.reviewId === "") {
+      // GET /v1/reviews/{id}/packets hands out a detached review's packetIds,
+      // so this route owes them an answer. The live store dropped them when
+      // the file closed; the sidecar still carries them, and the refusal it
+      // earns is the same one every reviewId route gives — the file is shut,
+      // not the packet missing. Clearing is shut too, so say so.
+      const detached = (await this._reviewApplication.listReviewQueries()).find(
+        (query) =>
+          !query.attached &&
+          query.sidecar.packets.some((packet) => packet.packetId === packetId),
+      );
+      if (detached !== undefined && !detached.attached) {
         return {
           ok: false,
-          code: "IDEMPOTENCY_CONFLICT",
-          message: "Idempotency-Key was already used for a different proposal request.",
+          code: "DOCUMENT_CLOSED",
+          message:
+            `The reviewed document ${detached.sidecar.documentPath} is not open. ` +
+            "Open it to reattach this review, then retract this packet.",
+          reviewId: detached.sidecar.reviewId,
+          canClearUnresolved: false,
         };
       }
-      return idempotent.response;
     }
-
-    const filePath = this.getDocumentPath(documentId);
-    if (filePath === undefined) {
-      return {
-        ok: false,
-        code: "DOCUMENT_NOT_FOUND",
-        message: "Document not found.",
-      };
-    }
-    const doc = this.documents.find((d) => d.filePath === filePath);
-    if (doc === undefined) {
-      return {
-        ok: false,
-        code: "DOCUMENT_CLOSED",
-        message: "Document is no longer open.",
-      };
-    }
-    // Verify version and hash
-    const currentContent = doc.document.toString();
-    const currentSha256 = sha256Text(currentContent);
-    if (ifMatch !== undefined && ifMatch !== `"sha256:${currentSha256}"`) {
-      return {
-        ok: false,
-        code: "REVISION_MISMATCH",
-        message: "If-Match does not match the current document revision.",
-      };
-    }
-    if (doc.currentVersion !== version || currentSha256 !== sha256) {
-      return {
-        ok: false,
-        code: "REVISION_MISMATCH",
-        message: "The document changed after the snapshot was read.",
-      };
-    }
-
-    // Check if a review is already active; if not, open one
-    const activeReview = this._reviewStore.getReview(documentId);
-    const currentGeneration = activeReview === undefined ? 0 : activeReview.generation;
-    if (expectedReviewGeneration !== undefined && expectedReviewGeneration !== currentGeneration) {
-      return {
-        ok: false,
-        code: "REVIEW_GENERATION_MISMATCH",
-        message: "The review generation no longer matches.",
-      };
-    }
-    if (activeReview === undefined) {
-      // Open a new review with the patch as the initial packet
-      try {
-        const diskContent = normalizeText(await this._app.fsal.loadAnySupportedFile(filePath));
-        const diskSha = sha256Text(diskContent);
-        this._reviewStore.openReview({
-          documentId,
-          documentPath: filePath,
-          baselineText: currentContent,
-          diskBaselineSha256: diskSha,
-          initialPatch: {
-            patchFormat: "unified-diff",
-            patch,
-            description,
-            clientRequestId,
-          },
-        });
-      } catch (err) {
-        return {
-          ok: false,
-          code: "PATCH_INVALID",
-          message: err instanceof Error ? err.message : "Invalid patch.",
-        };
-      }
-      // Broadcast the review start to renderers
-      const review = this._reviewStore.getReview(documentId)!;
-      this._applyWorkingTextToDocument(filePath, review.workingText);
-      this._broadcastReviewState(filePath, review);
-      const newContent = doc.document.toString();
-      const newSha256 = sha256Text(newContent);
-      const status = this._reviewStore.getReviewStatus(documentId)!;
-      const response: SubmittedProposalResponse = {
-        ok: true,
-        packetId: review.packets[0].packetId,
-        reviewId: review.reviewId,
-        documentId,
-        documentRevision: {
-          version: doc.currentVersion,
-          sha256: newSha256,
-        },
-        reviewGeneration: status.generation,
-        unresolvedChunks: status.unresolvedChunks,
-        state: status.state,
-      };
-      this._proposalIdempotency.set(idempotencyKey, { fingerprint, response });
-      return response;
-    }
-
-    // Submit as an additional packet
-    const result = this._reviewStore.submitPacket(documentId, {
-      patchFormat: "unified-diff",
-      patch,
-      description,
-      clientRequestId,
-    });
-    if (!result.ok) {
-      return {
-        ok: false,
-        code: result.code,
-        message: "message" in result ? result.message : "Patch rejected.",
-      };
-    }
-    // Update the document's working text
-    const review = this._reviewStore.getReview(documentId)!;
-    this._applyWorkingTextToDocument(filePath, review.workingText);
-    this._broadcastReviewState(filePath, review);
-    const newContent = doc.document.toString();
-    const newSha256 = sha256Text(newContent);
-    const response: SubmittedProposalResponse = {
-      ok: true,
-      packetId: result.packetId,
-      reviewId: result.reviewId,
-      documentId,
-      documentRevision: { version: doc.currentVersion, sha256: newSha256 },
-      reviewGeneration: result.generation,
-      unresolvedChunks: result.unresolvedChunks,
-      state: result.state,
-    };
-    this._proposalIdempotency.set(idempotencyKey, { fingerprint, response });
-    return response;
-  }
-
-  /**
-   * Clear all unresolved suggestions for a review.
-   * Atomically mutates store, applies working text to document, broadcasts state,
-   * and returns the post-mutation document revision.
-   */
-  public clearReview(reviewId: string):
-    | {
-        ok: true;
-        reviewId: string;
-        documentId: string;
-        state: ReviewState;
-        documentRevision: { version: number; sha256: string };
-        reviewGeneration: number;
-        unresolvedChunks: number;
-      }
-    | { ok: false; code: string; message: string } {
-    // Find documentId by reviewId
-    let documentId: string | undefined;
-    for (const r of this._reviewStore.listReviews()) {
-      if (r.reviewId === reviewId) {
-        documentId = r.documentId;
-        break;
-      }
-    }
-    if (documentId === undefined) {
-      return {
-        ok: false,
-        code: "REVIEW_NOT_FOUND",
-        message: "Review not found.",
-      };
-    }
-    const result = this._reviewStore.clearUnresolved(documentId);
-    if (!result.ok) {
-      return { ok: false, code: result.code, message: result.message };
-    }
-    const filePath = this.getDocumentPath(documentId);
-    if (filePath !== undefined) {
-      this._applyWorkingTextToDocument(filePath, result.workingText);
-      this._broadcastReviewCleared(filePath, reviewId);
-    }
-    const doc =
-      filePath !== undefined ? this.documents.find((d) => d.filePath === filePath) : undefined;
-    return {
-      ok: true,
-      reviewId: result.reviewId,
-      documentId,
-      state: result.state,
-      documentRevision: doc
-        ? {
-            version: doc.currentVersion,
-            sha256: sha256Text(doc.document.toString()),
-          }
-        : { version: 0, sha256: "" },
-      reviewGeneration: result.generation,
-      unresolvedChunks: result.unresolvedChunks,
-    };
-  }
-
-  /**
-   * Retract a proposal packet.
-   * Atomically mutates store, applies working text to document, broadcasts state,
-   * and returns the post-mutation document revision.
-   */
-  public retractProposal(packetId: string):
-    | {
-        ok: true;
-        retracted: true;
-        packetId: string;
-        reviewId: string;
-        documentId: string;
-        reviewGeneration: number;
-        unresolvedChunks: number;
-        documentRevision: { version: number; sha256: string };
-      }
-    | {
-        ok: false;
-        code: string;
-        message: string;
-        reviewId: string;
-        canClearUnresolved: true;
-      } {
-    const result = this._reviewStore.retractPacket(packetId);
-    if (!result.ok) {
-      return {
-        ok: false,
-        code: result.code,
-        message: result.message,
-        reviewId: result.reviewId,
-        canClearUnresolved: result.canClearUnresolved,
-      };
-    }
-    const documentId = result.documentId;
-    const filePath = this.getDocumentPath(documentId);
-    const review = this._reviewStore.getReview(documentId);
-    if (filePath !== undefined && review !== undefined) {
-      this._applyWorkingTextToDocument(filePath, review.workingText);
-      this._broadcastReviewState(filePath, review);
-    }
-    const doc =
-      filePath !== undefined ? this.documents.find((d) => d.filePath === filePath) : undefined;
-    return {
-      ok: true,
-      retracted: true,
-      packetId: result.packetId,
-      reviewId: result.reviewId,
-      documentId,
-      reviewGeneration: result.generation,
-      unresolvedChunks: result.unresolvedChunks,
-      documentRevision: doc
-        ? {
-            version: doc.currentVersion,
-            sha256: sha256Text(doc.document.toString()),
-          }
-        : { version: 0, sha256: "" },
-    };
+    return result;
   }
 
   /**
    * Get the review store for direct agent API method dispatch.
    */
-  public get reviewStore(): ReviewDiffStore {
-    return this._reviewStore;
+  public get reviewStore(): ReviewApplicationService["reviewStore"] {
+    return this._reviewApplication.reviewStore;
+  }
+
+  /** Read-only review projections for transport providers. */
+  public get reviewQueries(): ReviewQueryPort {
+    return this._reviewApplication;
+  }
+
+  /**
+   * The live working text of an open document, normalized — the text every
+   * review read projection must be given. Undefined when the document is not
+   * open, which is the caller's signal that only the sidecar can answer.
+   */
+  public readWorkingText(documentId: string): string | undefined {
+    return this._workingTextOf(documentId);
+  }
+
+  /**
+   * The status of a document's active review, against its live text. The one
+   * place the working text is paired with the review for a status read, so
+   * no caller can project a review against a text it does not have.
+   */
+  public reviewStatus(documentId: string): ReviewStatus | undefined {
+    return this._reviewApplication.getStatus(documentId);
   }
 
   /**
    * Expose the loaded documents array for the agent API provider to enumerate
-   * open documents (spec section 5.2).
+   * open documents.
    */
   public get loadedDocuments(): readonly Document[] {
     return this.documents;
   }
 
   /**
+   * The references provider's read seam into the document authority
+   * (issue #53): returns the CURRENT text of an open markdown buffer, or
+   * undefined when the path is not an open markdown document. This is the
+   * single source the provider derives live reference state from — both the
+   * merged snapshot's live overlays and the rename protocol's open-buffer
+   * partition and hash fences.
+   *
+   * @param   {string}  filePath  The document's path
+   *
+   * @return  {string|undefined}  The buffer text, if an open markdown doc
+   */
+  public readMarkdownBufferContent(filePath: string): string | undefined {
+    const doc = this.documents.find((d) => d.filePath === filePath);
+    if (doc === undefined || doc.type !== DocumentType.Markdown) {
+      return undefined;
+    }
+    return doc.document.toString();
+  }
+
+  /**
+   * Apply a workspace edit to every open Markdown document named by the
+   * transaction set. The document manager is the central collab authority:
+   * it prepares every ChangeSet before mutating any document, records one
+   * serialized authority update per touched document, then broadcasts the
+   * updates for every renderer pane to pull.
+   *
+   * Resolving the returned promise is the application acknowledgement used
+   * by ReferenceProvider. No rename success or undo record may be exposed
+   * before this method has updated every named authority buffer.
+   *
+   * @param   {WorkspaceTextEdit[]}  edits  Open-document workspace edits
+   *
+   * @return  {Promise<string[]>}           Acknowledged document paths
+   */
+  public async applyWorkspaceTextEdits(edits: WorkspaceTextEdit[]): Promise<string[]> {
+    const editsByDocument = new Map<string, WorkspaceTextEdit[]>();
+    for (const edit of edits) {
+      const documentEdits = editsByDocument.get(edit.documentPath);
+      if (documentEdits === undefined) {
+        editsByDocument.set(edit.documentPath, [edit]);
+      } else {
+        documentEdits.push(edit);
+      }
+    }
+
+    const prepared: Array<{
+      document: Document;
+      filePath: string;
+      nextText: Text;
+      update: SerializedUpdate;
+    }> = [];
+    for (const [filePath, documentEdits] of editsByDocument) {
+      const document = this.documents.find((candidate) => candidate.filePath === filePath);
+      assert(document !== undefined, `[DocumentManager] Workspace edit names unopened document ${filePath}`);
+      assert(
+        document.type === DocumentType.Markdown,
+        `[DocumentManager] Workspace edit names non-Markdown document ${filePath}`,
+      );
+      const changes = ChangeSet.of(
+        documentEdits.map((edit) => ({
+          from: edit.range.from,
+          to: edit.range.to,
+          insert: edit.insert,
+        })),
+        document.document.length,
+      );
+      const update = {
+        changes: serializeChangeSet(changes),
+        clientID: "reference-rename",
+      };
+      prepared.push({
+        document,
+        filePath,
+        nextText: changes.apply(document.document),
+        update,
+      });
+    }
+
+    for (const transaction of prepared) {
+      transaction.document.document = transaction.nextText;
+      transaction.document.currentVersion += 1;
+      transaction.document.updates.push(transaction.update);
+      while (transaction.document.updates.length > MAX_VERSION_HISTORY) {
+        transaction.document.updates.shift();
+        transaction.document.minimumVersion += 1;
+      }
+    }
+
+    for (const transaction of prepared) {
+      this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
+        filePath: transaction.filePath,
+        status: "modification",
+      });
+      this._app.references.reportAuthorityBuffer(transaction.filePath);
+    }
+
+    return prepared.map((transaction) => transaction.filePath);
+  }
+
+  /**
    * Broadcast the current review state to all renderers displaying a document.
-   * Constructs a legacy-compatible ReviewDiffSession for the renderer.
+   * The session carries exactly what a pane needs to draw: the provider-owned
+   * merge reference and the identifiers to send decisions back with. Panes
+   * derive their widgets from it locally; nothing is reported back.
    */
   private _broadcastReviewState(
     filePath: string,
-    review: ReturnType<ReviewDiffStore["getReview"]>,
+    review: ActiveReviewState | undefined,
   ): void {
     if (review === undefined) {
       return;
     }
-    // Construct a legacy ReviewDiffSession for renderer compat
-    const legacySession: ReviewDiffSession = {
-      id: review.reviewId,
-      reviewGeneration: review.generation,
-      documentPath: filePath,
-      baselineSha256: sha256Text(review.baselineText),
-      diskBaselineSha256: review.diskFenceSha256,
-      baselineText: review.baselineText,
-      originalText: review.referenceText,
-      proposedText: review.workingText,
-      currentText: review.workingText,
-    };
     this.broadcastEvent(DP_EVENTS.REVIEW_DIFF, {
       filePath,
-      reviewDiffSession: legacySession,
-      reviewState: {
-        reviewId: review.reviewId,
-        generation: review.generation,
-        referenceText: review.referenceText,
-        workingText: review.workingText,
-        unresolvedChunks:
-          this._reviewStore.getReviewStatus(review.documentId)?.unresolvedChunks ?? 0,
-      },
+      reviewDiffSession: this._reviewSessionFor(filePath, review),
     });
   }
 
   /**
+   * The one constructor of the session shape a pane draws from: the merge
+   * reference plus every packet's attribution (description and current
+   * reference spans), so the widgets can label each chunk with the claims
+   * that produced it.
+   */
+  private _reviewSessionFor(
+    filePath: string,
+    review: ActiveReviewState,
+  ): ReviewDiffSession {
+    const document = this.documents.find((candidate) => candidate.filePath === filePath);
+    if (document === undefined) {
+      throw new Error(`Review ${review.reviewId} has no open document ${filePath}`);
+    }
+    return {
+      id: review.reviewId,
+      reviewGeneration: review.generation,
+      documentPath: filePath,
+      referenceText: review.referenceText,
+      workingText: document.document.toString(),
+      // A packet carries its own attribution, and a chunk comment its own
+      // identity: the pane reads them straight off the committed review.
+      packets: review.packets.map((packet) => ({
+        packetId: packet.packetId,
+        description: packet.description,
+        refSpans: packet.refSpans.map((span) => ({ ...span })),
+      })),
+      chunkComments: review.chunkComments.map((note) => ({ ...note })),
+    };
+  }
+
+  /**
    * Broadcast a review-cleared signal to all renderers displaying a document.
-   * Tells the renderer to exit review mode (spec section 13: clear review mode
+   * Tells the renderer to exit review mode (clear review mode
    * when the provider closes or invalidates the session).
    */
   private _broadcastReviewCleared(filePath: string, reviewId: string): void {
@@ -2935,43 +3460,17 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Apply the working text from a review to the live document.
-   * This updates the CodeMirror Text without going through the collab update
-   * path — the provider is the authority.
+   * Replace the live document text through the authority's own prepare/commit
+   * pair. Used by the lifecycle paths that own their own persistence —
+   * discard and reattach — where the text is not a review decision's output.
    */
   private _applyWorkingTextToDocument(filePath: string, workingText: string): void {
-    const doc = this.documents.find((d) => d.filePath === filePath);
-    if (doc === undefined) {
+    const documentId = this.getDocumentId(filePath);
+    if (documentId === undefined) {
       return;
     }
-    const currentText = doc.document.toString();
-    if (currentText === workingText) {
-      return;
-    }
-    // Replace the document content atomically
-    const newText = Text.of(workingText.split("\n"));
-    const changes = ChangeSet.of(
-      [{ from: 0, to: doc.document.length, insert: workingText }],
-      doc.document.length,
+    this.commitWorkingTextReplacement(
+      this.prepareWorkingTextReplacement(documentId, workingText),
     );
-    // Serialize before mutating: serializeChangeSet throws on a shape it does
-    // not recognize, and a throw between the version bump and the push would
-    // consume a version number with no update for peers to pull — a dirty
-    // buffer that can never be saved, indistinguishable from a deadlock.
-    const update = {
-      changes: serializeChangeSet(changes),
-      clientID: "review-diff-store",
-    };
-    doc.document = newText;
-    doc.currentVersion += 1;
-    doc.updates.push(update);
-    while (doc.updates.length > MAX_VERSION_HISTORY) {
-      doc.updates.shift();
-      doc.minimumVersion += 1;
-    }
-    this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
-      filePath,
-      status: "modification",
-    });
   }
 }

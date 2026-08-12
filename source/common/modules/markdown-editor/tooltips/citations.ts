@@ -39,7 +39,7 @@ async function fetchBibliography (citekeys: string[], database: string): Promise
       database,
       citations: [...new Set(citekeys)]
     }
-  } as CiteprocProviderIPCAPI)
+  } as Extract<CiteprocProviderIPCAPI, { command: 'get-bibliography' }>)
 }
 
 /**
