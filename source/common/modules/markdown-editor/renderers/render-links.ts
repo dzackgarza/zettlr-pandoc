@@ -15,7 +15,7 @@
 import { type EditorView, type DecorationSet, ViewPlugin, type ViewUpdate, Decoration } from '@codemirror/view'
 import type { RangeSet, Range } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
-import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
+import { rangeInPreviewSuppression, reviewSuppressionChanged } from '../util/range-in-preview-suppression'
 import { configField } from '../util/configuration'
 
 function hideLinkMarkers (view: EditorView): RangeSet<Decoration> {
@@ -84,7 +84,7 @@ export const renderLinks = ViewPlugin.fromClass(class {
   }
 
   update (update: ViewUpdate): void {
-    if (update.docChanged || update.viewportChanged || update.selectionSet) {
+    if (update.docChanged || update.viewportChanged || update.selectionSet || reviewSuppressionChanged(update)) {
       this.decorations = hideLinkMarkers(update.view)
     }
   }

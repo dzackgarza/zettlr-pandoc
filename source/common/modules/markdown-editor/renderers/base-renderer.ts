@@ -25,7 +25,7 @@ import {
 import { syntaxTree } from '@codemirror/language'
 import { type SyntaxNodeRef } from '@lezer/common'
 import { StateField, type Range, type EditorState, type Extension } from '@codemirror/state'
-import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
+import { rangeInPreviewSuppression, reviewSuppressionChanged } from '../util/range-in-preview-suppression'
 import { configField } from '../util/configuration'
 
 /**
@@ -222,7 +222,7 @@ export function renderInlineWidgets (
     }
 
     update (update: ViewUpdate): void {
-      if (update.docChanged || update.viewportChanged || update.selectionSet) {
+      if (update.docChanged || update.viewportChanged || update.selectionSet || reviewSuppressionChanged(update)) {
         this.decorations = renderWidgets(update.view.state, update.view.visibleRanges, shouldHandleNode, createWidget)
       }
     }

@@ -13,6 +13,7 @@
  */
 
 import type { EditorState } from '@codemirror/state'
+import type { ViewUpdate } from '@codemirror/view'
 import { getReviewChunks } from '../plugins/review-chunks'
 import { rangeInSelection } from './range-in-selection'
 
@@ -29,6 +30,19 @@ import { rangeInSelection } from './range-in-selection'
  * `$$…$$` block is invisible while the author scans the page, and only appears
  * if they happen to click into the equation and un-render it by editing.
  */
+/**
+ * Whether this update changed what rangeInPreviewSuppression answers for
+ * reasons no doc/viewport/selection guard can see: review chunks arrive and
+ * leave through compartment reconfiguration, which dispatches a transaction
+ * that changes none of those. Every renderer whose update guard consults
+ * rangeInPreviewSuppression must also rebuild on this predicate — otherwise
+ * widgets stay rendered over newly active chunks (hiding their controls), and
+ * ranges stay raw after a review clears.
+ */
+export function reviewSuppressionChanged (update: ViewUpdate): boolean {
+  return getReviewChunks(update.startState) !== getReviewChunks(update.state)
+}
+
 export function rangeInPreviewSuppression (
   state: EditorState,
   rangeFrom: number,

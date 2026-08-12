@@ -20,7 +20,7 @@ import type { EditorSelection, Range, RangeSet } from '@codemirror/state'
 import { BlockWrapper, Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from '@codemirror/view'
 import { parsePandocAttributes } from 'source/common/pandoc-util/parse-pandoc-attributes'
 import { divModelFromNode, type PandocDivModel } from 'source/common/pandoc-util/pandoc-div-model'
-import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
+import { rangeInPreviewSuppression, reviewSuppressionChanged } from '../util/range-in-preview-suppression'
 import { configField } from '../util/configuration'
 import { VISUAL_INDENT_EXEMPT_CLASS } from '../plugins/visual-indent'
 
@@ -282,6 +282,7 @@ const pandocDivSpanPlugin = ViewPlugin.fromClass(class {
     // selection. Without recomputing there, divs that were not yet parsed at
     // construction would stay unwrapped until the next interaction.
     if (update.docChanged || update.viewportChanged || update.selectionSet ||
+        reviewSuppressionChanged(update) ||
         syntaxTree(update.state) !== syntaxTree(update.startState)) {
       this.spanDecorations = createSpanDecorations(update.view)
       this.divWrappers = createDivDecorations(update.view)

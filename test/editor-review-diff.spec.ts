@@ -28,6 +28,8 @@ import {
 } from 'source/common/modules/markdown-editor/plugins/review-chunks'
 import { computeReviewChunks } from 'source/common/modules/review/review-chunks'
 import { rangeInPreviewSuppression } from 'source/common/modules/markdown-editor/util/range-in-preview-suppression'
+import { renderLinks } from 'source/common/modules/markdown-editor/renderers/render-links'
+import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 
 function polyfillJsdomForCodeMirror (): void {
   if (typeof globalThis.requestAnimationFrame !== 'function') {
@@ -566,6 +568,54 @@ describe('Editor review-chunk view', function () {
         deletionChunks[0].fromB
       ),
       false
+    )
+  })
+
+  it('rebuilds preview renderers when a review arrives or clears without an edit', function () {
+    // Reviews install and clear through compartment reconfiguration, which
+    // changes no document, selection, or viewport — the renderer must still
+    // rebuild, or widgets stay rendered over active chunks and hide their
+    // controls (and stay raw after the review clears).
+    const working = 'see [text](https://example.com) here\n'
+    const reference = 'see [old](https://example.com) here\n'
+    const reviewCompartment = new Compartment()
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: working,
+        extensions: [ markdownParser(), renderLinks, reviewCompartment.of([]) ]
+      })
+    })
+    views.push(view)
+    const rawMarkers = (): boolean =>
+      (view.contentDOM.textContent ?? '').includes('](https://example.com)')
+
+    assert.equal(rawMarkers(), false, 'the link renders with hidden markers before a review exists')
+
+    view.dispatch({
+      effects: reviewCompartment.reconfigure(reviewChunksExtension({
+        reviewId: 'review-renderer-rebuild',
+        referenceText: reference,
+        packets: [],
+        chunkComments: [],
+        onDecide: async () => {},
+        onAcceptAll: async () => {},
+        onClear: async () => {},
+        onComment: async () => {},
+        onChunkComment: async () => {}
+      }))
+    })
+    assert.equal(
+      rawMarkers(),
+      true,
+      'installing a review without an edit reveals the raw link under its chunk'
+    )
+
+    view.dispatch({ effects: reviewCompartment.reconfigure([]) })
+    assert.equal(
+      rawMarkers(),
+      false,
+      'clearing the review without an edit re-renders the link'
     )
   })
 

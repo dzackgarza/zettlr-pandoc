@@ -16,7 +16,7 @@
 import { syntaxTree } from '@codemirror/language'
 import type { Range, RangeSet } from '@codemirror/state'
 import { BlockWrapper, EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
-import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
+import { rangeInPreviewSuppression, reviewSuppressionChanged } from '../util/range-in-preview-suppression'
 import type { SyntaxNode } from '@lezer/common'
 import { configField } from '../util/configuration'
 import { VISUAL_INDENT_EXEMPT_CLASS } from '../plugins/visual-indent'
@@ -75,7 +75,7 @@ const blockquotePlugin = ViewPlugin.fromClass(class {
   }
 
   update (update: ViewUpdate) {
-    if (update.docChanged || update.viewportChanged || update.selectionSet) {
+    if (update.docChanged || update.viewportChanged || update.selectionSet || reviewSuppressionChanged(update)) {
       this.blockWrappers = showBlockquoteWrappers(update.view)
     }
   }
