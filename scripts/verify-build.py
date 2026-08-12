@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import subprocess
 import sys
@@ -91,6 +92,14 @@ def build_and_verify() -> None:
         result = subprocess.run(
             ["bun", "run", "package:linux-x64"],
             cwd=REPO, capture_output=True, text=True, timeout=BUILD_TIMEOUT_S,
+            # Forge's interactive spinner renderer intermittently dies during
+            # "Building webpack bundles" when its output is a pipe, exiting 0
+            # with no fresh asar -- the exact swallowed mode this script
+            # exists to catch (reproduced 2026-08-12: three piped runs failed,
+            # the CI renderer completed and surfaced webpack output). CI=1
+            # selects listr's verbose renderer, which neither draws to a TTY
+            # nor swallows the failure.
+            env={**os.environ, "CI": "1"},
         )
     except subprocess.TimeoutExpired as exc:
         stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
