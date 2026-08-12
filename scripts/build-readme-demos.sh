@@ -12,3 +12,8 @@ for scene in math-typing amsthm-typing review-flow; do
     -loop 0 "$outdir/$scene.gif"
   echo "$scene.gif $(du -h "$outdir/$scene.gif" | cut -f1)"
 done
+
+# The env-gallery scene is a single still, not a GIF: trim the captured frame
+# to its content and restore an even margin.
+magick "$outdir/env-gallery/frame-0001.png" -trim -bordercolor white -border 24 "$outdir/env-gallery.png"
+echo "env-gallery.png $(du -h "$outdir/env-gallery.png" | cut -f1)"
