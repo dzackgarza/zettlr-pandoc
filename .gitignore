@@ -61,3 +61,10 @@ eslint_report.htm
 ### Idea ###
 .idea/*
 __pycache__/
+
+# Agent-memory vault overlays (machine-local symlinks). Repo-owned so
+# git state is identical under any HOME, not only where the global
+# ~/.config/git/ignore happens to exclude them (the desktop launcher
+# fingerprint depends on this).
+.agents
+.hermes
