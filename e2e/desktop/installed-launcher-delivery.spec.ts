@@ -19,11 +19,11 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { agentClient, delay, readAgentApiPort, type AgentClient } from './support/electron-app'
+import { agentClient, delay, readAgentApiPort, type AgentClient } from '../support/electron-app'
 
 const execFile = promisify(execFileCallback)
 
-const REPO_ROOT = path.resolve(__dirname, '..')
+const REPO_ROOT = path.resolve(__dirname, '..', '..')
 const APP_WINDOW_CLASS = 'zettlr-pandoc'
 const SPLASH_WINDOW_CLASS = 'zpandoc-boot'
 

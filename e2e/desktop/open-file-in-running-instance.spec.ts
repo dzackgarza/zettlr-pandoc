@@ -20,7 +20,7 @@ import {
   preserveArtifacts,
   requireInitialized,
   shutdown
-} from './support/electron-app'
+} from '../support/electron-app'
 
 const ARTIFACT_DIRECTORY = path.join(
   tmpdir(),

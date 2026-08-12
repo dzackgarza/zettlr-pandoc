@@ -94,10 +94,20 @@ test: sync-dependencies
     "{{justfile_directory()}}/node_modules/.bin/mocha" --timeout 120000 --inline-diffs
 
 # Run the assembled Electron app against its isolated document workspace.
+# Portable: runs on hosted CI and locally alike.
 test-e2e:
     {{bun}} install --frozen-lockfile
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     {{bun}} run test:e2e
+
+# Run the workstation-owned desktop-launcher proofs (e2e/desktop/). These
+# drive the installed desktop entry through a live Hyprland compositor and
+# the packaged binary from `just package`; they assert those preconditions
+# loudly instead of skipping, so they run in the local push gate, not CI.
+test-e2e-desktop:
+    {{bun}} install --frozen-lockfile
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    {{bun}} run test:e2e:desktop
 
 # Git event hooks are installed globally by ai-review-ci via core.hooksPath
 # (`pre-commit` -> this repo's test-commit, `pre-push` -> test-push).
