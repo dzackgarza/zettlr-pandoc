@@ -548,7 +548,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const undeclaredObjects: string[] = [];
     const walk = (node: JsonValue, where: string): void => {
-      if (node === null || typeof node !== "object") return;
+      if (node === null || typeof node !== "object") {
+        return;
+      }
       if (Array.isArray(node)) {
         node.forEach((item, index) => walk(item, `${where}[${index}]`));
         return;
@@ -560,7 +562,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       ) {
         undeclaredObjects.push(where);
       }
-      for (const [key, value] of Object.entries(node)) walk(value, `${where}.${key}`);
+      for (const [key, value] of Object.entries(node)) {
+        walk(value, `${where}.${key}`);
+      }
     };
     walk(document, "");
     assert.deepEqual(
