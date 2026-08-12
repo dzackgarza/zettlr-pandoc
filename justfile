@@ -154,6 +154,15 @@ capture-widget-indent output: sync-dependencies
 capture-tikz output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" tikz "{{output}}"
 
+# Capture and assemble the README demo GIFs (math typing, theorem envs,
+# review workflow): scripted scenes replayed frame by frame in isolated
+# offscreen Electron, then assembled with ffmpeg. Writes <scene>.gif files
+# into the output directory. Requires ffmpeg.
+# This never starts Forge, a dev server, xdg-open, or the system browser.
+readme-demos output: sync-dependencies
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" readme-demos "{{output}}"
+    bash "{{justfile_directory()}}/scripts/build-readme-demos.sh" "{{output}}"
+
 # Capture the real Pandoc quick-reference Vue component in isolated Electron.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
 capture-pandoc-help output: sync-dependencies
