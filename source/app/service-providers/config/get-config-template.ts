@@ -57,6 +57,11 @@ export interface LanguageToolIgnoredRuleEntry {
 
 export interface AgentApiConfig {
   enabled: boolean;
+  /**
+   * Loopback port for the HTTP listener. `0` requests a kernel-assigned port.
+   * In every case the actual bound port is published to the `agent-api.port`
+   * file in the user-data directory once the listener is up.
+   */
   port: number;
 }
 

@@ -34,10 +34,9 @@ import {
   delay,
   findEditorPage,
   hideDevServerOverlay,
+  readAgentApiPort,
   requireInitialized,
-  reserveFreePort,
   shutdown,
-  waitForAgentApi,
   type AgentClient
 } from './support/electron-app'
 
@@ -369,19 +368,17 @@ describe('a review decision waits for the document authority', function () {
   let reviewId: string | undefined
 
   before(async function () {
-    const port = await reserveFreePort()
     const fixture = await createFixture('zettlr-review-authority-sync-', {
       documentName: 'authority-sync.md',
       documentContents: BASELINE,
-      config: { agentApi: { enabled: true, port } }
+      config: { agentApi: { enabled: true, port: 0 } }
     })
     fixtureRoot = fixture.root
     documentPath = fixture.documentPath
     const running = await attach(fixture.configDirectory, [], this.timeout())
     appProcess = running.appProcess
     browser = running.browser
-    await waitForAgentApi(port, 60_000)
-    api = agentClient(port)
+    api = agentClient(await readAgentApiPort(fixture.configDirectory, 60_000))
     page = await findEditorPage(running.browser, this.timeout())
     await page.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
     await definePageNameHelper(page)

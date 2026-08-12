@@ -38,7 +38,17 @@ export function outputTail (output: string): string {
   return output.split('\n').slice(-100).join('\n')
 }
 
-/** Bind port 0, read what the kernel gave, release it, and hand it to the caller. */
+/**
+ * Bind port 0, read what the kernel gave, release it, and hand it to the
+ * caller. The reservation ends at the release: nothing owns the port until
+ * the child binds it, so this is only admissible for ports whose bind owner
+ * cannot choose its own port — Forge's webpack dev-server and logger, whose
+ * entry URLs are baked from the configured port before the server starts.
+ * Mocha runs specs serially in one process, and a collision fails the launch
+ * loudly with the process output rather than silently changing ports. Ports
+ * the application binds itself (the Agent API) must instead be requested as
+ * `port: 0` and read back through readAgentApiPort().
+ */
 export async function reserveFreePort (): Promise<number> {
   return await new Promise((resolve, reject) => {
     const server = createServer()
@@ -333,6 +343,66 @@ export function agentClient (port: number): AgentClient {
   }
 }
 
+/**
+ * Classifies a fetch failure while polling a loopback endpoint. A refused or
+ * reset connection is the one expected transient — nothing is listening yet,
+ * or a stale port file names a dead listener. Every other failure is a real
+ * defect and propagates.
+ */
+function transientConnectionFailure (error: unknown): undefined {
+  const cause = error instanceof Error ? error.cause : undefined
+  const code = typeof cause === 'object' && cause !== null && 'code' in cause
+    ? cause.code
+    : undefined
+  if (code === 'ECONNREFUSED' || code === 'ECONNRESET') {
+    return undefined
+  }
+  throw error
+}
+
+/**
+ * Reads the port the running instance actually bound, from the discovery
+ * file the Agent API publishes into its user-data directory. This is the
+ * race-free counterpart of reserveFreePort(): the bind owner chose the port,
+ * so no other process can have taken it. The port must also answer
+ * `/v1/ping` before it is handed out — a killed process leaves its file
+ * behind, and a stale port must read as "not published yet", not as the
+ * endpoint of the instance currently booting.
+ */
+export async function readAgentApiPort (
+  configDirectory: string,
+  timeoutMs: number
+): Promise<number> {
+  const portFile = path.join(configDirectory, 'agent-api.port')
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    // ENOENT is the one legal read failure: the instance has not published
+    // yet. Anything else (permissions, a directory at that path) is a real
+    // defect and propagates instead of looping into the timeout error.
+    const contents = await readFile(portFile, 'utf8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') {
+        return undefined
+      }
+      throw error
+    })
+    if (contents !== undefined) {
+      const port = Number.parseInt(contents.trim(), 10)
+      assert.ok(
+        Number.isInteger(port) && port > 0,
+        `The Agent API port file holds no port: ${JSON.stringify(contents)}`
+      )
+      const response = await fetch(`http://127.0.0.1:${port}/v1/ping`).catch(
+        transientConnectionFailure
+      )
+      if (response?.ok === true) {
+        return port
+      }
+    }
+    await delay(250)
+  }
+  throw new Error(`The Agent API never published a live port in ${portFile}`)
+}
+
 /** Resolves once the Agent API answers `/v1/ping`; throws when it never does. */
 export async function waitForAgentApi (
   port: number,
@@ -341,7 +411,7 @@ export async function waitForAgentApi (
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     const response = await fetch(`http://127.0.0.1:${port}/v1/ping`).catch(
-      () => undefined
+      transientConnectionFailure
     )
     if (response?.ok === true) {
       return

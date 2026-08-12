@@ -39,10 +39,9 @@ import {
   delay,
   findEditorPage,
   hideDevServerOverlay,
+  readAgentApiPort,
   requireInitialized,
-  reserveFreePort,
   shutdown,
-  waitForAgentApi,
   type AgentClient
 } from './support/electron-app'
 
@@ -253,11 +252,10 @@ describe('a review that cannot be persisted', function () {
   const rendererEvents: string[] = []
 
   before(async function () {
-    const port = await reserveFreePort()
     const fixture = await createFixture('zettlr-review-persistence-', {
       documentName: 'persistence.md',
       documentContents: BASELINE,
-      config: { agentApi: { enabled: true, port } }
+      config: { agentApi: { enabled: true, port: 0 } }
     })
     fixtureRoot = fixture.root
     documentPath = fixture.documentPath
@@ -265,8 +263,7 @@ describe('a review that cannot be persisted', function () {
     const running = await attach(fixture.configDirectory, rendererEvents, this.timeout())
     appProcess = running.appProcess
     browser = running.browser
-    await waitForAgentApi(port, 60_000)
-    api = agentClient(port)
+    api = agentClient(await readAgentApiPort(fixture.configDirectory, 60_000))
     page = await findEditorPage(running.browser, this.timeout())
     await page.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
     await hideDevServerOverlay(page)

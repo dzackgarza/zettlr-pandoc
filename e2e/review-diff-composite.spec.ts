@@ -24,7 +24,7 @@ import {
   attach,
   createFixture,
   findEditorPage,
-  reserveFreePort,
+  readAgentApiPort,
   shutdown
 } from './support/electron-app'
 
@@ -171,11 +171,10 @@ describe('review-diff closure contract composite lifecycle', function () {
   })
 
   it('runs batch, mixed UI decisions, chunk-note persistence, restart, exact save, and disk-drift refusal', async function () {
-    const port = await reserveFreePort()
     const fixture = await createFixture('zettlr-review-diff-composite-', {
       documentName: 'composite.md',
       documentContents: BASELINE,
-      config: { agentApi: { enabled: true, port } }
+      config: { agentApi: { enabled: true, port: 0 } }
     })
     fixtureRoot = fixture.root
     configDirectory = fixture.configDirectory
@@ -184,7 +183,7 @@ describe('review-diff closure contract composite lifecycle', function () {
     const running = await attach(configDirectory, [], this.timeout())
     appProcess = running.appProcess
     browser = running.browser
-    const api = client(port)
+    const api = client(await readAgentApiPort(configDirectory, 60_000))
     const page = await findEditorPage(browser, this.timeout())
 
     const step1 = BASELINE.replace('alpha baseline', 'alpha proposal')
@@ -312,7 +311,8 @@ describe('review-diff closure contract composite lifecycle', function () {
     browser = restarted.browser
     appProcess = restarted.appProcess
     const restartedPage = await findEditorPage(browser, this.timeout())
-    const restartedApi = client(port)
+    // The restarted instance owns a fresh kernel-assigned port.
+    const restartedApi = client(await readAgentApiPort(configDirectory, 60_000))
     await waitForReview(restartedPage)
     const outstanding = await restartedApi.get(`/v1/reviews/${reviewId}/chunks`)
     assert.ok(isRecord(outstanding) && Array.isArray(outstanding.chunks))

@@ -24,6 +24,7 @@ import { strict as assert } from "assert";
 import { spawn } from "child_process";
 import { createPatch } from "diff";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -305,11 +306,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   beforeEach(async function () {
     scratch = mkdtempSync(path.join(os.tmpdir(), "zettlr-http-api-"));
     openWorkspaces = [scratch];
-    // Find a free port
-    const server = net.createServer();
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    httpPort = (server.address() as net.AddressInfo).port;
-    server.close();
 
     provider = await createProvider();
     httpProvider = new AgentHTTPProvider(new LogProvider(), provider, {
@@ -320,12 +316,19 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           },
           agentApi: {
             enabled: true,
-            port: httpPort,
+            // Kernel-assigned: the provider owns the bind and publishes the
+            // actual port, so no reservation can race the listener.
+            port: 0,
           },
         }),
       },
     });
     await httpProvider.boot();
+    httpPort = Number.parseInt(
+      readFileSync(path.join(userData, "agent-api.port"), "utf8").trim(),
+      10,
+    );
+    assert.ok(Number.isInteger(httpPort) && httpPort > 0);
   });
 
   afterEach(async function () {
@@ -384,6 +387,21 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       await collided.shutdown();
       await new Promise<void>((resolve) => squatter.close(() => resolve()));
     }
+  });
+
+  it("publishes the bound port for discovery and retracts it on shutdown", async function () {
+    // The port file is the endpoint-discovery contract: with `port: 0` the
+    // kernel chooses, so the file is the only place a client can learn the
+    // endpoint. It must name the port that actually answers, and a clean
+    // shutdown must not leave a stale endpoint behind.
+    const portFile = path.join(userData, "agent-api.port");
+    const published = Number.parseInt(readFileSync(portFile, "utf8").trim(), 10);
+    assert.equal(published, httpPort);
+    const response = await httpRequest("GET", "/v1/ping");
+    assert.equal(response.status, 200);
+
+    await httpProvider.shutdown();
+    assert.equal(existsSync(portFile), false, "shutdown must remove the port file");
   });
 
   it("GET /openapi.yaml serves the OpenAPI specification without auth", async function () {

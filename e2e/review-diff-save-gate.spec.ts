@@ -29,6 +29,7 @@ import {
   findEditorPage,
   outputTail,
   preserveArtifacts,
+  readAgentApiPort,
   readAppLog,
   requireInitialized,
   shutdown
@@ -325,7 +326,7 @@ interface RunningFixture {
 }
 
 async function boot (fixture: RunningFixture, timeoutMs: number): Promise<void> {
-  const agentApi = { enabled: true, port: 39001 }
+  const agentApi = { enabled: true, port: 0 }
   const created = await createFixture('zettlr-review-diff-save-gate-e2e-', {
     documentName: 'reviewed-document.md',
     documentContents: DOCUMENT_CONTENTS,
@@ -343,7 +344,7 @@ async function boot (fixture: RunningFixture, timeoutMs: number): Promise<void> 
   fixture.appProcess = app.appProcess
   fixture.browser = app.browser
   fixture.getOutput = app.getOutput
-  fixture.client = agentClient(agentApi.port)
+  fixture.client = agentClient(await readAgentApiPort(created.configDirectory, 60_000))
   await waitForAgentApi(fixture.client, 60_000)
 }
 

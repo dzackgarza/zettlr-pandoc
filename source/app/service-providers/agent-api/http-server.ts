@@ -145,8 +145,18 @@ export interface AgentApiHost {
   };
 }
 
+/**
+ * The endpoint-discovery file, written into userData next to config.json once
+ * the listener is bound (the same pattern as Chromium's DevToolsActivePort).
+ * It holds the actual bound port, which is the only way a client can learn
+ * the endpoint when the config requests a kernel-assigned port (`port: 0`).
+ */
+export const AGENT_API_PORT_FILE = "agent-api.port";
+
 export default class AgentHTTPProvider extends ProviderContract {
   private _server: http.Server | undefined;
+  /** Set once the port file exists; shutdown removes exactly what boot wrote. */
+  private _portFilePath: string | undefined;
   private _instanceId: string;
   private readonly _queries: AgentDocumentQueries;
   private readonly _eventDelivery: AgentEventDelivery;
@@ -266,7 +276,6 @@ export default class AgentHTTPProvider extends ProviderContract {
         resolve(error);
       });
       this._server!.listen(config.port, "127.0.0.1", () => {
-        this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${config.port}`);
         resolve(undefined);
       });
     });
@@ -275,6 +284,28 @@ export default class AgentHTTPProvider extends ProviderContract {
       this._server = undefined;
       throw listenError;
     }
+
+    // The bind owner is the only process that knows the port when the config
+    // requests a kernel-assigned one (`port: 0`), so publish the actual bound
+    // port where clients of this instance can read it. A discovery file that
+    // cannot be written is a broken endpoint contract, exactly like a refused
+    // bind: fail the boot rather than run an instance nobody can find.
+    const address = this._server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("Agent API listener reports no TCP address");
+    }
+    const boundPort = address.port;
+    this._portFilePath = path.join(app.getPath("userData"), AGENT_API_PORT_FILE);
+    try {
+      await fs.promises.writeFile(this._portFilePath, `${boundPort}\n`, "utf8");
+    } catch (error) {
+      await this.shutdown();
+      throw new Error(
+        `Agent API could not publish its endpoint to ${this._portFilePath}`,
+        { cause: error },
+      );
+    }
+    this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${boundPort}`);
 
     // Subscribe to committed review events
     this._documents.agentEvents.on("*", (event: AgentEvent) => {
@@ -333,6 +364,13 @@ export default class AgentHTTPProvider extends ProviderContract {
         this._server?.close(() => resolve());
       });
       this._server = undefined;
+    }
+
+    if (this._portFilePath !== undefined) {
+      // force: a crash-then-restart cycle may already have replaced the file;
+      // absence at shutdown is a legal state, not a failure to report.
+      await fs.promises.rm(this._portFilePath, { force: true });
+      this._portFilePath = undefined;
     }
   }
 
