@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Hand file arguments to an already-running Zettlr-Pandoc and return.
 #
-# Electron's own single-instance lock performs the delivery. A second process
-# started from the same app directory and the same userData directory fails
+# Electron's own single-instance lock performs the delivery. A second app
+# process using the same userData directory fails
 # app.requestSingleInstanceLock(); failing it is what ships this process' argv
 # to the instance holding the lock, which receives it as 'second-instance' and
 # runs roots-add on the files (source/main.ts). The second process then exits
@@ -30,24 +30,23 @@ done
 
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
 repo=$(cd -- "$(dirname -- "$script_path")/../.." && pwd -P)
-electron="$repo/node_modules/electron/dist/electron"
+packaged_binary="$repo/out/Zettlr-Pandoc-linux-x64/zettlr-pandoc"
 
-if [[ ! -x "$electron" ]]; then
-  printf 'Electron is not installed in the repository: %s\n' "$electron" >&2
+# The handshake process runs the SAME packaged binary the boot launcher runs,
+# so the handoff never depends on a separately built (and possibly absent or
+# stale) dev webpack tree. The singleton lock is keyed by the user-data
+# directory, so the running instance receives the argv regardless of which
+# build it is.
+if [[ ! -x "$packaged_binary" ]]; then
+  printf 'The packaged app is not built: %s\nRun `just package` first.\n' "$packaged_binary" >&2
   exit 1
 fi
 
-if [[ ! -d "$repo/.webpack/main" ]]; then
-  printf 'The app bundle is not built: %s\n' "$repo/.webpack/main" >&2
-  exit 1
-fi
-
-# The app path is passed explicitly rather than relying on the working
-# directory, so this is callable from anywhere. The timeout is an outer cap on
-# a handshake that never returns -- a running instance answers in well under a
-# second, and one that does not answer at all must not hang the launcher.
+# The timeout is an outer cap on a handshake that never returns -- a running
+# instance answers in well under a second, and one that does not answer at all
+# must not hang the launcher.
 status=0
-timeout --kill-after=2 30 "$electron" "$repo" --open-in-running-instance "$@" || status=$?
+timeout --kill-after=2 30 "$packaged_binary" --open-in-running-instance "$@" || status=$?
 
 if (( status == 124 || status == 137 )); then
   printf 'The running Zettlr-Pandoc did not answer the single-instance handshake.\n' >&2
