@@ -88,6 +88,104 @@ const openApiDocument = parseYaml(
   paths: Record<string, Record<string, PublishedOperation>>;
 };
 
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+/**
+ * The checks the Custom GPT Actions importer runs on a schema, in the wording
+ * it reports them. None of them is an OpenAPI rule, so no validator this
+ * project could install would catch a violation — the builder is the only
+ * thing that fails, and it fails by refusing the whole document.
+ *
+ * The two length limits and the unsupported-header rule are documented at
+ * https://developers.openai.com/api/docs/actions/production. The
+ * object-schema rule is OpenAI's function-schema requirement that an object
+ * declare `properties`; `additionalProperties` alone does not satisfy it,
+ * which is how the two spec-serving routes stayed broken through a fix that
+ * declared only that.
+ *
+ * A header parameter is a warning rather than an error: the builder imports
+ * the document and silently drops the parameter, so the operation is
+ * installable and simply cannot receive that header.
+ *
+ * Finding text follows the builder's, so a report from it can be matched to a
+ * rule here by reading. The context tuple is this document's own JSON path,
+ * which locates the same schema more precisely than the builder's does.
+ */
+const ACTION_DESCRIPTION_LIMIT = 300;
+const ACTION_PARAMETER_DESCRIPTION_LIMIT = 700;
+const HTTP_METHODS = ["get", "put", "post", "delete", "options", "head", "patch", "trace"];
+
+interface ActionImportReport {
+  errors: string[];
+  warnings: string[];
+}
+
+function auditAsGptAction(document: JsonValue): ActionImportReport {
+  const report: ActionImportReport = { errors: [], warnings: [] };
+  const asObject = (node: JsonValue): { [key: string]: JsonValue } | undefined =>
+    node !== null && typeof node === "object" && !Array.isArray(node) ? node : undefined;
+  const asText = (node: JsonValue | undefined): string => (typeof node === "string" ? node : "");
+
+  const root = asObject(document);
+  const paths = root === undefined ? undefined : asObject(root.paths);
+  for (const [route, methodsNode] of Object.entries(paths ?? {})) {
+    const methods = asObject(methodsNode);
+    for (const method of HTTP_METHODS) {
+      const operation = methods === undefined ? undefined : asObject(methods[method]);
+      if (operation === undefined) {
+        continue;
+      }
+      const where = `In path ${route}, method ${method}, operationId ${asText(operation.operationId)}`;
+      for (const field of ["description", "summary"]) {
+        const length = asText(operation[field]).length;
+        if (length > ACTION_DESCRIPTION_LIMIT) {
+          report.errors.push(
+            `${where}, ${field} has length ${length} exceeding limit of ${ACTION_DESCRIPTION_LIMIT}`,
+          );
+        }
+      }
+      const parameters = Array.isArray(operation.parameters) ? operation.parameters : [];
+      for (const parameterNode of parameters) {
+        const parameter = asObject(parameterNode);
+        if (parameter === undefined) {
+          continue;
+        }
+        const name = asText(parameter.name);
+        const length = asText(parameter.description).length;
+        if (length > ACTION_PARAMETER_DESCRIPTION_LIMIT) {
+          report.errors.push(
+            `${where}, parameter ${name} description has length ${length} exceeding limit of ${ACTION_PARAMETER_DESCRIPTION_LIMIT}`,
+          );
+        }
+        if (asText(parameter.in) === "header") {
+          report.warnings.push(`${where}, parameter ${name} has location header; ignoring`);
+        }
+      }
+    }
+  }
+
+  const walkSchemas = (node: JsonValue, context: string[]): void => {
+    if (node === null || typeof node !== "object") {
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => walkSchemas(item, [...context, String(index)]));
+      return;
+    }
+    if (asText(node.type) === "object" && !("properties" in node)) {
+      report.errors.push(
+        `In context=(${context.map((step) => `'${step}'`).join(", ")}), object schema missing properties`,
+      );
+    }
+    for (const [key, value] of Object.entries(node)) {
+      walkSchemas(value, [...context, key]);
+    }
+  };
+  walkSchemas(document, []);
+
+  return report;
+}
+
 const ajv = new Ajv2020({ strict: false, allErrors: true });
 for (const [name, schema] of Object.entries(openApiDocument.components.schemas)) {
   ajv.addSchema(schema as object, `#/components/schemas/${name}`);
@@ -496,82 +594,60 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
   });
 
-  it("serves a projection the Action importer will accept", async function () {
-    // The Custom GPT builder refuses the whole document over two limits that
-    // no OpenAPI validator enforces: an operation description above 300
-    // characters, and an object schema that declares neither properties nor
-    // additionalProperties (it cannot tell what the free-form body is). Both
-    // are checked on the served bytes, because that is what the builder
-    // fetches — a description written past the limit in openapi.yaml makes
-    // the Action uninstallable, not merely verbose.
-    const ACTION_DESCRIPTION_LIMIT = 300;
-    type JsonValue =
-      | string
-      | number
-      | boolean
-      | null
-      | JsonValue[]
-      | { [key: string]: JsonValue };
-    const document = JSON.parse((await httpRequest("GET", "/openapi-actions.json")).body) as {
-      paths: Record<
-        string,
-        Record<string, { operationId?: string; description?: string }>
-      >;
-    } & JsonValue;
-    const operations = Object.entries(document.paths).flatMap(([route, methods]) =>
-      Object.entries(methods).map(([method, operation]) => ({ route, method, operation })),
-    );
-    // The enumeration reads real operations: a selector that found none would
-    // satisfy the emptiness assertions below on its own.
-    assert.ok(
-      operations.some(
-        ({ operation }) =>
-          operation.operationId === "submitProposal" &&
-          (operation.description ?? "").length > 0,
-      ),
-      "the projection must carry the described operations this checks",
-    );
+  it("serves documents the Custom GPT Action importer accepts", async function () {
+    // The importer's checks run here against the served bytes, because those
+    // are what the builder fetches. It refuses the whole document on any
+    // error, so a description written past 300 characters in openapi.yaml
+    // makes the Action uninstallable rather than merely verbose.
+    const projection = JSON.parse(
+      (await httpRequest("GET", "/openapi-actions.json")).body,
+    ) as JsonValue;
+    assert.deepEqual(auditAsGptAction(projection), { errors: [], warnings: [] });
 
-    assert.deepEqual(
-      operations
-        .filter(
-          ({ operation }) =>
-            (operation.description ?? "").length > ACTION_DESCRIPTION_LIMIT,
-        )
-        .map(
-          ({ route, operation }) =>
-            `${route} ${operation.operationId ?? "?"}: ${(operation.description ?? "").length}`,
-        ),
-      [],
-      `operation descriptions must fit ${ACTION_DESCRIPTION_LIMIT} characters`,
-    );
+    // The full document keeps the SSE route, whose resume header the importer
+    // drops. That is the one finding the projection exists to remove, and it
+    // is a warning: an importer fed the full document still installs it.
+    const full = JSON.parse((await httpRequest("GET", "/openapi.json")).body) as JsonValue;
+    assert.deepEqual(auditAsGptAction(full), {
+      errors: [],
+      warnings: [
+        "In path /v1/events, method get, operationId subscribeEvents, parameter Last-Event-ID has location header; ignoring",
+      ],
+    });
+  });
 
-    const undeclaredObjects: string[] = [];
-    const walk = (node: JsonValue, where: string): void => {
-      if (node === null || typeof node !== "object") {
-        return;
-      }
-      if (Array.isArray(node)) {
-        node.forEach((item, index) => walk(item, `${where}[${index}]`));
-        return;
-      }
-      if (
-        node.type === "object" &&
-        !("properties" in node) &&
-        !("additionalProperties" in node)
-      ) {
-        undeclaredObjects.push(where);
-      }
-      for (const [key, value] of Object.entries(node)) {
-        walk(value, `${where}.${key}`);
-      }
+  it("reproduces each import finding on a document that breaks the rules", function () {
+    // Without this, the empty findings above would also be what a checker
+    // that inspects nothing reports. Each rule is violated once, in the shape
+    // the real document uses.
+    const broken: JsonValue = {
+      openapi: "3.1.0",
+      paths: {
+        "/thing": {
+          get: {
+            operationId: "getThing",
+            description: "x".repeat(301),
+            parameters: [
+              { name: "verbose", in: "query", description: "y".repeat(701) },
+              { name: "Last-Event-ID", in: "header" },
+            ],
+            responses: {
+              "200": { content: { "application/json": { schema: { type: "object" } } } },
+            },
+          },
+        },
+      },
     };
-    walk(document, "");
-    assert.deepEqual(
-      undeclaredObjects,
-      [],
-      "an object schema must declare properties or additionalProperties",
-    );
+    assert.deepEqual(auditAsGptAction(broken), {
+      errors: [
+        "In path /thing, method get, operationId getThing, description has length 301 exceeding limit of 300",
+        "In path /thing, method get, operationId getThing, parameter verbose description has length 701 exceeding limit of 700",
+        "In context=('paths', '/thing', 'get', 'responses', '200', 'content', 'application/json', 'schema'), object schema missing properties",
+      ],
+      warnings: [
+        "In path /thing, method get, operationId getThing, parameter Last-Event-ID has location header; ignoring",
+      ],
+    });
   });
 
   it("publishes no adjudication operation in either served document", async function () {

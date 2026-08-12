@@ -1105,6 +1105,7 @@ paths:
             application/json:
               schema:
                 type: object
+                properties: {}
                 additionalProperties: true
   /openapi-actions.json:
     get:
@@ -1123,6 +1124,7 @@ paths:
             application/json:
               schema:
                 type: object
+                properties: {}
                 additionalProperties: true
   /health:
     get:
