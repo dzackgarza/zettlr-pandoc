@@ -34,7 +34,8 @@ Pandoc fenced divs (`::: theorem`, `::: proof`, …) render as styled environmen
 
 ### Reviewing external edit propositions
 
-An external tool (an agent, a script — see [External review propositions](#external-review-propositions)) can propose edits to the open document. Each changed chunk is adjudicated in the editor: accept it, annotate it with a comment, or reject it to restore the original text:
+An external tool (an agent, a script — see [External review propositions](#external-review-propositions)) can propose edits to the open document.
+Each changed chunk is adjudicated in the editor: accept it, annotate it with a comment, or reject it to restore the original text:
 
 ![Accepting, commenting on, and rejecting review chunks](resources/screenshots/review-flow.gif)
 
