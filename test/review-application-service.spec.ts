@@ -241,6 +241,59 @@ describe("ReviewApplicationService", function () {
     assert.equal(result.code, "DOCUMENT_CLOSED");
   });
 
+  it("preserves a saved held review when only a later unsaved edit is discarded", async function () {
+    // "Don't save" discards the unsaved delta the prompt names. A held review
+    // that was already saved — its sidecar fence matches the bytes on disk —
+    // is separately persisted state and is not the discard's to destroy.
+    const baseline = "alpha\nbeta\n";
+    const proposed = "ALPHA\nbeta\n";
+    const authority = new DocumentAuthority(baseline);
+    const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
+    const service = new ReviewApplicationService({
+      authority,
+      sidecarDirectory,
+      emit: () => undefined,
+      warn: () => undefined,
+    });
+    const submitted = await service.submitProposal({
+      documentId: DOCUMENT_ID,
+      baselineSha256: sha256Text(baseline),
+      claims: [{ patch: makePatch(baseline, proposed), description: "capitalize" }],
+      clientRequestId: "request-discard-preserve",
+      expectedReviewGeneration: 0,
+    });
+    assert.equal(submitted.ok, true);
+    if (!submitted.ok) {
+      return;
+    }
+
+    // Save the outstanding review: disk now holds the working text and the
+    // sidecar fence records it.
+    const save = await service.prepareSave(DOCUMENT_ID, sha256Text(proposed));
+    assert.ok(save !== undefined);
+    await service.completeSave(save!, sha256Text(proposed));
+    authority.setDiskText(proposed);
+
+    // A later edit the user chooses not to save.
+    const edited = "ALPHA\nbeta later\n";
+    const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, edited);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, edited, () => {
+      authority.commitWorkingTextReplacement(prepared);
+    });
+
+    await service.discardReview(DOCUMENT_ID, DOCUMENT_PATH, proposed);
+    assert.equal(
+      service.getReview(DOCUMENT_ID)?.reviewId,
+      submitted.reviewId,
+      "discarding the unsaved edit must not destroy the saved held review",
+    );
+    assert.equal(
+      (await service.readSidecar(DOCUMENT_PATH))?.reviewId,
+      submitted.reviewId,
+      "the saved review's sidecar must survive the discard",
+    );
+  });
+
   it("owns editor reconciliation, save fencing, and detached reattachment", async function () {
     const baseline = "alpha\nbeta\n";
     const proposed = "ALPHA\nbeta\n";
