@@ -384,9 +384,6 @@ components:
         event:
           type: string
           enum:
-            - focus.changed
-            - document.changed
-            - document.closed
             - review.started
             - review.changed
             - review.resolved
@@ -1006,8 +1003,6 @@ components:
         - reviewSupport
         - retractionSupport
         - maxRequestSize
-        - eventStreamSupport
-        - eventReplayBufferSize
         - applicationVersion
         - instanceId
       properties:
@@ -1026,11 +1021,6 @@ components:
           type: boolean
           const: true
         maxRequestSize:
-          type: integer
-        eventStreamSupport:
-          type: boolean
-          const: true
-        eventReplayBufferSize:
           type: integer
         applicationVersion:
           type: string
@@ -1098,25 +1088,6 @@ paths:
         The identical document, parsed from the YAML per request so the two
         encodings cannot disagree. Offered because schema importers are not
         uniformly willing to read YAML.
-      responses:
-        '200':
-          description: OpenAPI JSON document
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /openapi-actions.json:
-    get:
-      operationId: getOpenApiActionsJson
-      summary: Serve the OpenAPI specification as JSON without the SSE route
-      description: >-
-        Action-compatible projection without the SSE route. Derived per request
-        from the same document, dropping only /v1/events, which is
-        Server-Sent Events: an Action cannot consume it and waits on it
-        forever. The long-poll route /v1/reviews/{reviewId}/events is an
-        ordinary request and remains.
       responses:
         '200':
           description: OpenAPI JSON document
@@ -1648,30 +1619,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
 
-  /v1/events:
-    get:
-      operationId: subscribeEvents
-      summary: Subscribe to focus, document, proposal, and review events via SSE
-      responses:
-        '200':
-          description: SSE stream
-          content:
-            text/event-stream:
-              schema:
-                type: string
-          headers:
-            Cache-Control:
-              description: SSE transport must not be cached by intermediaries.
-              schema:
-                type: string
-              example: no-cache
-      parameters:
-        - name: Last-Event-ID
-          in: header
-          required: false
-          schema:
-            type: string
-          description: Resumes from the next server event after this id.
   /v1/reviews/{reviewId}/events:
     get:
       operationId: waitForReviewEvents

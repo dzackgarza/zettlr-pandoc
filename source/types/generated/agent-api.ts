@@ -41,26 +41,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/openapi-actions.json": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Serve the OpenAPI specification as JSON without the SSE route
-         * @description Action-compatible projection without the SSE route. Derived per request from the same document, dropping only /v1/events, which is Server-Sent Events: an Action cannot consume it and waits on it forever. The long-poll route /v1/reviews/{reviewId}/events is an ordinary request and remains.
-         */
-        get: operations["getOpenApiActionsJson"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/health": {
         parameters: {
             query?: never;
@@ -374,23 +354,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Subscribe to focus, document, proposal, and review events via SSE */
-        get: operations["subscribeEvents"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/reviews/{reviewId}/events": {
         parameters: {
             query?: never;
@@ -601,7 +564,7 @@ export interface components {
         };
         AgentEvent: {
             /** @enum {string} */
-            event: "focus.changed" | "document.changed" | "document.closed" | "review.started" | "review.changed" | "review.resolved" | "review.commented" | "review.cleared" | "review.invalidated" | "review.completed" | "review.discarded" | "review.sidecar-error" | "proposal.applied" | "proposal.retracted";
+            event: "review.started" | "review.changed" | "review.resolved" | "review.commented" | "review.cleared" | "review.invalidated" | "review.completed" | "review.discarded" | "review.sidecar-error" | "proposal.applied" | "proposal.retracted";
             timestamp: string;
             reviewId?: string;
             documentId?: string;
@@ -828,9 +791,6 @@ export interface components {
             /** @constant */
             retractionSupport: true;
             maxRequestSize: number;
-            /** @constant */
-            eventStreamSupport: true;
-            eventReplayBufferSize: number;
             applicationVersion: string;
             instanceId: string;
         };
@@ -878,28 +838,6 @@ export interface operations {
         };
     };
     getOpenApiSpecJson: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OpenAPI JSON document */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    getOpenApiActionsJson: {
         parameters: {
             query?: never;
             header?: never;
@@ -1473,34 +1411,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
-    };
-    subscribeEvents: {
-        parameters: {
-            query?: never;
-            header?: {
-                /** @description Resumes from the next server event after this id. */
-                "Last-Event-ID"?: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description SSE stream */
-            200: {
-                headers: {
-                    /**
-                     * @description SSE transport must not be cached by intermediaries.
-                     * @example no-cache
-                     */
-                    "Cache-Control"?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": string;
                 };
             };
         };
