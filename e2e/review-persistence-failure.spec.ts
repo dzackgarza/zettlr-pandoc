@@ -540,22 +540,32 @@ describe('a review that cannot be persisted', function () {
       'the acknowledged update must already be in the sidecar'
     )
 
-    // Typing outside the review's chunks adds one of its own. The reviewer
-    // accepts it in the pane — the annotated chunk from earlier keeps its
-    // note — so the next scenario starts from a saved document with only
-    // that annotated chunk outstanding.
+    // The acknowledged edit is the reviewer's own text, not a claim anyone
+    // proposed, so it is theirs and no decision is offered over it: it takes
+    // no place in the chunk listing and draws no controls (#65). Only the
+    // annotated chunk stays outstanding, which is where the next scenario
+    // starts from once this saves.
     const pending = await chunkListing(activeApi, activeReviewId)
-    const typed = pending.chunks.find(chunk => chunk.workingText.includes('accepted-edit'))
-    assert.ok(typed !== undefined, `the typed line must be its own chunk: ${JSON.stringify(pending)}`)
-    const typedWidget = activePage.locator('.cm-chunkControls').filter({ hasNotText: 'Revise bravo' })
-    await typedWidget.waitFor({ state: 'visible', timeout: 30_000 })
-    assert.equal(
-      await typedWidget.count(),
-      1,
-      'the typed line must be the only unannotated chunk to click'
+    assert.deepEqual(
+      pending.chunks.filter(chunk => chunk.workingText.includes('accepted-edit')),
+      [],
+      `the reviewer's own typing is never offered for adjudication: ${JSON.stringify(pending)}`
     )
-    await typedWidget.locator('button.cm-review-diff-control.accept').click()
-    await typedWidget.waitFor({ state: 'detached', timeout: 30_000 })
+    assert.deepEqual(
+      pending.chunks.map(chunk => chunk.workingText),
+      ['bravo proposed'],
+      `only the proposed claim remains adjudicable: ${JSON.stringify(pending)}`
+    )
+    assert.equal(
+      await activePage.locator('.cm-chunkControls').filter({ hasNotText: 'Revise bravo' }).count(),
+      0,
+      'the typed line gets no controls strip of its own'
+    )
+    assert.equal(
+      await activePage.locator('.cm-chunkControls').count(),
+      1,
+      'the annotated chunk is the only one the pane offers a decision on'
+    )
     assert.deepEqual(
       await activePage.evaluate(
         async (pathInPage: string) =>
