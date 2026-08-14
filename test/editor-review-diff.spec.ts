@@ -450,6 +450,40 @@ describe('Editor review-chunk view', function () {
     )
   })
 
+  it('never renders controls over a region the user typed (#65)', function () {
+    // Adjudication is a decision about a proposal. A paragraph the reviewer
+    // edited themselves disagrees with the frozen reference just as loudly,
+    // but no packet claims it — so it carries no controls, no highlight, and
+    // no place in the outstanding count.
+    const baseline = 'first baseline\n\nsecond baseline\n'
+    const working = 'first proposed\n\nsecond typed by hand\n'
+    const partition = computeReviewChunks(baseline, working)
+    assert.equal(partition.length, 2, 'the raw partition sees both paragraphs')
+
+    const { view } = createReviewView(baseline, working, {
+      packets: [{
+        packetId: 'packet-1',
+        description: 'Sharpen the opening claim',
+        refSpans: [{ from: partition[0].refFromLine, to: partition[0].refToLine }]
+      }]
+    })
+
+    const chunks = chunksOf(view)
+    assert.equal(chunks.length, 1, 'only the attributed edit is adjudicable')
+    assert.equal(chunks[0].workingText, 'first proposed')
+    assert.equal(view.dom.querySelectorAll('.cm-chunkControls').length, 1)
+    assert.equal(
+      view.dom.querySelector<HTMLElement>('.cm-reviewStatusLabel')?.textContent,
+      '1 outstanding'
+    )
+    const typedLine = view.state.doc.line(3)
+    assert.equal(
+      rangeInPreviewSuppression(view.state, typedLine.from, typedLine.to),
+      false,
+      'the user\'s own paragraph keeps its live preview'
+    )
+  })
+
   it('renders a small replacement as inline track changes with one controls strip', function () {
     const baseline = ['alpha', '', 'the original wording stays here', ''].join('\n')
     const proposed = baseline.replace('original wording', 'revised wording')
