@@ -90,6 +90,21 @@ function signalGroup (pid: number, signal: NodeJS.Signals): 'delivered' | 'gone'
   }
 }
 
+/**
+ * The launcher's own failure channel: zettlr-pandoc-boot writes the macro
+ * refresh, the packaging build, and every fail() reason to this file. It lives
+ * inside the isolated $HOME that after() removes, so a cold-launch failure
+ * reported without this tail leaves no evidence anywhere.
+ */
+async function launcherLogTail (home: string): Promise<string> {
+  const logFile = path.join(home, '.cache', 'zettlr-pandoc-dev.log')
+  const contents = await readFile(logFile, 'utf8').catch(
+    (error: NodeJS.ErrnoException) =>
+      `<no launcher log at ${logFile}: ${error.message}>`
+  )
+  return contents.split('\n').slice(-40).join('\n')
+}
+
 /** The open-document summaries of GET /v1/context, keyed by absolute path. */
 async function openDocumentPaths (api: AgentClient): Promise<string[]> {
   const context = await api.get('/v1/context')
@@ -230,22 +245,31 @@ describe('file delivery through the installed desktop launcher (#52)', function 
 
   it('cold start opens the file argument as the focused editor document', async function () {
     assert.ok(testHome !== undefined)
-    const profileDirectory = path.join(testHome, '.config', 'Zettlr-Pandoc')
-    const coldDocument = path.join(testHome, 'workspace', 'delivered-cold.md')
+    const home = testHome
+    const profileDirectory = path.join(home, '.config', 'Zettlr-Pandoc')
+    const coldDocument = path.join(home, 'workspace', 'delivered-cold.md')
     await writeFile(coldDocument, `# Cold delivery\n\n${COLD_MARKER}\n`, 'utf8')
 
     // The exact gesture a desktop session performs: activate the installed
     // desktop entry with a file argument.
     const desktopFile = path.join(
-      testHome, '.local', 'share', 'applications', 'zettlr-pandoc.desktop'
+      home, '.local', 'share', 'applications', 'zettlr-pandoc.desktop'
     )
+    // gio hands the launched chain this process's stdio, and execFile waits for
+    // EOF on it, so this resolves only once the whole chain has exited — which
+    // zettlr-pandoc-boot does only after Hyprland reports the app window. The
+    // launch is therefore already decided here: either the window is mapped, or
+    // the chain gave up (most often on the packaging build it runs when the
+    // source fingerprint is stale) and its reason is in the launcher log.
     await execFile('gio', ['launch', desktopFile, coldDocument], { env: environment() })
 
-    const appWindow = await pollUntil(
-      async () => (await windowsOfClass(APP_WINDOW_CLASS))[0],
-      this.timeout() - 60_000,
-      `a mapped ${APP_WINDOW_CLASS} window from the cold launch`
-    )
+    const [appWindow] = await windowsOfClass(APP_WINDOW_CLASS)
+    if (appWindow === undefined) {
+      assert.fail(
+        'The installed launcher chain exited without starting the app:\n' +
+        await launcherLogTail(home)
+      )
+    }
     assert.ok(appWindow.pid > 0)
 
     const port = await readAgentApiPort(profileDirectory, 60_000)
