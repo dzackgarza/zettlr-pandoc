@@ -278,6 +278,48 @@ describe("ReviewApplicationService", function () {
     );
   });
 
+  it("accepts all proposal chunks without accepting the user's own edit (#65)", async function () {
+    const baseline = "alpha\n\nmiddle\n\nomega\n";
+    const proposed = "ALPHA\n\nmiddle\n\nomega\n";
+    const typed = "ALPHA\n\nmiddle\n\nomega typed\n";
+    const authority = new DocumentAuthority(baseline);
+    const service = new ReviewApplicationService({
+      authority,
+      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
+      emit: () => undefined,
+      warn: () => undefined,
+    });
+    const submitted = await service.submitProposal({
+      documentId: DOCUMENT_ID,
+      baselineSha256: sha256Text(baseline),
+      claims: [{ patch: makePatch(baseline, proposed), description: "capitalize" }],
+      clientRequestId: "request-accept-all-user-edit",
+      expectedReviewGeneration: 0,
+    });
+    assert.equal(submitted.ok, true);
+    if (!submitted.ok) {
+      return;
+    }
+
+    const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, typed);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, typed, () => {
+      authority.commitWorkingTextReplacement(prepared);
+    });
+
+    const accepted = await service.acceptAllChunks(submitted.reviewId, {
+      expectedReviewGeneration: submitted.reviewGeneration,
+      expectedWorkingSha256: sha256Text(typed),
+    });
+    assert.equal(accepted.ok, true);
+    if (!accepted.ok) {
+      return;
+    }
+    assert.equal(authority.readWorkingText(DOCUMENT_ID), typed);
+    assert.equal(accepted.acceptedChunks, 1);
+    assert.equal(accepted.unresolvedChunks, 0);
+    assert.equal(service.getStatus(DOCUMENT_ID)?.unresolvedChunks, 0);
+  });
+
   it("refuses a closed review through an explicit service error", async function () {
     const baseline = "alpha\n";
     const authority = new DocumentAuthority(baseline);

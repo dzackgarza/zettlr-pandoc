@@ -1008,11 +1008,11 @@ export function prepareChunkComment(input: {
 }
 
 /**
- * Accept every chunk of the current partition at once: the reference becomes
- * the working text, exactly what accepting each chunk one at a time
- * converges to — the mirror of prepareClear, which is mass reject. The
- * document does not change. Annotated chunks are accepted too; their notes
- * surface as orphans. One generation advance, however many chunks resolved.
+ * Accept every packet-attributed chunk at once. The document does not change.
+ * The full working snapshot becomes the reference so the review closes while
+ * preserving user-only edits without counting them as accepted suggestions.
+ * Annotated chunks are accepted too; their notes surface as orphans. One
+ * generation advance, however many packet-attributed chunks resolved.
  */
 export function prepareAcceptAll(input: {
   review: ActiveReviewState;
@@ -1027,7 +1027,7 @@ export function prepareAcceptAll(input: {
   }
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
-  const partition = computeReviewChunks(next.referenceText, workingText);
+  const partition = adjudicablePartition(next, workingText);
   // Every chunk's reference region resolves at once. Remap spans across each
   // accepted chunk, last to first so earlier reference coordinates stay valid
   // while later splices shift the lines behind them.
