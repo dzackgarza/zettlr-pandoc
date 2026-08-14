@@ -1,5 +1,6 @@
 const rules = require('./webpack.rules')
 const CopyWebpackPlugin = require('copy-webpack-plugin')
+const TerserPlugin = require('terser-webpack-plugin')
 const path = require('path')
 
 const { VueLoaderPlugin } = require('vue-loader')
@@ -58,6 +59,15 @@ module.exports = {
   devtool: (process.env.NODE_ENV === 'production' || isE2E)
     ? false
     : 'source-map',
+  optimization: {
+    // terser-webpack-plugin defaults to os.cpus().length - 1 workers, and
+    // jest-worker runs them as THREADS, so every worker's V8 heap counts toward
+    // the one webpack process's RSS: measured 7737 MiB peak across 14 renderer
+    // entries on a 12-core machine. That is what earlyoom kills mid-build,
+    // leaving forge to report the signal death as exit 0. Output is unchanged —
+    // only how many chunks are minified at once.
+    minimizer: [new TerserPlugin({ parallel: 2 })]
+  },
   plugins,
   resolve: {
     extensions: [
