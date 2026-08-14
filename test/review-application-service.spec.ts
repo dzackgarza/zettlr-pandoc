@@ -24,6 +24,7 @@ import type { AgentEventType } from "@dts/common/agent-api";
 import type { SerializedUpdate } from "@dts/common/documents";
 import { sha256Text } from "@common/util/sha256";
 import serializeChangeSet from "@common/util/serialize-change-set";
+import { computeReviewChunks } from "@common/modules/review/review-chunks";
 import {
   ReviewApplicationService,
   type AgentEventPayload,
@@ -210,6 +211,113 @@ describe("ReviewApplicationService", function () {
     assert.equal(service.reviewStore.getStatus(DOCUMENT_ID, proposed)?.unresolvedChunks, 0);
     assert.equal((await service.readSidecar(DOCUMENT_PATH))?.generation, 2);
     assert.equal(emitted.at(-1)?.event, "review.resolved");
+  });
+
+  it("never offers the user's own edits for adjudication (#65)", async function () {
+    const baseline = "alpha\n\nmiddle\n\nomega\n";
+    const proposed = "ALPHA\n\nmiddle\n\nomega\n";
+    const typed = "ALPHA\n\nmiddle\n\nomega typed\n";
+    const authority = new DocumentAuthority(baseline);
+    const service = new ReviewApplicationService({
+      authority,
+      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
+      emit: () => undefined,
+      warn: () => undefined,
+    });
+    const submitted = await service.submitProposal({
+      documentId: DOCUMENT_ID,
+      baselineSha256: sha256Text(baseline),
+      claims: [{ patch: makePatch(baseline, proposed), description: "capitalize" }],
+      clientRequestId: "request-user-edit",
+      expectedReviewGeneration: 0,
+    });
+    assert.equal(submitted.ok, true);
+    if (!submitted.ok) {
+      return;
+    }
+
+    // The user types in an untouched paragraph while the review is open.
+    const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, typed);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, typed, () => {
+      authority.commitWorkingTextReplacement(prepared);
+    });
+
+    assert.equal(
+      service.getStatus(DOCUMENT_ID)?.unresolvedChunks,
+      1,
+      "the user's edit must not count as an unresolved review chunk",
+    );
+    const chunks = service.getOutstandingChunks(DOCUMENT_ID);
+    assert.equal(chunks?.length, 1, "only the proposed edit is adjudicable");
+    assert.equal(chunks?.[0].workingText, "ALPHA");
+
+    // The user's edit has no adjudicable chunk: a decision against the raw
+    // diff region of their typing must refuse rather than revert it.
+    const review = service.getReview(DOCUMENT_ID)!;
+    const userChunk = computeReviewChunks(review.referenceText, typed).find(
+      (chunk) => chunk.workingText.includes("omega typed"),
+    )!;
+    const rejected = await service.decideChunk(
+      submitted.reviewId,
+      userChunk.chunkId,
+      "reject",
+      {
+        expectedReviewGeneration: submitted.reviewGeneration,
+        expectedWorkingSha256: sha256Text(typed),
+      },
+    );
+    assert.equal(rejected.ok, false, "user text must not be decidable");
+    if (rejected.ok) {
+      return;
+    }
+    assert.equal(rejected.code, "CHUNK_NOT_FOUND");
+    assert.equal(
+      authority.readWorkingText(DOCUMENT_ID),
+      typed,
+      "the user's typing must survive untouched",
+    );
+  });
+
+  it("accepts all proposal chunks without accepting the user's own edit (#65)", async function () {
+    const baseline = "alpha\n\nmiddle\n\nomega\n";
+    const proposed = "ALPHA\n\nmiddle\n\nomega\n";
+    const typed = "ALPHA\n\nmiddle\n\nomega typed\n";
+    const authority = new DocumentAuthority(baseline);
+    const service = new ReviewApplicationService({
+      authority,
+      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
+      emit: () => undefined,
+      warn: () => undefined,
+    });
+    const submitted = await service.submitProposal({
+      documentId: DOCUMENT_ID,
+      baselineSha256: sha256Text(baseline),
+      claims: [{ patch: makePatch(baseline, proposed), description: "capitalize" }],
+      clientRequestId: "request-accept-all-user-edit",
+      expectedReviewGeneration: 0,
+    });
+    assert.equal(submitted.ok, true);
+    if (!submitted.ok) {
+      return;
+    }
+
+    const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, typed);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, typed, () => {
+      authority.commitWorkingTextReplacement(prepared);
+    });
+
+    const accepted = await service.acceptAllChunks(submitted.reviewId, {
+      expectedReviewGeneration: submitted.reviewGeneration,
+      expectedWorkingSha256: sha256Text(typed),
+    });
+    assert.equal(accepted.ok, true);
+    if (!accepted.ok) {
+      return;
+    }
+    assert.equal(authority.readWorkingText(DOCUMENT_ID), typed);
+    assert.equal(accepted.acceptedChunks, 1);
+    assert.equal(accepted.unresolvedChunks, 0);
+    assert.equal(service.getStatus(DOCUMENT_ID)?.unresolvedChunks, 0);
   });
 
   it("refuses a closed review through an explicit service error", async function () {

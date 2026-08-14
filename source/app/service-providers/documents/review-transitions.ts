@@ -49,6 +49,7 @@ import type {
   ReviewPacket,
 } from "@dts/common/review-domain";
 import {
+  adjudicableChunks,
   computeReviewChunks,
   spliceChunk,
   type RefSpan,
@@ -681,6 +682,23 @@ function reconcileChunkComments(
 // ============================================================================
 
 /**
+ * The chunks of a review a decision may address: the disagreements a packet
+ * claims, against the given working text. Every transition looks up, counts
+ * and reconciles through this rather than the raw partition — the reviewer's
+ * own typing disagrees with the reference too, and it is not the review's to
+ * find by id, count as unresolved, or splice away.
+ */
+function adjudicablePartition(
+  review: ActiveReviewState,
+  workingText: string,
+): ReviewChunk[] {
+  return adjudicableChunks(
+    computeReviewChunks(review.referenceText, workingText),
+    review.packets,
+  );
+}
+
+/**
  * Apply an ordered claim sequence, opening the review when none exists yet.
  * Opening here is what makes an all-or-nothing batch honest: a sequence that
  * does not apply produces no plan at all, so there is no empty review to
@@ -768,7 +786,7 @@ export function prepareProposalSubmission(input: {
   }
 
   const nextWorkingText = sequence.steps[sequence.steps.length - 1].textAfter;
-  const partition = computeReviewChunks(next.referenceText, nextWorkingText);
+  const partition = adjudicablePartition(next, nextWorkingText);
   events.push(...reconcileChunkComments(next, partition));
   const unresolvedChunks = partition.length;
 
@@ -833,7 +851,7 @@ export function prepareChunkDecision(input: {
   }
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
-  const partition = computeReviewChunks(next.referenceText, workingText);
+  const partition = adjudicablePartition(next, workingText);
   const events = reconcileChunkComments(next, partition);
   const chunk = partition.find((candidate) => candidate.chunkId === input.chunkId);
   if (chunk === undefined) {
@@ -871,7 +889,7 @@ export function prepareChunkDecision(input: {
     // the same lines is the editor's change, not the packet's.
     remapAcrossDecision(next, chunk, 0);
   }
-  const decided = computeReviewChunks(next.referenceText, nextWorkingText);
+  const decided = adjudicablePartition(next, nextWorkingText);
   events.push(...reconcileChunkComments(next, decided, input.decision));
   const unresolvedChunks = decided.length;
   next.generation += 1;
@@ -940,7 +958,7 @@ export function prepareChunkComment(input: {
   }
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
-  const partition = computeReviewChunks(next.referenceText, workingText);
+  const partition = adjudicablePartition(next, workingText);
   const events = reconcileChunkComments(next, partition);
   const chunk = partition.find((candidate) => candidate.chunkId === input.chunkId);
   if (chunk === undefined) {
@@ -990,11 +1008,11 @@ export function prepareChunkComment(input: {
 }
 
 /**
- * Accept every chunk of the current partition at once: the reference becomes
- * the working text, exactly what accepting each chunk one at a time
- * converges to — the mirror of prepareClear, which is mass reject. The
- * document does not change. Annotated chunks are accepted too; their notes
- * surface as orphans. One generation advance, however many chunks resolved.
+ * Accept every packet-attributed chunk at once. The document does not change.
+ * The full working snapshot becomes the reference so the review closes while
+ * preserving user-only edits without counting them as accepted suggestions.
+ * Annotated chunks are accepted too; their notes surface as orphans. One
+ * generation advance, however many packet-attributed chunks resolved.
  */
 export function prepareAcceptAll(input: {
   review: ActiveReviewState;
@@ -1009,7 +1027,7 @@ export function prepareAcceptAll(input: {
   }
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
-  const partition = computeReviewChunks(next.referenceText, workingText);
+  const partition = adjudicablePartition(next, workingText);
   // Every chunk's reference region resolves at once. Remap spans across each
   // accepted chunk, last to first so earlier reference coordinates stay valid
   // while later splices shift the lines behind them.
@@ -1190,7 +1208,7 @@ export function prepareRetraction(input: {
   next.packets.pop();
   next.generation += 1;
   const nextWorkingText = normalizeText(reverted);
-  const partition = computeReviewChunks(next.referenceText, nextWorkingText);
+  const partition = adjudicablePartition(next, nextWorkingText);
   const events = reconcileChunkComments(next, partition);
   const unresolvedChunks = partition.length;
   events.push({
@@ -1233,7 +1251,7 @@ export function prepareWorkingTextEdit(input: {
 }): ReviewMutationPlan<void> | undefined {
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
-  const partition = computeReviewChunks(next.referenceText, workingText);
+  const partition = adjudicablePartition(next, workingText);
   const events = reconcileChunkComments(next, partition);
   const unchanged =
     events.length === 0 &&

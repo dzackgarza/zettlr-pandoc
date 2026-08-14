@@ -35,6 +35,7 @@ import {
 } from "fs";
 import http from "http";
 import net from "net";
+import type { Document as OpenApiDefinition } from "openapi-backend";
 import os from "os";
 import path from "path";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
@@ -91,10 +92,12 @@ const openApiDocument = parseYaml(
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 /**
- * The checks the Custom GPT Actions importer runs on a schema, in the wording
- * it reports them. None of them is an OpenAPI rule, so no validator this
- * project could install would catch a violation — the builder is the only
- * thing that fails, and it fails by refusing the whole document.
+ * OpenAI publishes these constraints as prose, but it does not publish an
+ * importer validation schema or a distributable validator. This audit is a
+ * supplementary regression over those documented constraints and constraints
+ * observed directly in the importer. It runs against bytes served through the
+ * real HTTP boundary. It does not independently certify that the current
+ * authenticated Custom GPT Action builder accepts the document.
  *
  * The two length limits and the unsupported-header rule are documented at
  * https://developers.openai.com/api/docs/actions/production. The
@@ -103,9 +106,8 @@ type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string
  * which is how the two spec-serving routes stayed broken through a fix that
  * declared only that.
  *
- * A header parameter is a warning rather than an error: the builder imports
- * the document and silently drops the parameter, so the operation is
- * installable and simply cannot receive that header.
+ * A header parameter is a finding too: the builder drops it silently, so an
+ * operation that needs one cannot work as an Action at all.
  *
  * Finding text follows the builder's, so a report from it can be matched to a
  * rule here by reading. The context tuple is this document's own JSON path,
@@ -115,13 +117,8 @@ const ACTION_DESCRIPTION_LIMIT = 300;
 const ACTION_PARAMETER_DESCRIPTION_LIMIT = 700;
 const HTTP_METHODS = ["get", "put", "post", "delete", "options", "head", "patch", "trace"];
 
-interface ActionImportReport {
-  errors: string[];
-  warnings: string[];
-}
-
-function auditAsGptAction(document: JsonValue): ActionImportReport {
-  const report: ActionImportReport = { errors: [], warnings: [] };
+function auditAsGptAction(document: JsonValue): string[] {
+  const findings: string[] = [];
   const asObject = (node: JsonValue): { [key: string]: JsonValue } | undefined =>
     node !== null && typeof node === "object" && !Array.isArray(node) ? node : undefined;
   const asText = (node: JsonValue | undefined): string => (typeof node === "string" ? node : "");
@@ -139,7 +136,7 @@ function auditAsGptAction(document: JsonValue): ActionImportReport {
       for (const field of ["description", "summary"]) {
         const length = asText(operation[field]).length;
         if (length > ACTION_DESCRIPTION_LIMIT) {
-          report.errors.push(
+          findings.push(
             `${where}, ${field} has length ${length} exceeding limit of ${ACTION_DESCRIPTION_LIMIT}`,
           );
         }
@@ -153,12 +150,12 @@ function auditAsGptAction(document: JsonValue): ActionImportReport {
         const name = asText(parameter.name);
         const length = asText(parameter.description).length;
         if (length > ACTION_PARAMETER_DESCRIPTION_LIMIT) {
-          report.errors.push(
+          findings.push(
             `${where}, parameter ${name} description has length ${length} exceeding limit of ${ACTION_PARAMETER_DESCRIPTION_LIMIT}`,
           );
         }
         if (asText(parameter.in) === "header") {
-          report.warnings.push(`${where}, parameter ${name} has location header; ignoring`);
+          findings.push(`${where}, parameter ${name} has location header; ignoring`);
         }
       }
     }
@@ -173,7 +170,7 @@ function auditAsGptAction(document: JsonValue): ActionImportReport {
       return;
     }
     if (asText(node.type) === "object" && !("properties" in node)) {
-      report.errors.push(
+      findings.push(
         `In context=(${context.map((step) => `'${step}'`).join(", ")}), object schema missing properties`,
       );
     }
@@ -183,7 +180,7 @@ function auditAsGptAction(document: JsonValue): ActionImportReport {
   };
   walkSchemas(document, []);
 
-  return report;
+  return findings;
 }
 
 const ajv = new Ajv2020({ strict: false, allErrors: true });
@@ -559,61 +556,23 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
   });
 
-  it("serves an Action-compatible projection that differs only by the SSE route", async function () {
-    // An Action importer cannot consume Server-Sent Events: it calls /v1/events
-    // and waits on it forever. The projection drops that one route, and is
-    // derived from the same parsed document per request, so there is no second
-    // copy of the contract for this one to drift from.
-    const host = "zettlr.example.com";
-    const full = JSON.parse(
-      (await httpRequest("GET", "/openapi.json", { headers: { host } })).body,
-    );
-    const projected = await httpRequest("GET", "/openapi-actions.json", {
-      headers: { host },
-    });
-    assert.equal(projected.status, 200);
-    assert.equal(projected.headers["content-type"], "application/json");
-    const actions = JSON.parse(projected.body);
+  it("serves a document the Custom GPT Action importer accepts", async function () {
+    // The importer's checks run against the served bytes, because those are
+    // what the builder fetches. It refuses the whole document on any finding,
+    // so a description written past 300 characters in openapi.yaml makes the
+    // API uninstallable rather than merely verbose. There is one document:
+    // every route it declares is one an Action can call.
+    const document = JSON.parse((await httpRequest("GET", "/openapi.json")).body) as JsonValue;
+    assert.deepEqual(auditAsGptAction(document), []);
 
-    assert.ok("/v1/events" in full.paths, "/openapi.json must keep the SSE route");
-    assert.ok(!("/v1/events" in actions.paths), "the projection must drop the SSE route");
-    assert.ok(
-      "/v1/reviews/{reviewId}/events" in actions.paths,
-      "the long-poll route is an ordinary request and must survive the projection",
-    );
-
-    // Everything else is the same document: every other operation, the schemas,
-    // and the servers entry rewritten to the origin this request arrived on.
-    delete full.paths["/v1/events"];
-    assert.deepEqual(actions, full);
-    assert.equal(actions.servers[0].url, `https://${host}`);
-
-    for (const document of [full, actions]) {
-      assert.equal(document.security, undefined, "the API declares no authentication");
-      assert.equal(document.components.securitySchemes, undefined);
-    }
-  });
-
-  it("serves documents the Custom GPT Action importer accepts", async function () {
-    // The importer's checks run here against the served bytes, because those
-    // are what the builder fetches. It refuses the whole document on any
-    // error, so a description written past 300 characters in openapi.yaml
-    // makes the Action uninstallable rather than merely verbose.
-    const projection = JSON.parse(
-      (await httpRequest("GET", "/openapi-actions.json")).body,
-    ) as JsonValue;
-    assert.deepEqual(auditAsGptAction(projection), { errors: [], warnings: [] });
-
-    // The full document keeps the SSE route, whose resume header the importer
-    // drops. That is the one finding the projection exists to remove, and it
-    // is a warning: an importer fed the full document still installs it.
-    const full = JSON.parse((await httpRequest("GET", "/openapi.json")).body) as JsonValue;
-    assert.deepEqual(auditAsGptAction(full), {
-      errors: [],
-      warnings: [
-        "In path /v1/events, method get, operationId subscribeEvents, parameter Last-Event-ID has location header; ignoring",
-      ],
-    });
+    const withSecurity = JSON.parse((await httpRequest("GET", "/openapi.json")).body) as {
+      security?: OpenApiDefinition["security"];
+      components: {
+        securitySchemes?: NonNullable<OpenApiDefinition["components"]>["securitySchemes"];
+      };
+    };
+    assert.equal(withSecurity.security, undefined, "the API declares no authentication");
+    assert.equal(withSecurity.components.securitySchemes, undefined);
   });
 
   it("reproduces each import finding on a document that breaks the rules", function () {
@@ -629,7 +588,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             description: "x".repeat(301),
             parameters: [
               { name: "verbose", in: "query", description: "y".repeat(701) },
-              { name: "Last-Event-ID", in: "header" },
+              { name: "Stream-Cursor", in: "header" },
             ],
             responses: {
               "200": { content: { "application/json": { schema: { type: "object" } } } },
@@ -638,22 +597,18 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         },
       },
     };
-    assert.deepEqual(auditAsGptAction(broken), {
-      errors: [
-        "In path /thing, method get, operationId getThing, description has length 301 exceeding limit of 300",
-        "In path /thing, method get, operationId getThing, parameter verbose description has length 701 exceeding limit of 700",
-        "In context=('paths', '/thing', 'get', 'responses', '200', 'content', 'application/json', 'schema'), object schema missing properties",
-      ],
-      warnings: [
-        "In path /thing, method get, operationId getThing, parameter Last-Event-ID has location header; ignoring",
-      ],
-    });
+    assert.deepEqual(auditAsGptAction(broken), [
+      "In path /thing, method get, operationId getThing, description has length 301 exceeding limit of 300",
+      "In path /thing, method get, operationId getThing, parameter verbose description has length 701 exceeding limit of 700",
+      "In path /thing, method get, operationId getThing, parameter Stream-Cursor has location header; ignoring",
+      "In context=('paths', '/thing', 'get', 'responses', '200', 'content', 'application/json', 'schema'), object schema missing properties",
+    ]);
   });
 
-  it("publishes no adjudication operation in either served document", async function () {
+  it("publishes no adjudication operation in the served document", async function () {
     // The product boundary: an agent submits revisions and may comment on
     // them; disposing of a chunk is the reviewer's, through the editor. A
-    // Custom GPT builds its callable surface from these documents alone, so
+    // Custom GPT builds its callable surface from this document alone, so
     // the absence of these operationIds is what makes adjudication
     // inexpressible to it — not a refusal it could retry.
     const adjudication = [
@@ -662,20 +617,18 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       "acceptAllReviewChunks",
       "clearReview",
     ];
-    for (const route of ["/openapi.json", "/openapi-actions.json"]) {
-      const document = JSON.parse((await httpRequest("GET", route)).body) as {
-        paths: Record<string, Record<string, { operationId?: string }>>;
-      };
-      const declared = Object.values(document.paths).flatMap((methods) =>
-        Object.values(methods).map((operation) => operation.operationId),
-      );
-      // Submission and comment prove the enumeration reads real operationIds:
-      // a selector that found nothing would pass the absence check alone.
-      assert.ok(declared.includes("submitProposal"), route);
-      assert.ok(declared.includes("addReviewComment"), route);
-      for (const operationId of adjudication) {
-        assert.ok(!declared.includes(operationId), `${route} must not declare ${operationId}`);
-      }
+    const document = JSON.parse((await httpRequest("GET", "/openapi.json")).body) as {
+      paths: Record<string, Record<string, { operationId?: string }>>;
+    };
+    const declared = Object.values(document.paths).flatMap((methods) =>
+      Object.values(methods).map((operation) => operation.operationId),
+    );
+    // Submission and comment prove the enumeration reads real operationIds:
+    // a selector that found nothing would pass the absence check alone.
+    assert.ok(declared.includes("submitProposal"));
+    assert.ok(declared.includes("addReviewComment"));
+    for (const operationId of adjudication) {
+      assert.ok(!declared.includes(operationId), `must not declare ${operationId}`);
     }
   });
 
@@ -851,34 +804,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       req.end();
     });
     assert.equal(response.status, 200);
-  });
-
-  it("GET /v1/events returns SSE stream", async function () {
-    // Verify the SSE endpoint returns text/event-stream content type.
-    // We resolve the promise from the response callback and abort the request.
-    let resolved = false;
-    const contentType = await new Promise<string>((resolve) => {
-      const req = http.request(
-        {
-          hostname: "127.0.0.1",
-          port: httpPort,
-          path: "/v1/events",
-          method: "GET",
-        },
-        (res) => {
-          const ct = res.headers["content-type"] ?? "";
-          resolved = true;
-          resolve(ct);
-        },
-      );
-      req.on("error", () => {
-        if (!resolved) {
-          resolve("");
-        }
-      });
-      req.end();
-    });
-    assert.equal(contentType, "text/event-stream");
   });
 
   it("submits a review through the standalone external CLI process", async function () {

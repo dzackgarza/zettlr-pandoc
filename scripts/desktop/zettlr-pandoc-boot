@@ -16,7 +16,13 @@ script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
 repo=$(cd -- "$(dirname -- "$script_path")/../.." && pwd -P)
 log="$HOME/.cache/zettlr-pandoc-dev.log"
 app_class="zettlr-pandoc"
+# How long to wait for the app window. A current packaged build only has to
+# start Electron. A rebuild first runs `just package`, whose own ceiling is
+# verify-build.py's BUILD_TIMEOUT_S (600s), so the wait must outlast it —
+# otherwise the splash gives up on a build that is still working, and the only
+# way to reach this deadline is a `just package` that outlived its own timeout.
 launch_timeout=300
+rebuild_launch_timeout=660
 
 if [[ ! -f "$repo/justfile" ]]; then
   printf 'Repository justfile is unavailable: %s\n' "$repo/justfile" >&2
@@ -82,6 +88,7 @@ spin_until_app_up() {
   local frame
   local line
   local status
+  local termination_error
 
   while ! app_up; do
     if ! process_alive "$launch_pid"; then
@@ -91,6 +98,16 @@ spin_until_app_up() {
     fi
 
     if (( SECONDS - start > launch_timeout )); then
+      # The launch runs detached in its own process group. Abandoning it here
+      # would let a still-running `just package` exec the app minutes after the
+      # splash closed, against a caller that has already torn its state down
+      # (observed 2026-08-14: an orphan window holding a deleted $HOME). ESRCH
+      # is the one legal failure — the group beat us to it.
+      if termination_error=$(LC_ALL=C kill -- -"$launch_pid" 2>&1); then
+        :
+      elif [[ "$termination_error" != *"No such process"* ]]; then
+        fail "Could not terminate launch process group $launch_pid: $termination_error"
+      fi
       fail "Timed out after ${launch_timeout}s; the app window never appeared."
     fi
 
@@ -181,6 +198,7 @@ else
   ' sh "$repo" "$packaged_binary" "$@" \
     >>"$log" 2>&1 </dev/null &
   launch_pid=$!
+  launch_timeout=$rebuild_launch_timeout
 fi
 
 spin_until_app_up "$launch_pid" "$spinner_label"

@@ -25,7 +25,6 @@ import type {
   AgentApiOperations,
   AgentApiResponseBody,
   AgentEvent,
-  AgentEventType,
   AddReviewCommentRequest,
   AgentError,
   AgentErrorCode,
@@ -38,7 +37,6 @@ import type {
   SearchDocumentRequest,
   SubmitProposalRequest,
 } from "@dts/common/agent-api";
-import { DP_EVENTS } from "@dts/common/documents";
 import type DocumentManager from "@providers/documents";
 import type { ReviewFailure } from "@providers/documents/review-application-service";
 import type LogProvider from "@providers/log";
@@ -65,7 +63,6 @@ import AgentDocumentQueries, {
   SearchPatternError,
   SearchTimeoutError,
 } from "./document-queries";
-import AgentEventDelivery, { EVENT_REPLAY_BUFFER_SIZE } from "./event-delivery";
 
 export { MAX_SEARCH_HITS } from "./document-queries";
 
@@ -79,11 +76,6 @@ const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
  * serves no one.
  */
 const REQUEST_BODY_DEADLINE_MS = 30_000;
-
-/** The payload shape the document-provider events this server subscribes to carry. */
-interface DocumentEventContext {
-  filePath?: string;
-}
 
 class RequestTooLargeError extends Error {
   constructor() {
@@ -159,7 +151,6 @@ export default class AgentHTTPProvider extends ProviderContract {
   private _portFilePath: string | undefined;
   private _instanceId: string;
   private readonly _queries: AgentDocumentQueries;
-  private readonly _eventDelivery: AgentEventDelivery;
   /**
    * The committed specification, parsed once at construction. Per-request
    * copies get their `servers` entry set on the parsed document rather than
@@ -191,7 +182,6 @@ export default class AgentHTTPProvider extends ProviderContract {
     super();
     this._instanceId = crypto.randomUUID();
     this._queries = new AgentDocumentQueries(_documents, _documents.reviewQueries, _app, _log);
-    this._eventDelivery = new AgentEventDelivery((event) => this.enrichAgentEvent(event));
     // Load the OpenAPI YAML spec (dev: sibling to this file; packaged: assets/openapi.yaml)
     const candidatePaths = [
       path.join(__dirname, "openapi.yaml"),
@@ -306,49 +296,6 @@ export default class AgentHTTPProvider extends ProviderContract {
       );
     }
     this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${boundPort}`);
-
-    // Subscribe to committed review events
-    this._documents.agentEvents.on("*", (event: AgentEvent) => {
-      this._eventDelivery.broadcast(event);
-    });
-
-    // Subscribe to document-level events
-    this.onDocumentEvent(DP_EVENTS.ACTIVE_FILE, "focus.changed");
-    this.onDocumentEvent(DP_EVENTS.CHANGE_FILE_STATUS, "document.changed");
-    this.onDocumentEvent(DP_EVENTS.CLOSE_FILE, "document.closed");
-  }
-
-  /**
-   * The document provider's emitter is untyped (`(...args: unknown[]) => void`),
-   * so every subscription would otherwise carry `unknown` into this file. This
-   * is the single place that boundary is narrowed: the payload is checked once,
-   * and a shape that does not match is reported against the emitting provider
-   * rather than silently treated as an event with no document.
-   */
-  private onDocumentEvent(event: DP_EVENTS, agentEvent: AgentEventType): void {
-    this._documents.on(event, (...args: unknown[]) => {
-      const [context] = args;
-      if (typeof context !== "object" || context === null) {
-        this._log.error(
-          `[AgentHTTPProvider] ${event} payload is not an object (got ${typeof context}); ` +
-            "fix the emit site in service-providers/documents",
-        );
-        return;
-      }
-      const { filePath } = context as DocumentEventContext;
-      if (filePath !== undefined && typeof filePath !== "string") {
-        this._log.error(
-          `[AgentHTTPProvider] ${event} payload has a non-string filePath; ` +
-            "fix the emit site in service-providers/documents",
-        );
-        return;
-      }
-      this._eventDelivery.broadcast({
-        event: agentEvent,
-        timestamp: new Date().toISOString(),
-        documentId: filePath !== undefined ? this._documents.getDocumentId(filePath) : undefined,
-      });
-    });
   }
 
   /** Whether the HTTP listener is bound. False after a refused bind. */
@@ -357,8 +304,6 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   async shutdown(): Promise<void> {
-    this._eventDelivery.shutdown();
-
     if (this._server !== undefined) {
       await new Promise<void>((resolve) => {
         this._server?.close(() => resolve());
@@ -551,24 +496,6 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   /**
-   * The same document minus the one route an Action cannot consume:
-   * /v1/events is Server-Sent Events, and an importer that calls it waits on
-   * it forever. Derived here from the parsed document rather than by a
-   * command that curls this server and edits the result, so there is no
-   * second copy of the contract to keep in step. The long-poll route
-   * /v1/reviews/{reviewId}/events is an ordinary request and stays.
-   */
-  private serveActionSpecification(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): void {
-    const specification = this.specificationForRequest(req);
-    specification.deleteIn(["paths", "/v1/events"]);
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(specification.toJSON(), null, 2));
-  }
-
-  /**
    * One handler per operationId the document declares. Registered in strict
    * mode, so a name here that the document does not declare stops the provider
    * at construction instead of quietly never being reached.
@@ -580,8 +507,6 @@ export default class AgentHTTPProvider extends ProviderContract {
     return {
       getOpenApiSpec: (_c, req, res) => this.serveSpecification(req, res, false),
       getOpenApiSpecJson: (_c, req, res) => this.serveSpecification(req, res, true),
-      getOpenApiActionsJson: (_c, req, res) => this.serveActionSpecification(req, res),
-
       health: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
       ping: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
       getCapabilities: (_c, _req, res) =>
@@ -591,15 +516,11 @@ export default class AgentHTTPProvider extends ProviderContract {
           reviewSupport: true,
           retractionSupport: true,
           maxRequestSize: MAX_REQUEST_BODY_BYTES,
-          eventStreamSupport: true,
-          eventReplayBufferSize: EVENT_REPLAY_BUFFER_SIZE,
           applicationVersion: app.getVersion(),
           instanceId: this._instanceId,
         }),
       getContext: (_c, _req, res) => this.handleGetContext(res),
       listViews: (_c, _req, res) => this.handleGetViews(res),
-      subscribeEvents: (_c, req, res) => this._eventDelivery.subscribe(req, res),
-
       listWorkspaces: (_c, _req, res) => this.handleGetWorkspaces(res),
       listWorkspaceFiles: (_c, _req, res) => this.handleListWorkspaceFiles(res),
       listWorkspaceDocuments: (
@@ -1301,34 +1222,6 @@ export default class AgentHTTPProvider extends ProviderContract {
         ...AgentHTTPProvider.conflictDetail(result),
       });
     }
-  }
-
-  private enrichAgentEvent(event: AgentEvent): AgentEvent {
-    const enriched: AgentEvent = { ...event };
-    if (enriched.documentId !== undefined) {
-      const filePath = this._documents.getDocumentPath(enriched.documentId);
-      const document =
-        filePath === undefined
-          ? undefined
-          : this._documents.loadedDocuments.find((candidate) => candidate.filePath === filePath);
-      if (document !== undefined && enriched.documentRevision === undefined) {
-        enriched.documentRevision = { sha256: sha256Text(document.document.toString()) };
-      }
-      const review = this._documents.reviewQueries.getReview(enriched.documentId);
-      if (review !== undefined) {
-        if (enriched.reviewId === undefined) {
-          enriched.reviewId = review.reviewId;
-        }
-        if (enriched.reviewGeneration === undefined) {
-          enriched.reviewGeneration = review.generation;
-        }
-        if (enriched.unresolvedChunks === undefined) {
-          enriched.unresolvedChunks =
-          this._documents.reviewQueries.getStatus(enriched.documentId)?.unresolvedChunks;
-        }
-      }
-    }
-    return enriched;
   }
 
   // ==========================================================================

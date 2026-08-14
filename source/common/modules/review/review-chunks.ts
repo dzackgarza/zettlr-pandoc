@@ -630,6 +630,21 @@ export function chunkAttributesTo(
   );
 }
 
+/**
+ * The adjudicable part of a partition: the chunks at least one packet claims.
+ * Adjudication decides a proposal, so it requires packet attribution — text
+ * the reviewer typed disagrees with the reference just as loudly, but belongs
+ * to nobody's claim and is never offered, counted, listed, or decided.
+ */
+export function adjudicableChunks(
+  partition: readonly ReviewChunk[],
+  packets: ReadonlyArray<{ refSpans: readonly RefSpan[] }>,
+): ReviewChunk[] {
+  return partition.filter((chunk) =>
+    packets.some((packet) => chunkAttributesTo(chunk, packet.refSpans)),
+  );
+}
+
 function spansTouch(
   aFrom: number,
   aTo: number,

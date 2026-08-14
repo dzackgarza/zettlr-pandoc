@@ -20,7 +20,9 @@
  *                                    text of its own
  *                    chunks        = computeReviewChunks(reference, working),
  *                                    derived on demand by the one shared
- *                                    engine, never stored
+ *                                    engine, never stored; the projections
+ *                                    below report the adjudicable ones, the
+ *                                    chunks a packet claims
  *
  *                  The store decides nothing. Transitions live in
  *                  review-transitions.ts and are pure; the caller commits a
@@ -44,6 +46,7 @@ import type {
   ReviewPacket,
 } from "@dts/common/review-domain";
 import {
+  adjudicableChunks,
   chunkAttributesTo,
   computeReviewChunks,
   type ReviewChunk,
@@ -148,10 +151,10 @@ export function reviewPatch(referenceText: string, workingText: string): string 
 /**
  * A chunk partition dressed for the agent API: a focused zero-context patch
  * per chunk, the packets whose edits produced it (honest multi-attribution on
- * overlap; empty for a chunk only the user's own edits created), and the
- * reviewer's note when one is attached. Shared by the live store and the
- * sidecar path below — an attached and a detached review with the same texts
- * describe their chunks identically.
+ * overlap), and the reviewer's note when one is attached. Shared by the live
+ * store and the sidecar path below — an attached and a detached review with
+ * the same texts describe their chunks identically. Every caller passes the
+ * adjudicable partition, so each chunk names at least one packet.
  */
 function dressChunks(
   partition: readonly ReviewChunk[],
@@ -185,7 +188,10 @@ function dressChunks(
  */
 export function sidecarOutstandingChunks(sidecar: ReviewSidecarData): OutstandingChunk[] {
   return dressChunks(
-    computeReviewChunks(sidecar.referenceText, sidecar.workingText),
+    adjudicableChunks(
+      computeReviewChunks(sidecar.referenceText, sidecar.workingText),
+      sidecar.packets,
+    ),
     sidecar.packets,
     sidecar.chunkComments,
   );
@@ -234,7 +240,10 @@ export function reviewSidecar(
  * stored count is a second answer that can disagree with them.
  */
 export function sidecarUnresolvedChunks(sidecar: ReviewSidecarData): number {
-  return computeReviewChunks(sidecar.referenceText, sidecar.workingText).length;
+  return adjudicableChunks(
+    computeReviewChunks(sidecar.referenceText, sidecar.workingText),
+    sidecar.packets,
+  ).length;
 }
 
 /**
@@ -312,9 +321,9 @@ export class ReviewDiffStore {
     if (review === undefined) {
       return undefined;
     }
-    const partition = computeReviewChunks(
-      review.referenceText,
-      normalizeText(workingText),
+    const partition = adjudicableChunks(
+      computeReviewChunks(review.referenceText, normalizeText(workingText)),
+      review.packets,
     );
     const unresolvedChunks = partition.length;
     return {
@@ -327,10 +336,9 @@ export class ReviewDiffStore {
   }
 
   /**
-   * The current outstanding chunks — the shared partition dressed for the
-   * agent API, with a focused zero-context patch per chunk and the packets
-   * whose edits produced it (honest multi-attribution on overlap; empty for
-   * a chunk only the user's own edits created).
+   * The current outstanding chunks — the adjudicable partition dressed for
+   * the agent API, with a focused zero-context patch per chunk and the
+   * packets whose edits produced it (honest multi-attribution on overlap).
    */
   getOutstandingChunks(
     documentId: string,
@@ -341,7 +349,10 @@ export class ReviewDiffStore {
       return undefined;
     }
     return dressChunks(
-      computeReviewChunks(review.referenceText, normalizeText(workingText)),
+      adjudicableChunks(
+        computeReviewChunks(review.referenceText, normalizeText(workingText)),
+        review.packets,
+      ),
       review.packets,
       review.chunkComments,
     );
