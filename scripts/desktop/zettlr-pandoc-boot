@@ -88,6 +88,7 @@ spin_until_app_up() {
   local frame
   local line
   local status
+  local termination_error
 
   while ! app_up; do
     if ! process_alive "$launch_pid"; then
@@ -102,7 +103,11 @@ spin_until_app_up() {
       # splash closed, against a caller that has already torn its state down
       # (observed 2026-08-14: an orphan window holding a deleted $HOME). ESRCH
       # is the one legal failure — the group beat us to it.
-      kill -- -"$launch_pid" 2>/dev/null || true
+      if termination_error=$(LC_ALL=C kill -- -"$launch_pid" 2>&1); then
+        :
+      elif [[ "$termination_error" != *"No such process"* ]]; then
+        fail "Could not terminate launch process group $launch_pid: $termination_error"
+      fi
       fail "Timed out after ${launch_timeout}s; the app window never appeared."
     fi
 

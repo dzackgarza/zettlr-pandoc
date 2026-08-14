@@ -35,6 +35,7 @@ import {
 } from "fs";
 import http from "http";
 import net from "net";
+import type { Document as OpenApiDefinition } from "openapi-backend";
 import os from "os";
 import path from "path";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
@@ -91,10 +92,12 @@ const openApiDocument = parseYaml(
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 /**
- * The checks the Custom GPT Actions importer runs on a schema, in the wording
- * it reports them. None of them is an OpenAPI rule, so no validator this
- * project could install would catch a violation — the builder is the only
- * thing that fails, and it fails by refusing the whole document.
+ * OpenAI publishes these constraints as prose, but it does not publish an
+ * importer validation schema or a distributable validator. This audit is a
+ * supplementary regression over those documented constraints and constraints
+ * observed directly in the importer. It runs against bytes served through the
+ * real HTTP boundary. It does not independently certify that the current
+ * authenticated Custom GPT Action builder accepts the document.
  *
  * The two length limits and the unsupported-header rule are documented at
  * https://developers.openai.com/api/docs/actions/production. The
@@ -563,8 +566,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.deepEqual(auditAsGptAction(document), []);
 
     const withSecurity = JSON.parse((await httpRequest("GET", "/openapi.json")).body) as {
-      security?: unknown;
-      components: { securitySchemes?: unknown };
+      security?: OpenApiDefinition["security"];
+      components: {
+        securitySchemes?: NonNullable<OpenApiDefinition["components"]>["securitySchemes"];
+      };
     };
     assert.equal(withSecurity.security, undefined, "the API declares no authentication");
     assert.equal(withSecurity.components.securitySchemes, undefined);
