@@ -105,6 +105,20 @@ interface ReviewCalls {
   chunkNotes: Array<{ chunkId: string, text: string }>
 }
 
+/**
+ * One packet claiming every disagreement between two texts. Only an
+ * attributed chunk is adjudicable, so a spec about rendering a proposal has
+ * to say which proposal the chunks came from; specs about attribution itself
+ * pass their own narrower spans instead.
+ */
+function attributedToOnePacket (referenceText: string, workingText: string): PacketView[] {
+  return [{
+    packetId: 'packet-all',
+    refSpans: computeReviewChunks(referenceText, workingText)
+      .map(chunk => ({ from: chunk.refFromLine, to: chunk.refToLine }))
+  }]
+}
+
 describe('Editor review-chunk view', function () {
   const views: EditorView[] = []
 
@@ -139,7 +153,7 @@ describe('Editor review-chunk view', function () {
           reviewChunksExtension({
             reviewId: 'review-test',
             referenceText,
-            packets: options.packets ?? [],
+            packets: options.packets ?? attributedToOnePacket(referenceText, workingText),
             chunkComments: options.chunkComments ?? [],
             onDecide: async (chunkId, decision) => {
               calls.decisions.push({ chunkId, decision })
@@ -318,7 +332,7 @@ describe('Editor review-chunk view', function () {
     const configFor = (chunkComments: ChunkNoteView[]): Parameters<typeof reviewChunksExtension>[0] => ({
       reviewId: 'review-test',
       referenceText: baseline,
-      packets: [],
+      packets: attributedToOnePacket(baseline, proposed),
       chunkComments,
       onDecide: async () => {},
       onAcceptAll: async () => {},
@@ -630,7 +644,7 @@ describe('Editor review-chunk view', function () {
       effects: reviewCompartment.reconfigure(reviewChunksExtension({
         reviewId: 'review-renderer-rebuild',
         referenceText: reference,
-        packets: [],
+        packets: attributedToOnePacket(reference, working),
         chunkComments: [],
         onDecide: async () => {},
         onAcceptAll: async () => {},
@@ -734,7 +748,7 @@ describe('Editor review-chunk view', function () {
     const configFor = (sink: DecisionCall[]): Parameters<typeof reviewChunksExtension>[0] => ({
       reviewId: 'review-test',
       referenceText: baseline,
-      packets: [],
+      packets: attributedToOnePacket(baseline, proposed),
       chunkComments: [],
       onDecide: async (chunkId, decision) => {
         sink.push({ chunkId, decision })
@@ -786,7 +800,7 @@ describe('Editor review-chunk view', function () {
         extensions: [compartment.of(reviewChunksExtension({
           reviewId: 'review-test',
           referenceText: 'baseline\n',
-          packets: [],
+          packets: attributedToOnePacket('baseline\n', 'proposal\n'),
           chunkComments: [],
           onDecide: async () => {},
           onAcceptAll: async () => {},
@@ -822,7 +836,7 @@ describe('Editor review-chunk view', function () {
     const configFor = (referenceText: string): Parameters<typeof reviewChunksExtension>[0] => ({
       reviewId: 'review-test',
       referenceText,
-      packets: [],
+      packets: attributedToOnePacket(referenceText, 'proposal\n'),
       chunkComments: [],
       onDecide: async () => {},
       onAcceptAll: async () => {},
@@ -866,7 +880,7 @@ describe('Editor review-chunk view', function () {
     const extension = reviewChunksExtension({
       reviewId: 'review-test',
       referenceText: 'baseline\n',
-      packets: [],
+      packets: attributedToOnePacket('baseline\n', 'proposal\n'),
       chunkComments: [],
       onDecide: async () => {},
       onAcceptAll: async () => {},

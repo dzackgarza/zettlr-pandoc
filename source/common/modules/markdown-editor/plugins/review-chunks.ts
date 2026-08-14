@@ -41,6 +41,7 @@ import {
   WidgetType
 } from '@codemirror/view'
 import {
+  adjudicableChunks,
   chunkAttributesTo,
   computeReviewChunks,
   type ReviewChunk
@@ -334,7 +335,13 @@ export function reviewChunksExtension (config: ReviewChunksConfig): Extension[] 
 function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
   const config = requireReviewChunksConfig(state)
   const doc = state.doc
-  const chunks = computeReviewChunks(config.referenceText, doc.toString())
+  // Only what a packet claims is adjudicable: the reviewer's own typing
+  // disagrees with the reference too, and it gets no highlight, no controls,
+  // no slot in the outstanding count, and no navigation stop.
+  const chunks = adjudicableChunks(
+    computeReviewChunks(config.referenceText, doc.toString()),
+    config.packets
+  )
   if (chunks.length === 0) {
     return { chunks, decorations: Decoration.none }
   }
