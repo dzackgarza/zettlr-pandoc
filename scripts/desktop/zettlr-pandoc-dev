@@ -51,7 +51,12 @@ kitty \
 kitty_pid=$!
 
 address=
-for (( attempt = 0; attempt < 60; attempt++ )); do
+# 60 attempts was ~6s of sleep, which a cold kitty loses on a loaded machine —
+# observed 2026-08-14, a first-run kitty that had not yet mapped after 6s while
+# still alive and healthy. The loop breaks the moment the window maps and exits
+# early if kitty dies, so a generous ceiling costs nothing on the normal path;
+# it only bounds the case where kitty lives but never maps.
+for (( attempt = 0; attempt < 300; attempt++ )); do
   if ! process_alive "$kitty_pid"; then
     wait "$kitty_pid"
     exit $?

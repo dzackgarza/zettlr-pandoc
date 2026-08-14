@@ -261,13 +261,20 @@ describe('file delivery through the installed desktop launcher (#52)', function 
     // launch is therefore already decided here: either the window is mapped, or
     // the chain gave up (most often on the packaging build it runs when the
     // source fingerprint is stale) and its reason is in the launcher log.
-    await execFile('gio', ['launch', desktopFile, coldDocument], { env: environment() })
+    const launch = await execFile(
+      'gio', ['launch', desktopFile, coldDocument], { env: environment() }
+    )
 
     const [appWindow] = await windowsOfClass(APP_WINDOW_CLASS)
     if (appWindow === undefined) {
+      // Which channel carries the reason depends on how far the chain got:
+      // zettlr-pandoc-dev reports a splash that never mapped on the inherited
+      // stderr, before any launcher log exists; zettlr-pandoc-boot writes build
+      // failures to the log. Quote both — one of them is always empty.
       assert.fail(
-        'The installed launcher chain exited without starting the app:\n' +
-        await launcherLogTail(home)
+        'The installed launcher chain exited without starting the app.\n' +
+        `chain stderr: ${launch.stderr.trim()}\n` +
+        `launcher log:\n${await launcherLogTail(home)}`
       )
     }
     assert.ok(appWindow.pid > 0)
