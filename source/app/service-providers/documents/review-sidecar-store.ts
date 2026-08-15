@@ -11,8 +11,8 @@
  *                  reviewed document, in Electron app data (never the
  *                  workspace), keyed by canonical file path. The sidecar is
  *                  written through on every review mutation and carries the
- *                  complete review — both texts included — so closing a
- *                  reviewed file destroys nothing: reopening the file
+ *                  complete suggestion state and working text. Closing a
+ *                  reviewed file destroys nothing. Reopening the file
  *                  reattaches the review from here.
  *
  *                  This module only moves bytes. What a sidecar means —
@@ -55,6 +55,132 @@ const validateReviewSidecar = new Ajv({ allErrors: true }).compile<ReviewSidecar
   ReviewSidecarSchema,
 );
 
+function assertReviewSidecarSemantics(
+  sidecar: ReviewSidecarData,
+  target: string,
+): void {
+  const packetIds = new Set<string>();
+  for (const packet of sidecar.packets) {
+    if (packetIds.has(packet.packetId)) {
+      throw new Error(`Review sidecar ${target} has duplicate packet id ${packet.packetId}`);
+    }
+    if (packet.reviewId !== sidecar.reviewId) {
+      throw new Error(
+        `Review sidecar ${target} packet ${packet.packetId} belongs to another review`,
+      );
+    }
+    packetIds.add(packet.packetId);
+  }
+
+  const suggestionIds = new Set<string>();
+  for (const suggestion of sidecar.suggestions) {
+    if (suggestionIds.has(suggestion.suggestionId)) {
+      throw new Error(
+        `Review sidecar ${target} has duplicate suggestion id ${suggestion.suggestionId}`,
+      );
+    }
+    suggestionIds.add(suggestion.suggestionId);
+    if (!packetIds.has(suggestion.packetId)) {
+      throw new Error(
+        `Review sidecar ${target} suggestion ${suggestion.suggestionId} has no owning packet`,
+      );
+    }
+    if (suggestion.seam < 0 || suggestion.seam > sidecar.workingText.length) {
+      throw new Error(
+        `Review sidecar ${target} suggestion ${suggestion.suggestionId} has an invalid seam`,
+      );
+    }
+    let previousRestoration = -1;
+    for (const restoration of suggestion.restorations) {
+      if (
+        restoration.at < 0 ||
+        restoration.at > sidecar.workingText.length ||
+        restoration.at < previousRestoration
+      ) {
+        throw new Error(
+          `Review sidecar ${target} suggestion ${suggestion.suggestionId} has an invalid restoration`,
+        );
+      }
+      previousRestoration = restoration.at;
+    }
+
+    let previousTo = -1;
+    for (const anchor of suggestion.anchors) {
+      if (
+        anchor.from < 0 ||
+        anchor.from > anchor.to ||
+        anchor.to > sidecar.workingText.length ||
+        anchor.from < previousTo
+      ) {
+        throw new Error(
+          `Review sidecar ${target} suggestion ${suggestion.suggestionId} has invalid anchors`,
+        );
+      }
+      previousTo = anchor.to;
+    }
+
+    const ownedAnchors = suggestion.anchors.filter((anchor) => anchor.from < anchor.to);
+    const seamAnchors = suggestion.anchors.filter((anchor) => anchor.from === anchor.to);
+    const hasRestorations = suggestion.restorations.length > 0;
+    const hasRemovedText = suggestion.removedText !== "";
+    const coherent =
+      suggestion.state === "withdrawn" ||
+      (suggestion.kind === "insertion" &&
+        ownedAnchors.length > 0 &&
+        seamAnchors.length === 0 &&
+        ownedAnchors[0].from === suggestion.seam &&
+        !hasRestorations &&
+        !hasRemovedText) ||
+      (suggestion.kind === "deletion" &&
+        ownedAnchors.length === 0 &&
+        seamAnchors.length > 0 &&
+        seamAnchors[0].from === suggestion.seam &&
+        hasRestorations &&
+        hasRemovedText) ||
+      (suggestion.kind === "substitution" &&
+        ownedAnchors.length > 0 &&
+        seamAnchors.length === 0 &&
+        ownedAnchors[0].from === suggestion.seam &&
+        hasRestorations &&
+        hasRemovedText);
+    if (!coherent) {
+      throw new Error(
+        `Review sidecar ${target} suggestion ${suggestion.suggestionId} has incoherent change data`,
+      );
+    }
+    if (
+      suggestion.restorations.map((restoration) => restoration.text).join("") !==
+      suggestion.removedText
+    ) {
+      throw new Error(
+        `Review sidecar ${target} suggestion ${suggestion.suggestionId} has inconsistent restoration text`,
+      );
+    }
+  }
+  for (const comment of sidecar.chunkComments) {
+    if (!suggestionIds.has(comment.chunkId)) {
+      throw new Error(
+        `Review sidecar ${target} comment ${comment.chunkId} has no owning suggestion`,
+      );
+    }
+  }
+  const proposedAnchors = sidecar.suggestions
+    .filter((suggestion) => suggestion.state === "proposed")
+    .flatMap((suggestion) => suggestion.anchors
+      .filter((anchor) => anchor.from < anchor.to)
+      .map((anchor) => ({ ...anchor, suggestionId: suggestion.suggestionId })))
+    .sort((left, right) => left.from - right.from || left.to - right.to);
+  for (let index = 1; index < proposedAnchors.length; index += 1) {
+    const previous = proposedAnchors[index - 1];
+    const current = proposedAnchors[index];
+    if (current.from < previous.to) {
+      throw new Error(
+        `Review sidecar ${target} suggestions ${previous.suggestionId} and ${current.suggestionId} overlap`,
+      );
+    }
+  }
+}
+
 /**
  * Persisted bytes cross into trusted review state here and nowhere else:
  * parse, validate against the one schema, then verify the payload's own path
@@ -80,6 +206,7 @@ function parseReviewSidecar(raw: string, target: string): ReviewSidecarData {
           .join("; "),
     );
   }
+  assertReviewSidecarSemantics(parsed, target);
   const expectedHash = path.basename(target, ".json");
   if (expectedHash !== sha256Text(path.resolve(parsed.documentPath))) {
     throw new Error(`Review sidecar ${target} does not match its document path`);
@@ -98,6 +225,7 @@ export class ReviewSidecarStore {
    */
   async write(sidecar: ReviewSidecarData): Promise<void> {
     const target = reviewSidecarFilePath(this.directory, sidecar.documentPath);
+    assertReviewSidecarSemantics(sidecar, target);
     await fs.mkdir(this.directory, { recursive: true });
     await writeFileAtomic(target, JSON.stringify(sidecar), {
       encoding: "utf8",

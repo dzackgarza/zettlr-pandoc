@@ -851,9 +851,24 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const chunks = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}/chunks`);
     assert.equal(chunks.status, 200);
     const chunkBody = JSON.parse(chunks.body) as {
-      chunks: Array<{ descriptions: string[]; workingText: string }>;
+      chunks: Array<{
+        descriptions: string[];
+        workingText: string;
+        workingSpans: Array<{ from: number; to: number }>;
+      }>;
     };
-    assert.deepEqual(chunkBody.chunks.map((chunk) => chunk.workingText), [revised.trimEnd()]);
+    assert.deepEqual(chunkBody.chunks.map((chunk) => chunk.workingText), ["atr"]);
+    assert.deepEqual(chunkBody.chunks[0].workingSpans, [
+      { from: 0, to: 1 },
+      { from: 2, to: 3 },
+      { from: 4, to: 5 },
+    ]);
+    assert.equal(
+      chunkBody.chunks[0].workingSpans
+        .map((span) => revised.slice(span.from, span.to))
+        .join(""),
+      chunkBody.chunks[0].workingText,
+    );
     assert.deepEqual(chunkBody.chunks[0].descriptions, ["standalone CLI proposition"]);
   });
 

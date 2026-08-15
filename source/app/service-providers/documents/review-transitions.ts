@@ -28,7 +28,7 @@
  */
 
 import { randomUUID } from "crypto";
-import type { ChangeDesc } from "@codemirror/state";
+import { ChangeSet, Text, type ChangeDesc } from "@codemirror/state";
 import {
   applyPatch,
   diffChars,
@@ -47,23 +47,15 @@ import type {
 } from "@dts/common/agent-api";
 import type {
   ActiveReviewState,
-  ChunkComment,
   ReviewPacket,
   ReviewSuggestion,
-  SuggestionSpan,
 } from "@dts/common/review-domain";
-import {
-  adjudicableChunks,
-  computeReviewChunks,
-  spliceChunk,
-  type RefSpan,
-  type ReviewChunk,
-} from "@common/modules/review/review-chunks";
 import {
   classifyReviewState,
   normalizeText,
 } from "./review-diff-store";
 import { sha256Text } from "@common/util/sha256";
+import { mapSuggestionAnchorCoordinates } from "@common/util/review-suggestion-anchors";
 
 // ============================================================================
 // Plan and error shapes
@@ -211,10 +203,7 @@ export interface RetractProposalResponse {
 function cloneReview(review: ActiveReviewState): ActiveReviewState {
   return {
     ...review,
-    packets: review.packets.map((packet) => ({
-      ...packet,
-      refSpans: packet.refSpans.map((span) => ({ ...span })),
-    })),
+    packets: review.packets.map((packet) => ({ ...packet })),
     suggestions: review.suggestions.map((suggestion) => ({
       ...suggestion,
       anchors: suggestion.anchors.map((span) => ({ ...span })),
@@ -238,12 +227,10 @@ function suggestionsForChange(
   const changes = diffChars(before, after);
   const suggestions: ReviewSuggestion[] = [];
   let afterOffset = 0;
-  let beforeOffset = 0;
   for (let index = 0; index < changes.length; index += 1) {
     const change = changes[index];
     if (!change.added && !change.removed) {
       afterOffset += change.value.length;
-      beforeOffset += change.value.length;
       continue;
     }
     const adjacent = changes[index + 1];
@@ -254,7 +241,7 @@ function suggestionsForChange(
           ? adjacent.value
           : "";
     const addition = changes[index + 1];
-    let addedText =
+    const addedText =
       change.removed && addition?.added
         ? addition.value
         : change.added
@@ -267,15 +254,6 @@ function suggestionsForChange(
       index += 1;
     }
     const appliedLength = addedText.length;
-    if (removedText === "") {
-      while (
-        addedText.length > 0 &&
-        (addedText.at(-1) === before.at(beforeOffset) ||
-          addedText.at(-1) === before.at(beforeOffset - 1))
-      ) {
-        addedText = addedText.slice(0, -1);
-      }
-    }
     const kind =
       removedText === "" ? "insertion" : addedText === "" ? "deletion" : "substitution";
     suggestions.push({
@@ -284,11 +262,10 @@ function suggestionsForChange(
       kind,
       removedText,
       restorations: removedText === "" ? [] : [{ at: afterOffset, text: removedText }],
-      anchors: addedText === "" ? [] : [{ from: afterOffset, to: afterOffset + addedText.length }],
+      anchors: [{ from: afterOffset, to: afterOffset + addedText.length }],
       seam: afterOffset,
       state: "proposed",
     });
-    beforeOffset += removedText.length;
     afterOffset += appliedLength;
   }
   if (suggestions.length < 2) {return suggestions;}
@@ -297,7 +274,11 @@ function suggestionsForChange(
   return [{
     suggestionId: randomUUID(),
     packetId,
-    kind: restorations.length === 0 ? "insertion" : anchors.length === 0 ? "deletion" : "substitution",
+    kind: restorations.length === 0
+      ? "insertion"
+      : anchors.every((anchor) => anchor.from === anchor.to)
+        ? "deletion"
+        : "substitution",
     removedText: restorations.map((restoration) => restoration.text).join(""),
     restorations,
     anchors,
@@ -306,53 +287,59 @@ function suggestionsForChange(
   }];
 }
 
+function changeSetForTextTransition(before: string, after: string): ChangeSet {
+  const changes = diffChars(before, after);
+  const specs: Array<{ from: number; to: number; insert: string }> = [];
+  let beforeOffset = 0;
+  for (let index = 0; index < changes.length;) {
+    const change = changes[index];
+    if (!change.added && !change.removed) {
+      beforeOffset += change.value.length;
+      index += 1;
+      continue;
+    }
+    const from = beforeOffset;
+    let insert = "";
+    while (index < changes.length && (changes[index].added || changes[index].removed)) {
+      const part = changes[index];
+      if (part.removed) {
+        beforeOffset += part.value.length;
+      } else {
+        insert += part.value;
+      }
+      index += 1;
+    }
+    specs.push({ from, to: beforeOffset, insert });
+  }
+  return ChangeSet.of(specs, before.length);
+}
+
 function mapSuggestionAnchors(
   suggestions: ReviewSuggestion[],
   changes: ChangeDesc,
 ): boolean {
-  const edits: Array<{ from: number; to: number }> = [];
-  changes.iterChangedRanges((from, to) => edits.push({ from, to }), true);
   let changed = false;
 
   for (const suggestion of suggestions) {
     if (suggestion.state !== "proposed") {continue;}
-    const nextAnchors: SuggestionSpan[] = [];
-    for (const span of suggestion.anchors) {
-      let cursor = span.from;
-      for (const edit of edits) {
-        if (edit.from > span.to) {break;}
-        if (edit.to < cursor || edit.from < span.from && edit.to <= span.from) {continue;}
-        const unchangedTo = Math.min(edit.from, span.to);
-        if (cursor < unchangedTo) {
-          nextAnchors.push({
-            from: changes.mapPos(cursor, 1),
-            to: changes.mapPos(unchangedTo, -1),
-          });
-        }
-        cursor = Math.max(cursor, edit.to);
-        if (cursor >= span.to) {break;}
-      }
-      if (cursor < span.to) {
-        nextAnchors.push({
-          from: changes.mapPos(cursor, 1),
-          to: changes.mapPos(span.to, -1),
-        });
-      }
+    const mapped = mapSuggestionAnchorCoordinates(
+      suggestion.anchors,
+      suggestion.seam,
+      changes,
+    );
+    changed ||= mapped.changed;
+    suggestion.anchors = mapped.anchors;
+    suggestion.seam = mapped.seam;
+    if (mapped.destroyed) {
+      suggestion.state = "withdrawn";
+      changed = true;
+      continue;
     }
-    changed ||=
-      suggestion.anchors.length !== nextAnchors.length ||
-      suggestion.anchors.some((span, index) => {
-        const next = nextAnchors[index];
-        return next === undefined || span.from !== next.from || span.to !== next.to;
-      });
-    suggestion.anchors = nextAnchors;
-    const nextSeam = changes.mapPos(suggestion.seam, 1);
-    changed ||= suggestion.seam !== nextSeam;
-    suggestion.seam = nextSeam;
-    suggestion.restorations = suggestion.restorations.map((restoration) => ({
-      ...restoration,
-      at: changes.mapPos(restoration.at, 1),
-    }));
+    suggestion.restorations = suggestion.restorations.map((restoration) => {
+      const at = changes.mapPos(restoration.at, 1);
+      changed ||= restoration.at !== at;
+      return { ...restoration, at };
+    });
   }
   return changed;
 }
@@ -373,6 +360,36 @@ function rejectSuggestions(review: ActiveReviewState, workingText: string): stri
   }
   for (const suggestion of proposed) {suggestion.state = "rejected";}
   return result;
+}
+
+function rejectionChangeSet(
+  suggestions: readonly ReviewSuggestion[],
+  documentLength: number,
+): ChangeSet {
+  const specs = suggestions
+    .filter((suggestion) => suggestion.state === "proposed")
+    .flatMap((suggestion) => suggestion.anchors.map((anchor) => ({
+      from: anchor.from,
+      to: anchor.to,
+      insert: "",
+    })));
+  for (const suggestion of suggestions) {
+    if (suggestion.state !== "proposed") {continue;}
+    for (const restoration of suggestion.restorations) {
+      const replacement = specs.find((spec) => spec.from === restoration.at);
+      if (replacement === undefined) {
+        specs.push({ from: restoration.at, to: restoration.at, insert: restoration.text });
+      } else {
+        replacement.insert += restoration.text;
+      }
+    }
+  }
+  specs.sort((left, right) => left.from - right.from || left.to - right.to);
+  return ChangeSet.of(specs, documentLength);
+}
+
+function applyChangeSet(workingText: string, changes: ChangeSet): string {
+  return changes.apply(Text.of(workingText.split("\n"))).toString();
 }
 
 // ============================================================================
@@ -558,308 +575,13 @@ function formatPatch(patch: StructuredPatch): string {
   return lines.join("\n") + "\n";
 }
 
-// ============================================================================
-// Reference-span attribution
-// ============================================================================
-
-/**
- * The reference-side footprint of one applied claim: the merge-reference
- * spans the working-text transition before → after changed, at chunk
- * granularity.
- *
- * Reference coordinates are the durable frame for attribution: user edits
- * move working-side positions freely and never pass through a transition,
- * but the reference moves only on decisions, which do — so spans recorded
- * here stay meaningful for as long as they are remapped across decisions.
- *
- * Both diffs run through the one shared engine: the claim's own edits are
- * the partition of before → after, and each edited span is projected onto
- * the reference through the partition of reference → after. A span reaching
- * into a disagreement chunk widens to that chunk's whole reference range —
- * attribution is consumed at chunk granularity, so a finer projection would
- * claim precision no consumer sees.
- */
-function computeChangedRefSpans(
-  referenceText: string,
-  beforeText: string,
-  afterText: string,
-): RefSpan[] {
-  const edits = computeReviewChunks(beforeText, afterText);
-  if (edits.length === 0) {
-    return [];
-  }
-  const partition = computeReviewChunks(referenceText, afterText);
-  return mergeRefSpans(
-    edits.map((edit) =>
-      projectWorkingSpan(partition, edit.workFromLine, edit.workToLine),
-    ),
-  );
-}
-
-/**
- * Project one working-side line span onto the reference through a
- * (reference, working) partition. Boundaries in agreement regions map by the
- * accumulated line offset; a boundary inside a chunk rounds outward to the
- * chunk's reference range. An empty span — a pure deletion at a boundary —
- * maps to the reference range of the chunk covering that boundary, or to an
- * empty span at the projected point when the reference agrees there (the
- * deleted lines were a previous claim's own insertion, so the reference
- * holds nothing to attribute).
- */
-function projectWorkingSpan(
-  partition: readonly ReviewChunk[],
-  from: number,
-  to: number,
-): RefSpan {
-  if (from === to) {
-    const covering = partition.find(
-      (chunk) => chunk.workFromLine <= from && from <= chunk.workToLine,
-    );
-    if (covering !== undefined) {
-      return { from: covering.refFromLine, to: covering.refToLine };
-    }
-    let offset = 0;
-    for (const chunk of partition) {
-      if (chunk.workToLine >= from) {
-        break;
-      }
-      offset +=
-        chunk.refToLine - chunk.refFromLine - (chunk.workToLine - chunk.workFromLine);
-    }
-    return { from: from + offset, to: from + offset };
-  }
-  let refFrom = -1;
-  let offset = 0;
-  for (const chunk of partition) {
-    if (from < chunk.workFromLine) {
-      break;
-    }
-    if (from < chunk.workToLine) {
-      refFrom = chunk.refFromLine;
-      break;
-    }
-    offset +=
-      chunk.refToLine - chunk.refFromLine - (chunk.workToLine - chunk.workFromLine);
-  }
-  if (refFrom === -1) {
-    refFrom = from + offset;
-  }
-  let refTo = -1;
-  offset = 0;
-  for (const chunk of partition) {
-    if (to <= chunk.workFromLine) {
-      break;
-    }
-    if (to <= chunk.workToLine) {
-      refTo = chunk.refToLine;
-      break;
-    }
-    offset +=
-      chunk.refToLine - chunk.refFromLine - (chunk.workToLine - chunk.workFromLine);
-  }
-  if (refTo === -1) {
-    refTo = to + offset;
-  }
-  return { from: refFrom, to: refTo };
-}
-
-/** Sort spans and merge every overlapping or touching pair. */
-function mergeRefSpans(spans: readonly RefSpan[]): RefSpan[] {
-  const sorted = [...spans].sort((a, b) => a.from - b.from || a.to - b.to);
-  const merged: RefSpan[] = [];
-  for (const span of sorted) {
-    const last = merged[merged.length - 1];
-    if (last !== undefined && span.from <= last.to) {
-      last.to = Math.max(last.to, span.to);
-    } else {
-      merged.push({ ...span });
-    }
-  }
-  return merged;
-}
-
-/**
- * Remap a span list across a decided chunk covering reference lines
- * [refFrom, refTo). The decided region is resolved: span material inside it
- * is dropped rather than carried forward — a later edit of those lines is
- * the editor's change, not the packet's — and boundary points count as
- * inside because the same closed rule attributed them to the chunk
- * (chunkAttributesTo). Material behind the region shifts by lineDelta: the
- * line-count change an accept spliced into the reference, 0 for a reject.
- */
-function remapSpans(
-  spans: readonly RefSpan[],
-  refFrom: number,
-  refTo: number,
-  lineDelta: number,
-): RefSpan[] {
-  const result: RefSpan[] = [];
-  for (const span of spans) {
-    if (span.from === span.to) {
-      if (span.from < refFrom) {
-        result.push({ ...span });
-      } else if (span.from > refTo) {
-        result.push({ from: span.from + lineDelta, to: span.to + lineDelta });
-      }
-      continue;
-    }
-    if (span.from < refFrom) {
-      result.push({ from: span.from, to: Math.min(span.to, refFrom) });
-    }
-    if (span.to > refTo) {
-      result.push({
-        from: Math.max(span.from, refTo) + lineDelta,
-        to: span.to + lineDelta,
-      });
-    }
-  }
-  return result;
-}
-
-/** Remap every packet's spans across one decided chunk (see remapSpans). */
-function remapAcrossDecision(
-  review: ActiveReviewState,
-  chunk: ReviewChunk,
-  lineDelta: number,
-): void {
-  for (const packet of review.packets) {
-    packet.refSpans = remapSpans(
-      packet.refSpans,
-      chunk.refFromLine,
-      chunk.refToLine,
-      lineDelta,
-    );
-  }
-}
-
-// ============================================================================
-// Chunk-comment reconciliation
-// ============================================================================
-
-/** Ignore only seam newlines when matching an unchanged annotated edit. */
-function trimIdentitySeams(text: string): string {
-  return text.replace(/^\n+|\n+$/g, "");
-}
-
-/**
- * Reconcile a clone's chunk comments against a partition, and draft one
- * `review.commented` event per note whose text was orphaned.
- *
- * Chunk ids are content-addressed, so any change to an annotated chunk's
- * text — a user edit inside it, a later claim overlapping it, an explicit
- * decision on it — retires the id. A note whose chunk text is unchanged and
- * merely moved is reattached to the chunk that now carries it. One that
- * cannot be placed is released as an orphaned review-level comment naming
- * the vanished chunk, so the text is never silently lost.
- *
- * The orphan is the agent's record, not the reviewer's: it carries the
- * note's snapshot of the chunk's two texts, and — when this reconciliation
- * ran because of a decision — which way the chunk went. Without those, a
- * caller reading the comment after the fact would know only that a chunk id
- * once existed.
- */
-function reconcileChunkComments(
-  review: ActiveReviewState,
-  partition: readonly ReviewChunk[],
-  decision?: ChunkDecision,
-): AgentEventDraft[] {
-  const liveIds = new Set(partition.map((chunk) => chunk.chunkId));
-  const usedIds = new Set<string>();
-  const dangling: ChunkComment[] = [];
-  for (const note of review.chunkComments) {
-    if (liveIds.has(note.chunkId)) {
-      usedIds.add(note.chunkId);
-      continue;
-    }
-    const candidates = partition
-      .filter((chunk) => !usedIds.has(chunk.chunkId))
-      .filter((chunk) =>
-        note.referenceText !== undefined &&
-        note.workingText !== undefined &&
-        trimIdentitySeams(chunk.referenceText) === trimIdentitySeams(note.referenceText) &&
-        trimIdentitySeams(chunk.workingText) === trimIdentitySeams(note.workingText),
-      )
-      .map((chunk) => ({
-        chunk,
-        distance: (note.referenceFromLine === undefined ? 0 : Math.abs(chunk.refFromLine - note.referenceFromLine)) +
-          (note.workingFromLine === undefined ? 0 : Math.abs(chunk.workFromLine - note.workingFromLine)),
-      }))
-      .sort((a, b) => a.distance - b.distance);
-    const positionedCandidates = note.referenceFromLine === undefined
-      ? candidates
-      : candidates.filter(({ chunk }) => chunk.refFromLine === note.referenceFromLine);
-    const selected = positionedCandidates.length === 1
-      ? positionedCandidates[0]
-      : positionedCandidates.length > 1 && positionedCandidates[0].distance < positionedCandidates[1].distance
-        ? positionedCandidates[0]
-        : undefined;
-    if (selected !== undefined) {
-      note.chunkId = selected.chunk.chunkId;
-      note.referenceFromLine = selected.chunk.refFromLine;
-      note.workingFromLine = selected.chunk.workFromLine;
-      usedIds.add(note.chunkId);
-    } else {
-      dangling.push(note);
-    }
-  }
-  review.chunkComments = review.chunkComments.filter((note) => usedIds.has(note.chunkId));
-  const events: AgentEventDraft[] = [];
-  for (const note of dangling) {
-    const comment: ReviewComment = {
-      text: note.comment,
-      createdAt: new Date().toISOString(),
-      orphanedFromChunkId: note.chunkId,
-      decision,
-      referenceText: note.referenceText,
-      workingText: note.workingText,
-    };
-    review.comments.push(comment);
-    // Orphaning is derived bookkeeping of an edit that already happened, not
-    // a review decision, so it does not advance the generation cursor.
-    events.push({
-      event: "review.commented",
-      payload: {
-        reviewId: review.reviewId,
-        documentId: review.documentId,
-        comment: comment.text,
-        orphanedFromChunkId: note.chunkId,
-        generation: review.generation,
-        unresolvedChunks: partition.length,
-      },
-    });
-  }
-  return events;
-}
-
-// ============================================================================
-// Transitions
-// ============================================================================
-
-/**
- * The chunks of a review a decision may address: the disagreements a packet
- * claims, against the given working text. Every transition looks up, counts
- * and reconciles through this rather than the raw partition — the reviewer's
- * own typing disagrees with the reference too, and it is not the review's to
- * find by id, count as unresolved, or splice away.
- */
-function adjudicablePartition(
-  review: ActiveReviewState,
-  workingText: string,
-): ReviewChunk[] {
-  return adjudicableChunks(
-    computeReviewChunks(review.referenceText, workingText),
-    review.packets,
-  );
-}
-
 /**
  * Apply an ordered claim sequence, opening the review when none exists yet.
  * Opening here is what makes an all-or-nothing batch honest: a sequence that
  * does not apply produces no plan at all, so there is no empty review to
  * roll back and no `review.started` announcing one.
  *
- * The patches apply to the LIVE working text; the reference does not move,
- * so existing unresolved chunks survive untouched.
+ * Each patch maps existing suggestions before its new suggestions are added.
  */
 export function prepareProposalSubmission(input: {
   review: ActiveReviewState | undefined;
@@ -886,8 +608,6 @@ export function prepareProposalSubmission(input: {
           reviewId: randomUUID(),
           documentId: input.documentId,
           documentPath: input.documentPath,
-          referenceText: workingText,
-          trackedWorkingText: workingText,
           suggestions: [],
           generation: 0,
           packets: [],
@@ -930,13 +650,12 @@ export function prepareProposalSubmission(input: {
       appliedAt: new Date().toISOString(),
       patch: step.patch,
       applicationGeneration: next.generation + 1,
-      refSpans: computeChangedRefSpans(
-        next.referenceText,
-        textBefore,
-        step.textAfter,
-      ),
     };
     next.packets.push(packet);
+    mapSuggestionAnchors(
+      next.suggestions,
+      changeSetForTextTransition(textBefore, step.textAfter),
+    );
     next.suggestions.push(...suggestionsForChange(textBefore, step.textAfter, packetId));
     next.generation += 1;
     packetIds.push(packet.packetId);
@@ -944,9 +663,6 @@ export function prepareProposalSubmission(input: {
   }
 
   const nextWorkingText = sequence.steps[sequence.steps.length - 1].textAfter;
-  next.trackedWorkingText = nextWorkingText;
-  const partition = adjudicablePartition(next, nextWorkingText);
-  events.push(...reconcileChunkComments(next, partition));
   const unresolvedChunks = next.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
 
   const response: SubmitProposalResponse = {
@@ -986,7 +702,7 @@ export function prepareProposalSubmission(input: {
 }
 
 /**
- * Decide a single chunk by its content-addressed id — the ONE decision path
+ * Decide a single suggestion by its stable id — the ONE decision path
  * for both verbs.
  *
  * Accept makes the reference agree with the working text on the chunk (the
@@ -1010,89 +726,30 @@ export function prepareChunkDecision(input: {
   }
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
-  next.trackedWorkingText = workingText;
   const suggestion = next.suggestions.find(
     (candidate) => candidate.suggestionId === input.chunkId && candidate.state === "proposed",
   );
-  if (suggestion !== undefined) {
-    let nextWorkingText = workingText;
-    if (input.decision === "accept") {
-      suggestion.state = "accepted";
-    } else {
-      const isolated = { ...next, suggestions: [suggestion] };
-      nextWorkingText = rejectSuggestions(isolated, workingText);
-      suggestion.state = "rejected";
-    }
-    next.trackedWorkingText = nextWorkingText;
-    next.generation += 1;
-    const unresolvedChunks = next.suggestions.filter((candidate) => candidate.state === "proposed").length;
-    const events: AgentEventDraft[] = [{
-      event: "review.changed",
-      payload: { reviewId: next.reviewId, documentId: next.documentId, generation: next.generation, unresolvedChunks },
-    }];
-    if (unresolvedChunks === 0) {
-      events.push({ event: "review.resolved", payload: { reviewId: next.reviewId, documentId: next.documentId, generation: next.generation, unresolvedChunks: 0 } });
-    }
-    return {
-      nextReview: next,
-      nextWorkingText,
-      response: {
-        ok: true,
-        reviewId: next.reviewId,
-        documentId: next.documentId,
-        chunkId: input.chunkId,
-        decision: input.decision,
-        reviewGeneration: next.generation,
-        unresolvedChunks,
-        state: classifyReviewState(next.invalidated, unresolvedChunks),
-        documentRevision: { sha256: sha256Text(nextWorkingText) },
-      },
-      events,
-    };
-  }
-  const partition = adjudicablePartition(next, workingText);
-  const events = reconcileChunkComments(next, partition);
-  const chunk = partition.find((candidate) => candidate.chunkId === input.chunkId);
-  if (chunk === undefined) {
+  if (suggestion === undefined) {
     return {
       ok: false,
       code: "CHUNK_NOT_FOUND",
       message: `No unresolved chunk ${input.chunkId} exists at review generation ${next.generation}.`,
     };
   }
-
   let nextWorkingText = workingText;
   if (input.decision === "accept") {
-    const referenceLineDelta =
-      chunk.workToLine - chunk.workFromLine - (chunk.refToLine - chunk.refFromLine);
-    for (const note of next.chunkComments) {
-      if (note.chunkId !== input.chunkId && note.referenceFromLine !== undefined && note.referenceFromLine >= chunk.refToLine) {
-        note.referenceFromLine += referenceLineDelta;
-      }
-    }
-    next.referenceText = spliceChunk(next.referenceText, chunk, "accept");
-    // The accepted splice changed the reference's line count: spans behind
-    // it shift, spans on it are resolved and dropped.
-    remapAcrossDecision(next, chunk, referenceLineDelta);
+    suggestion.state = "accepted";
   } else {
-    const workingLineDelta =
-      chunk.refToLine - chunk.refFromLine - (chunk.workToLine - chunk.workFromLine);
-    for (const note of next.chunkComments) {
-      if (note.chunkId !== input.chunkId && note.workingFromLine !== undefined && note.workingFromLine >= chunk.workToLine) {
-        note.workingFromLine += workingLineDelta;
-      }
-    }
-    nextWorkingText = spliceChunk(workingText, chunk, "reject");
-    // The reference did not move, but the chunk's reference region is now
-    // resolved: attribution material there is dropped, so a later edit of
-    // the same lines is the editor's change, not the packet's.
-    remapAcrossDecision(next, chunk, 0);
+    const changes = rejectionChangeSet([suggestion], workingText.length);
+    nextWorkingText = applyChangeSet(workingText, changes);
+    suggestion.state = "rejected";
+    mapSuggestionAnchors(next.suggestions, changes);
   }
-  const decided = adjudicablePartition(next, nextWorkingText);
-  events.push(...reconcileChunkComments(next, decided, input.decision));
-  const unresolvedChunks = decided.length;
+  const unresolvedChunks = next.suggestions.filter(
+    (candidate) => candidate.state === "proposed",
+  ).length;
   next.generation += 1;
-  events.push({
+  const events: AgentEventDraft[] = [{
     event: "review.changed",
     payload: {
       reviewId: next.reviewId,
@@ -1100,7 +757,7 @@ export function prepareChunkDecision(input: {
       generation: next.generation,
       unresolvedChunks,
     },
-  });
+  }];
 
   if (unresolvedChunks === 0) {
     events.push({
@@ -1137,10 +794,7 @@ export function prepareChunkDecision(input: {
  * moves. Non-empty text upserts the note; empty text removes it. Both
  * advance the generation — like a review-level comment, a chunk note is a
  * deliberate turn in the conversation — except emptying a chunk that
- * carries no note, which is a no-op and does NOT advance the generation:
- * nothing changed, so no phantom mutation is recorded. When the chunk later
- * resolves, reconciliation orphans the note into a review-level comment
- * carrying its chunk id.
+ * carries no note, which is a no-op and does NOT advance the generation.
  */
 export function prepareChunkComment(input: {
   review: ActiveReviewState;
@@ -1157,10 +811,10 @@ export function prepareChunkComment(input: {
   }
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
-  const partition = adjudicablePartition(next, workingText);
-  const events = reconcileChunkComments(next, partition);
-  const chunk = partition.find((candidate) => candidate.chunkId === input.chunkId);
-  if (chunk === undefined) {
+  const suggestion = next.suggestions.find(
+    (candidate) => candidate.suggestionId === input.chunkId && candidate.state === "proposed",
+  );
+  if (suggestion === undefined) {
     return {
       ok: false,
       code: "CHUNK_NOT_FOUND",
@@ -1176,7 +830,7 @@ export function prepareChunkComment(input: {
   });
   const hadNote = next.chunkComments.some((note) => note.chunkId === input.chunkId);
   if (input.text === "" && !hadNote) {
-    return { nextReview: next, nextWorkingText: workingText, response: response(), events };
+    return { nextReview: next, nextWorkingText: workingText, response: response(), events: [] };
   }
   next.chunkComments = next.chunkComments.filter((note) => note.chunkId !== input.chunkId);
   if (input.text !== "") {
@@ -1184,14 +838,10 @@ export function prepareChunkComment(input: {
       chunkId: input.chunkId,
       comment: input.text,
       commentedAt: new Date().toISOString(),
-      referenceText: chunk.referenceText,
-      workingText: chunk.workingText,
-      referenceFromLine: chunk.refFromLine,
-      workingFromLine: chunk.workFromLine,
     });
   }
   next.generation += 1;
-  events.push({
+  const events: AgentEventDraft[] = [{
     event: "review.commented",
     payload: {
       reviewId: next.reviewId,
@@ -1200,18 +850,16 @@ export function prepareChunkComment(input: {
       // Absent comment = the reviewer cleared the note off this chunk.
       ...(input.text === "" ? {} : { comment: input.text }),
       generation: next.generation,
-      unresolvedChunks: partition.length,
+      unresolvedChunks: next.suggestions.filter((candidate) => candidate.state === "proposed").length,
     },
-  });
+  }];
   return { nextReview: next, nextWorkingText: workingText, response: response(), events };
 }
 
 /**
- * Accept every packet-attributed chunk at once. The document does not change.
- * The full working snapshot becomes the reference so the review closes while
- * preserving user-only edits without counting them as accepted suggestions.
- * Annotated chunks are accepted too; their notes surface as orphans. One
- * generation advance, however many packet-attributed chunks resolved.
+ * Accept every proposed suggestion at once. The document does not change.
+ * Owner edits stay outside the accepted suggestions. The generation advances
+ * once.
  */
 export function prepareAcceptAll(input: {
   review: ActiveReviewState;
@@ -1230,23 +878,8 @@ export function prepareAcceptAll(input: {
   for (const suggestion of next.suggestions) {
     if (suggestion.state === "proposed") {suggestion.state = "accepted";}
   }
-  next.trackedWorkingText = workingText;
-  const partition = adjudicablePartition(next, workingText);
-  // Every chunk's reference region resolves at once. Remap spans across each
-  // accepted chunk, last to first so earlier reference coordinates stay valid
-  // while later splices shift the lines behind them.
-  for (const chunk of [...partition].reverse()) {
-    remapAcrossDecision(
-      next,
-      chunk,
-      chunk.workToLine - chunk.workFromLine - (chunk.refToLine - chunk.refFromLine),
-    );
-  }
-  next.referenceText = workingText;
   next.generation += 1;
-  // Every chunk comment now dangles (its chunk is resolved).
-  const events = reconcileChunkComments(next, [], "accept");
-  events.push(
+  const events: AgentEventDraft[] = [
     {
       event: "review.changed",
       payload: {
@@ -1265,7 +898,7 @@ export function prepareAcceptAll(input: {
         unresolvedChunks: 0,
       },
     },
-  );
+  ];
   return {
     nextReview: next,
     nextWorkingText: workingText,
@@ -1294,15 +927,8 @@ export function prepareClear(input: {
   const next = cloneReview(input.review);
   const workingText = normalizeText(input.workingText);
   const nextWorkingText = rejectSuggestions(next, workingText);
-  next.trackedWorkingText = nextWorkingText;
   next.generation += 1;
-  // Every disagreement is resolved at once: nothing remains to attribute,
-  // and every chunk comment dangles — its text surfaces as an orphan.
-  const events = reconcileChunkComments(next, [], "reject");
-  for (const packet of next.packets) {
-    packet.refSpans = [];
-  }
-  events.push({
+  const events: AgentEventDraft[] = [{
     event: "review.cleared",
     payload: {
       reviewId: next.reviewId,
@@ -1310,7 +936,7 @@ export function prepareClear(input: {
       generation: next.generation,
       unresolvedChunks: 0,
     },
-  });
+  }];
   return {
     nextReview: next,
     nextWorkingText,
@@ -1412,13 +1038,36 @@ export function prepareRetraction(input: {
   }
 
   const next = cloneReview(input.review);
+  const retractedSuggestions = next.suggestions.filter(
+    (suggestion) => suggestion.packetId === input.packetId,
+  );
+  const retractionChanges = rejectionChangeSet(
+    retractedSuggestions,
+    workingText.length,
+  );
+  const exactReverted = applyChangeSet(workingText, retractionChanges);
+  if (exactReverted !== normalizeText(reverted)) {
+    return refuse("The proposal no longer matches its stored suggestion entities.");
+  }
   next.packets.pop();
+  const retractedSuggestionIds = new Set(
+    next.suggestions
+      .filter((suggestion) => suggestion.packetId === input.packetId)
+      .map((suggestion) => suggestion.suggestionId),
+  );
+  next.suggestions = next.suggestions.filter(
+    (suggestion) => suggestion.packetId !== input.packetId,
+  );
+  next.chunkComments = next.chunkComments.filter(
+    (comment) => !retractedSuggestionIds.has(comment.chunkId),
+  );
   next.generation += 1;
   const nextWorkingText = normalizeText(reverted);
-  const partition = adjudicablePartition(next, nextWorkingText);
-  const events = reconcileChunkComments(next, partition);
-  const unresolvedChunks = partition.length;
-  events.push({
+  mapSuggestionAnchors(next.suggestions, retractionChanges);
+  const unresolvedChunks = next.suggestions.filter(
+    (suggestion) => suggestion.state === "proposed",
+  ).length;
+  const events: AgentEventDraft[] = [{
     event: "proposal.retracted",
     payload: {
       reviewId: next.reviewId,
@@ -1427,7 +1076,7 @@ export function prepareRetraction(input: {
       generation: next.generation,
       unresolvedChunks,
     },
-  });
+  }];
   return {
     nextReview: next,
     nextWorkingText,
@@ -1448,9 +1097,8 @@ export function prepareRetraction(input: {
 /**
  * Reconcile a review against a working text that changed outside it —
  * ordinary editor typing. No decision was made, so the generation does not
- * advance and the document is not rewritten; what changes is which chunk
- * comments still name a live chunk. Returns undefined when nothing moved, so
- * a keystroke that touches no annotated region costs no commit.
+ * advance and the document is not rewritten. Returns undefined when no
+ * suggestion coordinate or state changed.
  */
 export function prepareWorkingTextEdit(input: {
   review: ActiveReviewState;
@@ -1460,28 +1108,13 @@ export function prepareWorkingTextEdit(input: {
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
   const anchorsChanged = mapSuggestionAnchors(next.suggestions, input.changes);
-  next.trackedWorkingText = workingText;
-  const partition = adjudicablePartition(next, workingText);
-  const events = reconcileChunkComments(next, partition);
-  const unchanged =
-    !anchorsChanged &&
-    events.length === 0 &&
-    next.chunkComments.length === input.review.chunkComments.length &&
-    next.chunkComments.every((note, index) => {
-      const before = input.review.chunkComments[index];
-      return (
-        note.chunkId === before.chunkId &&
-        note.referenceFromLine === before.referenceFromLine &&
-        note.workingFromLine === before.workingFromLine
-      );
-    });
-  if (unchanged) {
+  if (!anchorsChanged) {
     return undefined;
   }
   return {
     nextReview: next,
     nextWorkingText: workingText,
     response: undefined,
-    events,
+    events: [],
   };
 }

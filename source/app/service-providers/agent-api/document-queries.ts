@@ -34,7 +34,10 @@ import path from "path";
 import vm from "vm";
 import { sha256Text } from "@common/util/sha256";
 import makeSearchRegex from "source/common/util/make-search-regex";
-import { normalizeText } from "@providers/documents/review-diff-store";
+import {
+  normalizeText,
+  reviewReferenceText,
+} from "@providers/documents/review-diff-store";
 
 const SEARCH_CONTEXT_DEFAULT = 3;
 const SEARCH_DEADLINE_MS = 1000;
@@ -297,13 +300,15 @@ export default class AgentDocumentQueries {
       attached = true;
       working = document.document.toString();
       const review = this.reviews.getReview(documentId);
-      reference = review?.referenceText ?? working;
+      reference = review === undefined
+        ? working
+        : reviewReferenceText(review.suggestions, working);
       reviewGeneration = review?.generation ?? 0;
     } else {
       const sidecar = await this.reviews.readSidecar(filePath);
       if (sidecar !== undefined) {
         working = sidecar.workingText;
-        reference = sidecar.referenceText;
+        reference = reviewReferenceText(sidecar.suggestions, working);
         reviewGeneration = sidecar.generation;
       } else {
         working = normalizeText(await this.documents.readSupportedFile(filePath));

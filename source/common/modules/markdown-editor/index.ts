@@ -1019,17 +1019,6 @@ export default class MarkdownEditor extends EventEmitter {
       return;
     }
     this.pendingReviewDiffSession = null;
-    if (
-      this.activeReviewDiffSession?.id === session.id &&
-      this.activeReviewDiffSession.reviewGeneration === session.reviewGeneration &&
-      this.activeReviewDiffSession.referenceText === session.referenceText &&
-      this.activeReviewDiffSession.workingText === session.workingText &&
-      JSON.stringify(this.activeReviewDiffSession.packets) === JSON.stringify(session.packets) &&
-      JSON.stringify(this.activeReviewDiffSession.chunkComments) === JSON.stringify(session.chunkComments)
-    ) {
-      return;
-    }
-
     this.activeReviewDiffSession = session;
     // The review-diff-active styling scope rides in the extension itself
     // (an editorAttributes facet), so installing the compartment is what
@@ -1061,8 +1050,7 @@ export default class MarkdownEditor extends EventEmitter {
     const expectedReviewGeneration = session.reviewGeneration;
     return reviewChunksExtension({
       reviewId,
-      referenceText: session.referenceText,
-      packets: session.packets,
+      suggestions: session.suggestions,
       chunkComments: session.chunkComments,
       onDecide: async (chunkId, decision) =>
         await client().decide({

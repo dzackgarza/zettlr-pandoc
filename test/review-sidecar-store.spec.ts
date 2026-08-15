@@ -46,7 +46,6 @@ function sidecar(documentPath: string): ReviewSidecarData {
     version: 4,
     reviewId: "review-1",
     documentPath,
-    referenceText: "alpha\n",
     workingText: "ALPHA\n",
     generation: 1,
     diskFenceSha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -61,10 +60,20 @@ function sidecar(documentPath: string): ReviewSidecarData {
         appliedAt: "2026-08-01T00:00:00.000Z",
         patch: "--- document\n+++ document\n@@ -1 +1 @@\n-alpha\n+ALPHA\n",
         applicationGeneration: 1,
-        refSpans: [{ from: 1, to: 2 }],
       },
     ],
-    suggestions: [],
+    suggestions: [
+      {
+        suggestionId: "suggestion-1",
+        packetId: "packet-1",
+        kind: "substitution",
+        removedText: "alpha",
+        restorations: [{ at: 0, text: "alpha" }],
+        anchors: [{ from: 0, to: 5 }],
+        seam: 0,
+        state: "proposed",
+      },
+    ],
     submissions: [
       {
         clientRequestId: "request-1",
@@ -84,7 +93,7 @@ function sidecar(documentPath: string): ReviewSidecarData {
     ],
     chunkComments: [
       {
-        chunkId: "chunk-1",
+        chunkId: "suggestion-1",
         comment: "check this",
         commentedAt: "2026-08-01T00:01:00.000Z",
       },
@@ -93,7 +102,6 @@ function sidecar(documentPath: string): ReviewSidecarData {
       {
         text: "overall note",
         createdAt: "2026-08-01T00:02:00.000Z",
-        orphanedFromChunkId: "chunk-old",
       },
     ],
   };
@@ -156,12 +164,11 @@ describe("ReviewSidecarStore", function () {
     assert.deepEqual(await store.read(documentPath), withPendingSave);
   });
 
-  it("rejects a packet missing a required nested field", async function () {
+  it("rejects a packet field retired from the suggestion model", async function () {
     const valid = sidecar(documentPath);
-    const withoutSpans: Record<string, unknown> = { ...valid.packets[0] };
-    delete withoutSpans.refSpans;
-    persistRaw({ ...valid, packets: [withoutSpans] });
-    await assert.rejects(store.read(documentPath), /refSpans/);
+    const legacyPacket = { ...valid.packets[0], refSpans: [{ from: 1, to: 2 }] };
+    persistRaw({ ...valid, packets: [legacyPacket] });
+    await assert.rejects(store.read(documentPath), /not a valid review sidecar/);
   });
 
   it("rejects a field the schema does not declare", async function () {
@@ -174,9 +181,134 @@ describe("ReviewSidecarStore", function () {
     await assert.rejects(store.read(documentPath), /diskFenceSha256/);
   });
 
-  it("rejects a version-1 sidecar rather than migrating it", async function () {
-    persistRaw({ ...sidecar(documentPath), version: 1 });
+  it("rejects a version-3 sidecar rather than migrating it", async function () {
+    persistRaw({ ...sidecar(documentPath), version: 3 });
     await assert.rejects(store.read(documentPath), /not a valid review sidecar/);
+  });
+
+  it("rejects duplicate suggestion identities", async function () {
+    const valid = sidecar(documentPath);
+    persistRaw({ ...valid, suggestions: [valid.suggestions[0], valid.suggestions[0]] });
+    await assert.rejects(store.read(documentPath), /duplicate suggestion id suggestion-1/);
+  });
+
+  it("rejects a suggestion without an owning packet", async function () {
+    const valid = sidecar(documentPath);
+    persistRaw({
+      ...valid,
+      suggestions: [{ ...valid.suggestions[0], packetId: "missing-packet" }],
+    });
+    await assert.rejects(store.read(documentPath), /has no owning packet/);
+  });
+
+  it("rejects unsorted, overlapping, and out-of-bounds anchors", async function () {
+    const invalidAnchors = [
+      [{ from: 3, to: 5 }, { from: 1, to: 2 }],
+      [{ from: 0, to: 4 }, { from: 3, to: 5 }],
+      [{ from: 0, to: 7 }],
+      [{ from: -1, to: 1 }],
+    ];
+    for (const anchors of invalidAnchors) {
+      const valid = sidecar(documentPath);
+      persistRaw({
+        ...valid,
+        suggestions: [{ ...valid.suggestions[0], anchors }],
+      });
+      await assert.rejects(store.read(documentPath), /has invalid anchors|must be >= 0/);
+    }
+  });
+
+  it("rejects out-of-bounds seams and restorations", async function () {
+    const valid = sidecar(documentPath);
+    persistRaw({
+      ...valid,
+      suggestions: [{ ...valid.suggestions[0], seam: valid.workingText.length + 1 }],
+    });
+    await assert.rejects(store.read(documentPath), /has an invalid seam|must be >= 0/);
+
+    persistRaw({
+      ...valid,
+      suggestions: [{ ...valid.suggestions[0], seam: -1 }],
+    });
+    await assert.rejects(store.read(documentPath), /has an invalid seam|must be >= 0/);
+
+    persistRaw({
+      ...valid,
+      suggestions: [{
+        ...valid.suggestions[0],
+        restorations: [{ at: valid.workingText.length + 1, text: "alpha" }],
+      }],
+    });
+    await assert.rejects(
+      store.read(documentPath),
+      /has an invalid restoration|must be >= 0/,
+    );
+
+    persistRaw({
+      ...valid,
+      suggestions: [{
+        ...valid.suggestions[0],
+        restorations: [{ at: -1, text: "alpha" }],
+      }],
+    });
+    await assert.rejects(
+      store.read(documentPath),
+      /has an invalid restoration|must be >= 0/,
+    );
+  });
+
+  it("rejects incoherent insertion, deletion, and substitution data", async function () {
+    const valid = sidecar(documentPath);
+    const incoherent = [
+      { ...valid.suggestions[0], kind: "insertion", removedText: "alpha" },
+      { ...valid.suggestions[0], kind: "deletion", anchors: [{ from: 0, to: 5 }] },
+      { ...valid.suggestions[0], kind: "substitution", restorations: [] },
+    ];
+    for (const suggestion of incoherent) {
+      persistRaw({ ...valid, suggestions: [suggestion] });
+      await assert.rejects(store.read(documentPath), /has incoherent change data/);
+    }
+  });
+
+  it("accepts a deletion represented by one zero-length anchor", async function () {
+    const valid = sidecar(documentPath);
+    const deletion: ReviewSidecarData = {
+      ...valid,
+      suggestions: [{
+        ...valid.suggestions[0],
+        kind: "deletion",
+        anchors: [{ from: 0, to: 0 }],
+      }],
+    };
+    await store.write(deletion);
+    assert.deepEqual(await store.read(documentPath), deletion);
+  });
+
+  it("accepts one deletion with multiple zero-length anchors", async function () {
+    const valid = sidecar(documentPath);
+    const deletion: ReviewSidecarData = {
+      ...valid,
+      suggestions: [{
+        ...valid.suggestions[0],
+        kind: "deletion",
+        restorations: [{ at: 0, text: "al" }, { at: 2, text: "pha" }],
+        anchors: [{ from: 0, to: 0 }, { from: 2, to: 2 }],
+      }],
+    };
+    await store.write(deletion);
+    assert.deepEqual(await store.read(documentPath), deletion);
+  });
+
+  it("rejects overlapping proposed suggestion anchors", async function () {
+    const valid = sidecar(documentPath);
+    persistRaw({
+      ...valid,
+      suggestions: [
+        valid.suggestions[0],
+        { ...valid.suggestions[0], suggestionId: "suggestion-2" },
+      ],
+    });
+    await assert.rejects(store.read(documentPath), /suggestions suggestion-1 and suggestion-2 overlap/);
   });
 
   it("rejects a sidecar whose payload path does not match its hashed filename", async function () {

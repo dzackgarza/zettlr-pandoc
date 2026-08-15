@@ -20,12 +20,8 @@ import { renderPandoc } from 'source/common/modules/markdown-editor/renderers/re
 import { defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
 import { initializeMathJax } from 'source/common/util/mathtex-to-html'
 import { configField } from 'source/common/modules/markdown-editor/util/configuration'
-import {
-  computeReviewChunks,
-  spliceChunk
-} from 'source/common/modules/review/review-chunks'
 import { reviewChunksExtension, type ReviewChunksConfig } from 'source/common/modules/markdown-editor/plugins/review-chunks'
-import type { ReviewChunkCommentView } from '@dts/common/review-diff'
+import type { ReviewChunkCommentView, ReviewSuggestionView } from '@dts/common/review-diff'
 
 declare global {
   interface Window {
@@ -202,37 +198,43 @@ function scriptReviewScene (): void {
   }
 
   const compartment = new Compartment()
-  let reference = reviewBaseline
   let chunkComments: ReviewChunkCommentView[] = []
+  const firstStart = reviewProposed.indexOf('is at most 2, by the symmetrization argument')
+  const secondStart = reviewProposed.indexOf('follows from Lemma 3.2 applied to the boundary case')
+  let suggestions: ReviewSuggestionView[] = [
+    {
+      suggestionId: 'suggestion-constant',
+      removedText: 'is at most 4',
+      anchors: [{ from: firstStart, to: firstStart + 'is at most 2, by the symmetrization argument'.length }],
+      seam: firstStart,
+      description: 'Tighten the constant to 2 via symmetrization.'
+    },
+    {
+      suggestionId: 'suggestion-proof',
+      removedText: 'is left to the reader',
+      anchors: [{ from: secondStart, to: secondStart + 'follows from Lemma 3.2 applied to the boundary case'.length }],
+      seam: secondStart,
+      description: 'Replace the reader hand-wave with Lemma 3.2.'
+    }
+  ]
 
   const config = (): ReviewChunksConfig => ({
     reviewId: 'readme-demo',
-    referenceText: reference,
-    packets: [
-      {
-        packetId: 'readme-demo-constant',
-        description: 'Tighten the constant to 2 via symmetrization.',
-        refSpans: [{ from: 3, to: 4 }]
-      },
-      {
-        packetId: 'readme-demo-lemma',
-        description: 'Replace the reader hand-wave with Lemma 3.2.',
-        refSpans: [{ from: 7, to: 8 }]
-      }
-    ],
+    suggestions,
     chunkComments,
     onDecide: async (chunkId, decision) => {
-      const chunk = computeReviewChunks(reference, view.state.doc.toString())
-        .find(candidate => candidate.chunkId === chunkId)
-      if (chunk === undefined) {
-        throw new Error(`demo decision on unknown chunk ${chunkId}`)
-      }
+      const suggestion = suggestions.find(candidate => candidate.suggestionId === chunkId)
+      if (suggestion === undefined) {throw new Error(`demo decision on unknown suggestion ${chunkId}`)}
+      suggestions = suggestions.filter(candidate => candidate.suggestionId !== chunkId)
       if (decision === 'accept') {
-        reference = spliceChunk(reference, chunk, 'accept')
         view.dispatch({ effects: compartment.reconfigure(reviewChunksExtension(config())) })
       } else {
-        const reverted = spliceChunk(view.state.doc.toString(), chunk, 'reject')
-        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: reverted } })
+        const anchor = suggestion.anchors[0]
+        view.dispatch({
+          changes: anchor === undefined
+            ? { from: suggestion.seam, insert: suggestion.removedText }
+            : { from: anchor.from, to: anchor.to, insert: suggestion.removedText }
+        })
       }
     },
     onAcceptAll: async () => { /* not exercised by the demo script */ },

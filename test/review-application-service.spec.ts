@@ -15,7 +15,7 @@
  */
 
 import { strict as assert } from "assert";
-import { mkdtempSync } from "fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { ChangeSet, Text } from "@codemirror/state";
@@ -24,13 +24,13 @@ import type { AgentEventType } from "@dts/common/agent-api";
 import type { SerializedUpdate } from "@dts/common/documents";
 import { sha256Text } from "@common/util/sha256";
 import serializeChangeSet from "@common/util/serialize-change-set";
-import { computeReviewChunks } from "@common/modules/review/review-chunks";
 import {
   ReviewApplicationService,
   type AgentEventPayload,
   type PreparedDocumentMutation,
   type ReviewDocumentAuthority,
 } from "source/app/service-providers/documents/review-application-service";
+import { reviewSidecarFilePath } from "source/app/service-providers/documents/review-sidecar-store";
 
 const DOCUMENT_ID = "doc-service";
 const DOCUMENT_PATH = "/tmp/review-service-note.md";
@@ -251,13 +251,9 @@ describe("ReviewApplicationService", function () {
 
     // The user's edit has no adjudicable chunk: a decision against the raw
     // diff region of their typing must refuse rather than revert it.
-    const review = service.getReview(DOCUMENT_ID)!;
-    const userChunk = computeReviewChunks(review.referenceText, typed).find(
-      (chunk) => chunk.workingText.includes("omega typed"),
-    )!;
     const rejected = await service.decideChunk(
       submitted.reviewId,
-      userChunk.chunkId,
+      "owner-edit-has-no-suggestion-id",
       "reject",
       {
         expectedReviewGeneration: submitted.reviewGeneration,
@@ -351,7 +347,7 @@ describe("ReviewApplicationService", function () {
     const [outstanding] = service.getOutstandingChunks(DOCUMENT_ID) ?? [];
     assert.equal(
       outstanding.workingText,
-      "AGENT",
+      "AGENT ",
       "the API projection must exclude owner text inserted inside the suggestion",
     );
 
@@ -362,9 +358,88 @@ describe("ReviewApplicationService", function () {
     assert.equal(rejected.ok, true);
     assert.equal(
       authority.readWorkingText(DOCUMENT_ID),
-      "prefix USER suffix\n",
+      "prefix USERsuffix\n",
       "mass rejection must remove agent-authored spans and preserve the owner's interior edit",
     );
+  });
+
+  it("keeps an adjacent owner insertion outside the suggestion (#68)", async function () {
+    const baseline = "prefix suffix\n";
+    const proposed = "prefix AGENT suffix\n";
+    const edited = "prefix USERAGENT suffix\n";
+    const authority = new DocumentAuthority(baseline);
+    const service = new ReviewApplicationService({
+      authority,
+      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
+      emit: () => undefined,
+      warn: () => undefined,
+    });
+    const submitted = await service.submitProposal({
+      documentId: DOCUMENT_ID,
+      baselineSha256: sha256Text(baseline),
+      claims: [{ patch: makePatch(baseline, proposed), description: "insert AGENT" }],
+      clientRequestId: "request-owner-edit-adjacent-to-suggestion",
+      expectedReviewGeneration: 0,
+    });
+    assert.equal(submitted.ok, true);
+    if (!submitted.ok) {
+      return;
+    }
+
+    const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, edited);
+    assert.ok(prepared.change !== undefined);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, edited, prepared.change.changes, () => {
+      authority.commitWorkingTextReplacement(prepared);
+    });
+    assert.equal(service.getOutstandingChunks(DOCUMENT_ID)?.[0].workingText, "AGENT ");
+
+    const rejected = await service.clearReview(submitted.reviewId, {
+      expectedReviewGeneration: submitted.reviewGeneration,
+      expectedWorkingSha256: sha256Text(edited),
+    });
+    assert.equal(rejected.ok, true);
+    assert.equal(authority.readWorkingText(DOCUMENT_ID), "prefix USERsuffix\n");
+  });
+
+  it("maps a deletion seam past later owner text and restores only removed text (#68)", async function () {
+    const baseline = "prefix removed tail\n";
+    const proposed = "prefix tail\n";
+    const edited = "prefix OWNER tail\n";
+    const authority = new DocumentAuthority(baseline);
+    const service = new ReviewApplicationService({
+      authority,
+      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
+      emit: () => undefined,
+      warn: () => undefined,
+    });
+    const submitted = await service.submitProposal({
+      documentId: DOCUMENT_ID,
+      baselineSha256: sha256Text(baseline),
+      claims: [{ patch: makePatch(baseline, proposed), description: "remove word" }],
+      clientRequestId: "request-deletion-seam",
+      expectedReviewGeneration: 0,
+    });
+    assert.equal(submitted.ok, true);
+    if (!submitted.ok) {
+      return;
+    }
+
+    const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, edited);
+    assert.ok(prepared.change !== undefined);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, edited, prepared.change.changes, () => {
+      authority.commitWorkingTextReplacement(prepared);
+    });
+    const [outstanding] = service.getOutstandingChunks(DOCUMENT_ID) ?? [];
+    assert.equal(outstanding.workingText, "");
+    assert.equal(outstanding.workingSpans.length, 1);
+    assert.equal(outstanding.workingSpans[0].from, outstanding.workingSpans[0].to);
+
+    const rejected = await service.clearReview(submitted.reviewId, {
+      expectedReviewGeneration: submitted.reviewGeneration,
+      expectedWorkingSha256: sha256Text(edited),
+    });
+    assert.equal(rejected.ok, true);
+    assert.equal(authority.readWorkingText(DOCUMENT_ID), "prefix OWNER removed tail\n");
   });
 
   it("preserves independent suggestion identity across owner edits and restart (#68)", async function () {
@@ -395,6 +470,21 @@ describe("ReviewApplicationService", function () {
       return;
     }
 
+    const submittedChunks = service.getOutstandingChunks(DOCUMENT_ID);
+    assert.ok(submittedChunks !== undefined);
+    const firstSubmitted = submittedChunks.find((chunk) => chunk.workingText === "ONE");
+    assert.ok(firstSubmitted !== undefined);
+    const commented = await service.commentChunk(
+      submitted.reviewId,
+      firstSubmitted.chunkId,
+      "keep owner context",
+      {
+        expectedReviewGeneration: submitted.reviewGeneration,
+        expectedWorkingSha256: sha256Text(proposed),
+      },
+    );
+    assert.equal(commented.ok, true);
+
     const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, edited);
     assert.ok(prepared.change !== undefined);
     await service.applyWorkingTextEdit(DOCUMENT_ID, edited, prepared.change.changes, () => {
@@ -420,6 +510,11 @@ describe("ReviewApplicationService", function () {
       [first.chunkId, second.chunkId],
       "restart must preserve both stable suggestion identities",
     );
+    assert.equal(
+      restarted.getOutstandingChunks(DOCUMENT_ID)?.[0].comment,
+      "keep owner context",
+      "the suggestion comment must survive owner edits and restart",
+    );
 
     const restartedReview = restarted.getReview(DOCUMENT_ID);
     assert.ok(restartedReview !== undefined);
@@ -436,6 +531,11 @@ describe("ReviewApplicationService", function () {
     if (!accepted.ok) {
       return;
     }
+    assert.equal(
+      authority.readWorkingText(DOCUMENT_ID),
+      edited,
+      "accepting one suggestion must not write document text",
+    );
     assert.deepEqual(
       restarted.getOutstandingChunks(DOCUMENT_ID)?.map((chunk) => chunk.chunkId),
       [first.chunkId],
@@ -482,6 +582,28 @@ describe("ReviewApplicationService", function () {
       return;
     }
     assert.equal(result.code, "DOCUMENT_CLOSED");
+  });
+
+  it("fails reattachment when persisted state is version 3 (#68)", async function () {
+    const baseline = "alpha\n";
+    const authority = new DocumentAuthority(baseline);
+    const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
+    mkdirSync(sidecarDirectory, { recursive: true });
+    writeFileSync(
+      reviewSidecarFilePath(sidecarDirectory, DOCUMENT_PATH),
+      JSON.stringify({ version: 3 }),
+      "utf8",
+    );
+    const service = new ReviewApplicationService({
+      authority,
+      sidecarDirectory,
+      emit: () => undefined,
+      warn: () => undefined,
+    });
+    await assert.rejects(
+      service.reattachReview(DOCUMENT_ID, DOCUMENT_PATH, baseline),
+      /not a valid review sidecar.*version/,
+    );
   });
 
   it("preserves a saved held review when only a later unsaved edit is discarded", async function () {
