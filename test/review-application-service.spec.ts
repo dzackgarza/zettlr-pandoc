@@ -345,6 +345,13 @@ describe("ReviewApplicationService", function () {
       authority.commitWorkingTextReplacement(prepared);
     });
 
+    const [outstanding] = service.getOutstandingChunks(DOCUMENT_ID) ?? [];
+    assert.equal(
+      outstanding.workingText,
+      "AGENT",
+      "the API projection must exclude owner text inserted inside the suggestion",
+    );
+
     const rejected = await service.clearReview(submitted.reviewId, {
       expectedReviewGeneration: submitted.reviewGeneration,
       expectedWorkingSha256: sha256Text(edited),
