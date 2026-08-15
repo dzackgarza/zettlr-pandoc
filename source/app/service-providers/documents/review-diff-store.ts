@@ -44,13 +44,8 @@ import type {
   ActiveReviewState,
   ChunkComment,
   ReviewPacket,
+  ReviewSuggestion,
 } from "@dts/common/review-domain";
-import {
-  adjudicableChunks,
-  chunkAttributesTo,
-  computeReviewChunks,
-  type ReviewChunk,
-} from "@common/modules/review/review-chunks";
 import { sha256Text } from "@common/util/sha256";
 import type { ReviewSidecarData } from "./review-sidecar-schema";
 
@@ -156,28 +151,40 @@ export function reviewPatch(referenceText: string, workingText: string): string 
  * the same texts describe their chunks identically. Every caller passes the
  * adjudicable partition, so each chunk names at least one packet.
  */
-function dressChunks(
-  partition: readonly ReviewChunk[],
+function lineAt(text: string, offset: number): number {
+  return text.slice(0, offset).split("\n").length;
+}
+
+function dressSuggestions(
+  suggestions: readonly ReviewSuggestion[],
+  workingText: string,
   packets: readonly ReviewPacket[],
   chunkComments: readonly ChunkComment[],
 ): OutstandingChunk[] {
-  return partition.map((chunk) => {
-    const attributed = packets.filter((packet) => chunkAttributesTo(chunk, packet.refSpans));
-    const note = chunkComments.find((candidate) => candidate.chunkId === chunk.chunkId);
-    return {
-      chunkId: chunk.chunkId,
-      referenceRange: { fromLine: chunk.refFromLine, toLine: chunk.refToLine },
-      workingRange: { fromLine: chunk.workFromLine, toLine: chunk.workToLine },
-      referenceText: chunk.referenceText,
-      workingText: chunk.workingText,
-      packetIds: attributed.map((packet) => packet.packetId),
-      descriptions: attributed.map((packet) => packet.description),
-      ...(note === undefined ? {} : { comment: note.comment }),
-      patch: createPatch("document", chunk.referenceText, chunk.workingText, "", "", {
-        context: 0,
-      }),
-    };
-  });
+  return suggestions
+    .filter((suggestion) => suggestion.state === "proposed")
+    .map((suggestion) => {
+      const packet = packets.find((candidate) => candidate.packetId === suggestion.packetId);
+      const from = suggestion.anchors[0]?.from ?? suggestion.seam;
+      const to = suggestion.anchors.at(-1)?.to ?? suggestion.seam;
+      const proposedText = suggestion.anchors
+        .map((span) => workingText.slice(span.from, span.to))
+        .join("");
+      const fromLine = lineAt(workingText, from);
+      const toLine = lineAt(workingText, to) + (to > from ? 1 : 0);
+      const note = chunkComments.find((candidate) => candidate.chunkId === suggestion.suggestionId);
+      return {
+        chunkId: suggestion.suggestionId,
+        referenceRange: { fromLine, toLine: fromLine + (suggestion.removedText === "" ? 0 : 1) },
+        workingRange: { fromLine, toLine },
+        referenceText: suggestion.removedText,
+        workingText: proposedText,
+        packetIds: [suggestion.packetId],
+        descriptions: packet === undefined ? [] : [packet.description],
+        ...(note === undefined ? {} : { comment: note.comment }),
+        patch: createPatch("document", suggestion.removedText, proposedText, "", "", { context: 0 }),
+      };
+    });
 }
 
 /**
@@ -187,11 +194,9 @@ function dressChunks(
  * and no reconciliation — is needed to answer.
  */
 export function sidecarOutstandingChunks(sidecar: ReviewSidecarData): OutstandingChunk[] {
-  return dressChunks(
-    adjudicableChunks(
-      computeReviewChunks(sidecar.referenceText, sidecar.workingText),
-      sidecar.packets,
-    ),
+  return dressSuggestions(
+    sidecar.suggestions,
+    sidecar.workingText,
     sidecar.packets,
     sidecar.chunkComments,
   );
@@ -212,7 +217,7 @@ export function reviewSidecar(
   pendingSave?: ReviewSidecarData["pendingSave"],
 ): ReviewSidecarData {
   return {
-    version: 3,
+    version: 4,
     reviewId: review.reviewId,
     documentPath: review.documentPath,
     referenceText: review.referenceText,
@@ -223,6 +228,10 @@ export function reviewSidecar(
     packets: review.packets.map((packet) => ({
       ...packet,
       refSpans: packet.refSpans.map((span) => ({ ...span })),
+    })),
+    suggestions: review.suggestions.map((suggestion) => ({
+      ...suggestion,
+      anchors: suggestion.anchors.map((span) => ({ ...span })),
     })),
     submissions: review.submissions.map((submission) => ({
       ...submission,
@@ -240,10 +249,7 @@ export function reviewSidecar(
  * stored count is a second answer that can disagree with them.
  */
 export function sidecarUnresolvedChunks(sidecar: ReviewSidecarData): number {
-  return adjudicableChunks(
-    computeReviewChunks(sidecar.referenceText, sidecar.workingText),
-    sidecar.packets,
-  ).length;
+  return sidecar.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
 }
 
 /**
@@ -262,6 +268,11 @@ export function reviewFromSidecar(
     documentId,
     documentPath: sidecar.documentPath,
     referenceText: sidecar.referenceText,
+    trackedWorkingText: sidecar.workingText,
+    suggestions: sidecar.suggestions.map((suggestion) => ({
+      ...suggestion,
+      anchors: suggestion.anchors.map((span) => ({ ...span })),
+    })),
     generation: sidecar.generation,
     packets: sidecar.packets.map((packet) => ({
       ...packet,
@@ -316,16 +327,12 @@ export class ReviewDiffStore {
     return [...this.reviews.values()];
   }
 
-  getStatus(documentId: string, workingText: string): ReviewStatus | undefined {
+  getStatus(documentId: string, _workingText: string): ReviewStatus | undefined {
     const review = this.reviews.get(documentId);
     if (review === undefined) {
       return undefined;
     }
-    const partition = adjudicableChunks(
-      computeReviewChunks(review.referenceText, normalizeText(workingText)),
-      review.packets,
-    );
-    const unresolvedChunks = partition.length;
+    const unresolvedChunks = review.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
     return {
       reviewId: review.reviewId,
       state: classifyReviewState(review.invalidated, unresolvedChunks),
@@ -348,11 +355,9 @@ export class ReviewDiffStore {
     if (review === undefined) {
       return undefined;
     }
-    return dressChunks(
-      adjudicableChunks(
-        computeReviewChunks(review.referenceText, normalizeText(workingText)),
-        review.packets,
-      ),
+    return dressSuggestions(
+      review.suggestions,
+      normalizeText(workingText),
       review.packets,
       review.chunkComments,
     );

@@ -196,11 +196,8 @@ describe("ReviewApplicationService", function () {
     assert.equal(sidecar?.workingText, proposed);
     assert.equal(sidecar?.packets.length, 1);
 
-    const chunk = service.reviewStore.getOutstandingChunks(DOCUMENT_ID, proposed)![0];
-    const decided = await service.decideChunk(
+    const decided = await service.acceptAllChunks(
       submitted.reviewId,
-      chunk.chunkId,
-      "accept",
       {
         expectedReviewGeneration: submitted.reviewGeneration,
         expectedWorkingSha256: sha256Text(proposed),

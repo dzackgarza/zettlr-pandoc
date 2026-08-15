@@ -43,7 +43,7 @@ const FINGERPRINT =
 
 function sidecar(documentPath: string): ReviewSidecarData {
   return {
-    version: 3,
+    version: 4,
     reviewId: "review-1",
     documentPath,
     referenceText: "alpha\n",
@@ -64,6 +64,7 @@ function sidecar(documentPath: string): ReviewSidecarData {
         refSpans: [{ from: 1, to: 2 }],
       },
     ],
+    suggestions: [],
     submissions: [
       {
         clientRequestId: "request-1",

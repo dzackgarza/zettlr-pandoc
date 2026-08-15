@@ -30,6 +30,7 @@
 import { randomUUID } from "crypto";
 import {
   applyPatch,
+  diffChars,
   parsePatch,
   reversePatch,
   type StructuredPatch,
@@ -47,6 +48,8 @@ import type {
   ActiveReviewState,
   ChunkComment,
   ReviewPacket,
+  ReviewSuggestion,
+  SuggestionSpan,
 } from "@dts/common/review-domain";
 import {
   adjudicableChunks,
@@ -211,6 +214,10 @@ function cloneReview(review: ActiveReviewState): ActiveReviewState {
       ...packet,
       refSpans: packet.refSpans.map((span) => ({ ...span })),
     })),
+    suggestions: (review.suggestions ?? []).map((suggestion) => ({
+      ...suggestion,
+      anchors: suggestion.anchors.map((span) => ({ ...span })),
+    })),
     submissions: review.submissions.map((submission) => ({
       ...submission,
       packetIds: [...submission.packetIds],
@@ -219,6 +226,165 @@ function cloneReview(review: ActiveReviewState): ActiveReviewState {
     chunkComments: review.chunkComments.map((note) => ({ ...note })),
     comments: review.comments.map((comment) => ({ ...comment })),
   };
+}
+
+function suggestionsForChange(
+  before: string,
+  after: string,
+  packetId: string,
+): ReviewSuggestion[] {
+  const changes = diffChars(before, after);
+  const suggestions: ReviewSuggestion[] = [];
+  let afterOffset = 0;
+  let beforeOffset = 0;
+  for (let index = 0; index < changes.length; index += 1) {
+    const change = changes[index];
+    if (!change.added && !change.removed) {
+      afterOffset += change.value.length;
+      beforeOffset += change.value.length;
+      continue;
+    }
+    const adjacent = changes[index + 1];
+    const removedText =
+      change.removed
+        ? change.value
+        : change.added && adjacent?.removed
+          ? adjacent.value
+          : "";
+    const addition = changes[index + 1];
+    let addedText =
+      change.removed && addition?.added
+        ? addition.value
+        : change.added
+          ? change.value
+          : "";
+    if (
+      (change.removed && addition?.added) ||
+      (change.added && adjacent?.removed)
+    ) {
+      index += 1;
+    }
+    const appliedLength = addedText.length;
+    if (removedText === "") {
+      while (
+        addedText.length > 0 &&
+        (addedText.at(-1) === before.at(beforeOffset) ||
+          addedText.at(-1) === before.at(beforeOffset - 1))
+      ) {
+        addedText = addedText.slice(0, -1);
+      }
+    }
+    const kind =
+      removedText === "" ? "insertion" : addedText === "" ? "deletion" : "substitution";
+    suggestions.push({
+      suggestionId: randomUUID(),
+      packetId,
+      kind,
+      removedText,
+      anchors: addedText === "" ? [] : [{ from: afterOffset, to: afterOffset + addedText.length }],
+      seam: afterOffset,
+      state: "proposed",
+    });
+    beforeOffset += removedText.length;
+    afterOffset += appliedLength;
+  }
+  return suggestions;
+}
+
+function mapSuggestionAnchors(
+  suggestions: ReviewSuggestion[],
+  before: string,
+  after: string,
+): void {
+  const edits: Array<{ oldFrom: number; oldTo: number; newFrom: number; newTo: number }> = [];
+  let sharedPrefix = 0;
+  while (before.at(sharedPrefix) === after.at(sharedPrefix) && sharedPrefix < before.length) {
+    sharedPrefix += 1;
+  }
+  let sharedSuffix = 0;
+  while (
+    before.at(before.length - sharedSuffix - 1) === after.at(after.length - sharedSuffix - 1) &&
+    sharedSuffix < before.length - sharedPrefix
+  ) {
+    sharedSuffix += 1;
+  }
+  if (before.length + sharedSuffix === after.length + sharedSuffix) {
+    // Continue below through the general diff path.
+  } else if (before.length === sharedPrefix + sharedSuffix) {
+    edits.push({
+      oldFrom: sharedPrefix,
+      oldTo: sharedPrefix,
+      newFrom: sharedPrefix,
+      newTo: after.length - sharedSuffix,
+    });
+  }
+  const changes = edits.length === 0 ? diffChars(before, after) : [];
+  let oldOffset = 0;
+  let newOffset = 0;
+  for (let index = 0; index < changes.length; index += 1) {
+    const change = changes[index];
+    if (!change.added && !change.removed) {
+      oldOffset += change.value.length;
+      newOffset += change.value.length;
+      continue;
+    }
+    const oldFrom = oldOffset;
+    const newFrom = newOffset;
+    if (change.removed) {oldOffset += change.value.length;}
+    if (change.added) {newOffset += change.value.length;}
+    const adjacent = changes[index + 1];
+    if (change.removed && adjacent?.added) {
+      newOffset += adjacent.value.length;
+      index += 1;
+    }
+    edits.push({ oldFrom, oldTo: oldOffset, newFrom, newTo: newOffset });
+  }
+
+  const mapPoint = (position: number, association: "before" | "after"): number => {
+    let delta = 0;
+    for (const edit of edits) {
+      if (position < edit.oldFrom || (position === edit.oldFrom && association === "before")) {break;}
+      if (position <= edit.oldTo) {return association === "before" ? edit.newFrom : edit.newTo;}
+      delta += edit.newTo - edit.newFrom - (edit.oldTo - edit.oldFrom);
+    }
+    return position + delta;
+  };
+
+  for (const suggestion of suggestions) {
+    if (suggestion.state !== "proposed") {continue;}
+    const nextAnchors: SuggestionSpan[] = [];
+    for (const span of suggestion.anchors) {
+      const boundaries = [span.from, span.to];
+      for (const edit of edits) {
+        if (edit.oldFrom > span.from && edit.oldFrom < span.to) {boundaries.push(edit.oldFrom);}
+        if (edit.oldTo > span.from && edit.oldTo < span.to) {boundaries.push(edit.oldTo);}
+      }
+      boundaries.sort((left, right) => left - right);
+      for (let index = 0; index < boundaries.length - 1; index += 1) {
+        const from = mapPoint(boundaries[index], "after");
+        const to = mapPoint(boundaries[index + 1], "before");
+        if (from < to) {nextAnchors.push({ from, to });}
+      }
+    }
+    suggestion.anchors = nextAnchors;
+    suggestion.seam = mapPoint(suggestion.seam, "before");
+  }
+}
+
+function rejectSuggestions(review: ActiveReviewState, workingText: string): string {
+  const proposed = review.suggestions.filter((suggestion) => suggestion.state === "proposed");
+  const operations = proposed.flatMap((suggestion) => [
+    ...suggestion.anchors.map((span) => ({ from: span.from, to: span.to, insert: "" })),
+    ...(suggestion.removedText === ""
+      ? []
+      : [{ from: suggestion.seam, to: suggestion.seam, insert: suggestion.removedText }]),
+  ]).sort((left, right) => right.from - left.from || right.to - left.to);
+  let result = workingText;
+  for (const operation of operations) {
+    result = result.slice(0, operation.from) + operation.insert + result.slice(operation.to);
+  }
+  for (const suggestion of proposed) {suggestion.state = "rejected";}
+  return result;
 }
 
 // ============================================================================
@@ -733,6 +899,8 @@ export function prepareProposalSubmission(input: {
           documentId: input.documentId,
           documentPath: input.documentPath,
           referenceText: workingText,
+          trackedWorkingText: workingText,
+          suggestions: [],
           generation: 0,
           packets: [],
           submissions: [],
@@ -764,8 +932,9 @@ export function prepareProposalSubmission(input: {
   const packetIds: string[] = [];
   let textBefore = workingText;
   for (const step of sequence.steps) {
+    const packetId = randomUUID();
     const packet: ReviewPacket = {
-      packetId: randomUUID(),
+      packetId,
       reviewId: next.reviewId,
       clientRequestId: input.clientRequestId,
       requestFingerprint: input.requestFingerprint,
@@ -780,15 +949,17 @@ export function prepareProposalSubmission(input: {
       ),
     };
     next.packets.push(packet);
+    next.suggestions.push(...suggestionsForChange(textBefore, step.textAfter, packetId));
     next.generation += 1;
     packetIds.push(packet.packetId);
     textBefore = step.textAfter;
   }
 
   const nextWorkingText = sequence.steps[sequence.steps.length - 1].textAfter;
+  next.trackedWorkingText = nextWorkingText;
   const partition = adjudicablePartition(next, nextWorkingText);
   events.push(...reconcileChunkComments(next, partition));
-  const unresolvedChunks = partition.length;
+  const unresolvedChunks = next.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
 
   const response: SubmitProposalResponse = {
     packetId: packetIds[packetIds.length - 1],
@@ -851,6 +1022,47 @@ export function prepareChunkDecision(input: {
   }
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
+  mapSuggestionAnchors(next.suggestions, next.trackedWorkingText, workingText);
+  next.trackedWorkingText = workingText;
+  const suggestion = next.suggestions.find(
+    (candidate) => candidate.suggestionId === input.chunkId && candidate.state === "proposed",
+  );
+  if (suggestion !== undefined) {
+    let nextWorkingText = workingText;
+    if (input.decision === "accept") {
+      suggestion.state = "accepted";
+    } else {
+      const isolated = { ...next, suggestions: [suggestion] };
+      nextWorkingText = rejectSuggestions(isolated, workingText);
+      suggestion.state = "rejected";
+    }
+    next.trackedWorkingText = nextWorkingText;
+    next.generation += 1;
+    const unresolvedChunks = next.suggestions.filter((candidate) => candidate.state === "proposed").length;
+    const events: AgentEventDraft[] = [{
+      event: "review.changed",
+      payload: { reviewId: next.reviewId, documentId: next.documentId, generation: next.generation, unresolvedChunks },
+    }];
+    if (unresolvedChunks === 0) {
+      events.push({ event: "review.resolved", payload: { reviewId: next.reviewId, documentId: next.documentId, generation: next.generation, unresolvedChunks: 0 } });
+    }
+    return {
+      nextReview: next,
+      nextWorkingText,
+      response: {
+        ok: true,
+        reviewId: next.reviewId,
+        documentId: next.documentId,
+        chunkId: input.chunkId,
+        decision: input.decision,
+        reviewGeneration: next.generation,
+        unresolvedChunks,
+        state: classifyReviewState(next.invalidated, unresolvedChunks),
+        documentRevision: { sha256: sha256Text(nextWorkingText) },
+      },
+      events,
+    };
+  }
   const partition = adjudicablePartition(next, workingText);
   const events = reconcileChunkComments(next, partition);
   const chunk = partition.find((candidate) => candidate.chunkId === input.chunkId);
@@ -1027,6 +1239,12 @@ export function prepareAcceptAll(input: {
   }
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
+  const proposedCount = next.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
+  mapSuggestionAnchors(next.suggestions, next.trackedWorkingText, workingText);
+  for (const suggestion of next.suggestions) {
+    if (suggestion.state === "proposed") {suggestion.state = "accepted";}
+  }
+  next.trackedWorkingText = workingText;
   const partition = adjudicablePartition(next, workingText);
   // Every chunk's reference region resolves at once. Remap spans across each
   // accepted chunk, last to first so earlier reference coordinates stay valid
@@ -1069,7 +1287,7 @@ export function prepareAcceptAll(input: {
       ok: true,
       reviewId: next.reviewId,
       documentId: next.documentId,
-      acceptedChunks: partition.length,
+      acceptedChunks: proposedCount,
       reviewGeneration: next.generation,
       unresolvedChunks: 0,
       state: classifyReviewState(next.invalidated, 0),
@@ -1088,6 +1306,10 @@ export function prepareClear(input: {
   workingText: string;
 }): ReviewMutationPlan<ClearReviewResponse> {
   const next = cloneReview(input.review);
+  const workingText = normalizeText(input.workingText);
+  mapSuggestionAnchors(next.suggestions, next.trackedWorkingText, workingText);
+  const nextWorkingText = rejectSuggestions(next, workingText);
+  next.trackedWorkingText = nextWorkingText;
   next.generation += 1;
   // Every disagreement is resolved at once: nothing remains to attribute,
   // and every chunk comment dangles — its text surfaces as an orphan.
@@ -1106,13 +1328,13 @@ export function prepareClear(input: {
   });
   return {
     nextReview: next,
-    nextWorkingText: next.referenceText,
+    nextWorkingText,
     response: {
       ok: true,
       reviewId: next.reviewId,
       documentId: next.documentId,
       state: "cleared",
-      documentRevision: { sha256: sha256Text(next.referenceText) },
+      documentRevision: { sha256: sha256Text(nextWorkingText) },
       reviewGeneration: next.generation,
       unresolvedChunks: 0,
     },
@@ -1251,9 +1473,13 @@ export function prepareWorkingTextEdit(input: {
 }): ReviewMutationPlan<void> | undefined {
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
+  mapSuggestionAnchors(next.suggestions, next.trackedWorkingText, workingText);
+  const anchorsChanged = JSON.stringify(next.suggestions) !== JSON.stringify(input.review.suggestions);
+  next.trackedWorkingText = workingText;
   const partition = adjudicablePartition(next, workingText);
   const events = reconcileChunkComments(next, partition);
   const unchanged =
+    !anchorsChanged &&
     events.length === 0 &&
     next.chunkComments.length === input.review.chunkComments.length &&
     next.chunkComments.every((note, index) => {

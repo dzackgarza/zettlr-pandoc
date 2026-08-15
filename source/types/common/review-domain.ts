@@ -44,6 +44,21 @@ export interface ReviewPacket {
   refSpans: RefSpan[];
 }
 
+export interface SuggestionSpan {
+  from: number;
+  to: number;
+}
+
+export interface ReviewSuggestion {
+  suggestionId: string;
+  packetId: string;
+  kind: "insertion" | "deletion" | "substitution";
+  removedText: string;
+  anchors: SuggestionSpan[];
+  seam: number;
+  state: "proposed" | "accepted" | "rejected";
+}
+
 /**
  * One committed proposal submission: the idempotency ledger entry. Replaying
  * a clientRequestId with the same fingerprint returns `response` unchanged;
@@ -88,6 +103,9 @@ export interface ActiveReviewState {
    * a mirrored copy here is what previously let the two drift apart.
    */
   referenceText: string;
+  /** Last text whose offsets the suggestion anchors use. */
+  trackedWorkingText: string;
+  suggestions: ReviewSuggestion[];
   generation: number;
   packets: ReviewPacket[];
   /** The idempotency ledger, in submission order. */

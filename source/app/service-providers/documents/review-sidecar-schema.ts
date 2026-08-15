@@ -54,6 +54,32 @@ const ReviewPacketSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const SuggestionSpanSchema = Type.Object(
+  { from: Type.Integer({ minimum: 0 }), to: Type.Integer({ minimum: 0 }) },
+  { additionalProperties: false },
+);
+
+const ReviewSuggestionSchema = Type.Object(
+  {
+    suggestionId: Type.String({ minLength: 1 }),
+    packetId: Type.String({ minLength: 1 }),
+    kind: Type.Union([
+      Type.Literal("insertion"),
+      Type.Literal("deletion"),
+      Type.Literal("substitution"),
+    ]),
+    removedText: Type.String(),
+    anchors: Type.Array(SuggestionSpanSchema),
+    seam: Type.Integer({ minimum: 0 }),
+    state: Type.Union([
+      Type.Literal("proposed"),
+      Type.Literal("accepted"),
+      Type.Literal("rejected"),
+    ]),
+  },
+  { additionalProperties: false },
+);
+
 /**
  * The idempotency ledger entry. `response` is the exact body the original
  * submission answered with and is replayed verbatim, so it is described in
@@ -117,7 +143,7 @@ const ReviewCommentSchema = Type.Object(
 
 export const ReviewSidecarSchema = Type.Object(
   {
-    version: Type.Literal(3),
+    version: Type.Literal(4),
     reviewId: Type.String({ minLength: 1 }),
     documentPath: Type.String({ minLength: 1 }),
     referenceText: Type.String(),
@@ -126,6 +152,7 @@ export const ReviewSidecarSchema = Type.Object(
     diskFenceSha256: Sha256,
     invalidated: Type.Boolean(),
     packets: Type.Array(ReviewPacketSchema),
+    suggestions: Type.Array(ReviewSuggestionSchema),
     submissions: Type.Array(ProposalSubmissionRecordSchema),
     chunkComments: Type.Array(ChunkCommentSchema),
     comments: Type.Array(ReviewCommentSchema),
