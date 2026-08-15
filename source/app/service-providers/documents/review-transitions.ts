@@ -290,7 +290,7 @@ function suggestionsForChange(
     beforeOffset += removedText.length;
     afterOffset += appliedLength;
   }
-  if (suggestions.length < 2) return suggestions;
+  if (suggestions.length < 2) {return suggestions;}
   const anchors = suggestions.flatMap((suggestion) => suggestion.anchors);
   const restorations = suggestions.flatMap((suggestion) => suggestion.restorations);
   return [{
