@@ -235,7 +235,8 @@ describe("ReviewApplicationService", function () {
 
     // The user types in an untouched paragraph while the review is open.
     const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, typed);
-    await service.applyWorkingTextEdit(DOCUMENT_ID, typed, () => {
+    assert.ok(prepared.change !== undefined);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, typed, prepared.change.changes, () => {
       authority.commitWorkingTextReplacement(prepared);
     });
 
@@ -299,7 +300,8 @@ describe("ReviewApplicationService", function () {
     }
 
     const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, typed);
-    await service.applyWorkingTextEdit(DOCUMENT_ID, typed, () => {
+    assert.ok(prepared.change !== undefined);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, typed, prepared.change.changes, () => {
       authority.commitWorkingTextReplacement(prepared);
     });
 
@@ -341,7 +343,8 @@ describe("ReviewApplicationService", function () {
     }
 
     const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, edited);
-    await service.applyWorkingTextEdit(DOCUMENT_ID, edited, () => {
+    assert.ok(prepared.change !== undefined);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, edited, prepared.change.changes, () => {
       authority.commitWorkingTextReplacement(prepared);
     });
 
@@ -362,6 +365,94 @@ describe("ReviewApplicationService", function () {
       "prefix USER suffix\n",
       "mass rejection must remove agent-authored spans and preserve the owner's interior edit",
     );
+  });
+
+  it("preserves independent suggestion identity across owner edits and restart (#68)", async function () {
+    const baseline = "one middle two\n";
+    const firstProposal = "ONE middle two\n";
+    const proposed = "ONE middle TWO\n";
+    const edited = "OownerNE middle TWO\n";
+    const authority = new DocumentAuthority(baseline);
+    const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
+    const service = new ReviewApplicationService({
+      authority,
+      sidecarDirectory,
+      emit: () => undefined,
+      warn: () => undefined,
+    });
+    const submitted = await service.submitProposal({
+      documentId: DOCUMENT_ID,
+      baselineSha256: sha256Text(baseline),
+      claims: [
+        { patch: makePatch(baseline, firstProposal), description: "capitalize one" },
+        { patch: makePatch(firstProposal, proposed), description: "capitalize two" },
+      ],
+      clientRequestId: "request-independent-suggestions",
+      expectedReviewGeneration: 0,
+    });
+    assert.equal(submitted.ok, true);
+    if (!submitted.ok) {
+      return;
+    }
+
+    const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, edited);
+    assert.ok(prepared.change !== undefined);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, edited, prepared.change.changes, () => {
+      authority.commitWorkingTextReplacement(prepared);
+    });
+    const beforeRestart = service.getOutstandingChunks(DOCUMENT_ID);
+    assert.ok(beforeRestart !== undefined);
+    const first = beforeRestart.find((chunk) => chunk.workingText === "ONE");
+    const second = beforeRestart.find((chunk) => chunk.workingText === "TWO");
+    assert.ok(first !== undefined);
+    assert.ok(second !== undefined);
+
+    await service.detachReview(DOCUMENT_ID);
+    const restarted = new ReviewApplicationService({
+      authority,
+      sidecarDirectory,
+      emit: () => undefined,
+      warn: () => undefined,
+    });
+    await restarted.reattachReview(DOCUMENT_ID, DOCUMENT_PATH, baseline);
+    assert.deepEqual(
+      restarted.getOutstandingChunks(DOCUMENT_ID)?.map((chunk) => chunk.chunkId),
+      [first.chunkId, second.chunkId],
+      "restart must preserve both stable suggestion identities",
+    );
+
+    const restartedReview = restarted.getReview(DOCUMENT_ID);
+    assert.ok(restartedReview !== undefined);
+    const accepted = await restarted.decideChunk(
+      submitted.reviewId,
+      second.chunkId,
+      "accept",
+      {
+        expectedReviewGeneration: restartedReview.generation,
+        expectedWorkingSha256: sha256Text(edited),
+      },
+    );
+    assert.equal(accepted.ok, true);
+    if (!accepted.ok) {
+      return;
+    }
+    assert.deepEqual(
+      restarted.getOutstandingChunks(DOCUMENT_ID)?.map((chunk) => chunk.chunkId),
+      [first.chunkId],
+      "accepting one suggestion must leave the other unresolved",
+    );
+
+    const rejected = await restarted.decideChunk(
+      submitted.reviewId,
+      first.chunkId,
+      "reject",
+      {
+        expectedReviewGeneration: accepted.reviewGeneration,
+        expectedWorkingSha256: sha256Text(edited),
+      },
+    );
+    assert.equal(rejected.ok, true);
+    assert.equal(authority.readWorkingText(DOCUMENT_ID), "oneowner middle TWO\n");
   });
 
   it("refuses a closed review through an explicit service error", async function () {
@@ -429,7 +520,8 @@ describe("ReviewApplicationService", function () {
     // A later edit the user chooses not to save.
     const edited = "ALPHA\nbeta later\n";
     const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, edited);
-    await service.applyWorkingTextEdit(DOCUMENT_ID, edited, () => {
+    assert.ok(prepared.change !== undefined);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, edited, prepared.change.changes, () => {
       authority.commitWorkingTextReplacement(prepared);
     });
 
@@ -471,7 +563,8 @@ describe("ReviewApplicationService", function () {
     }
 
     const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, edited);
-    await service.applyWorkingTextEdit(DOCUMENT_ID, edited, () => {
+    assert.ok(prepared.change !== undefined);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, edited, prepared.change.changes, () => {
       authority.commitWorkingTextReplacement(prepared);
     });
     assert.equal(authority.readWorkingText(DOCUMENT_ID), edited);

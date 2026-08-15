@@ -28,6 +28,7 @@
  */
 
 import { randomUUID } from "crypto";
+import type { ChangeDesc } from "@codemirror/state";
 import {
   applyPatch,
   diffChars,
@@ -214,7 +215,7 @@ function cloneReview(review: ActiveReviewState): ActiveReviewState {
       ...packet,
       refSpans: packet.refSpans.map((span) => ({ ...span })),
     })),
-    suggestions: (review.suggestions ?? []).map((suggestion) => ({
+    suggestions: review.suggestions.map((suggestion) => ({
       ...suggestion,
       anchors: suggestion.anchors.map((span) => ({ ...span })),
       restorations: suggestion.restorations.map((restoration) => ({ ...restoration })),
@@ -307,86 +308,53 @@ function suggestionsForChange(
 
 function mapSuggestionAnchors(
   suggestions: ReviewSuggestion[],
-  before: string,
-  after: string,
-): void {
-  const edits: Array<{ oldFrom: number; oldTo: number; newFrom: number; newTo: number }> = [];
-  let sharedPrefix = 0;
-  while (before.at(sharedPrefix) === after.at(sharedPrefix) && sharedPrefix < before.length) {
-    sharedPrefix += 1;
-  }
-  let sharedSuffix = 0;
-  while (
-    before.at(before.length - sharedSuffix - 1) === after.at(after.length - sharedSuffix - 1) &&
-    sharedSuffix < before.length - sharedPrefix
-  ) {
-    sharedSuffix += 1;
-  }
-  if (before.length + sharedSuffix === after.length + sharedSuffix) {
-    // Continue below through the general diff path.
-  } else if (before.length === sharedPrefix + sharedSuffix) {
-    edits.push({
-      oldFrom: sharedPrefix,
-      oldTo: sharedPrefix,
-      newFrom: sharedPrefix,
-      newTo: after.length - sharedSuffix,
-    });
-  }
-  const changes = edits.length === 0 ? diffChars(before, after) : [];
-  let oldOffset = 0;
-  let newOffset = 0;
-  for (let index = 0; index < changes.length; index += 1) {
-    const change = changes[index];
-    if (!change.added && !change.removed) {
-      oldOffset += change.value.length;
-      newOffset += change.value.length;
-      continue;
-    }
-    const oldFrom = oldOffset;
-    const newFrom = newOffset;
-    if (change.removed) {oldOffset += change.value.length;}
-    if (change.added) {newOffset += change.value.length;}
-    const adjacent = changes[index + 1];
-    if (change.removed && adjacent?.added) {
-      newOffset += adjacent.value.length;
-      index += 1;
-    }
-    edits.push({ oldFrom, oldTo: oldOffset, newFrom, newTo: newOffset });
-  }
-
-  const mapPoint = (position: number, association: "before" | "after"): number => {
-    let delta = 0;
-    for (const edit of edits) {
-      if (position < edit.oldFrom || (position === edit.oldFrom && association === "before")) {break;}
-      if (position <= edit.oldTo) {return association === "before" ? edit.newFrom : edit.newTo;}
-      delta += edit.newTo - edit.newFrom - (edit.oldTo - edit.oldFrom);
-    }
-    return position + delta;
-  };
+  changes: ChangeDesc,
+): boolean {
+  const edits: Array<{ from: number; to: number }> = [];
+  changes.iterChangedRanges((from, to) => edits.push({ from, to }), true);
+  let changed = false;
 
   for (const suggestion of suggestions) {
     if (suggestion.state !== "proposed") {continue;}
     const nextAnchors: SuggestionSpan[] = [];
     for (const span of suggestion.anchors) {
-      const boundaries = [span.from, span.to];
+      let cursor = span.from;
       for (const edit of edits) {
-        if (edit.oldFrom > span.from && edit.oldFrom < span.to) {boundaries.push(edit.oldFrom);}
-        if (edit.oldTo > span.from && edit.oldTo < span.to) {boundaries.push(edit.oldTo);}
+        if (edit.from > span.to) {break;}
+        if (edit.to < cursor || edit.from < span.from && edit.to <= span.from) {continue;}
+        const unchangedTo = Math.min(edit.from, span.to);
+        if (cursor < unchangedTo) {
+          nextAnchors.push({
+            from: changes.mapPos(cursor, 1),
+            to: changes.mapPos(unchangedTo, -1),
+          });
+        }
+        cursor = Math.max(cursor, edit.to);
+        if (cursor >= span.to) {break;}
       }
-      boundaries.sort((left, right) => left - right);
-      for (let index = 0; index < boundaries.length - 1; index += 1) {
-        const from = mapPoint(boundaries[index], "after");
-        const to = mapPoint(boundaries[index + 1], "before");
-        if (from < to) {nextAnchors.push({ from, to });}
+      if (cursor < span.to) {
+        nextAnchors.push({
+          from: changes.mapPos(cursor, 1),
+          to: changes.mapPos(span.to, -1),
+        });
       }
     }
+    changed ||=
+      suggestion.anchors.length !== nextAnchors.length ||
+      suggestion.anchors.some((span, index) => {
+        const next = nextAnchors[index];
+        return next === undefined || span.from !== next.from || span.to !== next.to;
+      });
     suggestion.anchors = nextAnchors;
-    suggestion.seam = mapPoint(suggestion.seam, "before");
+    const nextSeam = changes.mapPos(suggestion.seam, 1);
+    changed ||= suggestion.seam !== nextSeam;
+    suggestion.seam = nextSeam;
     suggestion.restorations = suggestion.restorations.map((restoration) => ({
       ...restoration,
-      at: mapPoint(restoration.at, "before"),
+      at: changes.mapPos(restoration.at, 1),
     }));
   }
+  return changed;
 }
 
 function rejectSuggestions(review: ActiveReviewState, workingText: string): string {
@@ -1042,7 +1010,6 @@ export function prepareChunkDecision(input: {
   }
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
-  mapSuggestionAnchors(next.suggestions, next.trackedWorkingText, workingText);
   next.trackedWorkingText = workingText;
   const suggestion = next.suggestions.find(
     (candidate) => candidate.suggestionId === input.chunkId && candidate.state === "proposed",
@@ -1260,7 +1227,6 @@ export function prepareAcceptAll(input: {
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
   const proposedCount = next.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
-  mapSuggestionAnchors(next.suggestions, next.trackedWorkingText, workingText);
   for (const suggestion of next.suggestions) {
     if (suggestion.state === "proposed") {suggestion.state = "accepted";}
   }
@@ -1327,7 +1293,6 @@ export function prepareClear(input: {
 }): ReviewMutationPlan<ClearReviewResponse> {
   const next = cloneReview(input.review);
   const workingText = normalizeText(input.workingText);
-  mapSuggestionAnchors(next.suggestions, next.trackedWorkingText, workingText);
   const nextWorkingText = rejectSuggestions(next, workingText);
   next.trackedWorkingText = nextWorkingText;
   next.generation += 1;
@@ -1490,11 +1455,11 @@ export function prepareRetraction(input: {
 export function prepareWorkingTextEdit(input: {
   review: ActiveReviewState;
   workingText: string;
+  changes: ChangeDesc;
 }): ReviewMutationPlan<void> | undefined {
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
-  mapSuggestionAnchors(next.suggestions, next.trackedWorkingText, workingText);
-  const anchorsChanged = JSON.stringify(next.suggestions) !== JSON.stringify(input.review.suggestions);
+  const anchorsChanged = mapSuggestionAnchors(next.suggestions, input.changes);
   next.trackedWorkingText = workingText;
   const partition = adjudicablePartition(next, workingText);
   const events = reconcileChunkComments(next, partition);

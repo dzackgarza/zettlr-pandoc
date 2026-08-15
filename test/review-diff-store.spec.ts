@@ -15,6 +15,7 @@
  */
 
 import { strict as assert } from "assert";
+import { ChangeSet } from "@codemirror/state";
 import { createPatch } from "diff";
 import {
   proposalRequestFingerprint,
@@ -218,6 +219,10 @@ describe("pure review transitions", function () {
     const edit = prepareWorkingTextEdit({
       review: noted.nextReview!,
       workingText: review.referenceText,
+      changes: ChangeSet.of(
+        { from: 0, to: workingText.length, insert: review.referenceText },
+        workingText.length,
+      ),
     });
     assert.ok(edit !== undefined);
     assert.deepEqual(noted.nextReview, before);

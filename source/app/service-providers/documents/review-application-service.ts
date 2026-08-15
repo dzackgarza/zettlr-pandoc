@@ -367,10 +367,11 @@ export class ReviewApplicationService {
   public async applyWorkingTextEdit(
     documentId: string,
     workingText: string,
+    changes: ChangeSet,
     commitDocument: () => void,
   ): Promise<void> {
     await this.withDocumentLock(documentId, async () => {
-      await this.applyWorkingTextEditLocked(documentId, workingText, commitDocument);
+      await this.applyWorkingTextEditLocked(documentId, workingText, changes, commitDocument);
     });
   }
 
@@ -378,6 +379,7 @@ export class ReviewApplicationService {
   public async applyWorkingTextEditLocked(
     documentId: string,
     workingText: string,
+    changes: ChangeSet,
     commitDocument: () => void,
   ): Promise<void> {
     const review = this.reviews.getReview(documentId);
@@ -389,6 +391,7 @@ export class ReviewApplicationService {
     const plan = prepareWorkingTextEdit({
       review,
       workingText: normalizeText(workingText),
+      changes,
     });
     try {
       await this.sidecars.write(

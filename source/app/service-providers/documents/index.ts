@@ -1327,9 +1327,12 @@ export default class DocumentManager
     // The candidate document: everything the updates produce, computed
     // without touching the authority's own state.
     let candidateText = doc.document;
+    let candidateChanges = ChangeSet.empty(doc.document.length);
     for (const update of clientUpdates) {
       try {
-        candidateText = ChangeSet.fromJSON(update.changes).apply(candidateText);
+        const changes = ChangeSet.fromJSON(update.changes);
+        candidateText = changes.apply(candidateText);
+        candidateChanges = candidateChanges.compose(changes);
       } catch (err: unknown) {
         dialog.showErrorBox(
           "Document out of sync",
@@ -1383,6 +1386,7 @@ current contents from the editor somewhere else, and restart the application.`,
       await this._reviewApplication.applyWorkingTextEditLocked(
         documentId,
         candidateWorkingText,
+        candidateChanges,
         commitDocument,
       );
       // A reviewed document does not autosave: the save gate owns when its
