@@ -167,9 +167,7 @@ function dressSuggestions(
       const packet = packets.find((candidate) => candidate.packetId === suggestion.packetId);
       const from = suggestion.anchors[0]?.from ?? suggestion.seam;
       const to = suggestion.anchors.at(-1)?.to ?? suggestion.seam;
-      const proposedText = suggestion.anchors
-        .map((span) => workingText.slice(span.from, span.to))
-        .join("");
+      const proposedText = workingText.slice(from, to);
       const fromLine = lineAt(workingText, from);
       const toLine = lineAt(workingText, to) + (to > from ? 1 : 0);
       const note = chunkComments.find((candidate) => candidate.chunkId === suggestion.suggestionId);
@@ -232,6 +230,7 @@ export function reviewSidecar(
     suggestions: review.suggestions.map((suggestion) => ({
       ...suggestion,
       anchors: suggestion.anchors.map((span) => ({ ...span })),
+      restorations: suggestion.restorations.map((restoration) => ({ ...restoration })),
     })),
     submissions: review.submissions.map((submission) => ({
       ...submission,
@@ -272,6 +271,7 @@ export function reviewFromSidecar(
     suggestions: sidecar.suggestions.map((suggestion) => ({
       ...suggestion,
       anchors: suggestion.anchors.map((span) => ({ ...span })),
+      restorations: suggestion.restorations.map((restoration) => ({ ...restoration })),
     })),
     generation: sidecar.generation,
     packets: sidecar.packets.map((packet) => ({

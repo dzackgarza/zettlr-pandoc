@@ -54,6 +54,7 @@ export interface ReviewSuggestion {
   packetId: string;
   kind: "insertion" | "deletion" | "substitution";
   removedText: string;
+  restorations: Array<{ at: number; text: string }>;
   anchors: SuggestionSpan[];
   seam: number;
   state: "proposed" | "accepted" | "rejected";

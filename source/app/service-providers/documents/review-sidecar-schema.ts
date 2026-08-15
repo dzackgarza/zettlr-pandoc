@@ -69,6 +69,12 @@ const ReviewSuggestionSchema = Type.Object(
       Type.Literal("substitution"),
     ]),
     removedText: Type.String(),
+    restorations: Type.Array(
+      Type.Object(
+        { at: Type.Integer({ minimum: 0 }), text: Type.String() },
+        { additionalProperties: false },
+      ),
+    ),
     anchors: Type.Array(SuggestionSpanSchema),
     seam: Type.Integer({ minimum: 0 }),
     state: Type.Union([

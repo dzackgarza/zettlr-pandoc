@@ -217,6 +217,7 @@ function cloneReview(review: ActiveReviewState): ActiveReviewState {
     suggestions: (review.suggestions ?? []).map((suggestion) => ({
       ...suggestion,
       anchors: suggestion.anchors.map((span) => ({ ...span })),
+      restorations: suggestion.restorations.map((restoration) => ({ ...restoration })),
     })),
     submissions: review.submissions.map((submission) => ({
       ...submission,
@@ -281,6 +282,7 @@ function suggestionsForChange(
       packetId,
       kind,
       removedText,
+      restorations: removedText === "" ? [] : [{ at: afterOffset, text: removedText }],
       anchors: addedText === "" ? [] : [{ from: afterOffset, to: afterOffset + addedText.length }],
       seam: afterOffset,
       state: "proposed",
@@ -288,7 +290,19 @@ function suggestionsForChange(
     beforeOffset += removedText.length;
     afterOffset += appliedLength;
   }
-  return suggestions;
+  if (suggestions.length < 2) return suggestions;
+  const anchors = suggestions.flatMap((suggestion) => suggestion.anchors);
+  const restorations = suggestions.flatMap((suggestion) => suggestion.restorations);
+  return [{
+    suggestionId: randomUUID(),
+    packetId,
+    kind: restorations.length === 0 ? "insertion" : anchors.length === 0 ? "deletion" : "substitution",
+    removedText: restorations.map((restoration) => restoration.text).join(""),
+    restorations,
+    anchors,
+    seam: suggestions[0].seam,
+    state: "proposed",
+  }];
 }
 
 function mapSuggestionAnchors(
@@ -368,6 +382,10 @@ function mapSuggestionAnchors(
     }
     suggestion.anchors = nextAnchors;
     suggestion.seam = mapPoint(suggestion.seam, "before");
+    suggestion.restorations = suggestion.restorations.map((restoration) => ({
+      ...restoration,
+      at: mapPoint(restoration.at, "before"),
+    }));
   }
 }
 
@@ -375,9 +393,11 @@ function rejectSuggestions(review: ActiveReviewState, workingText: string): stri
   const proposed = review.suggestions.filter((suggestion) => suggestion.state === "proposed");
   const operations = proposed.flatMap((suggestion) => [
     ...suggestion.anchors.map((span) => ({ from: span.from, to: span.to, insert: "" })),
-    ...(suggestion.removedText === ""
-      ? []
-      : [{ from: suggestion.seam, to: suggestion.seam, insert: suggestion.removedText }]),
+    ...suggestion.restorations.map((restoration) => ({
+      from: restoration.at,
+      to: restoration.at,
+      insert: restoration.text,
+    })),
   ]).sort((left, right) => right.from - left.from || right.to - left.to);
   let result = workingText;
   for (const operation of operations) {
