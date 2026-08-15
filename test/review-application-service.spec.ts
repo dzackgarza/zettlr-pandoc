@@ -320,6 +320,46 @@ describe("ReviewApplicationService", function () {
     assert.equal(service.getStatus(DOCUMENT_ID)?.unresolvedChunks, 0);
   });
 
+  it("rejects only agent text after the owner edits inside a suggestion (#68)", async function () {
+    const baseline = "prefix suffix\n";
+    const proposed = "prefix AGENT suffix\n";
+    const edited = "prefix AGUSERENT suffix\n";
+    const authority = new DocumentAuthority(baseline);
+    const service = new ReviewApplicationService({
+      authority,
+      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
+      emit: () => undefined,
+      warn: () => undefined,
+    });
+    const submitted = await service.submitProposal({
+      documentId: DOCUMENT_ID,
+      baselineSha256: sha256Text(baseline),
+      claims: [{ patch: makePatch(baseline, proposed), description: "insert AGENT" }],
+      clientRequestId: "request-owner-edit-inside-suggestion",
+      expectedReviewGeneration: 0,
+    });
+    assert.equal(submitted.ok, true);
+    if (!submitted.ok) {
+      return;
+    }
+
+    const prepared = authority.prepareWorkingTextReplacement(DOCUMENT_ID, edited);
+    await service.applyWorkingTextEdit(DOCUMENT_ID, edited, () => {
+      authority.commitWorkingTextReplacement(prepared);
+    });
+
+    const rejected = await service.clearReview(submitted.reviewId, {
+      expectedReviewGeneration: submitted.reviewGeneration,
+      expectedWorkingSha256: sha256Text(edited),
+    });
+    assert.equal(rejected.ok, true);
+    assert.equal(
+      authority.readWorkingText(DOCUMENT_ID),
+      "prefix USER suffix\n",
+      "mass rejection must remove agent-authored spans and preserve the owner's interior edit",
+    );
+  });
+
   it("refuses a closed review through an explicit service error", async function () {
     const baseline = "alpha\n";
     const authority = new DocumentAuthority(baseline);
