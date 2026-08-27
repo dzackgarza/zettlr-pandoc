@@ -355,6 +355,19 @@ export default class CiteprocProvider extends ProviderContract {
       path.join(app.getPath('userData'), 'citeproc-cache')
     )
 
+    // Label styles print `citation-label`, and citeproc invents one from the
+    // author names when the item carries none -- BibTeX and BibLaTeX have no
+    // field that maps to it. The citekey IS the label the author writes and
+    // reads, so it is the label to print. This runs once per load, on the
+    // in-memory record: the parse cache on disk keeps holding exactly what the
+    // file says, and citeproc sees the same item object on every retrieval,
+    // which its cluster-wide disambiguation requires.
+    for (const [ id, item ] of Object.entries(record.cslData)) {
+      if (item['citation-label'] === undefined) {
+        item['citation-label'] = id
+      }
+    }
+
     // Add the database to the list of available databases
     this.databases.set(databasePath, record)
 
@@ -403,18 +416,7 @@ export default class CiteprocProvider extends ProviderContract {
       this._logger.verbose(`[Citeproc Provider] Selecting database ${dbPath}...`)
     }
 
-    // Label styles print `citation-label`, and citeproc invents one from the
-    // author names when the item carries none -- BibTeX and BibLaTeX have no
-    // field that maps to it. The citekey IS the label the author writes and
-    // reads, so it is the label to print. citeproc keeps state on the objects
-    // retrieveItem returns (disambiguation spans a whole cluster), so the
-    // labelled items are built once here rather than per retrieval; the parse
-    // cache keeps holding exactly what the file says.
-    this._items = Object.fromEntries(
-      Object.entries(database.cslData).map(([ id, item ]) => {
-        return [ id, item['citation-label'] === undefined ? { ...item, 'citation-label': id } : item ]
-      })
-    )
+    this._items = database.cslData
 
     // Remove the items from the registry
     this.engine.updateItems([])
