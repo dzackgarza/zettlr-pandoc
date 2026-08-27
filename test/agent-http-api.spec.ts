@@ -857,12 +857,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         workingSpans: Array<{ from: number; to: number }>;
       }>;
     };
-    assert.deepEqual(chunkBody.chunks.map((chunk) => chunk.workingText), ["atr"]);
-    assert.deepEqual(chunkBody.chunks[0].workingSpans, [
-      { from: 0, to: 1 },
-      { from: 2, to: 3 },
-      { from: 4, to: 5 },
-    ]);
+    // The reviewer reads the chunk as text, so the change is reported the way
+    // it reads -- one replaced word -- rather than as the letters a character
+    // diff happens to share between "before" and "after".
+    assert.deepEqual(chunkBody.chunks.map((chunk) => chunk.workingText), ["after"]);
+    assert.deepEqual(chunkBody.chunks[0].workingSpans, [{ from: 0, to: 5 }]);
     assert.equal(
       chunkBody.chunks[0].workingSpans
         .map((span) => revised.slice(span.from, span.to))

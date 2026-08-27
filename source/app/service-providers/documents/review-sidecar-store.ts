@@ -137,10 +137,14 @@ function assertReviewSidecarSemantics(
         seamAnchors[0].from === suggestion.seam &&
         hasRestorations &&
         hasRemovedText) ||
+      // One suggestion covers one change, and a change whose character diff
+      // falls into several parts deletes in one place and inserts in another:
+      // its deletions are seam anchors sitting between the owned ones. What a
+      // substitution must still be is a change that owns text, can restore
+      // what it replaced, and starts where it says it starts.
       (suggestion.kind === "substitution" &&
         ownedAnchors.length > 0 &&
-        seamAnchors.length === 0 &&
-        ownedAnchors[0].from === suggestion.seam &&
+        suggestion.anchors[0].from === suggestion.seam &&
         hasRestorations &&
         hasRemovedText);
     if (!coherent) {

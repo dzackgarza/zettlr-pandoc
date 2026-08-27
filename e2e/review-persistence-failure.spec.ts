@@ -553,7 +553,9 @@ describe('a review that cannot be persisted', function () {
     )
     assert.deepEqual(
       pending.chunks.map(chunk => chunk.workingText),
-      ['bravo proposed'],
+      // The claim rewrote one word of "bravo original", so that word is what
+      // the reviewer decides about; "bravo" is unchanged text on both sides.
+      ['proposed'],
       `only the proposed claim remains adjudicable: ${JSON.stringify(pending)}`
     )
     assert.equal(

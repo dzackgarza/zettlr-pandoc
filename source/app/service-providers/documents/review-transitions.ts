@@ -31,7 +31,7 @@ import { randomUUID } from "crypto";
 import { ChangeSet, Text, type ChangeDesc } from "@codemirror/state";
 import {
   applyPatch,
-  diffChars,
+  diffWordsWithSpace,
   parsePatch,
   reversePatch,
   type StructuredPatch,
@@ -224,7 +224,7 @@ function suggestionsForChange(
   after: string,
   packetId: string,
 ): ReviewSuggestion[] {
-  const changes = diffChars(before, after);
+  const changes = diffWordsWithSpace(before, after);
   const suggestions: ReviewSuggestion[] = [];
   let afterOffset = 0;
   for (let index = 0; index < changes.length; index += 1) {
@@ -288,7 +288,7 @@ function suggestionsForChange(
 }
 
 function changeSetForTextTransition(before: string, after: string): ChangeSet {
-  const changes = diffChars(before, after);
+  const changes = diffWordsWithSpace(before, after);
   const specs: Array<{ from: number; to: number; insert: string }> = [];
   let beforeOffset = 0;
   for (let index = 0; index < changes.length;) {
