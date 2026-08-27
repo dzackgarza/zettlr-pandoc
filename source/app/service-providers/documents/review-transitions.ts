@@ -268,23 +268,12 @@ function suggestionsForChange(
     });
     afterOffset += appliedLength;
   }
-  if (suggestions.length < 2) {return suggestions;}
-  const anchors = suggestions.flatMap((suggestion) => suggestion.anchors);
-  const restorations = suggestions.flatMap((suggestion) => suggestion.restorations);
-  return [{
-    suggestionId: randomUUID(),
-    packetId,
-    kind: restorations.length === 0
-      ? "insertion"
-      : anchors.every((anchor) => anchor.from === anchor.to)
-        ? "deletion"
-        : "substitution",
-    removedText: restorations.map((restoration) => restoration.text).join(""),
-    restorations,
-    anchors,
-    seam: suggestions[0].seam,
-    state: "proposed",
-  }];
+  // One suggestion per changed region, not per claim. A claim that rewrites
+  // two identical occurrences, or five lines, is adjudicated region by region:
+  // the reviewer accepts the ones they want and rejects the rest. Merging a
+  // claim's regions into one suggestion would make a claim all-or-nothing and
+  // hand the reviewer a chunk whose text spans the whole document.
+  return suggestions;
 }
 
 function changeSetForTextTransition(before: string, after: string): ChangeSet {

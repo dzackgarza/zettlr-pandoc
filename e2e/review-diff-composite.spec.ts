@@ -201,7 +201,9 @@ describe('review-diff closure contract composite lifecycle', function () {
     await waitForReview(page)
     // One claim can yield two independently actionable chunks when it edits
     // two identical occurrences; every packet still retains its description.
-    assert.equal(await page.locator('.cm-chunkDescription').count(), 5)
+    // Six here: alpha, the two repeated occurrences, the two lines of the
+    // display-math rewrite, and the blank line.
+    assert.equal(await page.locator('.cm-chunkDescription').count(), 6)
 
     // Accept alpha through its real widget. The controls strip names its
     // chunk by the claim description, not the replaced reference text.
