@@ -79,6 +79,24 @@ async function paintedMath (page: Page): Promise<PaintedMath[]> {
           })
         }
       }
+      // A painter can also be an ancestor of the widget — a mark decoration
+      // that spans the math, or the widget's own wrapper — so walk the chain
+      // up to the content element as well.
+      let node = widget.parentElement
+      while (node !== null && !node.classList.contains('cm-content')) {
+        const bg = getComputedStyle(node).backgroundColor
+        if (bg !== 'transparent' && bg.indexOf('rgba(0, 0, 0, 0') !== 0) {
+          painters.push({
+            cls: String(node.className) + ' [ancestor]',
+            bg,
+            width: Math.round(node.getBoundingClientRect().width),
+            rect: [ 0, 0, 0, 0 ],
+            mathRect: [ Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height) ],
+            text: (node.textContent || '').slice(0, 40)
+          })
+        }
+        node = node.parentElement
+      }
       const probeX = Math.round(box.left + 2)
       const probeY = Math.round(box.top + box.height / 2)
       const stack = document.elementsFromPoint(probeX, probeY).map(el => ({
@@ -106,6 +124,9 @@ async function reproConfig (): Promise<Record<string, unknown>|undefined> {
   const parsed = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>
   delete parsed.app
   delete parsed.openDirectory
+  // The reader's own Zettlr may be running and holding its configured Agent
+  // API port; the fixture must not compete for it.
+  parsed.agentApi = { enabled: false, port: 0 }
   return parsed
 }
 
@@ -159,6 +180,20 @@ describe('inline math in the live editor', function () {
     })()`)
     await page.waitForTimeout(600)
     console.log('cursor placed at', JSON.stringify(activation))
+    if (process.env.REPRO_EDIT !== undefined) {
+      // The reported state arises while typing a citekey that the library does
+      // not contain, so break a resolvable key in place rather than loading a
+      // document that was already broken.
+      const edit = await page.evaluate(`(() => {
+        const view = document.querySelector('.cm-content').cmTile.root.view
+        const at = view.state.doc.toString().indexOf('@CD85')
+        if (at < 0) throw new Error('the fixture has no @CD85 to break')
+        view.dispatch({ changes: { from: at + 4, to: at + 5, insert: '9' } })
+        return view.state.doc.sliceString(at, at + 6)
+      })()`)
+      await page.waitForTimeout(800)
+      console.log('edited citekey to', JSON.stringify(edit))
+    }
     console.log('div states:', await page.evaluate(`Array.from(document.querySelectorAll('[data-pandoc-div-state]')).map(el => el.getAttribute('data-pandoc-div-state')).join(',')`))
     // The reported layout has the file manager open, so the editor column is
     // narrower than this harness's default and the paragraph wraps elsewhere.
