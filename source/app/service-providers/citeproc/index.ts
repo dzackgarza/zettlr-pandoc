@@ -181,7 +181,15 @@ export default class CiteprocProvider extends ProviderContract {
         return this.getLocale(lang)
       },
       retrieveItem: (id: string) => {
-        return this._items[id]
+        const item = this._items[id]
+        if (item === undefined || item['citation-label'] !== undefined) {
+          return item
+        }
+        // Label styles print `citation-label`, and citeproc invents one from
+        // the author names when the item carries none -- BibTeX and BibLaTeX
+        // have no field that maps to it. The citekey IS the label the author
+        // writes and reads, so it is the label to print.
+        return { ...item, 'citation-label': id }
       }
     }
 
