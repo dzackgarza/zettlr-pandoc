@@ -28,9 +28,16 @@ const LIBRARY = `@article{Nik80,
   year = {1980},
   journaltitle = {Mathematics of the USSR-Izvestiya},
 }
+
+@article{DM20,
+  author = {Dolgachev, Igor and Markushevich, Dimitri},
+  title = {Lagrangian tens of planes},
+  year = {2020},
+  journaltitle = {arXiv},
+}
 `
 
-const DOCUMENT = '# Lattices\n\nThe classification is due to [@Nik80].\n'
+const DOCUMENT = '# Lattices\n\nThe classification is due to [@Nik80] and [@DM20].\n'
 
 const LABEL_STYLE = path.join(
   process.env.HOME ?? '/home/dzack',
@@ -76,12 +83,14 @@ describe('citation style in the editor', function () {
     assertCleanExit(getOutput())
   })
 
-  it('renders the citation in the configured style', async function () {
+  it('labels citations with their citekeys under a label style', async function () {
     assert.ok(browser, 'The application must be running')
     const page = await findEditorPage(browser, this.timeout())
-    const citation = page.locator('.citeproc-citation').first()
-    await citation.waitFor({ timeout: this.timeout() })
+    const citations = page.locator('.citeproc-citation')
+    await citations.first().waitFor({ timeout: this.timeout() })
     screenshots.set('citation-style.png', await page.screenshot())
-    assert.equal(await citation.textContent(), '[Niku80]')
+    // The citekeys are the labels the author writes and reads, so a label
+    // style must print them, not a label citeproc invents from the names.
+    assert.deepEqual(await citations.allTextContents(), [ '[Nik80]', '[DM20]' ])
   })
 })
