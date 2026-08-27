@@ -307,7 +307,14 @@ export default class CiteprocProvider extends ProviderContract {
    * @return {CSL.Engine} The instantiated engine
    */
   private async loadEngine (): Promise<void> {
-    const style = await fs.readFile(DEFAULT_CHICAGO_STYLE, 'utf-8')
+    // `export.cslStyle` is the application's only citation-style setting, so
+    // the editor renders in it too, not just the exporter. An unreadable path
+    // is a misconfiguration the user must see, not something to paper over
+    // with the bundled style.
+    const configuredStyle = this._config.get().export.cslStyle
+    const stylePath = configuredStyle === '' ? DEFAULT_CHICAGO_STYLE : configuredStyle
+    this._logger.info(`[Citeproc Provider] Loading CSL style at ${stylePath} ...`)
+    const style = await fs.readFile(stylePath, 'utf-8')
 
     // The last parameter enforces usage of the language we provide
     this.engine = new CSL.Engine(this.sys, style, this._config.get().appLang, true)
@@ -419,8 +426,8 @@ export default class CiteprocProvider extends ProviderContract {
    * There has been a config update. In case the main library has changed, reload
    */
   onConfigUpdate (option: string): void {
-    if (option === 'appLang') {
-      // We have to reload the engine to reflect the new language
+    if (option === 'appLang' || option === 'export.cslStyle') {
+      // We have to reload the engine to reflect the new language or style
       this.loadEngine().catch(err => this._logger.error(`[Citeproc Provider] Could not reload engine: ${err instanceof Error ? err.message : 'unknown error'}`, err))
     } else if (option === 'export.cslLibrary') {
       // Determine if we have to reload
