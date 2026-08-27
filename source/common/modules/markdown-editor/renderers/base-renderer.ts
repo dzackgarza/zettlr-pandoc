@@ -68,6 +68,15 @@ class LineStyleResetWidget extends WidgetType {
   }
 
   updateDOM (dom: HTMLElement, view: EditorView, from: LineStyleResetWidget): boolean {
+    // CodeMirror recycles a widget's element when the two widgets share a
+    // constructor, which every renderer now does through this wrapper. `dom`
+    // therefore belongs to whichever renderer produced it, and a renderer that
+    // adopts it keeps that renderer's classes -- a citation's element filled
+    // with math keeps the citation background. Refuse across renderers so
+    // CodeMirror builds a fresh element instead.
+    if (from.inner.constructor !== this.inner.constructor) {
+      return false
+    }
     // @codemirror/view's WidgetType.updateDOM is (dom, view, from) where `from`
     // is the previous widget of this type; forward the previous INNER widget so
     // the wrapped renderer sees its own predecessor, not this wrapper.
