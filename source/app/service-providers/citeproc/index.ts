@@ -181,15 +181,7 @@ export default class CiteprocProvider extends ProviderContract {
         return this.getLocale(lang)
       },
       retrieveItem: (id: string) => {
-        const item = this._items[id]
-        if (item === undefined || item['citation-label'] !== undefined) {
-          return item
-        }
-        // Label styles print `citation-label`, and citeproc invents one from
-        // the author names when the item carries none -- BibTeX and BibLaTeX
-        // have no field that maps to it. The citekey IS the label the author
-        // writes and reads, so it is the label to print.
-        return { ...item, 'citation-label': id }
+        return this._items[id]
       }
     }
 
@@ -411,7 +403,18 @@ export default class CiteprocProvider extends ProviderContract {
       this._logger.verbose(`[Citeproc Provider] Selecting database ${dbPath}...`)
     }
 
-    this._items = database.cslData
+    // Label styles print `citation-label`, and citeproc invents one from the
+    // author names when the item carries none -- BibTeX and BibLaTeX have no
+    // field that maps to it. The citekey IS the label the author writes and
+    // reads, so it is the label to print. citeproc keeps state on the objects
+    // retrieveItem returns (disambiguation spans a whole cluster), so the
+    // labelled items are built once here rather than per retrieval; the parse
+    // cache keeps holding exactly what the file says.
+    this._items = Object.fromEntries(
+      Object.entries(database.cslData).map(([ id, item ]) => {
+        return [ id, item['citation-label'] === undefined ? { ...item, 'citation-label': id } : item ]
+      })
+    )
 
     // Remove the items from the registry
     this.engine.updateItems([])
@@ -520,6 +523,11 @@ export default class CiteprocProvider extends ProviderContract {
         this._logger.verbose(`[CiteprocProvider] Cannot render citation with citekeys ${citekeys.join(', ')}: At least one key does not exist in database ${database}`)
         return undefined
       }
+
+      // A style whose <citation> declares a <sort> reads each cited item from
+      // the engine's registry while ordering the cluster, so the items have to
+      // be registered before the cluster is built.
+      this.engine.updateItems(citekeys)
 
       if (!composite || citations.length > 1) {
         return this.engine.makeCitationCluster(citations)

@@ -37,7 +37,7 @@ const LIBRARY = `@article{Nik80,
 }
 `
 
-const DOCUMENT = '# Lattices\n\nThe classification is due to [@Nik80] and [@DM20].\n'
+const DOCUMENT = '# Lattices\n\nThe classification is due to [@Nik80] and [@DM20], jointly [@Nik80; @DM20].\n'
 
 const LABEL_STYLE = path.join(
   process.env.HOME ?? '/home/dzack',
@@ -91,6 +91,9 @@ describe('citation style in the editor', function () {
     screenshots.set('citation-style.png', await page.screenshot())
     // The citekeys are the labels the author writes and reads, so a label
     // style must print them, not a label citeproc invents from the names.
-    assert.deepEqual(await citations.allTextContents(), [ '[Nik80]', '[DM20]' ])
+    assert.deepEqual(
+      await citations.allTextContents(),
+      [ '[Nik80]', '[DM20]', '[Nik80, DM20]' ]
+    )
   })
 })
