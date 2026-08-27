@@ -80,12 +80,16 @@ async function paintedMath (page: Page): Promise<PaintedMath[]> {
         }
       }
       // A painter can also be an ancestor of the widget — a mark decoration
-      // that spans the math, or the widget's own wrapper — so walk the chain
-      // up to the content element as well.
+      // that spans the math, or a foreign widget's element the math was
+      // rendered into. Only an ancestor drawn AROUND the math counts: the
+      // div and the page paint the background this math sits on, which is
+      // the page's, not the math's.
       let node = widget.parentElement
       while (node !== null && !node.classList.contains('cm-content')) {
+        const around = node.getBoundingClientRect()
+        const hugsMath = around.width <= box.width + 8 && around.height <= box.height + 8
         const bg = getComputedStyle(node).backgroundColor
-        if (bg !== 'transparent' && bg.indexOf('rgba(0, 0, 0, 0') !== 0) {
+        if (hugsMath && bg !== 'transparent' && bg.indexOf('rgba(0, 0, 0, 0') !== 0) {
           painters.push({
             cls: String(node.className) + ' [ancestor]',
             bg,
@@ -118,8 +122,14 @@ async function paintedMath (page: Page): Promise<PaintedMath[]> {
 async function reproConfig (): Promise<Record<string, unknown>|undefined> {
   const configPath = process.env.REPRO_CONFIG
   const library = process.env.REPRO_LIBRARY
+  // The Agent API is off in every case: a developer's own Zettlr may be
+  // running and holding the configured port, and this fixture must not
+  // compete with it for one.
   if (configPath === undefined) {
-    return library === undefined ? undefined : { export: { cslLibrary: library } }
+    return {
+      agentApi: { enabled: false, port: 0 },
+      ...(library === undefined ? {} : { export: { cslLibrary: library } })
+    }
   }
   const parsed = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>
   delete parsed.app

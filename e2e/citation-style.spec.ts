@@ -39,10 +39,32 @@ const LIBRARY = `@article{Nik80,
 
 const DOCUMENT = '# Lattices\n\nThe classification is due to [@Nik80] and [@DM20], jointly [@Nik80; @DM20].\n'
 
-const LABEL_STYLE = path.join(
-  process.env.HOME ?? '/home/dzack',
-  '.pandoc/csl/american-mathematical-society-label.csl'
-)
+/**
+ * A label style, written into the fixture so the run owns it. It keeps the
+ * `<sort>` a real label style carries: sorting reads each cited item from the
+ * engine's registry, which is what a multi-key cluster needs registered.
+ */
+const LABEL_STYLE_XML = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" default-locale="en-US">
+  <info>
+    <title>Label fixture</title>
+    <id>https://zettlr.test/styles/label-fixture</id>
+    <updated>2026-01-01T00:00:00+00:00</updated>
+  </info>
+  <citation>
+    <sort><key variable="citation-number"/></sort>
+    <layout prefix="[" suffix="]" delimiter=", ">
+      <text variable="citation-label"/>
+    </layout>
+  </citation>
+  <bibliography>
+    <layout>
+      <text variable="citation-label" prefix="[" suffix="] "/>
+      <text variable="title"/>
+    </layout>
+  </bibliography>
+</style>
+`
 
 describe('citation style in the editor', function () {
   let appProcess: ChildProcess | undefined
@@ -60,11 +82,13 @@ describe('citation style in the editor', function () {
     fixtureRoot = fixture.root
     const libraryPath = path.join(fixture.root, 'references.bib')
     await writeFile(libraryPath, LIBRARY, 'utf8')
+    const stylePath = path.join(fixture.root, 'label.csl')
+    await writeFile(stylePath, LABEL_STYLE_XML, 'utf8')
     const configPath = path.join(fixture.configDirectory, 'config.json')
     const config = JSON.parse(
       await (await import('node:fs/promises')).readFile(configPath, 'utf8')
     ) as Record<string, unknown>
-    config.export = { cslLibrary: libraryPath, cslStyle: LABEL_STYLE }
+    config.export = { cslLibrary: libraryPath, cslStyle: stylePath }
     config.agentApi = { enabled: false, port: 0 }
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8')
     const app = await attach(fixture.configDirectory, rendererEvents, this.timeout())
