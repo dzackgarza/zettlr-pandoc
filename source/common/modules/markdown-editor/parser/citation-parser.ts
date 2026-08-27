@@ -496,6 +496,14 @@ export const citationParser: InlineParser = {
           break // Stop iterating; citation is between pos and i.
         }
 
+        if (citekeyStart < 0 && i === citationPartStart && [ CHAR.SPACE, CHAR.LF, CHAR.CR, CHAR.TAB ].includes(ch)) {
+          // Whitespace at the start of a citation part separates it from the
+          // preceding semicolon. It is part of the citation syntax, so it must
+          // not end up in the prefix of this part.
+          citationPartStart = i + 1
+          continue
+        }
+
         if (ch === CHAR.HYPHEN && citekeyStart < 0 && nextCh === CHAR.AT) {
           // Suppress-author-flag: Before citekey starts, must be followed by @
           if (i > citationPartStart) {
@@ -507,8 +515,8 @@ export const citationParser: InlineParser = {
           continue
         }
 
-        if (ch === CHAR.AT && citekeyStart < 0 && [ CHAR.SPACE, CHAR.HYPHEN, CHAR.BRACKET_OPEN ].includes(prevCh)) {
-          // Start citekey (must be preceded by [, a space, or -)
+        if (ch === CHAR.AT && citekeyStart < 0 && [ CHAR.SPACE, CHAR.HYPHEN, CHAR.BRACKET_OPEN, CHAR.SEMICOLON ].includes(prevCh)) {
+          // Start citekey (must be preceded by [, a space, a semicolon, or -)
           if (i > citationPartStart && prevCh !== CHAR.HYPHEN) {
             // Add prefix node. Note that we have to add nodes in proper sorted
             // order.
