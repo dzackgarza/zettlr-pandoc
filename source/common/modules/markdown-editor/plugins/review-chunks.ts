@@ -16,13 +16,10 @@
  *
  *                  The pane is a VIEW. It renders the provider's mapped
  *                  suggestion anchors over this editor's buffer. Clicking a
- *                  control emits the stable suggestion id upward. The
- *                  provider applies the
- *                  decision and broadcasts, and this field recomputes. The
- *                  pane never mutates review state and reports nothing back —
- *                  which is what retires the @codemirror/merge unifiedMergeView
- *                  this plugin replaces, whose accept/reject rewrote a local
- *                  copy of the reference that main then had to reconcile.
+ *                  control emits the stable suggestion id upward. The provider
+ *                  applies the decision and broadcasts, and this field
+ *                  recomputes. The pane never mutates review state and reports
+ *                  nothing back.
  *
  * END HEADER
  */

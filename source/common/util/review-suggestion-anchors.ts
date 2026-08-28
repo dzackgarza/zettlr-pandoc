@@ -130,41 +130,48 @@ function absorbReplacements (
   }
 }
 
+/** A seam maps as the single position it is, and dies with the text under it. */
+function mapSeamAnchor (span: SuggestionSpan, changes: ChangeDesc): SuggestionSpan[] {
+  const point = changes.mapPos(span.from, 1, MapMode.TrackDel)
+  return point === null ? [] : [{ from: point, to: point }]
+}
+
+/** True when this edit lies wholly outside the span still to be walked. */
+function editMissesSpan (edit: Edit, span: SuggestionSpan, cursor: number): boolean {
+  return edit.toA < cursor || (edit.fromA < span.from && edit.toA <= span.from)
+}
+
+/** One anchor's stretches that no edit inserted into, in document order. */
+function splitSpan (
+  span: SuggestionSpan,
+  edits: readonly Edit[],
+  changes: ChangeDesc
+): SuggestionSpan[] {
+  if (span.from === span.to) {
+    return mapSeamAnchor(span, changes)
+  }
+  const kept: SuggestionSpan[] = []
+  const keep = (from: number, to: number): void => {
+    kept.push({ from: changes.mapPos(from, 1), to: changes.mapPos(to, -1) })
+  }
+  let cursor = span.from
+  for (const edit of edits) {
+    if (edit.fromA > span.to) { break }
+    if (editMissesSpan(edit, span, cursor)) { continue }
+    const unchangedTo = Math.min(edit.fromA, span.to)
+    if (cursor < unchangedTo) { keep(cursor, unchangedTo) }
+    cursor = Math.max(cursor, edit.toA)
+    if (cursor >= span.to) { break }
+  }
+  if (cursor < span.to) { keep(cursor, span.to) }
+  return kept
+}
+
 /** The anchors with every inserted stretch inside them left out. */
 function splitAroundEdits (
   anchors: readonly SuggestionSpan[],
   edits: readonly Edit[],
   changes: ChangeDesc
 ): SuggestionSpan[] {
-  const mapped: SuggestionSpan[] = []
-  for (const span of anchors) {
-    if (span.from === span.to) {
-      const point = changes.mapPos(span.from, 1, MapMode.TrackDel)
-      if (point !== null) {
-        mapped.push({ from: point, to: point })
-      }
-      continue
-    }
-    let cursor = span.from
-    for (const edit of edits) {
-      if (edit.fromA > span.to) { break }
-      if (edit.toA < cursor || (edit.fromA < span.from && edit.toA <= span.from)) { continue }
-      const unchangedTo = Math.min(edit.fromA, span.to)
-      if (cursor < unchangedTo) {
-        mapped.push({
-          from: changes.mapPos(cursor, 1),
-          to: changes.mapPos(unchangedTo, -1)
-        })
-      }
-      cursor = Math.max(cursor, edit.toA)
-      if (cursor >= span.to) { break }
-    }
-    if (cursor < span.to) {
-      mapped.push({
-        from: changes.mapPos(cursor, 1),
-        to: changes.mapPos(span.to, -1)
-      })
-    }
-  }
-  return mapped
+  return anchors.flatMap(span => splitSpan(span, edits, changes))
 }

@@ -219,60 +219,79 @@ function cloneReview(review: ActiveReviewState): ActiveReviewState {
   };
 }
 
+/** One changed region: what the claim took out, and what it put in. */
+interface ChangedRegion {
+  removedText: string;
+  addedText: string;
+}
+
+/**
+ * The word diff read as regions. A replacement reaches us as two adjacent
+ * parts — the removal and the insertion, in either order — and they are one
+ * region, so the pairing happens here rather than at every reader.
+ */
+function changedRegions(before: string, after: string): Array<ChangedRegion | string> {
+  const parts = diffWordsWithSpace(before, after);
+  const regions: Array<ChangedRegion | string> = [];
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (!part.added && !part.removed) {
+      regions.push(part.value);
+      continue;
+    }
+    const next = parts[index + 1];
+    const partner = part.removed
+      ? (next?.added ? next.value : undefined)
+      : (next?.removed ? next.value : undefined);
+    if (partner !== undefined) {
+      index += 1;
+    }
+    regions.push(regionOf(part.removed, part.value, partner));
+  }
+  return regions;
+}
+
+/** The region a diff part and its partner stand for, whichever came first. */
+function regionOf(removed: boolean, value: string, partner?: string): ChangedRegion {
+  return removed
+    ? { removedText: value, addedText: partner ?? "" }
+    : { removedText: partner ?? "", addedText: value };
+}
+
+/**
+ * One suggestion per changed region, not per claim. A claim that rewrites two
+ * identical occurrences, or five lines, is adjudicated region by region: the
+ * reviewer accepts the ones they want and rejects the rest. Merging a claim's
+ * regions into one suggestion would make a claim all-or-nothing and hand the
+ * reviewer a chunk whose text spans the whole document.
+ */
 function suggestionsForChange(
   before: string,
   after: string,
   packetId: string,
 ): ReviewSuggestion[] {
-  const changes = diffWordsWithSpace(before, after);
   const suggestions: ReviewSuggestion[] = [];
   let afterOffset = 0;
-  for (let index = 0; index < changes.length; index += 1) {
-    const change = changes[index];
-    if (!change.added && !change.removed) {
-      afterOffset += change.value.length;
+  for (const region of changedRegions(before, after)) {
+    if (typeof region === "string") {
+      afterOffset += region.length;
       continue;
     }
-    const adjacent = changes[index + 1];
-    const removedText =
-      change.removed
-        ? change.value
-        : change.added && adjacent?.removed
-          ? adjacent.value
-          : "";
-    const addition = changes[index + 1];
-    const addedText =
-      change.removed && addition?.added
-        ? addition.value
-        : change.added
-          ? change.value
-          : "";
-    if (
-      (change.removed && addition?.added) ||
-      (change.added && adjacent?.removed)
-    ) {
-      index += 1;
-    }
-    const appliedLength = addedText.length;
-    const kind =
-      removedText === "" ? "insertion" : addedText === "" ? "deletion" : "substitution";
+    const { removedText, addedText } = region;
     suggestions.push({
       suggestionId: randomUUID(),
       packetId,
-      kind,
+      kind: removedText === ""
+        ? "insertion"
+        : addedText === "" ? "deletion" : "substitution",
       removedText,
       restorations: removedText === "" ? [] : [{ at: afterOffset, text: removedText }],
       anchors: [{ from: afterOffset, to: afterOffset + addedText.length }],
       seam: afterOffset,
       state: "proposed",
     });
-    afterOffset += appliedLength;
+    afterOffset += addedText.length;
   }
-  // One suggestion per changed region, not per claim. A claim that rewrites
-  // two identical occurrences, or five lines, is adjudicated region by region:
-  // the reviewer accepts the ones they want and rejects the rest. Merging a
-  // claim's regions into one suggestion would make a claim all-or-nothing and
-  // hand the reviewer a chunk whose text spans the whole document.
   return suggestions;
 }
 

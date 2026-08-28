@@ -211,7 +211,9 @@ describe("pure review transitions", function () {
     assertTransitionError(refused, "PACKET_NOT_RETRACTABLE");
     assert.deepEqual(review, before);
   });
+});
 
+describe("suggestions through owner edits and later claims", function () {
   it("reconciles a working-text edit without mutating the input", function () {
     const baseline = "alpha\n";
     const { review, workingText } = withReview(baseline, "ALPHA\n");

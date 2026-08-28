@@ -26,22 +26,43 @@ import { configField } from 'source/common/modules/markdown-editor/util/configur
 import { initializeMathJax } from 'source/common/util/mathtex-to-html'
 import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
 
+/**
+ * A frame handle: the number a browser hands back, or the timer the shim
+ * below stands in for it with under Node.
+ */
+type FrameHandle = number | ReturnType<typeof setTimeout>
+
+/**
+ * The browser surface CodeMirror measures through and jsdom does not carry.
+ * Naming it is what lets the shim below assign through a checked view of the
+ * global object instead of an untyped one.
+ */
+interface MeasurableGlobals {
+  requestAnimationFrame?: (callback: (time: number) => void) => FrameHandle
+  cancelAnimationFrame?: (handle: FrameHandle) => void
+  ResizeObserver?: unknown
+  window?: MeasurableGlobals
+  Range?: { prototype: Partial<Range> }
+}
+
 function polyfillJsdomForCodeMirror (): void {
-  const w = globalThis as any
+  const w = globalThis as MeasurableGlobals
   if (typeof w.requestAnimationFrame !== 'function') {
-    w.requestAnimationFrame = (cb: (t: number) => void) => setTimeout(() => cb(Date.now()), 0)
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id)
+    w.requestAnimationFrame = (cb: (time: number) => void) => setTimeout(() => cb(Date.now()), 0)
+    w.cancelAnimationFrame = (handle: FrameHandle) => clearTimeout(handle)
   }
   if (typeof w.window === 'object' && typeof w.window.requestAnimationFrame !== 'function') {
     w.window.requestAnimationFrame = w.requestAnimationFrame
     w.window.cancelAnimationFrame = w.cancelAnimationFrame
   }
   if (typeof w.ResizeObserver !== 'function') {
-    w.ResizeObserver = class { observe () {} unobserve () {} disconnect () {} }
-    if (typeof w.window === 'object') w.window.ResizeObserver = w.ResizeObserver
+    w.ResizeObserver = class { observe (): void {} unobserve (): void {} disconnect (): void {} }
+    if (typeof w.window === 'object') {
+      w.window.ResizeObserver = w.ResizeObserver
+    }
   }
-  if (typeof w.Range?.prototype.getClientRects !== 'function') {
-    w.Range.prototype.getClientRects = () => []
+  if (typeof w.Range?.prototype.getClientRects !== 'function' && w.Range !== undefined) {
+    w.Range.prototype.getClientRects = () => [] as unknown as DOMRectList
     w.Range.prototype.getBoundingClientRect = () => ({
       bottom: 0, height: 0, left: 0, right: 0, top: 0, width: 0, x: 0, y: 0, toJSON: () => ({})
     })

@@ -7,7 +7,7 @@
 
 import { strict as assert } from 'node:assert'
 import { type ChildProcess } from 'node:child_process'
-import { rm, writeFile } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { type Browser } from 'playwright'
@@ -86,7 +86,7 @@ describe('citation style in the editor', function () {
     await writeFile(stylePath, LABEL_STYLE_XML, 'utf8')
     const configPath = path.join(fixture.configDirectory, 'config.json')
     const config = JSON.parse(
-      await (await import('node:fs/promises')).readFile(configPath, 'utf8')
+      await readFile(configPath, 'utf8')
     ) as Record<string, unknown>
     config.export = { cslLibrary: libraryPath, cslStyle: stylePath }
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8')

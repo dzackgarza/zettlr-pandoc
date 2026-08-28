@@ -403,24 +403,6 @@ export async function readAgentApiPort (
   throw new Error(`The Agent API never published a live port in ${portFile}`)
 }
 
-/** Resolves once the Agent API answers `/v1/ping`; throws when it never does. */
-export async function waitForAgentApi (
-  port: number,
-  timeoutMs: number
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    const response = await fetch(`http://127.0.0.1:${port}/v1/ping`).catch(
-      transientConnectionFailure
-    )
-    if (response?.ok === true) {
-      return
-    }
-    await delay(250)
-  }
-  throw new Error(`The Agent API on port ${port} never answered /v1/ping`)
-}
-
 export interface Fixture {
   root: string
   configDirectory: string

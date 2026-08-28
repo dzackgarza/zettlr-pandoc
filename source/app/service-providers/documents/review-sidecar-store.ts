@@ -55,10 +55,13 @@ const validateReviewSidecar = new Ajv({ allErrors: true }).compile<ReviewSidecar
   ReviewSidecarSchema,
 );
 
-function assertReviewSidecarSemantics(
-  sidecar: ReviewSidecarData,
-  target: string,
-): void {
+/**
+ * The rules a persisted review must satisfy, one function per rule. Each
+ * throws with the sidecar's path and the entity at fault, because the caller
+ * turns whatever comes out of here into the reason a write or a read was
+ * refused.
+ */
+function assertPacketIdentity(sidecar: ReviewSidecarData, target: string): Set<string> {
   const packetIds = new Set<string>();
   for (const packet of sidecar.packets) {
     if (packetIds.has(packet.packetId)) {
@@ -71,9 +74,114 @@ function assertReviewSidecarSemantics(
     }
     packetIds.add(packet.packetId);
   }
+  return packetIds;
+}
 
+/**
+ * Spans that stay inside the text and never step backwards. A restoration is
+ * one of these too: a point is a span of no width.
+ */
+function isOrderedWithin(
+  spans: ReadonlyArray<{ from: number; to: number }>,
+  length: number,
+): boolean {
+  let previous = -1;
+  for (const span of spans) {
+    if (span.from < 0 || span.from > span.to || span.to > length || span.from < previous) {
+      return false;
+    }
+    previous = span.to;
+  }
+  return true;
+}
+
+/** Every coordinate an outstanding suggestion carries lands in the text. */
+function assertSuggestionCoordinates(
+  suggestion: ReviewSidecarData["suggestions"][number],
+  length: number,
+  target: string,
+): void {
+  const invalid = (what: string): Error =>
+    new Error(`Review sidecar ${target} suggestion ${suggestion.suggestionId} has ${what}`);
+  if (suggestion.seam < 0 || suggestion.seam > length) {
+    throw invalid("an invalid seam");
+  }
+  const restorationPoints = suggestion.restorations.map(
+    (restoration) => ({ from: restoration.at, to: restoration.at }),
+  );
+  if (!isOrderedWithin(restorationPoints, length)) {
+    throw invalid("an invalid restoration");
+  }
+  if (!isOrderedWithin(suggestion.anchors, length)) {
+    throw invalid("invalid anchors");
+  }
+}
+
+/** The anchors a change owns text through, and the seams it only sits at. */
+interface AnchorShape {
+  owned: ReadonlyArray<{ from: number; to: number }>;
+  seams: ReadonlyArray<{ from: number; to: number }>;
+  restores: boolean;
+}
+
+/** Owns text, replaced nothing, and starts where it says it starts. */
+function isCoherentInsertion(
+  suggestion: ReviewSidecarData["suggestions"][number],
+  shape: AnchorShape,
+): boolean {
+  return shape.owned.length > 0 && shape.seams.length === 0 &&
+    shape.owned[0].from === suggestion.seam &&
+    suggestion.restorations.length === 0 && suggestion.removedText === "";
+}
+
+/** Owns no text, and restores what stood where it sits. */
+function isCoherentDeletion(
+  suggestion: ReviewSidecarData["suggestions"][number],
+  shape: AnchorShape,
+): boolean {
+  return shape.owned.length === 0 && shape.seams.length > 0 &&
+    shape.seams[0].from === suggestion.seam && shape.restores;
+}
+
+/**
+ * Owns text and can put back what it replaced. A change whose character diff
+ * falls into several parts deletes in one place and inserts in another, so a
+ * substitution's deletions are seam anchors sitting between its owned ones.
+ */
+function isCoherentSubstitution(
+  suggestion: ReviewSidecarData["suggestions"][number],
+  shape: AnchorShape,
+): boolean {
+  return shape.owned.length > 0 &&
+    suggestion.anchors[0].from === suggestion.seam && shape.restores;
+}
+
+/** The three shapes a change comes in, and nothing else. */
+function isCoherentChange(suggestion: ReviewSidecarData["suggestions"][number]): boolean {
+  const shape: AnchorShape = {
+    owned: suggestion.anchors.filter((anchor) => anchor.from < anchor.to),
+    seams: suggestion.anchors.filter((anchor) => anchor.from === anchor.to),
+    restores: suggestion.restorations.length > 0 && suggestion.removedText !== "",
+  };
+  if (suggestion.kind === "insertion") {
+    return isCoherentInsertion(suggestion, shape);
+  }
+  if (suggestion.kind === "deletion") {
+    return isCoherentDeletion(suggestion, shape);
+  }
+  return isCoherentSubstitution(suggestion, shape);
+}
+
+/** Ids are unique, every suggestion has its packet, and each one holds together. */
+function assertSuggestionIntegrity(
+  sidecar: ReviewSidecarData,
+  packetIds: ReadonlySet<string>,
+  target: string,
+): Set<string> {
   const suggestionIds = new Set<string>();
   for (const suggestion of sidecar.suggestions) {
+    const fault = (what: string): Error =>
+      new Error(`Review sidecar ${target} suggestion ${suggestion.suggestionId} has ${what}`);
     if (suggestionIds.has(suggestion.suggestionId)) {
       throw new Error(
         `Review sidecar ${target} has duplicate suggestion id ${suggestion.suggestionId}`,
@@ -81,9 +189,7 @@ function assertReviewSidecarSemantics(
     }
     suggestionIds.add(suggestion.suggestionId);
     if (!packetIds.has(suggestion.packetId)) {
-      throw new Error(
-        `Review sidecar ${target} suggestion ${suggestion.suggestionId} has no owning packet`,
-      );
+      throw fault("no owning packet");
     }
     // Only an outstanding suggestion describes the working text. A decided
     // one is a ledger entry: its coordinates name the text it was decided
@@ -91,81 +197,45 @@ function assertReviewSidecarSemantics(
     if (suggestion.state !== "proposed") {
       continue;
     }
-    if (suggestion.seam < 0 || suggestion.seam > sidecar.workingText.length) {
-      throw new Error(
-        `Review sidecar ${target} suggestion ${suggestion.suggestionId} has an invalid seam`,
-      );
-    }
-    let previousRestoration = -1;
-    for (const restoration of suggestion.restorations) {
-      if (
-        restoration.at < 0 ||
-        restoration.at > sidecar.workingText.length ||
-        restoration.at < previousRestoration
-      ) {
-        throw new Error(
-          `Review sidecar ${target} suggestion ${suggestion.suggestionId} has an invalid restoration`,
-        );
-      }
-      previousRestoration = restoration.at;
-    }
-
-    let previousTo = -1;
-    for (const anchor of suggestion.anchors) {
-      if (
-        anchor.from < 0 ||
-        anchor.from > anchor.to ||
-        anchor.to > sidecar.workingText.length ||
-        anchor.from < previousTo
-      ) {
-        throw new Error(
-          `Review sidecar ${target} suggestion ${suggestion.suggestionId} has invalid anchors`,
-        );
-      }
-      previousTo = anchor.to;
-    }
-
-    const ownedAnchors = suggestion.anchors.filter((anchor) => anchor.from < anchor.to);
-    const seamAnchors = suggestion.anchors.filter((anchor) => anchor.from === anchor.to);
-    const hasRestorations = suggestion.restorations.length > 0;
-    const hasRemovedText = suggestion.removedText !== "";
-    const coherent =
-      (suggestion.kind === "insertion" &&
-        ownedAnchors.length > 0 &&
-        seamAnchors.length === 0 &&
-        ownedAnchors[0].from === suggestion.seam &&
-        !hasRestorations &&
-        !hasRemovedText) ||
-      (suggestion.kind === "deletion" &&
-        ownedAnchors.length === 0 &&
-        seamAnchors.length > 0 &&
-        seamAnchors[0].from === suggestion.seam &&
-        hasRestorations &&
-        hasRemovedText) ||
-      // One suggestion covers one change, and a change whose character diff
-      // falls into several parts deletes in one place and inserts in another:
-      // its deletions are seam anchors sitting between the owned ones. What a
-      // substitution must still be is a change that owns text, can restore
-      // what it replaced, and starts where it says it starts.
-      (suggestion.kind === "substitution" &&
-        ownedAnchors.length > 0 &&
-        suggestion.anchors[0].from === suggestion.seam &&
-        hasRestorations &&
-        hasRemovedText);
-    if (!coherent) {
-      throw new Error(
-        `Review sidecar ${target} suggestion ${suggestion.suggestionId} has incoherent change data`,
-      );
+    assertSuggestionCoordinates(suggestion, sidecar.workingText.length, target);
+    if (!isCoherentChange(suggestion)) {
+      throw fault("incoherent change data");
     }
     if (
       suggestion.restorations.map((restoration) => restoration.text).join("") !==
       suggestion.removedText
     ) {
+      throw fault("inconsistent restoration text");
+    }
+  }
+  return suggestionIds;
+}
+
+/** No two outstanding suggestions claim the same character. */
+function assertDisjointAnchors(sidecar: ReviewSidecarData, target: string): void {
+  const anchors = sidecar.suggestions
+    .filter((suggestion) => suggestion.state === "proposed")
+    .flatMap((suggestion) => suggestion.anchors
+      .filter((anchor) => anchor.from < anchor.to)
+      .map((anchor) => ({ ...anchor, suggestionId: suggestion.suggestionId })))
+    .sort((left, right) => left.from - right.from || left.to - right.to);
+  for (let index = 1; index < anchors.length; index += 1) {
+    const previous = anchors[index - 1];
+    const current = anchors[index];
+    if (current.from < previous.to) {
       throw new Error(
-        `Review sidecar ${target} suggestion ${suggestion.suggestionId} has inconsistent restoration text`,
+        `Review sidecar ${target} suggestions ${previous.suggestionId} and ${current.suggestionId} overlap`,
       );
     }
   }
+}
+
+function assertReviewSidecarSemantics(
+  sidecar: ReviewSidecarData,
+  target: string,
+): void {
+  const packetIds = assertPacketIdentity(sidecar, target);
+  const suggestionIds = assertSuggestionIntegrity(sidecar, packetIds, target);
   for (const comment of sidecar.chunkComments) {
     if (!suggestionIds.has(comment.chunkId)) {
       throw new Error(
@@ -173,21 +243,7 @@ function assertReviewSidecarSemantics(
       );
     }
   }
-  const proposedAnchors = sidecar.suggestions
-    .filter((suggestion) => suggestion.state === "proposed")
-    .flatMap((suggestion) => suggestion.anchors
-      .filter((anchor) => anchor.from < anchor.to)
-      .map((anchor) => ({ ...anchor, suggestionId: suggestion.suggestionId })))
-    .sort((left, right) => left.from - right.from || left.to - right.to);
-  for (let index = 1; index < proposedAnchors.length; index += 1) {
-    const previous = proposedAnchors[index - 1];
-    const current = proposedAnchors[index];
-    if (current.from < previous.to) {
-      throw new Error(
-        `Review sidecar ${target} suggestions ${previous.suggestionId} and ${current.suggestionId} overlap`,
-      );
-    }
-  }
+  assertDisjointAnchors(sidecar, target);
 }
 
 /**

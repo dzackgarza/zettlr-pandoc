@@ -30,7 +30,7 @@ import {
 const STYLE = readFileSync(path.join(process.cwd(), 'static/csl-styles/chicago-author-date.csl'), 'utf8')
 const LOCALE = readFileSync(path.join(process.cwd(), 'static/csl-locales/locales-en-US.xml'), 'utf8')
 
-const LIBRARY: Record<string, any> = {
+const LIBRARY: Record<string, CSLItem> = {
   DM20: {
     id: 'DM20',
     type: 'article-journal',
