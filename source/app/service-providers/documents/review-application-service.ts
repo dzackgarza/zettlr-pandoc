@@ -360,17 +360,18 @@ export class ReviewApplicationService {
   }
 
   /**
-   * Commit an editor text update and its review reconciliation as one review
+   * Commit an editor text update and its suggestion mapping as one review
    * transaction. The callback updates the document authority only after the
    * sidecar write succeeds.
    */
   public async applyWorkingTextEdit(
     documentId: string,
     workingText: string,
+    changes: ChangeSet,
     commitDocument: () => void,
   ): Promise<void> {
     await this.withDocumentLock(documentId, async () => {
-      await this.applyWorkingTextEditLocked(documentId, workingText, commitDocument);
+      await this.applyWorkingTextEditLocked(documentId, workingText, changes, commitDocument);
     });
   }
 
@@ -378,6 +379,7 @@ export class ReviewApplicationService {
   public async applyWorkingTextEditLocked(
     documentId: string,
     workingText: string,
+    changes: ChangeSet,
     commitDocument: () => void,
   ): Promise<void> {
     const review = this.reviews.getReview(documentId);
@@ -386,20 +388,35 @@ export class ReviewApplicationService {
       return;
     }
 
+    // Read before commitDocument: the authority still holds the text the
+    // owner's changes were made against, which is what a suggestion the edit
+    // rewrites has to restore. A review without its document is not a state
+    // to map anchors in.
+    const textBefore = this.deps.authority.readWorkingText(documentId);
+    if (textBefore === undefined) {
+      throw new Error(`Review ${review.reviewId} has no open document ${documentId}`);
+    }
+
     const plan = prepareWorkingTextEdit({
       review,
+      textBefore,
       workingText: normalizeText(workingText),
+      changes,
     });
+    let writeFailure: unknown;
+    let written = false;
     try {
       await this.sidecars.write(
         reviewSidecar(plan?.nextReview ?? review, normalizeText(workingText)),
       );
+      written = true;
     } catch (error) {
-      throw new Error(
-        `The review could not be persisted before the editor update: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      writeFailure = error;
+    }
+    if (!written) {
+      throw new Error("The review could not be persisted before the editor update", {
+        cause: writeFailure,
+      });
     }
 
     commitDocument();
@@ -514,7 +531,7 @@ export class ReviewApplicationService {
       persisted.reviewId === review.reviewId &&
       !persisted.invalidated &&
       persisted.diskFenceSha256 === sha256Text(normalizedDisk) &&
-      normalizedDisk !== persisted.referenceText;
+      persisted.suggestions.some((suggestion) => suggestion.state === "proposed");
 
     if (preserveSavedReview) {
       return;
@@ -559,7 +576,7 @@ export class ReviewApplicationService {
       return undefined;
     }
 
-    if (sidecar.referenceText === sidecar.workingText) {
+    if (!sidecar.suggestions.some((suggestion) => suggestion.state === "proposed")) {
       await this.sidecars.delete(documentPath);
       return undefined;
     }
@@ -584,8 +601,8 @@ export class ReviewApplicationService {
     });
   }
 
-  public async readSidecar(documentPath: string): Promise<ReviewSidecarData | undefined> {
-    return await this.sidecars.read(documentPath);
+  public readSidecar(documentPath: string): Promise<ReviewSidecarData | undefined> {
+    return this.sidecars.read(documentPath);
   }
 
   private lockFor(documentId: string): Mutex {
@@ -603,11 +620,11 @@ export class ReviewApplicationService {
    * authority keeps its own transactions (editor updates, save, detach,
    * reattach) in its own module — it does not keep its own lock.
    */
-  public async withDocumentLock<T>(
+  public withDocumentLock<T>(
     documentId: string,
     run: () => Promise<T>,
   ): Promise<T> {
-    return await this.lockFor(documentId).runExclusive(run);
+    return this.lockFor(documentId).runExclusive(run);
   }
 
   // ==========================================================================
@@ -820,7 +837,7 @@ export class ReviewApplicationService {
     clientRequestId: string;
     expectedReviewGeneration: number;
   }): Promise<SubmittedProposal | { ok: false; code: string; message: string }> {
-    return await this.withDocumentLock(input.documentId, async () => {
+    return this.withDocumentLock(input.documentId, async () => {
       if (this.deps.authority.resolveDocumentPath(input.documentId) === undefined) {
         return { ok: false as const, code: "DOCUMENT_NOT_FOUND", message: "Document not found." };
       }
@@ -977,7 +994,7 @@ export class ReviewApplicationService {
     decision: ChunkDecision,
     precondition: ReviewMutationPrecondition,
   ): Promise<ChunkDecisionResponse | ReviewFailure> {
-    return await this.runKeyedByReview(reviewId, async (context) => {
+    return this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
@@ -986,7 +1003,7 @@ export class ReviewApplicationService {
       if (stale !== undefined) {
         return stale;
       }
-      return await this.commitReviewMutation(context, () => {
+      return this.commitReviewMutation(context, () => {
         const plan = prepareChunkDecision({
           review: context.review,
           workingText: context.workingText,
@@ -995,8 +1012,8 @@ export class ReviewApplicationService {
         });
         if (isTransitionError(plan)) {
           if (plan.code === "CHUNK_NOT_FOUND") {
-            // The caller decided against a stale partition (the text changed
-            // under it). Re-broadcast so every pane redraws from current state.
+            // The caller used an id that is not outstanding. Re-broadcast so
+            // every pane redraws from current state.
             this.deps.warn(
               `Chunk decision refused for ${context.documentPath}: ${plan.message}`,
             );
@@ -1011,9 +1028,7 @@ export class ReviewApplicationService {
 
   /**
    * Attach a comment to one outstanding chunk without deciding it. Fenced
-   * like a decision — the chunk id is content-addressed over the working
-   * text, so a note formed against a stale pane must refuse, not land on a
-   * chunk that moved.
+   * like a decision so a note formed against a stale pane must refuse.
    */
   public async commentChunk(
     reviewId: string,
@@ -1021,7 +1036,7 @@ export class ReviewApplicationService {
     text: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<ChunkCommentResponse | ReviewFailure> {
-    return await this.runKeyedByReview(reviewId, async (context) => {
+    return this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
@@ -1052,7 +1067,7 @@ export class ReviewApplicationService {
     reviewId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<AcceptAllChunksResponse | ReviewFailure> {
-    return await this.runKeyedByReview(reviewId, async (context) => {
+    return this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
@@ -1078,7 +1093,7 @@ export class ReviewApplicationService {
     reviewId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<ClearReviewResponse | ReviewFailure> {
-    return await this.runKeyedByReview(reviewId, async (context) => {
+    return this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
@@ -1102,7 +1117,7 @@ export class ReviewApplicationService {
     text: string,
     expectedReviewGeneration: number,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    return await this.runKeyedByReview(reviewId, async (context) => {
+    return this.runKeyedByReview(reviewId, async (context) => {
       const stale = this.checkPrecondition(context, { expectedReviewGeneration });
       if (stale !== undefined) {
         return stale;

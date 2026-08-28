@@ -20,13 +20,13 @@
 import { strict as assert } from 'assert'
 import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
+import type { ReviewSuggestionView } from '@dts/common/review-diff'
 import {
   getReviewChunks,
   reviewChunksExtension,
   selectNextReviewChunk,
   selectPreviousReviewChunk
 } from 'source/common/modules/markdown-editor/plugins/review-chunks'
-import { computeReviewChunks } from 'source/common/modules/review/review-chunks'
 import { rangeInPreviewSuppression } from 'source/common/modules/markdown-editor/util/range-in-preview-suppression'
 import { renderLinks } from 'source/common/modules/markdown-editor/renderers/render-links'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
@@ -76,20 +76,34 @@ function polyfillJsdomForCodeMirror (): void {
   }
 }
 
-interface PacketView {
-  packetId: string
-  description?: string
-  refSpans: Array<{ from: number, to: number }>
-}
-
 interface ChunkNoteView {
   chunkId: string
   comment: string
 }
 
 interface ReviewViewOptions {
-  packets?: PacketView[]
+  suggestions: ReviewSuggestionView[]
   chunkComments?: ChunkNoteView[]
+}
+
+function replacementSuggestion (
+  workingText: string,
+  removedText: string,
+  insertedText: string,
+  suggestionId = `suggestion-${insertedText || removedText}`,
+  description = 'proposal'
+): ReviewSuggestionView {
+  const seam = insertedText === ''
+    ? workingText.indexOf(workingText.trimEnd().split('\n').at(-1) ?? '')
+    : workingText.indexOf(insertedText)
+  assert.notEqual(seam, -1, `fixture text not found: ${insertedText}`)
+  return {
+    suggestionId,
+    removedText,
+    anchors: insertedText === '' ? [] : [{ from: seam, to: seam + insertedText.length }],
+    seam,
+    description
+  }
 }
 
 interface DecisionCall {
@@ -103,20 +117,6 @@ interface ReviewCalls {
   clear: number
   comments: string[]
   chunkNotes: Array<{ chunkId: string, text: string }>
-}
-
-/**
- * One packet claiming every disagreement between two texts. Only an
- * attributed chunk is adjudicable, so a spec about rendering a proposal has
- * to say which proposal the chunks came from; specs about attribution itself
- * pass their own narrower spans instead.
- */
-function attributedToOnePacket (referenceText: string, workingText: string): PacketView[] {
-  return [{
-    packetId: 'packet-all',
-    refSpans: computeReviewChunks(referenceText, workingText)
-      .map(chunk => ({ from: chunk.refFromLine, to: chunk.refToLine }))
-  }]
 }
 
 describe('Editor review-chunk view', function () {
@@ -134,9 +134,8 @@ describe('Editor review-chunk view', function () {
   })
 
   function createReviewView (
-    referenceText: string,
     workingText: string,
-    options: ReviewViewOptions = {}
+    options: ReviewViewOptions
   ): { view: EditorView, calls: ReviewCalls } {
     const calls: ReviewCalls = {
       decisions: [],
@@ -152,8 +151,7 @@ describe('Editor review-chunk view', function () {
         extensions: [
           reviewChunksExtension({
             reviewId: 'review-test',
-            referenceText,
-            packets: options.packets ?? attributedToOnePacket(referenceText, workingText),
+            suggestions: options.suggestions,
             chunkComments: options.chunkComments ?? [],
             onDecide: async (chunkId, decision) => {
               calls.decisions.push({ chunkId, decision })
@@ -184,7 +182,16 @@ describe('Editor review-chunk view', function () {
     const proposed = baseline
       .replace('first baseline', 'first proposed')
       .replace('second baseline', 'second proposed')
-    const { view, calls } = createReviewView(baseline, proposed)
+    const suggestions = [
+      replacementSuggestion(proposed, 'baseline', 'proposed', 'first-change'),
+      replacementSuggestion(proposed.slice(proposed.indexOf('middle unchanged')), 'baseline', 'proposed', 'second-change')
+    ]
+    suggestions[1].anchors = suggestions[1].anchors.map(anchor => ({
+      from: anchor.from + proposed.indexOf('middle unchanged'),
+      to: anchor.to + proposed.indexOf('middle unchanged')
+    }))
+    suggestions[1].seam += proposed.indexOf('middle unchanged')
+    const { view, calls } = createReviewView(proposed, { suggestions })
     const chunks = chunksOf(view)
     assert.equal(chunks.length, 2)
 
@@ -203,8 +210,8 @@ describe('Editor review-chunk view', function () {
     rejects[1].click()
 
     assert.deepEqual(calls.decisions, [
-      { chunkId: chunks[0].chunkId, decision: 'accept' },
-      { chunkId: chunks[1].chunkId, decision: 'reject' }
+      { chunkId: chunks[0].suggestionId, decision: 'accept' },
+      { chunkId: chunks[1].suggestionId, decision: 'reject' }
     ])
     assert.equal(
       chunksOf(view).length,
@@ -238,7 +245,9 @@ describe('Editor review-chunk view', function () {
   }
 
   it('autosaves a trimmed chunk note after a typing pause, without blur', async function () {
-    const { view, calls } = createReviewView('baseline\n', 'proposal\n')
+    const { view, calls } = createReviewView('proposal\n', {
+      suggestions: [replacementSuggestion('proposal\n', 'baseline', 'proposal')]
+    })
     const chunk = chunksOf(view)[0]
     const input = noteInputOf(view)
     const dot = dirtyDotOf(view)
@@ -251,7 +260,7 @@ describe('Editor review-chunk view', function () {
     assert.equal(dot.title, 'Unsaved — not yet visible to agents')
     await tick(AUTOSAVE_WAIT_MS)
     assert.deepEqual(calls.chunkNotes, [
-      { chunkId: chunk.chunkId, text: 'check the constant' }
+      { chunkId: chunk.suggestionId, text: 'check the constant' }
     ])
     assert.equal(document.activeElement, input, 'autosave must not steal focus')
     assert.equal(dot.classList.contains('unsaved'), false, 'the acknowledgment flips it back to saved')
@@ -260,7 +269,9 @@ describe('Editor review-chunk view', function () {
   })
 
   it('commits immediately on blur and on Enter', async function () {
-    const { view, calls } = createReviewView('baseline\n', 'proposal\n')
+    const { view, calls } = createReviewView('proposal\n', {
+      suggestions: [replacementSuggestion('proposal\n', 'baseline', 'proposal')]
+    })
     const chunk = chunksOf(view)[0]
     const input = noteInputOf(view)
 
@@ -268,29 +279,32 @@ describe('Editor review-chunk view', function () {
     input.dispatchEvent(new window.Event('blur'))
     await tick(0)
     assert.deepEqual(calls.chunkNotes, [
-      { chunkId: chunk.chunkId, text: 'first thought' }
+      { chunkId: chunk.suggestionId, text: 'first thought' }
     ], 'blur must commit without waiting out the debounce')
 
     // The commit echo has not arrived in this harness, so the field retries
     // on its own schedule; an Enter on a fresh view proves the immediate
     // path independently.
-    const second = createReviewView('other baseline\n', 'other proposal\n')
+    const second = createReviewView('other proposal\n', {
+      suggestions: [replacementSuggestion('other proposal\n', 'baseline', 'proposal')]
+    })
     const secondChunk = chunksOf(second.view)[0]
     const secondInput = noteInputOf(second.view)
     typeInto(secondInput, 'second thought')
     secondInput.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter' }))
     await tick(0)
     assert.deepEqual(second.calls.chunkNotes, [
-      { chunkId: secondChunk.chunkId, text: 'second thought' }
+      { chunkId: secondChunk.suggestionId, text: 'second thought' }
     ], 'Enter must commit without waiting out the debounce')
   })
 
   it('commits nothing when the value did not change', async function () {
     const baseline = 'first baseline\n\nsecond baseline\n'
     const proposed = baseline.replace('first baseline', 'first proposed')
-    const chunk = computeReviewChunks(baseline, proposed)[0]
-    const { view, calls } = createReviewView(baseline, proposed, {
-      chunkComments: [{ chunkId: chunk.chunkId, comment: 'as written' }]
+    const suggestion = replacementSuggestion(proposed, 'baseline', 'proposed')
+    const { view, calls } = createReviewView(proposed, {
+      suggestions: [suggestion],
+      chunkComments: [{ chunkId: suggestion.suggestionId, comment: 'as written' }]
     })
     const input = noteInputOf(view)
     assert.equal(input.value, 'as written', 'the field is prefilled with the note')
@@ -305,9 +319,10 @@ describe('Editor review-chunk view', function () {
   it('commits an emptied field as the note\'s removal', async function () {
     const baseline = 'first baseline\n\nsecond baseline\n'
     const proposed = baseline.replace('first baseline', 'first proposed')
-    const chunk = computeReviewChunks(baseline, proposed)[0]
-    const { view, calls } = createReviewView(baseline, proposed, {
-      chunkComments: [{ chunkId: chunk.chunkId, comment: 'kill me' }]
+    const suggestion = replacementSuggestion(proposed, 'baseline', 'proposed')
+    const { view, calls } = createReviewView(proposed, {
+      suggestions: [suggestion],
+      chunkComments: [{ chunkId: suggestion.suggestionId, comment: 'kill me' }]
     })
     const input = noteInputOf(view)
 
@@ -315,7 +330,7 @@ describe('Editor review-chunk view', function () {
     input.dispatchEvent(new window.Event('blur'))
     await tick(0)
     assert.deepEqual(calls.chunkNotes, [
-      { chunkId: chunk.chunkId, text: '' }
+      { chunkId: suggestion.suggestionId, text: '' }
     ], 'an emptied field removes the annotation')
   })
 
@@ -331,8 +346,7 @@ describe('Editor review-chunk view', function () {
     const compartment = new Compartment()
     const configFor = (chunkComments: ChunkNoteView[]): Parameters<typeof reviewChunksExtension>[0] => ({
       reviewId: 'review-test',
-      referenceText: baseline,
-      packets: attributedToOnePacket(baseline, proposed),
+      suggestions: [replacementSuggestion(proposed, 'baseline', 'proposed')],
       chunkComments,
       onDecide: async () => {},
       onAcceptAll: async () => {},
@@ -354,7 +368,7 @@ describe('Editor review-chunk view', function () {
 
     typeInto(input, 'first')
     await tick(AUTOSAVE_WAIT_MS)
-    assert.deepEqual(notes, [{ chunkId: chunk.chunkId, text: 'first' }])
+    assert.deepEqual(notes, [{ chunkId: chunk.suggestionId, text: 'first' }])
 
     // Keep typing BEFORE the provider's echo lands...
     typeInto(input, 'first second')
@@ -367,7 +381,7 @@ describe('Editor review-chunk view', function () {
     // committed note. The widget's eq() changes, decorations rebuild.
     view.dispatch({
       effects: compartment.reconfigure(
-        reviewChunksExtension(configFor([{ chunkId: chunk.chunkId, comment: 'first' }]))
+        reviewChunksExtension(configFor([{ chunkId: chunk.suggestionId, comment: 'first' }]))
       )
     })
 
@@ -387,8 +401,8 @@ describe('Editor review-chunk view', function () {
     // The interrupted typing commits on its own once the echo has settled.
     await tick(AUTOSAVE_WAIT_MS)
     assert.deepEqual(notes, [
-      { chunkId: chunk.chunkId, text: 'first' },
-      { chunkId: chunk.chunkId, text: 'first second' }
+      { chunkId: chunk.suggestionId, text: 'first' },
+      { chunkId: chunk.suggestionId, text: 'first second' }
     ])
     assert.equal(
       dirtyDotOf(view).classList.contains('unsaved'),
@@ -400,9 +414,10 @@ describe('Editor review-chunk view', function () {
   it('shows a provider-supplied chunk comment only in the comment field', function () {
     const baseline = 'first baseline\n\nsecond baseline\n'
     const proposed = baseline.replace('first baseline', 'first proposed')
-    const chunk = computeReviewChunks(baseline, proposed)[0]
-    const { view } = createReviewView(baseline, proposed, {
-      chunkComments: [{ chunkId: chunk.chunkId, comment: 'check the constant' }]
+    const suggestion = replacementSuggestion(proposed, 'baseline', 'proposed')
+    const { view } = createReviewView(proposed, {
+      suggestions: [suggestion],
+      chunkComments: [{ chunkId: suggestion.suggestionId, comment: 'check the constant' }]
     })
 
     const widget = view.dom.querySelector<HTMLElement>('.cm-chunkControls')
@@ -421,27 +436,21 @@ describe('Editor review-chunk view', function () {
     assert.ok(widget.querySelector('button.reject') !== null)
   })
 
-  it('shows each claim description at its own chunk and preserves it across a working-text tweak', function () {
+  it('shows each claim description and maps it across a working-text tweak', function () {
     const baseline = [
       '# Note', '', 'first baseline', '', 'middle unchanged', '', 'second baseline', ''
     ].join('\n')
     const proposed = baseline
       .replace('first baseline', 'first proposed')
       .replace('second baseline', 'second proposed')
-    const partition = computeReviewChunks(baseline, proposed)
-    assert.equal(partition.length, 2)
-
-    const { view } = createReviewView(baseline, proposed, {
-      packets: [
+    const secondOffset = proposed.indexOf('second proposed')
+    const { view } = createReviewView(proposed, {
+      suggestions: [
+        replacementSuggestion(proposed, 'baseline', 'proposed', 'opening', 'Sharpen the opening claim'),
         {
-          packetId: 'packet-1',
-          description: 'Sharpen the opening claim',
-          refSpans: [{ from: partition[0].refFromLine, to: partition[0].refToLine }]
-        },
-        {
-          packetId: 'packet-2',
-          description: 'Fix the closing claim',
-          refSpans: [{ from: partition[1].refFromLine, to: partition[1].refToLine }]
+          ...replacementSuggestion(proposed.slice(secondOffset), 'baseline', 'proposed', 'closing', 'Fix the closing claim'),
+          anchors: [{ from: secondOffset + 7, to: secondOffset + 15 }],
+          seam: secondOffset + 7
         }
       ]
     })
@@ -455,7 +464,7 @@ describe('Editor review-chunk view', function () {
     )
 
     const firstChunk = chunksOf(view)[0]
-    const insertAt = view.state.doc.line(firstChunk.workFromLine).to
+    const insertAt = view.state.doc.lineAt(firstChunk.anchors[0].from).to
     view.dispatch({ changes: { from: insertAt, insert: ' (tweaked)' } })
 
     assert.equal(
@@ -464,27 +473,43 @@ describe('Editor review-chunk view', function () {
     )
   })
 
+  it('maps a local owner insertion out of the rendered suggestion immediately', function () {
+    const working = 'prefix AGENT suffix\n'
+    const suggestion = replacementSuggestion(working, '', 'AGENT', 'agent-text')
+    const { view } = createReviewView(working, { suggestions: [suggestion] })
+    const insertAt = working.indexOf('AGENT') + 2
+    view.dispatch({ changes: { from: insertAt, insert: 'USER' } })
+
+    const [mapped] = chunksOf(view)
+    assert.deepEqual(mapped.anchors, [
+      { from: working.indexOf('AGENT'), to: insertAt },
+      { from: insertAt + 4, to: working.indexOf('AGENT') + 5 + 4 }
+    ])
+    assert.equal(
+      mapped.anchors.map(anchor => view.state.doc.sliceString(anchor.from, anchor.to)).join(''),
+      'AGENT'
+    )
+  })
+
   it('never renders controls over a region the user typed (#65)', function () {
     // Adjudication is a decision about a proposal. A paragraph the reviewer
     // edited themselves disagrees with the frozen reference just as loudly,
     // but no packet claims it — so it carries no controls, no highlight, and
     // no place in the outstanding count.
-    const baseline = 'first baseline\n\nsecond baseline\n'
     const working = 'first proposed\n\nsecond typed by hand\n'
-    const partition = computeReviewChunks(baseline, working)
-    assert.equal(partition.length, 2, 'the raw partition sees both paragraphs')
-
-    const { view } = createReviewView(baseline, working, {
-      packets: [{
-        packetId: 'packet-1',
-        description: 'Sharpen the opening claim',
-        refSpans: [{ from: partition[0].refFromLine, to: partition[0].refToLine }]
-      }]
+    const { view } = createReviewView(working, {
+      suggestions: [replacementSuggestion(
+        working,
+        'baseline',
+        'proposed',
+        'opening',
+        'Sharpen the opening claim'
+      )]
     })
 
     const chunks = chunksOf(view)
     assert.equal(chunks.length, 1, 'only the attributed edit is adjudicable')
-    assert.equal(chunks[0].workingText, 'first proposed')
+    assert.equal(view.state.doc.sliceString(chunks[0].anchors[0].from, chunks[0].anchors[0].to), 'proposed')
     assert.equal(view.dom.querySelectorAll('.cm-chunkControls').length, 1)
     assert.equal(
       view.dom.querySelector<HTMLElement>('.cm-reviewStatusLabel')?.textContent,
@@ -501,13 +526,8 @@ describe('Editor review-chunk view', function () {
   it('renders a small replacement as inline track changes with one controls strip', function () {
     const baseline = ['alpha', '', 'the original wording stays here', ''].join('\n')
     const proposed = baseline.replace('original wording', 'revised wording')
-    const chunk = computeReviewChunks(baseline, proposed)[0]
-    const { view } = createReviewView(baseline, proposed, {
-      packets: [{
-        packetId: 'packet-1',
-        description: 'Revise the wording',
-        refSpans: [{ from: chunk.refFromLine, to: chunk.refToLine }]
-      }]
+    const { view } = createReviewView(proposed, {
+      suggestions: [replacementSuggestion(proposed, 'original', 'revised', 'wording', 'Revise the wording')]
     })
 
     assert.equal(view.dom.querySelector('.cm-deletedChunk'), null, 'the delta renders in the document flow, not a block above it')
@@ -534,10 +554,19 @@ describe('Editor review-chunk view', function () {
   })
 
   it('renders a whole-line deletion as inline strikethrough with its controls strip', function () {
-    const { view } = createReviewView(
-      'prefix\nfirst removed\nsecond removed\nunchanged\n',
-      'prefix\nunchanged\n'
-    )
+    const working = 'prefix\nunchanged\n'
+    const { view } = createReviewView(working, {
+      suggestions: [{
+        suggestionId: 'removed-lines',
+        removedText: 'first removed\nsecond removed',
+        anchors: [{
+          from: working.indexOf('unchanged'),
+          to: working.indexOf('unchanged')
+        }],
+        seam: working.indexOf('unchanged'),
+        description: 'proposal'
+      }]
+    })
 
     assert.equal(view.dom.querySelector('.cm-deletedChunk'), null)
     const deleted = view.dom.querySelectorAll<HTMLElement>('del.cm-deletedText')
@@ -549,10 +578,10 @@ describe('Editor review-chunk view', function () {
   })
 
   it('keeps a heavy rewrite merged in the document flow', function () {
-    const { view } = createReviewView(
-      'alpha beta gamma delta\n',
-      'completely different words now\n'
-    )
+    const working = 'completely different words now\n'
+    const { view } = createReviewView(working, {
+      suggestions: [replacementSuggestion(working, 'alpha beta gamma delta', 'completely different words now')]
+    })
 
     assert.equal(view.dom.querySelector('.cm-deletedChunk'), null)
     const deleted = view.dom.querySelector<HTMLElement>('del.cm-deletedText')
@@ -569,7 +598,9 @@ describe('Editor review-chunk view', function () {
       'intro paragraph', '', '$$', 'p_a(C) = 10', '$$', '', 'closing paragraph', ''
     ].join('\n')
     const proposed = baseline.replace('p_a(C) = 10', 'g(C) = 10')
-    const { view } = createReviewView(baseline, proposed)
+    const { view } = createReviewView(proposed, {
+      suggestions: [replacementSuggestion(proposed, 'p_a(C) = 10', 'g(C) = 10')]
+    })
 
     assert.equal(
       rangeInPreviewSuppression(
@@ -584,36 +615,60 @@ describe('Editor review-chunk view', function () {
   })
 
   it('uses half-open chunk overlap while preserving deletion-point suppression', function () {
-    const adjacent = createReviewView('alpha\nunchanged', 'ALPHA\nunchanged').view
+    const adjacentText = 'ALPHA\nunchanged'
+    const adjacent = createReviewView(adjacentText, {
+      suggestions: [replacementSuggestion(adjacentText, 'alpha', 'ALPHA')]
+    }).view
     const unchanged = adjacent.state.doc.line(2)
     assert.equal(
       rangeInPreviewSuppression(adjacent.state, unchanged.from, unchanged.to),
       false
     )
 
-    const deletion = createReviewView(
-      'prefix\nremoved\nunchanged',
-      'prefix\nunchanged'
-    ).view
+    const deletionText = 'prefix\nunchanged'
+    const deletion = createReviewView(deletionText, {
+      suggestions: [{
+        suggestionId: 'middle-deletion',
+        removedText: 'removed\n',
+        anchors: [{
+          from: deletionText.indexOf('unchanged'),
+          to: deletionText.indexOf('unchanged')
+        }],
+        seam: deletionText.indexOf('unchanged'),
+        description: 'proposal'
+      }]
+    }).view
     const surviving = deletion.state.doc.line(2)
     assert.equal(
       rangeInPreviewSuppression(deletion.state, surviving.from, surviving.to),
       true
     )
 
-    const deletionAtEnd = createReviewView(
-      'prefix\nunchanged\nremoved\ntail',
-      'prefix\nunchanged\ntail'
-    ).view
+    const deletionAtEndText = 'prefix\nunchanged\ntail'
+    const deletionAtEnd = createReviewView(deletionAtEndText, {
+      suggestions: [{
+        suggestionId: 'later-deletion',
+        removedText: 'removed\n',
+        anchors: [{
+          from: deletionAtEndText.indexOf('tail'),
+          to: deletionAtEndText.indexOf('tail')
+        }],
+        seam: deletionAtEndText.indexOf('tail'),
+        description: 'proposal'
+      }]
+    }).view
     const beforeDeletion = deletionAtEnd.state.doc.line(2)
     const deletionChunks = chunksOf(deletionAtEnd)
     assert.equal(deletionChunks.length, 1)
-    assert.equal(deletionChunks[0].fromB, deletionChunks[0].toB)
+    assert.deepEqual(deletionChunks[0].anchors, [{
+      from: deletionAtEndText.indexOf('tail'),
+      to: deletionAtEndText.indexOf('tail')
+    }])
     assert.equal(
       rangeInPreviewSuppression(
         deletionAtEnd.state,
         beforeDeletion.from,
-        deletionChunks[0].fromB
+        deletionChunks[0].seam
       ),
       false
     )
@@ -625,7 +680,6 @@ describe('Editor review-chunk view', function () {
     // rebuild, or widgets stay rendered over active chunks and hide their
     // controls (and stay raw after the review clears).
     const working = 'see [text](https://example.com) here\n'
-    const reference = 'see [old](https://example.com) here\n'
     const reviewCompartment = new Compartment()
     const view = new EditorView({
       parent: document.body,
@@ -643,8 +697,7 @@ describe('Editor review-chunk view', function () {
     view.dispatch({
       effects: reviewCompartment.reconfigure(reviewChunksExtension({
         reviewId: 'review-renderer-rebuild',
-        referenceText: reference,
-        packets: attributedToOnePacket(reference, working),
+        suggestions: [replacementSuggestion(working, 'old', 'text')],
         chunkComments: [],
         onDecide: async () => {},
         onAcceptAll: async () => {},
@@ -674,10 +727,20 @@ describe('Editor review-chunk view', function () {
     const proposed = baseline
       .replace('first baseline', 'first proposed')
       .replace('second baseline', 'second proposed')
-    const { view } = createReviewView(baseline, proposed)
+    const first = replacementSuggestion(proposed, 'baseline', 'proposed', 'first')
+    const secondStart = proposed.indexOf('second proposed') + 'second '.length
+    const { view } = createReviewView(proposed, {
+      suggestions: [first, {
+        suggestionId: 'second',
+        removedText: 'baseline',
+        anchors: [{ from: secondStart, to: secondStart + 'proposed'.length }],
+        seam: secondStart,
+        description: 'proposal'
+      }]
+    })
     const chunks = chunksOf(view)
     const anchorOf = (index: number): number =>
-      view.state.doc.line(chunks[index].workFromLine).from
+      view.state.doc.lineAt(chunks[index].anchors[0]?.from ?? chunks[index].seam).from
 
     assert.equal(selectNextReviewChunk(view), true)
     assert.equal(view.state.selection.main.head, anchorOf(0))
@@ -704,7 +767,15 @@ describe('Editor review-chunk view', function () {
     const proposed = baseline
       .replace('first baseline', 'first proposed')
       .replace('second baseline', 'second proposed')
-    const { view, calls } = createReviewView(baseline, proposed)
+    const first = replacementSuggestion(proposed, 'baseline', 'proposed', 'first')
+    const secondStart = proposed.indexOf('second proposed') + 'second '.length
+    const { view, calls } = createReviewView(proposed, { suggestions: [first, {
+      suggestionId: 'second',
+      removedText: 'baseline',
+      anchors: [{ from: secondStart, to: secondStart + 'proposed'.length }],
+      seam: secondStart,
+      description: 'proposal'
+    }] })
     const label = view.dom.querySelector<HTMLElement>('.cm-reviewStatusLabel')
     const acceptAll = view.dom.querySelector<HTMLButtonElement>('button.cm-reviewAcceptAll')
     const clear = view.dom.querySelector<HTMLButtonElement>('button.cm-reviewClear')
@@ -745,10 +816,10 @@ describe('Editor review-chunk view', function () {
       .replace('second baseline', 'second proposed')
     const built: DecisionCall[] = []
     const current: DecisionCall[] = []
+    const suggestions = [replacementSuggestion(proposed, 'baseline', 'proposed')]
     const configFor = (sink: DecisionCall[]): Parameters<typeof reviewChunksExtension>[0] => ({
       reviewId: 'review-test',
-      referenceText: baseline,
-      packets: attributedToOnePacket(baseline, proposed),
+      suggestions,
       chunkComments: [],
       onDecide: async (chunkId, decision) => {
         sink.push({ chunkId, decision })
@@ -782,7 +853,7 @@ describe('Editor review-chunk view', function () {
     view.dom.querySelector<HTMLButtonElement>('button.cm-review-diff-control.accept')?.click()
     await new Promise(resolve => setTimeout(resolve, 0))
     assert.deepEqual(current, [
-      { chunkId: chunks[0].chunkId, decision: 'accept' }
+      { chunkId: chunks[0].suggestionId, decision: 'accept' }
     ])
     assert.deepEqual(built, [], 'the retired configuration must never be called')
   })
@@ -799,8 +870,7 @@ describe('Editor review-chunk view', function () {
         doc: 'proposal\n',
         extensions: [compartment.of(reviewChunksExtension({
           reviewId: 'review-test',
-          referenceText: 'baseline\n',
-          packets: attributedToOnePacket('baseline\n', 'proposal\n'),
+          suggestions: [replacementSuggestion('proposal\n', 'baseline', 'proposal')],
           chunkComments: [],
           onDecide: async () => {},
           onAcceptAll: async () => {},
@@ -833,10 +903,9 @@ describe('Editor review-chunk view', function () {
     // the review survives, resolved and awaiting its save, but the panel is
     // chunk controls and must leave with the last chunk.
     const compartment = new Compartment()
-    const configFor = (referenceText: string): Parameters<typeof reviewChunksExtension>[0] => ({
+    const configFor = (suggestions: ReviewSuggestionView[]): Parameters<typeof reviewChunksExtension>[0] => ({
       reviewId: 'review-test',
-      referenceText,
-      packets: attributedToOnePacket(referenceText, 'proposal\n'),
+      suggestions,
       chunkComments: [],
       onDecide: async () => {},
       onAcceptAll: async () => {},
@@ -848,7 +917,9 @@ describe('Editor review-chunk view', function () {
       parent: document.body,
       state: EditorState.create({
         doc: 'proposal\n',
-        extensions: [compartment.of(reviewChunksExtension(configFor('baseline\n')))]
+        extensions: [compartment.of(reviewChunksExtension(configFor([
+          replacementSuggestion('proposal\n', 'baseline', 'proposal')
+        ])))]
       })
     })
     views.push(view)
@@ -858,7 +929,7 @@ describe('Editor review-chunk view', function () {
     )
 
     view.dispatch({
-      effects: compartment.reconfigure(reviewChunksExtension(configFor('proposal\n')))
+      effects: compartment.reconfigure(reviewChunksExtension(configFor([])))
     })
     assert.equal(
       view.dom.querySelector('.cm-reviewStatusPanel'),
@@ -879,8 +950,7 @@ describe('Editor review-chunk view', function () {
     let view: EditorView
     const extension = reviewChunksExtension({
       reviewId: 'review-test',
-      referenceText: 'baseline\n',
-      packets: attributedToOnePacket('baseline\n', 'proposal\n'),
+      suggestions: [replacementSuggestion('proposal\n', 'baseline', 'proposal')],
       chunkComments: [],
       onDecide: async () => {},
       onAcceptAll: async () => {},
@@ -919,7 +989,9 @@ describe('Editor review-chunk view', function () {
   })
 
   it('emits trimmed review comments and never renders committed ones', function () {
-    const { view, calls } = createReviewView('baseline', 'proposal')
+    const { view, calls } = createReviewView('proposal', {
+      suggestions: [replacementSuggestion('proposal', 'baseline', 'proposal')]
+    })
 
     const input = view.dom.querySelector<HTMLInputElement>('.cm-reviewCommentInput')
     const submit = view.dom.querySelector<HTMLButtonElement>('.cm-reviewCommentSubmit')
@@ -956,11 +1028,12 @@ describe('Editor review-chunk view', function () {
 
   it('leaves unchanged document lines visible instead of folding them away', function () {
     const lines = Array.from({ length: 60 }, (_, index) => `line ${index + 1}`)
-    const baseline = lines.join('\n')
     const proposed = lines
       .map(line => line === 'line 30' ? 'line 30 corrected' : line)
       .join('\n')
-    const { view } = createReviewView(baseline, proposed)
+    const { view } = createReviewView(proposed, {
+      suggestions: [replacementSuggestion(proposed, 'line 30', 'line 30 corrected')]
+    })
 
     assert.equal(chunksOf(view).length, 1)
     assert.equal(view.dom.querySelectorAll('.cm-collapsedLines').length, 0)

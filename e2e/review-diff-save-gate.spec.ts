@@ -481,25 +481,34 @@ describe('saving after accepting a reviewed change', function () {
         typeof chunksPayload === 'object' &&
         'chunks' in chunksPayload &&
         Array.isArray(chunksPayload.chunks) &&
-        chunksPayload.chunks.length === 1,
-      `Chunk-note proof expected one addressable chunk: ${JSON.stringify(chunksPayload)}`
+        chunksPayload.chunks.length > 0,
+      `Chunk-note proof expected an addressable chunk: ${JSON.stringify(chunksPayload)}`
     )
+    // The note belongs to one chunk, named by its id: a claim is adjudicated
+    // region by region, so how many regions this claim happens to touch is
+    // not what this proof is about.
+    const notedChunkId = (chunksPayload.chunks[0] as { chunkId: string }).chunkId
 
     // The note is the reviewer's, typed into the chunk's own field. There is
     // no submit gesture: the reviewer types and walks away — no blur, no
     // Enter — and the autosave must still make the note agent-visible. That
     // is the product scenario this spec exists to prove, so the API is
     // polled BEFORE anything else touches the pane.
-    const chunkWidget = page.locator('.cm-chunkControls').first()
+    const chunkWidget = page.locator(`.cm-chunkControls[data-chunk-id="${notedChunkId}"]`)
     await chunkWidget
       .locator('input.cm-chunkCommentInput')
       .fill('Preserve this note across save')
     const agentSeesNote = async (): Promise<boolean> => {
       const payload = await activeClient.get(`/v1/reviews/${reviewId}/chunks`)
-      return payload !== null && typeof payload === 'object' &&
-        'chunks' in payload && Array.isArray(payload.chunks) &&
-        payload.chunks.length === 1 &&
-        (payload.chunks[0] as { comment?: unknown }).comment === 'Preserve this note across save'
+      if (payload === null || typeof payload !== 'object' || !('chunks' in payload) ||
+        !Array.isArray(payload.chunks)) {
+        return false
+      }
+      const noted = payload.chunks.find(
+        chunk => (chunk as { chunkId?: unknown }).chunkId === notedChunkId
+      )
+      return (noted as { comment?: unknown } | undefined)?.comment ===
+        'Preserve this note across save'
     }
     const noteDeadline = Date.now() + 20_000
     while (Date.now() < noteDeadline && !(await agentSeesNote())) {
@@ -538,11 +547,15 @@ describe('saving after accepting a reviewed change', function () {
     const afterChunks = await activeClient.get(`/v1/reviews/${reviewId}/chunks`)
     assert.ok(
       afterChunks !== null && typeof afterChunks === 'object' &&
-        'chunks' in afterChunks && Array.isArray(afterChunks.chunks) &&
-        afterChunks.chunks.length === 1,
-      `The chunk must stay outstanding after the save: ${JSON.stringify(afterChunks)}`
+        'chunks' in afterChunks && Array.isArray(afterChunks.chunks),
+      `The chunk listing must survive the save: ${JSON.stringify(afterChunks)}`
     )
-    const [annotated] = afterChunks.chunks as Array<{ comment?: unknown }>
+    const annotated = (afterChunks.chunks as Array<{ chunkId: string, comment?: unknown }>)
+      .find(chunk => chunk.chunkId === notedChunkId)
+    assert.ok(
+      annotated !== undefined,
+      `The annotated chunk must stay outstanding after the save: ${JSON.stringify(afterChunks)}`
+    )
     assert.equal(
       annotated.comment,
       'Preserve this note across save',
@@ -573,7 +586,7 @@ describe('saving after accepting a reviewed change', function () {
     )
 
     const before = await reviewCounts(activeClient, pendingReviewId)
-    assert.equal(before.unresolvedChunks, 1, 'The pending chunk must be open before the save.')
+    assert.ok(before.unresolvedChunks > 0, 'The pending chunk must be open before the save.')
 
     const saved = await invokeSave(page, activeDocumentPath)
     assert.deepEqual(
@@ -593,7 +606,11 @@ describe('saving after accepting a reviewed change', function () {
     // The review is untouched by the save: same pending chunk, same
     // generation, and the pane still renders its decidable widget.
     const after = await reviewCounts(activeClient, pendingReviewId)
-    assert.equal(after.unresolvedChunks, 1, 'The pending chunk must survive the save.')
+    assert.equal(
+      after.unresolvedChunks,
+      before.unresolvedChunks,
+      'The save must resolve nothing: the same chunks stay open.'
+    )
     assert.equal(after.generation, before.generation, 'A save must not advance the review generation.')
     await page
       .locator('button.cm-review-diff-control.accept')
@@ -614,8 +631,8 @@ describe('saving after accepting a reviewed change', function () {
     )
     assert.equal(
       (await reviewCounts(activeClient, pendingReviewId)).unresolvedChunks,
-      1,
-      'The pending chunk must survive the second save as well.'
+      before.unresolvedChunks,
+      'The pending chunks must survive the second save as well.'
     )
   })
 
@@ -653,10 +670,9 @@ describe('saving after accepting a reviewed change', function () {
     screenshots.set('pending-review-reattached.png', await page.screenshot())
 
     const reattached = await reviewCounts(activeClient, savedReviewId)
-    assert.equal(
-      reattached.unresolvedChunks,
-      1,
-      'The reopened document must reattach the review with its pending chunk intact.'
+    assert.ok(
+      reattached.unresolvedChunks > 0,
+      'The reopened document must reattach the review with its pending chunks intact.'
     )
 
     await clearReviewAndFlush(page, activeDocumentPath)

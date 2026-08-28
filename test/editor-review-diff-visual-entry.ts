@@ -1,7 +1,6 @@
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
-import { computeReviewChunks } from 'source/common/modules/review/review-chunks'
 import {
   getReviewChunks,
   reviewChunksExtension
@@ -36,7 +35,8 @@ const proposed = baseline
   .replace('original proof sketch', 'shorter proof sketch')
 
 async function mount (): Promise<void> {
-  const chunks = computeReviewChunks(baseline, proposed)
+  const theoremStart = proposed.indexOf('revised theorem statement')
+  const proofStart = proposed.indexOf('shorter proof sketch')
   const dark = document.body.dataset.dark === 'true'
   const host = document.querySelector<HTMLElement>('#editor')
   if (host === null) {
@@ -53,16 +53,24 @@ async function mount (): Promise<void> {
         EditorView.lineWrapping,
         reviewChunksExtension({
           reviewId: 'visual-capture',
-          referenceText: baseline,
-          packets: [
+          suggestions: [
             {
-              packetId: 'visual-packet-1',
-              description: 'Revise the theorem statement to match the corrected constant.',
-              refSpans: [{ from: chunks[0].refFromLine, to: chunks[0].refToLine }]
+              suggestionId: 'suggestion-theorem',
+              removedText: 'original theorem statement',
+              anchors: [{ from: theoremStart, to: theoremStart + 'revised theorem statement'.length }],
+              seam: theoremStart,
+              description: 'Revise the theorem statement to match the corrected constant.'
+            },
+            {
+              suggestionId: 'suggestion-proof',
+              removedText: 'original proof sketch',
+              anchors: [{ from: proofStart, to: proofStart + 'shorter proof sketch'.length }],
+              seam: proofStart,
+              description: 'Shorten the proof sketch.'
             }
           ],
           chunkComments: [
-            { chunkId: chunks[1].chunkId, comment: 'Checking this against the published erratum first.' }
+            { chunkId: 'suggestion-proof', comment: 'Checking this against the published erratum first.' }
           ],
           onDecide: async () => { /* capture harness: decisions are not exercised */ },
           onAcceptAll: async () => { /* capture harness: decisions are not exercised */ },

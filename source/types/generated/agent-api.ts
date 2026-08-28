@@ -458,24 +458,13 @@ export interface components {
             reviewId: string;
             state: components["schemas"]["ReviewState"];
             generation: number;
-            /** @description Chunks not yet accepted or rejected — the whole outstanding partition. */
+            /** @description Suggestions not yet accepted or rejected. */
             unresolvedChunks: number;
             packetCount: number;
         };
         ReviewComment: {
             text: string;
             createdAt: string;
-            /** @description Present when this comment was salvaged from a chunk-anchored note whose chunk id vanished from the partition (the annotated region was edited, decided, cleared, or absorbed by a later claim). Note text is never silently lost. */
-            orphanedFromChunkId?: string;
-            /**
-             * @description Present when the orphaning event was a decision: what happened to the chunk this comment annotated. Absent when the chunk dissolved through an ordinary edit.
-             * @enum {string}
-             */
-            decision?: "accept" | "reject";
-            /** @description The annotated chunk's reference-side text, snapshotted when the note was written. Lets a caller reconstruct what the comment was about without replaying the document history. */
-            referenceText?: string;
-            /** @description The annotated chunk's working-side text, snapshotted when the note was written. */
-            workingText?: string;
         };
         EditorViewSummary: {
             viewId: string;
@@ -577,8 +566,6 @@ export interface components {
             chunkId?: string;
             /** @description review.commented: the comment text. Absent on a chunk-anchored event when the reviewer removed the chunk's note. */
             comment?: string;
-            /** @description review.commented: set when the comment was salvaged from a chunk-anchored note whose chunk id vanished from the partition. */
-            orphanedFromChunkId?: string;
             /** @description review.sidecar-error: what failed and why. */
             message?: string;
             /** @description Server-generated event sequence identifier. */
@@ -683,10 +670,10 @@ export interface components {
             reviewId: string;
             state: components["schemas"]["ReviewState"];
             generation: number;
-            /** @description Chunks not yet accepted or rejected — the whole outstanding partition. */
+            /** @description Suggestions not yet accepted or rejected. */
             unresolvedChunks: number;
             packetCount: number;
-            /** @description Review-level comments in creation order — attached directly via the comments route, or orphaned from chunk-anchored notes whose chunks vanished. */
+            /** @description Review-level comments in creation order. */
             comments: components["schemas"]["ReviewComment"][];
             /** @description True while the reviewed document is open. A detached review is served from its sidecar: readable, but not decidable until its documentPath is opened again. */
             attached: boolean;
@@ -705,7 +692,7 @@ export interface components {
             /** @description Absent for a detached review, whose file is closed. */
             documentId?: string;
             generation: number;
-            /** @description SHA-256 of the working text these chunks were partitioned from — the `expectedWorkingSha256` a retraction of one of the packets behind them must carry. Absent for a detached review, which has no live buffer and accepts no mutation until its file is reopened. */
+            /** @description SHA-256 of the working text that contains these suggestions — the `expectedWorkingSha256` a retraction of one of the packets behind them must carry. Absent for a detached review, which has no live buffer and accepts no mutation until its file is reopened. */
             workingSha256?: string;
             chunks: components["schemas"]["OutstandingChunk"][];
         };
@@ -726,24 +713,20 @@ export interface components {
             documentRevision: components["schemas"]["DocumentRevision"];
         };
         OutstandingChunk: {
-            /** @description Content-addressed identity: stable while the chunk's own text is untouched, so deciding one chunk does not invalidate the ids of the others. A decision against an id whose region has since changed fails with CHUNK_NOT_FOUND. */
+            /** @description Stable suggestion identity. Owner edits map its anchors without changing this id. Deciding another suggestion does not change it. */
             chunkId: string;
-            /** @description 1-based, half-open: the chunk covers lines [fromLine, toLine). fromLine equal to toLine marks an empty side (a pure insertion has an empty reference range; a pure deletion an empty working range). Ranges of distinct chunks never overlap. */
-            referenceRange: {
-                fromLine: number;
-                toLine: number;
-            };
-            workingRange: {
-                fromLine: number;
-                toLine: number;
-            };
             /** @description The reference-side lines, newline-joined; empty for a pure insertion. */
             referenceText: string;
             /** @description The working-side lines, newline-joined; empty for a pure deletion. */
             workingText: string;
-            /** @description The packets whose edits produced this chunk, in application order — every packet whose recorded edit spans still touch the chunk's reference range. Overlapping claims attribute together; a chunk the user tweaked keeps the attribution of the claim it grew from; a chunk only the user's own edits created carries none. */
+            /** @description Disjoint half-open character ranges containing only agent-authored bytes. Owner text inserted inside a suggestion is not included. */
+            workingSpans: {
+                from: number;
+                to: number;
+            }[];
+            /** @description The one packet that owns this suggestion. */
             packetIds: string[];
-            /** @description Those packets' descriptions, in the same order, packets without one omitted. */
+            /** @description The owning packet's description. */
             descriptions: string[];
             /** @description The reviewer's note attached to this chunk without deciding it — a question or objection. Address it in your next claims batch. */
             comment?: string;
@@ -1276,7 +1259,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The unresolved chunks. A detached review answers from the frozen texts in its sidecar — same content-addressed chunk ids, no documentId. */
+            /** @description The unresolved suggestions. A detached review answers from its stored suggestion entities with the same stable ids and no documentId. */
             200: {
                 headers: {
                     [name: string]: unknown;

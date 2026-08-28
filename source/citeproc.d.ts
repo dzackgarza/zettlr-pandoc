@@ -32,7 +32,7 @@ interface CSLItem {
   /**
    * Arbitrary values can be passed here as well
    */
-  [key?: string]: unknown
+  [key: string]: unknown
 }
 
 /**
@@ -297,7 +297,7 @@ declare module 'citeproc' {
      *
      * @return  {CSLEngine}                   The initiated engine
      */
-    constructor (sys: CSLKernelConfig, style, lang?: string, forceLang?: boolean): Engine
+    constructor (sys: CSLKernelConfig, style: string, lang?: string, forceLang?: boolean)
     /**
      * The updateItems() method accepts a single argument when invoked as a
      * public method, and refreshes the registry with a designated set of

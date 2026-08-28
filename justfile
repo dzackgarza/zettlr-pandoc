@@ -134,9 +134,14 @@ test-e2e-desktop:
 test-commit:
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-commit
 
+# The desktop proofs hang off THIS recipe rather than scripts["test:push"]:
+# the pre-push hook is the only caller of it, while the CI tier reaches the
+# profile's own test-push directly. A hosted runner has no compositor and no
+# packaged binary, so a desktop proof there can only fail on its preconditions.
 [private]
 test-push:
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-push
+    @just test-e2e-desktop
 
 [private]
 test-ci:

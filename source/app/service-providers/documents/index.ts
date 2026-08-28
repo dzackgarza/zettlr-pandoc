@@ -203,7 +203,6 @@ export interface DocumentsUpdateContext {
   reviewState?: {
     reviewId: string;
     generation: number;
-    referenceText: string;
     workingText: string;
     unresolvedChunks: number;
   };
@@ -443,8 +442,8 @@ export type ReviewDecisionInput = {
 } & ReviewMutationPrecondition;
 
 /**
- * A comment attached to one outstanding chunk without deciding it. Fenced
- * like a decision: the chunk id is content-addressed over the working text.
+ * A comment attached to one outstanding suggestion without deciding it.
+ * The stable suggestion id selects the comment owner.
  */
 export type ReviewChunkCommentInput = {
   reviewId: string;
@@ -547,8 +546,8 @@ export default class DocumentManager
   private readonly _remoteChangeErrorShownFor: string[];
 
   /**
-   * Committed review state. The store owns the merge reference, the packet
-   * ledger, and the review generation; every decision about them is a pure
+   * Committed review state. The store owns suggestions, the packet ledger,
+   * and the review generation. Every decision about them is a pure
    * transition this provider prepares, persists, and commits.
    */
 
@@ -1283,8 +1282,8 @@ export default class DocumentManager
    * Accept an editor's collab updates into the authority buffer.
    *
    * While a review is open this is a STAGED commit: the incoming changes are
-   * applied to a local candidate, the review's chunk comments are reconciled
-   * against that candidate, and the resulting sidecar is written BEFORE the document
+   * applied to a local candidate, suggestion anchors are mapped through the
+   * transaction, and the resulting sidecar is written BEFORE the document
    * takes any of it. Persistence failure leaves `doc.document`, the versions,
    * the update history and the review exactly as they were, and rejects the
    * call — the renderer's update stays unsent and is retried.
@@ -1297,7 +1296,7 @@ export default class DocumentManager
     clientVersion: number,
     clientUpdates: SerializedUpdate[],
   ): Promise<boolean> {
-    return await this._reviewApplication.withDocumentLock(
+    return this._reviewApplication.withDocumentLock(
       this.ensureDocumentId(filePath),
       async () => await this.pushUpdatesLocked(filePath, clientVersion, clientUpdates),
     );
@@ -1327,9 +1326,12 @@ export default class DocumentManager
     // The candidate document: everything the updates produce, computed
     // without touching the authority's own state.
     let candidateText = doc.document;
+    let candidateChanges = ChangeSet.empty(doc.document.length);
     for (const update of clientUpdates) {
       try {
-        candidateText = ChangeSet.fromJSON(update.changes).apply(candidateText);
+        const changes = ChangeSet.fromJSON(update.changes);
+        candidateText = changes.apply(candidateText);
+        candidateChanges = candidateChanges.compose(changes);
       } catch (err: unknown) {
         dialog.showErrorBox(
           "Document out of sync",
@@ -1383,6 +1385,7 @@ current contents from the editor somewhere else, and restart the application.`,
       await this._reviewApplication.applyWorkingTextEditLocked(
         documentId,
         candidateWorkingText,
+        candidateChanges,
         commitDocument,
       );
       // A reviewed document does not autosave: the save gate owns when its
@@ -2537,7 +2540,7 @@ current contents from the editor somewhere else, and restart the application.`,
 
   /** The document's bytes as they currently are on disk. */
   public async readDiskText(documentPath: string): Promise<string> {
-    return await readFile(documentPath, "utf8");
+    return readFile(documentPath, "utf8");
   }
 
   /**
@@ -2667,13 +2670,13 @@ current contents from the editor somewhere else, and restart the application.`,
   // call these same methods; the service owns the transaction.
   // ==========================================================================
 
-  public async decideReviewChunk(
+  public decideReviewChunk(
     reviewId: string,
     chunkId: string,
     decision: ChunkDecision,
     precondition: ReviewMutationPrecondition,
   ): Promise<ChunkDecisionResponse | ReviewFailure> {
-    return await this._reviewApplication.decideChunk(
+    return this._reviewApplication.decideChunk(
       reviewId,
       chunkId,
       decision,
@@ -2681,35 +2684,35 @@ current contents from the editor somewhere else, and restart the application.`,
     );
   }
 
-  public async commentReviewChunk(
+  public commentReviewChunk(
     reviewId: string,
     chunkId: string,
     text: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<ChunkCommentResponse | ReviewFailure> {
-    return await this._reviewApplication.commentChunk(reviewId, chunkId, text, precondition);
+    return this._reviewApplication.commentChunk(reviewId, chunkId, text, precondition);
   }
 
-  public async acceptAllReviewChunks(
+  public acceptAllReviewChunks(
     reviewId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<AcceptAllChunksResponse | ReviewFailure> {
-    return await this._reviewApplication.acceptAllChunks(reviewId, precondition);
+    return this._reviewApplication.acceptAllChunks(reviewId, precondition);
   }
 
-  public async clearReview(
+  public clearReview(
     reviewId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<ClearReviewResponse | ReviewFailure> {
-    return await this._reviewApplication.clearReview(reviewId, precondition);
+    return this._reviewApplication.clearReview(reviewId, precondition);
   }
 
-  public async addReviewComment(
+  public addReviewComment(
     reviewId: string,
     text: string,
     expectedReviewGeneration: number,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    return await this._reviewApplication.addReviewComment(
+    return this._reviewApplication.addReviewComment(
       reviewId,
       text,
       expectedReviewGeneration,
@@ -2759,7 +2762,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * arriving mid-save is exactly what would break that.
    */
   public async saveFile(filePath: string): Promise<SaveFileResult> {
-    return await this._reviewApplication.withDocumentLock(
+    return this._reviewApplication.withDocumentLock(
       this.ensureDocumentId(filePath),
       async () => await this._saveFileLocked(filePath),
     );
@@ -3105,8 +3108,8 @@ current contents from the editor somewhere else, and restart the application.`,
     );
   }
 
-  public async readSupportedFile(filePath: string): Promise<string> {
-    return await this._app.fsal.loadAnySupportedFile(filePath);
+  public readSupportedFile(filePath: string): Promise<string> {
+    return this._app.fsal.loadAnySupportedFile(filePath);
   }
 
   /**
@@ -3206,7 +3209,7 @@ current contents from the editor somewhere else, and restart the application.`,
     clientRequestId: string,
     expectedReviewGeneration: number,
   ): Promise<SubmittedProposal | { ok: false; code: string; message: string }> {
-    return await this._reviewApplication.submitProposal({
+    return this._reviewApplication.submitProposal({
       documentId,
       baselineSha256,
       claims,
@@ -3397,9 +3400,8 @@ current contents from the editor somewhere else, and restart the application.`,
 
   /**
    * Broadcast the current review state to all renderers displaying a document.
-   * The session carries exactly what a pane needs to draw: the provider-owned
-   * merge reference and the identifiers to send decisions back with. Panes
-   * derive their widgets from it locally; nothing is reported back.
+   * The session carries the mapped suggestions and decision identifiers.
+   * Panes render this state locally and report no derived review state.
    */
   private _broadcastReviewState(
     filePath: string,
@@ -3415,10 +3417,8 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * The one constructor of the session shape a pane draws from: the merge
-   * reference plus every packet's attribution (description and current
-   * reference spans), so the widgets can label each chunk with the claims
-   * that produced it.
+   * The one constructor of the session shape a pane draws from: proposed
+   * suggestion entities and their source descriptions.
    */
   private _reviewSessionFor(
     filePath: string,
@@ -3432,15 +3432,24 @@ current contents from the editor somewhere else, and restart the application.`,
       id: review.reviewId,
       reviewGeneration: review.generation,
       documentPath: filePath,
-      referenceText: review.referenceText,
       workingText: document.document.toString(),
-      // A packet carries its own attribution, and a chunk comment its own
-      // identity: the pane reads them straight off the committed review.
-      packets: review.packets.map((packet) => ({
-        packetId: packet.packetId,
-        description: packet.description,
-        refSpans: packet.refSpans.map((span) => ({ ...span })),
-      })),
+      suggestions: review.suggestions
+        .filter((suggestion) => suggestion.state === "proposed")
+        .map((suggestion) => {
+          const packet = review.packets.find(
+            (candidate) => candidate.packetId === suggestion.packetId,
+          );
+          if (packet === undefined) {
+            throw new Error(`Suggestion ${suggestion.suggestionId} has no packet`);
+          }
+          return {
+            suggestionId: suggestion.suggestionId,
+            removedText: suggestion.removedText,
+            anchors: suggestion.anchors.map((span) => ({ ...span })),
+            seam: suggestion.seam,
+            description: packet.description,
+          };
+        }),
       chunkComments: review.chunkComments.map((note) => ({ ...note })),
     };
   }

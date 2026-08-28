@@ -15,6 +15,7 @@
  */
 
 import { strict as assert } from "assert";
+import { ChangeSet } from "@codemirror/state";
 import { createPatch } from "diff";
 import {
   proposalRequestFingerprint,
@@ -144,13 +145,13 @@ describe("pure review transitions", function () {
       decision: "accept",
     });
     assert.ok(!isTransitionError(decided));
-    assert.equal(decided.nextReview?.referenceText, workingText);
+    assert.equal(decided.nextReview?.suggestions[0].state, "accepted");
 
     const cleared = prepareClear({ review, workingText });
     assert.ok(!isTransitionError(cleared));
     assert.equal(cleared.response.state, "cleared");
     assert.equal(cleared.nextReview?.generation, review.generation + 1);
-    assert.equal(cleared.nextWorkingText, review.referenceText);
+    assert.equal(cleared.nextWorkingText, "alpha\nbeta\n");
   });
 
   it("retracts only the newest untouched packet", function () {
@@ -161,7 +162,10 @@ describe("pure review transitions", function () {
       documentPath: DOCUMENT_PATH,
       workingText: first.nextWorkingText,
       diskSha256: first.nextReview!.diskFenceSha256,
-      claims: [{ patch: patch(first.nextWorkingText, "ALPHA!\n"), description: "punctuate" }],
+      claims: [{
+        patch: patch(first.nextWorkingText, "prefix ALPHA\n"),
+        description: "prefix",
+      }],
       clientRequestId: "request-2",
       requestFingerprint: sha256Text("request-2"),
     });
@@ -175,6 +179,12 @@ describe("pure review transitions", function () {
     assert.ok(!isTransitionError(retracted));
     assert.equal(retracted.nextWorkingText, first.nextWorkingText);
     assert.equal(retracted.nextReview?.packets.length, 1);
+    const store = new ReviewDiffStore();
+    store.replaceReview(DOCUMENT_ID, retracted.nextReview!);
+    assert.equal(
+      store.getOutstandingChunks(DOCUMENT_ID, retracted.nextWorkingText)?.[0].workingText,
+      "ALPHA",
+    );
   });
 
   it("keeps preparation pure and drafts events without emitting them", function () {
@@ -201,9 +211,12 @@ describe("pure review transitions", function () {
     assertTransitionError(refused, "PACKET_NOT_RETRACTABLE");
     assert.deepEqual(review, before);
   });
+});
 
+describe("suggestions through owner edits and later claims", function () {
   it("reconciles a working-text edit without mutating the input", function () {
-    const { review, workingText } = withReview("alpha\n", "ALPHA\n");
+    const baseline = "alpha\n";
+    const { review, workingText } = withReview(baseline, "ALPHA\n");
     const store = new ReviewDiffStore();
     store.replaceReview(DOCUMENT_ID, review);
     const chunk = store.getOutstandingChunks(DOCUMENT_ID, workingText)![0];
@@ -217,16 +230,163 @@ describe("pure review transitions", function () {
     const before = structuredClone(noted.nextReview!);
     const edit = prepareWorkingTextEdit({
       review: noted.nextReview!,
-      workingText: review.referenceText,
+      textBefore: workingText,
+      workingText: baseline,
+      changes: ChangeSet.of(
+        { from: 0, to: workingText.length, insert: baseline },
+        workingText.length,
+      ),
     });
     assert.ok(edit !== undefined);
     assert.deepEqual(noted.nextReview, before);
   });
 
+  it("maps each deletion restoration when owner text changes between seams", function () {
+    const baseline = "one middle two\n";
+    const proposed = " middle \n";
+    const { review, workingText } = withReview(baseline, proposed);
+    assert.ok(review.suggestions.every((suggestion) =>
+      suggestion.anchors.every((anchor) => anchor.from === anchor.to),
+    ));
+    const insertionAt = workingText.indexOf("dle");
+    const ownerText = "OWNER";
+    const edited =
+      workingText.slice(0, insertionAt) + ownerText + workingText.slice(insertionAt);
+    const edit = prepareWorkingTextEdit({
+      review,
+      textBefore: workingText,
+      workingText: edited,
+      changes: ChangeSet.of(
+        { from: insertionAt, insert: ownerText },
+        workingText.length,
+      ),
+    });
+    assert.ok(edit !== undefined);
+
+    const rejected = prepareClear({
+      review: edit.nextReview!,
+      workingText: edited,
+    });
+    assert.ok(!isTransitionError(rejected));
+    assert.equal(rejected.nextWorkingText, "one midOWNERdle two\n");
+  });
+
+  it("maps an earlier suggestion through a later claim and later rejection", function () {
+    const baseline = "alpha beta\n";
+    const first = "ALPHA beta\n";
+    const final = "prefix ALPHA beta\n";
+    const claims = [
+      { patch: patch(baseline, first), description: "capitalize alpha" },
+      { patch: patch(first, final), description: "add prefix" },
+    ];
+    const submitted = prepareProposalSubmission({
+      review: undefined,
+      documentId: DOCUMENT_ID,
+      documentPath: DOCUMENT_PATH,
+      workingText: baseline,
+      diskSha256: sha256Text(baseline),
+      claims,
+      clientRequestId: "mapped-claims",
+      requestFingerprint: sha256Text("mapped-claims"),
+    });
+    assert.ok(!isTransitionError(submitted));
+    const store = new ReviewDiffStore();
+    store.replaceReview(DOCUMENT_ID, submitted.nextReview!);
+    const chunks = store.getOutstandingChunks(DOCUMENT_ID, final)!;
+    const capitalized = chunks.find((chunk) =>
+      chunk.descriptions.includes("capitalize alpha"),
+    );
+    const prefixed = chunks.find((chunk) => chunk.descriptions.includes("add prefix"));
+    assert.equal(capitalized?.workingText, "ALPHA");
+    assert.equal(prefixed?.workingText, "prefix ");
+
+    const prefixRejected = prepareChunkDecision({
+      review: submitted.nextReview!,
+      workingText: final,
+      chunkId: prefixed!.chunkId,
+      decision: "reject",
+    });
+    assert.ok(!isTransitionError(prefixRejected));
+    assert.equal(prefixRejected.nextWorkingText, first);
+
+    const capitalRejected = prepareChunkDecision({
+      review: prefixRejected.nextReview!,
+      workingText: prefixRejected.nextWorkingText,
+      chunkId: capitalized!.chunkId,
+      decision: "reject",
+    });
+    assert.ok(!isTransitionError(capitalRejected));
+    assert.equal(capitalRejected.nextWorkingText, baseline);
+  });
+
+  it("maps sibling identity through rejection of repeated text", function () {
+    const { review } = withReview("", "aa");
+    const packetId = review.packets[0].packetId;
+    review.suggestions = [
+      {
+        suggestionId: "first-a",
+        packetId,
+        kind: "insertion",
+        removedText: "",
+        restorations: [],
+        anchors: [{ from: 0, to: 1 }],
+        seam: 0,
+        state: "proposed",
+      },
+      {
+        suggestionId: "second-a",
+        packetId,
+        kind: "insertion",
+        removedText: "",
+        restorations: [],
+        anchors: [{ from: 1, to: 2 }],
+        seam: 1,
+        state: "proposed",
+      },
+    ];
+    const firstRejected = prepareChunkDecision({
+      review,
+      workingText: "aa",
+      chunkId: "first-a",
+      decision: "reject",
+    });
+    assert.ok(!isTransitionError(firstRejected));
+    assert.equal(firstRejected.nextWorkingText, "a");
+    assert.deepEqual(firstRejected.nextReview?.suggestions[1].anchors, [{ from: 0, to: 1 }]);
+
+    const secondRejected = prepareChunkDecision({
+      review: firstRejected.nextReview!,
+      workingText: firstRejected.nextWorkingText,
+      chunkId: "second-a",
+      decision: "reject",
+    });
+    assert.ok(!isTransitionError(secondRejected));
+    assert.equal(secondRejected.nextWorkingText, "");
+  });
+
+  it("withdraws a suggestion when an owner edit destroys its complete anchor", function () {
+    const baseline = "prefix suffix\n";
+    const proposed = "prefix AGENT suffix\n";
+    const { review, workingText } = withReview(baseline, proposed);
+    const anchor = review.suggestions[0].anchors[0];
+    const edited = workingText.slice(0, anchor.from) + workingText.slice(anchor.to);
+    const edit = prepareWorkingTextEdit({
+      review,
+      textBefore: workingText,
+      workingText: edited,
+      changes: ChangeSet.of({ from: anchor.from, to: anchor.to }, workingText.length),
+    });
+    assert.ok(edit !== undefined);
+    assert.equal(edit.nextReview?.suggestions[0].state, "withdrawn");
+    const store = new ReviewDiffStore();
+    store.replaceReview(DOCUMENT_ID, edit.nextReview!);
+    assert.deepEqual(store.getOutstandingChunks(DOCUMENT_ID, edited), []);
+  });
+
   it("round-trips packet attribution through the sidecar", function () {
     const { review, workingText } = withReview("alpha\n", "ALPHA\n");
     const restored = reviewFromSidecar("restored", reviewSidecar(review, workingText));
-    assert.deepEqual(restored.packets.map((packet) => packet.refSpans), review.packets.map((packet) => packet.refSpans));
+    assert.deepEqual(restored.suggestions, review.suggestions);
     assert.deepEqual(restored.submissions, review.submissions);
   });
 });

@@ -851,9 +851,23 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const chunks = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}/chunks`);
     assert.equal(chunks.status, 200);
     const chunkBody = JSON.parse(chunks.body) as {
-      chunks: Array<{ descriptions: string[]; workingText: string }>;
+      chunks: Array<{
+        descriptions: string[];
+        workingText: string;
+        workingSpans: Array<{ from: number; to: number }>;
+      }>;
     };
-    assert.deepEqual(chunkBody.chunks.map((chunk) => chunk.workingText), [revised.trimEnd()]);
+    // The reviewer reads the chunk as text, so the change is reported the way
+    // it reads -- one replaced word -- rather than as the letters a character
+    // diff happens to share between "before" and "after".
+    assert.deepEqual(chunkBody.chunks.map((chunk) => chunk.workingText), ["after"]);
+    assert.deepEqual(chunkBody.chunks[0].workingSpans, [{ from: 0, to: 5 }]);
+    assert.equal(
+      chunkBody.chunks[0].workingSpans
+        .map((span) => revised.slice(span.from, span.to))
+        .join(""),
+      chunkBody.chunks[0].workingText,
+    );
     assert.deepEqual(chunkBody.chunks[0].descriptions, ["standalone CLI proposition"]);
   });
 

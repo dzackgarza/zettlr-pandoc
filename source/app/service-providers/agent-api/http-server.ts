@@ -1046,7 +1046,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       const { sidecar } = query;
       this.sendJson(res, 200, {
         reviewId: sidecar.reviewId,
-        patch: reviewPatch(sidecar.referenceText, sidecar.workingText),
+        patch: reviewPatch(sidecar.suggestions, sidecar.workingText),
         generation: sidecar.generation,
       });
       return;

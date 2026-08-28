@@ -34,15 +34,18 @@ import path from "path";
 import vm from "vm";
 import { sha256Text } from "@common/util/sha256";
 import makeSearchRegex from "source/common/util/make-search-regex";
-import { normalizeText } from "@providers/documents/review-diff-store";
+import {
+  normalizeText,
+  reviewReferenceText,
+} from "@providers/documents/review-diff-store";
 
 const SEARCH_CONTEXT_DEFAULT = 3;
 const SEARCH_DEADLINE_MS = 1000;
 export const MAX_SEARCH_HITS = 1000;
 
 export class SearchPatternError extends Error {
-  constructor() {
-    super("Invalid search pattern");
+  constructor(cause?: unknown) {
+    super("Invalid search pattern", { cause });
   }
 }
 
@@ -297,13 +300,15 @@ export default class AgentDocumentQueries {
       attached = true;
       working = document.document.toString();
       const review = this.reviews.getReview(documentId);
-      reference = review?.referenceText ?? working;
+      reference = review === undefined
+        ? working
+        : reviewReferenceText(review.suggestions, working);
       reviewGeneration = review?.generation ?? 0;
     } else {
       const sidecar = await this.reviews.readSidecar(filePath);
       if (sidecar !== undefined) {
         working = sidecar.workingText;
-        reference = sidecar.referenceText;
+        reference = reviewReferenceText(sidecar.suggestions, working);
         reviewGeneration = sidecar.generation;
       } else {
         working = normalizeText(await this.documents.readSupportedFile(filePath));
@@ -342,11 +347,15 @@ export default class AgentDocumentQueries {
     if (document === undefined) {
       return undefined;
     }
-    let searchRegex: RegExp;
+    let searchRegex: RegExp | undefined;
+    let patternFailure: unknown;
     try {
       searchRegex = makeSearchRegex(request.literal, "g");
-    } catch {
-      throw new SearchPatternError();
+    } catch (error) {
+      patternFailure = error;
+    }
+    if (searchRegex === undefined) {
+      throw new SearchPatternError(patternFailure);
     }
     const content = document.document.toString();
     const lines = content.split("\n");

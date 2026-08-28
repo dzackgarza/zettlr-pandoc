@@ -81,7 +81,7 @@ interface RaceInput {
   edits: [string, string]
   /** The control clicked, as a selector resolved inside the clicked pane. */
   control?: string
-  /** Reference text naming the chunk whose control is clicked, if any. */
+  /** Id of the chunk whose control is clicked, if any. */
   chunk?: string
   /**
    * Text committed through the chunk's comment field instead of a control
@@ -107,7 +107,7 @@ interface RaceInput {
  * looking at, and what every assertion below compares against.
  */
 async function raceEditsWithClick (page: Page, input: RaceInput): Promise<string> {
-  return await page.evaluate((options: RaceInput) => {
+  return page.evaluate((options: RaceInput) => {
     const contents = Array.from(
       document.querySelectorAll<PageContentElement>('.cm-content')
     )
@@ -150,28 +150,13 @@ async function raceEditsWithClick (page: Page, input: RaceInput): Promise<string
     if (pane === null) {
       throw new Error('The editor content is not inside a .cm-editor')
     }
-    // The reference text renders inline inside the chunk's changed lines
-    // (the deleted span sits at its removal position, so the line's text
-    // contains it), and the chunk's controls are the next .cm-chunkControls
-    // strip after those lines in DOM order.
-    const findControls = (chunk: string): Element|undefined => {
-      const nodes = Array.from(
-        pane.querySelectorAll('.cm-changedLine, .cm-chunkControls')
-      )
-      const lineIndex = nodes.findIndex(node => {
-        if (node.classList.contains('cm-chunkControls')) {
-          return false
-        }
-        const text = node.textContent
-        return text !== null && text.includes(chunk)
-      })
-      return lineIndex === -1
-        ? undefined
-        : nodes.slice(lineIndex + 1).find(node => node.classList.contains('cm-chunkControls'))
-    }
-    const scope = options.chunk === undefined ? pane : findControls(options.chunk)
-    if (scope === undefined) {
-      throw new Error(`No chunk widget names ${JSON.stringify(options.chunk)}`)
+    // The controls carry the chunk's own id, which is what the provider
+    // listing names it by too.
+    const scope = options.chunk === undefined
+      ? pane
+      : pane.querySelector(`.cm-chunkControls[data-chunk-id="${options.chunk}"]`)
+    if (scope === null || scope === undefined) {
+      throw new Error(`No chunk widget carries the id ${JSON.stringify(options.chunk)}`)
     }
     if (options.commentText !== undefined) {
       const noteInput = scope.querySelector('input.cm-chunkCommentInput')
@@ -251,7 +236,29 @@ interface ChunkView {
   chunkId: string
   referenceText: string
   workingText: string
+  workingSpans: Array<{ from: number, to: number }>
   comment?: string
+}
+
+/**
+ * The chunk covering a line, by the identity the provider and the renderer
+ * share. Naming a chunk by the text it draws would tie this spec to how a
+ * replacement is rendered -- which side of the seam the removed text sits on,
+ * and whether the change reads as one span or several.
+ */
+function chunkOnLine (
+  chunks: ChunkView[],
+  documentText: string,
+  lineText: string
+): string {
+  const lineFrom = documentText.indexOf(lineText)
+  assert.notEqual(lineFrom, -1, `no line reads ${JSON.stringify(lineText)}`)
+  const lineTo = lineFrom + lineText.length
+  const owner = chunks.find(chunk =>
+    chunk.workingSpans.some(span => span.from >= lineFrom && span.to <= lineTo)
+  )
+  assert.ok(owner !== undefined, `no chunk covers ${JSON.stringify(lineText)}`)
+  return owner.chunkId
 }
 
 /** The chunk partition and the fence values a decision has to bind to. */
@@ -304,8 +311,8 @@ async function propose (
 }
 
 /** Every toast currently on screen, as its message text. */
-async function toastMessages (page: Page): Promise<string[]> {
-  return await page
+function toastMessages (page: Page): Promise<string[]> {
+  return page
     .locator('#zettlr-toast-container .zettlr-toast span:first-child')
     .allInnerTexts()
 }
@@ -410,17 +417,18 @@ describe('a review decision waits for the document authority', function () {
     )
     assert.equal(drawn.length, 5, 'the proposal must partition into five chunks')
 
+    const acceptedChunk = chunkOnLine(drawn, await workingText(activeApi), 'alpha proposed')
     const textAtClick = await raceEditsWithClick(activePage, {
       editPane: 0,
       clickPane: 0,
       line: 'alpha proposed',
       edits: ['alpha proposed one', 'alpha proposed one two'],
-      chunk: 'alpha original',
+      chunk: acceptedChunk,
       control: 'button.cm-review-diff-control.accept'
     })
 
     const chunks = await settledChunks(activeApi, activePage, activeReviewId, list =>
-      list.every(chunk => !chunk.referenceText.includes('alpha original'))
+      list.every(chunk => chunk.chunkId !== acceptedChunk)
     )
     assert.equal(chunks.length, 4, 'exactly the accepted chunk leaves the partition')
     assert.deepEqual(
@@ -450,17 +458,22 @@ describe('a review decision waits for the document authority', function () {
     const activePage = requireInitialized(page, 'the editor page must be initialized')
     const activeReviewId = requireInitialized(reviewId, 'the review must be open')
 
+    const rejectedChunk = chunkOnLine(
+      (await chunkListing(activeApi, activeReviewId)).chunks,
+      await workingText(activeApi),
+      'bravo proposed'
+    )
     const textAtClick = await raceEditsWithClick(activePage, {
       editPane: 0,
       clickPane: 0,
       line: 'bravo proposed',
       edits: ['bravo proposed one', 'bravo proposed one two'],
-      chunk: 'bravo original',
+      chunk: rejectedChunk,
       control: 'button.cm-review-diff-control.reject'
     })
 
     const chunks = await settledChunks(activeApi, activePage, activeReviewId, list =>
-      list.every(chunk => !chunk.referenceText.includes('bravo original'))
+      list.every(chunk => chunk.chunkId !== rejectedChunk)
     )
     assert.equal(chunks.length, 3, 'exactly the rejected chunk leaves the partition')
     assert.deepEqual(await toastMessages(activePage), [])
@@ -481,7 +494,11 @@ describe('a review decision waits for the document authority', function () {
       clickPane: 0,
       line: 'charlie proposed',
       edits: ['charlie proposed one', 'charlie proposed one two'],
-      chunk: 'charlie original',
+      chunk: chunkOnLine(
+        (await chunkListing(activeApi, activeReviewId)).chunks,
+        await workingText(activeApi),
+        'charlie proposed'
+      ),
       commentText: 'second thoughts'
     })
 
@@ -663,7 +680,11 @@ describe('a review decision waits for the document authority', function () {
       clickPane: 0,
       line: '# Authority sync',
       edits: ['# Authority sync edited', '# Authority sync edited twice'],
-      chunk: 'delta proposed one two',
+      chunk: chunkOnLine(
+        (await chunkListing(activeApi, staleReviewId)).chunks,
+        await workingText(activeApi),
+        'delta final'
+      ),
       control: 'button.cm-review-diff-control.accept'
     })
 

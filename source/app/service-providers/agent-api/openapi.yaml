@@ -64,8 +64,7 @@ components:
         unresolvedChunks:
           type: integer
           description: >-
-            Chunks not yet accepted or rejected — the whole outstanding
-            partition.
+            Suggestions not yet accepted or rejected.
         packetCount:
           type: integer
     ReviewComment:
@@ -78,31 +77,6 @@ components:
           type: string
         createdAt:
           type: string
-        orphanedFromChunkId:
-          type: string
-          description: >-
-            Present when this comment was salvaged from a chunk-anchored
-            note whose chunk id vanished from the partition (the annotated
-            region was edited, decided, cleared, or absorbed by a later
-            claim). Note text is never silently lost.
-        decision:
-          type: string
-          enum: [accept, reject]
-          description: >-
-            Present when the orphaning event was a decision: what happened
-            to the chunk this comment annotated. Absent when the chunk
-            dissolved through an ordinary edit.
-        referenceText:
-          type: string
-          description: >-
-            The annotated chunk's reference-side text, snapshotted when the
-            note was written. Lets a caller reconstruct what the comment
-            was about without replaying the document history.
-        workingText:
-          type: string
-          description: >-
-            The annotated chunk's working-side text, snapshotted when the
-            note was written.
     EditorViewSummary:
       type: object
       required:
@@ -421,11 +395,6 @@ components:
           description: >-
             review.commented: the comment text. Absent on a chunk-anchored
             event when the reviewer removed the chunk's note.
-        orphanedFromChunkId:
-          type: string
-          description: >-
-            review.commented: set when the comment was salvaged from a
-            chunk-anchored note whose chunk id vanished from the partition.
         message:
           type: string
           description: 'review.sidecar-error: what failed and why.'
@@ -713,8 +682,7 @@ components:
         unresolvedChunks:
           type: integer
           description: >-
-            Chunks not yet accepted or rejected — the whole outstanding
-            partition.
+            Suggestions not yet accepted or rejected.
         packetCount:
           type: integer
         comments:
@@ -722,9 +690,7 @@ components:
           items:
             $ref: '#/components/schemas/ReviewComment'
           description: >-
-            Review-level comments in creation order — attached directly via
-            the comments route, or orphaned from chunk-anchored notes whose
-            chunks vanished.
+            Review-level comments in creation order.
         attached:
           type: boolean
           description: >-
@@ -770,7 +736,7 @@ components:
           type: string
           pattern: '^[0-9a-f]{64}$'
           description: >-
-            SHA-256 of the working text these chunks were partitioned from —
+            SHA-256 of the working text that contains these suggestions —
             the `expectedWorkingSha256` a retraction of one of the packets
             behind them must carry. Absent for a detached review, which has
             no live buffer and accepts no mutation until its file is
@@ -824,10 +790,9 @@ components:
       type: object
       required:
         - chunkId
-        - referenceRange
-        - workingRange
         - referenceText
         - workingText
+        - workingSpans
         - packetIds
         - descriptions
         - patch
@@ -835,59 +800,41 @@ components:
         chunkId:
           type: string
           description: >-
-            Content-addressed identity: stable while the chunk's own text is
-            untouched, so deciding one chunk does not invalidate the ids of
-            the others. A decision against an id whose region has since
-            changed fails with CHUNK_NOT_FOUND.
-        referenceRange:
-          description: >-
-            1-based, half-open: the chunk covers lines [fromLine, toLine).
-            fromLine equal to toLine marks an empty side (a pure insertion
-            has an empty reference range; a pure deletion an empty working
-            range). Ranges of distinct chunks never overlap.
-          type: object
-          required:
-            - fromLine
-            - toLine
-          properties:
-            fromLine:
-              type: integer
-            toLine:
-              type: integer
-        workingRange:
-          type: object
-          required:
-            - fromLine
-            - toLine
-          properties:
-            fromLine:
-              type: integer
-            toLine:
-              type: integer
+            Stable suggestion identity. Owner edits map its anchors without
+            changing this id. Deciding another suggestion does not change it.
         referenceText:
           type: string
           description: The reference-side lines, newline-joined; empty for a pure insertion.
         workingText:
           type: string
           description: The working-side lines, newline-joined; empty for a pure deletion.
+        workingSpans:
+          type: array
+          description: >-
+            Disjoint half-open character ranges containing only agent-authored
+            bytes. Owner text inserted inside a suggestion is not included.
+          items:
+            type: object
+            required:
+              - from
+              - to
+            properties:
+              from:
+                type: integer
+              to:
+                type: integer
         packetIds:
           type: array
           items:
             type: string
           description: >-
-            The packets whose edits produced this chunk, in application
-            order — every packet whose recorded edit spans still touch the
-            chunk's reference range. Overlapping claims attribute together;
-            a chunk the user tweaked keeps the attribution of the claim it
-            grew from; a chunk only the user's own edits created carries
-            none.
+            The one packet that owns this suggestion.
         descriptions:
           type: array
           items:
             type: string
           description: >-
-            Those packets' descriptions, in the same order, packets without
-            one omitted.
+            The owning packet's description.
         comment:
           type: string
           description: >-
@@ -1481,8 +1428,8 @@ paths:
       responses:
         '200':
           description: >-
-            The unresolved chunks. A detached review answers from the frozen
-            texts in its sidecar — same content-addressed chunk ids, no
+            The unresolved suggestions. A detached review answers from its
+            stored suggestion entities with the same stable ids and no
             documentId.
           content:
             application/json:

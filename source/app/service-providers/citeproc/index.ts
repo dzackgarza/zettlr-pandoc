@@ -307,7 +307,14 @@ export default class CiteprocProvider extends ProviderContract {
    * @return {CSL.Engine} The instantiated engine
    */
   private async loadEngine (): Promise<void> {
-    const style = await fs.readFile(DEFAULT_CHICAGO_STYLE, 'utf-8')
+    // `export.cslStyle` is the application's only citation-style setting, so
+    // the editor renders in it too, not just the exporter. An unreadable path
+    // is a misconfiguration the user must see, not something to paper over
+    // with the bundled style.
+    const configuredStyle = this._config.get().export.cslStyle
+    const stylePath = configuredStyle === '' ? DEFAULT_CHICAGO_STYLE : configuredStyle
+    this._logger.info(`[Citeproc Provider] Loading CSL style at ${stylePath} ...`)
+    const style = await fs.readFile(stylePath, 'utf-8')
 
     // The last parameter enforces usage of the language we provide
     this.engine = new CSL.Engine(this.sys, style, this._config.get().appLang, true)
@@ -347,6 +354,19 @@ export default class CiteprocProvider extends ProviderContract {
       this._logger,
       path.join(app.getPath('userData'), 'citeproc-cache')
     )
+
+    // Label styles print `citation-label`, and citeproc invents one from the
+    // author names when the item carries none -- BibTeX and BibLaTeX have no
+    // field that maps to it. The citekey IS the label the author writes and
+    // reads, so it is the label to print. This runs once per load, on the
+    // in-memory record: the parse cache on disk keeps holding exactly what the
+    // file says, and citeproc sees the same item object on every retrieval,
+    // which its cluster-wide disambiguation requires.
+    for (const [ id, item ] of Object.entries(record.cslData)) {
+      if (item['citation-label'] === undefined) {
+        item['citation-label'] = id
+      }
+    }
 
     // Add the database to the list of available databases
     this.databases.set(databasePath, record)
@@ -419,8 +439,8 @@ export default class CiteprocProvider extends ProviderContract {
    * There has been a config update. In case the main library has changed, reload
    */
   onConfigUpdate (option: string): void {
-    if (option === 'appLang') {
-      // We have to reload the engine to reflect the new language
+    if (option === 'appLang' || option === 'export.cslStyle') {
+      // We have to reload the engine to reflect the new language or style
       this.loadEngine().catch(err => this._logger.error(`[Citeproc Provider] Could not reload engine: ${err instanceof Error ? err.message : 'unknown error'}`, err))
     } else if (option === 'export.cslLibrary') {
       // Determine if we have to reload
@@ -505,6 +525,11 @@ export default class CiteprocProvider extends ProviderContract {
         this._logger.verbose(`[CiteprocProvider] Cannot render citation with citekeys ${citekeys.join(', ')}: At least one key does not exist in database ${database}`)
         return undefined
       }
+
+      // A style whose <citation> declares a <sort> reads each cited item from
+      // the engine's registry while ordering the cluster, so the items have to
+      // be registered before the cluster is built.
+      this.engine.updateItems(citekeys)
 
       if (!composite || citations.length > 1) {
         return this.engine.makeCitationCluster(citations)

@@ -71,10 +71,12 @@ function rangeCarriesReviewChunk (
   if (chunks === null) {
     return false
   }
-  return chunks.some(chunk => {
-    if (chunk.fromB === chunk.toB) {
-      return rangeFrom <= chunk.fromB && chunk.fromB < rangeTo
+  return chunks.some(suggestion => {
+    const ownedSpans = suggestion.anchors.filter(anchor => anchor.to > anchor.from)
+    if (ownedSpans.length === 0) {
+      const seam = suggestion.anchors[0]?.from ?? suggestion.seam
+      return rangeFrom <= seam && seam < rangeTo
     }
-    return chunk.fromB < rangeTo && rangeFrom < chunk.toB
+    return ownedSpans.some(anchor => anchor.from < rangeTo && rangeFrom < anchor.to)
   })
 }

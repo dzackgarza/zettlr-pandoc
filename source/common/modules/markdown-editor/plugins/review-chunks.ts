@@ -8,29 +8,23 @@
  * License:         GNU GPL v3
  *
  * Description:     Renders review chunks as track changes over the live
- *                  document: deleted reference spans struck through inline
+ *                  document: removed suggestion text struck through inline
  *                  at the positions they were removed from, inserted spans
  *                  highlighted in place, and one compact control strip with
  *                  the Accept/Reject decisions and the chunk's comment field
  *                  below each chunk.
  *
- *                  The pane is a VIEW. The partition is computed by the same
- *                  shared engine the provider uses, from the same two texts
- *                  (the broadcast merge reference and this editor's buffer),
- *                  so the widgets here and the provider's chunk list agree by
- *                  construction. Clicking a control emits the chunk's
- *                  content-addressed id upward; the provider applies the
- *                  decision and broadcasts, and this field recomputes. The
- *                  pane never mutates review state and reports nothing back —
- *                  which is what retires the @codemirror/merge unifiedMergeView
- *                  this plugin replaces, whose accept/reject rewrote a local
- *                  copy of the reference that main then had to reconcile.
+ *                  The pane is a VIEW. It renders the provider's mapped
+ *                  suggestion anchors over this editor's buffer. Clicking a
+ *                  control emits the stable suggestion id upward. The provider
+ *                  applies the decision and broadcasts, and this field
+ *                  recomputes. The pane never mutates review state and reports
+ *                  nothing back.
  *
  * END HEADER
  */
 
-import { presentableDiff } from '@codemirror/merge'
-import { Facet, StateField, type EditorState, type Extension, type Text } from '@codemirror/state'
+import { Facet, StateField, type EditorState, type Extension } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -40,37 +34,23 @@ import {
   showPanel,
   WidgetType
 } from '@codemirror/view'
-import {
-  adjudicableChunks,
-  chunkAttributesTo,
-  computeReviewChunks,
-  type ReviewChunk
-} from '@common/modules/review/review-chunks'
-import type { ReviewChunkCommentView, ReviewPacketAttribution } from '@dts/common/review-diff'
+import type { ReviewChunkCommentView, ReviewSuggestionView } from '@dts/common/review-diff'
+import { mapSuggestionThroughChanges } from '@common/util/review-suggestion-anchors'
 
 export interface ReviewChunksConfig {
   reviewId: string
-  /** The provider-owned merge reference the chunks are computed against. */
-  referenceText: string
-  /**
-   * Every packet's attribution, from the provider's broadcast. A chunk shows
-   * the descriptions of the packets whose reference spans it touches — the
-   * same chunkAttributesTo rule the provider's chunk list uses, so the label
-   * here and the API's attribution agree by construction.
-   */
-  packets: ReviewPacketAttribution[]
+  suggestions: ReviewSuggestionView[]
   /**
    * The chunk-anchored comments, from the provider's broadcast. A note
    * renders muted at its chunk's controls strip, like a description — an
-   * edit inside the chunk retires the content-addressed id, at which point
-   * it stops matching (the provider orphans the note's text).
+   * owner edit maps the suggestion without changing its id.
    */
   chunkComments: ReviewChunkCommentView[]
-  /** Called with a chunk's content-addressed id when a control is clicked. */
+  /** Called with a suggestion's stable id when a control is clicked. */
   onDecide: (chunkId: string, decision: 'accept'|'reject') => Promise<void>
   /**
    * Called when the status panel's Accept-all control is clicked. The
-   * provider sweeps the whole partition through its one decision path and
+   * provider accepts every proposed suggestion and
    * broadcasts; this pane redraws from that broadcast, like any decision.
    */
   onAcceptAll: () => Promise<void>
@@ -127,15 +107,33 @@ function requireReviewChunksConfig (state: EditorState): ReviewChunksConfig {
 }
 
 interface ReviewChunksFieldValue {
-  chunks: ReviewChunk[]
+  suggestions: ReviewSuggestionView[]
   decorations: DecorationSet
 }
 
 const reviewChunksField = StateField.define<ReviewChunksFieldValue>({
   create: buildFieldValue,
   update (value, tr) {
-    if (tr.docChanged || tr.startState.facet(reviewChunksConfig) !== tr.state.facet(reviewChunksConfig)) {
+    if (tr.startState.facet(reviewChunksConfig) !== tr.state.facet(reviewChunksConfig)) {
       return buildFieldValue(tr.state)
+    }
+    if (tr.docChanged) {
+      const suggestions = value.suggestions.flatMap(suggestion => {
+        const mapped = mapSuggestionThroughChanges(
+          suggestion,
+          tr.changes,
+          (from, to) => tr.startState.doc.sliceString(from, to)
+        )
+        return mapped.destroyed
+          ? []
+          : [{
+              ...suggestion,
+              anchors: mapped.anchors,
+              seam: mapped.seam,
+              removedText: mapped.removedText
+            }]
+      })
+      return buildFieldValue(tr.state, suggestions)
     }
     return value
   },
@@ -143,32 +141,33 @@ const reviewChunksField = StateField.define<ReviewChunksFieldValue>({
 })
 
 /**
- * The current review chunk partition, or null when no review is active in
+ * The current proposed suggestions, or null when no review is active in
  * this state. Live-preview suppression reads this to leave chunk-carrying
  * ranges un-rendered.
  */
-export function getReviewChunks (state: EditorState): ReviewChunk[]|null {
+export function getReviewChunks (state: EditorState): ReviewSuggestionView[]|null {
   const value = state.field(reviewChunksField, false)
-  return value === undefined ? null : value.chunks
+  return value === undefined ? null : value.suggestions
 }
 
-/** The anchor position of a chunk: its first working line, or document end. */
-function chunkAnchor (doc: Text, chunk: ReviewChunk): number {
-  return chunk.workFromLine <= doc.lines ? doc.line(chunk.workFromLine).from : doc.length
+/** The anchor position of a suggestion, or document end. */
+function suggestionAnchor (state: EditorState, suggestion: ReviewSuggestionView): number {
+  const position = Math.min(suggestion.anchors[0]?.from ?? suggestion.seam, state.doc.length)
+  return state.doc.lineAt(position).from
 }
 
 function selectReviewChunk (view: EditorView, direction: 1|-1): boolean {
   const value = view.state.field(reviewChunksField, false)
-  if (value === undefined || value.chunks.length === 0) {
+  if (value === undefined || value.suggestions.length === 0) {
     return false
   }
   const doc = view.state.doc
   const headLine = doc.lineAt(view.state.selection.main.head).number
-  const chunks = value.chunks
+  const suggestions = value.suggestions
   const target = direction === 1
-    ? chunks.find(chunk => chunk.workFromLine > headLine) ?? chunks[0]
-    : [...chunks].reverse().find(chunk => chunk.workFromLine < headLine) ?? chunks[chunks.length - 1]
-  const anchor = chunkAnchor(doc, target)
+    ? suggestions.find(suggestion => doc.lineAt(suggestionAnchor(view.state, suggestion)).number > headLine) ?? suggestions[0]
+    : [...suggestions].reverse().find(suggestion => doc.lineAt(suggestionAnchor(view.state, suggestion)).number < headLine) ?? suggestions[suggestions.length - 1]
+  const anchor = suggestionAnchor(view.state, target)
   view.dispatch({
     selection: { anchor },
     effects: EditorView.scrollIntoView(anchor, { y: 'center' }),
@@ -291,9 +290,9 @@ function reviewStatusPanel (view: EditorView): Panel {
     if (value === undefined) {
       return
     }
-    const chunks = value.chunks
-    label.textContent = `${chunks.length} outstanding`
-    const done = chunks.length === 0
+    const suggestions = value.suggestions
+    label.textContent = `${suggestions.length} outstanding`
+    const done = suggestions.length === 0
     previous.disabled = done
     next.disabled = done
     acceptAll.disabled = done || busy
@@ -326,100 +325,68 @@ export function reviewChunksExtension (config: ReviewChunksConfig): Extension[] 
     // awaiting the save that closes it — but that state is the agent's to
     // read; a bar of dead controls over "0 outstanding" serves no one.
     showPanel.compute([reviewChunksField], state =>
-      state.field(reviewChunksField).chunks.length > 0 ? reviewStatusPanel : null),
+      state.field(reviewChunksField).suggestions.length > 0 ? reviewStatusPanel : null),
     reviewChunkKeymap,
     reviewChunksTheme
   ]
 }
 
-function buildFieldValue (state: EditorState): ReviewChunksFieldValue {
+function buildFieldValue (
+  state: EditorState,
+  projectedSuggestions?: ReviewSuggestionView[]
+): ReviewChunksFieldValue {
   const config = requireReviewChunksConfig(state)
   const doc = state.doc
-  // Only what a packet claims is adjudicable: the reviewer's own typing
-  // disagrees with the reference too, and it gets no highlight, no controls,
-  // no slot in the outstanding count, and no navigation stop.
-  const chunks = adjudicableChunks(
-    computeReviewChunks(config.referenceText, doc.toString()),
-    config.packets
-  )
-  if (chunks.length === 0) {
-    return { chunks, decorations: Decoration.none }
+  const suggestions = projectedSuggestions ?? config.suggestions
+  if (suggestions.length === 0) {
+    return { suggestions, decorations: Decoration.none }
   }
 
   const ranges: Array<ReturnType<Decoration['range']>> = []
-  for (const chunk of chunks) {
+  for (const suggestion of suggestions) {
     // Anchor position: the start of the chunk's first working line, or the
     // end of the document for a pure deletion below the last line.
-    const anchor = chunk.workFromLine <= doc.lines
-      ? doc.line(chunk.workFromLine).from
-      : doc.length
-
     // Word-level diff between the two sides, for display only. The insert
     // side is marked inside the document; the delete side renders as inline
     // strikethrough widgets at the positions the text was removed from.
-    const changes = presentableDiff(chunk.referenceText, chunk.workingText)
-
-    // The claims this chunk came from, in packet application order.
-    const descriptions = config.packets
-      .filter(packet => chunkAttributesTo(chunk, packet.refSpans))
-      .map(packet => packet.description)
-      .filter((description): description is string => description !== undefined)
-
-    const note = config.chunkComments.find(n => n.chunkId === chunk.chunkId) ?? config.chunkComments.find(n =>
-      n.referenceText !== undefined &&
-      n.workingText !== undefined &&
-      n.referenceFromLine === chunk.refFromLine &&
-      trimIdentitySeams(n.referenceText) === trimIdentitySeams(chunk.referenceText) &&
-      trimIdentitySeams(n.workingText) === trimIdentitySeams(chunk.workingText)
-    )
+    const descriptions = [suggestion.description]
+    const note = config.chunkComments.find(n => n.chunkId === suggestion.suggestionId)
 
     // The deleted spans, struck through in the document flow. A negative
     // side keeps a deleted span before an inserted one starting at the same
     // position, so a replacement reads old-then-new, like tracked changes.
-    changes.forEach((change, changeIndex) => {
-      if (change.toA > change.fromA) {
-        ranges.push(
-          Decoration.widget({
-            widget: new DeletedSpanWidget(
-              chunk.chunkId,
-              chunk.referenceText.slice(change.fromA, change.toA),
-              changeIndex
-            ),
-            side: -1
-          }).range(Math.min(anchor + change.fromB, doc.length))
-        )
-      }
-    })
-
-    for (let line = chunk.workFromLine; line < chunk.workToLine && line <= doc.lines; line++) {
-      ranges.push(changedLine.range(doc.line(line).from))
+    if (suggestion.removedText !== '') {
+      ranges.push(
+        Decoration.widget({
+          widget: new DeletedSpanWidget(suggestion.suggestionId, suggestion.removedText, 0),
+          side: -1
+        }).range(Math.min(suggestion.seam, doc.length))
+      )
     }
-    for (const change of changes) {
-      if (change.toB > change.fromB) {
-        const from = anchor + change.fromB
-        const to = Math.min(anchor + change.toB, doc.length)
-        if (to > from) {
-          ranges.push(changedText.range(from, to))
-        }
+
+    for (const span of suggestion.anchors) {
+      const lastPosition = span.to > span.from ? span.to - 1 : span.from
+      for (let line = doc.lineAt(span.from).number; line <= doc.lineAt(lastPosition).number; line++) {
+        ranges.push(changedLine.range(doc.line(line).from))
+      }
+      if (span.to > span.from) {
+        ranges.push(changedText.range(span.from, span.to))
       }
     }
 
     // The controls strip sits below the chunk: after its last working line,
     // or after the line carrying the strikethrough for a pure deletion.
-    const controlsLine = Math.min(Math.max(chunk.workToLine - 1, chunk.workFromLine), doc.lines)
+    const controlPosition = suggestion.anchors.at(-1)?.to ?? suggestion.seam
+    const controlsLine = doc.lineAt(Math.min(controlPosition, doc.length)).number
     ranges.push(
       Decoration.widget({
-        widget: new ChunkControlsWidget(chunk, descriptions, note, config),
+        widget: new ChunkControlsWidget(suggestion, descriptions, note, config, doc),
         block: true,
         side: 10
       }).range(doc.line(controlsLine).to)
     )
   }
-  return { chunks, decorations: Decoration.set(ranges, true) }
-}
-
-function trimIdentitySeams (text: string): string {
-  return text.replace(/^\n+|\n+$/g, '')
+  return { suggestions, decorations: Decoration.set(ranges, true) }
 }
 
 const changedLine = Decoration.line({ class: 'cm-changedLine' })
@@ -518,27 +485,34 @@ function renderChunkMeta (
  */
 class ChunkControlsWidget extends WidgetType {
   constructor (
-    private readonly chunk: ReviewChunk,
+    private readonly suggestion: ReviewSuggestionView,
     private readonly descriptions: readonly string[],
     private readonly note: ReviewChunkCommentView|undefined,
-    private readonly config: ReviewChunksConfig
+    private readonly config: ReviewChunksConfig,
+    private readonly doc: EditorState['doc']
   ) {
     super()
   }
 
   eq (other: ChunkControlsWidget): boolean {
-    return other.chunk.chunkId === this.chunk.chunkId &&
-      other.chunk.referenceText === this.chunk.referenceText &&
-      other.chunk.workingText === this.chunk.workingText &&
+    return other.suggestion.suggestionId === this.suggestion.suggestionId &&
+      other.suggestion.removedText === this.suggestion.removedText &&
+      other.suggestion.anchors.length === this.suggestion.anchors.length &&
+      other.suggestion.anchors.every((anchor, index) => {
+        const current = this.suggestion.anchors[index]
+        return current.from === anchor.from && current.to === anchor.to &&
+          other.doc.sliceString(anchor.from, anchor.to) === this.doc.sliceString(current.from, current.to)
+      }) &&
       other.config.reviewId === this.config.reviewId &&
-      JSON.stringify(other.descriptions) === JSON.stringify(this.descriptions) &&
+      other.descriptions.length === this.descriptions.length &&
+      other.descriptions.every((description, index) => description === this.descriptions[index]) &&
       other.note?.comment === this.note?.comment
   }
 
   toDOM (view: EditorView): HTMLElement {
     const container = document.createElement('div')
     container.className = 'cm-chunkControls'
-    container.dataset.chunkId = this.chunk.chunkId
+    container.dataset.chunkId = this.suggestion.suggestionId
 
     const buttons = document.createElement('div')
     buttons.className = 'cm-chunkButtons'
@@ -557,7 +531,7 @@ class ChunkControlsWidget extends WidgetType {
         // generation captured in it then fences the click against a review
         // state nobody is looking at any more.
         await requireReviewChunksConfig(view.state)
-          .onDecide(this.chunk.chunkId, decision)
+          .onDecide(this.suggestion.suggestionId, decision)
       })
     }
     for (const decision of ['accept', 'reject'] as const) {
@@ -606,7 +580,7 @@ class ChunkControlsWidget extends WidgetType {
     }
     state.syncIndicator()
     noteFieldState.set(noteInput, state)
-    const chunkId = this.chunk.chunkId
+    const chunkId = this.suggestion.suggestionId
     const tryCommit = (): void => {
       clearTimeout(state.timer)
       state.timer = undefined
@@ -663,7 +637,7 @@ class ChunkControlsWidget extends WidgetType {
    * is typing in it.
    */
   updateDOM (dom: HTMLElement): boolean {
-    if (dom.dataset.chunkId !== this.chunk.chunkId) {
+    if (dom.dataset.chunkId !== this.suggestion.suggestionId) {
       return false
     }
     renderChunkMeta(dom, this.descriptions)

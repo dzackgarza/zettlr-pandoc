@@ -11,18 +11,8 @@
  *                  One active review per document, keyed by documentId (not
  *                  path).
  *
- *                  State model — deliberately minimal:
- *                    referenceText = accepted state + rejected restorations,
- *                                    owned HERE and nowhere else
- *                    working text  = the live document, owned by the document
- *                                    authority and PASSED IN to every read —
- *                                    the store holds no copy and resolves no
- *                                    text of its own
- *                    chunks        = computeReviewChunks(reference, working),
- *                                    derived on demand by the one shared
- *                                    engine, never stored; the projections
- *                                    below report the adjudicable ones, the
- *                                    chunks a packet claims
+ *                  Suggestions are the stored review entities. Their stable
+ *                  identities, anchors, and restorations drive every read.
  *
  *                  The store decides nothing. Transitions live in
  *                  review-transitions.ts and are pure; the caller commits a
@@ -44,13 +34,8 @@ import type {
   ActiveReviewState,
   ChunkComment,
   ReviewPacket,
+  ReviewSuggestion,
 } from "@dts/common/review-domain";
-import {
-  adjudicableChunks,
-  chunkAttributesTo,
-  computeReviewChunks,
-  type ReviewChunk,
-} from "@common/modules/review/review-chunks";
 import { sha256Text } from "@common/util/sha256";
 import type { ReviewSidecarData } from "./review-sidecar-schema";
 
@@ -144,54 +129,88 @@ export function classifyReviewState(
  * owner of that computation, so the live store and a detached review read
  * from its sidecar cannot answer different diffs for the same two texts.
  */
-export function reviewPatch(referenceText: string, workingText: string): string {
-  return createPatch("document", referenceText, workingText, "", "", { context: 3 });
+export function reviewReferenceText(
+  suggestions: readonly ReviewSuggestion[],
+  workingText: string,
+): string {
+  const operations = suggestions
+    .filter((suggestion) => suggestion.state === "proposed")
+    .flatMap((suggestion) => [
+      ...suggestion.anchors.map((span) => ({ from: span.from, to: span.to, insert: "" })),
+      ...suggestion.restorations.map((restoration) => ({
+        from: restoration.at,
+        to: restoration.at,
+        insert: restoration.text,
+      })),
+    ])
+    .sort((left, right) => right.from - left.from || right.to - left.to);
+  let referenceText = workingText;
+  for (const operation of operations) {
+    referenceText =
+      referenceText.slice(0, operation.from) +
+      operation.insert +
+      referenceText.slice(operation.to);
+  }
+  return referenceText;
+}
+
+export function reviewPatch(
+  suggestions: readonly ReviewSuggestion[],
+  workingText: string,
+): string {
+  return createPatch(
+    "document",
+    reviewReferenceText(suggestions, workingText),
+    workingText,
+    "",
+    "",
+    { context: 3 },
+  );
 }
 
 /**
- * A chunk partition dressed for the agent API: a focused zero-context patch
- * per chunk, the packets whose edits produced it (honest multi-attribution on
- * overlap), and the reviewer's note when one is attached. Shared by the live
- * store and the sidecar path below — an attached and a detached review with
- * the same texts describe their chunks identically. Every caller passes the
- * adjudicable partition, so each chunk names at least one packet.
+ * Suggestion entities dressed for the agent API, with disjoint working spans,
+ * their source packet, and the reviewer's note. Shared by the live
+ * store and the sidecar path below. Attached and detached reviews therefore
+ * project the same suggestion entities.
  */
-function dressChunks(
-  partition: readonly ReviewChunk[],
+function dressSuggestions(
+  suggestions: readonly ReviewSuggestion[],
+  workingText: string,
   packets: readonly ReviewPacket[],
   chunkComments: readonly ChunkComment[],
 ): OutstandingChunk[] {
-  return partition.map((chunk) => {
-    const attributed = packets.filter((packet) => chunkAttributesTo(chunk, packet.refSpans));
-    const note = chunkComments.find((candidate) => candidate.chunkId === chunk.chunkId);
-    return {
-      chunkId: chunk.chunkId,
-      referenceRange: { fromLine: chunk.refFromLine, toLine: chunk.refToLine },
-      workingRange: { fromLine: chunk.workFromLine, toLine: chunk.workToLine },
-      referenceText: chunk.referenceText,
-      workingText: chunk.workingText,
-      packetIds: attributed.map((packet) => packet.packetId),
-      descriptions: attributed.map((packet) => packet.description),
-      ...(note === undefined ? {} : { comment: note.comment }),
-      patch: createPatch("document", chunk.referenceText, chunk.workingText, "", "", {
-        context: 0,
-      }),
-    };
-  });
+  return suggestions
+    .filter((suggestion) => suggestion.state === "proposed")
+    .map((suggestion) => {
+      const packet = packets.find((candidate) => candidate.packetId === suggestion.packetId);
+      const proposedText = suggestion.anchors
+        .map((span) => workingText.slice(span.from, span.to))
+        .join("");
+      const workingSpans = suggestion.anchors.map((span) => ({ ...span }));
+      const note = chunkComments.find((candidate) => candidate.chunkId === suggestion.suggestionId);
+      return {
+        chunkId: suggestion.suggestionId,
+        referenceText: suggestion.removedText,
+        workingText: proposedText,
+        workingSpans,
+        packetIds: [suggestion.packetId],
+        descriptions: packet === undefined ? [] : [packet.description],
+        ...(note === undefined ? {} : { comment: note.comment }),
+        patch: createPatch("document", suggestion.removedText, proposedText, "", "", { context: 0 }),
+      };
+    });
 }
 
 /**
  * The outstanding chunks of a detached review, computed from its sidecar.
- * Both texts are frozen while the file is closed and the export reconciled
- * the chunk comments against exactly this partition, so no live document —
- * and no reconciliation — is needed to answer.
+ * The sidecar stores the working text and suggestion entities. No live
+ * document or reconstruction is needed to answer.
  */
 export function sidecarOutstandingChunks(sidecar: ReviewSidecarData): OutstandingChunk[] {
-  return dressChunks(
-    adjudicableChunks(
-      computeReviewChunks(sidecar.referenceText, sidecar.workingText),
-      sidecar.packets,
-    ),
+  return dressSuggestions(
+    sidecar.suggestions,
+    sidecar.workingText,
     sidecar.packets,
     sidecar.chunkComments,
   );
@@ -212,17 +231,18 @@ export function reviewSidecar(
   pendingSave?: ReviewSidecarData["pendingSave"],
 ): ReviewSidecarData {
   return {
-    version: 3,
+    version: 4,
     reviewId: review.reviewId,
     documentPath: review.documentPath,
-    referenceText: review.referenceText,
     workingText,
     generation: review.generation,
     diskFenceSha256: review.diskFenceSha256,
     invalidated: review.invalidated,
-    packets: review.packets.map((packet) => ({
-      ...packet,
-      refSpans: packet.refSpans.map((span) => ({ ...span })),
+    packets: review.packets.map((packet) => ({ ...packet })),
+    suggestions: review.suggestions.map((suggestion) => ({
+      ...suggestion,
+      anchors: suggestion.anchors.map((span) => ({ ...span })),
+      restorations: suggestion.restorations.map((restoration) => ({ ...restoration })),
     })),
     submissions: review.submissions.map((submission) => ({
       ...submission,
@@ -235,23 +255,16 @@ export function reviewSidecar(
 }
 
 /**
- * The unresolved chunk count of a detached review, computed from its sidecar.
- * Nothing derived is persisted: the two texts are the whole answer, and a
- * stored count is a second answer that can disagree with them.
+ * The unresolved suggestion count of a detached review.
  */
 export function sidecarUnresolvedChunks(sidecar: ReviewSidecarData): number {
-  return adjudicableChunks(
-    computeReviewChunks(sidecar.referenceText, sidecar.workingText),
-    sidecar.packets,
-  ).length;
+  return sidecar.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
 }
 
 /**
  * Rebuild a review from its sidecar under a (possibly new) documentId. The
- * inverse of reviewSidecar: same reviewId, generation, packets with their
- * attribution spans, submission ledger, chunk comments, and comments — and
- * because chunk ids are content-addressed over the two texts, the same
- * chunk ids.
+ * inverse of reviewSidecar: same reviewId, generation, packets, suggestions,
+ * submission ledger, chunk comments, and review comments.
  */
 export function reviewFromSidecar(
   documentId: string,
@@ -261,12 +274,13 @@ export function reviewFromSidecar(
     reviewId: sidecar.reviewId,
     documentId,
     documentPath: sidecar.documentPath,
-    referenceText: sidecar.referenceText,
-    generation: sidecar.generation,
-    packets: sidecar.packets.map((packet) => ({
-      ...packet,
-      refSpans: packet.refSpans.map((span) => ({ ...span })),
+    suggestions: sidecar.suggestions.map((suggestion) => ({
+      ...suggestion,
+      anchors: suggestion.anchors.map((span) => ({ ...span })),
+      restorations: suggestion.restorations.map((restoration) => ({ ...restoration })),
     })),
+    generation: sidecar.generation,
+    packets: sidecar.packets.map((packet) => ({ ...packet })),
     submissions: sidecar.submissions.map((submission) => ({
       ...submission,
       packetIds: [...submission.packetIds],
@@ -316,16 +330,12 @@ export class ReviewDiffStore {
     return [...this.reviews.values()];
   }
 
-  getStatus(documentId: string, workingText: string): ReviewStatus | undefined {
+  getStatus(documentId: string, _workingText: string): ReviewStatus | undefined {
     const review = this.reviews.get(documentId);
     if (review === undefined) {
       return undefined;
     }
-    const partition = adjudicableChunks(
-      computeReviewChunks(review.referenceText, normalizeText(workingText)),
-      review.packets,
-    );
-    const unresolvedChunks = partition.length;
+    const unresolvedChunks = review.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
     return {
       reviewId: review.reviewId,
       state: classifyReviewState(review.invalidated, unresolvedChunks),
@@ -336,9 +346,7 @@ export class ReviewDiffStore {
   }
 
   /**
-   * The current outstanding chunks — the adjudicable partition dressed for
-   * the agent API, with a focused zero-context patch per chunk and the
-   * packets whose edits produced it (honest multi-attribution on overlap).
+   * The current proposed suggestions dressed for the agent API.
    */
   getOutstandingChunks(
     documentId: string,
@@ -348,11 +356,9 @@ export class ReviewDiffStore {
     if (review === undefined) {
       return undefined;
     }
-    return dressChunks(
-      adjudicableChunks(
-        computeReviewChunks(review.referenceText, normalizeText(workingText)),
-        review.packets,
-      ),
+    return dressSuggestions(
+      review.suggestions,
+      normalizeText(workingText),
       review.packets,
       review.chunkComments,
     );
@@ -364,6 +370,6 @@ export class ReviewDiffStore {
     if (review === undefined) {
       return undefined;
     }
-    return reviewPatch(review.referenceText, normalizeText(workingText));
+    return reviewPatch(review.suggestions, normalizeText(workingText));
   }
 }

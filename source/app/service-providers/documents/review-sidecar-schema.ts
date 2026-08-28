@@ -2,7 +2,7 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Review sidecar schema (version 3)
+ * Contains:        Review sidecar schema (version 4)
  * CVM-Role:        Model
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
@@ -30,15 +30,6 @@ import { Type, type Static } from "@sinclair/typebox";
 
 const Sha256 = Type.String({ pattern: "^[0-9a-f]{64}$" });
 
-/** A half-open, 1-based line interval in the merge reference. */
-const RefSpanSchema = Type.Object(
-  {
-    from: Type.Integer(),
-    to: Type.Integer(),
-  },
-  { additionalProperties: false },
-);
-
 const ReviewPacketSchema = Type.Object(
   {
     packetId: Type.String(),
@@ -49,7 +40,39 @@ const ReviewPacketSchema = Type.Object(
     appliedAt: Type.String(),
     patch: Type.String(),
     applicationGeneration: Type.Integer(),
-    refSpans: Type.Array(RefSpanSchema),
+  },
+  { additionalProperties: false },
+);
+
+const SuggestionSpanSchema = Type.Object(
+  { from: Type.Integer({ minimum: 0 }), to: Type.Integer({ minimum: 0 }) },
+  { additionalProperties: false },
+);
+
+const ReviewSuggestionSchema = Type.Object(
+  {
+    suggestionId: Type.String({ minLength: 1 }),
+    packetId: Type.String({ minLength: 1 }),
+    kind: Type.Union([
+      Type.Literal("insertion"),
+      Type.Literal("deletion"),
+      Type.Literal("substitution"),
+    ]),
+    removedText: Type.String(),
+    restorations: Type.Array(
+      Type.Object(
+        { at: Type.Integer({ minimum: 0 }), text: Type.String() },
+        { additionalProperties: false },
+      ),
+    ),
+    anchors: Type.Array(SuggestionSpanSchema),
+    seam: Type.Integer({ minimum: 0 }),
+    state: Type.Union([
+      Type.Literal("proposed"),
+      Type.Literal("accepted"),
+      Type.Literal("rejected"),
+      Type.Literal("withdrawn"),
+    ]),
   },
   { additionalProperties: false },
 );
@@ -93,10 +116,6 @@ const ChunkCommentSchema = Type.Object(
     chunkId: Type.String(),
     comment: Type.String(),
     commentedAt: Type.String(),
-    referenceText: Type.Optional(Type.String()),
-    workingText: Type.Optional(Type.String()),
-    referenceFromLine: Type.Optional(Type.Integer()),
-    workingFromLine: Type.Optional(Type.Integer()),
   },
   { additionalProperties: false },
 );
@@ -105,27 +124,21 @@ const ReviewCommentSchema = Type.Object(
   {
     text: Type.String(),
     createdAt: Type.String(),
-    orphanedFromChunkId: Type.Optional(Type.String()),
-    decision: Type.Optional(
-      Type.Union([Type.Literal("accept"), Type.Literal("reject")]),
-    ),
-    referenceText: Type.Optional(Type.String()),
-    workingText: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
 
 export const ReviewSidecarSchema = Type.Object(
   {
-    version: Type.Literal(3),
+    version: Type.Literal(4),
     reviewId: Type.String({ minLength: 1 }),
     documentPath: Type.String({ minLength: 1 }),
-    referenceText: Type.String(),
     workingText: Type.String(),
     generation: Type.Integer({ minimum: 0 }),
     diskFenceSha256: Sha256,
     invalidated: Type.Boolean(),
     packets: Type.Array(ReviewPacketSchema),
+    suggestions: Type.Array(ReviewSuggestionSchema),
     submissions: Type.Array(ProposalSubmissionRecordSchema),
     chunkComments: Type.Array(ChunkCommentSchema),
     comments: Type.Array(ReviewCommentSchema),
