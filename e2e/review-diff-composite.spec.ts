@@ -219,11 +219,10 @@ describe('review-diff closure contract composite lifecycle', function () {
     await page.keyboard.press('Home')
     await page.keyboard.press('Shift+End')
     await page.keyboard.type('DIFF edited')
-    // Wait for the pane to redraw from the edit BEFORE clicking: chunk ids are
-    // content-addressed, so the widget still on screen from before the last
-    // keystroke names a chunk the provider will no longer have once the click
-    // syncs the edited buffer to it, and the decision is refused as
-    // CHUNK_NOT_FOUND. A reviewer types and then clicks what they can see.
+    // Wait for the pane to redraw from the edit BEFORE clicking: a decision
+    // binds to the bytes on screen, so a click issued while the buffer still
+    // runs ahead of the authority names text the provider has not been told
+    // about. A reviewer types and then clicks what they can see.
     await page.locator('.cm-content').filter({ hasText: 'DIFF edited' }).waitFor({ state: 'visible' })
     await repeatedWidgets.nth(0).locator('button.accept').click()
     await repeatedWidgets.nth(1).waitFor({ state: 'detached' })
@@ -250,14 +249,14 @@ describe('review-diff closure contract composite lifecycle', function () {
       return input !== null && input.value === ''
     })
 
-    // The blank-line-only chunk is still undecided too. The API vouches
-    // for it by its empty reference/working text; the reviewer resolves it
-    // from its own widget, which a chunk with no text on either side must
-    // still render controls for.
+    // The blank-line-only chunk is still undecided too. The API vouches for
+    // it by the one character it owns and the nothing it replaced; the
+    // reviewer resolves it from its own widget, which a chunk that renders no
+    // visible text must still draw controls for.
     const blankChunks = await api.get(`/v1/reviews/${reviewId}/chunks`)
     assert.ok(isRecord(blankChunks) && Array.isArray(blankChunks.chunks))
     const blankChunk = blankChunks.chunks.find(chunk =>
-      isRecord(chunk) && chunk.referenceText === '' && chunk.workingText === '')
+      isRecord(chunk) && chunk.referenceText === '' && chunk.workingText === '\n')
     assert.ok(isRecord(blankChunk), 'blank-line-only proposal must remain actionable')
     const blankWidget = page.locator('.cm-chunkControls').filter({ hasText: 'Preserve the intentional blank line' })
     assert.equal(
@@ -318,15 +317,29 @@ describe('review-diff closure contract composite lifecycle', function () {
     await waitForReview(restartedPage)
     const outstanding = await restartedApi.get(`/v1/reviews/${reviewId}/chunks`)
     assert.ok(isRecord(outstanding) && Array.isArray(outstanding.chunks))
-    assert.equal(outstanding.chunks.length, 1)
-    assert.ok(isRecord(outstanding.chunks[0]))
-    assert.equal(outstanding.chunks[0].comment, 'check the constants')
-    assert.ok(Array.isArray(outstanding.chunks[0].packetIds) && outstanding.chunks[0].packetIds.length > 0)
-    assert.ok(Array.isArray(outstanding.chunks[0].descriptions))
-    assert.ok(outstanding.chunks[0].descriptions.includes('Rewrite the display-math environment'))
+    // The display-math claim rewrote two lines, so it is outstanding as two
+    // regions — and the note the reviewer wrote sits on the one they wrote it
+    // on, not on the claim as a whole.
+    assert.equal(outstanding.chunks.length, 2)
+    for (const chunk of outstanding.chunks) {
+      assert.ok(isRecord(chunk))
+      assert.ok(Array.isArray(chunk.packetIds) && chunk.packetIds.length > 0)
+      assert.ok(Array.isArray(chunk.descriptions))
+      assert.ok(chunk.descriptions.includes('Rewrite the display-math environment'))
+    }
+    assert.deepEqual(
+      outstanding.chunks.map(chunk => isRecord(chunk) ? chunk.comment : undefined),
+      ['check the constants', undefined],
+      'the restored note names the region it was written on'
+    )
 
     // Resolve the annotated block through the UI and prove exact final bytes.
-    await restartedPage.locator('.cm-chunkControls button.accept').click()
+    // Each region is its own decision; the panel leaves with the last of them.
+    const widgets = restartedPage.locator('.cm-chunkControls')
+    await widgets.first().locator('button.accept').click()
+    await widgets.nth(1).waitFor({ state: 'detached', timeout: 30_000 })
+    await widgets.first().locator('button.accept').click()
+    await restartedPage.locator('.cm-reviewStatusPanel').waitFor({ state: 'detached', timeout: 30_000 })
     const resolvedSave = await invokeSave(restartedPage, documentPath)
     assert.ok(isRecord(resolvedSave) && resolvedSave.ok === true)
     assert.equal(await readFile(documentPath, 'utf8'), mixedExpected)

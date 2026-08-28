@@ -38,7 +38,7 @@ import {
   WidgetType
 } from '@codemirror/view'
 import type { ReviewChunkCommentView, ReviewSuggestionView } from '@dts/common/review-diff'
-import { mapSuggestionAnchorCoordinates } from '@common/util/review-suggestion-anchors'
+import { mapSuggestionThroughChanges } from '@common/util/review-suggestion-anchors'
 
 export interface ReviewChunksConfig {
   reviewId: string
@@ -122,14 +122,19 @@ const reviewChunksField = StateField.define<ReviewChunksFieldValue>({
     }
     if (tr.docChanged) {
       const suggestions = value.suggestions.flatMap(suggestion => {
-        const mapped = mapSuggestionAnchorCoordinates(
-          suggestion.anchors,
-          suggestion.seam,
-          tr.changes
+        const mapped = mapSuggestionThroughChanges(
+          suggestion,
+          tr.changes,
+          (from, to) => tr.startState.doc.sliceString(from, to)
         )
         return mapped.destroyed
           ? []
-          : [{ ...suggestion, anchors: mapped.anchors, seam: mapped.seam }]
+          : [{
+              ...suggestion,
+              anchors: mapped.anchors,
+              seam: mapped.seam,
+              removedText: mapped.removedText
+            }]
       })
       return buildFieldValue(tr.state, suggestions)
     }

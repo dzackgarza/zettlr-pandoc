@@ -390,6 +390,10 @@ export class ReviewApplicationService {
 
     const plan = prepareWorkingTextEdit({
       review,
+      // Read before commitDocument: the authority still holds the text the
+      // owner's changes were made against, which is what a suggestion the
+      // edit rewrites has to restore.
+      textBefore: this.deps.authority.readWorkingText(documentId) ?? "",
       workingText: normalizeText(workingText),
       changes,
     });

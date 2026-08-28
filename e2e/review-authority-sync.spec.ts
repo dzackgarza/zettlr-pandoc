@@ -683,7 +683,7 @@ describe('a review decision waits for the document authority', function () {
       chunk: chunkOnLine(
         (await chunkListing(activeApi, staleReviewId)).chunks,
         await workingText(activeApi),
-        'delta proposed one two'
+        'delta final'
       ),
       control: 'button.cm-review-diff-control.accept'
     })

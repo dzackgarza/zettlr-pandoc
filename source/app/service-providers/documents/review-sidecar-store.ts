@@ -85,6 +85,12 @@ function assertReviewSidecarSemantics(
         `Review sidecar ${target} suggestion ${suggestion.suggestionId} has no owning packet`,
       );
     }
+    // Only an outstanding suggestion describes the working text. A decided
+    // one is a ledger entry: its coordinates name the text it was decided
+    // against, which later decisions and later typing move out from under it.
+    if (suggestion.state !== "proposed") {
+      continue;
+    }
     if (suggestion.seam < 0 || suggestion.seam > sidecar.workingText.length) {
       throw new Error(
         `Review sidecar ${target} suggestion ${suggestion.suggestionId} has an invalid seam`,
@@ -124,7 +130,6 @@ function assertReviewSidecarSemantics(
     const hasRestorations = suggestion.restorations.length > 0;
     const hasRemovedText = suggestion.removedText !== "";
     const coherent =
-      suggestion.state === "withdrawn" ||
       (suggestion.kind === "insertion" &&
         ownedAnchors.length > 0 &&
         seamAnchors.length === 0 &&

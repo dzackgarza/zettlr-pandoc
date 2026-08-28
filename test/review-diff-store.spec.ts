@@ -228,6 +228,7 @@ describe("pure review transitions", function () {
     const before = structuredClone(noted.nextReview!);
     const edit = prepareWorkingTextEdit({
       review: noted.nextReview!,
+      textBefore: workingText,
       workingText: baseline,
       changes: ChangeSet.of(
         { from: 0, to: workingText.length, insert: baseline },
@@ -251,6 +252,7 @@ describe("pure review transitions", function () {
       workingText.slice(0, insertionAt) + ownerText + workingText.slice(insertionAt);
     const edit = prepareWorkingTextEdit({
       review,
+      textBefore: workingText,
       workingText: edited,
       changes: ChangeSet.of(
         { from: insertionAt, insert: ownerText },
@@ -368,6 +370,7 @@ describe("pure review transitions", function () {
     const edited = workingText.slice(0, anchor.from) + workingText.slice(anchor.to);
     const edit = prepareWorkingTextEdit({
       review,
+      textBefore: workingText,
       workingText: edited,
       changes: ChangeSet.of({ from: anchor.from, to: anchor.to }, workingText.length),
     });
