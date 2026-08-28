@@ -31,6 +31,7 @@ import { randomUUID } from "crypto";
 import { ChangeSet, Text, type ChangeDesc } from "@codemirror/state";
 import {
   applyPatch,
+  type Change,
   diffWordsWithSpace,
   parsePatch,
   reversePatch,
@@ -225,37 +226,49 @@ interface ChangedRegion {
   addedText: string;
 }
 
+/** One region, and how many diff parts it took to say it. */
+interface ReadRegion {
+  region: ChangedRegion | string;
+  parts: number;
+}
+
 /**
- * The word diff read as regions. A replacement reaches us as two adjacent
- * parts — the removal and the insertion, in either order — and they are one
- * region, so the pairing happens here rather than at every reader.
+ * The region beginning at one diff part. A replacement reaches us as two
+ * adjacent parts — the removal and the insertion, in either order — and they
+ * are one region, which is why this answers with a part count rather than
+ * stepping one at a time.
+ *
+ * A part with nothing on its other side took text out and put none back, or
+ * put text in and took none out. The empty string there is the region's other
+ * side, not a stand-in for a value that went missing.
  */
+function regionAt(parts: readonly Change[], index: number): ReadRegion {
+  const part = parts[index];
+  if (!part.added && !part.removed) {
+    return { region: part.value, parts: 1 };
+  }
+  const next = parts[index + 1];
+  if (part.removed && next?.added) {
+    return { region: { removedText: part.value, addedText: next.value }, parts: 2 };
+  }
+  if (part.added && next?.removed) {
+    return { region: { removedText: next.value, addedText: part.value }, parts: 2 };
+  }
+  return part.removed
+    ? { region: { removedText: part.value, addedText: "" }, parts: 1 }
+    : { region: { removedText: "", addedText: part.value }, parts: 1 };
+}
+
+/** The word diff read as regions, in document order. */
 function changedRegions(before: string, after: string): Array<ChangedRegion | string> {
   const parts = diffWordsWithSpace(before, after);
   const regions: Array<ChangedRegion | string> = [];
-  for (let index = 0; index < parts.length; index += 1) {
-    const part = parts[index];
-    if (!part.added && !part.removed) {
-      regions.push(part.value);
-      continue;
-    }
-    const next = parts[index + 1];
-    const partner = part.removed
-      ? (next?.added ? next.value : undefined)
-      : (next?.removed ? next.value : undefined);
-    if (partner !== undefined) {
-      index += 1;
-    }
-    regions.push(regionOf(part.removed, part.value, partner));
+  for (let index = 0; index < parts.length;) {
+    const read = regionAt(parts, index);
+    regions.push(read.region);
+    index += read.parts;
   }
   return regions;
-}
-
-/** The region a diff part and its partner stand for, whichever came first. */
-function regionOf(removed: boolean, value: string, partner?: string): ChangedRegion {
-  return removed
-    ? { removedText: value, addedText: partner ?? "" }
-    : { removedText: partner ?? "", addedText: value };
 }
 
 /**
