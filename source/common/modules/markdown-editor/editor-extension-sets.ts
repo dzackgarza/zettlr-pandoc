@@ -56,6 +56,7 @@ import { languageTool } from './linters/language-tool'
 import { statusbar } from './statusbar'
 import { renderers } from './renderers'
 import { mdPasteDropHandlers } from './plugins/md-paste-drop-handlers'
+import { footnoteBackground } from './plugins/footnote-background'
 import { footnoteGutter } from './plugins/footnote-gutter'
 import { yamlFrontmatterLint } from './linters/yaml-frontmatter-lint'
 import {
@@ -360,6 +361,7 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     citationTooltips,
     referenceTooltips,
     backgroundLayers, // Add a background behind inline code and code blocks
+    footnoteBackground, // Tint the lines that belong to a footnote body
     defaultContextMenu, // A default context menu
     softwrapVisualIndent, // Always indent visually
     tagClasses(), // Apply a custom class to each tag so that users can style them (#4589)
