@@ -14,12 +14,12 @@
  * END HEADER
  */
 
-import type { MenuItemConstructorOptions } from "electron";
+import type { MenuItemConstructorOptions } from 'electron'
 
 /** The menu tree is an opaque serialized structure the provider validates. */
 export type MenuProviderIPCContract = {
-  "display-native-context-menu": {
-    request: { payload: { menu: MenuItemConstructorOptions[]; x: number; y: number } };
-    response: string | undefined;
-  };
-};
+  'display-native-context-menu': {
+    request: { payload: { menu: MenuItemConstructorOptions[], x: number, y: number } }
+    response: string|undefined
+  }
+}

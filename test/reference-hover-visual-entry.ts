@@ -17,31 +17,24 @@
  *   Project-status row ("Another Project").
  */
 
-import { EditorState, StateEffect, StateField } from "@codemirror/state";
-import { EditorView, showTooltip, type Tooltip } from "@codemirror/view";
-import type { ProjectRootSpec } from "@dts/common/references";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import { EditorState, StateEffect, StateField } from '@codemirror/state'
+import { EditorView, showTooltip, type Tooltip } from '@codemirror/view'
+import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
+import { referenceTooltip, referenceTooltips } from 'source/common/modules/markdown-editor/tooltips/references'
 import {
-  type EditorWorkspaceReferences,
   workspaceReferencesField,
   workspaceReferencesUpdate,
-} from "source/common/modules/markdown-editor/plugins/workspace-references-field";
-import {
-  defaultDark,
-  defaultLight,
-  editorTheme,
-} from "source/common/modules/markdown-editor/theme/editor";
-import {
-  referenceTooltip,
-  referenceTooltips,
-} from "source/common/modules/markdown-editor/tooltips/references";
-import { configField } from "source/common/modules/markdown-editor/util/configuration";
-import { extractReferences } from "source/common/pandoc-util/extract-references";
-import { resolveWorkspace } from "source/common/pandoc-util/resolve-references";
+  type EditorWorkspaceReferences
+} from 'source/common/modules/markdown-editor/plugins/workspace-references-field'
+import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
+import { extractReferences } from 'source/common/pandoc-util/extract-references'
+import { resolveWorkspace } from 'source/common/pandoc-util/resolve-references'
+import type { ProjectRootSpec } from '@dts/common/references'
 
 declare global {
   interface Window {
-    captureReady: Promise<void>;
+    captureReady: Promise<void>
   }
 }
 
@@ -66,7 +59,7 @@ applying the strong Torelli theorem for the K3 cover, and descending the
 resulting Hodge isometry through the Enriques involution, which pins the
 polarization data on each half-fiber of the elliptic fibration.
 :::
-`;
+`
 
 const otherPaper = `# Companion paper
 
@@ -74,7 +67,7 @@ const otherPaper = `# Companion paper
 The linear system of a Halphen pencil of index two embeds the blown-up
 plane whenever the nine base points are in general position.
 :::
-`;
+`
 
 const citing = `# Halphen surfaces of index two
 
@@ -93,60 +86,57 @@ isomorphism class of the surface together with its polarization data.
 
 The embedding step relies on @lem:kodaira:embedding for the ample linear
 system of the blown-up plane.
-`;
+`
 
 const PROJECT_ROOTS: ProjectRootSpec[] = [
   {
-    rootPath: "ProjectA",
-    files: ["Theorems.md", "Halphen_Surfaces.md"],
+    rootPath: 'ProjectA',
+    files: [ 'Theorems.md', 'Halphen_Surfaces.md' ],
   },
   {
-    rootPath: "ProjectB",
-    files: ["Other_Paper.md"],
+    rootPath: 'ProjectB',
+    files: ['Other_Paper.md'],
   },
-];
+]
 
-const setTooltip = StateEffect.define<Tooltip | null>();
+const setTooltip = StateEffect.define<Tooltip|null>()
 
-const pinnedTooltip = StateField.define<Tooltip | null>({
+const pinnedTooltip = StateField.define<Tooltip|null>({
   create: () => null,
-  update(value, transaction) {
+  update (value, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(setTooltip)) {
-        return effect.value;
+        return effect.value
       }
     }
-    return value;
+    return value
   },
-  provide: (f) => showTooltip.from(f),
-});
+  provide: f => showTooltip.from(f)
+})
 
-async function mount(): Promise<void> {
-  window.getCitationCallback = () => (citations) =>
-    citations
-      .map((citation) => {
-        return [citation.id, citation.locator, citation.suffix?.trimStart()]
-          .filter((part) => part !== undefined)
-          .join(" ");
-      })
-      .join("; ");
+async function mount (): Promise<void> {
+  window.getCitationCallback = () => citations => citations.map(citation => {
+    return [ citation.id, citation.locator, citation.suffix?.trimStart() ]
+      .filter(part => part !== undefined)
+      .join(' ')
+  }).join('; ')
 
-  const dark = document.body.dataset.dark === "true";
-  const scene = document.body.dataset.scene ?? "resolved";
-  const doc = citing;
+  const dark = document.body.dataset.dark === 'true'
+  const scene = document.body.dataset.scene ?? 'resolved'
+  const doc = citing
 
-  const definitionsSnapshot = extractReferences("ProjectA/Theorems.md", definitions);
-  const otherSnapshot = extractReferences("ProjectB/Other_Paper.md", otherPaper);
-  const citingSnapshot = extractReferences("ProjectA/Halphen_Surfaces.md", doc);
-  const workspace = [definitionsSnapshot, otherSnapshot, citingSnapshot];
+  const definitionsSnapshot = extractReferences('ProjectA/Theorems.md', definitions)
+  const otherSnapshot = extractReferences('ProjectB/Other_Paper.md', otherPaper)
+  const citingSnapshot = extractReferences('ProjectA/Halphen_Surfaces.md', doc)
+  const workspace = [ definitionsSnapshot, otherSnapshot, citingSnapshot ]
   const payload: EditorWorkspaceReferences = {
     snapshot: citingSnapshot,
-    workspaceOccurrences: workspace.flatMap((s) => s.occurrences),
-    resolutions: resolveWorkspace(workspace),
-  };
-  if (scene === "another-project") {
+    workspaceOccurrences: workspace.flatMap(s => s.occurrences),
+    resolutions: resolveWorkspace(workspace)
+  }
+  if (scene === 'another-project') {
     // The status row renders only while the view carries projectRoots.
-    payload.projectRoots = PROJECT_ROOTS;
+    payload.projectRoots = PROJECT_ROOTS
   }
 
   const state = EditorState.create({
@@ -162,30 +152,30 @@ async function mount(): Promise<void> {
       referenceTooltips,
       pinnedTooltip,
     ],
-  });
+  })
 
-  const host = document.querySelector<HTMLElement>("#editor");
+  const host = document.querySelector<HTMLElement>('#editor')
   if (host === null) {
-    throw new Error("Visual capture host is missing");
+    throw new Error('Visual capture host is missing')
   }
 
-  const view = new EditorView({ state, parent: host });
-  view.dispatch({ effects: workspaceReferencesUpdate.of(payload) });
+  const view = new EditorView({ state, parent: host })
+  view.dispatch({ effects: workspaceReferencesUpdate.of(payload) })
 
-  const hoverToken = scene === "another-project" ? "@lem:kodaira:embedding" : "@thm:torelli";
-  const hoverPos = doc.indexOf(hoverToken) + 3;
-  const tooltip = referenceTooltip(view, hoverPos, 1);
+  const hoverToken = scene === 'another-project' ? '@lem:kodaira:embedding' : '@thm:torelli'
+  const hoverPos = doc.indexOf(hoverToken) + 3
+  const tooltip = referenceTooltip(view, hoverPos, 1)
   if (tooltip === null) {
-    throw new Error("The resolved occurrence must produce a hover tooltip");
+    throw new Error('The resolved occurrence must produce a hover tooltip')
   }
-  view.dispatch({ effects: setTooltip.of(tooltip) });
+  view.dispatch({ effects: setTooltip.of(tooltip) })
 
-  await document.fonts.ready;
+  await document.fonts.ready
   // Give the tooltip its layout cycle and the excerpt its rendering pass.
-  await new Promise<void>((resolve) => setTimeout(resolve, 200));
+  await new Promise<void>(resolve => setTimeout(resolve, 200))
   for (let i = 0; i < 3; i++) {
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
   }
 }
 
-window.captureReady = mount();
+window.captureReady = mount()

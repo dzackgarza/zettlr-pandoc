@@ -45,27 +45,27 @@
  *
  * END HEADER
  */
-import { trans } from "@common/i18n-renderer";
-import { computed, ref } from "vue";
+import { trans } from '@common/i18n-renderer'
+import { computed, ref } from 'vue'
 
 const props = defineProps<{
-  modelValue: string;
-  placeholder?: string;
-  label?: string;
-  name?: string;
-  reset?: string;
-  inline?: boolean;
-}>();
+  modelValue: string
+  placeholder?: string
+  label?: string
+  name?: string
+  reset?: string
+  inline?: boolean
+}>()
 
-const emit = defineEmits<(e: "update:modelValue", val: string) => void>();
+const emit = defineEmits<(e: 'update:modelValue', val: string) => void>()
 
-const value = ref<string>(props.modelValue);
+const value = ref<string>(props.modelValue)
 
 const fieldID = computed<string>(() => {
-  return "field-input-" + (props.name ?? "");
-});
+  return 'field-input-' + (props.name ?? '')
+})
 
-const resetLabel = trans("Reset");
+const resetLabel = trans('Reset')
 </script>
 
 <style lang="css" scoped>

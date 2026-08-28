@@ -13,12 +13,12 @@
  *
  * END HEADER
  */
-import { type StateCommand } from "@codemirror/state";
-import { transformSelectedText } from "./transform-selected-text";
+import { type StateCommand } from '@codemirror/state'
+import { transformSelectedText } from './transform-selected-text'
 
 // Characters that indicate the next quote should be an opening quote.
 // Reused from autocorrect.ts handleQuote logic.
-const startChars = " ([{-\u2013\u2014\n\r\t\v\f/\\";
+const startChars = ' ([{-\u2013\u2014\n\r\t\v\f/\\'
 
 /**
  * Convert straight quotes to curly (smart) quotes, using the user's configured
@@ -29,27 +29,27 @@ const startChars = " ([{-\u2013\u2014\n\r\t\v\f/\\";
  *
  * @return  {StateCommand}       A `StateCommand` that curls straight quotes.
  */
-export function curlQuotes(primary: [string, string], secondary: [string, string]): StateCommand {
-  const [primaryOpen, primaryClose] = primary;
-  const [secondaryOpen, secondaryClose] = secondary;
+export function curlQuotes (primary: [string, string], secondary: [string, string]): StateCommand {
+  const [ primaryOpen, primaryClose ] = primary
+  const [ secondaryOpen, secondaryClose ] = secondary
 
   return transformSelectedText((text) => {
-    let result = "";
+    let result = ''
 
     for (let i = 0; i < text.length; i++) {
-      const ch = text[i];
+      const ch = text[i]
 
       if (ch === '"') {
-        const charBefore = i === 0 ? " " : text[i - 1];
-        result += startChars.includes(charBefore) ? primaryOpen : primaryClose;
+        const charBefore = i === 0 ? ' ' : text[i - 1]
+        result += startChars.includes(charBefore) ? primaryOpen : primaryClose
       } else if (ch === "'") {
-        const charBefore = i === 0 ? " " : text[i - 1];
-        result += startChars.includes(charBefore) ? secondaryOpen : secondaryClose;
+        const charBefore = i === 0 ? ' ' : text[i - 1]
+        result += startChars.includes(charBefore) ? secondaryOpen : secondaryClose
       } else {
-        result += ch;
+        result += ch
       }
     }
 
-    return result;
-  });
+    return result
+  })
 }

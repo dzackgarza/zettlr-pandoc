@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import type LogProvider from "@providers/log";
+import type LogProvider from '@providers/log'
 
 /**
  * Adds the given path to PATH.
@@ -21,24 +21,20 @@ import type LogProvider from "@providers/log";
  * @param  {string}      path    The path to add to PATH
  * @param  {string}      method  The method to use when adding the path.
  */
-export default function addToPath(
-  logger: LogProvider,
-  path: string,
-  method: "unshift" | "push",
-): void {
+export default function addToPath (logger: LogProvider, path: string, method: 'unshift'|'push'): void {
   if (process.env.PATH === undefined) {
-    process.env.PATH = "";
+    process.env.PATH = ''
   }
 
-  const DELIM = process.platform === "win32" ? ";" : ":";
-  const tempPATH = process.env.PATH.split(DELIM);
+  const DELIM = (process.platform === 'win32') ? ';' : ':'
+  const tempPATH = process.env.PATH.split(DELIM)
 
-  if (method === "unshift") {
-    tempPATH.unshift(path);
-  } else if (method === "push") {
-    tempPATH.push(path);
+  if (method === 'unshift') {
+    tempPATH.unshift(path)
+  } else if (method === 'push') {
+    tempPATH.push(path)
   }
 
-  process.env.PATH = tempPATH.join(DELIM);
-  logger.info(`[Application] Added ${path} to PATH.`);
+  process.env.PATH = tempPATH.join(DELIM)
+  logger.info(`[Application] Added ${path} to PATH.`)
 }

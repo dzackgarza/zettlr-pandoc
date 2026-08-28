@@ -13,39 +13,43 @@
  * END HEADER
  */
 
-import AgentHTTPProvider from "@providers/agent-api/http-server";
 // Providers
-import AppearanceProvider from "@providers/appearance";
-import AssetsProvider from "@providers/assets";
-import CiteprocProvider from "@providers/citeproc";
-import CommandProvider from "@providers/commands";
-import ConfigProvider from "@providers/config";
-import CssProvider from "@providers/css";
-import DictionaryProvider from "@providers/dictionary";
-import DocumentManager from "@providers/documents";
-import FSAL from "@providers/fsal";
-import LinkProvider from "@providers/links";
-import LogProvider from "@providers/log";
-import MenuProvider from "@providers/menu";
-import type ProviderContract from "@providers/provider-contract";
-import RecentDocumentsProvider from "@providers/recent-docs";
-import ReferenceProvider from "@providers/references";
-import StatsProvider from "@providers/stats";
-import TagProvider from "@providers/tags";
-import TargetProvider from "@providers/targets";
-import TrayProvider from "@providers/tray";
-import UpdateProvider from "@providers/updates";
-import WindowProvider from "@providers/windows";
-import { app, dialog } from "electron";
-import path from "path";
-import { trans } from "source/common/i18n-main";
-import LongRunningTaskProvider from "./service-providers/long-running-tasks";
-import { SearchProvider } from "./service-providers/search";
-import { closeSplashScreen, showSplashScreen, updateSplashScreen } from "./util/splash-screen";
+import AppearanceProvider from '@providers/appearance'
+import AssetsProvider from '@providers/assets'
+import CiteprocProvider from '@providers/citeproc'
+import CommandProvider from '@providers/commands'
+import ConfigProvider from '@providers/config'
+import CssProvider from '@providers/css'
+import DictionaryProvider from '@providers/dictionary'
+import DocumentManager from '@providers/documents'
+import FSAL from '@providers/fsal'
+import LinkProvider from '@providers/links'
+import LogProvider from '@providers/log'
+import MenuProvider from '@providers/menu'
+import type ProviderContract from '@providers/provider-contract'
+import RecentDocumentsProvider from '@providers/recent-docs'
+import ReferenceProvider from '@providers/references'
+import AgentHTTPProvider from '@providers/agent-api/http-server'
+import StatsProvider from '@providers/stats'
+import TagProvider from '@providers/tags'
+import TargetProvider from '@providers/targets'
+import TrayProvider from '@providers/tray'
+import UpdateProvider from '@providers/updates'
+import WindowProvider from '@providers/windows'
+import { app, dialog } from 'electron'
+import {
+  closeSplashScreen,
+  showSplashScreen,
+  updateSplashScreen,
+} from './util/splash-screen'
+import path from 'path'
+import { trans } from 'source/common/i18n-main'
+import LongRunningTaskProvider from './service-providers/long-running-tasks'
+import { SearchProvider } from './service-providers/search'
 
 // We need module-global variables so that garbage collect won't shut down the
 // providers before the app is shut down.
-let appServiceContainer: AppServiceContainer | undefined;
+let appServiceContainer: AppServiceContainer | undefined
 
 // TODO: This function makes no sense in this module; find a better place!
 /**
@@ -53,12 +57,12 @@ let appServiceContainer: AppServiceContainer | undefined;
  *
  * @return  {AppServiceContainer}  The app service container.
  */
-export function getAppServiceContainer(): AppServiceContainer {
+export function getAppServiceContainer (): AppServiceContainer {
   if (appServiceContainer === undefined || !appServiceContainer.isBooted) {
-    throw new Error("Do not access the app service container before boot");
+    throw new Error('Do not access the app service container before boot')
   }
 
-  return appServiceContainer;
+  return appServiceContainer
 }
 
 /**
@@ -66,66 +70,84 @@ export function getAppServiceContainer(): AppServiceContainer {
  *
  * @return  {boolean}  Whether the app service container is booted.
  */
-export function isAppServiceContainerReady(): boolean {
-  return appServiceContainer?.isBooted ?? false;
+export function isAppServiceContainerReady (): boolean {
+  return appServiceContainer?.isBooted ?? false
 }
 
-export function setAppServiceContainer(container: AppServiceContainer) {
-  appServiceContainer = container;
+export function setAppServiceContainer (container: AppServiceContainer) {
+  appServiceContainer = container
 }
 
 export class AppServiceContainer {
-  private readonly _appearanceProvider: AppearanceProvider;
-  private readonly _assetsProvider: AssetsProvider;
-  private readonly _citeprocProvider: CiteprocProvider;
-  private readonly _commandProvider: CommandProvider;
-  private readonly _configProvider: ConfigProvider;
-  private readonly _cssProvider: CssProvider;
-  private readonly _dictionaryProvider: DictionaryProvider;
-  private readonly _linkProvider: LinkProvider;
-  private readonly _logProvider: LogProvider;
-  private readonly _menuProvider: MenuProvider;
-  private readonly _recentDocsProvider: RecentDocumentsProvider;
-  private readonly _referenceProvider: ReferenceProvider;
-  private readonly _statsProvider: StatsProvider;
-  private readonly _tagProvider: TagProvider;
-  private readonly _targetProvider: TargetProvider;
-  private readonly _trayProvider: TrayProvider;
-  private readonly _updateProvider: UpdateProvider;
-  private readonly _windowProvider: WindowProvider;
-  private readonly _fsal: FSAL;
-  private readonly _documentManager: DocumentManager;
-  private readonly _agentHTTPProvider: AgentHTTPProvider;
-  private readonly _lrtProvider: LongRunningTaskProvider;
-  private readonly _searchProvider: SearchProvider;
-  private _isBooted: boolean;
+  private readonly _appearanceProvider: AppearanceProvider
+  private readonly _assetsProvider: AssetsProvider
+  private readonly _citeprocProvider: CiteprocProvider
+  private readonly _commandProvider: CommandProvider
+  private readonly _configProvider: ConfigProvider
+  private readonly _cssProvider: CssProvider
+  private readonly _dictionaryProvider: DictionaryProvider
+  private readonly _linkProvider: LinkProvider
+  private readonly _logProvider: LogProvider
+  private readonly _menuProvider: MenuProvider
+  private readonly _recentDocsProvider: RecentDocumentsProvider
+  private readonly _referenceProvider: ReferenceProvider
+  private readonly _statsProvider: StatsProvider
+  private readonly _tagProvider: TagProvider
+  private readonly _targetProvider: TargetProvider
+  private readonly _trayProvider: TrayProvider
+  private readonly _updateProvider: UpdateProvider
+  private readonly _windowProvider: WindowProvider
+  private readonly _fsal: FSAL
+  private readonly _documentManager: DocumentManager
+  private readonly _agentHTTPProvider: AgentHTTPProvider
+  private readonly _lrtProvider: LongRunningTaskProvider
+  private readonly _searchProvider: SearchProvider
+  private _isBooted: boolean
 
-  constructor() {
+  constructor () {
     // NOTE: We need to instantiate the providers according to their dependence
     // on other providers.
-    this._isBooted = false;
+    this._isBooted = false
 
     // First section: Crucial providers
-    this._logProvider = new LogProvider();
-    this._configProvider = new ConfigProvider(this._logProvider);
-    this._lrtProvider = new LongRunningTaskProvider(this._logProvider); // Not really crucial, but the FSAL needs access
-    this._fsal = new FSAL(this._logProvider, this._configProvider, this._lrtProvider);
+    this._logProvider = new LogProvider()
+    this._configProvider = new ConfigProvider(this._logProvider)
+    this._lrtProvider = new LongRunningTaskProvider(this._logProvider) // Not really crucial, but the FSAL needs access
+    this._fsal = new FSAL(
+      this._logProvider,
+      this._configProvider,
+      this._lrtProvider,
+    )
 
     // Now according to their dependencies
-    this._recentDocsProvider = new RecentDocumentsProvider(this._logProvider);
-    this._assetsProvider = new AssetsProvider(this._logProvider);
-    this._cssProvider = new CssProvider(this._logProvider);
-    this._statsProvider = new StatsProvider(this._logProvider);
+    this._recentDocsProvider = new RecentDocumentsProvider(this._logProvider)
+    this._assetsProvider = new AssetsProvider(this._logProvider)
+    this._cssProvider = new CssProvider(this._logProvider)
+    this._statsProvider = new StatsProvider(this._logProvider)
 
-    this._appearanceProvider = new AppearanceProvider(this._logProvider, this._configProvider);
-    this._dictionaryProvider = new DictionaryProvider(this._logProvider, this._configProvider);
+    this._appearanceProvider = new AppearanceProvider(
+      this._logProvider,
+      this._configProvider,
+    )
+    this._dictionaryProvider = new DictionaryProvider(
+      this._logProvider,
+      this._configProvider,
+    )
 
-    this._targetProvider = new TargetProvider(this._logProvider, this._fsal);
-    this._linkProvider = new LinkProvider(this._logProvider, this._configProvider, this._fsal);
-    this._searchProvider = new SearchProvider(this._logProvider, this._fsal, this._configProvider);
+    this._targetProvider = new TargetProvider(this._logProvider, this._fsal)
+    this._linkProvider = new LinkProvider(
+      this._logProvider,
+      this._configProvider,
+      this._fsal,
+    )
+    this._searchProvider = new SearchProvider(
+      this._logProvider,
+      this._fsal,
+      this._configProvider,
+    )
 
     // The document provider accesses only the FSAL in its constructor
-    this._documentManager = new DocumentManager(this);
+    this._documentManager = new DocumentManager(this)
     // The references provider reads live buffers through the document
     // authority (issue #53), so it is constructed right after it; the
     // manager reaches back through the container's references getter at
@@ -135,35 +157,39 @@ export class AppServiceContainer {
       this._fsal,
       this._documentManager,
       this._configProvider.get().references.authorityReportDebounceMs,
-      app.getPath("userData"),
-    );
-    this._agentHTTPProvider = new AgentHTTPProvider(this._logProvider, this._documentManager, this);
+      app.getPath('userData'),
+    )
+    this._agentHTTPProvider = new AgentHTTPProvider(
+      this._logProvider,
+      this._documentManager,
+      this,
+    )
     this._tagProvider = new TagProvider(
       this._logProvider,
       this._documentManager,
       this._configProvider,
       this._fsal,
-    );
+    )
     this._windowProvider = new WindowProvider(
       this._logProvider,
       this._configProvider,
       this._documentManager,
-    );
+    )
 
     this._citeprocProvider = new CiteprocProvider(
       this._logProvider,
       this._configProvider,
       this._windowProvider,
-    );
+    )
     this._trayProvider = new TrayProvider(
       this._logProvider,
       this._configProvider,
       this._windowProvider,
-    );
+    )
 
     // The command provider only needs the container for running the commands,
     // none of which will run during the boot cycle.
-    this._commandProvider = new CommandProvider(this);
+    this._commandProvider = new CommandProvider(this)
     this._menuProvider = new MenuProvider(
       this._logProvider,
       this._configProvider,
@@ -171,33 +197,33 @@ export class AppServiceContainer {
       this._commandProvider,
       this._windowProvider,
       this._documentManager,
-    );
+    )
     this._updateProvider = new UpdateProvider(
       this._logProvider,
       this._configProvider,
       this._commandProvider,
       this._windowProvider,
-    );
+    )
   }
 
   /**
    * Boots up all service providers which need to be ready before the
    * application can be used.
    */
-  async boot(): Promise<void> {
+  async boot (): Promise<void> {
     // NOTE: We need to boot the providers in roughly the same order as we
     // instantiate them to ensure that their boot functions work properly. We
     // can't do this in the exact same order, because the dependencies are only
     // required for the variables, while the boot function may access them in
     // different order.
 
-    await this._informativeBoot(this._logProvider, "LogProvider");
+    await this._informativeBoot(this._logProvider, 'LogProvider')
     // We boot the CSS provider very early just so that it can create the CSS
     // file. This is not really critical, but prevents an error upon first start
     // when the onboarding dialog is shown by the ConfigProvider, which will
     // request the custom CSS file.
-    await this._informativeBoot(this._cssProvider, "CSSProvider");
-    await this._informativeBoot(this._configProvider, "ConfigProvider");
+    await this._informativeBoot(this._cssProvider, 'CSSProvider')
+    await this._informativeBoot(this._configProvider, 'ConfigProvider')
 
     // If the booting isn't done after 1 second, begin displaying a splash
     // screen to indicate to the user that things are happening, even if the
@@ -205,168 +231,178 @@ export class AppServiceContainer {
     // screen until AFTER the config provider has been booted, as that one may
     // show an onboarding window.
     const timeout = setTimeout(() => {
-      showSplashScreen(this.log);
-    }, 1000);
+      showSplashScreen(this.log)
+    }, 1000)
 
-    await this._informativeBoot(this._fsal, "FSAL");
+    await this._informativeBoot(this._fsal, 'FSAL')
 
-    await this._informativeBoot(this._recentDocsProvider, "RecentDocsProvider");
-    await this._informativeBoot(this._assetsProvider, "AssetsProvider");
-    await this._informativeBoot(this._statsProvider, "StatsProvider");
+    await this._informativeBoot(this._recentDocsProvider, 'RecentDocsProvider')
+    await this._informativeBoot(this._assetsProvider, 'AssetsProvider')
+    await this._informativeBoot(this._statsProvider, 'StatsProvider')
 
-    await this._informativeBoot(this._appearanceProvider, "AppearanceProvider");
-    await this._informativeBoot(this._dictionaryProvider, "DictionaryProvider");
+    await this._informativeBoot(this._appearanceProvider, 'AppearanceProvider')
+    await this._informativeBoot(this._dictionaryProvider, 'DictionaryProvider')
 
     // Reindex every file if necessary. Needs to come after appearance provider
     // and CSS provider (due to splashscreen), and before anything that accesses
     // the FSAL.
 
     await this.fsal.reindexFiles((absPath, currentPercent) => {
-      updateSplashScreen(trans("Indexing %s…", path.basename(absPath)), currentPercent);
-    });
+      updateSplashScreen(
+        trans('Indexing %s…', path.basename(absPath)),
+        currentPercent,
+      )
+    })
 
-    await this._informativeBoot(this._targetProvider, "TargetProvider");
-    await this._informativeBoot(this._linkProvider, "LinkProvider");
-    await this._informativeBoot(this._referenceProvider, "ReferenceProvider");
-    await this._informativeBoot(this._searchProvider, "SearchProvider");
+    await this._informativeBoot(this._targetProvider, 'TargetProvider')
+    await this._informativeBoot(this._linkProvider, 'LinkProvider')
+    await this._informativeBoot(this._referenceProvider, 'ReferenceProvider')
+    await this._informativeBoot(this._searchProvider, 'SearchProvider')
 
     // Boot the commands before the window provider to ensure the handler for
     // application requests from windows is registered before any window opens
-    await this._informativeBoot(this._commandProvider, "CommandProvider");
-    await this._informativeBoot(this._windowProvider, "WindowManager");
+    await this._informativeBoot(this._commandProvider, 'CommandProvider')
+    await this._informativeBoot(this._windowProvider, 'WindowManager')
 
-    await this._informativeBoot(this._tagProvider, "TagProvider");
-    await this._informativeBoot(this._trayProvider, "TrayProvider");
-    await this._informativeBoot(this._citeprocProvider, "CiteprocProvider");
+    await this._informativeBoot(this._tagProvider, 'TagProvider')
+    await this._informativeBoot(this._trayProvider, 'TrayProvider')
+    await this._informativeBoot(this._citeprocProvider, 'CiteprocProvider')
 
-    await this._informativeBoot(this._documentManager, "DocumentManager");
-    await this._informativeBoot(this._agentHTTPProvider, "AgentHTTPProvider");
-    await this._informativeBoot(this._menuProvider, "MenuProvider");
-    await this._informativeBoot(this._updateProvider, "UpdateProvider");
+    await this._informativeBoot(this._documentManager, 'DocumentManager')
+    await this._informativeBoot(this._agentHTTPProvider, 'AgentHTTPProvider')
+    await this._informativeBoot(this._menuProvider, 'MenuProvider')
+    await this._informativeBoot(this._updateProvider, 'UpdateProvider')
 
-    await this._informativeBoot(this._lrtProvider, "Long-Running Tasks Provider");
+    await this._informativeBoot(
+      this._lrtProvider,
+      'Long-Running Tasks Provider',
+    )
 
-    this._menuProvider.set(); // TODO
+    this._menuProvider.set() // TODO
 
-    this.log.info("[AppServiceContainer] Boot successful!");
-    this._isBooted = true;
+    this.log.info('[AppServiceContainer] Boot successful!')
+    this._isBooted = true
 
     // Now that the config provider is definitely set up, let's see if we
     // should copy the interactive tutorial to the documents directory.
     if (this.config.isFirstStart()) {
-      this.log.info("[AppServiceContainer] Copying over the interactive tutorial!");
+      this.log.info(
+        '[AppServiceContainer] Copying over the interactive tutorial!',
+      )
       this.commands
-        .run("tutorial-open", {})
-        .catch((err) => this.log.error("[AppServiceContainer] Could not open tutorial", err));
+        .run('tutorial-open', {})
+        .catch((err) =>
+          this.log.error('[AppServiceContainer] Could not open tutorial', err),
+        )
     }
 
-    clearTimeout(timeout);
-    closeSplashScreen();
+    clearTimeout(timeout)
+    closeSplashScreen()
 
     // After everything has been booted up, show the windows
-    this.windows.maybeShowWindows();
+    this.windows.maybeShowWindows()
   }
 
-  public get isBooted() {
-    return this._isBooted;
+  public get isBooted () {
+    return this._isBooted
   }
 
   // Getters for the various providers
-  public get appearance(): AppearanceProvider {
-    return this._appearanceProvider;
+  public get appearance (): AppearanceProvider {
+    return this._appearanceProvider
   }
-  public get assets(): AssetsProvider {
-    return this._assetsProvider;
+  public get assets (): AssetsProvider {
+    return this._assetsProvider
   }
-  public get citeproc(): CiteprocProvider {
-    return this._citeprocProvider;
+  public get citeproc (): CiteprocProvider {
+    return this._citeprocProvider
   }
-  public get config(): ConfigProvider {
-    return this._configProvider;
+  public get config (): ConfigProvider {
+    return this._configProvider
   }
-  public get css(): CssProvider {
-    return this._cssProvider;
+  public get css (): CssProvider {
+    return this._cssProvider
   }
-  public get dictionary(): DictionaryProvider {
-    return this._dictionaryProvider;
+  public get dictionary (): DictionaryProvider {
+    return this._dictionaryProvider
   }
-  public get links(): LinkProvider {
-    return this._linkProvider;
+  public get links (): LinkProvider {
+    return this._linkProvider
   }
-  public get log(): LogProvider {
-    return this._logProvider;
+  public get log (): LogProvider {
+    return this._logProvider
   }
-  public get menu(): MenuProvider {
-    return this._menuProvider;
+  public get menu (): MenuProvider {
+    return this._menuProvider
   }
-  public get recentDocs(): RecentDocumentsProvider {
-    return this._recentDocsProvider;
+  public get recentDocs (): RecentDocumentsProvider {
+    return this._recentDocsProvider
   }
-  public get references(): ReferenceProvider {
-    return this._referenceProvider;
+  public get references (): ReferenceProvider {
+    return this._referenceProvider
   }
-  public get stats(): StatsProvider {
-    return this._statsProvider;
+  public get stats (): StatsProvider {
+    return this._statsProvider
   }
-  public get tags(): TagProvider {
-    return this._tagProvider;
+  public get tags (): TagProvider {
+    return this._tagProvider
   }
-  public get targets(): TargetProvider {
-    return this._targetProvider;
+  public get targets (): TargetProvider {
+    return this._targetProvider
   }
-  public get tray(): TrayProvider {
-    return this._trayProvider;
+  public get tray (): TrayProvider {
+    return this._trayProvider
   }
-  public get updates(): UpdateProvider {
-    return this._updateProvider;
+  public get updates (): UpdateProvider {
+    return this._updateProvider
   }
-  public get windows(): WindowProvider {
-    return this._windowProvider;
+  public get windows (): WindowProvider {
+    return this._windowProvider
   }
-  public get fsal(): FSAL {
-    return this._fsal;
+  public get fsal (): FSAL {
+    return this._fsal
   }
-  public get documents(): DocumentManager {
-    return this._documentManager;
+  public get documents (): DocumentManager {
+    return this._documentManager
   }
-  public get agentHTTP(): AgentHTTPProvider {
-    return this._agentHTTPProvider;
+  public get agentHTTP (): AgentHTTPProvider {
+    return this._agentHTTPProvider
   }
-  public get commands(): CommandProvider {
-    return this._commandProvider;
+  public get commands (): CommandProvider {
+    return this._commandProvider
   }
-  public get lrt(): LongRunningTaskProvider {
-    return this._lrtProvider;
+  public get lrt (): LongRunningTaskProvider {
+    return this._lrtProvider
   }
 
   /**
    * Prepares quitting the app by shutting down the service providers
    */
-  async shutdown(): Promise<void> {
-    await this._safeShutdown(this._lrtProvider, "Long-running Task Provider");
-    await this._safeShutdown(this._commandProvider, "CommandProvider");
-    await this._safeShutdown(this._agentHTTPProvider, "AgentHTTPProvider");
-    await this._safeShutdown(this._documentManager, "DocumentManager");
-    await this._safeShutdown(this._fsal, "FSAL");
+  async shutdown (): Promise<void> {
+    await this._safeShutdown(this._lrtProvider, 'Long-running Task Provider')
+    await this._safeShutdown(this._commandProvider, 'CommandProvider')
+    await this._safeShutdown(this._agentHTTPProvider, 'AgentHTTPProvider')
+    await this._safeShutdown(this._documentManager, 'DocumentManager')
+    await this._safeShutdown(this._fsal, 'FSAL')
 
-    await this._safeShutdown(this._windowProvider, "WindowManager");
-    await this._safeShutdown(this._trayProvider, "TrayProvider");
-    await this._safeShutdown(this._statsProvider, "StatsProvider");
-    await this._safeShutdown(this._updateProvider, "UpdateProvider");
-    await this._safeShutdown(this._cssProvider, "CSSProvider");
-    await this._safeShutdown(this._targetProvider, "TargetProvider");
-    await this._safeShutdown(this._linkProvider, "LinkProvider");
-    await this._safeShutdown(this._referenceProvider, "ReferenceProvider");
-    await this._safeShutdown(this._tagProvider, "TagProvider");
-    await this._safeShutdown(this._searchProvider, "SearchProvider");
-    await this._safeShutdown(this._menuProvider, "MenuProvider");
-    await this._safeShutdown(this._recentDocsProvider, "RecentDocsProvider");
-    await this._safeShutdown(this._dictionaryProvider, "DictionaryProvider");
-    await this._safeShutdown(this._citeprocProvider, "CiteprocProvider");
-    await this._safeShutdown(this._assetsProvider, "AssetsProvider");
-    await this._safeShutdown(this._appearanceProvider, "AppearanceProvider");
-    await this._safeShutdown(this._configProvider, "ConfigProvider");
-    await this._safeShutdown(this._logProvider, "LogProvider");
+    await this._safeShutdown(this._windowProvider, 'WindowManager')
+    await this._safeShutdown(this._trayProvider, 'TrayProvider')
+    await this._safeShutdown(this._statsProvider, 'StatsProvider')
+    await this._safeShutdown(this._updateProvider, 'UpdateProvider')
+    await this._safeShutdown(this._cssProvider, 'CSSProvider')
+    await this._safeShutdown(this._targetProvider, 'TargetProvider')
+    await this._safeShutdown(this._linkProvider, 'LinkProvider')
+    await this._safeShutdown(this._referenceProvider, 'ReferenceProvider')
+    await this._safeShutdown(this._tagProvider, 'TagProvider')
+    await this._safeShutdown(this._searchProvider, 'SearchProvider')
+    await this._safeShutdown(this._menuProvider, 'MenuProvider')
+    await this._safeShutdown(this._recentDocsProvider, 'RecentDocsProvider')
+    await this._safeShutdown(this._dictionaryProvider, 'DictionaryProvider')
+    await this._safeShutdown(this._citeprocProvider, 'CiteprocProvider')
+    await this._safeShutdown(this._assetsProvider, 'AssetsProvider')
+    await this._safeShutdown(this._appearanceProvider, 'AppearanceProvider')
+    await this._safeShutdown(this._configProvider, 'ConfigProvider')
+    await this._safeShutdown(this._logProvider, 'LogProvider')
   }
 
   /**
@@ -380,12 +416,12 @@ export class AppServiceContainer {
     displayName: string,
   ): Promise<void> {
     try {
-      await provider.shutdown();
+      await provider.shutdown()
     } catch (err: unknown) {
-      const title = `Error shutting down ${displayName}`;
-      const message = `Could not shut down ${displayName}: ${err instanceof Error ? err.message : "unknown error"}`;
-      dialog.showErrorBox(title, message);
-      this._logProvider.error(`[AppServiceContainer] ${message}`, err);
+      const title = `Error shutting down ${displayName}`
+      const message = `Could not shut down ${displayName}: ${err instanceof Error ? err.message : 'unknown error'}`
+      dialog.showErrorBox(title, message)
+      this._logProvider.error(`[AppServiceContainer] ${message}`, err)
     }
   }
 
@@ -402,18 +438,18 @@ export class AppServiceContainer {
     displayName: string,
   ): Promise<void> {
     try {
-      const start = performance.now();
-      updateSplashScreen(trans("Booting %s…", displayName), 0);
-      await provider.boot();
+      const start = performance.now()
+      updateSplashScreen(trans('Booting %s…', displayName), 0)
+      await provider.boot()
       this._logProvider.verbose(
         `[AppServiceContainer] Booted ${displayName} in ${Math.round(performance.now() - start)}ms`,
-      );
+      )
     } catch (err: unknown) {
-      const title = `Error starting ${displayName}`;
-      const message = `Could not start ${displayName}: ${err instanceof Error ? err.message : "unknown error"}`;
-      dialog.showErrorBox(title, message);
-      this._logProvider.error(`[AppServiceContainer] ${message}`, err);
-      throw err; // Re-Throw since we need to quit the app now.
+      const title = `Error starting ${displayName}`
+      const message = `Could not start ${displayName}: ${err instanceof Error ? err.message : 'unknown error'}`
+      dialog.showErrorBox(title, message)
+      this._logProvider.error(`[AppServiceContainer] ${message}`, err)
+      throw err // Re-Throw since we need to quit the app now.
     }
   }
 }

@@ -22,28 +22,28 @@
  * the main process.
  */
 export type DictionaryProviderIPCContract = {
-  check: {
-    request: { terms: string[] };
-    response: boolean[];
-  };
-  suggest: {
-    request: { terms: string[] };
-    response: string[][];
-  };
-  add: {
-    request: { terms: string[] };
-    response: boolean[];
-  };
-  "get-user-dictionary": {
-    request: { payload?: undefined };
-    response: string[];
-  };
-  "set-user-dictionary": {
-    request: { payload: string[] };
-    response: undefined;
-  };
-  "open-dictionary-folder": {
-    request: { payload?: undefined };
-    response: undefined;
-  };
-};
+  'check': {
+    request: { terms: string[] }
+    response: boolean[]
+  }
+  'suggest': {
+    request: { terms: string[] }
+    response: string[][]
+  }
+  'add': {
+    request: { terms: string[] }
+    response: boolean[]
+  }
+  'get-user-dictionary': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+  'set-user-dictionary': {
+    request: { payload: string[] }
+    response: undefined
+  }
+  'open-dictionary-folder': {
+    request: { payload?: undefined }
+    response: undefined
+  }
+}

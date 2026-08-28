@@ -11,8 +11,8 @@
  *
  * END HEADER
  */
-import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
-import { transformSelectedText } from "./transform-selected-text";
+import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
+import { transformSelectedText } from './transform-selected-text'
 
 /**
  * Return a function that'll return a '`StateCommand` that converts selected
@@ -33,33 +33,34 @@ import { transformSelectedText } from "./transform-selected-text";
  * @return  {StateCommand}          A `StateCommand` that converts selected text
  *                                  to sentence case.
  */
-export const toSentenceCase = (locale: ConfigOptions["appLang"]) => {
-  const toWords = new Intl.Segmenter(locale, { granularity: "word" });
-  const toCharacters = new Intl.Segmenter(locale);
+export const toSentenceCase =
+  (locale: ConfigOptions['appLang']) => {
+    const toWords = new Intl.Segmenter(locale, { granularity: 'word' })
+    const toCharacters = new Intl.Segmenter(locale)
 
-  return transformSelectedText((text) => {
-    const sentenceCasedWords = [];
+    return transformSelectedText((text) => {
+      const sentenceCasedWords = []
 
-    const words = toWords.segment(text);
-    for (const word of words) {
-      if (word.index === 0) {
-        let theWord = "";
+      const words = toWords.segment(text)
+      for (const word of words) {
+        if (word.index === 0) {
+          let theWord = ''
 
-        const characters = toCharacters.segment(word.segment);
-        for (const character of characters) {
-          if (character.index === 0) {
-            theWord += character.segment.toLocaleUpperCase(locale);
-          } else {
-            theWord += character.segment.toLocaleLowerCase(locale);
+          const characters = toCharacters.segment(word.segment)
+          for (const character of characters) {
+            if (character.index === 0) {
+              theWord += character.segment.toLocaleUpperCase(locale)
+            } else {
+              theWord += character.segment.toLocaleLowerCase(locale)
+            }
           }
+
+          sentenceCasedWords.push(theWord)
+        } else {
+          sentenceCasedWords.push(word.segment.toLocaleLowerCase(locale))
         }
-
-        sentenceCasedWords.push(theWord);
-      } else {
-        sentenceCasedWords.push(word.segment.toLocaleLowerCase(locale));
       }
-    }
 
-    return sentenceCasedWords.join("");
-  });
-};
+      return sentenceCasedWords.join('')
+    })
+  }

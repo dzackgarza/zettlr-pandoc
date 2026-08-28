@@ -27,139 +27,121 @@
  *   after the dismissal lands in the document.
  */
 
-import { EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import { EditorState } from '@codemirror/state'
+import { EditorView } from '@codemirror/view'
+import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 
 interface ToastState {
-  text: string;
-  isError: boolean;
-  dismissLabel: string | null;
+  text: string
+  isError: boolean
+  dismissLabel: string|null
 }
 
 interface ErrorSurfaceRunReport {
-  moduleAvailable: boolean;
-  moduleFailure: string | null;
-  outcome: unknown;
+  moduleAvailable: boolean
+  moduleFailure: string|null
+  outcome: unknown
 }
 
 declare global {
   interface Window {
-    errorSurfaceProbeRun: () => Promise<ErrorSurfaceRunReport>;
-    errorSurfaceProbeToastState: () => ToastState[];
-    errorSurfaceProbeDismiss: () => boolean;
-    errorSurfaceProbeFocusEditor: () => void;
-    errorSurfaceProbeEditorText: () => string;
-    errorSurfaceProbeUncaught: () => string[];
+    errorSurfaceProbeRun: () => Promise<ErrorSurfaceRunReport>
+    errorSurfaceProbeToastState: () => ToastState[]
+    errorSurfaceProbeDismiss: () => boolean
+    errorSurfaceProbeFocusEditor: () => void
+    errorSurfaceProbeEditorText: () => string
+    errorSurfaceProbeUncaught: () => string[]
   }
 }
 
 // Resolved through a context (not a static import) so the bundle builds and
 // reports structured absence while the boundary does not exist yet.
-const boundaryContext = require.context(
-  "../source/win-main/util/",
-  false,
-  /recoverable-reference-errors\.ts$/,
-);
+const boundaryContext = require.context('../source/win-main/util/', false, /recoverable-reference-errors\.ts$/)
 
-const uncaught: string[] = [];
-window.addEventListener("error", (event) => {
-  uncaught.push(`error: ${String(event.error ?? event.message)}`);
-});
-window.addEventListener("unhandledrejection", (event) => {
-  uncaught.push(`unhandledrejection: ${String(event.reason)}`);
-});
+const uncaught: string[] = []
+window.addEventListener('error', event => {
+  uncaught.push(`error: ${String(event.error ?? event.message)}`)
+})
+window.addEventListener('unhandledrejection', event => {
+  uncaught.push(`unhandledrejection: ${String(event.reason)}`)
+})
 
-const EDITOR_SEED = "The buffer under the failing index.\n";
-let view: EditorView | null = null;
+const EDITOR_SEED = 'The buffer under the failing index.\n'
+let view: EditorView|null = null
 
 window.errorSurfaceProbeRun = async (): Promise<ErrorSurfaceRunReport> => {
   // The real editor the user keeps working in while the index misbehaves.
-  const host = document.createElement("div");
-  host.id = "error-surface-editor";
-  document.body.appendChild(host);
+  const host = document.createElement('div')
+  host.id = 'error-surface-editor'
+  document.body.appendChild(host)
   view = new EditorView({
-    state: EditorState.create({ doc: EDITOR_SEED, extensions: [markdownParser()] }),
-    parent: host,
-  });
+    state: EditorState.create({ doc: EDITOR_SEED, extensions: [ markdownParser() ] }),
+    parent: host
+  })
 
-  const boundaryKey = boundaryContext
-    .keys()
-    .find((key) => key.includes("recoverable-reference-errors"));
+  const boundaryKey = boundaryContext.keys().find(key => key.includes('recoverable-reference-errors'))
   if (boundaryKey === undefined) {
     return {
       moduleAvailable: false,
-      moduleFailure:
-        "source/win-main/util/recoverable-reference-errors.ts does not exist yet (issue #1 Phase 8 red)",
-      outcome: null,
-    };
+      moduleFailure: 'source/win-main/util/recoverable-reference-errors.ts does not exist yet (issue #1 Phase 8 red)',
+      outcome: null
+    }
   }
 
   const boundaryModule = boundaryContext(boundaryKey) as {
     invokeReferenceProviderRecoverably?: (
-      ipcInvoke: (
-        channel: string,
-        message: { command: string; payload?: unknown },
-      ) => Promise<unknown>,
-      message: { command: string; payload?: unknown },
-      operationLabel: string,
-    ) => Promise<unknown>;
-  };
+      ipcInvoke: (channel: string, message: { command: string, payload?: unknown }) => Promise<unknown>,
+      message: { command: string, payload?: unknown },
+      operationLabel: string
+    ) => Promise<unknown>
+  }
   if (boundaryModule.invokeReferenceProviderRecoverably === undefined) {
     return {
       moduleAvailable: false,
-      moduleFailure:
-        "recoverable-reference-errors.ts exists but exports no invokeReferenceProviderRecoverably",
-      outcome: null,
-    };
+      moduleFailure: 'recoverable-reference-errors.ts exists but exports no invokeReferenceProviderRecoverably',
+      outcome: null
+    }
   }
 
   // The injected ipc seam rejects — the real failure shape of
   // ipcRenderer.invoke when the main-process handler is missing or throws.
-  const rejectingSeam = async (
-    _channel: string,
-    message: { command: string },
-  ): Promise<unknown> => {
-    throw new Error(
-      `No handler registered for 'reference-provider' (probe-forced failure of '${message.command}')`,
-    );
-  };
+  const rejectingSeam = async (_channel: string, message: { command: string }): Promise<unknown> => {
+    throw new Error(`No handler registered for 'reference-provider' (probe-forced failure of '${message.command}')`)
+  }
 
   const outcome = await boundaryModule.invokeReferenceProviderRecoverably(
     rejectingSeam,
-    { command: "get-snapshot" },
-    "Loading workspace references",
-  );
+    { command: 'get-snapshot' },
+    'Loading workspace references'
+  )
 
-  return { moduleAvailable: true, moduleFailure: null, outcome };
-};
+  return { moduleAvailable: true, moduleFailure: null, outcome }
+}
 
 window.errorSurfaceProbeToastState = (): ToastState[] => {
-  return Array.from(
-    document.querySelectorAll<HTMLElement>("#zettlr-toast-container .zettlr-toast"),
-  ).map((toast) => ({
-    text: toast.textContent ?? "",
-    isError: toast.classList.contains("error"),
-    dismissLabel: toast.querySelector("[aria-label]")?.getAttribute("aria-label") ?? null,
-  }));
-};
+  return Array.from(document.querySelectorAll<HTMLElement>('#zettlr-toast-container .zettlr-toast')).map(toast => ({
+    text: toast.textContent ?? '',
+    isError: toast.classList.contains('error'),
+    dismissLabel: toast.querySelector('[aria-label]')?.getAttribute('aria-label') ?? null
+  }))
+}
 
 window.errorSurfaceProbeDismiss = (): boolean => {
-  const toast = document.querySelector<HTMLElement>("#zettlr-toast-container .zettlr-toast");
+  const toast = document.querySelector<HTMLElement>('#zettlr-toast-container .zettlr-toast')
   if (toast === null) {
-    return false;
+    return false
   }
   // The toast's own contract: it dismisses on click.
-  toast.click();
-  return true;
-};
+  toast.click()
+  return true
+}
 
 window.errorSurfaceProbeFocusEditor = (): void => {
-  view?.focus();
-};
+  view?.focus()
+}
 
 window.errorSurfaceProbeEditorText = (): string => {
-  return view?.state.doc.toString() ?? "";
-};
+  return view?.state.doc.toString() ?? ''
+}
 
-window.errorSurfaceProbeUncaught = (): string[] => uncaught;
+window.errorSurfaceProbeUncaught = (): string[] => uncaught

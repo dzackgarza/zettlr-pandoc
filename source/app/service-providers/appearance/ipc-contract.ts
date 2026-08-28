@@ -15,8 +15,8 @@
  */
 
 export type AppearanceProviderIPCContract = {
-  "get-accent-color": {
-    request: { payload?: undefined };
-    response: { accent: string; contrast: string };
-  };
-};
+  'get-accent-color': {
+    request: { payload?: undefined }
+    response: { accent: string, contrast: string }
+  }
+}

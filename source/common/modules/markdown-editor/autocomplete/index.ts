@@ -15,19 +15,19 @@
  */
 
 import {
-  autocompletion,
   type Completion,
-  type CompletionContext,
-  type CompletionResult,
   type CompletionSource,
-} from "@codemirror/autocomplete";
-import { type StateField } from "@codemirror/state";
-import { atSymbols } from "./at-symbols";
-import { codeBlocks } from "./code-blocks";
-import { files } from "./files";
-import { headings } from "./headings";
-import { snippets } from "./snippets";
-import { tags } from "./tags";
+  type CompletionResult,
+  autocompletion,
+  type CompletionContext
+} from '@codemirror/autocomplete'
+import { type StateField } from '@codemirror/state'
+import { codeBlocks } from './code-blocks'
+import { atSymbols } from './at-symbols'
+import { snippets } from './snippets'
+import { files } from './files'
+import { tags } from './tags'
+import { headings } from './headings'
 
 export interface AutocompletePlugin {
   /**
@@ -40,7 +40,7 @@ export interface AutocompletePlugin {
    *                                    autocompletion does not apply. Otherwise
    *                                    returns a number -> the start pos.
    */
-  applies: (ctx: CompletionContext) => number | false;
+  applies: (ctx: CompletionContext) => number|false
   /**
    * This function is called while an autocompletion is active. It is provided
    * the current query the user has typed and should return a filtered list of
@@ -52,16 +52,16 @@ export interface AutocompletePlugin {
    *
    * @return  {Completion[]}              The list of available completions
    */
-  entries: (ctx: CompletionContext, query: string) => Completion[];
-  fields?: Array<StateField<any>>;
+  entries: (ctx: CompletionContext, query: string) => Completion[]
+  fields?: Array<StateField<any>>
 }
 
 const forbiddenTokens = [
-  "YAMLFrontmatter",
-  "YAMLFrontmatterStart",
-  "YAMLFrontmatterEnd",
-  "MathEquation",
-];
+  'YAMLFrontmatter',
+  'YAMLFrontmatterStart',
+  'YAMLFrontmatterEnd',
+  'MathEquation'
+]
 
 /**
  * Builds the completion source over an ordered provider list: the shared
@@ -74,62 +74,52 @@ const forbiddenTokens = [
  *
  * @return  {CompletionSource}                 The dispatching source
  */
-export function createAutocompleteSource(providers: AutocompletePlugin[]): CompletionSource {
-  return function (ctx): CompletionResult | null {
+export function createAutocompleteSource (providers: AutocompletePlugin[]): CompletionSource {
+  return function (ctx): CompletionResult|null {
     // This function is called for every keystroke and shall determine whether
     // to actually start the autocomplete.
 
     // With this function we check whether we are currently within "forbidden"
     // tokens (i.e. codeblocks, YAML stuff, etc.)
     if (ctx.tokenBefore(forbiddenTokens) !== null) {
-      return null;
+      return null
     }
 
-    let plugin: AutocompletePlugin | undefined;
-    let startpos = ctx.pos;
+    let plugin: AutocompletePlugin|undefined
+    let startpos = ctx.pos
 
     for (const p of providers) {
-      const res = p.applies(ctx);
+      const res = p.applies(ctx)
       if (res !== false) {
-        plugin = p;
-        startpos = res;
-        break;
+        plugin = p
+        startpos = res
+        break
       }
     }
 
     if (plugin !== undefined) {
-      const initialOptions = plugin.entries(
-        ctx,
-        ctx.state.doc.sliceString(startpos, ctx.pos).toLowerCase(),
-      );
+      const initialOptions = plugin.entries(ctx, ctx.state.doc.sliceString(startpos, ctx.pos).toLowerCase())
       return {
         from: startpos,
         options: initialOptions,
         filter: false,
         update: (current, from, to, ctx) => {
-          const query = ctx.state.doc.sliceString(from, to).toLowerCase();
-          current.options = plugin!.entries(ctx, query);
-          return current;
-        },
-      };
+          const query = ctx.state.doc.sliceString(from, to).toLowerCase()
+          current.options = plugin!.entries(ctx, query)
+          return current
+        }
+      }
     }
 
     // Return null to indicate that autocomplete does not apply.
-    return null;
-  };
+    return null
+  }
 }
 
 // NOTE: Headings has to be checked before tags
-export const AUTOCOMPLETE_PROVIDERS: AutocompletePlugin[] = [
-  codeBlocks,
-  atSymbols,
-  files,
-  headings,
-  tags,
-  snippets,
-];
+export const AUTOCOMPLETE_PROVIDERS: AutocompletePlugin[] = [ codeBlocks, atSymbols, files, headings, tags, snippets ]
 
-const autocompleteSource: CompletionSource = createAutocompleteSource(AUTOCOMPLETE_PROVIDERS);
+const autocompleteSource: CompletionSource = createAutocompleteSource(AUTOCOMPLETE_PROVIDERS)
 
 export const autocomplete = [
   autocompletion({
@@ -142,7 +132,7 @@ export const autocomplete = [
     // avoid a specific decision by CodeMirror to remap the autocomplete toggle
     // on macOS to Alt+\ which, on an Italian keyboard layout, will fail to
     // produce backticks. (See issue #5517)
-    defaultKeymap: false,
+    defaultKeymap: false
   }),
   // Make sure any configuration fields will be inserted into the state so that
   // the plugins can look them up and function correctly. These fields are not
@@ -154,13 +144,13 @@ export const autocomplete = [
   atSymbols.fields ?? [],
   files.fields ?? [],
   tags.fields ?? [],
-  snippets.fields ?? [],
-];
+  snippets.fields ?? []
+]
 
-export { referencesUpdate } from "./at-symbols";
 // Lastly, also re-export the effects which the main class (MarkdownEditor)
 // requires in order to provide data for these fields.
-export { citekeyUpdate } from "./citations";
-export { filesUpdate } from "./files";
-export { snippetsUpdate } from "./snippets";
-export { tagsUpdate } from "./tags";
+export { citekeyUpdate } from './citations'
+export { referencesUpdate } from './at-symbols'
+export { filesUpdate } from './files'
+export { tagsUpdate } from './tags'
+export { snippetsUpdate } from './snippets'

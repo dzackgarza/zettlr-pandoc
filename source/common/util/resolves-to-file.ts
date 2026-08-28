@@ -19,7 +19,7 @@
  * END HEADER
  */
 
-import { statSync } from "fs";
+import { statSync } from 'fs'
 
 /**
  * True iff `p` resolves to a regular file, following symlinks.
@@ -28,10 +28,10 @@ import { statSync } from "fs";
  *
  * @return {boolean}    True iff the (symlink-resolved) target is a regular file
  */
-export default function resolvesToFile(p: string): boolean {
+export default function resolvesToFile (p: string): boolean {
   try {
-    return statSync(p).isFile();
+    return statSync(p).isFile()
   } catch (err) {
-    return false;
+    return false
   }
 }

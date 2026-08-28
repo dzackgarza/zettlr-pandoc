@@ -12,110 +12,97 @@
  * END HEADER
  */
 
-import type { BlockContext, BlockParser, DelimiterType, InlineParser, Line } from "@lezer/markdown";
+import type { InlineParser, BlockParser, DelimiterType, BlockContext, Line } from '@lezer/markdown'
 
-const FootnoteDelimiter: DelimiterType = {};
+const FootnoteDelimiter: DelimiterType = {}
 
-const validFootnoteRe = /^[^\s\^\[\]]+$/;
+const validFootnoteRe = /^[^\s\^\[\]]+$/
 
-const footnoteRefRe = /^\[\^[^\s\^\[\]]+\]:\s/;
+const footnoteRefRe = /^\[\^[^\s\^\[\]]+\]:\s/
 
 export const footnoteParser: InlineParser = {
-  name: "footnotes",
-  before: "Link", // [^1] will otherwise be detected as a link
-  parse(ctx, next, pos) {
-    if (next !== 91 && next !== 94 && next !== 93) {
-      // 91 === '[', 94 === '^', 93 === ']'
-      return -1;
+  name: 'footnotes',
+  before: 'Link', // [^1] will otherwise be detected as a link
+  parse (ctx, next, pos) {
+    if (next !== 91 && next !== 94 && next !== 93) { // 91 === '[', 94 === '^', 93 === ']'
+      return -1
     }
 
     // Footnote Style: [^identifier]
-    if (next === 91 && ctx.char(pos + 1) === 94) {
-      // 91 === '[', 94 === '^'
-      ctx.addDelimiter(FootnoteDelimiter, pos, pos + 2, true, false);
+    if (next === 91 && ctx.char(pos + 1) === 94) { // 91 === '[', 94 === '^'
+      ctx.addDelimiter(FootnoteDelimiter, pos, pos + 2, true, false)
 
       // We return -1 here so that the link parser can add its delimiters
       // since [^invalid id](my url) is a valid link otherwise.
-      return -1;
+      return -1
     }
 
     // Footnote Style: ^[inline]
     if (next === 94 && ctx.char(pos + 1) === 91) {
-      return ctx.addDelimiter(FootnoteDelimiter, pos, pos + 2, true, false);
+      return ctx.addDelimiter(FootnoteDelimiter, pos, pos + 2, true, false)
     }
 
-    let opening = null;
-    if (next === 93) {
-      // 93 === ']'
-      opening = ctx.findOpeningDelimiter(FootnoteDelimiter);
+    let opening = null
+    if (next === 93) {  // 93 === ']'
+      opening = ctx.findOpeningDelimiter(FootnoteDelimiter)
     }
 
-    if (opening === null) {
-      return -1;
-    }
+    if (opening === null) { return -1}
 
-    const delim = ctx.getDelimiterAt(opening);
-    if (delim === null) {
-      return -1;
-    }
+    const delim = ctx.getDelimiterAt(opening)
+    if (delim === null) { return -1 }
 
     // Inline footnotes can contain markup, however, identifier footnotes cannot.
-    const isInline = ctx.char(delim.from) === 94; // 94 === '^'
+    const isInline = ctx.char(delim.from) === 94 // 94 === '^'
 
     // Finally, check if the identifier is valid
     if (!isInline && !validFootnoteRe.test(ctx.slice(delim.to, pos))) {
-      return -1;
+      return -1
     }
 
-    const children = ctx.takeContent(opening);
+    const children = ctx.takeContent(opening)
 
-    ctx.addDelimiter(FootnoteDelimiter, pos, pos + 1, false, true);
-    return ctx.addElement(
-      ctx.elt("Footnote", delim.from, pos + 1, isInline ? children : undefined),
-    );
-  },
-};
+    ctx.addDelimiter(FootnoteDelimiter, pos, pos + 1, false, true)
+    return ctx.addElement(ctx.elt('Footnote', delim.from, pos + 1, isInline ? children : undefined))
+  }
+}
 
 export const footnoteRefParser: BlockParser = {
-  name: "footnote-refs",
-  parse(ctx, line) {
+  name: 'footnote-refs',
+  parse (ctx, line) {
     // This prevents footnotes from nesting into footnotes
     // and it prevents infinite recursion and OOM errors.
-    if (ctx.depth > 1) {
-      return false;
-    }
+    if (ctx.depth > 1) { return false }
 
-    const match = footnoteRefRe.exec(line.text);
-    if (!match) {
-      return false;
-    }
+    const match = footnoteRefRe.exec(line.text)
+    if (!match) { return false }
 
-    ctx.startComposite("FootnoteRef", 0);
-    ctx.addElement(ctx.elt("FootnoteRefLabel", ctx.lineStart, ctx.lineStart + match[0].length - 1));
+    ctx.startComposite('FootnoteRef', 0)
+    ctx.addElement(ctx.elt('FootnoteRefLabel', ctx.lineStart, ctx.lineStart + match[0].length - 1))
 
-    line.moveBaseColumn(match[0].length);
+    line.moveBaseColumn(match[0].length)
 
-    return null;
+    return null
   },
 
   // This is required since the composite block technically starts a `Paragraph`,
   // so in order for stacked footnotes, we have to be able to interrupt paragraph blocks.
   // But we only need to do this for paragraphs which are direct children of a `FootnoteRef`
-  endLeaf(ctx, line, _leaf) {
-    if (ctx.parentType().name === "FootnoteRef") {
-      return footnoteRefRe.test(line.text);
+  endLeaf (ctx, line, _leaf) {
+    if (ctx.parentType().name === 'FootnoteRef') {
+      return footnoteRefRe.test(line.text)
     }
 
-    return false;
-  },
-};
+    return false
+  }
+}
 
-export function footnoteComposite(ctx: BlockContext, line: Line, _value: number): boolean {
+export function footnoteComposite (ctx: BlockContext, line: Line, _value: number): boolean {
   // If the line is indented, or the line is empty and the next line is indented.
   if (line.indent >= 4 || (/^\s*$/.test(line.text) && /^([ ]{4,}|\t)/.test(ctx.peekLine()))) {
-    line.moveBaseColumn(4);
-    return true;
+    line.moveBaseColumn(4)
+    return true
   }
 
-  return false;
+  return false
 }

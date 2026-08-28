@@ -60,83 +60,82 @@
 </template>
 
 <script setup lang="ts">
-import { DateTime } from "luxon";
-import type { LRTIPCSyncMessage } from "source/app/service-providers/long-running-tasks";
-import type { LRT_JSON } from "source/app/service-providers/long-running-tasks/task";
-import { trans } from "source/common/i18n-renderer";
-import ButtonControl from "source/common/vue/form/elements/ButtonControl.vue";
-import LoadingSpinner from "source/common/vue/LoadingSpinner.vue";
-import PopoverWrapper from "source/common/vue/PopoverWrapper.vue";
-import { useLRTStore } from "source/pinia";
-import { TaskStatus } from "source/pinia/lrt-store";
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { DateTime } from 'luxon'
+import type { LRTIPCSyncMessage } from 'source/app/service-providers/long-running-tasks'
+import type { LRT_JSON } from 'source/app/service-providers/long-running-tasks/task'
+import { trans } from 'source/common/i18n-renderer'
+import LoadingSpinner from 'source/common/vue/LoadingSpinner.vue'
+import PopoverWrapper from 'source/common/vue/PopoverWrapper.vue'
+import ButtonControl from 'source/common/vue/form/elements/ButtonControl.vue'
+import { useLRTStore } from 'source/pinia'
+import { TaskStatus } from 'source/pinia/lrt-store'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
 // Time in ms when running tasks should be updating
-const REFRESH_INTERVAL = 100;
+const REFRESH_INTERVAL = 100
 
-const clearLabel = trans("Clear finished tasks");
+const clearLabel = trans('Clear finished tasks')
 
-const props = defineProps<{ target: HTMLElement }>();
-const LRTStore = useLRTStore();
+const props = defineProps<{ target: HTMLElement }>()
+const LRTStore = useLRTStore()
 
 const sortedTasks = computed<LRT_JSON[]>(() => {
   return LRTStore.tasks.toSorted((a, b) => {
     // First sorting: after status
-    const aOngoing = a.status === TaskStatus.ongoing ? 1 : 0;
-    const bOngoing = b.status === TaskStatus.ongoing ? 1 : 0;
-    const cmpResult = aOngoing - bOngoing;
+    const aOngoing = a.status === TaskStatus.ongoing ? 1 : 0
+    const bOngoing = b.status === TaskStatus.ongoing ? 1 : 0
+    const cmpResult = aOngoing - bOngoing
 
     if (cmpResult !== 0) {
-      return cmpResult;
+      return cmpResult
     }
 
     // Next sorting: time
-    const aST = DateTime.fromISO(a.startTime);
-    const bST = DateTime.fromISO(b.startTime);
+    const aST = DateTime.fromISO(a.startTime)
+    const bST = DateTime.fromISO(b.startTime)
 
-    return aST.diff(bST).milliseconds;
-  });
-});
+    return aST.diff(bST).milliseconds
+  })
+})
 
 const hasRunningTasks = computed(() => {
-  return LRTStore.tasks.some((t) => t.status === TaskStatus.ongoing);
-});
+  return LRTStore.tasks.some(t => t.status === TaskStatus.ongoing)
+})
 
 const hasFinishedTasks = computed(() => {
-  return LRTStore.tasks.some((t) => t.status !== TaskStatus.ongoing);
-});
+  return LRTStore.tasks.some(t => t.status !== TaskStatus.ongoing)
+})
 
-const currentTime = ref(DateTime.now().toISO());
+const currentTime = ref(DateTime.now().toISO())
 
-let intervalTimer: NodeJS.Timeout | undefined;
+let intervalTimer: NodeJS.Timeout|undefined
 
 onMounted(() => {
   intervalTimer = setInterval(() => {
     if (hasRunningTasks.value) {
-      currentTime.value = DateTime.now().toISO();
+      currentTime.value = DateTime.now().toISO()
     }
-  }, REFRESH_INTERVAL);
-});
+  }, REFRESH_INTERVAL)
+})
 
 onBeforeUnmount(() => {
-  clearInterval(intervalTimer);
-});
+  clearInterval(intervalTimer)
+})
 
-function clearFinishedTasks() {
-  const finishedTasks = LRTStore.tasks.filter((t) => t.status !== TaskStatus.ongoing);
+function clearFinishedTasks () {
+  const finishedTasks = LRTStore.tasks.filter(t => t.status !== TaskStatus.ongoing)
 
   for (const task of finishedTasks) {
-    LRTStore.deleteTask(task.id);
+    LRTStore.deleteTask(task.id)
   }
 }
 
-function interactTask(id: string) {
-  ipcRenderer.send("lrt-provider", {
-    command: "interact-task",
-    payload: { id },
-  } as LRTIPCSyncMessage);
+function interactTask (id: string) {
+  ipcRenderer.send('lrt-provider', {
+    command: 'interact-task', payload: { id }
+  } as LRTIPCSyncMessage)
 }
 
 /**
@@ -148,38 +147,39 @@ function interactTask(id: string) {
  *
  * @return  {string}             The duration as a string
  */
-function getDuration(start: string, end: string | undefined, highPrec = false): string {
-  const st = DateTime.fromISO(start);
-  const et = end !== undefined ? DateTime.fromISO(end) : DateTime.now();
+function getDuration (start: string, end: string|undefined, highPrec = false): string {
+  const st = DateTime.fromISO(start)
+  const et = end !== undefined ? DateTime.fromISO(end) : DateTime.now()
 
-  const debug = et.diff(st, ["minutes", "seconds"]);
+  const debug = et.diff(st, [ 'minutes', 'seconds' ])
   if (!debug.isValid) {
-    console.warn(debug.invalidReason, debug.invalidExplanation);
-    console.log({ start, st: st.toISO(), et: et.toISO() });
+    console.warn(debug.invalidReason, debug.invalidExplanation)
+    console.log({ start, st: st.toISO(), et: et.toISO() })
   }
 
   if (highPrec) {
     return et
-      .diff(st, ["minutes", "seconds"]) // Calculate the difference
-      .toHuman({ unitDisplay: "short" }); // Convert to string
+      .diff(st, [ 'minutes', 'seconds' ]) // Calculate the difference
+      .toHuman({ unitDisplay: 'short' }) // Convert to string
   } else {
     return et
-      .diff(st, ["minutes", "seconds", "milliseconds"]) // Calculate the difference
+      .diff(st, [ 'minutes', 'seconds', 'milliseconds' ]) // Calculate the difference
       .set({ milliseconds: 0 }) // Avoid fractional seconds if asked
       .rescale() // Ensure the duration uses the most compact format (seconds, minutes, or hours)
-      .toHuman({ unitDisplay: "short" }); // Convert to string
+      .toHuman({ unitDisplay: 'short' }) // Convert to string
   }
 }
 
-function formatPercentage(perc: number, roundTo = 2): string {
+function formatPercentage (perc: number, roundTo = 2): string {
   // First, percentages in the LRT provider are always fractions.
-  perc *= 100;
+  perc *= 100
 
-  const factor = 10 ** roundTo;
-  perc = Math.round(perc * factor) / factor;
+  const factor = 10 ** roundTo
+  perc = Math.round(perc * factor) / factor
 
-  return `${perc}%`;
+  return `${perc}%`
 }
+
 </script>
 
 

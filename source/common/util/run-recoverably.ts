@@ -27,11 +27,13 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-renderer";
-import showToast from "@common/util/show-toast";
+import { trans } from '@common/i18n-renderer'
+import showToast from '@common/util/show-toast'
 
 /** The typed outcome of a recoverable operation. */
-export type RecoverableOutcome<T> = { status: "ok"; value: T } | { status: "failed" };
+export type RecoverableOutcome<T> =
+  | { status: 'ok', value: T }
+  | { status: 'failed' }
 
 /**
  * Runs a recoverable operation, surfacing any rejection as one closable
@@ -45,19 +47,19 @@ export type RecoverableOutcome<T> = { status: "ok"; value: T } | { status: "fail
  *
  * @return  {Promise<RecoverableOutcome<T>>}    The typed outcome
  */
-export async function runRecoverably<T>(
+export async function runRecoverably<T> (
   operation: () => Promise<T>,
-  operationLabel: string,
+  operationLabel: string
 ): Promise<RecoverableOutcome<T>> {
   return await operation()
-    .then((value): RecoverableOutcome<T> => ({ status: "ok", value }))
+    .then((value): RecoverableOutcome<T> => ({ status: 'ok', value }))
     .catch((err): RecoverableOutcome<T> => {
       // Exactly one closable error toast naming the failed operation, plus
       // the typed outcome. The rejection never escapes; the console line
       // keeps the raw diagnostic available.
-      console.error(`Reference operation failed (${operationLabel})`, err);
-      const detail = err instanceof Error ? err.message : String(err);
-      showToast(trans("%s failed: %s", operationLabel, detail), "error");
-      return { status: "failed" };
-    });
+      console.error(`Reference operation failed (${operationLabel})`, err)
+      const detail = err instanceof Error ? err.message : String(err)
+      showToast(trans('%s failed: %s', operationLabel, detail), 'error')
+      return { status: 'failed' }
+    })
 }

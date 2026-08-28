@@ -11,8 +11,8 @@
  * END HEADER
  */
 
-import { DateTime } from "luxon";
-import { trans } from "../i18n-renderer";
+import { DateTime } from 'luxon'
+import { trans } from '../i18n-renderer'
 
 /**
  * Formats a date based on the given locale.
@@ -23,27 +23,24 @@ import { trans } from "../i18n-renderer";
  *
  * @return  {string}                         The formatted date string
  */
-export default function formatDate(
-  dateObj: Date | number,
-  locale: string,
-  relative: boolean = false,
-): string {
-  const isDate = dateObj instanceof Date;
-  const dt = isDate ? DateTime.fromJSDate(dateObj) : DateTime.fromMillis(dateObj);
+export default function formatDate (dateObj: Date|number, locale: string, relative: boolean = false): string {
+  const isDate = dateObj instanceof Date
+  const dt = (isDate) ? DateTime.fromJSDate(dateObj) : DateTime.fromMillis(dateObj)
   if (relative) {
     // Check if there is at least a minute difference between the datetime object
     // and now. If not, simply output "just now", else the actual relative difference.
-    if (dt.diff(DateTime.now(), "minutes").toObject().minutes! * -1 < 1) {
-      return trans("just now");
+    if (dt.diff(DateTime.now(), 'minutes').toObject().minutes! * -1 < 1) {
+      return trans('just now')
     } else {
-      return (
-        dt.toRelative({
-          style: "short", // Can be short, narrow, or long
-          locale,
-        }) ?? ""
-      );
+      return dt.toRelative({
+        style: 'short', // Can be short, narrow, or long
+        locale
+      }) ?? ''
     }
   } else {
-    return dt.toLocaleString({ dateStyle: "long", timeStyle: "short" }, { locale });
+    return dt.toLocaleString(
+      { dateStyle: 'long', timeStyle: 'short' },
+      { locale }
+    )
   }
 }

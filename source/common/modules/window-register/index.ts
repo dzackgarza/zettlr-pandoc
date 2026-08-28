@@ -15,32 +15,32 @@
  * END HEADER
  */
 
-import { loadData } from "@common/i18n-renderer";
-import type { MathJaxMacro } from "@common/util/mathjax-config";
-import { initializeMathJax } from "@common/util/mathtex-to-html";
-import loadIcons from "./load-icons";
-import registerDefaultContextMenu from "./register-default-context";
-import registerThemes from "./register-themes";
+import registerThemes from './register-themes'
+import registerDefaultContextMenu from './register-default-context'
+import loadIcons from './load-icons'
+import { loadData } from '@common/i18n-renderer'
+import { initializeMathJax } from '@common/util/mathtex-to-html'
+import type { MathJaxMacro } from '@common/util/mathjax-config'
 
 /**
  * This function is the renderer's counterpart to the main process's window
  * configuration and registers stuff like custom window controls and the menu
  * bar (on Windows and Linux, if native is off)
  */
-export default async function windowRegister(): Promise<void> {
+export default async function windowRegister (): Promise<void> {
   // Immediately load the translations
-  await loadData();
+  await loadData()
   // Load the clarity icons
-  await loadIcons();
+  await loadIcons()
 
   // Fetch the user's MathJax macros from the main process (the renderer is
   // sandboxed and cannot read the config file itself), then preload the font
   // data before synchronous document conversion begins.
-  const macros = (await window.ipc.invoke("mathjax-macros")) as Record<string, MathJaxMacro>;
-  await initializeMathJax(macros);
+  const macros = await window.ipc.invoke('mathjax-macros') as Record<string, MathJaxMacro>
+  await initializeMathJax(macros)
 
   // ... the theming functionality ...
-  registerThemes();
+  registerThemes()
   // ... the default context menus
-  registerDefaultContextMenu();
+  registerDefaultContextMenu()
 }

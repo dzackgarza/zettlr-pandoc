@@ -13,7 +13,7 @@
  */
 
 // Helpers to determine what files from argv we can open
-import { hasMdOrCodeExt } from "@common/util/file-extention-checks";
+import { hasMdOrCodeExt } from '@common/util/file-extention-checks'
 
 /**
  * Extracts files from argv.
@@ -22,13 +22,13 @@ import { hasMdOrCodeExt } from "@common/util/file-extention-checks";
  *
  * @returns {string[]}                       The filtered out files
  */
-export default function extractFilesFromArgv(argv = process.argv): string[] {
+export default function extractFilesFromArgv (argv = process.argv): string[] {
   if (!Array.isArray(argv)) {
-    return [];
+    return []
   }
 
   return argv.filter((arg) => {
     // Filter out CLI arguments, non-files, and non-supported files
-    return !arg.startsWith("--") && hasMdOrCodeExt(arg);
-  });
+    return !arg.startsWith('--') && hasMdOrCodeExt(arg)
+  })
 }

@@ -13,15 +13,15 @@
  * END HEADER
  */
 
-import { getSystemColors } from "@common/util/get-system-colors";
-import type ConfigProvider from "@providers/config";
-import { type BrowserWindowConstructorOptions, nativeTheme } from "electron";
-import path from "path";
+import type ConfigProvider from '@providers/config'
+import { type BrowserWindowConstructorOptions, nativeTheme } from 'electron'
+import path from 'path'
+import { getSystemColors } from '@common/util/get-system-colors'
 
 // This variable controls the height (in px) of the custom window controls on
 // Windows. This will be picked up by the titlebar and menubar via CSS
 // environment variables to match this size.
-const CUSTOM_WINDOW_CONTROLS_HEIGHT = 35;
+const CUSTOM_WINDOW_CONTROLS_HEIGHT = 35
 
 /**
  * This function modifies the provided window configuration in-place to match
@@ -31,49 +31,44 @@ const CUSTOM_WINDOW_CONTROLS_HEIGHT = 35;
  * @param  {BrowserWindowConstructorOptions}  winConf        The configuration
  * @param  {boolean}                          [modal=false]  If set to true, will assign a modal chrome
  */
-export default function setWindowChrome(
-  config: ConfigProvider,
-  winConf: BrowserWindowConstructorOptions,
-  modal: boolean = false,
-): void {
-  const { nativeAppearance, vibrancy } = config.get().window;
+export default function setWindowChrome (config: ConfigProvider, winConf: BrowserWindowConstructorOptions, modal: boolean = false): void {
+  const { nativeAppearance, vibrancy } = config.get().window
 
-  const macOSVibrancyEnabled =
-    process.platform === "darwin" && vibrancy && !nativeTheme.prefersReducedTransparency;
+  const macOSVibrancyEnabled = process.platform === 'darwin' && vibrancy && !nativeTheme.prefersReducedTransparency
 
   if (!macOSVibrancyEnabled || modal) {
     // It is recommended to set a background color for the windows, however, on
     // macOS we can only do so if vibrancy is off, because that would render nil
     // the vibrancy.
-    winConf.backgroundColor = config.get().darkMode ? "#333" : "#fff";
+    winConf.backgroundColor = config.get().darkMode ? '#333' : '#fff'
   }
 
-  if (process.platform === "darwin" && !modal) {
+  if (process.platform === 'darwin' && !modal) {
     // On macOS, we want slightly inset traffic lights without any other window
     // chrome. Additionally, we'll be setting the window's vibrancy so that the
     // app looks even more native.
-    winConf.titleBarStyle = "hiddenInset";
+    winConf.titleBarStyle = 'hiddenInset'
     if (vibrancy && !nativeTheme.prefersReducedTransparency) {
       // See https://developer.apple.com/design/human-interface-guidelines/macos/visual-design/translucency/
-      winConf.vibrancy = "under-window";
-      winConf.visualEffectState = "followWindow";
+      winConf.vibrancy = 'under-window'
+      winConf.visualEffectState = 'followWindow'
     }
-  } else if ((process.platform === "linux" && !nativeAppearance) || process.platform === "win32") {
+  } else if ((process.platform === 'linux' && !nativeAppearance) || process.platform === 'win32') {
     // On Windows, we need a frameless window. On Linux, only if the
     // shouldUseNativeAppearance flag is set to false.
-    winConf.frame = false;
-    const { accent, contrast } = getSystemColors();
-    winConf.titleBarStyle = "hidden";
+    winConf.frame = false
+    const { accent, contrast } = getSystemColors()
+    winConf.titleBarStyle = 'hidden'
     winConf.titleBarOverlay = {
       color: `#${accent}`,
       symbolColor: `#${contrast}`,
-      height: CUSTOM_WINDOW_CONTROLS_HEIGHT,
-    };
-    winConf.frame = false;
+      height: CUSTOM_WINDOW_CONTROLS_HEIGHT
+    }
+    winConf.frame = false
   } // Else: We have Linux with native appearance.
 
   // Application icon for Linux. Cannot be embedded in the executable.
-  if (process.platform === "linux") {
-    winConf.icon = path.join(__dirname, "assets/icons/png/128x128.png");
+  if (process.platform === 'linux') {
+    winConf.icon = path.join(__dirname, 'assets/icons/png/128x128.png')
   }
 }

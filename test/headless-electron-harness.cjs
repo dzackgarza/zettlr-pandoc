@@ -22,10 +22,10 @@
  * END HEADER
  */
 
-const Module = require("module");
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
+const Module = require('module')
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
 
 // Per-process, because this path is a real app-data directory: the harness
 // writes documents.yaml here and the providers read it back on boot. A fixed
@@ -34,10 +34,10 @@ const path = require("path");
 // on a single line" — a failure that belongs to neither run and reproduces
 // from leftover state alone. The pid keys it to the process that owns it.
 const userData = fs.mkdtempSync(
-  path.join(os.tmpdir(), `zettlr-pandoc-headless-test-${process.pid}-`),
-);
-fs.mkdirSync(path.join(userData, "logs"), { recursive: true });
-fs.mkdirSync(path.join(userData, "lang"), { recursive: true });
+  path.join(os.tmpdir(), `zettlr-pandoc-headless-test-${process.pid}-`)
+)
+fs.mkdirSync(path.join(userData, 'logs'), { recursive: true })
+fs.mkdirSync(path.join(userData, 'lang'), { recursive: true })
 
 /**
  * Records every ipcMain.handle registration made by main-process modules
@@ -48,30 +48,26 @@ fs.mkdirSync(path.join(userData, "lang"), { recursive: true });
  *
  * @type {Map<string, Function>}
  */
-const ipcMainHandlers = new Map();
-const sentMessages = new WeakMap();
+const ipcMainHandlers = new Map()
+const sentMessages = new WeakMap()
 
 class HeadlessBrowserWindow {
-  constructor() {
-    const messages = [];
-    sentMessages.set(this, messages);
+  constructor () {
+    const messages = []
+    sentMessages.set(this, messages)
     this.webContents = {
-      send(...args) {
-        messages.push(args);
-      },
-    };
+      send (...args) { messages.push(args) }
+    }
   }
 
   // Real Electron semantics for a process with no open windows: the list is
   // empty, so broadcastIPCMessage() sends to nobody.
-  static getAllWindows() {
-    return [];
-  }
+  static getAllWindows () { return [] }
 }
 
 class HeadlessMenuItem {
-  constructor(options) {
-    Object.assign(this, options);
+  constructor (options) {
+    Object.assign(this, options)
   }
 }
 
@@ -81,50 +77,44 @@ class HeadlessMenuItem {
  * @param {HeadlessBrowserWindow} window
  * @returns {unknown[][]}
  */
-function sentMessagesFor(window) {
-  const messages = sentMessages.get(window);
+function sentMessagesFor (window) {
+  const messages = sentMessages.get(window)
   if (messages === undefined) {
-    throw new Error("Window was not created by the headless Electron harness");
+    throw new Error('Window was not created by the headless Electron harness')
   }
-  return messages;
+  return messages
 }
 
-const orig = Module._load;
+const orig = Module._load
 Module._load = function (request, ...rest) {
-  if (request === "electron") {
+  if (request === 'electron') {
     return {
       app: {
-        getPath: (key) => (key === "userData" ? userData : os.tmpdir()),
+        getPath: (key) => key === 'userData' ? userData : os.tmpdir(),
         isPackaged: false,
-        getName: () => "Zettlr-Pandoc",
-        getVersion: () => "0.0.0-headless-test",
-        getLocale: () => "en-US",
-        on() {},
-        whenReady: async () => {},
+        getName: () => 'Zettlr-Pandoc',
+        getVersion: () => '0.0.0-headless-test',
+        getLocale: () => 'en-US',
+        on () {},
+        whenReady: async () => {}
       },
       ipcMain: {
-        handle(channel, listener) {
-          ipcMainHandlers.set(channel, listener);
-        },
-        on() {},
-        removeHandler(channel) {
-          ipcMainHandlers.delete(channel);
-        },
+        handle (channel, listener) { ipcMainHandlers.set(channel, listener) },
+        on () {},
+        removeHandler (channel) { ipcMainHandlers.delete(channel) }
       },
-      dialog: { showErrorBox() {} },
-      shell: { openPath: async () => "" },
+      dialog: { showErrorBox () {} },
+      shell: { openPath: async () => '' },
       nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
-      Notification: class {
-        show() {}
-      },
+      Notification: class { show () {} },
       BrowserWindow: HeadlessBrowserWindow,
-      MenuItem: HeadlessMenuItem,
-    };
+      MenuItem: HeadlessMenuItem
+    }
   }
-  return orig.call(this, request, ...rest);
-};
+  return orig.call(this, request, ...rest)
+}
 
 // userData is exported because it is now per-process: a spec that needs the
 // directory must ask the harness that created it rather than recomputing the
 // path, which is what coupled the two to a fixed location in the first place.
-module.exports = { ipcMainHandlers, sentMessagesFor, userData };
+module.exports = { ipcMainHandlers, sentMessagesFor, userData }

@@ -11,7 +11,7 @@
  * END HEADER
  */
 
-const pdfRE = /\.pdf$/i;
+const pdfRE = /\.pdf$/i
 
 /**
  * Sorting function that sorts PDF files to be at the top
@@ -21,17 +21,17 @@ const pdfRE = /\.pdf$/i;
  *
  * @return {number}   A number for consumption by Array.sort()
  */
-export default function sortByPDF(a: string, b: string): number {
-  let isAPDF = pdfRE.test(a);
-  let isBPDF = pdfRE.test(b);
+export default function sortByPDF (a: string, b: string): number {
+  let isAPDF = pdfRE.test(a)
+  let isBPDF = pdfRE.test(b)
 
   if (isAPDF && isBPDF) {
-    return 0;
+    return 0
   } else if (isAPDF) {
-    return -1;
+    return -1
   } else if (isBPDF) {
-    return 1;
+    return 1
   }
 
-  return 0;
+  return 0
 }

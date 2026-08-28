@@ -13,19 +13,11 @@
  * END HEADER
  */
 
-import markdownParser, {
-  type MarkdownParserConfig,
-} from "@common/modules/markdown-editor/parser/markdown-parser";
-import { type Tree } from "@lezer/common";
-import {
-  type ASTNode,
-  type ASTNodeType,
-  type Document,
-  parseNode,
-  type TextNode,
-} from "./markdown-ast";
+import markdownParser, { type MarkdownParserConfig } from '@common/modules/markdown-editor/parser/markdown-parser'
+import { parseNode, type ASTNode, type ASTNodeType, type TextNode, type Document } from './markdown-ast'
+import { type Tree } from '@lezer/common'
 
-export { md2html } from "./markdown-to-html";
+export { md2html } from './markdown-to-html'
 
 /**
  * Converts a Markdown string into an AST, utilizing the CodeMirror Markdown
@@ -43,17 +35,13 @@ export { md2html } from "./markdown-to-html";
  *
  * @return  {ASTNode}            The root node of the AST
  */
-export function markdownToAST(
-  markdown: string,
-  tree: Tree | null = null,
-  parserConfig?: MarkdownParserConfig,
-): Document | ASTNode {
+export function markdownToAST (markdown: string, tree: Tree|null = null, parserConfig?: MarkdownParserConfig): Document|ASTNode {
   if (tree === null) {
-    const { parser } = markdownParser(parserConfig).language;
-    tree = parser.parse(markdown);
+    const { parser } = markdownParser(parserConfig).language
+    tree = parser.parse(markdown)
   }
-  const ast = parseNode(tree.topNode, markdown);
-  return ast;
+  const ast = parseNode(tree.topNode, markdown)
+  return ast
 }
 
 /**
@@ -68,62 +56,56 @@ export function markdownToAST(
  *
  * @return  {ASTNode[]}              An array of all found nodes
  */
-export function extractASTNodes(
-  ast: ASTNode,
-  nodeType: ASTNodeType,
-  filter?: (node: ASTNode) => boolean,
-): ASTNode[] {
-  if (ast.type === "Document") {
-    return ast.children.flatMap((child) => extractASTNodes(child, nodeType, filter));
+export function extractASTNodes (ast: ASTNode, nodeType: ASTNodeType, filter?: (node: ASTNode) => boolean): ASTNode[] {
+  if (ast.type === 'Document') {
+    return ast.children.flatMap(child => extractASTNodes(child, nodeType, filter))
   }
 
   if (filter !== undefined && !filter(ast)) {
-    return [];
+    return []
   }
 
-  let returnNodes: ASTNode[] = [];
+  let returnNodes: ASTNode[] = []
 
   switch (ast.type) {
     case nodeType: {
-      returnNodes.push(ast);
-      break;
+      returnNodes.push(ast)
+      break
     }
 
-    case "Generic":
-    case "Heading":
-    case "Emphasis":
-    case "FootnoteRef":
-    case "Highlight":
-    case "ListItem":
-    case "PandocSpan":
-    case "PandocDiv": {
+    case 'Generic':
+    case 'Heading':
+    case 'Emphasis':
+    case 'FootnoteRef':
+    case 'Highlight':
+    case 'ListItem':
+    case 'PandocSpan':
+    case 'PandocDiv': {
       for (const child of ast.children) {
-        returnNodes = returnNodes.concat(extractASTNodes(child, nodeType, filter));
+        returnNodes = returnNodes.concat(extractASTNodes(child, nodeType, filter))
       }
-      break;
+      break
     }
 
-    case "OrderedList":
-    case "BulletList": {
+    case 'OrderedList':
+    case 'BulletList': {
       for (const item of ast.items) {
-        returnNodes = returnNodes.concat(extractASTNodes(item, nodeType, filter));
+        returnNodes = returnNodes.concat(extractASTNodes(item, nodeType, filter))
       }
-      break;
+      break
     }
 
-    case "Table": {
+    case 'Table': {
       for (const row of ast.rows) {
         for (const cell of row.cells) {
-          returnNodes = returnNodes.concat(
-            cell.children.flatMap((c) => extractASTNodes(c, nodeType, filter)),
-          );
+          returnNodes = returnNodes.concat(cell.children.flatMap(c => extractASTNodes(c, nodeType, filter)))
         }
       }
-      break;
+      break
     }
   }
 
-  return returnNodes;
+  return returnNodes
 }
 
 /**
@@ -137,71 +119,71 @@ export function extractASTNodes(
  *
  * @return  {TextNode[]}          A list of all text nodes
  */
-export function extractTextnodes(ast: ASTNode, filter?: (node: ASTNode) => boolean): TextNode[] {
-  if (ast.type === "Document") {
-    return ast.children.flatMap((child) => extractTextnodes(child, filter));
+export function extractTextnodes (ast: ASTNode, filter?: (node: ASTNode) => boolean): TextNode[] {
+  if (ast.type === 'Document') {
+    return ast.children.flatMap(child => extractTextnodes(child, filter))
   }
 
   if (filter !== undefined && !filter(ast)) {
-    return [];
+    return []
   }
 
-  let textNodes: TextNode[] = [];
+  let textNodes: TextNode[] = []
 
   switch (ast.type) {
-    case "Text": {
-      textNodes.push(ast);
-      break;
+    case 'Text': {
+      textNodes.push(ast)
+      break
     }
 
-    case "Generic":
-    case "Heading":
-    case "Emphasis":
-    case "FootnoteRef":
-    case "Highlight":
-    case "ListItem":
-    case "PandocSpan":
-    case "PandocDiv": {
+    case 'Generic':
+    case 'Heading':
+    case 'Emphasis':
+    case 'FootnoteRef':
+    case 'Highlight':
+    case 'ListItem':
+    case 'PandocSpan':
+    case 'PandocDiv': {
       for (const child of ast.children) {
-        textNodes = textNodes.concat(extractTextnodes(child, filter));
+        textNodes = textNodes.concat(extractTextnodes(child, filter))
       }
-      break;
+      break
     }
 
-    case "Image":
-    case "Link": {
-      textNodes.push(ast.alt);
+    case 'Image':
+    case 'Link': {
+      textNodes.push(ast.alt)
       if (ast.title !== undefined) {
-        textNodes.push(ast.title);
+        textNodes.push(ast.title)
       }
-      break;
+      break
     }
 
-    case "ZettelkastenLink": {
+    case 'ZettelkastenLink':  {
       if (ast.title !== undefined) {
-        textNodes.push(ast.title);
+        textNodes.push(ast.title)
       }
-      break;
+      break
     }
 
-    case "OrderedList":
-    case "BulletList": {
+    case 'OrderedList':
+    case 'BulletList': {
       for (const item of ast.items) {
-        textNodes = textNodes.concat(extractTextnodes(item, filter));
+        textNodes = textNodes.concat(extractTextnodes(item, filter))
       }
-      break;
+      break
     }
 
-    case "Table": {
+    case 'Table': {
       for (const row of ast.rows) {
         for (const cell of row.cells) {
-          const nodes = cell.children.flatMap((c) => extractTextnodes(c, filter));
-          textNodes = textNodes.concat(nodes);
+          const nodes = cell.children.flatMap(c => extractTextnodes(c, filter))
+          textNodes = textNodes.concat(nodes)
         }
       }
-      break;
+      break
     }
   }
 
-  return textNodes;
+  return textNodes
 }

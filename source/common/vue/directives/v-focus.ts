@@ -15,28 +15,28 @@
  * END HEADER
  */
 
-import type { Directive } from "vue";
+import type { Directive } from 'vue'
 
 // Proper typing, see https://vuejs.org/guide/typescript/composition-api.html#typing-global-custom-directives
 export const FocusDirective: Directive<HTMLElement, string> = {
-  mounted(el, binding) {
-    el.focus();
+  mounted (el, binding) {
+    el.focus()
 
     // This directive supports modifiers.
 
     // v-focus.select -> selects an input element's contents.
     if (el instanceof HTMLInputElement && binding.modifiers.select === true) {
-      el.select();
+      el.select()
       if (binding.modifiers.filename === true) {
         // v-focus.select.filename -> Only selects up to the last dot.
-        el.setSelectionRange(0, el.value.lastIndexOf("."));
+        el.setSelectionRange(0, el.value.lastIndexOf('.'))
       }
     }
-  },
-};
+  }
+}
 
-declare module "vue" {
+declare module 'vue' {
   export interface GlobalDirectives {
-    vFocus: Directive<HTMLElement, string>;
+    vFocus: Directive<HTMLElement, string>
   }
 }

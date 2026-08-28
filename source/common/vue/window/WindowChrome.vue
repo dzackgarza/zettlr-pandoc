@@ -69,56 +69,56 @@
  * END HEADER
  */
 
-import WindowMenubar from "./WindowMenubar.vue";
-import WindowStatusbar, { type StatusbarControl } from "./WindowStatusbar.vue";
-import WindowTabbar, { type WindowTab } from "./WindowTabbar.vue";
-import WindowTitlebar from "./WindowTitlebar.vue";
-import WindowToolbar, { type ToolbarControl } from "./WindowToolbar.vue";
+import WindowTitlebar from './WindowTitlebar.vue'
+import WindowMenubar from './WindowMenubar.vue'
+import WindowToolbar, { type ToolbarControl } from './WindowToolbar.vue'
+import WindowTabbar, { type WindowTab } from './WindowTabbar.vue'
+import WindowStatusbar, { type StatusbarControl } from './WindowStatusbar.vue'
 
 // Import the correct styles (the platform styles are namespaced)
-import "./assets/generic.css";
-import { useConfigStore, useWindowStateStore } from "source/pinia";
-import { computed, onBeforeMount, ref, toRef, watch } from "vue";
+import './assets/generic.css'
+import { ref, computed, watch, toRef, onBeforeMount } from 'vue'
+import { useConfigStore, useWindowStateStore } from 'source/pinia'
 
-const configStore = useConfigStore();
-const windowStateStore = useWindowStateStore();
+const configStore = useConfigStore()
+const windowStateStore = useWindowStateStore()
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
 const props = defineProps<{
   // Window title
-  title?: string;
+  title?: string
   // Tabbar tabs
-  tabbarTabs?: WindowTab[];
+  tabbarTabs?: WindowTab[]
   // Tabbar ARIA label
-  tabbarLabel?: string;
+  tabbarLabel?: string
   // Toolbar controls
-  toolbarControls?: ToolbarControl[];
+  toolbarControls?: ToolbarControl[]
   // Should show a titlebar if adequate?
-  titlebar?: boolean;
+  titlebar?: boolean
   // Should show a menubar if adequate?
-  menubar?: boolean;
+  menubar?: boolean
   // Show the toolbar?
-  showToolbar?: boolean;
+  showToolbar?: boolean
   // Show labels under the toolbar icons?
-  toolbarLabels?: boolean;
+  toolbarLabels?: boolean
   // Show the tabbar?
-  showTabbar?: boolean;
-  showStatusbar?: boolean;
-  statusbarControls?: StatusbarControl[];
+  showTabbar?: boolean
+  showStatusbar?: boolean
+  statusbarControls?: StatusbarControl[]
   // If this is set to true, the window contents will disable vibrancy for
   // this window on macOS. Doesn't have an effect on any other operating
   // system.
-  disableVibrancy?: boolean;
-}>();
+  disableVibrancy?: boolean
+}>()
 
 const emit = defineEmits<{
-  (e: "toolbar-search", value: string): void;
-  (e: "toolbar-click", value?: string): void;
-  (e: "toolbar-toggle", value: { id?: string; state?: string | boolean }): void;
-  (e: "tab", value: number): void;
-  (e: "statusbar-click", value: any): void; // TODO
-}>();
+  (e: 'toolbar-search', value: string): void
+  (e: 'toolbar-click', value?: string): void
+  (e: 'toolbar-toggle', value: { id?: string, state?: string|boolean }): void
+  (e: 'tab', value: number): void
+  (e: 'statusbar-click', value: any): void // TODO
+}>()
 
 // NOTE: This is solely for debug purposes so that we can adapt any styles for
 // the correct platform. In production, this will ensure "linux" styles are
@@ -126,74 +126,74 @@ const emit = defineEmits<{
 // shown on Windows. Change the value in the Vue dev tools if you want to see
 // how Zettlr looks on other platforms. Please also note that this does not
 // affect the native window chrome.
-const platform = ref<typeof process.platform>(process.platform);
+const platform = ref<typeof process.platform>(process.platform)
 // const platform = ref<typeof process.platform>('win32')
 
-const useNativeAppearance = ref(configStore.config.window.nativeAppearance);
+const useNativeAppearance = ref(configStore.config.window.nativeAppearance)
 
-const isFullscreen = computed(() => windowStateStore.isFullscreen);
+const isFullscreen = computed(() => windowStateStore.isFullscreen)
 
 const showTitlebar = computed<boolean>(() => {
   // Shows a titlebar if one is requested and we are on macOS or on Windows
   // or on Linux with not native appearance.
-  if (platform.value === "linux" && useNativeAppearance.value) {
-    return false;
+  if (platform.value === 'linux' && useNativeAppearance.value) {
+    return false
   }
 
-  return props.titlebar;
-});
+  return props.titlebar
+})
 
 const showMenubar = computed<boolean>(() => {
   // Shows a menubar if one is requested and we are on Windows or on Linux
   // with not native appearance.
-  if (platform.value === "darwin") {
-    return false;
+  if (platform.value === 'darwin') {
+    return false
   }
 
-  if (platform.value === "linux" && useNativeAppearance.value) {
-    return false;
+  if (platform.value === 'linux' && useNativeAppearance.value) {
+    return false
   }
 
-  return props.menubar;
-});
+  return props.menubar
+})
 
 watch(platform, () => {
   // When the platform changes (only happens during debug) make sure to adapt
   // the body class
-  document.body.classList.remove("darwin", "win32", "linux");
-  document.body.classList.add(platform.value);
-});
+  document.body.classList.remove('darwin', 'win32', 'linux')
+  document.body.classList.add(platform.value)
+})
 
-watch(toRef(props, "title"), () => {
-  document.title = props.title ?? "Zettlr";
-});
+watch(toRef(props, 'title'), () => {
+  document.title = props.title ?? 'Zettlr'
+})
 
 watch(isFullscreen, () => {
-  document.body.classList.toggle("fullscreen", isFullscreen.value);
-});
+  document.body.classList.toggle('fullscreen', isFullscreen.value)
+})
 
 onBeforeMount(() => {
-  ipcRenderer.on("config-provider", (event, { command, payload }) => {
-    if (command === "update" && payload === "window.nativeAppearance") {
-      useNativeAppearance.value = configStore.config.window.nativeAppearance;
+  ipcRenderer.on('config-provider', (event, { command, payload }) => {
+    if (command === 'update' && payload === 'window.nativeAppearance') {
+      useNativeAppearance.value = configStore.config.window.nativeAppearance
     }
-  });
+  })
 
   // Apply the body class immediately and also set the title
-  document.body.classList.add(platform.value);
-  document.title = props.title ?? "Zettlr";
-});
+  document.body.classList.add(platform.value)
+  document.title = props.title ?? 'Zettlr'
+})
 
-function handleDoubleClick(origin: "titlebar" | "toolbar"): void {
-  if (origin === "titlebar") {
+function handleDoubleClick (origin: 'titlebar'|'toolbar'): void {
+  if (origin === 'titlebar') {
     // A doubleclick on the titlebar is pretty universally recognised as
     // an action that should maximise the window.
-    ipcRenderer.send("window-controls", { command: "win-maximise" });
-  } else if (origin === "toolbar") {
+    ipcRenderer.send('window-controls', { command: 'win-maximise' })
+  } else if (origin === 'toolbar') {
     // A doubleclick on the toolbar should trigger a maximisation if there
     // is no titlebar on darwin
-    if (platform.value === "darwin" && !props.titlebar) {
-      ipcRenderer.send("window-controls", { command: "win-maximise" });
+    if (platform.value === 'darwin' && !props.titlebar) {
+      ipcRenderer.send('window-controls', { command: 'win-maximise' })
     }
   }
 }

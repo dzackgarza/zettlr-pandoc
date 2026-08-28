@@ -11,7 +11,7 @@
  * END HEADER
  */
 
-import { constants, type PathLike, promises } from "fs";
+import { constants, type PathLike, promises } from 'fs'
 
 /**
  * Check if a path exists.
@@ -19,11 +19,11 @@ import { constants, type PathLike, promises } from "fs";
  * @param   {PathLike}  p  path to be tested
  * @return  {boolean}      true if the path exists otherwise false
  */
-export default async function pathExists(p: PathLike): Promise<boolean> {
+export default async function pathExists (p: PathLike): Promise<boolean> {
   try {
-    await promises.access(p, constants.F_OK);
-    return true;
+    await promises.access(p, constants.F_OK)
+    return true
   } catch (err) {
-    return false;
+    return false
   }
 }

@@ -49,27 +49,27 @@ export interface TabbarControl {
   /**
    * This should match a Clarity icon shape
    */
-  icon?: string;
+  icon?: string
   /**
    * A unique ID for the tab
    */
-  id: string;
+  id: string
   /**
    * The target ID of whichever tab this represents (for a11y purposes)
    */
-  target: string;
+  target: string
   /**
    * A label, may be displayed.
    */
-  label: string;
+  label: string
 }
 
 const props = defineProps<{
-  tabs: TabbarControl[];
-  currentTab: string;
-}>();
+  tabs: TabbarControl[]
+  currentTab: string
+}>()
 
-const emit = defineEmits<(e: "tab", value: string) => void>();
+const emit = defineEmits<(e: 'tab', value: string) => void>()
 </script>
 
 <style lang="less">

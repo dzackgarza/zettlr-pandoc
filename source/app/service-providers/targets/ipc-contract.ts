@@ -14,15 +14,15 @@
  * END HEADER
  */
 
-import type { WritingTarget } from "./index";
+import type { WritingTarget } from './index'
 
 export type TargetProviderIPCContract = {
-  "get-targets": {
-    request: { payload?: undefined };
-    response: WritingTarget[];
-  };
-  "set-writing-target": {
-    request: { payload: WritingTarget };
-    response: void;
-  };
-};
+  'get-targets': {
+    request: { payload?: undefined }
+    response: WritingTarget[]
+  }
+  'set-writing-target': {
+    request: { payload: WritingTarget }
+    response: void
+  }
+}

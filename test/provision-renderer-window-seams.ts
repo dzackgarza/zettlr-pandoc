@@ -17,7 +17,7 @@
  * END HEADER
  */
 
-const w = globalThis as any;
+const w = globalThis as any
 
 if (w.window !== undefined && w.window.ipc === undefined) {
   w.window.ipc = {
@@ -25,14 +25,13 @@ if (w.window !== undefined && w.window.ipc === undefined) {
     invoke: async () => undefined,
     send: () => {},
     sendSync: () => undefined,
-  };
-  w.ipc = w.window.ipc;
+  }
+  w.ipc = w.window.ipc
 }
 
-if (w.window !== undefined && typeof w.window.getCitationCallback !== "function") {
-  w.window.getCitationCallback = () => (citations: Array<{ id: string }>) =>
-    citations.map((citation) => citation.id).join("; ");
-  w.getCitationCallback = w.window.getCitationCallback;
+if (w.window !== undefined && typeof w.window.getCitationCallback !== 'function') {
+  w.window.getCitationCallback = () => (citations: Array<{ id: string }>) => citations.map(citation => citation.id).join('; ')
+  w.getCitationCallback = w.window.getCitationCallback
 }
 
-export {};
+export {}

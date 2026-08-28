@@ -11,7 +11,7 @@
  * END HEADER
  */
 
-import { lstatSync } from "fs";
+import { lstatSync } from 'fs'
 
 /**
  * Checks if a given path is a valid directory
@@ -19,11 +19,11 @@ import { lstatSync } from "fs";
  *
  * @return {boolean}   True, if p is valid and also a directory
  */
-export default function isDir(p: string): boolean {
+export default function isDir (p: string): boolean {
   try {
-    let s = lstatSync(p);
-    return s.isDirectory();
+    let s = lstatSync(p)
+    return s.isDirectory()
   } catch (err) {
-    return false;
+    return false
   }
 }

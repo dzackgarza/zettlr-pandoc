@@ -217,7 +217,8 @@
 </template>
 
 <script setup lang="ts">
-import { trans } from "@common/i18n-renderer";
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { trans } from '@common/i18n-renderer'
 import {
   filterHelpEntries,
   PANDOC_ATTRIBUTE_EXAMPLES,
@@ -227,91 +228,78 @@ import {
   PANDOC_REFERENCE_MODIFIERS,
   THEOREM_DIV_EXAMPLES,
   type TheoremDivExample,
-} from "@common/util/pandoc-quick-reference";
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+} from '@common/util/pandoc-quick-reference'
 
-const emit = defineEmits<(event: "close") => void>();
-const dialog = ref<HTMLElement | null>(null);
+const emit = defineEmits<(event: 'close') => void>()
+const dialog = ref<HTMLElement|null>(null)
 
 // The searchable-help filter (issue #1, review A2 / US-06): every section
 // narrows through the SHARED filterHelpEntries() by case-insensitive
 // substring across its displayed labels, details, and authored examples.
-const filterQuery = ref<string>("");
-const filterInput = ref<HTMLInputElement | null>(null);
+const filterQuery = ref<string>('')
+const filterInput = ref<HTMLInputElement|null>(null)
 
-const citationExamples = computed(() =>
-  filterHelpEntries(PANDOC_CITATION_EXAMPLES, filterQuery.value, (example) => [
-    citationLabel(example.kind),
-    example.syntax,
-  ]),
-);
-const crossReferenceExamples = computed(() =>
-  filterHelpEntries(PANDOC_CROSS_REFERENCE_EXAMPLES, filterQuery.value, (example) => [
-    crossrefLabel(example.kind),
-    example.label,
-    example.reference,
-  ]),
-);
-const referenceModifiers = computed(() =>
-  filterHelpEntries(PANDOC_REFERENCE_MODIFIERS, filterQuery.value, (example) => [
-    modifierLabel(example.kind),
-    example.syntax,
-  ]),
-);
-const attributeExamples = computed(() =>
-  filterHelpEntries(PANDOC_ATTRIBUTE_EXAMPLES, filterQuery.value, (example) => [
-    attributeLabel(example.kind),
-    example.syntax,
-  ]),
-);
-const theoremDivExamples = computed(() =>
-  filterHelpEntries(THEOREM_DIV_EXAMPLES, filterQuery.value, (example) => [
-    theoremLabel(example),
-    example.divClass,
-    example.label,
-    example.reference,
-  ]),
-);
-const referenceAuthoringTopics = computed(() =>
-  filterHelpEntries(PANDOC_REFERENCE_AUTHORING_TOPICS, filterQuery.value, (topic) => [
-    trans(topic.title),
-    trans(topic.detail),
-    topic.syntax,
-  ]),
-);
+const citationExamples = computed(() => filterHelpEntries(
+  PANDOC_CITATION_EXAMPLES,
+  filterQuery.value,
+  example => [ citationLabel(example.kind), example.syntax ]
+))
+const crossReferenceExamples = computed(() => filterHelpEntries(
+  PANDOC_CROSS_REFERENCE_EXAMPLES,
+  filterQuery.value,
+  example => [ crossrefLabel(example.kind), example.label, example.reference ]
+))
+const referenceModifiers = computed(() => filterHelpEntries(
+  PANDOC_REFERENCE_MODIFIERS,
+  filterQuery.value,
+  example => [ modifierLabel(example.kind), example.syntax ]
+))
+const attributeExamples = computed(() => filterHelpEntries(
+  PANDOC_ATTRIBUTE_EXAMPLES,
+  filterQuery.value,
+  example => [ attributeLabel(example.kind), example.syntax ]
+))
+const theoremDivExamples = computed(() => filterHelpEntries(
+  THEOREM_DIV_EXAMPLES,
+  filterQuery.value,
+  example => [ theoremLabel(example), example.divClass, example.label, example.reference ]
+))
+const referenceAuthoringTopics = computed(() => filterHelpEntries(
+  PANDOC_REFERENCE_AUTHORING_TOPICS,
+  filterQuery.value,
+  topic => [ trans(topic.title), trans(topic.detail), topic.syntax ]
+))
 
 const nothingMatches = computed<boolean>(() => {
-  return (
-    citationExamples.value.length === 0 &&
+  return citationExamples.value.length === 0 &&
     crossReferenceExamples.value.length === 0 &&
     referenceModifiers.value.length === 0 &&
     attributeExamples.value.length === 0 &&
     theoremDivExamples.value.length === 0 &&
     referenceAuthoringTopics.value.length === 0
-  );
-});
+})
 
-function citationLabel(kind: (typeof PANDOC_CITATION_EXAMPLES)[number]["kind"]): string {
+function citationLabel (kind: typeof PANDOC_CITATION_EXAMPLES[number]['kind']): string {
   const labels = {
-    parenthetical: trans("Parenthetical"),
-    narrative: trans("In text"),
-    locator: trans("With locator"),
-    "prefix-and-suffix": trans("Prefix and suffix"),
-    multiple: trans("Multiple sources"),
-    "suppress-author": trans("Suppress author"),
-  };
-  return labels[kind];
+    parenthetical: trans('Parenthetical'),
+    narrative: trans('In text'),
+    locator: trans('With locator'),
+    'prefix-and-suffix': trans('Prefix and suffix'),
+    multiple: trans('Multiple sources'),
+    'suppress-author': trans('Suppress author'),
+  }
+  return labels[kind]
 }
 
-function crossrefLabel(kind: (typeof PANDOC_CROSS_REFERENCE_EXAMPLES)[number]["kind"]): string {
+function crossrefLabel (kind: typeof PANDOC_CROSS_REFERENCE_EXAMPLES[number]['kind']): string {
   const labels = {
-    figure: trans("Figure"),
-    table: trans("Table"),
-    equation: trans("Equation"),
-    section: trans("Section"),
-    listing: trans("Listing"),
-  };
-  return labels[kind];
+    figure: trans('Figure'),
+    table: trans('Table'),
+    equation: trans('Equation'),
+    section: trans('Section'),
+    listing: trans('Listing'),
+  }
+  return labels[kind]
 }
 
 /**
@@ -319,47 +307,47 @@ function crossrefLabel(kind: (typeof PANDOC_CROSS_REFERENCE_EXAMPLES)[number]["k
  * capitalized (the same derivation the reference views use), routed through
  * the translation layer like every other label in this dialog.
  */
-function theoremLabel(example: TheoremDivExample): string {
-  return trans(example.divClass.charAt(0).toUpperCase() + example.divClass.slice(1));
+function theoremLabel (example: TheoremDivExample): string {
+  return trans(example.divClass.charAt(0).toUpperCase() + example.divClass.slice(1))
 }
 
-function modifierLabel(kind: (typeof PANDOC_REFERENCE_MODIFIERS)[number]["kind"]): string {
+function modifierLabel (kind: typeof PANDOC_REFERENCE_MODIFIERS[number]['kind']): string {
   const labels = {
-    group: trans("Group references"),
-    "custom-prefix": trans("Custom prefix"),
-    "suppress-prefix": trans("Suppress prefix"),
-  };
-  return labels[kind];
+    group: trans('Group references'),
+    'custom-prefix': trans('Custom prefix'),
+    'suppress-prefix': trans('Suppress prefix'),
+  }
+  return labels[kind]
 }
 
-function attributeLabel(kind: (typeof PANDOC_ATTRIBUTE_EXAMPLES)[number]["kind"]): string {
+function attributeLabel (kind: typeof PANDOC_ATTRIBUTE_EXAMPLES[number]['kind']): string {
   const labels = {
-    attributes: trans("Attribute list"),
-    "fenced-div": trans("Fenced div"),
-    "bracketed-span": trans("Bracketed span"),
-  };
-  return labels[kind];
+    attributes: trans('Attribute list'),
+    'fenced-div': trans('Fenced div'),
+    'bracketed-span': trans('Bracketed span'),
+  }
+  return labels[kind]
 }
 
-function handleKeydown(event: KeyboardEvent): void {
-  if (event.key === "Escape") {
-    event.preventDefault();
-    event.stopPropagation();
-    emit("close");
+function handleKeydown (event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    emit('close')
   }
 }
 
 onMounted(() => {
-  document.addEventListener("keydown", handleKeydown);
+  document.addEventListener('keydown', handleKeydown)
   // Searchable at the point of use (US-06): typing filters immediately.
   if (filterInput.value !== null) {
-    filterInput.value.focus();
+    filterInput.value.focus()
   } else {
-    dialog.value?.focus();
+    dialog.value?.focus()
   }
-});
+})
 
-onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
+onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
 </script>
 
 <style lang="less">

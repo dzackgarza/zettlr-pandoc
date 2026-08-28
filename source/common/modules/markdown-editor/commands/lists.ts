@@ -14,14 +14,14 @@
 
 // This plugin handles everything with lists
 
-import { indentLess, indentMore, moveLineDown, moveLineUp } from "@codemirror/commands";
-import { syntaxTree } from "@codemirror/language";
-import { type ChangeSpec, type EditorState, type Transaction } from "@codemirror/state";
-import { type EditorView } from "@codemirror/view";
-import { markdownToAST } from "@common/modules/markdown-utils";
-import type { BulletList, OrderedList } from "@common/modules/markdown-utils/markdown-ast";
-import { type SyntaxNode } from "@lezer/common";
-import { nodeInSelection } from "../util/node-in-selection";
+import { type ChangeSpec, type EditorState, type Transaction } from '@codemirror/state'
+import { type EditorView } from '@codemirror/view'
+import { syntaxTree } from '@codemirror/language'
+import { indentLess, indentMore, moveLineDown, moveLineUp } from '@codemirror/commands'
+import { type SyntaxNode } from '@lezer/common'
+import { markdownToAST } from '@common/modules/markdown-utils'
+import type { BulletList, OrderedList } from '@common/modules/markdown-utils/markdown-ast'
+import { nodeInSelection } from '../util/node-in-selection'
 
 /**
  * Returns a set of changes required in order to sanitize the given list node.
@@ -32,8 +32,8 @@ import { nodeInSelection } from "../util/node-in-selection";
  *
  * @return  {ChangeSpec[]}             A set of changes
  */
-function correctOrderedList(listNode: OrderedList, offset: number): ChangeSpec[] {
-  const changes: ChangeSpec[] = [];
+function correctOrderedList (listNode: OrderedList, offset: number): ChangeSpec[] {
+  const changes: ChangeSpec[] = []
 
   // NOTE: This code deliberately changes the starting number to 1, regardless
   // of what it was, since this function can also be called from a swap-line
@@ -42,50 +42,42 @@ function correctOrderedList(listNode: OrderedList, offset: number): ChangeSpec[]
   // and on export the order would be restored anyhow. Should someone complain,
   // we can replace the line below with the commented line at any time.
   // let idx = listNode.startsAt
-  let idx = 1;
+  let idx = 1
   for (const item of listNode.items) {
     if (item.number !== idx) {
-      changes.push({
-        from: offset + item.marker.from,
-        to: offset + item.marker.to - 1,
-        insert: `${idx}`,
-      });
+      changes.push({ from: offset + item.marker.from, to: offset + item.marker.to - 1, insert: `${idx}` })
     }
 
-    idx++;
+    idx++
 
-    const subLists = item.children.filter((item) => item.type === "OrderedList") as OrderedList[];
+    const subLists = item.children.filter(item => item.type === 'OrderedList') as OrderedList[]
 
     if (subLists.length >= 2) {
       // We have multiple same-level lists, so there is a change in list markers.
       // THE FIRST ITEM DETERMINES THE LIST MARKER!
-      const mainList = subLists.shift()!;
+      const mainList = subLists.shift()!
       for (const list of subLists) {
         if (list.delimiter === mainList.delimiter) {
-          continue;
+          continue
         }
 
         for (const item of list.items) {
-          changes.push({
-            from: offset + item.marker.from,
-            to: offset + item.marker.to,
-            insert: `${idx}${mainList.delimiter}`,
-          });
-          idx++;
+          changes.push({ from: offset + item.marker.from, to: offset + item.marker.to, insert: `${idx}${mainList.delimiter}` })
+          idx++
         }
       }
     }
 
     // Check for nested lists
     for (const child of item.children) {
-      if (child.type === "BulletList") {
-        changes.push(...correctBulletList(child, offset));
-      } else if (child.type === "OrderedList") {
-        changes.push(...correctOrderedList(child, offset));
+      if (child.type === 'BulletList') {
+        changes.push(...correctBulletList(child, offset))
+      } else if (child.type === 'OrderedList') {
+        changes.push(...correctOrderedList(child, offset))
       }
     }
   }
-  return changes;
+  return changes
 }
 
 /**
@@ -97,44 +89,40 @@ function correctOrderedList(listNode: OrderedList, offset: number): ChangeSpec[]
  *
  * @return  {ChangeSpec[]}            A set of changes
  */
-function correctBulletList(listNode: BulletList, offset: number): ChangeSpec[] {
-  const changes: ChangeSpec[] = [];
+function correctBulletList (listNode: BulletList, offset: number): ChangeSpec[] {
+  const changes: ChangeSpec[] = []
 
   // The first list item of the same order determines the overall marker style
 
   for (const item of listNode.items) {
-    const subLists = item.children.filter((item) => item.type === "BulletList") as BulletList[];
+    const subLists = item.children.filter(item => item.type === 'BulletList') as BulletList[]
 
     if (subLists.length >= 2) {
       // We have multiple same-level lists, so there is a change in list markers.
       // THE FIRST ITEM DETERMINES THE LIST MARKER!
-      const mainList = subLists.shift()!;
+      const mainList = subLists.shift()!
       for (const list of subLists) {
         if (list.symbol === mainList.symbol) {
-          continue;
+          continue
         }
 
         for (const item of list.items) {
-          changes.push({
-            from: offset + item.marker.from,
-            to: offset + item.marker.to,
-            insert: mainList.symbol,
-          });
+          changes.push({ from: offset + item.marker.from, to: offset + item.marker.to, insert: mainList.symbol })
         }
       }
     }
 
     // Check for nested lists
     for (const child of item.children) {
-      if (child.type === "BulletList") {
-        changes.push(...correctBulletList(child, offset));
-      } else if (child.type === "OrderedList") {
-        changes.push(...correctOrderedList(child, offset));
+      if (child.type === 'BulletList') {
+        changes.push(...correctBulletList(child, offset))
+      } else if (child.type === 'OrderedList') {
+        changes.push(...correctOrderedList(child, offset))
       }
     }
   }
 
-  return changes;
+  return changes
 }
 
 /**
@@ -144,8 +132,8 @@ function correctBulletList(listNode: BulletList, offset: number): ChangeSpec[] {
  *
  * @return  {SyntaxNode[]}          A list of nodes of type OrderedList and BulletList
  */
-function fetchLists(state: EditorState): SyntaxNode[] {
-  const lists: SyntaxNode[] = [];
+function fetchLists (state: EditorState): SyntaxNode[] {
+  const lists: SyntaxNode[] = []
 
   for (const range of state.selection.ranges) {
     // NOTE: The Markdown mode nests lists under the parent nodes OrderedList
@@ -154,22 +142,22 @@ function fetchLists(state: EditorState): SyntaxNode[] {
     syntaxTree(state).iterate({
       from: range.from,
       to: range.to,
-      enter(node) {
+      enter (node) {
         switch (node.type.name) {
-          case "Document":
-            return;
-          case "OrderedList":
-          case "BulletList":
-            lists.push(node.node);
-          // falls through
+          case 'Document':
+            return
+          case 'OrderedList':
+          case 'BulletList':
+            lists.push(node.node)
+            // falls through
           default:
-            return false;
+            return false
         }
-      },
-    });
+      }
+    })
   }
 
-  return lists;
+  return lists
 }
 
 /**
@@ -181,25 +169,25 @@ function fetchLists(state: EditorState): SyntaxNode[] {
  *
  * @param   {EditorState}  state  The editor state in question
  */
-function correctListMarkers(state: EditorState): Transaction {
+function correctListMarkers (state: EditorState): Transaction {
   // So what this function needs to do is go over the ranges. We know that this
   // function will only be called after the user either indented or unindented
   // anything that has a list in it.
 
-  const lists = fetchLists(state);
-  const changes: ChangeSpec[] = [];
+  const lists = fetchLists(state)
+  const changes: ChangeSpec[] = []
 
   for (const list of lists) {
-    const fragment = markdownToAST(state.sliceDoc(list.from, list.to), list.toTree());
-    if (fragment.type === "OrderedList") {
-      changes.push(...correctOrderedList(fragment, list.from));
-    } else if (fragment.type === "BulletList") {
-      changes.push(...correctBulletList(fragment, list.from));
+    const fragment = markdownToAST(state.sliceDoc(list.from, list.to), list.toTree())
+    if (fragment.type === 'OrderedList') {
+      changes.push(...correctOrderedList(fragment, list.from))
+    } else if (fragment.type === 'BulletList') {
+      changes.push(...correctBulletList(fragment, list.from))
     }
   }
 
   // Create a transaction that can be dispatched to the view
-  return state.update({ changes });
+  return state.update({ changes })
 }
 
 /**
@@ -211,17 +199,17 @@ function correctListMarkers(state: EditorState): Transaction {
  *
  * @return  {boolean}             Whether the command has handled the keypress
  */
-export function maybeIndentList(target: EditorView): boolean {
-  const tree = syntaxTree(target.state);
-  if (nodeInSelection(target.state.selection, tree, ["OrderedList", "BulletList"], -1)) {
+export function maybeIndentList (target: EditorView): boolean {
+  const tree = syntaxTree(target.state)
+  if (nodeInSelection(target.state.selection, tree, [ 'OrderedList', 'BulletList' ], -1)) {
     // `indentMore` may return false, in which case we do not want to continue
     if (indentMore(target)) {
-      target.dispatch(correctListMarkers(target.state));
-      return true;
+      target.dispatch(correctListMarkers(target.state))
+      return true
     }
   }
 
-  return false;
+  return false
 }
 
 /**
@@ -232,19 +220,19 @@ export function maybeIndentList(target: EditorView): boolean {
  *
  * @return  {boolean}             Whether the command has handled the keypress
  */
-export function maybeUnindentList(target: EditorView): boolean {
+export function maybeUnindentList (target: EditorView): boolean {
   let hasHandled = indentLess({
     state: target.state,
-    dispatch: (transaction) => target.dispatch(transaction),
-  });
+    dispatch: (transaction) => target.dispatch(transaction)
+  })
 
-  const tree = syntaxTree(target.state);
-  if (nodeInSelection(target.state.selection, tree, ["OrderedList", "BulletList"], -1)) {
-    target.dispatch(correctListMarkers(target.state));
-    hasHandled = true;
+  const tree = syntaxTree(target.state)
+  if (nodeInSelection(target.state.selection, tree, [ 'OrderedList', 'BulletList' ], -1)) {
+    target.dispatch(correctListMarkers(target.state))
+    hasHandled = true
   }
 
-  return hasHandled;
+  return hasHandled
 }
 
 /**
@@ -255,19 +243,19 @@ export function maybeUnindentList(target: EditorView): boolean {
  *
  * @return  {boolean}             Whether the command has handled the keypress
  */
-export function customMoveLineDown(target: EditorView): boolean {
+export function customMoveLineDown (target: EditorView): boolean {
   let hasHandled = moveLineDown({
     state: target.state,
-    dispatch: (transaction) => target.dispatch(transaction),
-  });
+    dispatch: (transaction) => target.dispatch(transaction)
+  })
 
-  const tree = syntaxTree(target.state);
-  if (nodeInSelection(target.state.selection, tree, ["OrderedList", "BulletList"], -1)) {
-    target.dispatch(correctListMarkers(target.state));
-    hasHandled = true;
+  const tree = syntaxTree(target.state)
+  if (nodeInSelection(target.state.selection, tree, [ 'OrderedList', 'BulletList' ], -1)) {
+    target.dispatch(correctListMarkers(target.state))
+    hasHandled = true
   }
 
-  return hasHandled;
+  return hasHandled
 }
 
 /**
@@ -278,17 +266,17 @@ export function customMoveLineDown(target: EditorView): boolean {
  *
  * @return  {boolean}             Whether the command has handled the keypress
  */
-export function customMoveLineUp(target: EditorView): boolean {
+export function customMoveLineUp (target: EditorView): boolean {
   let hasHandled = moveLineUp({
     state: target.state,
-    dispatch: (transaction) => target.dispatch(transaction),
-  });
+    dispatch: (transaction) => target.dispatch(transaction)
+  })
 
-  const tree = syntaxTree(target.state);
-  if (nodeInSelection(target.state.selection, tree, ["OrderedList", "BulletList"], -1)) {
-    target.dispatch(correctListMarkers(target.state));
-    hasHandled = true;
+  const tree = syntaxTree(target.state)
+  if (nodeInSelection(target.state.selection, tree, [ 'OrderedList', 'BulletList' ], -1)) {
+    target.dispatch(correctListMarkers(target.state))
+    hasHandled = true
   }
 
-  return hasHandled;
+  return hasHandled
 }

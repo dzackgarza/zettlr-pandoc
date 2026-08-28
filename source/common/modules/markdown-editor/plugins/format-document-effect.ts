@@ -18,13 +18,13 @@
  * END HEADER
  */
 
-import { StateEffect } from "@codemirror/state";
-import { type Command } from "@codemirror/view";
+import { StateEffect } from '@codemirror/state'
+import { type Command } from '@codemirror/view'
 
-export const formatDocumentEffect = StateEffect.define<null>();
+export const formatDocumentEffect = StateEffect.define<null>()
 
 /** Keymap command: requests a document format via the shared effect. */
-export const requestFormatDocument: Command = (view) => {
-  view.dispatch({ effects: formatDocumentEffect.of(null) });
-  return true;
-};
+export const requestFormatDocument: Command = view => {
+  view.dispatch({ effects: formatDocumentEffect.of(null) })
+  return true
+}

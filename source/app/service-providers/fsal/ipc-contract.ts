@@ -14,19 +14,19 @@
  * END HEADER
  */
 
-import type { AnyDescriptor } from "@dts/common/fsal";
+import type { AnyDescriptor } from '@dts/common/fsal'
 
 export type FsalIPCContract = {
-  "read-path-recursively": {
-    request: { payload: string };
-    response: string[];
-  };
-  "read-directory": {
-    request: { payload: string };
-    response: AnyDescriptor[];
-  };
-  "get-descriptor": {
-    request: { payload: string | string[] };
-    response: AnyDescriptor | AnyDescriptor[] | undefined;
-  };
-};
+  'read-path-recursively': {
+    request: { payload: string }
+    response: string[]
+  }
+  'read-directory': {
+    request: { payload: string }
+    response: AnyDescriptor[]
+  }
+  'get-descriptor': {
+    request: { payload: string|string[] }
+    response: AnyDescriptor|AnyDescriptor[]|undefined
+  }
+}

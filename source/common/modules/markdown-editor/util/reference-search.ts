@@ -34,11 +34,11 @@
  * END HEADER
  */
 
-import { computeProjectReferenceStatus } from "@common/pandoc-util/project-reference-status";
-import { type ProjectRootSpec, type ReferenceDefinition } from "@dts/common/references";
 // NOTE: fzf is ESM-only; this must remain a real ESM import. A require()
 // call resolves to an empty object at runtime.
-import { Fzf } from "fzf";
+import { Fzf } from 'fzf'
+import { type ProjectRootSpec, type ReferenceDefinition } from '@dts/common/references'
+import { computeProjectReferenceStatus } from '@common/pandoc-util/project-reference-status'
 
 /**
  * The Project context of a Mod-P search: the document the search was invoked
@@ -46,8 +46,8 @@ import { Fzf } from "fzf";
  * current-Project-first ranking.
  */
 export interface WorkspaceSearchContext {
-  activeDocumentPath: string;
-  projectRoots: ProjectRootSpec[];
+  activeDocumentPath: string
+  projectRoots: ProjectRootSpec[]
 }
 
 /**
@@ -59,16 +59,16 @@ export interface WorkspaceSearchContext {
  *
  * @return  {boolean}                              Whether the definition is current
  */
-export function isCurrentProjectDefinition(
+export function isCurrentProjectDefinition (
   definition: ReferenceDefinition,
-  context: WorkspaceSearchContext,
+  context: WorkspaceSearchContext
 ): boolean {
   const status = computeProjectReferenceStatus(
     definition.documentPath,
     context.activeDocumentPath,
-    context.projectRoots,
-  );
-  return status === "same-file" || status === "in-active-project";
+    context.projectRoots
+  )
+  return status === 'same-file' || status === 'in-active-project'
 }
 
 /**
@@ -87,29 +87,29 @@ export function isCurrentProjectDefinition(
  *
  * @return  {ReferenceDefinition[]}                The ranked matches
  */
-export function searchWorkspaceDefinitions(
+export function searchWorkspaceDefinitions (
   definitions: ReferenceDefinition[],
   query: string,
-  context?: WorkspaceSearchContext,
+  context?: WorkspaceSearchContext
 ): ReferenceDefinition[] {
-  let matches: ReferenceDefinition[];
-  if (query === "") {
-    matches = [...definitions];
+  let matches: ReferenceDefinition[]
+  if (query === '') {
+    matches = [...definitions]
   } else {
     const fzf = new Fzf(definitions, {
-      selector: (definition) => definition.key,
-    });
-    matches = fzf.find(query).map((result) => result.item);
+      selector: definition => definition.key
+    })
+    matches = fzf.find(query).map(result => result.item)
   }
 
   if (context === undefined) {
-    return matches;
+    return matches
   }
 
   // Stable partition: current-Project definitions first, everything else
   // after, each group keeping its fzf (or feed) order.
   return [
-    ...matches.filter((definition) => isCurrentProjectDefinition(definition, context)),
-    ...matches.filter((definition) => !isCurrentProjectDefinition(definition, context)),
-  ];
+    ...matches.filter(definition => isCurrentProjectDefinition(definition, context)),
+    ...matches.filter(definition => !isCurrentProjectDefinition(definition, context))
+  ]
 }

@@ -20,12 +20,12 @@
 </template>
 
 <script setup lang="ts">
-import { trans } from "source/common/i18n-renderer";
+import { trans } from 'source/common/i18n-renderer'
 
-const supportMessage = trans("Support the development of Zettlr");
+const supportMessage = trans('Support the development of Zettlr')
 
-function loadUrl(url: string) {
-  window.location.href = url;
+function loadUrl (url: string) {
+  window.location.href = url
 }
 </script>
 

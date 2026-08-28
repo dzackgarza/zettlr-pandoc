@@ -1,25 +1,25 @@
-"use strict";
+'use strict'
 
-const { app, BrowserWindow } = require("electron");
-const fs = require("fs/promises");
-const path = require("path");
+const { app, BrowserWindow } = require('electron')
+const fs = require('fs/promises')
+const path = require('path')
 
-const outputDirectory = process.argv[process.argv.length - 1];
+const outputDirectory = process.argv[process.argv.length - 1]
 const scenes = [
-  { name: "chips-occurrences-light", scene: "occurrences", dark: false, width: 1200, height: 800 },
-  { name: "chips-occurrences-dark", scene: "occurrences", dark: true, width: 1200, height: 800 },
-  { name: "chips-definitions-light", scene: "definitions", dark: false, width: 1200, height: 900 },
-  { name: "chips-definitions-dark", scene: "definitions", dark: true, width: 1200, height: 900 },
+  { name: 'chips-occurrences-light', scene: 'occurrences', dark: false, width: 1200, height: 800 },
+  { name: 'chips-occurrences-dark', scene: 'occurrences', dark: true, width: 1200, height: 800 },
+  { name: 'chips-definitions-light', scene: 'definitions', dark: false, width: 1200, height: 900 },
+  { name: 'chips-definitions-dark', scene: 'definitions', dark: true, width: 1200, height: 900 },
   // The resolution-states scene (ledger C4): duplicate and missing keys stay
   // raw while resolved keys — including the one resolving into ProjectB with
   // projectRoots fed — render chips.
-  { name: "chips-states-light", scene: "states", dark: false, width: 1200, height: 800 },
-  { name: "chips-states-dark", scene: "states", dark: true, width: 1200, height: 800 },
-];
+  { name: 'chips-states-light', scene: 'states', dark: false, width: 1200, height: 800 },
+  { name: 'chips-states-dark', scene: 'states', dark: true, width: 1200, height: 800 },
+]
 
-async function capture(window, scene) {
-  const background = scene.dark ? "#2b2b2c" : "#ffffff";
-  const foreground = scene.dark ? "#e5e7eb" : "#222222";
+async function capture (window, scene) {
+  const background = scene.dark ? '#2b2b2c' : '#ffffff'
+  const foreground = scene.dark ? '#e5e7eb' : '#222222'
   const page = `<!doctype html><html><head><meta charset="utf-8"><style>
     html, body { margin: 0; min-height: 100%; background: ${background}; color: ${foreground}; }
     body { padding: 28px; box-sizing: border-box; }
@@ -29,16 +29,16 @@ async function capture(window, scene) {
     .cm-content { overflow-wrap: anywhere; }
     /* Minimal stand-in for the app stylesheet's code-block framing, so hidden
        fence lines read as a code region instead of blank lines. */
-    .code { background: ${scene.dark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.05)"}; font-family: monospace; }
+    .code { background: ${scene.dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'}; font-family: monospace; }
   </style></head><body data-scene="${scene.scene}" data-dark="${scene.dark}">
     <main id="editor"></main><script src="./reference-chips-visual-bundle.js"></script>
-  </body></html>`;
-  const pagePath = path.join(outputDirectory, `${scene.name}.html`);
-  await fs.writeFile(pagePath, page);
-  window.setSize(scene.width, scene.height);
-  await window.loadFile(pagePath);
-  await window.webContents.executeJavaScript("window.captureReady");
-  await new Promise((resolve) => setTimeout(resolve, 150));
+  </body></html>`
+  const pagePath = path.join(outputDirectory, `${scene.name}.html`)
+  await fs.writeFile(pagePath, page)
+  window.setSize(scene.width, scene.height)
+  await window.loadFile(pagePath)
+  await window.webContents.executeJavaScript('window.captureReady')
+  await new Promise(resolve => setTimeout(resolve, 150))
   const diagnostics = await window.webContents.executeJavaScript(`(() => {
     const content = document.querySelector('.cm-content')
     return {
@@ -53,62 +53,52 @@ async function capture(window, scene) {
       rawDuplicateVisible: document.body.textContent.includes('@thm:torelli'),
       rawMissingVisible: document.body.textContent.includes('@fig:missing'),
     }
-  })()`);
-  console.log(scene.name, diagnostics);
+  })()`)
+  console.log(scene.name, diagnostics)
   if (diagnostics.contentScrollWidth > diagnostics.contentClientWidth + 1) {
-    throw new Error(`${scene.name} has horizontal editor overflow`);
+    throw new Error(`${scene.name} has horizontal editor overflow`)
   }
-  if (scene.scene === "occurrences" && diagnostics.chips === 0) {
-    throw new Error(`${scene.name} rendered no reference chips`);
+  if (scene.scene === 'occurrences' && diagnostics.chips === 0) {
+    throw new Error(`${scene.name} rendered no reference chips`)
   }
-  if (scene.scene === "occurrences" && !diagnostics.rawMixed) {
-    throw new Error(`${scene.name} did not keep the mixed cluster raw`);
+  if (scene.scene === 'occurrences' && !diagnostics.rawMixed) {
+    throw new Error(`${scene.name} did not keep the mixed cluster raw`)
   }
-  if (
-    scene.scene === "definitions" &&
-    (diagnostics.countBadges === 0 || diagnostics.positionedGroups === 0)
-  ) {
-    throw new Error(`${scene.name} rendered no positioned definition badges`);
+  if (scene.scene === 'definitions' && (diagnostics.countBadges === 0 || diagnostics.positionedGroups === 0)) {
+    throw new Error(`${scene.name} rendered no positioned definition badges`)
   }
-  if (scene.scene === "states") {
+  if (scene.scene === 'states') {
     // Resolved keys render chips — including the ProjectB-resolved key —
     // while the duplicate and missing keys stay raw (no chip, authored
     // token visible).
-    if (
-      !diagnostics.chipKeys.includes("eq:intersection-form") ||
-      !diagnostics.chipKeys.includes("lem:halphen-degeneration")
-    ) {
-      throw new Error(
-        `${scene.name} did not render the resolved chips: ${JSON.stringify(diagnostics.chipKeys)}`,
-      );
+    if (!diagnostics.chipKeys.includes('eq:intersection-form') ||
+        !diagnostics.chipKeys.includes('lem:halphen-degeneration')) {
+      throw new Error(`${scene.name} did not render the resolved chips: ${JSON.stringify(diagnostics.chipKeys)}`)
     }
-    if (diagnostics.chipKeys.includes("thm:torelli")) {
-      throw new Error(`${scene.name} rendered a chip for the duplicate key`);
+    if (diagnostics.chipKeys.includes('thm:torelli')) {
+      throw new Error(`${scene.name} rendered a chip for the duplicate key`)
     }
     if (!diagnostics.rawDuplicateVisible || !diagnostics.rawMissingVisible) {
-      throw new Error(`${scene.name} does not show the raw duplicate/missing tokens`);
+      throw new Error(`${scene.name} does not show the raw duplicate/missing tokens`)
     }
   }
-  const image = await window.webContents.capturePage();
-  await fs.writeFile(path.join(outputDirectory, `${scene.name}.png`), image.toPNG());
+  const image = await window.webContents.capturePage()
+  await fs.writeFile(path.join(outputDirectory, `${scene.name}.png`), image.toPNG())
 }
 
-app
-  .whenReady()
-  .then(async () => {
-    const window = new BrowserWindow({
-      width: 1200,
-      height: 900,
-      show: false,
-      webPreferences: { offscreen: true },
-    });
-    for (const scene of scenes) {
-      await capture(window, scene);
-    }
-    window.destroy();
-    app.quit();
+app.whenReady().then(async () => {
+  const window = new BrowserWindow({
+    width: 1200,
+    height: 900,
+    show: false,
+    webPreferences: { offscreen: true },
   })
-  .catch((error) => {
-    console.error(error);
-    app.exit(1);
-  });
+  for (const scene of scenes) {
+    await capture(window, scene)
+  }
+  window.destroy()
+  app.quit()
+}).catch(error => {
+  console.error(error)
+  app.exit(1)
+})

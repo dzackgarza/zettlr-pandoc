@@ -44,47 +44,43 @@
  * END HEADER
  */
 
-import { type Completion } from "@codemirror/autocomplete";
-import { StateEffect, StateField } from "@codemirror/state";
-import { type EditorView } from "@codemirror/view";
-import { trans } from "@common/i18n-renderer";
+import { type Completion } from '@codemirror/autocomplete'
+import { StateEffect, StateField } from '@codemirror/state'
+import { type EditorView } from '@codemirror/view'
+import { referenceFamilyDisplayName, type AppendAndContinuePlan, type ReferenceCompletionEntry } from '@dts/common/references'
+import { type ProjectSettings } from '@dts/common/fsal'
 import {
-  appendToastMessage,
   applyAppendPlan,
-  type CompletionInsertionAffordance,
+  appendToastMessage,
   completionAffordanceFor,
-} from "@common/pandoc-util/project-reference-status";
-import { runRecoverably } from "@common/util/run-recoverably";
-import showToast from "@common/util/show-toast";
-import { type ProjectSettings } from "@dts/common/fsal";
-import {
-  type AppendAndContinuePlan,
-  type ReferenceCompletionEntry,
-  referenceFamilyDisplayName,
-} from "@dts/common/references";
-import { requestPandocQuickHelp } from "../plugins/pandoc-quick-help-effect";
-import { type AutocompletePlugin } from ".";
-import { citations, citekeyUpdateField } from "./citations";
+  type CompletionInsertionAffordance
+} from '@common/pandoc-util/project-reference-status'
+import showToast from '@common/util/show-toast'
+import { trans } from '@common/i18n-renderer'
+import { runRecoverably } from '@common/util/run-recoverably'
+import { requestPandocQuickHelp } from '../plugins/pandoc-quick-help-effect'
+import { type AutocompletePlugin } from '.'
+import { citations, citekeyUpdateField } from './citations'
 
 /**
  * Use this effect to provide the editor state with a new set of workspace
  * reference label entries (the 'references' completion database).
  */
-export const referencesUpdate = StateEffect.define<ReferenceCompletionEntry[]>();
+export const referencesUpdate = StateEffect.define<ReferenceCompletionEntry[]>()
 
 export const referencesUpdateField = StateField.define<ReferenceCompletionEntry[]>({
-  create(_state) {
-    return [];
+  create (_state) {
+    return []
   },
-  update(val, transaction) {
+  update (val, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(referencesUpdate)) {
-        return effect.value;
+        return effect.value
       }
     }
-    return val;
-  },
-});
+    return val
+  }
+})
 
 /**
  * A label option on the combined surface: a Completion exposing its typed
@@ -92,7 +88,7 @@ export const referencesUpdateField = StateField.define<ReferenceCompletionEntry[
  * options never carry this property.
  */
 interface ReferenceLabelCompletion extends Completion {
-  referenceAffordance: CompletionInsertionAffordance;
+  referenceAffordance: CompletionInsertionAffordance
 }
 
 /**
@@ -102,7 +98,7 @@ interface ReferenceLabelCompletion extends Completion {
  * so entries() records the last seen view here for the info panel's
  * quick-help link — the panel DOM outlives the context that created it.
  */
-let lastCompletionView: EditorView | undefined;
+let lastCompletionView: EditorView|undefined
 
 /**
  * Builds a label option's info panel: the US-06 "help from completion"
@@ -114,32 +110,31 @@ let lastCompletionView: EditorView | undefined;
  *
  * @return  {HTMLElement}     The info panel element
  */
-function labelInfoPanel(detail: string): HTMLElement {
-  const panel = document.createElement("div");
-  panel.className = "reference-completion-info";
+function labelInfoPanel (detail: string): HTMLElement {
+  const panel = document.createElement('div')
+  panel.className = 'reference-completion-info'
 
-  const description = document.createElement("div");
-  description.textContent = detail;
-  panel.appendChild(description);
+  const description = document.createElement('div')
+  description.textContent = detail
+  panel.appendChild(description)
 
-  const link = document.createElement("button");
-  link.type = "button";
-  link.setAttribute("data-open-help", "");
-  link.textContent = "Pandoc quick reference…";
-  link.style.cssText =
-    "margin-top: 6px; padding: 0; color: inherit; background: none; border: none; font: inherit; text-decoration: underline; cursor: pointer";
-  link.addEventListener("click", () => {
-    const view = lastCompletionView;
+  const link = document.createElement('button')
+  link.type = 'button'
+  link.setAttribute('data-open-help', '')
+  link.textContent = 'Pandoc quick reference…'
+  link.style.cssText = 'margin-top: 6px; padding: 0; color: inherit; background: none; border: none; font: inherit; text-decoration: underline; cursor: pointer'
+  link.addEventListener('click', () => {
+    const view = lastCompletionView
     if (view === undefined) {
       // The panel cannot exist without a completion session having seen a
       // view; reaching this state is a protocol violation, not a fallback.
-      throw new Error("Pandoc quick-help link clicked outside a completion session");
+      throw new Error('Pandoc quick-help link clicked outside a completion session')
     }
-    requestPandocQuickHelp(view);
-  });
-  panel.appendChild(link);
+    requestPandocQuickHelp(view)
+  })
+  panel.appendChild(link)
 
-  return panel;
+  return panel
 }
 
 /**
@@ -151,10 +146,10 @@ function labelInfoPanel(detail: string): HTMLElement {
  *
  * @return  {string}                           The detail display text
  */
-function labelDetail(entry: ReferenceCompletionEntry): string {
+function labelDetail (entry: ReferenceCompletionEntry): string {
   return entry.title !== undefined
     ? `${referenceFamilyDisplayName(entry.family)} — ${entry.title}`
-    : referenceFamilyDisplayName(entry.family);
+    : referenceFamilyDisplayName(entry.family)
 }
 
 /**
@@ -162,28 +157,18 @@ function labelDetail(entry: ReferenceCompletionEntry): string {
  * range. This never wraps the insertion in brackets and never rewrites the
  * authored `@` or an authored bracket cluster.
  */
-const applyLabel = function (
-  view: EditorView,
-  completion: Completion,
-  from: number,
-  to: number,
-): void {
-  const insert = String(completion.label);
-  view.dispatch({ changes: [{ from, to, insert }], selection: { anchor: from + insert.length } });
-};
+const applyLabel = function (view: EditorView, completion: Completion, from: number, to: number): void {
+  const insert = String(completion.label)
+  view.dispatch({ changes: [{ from, to, insert }], selection: { anchor: from + insert.length } })
+}
 
 /**
  * A disabled label completion: another-Project targets stay visible on the
  * surface but are inert for insertion — applying one changes nothing.
  */
-const applyDisabled = function (
-  _view: EditorView,
-  _completion: Completion,
-  _from: number,
-  _to: number,
-): void {
+const applyDisabled = function (_view: EditorView, _completion: Completion, _from: number, _to: number): void {
   // Insertion is disabled for another-Project entries.
-};
+}
 
 /**
  * Runs the mechanical append-and-continue plan through the EXISTING
@@ -194,33 +179,29 @@ const applyDisabled = function (
  *
  * @param   {AppendAndContinuePlan}  plan  The plan carried by the applied option
  */
-async function runAppendAndContinue(plan: AppendAndContinuePlan): Promise<void> {
+async function runAppendAndContinue (plan: AppendAndContinuePlan): Promise<void> {
   // window.ipc is the production preload bridge, present in every renderer
   // window; the headless completion specs provision the same seam.
-  const descriptor = await window.ipc.invoke("fsal", {
-    command: "get-descriptor",
-    payload: plan.rootPath,
-  });
+  const descriptor = await window.ipc.invoke('fsal', {
+    command: 'get-descriptor',
+    payload: plan.rootPath
+  })
 
-  if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== "directory") {
-    throw new Error(
-      `Cannot append to the Project at ${plan.rootPath}: the path is not a workspace directory`,
-    );
+  if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== 'directory') {
+    throw new Error(`Cannot append to the Project at ${plan.rootPath}: the path is not a workspace directory`)
   }
 
-  const settings: ProjectSettings | null = descriptor.settings.project;
+  const settings: ProjectSettings|null = descriptor.settings.project
   if (settings === null) {
-    throw new Error(
-      `Cannot append to the Project at ${plan.rootPath}: the directory carries no Project settings`,
-    );
+    throw new Error(`Cannot append to the Project at ${plan.rootPath}: the directory carries no Project settings`)
   }
 
-  await window.ipc.invoke("application", {
-    command: "update-project-properties",
-    payload: { path: plan.rootPath, properties: applyAppendPlan(settings, plan) },
-  });
+  await window.ipc.invoke('application', {
+    command: 'update-project-properties',
+    payload: { path: plan.rootPath, properties: applyAppendPlan(settings, plan) }
+  })
 
-  showToast(appendToastMessage(plan));
+  showToast(appendToastMessage(plan))
 }
 
 /**
@@ -233,24 +214,22 @@ async function runAppendAndContinue(plan: AppendAndContinuePlan): Promise<void> 
  *
  * @return  {typeof applyLabel}                          The apply handler
  */
-function applyFor(affordance: CompletionInsertionAffordance): typeof applyLabel {
-  if (affordance.kind === "disabled-another-project") {
-    return applyDisabled;
+function applyFor (affordance: CompletionInsertionAffordance): typeof applyLabel {
+  if (affordance.kind === 'disabled-another-project') {
+    return applyDisabled
   }
 
-  if (affordance.kind === "insert-with-append") {
+  if (affordance.kind === 'insert-with-append') {
     return function (view: EditorView, completion: Completion, from: number, to: number): void {
-      applyLabel(view, completion, from, to);
+      applyLabel(view, completion, from, to)
       // The append continuation surfaces failures through the recoverable
       // boundary (review B8): one closable error toast, never a silent
       // console-only line. The insertion above already happened either way.
-      void runRecoverably(async () => {
-        await runAppendAndContinue(affordance.plan);
-      }, trans("Appending to the Project"));
-    };
+      void runRecoverably(async () => { await runAppendAndContinue(affordance.plan) }, trans('Appending to the Project'))
+    }
   }
 
-  return applyLabel;
+  return applyLabel
 }
 
 /**
@@ -260,22 +239,21 @@ function applyFor(affordance: CompletionInsertionAffordance): typeof applyLabel 
  * projectStatus never gates, reorders, or restyles label entries in Phase 3.
  */
 export const atSymbols: AutocompletePlugin = {
-  applies(ctx) {
+  applies (ctx) {
     // The trigger surface is byte-identical to the citation provider's.
-    return citations.applies(ctx);
+    return citations.applies(ctx)
   },
-  entries(ctx, query) {
-    query = query.toLowerCase();
+  entries (ctx, query) {
+    query = query.toLowerCase()
     if (ctx.view !== undefined) {
-      lastCompletionView = ctx.view;
+      lastCompletionView = ctx.view
     }
-    const labelEntries: ReferenceLabelCompletion[] = ctx.state
-      .field(referencesUpdateField)
-      .map((entry) => {
+    const labelEntries: ReferenceLabelCompletion[] = ctx.state.field(referencesUpdateField)
+      .map(entry => {
         // The Phase-7 gating: the typed affordance decides HOW the entry
         // applies; it never gates visibility or label/detail presentation.
-        const referenceAffordance = completionAffordanceFor(entry.projectStatus, entry.appendPlan);
-        const detail = labelDetail(entry);
+        const referenceAffordance = completionAffordanceFor(entry.projectStatus, entry.appendPlan)
+        const detail = labelDetail(entry)
         return {
           label: entry.key,
           detail,
@@ -284,18 +262,16 @@ export const atSymbols: AutocompletePlugin = {
           // quick help from its info panel. Citation options never carry
           // this — their objects pass through byte-identically.
           info: () => labelInfoPanel(detail),
-          referenceAffordance,
-        };
+          referenceAffordance
+        }
       })
-      .filter((entry) => {
+      .filter(entry => {
         // The same case-insensitive substring filter the citation provider
         // applies, over label and detail.
-        return (
-          entry.label.toLowerCase().includes(query) || entry.detail.toLowerCase().includes(query)
-        );
-      });
+        return entry.label.toLowerCase().includes(query) || entry.detail.toLowerCase().includes(query)
+      })
 
-    return citations.entries(ctx, query).concat(labelEntries);
+    return citations.entries(ctx, query).concat(labelEntries)
   },
-  fields: [citekeyUpdateField, referencesUpdateField],
-};
+  fields: [ citekeyUpdateField, referencesUpdateField ]
+}

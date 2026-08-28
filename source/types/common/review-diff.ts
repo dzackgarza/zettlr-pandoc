@@ -1,3 +1,4 @@
+
 /**
  * What a renderer pane needs to display a review: stable suggestions and the
  * identifiers to send decisions back with. The
@@ -30,7 +31,7 @@ export interface ReviewChunkCommentView {
 export interface ReviewSuggestionView {
   suggestionId: string;
   removedText: string;
-  anchors: Array<{ from: number; to: number }>;
+  anchors: Array<{ from: number, to: number }>;
   seam: number;
   description: string;
 }
@@ -56,7 +57,7 @@ export interface ReviewDiffOpenRequest {
 export type ReviewDiffOpenResult =
   | { accepted: true; sessionId: string }
   | {
-      accepted: false;
-      reason: "stale-baseline" | "invalid-request" | "open-failed";
-      message: string;
-    };
+    accepted: false;
+    reason: 'stale-baseline' | 'invalid-request' | 'open-failed';
+    message: string;
+  }

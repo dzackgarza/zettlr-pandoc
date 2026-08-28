@@ -63,67 +63,66 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-renderer";
-import localiseNumber from "@common/util/localise-number";
-import PopoverWrapper from "@common/vue/PopoverWrapper.vue";
-import { useStatisticsStore } from "source/pinia";
-import { computed } from "vue";
+import PopoverWrapper from '@common/vue/PopoverWrapper.vue'
+import { trans } from '@common/i18n-renderer'
+import localiseNumber from '@common/util/localise-number'
+import { useStatisticsStore } from 'source/pinia'
+import { computed } from 'vue'
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
-const statisticsStore = useStatisticsStore();
+const statisticsStore = useStatisticsStore()
 
-const svgWidth = 100;
-const svgHeight = 20;
+const svgWidth = 100
+const svgHeight = 20
 
-const lastMonthLabel = trans("words last month");
-const averageLabel = trans("daily average");
-const todayLabel = trans("words today");
-const surpassedMessage = trans("🔥 You're on fire!");
-const closeToMessage = trans("💪 You're close to hitting your daily average!");
-const notReachedMessage = trans("✍🏼 Get writing to surpass your daily average.");
-const buttonLabel = trans("More statistics …");
+const lastMonthLabel = trans('words last month')
+const averageLabel = trans('daily average')
+const todayLabel = trans('words today')
+const surpassedMessage = trans('🔥 You\'re on fire!')
+const closeToMessage = trans('💪 You\'re close to hitting your daily average!')
+const notReachedMessage = trans('✍🏼 Get writing to surpass your daily average.')
+const buttonLabel = trans('More statistics …')
 
-const emit = defineEmits<(e: "close") => void>();
+const emit = defineEmits<(e: 'close') => void>()
 
-const props = defineProps<{ target: HTMLElement }>();
+const props = defineProps<{ target: HTMLElement }>()
 
-const displaySumMonth = computed(() => localiseNumber(statisticsStore.sum30DaysWords));
-const displayAvgMonth = computed(() => localiseNumber(Math.round(statisticsStore.avg30DaysWords)));
-const displaySumToday = computed(() => localiseNumber(statisticsStore.todayWords));
+const displaySumMonth = computed(() => localiseNumber(statisticsStore.sum30DaysWords))
+const displayAvgMonth = computed(() => localiseNumber(Math.round(statisticsStore.avg30DaysWords)))
+const displaySumToday = computed(() => localiseNumber(statisticsStore.todayWords))
 
 const getDailyCountsSVGPath = computed(() => {
-  const data = statisticsStore.wordsLast30CalendarDays;
+  const data = statisticsStore.wordsLast30CalendarDays
 
   // Retrieve the size, and substract a little bit padding
-  const padding = 1;
-  const height = svgHeight - padding * 2;
-  const width = svgWidth - padding * 2;
-  const interval = Math.round(width / 30);
+  const padding = 1
+  const height = svgHeight - padding * 2
+  const width = svgWidth - padding * 2
+  const interval = Math.round(width / 30)
 
   // Ensure `max` is at least 1 to prevent division by zero
-  const max = Math.max(1, Math.max(...data.map((x) => x[1])));
+  const max = Math.max(1, Math.max(...data.map(x => x[1])))
 
-  let p = `M${padding} ${svgHeight - padding} `; // Move to the bottom left
+  let p = `M${padding} ${svgHeight - padding} ` // Move to the bottom left
 
   // Move to the right by 1/30th for each day
-  let x = interval;
-  for (const [iso, count] of data) {
+  let x = interval
+  for (const [ iso, count ] of data) {
     // Use the word count, or 0
     // const count = wordsLastMonth.find(x => x[0] === iso)?.[1] ?? 0
-    p += `L${x} ${height - Math.round((count / max) * height)} `;
-    x += interval;
+    p += `L${x} ${height - Math.round((count / max) * height)} `
+    x += interval
   }
 
   // Finally return the path
-  return p;
-});
+  return p
+})
 
-function buttonClick(): void {
-  ipcRenderer
-    .invoke("application", { command: "open-stats-window" })
-    .catch((err) => console.error(err));
-  emit("close");
+function buttonClick (): void {
+  ipcRenderer.invoke('application', { command: 'open-stats-window' })
+    .catch(err => console.error(err))
+  emit('close')
 }
 </script>
 

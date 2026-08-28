@@ -16,19 +16,19 @@
  * END HEADER
  */
 
-import isFile from "@common/util/is-file";
-import type { LeafNodeJSON } from "@dts/common/documents";
-import { v4 as uuid4 } from "uuid";
-import { DocumentTree } from "./document-tree";
-import { DTBranch } from "./document-tree-branch";
-import { TabManager } from "./tab-manager";
+import isFile from '@common/util/is-file'
+import type { LeafNodeJSON } from '@dts/common/documents'
+import { v4 as uuid4 } from 'uuid'
+import { DocumentTree } from './document-tree'
+import { DTBranch } from './document-tree-branch'
+import { TabManager } from './tab-manager'
 
 export class DTLeaf {
   // This is info concerning the tree structure
-  private readonly _id: string;
-  private _parent: DTBranch | DocumentTree;
+  private readonly _id: string
+  private _parent: DTBranch|DocumentTree
   // The tab manager actually manages the data
-  private readonly _tabManager: TabManager;
+  private readonly _tabManager: TabManager
 
   /**
    * Creates a new empty leaf.
@@ -36,25 +36,28 @@ export class DTLeaf {
    * @param  {DTBranch|DocumentTree}  parent  The parent for this leaf
    * @param  {string}                 id      An optional ID, may be changed to ensure uniqueness
    */
-  constructor(parent: DTBranch | DocumentTree, id: string = uuid4()) {
-    this._parent = parent;
-    this._tabManager = new TabManager();
+  constructor (
+    parent: DTBranch|DocumentTree,
+    id: string = uuid4()
+  ) {
+    this._parent = parent
+    this._tabManager = new TabManager()
 
-    if (typeof id !== "string") {
-      id = uuid4();
+    if (typeof id !== 'string') {
+      id = uuid4()
     }
 
     // Ensure a unique ID
-    let root = parent;
+    let root = parent
     while (!(root instanceof DocumentTree)) {
-      root = root.parent;
+      root = root.parent
     }
 
     while (root.findLeaf(id) !== undefined) {
-      id = uuid4();
+      id = uuid4()
     }
 
-    this._id = id;
+    this._id = id
   }
 
   /**
@@ -62,8 +65,8 @@ export class DTLeaf {
    *
    * @return  {TabManager}  The tab manager instance
    */
-  public get tabMan(): TabManager {
-    return this._tabManager;
+  public get tabMan (): TabManager {
+    return this._tabManager
   }
 
   /**
@@ -71,8 +74,8 @@ export class DTLeaf {
    *
    * @return  {string}  The ID
    */
-  public get id(): string {
-    return this._id;
+  public get id (): string {
+    return this._id
   }
 
   /**
@@ -80,8 +83,8 @@ export class DTLeaf {
    *
    * @return  {DTBranch|DocumentTree}  The parent
    */
-  public get parent(): DTBranch | DocumentTree {
-    return this._parent;
+  public get parent (): DTBranch|DocumentTree {
+    return this._parent
   }
 
   /**
@@ -89,8 +92,8 @@ export class DTLeaf {
    *
    * @param   {DTBranch|DocumentTree}  parent  The new parent
    */
-  public set parent(parent: DTBranch | DocumentTree) {
-    this._parent = parent;
+  public set parent (parent: DTBranch|DocumentTree) {
+    this._parent = parent
   }
 
   /**
@@ -103,46 +106,46 @@ export class DTLeaf {
    *
    * @return  {DTLeaf}             Returns the newly created leaf
    */
-  public split(direction: "horizontal" | "vertical", insertion: "before" | "after"): DTLeaf {
+  public split (direction: 'horizontal'|'vertical', insertion: 'before'|'after'): DTLeaf {
     if (this._parent instanceof DocumentTree) {
-      console.log("Replacing this leaf with a new branch as the tree node");
-      const newBranch = new DTBranch(this._parent, direction);
-      const newLeaf = new DTLeaf(newBranch);
+      console.log('Replacing this leaf with a new branch as the tree node')
+      const newBranch = new DTBranch(this._parent, direction)
+      const newLeaf = new DTLeaf(newBranch)
 
-      if (insertion === "before") {
-        newBranch.addNode(newLeaf);
-        newBranch.addNode(this);
+      if (insertion === 'before') {
+        newBranch.addNode(newLeaf)
+        newBranch.addNode(this)
       } else {
-        newBranch.addNode(this);
-        newBranch.addNode(newLeaf);
+        newBranch.addNode(this)
+        newBranch.addNode(newLeaf)
       }
 
-      this._parent.node = newBranch;
-      this._parent = newBranch;
-      return newLeaf;
+      this._parent.node = newBranch
+      this._parent = newBranch
+      return newLeaf
     } else if (this._parent.direction === direction) {
       // Same direction, and we're already in a split -> add a new node
-      const newLeaf = new DTLeaf(this._parent);
-      this._parent.addNode(newLeaf, this, insertion);
-      return newLeaf;
+      const newLeaf = new DTLeaf(this._parent)
+      this._parent.addNode(newLeaf, this, insertion)
+      return newLeaf
     } else {
       // Different direction -> replace this node with a new branch
-      const newBranch = new DTBranch(this._parent, direction);
-      const newLeaf = new DTLeaf(newBranch);
+      const newBranch = new DTBranch(this._parent, direction)
+      const newLeaf = new DTLeaf(newBranch)
 
-      if (insertion === "before") {
-        newBranch.addNode(newLeaf);
-        newBranch.addNode(this);
+      if (insertion === 'before') {
+        newBranch.addNode(newLeaf)
+        newBranch.addNode(this)
       } else {
-        newBranch.addNode(this);
-        newBranch.addNode(newLeaf);
+        newBranch.addNode(this)
+        newBranch.addNode(newLeaf)
       }
 
-      this._parent.addNode(newBranch, this, "after");
-      this._parent.removeNode(this);
+      this._parent.addNode(newBranch, this, 'after')
+      this._parent.removeNode(this)
 
-      this._parent = newBranch;
-      return newLeaf;
+      this._parent = newBranch
+      return newLeaf
     }
   }
 
@@ -153,9 +156,9 @@ export class DTLeaf {
    *
    * @return  {DTLeaf}      This, or undefined
    */
-  public findLeaf(id: string): this | undefined {
+  public findLeaf (id: string): this|undefined {
     if (id === this._id) {
-      return this;
+      return this
     }
   }
 
@@ -167,57 +170,55 @@ export class DTLeaf {
    *
    * @return  {Promise<DTLeaf>}                  Resolves with the new leaf
    */
-  static fromJSON(parent: DocumentTree | DTBranch, nodeData: unknown): DTLeaf {
-    if (typeof nodeData !== "object" || nodeData === null || Array.isArray(nodeData)) {
-      throw new Error("Could not instantiate DTLeaf: Provided JSON was not a valid object.");
+  static fromJSON (parent: DocumentTree|DTBranch, nodeData: unknown): DTLeaf {
+    if (typeof nodeData !== 'object' || nodeData === null || Array.isArray(nodeData)) {
+      throw new Error('Could not instantiate DTLeaf: Provided JSON was not a valid object.')
     }
 
-    const { id, openFiles, activeFile } = nodeData as Partial<LeafNodeJSON>;
+    const { id, openFiles, activeFile } = nodeData as Partial<LeafNodeJSON>
 
-    if (typeof id !== "string") {
-      throw new Error(`Could not instantiate DTLeaf: ID was invalid: ${String(id)}`);
+    if (typeof id !== 'string') {
+      throw new Error(`Could not instantiate DTLeaf: ID was invalid: ${String(id)}`)
     }
 
     if (!Array.isArray(openFiles)) {
-      throw new Error(
-        `Could not instantiate DTLeaf: openFiles was not an array: ${typeof openFiles}`,
-      );
+      throw new Error(`Could not instantiate DTLeaf: openFiles was not an array: ${typeof openFiles}`)
     }
 
     // NOTE: After this point, we don't throw any more errors, since the leaf
     // can be successfully instantiated. The only thing that may miss are the
     // open documents.
-    const leaf = new DTLeaf(parent, id);
+    const leaf = new DTLeaf(parent, id)
     for (const file of openFiles) {
-      if (typeof file !== "object") {
-        continue; // Invalid entry
+      if (typeof file !== 'object') {
+        continue // Invalid entry
       }
 
-      const { path, pinned } = file;
+      const { path, pinned } = file
 
-      if (typeof path !== "string" || typeof pinned !== "boolean" || !isFile(path)) {
-        continue; // Invalid entry
+      if (typeof path !== 'string' || typeof pinned !== 'boolean' || !isFile(path)) {
+        continue // Invalid entry
       }
 
-      const success = leaf.tabMan.openFile(path, false);
+      const success = leaf.tabMan.openFile(path, false)
       if (success) {
-        leaf.tabMan.setPinnedStatus(path, pinned);
+        leaf.tabMan.setPinnedStatus(path, pinned)
       } else {
         // Invalid entry
       }
     }
 
     // Revitalize the active File pointer
-    const tabManActiveFile = leaf.tabMan.openFiles.find((e) => e.path === activeFile?.path) ?? null;
-    leaf.tabMan.activeFile = tabManActiveFile;
+    const tabManActiveFile = leaf.tabMan.openFiles.find(e => e.path === activeFile?.path) ?? null
+    leaf.tabMan.activeFile = tabManActiveFile
 
     // If the last active file can't be restored, make the first one of this
     // leaf active so that the editor shows something.
     if (leaf.tabMan.activeFile === null && leaf.tabMan.openFiles.length > 0) {
-      leaf.tabMan.activeFile = leaf.tabMan.openFiles[0];
+      leaf.tabMan.activeFile = leaf.tabMan.openFiles[0]
     }
 
-    return leaf;
+    return leaf
   }
 
   /**
@@ -225,11 +226,11 @@ export class DTLeaf {
    *
    * @return  {LeafNodeJSON}  The JSON data
    */
-  public toJSON(): LeafNodeJSON {
+  public toJSON (): LeafNodeJSON {
     return {
-      type: "leaf",
+      type: 'leaf',
       id: this._id,
-      ...this._tabManager.toJSON(),
-    };
+      ...this._tabManager.toJSON()
+    }
   }
 }

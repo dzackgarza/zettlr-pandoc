@@ -20,20 +20,20 @@
  * END HEADER
  */
 
-import { StateEffect } from "@codemirror/state";
-import { type EditorView } from "@codemirror/view";
+import { StateEffect } from '@codemirror/state'
+import { type EditorView } from '@codemirror/view'
 
 /**
  * Signals that the user requested the Pandoc quick help from inside the
  * editor.
  */
-export const openPandocQuickHelpEffect = StateEffect.define<null>();
+export const openPandocQuickHelpEffect = StateEffect.define<null>()
 
 /**
  * Dispatches the open-quick-help request on the given view.
  *
  * @param   {EditorView}  view  The editor view
  */
-export function requestPandocQuickHelp(view: EditorView): void {
-  view.dispatch({ effects: openPandocQuickHelpEffect.of(null) });
+export function requestPandocQuickHelp (view: EditorView): void {
+  view.dispatch({ effects: openPandocQuickHelpEffect.of(null) })
 }

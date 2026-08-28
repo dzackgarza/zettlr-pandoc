@@ -18,66 +18,62 @@
  * END HEADER
  */
 
-import { strict as assert } from "assert";
-import showToast from "source/common/util/show-toast";
+import { strict as assert } from 'assert'
+import showToast from 'source/common/util/show-toast'
 
-const CONTAINER_ID = "zettlr-toast-container";
+const CONTAINER_ID = 'zettlr-toast-container'
 
-describe("Toast action affordance (review A5)", function () {
+describe('Toast action affordance (review A5)', function () {
   afterEach(function () {
-    document.getElementById(CONTAINER_ID)?.remove();
-  });
+    document.getElementById(CONTAINER_ID)?.remove()
+  })
 
-  function toasts(): HTMLElement[] {
-    return Array.from(document.querySelectorAll(`#${CONTAINER_ID} .zettlr-toast`));
+  function toasts (): HTMLElement[] {
+    return Array.from(document.querySelectorAll(`#${CONTAINER_ID} .zettlr-toast`))
   }
 
-  it("renders one labeled action button and runs the action exactly once on click", function () {
-    let actionRuns = 0;
-    showToast("Renamed thm:torelli to thm:headline across 4 documents.", "info", 6000, {
-      label: "Undo",
-      onAction: () => {
-        actionRuns++;
-      },
-    });
+  it('renders one labeled action button and runs the action exactly once on click', function () {
+    let actionRuns = 0
+    showToast('Renamed thm:torelli to thm:headline across 4 documents.', 'info', 6000, {
+      label: 'Undo',
+      onAction: () => { actionRuns++ }
+    })
 
-    const toast = toasts()[0];
-    assert.notStrictEqual(toast, undefined, "the toast must render");
+    const toast = toasts()[0]
+    assert.notStrictEqual(toast, undefined, 'the toast must render')
 
-    const button = toast.querySelector<HTMLButtonElement>("button[data-toast-action]");
-    assert.ok(button !== null, "the action toast must render its action as a real button");
-    assert.strictEqual(button.textContent, "Undo", "the button must carry the supplied label");
+    const button = toast.querySelector<HTMLButtonElement>('button[data-toast-action]')
+    assert.ok(button !== null, 'the action toast must render its action as a real button')
+    assert.strictEqual(button.textContent, 'Undo', 'the button must carry the supplied label')
 
-    assert.strictEqual(actionRuns, 0, "rendering must not run the action");
-    button.click();
-    assert.strictEqual(actionRuns, 1, "clicking the button must run the action exactly once");
-    assert.strictEqual(toasts().length, 0, "the acted-on toast must dismiss itself");
-  });
+    assert.strictEqual(actionRuns, 0, 'rendering must not run the action')
+    button.click()
+    assert.strictEqual(actionRuns, 1, 'clicking the button must run the action exactly once')
+    assert.strictEqual(toasts().length, 0, 'the acted-on toast must dismiss itself')
+  })
 
-  it("dismissing the toast body never runs the action", function () {
-    let actionRuns = 0;
-    showToast("Renamed with pending undo.", "info", 6000, {
-      label: "Undo",
-      onAction: () => {
-        actionRuns++;
-      },
-    });
+  it('dismissing the toast body never runs the action', function () {
+    let actionRuns = 0
+    showToast('Renamed with pending undo.', 'info', 6000, {
+      label: 'Undo',
+      onAction: () => { actionRuns++ }
+    })
 
-    const toast = toasts()[0];
-    assert.notStrictEqual(toast, undefined, "the toast must render");
-    toast.click();
-    assert.strictEqual(toasts().length, 0, "clicking the body must dismiss the toast");
-    assert.strictEqual(actionRuns, 0, "dismissal is not the action");
-  });
+    const toast = toasts()[0]
+    assert.notStrictEqual(toast, undefined, 'the toast must render')
+    toast.click()
+    assert.strictEqual(toasts().length, 0, 'clicking the body must dismiss the toast')
+    assert.strictEqual(actionRuns, 0, 'dismissal is not the action')
+  })
 
-  it("action-free toasts render no action button", function () {
-    showToast("Loading workspace references failed.", "error");
-    const toast = toasts()[0];
-    assert.notStrictEqual(toast, undefined, "the toast must render");
+  it('action-free toasts render no action button', function () {
+    showToast('Loading workspace references failed.', 'error')
+    const toast = toasts()[0]
+    assert.notStrictEqual(toast, undefined, 'the toast must render')
     assert.strictEqual(
-      toast.querySelector("button[data-toast-action]"),
+      toast.querySelector('button[data-toast-action]'),
       null,
-      "a toast without an action must not grow a button",
-    );
-  });
-});
+      'a toast without an action must not grow a button'
+    )
+  })
+})

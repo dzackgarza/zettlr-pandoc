@@ -4,36 +4,36 @@
  * that other inline math does not receive.
  */
 
-import { strict as assert } from "node:assert";
-import { type ChildProcess } from "node:child_process";
-import { readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { type Browser, type Page } from "playwright";
+import { strict as assert } from 'node:assert'
+import { type ChildProcess } from 'node:child_process'
+import { readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { type Browser, type Page } from 'playwright'
 import {
   assertCleanExit,
   attach,
   createFixture,
   findEditorPage,
   preserveArtifacts,
-  shutdown,
-} from "./support/electron-app";
+  shutdown
+} from './support/electron-app'
 
-const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-inline-math-background-e2e-latest");
+const ARTIFACT_DIRECTORY = path.join(tmpdir(), 'zettlr-inline-math-background-e2e-latest')
 
 const DOCUMENT =
-  "# Basics of Coble surfaces\n\n" +
+  '# Basics of Coble surfaces\n\n' +
   '::: {.remark title="On defining Cobles"}\n\n' +
-  "A Coble surface is a rational surface with $\\lvert -K_S \\rvert = \\emptyset$ " +
-  "but $\\lvert -2K_S \\rvert \\neq \\emptyset$.\n" +
-  "The curve decomposes as $C = C_1 + C_2$ with $C_i^2 = -4$.\n" +
-  ":::\n\n" +
-  "Outside the div, $\\lvert -K_S \\rvert = \\emptyset$ and $C = C_1 + C_2$.\n";
+  'A Coble surface is a rational surface with $\\lvert -K_S \\rvert = \\emptyset$ ' +
+  'but $\\lvert -2K_S \\rvert \\neq \\emptyset$.\n' +
+  'The curve decomposes as $C = C_1 + C_2$ with $C_i^2 = -4$.\n' +
+  ':::\n\n' +
+  'Outside the div, $\\lvert -K_S \\rvert = \\emptyset$ and $C = C_1 + C_2$.\n'
 
 interface PaintedMath {
-  math: string;
-  painters: Array<{ cls: string; bg: string; width: number }>;
-  stack: Array<{ tag: string; cls: string; bg: string }>;
+  math: string
+  painters: Array<{ cls: string, bg: string, width: number }>
+  stack: Array<{ tag: string, cls: string, bg: string }>
 }
 
 /**
@@ -41,10 +41,10 @@ interface PaintedMath {
  * opaque background over it. Ancestors that span the whole editor (scroller,
  * div wrapper) are excluded: they paint the page, not the math.
  */
-async function paintedMath(page: Page): Promise<PaintedMath[]> {
+async function paintedMath (page: Page): Promise<PaintedMath[]> {
   // The page script is passed as source: the test runner's transform injects
   // helper identifiers that do not exist in the renderer context.
-  return (await page.evaluate(`(() => {
+  return await page.evaluate(`(() => {
     const results = []
     for (const widget of document.querySelectorAll('.preview-math')) {
       const box = widget.getBoundingClientRect()
@@ -111,7 +111,7 @@ async function paintedMath(page: Page): Promise<PaintedMath[]> {
       results.push({ math: (widget.textContent || '').slice(0, 30), painters, stack })
     }
     return results
-  })()`)) as PaintedMath[];
+  })()`) as PaintedMath[]
 }
 
 /**
@@ -119,63 +119,57 @@ async function paintedMath(page: Page): Promise<PaintedMath[]> {
  * citation library). REPRO_CONFIG points at that config.json; its workspace
  * keys are dropped so the fixture keeps its own workspace.
  */
-async function reproConfig(): Promise<Record<string, unknown> | undefined> {
-  const configPath = process.env.REPRO_CONFIG;
-  const library = process.env.REPRO_LIBRARY;
+async function reproConfig (): Promise<Record<string, unknown>|undefined> {
+  const configPath = process.env.REPRO_CONFIG
+  const library = process.env.REPRO_LIBRARY
   if (configPath === undefined) {
-    return library === undefined ? undefined : { export: { cslLibrary: library } };
+    return library === undefined ? undefined : { export: { cslLibrary: library } }
   }
-  const parsed = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
-  delete parsed.app;
-  delete parsed.openDirectory;
+  const parsed = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>
+  delete parsed.app
+  delete parsed.openDirectory
   // The reader's own Zettlr may be running and holding its configured Agent
   // API port; the fixture must not compete for it.
-  parsed.agentApi = { enabled: false, port: 0 };
-  return parsed;
+  parsed.agentApi = { enabled: false, port: 0 }
+  return parsed
 }
 
-describe("inline math in the live editor", function () {
-  let appProcess: ChildProcess | undefined;
-  let browser: Browser | undefined;
-  let fixtureRoot: string | undefined;
-  let getOutput: () => string = () => "";
-  const rendererEvents: string[] = [];
-  const screenshots = new Map<string, Buffer>();
+describe('inline math in the live editor', function () {
+  let appProcess: ChildProcess | undefined
+  let browser: Browser | undefined
+  let fixtureRoot: string | undefined
+  let getOutput: () => string = () => ''
+  const rendererEvents: string[] = []
+  const screenshots = new Map<string, Buffer>()
 
   before(async function () {
-    const override = process.env.REPRO_DOC;
-    const fixture = await createFixture("zettlr-inline-math-background-e2e-", {
-      documentName: "inline-math.md",
-      documentContents: override === undefined ? DOCUMENT : await readFile(override, "utf8"),
-      config: await reproConfig(),
-    });
-    fixtureRoot = fixture.root;
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
-    appProcess = app.appProcess;
-    browser = app.browser;
-    getOutput = app.getOutput;
-  });
+    const override = process.env.REPRO_DOC
+    const fixture = await createFixture('zettlr-inline-math-background-e2e-', {
+      documentName: 'inline-math.md',
+      documentContents: override === undefined ? DOCUMENT : await readFile(override, 'utf8'),
+      config: await reproConfig()
+    })
+    fixtureRoot = fixture.root
+    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout())
+    appProcess = app.appProcess
+    browser = app.browser
+    getOutput = app.getOutput
+  })
 
   after(async function () {
-    await shutdown(browser, appProcess);
-    await preserveArtifacts(
-      ARTIFACT_DIRECTORY,
-      fixtureRoot,
-      getOutput(),
-      rendererEvents,
-      screenshots,
-    );
+    await shutdown(browser, appProcess)
+    await preserveArtifacts(ARTIFACT_DIRECTORY, fixtureRoot, getOutput(), rendererEvents, screenshots)
     if (fixtureRoot !== undefined) {
-      await rm(fixtureRoot, { recursive: true, force: true });
+      await rm(fixtureRoot, { recursive: true, force: true })
     }
-    console.log(`E2E artifacts: ${ARTIFACT_DIRECTORY}`);
-    assertCleanExit(getOutput());
-  });
+    console.log(`E2E artifacts: ${ARTIFACT_DIRECTORY}`)
+    assertCleanExit(getOutput())
+  })
 
-  it("paints no background behind rendered inline math", async function () {
-    assert.ok(browser, "The application must be running");
-    const page = await findEditorPage(browser, this.timeout());
-    await page.locator(".preview-math").first().waitFor({ timeout: this.timeout() });
+  it('paints no background behind rendered inline math', async function () {
+    assert.ok(browser, 'The application must be running')
+    const page = await findEditorPage(browser, this.timeout())
+    await page.locator('.preview-math').first().waitFor({ timeout: this.timeout() })
     // The reported state has the cursor inside the div, which switches the div
     // from its rendered widget back to its source lines.
     const activation = await page.evaluate(`(() => {
@@ -187,9 +181,9 @@ describe("inline math in the live editor", function () {
       view.focus()
       view.dispatch({ selection: { anchor: marker + 4 } })
       return { anchor: view.state.selection.main.head }
-    })()`);
-    await page.waitForTimeout(600);
-    console.log("cursor placed at", JSON.stringify(activation));
+    })()`)
+    await page.waitForTimeout(600)
+    console.log('cursor placed at', JSON.stringify(activation))
     if (process.env.REPRO_EDIT !== undefined) {
       // The reported state arises while typing a citekey that the library does
       // not contain, so break a resolvable key in place rather than loading a
@@ -200,33 +194,28 @@ describe("inline math in the live editor", function () {
         if (at < 0) throw new Error('the fixture has no @CD85 to break')
         view.dispatch({ changes: { from: at + 4, to: at + 5, insert: '9' } })
         return view.state.doc.sliceString(at, at + 6)
-      })()`);
-      await page.waitForTimeout(800);
-      console.log("edited citekey to", JSON.stringify(edit));
+      })()`)
+      await page.waitForTimeout(800)
+      console.log('edited citekey to', JSON.stringify(edit))
     }
-    console.log(
-      "div states:",
-      await page.evaluate(
-        `Array.from(document.querySelectorAll('[data-pandoc-div-state]')).map(el => el.getAttribute('data-pandoc-div-state')).join(',')`,
-      ),
-    );
+    console.log('div states:', await page.evaluate(`Array.from(document.querySelectorAll('[data-pandoc-div-state]')).map(el => el.getAttribute('data-pandoc-div-state')).join(',')`))
     // The reported layout has the file manager open, so the editor column is
     // narrower than this harness's default and the paragraph wraps elsewhere.
     // Sweep the widths a reader could have, since the defect may depend on
     // where a rendered citation breaks across lines.
-    const painted: PaintedMath[] = [];
-    for (const width of [1876, 1600, 1400, 1200, 1000]) {
-      await page.setViewportSize({ width, height: 1000 });
-      await page.waitForTimeout(400);
-      const report = await paintedMath(page);
-      const hits = report.filter((entry) => entry.painters.length > 0);
-      console.log(`width ${width}: ${report.length} math, ${hits.length} painted`);
+    const painted: PaintedMath[] = []
+    for (const width of [ 1876, 1600, 1400, 1200, 1000 ]) {
+      await page.setViewportSize({ width, height: 1000 })
+      await page.waitForTimeout(400)
+      const report = await paintedMath(page)
+      const hits = report.filter(entry => entry.painters.length > 0)
+      console.log(`width ${width}: ${report.length} math, ${hits.length} painted`)
       for (const hit of hits) {
-        console.log("   ", hit.math, JSON.stringify(hit.painters));
+        console.log('   ', hit.math, JSON.stringify(hit.painters))
       }
-      screenshots.set(`inline-math-${width}.png`, await page.screenshot());
-      painted.push(...hits);
+      screenshots.set(`inline-math-${width}.png`, await page.screenshot())
+      painted.push(...hits)
     }
-    assert.deepEqual(painted, [], "no inline math may receive its own background");
-  });
-});
+    assert.deepEqual(painted, [], 'no inline math may receive its own background')
+  })
+})

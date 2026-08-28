@@ -35,130 +35,130 @@
  * END HEADER
  */
 
-import WindowChrome from "@common/vue/window/WindowChrome.vue";
-import { type ToolbarControl } from "@common/vue/window/WindowToolbar.vue";
-import { type LogMessage as LM } from "@providers/log";
-import { computed, nextTick, ref } from "vue";
-import LogMessage from "./LogMessage.vue";
+import LogMessage from './LogMessage.vue'
+import WindowChrome from '@common/vue/window/WindowChrome.vue'
+import { nextTick, ref, computed } from 'vue'
+import { type LogMessage as LM } from '@providers/log'
+import { type ToolbarControl } from '@common/vue/window/WindowToolbar.vue'
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
 const toolbarControls: ToolbarControl[] = [
   {
-    id: "filter-text",
-    type: "text",
-    align: "left",
-    content: "Filter messages:",
+    id: 'filter-text',
+    type: 'text',
+    align: 'left',
+    content: 'Filter messages:'
   },
   {
-    type: "spacer",
-    size: "5x",
+    type: 'spacer',
+    size: '5x'
   },
   {
-    type: "toggle",
-    label: "Verbose",
-    id: "verboseToggle",
-    activeClass: "verbose-control-active",
-    initialState: false,
+    type: 'toggle',
+    label: 'Verbose',
+    id: 'verboseToggle',
+    activeClass: 'verbose-control-active',
+    initialState: false
   },
   {
-    type: "toggle",
-    label: "Info",
-    id: "infoToggle",
-    activeClass: "info-control-active",
-    initialState: false,
+    type: 'toggle',
+    label: 'Info',
+    id: 'infoToggle',
+    activeClass: 'info-control-active',
+    initialState: false
   },
   {
-    type: "toggle",
-    label: "Warning",
-    id: "warningToggle",
-    activeClass: "warning-control-active",
-    initialState: true,
+    type: 'toggle',
+    label: 'Warning',
+    id: 'warningToggle',
+    activeClass: 'warning-control-active',
+    initialState: true
   },
   {
-    type: "toggle",
-    label: "Error",
-    id: "errorToggle",
-    activeClass: "error-control-active",
-    initialState: true,
+    type: 'toggle',
+    label: 'Error',
+    id: 'errorToggle',
+    activeClass: 'error-control-active',
+    initialState: true
   },
   {
-    type: "spacer", // Make sure the content is flushed to the left
-    id: "spacer-one",
-    size: "3x",
+    type: 'spacer', // Make sure the content is flushed to the left
+    id: 'spacer-one',
+    size: '3x'
   },
   {
-    type: "search",
-    id: "log-filter",
-    placeholder: "Filter…",
-  },
-];
+    type: 'search',
+    id: 'log-filter',
+    placeholder: 'Filter…'
+  }
+]
 
-const filter = ref(""); // Optionally filter the messages with a string
-const nextIndex = ref(0); // Last log message array index; updated from the main process
-const messages = ref<LM[]>([]); // Holds all the log files
-const includeVerbose = ref(false);
-const includeInfo = ref(false);
-const includeWarning = ref(true);
-const includeError = ref(true);
-const logViewer = ref<null | HTMLDivElement>(null);
+const filter = ref('') // Optionally filter the messages with a string
+const nextIndex = ref(0) // Last log message array index; updated from the main process
+const messages = ref<LM[]>([]) // Holds all the log files
+const includeVerbose = ref(false)
+const includeInfo = ref(false)
+const includeWarning = ref(true)
+const includeError = ref(true)
+const logViewer = ref<null|HTMLDivElement>(null)
 
 const filteredMessages = computed<LM[]>(() => {
-  const preFiltered = messages.value.filter((message) => {
+  const preFiltered = messages.value.filter(message => {
     if (includeVerbose.value && message.level === 1) {
-      return true;
+      return true
     }
 
     if (includeInfo.value && message.level === 2) {
-      return true;
+      return true
     }
 
     if (includeWarning.value && message.level === 3) {
-      return true;
+      return true
     }
 
     if (includeError.value && message.level === 4) {
-      return true;
+      return true
     }
 
-    return false;
-  });
+    return false
+  })
 
-  const q = filter.value.trim().toLowerCase();
+  const q = filter.value.trim().toLowerCase()
 
-  if (q !== "") {
-    return preFiltered.filter((message) => {
-      return message.message.toLowerCase().includes(q);
-    });
+  if (q !== '') {
+    return preFiltered.filter(message => {
+      return message.message.toLowerCase().includes(q)
+    })
   } else {
-    return preFiltered;
+    return preFiltered
   }
-});
+})
 
 // AUTOMATIC REFRESH INTERVAL
 setInterval(() => {
-  fetchData().catch((e) => console.error("Could not fetch new log data", e));
-}, 1000);
+  fetchData().catch(e => console.error('Could not fetch new log data', e))
+}, 1000)
 
 /**
  * Fetches new log data, beginning at nextIndex
  *
  * @return  {void}
  */
-async function fetchData(): Promise<void> {
-  const newLogs: LM[] = await ipcRenderer.invoke("log-provider", {
-    command: "retrieve-log-chunk",
-    nextIndex: nextIndex.value,
-  });
+async function fetchData (): Promise<void> {
+  const newLogs: LM[] = await ipcRenderer.invoke('log-provider', {
+    command: 'retrieve-log-chunk',
+    nextIndex: nextIndex.value
+  })
 
-  const shouldScroll = containerScrolledToBottom();
+  const shouldScroll = containerScrolledToBottom()
 
-  nextIndex.value += newLogs.length;
-  messages.value = messages.value.concat(newLogs);
+  nextIndex.value += newLogs.length
+  messages.value = messages.value.concat(newLogs)
   // Vue will update itself only on the next tick, so let's await that
   if (shouldScroll) {
-    await nextTick();
-    scrollToBottom();
+    await nextTick()
+    scrollToBottom()
   }
 }
 
@@ -167,16 +167,16 @@ async function fetchData(): Promise<void> {
  *
  * @return  {boolean}  Whether the container is at the bottom
  */
-function containerScrolledToBottom(): boolean {
-  const elem = logViewer.value;
+function containerScrolledToBottom (): boolean {
+  const elem = logViewer.value
   if (elem === null) {
-    return true;
+    return true
   }
 
-  const lastVisiblePixel = elem.getBoundingClientRect().height + elem.scrollTop;
-  const leftToShow = elem.scrollHeight - lastVisiblePixel;
+  const lastVisiblePixel = elem.getBoundingClientRect().height + elem.scrollTop
+  const leftToShow = elem.scrollHeight - lastVisiblePixel
 
-  return leftToShow === 0;
+  return leftToShow === 0
 }
 
 /**
@@ -184,29 +184,29 @@ function containerScrolledToBottom(): boolean {
  *
  * @return  {void}
  */
-function scrollToBottom(): void {
-  const elem = logViewer.value;
+function scrollToBottom (): void {
+  const elem = logViewer.value
   if (elem === null) {
-    return;
+    return
   }
 
-  elem.scrollTop = elem.scrollHeight - elem.getBoundingClientRect().height;
+  elem.scrollTop = elem.scrollHeight - elem.getBoundingClientRect().height
 }
 
-function handleToggle(event: { id?: string; state?: string | boolean }): void {
-  const { id, state } = event;
-  if (typeof state !== "boolean") {
-    console.warn("Could not toggle log level: State was not a boolean.");
-    return;
+function handleToggle (event: { id?: string, state?: string|boolean }): void {
+  const { id, state } = event
+  if (typeof state !== 'boolean') {
+    console.warn('Could not toggle log level: State was not a boolean.')
+    return
   }
-  if (id === "verboseToggle") {
-    includeVerbose.value = state;
-  } else if (id === "infoToggle") {
-    includeInfo.value = state;
-  } else if (id === "warningToggle") {
-    includeWarning.value = state;
-  } else if (id === "errorToggle") {
-    includeError.value = state;
+  if (id === 'verboseToggle') {
+    includeVerbose.value = state
+  } else if (id === 'infoToggle') {
+    includeInfo.value = state
+  } else if (id === 'warningToggle') {
+    includeWarning.value = state
+  } else if (id === 'errorToggle') {
+    includeError.value = state
   }
 }
 </script>

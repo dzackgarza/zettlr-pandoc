@@ -12,12 +12,12 @@
  * END HEADER
  */
 
-import rehypeParse from "rehype-parse";
-import rehypeRemark from "rehype-remark";
-import rehypeRemoveComments from "rehype-remove-comments";
-import remarkGfm from "remark-gfm";
-import remarkStringify, { type Options } from "remark-stringify";
-import { unified } from "unified";
+import rehypeParse from 'rehype-parse'
+import rehypeRemark from 'rehype-remark'
+import remarkGfm from 'remark-gfm'
+import remarkStringify, { type Options } from 'remark-stringify'
+import rehypeRemoveComments from 'rehype-remove-comments'
+import { unified } from 'unified'
 
 /**
  * Turns the given HTML string to Markdown
@@ -29,26 +29,22 @@ import { unified } from "unified";
  *
  * @return  {Promise<string>}           The converted Markdown
  */
-export default async function html2md(
-  html: string,
-  stripComments = false,
-  stringifyOptions?: Options,
-): Promise<string> {
+export default async function html2md (html: string, stripComments = false, stringifyOptions?: Options): Promise<string> {
   const procRetainComments = unified()
     .use(rehypeParse)
     .use(rehypeRemark)
     .use(remarkGfm)
-    .use(remarkStringify, stringifyOptions);
+    .use(remarkStringify, stringifyOptions)
 
   const procRemoveComments = unified()
     .use(rehypeParse)
     .use(rehypeRemoveComments, { removeConditional: true })
     .use(rehypeRemark)
     .use(remarkGfm)
-    .use(remarkStringify, stringifyOptions);
+    .use(remarkStringify, stringifyOptions)
 
-  const proc = stripComments ? procRemoveComments : procRetainComments;
+  const proc = stripComments ? procRemoveComments : procRetainComments
 
-  const file = await proc.process(html);
-  return String(file);
+  const file = await proc.process(html)
+  return String(file)
 }

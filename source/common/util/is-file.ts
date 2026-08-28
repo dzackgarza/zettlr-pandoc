@@ -11,7 +11,7 @@
  * END HEADER
  */
 
-import { lstatSync } from "fs";
+import { lstatSync } from 'fs'
 
 /**
  * Checks if a given path is a valid file
@@ -20,11 +20,11 @@ import { lstatSync } from "fs";
  *
  * @return {boolean}   True, if it is a valid path + file, and false if not
  */
-export default function isFile(p: string): boolean {
+export default function isFile (p: string): boolean {
   try {
-    let s = lstatSync(p);
-    return s.isFile();
+    let s = lstatSync(p)
+    return s.isFile()
   } catch (err) {
-    return false;
+    return false
   }
 }

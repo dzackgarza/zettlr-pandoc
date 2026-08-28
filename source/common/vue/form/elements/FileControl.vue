@@ -37,79 +37,77 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-renderer";
-import type { FileFilter } from "electron";
-import type { RequestFilesIPCAPI } from "source/app/service-providers/windows";
-import { computed, ref, toRef, watch } from "vue";
-import TextControl from "./TextControl.vue";
+import { trans } from '@common/i18n-renderer'
+import { ref, computed, watch, toRef } from 'vue'
+import TextControl from './TextControl.vue'
+import type { FileFilter } from 'electron'
+import type { RequestFilesIPCAPI } from 'source/app/service-providers/windows'
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
 const props = defineProps<{
-  modelValue: string;
-  label?: string;
-  name?: string;
-  reset?: boolean | string;
-  placeholder?: string;
-  directory?: boolean;
-  filter?: FileFilter[];
-}>();
+  modelValue: string
+  label?: string
+  name?: string
+  reset?: boolean|string
+  placeholder?: string
+  directory?: boolean
+  filter?: FileFilter[]
+}>()
 
-const emit = defineEmits<(e: "update:modelValue", val: string) => void>();
+const emit = defineEmits<(e: 'update:modelValue', val: string) => void>()
 
-const textValue = ref<string>(props.modelValue);
+const textValue = ref<string>(props.modelValue)
 
 const fieldID = computed<string>(() => {
-  return "field-input-" + props.name;
-});
+  return 'field-input-' + props.name
+})
 
 const selectButtonLabel = computed<string>(() => {
-  return props.directory ? trans("Select folder…") : trans("Select file…");
-});
+  return props.directory ? trans('Select folder…') : trans('Select file…')
+})
 
-watch(toRef(props, "modelValue"), (newValue) => {
+watch(toRef(props, 'modelValue'), (newValue) => {
   if (newValue !== textValue.value) {
-    textValue.value = newValue;
+    textValue.value = newValue
   }
-});
+})
 
 watch(textValue, () => {
-  emit("update:modelValue", textValue.value);
-});
+  emit('update:modelValue', textValue.value)
+})
 
-function requestFile(): void {
+function requestFile (): void {
   const payload: RequestFilesIPCAPI = {
-    filters: props.filter ?? [{ name: trans("All Files"), extensions: ["*"] }],
-    multiSelection: false,
-  };
+    filters: props.filter ?? [{ name: trans('All Files'), extensions: ['*'] }],
+    multiSelection: false
+  }
 
-  ipcRenderer
-    .invoke("request-files", payload)
-    .then((result) => {
+  ipcRenderer.invoke('request-files', payload)
+    .then(result => {
       // Don't update to empty paths.
-      if (result.length === 0 || result[0].trim() === "") {
-        return;
+      if (result.length === 0 || result[0].trim() === '') {
+        return
       }
 
       // Write the return value into the data-request-target of the clicked
       // button, because each button has a designated text field.
-      textValue.value = result[0];
+      textValue.value = result[0]
     })
-    .catch((e) => console.error(e));
+    .catch(e => console.error(e))
 }
 
-function requestDir(): void {
-  ipcRenderer
-    .invoke("request-dir")
-    .then((result) => {
+function requestDir (): void {
+  ipcRenderer.invoke('request-dir')
+    .then(result => {
       // Don't update to empty paths.
-      if (result.length === 0 || result[0].trim() === "") {
-        return;
+      if (result.length === 0 || result[0].trim() === '') {
+        return
       }
 
-      textValue.value = result[0];
+      textValue.value = result[0]
     })
-    .catch((e) => console.error(e));
+    .catch(e => console.error(e))
 }
 </script>
 

@@ -11,8 +11,8 @@
  *
  * END HEADER
  */
-import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
-import { transformSelectedText } from "./transform-selected-text";
+import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
+import { transformSelectedText } from './transform-selected-text'
 
 /**
  * Return a function that'll return a '`StateCommand` that converts selected
@@ -30,28 +30,29 @@ import { transformSelectedText } from "./transform-selected-text";
  * @return  {StateCommand}          A `StateCommand` that converts selected text
  *                                  to title case.
  */
-export const toTitleCase = (locale: ConfigOptions["appLang"]) => {
-  const toWords = new Intl.Segmenter(locale, { granularity: "word" });
+export const toTitleCase =
+  (locale: ConfigOptions['appLang']) => {
+    const toWords = new Intl.Segmenter(locale, { granularity: 'word' })
 
-  const capitalize = capitalizeFor(locale);
+    const capitalize = capitalizeFor(locale)
 
-  return transformSelectedText((text) => {
-    const titleCasedWords: string[] = [];
+    return transformSelectedText((text) => {
+      const titleCasedWords: string[] = []
 
-    const words = toWords.segment(text);
+      const words = toWords.segment(text)
 
-    for (const word of words) {
-      if (word.isWordLike === true) {
-        titleCasedWords.push(capitalize(word));
-      } else {
-        // it's a number/emoji/whitespace: don't bother capitalizing it
-        titleCasedWords.push(word.segment);
+      for (const word of words) {
+        if (word.isWordLike === true) {
+          titleCasedWords.push(capitalize(word))
+        } else {
+          // it's a number/emoji/whitespace: don't bother capitalizing it
+          titleCasedWords.push(word.segment)
+        }
       }
-    }
 
-    return titleCasedWords.join("");
-  });
-};
+      return titleCasedWords.join('')
+    })
+  }
 
 /**
  * Return a function that'll capitalize words using the `locale`'s rules.
@@ -60,14 +61,15 @@ export const toTitleCase = (locale: ConfigOptions["appLang"]) => {
  *
  * @return  {Function}         a capitalizing function.
  */
-function capitalizeFor(locale: ConfigOptions["appLang"]) {
-  const toCharacters = new Intl.Segmenter(locale);
+function capitalizeFor (locale: ConfigOptions['appLang']) {
+  const toCharacters = new Intl.Segmenter(locale)
 
   return (word: Intl.SegmentData): string => {
-    const [first, ...rest] = [...toCharacters.segment(word.segment)];
+    const [ first, ...rest ] = [...toCharacters.segment(word.segment)]
 
-    return [first.segment.toLocaleUpperCase(locale), ...rest.map(({ segment }) => segment)].join(
-      "",
-    );
-  };
+    return [
+      first.segment.toLocaleUpperCase(locale),
+      ...rest.map(({ segment }) => segment)
+    ].join('')
+  }
 }

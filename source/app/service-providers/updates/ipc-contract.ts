@@ -14,23 +14,23 @@
  * END HEADER
  */
 
-import type { UpdateState } from "./index";
+import type { UpdateState } from './index'
 
 export type UpdateProviderIPCContract = {
-  "check-for-update": {
-    request: { payload?: undefined };
-    response: undefined;
-  };
-  "update-status": {
-    request: { payload?: undefined };
-    response: UpdateState;
-  };
-  "request-app-update": {
-    request: { payload: string };
-    response: undefined;
-  };
-  "begin-update": {
-    request: { payload?: undefined };
-    response: boolean;
-  };
-};
+  'check-for-update': {
+    request: { payload?: undefined }
+    response: undefined
+  }
+  'update-status': {
+    request: { payload?: undefined }
+    response: UpdateState
+  }
+  'request-app-update': {
+    request: { payload: string }
+    response: undefined
+  }
+  'begin-update': {
+    request: { payload?: undefined }
+    response: boolean
+  }
+}

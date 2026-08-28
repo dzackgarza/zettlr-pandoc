@@ -13,22 +13,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed } from 'vue'
 
-const props = defineProps<{ type?: "warning" | "error" | "info" }>();
+const props = defineProps<{ type?: 'warning'|'error'|'info' }>()
 
 const icon = computed(() => {
   switch (props.type) {
-    case "error":
-      return "error-standard";
-    case "info":
-      return "info-standard";
-    case "warning":
-    // falls through
+    case 'error':
+      return 'error-standard'
+    case 'info':
+      return 'info-standard'
+    case 'warning':
+      // falls through
     default:
-      return "warning-standard";
+      return 'warning-standard'
   }
-});
+})
 </script>
 
 <style lang="less">

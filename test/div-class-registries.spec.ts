@@ -37,60 +37,51 @@
  * END HEADER
  */
 
-import { strict as assert } from "assert";
-import { classifyDiv, SEMANTIC_DIV_CLASSES } from "source/common/pandoc-util/pandoc-div-model";
-import { REFERENCEABLE_DIV_CLASSES } from "source/common/util/pandoc-quick-reference";
+import { strict as assert } from 'assert'
+import { classifyDiv, SEMANTIC_DIV_CLASSES } from 'source/common/pandoc-util/pandoc-div-model'
+import { REFERENCEABLE_DIV_CLASSES } from 'source/common/util/pandoc-quick-reference'
 
-describe("Div-class registry relation (issue #5, B23)", function () {
-  it("every referenceable div class carries a semantic family (never generic)", function () {
-    const semanticClasses = Object.keys(SEMANTIC_DIV_CLASSES);
-    const outsiders = REFERENCEABLE_DIV_CLASSES.filter(
-      (divClass) => !semanticClasses.includes(divClass),
-    );
+describe('Div-class registry relation (issue #5, B23)', function () {
+  it('every referenceable div class carries a semantic family (never generic)', function () {
+    const semanticClasses = Object.keys(SEMANTIC_DIV_CLASSES)
+    const outsiders = REFERENCEABLE_DIV_CLASSES.filter(divClass => !semanticClasses.includes(divClass))
     assert.deepEqual(
       outsiders,
       [],
-      "a referenceable class outside SEMANTIC_DIV_CLASSES would render as a generic div while claiming a typed label",
-    );
+      'a referenceable class outside SEMANTIC_DIV_CLASSES would render as a generic div while claiming a typed label'
+    )
 
     // The same claim through the real classifier: no referenceable class may
     // fall through to the generic branch.
     for (const divClass of REFERENCEABLE_DIV_CLASSES) {
-      const { family } = classifyDiv([divClass]);
-      assert.notEqual(
-        family,
-        "generic",
-        `${divClass} is referenceable and must classify semantically`,
-      );
+      const { family } = classifyDiv([divClass])
+      assert.notEqual(family, 'generic', `${divClass} is referenceable and must classify semantically`)
     }
-  });
+  })
 
-  it("no referenceable div class belongs to the proof family", function () {
+  it('no referenceable div class belongs to the proof family', function () {
     // reference-lint warns on every labeled proof-family div; a class in both
     // registries would make that warning contradict the completion surface.
-    const proofFamilyReferenceable = REFERENCEABLE_DIV_CLASSES.filter(
-      (divClass) => SEMANTIC_DIV_CLASSES[divClass] === "proof",
-    );
+    const proofFamilyReferenceable = REFERENCEABLE_DIV_CLASSES
+      .filter(divClass => SEMANTIC_DIV_CLASSES[divClass] === 'proof')
     assert.deepEqual(
       proofFamilyReferenceable,
       [],
-      "proof-like divs are deliberately unreferenceable (THEOREM_DIV_PREFIXES contract)",
-    );
-  });
+      'proof-like divs are deliberately unreferenceable (THEOREM_DIV_PREFIXES contract)'
+    )
+  })
 
-  it("the overlap is exactly the referenceable set — a real, nonempty subset", function () {
+  it('the overlap is exactly the referenceable set — a real, nonempty subset', function () {
     // Guard against vacuous passes: the subset relation above must be doing
     // work over the actual 15-name overlap, and the registries must remain
     // genuinely distinct (semantic styling is wider than referenceability).
-    const semanticClasses = Object.keys(SEMANTIC_DIV_CLASSES);
-    const overlap = semanticClasses.filter((divClass) =>
-      REFERENCEABLE_DIV_CLASSES.includes(divClass),
-    );
-    assert.deepEqual([...overlap].sort(), [...REFERENCEABLE_DIV_CLASSES].sort());
-    assert.equal(overlap.length, 15, "the locked referenceable registry has exactly 15 classes");
+    const semanticClasses = Object.keys(SEMANTIC_DIV_CLASSES)
+    const overlap = semanticClasses.filter(divClass => REFERENCEABLE_DIV_CLASSES.includes(divClass))
+    assert.deepEqual([...overlap].sort(), [...REFERENCEABLE_DIV_CLASSES].sort())
+    assert.equal(overlap.length, 15, 'the locked referenceable registry has exactly 15 classes')
     assert.ok(
       semanticClasses.length > overlap.length,
-      "SEMANTIC_DIV_CLASSES intentionally styles classes beyond the referenceable set",
-    );
-  });
-});
+      'SEMANTIC_DIV_CLASSES intentionally styles classes beyond the referenceable set'
+    )
+  })
+})

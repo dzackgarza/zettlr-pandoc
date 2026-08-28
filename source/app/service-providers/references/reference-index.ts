@@ -25,8 +25,8 @@
  * END HEADER
  */
 
-import { resolveWorkspace } from "@common/pandoc-util/resolve-references";
-import type { DocumentReferenceSnapshot, Resolution } from "@dts/common/references";
+import type { DocumentReferenceSnapshot, Resolution } from '@dts/common/references'
+import { resolveWorkspace } from '@common/pandoc-util/resolve-references'
 
 /**
  * The complete workspace reference state served to every consumer: exactly
@@ -34,8 +34,8 @@ import type { DocumentReferenceSnapshot, Resolution } from "@dts/common/referenc
  * for its document) plus the resolution map computed over that merged view.
  */
 export interface WorkspaceReferenceState {
-  snapshots: DocumentReferenceSnapshot[];
-  resolutions: Map<string, Resolution>;
+  snapshots: DocumentReferenceSnapshot[]
+  resolutions: Map<string, Resolution>
 }
 
 /**
@@ -58,13 +58,13 @@ export interface WorkspaceReferenceState {
  */
 export class ReferenceIndex {
   /** Saved (on-disk) snapshots by documentPath, owned by FSAL events. */
-  private readonly saved: Map<string, DocumentReferenceSnapshot>;
+  private readonly saved: Map<string, DocumentReferenceSnapshot>
   /** Live-buffer overlays by documentPath, owned by the document authority. */
-  private readonly live: Map<string, DocumentReferenceSnapshot>;
+  private readonly live: Map<string, DocumentReferenceSnapshot>
 
-  constructor() {
-    this.saved = new Map();
-    this.live = new Map();
+  constructor () {
+    this.saved = new Map()
+    this.live = new Map()
   }
 
   /**
@@ -74,8 +74,8 @@ export class ReferenceIndex {
    *
    * @param   {DocumentReferenceSnapshot}  snapshot  The saved snapshot
    */
-  applySavedSnapshot(snapshot: DocumentReferenceSnapshot): void {
-    this.saved.set(snapshot.documentPath, snapshot);
+  applySavedSnapshot (snapshot: DocumentReferenceSnapshot): void {
+    this.saved.set(snapshot.documentPath, snapshot)
   }
 
   /**
@@ -83,10 +83,10 @@ export class ReferenceIndex {
    *
    * @param   {string}  documentPath  The unlinked document's path
    */
-  removeSavedSnapshot(documentPath: string): void {
+  removeSavedSnapshot (documentPath: string): void {
     // An unlink never touches a live overlay: an open buffer stays
     // authoritative until it is dropped.
-    this.saved.delete(documentPath);
+    this.saved.delete(documentPath)
   }
 
   /**
@@ -97,8 +97,8 @@ export class ReferenceIndex {
    *
    * @param   {DocumentReferenceSnapshot}  snapshot  The live snapshot
    */
-  reportLiveBuffer(snapshot: DocumentReferenceSnapshot): void {
-    this.live.set(snapshot.documentPath, snapshot);
+  reportLiveBuffer (snapshot: DocumentReferenceSnapshot): void {
+    this.live.set(snapshot.documentPath, snapshot)
   }
 
   /**
@@ -108,8 +108,8 @@ export class ReferenceIndex {
    *
    * @return  {boolean}               True when an overlay actually existed
    */
-  dropLiveBuffer(documentPath: string): boolean {
-    return this.live.delete(documentPath);
+  dropLiveBuffer (documentPath: string): boolean {
+    return this.live.delete(documentPath)
   }
 
   /**
@@ -119,22 +119,22 @@ export class ReferenceIndex {
    *
    * @return  {WorkspaceReferenceState}  The merged workspace reference state
    */
-  getSnapshot(): WorkspaceReferenceState {
-    const snapshots: DocumentReferenceSnapshot[] = [];
+  getSnapshot (): WorkspaceReferenceState {
+    const snapshots: DocumentReferenceSnapshot[] = []
 
-    for (const [documentPath, snapshot] of this.saved) {
-      snapshots.push(this.live.get(documentPath) ?? snapshot);
+    for (const [ documentPath, snapshot ] of this.saved) {
+      snapshots.push(this.live.get(documentPath) ?? snapshot)
     }
 
     // Documents that only exist as open buffers (e.g. unlinked but still
     // open, or open files FSAL has never indexed) are part of the merged
     // view too.
-    for (const [documentPath, snapshot] of this.live) {
+    for (const [ documentPath, snapshot ] of this.live) {
       if (!this.saved.has(documentPath)) {
-        snapshots.push(snapshot);
+        snapshots.push(snapshot)
       }
     }
 
-    return { snapshots, resolutions: resolveWorkspace(snapshots) };
+    return { snapshots, resolutions: resolveWorkspace(snapshots) }
   }
 }

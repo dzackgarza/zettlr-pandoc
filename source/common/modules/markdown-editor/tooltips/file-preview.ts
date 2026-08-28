@@ -13,51 +13,43 @@
  * END HEADER
  */
 
-import { syntaxTree } from "@codemirror/language";
-import { EditorView, hoverTooltip, type Tooltip } from "@codemirror/view";
-import { trans } from "@common/i18n-renderer";
-import { md2html } from "@common/modules/markdown-utils/markdown-to-html";
-import formatDate from "@common/util/format-date";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
-import type { FindFileAndReturnMetadataResult } from "source/app/service-providers/commands/file-find-and-return-meta-data";
-import type { ForceOpenAPI } from "source/app/service-providers/commands/force-open";
-import makeValidUri from "source/common/util/make-valid-uri";
-import { pathDirname } from "source/common/util/renderer-path-polyfill";
-import { configField } from "../util/configuration";
+import { syntaxTree } from '@codemirror/language'
+import { hoverTooltip, EditorView, type Tooltip } from '@codemirror/view'
+import { trans } from '@common/i18n-renderer'
+import { md2html } from '@common/modules/markdown-utils/markdown-to-html'
+import formatDate from '@common/util/format-date'
+import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
+import { configField } from '../util/configuration'
+import type { FindFileAndReturnMetadataResult } from 'source/app/service-providers/commands/file-find-and-return-meta-data'
+import { pathDirname } from 'source/common/util/renderer-path-polyfill'
+import makeValidUri from 'source/common/util/make-valid-uri'
+import type { ForceOpenAPI } from 'source/app/service-providers/commands/force-open'
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
 // Previews files with tooltips
-async function filePreviewTooltip(
-  view: EditorView,
-  pos: number,
-  side: 1 | -1,
-): Promise<Tooltip | null> {
-  const nodeAt = syntaxTree(view.state).resolve(pos, side);
+async function filePreviewTooltip (view: EditorView, pos: number, side: 1 | -1): Promise<Tooltip|null> {
+  const nodeAt = syntaxTree(view.state).resolve(pos, side)
 
-  if (
-    !["ZknLink", "ZknLinkContent", "ZknLinkTitle", "ZknLinkPipe", "ZknLinkMark"].includes(
-      nodeAt.type.name,
-    )
-  ) {
-    return null;
+  if (![ 'ZknLink', 'ZknLinkContent', 'ZknLinkTitle', 'ZknLinkPipe', 'ZknLinkMark',  ].includes(nodeAt.type.name)) {
+    return null
   }
 
-  const wrapperNode = nodeAt.type.name === "ZknLink" ? nodeAt : nodeAt.parent;
-  const contentNode = wrapperNode?.getChild("ZknLinkContent");
+  const wrapperNode = nodeAt.type.name === 'ZknLink' ? nodeAt : nodeAt.parent
+  const contentNode = wrapperNode?.getChild('ZknLinkContent')
 
   if (contentNode == null) {
-    return null;
+    return null
   }
 
-  const fileToDisplay = view.state.sliceDoc(contentNode.from, contentNode.to);
+  const fileToDisplay = view.state.sliceDoc(contentNode.from, contentNode.to)
 
-  const res: FindFileAndReturnMetadataResult | undefined = await ipcRenderer.invoke("application", {
-    command: "file-find-and-return-meta-data",
-    payload: fileToDisplay,
-  });
+  const res: FindFileAndReturnMetadataResult|undefined = await ipcRenderer.invoke(
+    'application',
+    { command: 'file-find-and-return-meta-data', payload: fileToDisplay }
+  )
 
-  const { zknLinkFormat } = view.state.field(configField);
+  const { zknLinkFormat } = view.state.field(configField)
 
   // By annotating a range (providing `end`) the hover tooltip will stay as long
   // as the user is somewhere over the links
@@ -65,19 +57,17 @@ async function filePreviewTooltip(
     pos: nodeAt.from,
     end: nodeAt.to,
     above: true,
-    create(_view) {
+    create (_view) {
       if (res !== undefined) {
-        return { dom: getPreviewElement(res, fileToDisplay, zknLinkFormat) };
+        return { dom: getPreviewElement(res, fileToDisplay, zknLinkFormat) }
       } else {
-        const dom = document.createElement("div");
-        const filename = fileToDisplay.includes("#")
-          ? fileToDisplay.slice(0, fileToDisplay.indexOf("#"))
-          : fileToDisplay;
-        dom.textContent = trans("File %s does not exist.", filename);
-        return { dom };
+        const dom = document.createElement('div')
+        const filename = fileToDisplay.includes('#') ? fileToDisplay.slice(0, fileToDisplay.indexOf('#')) : fileToDisplay
+        dom.textContent = trans('File %s does not exist.', filename)
+        return { dom }
       }
-    },
-  };
+    }
+  }
 }
 
 /**
@@ -90,129 +80,126 @@ async function filePreviewTooltip(
  *
  * @return  {Element}                                        The wrapper element
  */
-function getPreviewElement(
-  metadata: FindFileAndReturnMetadataResult,
-  linkContents: string,
-  zknLinkFormat: "link|title" | "title|link",
-): HTMLDivElement {
-  const wrapper = document.createElement("div");
-  wrapper.classList.add("editor-note-preview");
+function getPreviewElement (metadata: FindFileAndReturnMetadataResult, linkContents: string, zknLinkFormat: 'link|title'|'title|link'): HTMLDivElement {
+  const wrapper = document.createElement('div')
+  wrapper.classList.add('editor-note-preview')
 
-  const title = document.createElement("p");
-  title.classList.add("filename");
-  title.textContent = metadata.title;
+  const title = document.createElement('p')
+  title.classList.add('filename')
+  title.textContent = metadata.title
 
-  const content = document.createElement("div");
-  content.classList.add("note-content");
+  const content = document.createElement('div')
+  content.classList.add('note-content')
 
   // basePath is needed to convert any relative URLs into absolute ones
-  const basePath = pathDirname(metadata.filePath);
-  content.textContent = trans("Generating preview…");
+  const basePath = pathDirname(metadata.filePath)
+  content.textContent = trans('Generating preview…')
 
   // Start the MD->HTML conversion ...
-  md2html(metadata.previewMarkdown, {
-    zknLinkFormat,
-    onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
-    // Convert the image links to absolute (if necessary)
-    onImageSrc(src) {
-      const isDataUrl = /^data:[a-zA-Z0-9/;=]+(?:;base64){0,1},.+/.test(src);
-      if (isDataUrl) {
-        return src;
-      } else {
-        return makeValidUri(src, basePath);
+  md2html(
+    metadata.previewMarkdown,
+    {
+      zknLinkFormat,
+      onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
+      // Convert the image links to absolute (if necessary)
+      onImageSrc (src) {
+        const isDataUrl = /^data:[a-zA-Z0-9/;=]+(?:;base64){0,1},.+/.test(src)
+        if (isDataUrl) {
+          return src
+        } else {
+          return makeValidUri(src, basePath)
+        }
       }
-    },
-  })
-    .then((html) => {
+    }
+  )
+    .then(html => {
       // ... and then apply it to the content element.
-      content.innerHTML = html;
+      content.innerHTML = html
     })
-    .catch((err) => console.error(err));
+    .catch(err => console.error(err))
 
-  const meta = document.createElement("div");
-  meta.classList.add("metadata");
-  meta.innerHTML = `${trans("Word count")}: ${metadata.wordCount}`;
-  meta.innerHTML += "<br>";
-  meta.innerHTML += `${trans("Modified")}: ${formatDate(metadata.modtime, window.config.get("appLang") as string)}`;
+  const meta = document.createElement('div')
+  meta.classList.add('metadata')
+  meta.innerHTML = `${trans('Word count')}: ${metadata.wordCount}`
+  meta.innerHTML += '<br>'
+  meta.innerHTML += `${trans('Modified')}: ${formatDate(metadata.modtime, window.config.get('appLang') as string)}`
 
-  const actions = document.createElement("div");
-  actions.classList.add("actions");
+  const actions = document.createElement('div')
+  actions.classList.add('actions')
 
   const openFunc = function (): void {
-    ipcRenderer
-      .invoke("application", {
-        command: "force-open",
-        payload: {
-          linkContents,
-          newTab: undefined, // let open-file command decide based on preferences
-        } as ForceOpenAPI,
-      })
-      .catch((err) => console.error(err));
-  };
+    ipcRenderer.invoke('application', {
+      command: 'force-open',
+      payload: {
+        linkContents,
+        newTab: undefined // let open-file command decide based on preferences
+      } as ForceOpenAPI
+    })
+      .catch(err => console.error(err))
+  }
 
-  const openButton = document.createElement("button");
-  openButton.setAttribute("id", "open-note");
-  openButton.textContent = trans("Open…").replace("\u2026", ""); // remove "...", if any
-  openButton.addEventListener("click", openFunc);
-  actions.appendChild(openButton);
+  const openButton = document.createElement('button')
+  openButton.setAttribute('id', 'open-note')
+  openButton.textContent = trans('Open…').replace('\u2026', '') // remove "...", if any
+  openButton.addEventListener('click', openFunc)
+  actions.appendChild(openButton)
 
   // Only if preference "Avoid New Tabs" is set,
   // offer an additional button on preview tooltip
   // to open the file in a new tab
-  if (window.config.get("system.avoidNewTabs") === true) {
+  if (window.config.get('system.avoidNewTabs') === true) {
     const openFuncNewTab = function (): void {
-      ipcRenderer
-        .invoke("application", {
-          command: "force-open",
-          payload: {
-            linkContents,
-            newTab: true,
-          },
-        })
-        .catch((err) => console.error(err));
-    };
+      ipcRenderer.invoke('application', {
+        command: 'force-open',
+        payload: {
+          linkContents,
+          newTab: true
+        }
+      })
+        .catch(err => console.error(err))
+    }
 
-    const openButtonNT = document.createElement("button");
-    openButtonNT.setAttribute("id", "open-note-new-tab");
-    openButtonNT.textContent = trans("Open in a new tab");
-    openButtonNT.addEventListener("click", openFuncNewTab);
-    openButtonNT.style.marginLeft = "10px";
-    actions.appendChild(openButtonNT);
+    const openButtonNT = document.createElement('button')
+    openButtonNT.setAttribute('id', 'open-note-new-tab')
+    openButtonNT.textContent = trans('Open in a new tab')
+    openButtonNT.addEventListener('click', openFuncNewTab)
+    openButtonNT.style.marginLeft = '10px'
+    actions.appendChild(openButtonNT)
   }
 
-  wrapper.appendChild(title);
-  wrapper.appendChild(document.createElement("hr"));
-  wrapper.appendChild(content);
-  wrapper.appendChild(document.createElement("hr"));
-  wrapper.appendChild(meta);
-  wrapper.appendChild(actions);
+  wrapper.appendChild(title)
+  wrapper.appendChild(document.createElement('hr'))
+  wrapper.appendChild(content)
+  wrapper.appendChild(document.createElement('hr'))
+  wrapper.appendChild(meta)
+  wrapper.appendChild(actions)
 
-  return wrapper;
+  return wrapper
 }
 
 export const filePreview = [
   hoverTooltip(filePreviewTooltip, { hoverTime: 100 }),
   // Provide basic styles for these tooltips
   EditorView.baseTheme({
-    ".editor-note-preview": {
-      maxWidth: "300px",
-      padding: "5px",
-      fontSize: "80%",
+    '.editor-note-preview': {
+      maxWidth: '300px',
+      padding: '5px',
+      fontSize: '80%'
     },
-    ".editor-note-preview pre": { whiteSpace: "pre-wrap" },
-    ".editor-note-preview h1": { fontSize: "100%" },
-    ".editor-note-preview h2": { fontSize: "95%" },
-    ".editor-note-preview h3": { fontSize: "90%" },
-    ".editor-note-preview h4": { fontSize: "80%" },
-    ".editor-note-preview h5": { fontSize: "70%" },
-    ".editor-note-preview h6": { fontSize: "70%" },
-    ".editor-note-preview .note-content": { margin: "10px 0" },
-    ".editor-note-preview .metadata": {
-      color: "rgb(200, 200, 200)",
-      fontSize: "80%",
+    '.editor-note-preview pre': { whiteSpace: 'pre-wrap' },
+    '.editor-note-preview h1': { fontSize: '100%' },
+    '.editor-note-preview h2': { fontSize: '95%' },
+    '.editor-note-preview h3': { fontSize: '90%' },
+    '.editor-note-preview h4': { fontSize: '80%' },
+    '.editor-note-preview h5': { fontSize: '70%' },
+    '.editor-note-preview h6': { fontSize: '70%' },
+    '.editor-note-preview .note-content': { margin: '10px 0' },
+    '.editor-note-preview .metadata': {
+      color: 'rgb(200, 200, 200)',
+      fontSize: '80%'
     },
-    ".editor-note-preview .actions": {
-      margin: "5px 0",
-    },
-  }),
-];
+    '.editor-note-preview .actions': {
+      margin: '5px 0'
+    }
+  })
+]

@@ -51,112 +51,110 @@
  * END HEADER
  */
 
-import { computed, nextTick, ref, toRef, watch } from "vue";
+import { ref, computed, watch, toRef, nextTick } from 'vue'
 
 const props = defineProps<{
-  modelValue: string;
-  placeholder: string;
-  label: string;
-  name: string;
-  inline?: boolean;
-  autocompleteValues: string[];
-}>();
+  modelValue: string
+  placeholder: string
+  label: string
+  name: string
+  inline?: boolean
+  autocompleteValues: string[]
+}>()
 
 const visibleSuggestions = computed(() => {
-  const q = thisValue.value.toLowerCase();
-  return props.autocompleteValues.filter((item) => item.toLowerCase().includes(q));
-});
+  const q = thisValue.value.toLowerCase()
+  return props.autocompleteValues.filter(item => item.toLowerCase().includes(q))
+})
 
-const emit = defineEmits<(e: "update:modelValue", val: string) => void>();
+const emit = defineEmits<(e: 'update:modelValue', val: string) => void>()
 
 /**
  * Value updating logic
  */
-const thisValue = ref<string>(props.modelValue);
-const showOptions = ref(false);
-const activeOption = ref(-1);
+const thisValue = ref<string>(props.modelValue)
+const showOptions = ref(false)
+const activeOption = ref(-1)
 
-function onInputFocus() {
-  showOptions.value = true;
+function onInputFocus () {
+  showOptions.value = true
 }
 
-function onInputBlur() {
-  showOptions.value = false;
-  activeOption.value = -1;
+function onInputBlur () {
+  showOptions.value = false
+  activeOption.value = -1
 }
 
-function onKeyPress(event: KeyboardEvent) {
+function onKeyPress (event: KeyboardEvent) {
   if (visibleSuggestions.value.length === 0) {
-    return; // Can't navigate an empty list
+    return // Can't navigate an empty list
   }
 
-  let keyHandled = false;
-  if (event.key === "ArrowDown") {
-    keyHandled = true;
-    activeOption.value++;
+  let keyHandled = false
+  if (event.key === 'ArrowDown') {
+    keyHandled = true
+    activeOption.value++
     if (activeOption.value > visibleSuggestions.value.length - 1) {
-      activeOption.value = 0;
+      activeOption.value = 0
     }
-    maybeScrollOptionIntoView();
-  } else if (event.key === "ArrowUp") {
-    keyHandled = true;
-    activeOption.value--;
+    maybeScrollOptionIntoView()
+  } else if (event.key === 'ArrowUp') {
+    keyHandled = true
+    activeOption.value--
     if (activeOption.value < 0) {
-      activeOption.value = visibleSuggestions.value.length - 1;
+      activeOption.value = visibleSuggestions.value.length - 1
     }
-    maybeScrollOptionIntoView();
-  } else if (event.key === "Enter") {
+    maybeScrollOptionIntoView()
+  } else if (event.key === 'Enter') {
     if (activeOption.value > -1 && visibleSuggestions.value.length > 1) {
-      keyHandled = true;
-      thisValue.value = visibleSuggestions.value[activeOption.value] ?? "";
+      keyHandled = true
+      thisValue.value = visibleSuggestions.value[activeOption.value] ?? ''
     }
   }
 
   if (keyHandled) {
-    event.preventDefault();
-    event.stopPropagation();
+    event.preventDefault()
+    event.stopPropagation()
   }
 }
 
-function maybeScrollOptionIntoView() {
+function maybeScrollOptionIntoView () {
   nextTick()
     .then(() => {
-      const option = document.querySelector(
-        `#${fieldId.value}-list option:nth-child(${activeOption.value})`,
-      );
+      const option = document.querySelector(`#${fieldId.value}-list option:nth-child(${activeOption.value})`)
       if (option === null) {
-        return;
+        return
       }
-      option.scrollIntoView();
+      option.scrollIntoView()
     })
-    .catch((err) => console.error(err));
+    .catch(err => console.error(err))
 }
 
-watch(toRef(props, "modelValue"), (newVal) => {
-  thisValue.value = newVal;
-});
+watch(toRef(props, 'modelValue'), (newVal) => {
+  thisValue.value = newVal
+})
 
 watch(thisValue, () => {
-  emit("update:modelValue", thisValue.value);
-});
+  emit('update:modelValue', thisValue.value)
+})
 
 // Utilities
-const inputField = ref<HTMLInputElement | null>(null);
-const fieldId = computed<string>(() => "field-input" + props.name);
+const inputField = ref<HTMLInputElement|null>(null)
+const fieldId = computed<string>(() => 'field-input' + props.name)
 
-function focus(): void {
-  inputField.value?.focus();
+function focus (): void {
+  inputField.value?.focus()
 }
 
-function blur(): void {
-  inputField.value?.blur();
+function blur (): void {
+  inputField.value?.blur()
 }
 
-function select(): void {
-  inputField.value?.select();
+function select (): void {
+  inputField.value?.select()
 }
 
-defineExpose({ focus, blur, select });
+defineExpose({ focus, blur, select })
 </script>
 
 <style lang="css" scoped>

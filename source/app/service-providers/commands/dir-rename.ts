@@ -12,15 +12,15 @@
  * END HEADER
  */
 
-import path from "path";
-import sanitize from "sanitize-filename";
-import type { AppServiceContainer } from "source/app/app-service-container";
-import { trans } from "source/common/i18n-main";
-import ZettlrCommand from "./zettlr-command";
+import path from 'path'
+import ZettlrCommand from './zettlr-command'
+import sanitize from 'sanitize-filename'
+import type { AppServiceContainer } from 'source/app/app-service-container'
+import { trans } from 'source/common/i18n-main'
 
 export default class DirRename extends ZettlrCommand {
-  constructor(app: AppServiceContainer) {
-    super(app, "dir-rename");
+  constructor (app: AppServiceContainer) {
+    super(app, 'dir-rename')
   }
 
   /**
@@ -29,54 +29,54 @@ export default class DirRename extends ZettlrCommand {
    * @param  {string}  evt The event name
    * @param  {any}     arg An object with the path for the source dir and the new directory name.
    */
-  async run(evt: string, arg: { path: string; name: string }): Promise<boolean> {
-    const sourceDir = await this._app.fsal.getAnyDirectoryDescriptor(arg.path);
+  async run (evt: string, arg: { path: string, name: string }): Promise<boolean> {
+    const sourceDir = await this._app.fsal.getAnyDirectoryDescriptor(arg.path)
     if (sourceDir === undefined) {
-      this._app.log.error("Could not rename directory: Not found.");
-      return false;
+      this._app.log.error('Could not rename directory: Not found.')
+      return false
     }
 
-    const sanitizedName = sanitize(arg.name, { replacement: "-" });
-    const newPath = path.join(path.dirname(arg.path), sanitizedName);
+    const sanitizedName = sanitize(arg.name, { replacement: '-' })
+    const newPath = path.join(path.dirname(arg.path), sanitizedName)
 
     // At this point no file is open in that directory anymore, so we can easily
     // rename the directory. The FSAL will reflect the changes.
     try {
       // Before renaming the dir, let's see if it is a workspace. Because if it
       // is, we have to close it first.
-      const { openWorkspaces } = this._app.config.getConfig().app;
-      const isRoot = openWorkspaces.includes(sourceDir.path);
+      const { openWorkspaces } = this._app.config.getConfig().app
+      const isRoot = openWorkspaces.includes(sourceDir.path)
 
       if (isRoot) {
-        this._app.config.removePath(sourceDir.path);
+        this._app.config.removePath(sourceDir.path)
       }
 
-      await this._app.fsal.rename(arg.path, newPath);
+      await this._app.fsal.rename(arg.path, newPath)
       // Notify the documents provider so it can exchange any files if necessary
-      await this._app.documents.hasMovedDir(arg.path, newPath);
+      await this._app.documents.hasMovedDir(arg.path, newPath)
 
       if (isRoot) {
-        this._app.config.addPath(newPath);
+        this._app.config.addPath(newPath)
       }
     } catch (err: unknown) {
       if (err instanceof Error) {
-        this._app.log.error(`Error during renaming file: ${err.message}`, err);
+        this._app.log.error(`Error during renaming file: ${err.message}`, err)
         this._app.windows.prompt({
-          type: "error",
+          type: 'error',
           title: err.name,
-          message: err.message,
-        });
+          message: err.message
+        })
       } else {
-        this._app.log.error("Unknown error while renaming file.", err);
+        this._app.log.error('Unknown error while renaming file.', err)
         this._app.windows.prompt({
-          type: "error",
-          title: trans("Could not rename file"),
-          message: trans("There was an error renaming the file."),
-        });
+          type: 'error',
+          title: trans('Could not rename file'),
+          message: trans('There was an error renaming the file.')
+        })
       }
-      return false;
+      return false
     }
 
-    return true;
+    return true
   }
 }

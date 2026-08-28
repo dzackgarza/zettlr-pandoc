@@ -5,16 +5,12 @@
  * type of the global `require` binding.
  */
 interface WebpackRequireContext {
-  keys: () => string[];
-  (id: string): unknown;
+  keys: () => string[]
+  (id: string): unknown
 }
 
 declare namespace NodeJS {
   interface Require {
-    context: (
-      directory: string,
-      useSubdirectories: boolean,
-      regExp: RegExp,
-    ) => WebpackRequireContext;
+    context: (directory: string, useSubdirectories: boolean, regExp: RegExp) => WebpackRequireContext
   }
 }

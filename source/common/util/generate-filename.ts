@@ -12,21 +12,21 @@
  * END HEADER
  */
 
-import { v4 as uuid } from "uuid";
-import generateId from "./generate-id";
-import replaceStringVariables from "./replace-string-variables";
+import replaceStringVariables from './replace-string-variables'
+import generateId from './generate-id'
+import { v4 as uuid } from 'uuid'
 
 /**
  * Generates a new filename based on the configured filename pattern.
  * @return {string} The new filename.
  */
-export default function generateFilename(filenamePattern: string, idGenPattern: string): string {
-  let pattern = replaceStringVariables(filenamePattern);
-  pattern = pattern.replace(/%id/g, generateId(idGenPattern));
+export default function generateFilename (filenamePattern: string, idGenPattern: string): string {
+  let pattern = replaceStringVariables(filenamePattern)
+  pattern = pattern.replace(/%id/g, generateId(idGenPattern))
   // In case a funny guy has removed the pattern from config.
   if (pattern.trim().length === 0) {
-    pattern = uuid();
+    pattern = uuid()
   }
 
-  return pattern;
+  return pattern
 }

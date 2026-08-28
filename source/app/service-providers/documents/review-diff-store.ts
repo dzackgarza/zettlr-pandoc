@@ -24,15 +24,19 @@
  * END HEADER
  */
 
-import { sha256Text } from "@common/util/sha256";
-import type { OutstandingChunk, ProposalPacket, ReviewState } from "@dts/common/agent-api";
+import { createPatch } from "diff";
+import type {
+  OutstandingChunk,
+  ProposalPacket,
+  ReviewState,
+} from "@dts/common/agent-api";
 import type {
   ActiveReviewState,
   ChunkComment,
   ReviewPacket,
   ReviewSuggestion,
 } from "@dts/common/review-domain";
-import { createPatch } from "diff";
+import { sha256Text } from "@common/util/sha256";
 import type { ReviewSidecarData } from "./review-sidecar-schema";
 
 export type { ReviewSidecarData };
@@ -110,7 +114,10 @@ export function toWirePacket(packet: ReviewPacket): ProposalPacket {
  * listing so an attached and a detached review with the same facts can never
  * classify differently.
  */
-export function classifyReviewState(invalidated: boolean, unresolvedChunks: number): ReviewState {
+export function classifyReviewState(
+  invalidated: boolean,
+  unresolvedChunks: number,
+): ReviewState {
   if (invalidated) {
     return "invalidated";
   }
@@ -140,12 +147,17 @@ export function reviewReferenceText(
   let referenceText = workingText;
   for (const operation of operations) {
     referenceText =
-      referenceText.slice(0, operation.from) + operation.insert + referenceText.slice(operation.to);
+      referenceText.slice(0, operation.from) +
+      operation.insert +
+      referenceText.slice(operation.to);
   }
   return referenceText;
 }
 
-export function reviewPatch(suggestions: readonly ReviewSuggestion[], workingText: string): string {
+export function reviewPatch(
+  suggestions: readonly ReviewSuggestion[],
+  workingText: string,
+): string {
   return createPatch(
     "document",
     reviewReferenceText(suggestions, workingText),
@@ -185,9 +197,7 @@ function dressSuggestions(
         packetIds: [suggestion.packetId],
         descriptions: packet === undefined ? [] : [packet.description],
         ...(note === undefined ? {} : { comment: note.comment }),
-        patch: createPatch("document", suggestion.removedText, proposedText, "", "", {
-          context: 0,
-        }),
+        patch: createPatch("document", suggestion.removedText, proposedText, "", "", { context: 0 }),
       };
     });
 }
@@ -325,9 +335,7 @@ export class ReviewDiffStore {
     if (review === undefined) {
       return undefined;
     }
-    const unresolvedChunks = review.suggestions.filter(
-      (suggestion) => suggestion.state === "proposed",
-    ).length;
+    const unresolvedChunks = review.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
     return {
       reviewId: review.reviewId,
       state: classifyReviewState(review.invalidated, unresolvedChunks),
@@ -340,7 +348,10 @@ export class ReviewDiffStore {
   /**
    * The current proposed suggestions dressed for the agent API.
    */
-  getOutstandingChunks(documentId: string, workingText: string): OutstandingChunk[] | undefined {
+  getOutstandingChunks(
+    documentId: string,
+    workingText: string,
+  ): OutstandingChunk[] | undefined {
     const review = this.reviews.get(documentId);
     if (review === undefined) {
       return undefined;

@@ -39,18 +39,18 @@
  *
  * END HEADER
  */
-import { computed } from "vue";
+import { computed } from 'vue'
 
 const props = defineProps<{
   /**
    * The size (in pixels) of this spinner. Default: 20.
    */
-  spinnerSize?: number;
+  spinnerSize?: number
   /**
    * The primary spinner CSS color. Default: 'currentColor'.
    */
-  spinnerColor?: string;
-}>();
+  spinnerColor?: string
+}>()
 
 // The animation delay (="begin") and duration need to be matched and sped up to
 // such an amount that the impression of a flowing motions occurs. That means we
@@ -62,45 +62,42 @@ const props = defineProps<{
 // appear more smoothly, but at the expense of speed. We shouldn't need to set
 // anything higher than that, since the fade-effect should run on the GPU and
 // have a higher refresh rate than this here.
-const ANIMATION_FPS = 1 / 24;
+const ANIMATION_FPS = 1/24
 
-const SVG_SIZE = props.spinnerSize ?? 20;
-const SVG_COLOR = props.spinnerColor ?? "currentColor";
+const SVG_SIZE = props.spinnerSize ?? 20
+const SVG_COLOR = props.spinnerColor ?? 'currentColor'
 
-const LINE_LENGTH = SVG_SIZE / 6;
-const LINE_WIDTH = SVG_SIZE / 12;
-const MAX_RAD = 2 * Math.PI;
-const OUTER_RADIUS = SVG_SIZE / 2 - LINE_LENGTH / 2;
+const LINE_LENGTH = SVG_SIZE / 6
+const LINE_WIDTH = SVG_SIZE / 12
+const MAX_RAD = 2 * Math.PI
+const OUTER_RADIUS = SVG_SIZE / 2 - LINE_LENGTH / 2
 
 const ticks = computed(() => {
   // We want 12 ticks Each dial mark is a line pointing towards the origin of
   // the clock, and being line-width long. So we need one angle, and calculate
   // two points on two different circles
-  const dialCount = 12;
+  const dialCount = 12
 
-  const innerRadius = OUTER_RADIUS - LINE_LENGTH;
-  const rOuter = OUTER_RADIUS + LINE_LENGTH / 2;
-  const radPer = MAX_RAD / dialCount;
-  const translate = SVG_SIZE / 2;
+  const innerRadius = OUTER_RADIUS - LINE_LENGTH
+  const rOuter = OUTER_RADIUS + LINE_LENGTH / 2
+  const radPer = MAX_RAD / dialCount
+  const translate = SVG_SIZE / 2
 
-  const paths: string[] = [];
+  const paths: string[] = []
 
   for (let i = 0; i < dialCount; i++) {
-    const theta = i * radPer;
-    const [x1, y1] = [
-      Math.cos(theta) * innerRadius + translate,
-      -Math.sin(theta) * innerRadius + translate,
-    ];
-    const [x2, y2] = [Math.cos(theta) * rOuter + translate, -Math.sin(theta) * rOuter + translate];
-    paths.push(`M ${x1} ${y1} L ${x2} ${y2}`);
+    const theta = i * radPer
+    const [ x1, y1 ] = [ Math.cos(theta) * innerRadius + translate, -Math.sin(theta) * innerRadius + translate ]
+    const [ x2, y2 ] = [ Math.cos(theta) * rOuter + translate, -Math.sin(theta) * rOuter + translate ]
+    paths.push(`M ${x1} ${y1} L ${x2} ${y2}`)
   }
 
   // NOTE that the circle math outputs the ticks in a counter-clockwise fashion,
   // so `toReversed` ensures that the ensuing animation runs clockwise.
-  return paths.toReversed();
-});
+  return paths.toReversed()
+})
 
-const duration = computed(() => ticks.value.length * ANIMATION_FPS);
+const duration = computed(() => ticks.value.length * ANIMATION_FPS)
 </script>
 
 <style lang="css" scoped>

@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import { getIDRE } from "@common/regular-expressions";
+import { getIDRE } from '@common/regular-expressions'
 
 /**
  * Extracts a file ID from the content of a Markdown document. NOTE that this
@@ -25,33 +25,33 @@ import { getIDRE } from "@common/regular-expressions";
  *
  * @return  {string}             The found ID, an empty string otherwise
  */
-export default function extractFileId(
+export default function extractFileId (
   filename: string,
   markdown: string,
-  idPattern: string,
+  idPattern: string
 ): string {
-  const idRE = getIDRE(idPattern);
+  const idRE = getIDRE(idPattern)
 
   // First, try to find an ID in the file's name
-  const filenameMatch = idRE.exec(filename);
+  const filenameMatch = idRE.exec(filename)
   if (filenameMatch !== null) {
-    return filenameMatch[1];
+    return filenameMatch[1]
   }
 
   // Then, take a look at the content. Precedence goes to the first ID found.
   for (const match of markdown.matchAll(idRE)) {
     if (match.index === undefined) {
-      continue; // This is because TypeScript doesn't know about the global flag
+      continue // This is because TypeScript doesn't know about the global flag
     }
 
-    if (markdown.substring(match.index - 2, match.index) !== "[[") {
+    if (markdown.substring(match.index - 2, match.index) !== '[[') {
       // Found an ID. Make sure the ID doesn't start with linkStart and not end
       // with the linkEnd
-      if (!match[1].endsWith("]]")) {
-        return match[1];
+      if (!match[1].endsWith(']]')) {
+        return match[1]
       }
     }
   }
 
-  return ""; // No ID found
+  return '' // No ID found
 }

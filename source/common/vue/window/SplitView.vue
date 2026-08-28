@@ -43,174 +43,173 @@
  *
  * END HEADER
  */
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 const props = defineProps<{
-  split?: "horizontal" | "vertical";
+  split?: 'horizontal'|'vertical'
   // Never go below any of these sizes
-  minimumSizePercent: [number, number];
+  minimumSizePercent: [ number, number ]
   // What to preset the sizes with
-  initialSizePercent: [number, number];
+  initialSizePercent: [ number, number ]
   // When the user double-clicks the resizer, go to this size
-  resetSizePercent: [number, number];
-}>();
+  resetSizePercent: [ number, number ]
+}>()
 
-const emit = defineEmits<(e: "views-resized", sizes: [number, number]) => void>();
+const emit = defineEmits<(e: 'views-resized', sizes: [number, number]) => void>()
 
-const availableSize = ref<number>(window.innerWidth);
-const viewResizing = ref<boolean>(false);
-const viewResizeX = ref<number>(0);
+const availableSize = ref<number>(window.innerWidth)
+const viewResizing = ref<boolean>(false)
+const viewResizeX = ref<number>(0)
 // Initial widths
-const view1Width = ref<number>(availableSize.value * (props.initialSizePercent[0] / 100));
-const view2Width = ref<number>(availableSize.value * (props.initialSizePercent[1] / 100));
+const view1Width = ref<number>(availableSize.value * (props.initialSizePercent[0] / 100))
+const view2Width = ref<number>(availableSize.value * (props.initialSizePercent[1] / 100))
 // Minimum widths
-const view1WidthMin = ref<number>(availableSize.value * (props.minimumSizePercent[0] / 100));
-const view2WidthMin = ref<number>(availableSize.value * (props.minimumSizePercent[1] / 100));
+const view1WidthMin = ref<number>(availableSize.value * (props.minimumSizePercent[0] / 100))
+const view2WidthMin = ref<number>(availableSize.value * (props.minimumSizePercent[1] / 100))
 // Properties necessary for hiding views programmatically
-const originalViewWidth = ref<[number, number]>([0, 0]);
-const hasHiddenView = ref<0 | 1 | 2>(0); // Is 1 or 2 if one view is hidden
+const originalViewWidth = ref<[number, number]>([ 0, 0 ])
+const hasHiddenView = ref<0|1|2>(0) // Is 1 or 2 if one view is hidden
 const observer = new ResizeObserver(() => {
   requestAnimationFrame(() => {
-    recalculateSizes();
-  });
-});
+    recalculateSizes()
+  })
+})
 
-const element = ref<HTMLDivElement | null>(null);
+const element = ref<HTMLDivElement|null>(null)
 
-function recalculateSizes(): void {
+function recalculateSizes (): void {
   if (element.value === null) {
-    return;
+    return
   }
 
   // Save the current ratios before applying the new widths
-  const view1Percent = view1Width.value / availableSize.value;
-  const view2Percent = view2Width.value / availableSize.value;
-  availableSize.value = element.value.getBoundingClientRect().width;
+  const view1Percent = view1Width.value / availableSize.value
+  const view2Percent = view2Width.value / availableSize.value
+  availableSize.value = element.value.getBoundingClientRect().width
 
   if (hasHiddenView.value === 1) {
     // Give view 2 all of the available size
-    view2Width.value = availableSize.value;
+    view2Width.value = availableSize.value
   } else if (hasHiddenView.value === 2) {
     // Give view 1 all of the available size
-    view1Width.value = availableSize.value;
-  } else {
-    // Else: this.hasHiddenView === 0
+    view1Width.value = availableSize.value
+  } else { // Else: this.hasHiddenView === 0
     // Scale both proportionally
-    view1Width.value = availableSize.value * view1Percent;
-    view2Width.value = availableSize.value * view2Percent;
+    view1Width.value = availableSize.value * view1Percent
+    view2Width.value = availableSize.value * view2Percent
   }
 
   // Don't forget to also update the minimum widths
-  view1WidthMin.value = availableSize.value * (props.minimumSizePercent[0] / 100);
-  view2WidthMin.value = availableSize.value * (props.minimumSizePercent[1] / 100);
+  view1WidthMin.value = availableSize.value * (props.minimumSizePercent[0] / 100)
+  view2WidthMin.value = availableSize.value * (props.minimumSizePercent[1] / 100)
 
   // Notify parent
-  const newWidth1Percent = view1Width.value / availableSize.value;
+  const newWidth1Percent = view1Width.value / availableSize.value
   if (hasHiddenView.value === 0 && newWidth1Percent !== view1Percent) {
-    const intWidth = Math.round(view1Percent * 100);
-    emit("views-resized", [intWidth, 100 - intWidth]);
+    const intWidth = Math.round(view1Percent * 100)
+    emit('views-resized', [ intWidth, 100 - intWidth ])
   }
 }
 
 onMounted(() => {
-  recalculateSizes();
+  recalculateSizes()
   if (element.value !== null) {
-    observer.observe(element.value, { box: "border-box" });
+    observer.observe(element.value, { box: 'border-box' })
   }
-});
+})
 
 onBeforeUnmount(() => {
   if (element.value !== null) {
-    observer.unobserve(element.value);
+    observer.unobserve(element.value)
   }
-});
+})
 
-function beginViewResizing(event: MouseEvent): void {
-  viewResizing.value = true;
-  viewResizeX.value = event.clientX;
-  element.value?.addEventListener("mousemove", onViewResizing);
-  element.value?.addEventListener("mouseup", endViewResizing);
+function beginViewResizing (event: MouseEvent): void {
+  viewResizing.value = true
+  viewResizeX.value = event.clientX
+  element.value?.addEventListener('mousemove', onViewResizing)
+  element.value?.addEventListener('mouseup', endViewResizing)
 }
 
-function onViewResizing(event: MouseEvent): void {
+function onViewResizing (event: MouseEvent): void {
   if (!viewResizing.value) {
-    return;
+    return
   }
 
-  const oldView1Percent = view1Width.value / availableSize.value;
+  const oldView1Percent = view1Width.value / availableSize.value
 
   // x > 0 means: Direction -->
   // x < 0 means: Direction <--
-  let offsetX = event.clientX - viewResizeX.value;
+  let offsetX = event.clientX - viewResizeX.value
   // Make sure the views don't get resized too much
   if (offsetX > 0 && view2Width.value > view2WidthMin.value) {
     // Increase view1 in size
-    view1Width.value += offsetX;
-    view2Width.value = availableSize.value - view1Width.value;
+    view1Width.value += offsetX
+    view2Width.value = availableSize.value - view1Width.value
   } else if (offsetX < 0 && view1Width.value > view1WidthMin.value) {
     // Increase view2 in size
-    view2Width.value -= offsetX;
-    view1Width.value = availableSize.value - view2Width.value;
+    view2Width.value -= offsetX
+    view1Width.value = availableSize.value - view2Width.value
   }
 
-  viewResizeX.value = event.clientX;
+  viewResizeX.value = event.clientX
 
   // Notify parent if applicable
-  const view1Percent = view1Width.value / availableSize.value;
+  const view1Percent = view1Width.value / availableSize.value
   if (hasHiddenView.value === 0 && oldView1Percent !== view1Percent) {
-    const intWidth = Math.round(view1Percent * 100);
-    emit("views-resized", [intWidth, 100 - intWidth]);
+    const intWidth = Math.round(view1Percent * 100)
+    emit('views-resized', [ intWidth, 100 - intWidth ])
   }
 }
 
-function endViewResizing(_event: MouseEvent): void {
-  viewResizing.value = false;
-  viewResizeX.value = 0;
-  element.value?.removeEventListener("mousemove", onViewResizing);
-  element.value?.removeEventListener("mouseup", endViewResizing);
+function endViewResizing (_event: MouseEvent): void {
+  viewResizing.value = false
+  viewResizeX.value = 0
+  element.value?.removeEventListener('mousemove', onViewResizing)
+  element.value?.removeEventListener('mouseup', endViewResizing)
 }
 
-function hideView(viewNumber: 1 | 2): void {
+function hideView (viewNumber: 1|2): void {
   // Enables you to hide one of the views programmatically. First, we need
   // to un-hide any view if applicable. Then, we need to hide the view in
   // a second step.
-  unhide();
+  unhide()
 
   // Now no view is hidden at this point.
-  hasHiddenView.value = viewNumber;
+  hasHiddenView.value = viewNumber
   originalViewWidth.value = [
     view1Width.value / availableSize.value,
-    view2Width.value / availableSize.value,
-  ];
+    view2Width.value / availableSize.value
+  ]
   if (viewNumber === 1) {
-    view2Width.value += view1Width.value;
-    view1Width.value = 0;
+    view2Width.value += view1Width.value
+    view1Width.value = 0
   } else {
-    view1Width.value += view2Width.value;
-    view2Width.value = 0;
+    view1Width.value += view2Width.value
+    view2Width.value = 0
   }
 }
 
-function unhide(): void {
+function unhide (): void {
   if (hasHiddenView.value === 0) {
-    return;
+    return
   }
   // Un-hide
-  view1Width.value = originalViewWidth.value[0] * availableSize.value;
-  view2Width.value = originalViewWidth.value[1] * availableSize.value;
-  hasHiddenView.value = 0;
+  view1Width.value = originalViewWidth.value[0] * availableSize.value
+  view2Width.value = originalViewWidth.value[1] * availableSize.value
+  hasHiddenView.value = 0
   // After we've unhidden the view, make sure to recalculate possibly
   // changed metrics in the meantime.
-  recalculateSizes();
+  recalculateSizes()
 }
 
-function resetSize(): void {
-  view1Width.value = availableSize.value * (props.resetSizePercent[0] / 100);
-  view2Width.value = availableSize.value * (props.resetSizePercent[1] / 100);
-  emit("views-resized", [...props.resetSizePercent]);
+function resetSize (): void {
+  view1Width.value = availableSize.value * (props.resetSizePercent[0] / 100)
+  view2Width.value = availableSize.value * (props.resetSizePercent[1] / 100)
+  emit('views-resized', [...props.resetSizePercent])
 }
 
-defineExpose({ hideView, unhide });
+defineExpose({ hideView, unhide })
 </script>
 
 <style lang="less">

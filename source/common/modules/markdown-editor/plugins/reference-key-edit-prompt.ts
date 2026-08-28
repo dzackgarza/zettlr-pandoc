@@ -34,31 +34,31 @@
  * END HEADER
  */
 
-import { type Extension } from "@codemirror/state";
-import { ViewPlugin, type ViewUpdate } from "@codemirror/view";
-import { extractReferences } from "@common/pandoc-util/extract-references";
-import type { SourceRange } from "@dts/common/references";
-import { workspaceReferencesField } from "./workspace-references-field";
+import { type Extension } from '@codemirror/state'
+import { ViewPlugin, type ViewUpdate } from '@codemirror/view'
+import { extractReferences } from '@common/pandoc-util/extract-references'
+import type { SourceRange } from '@dts/common/references'
+import { workspaceReferencesField } from './workspace-references-field'
 
 /**
  * The prompt intent emitted when the selection leaves an edited
  * definition-id range whose key changed.
  */
 export interface ReferenceKeyEditPromptIntent {
-  documentPath: string;
+  documentPath: string
   /** The key of the definition per the last-known snapshot */
-  oldKey: string;
+  oldKey: string
   /** The authored replacement key currently in the buffer */
-  newKey: string;
+  newKey: string
   /** The exact post-edit range of the authored id token (with '#' sigil) */
-  range: SourceRange;
+  range: SourceRange
 }
 
 export interface ReferenceKeyEditPromptConfig {
   /** The edited document's path (snapshot identity of the intents) */
-  documentPath: string;
+  documentPath: string
   /** Called exactly once per departure from an edited, key-changed id */
-  onPrompt: (intent: ReferenceKeyEditPromptIntent) => void;
+  onPrompt: (intent: ReferenceKeyEditPromptIntent) => void
 }
 
 /**
@@ -67,11 +67,11 @@ export interface ReferenceKeyEditPromptConfig {
  * the primary selection was inside the range after the previous update.
  */
 interface DefinitionTracker {
-  oldKey: string;
-  from: number;
-  to: number;
-  edited: boolean;
-  headInside: boolean;
+  oldKey: string
+  from: number
+  to: number
+  edited: boolean
+  headInside: boolean
 }
 
 /**
@@ -81,29 +81,28 @@ interface DefinitionTracker {
  *
  * @return  {Extension}                             The editor extension
  */
-export default function referenceKeyEditPrompt(config: ReferenceKeyEditPromptConfig): Extension {
-  return ViewPlugin.define((view) => {
-    const initialHead = view.state.selection.main.head;
+export default function referenceKeyEditPrompt (config: ReferenceKeyEditPromptConfig): Extension {
+  return ViewPlugin.define(view => {
+    const initialHead = view.state.selection.main.head
 
     // Baseline: the definitions of the last-known snapshot. Prefer the
     // host-fed resolved workspace view; fall back to extracting the initial
     // document with the real extractor.
-    const fieldState = view.state.field(workspaceReferencesField, false);
-    const definitions =
-      fieldState?.snapshot.documentPath === config.documentPath
-        ? fieldState.snapshot.definitions
-        : extractReferences(config.documentPath, view.state.doc.toString()).definitions;
+    const fieldState = view.state.field(workspaceReferencesField, false)
+    const definitions = fieldState?.snapshot.documentPath === config.documentPath
+      ? fieldState.snapshot.definitions
+      : extractReferences(config.documentPath, view.state.doc.toString()).definitions
 
-    const trackers: DefinitionTracker[] = definitions.map((definition) => ({
+    const trackers: DefinitionTracker[] = definitions.map(definition => ({
       oldKey: definition.key,
       from: definition.range.from,
       to: definition.range.to,
       edited: false,
-      headInside: initialHead >= definition.range.from && initialHead <= definition.range.to,
-    }));
+      headInside: initialHead >= definition.range.from && initialHead <= definition.range.to
+    }))
 
     return {
-      update(update: ViewUpdate) {
+      update (update: ViewUpdate) {
         if (update.docChanged) {
           // Mark trackers whose (pre-change) range an edit touched, then map
           // the ranges into the new document. Both boundaries map with
@@ -112,56 +111,52 @@ export default function referenceKeyEditPrompt(config: ReferenceKeyEditPromptCon
           update.changes.iterChangedRanges((fromA, toA) => {
             for (const tracker of trackers) {
               if (fromA <= tracker.to && toA >= tracker.from) {
-                tracker.edited = true;
+                tracker.edited = true
               }
             }
-          });
+          })
           for (const tracker of trackers) {
-            tracker.from = update.changes.mapPos(tracker.from, 1);
-            tracker.to = update.changes.mapPos(tracker.to, 1);
+            tracker.from = update.changes.mapPos(tracker.from, 1)
+            tracker.to = update.changes.mapPos(tracker.to, 1)
           }
         }
 
-        const head = update.state.selection.main.head;
+        const head = update.state.selection.main.head
         for (const tracker of trackers) {
-          const inside = head >= tracker.from && head <= tracker.to;
+          const inside = head >= tracker.from && head <= tracker.to
 
           if (tracker.edited && tracker.headInside && !inside) {
             // The selection just LEFT an edited id range: compare the
             // authored key against the baseline, prompting on a change.
-            const snapshot = extractReferences(config.documentPath, update.state.doc.toString());
-            const definition = snapshot.definitions.find(
-              (d) => d.range.from <= tracker.to && d.range.to >= tracker.from,
-            );
+            const snapshot = extractReferences(config.documentPath, update.state.doc.toString())
+            const definition = snapshot.definitions.find(d => d.range.from <= tracker.to && d.range.to >= tracker.from)
 
             if (definition !== undefined && definition.key !== tracker.oldKey) {
               const intent: ReferenceKeyEditPromptIntent = {
                 documentPath: config.documentPath,
                 oldKey: tracker.oldKey,
                 newKey: definition.key,
-                range: { from: definition.range.from, to: definition.range.to },
-              };
+                range: { from: definition.range.from, to: definition.range.to }
+              }
               // Decouple the host callback from the view update cycle: the
               // host may dispatch transactions or invoke ipc.
-              queueMicrotask(() => {
-                config.onPrompt(intent);
-              });
+              queueMicrotask(() => { config.onPrompt(intent) })
 
               // Rebaseline: one prompt per departure. Only a NEW edit of
               // the (new) key followed by a new departure prompts again.
-              tracker.oldKey = definition.key;
-              tracker.from = definition.range.from;
-              tracker.to = definition.range.to;
+              tracker.oldKey = definition.key
+              tracker.from = definition.range.from
+              tracker.to = definition.range.to
             }
 
             // Whether the key changed or the edit was reverted in place,
             // the edit episode is over once the selection departs.
-            tracker.edited = false;
+            tracker.edited = false
           }
 
-          tracker.headInside = inside;
+          tracker.headInside = inside
         }
-      },
-    };
-  });
+      }
+    }
+  })
 }

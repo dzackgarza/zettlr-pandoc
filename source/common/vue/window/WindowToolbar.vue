@@ -109,91 +109,83 @@
  * END HEADER
  */
 
-import { onBeforeUnmount, onMounted, ref } from "vue";
-import IrisIndicator, { type IrisIndicatorControl } from "../IrisIndicator.vue";
-import ButtonControl, { type ToolbarButtonControl } from "./toolbar-controls/ButtonControl.vue";
-import RingControl, {
-  type RingProgressButtonControl,
-} from "./toolbar-controls/RingProgressButton.vue";
-import SearchControl, { type ToolbarSearchControl } from "./toolbar-controls/SearchControl.vue";
-import SpacerControl, { type ToolbarSpacerControl } from "./toolbar-controls/SpacerControl.vue";
-import TextControl, { type ToolbarTextControl } from "./toolbar-controls/TextControl.vue";
-import ThreeWayToggle, { type ToolbarThreeWayControl } from "./toolbar-controls/ThreeWayToggle.vue";
-import ToggleControl, { type ToolbarToggleControl } from "./toolbar-controls/ToggleControl.vue";
+import ButtonControl, { type ToolbarButtonControl } from './toolbar-controls/ButtonControl.vue'
+import RingControl, { type RingProgressButtonControl } from './toolbar-controls/RingProgressButton.vue'
+import ToggleControl, { type ToolbarToggleControl } from './toolbar-controls/ToggleControl.vue'
+import ThreeWayToggle, { type ToolbarThreeWayControl } from './toolbar-controls/ThreeWayToggle.vue'
+import SearchControl, { type ToolbarSearchControl } from './toolbar-controls/SearchControl.vue'
+import SpacerControl, { type ToolbarSpacerControl } from './toolbar-controls/SpacerControl.vue'
+import TextControl, { type ToolbarTextControl } from './toolbar-controls/TextControl.vue'
+import { onMounted, onBeforeUnmount, ref } from 'vue'
+import IrisIndicator, { type IrisIndicatorControl } from '../IrisIndicator.vue'
 
-export type ToolbarControl =
-  | ToolbarButtonControl
-  | RingProgressButtonControl
-  | ToolbarSearchControl
-  | ToolbarSpacerControl
-  | ToolbarTextControl
-  | ToolbarThreeWayControl
-  | ToolbarToggleControl
-  | IrisIndicatorControl;
+export type ToolbarControl = ToolbarButtonControl|RingProgressButtonControl|
+ToolbarSearchControl|ToolbarSpacerControl|ToolbarTextControl|
+ToolbarThreeWayControl|ToolbarToggleControl|IrisIndicatorControl
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
-const props = defineProps<{ controls: ToolbarControl[]; showLabels?: boolean }>();
+const props = defineProps<{ controls: ToolbarControl[], showLabels?: boolean }>()
 
-const element = ref<HTMLDivElement | null>(null);
+const element = ref<HTMLDivElement|null>(null)
 
 const emit = defineEmits<{
-  (e: "click", value: string | undefined): void;
-  (e: "dblclick"): void;
-  (e: "toggle", value: { id: string | undefined; state: string | boolean | undefined }): void;
-  (e: "search", value: string): void;
-}>();
+  (e: 'click', value: string|undefined): void
+  (e: 'dblclick'): void
+  (e: 'toggle', value: { id: string|undefined, state: string|boolean|undefined }): void
+  (e: 'search', value: string): void
+}>()
 
-const hasRTLTrafficLights = ref<boolean>(false);
+const hasRTLTrafficLights = ref<boolean>(false)
 
-const scrollArea = ref<HTMLDivElement | null>(null);
-const canScroll = ref(false);
+const scrollArea = ref<HTMLDivElement|null>(null)
+const canScroll = ref(false)
 // To account for really small differences between `scrollWidth` and `clientWidth`
 // (sometimes only fractions of a pixel), add a small additional tolerance to
 // `clientWidth` to prevent erroneously displaying of the scroll buttons.
-const clientWidthTolerance = 5;
+const clientWidthTolerance = 5
 
-function checkOverflow() {
+function checkOverflow () {
   if (scrollArea.value) {
-    const sa = scrollArea.value;
-    canScroll.value = sa.scrollWidth > sa.clientWidth + clientWidthTolerance;
+    const sa = scrollArea.value
+    canScroll.value = sa.scrollWidth > (sa.clientWidth + clientWidthTolerance)
   }
 }
 
-function scrollLeft() {
-  scrollArea.value?.scrollBy({ left: -100, behavior: "smooth" });
+function scrollLeft () {
+  scrollArea.value?.scrollBy({ left: -100, behavior: 'smooth' })
 }
 
-function scrollRight() {
-  scrollArea.value?.scrollBy({ left: 100, behavior: "smooth" });
+function scrollRight () {
+  scrollArea.value?.scrollBy({ left: 100, behavior: 'smooth' })
 }
 
 onMounted(() => {
   // Make sure that (on macOS) we have the correct spacing of the toolbar.
-  ipcRenderer.on("window-controls", (event, message) => {
-    const { command, payload } = message;
-    if (command === "traffic-lights-rtl") {
-      hasRTLTrafficLights.value = payload;
+  ipcRenderer.on('window-controls', (event, message) => {
+    const { command, payload } = message
+    if (command === 'traffic-lights-rtl') {
+      hasRTLTrafficLights.value = payload
     }
-  });
+  })
 
   // Also send an initial request
-  ipcRenderer.send("window-controls", { command: "get-traffic-lights-rtl" });
+  ipcRenderer.send('window-controls', { command: 'get-traffic-lights-rtl' })
 
-  checkOverflow();
-  window.addEventListener("resize", checkOverflow);
-});
+  checkOverflow()
+  window.addEventListener('resize', checkOverflow)
+})
 
 onBeforeUnmount(() => {
-  window.removeEventListener("resize", checkOverflow);
-});
+  window.removeEventListener('resize', checkOverflow)
+})
 
-function handleDoubleClick(event: MouseEvent): void {
+function handleDoubleClick (event: MouseEvent): void {
   // Only emit a double click event if the user double clicked on the
   // _toolbar_ or on a spacer, and not just on any button.
-  const t = event.target as HTMLElement | null;
-  if (t === element.value || t?.className.includes("spacer") === true) {
-    emit("dblclick");
+  const t = event.target as HTMLElement|null
+  if (t === element.value || t?.className.includes('spacer') === true) {
+    emit('dblclick')
   }
 }
 </script>
