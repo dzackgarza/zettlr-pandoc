@@ -13,26 +13,26 @@
  * END HEADER
  */
 
-import { loadData, trans } from "@common/i18n-main";
-import PersistentDataContainer from "@common/modules/persistent-data-container";
-import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
-import enumDictFiles from "@common/util/enum-dict-files";
-import { hasMdOrCodeExt } from "@common/util/file-extention-checks";
-import { ignorePath } from "@common/util/ignore-path";
-import isDir from "@common/util/is-dir";
-import isFile from "@common/util/is-file";
-import safeAssign from "@common/util/safe-assign";
-import { app, dialog, ipcMain } from "electron";
-import EventEmitter from "events";
-import { DateTime } from "luxon";
-import path from "path";
-import type LogProvider from "../log";
-import ProviderContract from "../provider-contract";
-import { VALIDATE_PROPERTIES, VALIDATE_RULES, ValidationRule } from "./config-validation";
-import { type ConfigOptions, getConfigTemplate } from "./get-config-template";
-import { showOnboardingWindow } from "./onboarding-window";
+import path from 'path'
+import EventEmitter from 'events'
+import { ValidationRule, VALIDATE_RULES, VALIDATE_PROPERTIES } from './config-validation'
+import PersistentDataContainer from '@common/modules/persistent-data-container'
+import { app, dialog, ipcMain } from 'electron'
+import safeAssign from '@common/util/safe-assign'
+import isDir from '@common/util/is-dir'
+import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
+import { getConfigTemplate, type ConfigOptions } from './get-config-template'
+import enumDictFiles from '@common/util/enum-dict-files'
+import ProviderContract from '../provider-contract'
+import type LogProvider from '../log'
+import { loadData, trans } from '@common/i18n-main'
+import isFile from '@common/util/is-file'
+import { hasMdOrCodeExt } from '@common/util/file-extention-checks'
+import { ignorePath } from '@common/util/ignore-path'
+import { showOnboardingWindow } from './onboarding-window'
+import { DateTime } from 'luxon'
 
-const ZETTLR_VERSION = app.getVersion();
+const ZETTLR_VERSION = app.getVersion()
 
 /**
  * The following options require a relaunch after being changed. NOTE: These are
@@ -41,21 +41,23 @@ const ZETTLR_VERSION = app.getVersion();
  */
 const guardOptions = {
   relaunch: new Map<string, boolean>([
-    ["appLang", false],
-    ["window.nativeAppearance", false],
-    ["window.vibrancy", false],
-    ["watchdog.activatePolling", false],
-    ["export.useBundledPandoc", false],
-    ["zkn.idRE", false],
+    [ 'appLang', false ],
+    [ 'window.nativeAppearance', false ],
+    [ 'window.vibrancy', false ],
+    [ 'watchdog.activatePolling', false ],
+    [ 'export.useBundledPandoc', false ],
+    [ 'zkn.idRE', false ]
   ]),
   // The following options additionally require a clearing of the cache
-  clearCache: new Map<string, boolean>([["zkn.idRE", false]]),
+  clearCache: new Map<string, boolean>([
+    [ 'zkn.idRE', false ]
+  ]),
   // The following options only require the editors to reload, since they are,
   // e.g., required by one of the extensions.
   reloadEditors: [
-    "zkn.linkFormat", // Requires a reload since required by the parser that has no access to the editor config
-  ],
-};
+    'zkn.linkFormat' // Requires a reload since required by the parser that has no access to the editor config
+  ]
+}
 
 /**
  * This class represents the configuration of Zettlr, represented by the
@@ -69,258 +71,258 @@ export default class ConfigProvider extends ProviderContract {
    *
    * @var {string}
    */
-  private readonly configFile: string;
+  private readonly configFile: string
   /**
    * Contains a set of validation rules
    *
    * @var {any[]}
    */
-  private readonly _rules: any[];
+  private readonly _rules: any[]
   /**
    * Contains the actual configuration
    *
    * @var {any}
    */
-  private config: ConfigOptions;
+  private config: ConfigOptions
   /**
    * A flag indicating whether the provider thinks this is a first start
    *
    * @var {boolean}
    */
-  private _firstStart: boolean;
+  private _firstStart: boolean
   /**
    * A flag indicating whether the provider thinks the user has just updated
    *
    * @var {boolean}
    */
-  private _newVersion: boolean;
+  private _newVersion: boolean
 
   /**
    * Holds the data container responsible for writing the data to disk
    *
    * @var {PersistentDataContainer}
    */
-  private readonly _container: PersistentDataContainer<ConfigOptions>;
+  private readonly _container: PersistentDataContainer<ConfigOptions>
 
-  private readonly _emitter: EventEmitter;
+  private readonly _emitter: EventEmitter
 
   /**
-   * Preset sane defaults, then load the config and perform a system check.
-   * @param {Zettlr} parent Parent Zettlr object.
-   */
-  constructor(private readonly _logger: LogProvider) {
-    super();
-    this.configFile = path.join(app.getPath("userData"), "config.json");
+    * Preset sane defaults, then load the config and perform a system check.
+    * @param {Zettlr} parent Parent Zettlr object.
+    */
+  constructor (private readonly _logger: LogProvider) {
+    super()
+    this.configFile = path.join(app.getPath('userData'), 'config.json')
 
-    this._emitter = new EventEmitter(); // Initiate the emitter
+    this._emitter = new EventEmitter() // Initiate the emitter
 
-    this.config = getConfigTemplate();
-    this._rules = []; // This array holds all validation rules
-    this._firstStart = false; // Only true if a config file has been created
-    this._newVersion = false; // True if the last read config had a different version
+    this.config = getConfigTemplate()
+    this._rules = [] // This array holds all validation rules
+    this._firstStart = false // Only true if a config file has been created
+    this._newVersion = false // True if the last read config had a different version
 
-    this._container = new PersistentDataContainer(this.configFile, "json");
+    this._container = new PersistentDataContainer(this.configFile, 'json')
 
     // Listen for renderer events. These must be synchronous.
-    ipcMain.on("config-provider", (event, message) => {
-      const { command, payload } = message;
+    ipcMain.on('config-provider', (event, message) => {
+      const { command, payload } = message
 
-      if (command === "get-config") {
-        event.returnValue = payload !== undefined ? this.get(payload.key as string) : this.get();
-      } else if (command === "set-config-single") {
-        event.returnValue = this.set(payload.key as string, payload.val);
+      if (command === 'get-config') {
+        event.returnValue = payload !== undefined ? this.get(payload.key as string) : this.get()
+      } else if (command === 'set-config-single') {
+        event.returnValue = this.set(payload.key as string, payload.val)
       }
-    });
+    })
 
     // Handle config events
-    ipcMain.handle("config-provider", (event, message) => {
-      const { command } = message;
+    ipcMain.handle('config-provider', (event, message) => {
+      const { command } = message
 
-      if (command === "set-config") {
+      if (command === 'set-config') {
         // Sets the complete config object
-        const { payload } = message;
+        const { payload } = message
         for (const opt in payload) {
-          this.set(opt, payload[opt]);
+          this.set(opt, payload[opt])
         }
-        return true;
+        return true
       }
-    });
+    })
   }
 
-  isFirstStart(): boolean {
-    return this._firstStart;
+  isFirstStart (): boolean {
+    return this._firstStart
   }
 
-  newVersionDetected(): boolean {
-    return this._newVersion;
+  newVersionDetected (): boolean {
+    return this._newVersion
   }
 
   /**
    * Shutdown the service provider -- here save the config to disk
    * @return {Boolean} Returns true after successful shutdown.
    */
-  async shutdown(): Promise<void> {
-    this._logger.verbose("Config provider shutting down ...");
-    this._container.shutdown();
+  async shutdown (): Promise<void> {
+    this._logger.verbose('Config provider shutting down ...')
+    this._container.shutdown()
   }
 
   /**
    * Boots the provider
    */
-  async boot(): Promise<void> {
-    this._logger.verbose("Config provider booting up ...");
+  async boot (): Promise<void> {
+    this._logger.verbose('Config provider booting up ...')
 
-    if (!(await this._container.isInitialized())) {
-      this._logger.info("No configuration detected: Assuming first start and new version!");
+    if (!await this._container.isInitialized()) {
+      this._logger.info('No configuration detected: Assuming first start and new version!')
       // The config is not yet initialized, so we know this is a firstStart.
-      this._firstStart = true;
-      this._newVersion = true;
-      await this._container.init(this.config);
+      this._firstStart = true
+      this._newVersion = true
+      await this._container.init(this.config)
     } else {
-      this._logger.verbose("Loading configuration ...");
+      this._logger.verbose('Loading configuration ...')
       // The container has already been initialized, so it's not a first start.
       // Pull in the config and do our thing.
-      const readConfig = await this._container.get();
+      const readConfig = await this._container.get()
 
       // Determine if this is a different version
-      this._newVersion = readConfig.version !== this.config.version;
-      const oldVersion = readConfig.version;
+      this._newVersion = readConfig.version !== this.config.version
+      const oldVersion = readConfig.version
 
       // Additional check for nightlies, because these do not differ in terms of
       // build version, but rather in terms of build date.
-      const isNightly = this.config.version.endsWith("-nightly");
-      const buildDatesDiffer = this.config.buildDate !== readConfig.buildDate;
+      const isNightly = this.config.version.endsWith('-nightly')
+      const buildDatesDiffer = this.config.buildDate !== readConfig.buildDate
       if (!this._newVersion && isNightly && buildDatesDiffer) {
         // Below's check errs on the side of caution and assigns newVersion true
         // if unsure.
-        const oldDate = DateTime.fromISO(readConfig.buildDate ?? this.config.buildDate);
-        const newDate = DateTime.fromISO(this.config.buildDate);
-        this._newVersion = newDate >= oldDate;
+        const oldDate = DateTime.fromISO(readConfig.buildDate ?? this.config.buildDate)
+        const newDate = DateTime.fromISO(this.config.buildDate)
+        this._newVersion = newDate >= oldDate
       }
 
       // Run potential migrations on the (old) read configuration from disk
       // before merging with the correct config template. This allows the
       // migrations to modify certain properties if necessary.
-      this.runMigrations(readConfig);
+      this.runMigrations(readConfig)
 
       // NOTE: We cannot use "update" here because we cannot yet broadcast any
       // events, so we have to use safeAssign directly.
-      this.config = safeAssign(readConfig, this.config);
+      this.config = safeAssign(readConfig, this.config)
 
       // Don't forget to update the version
       if (this._newVersion) {
-        this._logger.info(`Migrating from ${oldVersion} to ${String(this.config.version)}!`);
-        this.config.version = ZETTLR_VERSION; // We should not emit events here, so manually set the value
-        this.config.buildDate = __BUILD_DATE__;
+        this._logger.info(`Migrating from ${oldVersion} to ${String(this.config.version)}!`)
+        this.config.version = ZETTLR_VERSION // We should not emit events here, so manually set the value
+        this.config.buildDate = __BUILD_DATE__
       }
     }
 
     // Remove potential dead links to non-existent files and dirs
-    this.checkPaths();
+    this.checkPaths()
 
     // Immediately begin loading the translation strings. These have to be
     // available directly after the config has been loaded.
-    const file = await loadData(this.config.appLang);
+    const file = await loadData(this.config.appLang)
     // It may be that only a fallback has been provided or else. In this case we
     // must update the config to reflect this.
     if (file.tag !== this.config.appLang) {
-      this.config.appLang = file.tag;
+      this.config.appLang = file.tag
     }
 
     // Boot up the validation rules
     for (let i = 0; i < VALIDATE_RULES.length; i++) {
-      this._rules.push(new ValidationRule(VALIDATE_RULES[i], VALIDATE_PROPERTIES[i]));
+      this._rules.push(new ValidationRule(VALIDATE_RULES[i], VALIDATE_PROPERTIES[i]))
     }
 
     // Now for the fun part: Show a brand new onboarding experience.
     if (this._firstStart || this._newVersion) {
-      await showOnboardingWindow(this, this._logger, this._firstStart ? "first-start" : "update");
+      await showOnboardingWindow(this, this._logger, this._firstStart ? 'first-start' : 'update')
     }
   }
 
   // Enable global event listening to updates of the config
-  on(evt: string, callback: (...args: any[]) => void): void {
-    this._emitter.on(evt, callback);
+  on (evt: string, callback: (...args: any[]) => void): void {
+    this._emitter.on(evt, callback)
   }
 
   // Also do the same for the removal of listeners
-  off(evt: string, callback: (...args: any[]) => void): void {
-    this._emitter.off(evt, callback);
+  off (evt: string, callback: (...args: any[]) => void): void {
+    this._emitter.off(evt, callback)
   }
 
   /**
-   * This function is used to run migrations on the read config when the user
-   * updates to a new version. It modifies the read configuration object in
-   * place so that it can then be merged into the correct config template.
-   *
-   * @param  {any}  readConfig  The read config from disk.
-   */
-  private runMigrations(readConfig: any): void {
+    * This function is used to run migrations on the read config when the user
+    * updates to a new version. It modifies the read configuration object in
+    * place so that it can then be merged into the correct config template.
+    *
+    * @param  {any}  readConfig  The read config from disk.
+    */
+  private runMigrations (readConfig: any): void {
     // After version 4.0.0, we have split up `openPaths` into separate file and
     // workspaces arrays.
-    if ("openPaths" in readConfig) {
-      const openPaths: string[] = readConfig.openPaths;
+    if (('openPaths' in readConfig)) {
+      const openPaths: string[] = readConfig.openPaths
 
-      if (!("app" in readConfig)) {
+      if (!('app' in readConfig)) {
         readConfig.app = {
           openFiles: [],
-          openWorkspaces: [],
-        };
+          openWorkspaces: []
+        }
       }
 
-      if (!("openFiles" in readConfig.app)) {
-        readConfig.app.openFiles = [];
+      if (!('openFiles' in readConfig.app)) {
+        readConfig.app.openFiles = []
       }
 
-      if (!("openWorkspaces" in readConfig.app)) {
-        readConfig.app.openWorkspaces = [];
+      if (!('openWorkspaces' in readConfig.app)) {
+        readConfig.app.openWorkspaces = []
       }
 
       for (const absPath of openPaths) {
         if (isFile(absPath)) {
-          readConfig.app.openFiles.push(absPath);
+          readConfig.app.openFiles.push(absPath)
         } else if (isDir(absPath)) {
-          readConfig.app.openWorkspaces.push(absPath);
+          readConfig.app.openWorkspaces.push(absPath)
         }
       }
     } // END: openPaths migration
   }
 
   /**
-   * Checks the validity of each path that should be opened and removes all
-   * those that are invalid.
-   */
-  checkPaths(): void {
+    * Checks the validity of each path that should be opened and removes all
+    * those that are invalid.
+    */
+  checkPaths (): void {
     // Remove duplicates
-    this.config.app.openFiles = [...new Set(this.config.app.openFiles)];
-    this.config.app.openWorkspaces = [...new Set(this.config.app.openWorkspaces)];
+    this.config.app.openFiles = [...new Set(this.config.app.openFiles)]
+    this.config.app.openWorkspaces = [...new Set(this.config.app.openWorkspaces)]
 
     // Check for the existence of the files and folders
     for (const file of this.config.app.openFiles) {
       if (!isFile(file)) {
-        const idx = this.config.app.openFiles.indexOf(file);
-        this.config.app.openFiles.splice(idx, 1);
+        const idx = this.config.app.openFiles.indexOf(file)
+        this.config.app.openFiles.splice(idx, 1)
       }
     }
 
     for (const workspace of this.config.app.openWorkspaces) {
       if (!isDir(workspace)) {
-        const idx = this.config.app.openWorkspaces.indexOf(workspace);
-        this.config.app.openWorkspaces.splice(idx, 1);
+        const idx = this.config.app.openWorkspaces.indexOf(workspace)
+        this.config.app.openWorkspaces.splice(idx, 1)
       }
     }
 
     // Now sort the paths.
-    this.sortPaths();
+    this.sortPaths()
 
-    const dicts = enumDictFiles().map((item) => item.tag);
+    const dicts = enumDictFiles().map(item => item.tag)
 
     // We have to run over the spellchecking dictionaries and see whether or
     // not they are still valid or if they have been deleted.
     for (let i = 0; i < this.config.selectedDicts.length; i++) {
       if (!dicts.includes(this.config.selectedDicts[i])) {
-        this.config.selectedDicts.splice(i, 1);
-        --i;
+        this.config.selectedDicts.splice(i, 1)
+        --i
       }
     }
   }
@@ -332,14 +334,14 @@ export default class ConfigProvider extends ProviderContract {
    * inconsistencies when a root file is part of a loaded workspace, or some
    * workspace is loaded as part of another workspace.
    */
-  private consolidateRootPaths(): void {
-    const { openFiles, openWorkspaces } = this.config.app;
+  private consolidateRootPaths (): void {
+    const { openFiles, openWorkspaces } = this.config.app
 
     // First, check if any of the open files are part of any of the workspaces.
     for (const openFile of openFiles) {
       for (const workspace of openWorkspaces) {
         if (openFile.startsWith(workspace)) {
-          openFiles.splice(openFiles.indexOf(openFile), 1);
+          openFiles.splice(openFiles.indexOf(openFile), 1)
         }
       }
     }
@@ -349,192 +351,191 @@ export default class ConfigProvider extends ProviderContract {
     for (const workspace of openWorkspaces) {
       for (const otherWorkspace of openWorkspaces) {
         if (workspace === otherWorkspace) {
-          continue;
+          continue
         }
 
         if (workspace.startsWith(otherWorkspace)) {
-          openWorkspaces.slice(openWorkspaces.indexOf(workspace), 1);
+          openWorkspaces.slice(openWorkspaces.indexOf(workspace), 1)
         }
       }
     }
 
-    this.config.app.openFiles = openFiles;
-    this.config.app.openWorkspaces = openWorkspaces;
-    this._container.set(this.config); // Persist changes
+    this.config.app.openFiles = openFiles
+    this.config.app.openWorkspaces = openWorkspaces
+    this._container.set(this.config) // Persist changes
   }
 
   /**
-   * Sorts the paths prior to using them alphabetically and by type.
-   * @return {ZettlrConfig} Chainability.
-   */
-  private sortPaths(): void {
-    const { openFiles, openWorkspaces } = this.config.app;
-    const { sortWorkspacesManually } = this.config.fileManager;
+    * Sorts the paths prior to using them alphabetically and by type.
+    * @return {ZettlrConfig} Chainability.
+    */
+  private sortPaths (): void {
+    const { openFiles, openWorkspaces } = this.config.app
+    const { sortWorkspacesManually } = this.config.fileManager
 
     // We only want to sort the paths based on rudimentary, natural order.
-    const coll = new Intl.Collator([this.get("appLang"), "en"], { numeric: true });
+    const coll = new Intl.Collator([ this.get('appLang'), 'en' ], { numeric: true })
 
     openFiles.sort((a, b) => {
-      return coll.compare(path.basename(a), path.basename(b));
-    });
-    this.config.app.openFiles = openFiles;
+      return coll.compare(path.basename(a), path.basename(b))
+    })
+    this.config.app.openFiles = openFiles
 
     // Only sort the workspaces if the user did not override the order manually.
     if (!sortWorkspacesManually) {
       openWorkspaces.sort((a, b) => {
-        return coll.compare(path.basename(a), path.basename(b));
-      });
-      this.config.app.openWorkspaces = openWorkspaces;
+        return coll.compare(path.basename(a), path.basename(b))
+      })
+      this.config.app.openWorkspaces = openWorkspaces
     }
 
-    this._container.set(this.config);
+    this._container.set(this.config)
   }
 
   /**
-   * Adds a path to be opened on startup
-   * @param {String} p The path to be added
-   * @return {Boolean} True, if the path was successfully added, else false.
-   */
-  addPath(p: string): boolean {
-    const { openFiles, openWorkspaces } = this.config.app;
+    * Adds a path to be opened on startup
+    * @param {String} p The path to be added
+    * @return {Boolean} True, if the path was successfully added, else false.
+    */
+  addPath (p: string): boolean {
+    const { openFiles, openWorkspaces } = this.config.app
     // Only add valid and unique paths
     if (openFiles.includes(p) || openWorkspaces.includes(p)) {
-      return false;
+      return false
     }
 
-    const validFile = isFile(p) && hasMdOrCodeExt(p);
-    const validDir = isDir(p);
+    const validFile = isFile(p) && hasMdOrCodeExt(p)
+    const validDir = isDir(p)
 
     if (!ignorePath(p) && (validFile || validDir)) {
+
       if (validFile) {
-        this.config.app.openFiles.push(p);
+        this.config.app.openFiles.push(p)
       } else {
-        this.config.app.openWorkspaces.push(p);
+        this.config.app.openWorkspaces.push(p)
       }
 
-      this.consolidateRootPaths();
-      this.sortPaths();
-      this._container.set(this.config);
-      this._emitter.emit("update", "openPaths");
-      broadcastIpcMessage("config-provider", { command: "update", payload: "openPaths" });
-      return true;
+      this.consolidateRootPaths()
+      this.sortPaths()
+      this._container.set(this.config)
+      this._emitter.emit('update', 'openPaths')
+      broadcastIpcMessage('config-provider', { command: 'update', payload: 'openPaths' })
+      return true
     }
 
-    return false;
+    return false
   }
 
   /**
-   * Removes a path from the startup paths
-   * @param  {String} p The path to be removed
-   * @return {Boolean} Whether or not the call succeeded.
-   */
-  removePath(p: string): boolean {
-    const { openFiles, openWorkspaces } = this.config.app;
-    const fileIdx = openFiles.indexOf(p);
-    const wsIdx = openWorkspaces.indexOf(p);
-    const rootFile = fileIdx > -1;
-    const workspace = wsIdx > -1;
+    * Removes a path from the startup paths
+    * @param  {String} p The path to be removed
+    * @return {Boolean} Whether or not the call succeeded.
+    */
+  removePath (p: string): boolean {
+    const { openFiles, openWorkspaces } = this.config.app
+    const fileIdx = openFiles.indexOf(p)
+    const wsIdx = openWorkspaces.indexOf(p)
+    const rootFile = fileIdx > -1
+    const workspace = wsIdx > -1
 
     if (rootFile || workspace) {
       if (rootFile) {
-        this.config.app.openFiles.splice(fileIdx, 1);
+        this.config.app.openFiles.splice(fileIdx, 1)
       } else {
-        this.config.app.openWorkspaces.splice(wsIdx, 1);
+        this.config.app.openWorkspaces.splice(wsIdx, 1)
       }
-      this._container.set(this.config);
-      this._emitter.emit("update", "openPaths");
-      broadcastIpcMessage("config-provider", { command: "update", payload: "openPaths" });
-      return true;
+      this._container.set(this.config)
+      this._emitter.emit('update', 'openPaths')
+      broadcastIpcMessage('config-provider', { command: 'update', payload: 'openPaths' })
+      return true
     }
 
-    return false;
+    return false
   }
 
   /**
-   * Returns a config property
-   *
-   * @param  {string}             attr  The property to return
-   * @return {any|ConfigOptions}        Either the config property or null
-   */
-  get(): ConfigOptions;
-  get(attr: string): any;
-  get(attr?: string): any {
+    * Returns a config property
+    *
+    * @param  {string}             attr  The property to return
+    * @return {any|ConfigOptions}        Either the config property or null
+    */
+  get (): ConfigOptions
+  get (attr: string): any
+  get (attr?: string): any {
     if (attr === undefined) {
       // If no attribute is given, simply return the complete config object.
-      return this.getConfig();
+      return this.getConfig()
     }
 
-    if (attr.indexOf(".") > 0) {
+    if (attr.indexOf('.') > 0) {
       // A nested argument was requested, so iterate until we find it
-      let nested = attr.split(".");
-      let cfg = this.config;
+      let nested = attr.split('.')
+      let cfg = this.config
       for (let arg of nested) {
         if (arg in cfg) {
           // arg will be a keyof ConfigOptions at this point
-          cfg = cfg[arg as keyof ConfigOptions] as unknown as any;
+          cfg = cfg[arg as keyof ConfigOptions] as unknown as any
         } else {
-          this._logger.warning(
-            `[Config Provider] Someone has requested a non-existent key: ${attr}`,
-          );
-          return null; // The config option must match exactly
+          this._logger.warning(`[Config Provider] Someone has requested a non-existent key: ${attr}`)
+          return null // The config option must match exactly
         }
       }
 
-      return cfg; // Now not the requested config option.
+      return cfg // Now not the requested config option.
     }
 
     // Plain attribute requested
     if (attr in this.config) {
-      return this.config[attr as keyof ConfigOptions];
+      return this.config[attr as keyof ConfigOptions]
     } else {
-      this._logger.warning(`[Config Provider] Someone has requested a non-existent key: ${attr}`);
-      return null;
+      this._logger.warning(`[Config Provider] Someone has requested a non-existent key: ${attr}`)
+      return null
     }
   }
 
   /**
-   * Simply returns the complete config object.
-   *
-   * @return {ConfigOptions} The configuration object.
-   */
-  getConfig(): ConfigOptions {
-    return this.config;
+    * Simply returns the complete config object.
+    *
+    * @return {ConfigOptions} The configuration object.
+    */
+  getConfig (): ConfigOptions {
+    return this.config
   }
 
   /**
-   * Sets a configuration option
-   * @param  {string}   option      The option to be set
-   * @param  {any}      value       The value of the config variable.
-   * @param  {boolean}  skipChecks  For internal use only. Do not use.
-   */
-  set(option: string, value: any, skipChecks = false): void {
+    * Sets a configuration option
+    * @param  {string}   option      The option to be set
+    * @param  {any}      value       The value of the config variable.
+    * @param  {boolean}  skipChecks  For internal use only. Do not use.
+    */
+  set (option: string, value: any, skipChecks = false): void {
     // Don't add non-existent options
     if (option in this.config && this._validate(option, value)) {
       // Do not set the option if it already has the requested value
       if (this.config[option as keyof ConfigOptions] === value) {
-        return;
+        return
       }
 
       // Set the new value and inform the listeners
       // @ts-expect-error Since we're dynamically assigning a value here.
-      this.config[option as keyof ConfigOptions] = value;
-      this._container.set(this.config);
-      this._emitter.emit("update", option);
-      broadcastIpcMessage("config-provider", { command: "update", payload: option });
+      this.config[option as keyof ConfigOptions] = value
+      this._container.set(this.config)
+      this._emitter.emit('update', option)
+      broadcastIpcMessage('config-provider', { command: 'update', payload: option })
       if (!skipChecks) {
-        this.checkOptionForGuard(option);
+        this.checkOptionForGuard(option)
       }
-    } else if (option.indexOf(".") > 0) {
+    } else if (option.indexOf('.') > 0) {
       // A nested argument was requested, so iterate until we find it
-      let nested = option.split(".");
+      let nested = option.split('.')
       // Last one must be set manually, b/c simple attributes aren't pointers
-      let prop = nested.pop()!; // We can be sure it's not undefined
-      let cfg = this.config;
+      let prop = nested.pop()! // We can be sure it's not undefined
+      let cfg = this.config
       for (let arg of nested) {
         if (arg in cfg) {
-          cfg = cfg[arg as keyof ConfigOptions] as unknown as any;
+          cfg = cfg[arg as keyof ConfigOptions] as unknown as any
         } else {
-          return; // The config option must match exactly
+          return // The config option must match exactly
         }
       }
 
@@ -542,25 +543,22 @@ export default class ConfigProvider extends ProviderContract {
       if (prop in cfg && this._validate(option, value)) {
         // Do not set the option if it already has the requested value
         if (cfg[prop as keyof ConfigOptions] === value) {
-          return;
+          return
         }
 
         // Set the new value and inform the listeners
         // @ts-expect-error Since we're dynamically assigning a value here
-        cfg[prop as keyof ConfigOptions] = value;
-        this._container.set(this.config);
-        this._emitter.emit("update", option);
-        broadcastIpcMessage("config-provider", { command: "update", payload: option });
+        cfg[prop as keyof ConfigOptions] = value
+        this._container.set(this.config)
+        this._emitter.emit('update', option)
+        broadcastIpcMessage('config-provider', { command: 'update', payload: option })
         if (!skipChecks) {
-          this.checkOptionForGuard(option);
+          this.checkOptionForGuard(option)
 
           // Special treatment, since this is a config option that affects the
           // config provider itself.
-          if (
-            option === "fileManager.sortWorkspacesManually" &&
-            !this.config.fileManager.sortWorkspacesManually
-          ) {
-            this.sortPaths();
+          if (option === 'fileManager.sortWorkspacesManually' && !this.config.fileManager.sortWorkspacesManually) {
+            this.sortPaths()
           }
         }
       }
@@ -576,59 +574,61 @@ export default class ConfigProvider extends ProviderContract {
    *
    * @param   {string}  option  The configuration option to check
    */
-  private checkOptionForGuard(option: string): void {
+  private checkOptionForGuard (option: string): void {
     // Some settings require all editors to perform a full reload
     if (guardOptions.reloadEditors.includes(option)) {
-      broadcastIpcMessage("reload-editors");
+      broadcastIpcMessage('reload-editors')
     }
 
     // If the option is not guarded or the dialog has already been asked,
     // quietly return.
-    const opt = guardOptions.relaunch.get(option);
+    const opt = guardOptions.relaunch.get(option)
     if (opt === undefined || opt) {
-      return;
+      return
     }
 
-    guardOptions.relaunch.set(option, true);
+    guardOptions.relaunch.set(option, true)
 
-    dialog
-      .showMessageBox({
-        message: trans("Changing this option requires a restart to take effect."),
-        type: "warning",
-        buttons: [trans("Restart now"), trans("Restart later")],
-        defaultId: 0,
-        cancelId: 1,
-        title: trans("Confirm"),
-      })
+    dialog.showMessageBox({
+      message: trans('Changing this option requires a restart to take effect.'),
+      type: 'warning',
+      buttons: [
+        trans('Restart now'),
+        trans('Restart later')
+      ],
+      defaultId: 0,
+      cancelId: 1,
+      title: trans('Confirm')
+    })
       .then(({ response }) => {
         if (response === 0) {
           // The user wants to restart now
           if (guardOptions.clearCache.has(option)) {
             // Ensure the cache is cleared on relaunch
-            app.relaunch({ args: process.argv.slice(1).concat(["--clear-cache"]) });
+            app.relaunch({ args: process.argv.slice(1).concat(['--clear-cache']) })
           } else {
-            app.relaunch();
+            app.relaunch()
           }
-          app.quit();
+          app.quit()
         }
       })
-      .catch((err) => console.error(err));
+      .catch(err => console.error(err))
   }
 
   /**
-   * Update the complete configuration object with new values
-   * @param  {Object} newcfg               The new object containing new props
-   * @return {void}                      Does not return anything.
-   */
-  update(newcfg: Partial<ConfigOptions>): void {
+    * Update the complete configuration object with new values
+    * @param  {Object} newcfg               The new object containing new props
+    * @return {void}                      Does not return anything.
+    */
+  update (newcfg: Partial<ConfigOptions>): void {
     // Use safeAssign to make sure only properties from the config
     // are retained, and no rogue values (which can also simply be
     // old deprecated values).
-    this.config = safeAssign(newcfg, this.config);
-    this._emitter.emit("update"); // Emit an event to all listeners
+    this.config = safeAssign(newcfg, this.config)
+    this._emitter.emit('update') // Emit an event to all listeners
     // Broadcast to all open windows
-    broadcastIpcMessage("config-provider", { command: "update", payload: undefined });
-    this._container.set(this.config);
+    broadcastIpcMessage('config-provider', { command: 'update', payload: undefined })
+    this._container.set(this.config)
   }
 
   /**
@@ -637,13 +637,13 @@ export default class ConfigProvider extends ProviderContract {
    * @param  {mixed} value The value to be validated
    * @return {Boolean}       False, if a given validation failed, otherwise true.
    */
-  _validate(key: string, value: any): boolean {
-    let rule = this._rules.find((elem) => elem.getKey() === key);
+  _validate (key: string, value: any): boolean {
+    let rule = this._rules.find(elem => elem.getKey() === key)
     // There is a rule for this key, so validate
     if (rule !== undefined) {
-      return rule.validate(value);
+      return rule.validate(value)
     }
     // There are some options for which there is no validation.
-    return true;
+    return true
   }
 }

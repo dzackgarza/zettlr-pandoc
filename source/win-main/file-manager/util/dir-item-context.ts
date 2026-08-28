@@ -12,142 +12,129 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-renderer";
-import showPopupMenu, {
-  type AnyMenuItem,
-} from "@common/modules/window-register/application-menu-helper";
-import type { DirDescriptor } from "@dts/common/fsal";
-import type { WindowControlsIPCAPI } from "source/app/service-providers/windows";
-import { useConfigStore } from "source/pinia";
+import { trans } from '@common/i18n-renderer'
+import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
+import type { DirDescriptor } from '@dts/common/fsal'
+import type { WindowControlsIPCAPI } from 'source/app/service-providers/windows'
+import { useConfigStore } from 'source/pinia'
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
-export function displayDirContext(
-  event: MouseEvent,
-  dirObject: DirDescriptor,
-  el: HTMLElement,
-  callback: (clickedID: string) => void,
-): void {
-  const configStore = useConfigStore();
-  const isMac = process.platform === "darwin";
-  const isWin = process.platform === "win32";
+export function displayDirContext (event: MouseEvent, dirObject: DirDescriptor, el: HTMLElement, callback: (clickedID: string) => void): void {
+  const configStore = useConfigStore()
+  const isMac = process.platform === 'darwin'
+  const isWin = process.platform === 'win32'
 
   const TEMPLATE: AnyMenuItem[] = [
     {
-      label: trans("Properties"),
-      id: "menu.properties",
-      type: "normal",
+      label: trans('Properties'),
+      id: 'menu.properties',
+      type: 'normal'
     },
     {
-      type: "separator",
+      type: 'separator'
     },
     {
-      label: trans("New file…"),
-      type: "normal",
-      id: "menu.new_file",
+      label: trans('New file…'),
+      type: 'normal',
+      id: 'menu.new_file'
     },
     {
-      label: trans("New directory…"),
-      type: "normal",
-      id: "menu.new_dir",
+      label: trans('New directory…'),
+      type: 'normal',
+      id: 'menu.new_dir'
     },
     {
-      type: "separator",
+      type: 'separator'
     },
     {
-      label: trans("Rename directory"),
-      type: "normal",
-      id: "menu.rename_dir",
+      label: trans('Rename directory'),
+      type: 'normal',
+      id: 'menu.rename_dir'
     },
     {
-      label: trans("Delete directory"),
-      type: "normal",
-      id: "menu.delete_dir",
+      label: trans('Delete directory'),
+      type: 'normal',
+      id: 'menu.delete_dir'
     },
     {
-      type: "separator",
+      type: 'separator'
     },
     {
-      label: trans("Copy path"),
-      id: "menu.copy_path",
-      type: "normal",
+      label: trans('Copy path'),
+      id: 'menu.copy_path',
+      type: 'normal'
     },
     {
-      type: "separator",
+      type: 'separator'
     },
     {
-      label: isMac
-        ? trans("Reveal in Finder")
-        : isWin
-          ? trans("Reveal in Explorer")
-          : trans("Reveal in File Browser"),
-      type: "normal",
-      id: "gui.attachments_open_dir",
-    },
-  ];
+      label: isMac ? trans('Reveal in Finder') : isWin ? trans('Reveal in Explorer') : trans('Reveal in File Browser'),
+      type: 'normal',
+      id: 'gui.attachments_open_dir'
+    }
+  ]
 
   const NOT_FOUND_TEMPLATE: AnyMenuItem[] = [
     {
-      id: "menu.rescan_dir",
-      type: "normal",
-      label: trans("Check for directory …"),
-    },
-  ];
+      id: 'menu.rescan_dir',
+      type: 'normal',
+      label: trans('Check for directory …')
+    }
+  ]
 
   // Determine the template to use
-  let template = TEMPLATE;
+  let template = TEMPLATE
   if (dirObject.dirNotFoundFlag === true) {
-    template = NOT_FOUND_TEMPLATE;
+    template = NOT_FOUND_TEMPLATE
   }
 
   // Now check for a project
   if (dirObject.settings.project !== null && dirObject.dirNotFoundFlag !== true) {
-    template.push({ type: "separator" });
+    template.push({ type: 'separator' })
     template.push({
-      id: "menu.project_build",
-      type: "normal",
-      label: trans("Export Project"),
+      id: 'menu.project_build',
+      type: 'normal',
+      label: trans('Export Project'),
       // Only enable if there are files and formats to export to
-      enabled:
-        dirObject.settings.project.profiles.length > 0 &&
-        dirObject.settings.project.files.length > 0,
-    });
+      enabled: dirObject.settings.project.profiles.length > 0 && dirObject.settings.project.files.length > 0
+    })
   }
 
   // Finally, check for it being root
   if (configStore.config.app.openWorkspaces.includes(dirObject.path)) {
-    template.push({ type: "separator" });
+    template.push({ type: 'separator' })
     template.push({
-      id: "menu.close_workspace",
-      type: "normal",
-      label: trans("Close workspace"),
-    });
+      id: 'menu.close_workspace',
+      type: 'normal',
+      label: trans('Close workspace')
+    })
   }
 
-  const point = { x: event.clientX, y: event.clientY };
+  const point = { x: event.clientX, y: event.clientY }
   showPopupMenu(point, template, (clickedID) => {
-    callback(clickedID); // TODO
+    callback(clickedID) // TODO
     switch (clickedID) {
-      case "menu.copy_path":
-        navigator.clipboard.writeText(dirObject.path).catch((err) => console.error(err));
-        break;
-      case "gui.attachments_open_dir":
-        ipcRenderer.send("window-controls", {
-          command: "show-item-in-folder",
-          payload: { itemPath: dirObject.path },
-        } as WindowControlsIPCAPI);
-        break;
-      case "menu.project_build":
-        ipcRenderer.send("message", {
-          command: "dir-project-export",
-          content: { path: dirObject.path },
-        });
-        break;
-      case "menu.rescan_dir":
-        ipcRenderer.send("message", {
-          command: "rescan-dir",
-          content: { path: dirObject.path },
-        });
+      case 'menu.copy_path':
+        navigator.clipboard.writeText(dirObject.path).catch(err => console.error(err))
+        break
+      case 'gui.attachments_open_dir':
+        ipcRenderer.send('window-controls', {
+          command: 'show-item-in-folder',
+          payload: { itemPath: dirObject.path }
+        } as WindowControlsIPCAPI)
+        break
+      case 'menu.project_build':
+        ipcRenderer.send('message', {
+          command: 'dir-project-export',
+          content: { path: dirObject.path }
+        })
+        break
+      case 'menu.rescan_dir':
+        ipcRenderer.send('message', {
+          command: 'rescan-dir',
+          content: { path: dirObject.path }
+        })
     }
-  });
+  })
 }

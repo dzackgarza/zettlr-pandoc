@@ -46,20 +46,16 @@
  * END HEADER
  */
 
-import { EditorView, hoverTooltip, type Tooltip } from "@codemirror/view";
-import { md2html } from "@common/modules/markdown-utils/markdown-to-html";
+import { hoverTooltip, EditorView, type Tooltip } from '@codemirror/view'
+import { md2html } from '@common/modules/markdown-utils/markdown-to-html'
+import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
+import { referenceFamilyDisplayName, type ProjectRootSpec, type ReferenceDefinition } from '@dts/common/references'
 import {
   computeProjectReferenceStatus,
-  projectStatusDisplayName,
-} from "@common/pandoc-util/project-reference-status";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
-import {
-  type ProjectRootSpec,
-  type ReferenceDefinition,
-  referenceFamilyDisplayName,
-} from "@dts/common/references";
-import { workspaceReferencesField } from "../plugins/workspace-references-field";
-import { configField } from "../util/configuration";
+  projectStatusDisplayName
+} from '@common/pandoc-util/project-reference-status'
+import { configField } from '../util/configuration'
+import { workspaceReferencesField } from '../plugins/workspace-references-field'
 
 /**
  * The bounded excerpt source of a definition: the previewSource with its
@@ -71,30 +67,27 @@ import { configField } from "../util/configuration";
  *
  * @return  {string}                           The excerpt markdown source
  */
-function excerptSource(definition: ReferenceDefinition): string {
-  const lines = definition.previewSource.split("\n");
+function excerptSource (definition: ReferenceDefinition): string {
+  const lines = definition.previewSource.split('\n')
 
-  if (definition.sourceKind === "theorem-div") {
+  if (definition.sourceKind === 'theorem-div') {
     // Drop the opening `::: {...}` line and the closing `:::` line.
-    const last = lines[lines.length - 1].trim().startsWith(":::") ? -1 : undefined;
-    return lines.slice(1, last).join("\n").trim();
+    const last = lines[lines.length - 1].trim().startsWith(':::') ? -1 : undefined
+    return lines.slice(1, last).join('\n').trim()
   }
 
-  if (definition.family === "lst" && lines.length > 1) {
+  if (definition.family === 'lst' && lines.length > 1) {
     // Drop the fence lines of the listing's fenced code block.
-    const last = lines[lines.length - 1].trim().startsWith("```") ? -1 : undefined;
-    return lines.slice(1, last).join("\n").trim();
+    const last = lines[lines.length - 1].trim().startsWith('```') ? -1 : undefined
+    return lines.slice(1, last).join('\n').trim()
   }
 
   // A single authored line bearing the id attribute: strip the trailing
   // attribute block plus caption/heading sigils.
-  const line = lines.join("\n");
-  const brace = line.lastIndexOf("{");
-  const clean = brace === -1 ? line : line.slice(0, brace);
-  return clean
-    .replace(/^#+\s*/, "")
-    .replace(/^:\s*/, "")
-    .trim();
+  const line = lines.join('\n')
+  const brace = line.lastIndexOf('{')
+  const clean = brace === -1 ? line : line.slice(0, brace)
+  return clean.replace(/^#+\s*/, '').replace(/^:\s*/, '').trim()
 }
 
 /**
@@ -107,43 +100,43 @@ function excerptSource(definition: ReferenceDefinition): string {
  *
  * @return  {Tooltip|null}      The tooltip spec, or null
  */
-export function referenceTooltip(view: EditorView, pos: number, side: 1 | -1): Tooltip | null {
-  const references = view.state.field(workspaceReferencesField, false) ?? null;
+export function referenceTooltip (view: EditorView, pos: number, side: 1 | -1): Tooltip|null {
+  const references = view.state.field(workspaceReferencesField, false) ?? null
   if (references === null) {
-    return null; // No workspace view yet: never fabricate a target.
+    return null // No workspace view yet: never fabricate a target.
   }
 
-  const occurrence = references.snapshot.occurrences.find((candidate) => {
-    const { from, to } = candidate.range;
-    return (pos > from && pos < to) || (pos === from && side === 1) || (pos === to && side === -1);
-  });
+  const occurrence = references.snapshot.occurrences.find(candidate => {
+    const { from, to } = candidate.range
+    return (pos > from && pos < to) ||
+      (pos === from && side === 1) ||
+      (pos === to && side === -1)
+  })
   if (occurrence === undefined) {
-    return null; // Plain prose and bibliography citations are not ours.
+    return null // Plain prose and bibliography citations are not ours.
   }
 
-  const resolution = references.resolutions.get(occurrence.key);
-  if (resolution === undefined || resolution.status !== "resolved") {
-    return null; // Missing/duplicate occurrences never fabricate a target.
+  const resolution = references.resolutions.get(occurrence.key)
+  if (resolution === undefined || resolution.status !== 'resolved') {
+    return null // Missing/duplicate occurrences never fabricate a target.
   }
 
-  const { definition } = resolution;
+  const { definition } = resolution
 
   // The active document is the snapshot's own documentPath; the Project
   // status is derivable only while the view carries projectRoots (issue #1
   // Phase 7) — an undefined root set never fabricates a membership.
-  const activeDocumentPath = references.snapshot.documentPath;
-  const projectRoots = references.projectRoots;
+  const activeDocumentPath = references.snapshot.documentPath
+  const projectRoots = references.projectRoots
 
   return {
     pos: occurrence.range.from,
     end: occurrence.range.to,
     above: true,
-    create(view) {
-      return {
-        dom: getPreviewElement(view, occurrence.key, definition, activeDocumentPath, projectRoots),
-      };
-    },
-  };
+    create (view) {
+      return { dom: getPreviewElement(view, occurrence.key, definition, activeDocumentPath, projectRoots) }
+    }
+  }
 }
 
 /**
@@ -159,137 +152,133 @@ export function referenceTooltip(view: EditorView, pos: number, side: 1 | -1): T
  *
  * @return  {HTMLDivElement}                                     The tooltip DOM
  */
-function getPreviewElement(
+function getPreviewElement (
   view: EditorView,
   key: string,
   definition: ReferenceDefinition,
   activeDocumentPath: string,
-  projectRoots: ProjectRootSpec[] | undefined,
+  projectRoots: ProjectRootSpec[]|undefined
 ): HTMLDivElement {
-  const wrapper = document.createElement("div");
-  wrapper.classList.add("reference-hover-preview");
+  const wrapper = document.createElement('div')
+  wrapper.classList.add('reference-hover-preview')
 
-  const header = document.createElement("p");
-  header.classList.add("reference-hover-header");
+  const header = document.createElement('p')
+  header.classList.add('reference-hover-header')
 
-  const type = document.createElement("span");
-  type.dataset.referenceType = "true";
-  type.textContent = referenceFamilyDisplayName(definition.family);
-  header.appendChild(type);
+  const type = document.createElement('span')
+  type.dataset.referenceType = 'true'
+  type.textContent = referenceFamilyDisplayName(definition.family)
+  header.appendChild(type)
 
-  header.appendChild(document.createTextNode(" "));
+  header.appendChild(document.createTextNode(' '))
 
-  const keyElem = document.createElement("span");
-  keyElem.dataset.referenceKey = "true";
-  keyElem.textContent = key;
-  header.appendChild(keyElem);
+  const keyElem = document.createElement('span')
+  keyElem.dataset.referenceKey = 'true'
+  keyElem.textContent = key
+  header.appendChild(keyElem)
 
-  const location = document.createElement("p");
-  location.classList.add("reference-hover-location");
+  const location = document.createElement('p')
+  location.classList.add('reference-hover-location')
 
-  const path = document.createElement("span");
-  path.dataset.referencePath = "true";
-  path.textContent = definition.documentPath;
-  location.appendChild(path);
+  const path = document.createElement('span')
+  path.dataset.referencePath = 'true'
+  path.textContent = definition.documentPath
+  location.appendChild(path)
 
   if (definition.enclosingSection !== undefined) {
-    location.appendChild(document.createTextNode(" § "));
-    const section = document.createElement("span");
-    section.dataset.referenceSection = "true";
-    section.textContent = definition.enclosingSection;
-    location.appendChild(section);
+    location.appendChild(document.createTextNode(' § '))
+    const section = document.createElement('span')
+    section.dataset.referenceSection = 'true'
+    section.textContent = definition.enclosingSection
+    location.appendChild(section)
   }
 
-  const excerpt = document.createElement("div");
-  excerpt.classList.add("reference-hover-excerpt");
-  excerpt.dataset.referenceExcerpt = "true";
+  const excerpt = document.createElement('div')
+  excerpt.classList.add('reference-hover-excerpt')
+  excerpt.dataset.referenceExcerpt = 'true'
 
   // The excerpt is available synchronously as fence-stripped source text and
   // upgrades in place to fully rendered markdown. window.getCitationCallback
   // is the production preload bridge, present in every renderer window
   // (review B9: no existence probe — the headless specs provision the same
   // seam).
-  const source = excerptSource(definition);
-  excerpt.textContent = source;
+  const source = excerptSource(definition)
+  excerpt.textContent = source
 
-  const config = view.state.field(configField, false);
+  const config = view.state.field(configField, false)
   md2html(source, {
-    zknLinkFormat: config?.zknLinkFormat ?? "link|title",
-    onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
+    zknLinkFormat: config?.zknLinkFormat ?? 'link|title',
+    onCitation: window.getCitationCallback(CITEPROC_MAIN_DB)
   })
-    .then((html) => {
-      excerpt.innerHTML = html;
+    .then(html => {
+      excerpt.innerHTML = html
     })
-    .catch((err) => console.error("Could not render the reference excerpt", err));
+    .catch(err => console.error('Could not render the reference excerpt', err))
 
-  const expand = document.createElement("button");
-  expand.classList.add("reference-hover-expand");
-  expand.dataset.referenceExpand = "true";
-  expand.textContent = "Expand";
-  expand.addEventListener("click", () => {
-    excerpt.classList.toggle("expanded");
-    expand.textContent = excerpt.classList.contains("expanded") ? "Collapse" : "Expand";
-  });
+  const expand = document.createElement('button')
+  expand.classList.add('reference-hover-expand')
+  expand.dataset.referenceExpand = 'true'
+  expand.textContent = 'Expand'
+  expand.addEventListener('click', () => {
+    excerpt.classList.toggle('expanded')
+    expand.textContent = excerpt.classList.contains('expanded') ? 'Collapse' : 'Expand'
+  })
 
-  wrapper.appendChild(header);
-  wrapper.appendChild(location);
+  wrapper.appendChild(header)
+  wrapper.appendChild(location)
 
   // The Project-status row (issue #1 Phase 7): rendered only while the view
   // carries projectRoots — the tooltip never fabricates a membership.
   if (projectRoots !== undefined) {
-    const projectStatus = computeProjectReferenceStatus(
-      definition.documentPath,
-      activeDocumentPath,
-      projectRoots,
-    );
-    const status = document.createElement("p");
-    status.classList.add("reference-hover-project-status");
-    status.setAttribute("data-reference-project-status", projectStatus);
-    status.textContent = projectStatusDisplayName(projectStatus);
-    wrapper.appendChild(status);
+    const projectStatus = computeProjectReferenceStatus(definition.documentPath, activeDocumentPath, projectRoots)
+    const status = document.createElement('p')
+    status.classList.add('reference-hover-project-status')
+    status.setAttribute('data-reference-project-status', projectStatus)
+    status.textContent = projectStatusDisplayName(projectStatus)
+    wrapper.appendChild(status)
   }
 
-  wrapper.appendChild(excerpt);
-  wrapper.appendChild(expand);
+  wrapper.appendChild(excerpt)
+  wrapper.appendChild(expand)
 
-  return wrapper;
+  return wrapper
 }
 
 export const referenceTooltips = [
   hoverTooltip(referenceTooltip, { hoverTime: 500 }),
   // Provide basic styles for these tooltips
   EditorView.baseTheme({
-    ".reference-hover-preview": {
-      maxWidth: "360px",
-      padding: "8px 10px",
-      fontSize: "85%",
+    '.reference-hover-preview': {
+      maxWidth: '360px',
+      padding: '8px 10px',
+      fontSize: '85%'
     },
-    ".reference-hover-preview .reference-hover-header": {
-      margin: "0 0 2px 0",
-      fontWeight: "bold",
+    '.reference-hover-preview .reference-hover-header': {
+      margin: '0 0 2px 0',
+      fontWeight: 'bold'
     },
-    ".reference-hover-preview .reference-hover-header [data-reference-key]": {
-      fontWeight: "normal",
-      fontFamily: "monospace",
-      marginLeft: "4px",
+    '.reference-hover-preview .reference-hover-header [data-reference-key]': {
+      fontWeight: 'normal',
+      fontFamily: 'monospace',
+      marginLeft: '4px'
     },
-    ".reference-hover-preview .reference-hover-location": {
-      margin: "0 0 6px 0",
-      opacity: "0.7",
-      fontSize: "90%",
-      overflowWrap: "anywhere",
+    '.reference-hover-preview .reference-hover-location': {
+      margin: '0 0 6px 0',
+      opacity: '0.7',
+      fontSize: '90%',
+      overflowWrap: 'anywhere'
     },
-    ".reference-hover-preview .reference-hover-excerpt": {
-      maxHeight: "10em",
-      overflow: "hidden",
-      margin: "0 0 6px 0",
+    '.reference-hover-preview .reference-hover-excerpt': {
+      maxHeight: '10em',
+      overflow: 'hidden',
+      margin: '0 0 6px 0'
     },
-    ".reference-hover-preview .reference-hover-excerpt.expanded": {
-      maxHeight: "none",
-      overflow: "auto",
+    '.reference-hover-preview .reference-hover-excerpt.expanded': {
+      maxHeight: 'none',
+      overflow: 'auto'
     },
-    ".reference-hover-preview .reference-hover-expand": {
-      fontSize: "90%",
-    },
-  }),
-];
+    '.reference-hover-preview .reference-hover-expand': {
+      fontSize: '90%'
+    }
+  })
+]

@@ -31,8 +31,8 @@
  * END HEADER
  */
 
+import { Mutex } from "async-mutex";
 import type { ChangeSet, Text } from "@codemirror/state";
-import { sha256Text } from "@common/util/sha256";
 import type {
   AgentErrorCode,
   AgentEvent,
@@ -41,26 +41,19 @@ import type {
 } from "@dts/common/agent-api";
 import type { SerializedUpdate } from "@dts/common/documents";
 import type { ActiveReviewState } from "@dts/common/review-domain";
-import { Mutex } from "async-mutex";
 import {
-  normalizeText,
   proposalRequestFingerprint,
-  ReviewDiffStore,
-  type ReviewDiffStore as ReviewDiffStoreType,
-  type ReviewStatus,
-  reviewFromSidecar,
   reviewSidecar,
+  normalizeText,
+  ReviewDiffStore,
+  reviewFromSidecar,
+  type ReviewStatus,
+  type ReviewDiffStore as ReviewDiffStoreType,
 } from "./review-diff-store";
-import type { ReviewSidecarData } from "./review-sidecar-schema";
+import { sha256Text } from "@common/util/sha256";
 import { ReviewSidecarStore } from "./review-sidecar-store";
+import type { ReviewSidecarData } from "./review-sidecar-schema";
 import {
-  type AcceptAllChunksResponse,
-  type AddReviewCommentResponse,
-  type ChunkCommentResponse,
-  type ChunkDecision,
-  type ChunkDecisionResponse,
-  type ClaimInput,
-  type ClearReviewResponse,
   isTransitionError,
   prepareAcceptAll,
   prepareChunkComment,
@@ -70,8 +63,15 @@ import {
   prepareRetraction,
   prepareReviewComment,
   prepareWorkingTextEdit,
-  type RetractProposalResponse,
+  type AcceptAllChunksResponse,
+  type AddReviewCommentResponse,
+  type ChunkCommentResponse,
+  type ChunkDecision,
+  type ChunkDecisionResponse,
+  type ClaimInput,
+  type ClearReviewResponse,
   type ReviewMutationPlan,
+  type RetractProposalResponse,
 } from "./review-transitions";
 
 // ============================================================================
@@ -124,7 +124,10 @@ export interface ReviewDocumentAuthority {
    */
   readSavedDiskSha256: (documentId: string) => string | undefined;
 
-  prepareWorkingTextReplacement: (documentId: string, nextText: string) => PreparedDocumentMutation;
+  prepareWorkingTextReplacement: (
+    documentId: string,
+    nextText: string,
+  ) => PreparedDocumentMutation;
 
   commitWorkingTextReplacement: (prepared: PreparedDocumentMutation) => void;
 
@@ -269,7 +272,9 @@ export class ReviewApplicationService {
 
   public getStatus(documentId: string): ReviewStatus | undefined {
     const workingText = this.deps.authority.readWorkingText(documentId);
-    return workingText === undefined ? undefined : this.reviews.getStatus(documentId, workingText);
+    return workingText === undefined
+      ? undefined
+      : this.reviews.getStatus(documentId, workingText);
   }
 
   public getReview(documentId: string): ActiveReviewState | undefined {
@@ -328,7 +333,9 @@ export class ReviewApplicationService {
     if (active !== undefined) {
       const attached = this.attachedReviewQuery(active);
       if (attached === undefined) {
-        throw new Error(`Review ${reviewId} is attached to a document that is not open`);
+        throw new Error(
+          `Review ${reviewId} is attached to a document that is not open`,
+        );
       }
       return attached;
     }
@@ -342,7 +349,9 @@ export class ReviewApplicationService {
     for (const review of this.reviews.listReviews()) {
       const attached = this.attachedReviewQuery(review);
       if (attached === undefined) {
-        throw new Error(`Review ${review.reviewId} is attached to a document that is not open`);
+        throw new Error(
+          `Review ${review.reviewId} is attached to a document that is not open`,
+        );
       }
       queries.push(attached);
     }
@@ -394,20 +403,16 @@ export class ReviewApplicationService {
       workingText: normalizeText(workingText),
       changes,
     });
-    let writeFailure: unknown;
-    let written = false;
     try {
       await this.sidecars.write(
         reviewSidecar(plan?.nextReview ?? review, normalizeText(workingText)),
       );
-      written = true;
     } catch (error) {
-      writeFailure = error;
-    }
-    if (!written) {
-      throw new Error("The review could not be persisted before the editor update", {
-        cause: writeFailure,
-      });
+      throw new Error(
+        `The review could not be persisted before the editor update: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
 
     commitDocument();
@@ -469,7 +474,10 @@ export class ReviewApplicationService {
     }
 
     this.reviews.removeReview(preparation.documentId);
-    this.deps.authority.broadcastReviewCleared(preparation.documentId, preparation.reviewId);
+    this.deps.authority.broadcastReviewCleared(
+      preparation.documentId,
+      preparation.reviewId,
+    );
     this.deps.emit("review.completed", {
       reviewId: preparation.reviewId,
       documentId: preparation.documentId,
@@ -509,7 +517,9 @@ export class ReviewApplicationService {
     diskText: string,
   ): Promise<void> {
     const review = this.reviews.getReview(documentId);
-    const persisted = review === undefined ? undefined : await this.sidecars.read(documentPath);
+    const persisted = review === undefined
+      ? undefined
+      : await this.sidecars.read(documentPath);
     const normalizedDisk = normalizeText(diskText);
     const preserveSavedReview =
       review !== undefined &&
@@ -587,8 +597,8 @@ export class ReviewApplicationService {
     });
   }
 
-  public readSidecar(documentPath: string): Promise<ReviewSidecarData | undefined> {
-    return this.sidecars.read(documentPath);
+  public async readSidecar(documentPath: string): Promise<ReviewSidecarData | undefined> {
+    return await this.sidecars.read(documentPath);
   }
 
   private lockFor(documentId: string): Mutex {
@@ -606,8 +616,11 @@ export class ReviewApplicationService {
    * authority keeps its own transactions (editor updates, save, detach,
    * reattach) in its own module — it does not keep its own lock.
    */
-  public withDocumentLock<T>(documentId: string, run: () => Promise<T>): Promise<T> {
-    return this.lockFor(documentId).runExclusive(run);
+  public async withDocumentLock<T>(
+    documentId: string,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    return await this.lockFor(documentId).runExclusive(run);
   }
 
   // ==========================================================================
@@ -641,7 +654,9 @@ export class ReviewApplicationService {
       if (plan.nextReview === undefined) {
         await this.sidecars.delete(context.documentPath);
       } else {
-        await this.sidecars.write(reviewSidecar(plan.nextReview, plan.nextWorkingText));
+        await this.sidecars.write(
+          reviewSidecar(plan.nextReview, plan.nextWorkingText),
+        );
       }
     } catch (error) {
       return persistenceFailure("the mutation", error);
@@ -658,7 +673,10 @@ export class ReviewApplicationService {
       this.deps.emit(draft.event, draft.payload);
     }
     if (broadcast === "cleared") {
-      this.deps.authority.broadcastReviewCleared(context.documentId, context.review.reviewId);
+      this.deps.authority.broadcastReviewCleared(
+        context.documentId,
+        context.review.reviewId,
+      );
     } else if (plan.nextReview !== undefined) {
       this.deps.authority.broadcastReviewState(context.documentId);
     }
@@ -742,7 +760,9 @@ export class ReviewApplicationService {
    * is returned, so a crash cannot leave a review that answers proposals
    * against a file that moved underneath it.
    */
-  private async checkDiskFence(context: MutationContext): Promise<{ ok: true } | ReviewFailure> {
+  private async checkDiskFence(
+    context: MutationContext,
+  ): Promise<{ ok: true } | ReviewFailure> {
     if (context.review.invalidated) {
       return {
         ok: false,
@@ -787,7 +807,10 @@ export class ReviewApplicationService {
       reviewId: invalidated.reviewId,
       documentId: context.documentId,
     });
-    this.deps.authority.broadcastReviewCleared(context.documentId, invalidated.reviewId);
+    this.deps.authority.broadcastReviewCleared(
+      context.documentId,
+      invalidated.reviewId,
+    );
     return { ok: false, code: "REVIEW_INVALIDATED", message };
   }
 
@@ -810,7 +833,7 @@ export class ReviewApplicationService {
     clientRequestId: string;
     expectedReviewGeneration: number;
   }): Promise<SubmittedProposal | { ok: false; code: string; message: string }> {
-    return this.withDocumentLock(input.documentId, async () => {
+    return await this.withDocumentLock(input.documentId, async () => {
       if (this.deps.authority.resolveDocumentPath(input.documentId) === undefined) {
         return { ok: false as const, code: "DOCUMENT_NOT_FOUND", message: "Document not found." };
       }
@@ -967,7 +990,7 @@ export class ReviewApplicationService {
     decision: ChunkDecision,
     precondition: ReviewMutationPrecondition,
   ): Promise<ChunkDecisionResponse | ReviewFailure> {
-    return this.runKeyedByReview(reviewId, async (context) => {
+    return await this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
@@ -987,7 +1010,9 @@ export class ReviewApplicationService {
           if (plan.code === "CHUNK_NOT_FOUND") {
             // The caller used an id that is not outstanding. Re-broadcast so
             // every pane redraws from current state.
-            this.deps.warn(`Chunk decision refused for ${context.documentPath}: ${plan.message}`);
+            this.deps.warn(
+              `Chunk decision refused for ${context.documentPath}: ${plan.message}`,
+            );
             this.deps.authority.broadcastReviewState(context.documentId);
           }
           return { ok: false, code: plan.code, message: plan.message };
@@ -1007,7 +1032,7 @@ export class ReviewApplicationService {
     text: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<ChunkCommentResponse | ReviewFailure> {
-    return this.runKeyedByReview(reviewId, async (context) => {
+    return await this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
@@ -1038,7 +1063,7 @@ export class ReviewApplicationService {
     reviewId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<AcceptAllChunksResponse | ReviewFailure> {
-    return this.runKeyedByReview(reviewId, async (context) => {
+    return await this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
@@ -1064,7 +1089,7 @@ export class ReviewApplicationService {
     reviewId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<ClearReviewResponse | ReviewFailure> {
-    return this.runKeyedByReview(reviewId, async (context) => {
+    return await this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
@@ -1075,7 +1100,8 @@ export class ReviewApplicationService {
       }
       return await this.commitReviewMutation(
         context,
-        () => prepareClear({ review: context.review, workingText: context.workingText }),
+        () =>
+          prepareClear({ review: context.review, workingText: context.workingText }),
         "cleared",
       );
     });
@@ -1087,7 +1113,7 @@ export class ReviewApplicationService {
     text: string,
     expectedReviewGeneration: number,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    return this.runKeyedByReview(reviewId, async (context) => {
+    return await this.runKeyedByReview(reviewId, async (context) => {
       const stale = this.checkPrecondition(context, { expectedReviewGeneration });
       if (stale !== undefined) {
         return stale;
@@ -1110,13 +1136,16 @@ export class ReviewApplicationService {
     packetId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<
-    RetractProposalResponse | (ReviewFailure & { reviewId: string; canClearUnresolved: boolean })
+    | RetractProposalResponse
+    | (ReviewFailure & { reviewId: string; canClearUnresolved: boolean })
   > {
     // Reviews and their packets are few; a scan is cheaper to keep correct
     // than an index every mutation must remember to maintain.
     const owner = this.reviews
       .listReviews()
-      .find((candidate) => candidate.packets.some((packet) => packet.packetId === packetId));
+      .find((candidate) =>
+        candidate.packets.some((packet) => packet.packetId === packetId),
+      );
     if (owner === undefined) {
       return {
         ok: false,

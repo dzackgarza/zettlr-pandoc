@@ -21,16 +21,16 @@
  * @param   {HTMLElement}             content  The container element
  * @param   {(href: string) => void}  cb       The callback function
  */
-export function interceptAnchorClicks(content: HTMLElement, cb: (href: string) => void) {
-  const anchors = content.querySelectorAll("a");
+export function interceptAnchorClicks (content: HTMLElement, cb: (href: string) => void) {
+  const anchors = content.querySelectorAll('a')
 
   for (const anchor of anchors) {
-    anchor.addEventListener("mousedown", (event: MouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
+    anchor.addEventListener('mousedown', (event: MouseEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
       // NOTE: `anchor.href` already returns a *resolved* link.
-      cb(anchor.getAttribute("href") ?? "");
-      return false;
-    });
+      cb(anchor.getAttribute('href') ?? '')
+      return false
+    })
   }
 }

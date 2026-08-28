@@ -13,30 +13,23 @@
  * END HEADER
  */
 
-import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
-import type { EditorState, Range } from "@codemirror/state";
-import type { DecorationSet, Rect } from "@codemirror/view";
-import { Decoration, EditorView, WidgetType } from "@codemirror/view";
-import type { SyntaxNode } from "@lezer/common";
-import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
-import type { Table, TableCell, TableRow } from "../../markdown-utils/markdown-ast";
-import { parseTableNode } from "../../markdown-utils/markdown-ast/parse-table-node";
-import { nodeToHTML } from "../../markdown-utils/markdown-to-html";
-import { WIDGET_LINE_STYLE_RESET_CLASS } from "../renderers/base-renderer";
-import { configField } from "../util/configuration";
-import openMarkdownLink from "../util/open-markdown-link";
-import { getCoordinatesForRange } from "./commands/util";
-import { displayTableContextMenu } from "./context-menu";
-import { createSubviewForCell, hiddenSpanField } from "./subview";
-import { interceptAnchorClicks } from "./util/anchor-callbacks";
-import {
-  generateColumnControls,
-  generateEmptyTableWidgetElement,
-  generateRowControls,
-  tableTD,
-  tableTH,
-  tableTR,
-} from "./widget-dom";
+import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
+import type { EditorState, Range } from '@codemirror/state'
+import type { Rect, DecorationSet } from '@codemirror/view'
+import { WidgetType, EditorView, Decoration } from '@codemirror/view'
+import type { SyntaxNode } from '@lezer/common'
+import type { TableRow, Table, TableCell } from '../../markdown-utils/markdown-ast'
+import { parseTableNode } from '../../markdown-utils/markdown-ast/parse-table-node'
+import { nodeToHTML } from '../../markdown-utils/markdown-to-html'
+import { createSubviewForCell, hiddenSpanField } from './subview'
+import { getCoordinatesForRange } from './commands/util'
+import { generateColumnControls, generateEmptyTableWidgetElement, generateRowControls, tableTD, tableTH, tableTR } from './widget-dom'
+import { displayTableContextMenu } from './context-menu'
+import { WIDGET_LINE_STYLE_RESET_CLASS } from '../renderers/base-renderer'
+import { CITEPROC_MAIN_DB } from 'source/types/common/citeproc'
+import { configField } from '../util/configuration'
+import { interceptAnchorClicks } from './util/anchor-callbacks'
+import openMarkdownLink from '../util/open-markdown-link'
 
 /**
  * This holds the last measured height of each rendered table to provide
@@ -46,33 +39,33 @@ import {
  * open document.
  */
 const TABLE_HEIGHT_CACHE = new (class {
-  private readonly cache = new Map<string, number>();
-  private readonly maxSize = 100; // Limit the number of entries. Currently an arbitrary number.
+  private readonly cache = new Map<string, number>()
+  private readonly maxSize = 100 // Limit the number of entries. Currently an arbitrary number.
 
-  get(key: string): number | undefined {
-    const value = this.cache.get(key);
+  get (key: string): number|undefined {
+    const value = this.cache.get(key)
     if (value !== undefined) {
       // Refresh the key's position
-      this.cache.delete(key);
-      this.cache.set(key, value);
+      this.cache.delete(key)
+      this.cache.set(key, value)
     }
-    return value;
+    return value
   }
 
-  set(key: string, value: number): void {
+  set (key: string, value: number): void {
     // Refresh the key's position
     if (this.cache.has(key)) {
-      this.cache.delete(key);
-      // Prune the cache entries
+      this.cache.delete(key)
+    // Prune the cache entries
     } else if (this.cache.size === this.maxSize) {
-      const first = this.cache.keys().next().value;
+      const first = this.cache.keys().next().value
       if (first !== undefined) {
-        this.cache.delete(first);
+        this.cache.delete(first)
       }
     }
-    this.cache.set(key, value);
+    this.cache.set(key, value)
   }
-})();
+})()
 
 // This widget holds a visual DOM representation of a table.
 export class TableWidget extends WidgetType {
@@ -82,13 +75,10 @@ export class TableWidget extends WidgetType {
   // highest wrapped cell in a table to prevent any jumping. But I'll keep the
   // TODO here for as long as we don't really know why this works.
   // For more background, see issue #5940.
-  private readonly meanRowHeight = 100;
+  private readonly meanRowHeight = 100
 
-  constructor(
-    readonly ast: Table,
-    readonly node: SyntaxNode,
-  ) {
-    super();
+  constructor (readonly ast: Table, readonly node: SyntaxNode) {
+    super()
   }
 
   // Okay, this is wild. So, this getter (plus the `coordsAt` overwrite below)
@@ -108,99 +98,100 @@ export class TableWidget extends WidgetType {
   // position, because you changed the viewport, and only if not you but
   // Codemirror changed the viewport will it believe (itself). Anyways, now it
   // works -- much better than before.
-  get estimatedHeight(): number {
-    const height = TABLE_HEIGHT_CACHE.get(this.cacheKey) ?? 0;
+  get estimatedHeight (): number {
+    const height = TABLE_HEIGHT_CACHE.get(this.cacheKey) ?? 0
     if (height > 0) {
-      return height;
+      return height
     }
 
     // We base our height estimate off the mean row height.
-    return this.ast.rows.length * this.meanRowHeight;
+    return this.ast.rows.length * this.meanRowHeight
   }
 
   // By setting the cache key to the node's `from` position,
   // we stabilize the cache while edits happen within the table.
-  private get cacheKey(): string {
-    return `${this.node.from}`;
+  private get cacheKey (): string {
+    return `${this.node.from}`
   }
 
-  toDOM(view: EditorView): HTMLElement {
+  toDOM (view: EditorView): HTMLElement {
     try {
-      const { wrapper, table } = generateEmptyTableWidgetElement();
+      const { wrapper, table } = generateEmptyTableWidgetElement()
       // This block widget cannot route through base-renderer, so it opts into
       // the shared line-style reset itself (see WIDGET_LINE_STYLE_RESET_CLASS).
-      wrapper.classList.add(WIDGET_LINE_STYLE_RESET_CLASS);
-      const tableAST = parseTableNode(this.node, view.state.sliceDoc());
-      if (tableAST.type !== "Table") {
-        throw new Error("Cannot render table: Likely malformed");
+      wrapper.classList.add(WIDGET_LINE_STYLE_RESET_CLASS)
+      const tableAST = parseTableNode(this.node, view.state.sliceDoc())
+      if (tableAST.type !== 'Table') {
+        throw new Error('Cannot render table: Likely malformed')
       }
 
-      updateTable(table, tableAST, view);
+      updateTable(table, tableAST, view)
 
-      const cacheKey = this.cacheKey;
+      const cacheKey = this.cacheKey
       view.requestMeasure({
-        read() {
-          const height = table.getBoundingClientRect().height;
-          TABLE_HEIGHT_CACHE.set(cacheKey, height);
+        read () {
+          const height = table.getBoundingClientRect().height
+          TABLE_HEIGHT_CACHE.set(cacheKey, height)
         },
-        key: cacheKey,
-      });
+        key: cacheKey
+      })
 
-      interceptAnchorClicks(wrapper, (href) => openMarkdownLink(href, view));
+      interceptAnchorClicks(wrapper, href => openMarkdownLink(href, view))
 
-      return wrapper;
+      return wrapper
     } catch (err: unknown) {
-      console.error(err);
-      const error = document.createElement("div");
-      error.classList.add("error");
-      error.textContent = `Could not render table: ${err instanceof Error ? err.message : "Unknown error"}`;
-      return error;
+      console.error(err)
+      const error = document.createElement('div')
+      error.classList.add('error')
+      error.textContent = `Could not render table: ${err instanceof Error ? err.message : 'Unknown error'}`
+      return error
     }
   }
 
-  updateDOM(dom: HTMLElement, view: EditorView): boolean {
+  updateDOM (dom: HTMLElement, view: EditorView): boolean {
     // `dom` is the widget wrapper.
-    const table: HTMLTableElement | null = dom.querySelector("table");
+    const table: HTMLTableElement|null = dom.querySelector('table')
 
     // This check allows us to, e.g., create error divs
     if (table === null) {
-      return false;
+      return false
     }
 
-    const tableAST = parseTableNode(this.node, view.state.sliceDoc());
-    if (tableAST.type === "Table") {
-      const prevHeight = TABLE_HEIGHT_CACHE.get(this.cacheKey) ?? 0;
-      updateTable(table, tableAST, view);
+    const tableAST = parseTableNode(this.node, view.state.sliceDoc())
+    if (tableAST.type === 'Table') {
+      const prevHeight = TABLE_HEIGHT_CACHE.get(this.cacheKey) ?? 0
+      updateTable(table, tableAST, view)
       // Instruct the editor to remeasure its height; see
       // https://discuss.codemirror.net/t/5604
-      const height = table.getBoundingClientRect().height;
+      const height = table.getBoundingClientRect().height
       if (prevHeight !== height) {
-        const cacheKey = this.cacheKey;
+
+        const cacheKey = this.cacheKey
         view.requestMeasure({
-          read() {
-            const height = table.getBoundingClientRect().height;
-            TABLE_HEIGHT_CACHE.set(cacheKey, height);
+          read () {
+            const height = table.getBoundingClientRect().height
+            TABLE_HEIGHT_CACHE.set(cacheKey, height)
           },
-          key: cacheKey,
-        });
+          key: cacheKey
+        })
       }
-      return true;
+      return true
     }
 
-    return false;
+    return false
   }
 
-  destroy(dom: HTMLElement): void {
+  destroy (dom: HTMLElement): void {
     // Here we ensure that we completely detach any active subview from the rest
     // of the document so that the garbage collector can remove the subview.
     // NOTE that all content, including the subviews, are mounted into a content
     // wrapper DIV element within the table cell elements.
-    const cells = [...dom.querySelectorAll<HTMLDivElement>("div.content")];
+    const cells = [...dom.querySelectorAll<HTMLDivElement>('div.content')]
 
     for (const cell of cells) {
-      const subview = EditorView.findFromDOM(cell);
+      const subview = EditorView.findFromDOM(cell)
       if (subview !== null) {
-        subview.destroy();
+        subview.destroy()
       }
     }
   }
@@ -208,50 +199,49 @@ export class TableWidget extends WidgetType {
   // This is the second secret to preventing scroll jumping-issues: Give
   // Codemirror approximate pixel positions of a position its requesting within
   // the table widget.
-  coordsAt(dom: HTMLElement, pos: number, _side: number): Rect | null {
+  coordsAt (dom: HTMLElement, pos: number, _side: number): Rect | null {
     // We use this helper function to help Codemirror determine the exact, pixel
     // perfect position of a given position inside our table so that it can
     // correctly calculate viewpoint positions where necessary.
-    const cells = [...dom.querySelectorAll<HTMLDivElement>("td, th")].map((cell) => {
-      return {
-        td: cell,
-        from: parseInt(cell.dataset.cellFrom!, 10),
-        to: parseInt(cell.dataset.cellTo!, 10),
-      };
-    });
+    const cells = [...dom.querySelectorAll<HTMLDivElement>('td, th')]
+      .map(cell => {
+        return {
+          td: cell,
+          from: parseInt(cell.dataset.cellFrom!, 10),
+          to: parseInt(cell.dataset.cellTo!, 10)
+        }
+      })
 
-    const realPos = pos + this.node.from; // NOTE that `pos` is only an offset.
+    const realPos = pos + this.node.from // NOTE that `pos` is only an offset.
 
     // NOTE: This code ignores the "side" parameter. Also, it ignores the offset
     // into the table cell itself.
     for (const cell of cells) {
-      const { from, to, td } = cell;
+      const { from, to, td } = cell
       if ((from <= realPos && to >= realPos) || realPos < from) {
         // Found it: The pos is somewhere within this cell, or it was after the
         // previous cell (but before this one), or in the leading formatting
         // characters of the table. In any case, report back the correct pixel
         // position of this cell
-        const content = td.querySelector(".content");
+        const content = td.querySelector('.content')
         if (content !== null) {
           // Found via https://github.com/codemirror/view/blob/45268f0eb62d1c6a0d70952ebdeb2e5ac898109d/src/dom.ts#L89
           // This seems to improve the situation marginally.
-          const { left, top, bottom } = content.getBoundingClientRect();
-          return { left, right: left, top, bottom };
+          const { left, top, bottom } = content.getBoundingClientRect()
+          return { left, right: left, top, bottom }
         } else {
-          console.warn(
-            "[TableEditor] Cannot provide accurate client rect: no `.content`-element found in table cell.",
-          );
-          return td.getBoundingClientRect();
+          console.warn('[TableEditor] Cannot provide accurate client rect: no `.content`-element found in table cell.')
+          return td.getBoundingClientRect()
         }
       }
     }
 
     // Not found in the table -> fall back to the rect of the entire table
-    return dom.getBoundingClientRect();
+    return dom.getBoundingClientRect()
   }
 
-  ignoreEvent(event: Event): boolean {
-    return true; // In this plugin case, the table should handle everything
+  ignoreEvent (event: Event): boolean {
+    return true // In this plugin case, the table should handle everything
   }
 
   /**
@@ -262,19 +252,20 @@ export class TableWidget extends WidgetType {
    *
    * @return  {DecorationSet}         The DecorationSet
    */
-  public static createForState(state: EditorState): DecorationSet {
+  public static createForState (state: EditorState): DecorationSet {
     // We try to retrieve the full syntax tree, and if that fails, fall back to
     // the (possibly incomplete) syntax tree.
-    const tree = ensureSyntaxTree(state, state.doc.length, 500) ?? syntaxTree(state);
+    const tree = ensureSyntaxTree(state, state.doc.length, 500) ?? syntaxTree(state)
     // Constantly calling `sliceDoc()` within the tree traversal
     // below has some negative performance impacts, so we extract
     // the markdown text outside of the loop
-    const markdown = state.sliceDoc();
+    const markdown = state.sliceDoc()
 
-    const newDecos: Array<Range<Decoration>> = tree.topNode // Get all Table nodes in the document
-      .getChildren("Table")
-      .map((node) => {
-        return { node, ast: parseTableNode(node, markdown) };
+    const newDecos: Array<Range<Decoration>> = tree
+      // Get all Table nodes in the document
+      .topNode.getChildren('Table')
+      .map(node => {
+        return { node, ast: parseTableNode(node, markdown) }
       })
       .filter(({ ast }) => {
         // The TableEditor cannot support grid tables, since they can have
@@ -282,22 +273,22 @@ export class TableWidget extends WidgetType {
         // too difficult to represent using our approach here. (Also, grids
         // are much easier to parse visually than pipes and less common,
         // reducing the need for us to support them.)
-        if (ast.type === "Table" && ast.tableType === "pipe") {
-          const rowLength = ast.alignment?.length ?? 0;
-          return ast.rows.every((r) => r.cells.length === rowLength);
+        if (ast.type === 'Table' && ast.tableType === 'pipe') {
+          const rowLength = ast.alignment?.length ?? 0
+          return ast.rows.every(r => r.cells.length === rowLength)
         }
 
-        return false;
+        return false
       })
       // Turn the nodes into Decorations
       .map(({ node, ast }) => {
         return Decoration.replace({
           widget: new TableWidget(ast as Table, node.node),
           // inclusive: false,
-          block: true,
-        }).range(node.from, node.to);
-      });
-    return Decoration.set(newDecos, true);
+          block: true
+        }).range(node.from, node.to)
+      })
+    return Decoration.set(newDecos, true)
   }
 }
 
@@ -309,35 +300,33 @@ export class TableWidget extends WidgetType {
  * @param  {Table}             tableAST  The table AST node
  * @param  {EditorView}        view      The EditorView
  */
-function updateTable(table: HTMLTableElement, tableAST: Table, view: EditorView): void {
+function updateTable (table: HTMLTableElement, tableAST: Table, view: EditorView): void {
   // Before we get started in updating the table, we need to find and remove all
   // handle elements we have in the table. They will be re-inserted in the
   // updateRow function calls below.
-  table
-    .querySelectorAll("div.grab-handle")
-    .forEach((handle) => handle.parentElement!.removeChild(handle));
-  table.querySelectorAll("div.plus").forEach((plus) => plus.parentElement!.removeChild(plus));
+  table.querySelectorAll('div.grab-handle').forEach(handle => handle.parentElement!.removeChild(handle))
+  table.querySelectorAll('div.plus').forEach(plus => plus.parentElement!.removeChild(plus))
 
-  const trs = [...table.querySelectorAll("tr")];
-  const rowsChanged = trs.length !== tableAST.rows.length;
+  const trs = [...table.querySelectorAll('tr')]
+  const rowsChanged = trs.length !== tableAST.rows.length
   // Remove now-superfluous TRs. The for-loop below accounts for too few.
   while (trs.length > tableAST.rows.length) {
-    const tr = trs.pop()!;
-    tr.parentElement?.removeChild(tr);
+    const tr = trs.pop()!
+    tr.parentElement?.removeChild(tr)
   }
 
-  const coords = getCoordinatesForRange(view.state.selection.main, tableAST);
+  const coords = getCoordinatesForRange(view.state.selection.main, tableAST)
 
   for (let i = 0; i < tableAST.rows.length; i++) {
-    const row = tableAST.rows[i];
+    const row = tableAST.rows[i]
     if (i === trs.length) {
       // We have to create a new TR
-      const tr = tableTR();
-      table.appendChild(tr);
-      trs.push(tr);
+      const tr = tableTR()
+      table.appendChild(tr)
+      trs.push(tr)
     }
     // Transfer the contents
-    updateRow(trs[i], row, i, tableAST.alignment, view, rowsChanged, coords);
+    updateRow(trs[i], row, i, tableAST.alignment, view, rowsChanged, coords)
   }
 }
 
@@ -352,88 +341,83 @@ function updateTable(table: HTMLTableElement, tableAST: Table, view: EditorView)
  * @param  {number}               idx     The row's index in the table
  * @param  {EditorView}           view    The EditorView
  */
-function updateRow(
+function updateRow (
   tr: HTMLTableRowElement,
   astRow: TableRow,
   idx: number,
-  align: Array<"left" | "center" | "right" | null>,
+  align: Array<'left'|'center'|'right'|null>,
   view: EditorView,
   rowsChanged: boolean,
-  selectionCoords?: { col: number; row: number },
+  selectionCoords?: { col: number, row: number },
 ): void {
-  const tds = [...tr.querySelectorAll(astRow.isHeaderOrFooter ? "th" : "td")];
-  const columnsChanged = tds.length !== astRow.cells.length;
+  const tds = [...tr.querySelectorAll(astRow.isHeaderOrFooter ? 'th' : 'td')]
+  const columnsChanged = tds.length !== astRow.cells.length
   // Remove now-superfluous TRs. The for-loop below accounts for too few.
   while (tds.length > astRow.cells.length) {
-    const td = tds.pop()!;
-    td.parentElement?.removeChild(td);
+    const td = tds.pop()!
+    td.parentElement?.removeChild(td)
   }
 
-  const { row, col } = selectionCoords !== undefined ? selectionCoords : { row: -1, col: -1 };
+  const { row, col } = selectionCoords !== undefined ? selectionCoords : { row: -1, col: -1 }
 
   // Prepare the citation callback
-  let { library } = view.state.field(configField).metadata;
-  library = library === "" ? CITEPROC_MAIN_DB : library;
-  const onCitation = window.getCitationCallback(library);
+  let { library } = view.state.field(configField).metadata
+  library = library === '' ? CITEPROC_MAIN_DB : library
+  const onCitation = window.getCitationCallback(library)
 
   for (let i = 0; i < astRow.cells.length; i++) {
-    const cell = astRow.cells[i];
-    const selectionInCell = row === idx && col === i;
+    const cell = astRow.cells[i]
+    const selectionInCell = row === idx && col === i
     if (i === tds.length) {
       // We have to create a new TD
-      const td = astRow.isHeaderOrFooter ? tableTH() : tableTD();
+      const td = astRow.isHeaderOrFooter ? tableTH() : tableTD()
 
-      const contentWrapper = document.createElement("div");
-      contentWrapper.classList.add("content");
-      td.appendChild(contentWrapper);
+      const contentWrapper = document.createElement('div')
+      contentWrapper.classList.add('content')
+      td.appendChild(contentWrapper)
 
-      const { zknLinkFormat } = view.state.field(configField);
-      const html = nodeToHTML(
-        cell.children,
-        {
-          onCitation,
-          zknLinkFormat,
-        },
-        0,
-      ).trim();
-      contentWrapper.innerHTML = html.length > 0 ? html : "&nbsp;";
+      const { zknLinkFormat } = view.state.field(configField)
+      const html = nodeToHTML(cell.children, {
+        onCitation, zknLinkFormat,
+      }, 0).trim()
+      contentWrapper.innerHTML = html.length > 0 ? html : '&nbsp;'
 
       // NOTE: This handle gets attached once and then remains on the TD for
       // the existence of the table. Since the `view` will always be the same,
       // we only have to save the cellFrom and cellTo to the TDs dataset each
       // time around (see below).
-      td.addEventListener("mousedown", (event) => {
-        if (contentWrapper.classList.contains("editing")) {
+      td.addEventListener('mousedown', (event) => {
+        if (contentWrapper.classList.contains('editing')) {
           // There is already a subview inside this cell to handle selections.
-          return;
+          return
         }
 
-        event.preventDefault();
-        event.stopPropagation();
+        event.preventDefault()
+        event.stopPropagation()
 
-        setSelectionToCell(td, cell, view);
-      });
+        setSelectionToCell(td, cell, view)
+      })
 
-      td.addEventListener("contextmenu", (event) => {
-        const ctxEvent = event instanceof PointerEvent && event.button === 2;
+      td.addEventListener('contextmenu', (event) => {
+        const ctxEvent = event instanceof PointerEvent && event.button === 2
         if (!ctxEvent) {
-          return;
+          return
         }
 
-        event.preventDefault();
-        event.stopPropagation();
+        event.preventDefault()
+        event.stopPropagation()
 
-        const subview = EditorView.findFromDOM(td);
+        const subview = EditorView.findFromDOM(td)
 
         if (subview === null) {
-          setSelectionToCell(td, cell, view);
+          setSelectionToCell(td, cell, view)
         }
 
-        displayTableContextMenu(event, view, subview ?? view);
-      });
+        displayTableContextMenu(event, view, subview ?? view)
+      })
 
-      tr.appendChild(td);
-      tds.push(td);
+      tr.appendChild(td)
+      tds.push(td)
     }
 
     // At this point, there is guaranteed to be an element at i. We need to do
@@ -443,42 +427,37 @@ function updateRow(
     if (idx === 0 && col === i) {
       // Selection is in this column
       for (const elem of generateColumnControls(view)) {
-        tds[i].appendChild(elem);
+        tds[i].appendChild(elem)
       }
     }
 
     if (i === 0 && row === idx) {
       // Selection is in this row
       for (const elem of generateRowControls(view)) {
-        tds[i].appendChild(elem);
+        tds[i].appendChild(elem)
       }
     }
 
     // Save the corresponding document offsets appropriately. NOTE that we
     // include whitespace here (minus one space padding if applicable).
-    tds[i].dataset.cellFrom = String(cell.from);
-    tds[i].dataset.cellTo = String(cell.to);
-    tds[i].style.textAlign = align[i] ?? "";
+    tds[i].dataset.cellFrom = String(cell.from)
+    tds[i].dataset.cellTo = String(cell.to)
+    tds[i].style.textAlign = align[i] ?? ''
 
-    const contentWrapper: HTMLDivElement = tds[i].querySelector("div.content")!;
-    const subview = EditorView.findFromDOM(contentWrapper);
+    const contentWrapper: HTMLDivElement = tds[i].querySelector('div.content')!
+    const subview = EditorView.findFromDOM(contentWrapper)
 
-    const [subviewFrom, subviewTo] = subview?.state.field(hiddenSpanField).cellRange ?? [-1, -1];
+    const [ subviewFrom, subviewTo ] = subview?.state.field(hiddenSpanField).cellRange ?? [ -1, -1 ]
 
     if (subview !== null && !selectionInCell) {
-      subview.destroy();
-      contentWrapper.classList.remove("editing");
-      const { zknLinkFormat } = view.state.field(configField);
-      const html = nodeToHTML(
-        cell.children,
-        {
-          onCitation,
-          zknLinkFormat,
-        },
-        0,
-      ).trim();
-      contentWrapper.innerHTML = html.length > 0 ? html : "&nbsp;";
-      interceptAnchorClicks(contentWrapper, (href) => openMarkdownLink(href, view));
+      subview.destroy()
+      contentWrapper.classList.remove('editing')
+      const { zknLinkFormat } = view.state.field(configField)
+      const html = nodeToHTML(cell.children, {
+        onCitation, zknLinkFormat,
+      }, 0).trim()
+      contentWrapper.innerHTML = html.length > 0 ? html : '&nbsp;'
+      interceptAnchorClicks(contentWrapper, href => openMarkdownLink(href, view))
     } else if (subview === null && selectionInCell) {
       // Before we mount a subview, we need to normalize the selection if
       // necessary. The table commands are allowed to place the new selection
@@ -497,43 +476,35 @@ function updateRow(
       // the inserted characters at completely arbitrary positions of the table.
       // So, here we enforce that the main selection is definitely somewhere
       // inside the table cell *content*.
-      const sel = view.state.selection.main;
-      const newFrom = Math.min(Math.max(sel.from, cell.from), cell.to);
-      const newTo = Math.min(Math.max(sel.to, cell.from), cell.to);
+      const sel = view.state.selection.main
+      const newFrom = Math.min(Math.max(sel.from, cell.from), cell.to)
+      const newTo = Math.min(Math.max(sel.to, cell.from), cell.to)
 
       // NOTE: This entire code runs during updates (since that's when the
       // widget's updateDOM function will be called), so we must wait until that
       // update is complete before we do anything.
       requestAnimationFrame(() => {
         if (newFrom !== sel.from || newTo !== sel.to) {
-          view.dispatch({ selection: { anchor: newFrom, head: newTo } });
+          view.dispatch({ selection: { anchor: newFrom, head: newTo } })
         }
 
         // Create a new subview to represent the selection here. Ensure the cell
         // itself is empty before we mount the subview.
-        contentWrapper.innerHTML = "";
-        createSubviewForCell(view, contentWrapper, { from: cell.from, to: cell.to });
-        contentWrapper.classList.add("editing");
-      });
+        contentWrapper.innerHTML = ''
+        createSubviewForCell(view, contentWrapper, { from: cell.from, to: cell.to })
+        contentWrapper.classList.add('editing')
+      })
     } else if (subview === null) {
       // Simply transfer the contents
-      const { zknLinkFormat } = view.state.field(configField);
-      const html = nodeToHTML(
-        cell.children,
-        {
-          onCitation,
-          zknLinkFormat,
-        },
-        0,
-      ).trim();
+      const { zknLinkFormat } = view.state.field(configField)
+      const html = nodeToHTML(cell.children, {
+        onCitation, zknLinkFormat,
+      }, 0).trim()
       if (html !== contentWrapper.innerHTML) {
-        contentWrapper.innerHTML = html.length > 0 ? html : "&nbsp;";
-        interceptAnchorClicks(contentWrapper, (href) => openMarkdownLink(href, view));
+        contentWrapper.innerHTML = html.length > 0 ? html : '&nbsp;'
+        interceptAnchorClicks(contentWrapper, href => openMarkdownLink(href, view))
       }
-    } else if (
-      (subviewFrom !== cell.from || subviewTo !== cell.to) &&
-      (columnsChanged || rowsChanged)
-    ) {
+    } else if ((subviewFrom !== cell.from || subviewTo !== cell.to) && (columnsChanged || rowsChanged)) {
       // Here, there is a subview in the cell and the selection is in this cell,
       // but the subview has been "carried over" from a different column or row,
       // which happens if the user adds or removes columns or rows. In this case
@@ -545,8 +516,8 @@ function updateRow(
       // we also check for whether the amount of columns or rows has changed.
       // This is usually a good indicator that the subview may contain an
       // outdated cell view.
-      subview.destroy();
-      createSubviewForCell(view, contentWrapper, { from: cell.from, to: cell.to });
+      subview.destroy()
+      createSubviewForCell(view, contentWrapper, { from: cell.from, to: cell.to })
     } // Else: The cell has a subview and the selection is still in there.
   }
 }
@@ -560,13 +531,13 @@ function updateRow(
  * @param   {TableCell}             cell  The table cell contents
  * @param   {EditorView}            view  The editor view
  */
-function setSelectionToCell(td: HTMLTableCellElement, cell: TableCell, view: EditorView): void {
-  const from = parseInt(td.dataset.cellFrom ?? "0", 10);
-  const cellTo = parseInt(td.dataset.cellTo ?? "0", 10);
-  const selection = getSelection();
-  const textOffset = selection?.focusOffset ?? 0;
-  const nodeOffset = estimateNodeOffset(selection?.anchorNode ?? td, td, cell.textContent);
-  view.dispatch({ selection: { anchor: Math.min(from + nodeOffset + textOffset, cellTo) } });
+function setSelectionToCell (td: HTMLTableCellElement, cell: TableCell, view: EditorView): void {
+  const from = parseInt(td.dataset.cellFrom ?? '0', 10)
+  const cellTo = parseInt(td.dataset.cellTo ?? '0', 10)
+  const selection = getSelection()
+  const textOffset = selection?.focusOffset ?? 0
+  const nodeOffset = estimateNodeOffset(selection?.anchorNode ?? td, td, cell.textContent)
+  view.dispatch({ selection: { anchor: Math.min(from + nodeOffset + textOffset, cellTo) } })
 }
 
 /**
@@ -586,29 +557,24 @@ function setSelectionToCell(td: HTMLTableCellElement, cell: TableCell, view: Edi
  * @return  {number}                             An estimated offset of
  *                                               `anchorNode` within `td`
  */
-function estimateNodeOffset(
-  anchorNode: Node,
-  td: HTMLTableCellElement,
-  cellContent: string,
-): number {
+function estimateNodeOffset (anchorNode: Node, td: HTMLTableCellElement, cellContent: string): number {
   // BUG: Somehow this function returns numbers that are WAY too high, there is
   // still some bug in here. I can reproduce this sometimes in empty cells/an
   // empty table, but I couldn't find a specific pattern yet.
   if (anchorNode === td || anchorNode.parentNode === td) {
     // Clicked node was the target itself, but realistically this doesn't happen
-    return 0;
+    return 0
   }
 
   // If the anchorNode is a text node, and the text content of that anchor is
   // unique within the table cell's content, then we can calculate the correct
   // offset and return that one.
   if (anchorNode instanceof Text && anchorNode.nodeValue !== null) {
-    const firstIdx = cellContent.indexOf(anchorNode.nodeValue);
-    const lastIdx = cellContent.lastIndexOf(anchorNode.nodeValue);
+    const firstIdx = cellContent.indexOf(anchorNode.nodeValue)
+    const lastIdx = cellContent.lastIndexOf(anchorNode.nodeValue)
 
-    if (firstIdx > -1 && firstIdx === lastIdx) {
-      // --> Unique substring
-      return firstIdx;
+    if (firstIdx > -1 && firstIdx === lastIdx) { // --> Unique substring
+      return firstIdx
     }
   }
 
@@ -616,38 +582,38 @@ function estimateNodeOffset(
   // use the DOM of the table cell's HTML sub tree to estimate the offset as
   // good as possible.
 
-  let nodeOffset = 0;
+  let nodeOffset = 0
   // Here we assume that we're somewhere in the td's sub-tree. We'll start
   // navigating node by node backwards until we end up at the td.
-  let currentNode = anchorNode;
+  let currentNode = anchorNode
   while (currentNode !== td) {
-    if (currentNode.previousSibling !== null) {
-      currentNode = currentNode.previousSibling;
+    if (currentNode.previousSibling !== null ) {
+      currentNode = currentNode.previousSibling
     } else if (currentNode.parentNode !== null) {
-      currentNode = currentNode.parentNode;
+      currentNode = currentNode.parentNode
       // The parentNode includes all the children we may have already went
       // through so we have to immediately select the previous sibling of it.
       if (currentNode.previousSibling === null) {
-        break; // Shouldn't happen, but who knows
+        break // Shouldn't happen, but who knows
       } else {
-        currentNode = currentNode.previousSibling;
+        currentNode = currentNode.previousSibling
       }
     } else {
-      break; // Something went wrong ...?
+      break // Something went wrong ...?
     }
 
     if (currentNode instanceof Text) {
       // Simple text node -> offset increases by its nodeValue
-      nodeOffset += currentNode.nodeValue?.length ?? 0;
+      nodeOffset += currentNode.nodeValue?.length ?? 0
     } else if (currentNode instanceof Element) {
       // Element node --> offset increases by its textContent as well as a rough
       // formatting character estimation
-      nodeOffset += currentNode.textContent?.length ?? 0;
-      nodeOffset += guessFormattingCharsFor(currentNode);
+      nodeOffset += currentNode.textContent?.length ?? 0
+      nodeOffset += guessFormattingCharsFor(currentNode)
     }
   }
 
-  return nodeOffset;
+  return nodeOffset
 }
 
 /**
@@ -662,23 +628,23 @@ function estimateNodeOffset(
  * @return  {number}            A guess of how many formatting characters the
  *                              Markdown source used.
  */
-function guessFormattingCharsFor(element: Element): number {
-  let chars = 0;
+function guessFormattingCharsFor (element: Element): number {
+  let chars = 0
 
   // This function should count anything that is not included in `textContent`
 
   // Simple inlines
-  chars += element.querySelectorAll("strong").length * 4;
-  chars += element.querySelectorAll("em").length * 2;
-  chars += element.querySelectorAll("mark").length * 4;
+  chars += element.querySelectorAll('strong').length * 4
+  chars += element.querySelectorAll('em').length * 2
+  chars += element.querySelectorAll('mark').length * 4
 
   // Links and images have 4/5 formatting characters plus however long the href
   // or src is.
-  for (const a of element.querySelectorAll("a")) {
-    chars += a.getAttribute("href")?.length ?? 0 + 4;
+  for (const a of element.querySelectorAll('a')) {
+    chars += a.getAttribute('href')?.length ?? 0 + 4
   }
-  for (const img of element.querySelectorAll("img")) {
-    chars += img.getAttribute("src")?.length ?? 0 + 5;
+  for (const img of element.querySelectorAll('img')) {
+    chars += img.getAttribute('src')?.length ?? 0 + 5
   }
 
   // NOTE: Headings and other block-level nodes are ignored because they can't
@@ -686,5 +652,5 @@ function guessFormattingCharsFor(element: Element): number {
   // turn out that our guesses are way too bad. Because a few block level
   // elements (such as lists etc.) can occur at least in grid tables.
 
-  return chars;
+  return chars
 }

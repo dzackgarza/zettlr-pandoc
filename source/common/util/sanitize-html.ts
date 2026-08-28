@@ -11,7 +11,7 @@
  *
  * END HEADER
  */
-import DOMPurify from "dompurify";
+import DOMPurify from 'dompurify'
 
 /**
  * Sanitizes the provided HTML string and prepare it for insertion into the DOM.
@@ -22,9 +22,9 @@ import DOMPurify from "dompurify";
  *
  * @return  {string}        The cleaned HTML
  */
-export function sanitizeHTML(html: string) {
+export function sanitizeHTML (html: string) {
   return DOMPurify.sanitize(html, {
     // Allow tags that Zettlr uses
-    ADD_TAGS: ["cds-icon"],
-  });
+    ADD_TAGS: ['cds-icon']
+  })
 }

@@ -19,57 +19,50 @@
  * END HEADER
  */
 
-import { EditorSelection } from "@codemirror/state";
-import { type EditorView } from "@codemirror/view";
+import { EditorSelection } from '@codemirror/state'
+import { type EditorView } from '@codemirror/view'
 
 /**
  * The typed outcome of a format attempt. `ok: false` is a real domain state
  * (the external tool was missing, or reported an error) — never a silent no-op.
  */
 export type FormatResult =
-  | { ok: true; formatted: string }
-  | { ok: false; kind: "flowmark-absent" | "flowmark-error" | "flowmark-timeout"; message: string };
+  | { ok: true, formatted: string }
+  | { ok: false, kind: 'flowmark-absent' | 'flowmark-error' | 'flowmark-timeout', message: string }
 
 /** Formats markdown source text, returning a typed result. */
-export type MarkdownFormatter = (text: string) => Promise<FormatResult>;
+export type MarkdownFormatter = (text: string) => Promise<FormatResult>
 
-function isWhitespace(char: string): boolean {
-  return (
-    char === " " ||
-    char === "\t" ||
-    char === "\n" ||
-    char === "\r" ||
-    char === "\f" ||
-    char === "\v"
-  );
+function isWhitespace (char: string): boolean {
+  return char === ' ' || char === '\t' || char === '\n' || char === '\r' || char === '\f' || char === '\v'
 }
 
 /** Counts the non-whitespace characters in `text` strictly before `pos`. */
-function nonWhitespaceBefore(text: string, pos: number): number {
-  let count = 0;
+function nonWhitespaceBefore (text: string, pos: number): number {
+  let count = 0
   for (let i = 0; i < pos && i < text.length; i++) {
     if (!isWhitespace(text[i])) {
-      count++;
+      count++
     }
   }
-  return count;
+  return count
 }
 
 /** Returns the index of the `n`-th (1-based) non-whitespace char, or -1. */
-function indexOfNthNonWhitespace(text: string, n: number): number {
+function indexOfNthNonWhitespace (text: string, n: number): number {
   if (n <= 0) {
-    return -1;
+    return -1
   }
-  let count = 0;
+  let count = 0
   for (let i = 0; i < text.length; i++) {
     if (!isWhitespace(text[i])) {
-      count++;
+      count++
       if (count === n) {
-        return i;
+        return i
       }
     }
   }
-  return -1;
+  return -1
 }
 
 /**
@@ -79,21 +72,21 @@ function indexOfNthNonWhitespace(text: string, n: number): number {
  * non-whitespace characters is stable — mapping by that index survives the
  * reflow where a raw byte offset would drift.
  */
-export function mapCaretThroughReflow(original: string, formatted: string, caret: number): number {
-  const before = nonWhitespaceBefore(original, caret);
-  const caretOnWord = caret < original.length && !isWhitespace(original[caret]);
+export function mapCaretThroughReflow (original: string, formatted: string, caret: number): number {
+  const before = nonWhitespaceBefore(original, caret)
+  const caretOnWord = caret < original.length && !isWhitespace(original[caret])
 
   if (caretOnWord || caret === 0) {
     // Caret sits at the start of a word (or the document start): land it just
     // before the next non-whitespace character in the formatted text.
-    const idx = indexOfNthNonWhitespace(formatted, before + 1);
-    return idx === -1 ? formatted.length : idx;
+    const idx = indexOfNthNonWhitespace(formatted, before + 1)
+    return idx === -1 ? formatted.length : idx
   }
 
   // Caret trails a word (whitespace or end-of-doc ahead): land it just after
   // the same non-whitespace character it followed.
-  const idx = indexOfNthNonWhitespace(formatted, before);
-  return idx === -1 ? 0 : idx + 1;
+  const idx = indexOfNthNonWhitespace(formatted, before)
+  return idx === -1 ? 0 : idx + 1
 }
 
 /**
@@ -109,28 +102,25 @@ export function mapCaretThroughReflow(original: string, formatted: string, caret
  *
  * @return          The formatter's typed result.
  */
-export async function formatDocument(
-  view: EditorView,
-  format: MarkdownFormatter,
-): Promise<FormatResult> {
-  const original = view.state.doc.toString();
-  const result = await format(original);
+export async function formatDocument (view: EditorView, format: MarkdownFormatter): Promise<FormatResult> {
+  const original = view.state.doc.toString()
+  const result = await format(original)
 
   if (!result.ok) {
-    return result;
+    return result
   }
 
   if (result.formatted === original) {
-    return result;
+    return result
   }
 
-  const caret = view.state.selection.main.head;
-  const mapped = mapCaretThroughReflow(original, result.formatted, caret);
+  const caret = view.state.selection.main.head
+  const mapped = mapCaretThroughReflow(original, result.formatted, caret)
 
   view.dispatch({
     changes: { from: 0, to: original.length, insert: result.formatted },
-    selection: EditorSelection.single(mapped),
-  });
+    selection: EditorSelection.single(mapped)
+  })
 
-  return result;
+  return result
 }

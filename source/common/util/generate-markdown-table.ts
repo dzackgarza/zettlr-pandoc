@@ -12,20 +12,20 @@
  */
 
 /**
- * Generates a basic Markdown table of the given size.
- * @param  {Number} rows Number of rows
- * @param  {Number} cols Number of columns
- * @return {String}      The generated table.
- */
+* Generates a basic Markdown table of the given size.
+* @param  {Number} rows Number of rows
+* @param  {Number} cols Number of columns
+* @return {String}      The generated table.
+*/
 export default function (rows: number = 2, cols: number = 2): string {
-  let table = "";
+  let table = ''
 
   for (let i = 0; i < rows; i++) {
-    table += "|";
+    table += '|'
     for (let k = 0; k < cols; k++) {
-      table += "   |";
+      table += '   |'
     }
-    table += "\n";
+    table += '\n'
   }
-  return table;
+  return table
 }

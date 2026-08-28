@@ -4,1574 +4,1540 @@
  */
 
 export interface paths {
-  "/openapi.yaml": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/openapi.yaml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Serve the OpenAPI specification */
+        get: operations["getOpenApiSpec"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Serve the OpenAPI specification */
-    get: operations["getOpenApiSpec"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/openapi.json": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/openapi.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve the OpenAPI specification as JSON
+         * @description The identical document, parsed from the YAML per request so the two encodings cannot disagree. Offered because schema importers are not uniformly willing to read YAML.
+         */
+        get: operations["getOpenApiSpecJson"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Serve the OpenAPI specification as JSON
-     * @description The identical document, parsed from the YAML per request so the two encodings cannot disagree. Offered because schema importers are not uniformly willing to read YAML.
-     */
-    get: operations["getOpenApiSpecJson"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/health": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Protocol version, instance ID, and PID */
+        get: operations["health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Protocol version, instance ID, and PID */
-    get: operations["health"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/ping": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/ping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Protocol version, instance ID, and PID */
+        get: operations["ping"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Protocol version, instance ID, and PID */
-    get: operations["ping"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/capabilities": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Supported features and limits */
+        get: operations["getCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Supported features and limits */
-    get: operations["getCapabilities"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/context": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Focused view, focused document, and all open documents */
+        get: operations["getContext"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Focused view, focused document, and all open documents */
-    get: operations["getContext"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/documents": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List open or loaded documents */
+        get: operations["listDocuments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** List open or loaded documents */
-    get: operations["listDocuments"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/documents/{documentId}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/documents/{documentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Document metadata and review status */
+        get: operations["getDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Document metadata and review status */
-    get: operations["getDocument"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/documents/{documentId}/focus": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/documents/{documentId}/focus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Focus or create an editor view for the document */
+        post: operations["focusDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Focus or create an editor view for the document */
-    post: operations["focusDocument"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/documents/{documentId}/content": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/documents/{documentId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read working or reference text by line slice
+         * @description Answers for every documentId GET /v1/workspace/files returns, whether or not the file is open; reading never opens a file or moves the user's focus. A closed file answers from its detached review when it has one and from disk otherwise. Re-read the working side before each new proposal.
+         */
+        get: operations["readDocumentContent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Read working or reference text by line slice
-     * @description Answers for every documentId GET /v1/workspace/files returns, whether or not the file is open; reading never opens a file or moves the user's focus. A closed file answers from its detached review when it has one and from disk otherwise. Re-read the working side before each new proposal.
-     */
-    get: operations["readDocumentContent"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/documents/{documentId}/search": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/documents/{documentId}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Literal or regex search against the live buffer */
+        post: operations["searchDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Literal or regex search against the live buffer */
-    post: operations["searchDocument"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/documents/{documentId}/proposals": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/documents/{documentId}/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit an ordered batch of exact unified-diff claims
+         * @description The batch binds to the one baselineSha256 in the body and applies all-or-nothing; packetIds maps its packets in claim order. Accepted material is already in the working text — do not resubmit it. The reviewer may edit a chunk before accepting it, so diff your proposal against the final text.
+         */
+        post: operations["submitProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * Submit an ordered batch of exact unified-diff claims
-     * @description The batch binds to the one baselineSha256 in the body and applies all-or-nothing; packetIds maps its packets in claim order. Accepted material is already in the working text — do not resubmit it. The reviewer may edit a chunk before accepting it, so diff your proposal against the final text.
-     */
-    post: operations["submitProposal"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/reviews": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all reviews, attached and detached
+         * @description Reviews attached to open documents, plus detached (sidecar-backed) reviews on files that are currently closed. A returning turn starts here: this is every review still carrying outstanding state, on files nobody has open included. A detached review reattaches by opening its documentPath.
+         */
+        get: operations["listReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * List all reviews, attached and detached
-     * @description Reviews attached to open documents, plus detached (sidecar-backed) reviews on files that are currently closed. A returning turn starts here: this is every review still carrying outstanding state, on files nobody has open included. A detached review reattaches by opening its documentPath.
-     */
-    get: operations["listReviews"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/reviews/{reviewId}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/reviews/{reviewId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect a review
+         * @description Status plus review-level comments — the reviewer's channel back to you. Read them and the chunk notes at the start of each turn, and address them with new claims. Answers for every reviewId /v1/reviews lists: a detached review is served from its sidecar, with attached=false and no documentRevision.
+         */
+        get: operations["getReview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Inspect a review
-     * @description Status plus review-level comments — the reviewer's channel back to you. Read them and the chunk notes at the start of each turn, and address them with new claims. Answers for every reviewId /v1/reviews lists: a detached review is served from its sidecar, with attached=false and no documentRevision.
-     */
-    get: operations["getReview"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/reviews/{reviewId}/diff": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/reviews/{reviewId}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieve the complete unresolved composite diff
+         * @description Answers for a detached review too, from the frozen texts in its sidecar; that response carries no documentId.
+         */
+        get: operations["getReviewDiff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Retrieve the complete unresolved composite diff
-     * @description Answers for a detached review too, from the frozen texts in its sidecar; that response carries no documentId.
-     */
-    get: operations["getReviewDiff"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/reviews/{reviewId}/chunks": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/reviews/{reviewId}/chunks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect current unresolved chunks
+         * @description Read this at the start of each turn. A chunk's comment is the reviewer's question or objection — answer it with a revised claim in your next submission. Every chunk here is undecided: the reviewer accepts and rejects them in the editor, and this API offers no way to decide them for them.
+         */
+        get: operations["getReviewChunks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Inspect current unresolved chunks
-     * @description Read this at the start of each turn. A chunk's comment is the reviewer's question or objection — answer it with a revised claim in your next submission. Every chunk here is undecided: the reviewer accepts and rejects them in the editor, and this API offers no way to decide them for them.
-     */
-    get: operations["getReviewChunks"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/reviews/{reviewId}/comments": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/reviews/{reviewId}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Attach a review-level comment
+         * @description Communication without adjudication: the comment lands in the review's comment list and advances the generation, so a long-poll on the existing generation cursor wakes. Answer a chunk note here when the answer is an argument; answer with a new claim when the answer is an edit.
+         */
+        post: operations["addReviewComment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * Attach a review-level comment
-     * @description Communication without adjudication: the comment lands in the review's comment list and advances the generation, so a long-poll on the existing generation cursor wakes. Answer a chunk note here when the answer is an argument; answer with a new claim when the answer is an edit.
-     */
-    post: operations["addReviewComment"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/reviews/{reviewId}/packets": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/reviews/{reviewId}/packets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect the proposal-packet ledger
+         * @description Answers for a detached review too, from its sidecar's ledger; that response carries no documentId.
+         */
+        get: operations["getReviewPackets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Inspect the proposal-packet ledger
-     * @description Answers for a detached review too, from its sidecar's ledger; that response carries no documentId.
-     */
-    get: operations["getReviewPackets"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/proposals/{packetId}/retract": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/proposals/{packetId}/retract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retract an untouched, most-recent packet */
+        post: operations["retractProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Retract an untouched, most-recent packet */
-    post: operations["retractProposal"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/reviews/{reviewId}/events": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/reviews/{reviewId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Long-poll review events and status after a generation advance
+         * @description The "what changed since my last turn" query: pass your last response's generation as afterGeneration. It answers at once if the review already moved past that generation, otherwise blocks until a decision, comment, or packet advances it — or until waitSeconds elapses, answering with timedOut true.
+         */
+        get: operations["waitForReviewEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Long-poll review events and status after a generation advance
-     * @description The "what changed since my last turn" query: pass your last response's generation as afterGeneration. It answers at once if the review already moved past that generation, otherwise blocks until a decision, comment, or packet advances it — or until waitSeconds elapses, answering with timedOut true.
-     */
-    get: operations["waitForReviewEvents"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/views": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/views": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List active editor views */
+        get: operations["listViews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** List active editor views */
-    get: operations["listViews"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/workspace/files": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/workspace/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List every file across the configured workspaces
+         * @description The agent's orientation entry point — all files the editor can see, open or not, flat across every configured workspace. Orient in this order: workspace files -> documents -> reviews -> chunks.
+         */
+        get: operations["listWorkspaceFiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * List every file across the configured workspaces
-     * @description The agent's orientation entry point — all files the editor can see, open or not, flat across every configured workspace. Orient in this order: workspace files -> documents -> reviews -> chunks.
-     */
-    get: operations["listWorkspaceFiles"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/workspaces": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List configured workspaces */
+        get: operations["listWorkspaces"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** List configured workspaces */
-    get: operations["listWorkspaces"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/workspaces/{workspaceId}/documents": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/workspaces/{workspaceId}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List documents known to a workspace */
+        get: operations["listWorkspaceDocuments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** List documents known to a workspace */
-    get: operations["listWorkspaceDocuments"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-  schemas: {
-    DocumentRevision: {
-      sha256: string;
+    schemas: {
+        DocumentRevision: {
+            sha256: string;
+        };
+        /** @enum {string} */
+        ReviewState: "active" | "resolved-awaiting-save" | "completed" | "cleared" | "invalidated";
+        ReviewSummary: {
+            reviewId: string;
+            state: components["schemas"]["ReviewState"];
+            generation: number;
+            /** @description Suggestions not yet accepted or rejected. */
+            unresolvedChunks: number;
+            packetCount: number;
+        };
+        ReviewComment: {
+            text: string;
+            createdAt: string;
+        };
+        EditorViewSummary: {
+            viewId: string;
+            windowId: string;
+            leafId: string;
+            focused: boolean;
+            active: boolean;
+        };
+        DocumentSummary: {
+            documentId: string;
+            uri: string;
+            path: string;
+            name: string;
+            /** @enum {string} */
+            type: "markdown" | "code";
+            dirty: boolean;
+            revision: components["schemas"]["DocumentRevision"];
+            lineCount: number;
+            byteLength: number;
+            views: components["schemas"]["EditorViewSummary"][];
+            review?: components["schemas"]["ReviewSummary"];
+        };
+        EditorContext: {
+            focusedView?: components["schemas"]["FocusedViewSummary"];
+            focusedDocument?: components["schemas"]["DocumentSummary"];
+            openDocuments: components["schemas"]["DocumentSummary"][];
+        };
+        ReadDocumentResponse: {
+            documentId: string;
+            /** @description Whether the document currently has a live authority buffer. */
+            attached: boolean;
+            /** @enum {string} */
+            side: "working" | "reference";
+            revision: components["schemas"]["DocumentRevision"];
+            reviewGeneration: number;
+            range: {
+                startLine: number;
+                endLine: number;
+                totalLines: number;
+            };
+            content: string;
+            truncated: boolean;
+        };
+        /** @description One logical decision — the smallest change a reviewer can accept or reject on its own. Do not bundle unrelated edits into one claim. */
+        ProposalClaim: {
+            /** @description Self-contained prose shown to the reviewer at the chunks this claim produced: what is wrong, what the patch changes, and why — enough to adjudicate without re-deriving the diagnosis. */
+            description: string;
+            /** @description Unified diff implementing exactly this claim. Name the target in the ---/+++ headers as the literal `document` or as the document's absolute path (a git-style a/ or b/ prefix is allowed); any other filename, a create/delete/rename/binary/mode patch, or a diff that leaves the text unchanged is PATCH_INVALID. */
+            patch: string;
+        };
+        SubmitProposalRequest: {
+            /** @description SHA-256 returned by the most recent working-content read. It pins the exact text the patches must apply to; a stale hash is refused as REVISION_MISMATCH. */
+            baselineSha256: string;
+            /** @description Zero when no review exists; otherwise the generation returned by the most recent review or chunk read. */
+            expectedReviewGeneration: number;
+            /** @description Client-chosen unique string. Replaying it returns the original packet rather than applying the patch twice; reusing it for a different request is refused as IDEMPOTENCY_CONFLICT. */
+            clientRequestId: string;
+            /** @description Ordered claim sequence applied against the ONE baseline, sequentially and atomically: claim k applies with zero fuzz to the text claim k-1 produced, all-or-nothing, and each claim becomes its own packet. Send one entry per logical decision — that gives the reviewer separately decidable packets. */
+            claims: components["schemas"]["ProposalClaim"][];
+        };
+        SubmitProposalResponse: {
+            /** @description The newest packet of this submission (the retractable one) — the last element of packetIds. */
+            packetId: string;
+            /** @description One packet per claim, in claim order; a single-patch submission has exactly one. */
+            packetIds: string[];
+            reviewId: string;
+            documentId: string;
+            documentRevision: components["schemas"]["DocumentRevision"];
+            reviewGeneration: number;
+            unresolvedChunks: number;
+            state: components["schemas"]["ReviewState"];
+        };
+        AgentError: {
+            /** @enum {string} */
+            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR";
+            message: string;
+            documentId?: string;
+            expected?: components["schemas"]["DocumentRevision"];
+            actual?: components["schemas"]["DocumentRevision"];
+            reviewId?: string;
+            /** @description REVIEW_GENERATION_MISMATCH: the generation the review is actually at, so the caller can re-read from exactly there. */
+            reviewGeneration?: number;
+        };
+        AgentErrorResponse: {
+            error: components["schemas"]["AgentError"];
+        };
+        AgentEvent: {
+            /** @enum {string} */
+            event: "review.started" | "review.changed" | "review.resolved" | "review.commented" | "review.cleared" | "review.invalidated" | "review.completed" | "review.discarded" | "review.sidecar-error" | "proposal.applied" | "proposal.retracted";
+            timestamp: string;
+            reviewId?: string;
+            documentId?: string;
+            documentRevision?: components["schemas"]["DocumentRevision"];
+            reviewGeneration?: number;
+            unresolvedChunks?: number;
+            /** @description proposal.applied and proposal.retracted: the packet affected by the event. */
+            packetId?: string;
+            /** @description review.commented: the outstanding chunk the comment is anchored to, when it is chunk-anchored. */
+            chunkId?: string;
+            /** @description review.commented: the comment text. Absent on a chunk-anchored event when the reviewer removed the chunk's note. */
+            comment?: string;
+            /** @description review.sidecar-error: what failed and why. */
+            message?: string;
+            /** @description Server-generated event sequence identifier. */
+            id?: string;
+        };
+        ReviewEventsResponse: {
+            reviewId: string;
+            status?: components["schemas"]["ReviewSummary"];
+            events?: components["schemas"]["AgentEvent"][];
+            /** @description True if the request reached its timeout before a status change. */
+            timedOut?: boolean;
+        };
+        FocusedViewSummary: {
+            viewId: string;
+            windowId: string;
+            leafId: string;
+            documentId: string;
+        };
+        ViewSummary: {
+            viewId: string;
+            windowId: string;
+            leafId: string;
+            documentId?: string;
+            focused: boolean;
+            active: boolean;
+            documents?: {
+                documentId?: string;
+                path: string;
+            }[];
+        };
+        ViewsResponse: {
+            views: components["schemas"]["ViewSummary"][];
+        };
+        WorkspaceSummary: {
+            workspaceId: string;
+            path: string;
+        };
+        WorkspacesResponse: {
+            workspaces: components["schemas"]["WorkspaceSummary"][];
+        };
+        LoadedWorkspaceDocumentSummary: {
+            documentId: string;
+            workspaceId: string;
+            uri: string;
+            path: string;
+            name: string;
+            /** @enum {boolean} */
+            loaded: true;
+            /** @enum {string} */
+            type: "markdown" | "code";
+            dirty: boolean;
+            revision: components["schemas"]["DocumentRevision"];
+            lineCount: number;
+            byteLength: number;
+            views: components["schemas"]["EditorViewSummary"][];
+            review?: components["schemas"]["ReviewSummary"];
+        };
+        UnloadedWorkspaceDocumentSummary: {
+            documentId: string;
+            workspaceId: string;
+            uri: string;
+            path: string;
+            name: string;
+            /** @enum {boolean} */
+            loaded: false;
+        };
+        WorkspaceDocumentSummary: components["schemas"]["LoadedWorkspaceDocumentSummary"] | components["schemas"]["UnloadedWorkspaceDocumentSummary"];
+        FocusDocumentResponse: {
+            /** @constant */
+            focused: true;
+            documentId: string;
+        };
+        WorkspaceDocumentsResponse: {
+            workspaceId: string;
+            documents: components["schemas"]["WorkspaceDocumentSummary"][];
+        };
+        WorkspaceFileEntry: {
+            documentId: string;
+            path: string;
+            name: string;
+            workspaceId: string;
+            /** @description Whether the file is currently loaded in the editor. */
+            open: boolean;
+        };
+        WorkspaceFilesResponse: {
+            files: components["schemas"]["WorkspaceFileEntry"][];
+        };
+        SearchDocumentResponse: {
+            documentId: string;
+            revision: components["schemas"]["DocumentRevision"];
+            /** @description Search hits in document order. At most 1000 hits are returned; a true truncated field means more matching hits were present. */
+            hits: {
+                line: number;
+                column: number;
+                length: number;
+                contextBefore: string;
+                contextAfter: string;
+            }[];
+            truncated: boolean;
+        };
+        ReviewDetailResponse: {
+            reviewId: string;
+            state: components["schemas"]["ReviewState"];
+            generation: number;
+            /** @description Suggestions not yet accepted or rejected. */
+            unresolvedChunks: number;
+            packetCount: number;
+            /** @description Review-level comments in creation order. */
+            comments: components["schemas"]["ReviewComment"][];
+            /** @description True while the reviewed document is open. A detached review is served from its sidecar: readable, but not decidable until its documentPath is opened again. */
+            attached: boolean;
+            /** @description The open document's revision. Absent for a detached review — there is no open document to revise. */
+            documentRevision?: components["schemas"]["DocumentRevision"];
+        };
+        ReviewDiffResponse: {
+            reviewId: string;
+            /** @description Absent for a detached review, whose file is closed. */
+            documentId?: string;
+            patch: string;
+            generation: number;
+        };
+        ReviewChunksResponse: {
+            reviewId: string;
+            /** @description Absent for a detached review, whose file is closed. */
+            documentId?: string;
+            generation: number;
+            /** @description SHA-256 of the working text that contains these suggestions — the `expectedWorkingSha256` a retraction of one of the packets behind them must carry. Absent for a detached review, which has no live buffer and accepts no mutation until its file is reopened. */
+            workingSha256?: string;
+            chunks: components["schemas"]["OutstandingChunk"][];
+        };
+        ReviewPacketsResponse: {
+            reviewId: string;
+            /** @description Absent for a detached review, whose file is closed. */
+            documentId?: string;
+            packets: components["schemas"]["ProposalPacket"][];
+        };
+        RetractProposalResponse: {
+            /** @constant */
+            retracted: true;
+            packetId: string;
+            reviewId: string;
+            documentId: string;
+            reviewGeneration: number;
+            unresolvedChunks: number;
+            documentRevision: components["schemas"]["DocumentRevision"];
+        };
+        OutstandingChunk: {
+            /** @description Stable suggestion identity. Owner edits map its anchors without changing this id. Deciding another suggestion does not change it. */
+            chunkId: string;
+            /** @description The reference-side lines, newline-joined; empty for a pure insertion. */
+            referenceText: string;
+            /** @description The working-side lines, newline-joined; empty for a pure deletion. */
+            workingText: string;
+            /** @description Disjoint half-open character ranges containing only agent-authored bytes. Owner text inserted inside a suggestion is not included. */
+            workingSpans: {
+                from: number;
+                to: number;
+            }[];
+            /** @description The one packet that owns this suggestion. */
+            packetIds: string[];
+            /** @description The owning packet's description. */
+            descriptions: string[];
+            /** @description The reviewer's note attached to this chunk without deciding it — a question or objection. Address it in your next claims batch. */
+            comment?: string;
+            /** @description Focused zero-context unified diff of exactly this chunk. */
+            patch: string;
+        };
+        ReviewMutationPrecondition: {
+            /** @description The review generation this request was formed against — the `generation` of the chunk list, diff, or status you read. Every review mutation advances it, including the reviewer's decisions, so a request that carries a stale one was formed before somebody else's mutation landed and is refused as REVIEW_GENERATION_MISMATCH. */
+            expectedReviewGeneration: number;
+            /** @description SHA-256 of the working text this request was formed against — `workingSha256` from GET /v1/reviews/{reviewId}/chunks. Binding the request to the exact bytes makes an edit between the read and the request a REVISION_MISMATCH refusal instead of a retraction landing on text the caller never saw. */
+            expectedWorkingSha256: string;
+        };
+        AddReviewCommentRequest: {
+            /** @description See ReviewMutationPrecondition. A comment moves no document text, so it carries no working hash. */
+            expectedReviewGeneration: number;
+            text: string;
+        };
+        ReviewCommentResponse: {
+            reviewId: string;
+            documentId: string;
+            reviewGeneration: number;
+            comment: components["schemas"]["ReviewComment"];
+        };
+        ProposalPacket: {
+            packetId: string;
+            reviewId: string;
+            clientRequestId: string;
+            description?: string;
+            appliedAt: string;
+            patchFormat: string;
+            patch: string;
+            /** @description The review generation this packet's application produced. */
+            applicationGeneration: number;
+        };
+        PingResponse: {
+            protocolVersion: string;
+            instanceId: string;
+            pid: number;
+        };
+        CapabilitiesResponse: {
+            protocolVersion: string;
+            supportedPatchFormats: "unified-diff"[];
+            /** @constant */
+            reviewSupport: true;
+            /** @constant */
+            retractionSupport: true;
+            maxRequestSize: number;
+            applicationVersion: string;
+            instanceId: string;
+        };
+        DocumentListResponse: {
+            documents: components["schemas"]["DocumentSummary"][];
+        };
+        ReviewListEntry: components["schemas"]["ReviewSummary"] & {
+            /** @description Present for a review attached to an open document; absent for a detached (sidecar-backed) review whose file is closed. */
+            documentId?: string;
+            /** @description The absolute path of the reviewed file. */
+            documentPath: string;
+            /** @description True while the reviewed document is open; false for a review persisted in its sidecar after the file closed. There is no reattach API — opening the file is the reattachment. */
+            attached: boolean;
+        };
+        ReviewListResponse: {
+            reviews: components["schemas"]["ReviewListEntry"][];
+        };
     };
-    /** @enum {string} */
-    ReviewState: "active" | "resolved-awaiting-save" | "completed" | "cleared" | "invalidated";
-    ReviewSummary: {
-      reviewId: string;
-      state: components["schemas"]["ReviewState"];
-      generation: number;
-      /** @description Suggestions not yet accepted or rejected. */
-      unresolvedChunks: number;
-      packetCount: number;
-    };
-    ReviewComment: {
-      text: string;
-      createdAt: string;
-    };
-    EditorViewSummary: {
-      viewId: string;
-      windowId: string;
-      leafId: string;
-      focused: boolean;
-      active: boolean;
-    };
-    DocumentSummary: {
-      documentId: string;
-      uri: string;
-      path: string;
-      name: string;
-      /** @enum {string} */
-      type: "markdown" | "code";
-      dirty: boolean;
-      revision: components["schemas"]["DocumentRevision"];
-      lineCount: number;
-      byteLength: number;
-      views: components["schemas"]["EditorViewSummary"][];
-      review?: components["schemas"]["ReviewSummary"];
-    };
-    EditorContext: {
-      focusedView?: components["schemas"]["FocusedViewSummary"];
-      focusedDocument?: components["schemas"]["DocumentSummary"];
-      openDocuments: components["schemas"]["DocumentSummary"][];
-    };
-    ReadDocumentResponse: {
-      documentId: string;
-      /** @description Whether the document currently has a live authority buffer. */
-      attached: boolean;
-      /** @enum {string} */
-      side: "working" | "reference";
-      revision: components["schemas"]["DocumentRevision"];
-      reviewGeneration: number;
-      range: {
-        startLine: number;
-        endLine: number;
-        totalLines: number;
-      };
-      content: string;
-      truncated: boolean;
-    };
-    /** @description One logical decision — the smallest change a reviewer can accept or reject on its own. Do not bundle unrelated edits into one claim. */
-    ProposalClaim: {
-      /** @description Self-contained prose shown to the reviewer at the chunks this claim produced: what is wrong, what the patch changes, and why — enough to adjudicate without re-deriving the diagnosis. */
-      description: string;
-      /** @description Unified diff implementing exactly this claim. Name the target in the ---/+++ headers as the literal `document` or as the document's absolute path (a git-style a/ or b/ prefix is allowed); any other filename, a create/delete/rename/binary/mode patch, or a diff that leaves the text unchanged is PATCH_INVALID. */
-      patch: string;
-    };
-    SubmitProposalRequest: {
-      /** @description SHA-256 returned by the most recent working-content read. It pins the exact text the patches must apply to; a stale hash is refused as REVISION_MISMATCH. */
-      baselineSha256: string;
-      /** @description Zero when no review exists; otherwise the generation returned by the most recent review or chunk read. */
-      expectedReviewGeneration: number;
-      /** @description Client-chosen unique string. Replaying it returns the original packet rather than applying the patch twice; reusing it for a different request is refused as IDEMPOTENCY_CONFLICT. */
-      clientRequestId: string;
-      /** @description Ordered claim sequence applied against the ONE baseline, sequentially and atomically: claim k applies with zero fuzz to the text claim k-1 produced, all-or-nothing, and each claim becomes its own packet. Send one entry per logical decision — that gives the reviewer separately decidable packets. */
-      claims: components["schemas"]["ProposalClaim"][];
-    };
-    SubmitProposalResponse: {
-      /** @description The newest packet of this submission (the retractable one) — the last element of packetIds. */
-      packetId: string;
-      /** @description One packet per claim, in claim order; a single-patch submission has exactly one. */
-      packetIds: string[];
-      reviewId: string;
-      documentId: string;
-      documentRevision: components["schemas"]["DocumentRevision"];
-      reviewGeneration: number;
-      unresolvedChunks: number;
-      state: components["schemas"]["ReviewState"];
-    };
-    AgentError: {
-      /** @enum {string} */
-      code:
-        | "APP_NOT_RUNNING"
-        | "PROTOCOL_MISMATCH"
-        | "NO_FOCUSED_DOCUMENT"
-        | "DOCUMENT_NOT_FOUND"
-        | "DOCUMENT_CLOSED"
-        | "REVISION_MISMATCH"
-        | "REVIEW_GENERATION_MISMATCH"
-        | "REVIEW_NOT_FOUND"
-        | "REVIEW_INVALIDATED"
-        | "PATCH_INVALID"
-        | "PATCH_NOT_APPLICABLE"
-        | "PACKET_NOT_RETRACTABLE"
-        | "CHUNK_NOT_FOUND"
-        | "IDEMPOTENCY_CONFLICT"
-        | "REQUEST_TOO_LARGE"
-        | "REQUEST_BODY_TIMEOUT"
-        | "SEARCH_TIMEOUT"
-        | "METHOD_NOT_FOUND"
-        | "INVALID_PARAMS"
-        | "PERSISTENCE_FAILED"
-        | "INTERNAL_ERROR";
-      message: string;
-      documentId?: string;
-      expected?: components["schemas"]["DocumentRevision"];
-      actual?: components["schemas"]["DocumentRevision"];
-      reviewId?: string;
-      /** @description REVIEW_GENERATION_MISMATCH: the generation the review is actually at, so the caller can re-read from exactly there. */
-      reviewGeneration?: number;
-    };
-    AgentErrorResponse: {
-      error: components["schemas"]["AgentError"];
-    };
-    AgentEvent: {
-      /** @enum {string} */
-      event:
-        | "review.started"
-        | "review.changed"
-        | "review.resolved"
-        | "review.commented"
-        | "review.cleared"
-        | "review.invalidated"
-        | "review.completed"
-        | "review.discarded"
-        | "review.sidecar-error"
-        | "proposal.applied"
-        | "proposal.retracted";
-      timestamp: string;
-      reviewId?: string;
-      documentId?: string;
-      documentRevision?: components["schemas"]["DocumentRevision"];
-      reviewGeneration?: number;
-      unresolvedChunks?: number;
-      /** @description proposal.applied and proposal.retracted: the packet affected by the event. */
-      packetId?: string;
-      /** @description review.commented: the outstanding chunk the comment is anchored to, when it is chunk-anchored. */
-      chunkId?: string;
-      /** @description review.commented: the comment text. Absent on a chunk-anchored event when the reviewer removed the chunk's note. */
-      comment?: string;
-      /** @description review.sidecar-error: what failed and why. */
-      message?: string;
-      /** @description Server-generated event sequence identifier. */
-      id?: string;
-    };
-    ReviewEventsResponse: {
-      reviewId: string;
-      status?: components["schemas"]["ReviewSummary"];
-      events?: components["schemas"]["AgentEvent"][];
-      /** @description True if the request reached its timeout before a status change. */
-      timedOut?: boolean;
-    };
-    FocusedViewSummary: {
-      viewId: string;
-      windowId: string;
-      leafId: string;
-      documentId: string;
-    };
-    ViewSummary: {
-      viewId: string;
-      windowId: string;
-      leafId: string;
-      documentId?: string;
-      focused: boolean;
-      active: boolean;
-      documents?: {
-        documentId?: string;
-        path: string;
-      }[];
-    };
-    ViewsResponse: {
-      views: components["schemas"]["ViewSummary"][];
-    };
-    WorkspaceSummary: {
-      workspaceId: string;
-      path: string;
-    };
-    WorkspacesResponse: {
-      workspaces: components["schemas"]["WorkspaceSummary"][];
-    };
-    LoadedWorkspaceDocumentSummary: {
-      documentId: string;
-      workspaceId: string;
-      uri: string;
-      path: string;
-      name: string;
-      /** @enum {boolean} */
-      loaded: true;
-      /** @enum {string} */
-      type: "markdown" | "code";
-      dirty: boolean;
-      revision: components["schemas"]["DocumentRevision"];
-      lineCount: number;
-      byteLength: number;
-      views: components["schemas"]["EditorViewSummary"][];
-      review?: components["schemas"]["ReviewSummary"];
-    };
-    UnloadedWorkspaceDocumentSummary: {
-      documentId: string;
-      workspaceId: string;
-      uri: string;
-      path: string;
-      name: string;
-      /** @enum {boolean} */
-      loaded: false;
-    };
-    WorkspaceDocumentSummary:
-      | components["schemas"]["LoadedWorkspaceDocumentSummary"]
-      | components["schemas"]["UnloadedWorkspaceDocumentSummary"];
-    FocusDocumentResponse: {
-      /** @constant */
-      focused: true;
-      documentId: string;
-    };
-    WorkspaceDocumentsResponse: {
-      workspaceId: string;
-      documents: components["schemas"]["WorkspaceDocumentSummary"][];
-    };
-    WorkspaceFileEntry: {
-      documentId: string;
-      path: string;
-      name: string;
-      workspaceId: string;
-      /** @description Whether the file is currently loaded in the editor. */
-      open: boolean;
-    };
-    WorkspaceFilesResponse: {
-      files: components["schemas"]["WorkspaceFileEntry"][];
-    };
-    SearchDocumentResponse: {
-      documentId: string;
-      revision: components["schemas"]["DocumentRevision"];
-      /** @description Search hits in document order. At most 1000 hits are returned; a true truncated field means more matching hits were present. */
-      hits: {
-        line: number;
-        column: number;
-        length: number;
-        contextBefore: string;
-        contextAfter: string;
-      }[];
-      truncated: boolean;
-    };
-    ReviewDetailResponse: {
-      reviewId: string;
-      state: components["schemas"]["ReviewState"];
-      generation: number;
-      /** @description Suggestions not yet accepted or rejected. */
-      unresolvedChunks: number;
-      packetCount: number;
-      /** @description Review-level comments in creation order. */
-      comments: components["schemas"]["ReviewComment"][];
-      /** @description True while the reviewed document is open. A detached review is served from its sidecar: readable, but not decidable until its documentPath is opened again. */
-      attached: boolean;
-      /** @description The open document's revision. Absent for a detached review — there is no open document to revise. */
-      documentRevision?: components["schemas"]["DocumentRevision"];
-    };
-    ReviewDiffResponse: {
-      reviewId: string;
-      /** @description Absent for a detached review, whose file is closed. */
-      documentId?: string;
-      patch: string;
-      generation: number;
-    };
-    ReviewChunksResponse: {
-      reviewId: string;
-      /** @description Absent for a detached review, whose file is closed. */
-      documentId?: string;
-      generation: number;
-      /** @description SHA-256 of the working text that contains these suggestions — the `expectedWorkingSha256` a retraction of one of the packets behind them must carry. Absent for a detached review, which has no live buffer and accepts no mutation until its file is reopened. */
-      workingSha256?: string;
-      chunks: components["schemas"]["OutstandingChunk"][];
-    };
-    ReviewPacketsResponse: {
-      reviewId: string;
-      /** @description Absent for a detached review, whose file is closed. */
-      documentId?: string;
-      packets: components["schemas"]["ProposalPacket"][];
-    };
-    RetractProposalResponse: {
-      /** @constant */
-      retracted: true;
-      packetId: string;
-      reviewId: string;
-      documentId: string;
-      reviewGeneration: number;
-      unresolvedChunks: number;
-      documentRevision: components["schemas"]["DocumentRevision"];
-    };
-    OutstandingChunk: {
-      /** @description Stable suggestion identity. Owner edits map its anchors without changing this id. Deciding another suggestion does not change it. */
-      chunkId: string;
-      /** @description The reference-side lines, newline-joined; empty for a pure insertion. */
-      referenceText: string;
-      /** @description The working-side lines, newline-joined; empty for a pure deletion. */
-      workingText: string;
-      /** @description Disjoint half-open character ranges containing only agent-authored bytes. Owner text inserted inside a suggestion is not included. */
-      workingSpans: {
-        from: number;
-        to: number;
-      }[];
-      /** @description The one packet that owns this suggestion. */
-      packetIds: string[];
-      /** @description The owning packet's description. */
-      descriptions: string[];
-      /** @description The reviewer's note attached to this chunk without deciding it — a question or objection. Address it in your next claims batch. */
-      comment?: string;
-      /** @description Focused zero-context unified diff of exactly this chunk. */
-      patch: string;
-    };
-    ReviewMutationPrecondition: {
-      /** @description The review generation this request was formed against — the `generation` of the chunk list, diff, or status you read. Every review mutation advances it, including the reviewer's decisions, so a request that carries a stale one was formed before somebody else's mutation landed and is refused as REVIEW_GENERATION_MISMATCH. */
-      expectedReviewGeneration: number;
-      /** @description SHA-256 of the working text this request was formed against — `workingSha256` from GET /v1/reviews/{reviewId}/chunks. Binding the request to the exact bytes makes an edit between the read and the request a REVISION_MISMATCH refusal instead of a retraction landing on text the caller never saw. */
-      expectedWorkingSha256: string;
-    };
-    AddReviewCommentRequest: {
-      /** @description See ReviewMutationPrecondition. A comment moves no document text, so it carries no working hash. */
-      expectedReviewGeneration: number;
-      text: string;
-    };
-    ReviewCommentResponse: {
-      reviewId: string;
-      documentId: string;
-      reviewGeneration: number;
-      comment: components["schemas"]["ReviewComment"];
-    };
-    ProposalPacket: {
-      packetId: string;
-      reviewId: string;
-      clientRequestId: string;
-      description?: string;
-      appliedAt: string;
-      patchFormat: string;
-      patch: string;
-      /** @description The review generation this packet's application produced. */
-      applicationGeneration: number;
-    };
-    PingResponse: {
-      protocolVersion: string;
-      instanceId: string;
-      pid: number;
-    };
-    CapabilitiesResponse: {
-      protocolVersion: string;
-      supportedPatchFormats: "unified-diff"[];
-      /** @constant */
-      reviewSupport: true;
-      /** @constant */
-      retractionSupport: true;
-      maxRequestSize: number;
-      applicationVersion: string;
-      instanceId: string;
-    };
-    DocumentListResponse: {
-      documents: components["schemas"]["DocumentSummary"][];
-    };
-    ReviewListEntry: components["schemas"]["ReviewSummary"] & {
-      /** @description Present for a review attached to an open document; absent for a detached (sidecar-backed) review whose file is closed. */
-      documentId?: string;
-      /** @description The absolute path of the reviewed file. */
-      documentPath: string;
-      /** @description True while the reviewed document is open; false for a review persisted in its sidecar after the file closed. There is no reattach API — opening the file is the reattachment. */
-      attached: boolean;
-    };
-    ReviewListResponse: {
-      reviews: components["schemas"]["ReviewListEntry"][];
-    };
-  };
-  responses: never;
-  parameters: never;
-  requestBodies: never;
-  headers: never;
-  pathItems: never;
+    responses: never;
+    parameters: never;
+    requestBodies: never;
+    headers: never;
+    pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  getOpenApiSpec: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    getOpenApiSpec: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OpenAPI YAML document */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/yaml": string;
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description OpenAPI YAML document */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    getOpenApiSpecJson: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          "application/yaml": string;
+        requestBody?: never;
+        responses: {
+            /** @description OpenAPI JSON document */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
         };
-      };
     };
-  };
-  getOpenApiSpecJson: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PingResponse"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description OpenAPI JSON document */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    ping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          "application/json": {
-            [key: string]: unknown;
-          };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PingResponse"];
+                };
+            };
         };
-      };
     };
-  };
-  health: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    getCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilitiesResponse"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    getContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["PingResponse"];
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditorContext"];
+                };
+            };
         };
-      };
     };
-  };
-  ping: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    listDocuments: {
+        parameters: {
+            query?: {
+                /** @description Reserved document-state filter for clients. Only open is currently supported. */
+                state?: "open";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentListResponse"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    getDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["PingResponse"];
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSummary"];
+                };
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
         };
-      };
     };
-  };
-  getCapabilities: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    focusDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FocusDocumentResponse"];
+                };
+            };
+            /** @description Document not found or outside configured workspace scope */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    readDocumentContent: {
+        parameters: {
+            query?: {
+                /** @description working is the text your next patch must match, with every accepted change already in it, and the side whose revision hash a proposal needs; diff it against what you proposed to detect an acceptance the reviewer tweaked. reference is the review baseline, identical to working until a review exists. */
+                side?: "working" | "reference";
+                startLine?: number;
+                endLine?: number;
+            };
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["CapabilitiesResponse"];
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadDocumentResponse"];
+                };
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
         };
-      };
     };
-  };
-  getContext: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    searchDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    literal: string;
+                    /**
+                     * @description Lines of surrounding text returned on each side of every hit. Every hit carries its own copy, so this multiplies the response by the number of hits and is capped rather than open-ended; a context outside this range is refused with INVALID_PARAMS.
+                     * @default 3
+                     */
+                    context?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchDocumentResponse"];
+                };
+            };
+            /** @description Invalid, unparseable, or over-length search pattern, or a context outside the declared range */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Pattern evaluation exceeded the server's time budget (SEARCH_TIMEOUT). The budget bounds the whole match, including a single catastrophically backtracking execution, so an identical retry costs the same wall time and fails again: simplify the pattern instead. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    submitProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["EditorContext"];
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitProposalRequest"];
+            };
         };
-      };
+        responses: {
+            /** @description Proposal applied */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmitProposalResponse"];
+                };
+            };
+            /** @description Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the document drifted from the text you built against: re-read the working content and rebuild the patch against it — a blind retry fails identically. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description The document does not exist or is outside the configured workspace scope. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Review generation conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Stale revision (ETag mismatch) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description The proposal could not be persisted or the server could not complete the submission. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
     };
-  };
-  listDocuments: {
-    parameters: {
-      query?: {
-        /** @description Reserved document-state filter for clients. Only open is currently supported. */
-        state?: "open";
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
+    listReviews: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewListResponse"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    getReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reviewId: string;
+            };
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["DocumentListResponse"];
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewDetailResponse"];
+                };
+            };
+            /** @description Review not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
         };
-      };
     };
-  };
-  getDocument: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        documentId: string;
-      };
-      cookie?: never;
+    getReviewDiff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reviewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewDiffResponse"];
+                };
+            };
+            /** @description Review not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    getReviewChunks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reviewId: string;
+            };
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["DocumentSummary"];
+        requestBody?: never;
+        responses: {
+            /** @description The unresolved suggestions. A detached review answers from its stored suggestion entities with the same stable ids and no documentId. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewChunksResponse"];
+                };
+            };
+            /** @description Review not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
         };
-      };
-      /** @description Document not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
     };
-  };
-  focusDocument: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        documentId: string;
-      };
-      cookie?: never;
+    addReviewComment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reviewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddReviewCommentRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewCommentResponse"];
+                };
+            };
+            /** @description Missing or empty comment text */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Review not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but a comment cannot land while its file is closed. Open its documentPath to reattach it. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    getReviewPackets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reviewId: string;
+            };
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["FocusDocumentResponse"];
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewPacketsResponse"];
+                };
+            };
+            /** @description Review not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
         };
-      };
-      /** @description Document not found or outside configured workspace scope */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
     };
-  };
-  readDocumentContent: {
-    parameters: {
-      query?: {
-        /** @description working is the text your next patch must match, with every accepted change already in it, and the side whose revision hash a proposal needs; diff it against what you proposed to detect an acceptance the reviewer tweaked. reference is the review baseline, identical to working until a review exists. */
-        side?: "working" | "reference";
-        startLine?: number;
-        endLine?: number;
-      };
-      header?: never;
-      path: {
-        documentId: string;
-      };
-      cookie?: never;
+    retractProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                packetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewMutationPrecondition"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetractProposalResponse"];
+                };
+            };
+            /** @description PACKET_NOT_RETRACTABLE when the packet is live but no longer the retractable one: the error carries the owning reviewId, and the suggestions stay up for the reviewer to dispose of. A packet the reviewer has already adjudicated is never retractable — the decision advanced the generation the packet was applied at. DOCUMENT_CLOSED when the packet belongs to a detached review (one listReviews reports with attached: false): the message names the file to open. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          ETag?: string;
-          [name: string]: unknown;
+    waitForReviewEvents: {
+        parameters: {
+            query?: {
+                afterGeneration?: number;
+                waitSeconds?: number;
+                /**
+                 * @deprecated
+                 * @description Deprecated alias for waitSeconds.
+                 */
+                wait?: number;
+            };
+            header?: never;
+            path: {
+                reviewId: string;
+            };
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["ReadDocumentResponse"];
+        requestBody?: never;
+        responses: {
+            /** @description Review state and matching event history (or timed out) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewEventsResponse"];
+                };
+            };
+            /** @description Review not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description DOCUMENT_CLOSED — the review is detached, so nothing can advance its generation and the wait would never end. Open its documentPath to reattach it, then poll. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
         };
-      };
-      /** @description Document not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
     };
-  };
-  searchDocument: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        documentId: string;
-      };
-      cookie?: never;
+    listViews: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewsResponse"];
+                };
+            };
+        };
     };
-    requestBody: {
-      content: {
-        "application/json": {
-          literal: string;
-          /**
-           * @description Lines of surrounding text returned on each side of every hit. Every hit carries its own copy, so this multiplies the response by the number of hits and is capped rather than open-ended; a context outside this range is refused with INVALID_PARAMS.
-           * @default 3
-           */
-          context?: number;
+    listWorkspaceFiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-      };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceFilesResponse"];
+                };
+            };
+        };
     };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    listWorkspaces: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["SearchDocumentResponse"];
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspacesResponse"];
+                };
+            };
         };
-      };
-      /** @description Invalid, unparseable, or over-length search pattern, or a context outside the declared range */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-      /** @description Pattern evaluation exceeded the server's time budget (SEARCH_TIMEOUT). The budget bounds the whole match, including a single catastrophically backtracking execution, so an identical retry costs the same wall time and fails again: simplify the pattern instead. */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
     };
-  };
-  submitProposal: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        documentId: string;
-      };
-      cookie?: never;
+    listWorkspaceDocuments: {
+        parameters: {
+            query?: {
+                /** @description Optional case-insensitive substring filter over file path. */
+                query?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceDocumentsResponse"];
+                };
+            };
+            /** @description Workspace not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
     };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SubmitProposalRequest"];
-      };
-    };
-    responses: {
-      /** @description Proposal applied */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SubmitProposalResponse"];
-        };
-      };
-      /** @description Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the document drifted from the text you built against: re-read the working content and rebuild the patch against it — a blind retry fails identically. */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-      /** @description The document does not exist or is outside the configured workspace scope. */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-      /** @description Review generation conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-      /** @description Stale revision (ETag mismatch) */
-      412: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-      /** @description The proposal could not be persisted or the server could not complete the submission. */
-      500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-    };
-  };
-  listReviews: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ReviewListResponse"];
-        };
-      };
-    };
-  };
-  getReview: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        reviewId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ReviewDetailResponse"];
-        };
-      };
-      /** @description Review not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-    };
-  };
-  getReviewDiff: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        reviewId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ReviewDiffResponse"];
-        };
-      };
-      /** @description Review not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-    };
-  };
-  getReviewChunks: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        reviewId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The unresolved suggestions. A detached review answers from its stored suggestion entities with the same stable ids and no documentId. */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ReviewChunksResponse"];
-        };
-      };
-      /** @description Review not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-    };
-  };
-  addReviewComment: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        reviewId: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["AddReviewCommentRequest"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ReviewCommentResponse"];
-        };
-      };
-      /** @description Missing or empty comment text */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-      /** @description Review not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-      /** @description DOCUMENT_CLOSED — the review is detached: it exists, and /v1/reviews lists it, but a comment cannot land while its file is closed. Open its documentPath to reattach it. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-    };
-  };
-  getReviewPackets: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        reviewId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ReviewPacketsResponse"];
-        };
-      };
-      /** @description Review not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-    };
-  };
-  retractProposal: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        packetId: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ReviewMutationPrecondition"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RetractProposalResponse"];
-        };
-      };
-      /** @description PACKET_NOT_RETRACTABLE when the packet is live but no longer the retractable one: the error carries the owning reviewId, and the suggestions stay up for the reviewer to dispose of. A packet the reviewer has already adjudicated is never retractable — the decision advanced the generation the packet was applied at. DOCUMENT_CLOSED when the packet belongs to a detached review (one listReviews reports with attached: false): the message names the file to open. Also REVISION_MISMATCH when expectedWorkingSha256 does not match the live working text, and REVIEW_GENERATION_MISMATCH when expectedReviewGeneration is not the review's current generation; the error carries the actual revision and generation, and neither refusal mutates anything. */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-    };
-  };
-  waitForReviewEvents: {
-    parameters: {
-      query?: {
-        afterGeneration?: number;
-        waitSeconds?: number;
-        /**
-         * @deprecated
-         * @description Deprecated alias for waitSeconds.
-         */
-        wait?: number;
-      };
-      header?: never;
-      path: {
-        reviewId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Review state and matching event history (or timed out) */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ReviewEventsResponse"];
-        };
-      };
-      /** @description Review not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-      /** @description DOCUMENT_CLOSED — the review is detached, so nothing can advance its generation and the wait would never end. Open its documentPath to reattach it, then poll. */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-    };
-  };
-  listViews: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ViewsResponse"];
-        };
-      };
-    };
-  };
-  listWorkspaceFiles: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["WorkspaceFilesResponse"];
-        };
-      };
-    };
-  };
-  listWorkspaces: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["WorkspacesResponse"];
-        };
-      };
-    };
-  };
-  listWorkspaceDocuments: {
-    parameters: {
-      query?: {
-        /** @description Optional case-insensitive substring filter over file path. */
-        query?: string;
-      };
-      header?: never;
-      path: {
-        workspaceId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["WorkspaceDocumentsResponse"];
-        };
-      };
-      /** @description Workspace not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-    };
-  };
 }

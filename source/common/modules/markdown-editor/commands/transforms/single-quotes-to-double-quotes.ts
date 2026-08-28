@@ -11,7 +11,7 @@
  *
  * END HEADER
  */
-import { transformSelectedText } from "./transform-selected-text";
+import { transformSelectedText } from './transform-selected-text'
 
 /**
  * Convert single quotes to double quotes in the selected text.
@@ -25,5 +25,5 @@ import { transformSelectedText } from "./transform-selected-text";
  *                          quotes.
  */
 export const singleQuotesToDouble = transformSelectedText((text) => {
-  return text.replaceAll("'", '"');
-});
+  return text.replaceAll('\'', '"')
+})

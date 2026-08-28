@@ -15,13 +15,11 @@
  * END HEADER
  */
 
-// biome-ignore-all assist/source/organizeImports: the harness installs the
-// electron stand-in at module scope, so it has to load before any module
-// that imports electron itself. Sorting these imports breaks the specs.
 import { userData } from "./headless-electron-harness.cjs";
+import Ajv2020 from "ajv/dist/2020";
+import { parse as parseYaml } from "yaml";
 import { type ReadDocumentResponse } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
-import Ajv2020 from "ajv/dist/2020";
 import { strict as assert } from "assert";
 import { spawn } from "child_process";
 import { createPatch } from "diff";
@@ -42,9 +40,8 @@ import os from "os";
 import path from "path";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentManager from "source/app/service-providers/documents";
-import LogProvider from "source/app/service-providers/log";
 import { sha256Text } from "source/common/util/sha256";
-import { parse as parseYaml } from "yaml";
+import LogProvider from "source/app/service-providers/log";
 
 // ============================================================================
 // Contract conformance
@@ -68,7 +65,10 @@ interface PublishedNumericBounds {
 interface PublishedOperation {
   [field: string]: unknown;
   requestBody?: {
-    content: Record<string, { schema: { properties: Record<string, PublishedNumericBounds> } }>;
+    content: Record<
+      string,
+      { schema: { properties: Record<string, PublishedNumericBounds> } }
+    >;
   };
 }
 
@@ -473,7 +473,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         collided.boot(),
         (error: NodeJS.ErrnoException) => error.code === "EADDRINUSE",
       );
-      assert.equal(collided.isListening, false, "a failed boot must leave no listener behind");
+      assert.equal(
+        collided.isListening,
+        false,
+        "a failed boot must leave no listener behind",
+      );
     } finally {
       await collided.shutdown();
       await new Promise<void>((resolve) => squatter.close(() => resolve()));
@@ -856,13 +860,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // The reviewer reads the chunk as text, so the change is reported the way
     // it reads -- one replaced word -- rather than as the letters a character
     // diff happens to share between "before" and "after".
-    assert.deepEqual(
-      chunkBody.chunks.map((chunk) => chunk.workingText),
-      ["after"],
-    );
+    assert.deepEqual(chunkBody.chunks.map((chunk) => chunk.workingText), ["after"]);
     assert.deepEqual(chunkBody.chunks[0].workingSpans, [{ from: 0, to: 5 }]);
     assert.equal(
-      chunkBody.chunks[0].workingSpans.map((span) => revised.slice(span.from, span.to)).join(""),
+      chunkBody.chunks[0].workingSpans
+        .map((span) => revised.slice(span.from, span.to))
+        .join(""),
       chunkBody.chunks[0].workingText,
     );
     assert.deepEqual(chunkBody.chunks[0].descriptions, ["standalone CLI proposition"]);
@@ -977,10 +980,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const documents = JSON.parse((await httpRequest("GET", "/v1/documents")).body) as {
       documents: Array<{ path: string }>;
     };
-    assert.equal(
-      documents.documents.some((document) => document.path === filePath),
-      false,
-    );
+    assert.equal(documents.documents.some((document) => document.path === filePath), false);
     const content = await httpRequest("GET", "/v1/workspace/files");
     assert.equal(content.status, 200);
     const files = JSON.parse(content.body) as { files: Array<{ path: string; open: boolean }> };
@@ -1212,6 +1212,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const workspaces = await httpRequest("GET", "/v1/workspaces");
       assert.equal(workspaces.status, 200);
       assertMatchesSchema(JSON.parse(workspaces.body), "WorkspacesResponse");
+
     });
   });
 });

@@ -34,19 +34,19 @@
  * END HEADER
  */
 
-import { computed } from "vue";
+import { computed } from 'vue'
 
 const props = defineProps<{
-  modelValue: string;
-  label?: string;
-  name?: string;
-  inline?: boolean;
-  disabled?: boolean;
-}>();
+  modelValue: string
+  label?: string
+  name?: string
+  inline?: boolean
+  disabled?: boolean
+}>()
 
-const emit = defineEmits<(e: "update:modelValue", value: string) => void>();
+const emit = defineEmits<(e: 'update:modelValue', value: string) => void>()
 
-const fieldID = computed<string>(() => "field-input-" + (props.name ?? ""));
+const fieldID = computed<string>(() => 'field-input-' + (props.name ?? ''))
 </script>
 
 <style lang="less">

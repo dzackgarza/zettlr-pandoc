@@ -14,24 +14,24 @@
  * END HEADER
  */
 
-import { createPinia } from "pinia";
-import { createApp } from "vue";
-import windowRegister from "../common/modules/window-register";
-import App from "./App.vue";
+import windowRegister from '../common/modules/window-register'
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import App from './App.vue'
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
 windowRegister()
   .then(() => {
-    const pinia = createPinia();
+    const pinia = createPinia()
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    createApp(App).use(pinia).mount("#app");
+    createApp(App).use(pinia).mount('#app')
 
     // This window will be closed immediately on a window-close command
-    ipcRenderer.on("shortcut", (event, shortcut) => {
-      if (shortcut === "close-window") {
-        ipcRenderer.send("window-controls", { command: "win-close" });
+    ipcRenderer.on('shortcut', (event, shortcut) => {
+      if (shortcut === 'close-window') {
+        ipcRenderer.send('window-controls', { command: 'win-close' })
       }
-    });
+    })
   })
-  .catch((e) => console.error(e));
+  .catch(e => console.error(e))

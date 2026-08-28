@@ -35,36 +35,36 @@
  *
  * END HEADER
  */
-import { computed } from "vue";
+import { computed } from 'vue'
 
 export interface ToolbarButtonControl {
-  type: "button";
-  id?: string;
-  buttonText?: string;
-  title?: string;
-  label?: string;
-  icon: string;
-  badge?: boolean;
-  direction?: "up" | "down" | "left" | "right";
+  type: 'button'
+  id?: string
+  buttonText?: string
+  title?: string
+  label?: string
+  icon: string
+  badge?: boolean
+  direction?: 'up'|'down'|'left'|'right'
   /** Renders the button disabled (e.g. Back/Forward at a history boundary) */
-  disabled?: boolean;
+  disabled?: boolean
   // Allow arbitrary properties that we ignore
-  [key: string]: unknown;
+  [key: string]: unknown
 }
 
 const props = defineProps<{
-  control: ToolbarButtonControl;
-  showLabel?: boolean;
-  buttonText?: string;
-}>();
+  control: ToolbarButtonControl
+  showLabel?: boolean
+  buttonText?: string
+}>()
 
 const titleWithFallback = computed<string>(() => {
-  return props.control.title ?? props.control.label ?? "";
-});
+  return props.control.title ?? props.control.label ?? ''
+})
 
 const labelWithFallback = computed<string>(() => {
-  return props.control.label ?? props.control.title ?? "";
-});
+  return props.control.label ?? props.control.title ?? ''
+})
 </script>
 
 <style lang="less">

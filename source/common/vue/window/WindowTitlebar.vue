@@ -22,9 +22,9 @@
  */
 
 const props = defineProps<{
-  titleContent: string;
-  hasVibrancy: boolean;
-}>();
+  titleContent: string
+  hasVibrancy: boolean
+}>()
 </script>
 
 <style lang="less">

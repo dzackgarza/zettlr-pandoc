@@ -35,7 +35,7 @@
     "verbosity": {
       "type": "string",
       "description": "Specify the verbosity of Pandoc",
-      "enum": ["INFO", "WARNING", "ERROR"]
+      "enum": [ "INFO", "WARNING", "ERROR" ]
     },
     "fail-if-warnings": {
       "type": "boolean",
@@ -88,7 +88,7 @@
     "track-changes": {
       "type": "string",
       "description": "Specifies what to do with insertions, deletions, and comments produced by MS Word.",
-      "enum": ["accept", "reject", "all"]
+      "enum": [ "accept", "reject", "all" ]
     },
     "extract-media": {
       "type": "string",
@@ -121,7 +121,7 @@
     "eol": {
       "type": "string",
       "description": "Specify line endings manually. Default is to use the line endings native to the operating system.",
-      "enum": ["lf", "crlf", "native"]
+      "enum": [ "lf", "crlf", "native" ]
     },
     "dpi": {
       "type": "number",
@@ -130,7 +130,7 @@
     "wrap": {
       "type": "string",
       "description": "Determine how text is wrapped in the output. Default is auto, which attempts line wrapping at 72 columns, unless the column variable is specified.",
-      "enum": ["auto", "none", "preserve"]
+      "enum": [ "auto", "none", "preserve" ]
     },
     "columns": {
       "type": "number",
@@ -155,16 +155,7 @@
     "highlight-style": {
       "type": "string",
       "description": "Specifies the coloring style to be used in highlighted source code. Default is pygments.",
-      "enum": [
-        "pygments",
-        "kate",
-        "monochrome",
-        "breezeDark",
-        "espresso",
-        "zenburn",
-        "haddock",
-        "tango"
-      ]
+      "enum": [ "pygments", "kate", "monochrome", "breezeDark", "espresso", "zenburn", "haddock", "tango" ]
     },
     "syntax-definition": {
       "type": "string",
@@ -209,12 +200,12 @@
     "reference-location": {
       "type": "string",
       "description": "Specify where to place references in the output. Options are block, section, or document.",
-      "enum": ["block", "section", "document"]
+      "enum": [ "block", "section", "document" ]
     },
     "markdown-headings": {
       "type": "string",
       "description": "Specify whether to use ATX (#-prefixed) or Setext style (underlined) headings for level 1 and 2 headings in Markdown output. Default is ATX.",
-      "enum": ["atx", "setext"]
+      "enum": [ "atx", "setext" ]
     },
     "list-tables": {
       "type": "boolean",
@@ -223,7 +214,7 @@
     "top-level-division": {
       "type": "string",
       "description": "Treat top-level headings as the given division type in LaTeX, ConTeXt, DocBook, and TEI output. Can be default, section, chapter, or part.",
-      "enum": ["default", "section", "chapter", "part"]
+      "enum": [ "default", "section", "chapter", "part" ]
     },
     "number-sections": {
       "type": "boolean",
@@ -253,7 +244,7 @@
     "email-obfuscation": {
       "type": "string",
       "description": "Whether to obfuscate emails (default none). Can be javascript or references.",
-      "enum": ["none", "javascript", "references"]
+      "enum": [ "none", "javascript", "references" ]
     },
     "id-prefix": {
       "type": "string",
@@ -306,7 +297,7 @@
     "ipynb-output": {
       "type": "string",
       "description": "Determines how Ipynb output cells are treated.",
-      "enum": ["all", "none", "best"]
+      "enum": [ "all", "none", "best" ]
     },
     "pdf-engine": {
       "type": "string",
@@ -335,7 +326,7 @@
     "cite-method": {
       "type": "string",
       "description": "How to output citations. `citeproc` renders citations directly, `natbib` and `biblatex` produces this kind of citations in LaTeX output.",
-      "enum": ["citeproc", "natbib", "biblatex"]
+      "enum": [ "citeproc", "natbib", "biblatex" ]
     },
     "html-math-method": {
       "type": "object",
@@ -344,7 +335,7 @@
         "method": {
           "type": "string",
           "description": "Describes the math method.",
-          "enum": ["mathjax", "mathml", "webtex", "katex", "gladtex", "plain"]
+          "enum": [ "mathjax", "mathml", "webtex", "katex", "gladtex", "plain" ]
         }
       }
     },

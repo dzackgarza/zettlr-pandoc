@@ -1,24 +1,20 @@
 /** Mounts the production CodeMirror/Pandoc renderers for isolated visual capture. */
 
-import { EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
-import { renderCitations } from "source/common/modules/markdown-editor/renderers/render-citations";
-import { renderEmphasis } from "source/common/modules/markdown-editor/renderers/render-emphasis";
-import { renderLinks } from "source/common/modules/markdown-editor/renderers/render-links";
-import { renderMath } from "source/common/modules/markdown-editor/renderers/render-math";
-import { renderPandoc } from "source/common/modules/markdown-editor/renderers/render-pandoc-div-span";
-import {
-  defaultDark,
-  defaultLight,
-  editorTheme,
-} from "source/common/modules/markdown-editor/theme/editor";
-import { configField } from "source/common/modules/markdown-editor/util/configuration";
-import { initializeMathJax } from "source/common/util/mathtex-to-html";
+import { EditorState } from '@codemirror/state'
+import { EditorView } from '@codemirror/view'
+import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
+import { renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
+import { renderEmphasis } from 'source/common/modules/markdown-editor/renderers/render-emphasis'
+import { renderLinks } from 'source/common/modules/markdown-editor/renderers/render-links'
+import { renderMath } from 'source/common/modules/markdown-editor/renderers/render-math'
+import { renderPandoc } from 'source/common/modules/markdown-editor/renderers/render-pandoc-div-span'
+import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
+import { initializeMathJax } from 'source/common/util/mathtex-to-html'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 
 declare global {
   interface Window {
-    captureReady: Promise<void>;
+    captureReady: Promise<void>
   }
 }
 
@@ -51,7 +47,7 @@ Apply the finite-subcover argument.
 ::: {.custom-result}
 Project-specific metadata remains visibly generic.
 :::
-`;
+`
 
 const nested = `# Nested structure
 
@@ -66,7 +62,7 @@ The conclusion belongs to the outer theorem.
 :::
 
 Outside the structure.
-`;
+`
 
 const active = `# Editing state
 
@@ -77,32 +73,24 @@ By [@Ols04 Lem. 7.1, 7.2], some result follows.
 :::
 
 Outside the active div.
-`;
+`
 
-async function mount(): Promise<void> {
-  await initializeMathJax({ RR: "\\mathbb{R}" });
-  window.getCitationCallback = () => (citations) =>
-    citations
-      .map((citation) => {
-        return [citation.id, citation.locator, citation.suffix?.trimStart()]
-          .filter((part) => part !== undefined)
-          .join(" ");
-      })
-      .join("; ");
+async function mount (): Promise<void> {
+  await initializeMathJax({ RR: '\\mathbb{R}' })
+  window.getCitationCallback = () => citations => citations.map(citation => {
+    return [ citation.id, citation.locator, citation.suffix?.trimStart() ]
+      .filter(part => part !== undefined)
+      .join(' ')
+  }).join('; ')
 
-  const scene = document.body.dataset.scene ?? "overview";
-  const dark = document.body.dataset.dark === "true";
-  const doc = ["active", "citation-edit"].includes(scene)
-    ? active
-    : scene === "nested"
-      ? nested
-      : overview;
-  const anchor =
-    scene === "active"
-      ? doc.indexOf("*proper") + 2
-      : scene === "citation-edit"
-        ? doc.indexOf("Lem.") + 1
-        : doc.length;
+  const scene = document.body.dataset.scene ?? 'overview'
+  const dark = document.body.dataset.dark === 'true'
+  const doc = [ 'active', 'citation-edit' ].includes(scene) ? active : scene === 'nested' ? nested : overview
+  const anchor = scene === 'active'
+    ? doc.indexOf('*proper') + 2
+    : scene === 'citation-edit'
+      ? doc.indexOf('Lem.') + 1
+      : doc.length
   const state = EditorState.create({
     doc,
     selection: { anchor },
@@ -118,19 +106,17 @@ async function mount(): Promise<void> {
       renderLinks,
       renderMath,
     ],
-  });
+  })
 
-  const host = document.querySelector<HTMLElement>("#editor");
+  const host = document.querySelector<HTMLElement>('#editor')
   if (host === null) {
-    throw new Error("Visual capture host is missing");
+    throw new Error('Visual capture host is missing')
   }
 
-  const view = new EditorView({ state, parent: host });
-  view.focus();
-  await document.fonts.ready;
-  await new Promise<void>((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-  );
+  const view = new EditorView({ state, parent: host })
+  view.focus()
+  await document.fonts.ready
+  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
 }
 
-window.captureReady = mount();
+window.captureReady = mount()

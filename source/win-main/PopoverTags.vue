@@ -48,72 +48,72 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-renderer";
-import TextControl from "@common/vue/form/elements/TextControl.vue";
-import PopoverWrapper from "@common/vue/PopoverWrapper.vue";
-import TabBar, { type TabbarControl } from "@common/vue/TabBar.vue";
-import { useConfigStore, useTagsStore } from "source/pinia";
-import { computed, onMounted, ref } from "vue";
+import PopoverWrapper from '@common/vue/PopoverWrapper.vue'
+import TextControl from '@common/vue/form/elements/TextControl.vue'
+import TabBar, { type TabbarControl } from '@common/vue/TabBar.vue'
+import { trans } from '@common/i18n-renderer'
+import { ref, computed, onMounted } from 'vue'
+import { useConfigStore, useTagsStore } from 'source/pinia'
 
 const props = defineProps<{
-  target: HTMLElement;
+  target: HTMLElement
   // activeFile?: OpenDocument
-}>();
+}>()
 
 const emit = defineEmits<{
-  (e: "close"): void;
-  (e: "search-tag", tagName: string): void;
-}>();
+  (e: 'close'): void
+  (e: 'search-tag', tagName: string): void
+}>()
 
-const tagStore = useTagsStore();
-const configStore = useConfigStore();
+const tagStore = useTagsStore()
+const configStore = useConfigStore()
 
-const filter = ref<typeof TextControl | null>(null);
+const filter = ref<typeof TextControl|null>(null)
 
 const tabs: TabbarControl[] = [
-  { id: "name", label: trans("Name"), target: "name" },
-  { id: "count", label: trans("Count"), target: "count" },
-  { id: "idf", label: "IDF", target: "idf" },
-];
+  { id: 'name', label: trans('Name'), target: 'name' },
+  { id: 'count', label: trans('Count'), target: 'count' },
+  { id: 'idf', label: 'IDF', target: 'idf' }
+]
 
-const query = ref("");
-const sorting = ref<"name" | "count" | "idf">("name");
+const query = ref('')
+const sorting = ref<'name'|'count'|'idf'>('name')
 
-const filterPlaceholder = trans("Filter tags…");
-const tagCloudTitle = trans("Tag Cloud");
+const filterPlaceholder = trans('Filter tags…')
+const tagCloudTitle = trans('Tag Cloud')
 // const tagSuggestionsLabel = trans('Suggested tags for the current file')
 // const addButtonLabel = trans('Add to file')
 
 const sortedTags = computed(() => {
   // Sorts the tags based on either name or count
-  const sorted = tagStore.tags.map((elem) => elem);
-  const languagePreferences = [configStore.config.appLang, "en"];
-  const coll = new Intl.Collator(languagePreferences, { numeric: true });
+  const sorted = tagStore.tags.map(elem => elem)
+  const languagePreferences = [ configStore.config.appLang, 'en' ]
+  const coll = new Intl.Collator(languagePreferences, { numeric: true })
   sorted.sort((a, b) => {
-    if (sorting.value === "name") {
-      return coll.compare(a.name, b.name);
-    } else if (sorting.value === "idf") {
-      return b.idf - a.idf;
+    if (sorting.value === 'name') {
+      return coll.compare(a.name, b.name)
+    } else if (sorting.value === 'idf') {
+      return b.idf - a.idf
     } else {
-      return b.files.length - a.files.length;
+      return b.files.length - a.files.length
     }
-  });
-  return sorted;
-});
+  })
+  return sorted
+})
 
 const filteredTags = computed(() => {
-  return sortedTags.value.filter((tag) => {
-    return tag.name.toLowerCase().includes(query.value.toLowerCase());
-  });
-});
+  return sortedTags.value.filter(tag => {
+    return tag.name.toLowerCase().includes(query.value.toLowerCase())
+  })
+})
 
 onMounted(() => {
-  filter.value?.focus();
-});
+  filter.value?.focus()
+})
 
-function searchAndClose(tagName: string): void {
-  emit("search-tag", `#${tagName}`);
-  emit("close");
+function searchAndClose (tagName: string): void {
+  emit('search-tag', `#${tagName}`)
+  emit('close')
 }
 </script>
 

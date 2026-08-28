@@ -11,10 +11,10 @@
  *
  * END HEADER
  */
-import { transformSelectedText } from "./transform-selected-text";
+import { transformSelectedText } from './transform-selected-text'
 
-const SEPARATOR_WORD = " ";
-const SEPARATOR_PARAGRAPH = "\n\n";
+const SEPARATOR_WORD = ' '
+const SEPARATOR_PARAGRAPH = '\n\n'
 
 /**
  * Remove unwanted line breaks from selected text.
@@ -31,10 +31,9 @@ export const removeLineBreaks = transformSelectedText((text) => {
     .split(SEPARATOR_PARAGRAPH)
     .filter((paragraph) => paragraph.length > 0)
     .map((line) =>
-      line
-        .split("\n")
+      line.split('\n')
         .map((word) => word.trim())
-        .join(SEPARATOR_WORD),
+        .join(SEPARATOR_WORD)
     )
-    .join(SEPARATOR_PARAGRAPH);
-});
+    .join(SEPARATOR_PARAGRAPH)
+})

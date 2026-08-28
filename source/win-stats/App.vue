@@ -46,57 +46,55 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-renderer";
-import WindowChrome from "@common/vue/window/WindowChrome.vue";
-import { type WindowTab } from "@common/vue/window/WindowTabbar.vue";
-import { useConfigStore } from "source/pinia";
-import { computed, ref } from "vue";
-import CalendarView from "./CalendarView.vue";
-import ChartView from "./ChartView.vue";
-import FSALView from "./FSALView.vue";
-import GraphView from "./GraphView.vue";
+import WindowChrome from '@common/vue/window/WindowChrome.vue'
+import CalendarView from './CalendarView.vue'
+import ChartView from './ChartView.vue'
+import FSALView from './FSALView.vue'
+import { trans } from '@common/i18n-renderer'
+import { ref, computed } from 'vue'
+import GraphView from './GraphView.vue'
+import { type WindowTab } from '@common/vue/window/WindowTabbar.vue'
+import { useConfigStore } from 'source/pinia'
 
 const tabs: WindowTab[] = [
   {
-    label: trans("Calendar"),
-    controls: "tab-calendar",
-    id: "tab-calendar-control",
-    icon: "calendar",
+    label: trans('Calendar'),
+    controls: 'tab-calendar',
+    id: 'tab-calendar-control',
+    icon: 'calendar'
   },
   {
-    label: trans("Charts"),
-    controls: "tab-charts",
-    id: "tab-charts-control",
-    icon: "line-chart",
+    label: trans('Charts'),
+    controls: 'tab-charts',
+    id: 'tab-charts-control',
+    icon: 'line-chart'
   },
   {
-    label: trans("FSAL Stats"),
-    controls: "tab-fsal",
-    id: "tab-fsal-control",
-    icon: "file-group",
+    label: trans('FSAL Stats'),
+    controls: 'tab-fsal',
+    id: 'tab-fsal-control',
+    icon: 'file-group'
   },
   {
-    label: "Graph",
-    controls: "tab-graph",
-    id: "tab-graph-control",
-    icon: "network-globe",
-  },
-];
+    label: 'Graph',
+    controls: 'tab-graph',
+    id: 'tab-graph-control',
+    icon: 'network-globe'
+  }
+]
 
-const currentTab = ref<number>(0);
+const currentTab = ref<number>(0)
 
-const configStore = useConfigStore();
-const hasVibrancy = computed(
-  () => configStore.config.window.vibrancy && process.platform === "darwin",
-);
+const configStore = useConfigStore()
+const hasVibrancy = computed(() => configStore.config.window.vibrancy && process.platform === 'darwin')
 
 const windowTitle = computed<string>(() => {
-  if (process.platform === "darwin") {
-    return tabs[currentTab.value].label;
+  if (process.platform === 'darwin') {
+    return tabs[currentTab.value].label
   } else {
-    return trans("Writing statistics");
+    return trans('Writing statistics')
   }
-});
+})
 </script>
 
 <style lang="css" scoped>

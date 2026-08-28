@@ -11,7 +11,7 @@
  *
  * END HEADER
  */
-import { constants as FS_CONSTANTS, promises as fs } from "fs";
+import { promises as fs, constants as FS_CONSTANTS } from 'fs'
 
 /**
  * Checks if a given path exists on the file system. Optional flags can be
@@ -24,14 +24,11 @@ import { constants as FS_CONSTANTS, promises as fs } from "fs";
  *
  * @return  {Promise<boolean>}           Resolves to true or false
  */
-export async function pathExists(
-  absPath: string,
-  flags: number = FS_CONSTANTS.F_OK | FS_CONSTANTS.R_OK,
-): Promise<boolean> {
+export async function pathExists (absPath: string, flags: number = FS_CONSTANTS.F_OK|FS_CONSTANTS.R_OK): Promise<boolean> {
   try {
-    await fs.access(absPath, flags);
-    return true;
+    await fs.access(absPath, flags)
+    return true
   } catch (err: any) {
-    return false;
+    return false
   }
 }

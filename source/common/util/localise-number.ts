@@ -11,7 +11,7 @@
  * END HEADER
  */
 
-import { trans } from "../i18n-renderer";
+import { trans } from '../i18n-renderer'
 
 /**
  * Adds delimiters to numbers.
@@ -21,53 +21,53 @@ import { trans } from "../i18n-renderer";
  * @return {string}        The number with delimiters.
  */
 export default function (number: number): string {
-  if (typeof number !== "number" || (number < 1000 && number >= 0)) {
-    return number.toString();
+  if (typeof number !== 'number' || (number < 1000 && number >= 0)) {
+    return number.toString()
   }
 
   if (!Number.isFinite(number)) {
-    return number.toString();
+    return number.toString()
   }
 
-  let delim = trans(",");
-  let decimal = trans(".");
+  let delim = trans(',')
+  let decimal = trans('.')
   // No delimiter available -> fallback
-  if (delim === "localise.thousand_delimiter") {
-    delim = ".";
+  if (delim === 'localise.thousand_delimiter') {
+    delim = '.'
   }
 
-  if (decimal === "localise.decimal_delimiter") {
-    decimal = ",";
+  if (decimal === 'localise.decimal_delimiter') {
+    decimal = ','
   }
 
   // Account for negative values
-  let isNegative = false;
-  let suffix = "";
+  let isNegative = false
+  let suffix = ''
   if (number < 0) {
-    isNegative = true;
-    number = Math.abs(number);
+    isNegative = true
+    number = Math.abs(number)
   }
 
   // If we have a float, we have a suffix
   if (number % 1 !== 0) {
-    suffix = number.toString().split(".")[1];
-    number = Math.floor(number);
+    suffix = number.toString().split('.')[1]
+    number = Math.floor(number)
   }
 
-  let ret = "";
-  ret = number.toString();
-  let cnt = 0;
+  let ret = ''
+  ret = number.toString()
+  let cnt = 0
   for (let i = ret.length - 1; i > 0; i--) {
-    cnt++;
+    cnt++
     if (cnt === 3) {
-      ret = ret.substring(0, i) + delim + ret.substring(i);
-      cnt = 0;
+      ret = ret.substring(0, i) + delim + ret.substring(i)
+      cnt = 0
     }
   }
 
   // Re-append the suffix, if applicable
-  ret = suffix.length > 0 ? ret + decimal + suffix : ret;
+  ret = (suffix.length > 0) ? ret + decimal + suffix : ret
 
   // Re-prepend the minus sign
-  return isNegative ? "-" + ret : ret;
+  return ((isNegative) ? '-' + ret : ret)
 }

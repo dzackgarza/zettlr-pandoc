@@ -15,10 +15,11 @@
  * END HEADER
  */
 
-import { syntaxTree } from "@codemirror/language";
-import { type ChangeSpec, type EditorState } from "@codemirror/state";
-import { type EditorView } from "@codemirror/view";
-import { type SyntaxNode } from "@lezer/common";
+import { syntaxTree } from '@codemirror/language'
+import { type EditorState } from '@codemirror/state'
+import { type SyntaxNode } from '@lezer/common'
+import { type EditorView } from '@codemirror/view'
+import { type ChangeSpec } from '@codemirror/state'
 
 /**
  * Utility to remove a markdown link. It extracts the text from the markdown
@@ -27,63 +28,59 @@ import { type SyntaxNode } from "@lezer/common";
  * @param  {EditorView}  view  The editor view
  * @param  {SyntaxNode}  node  The node containing the Link
  */
-export function removeMarkdownLink(node: SyntaxNode, view: EditorView): void {
-  const state = view.state;
-  const changes: ChangeSpec[] = [];
+export function removeMarkdownLink (node: SyntaxNode, view: EditorView): void {
+  const state = view.state
+  const changes: ChangeSpec[] = []
 
-  if (node.type.name === "URL") {
-    const linkText = state.sliceDoc(node.from, node.to);
-    if (linkText.startsWith("<") && linkText.endsWith(">")) {
+  if (node.type.name === 'URL') {
+    const linkText = state.sliceDoc(node.from, node.to)
+    if (linkText.startsWith('<') && linkText.endsWith('>')) {
       // Remove the angle brackets
-      changes.push({
-        from: node.from,
-        to: node.to,
-        insert: linkText.slice(1, linkText.length - 1),
-      });
+      changes.push({ from: node.from, to: node.to, insert: linkText.slice(1, linkText.length - 1) })
     } else {
       // LinkText is already a plain URL
     }
-  } else if (node.type.name === "Link") {
+  } else if (node.type.name === 'Link') {
     // This is a regular in-text link. It may contain an URl, or just a link
     // label. In any case, we can already remove the link marks.
-    const marks = node.getChildren("LinkMark");
-    const linkText = state.sliceDoc(marks[0].to, marks[1].from);
-    changes.push({ from: node.from, to: node.to, insert: linkText });
+    const marks = node.getChildren('LinkMark')
+    const linkText = state.sliceDoc(marks[0].to, marks[1].from)
+    changes.push({ from: node.from, to: node.to, insert: linkText })
 
-    const linkLabel = node.getChild("LinkLabel");
+    const linkLabel = node.getChild('LinkLabel')
     if (linkLabel !== null) {
       // Off you go
-      changes.push({ from: linkLabel.from, to: linkLabel.to, insert: "" });
+      changes.push({ from: linkLabel.from, to: linkLabel.to, insert: '' })
 
-      const labelString = state.sliceDoc(linkLabel.from, linkLabel.to);
-      const ref = findReferenceForLinkLabel(state, labelString);
+      const labelString = state.sliceDoc(linkLabel.from, linkLabel.to)
+      const ref = findReferenceForLinkLabel(state, labelString)
       if (ref !== null) {
-        const count = countLinksReferencingLabel(state, labelString);
+        const count = countLinksReferencingLabel(state, labelString)
         if (count === 1) {
           // No other links referencing this label, so we can remove the reference.
-          changes.push({ from: ref.from, to: ref.to, insert: "" });
+          changes.push({ from: ref.from, to: ref.to, insert: '' })
         }
       }
     }
-  } else if (node.type.name === "LinkReference") {
-    changes.push({ from: node.from, to: node.to, insert: "" });
-    const linkLabel = node.getChild("LinkLabel");
+  } else if (node.type.name === 'LinkReference') {
+    changes.push({ from: node.from, to: node.to, insert: '' })
+    const linkLabel = node.getChild('LinkLabel')
     if (linkLabel !== null) {
-      const labelString = state.sliceDoc(linkLabel.from, linkLabel.to);
-      const links = findLinksforReferenceLinkLabel(state, labelString);
+      const labelString = state.sliceDoc(linkLabel.from, linkLabel.to)
+      const links = findLinksforReferenceLinkLabel(state, labelString)
 
       // Remove all links referencing this.
       for (const link of links) {
-        const marks = link.getChildren("LinkMark");
-        const linkText = state.sliceDoc(marks[0].to, marks[1].from);
-        changes.push({ from: link.from, to: link.to, insert: linkText });
+        const marks = link.getChildren('LinkMark')
+        const linkText = state.sliceDoc(marks[0].to, marks[1].from)
+        changes.push({ from: link.from, to: link.to, insert: linkText })
       }
     }
   } else {
-    console.error(`Cannot remove Markdown link for node -- wrong type: ${node.type.name}`);
+    console.error(`Cannot remove Markdown link for node -- wrong type: ${node.type.name}`)
   }
 
-  view.dispatch({ changes });
+  view.dispatch({ changes })
 }
 
 /**
@@ -96,29 +93,26 @@ export function removeMarkdownLink(node: SyntaxNode, view: EditorView): void {
  *
  * @return  {SyntaxNode[]}                A list of nodes.
  */
-export function findLinksforReferenceLinkLabel(
-  state: EditorState,
-  labelString: string,
-): SyntaxNode[] {
-  const links: SyntaxNode[] = [];
-  syntaxTree(state).iterate({
-    enter(node) {
-      if (node.type.name !== "Link") {
-        return;
+export function findLinksforReferenceLinkLabel (state: EditorState, labelString: string): SyntaxNode[] {
+  const links: SyntaxNode[] = []
+  syntaxTree(state).iterate({ 
+    enter (node) {
+      if (node.type.name !== 'Link') {
+        return
       }
 
-      const label = node.node.getChild("LinkLabel");
+      const label = node.node.getChild('LinkLabel')
       if (label === null) {
-        return;
+        return
       }
 
       if (state.sliceDoc(label.from, label.to) === labelString) {
-        links.push(node.node);
+        links.push(node.node)
       }
-    },
-  });
+    }
+  })
 
-  return links;
+  return links
 }
 
 /**
@@ -131,33 +125,30 @@ export function findLinksforReferenceLinkLabel(
  *
  * @return  {SyntaxNode}                The LinkReference node, or null.
  */
-export function findReferenceForLinkLabel(
-  state: EditorState,
-  labelString: string,
-): SyntaxNode | null {
-  let ref: SyntaxNode | null = null;
+export function findReferenceForLinkLabel (state: EditorState, labelString: string): SyntaxNode|null {
+  let ref: SyntaxNode|null = null
   syntaxTree(state).iterate({
-    enter(node) {
+    enter (node) {
       if (ref !== null) {
-        return false;
+        return false
       }
 
-      if (node.type.name !== "LinkReference") {
-        return;
+      if (node.type.name !== 'LinkReference') {
+        return
       }
 
-      const label = node.node.getChild("LinkLabel");
+      const label = node.node.getChild('LinkLabel')
       if (label === null) {
-        return;
+        return
       }
 
       if (state.sliceDoc(label.from, label.to) === labelString) {
-        ref = node.node;
+        ref = node.node
       }
-    },
-  });
+    }
+  })
 
-  return ref;
+  return ref
 }
 
 /**
@@ -171,25 +162,25 @@ export function findReferenceForLinkLabel(
  * @return  {number}                    The amount of Link-nodes referencing the
  *                                      label.
  */
-export function countLinksReferencingLabel(state: EditorState, labelString: string): number {
-  let count = 0;
+export function countLinksReferencingLabel (state: EditorState, labelString: string): number {
+  let count = 0
 
   syntaxTree(state).iterate({
-    enter(node) {
-      if (node.type.name !== "Link") {
-        return;
+    enter (node) {
+      if (node.type.name !== 'Link') {
+        return
       }
 
-      const label = node.node.getChild("LinkLabel");
+      const label = node.node.getChild('LinkLabel')
       if (label === null) {
-        return;
+        return
       }
 
       if (state.sliceDoc(label.from, label.to) === labelString) {
-        count++;
+        count++
       }
-    },
-  });
+    }
+  })
 
-  return count;
+  return count
 }

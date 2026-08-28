@@ -57,17 +57,11 @@ describe("Citeproc database parse cache", function () {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  function cacheFileContent(): {
-    version: number;
-    sourceSha256: string;
-    cslData: Record<string, unknown>;
-  } {
+  function cacheFileContent (): { version: number, sourceSha256: string, cslData: Record<string, unknown> } {
     const entries = readdirSync(cacheDir);
     assert.equal(entries.length, 1, "exactly one cache file per database");
     return JSON.parse(readFileSync(path.join(cacheDir, entries[0]), "utf8")) as {
-      version: number;
-      sourceSha256: string;
-      cslData: Record<string, unknown>;
+      version: number, sourceSha256: string, cslData: Record<string, unknown>
     };
   }
 
@@ -96,11 +90,7 @@ describe("Citeproc database parse cache", function () {
 
     const record = await loadDatabase(databasePath, undefined, cacheDir);
     assert.deepEqual(Object.keys(record.cslData), ["planted"]);
-    assert.equal(
-      record.path,
-      databasePath,
-      "the record's path is the live argument, never the cache's",
-    );
+    assert.equal(record.path, databasePath, "the record's path is the live argument, never the cache's");
   });
 
   it("re-parses and re-stamps when the database content changes", async function () {
@@ -110,15 +100,8 @@ describe("Citeproc database parse cache", function () {
     writeFileSync(databasePath, updated);
     const record = await loadDatabase(databasePath, undefined, cacheDir);
 
-    assert.ok(
-      "Nik80" in record.cslData && "Cob19" in record.cslData,
-      "the edited database is re-parsed in full",
-    );
-    assert.equal(
-      cacheFileContent().sourceSha256,
-      sha256Text(updated),
-      "the cache is re-stamped for the new content",
-    );
+    assert.ok("Nik80" in record.cslData && "Cob19" in record.cslData, "the edited database is re-parsed in full");
+    assert.equal(cacheFileContent().sourceSha256, sha256Text(updated), "the cache is re-stamped for the new content");
   });
 
   it("re-parses over an unreadable cache file rather than failing the load", async function () {

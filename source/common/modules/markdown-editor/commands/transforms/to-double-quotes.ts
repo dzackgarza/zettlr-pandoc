@@ -11,8 +11,8 @@
  *
  * END HEADER
  */
-import { delimit, replaceWith } from "./support/delimit";
-import { transformSelectedText } from "./transform-selected-text";
+import { delimit, replaceWith } from './support/delimit'
+import { transformSelectedText } from './transform-selected-text'
 
 /**
  * Convert paired single quotes and paired backticks to double-quotes.
@@ -26,11 +26,11 @@ import { transformSelectedText } from "./transform-selected-text";
  *                          backticks converted to double-quotes.
  */
 export const toDoubleQuotes = transformSelectedText((text) => {
-  const replace = replaceWith('"');
+  const replace = replaceWith('"')
 
   // replace paired single quotes
-  const interim = replace(delimit("'")(text));
+  const interim = replace(delimit('\'')(text))
 
   // replace paired backticks
-  return replace(delimit("`")(interim));
-});
+  return replace(delimit('`')(interim))
+})

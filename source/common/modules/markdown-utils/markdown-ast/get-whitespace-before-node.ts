@@ -14,7 +14,7 @@
  * END HEADER
  */
 
-import { type SyntaxNode } from "@lezer/common";
+import { type SyntaxNode } from '@lezer/common'
 
 /**
  * Extracts any amount of whitespace (`\t\s\n\r\f\v`, etc.) that occurs before
@@ -28,16 +28,16 @@ import { type SyntaxNode } from "@lezer/common";
  *
  * @return  {string}                The whitespace string
  */
-export function getWhitespaceBeforeNode(node: SyntaxNode, markdown: string): string {
+export function getWhitespaceBeforeNode (node: SyntaxNode, markdown: string): string {
   if (node.prevSibling !== null) {
-    const sliceBefore = markdown.substring(node.prevSibling.to, node.from);
-    const onlyWhitespace = /(\s*)$/m.exec(sliceBefore); // NOTE the "m" flag
-    return onlyWhitespace !== null ? onlyWhitespace[1] : "";
+    const sliceBefore = markdown.substring(node.prevSibling.to, node.from)
+    const onlyWhitespace = /(\s*)$/m.exec(sliceBefore) // NOTE the "m" flag
+    return onlyWhitespace !== null ? onlyWhitespace[1] : ''
   } else if (node.parent !== null) {
-    const sliceBefore = markdown.substring(node.parent.from, node.from);
-    const onlyWhitespace = /(\s*)$/m.exec(sliceBefore); // NOTE the "m" flag
-    return onlyWhitespace !== null ? onlyWhitespace[1] : "";
+    const sliceBefore = markdown.substring(node.parent.from, node.from)
+    const onlyWhitespace = /(\s*)$/m.exec(sliceBefore) // NOTE the "m" flag
+    return onlyWhitespace !== null ? onlyWhitespace[1] : ''
   } else {
-    return "";
+    return ''
   }
 }

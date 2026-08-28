@@ -91,146 +91,132 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-renderer";
-import formatSize from "@common/util/format-size";
-import ButtonControl from "@common/vue/form/elements/ButtonControl.vue";
-import ProgressControl from "@common/vue/form/elements/ProgressControl.vue";
-import WindowChrome from "@common/vue/window/WindowChrome.vue";
-import { DateTime } from "luxon";
-import { type UpdateState } from "source/app/service-providers/updates";
-import { sanitizeHTML } from "source/common/util/sanitize-html";
-import { useConfigStore } from "source/pinia";
-import { computed, onUnmounted, ref } from "vue";
-import PACKAGE_JSON from "../../package.json";
+import WindowChrome from '@common/vue/window/WindowChrome.vue'
+import ButtonControl from '@common/vue/form/elements/ButtonControl.vue'
+import ProgressControl from '@common/vue/form/elements/ProgressControl.vue'
+import { trans } from '@common/i18n-renderer'
+import formatSize from '@common/util/format-size'
+import PACKAGE_JSON from '../../package.json'
+import { computed, onUnmounted, ref } from 'vue'
+import { type UpdateState } from 'source/app/service-providers/updates'
+import { DateTime } from 'luxon'
+import { useConfigStore } from 'source/pinia'
+import { sanitizeHTML } from 'source/common/util/sanitize-html'
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
-const configStore = useConfigStore();
+const configStore = useConfigStore()
 
-const windowTitle = trans("Updater");
-const updateTitle = trans("New update available");
-const updateCurrentVersion = trans("Your version");
-const updateNotification = trans(
-  "There is a new version of Zettlr available to download. Please read the changelog below.",
-);
-const downloadProgressLabel = trans("Downloading your update");
-const noUpdateMessage = trans("No update available. You have the most recent version.");
-const checkForUpdateLabel = trans("Check for updates");
+const windowTitle = trans('Updater')
+const updateTitle = trans('New update available')
+const updateCurrentVersion = trans('Your version')
+const updateNotification = trans('There is a new version of Zettlr available to download. Please read the changelog below.')
+const downloadProgressLabel = trans('Downloading your update')
+const noUpdateMessage = trans('No update available. You have the most recent version.')
+const checkForUpdateLabel = trans('Check for updates')
 
-const vibrancyEnabled = configStore.config.window.vibrancy;
-const currentVersion = PACKAGE_JSON.version;
+const vibrancyEnabled = configStore.config.window.vibrancy
+const currentVersion = PACKAGE_JSON.version
 
-const sanitizedChangelog = computed(() => sanitizeHTML(updateState.value.changelog));
+const sanitizedChangelog = computed(() => sanitizeHTML(updateState.value.changelog))
 
-const startButtonLabel = ref(trans("Click to start update"));
+const startButtonLabel = ref(trans('Click to start update'))
 const lastCheckedMessage = computed(() => {
   if (updateState.value.lastCheck === undefined) {
-    return trans("Last checked: %s", trans("never"));
+    return trans('Last checked: %s', trans('never'))
   } else {
-    const dt = DateTime.fromMillis(updateState.value.lastCheck);
-    return trans("Last checked: %s", dt.toRelative());
+    const dt = DateTime.fromMillis(updateState.value.lastCheck)
+    return trans('Last checked: %s', dt.toRelative())
   }
-});
-const disableStartButton = ref(false); // True as soon as the update starts
+})
+const disableStartButton = ref(false) // True as soon as the update starts
 const updateState = ref<UpdateState>({
   lastErrorMessage: undefined,
   lastErrorCode: undefined,
   updateAvailable: false,
   prerelease: false,
-  changelog: "",
-  tagName: "",
-  releasePage: "https://github.com/Zettlr/Zettlr/releases",
+  changelog: '',
+  tagName: '',
+  releasePage: 'https://github.com/Zettlr/Zettlr/releases',
   compatibleAssets: [],
-  name: "",
-  full_path: "",
+  name: '',
+  full_path: '',
   size_total: 0,
   size_downloaded: 0,
   start_time: 0,
-  eta_seconds: 0,
-});
+  eta_seconds: 0
+})
 
 const hasError = computed(() => {
   // Sometimes, "undefined" properties do not get transferred from main so
   // we additionally need to check for existence here, cf. #2775
-  return (
-    "lastErrorMessage" in updateState.value &&
-    "lastErrorCode" in updateState.value &&
+  return 'lastErrorMessage' in updateState.value &&
+    'lastErrorCode' in updateState.value &&
     updateState.value.lastErrorMessage !== undefined &&
     updateState.value.lastErrorCode !== undefined
-  );
-});
+})
 
 const isDownloading = computed(() => {
-  return (
-    updateState.value.size_downloaded > 0 &&
-    updateState.value.size_downloaded < updateState.value.size_total
-  );
-});
+  return updateState.value.size_downloaded > 0 && updateState.value.size_downloaded < updateState.value.size_total
+})
 
 const isFinished = computed(() => {
-  return (
-    updateState.value.size_downloaded > 0 &&
-    updateState.value.size_downloaded === updateState.value.size_total
-  );
-});
+  return updateState.value.size_downloaded > 0 && updateState.value.size_downloaded === updateState.value.size_total
+})
 
 const getETA = computed(() => {
-  const seconds = updateState.value.eta_seconds;
+  const seconds = updateState.value.eta_seconds
   if (seconds > 60) {
-    return Math.floor(seconds / 60) + "m " + (seconds % 60) + "s";
+    return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's'
   } else {
-    return seconds + "s";
+    return seconds + 's'
   }
-});
+})
 
 // Immediately retrieve the current update status and set up a listener to
 // retrieve any updates to the state.
-ipcRenderer
-  .invoke("update-provider", { command: "update-status" })
-  .then((newUpdateState) => {
-    updateState.value = newUpdateState;
-  })
-  .catch((e) => console.error(e));
+ipcRenderer.invoke('update-provider', { command: 'update-status' })
+  .then(newUpdateState => { updateState.value = newUpdateState })
+  .catch(e => console.error(e))
 
 // Whenever the update state changes in the provider, we must update it here
-const offCallback = ipcRenderer.on("update-provider", (event, command, newUpdateState) => {
-  if (command === "state-changed") {
+const offCallback = ipcRenderer.on('update-provider', (event, command, newUpdateState) => {
+  if (command === 'state-changed') {
     if (newUpdateState !== undefined) {
-      updateState.value = newUpdateState;
+      updateState.value = newUpdateState
     } else {
-      console.error("ERROR: Expected an update state, received undefined!");
+      console.error('ERROR: Expected an update state, received undefined!')
     }
   }
-});
+})
 
-onUnmounted(offCallback);
+onUnmounted(offCallback)
 
-function requestDownload(url: string): void {
-  ipcRenderer
-    .invoke("update-provider", {
-      command: "request-app-update",
-      payload: url,
+function requestDownload (url: string): void {
+  ipcRenderer.invoke('update-provider', {
+    command: 'request-app-update',
+    payload: url
+  })
+    .catch(e => console.error(e))
+}
+
+function startUpdate (): void {
+  disableStartButton.value = true
+  startButtonLabel.value = trans('Starting update …')
+  ipcRenderer.invoke('update-provider', { command: 'begin-update' })
+    .catch(e => {
+      disableStartButton.value = false
+      console.error(e)
     })
-    .catch((e) => console.error(e));
 }
 
-function startUpdate(): void {
-  disableStartButton.value = true;
-  startButtonLabel.value = trans("Starting update …");
-  ipcRenderer.invoke("update-provider", { command: "begin-update" }).catch((e) => {
-    disableStartButton.value = false;
-    console.error(e);
-  });
+function checkForUpdate (): void {
+  ipcRenderer.invoke('update-provider', { command: 'check-for-update' })
+    .catch(e => console.error(e))
 }
 
-function checkForUpdate(): void {
-  ipcRenderer
-    .invoke("update-provider", { command: "check-for-update" })
-    .catch((e) => console.error(e));
-}
-
-function openReleasesPage(): void {
-  window.location.assign(updateState.value.releasePage);
+function openReleasesPage (): void {
+  window.location.assign(updateState.value.releasePage)
 }
 </script>
 

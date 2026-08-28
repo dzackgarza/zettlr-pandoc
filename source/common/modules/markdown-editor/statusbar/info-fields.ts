@@ -6,19 +6,19 @@
  * CVM-Role:        View
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
- *
+*
  * Description:     This file defines a set of info statusbar items
  *
  * END HEADER
  */
 
-import { type EditorState } from "@codemirror/state";
-import { type EditorView } from "@codemirror/view";
-import { trans } from "@common/i18n-renderer";
-import localiseNumber from "@common/util/localise-number";
-import { countField } from "../plugins/statistics-fields";
-import { configField } from "../util/configuration";
-import { type StatusbarItem } from ".";
+import { type EditorState } from '@codemirror/state'
+import { type EditorView } from '@codemirror/view'
+import { trans } from '@common/i18n-renderer'
+import localiseNumber from '@common/util/localise-number'
+import { type StatusbarItem } from '.'
+import { countField } from '../plugins/statistics-fields'
+import { configField } from '../util/configuration'
 
 /**
  * Displays the cursor position
@@ -28,12 +28,12 @@ import { type StatusbarItem } from ".";
  *
  * @return  {StatusbarItem}         Returns the element
  */
-export function cursorStatus(state: EditorState, _view: EditorView): StatusbarItem | null {
-  const mainOffset = state.selection.main.head;
-  const line = state.doc.lineAt(mainOffset);
+export function cursorStatus (state: EditorState, _view: EditorView): StatusbarItem|null {
+  const mainOffset = state.selection.main.head
+  const line = state.doc.lineAt(mainOffset)
   return {
-    content: `${line.number}:${mainOffset - line.from + 1} (${localiseNumber(mainOffset)})`,
-  };
+    content: `${line.number}:${mainOffset - line.from + 1} (${localiseNumber(mainOffset)})`
+  }
 }
 
 /**
@@ -44,14 +44,14 @@ export function cursorStatus(state: EditorState, _view: EditorView): StatusbarIt
  *
  * @return  {StatusbarItem}         Returns the element or null
  */
-export function wordcountStatus(state: EditorState, _view: EditorView): StatusbarItem | null {
-  const counter = state.field(countField, false);
+export function wordcountStatus (state: EditorState, _view: EditorView): StatusbarItem|null {
+  const counter = state.field(countField, false)
   if (counter === undefined) {
-    return null;
+    return null
   } else {
     return {
-      content: trans("%s words", localiseNumber(counter.words)),
-    };
+      content: trans('%s words', localiseNumber(counter.words))
+    }
   }
 }
 
@@ -63,14 +63,14 @@ export function wordcountStatus(state: EditorState, _view: EditorView): Statusba
  *
  * @return  {StatusbarItem}         Returns the element or null
  */
-export function charcountStatus(state: EditorState, _view: EditorView): StatusbarItem | null {
-  const counter = state.field(countField, false);
+export function charcountStatus (state: EditorState, _view: EditorView): StatusbarItem|null {
+  const counter = state.field(countField, false)
   if (counter === undefined) {
-    return null;
+    return null
   } else {
     return {
-      content: trans("%s characters", localiseNumber(counter.chars)),
-    };
+      content: trans('%s characters', localiseNumber(counter.chars))
+    }
   }
 }
 
@@ -82,15 +82,15 @@ export function charcountStatus(state: EditorState, _view: EditorView): Statusba
  *
  * @return  {StatusbarItem}         Returns the element or null
  */
-export function inputModeStatus(state: EditorState, _view: EditorView): StatusbarItem | null {
-  const config = state.field(configField, false);
+export function inputModeStatus (state: EditorState, _view: EditorView): StatusbarItem|null {
+  const config = state.field(configField, false)
   if (config === undefined) {
-    return null;
-  } else if (config.inputMode !== "default") {
+    return null
+  } else if (config.inputMode !== 'default') {
     return {
-      content: "Mode: " + (config.inputMode === "vim" ? "Vim" : "Emacs"),
-    };
+      content: 'Mode: ' + (config.inputMode === 'vim' ? 'Vim' : 'Emacs')
+    }
   } else {
-    return null;
+    return null
   }
 }

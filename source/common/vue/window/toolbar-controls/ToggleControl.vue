@@ -32,40 +32,40 @@
  * END HEADER
  */
 
-import { computed, ref, toRef, watch } from "vue";
+import { watch, toRef, ref, computed } from 'vue'
 
 export interface ToolbarToggleControl {
-  type: "toggle";
-  id?: string;
-  icon?: string;
-  title?: string;
-  label?: string;
-  initialState: boolean;
+  type: 'toggle'
+  id?: string
+  icon?: string
+  title?: string
+  label?: string
+  initialState: boolean
   // Allow arbitrary properties that we ignore
-  [key: string]: unknown;
+  [key: string]: unknown
 }
 
-const props = defineProps<{ control: ToolbarToggleControl; showLabel?: boolean }>();
+const props = defineProps<{ control: ToolbarToggleControl, showLabel?: boolean }>()
 
-const emit = defineEmits<(e: "toggle", isActive: boolean) => void>();
+const emit = defineEmits<(e: 'toggle', isActive: boolean) => void>()
 
 const titleWithFallback = computed<string>(() => {
-  return props.control.title ?? props.control.label ?? "";
-});
+  return props.control.title ?? props.control.label ?? ''
+})
 
 const labelWithFallback = computed<string>(() => {
-  return props.control.label ?? props.control.title ?? "";
-});
+  return props.control.label ?? props.control.title ?? ''
+})
 
-const isActive = ref<boolean>(props.control.initialState);
+const isActive = ref<boolean>(props.control.initialState)
 
-watch(toRef(props, "control"), () => {
-  isActive.value = props.control.initialState;
-});
+watch(toRef(props, 'control'), () => {
+  isActive.value = props.control.initialState
+})
 
-function toggle(): void {
-  isActive.value = !isActive.value;
-  emit("toggle", isActive.value);
+function toggle (): void {
+  isActive.value = !isActive.value
+  emit('toggle', isActive.value)
 }
 </script>
 

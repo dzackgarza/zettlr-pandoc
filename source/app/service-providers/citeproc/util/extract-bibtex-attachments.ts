@@ -12,15 +12,15 @@
  * END HEADER
  */
 
-import pdfSorter from "@common/util/sort-by-pdf";
-import type LogProvider from "@providers/log";
-import { bibtex } from "astrocite";
-import { type BracedComment } from "astrocite-bibtex";
-import path from "path";
+import path from 'path'
+import { bibtex } from 'astrocite'
+import { type BracedComment } from 'astrocite-bibtex'
+import pdfSorter from '@common/util/sort-by-pdf'
+import type LogProvider from '@providers/log'
 
-const AstrociteAST = bibtex.AST;
+const AstrociteAST = bibtex.AST
 
-type BibTexAttachments = Record<string, string[] | false>;
+type BibTexAttachments = Record<string, string[]|false>
 
 /**
  * Returns a dictionary in the form citeKey: Array(files)
@@ -28,65 +28,63 @@ type BibTexAttachments = Record<string, string[] | false>;
  * @param {String} baseDir The base directory to use in case the links are relative.
  * @return {Object} Returns a dictionary containing all extracted files
  */
-export default function extractBibtexAttachments(
+export default function extractBibtexAttachments (
   fileContents: string,
   baseDir: string,
-  logger?: LogProvider,
+  logger?: LogProvider
 ): BibTexAttachments {
-  const ast = AstrociteAST.parse(fileContents);
+  const ast = AstrociteAST.parse(fileContents)
   // Return value will be a fast-access dictionary
-  const files: BibTexAttachments = {};
+  const files: BibTexAttachments = {}
 
   // First we search for the jabref comments containing the files' root directories
-  const comments = ast.children.filter((item) => item.kind === "BracedComment") as BracedComment[];
+  const comments = ast.children.filter(item => item.kind === 'BracedComment') as BracedComment[]
   // The format of the value field is 'jabref-meta: fileDirectory*:<path>;'
-  const jabrefComments = comments.filter((item) => item.value.startsWith("jabref-meta:"));
+  const jabrefComments = comments.filter(item => item.value.startsWith('jabref-meta:'))
   for (const entry of jabrefComments) {
-    const value = entry.value.split(":").map((e) => e.trim());
-    if (value[1].startsWith("fileDirectory")) {
-      baseDir = value[2].replace(/;/g, "");
-      logger?.info(
-        `[extractBibtexAttachments] Found a fileDirectory, overwriting baseDir: ${baseDir}`,
-      );
-      break;
+    const value = entry.value.split(':').map(e => e.trim())
+    if (value[1].startsWith('fileDirectory')) {
+      baseDir = value[2].replace(/;/g, '')
+      logger?.info(`[extractBibtexAttachments] Found a fileDirectory, overwriting baseDir: ${baseDir}`)
+      break
     }
   }
 
   // Now let's see what entries have files attached.
   // Such attributes are stored in properties within the entry.
   for (const entry of ast.children) {
-    if (entry.kind !== "Entry") {
-      continue;
+    if (entry.kind !== 'Entry') {
+      continue
     }
 
     for (const property of entry.properties) {
-      if (property.key === "file") {
-        const firstValue = property.value[0];
-        if (firstValue.kind !== "String" && firstValue.kind !== "Text") {
-          continue;
+      if (property.key === 'file') {
+        const firstValue = property.value[0]
+        if (firstValue.kind !== 'String' && firstValue.kind !== 'Text') {
+          continue
         }
 
         // The file entry by JabRef is saved as description:path:type
         // Multiple entries are delimited with ;
         // Reference: https://github.com/JabRef/jabref/blob/93f47c9069d01247375cabbe6e1328f0a477472b/src/main/java/org/jabref/gui/filelist/FileListEntry.java#L46
-        let f = firstValue.value.split(";");
-        f = f.map((elem) => {
+        let f = firstValue.value.split(';')
+        f = f.map(elem => {
           // Extract the file paths
-          if (elem.includes(":")) {
-            return elem.split(":")[1];
+          if (elem.includes(':')) {
+            return elem.split(':')[1]
           } else {
-            return elem;
+            return elem
           }
-        });
+        })
         // Now sort so that PDF-files are at the top
-        f = f.sort(pdfSorter);
+        f = f.sort(pdfSorter)
 
         // In case the paths are not absolute, make them this way.
         if (!path.isAbsolute(f[0])) {
-          f = f.map((elem) => path.join(baseDir, elem));
+          f = f.map(elem => path.join(baseDir, elem))
         }
         // Save them to the dictionary
-        files[entry.id] = f;
+        files[entry.id] = f
       }
     }
 
@@ -94,9 +92,9 @@ export default function extractBibtexAttachments(
     // are no files attached. -> Set it to false so one can easily
     // check if (!files[key]), as an array will evaluate to true.
     if (files[entry.id] === undefined) {
-      files[entry.id] = false;
+      files[entry.id] = false
     }
   }
 
-  return files;
+  return files
 }

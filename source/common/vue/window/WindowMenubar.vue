@@ -27,65 +27,59 @@
  * END HEADER
  */
 
-import showPopupMenu, {
-  type AnyMenuItem,
-  type SubmenuItem,
-} from "@common/modules/window-register/application-menu-helper";
-import { onBeforeMount, ref } from "vue";
+import showPopupMenu, { type AnyMenuItem, type SubmenuItem } from '@common/modules/window-register/application-menu-helper'
+import { ref, onBeforeMount } from 'vue'
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
-const menu = ref<SubmenuItem[]>([]);
-const currentSubmenu = ref<string | null>(null);
-const menuCloseCallback = ref<null | (() => void) | null>(null);
+const menu = ref<SubmenuItem[]>([])
+const currentSubmenu = ref<string|null>(null)
+const menuCloseCallback = ref<null|(() => void)|null>(null)
 
 // Can contain a target if a submenu is right now being requested
-const targetElement = ref<HTMLElement | null>(null);
+const targetElement = ref<HTMLElement|null>(null)
 
 onBeforeMount(() => {
   // Listen to messages from the menu provider
-  type MenuMessage = { command: "application-menu"; payload: SubmenuItem[] };
-  type SubmenuMessage = {
-    command: "application-submenu";
-    payload: { id: string; submenu: SubmenuItem[] };
-  };
+  type MenuMessage = { command: 'application-menu', payload: SubmenuItem[] }
+  type SubmenuMessage = { command: 'application-submenu', payload: { id: string, submenu: SubmenuItem[] } }
 
-  ipcRenderer.on("menu-provider", (event, { command, payload }: MenuMessage | SubmenuMessage) => {
-    if (command === "application-menu") {
-      menu.value = payload;
-    } else if (command === "application-submenu") {
-      showSubmenu(payload.submenu, payload.id);
+  ipcRenderer.on('menu-provider', (event, { command, payload }: MenuMessage|SubmenuMessage) => {
+    if (command === 'application-menu') {
+      menu.value = payload
+    } else if (command === 'application-submenu') {
+      showSubmenu(payload.submenu, payload.id)
     }
-  });
+  })
 
   // Send an initial request
-  ipcRenderer.send("menu-provider", { command: "get-application-menu" });
+  ipcRenderer.send('menu-provider', { command: 'get-application-menu' })
 
   // Also make sure to reset the internal state if necessary
-  window.addEventListener("mousedown", (_event) => {
+  window.addEventListener('mousedown', (_event) => {
     // The closing will be handled automatically by the menu handler
     if (menuCloseCallback.value !== null) {
-      menuCloseCallback.value = null;
-      currentSubmenu.value = null;
+      menuCloseCallback.value = null
+      currentSubmenu.value = null
     }
-  });
-});
+  })
+})
 
-function getSubmenu(menuID: string, target: HTMLElement): void {
-  targetElement.value = target;
-  ipcRenderer.send("menu-provider", {
-    command: "get-application-submenu",
-    payload: menuID,
-  });
+function getSubmenu (menuID: string, target: HTMLElement): void {
+  targetElement.value = target
+  ipcRenderer.send('menu-provider', {
+    command: 'get-application-submenu',
+    payload: menuID
+  })
 }
 
-function maybeExchangeSubmenu(menuID: string, targetElement: HTMLElement): void {
+function maybeExchangeSubmenu (menuID: string, targetElement: HTMLElement): void {
   if (currentSubmenu.value === null) {
-    return;
+    return
   }
 
   if (currentSubmenu.value !== menuID) {
-    getSubmenu(menuID, targetElement);
+    getSubmenu(menuID, targetElement)
   }
 }
 
@@ -95,46 +89,46 @@ function maybeExchangeSubmenu(menuID: string, targetElement: HTMLElement): void 
  * @param   {AnyMenuItem[]}  items     The items in serialized form
  * @param   {string}      attachTo  The MenuItem.id of the item to attach to
  */
-function showSubmenu(items: AnyMenuItem[], attachTo: string): void {
+function showSubmenu (items: AnyMenuItem[], attachTo: string): void {
   if (targetElement.value === null) {
-    return console.error("Cannot show application menu: Target item has not been found.");
+    return console.error('Cannot show application menu: Target item has not been found.')
   }
 
-  const rect = targetElement.value.getBoundingClientRect();
+  const rect = targetElement.value.getBoundingClientRect()
   if (rect === undefined) {
-    return console.error("Cannot show application menu: Target has not been found!");
+    return console.error('Cannot show application menu: Target has not been found!')
   }
 
   // Reset the application menu if shown
   if (menuCloseCallback.value !== null) {
-    menuCloseCallback.value();
-    menuCloseCallback.value = null;
+    menuCloseCallback.value()
+    menuCloseCallback.value = null
   }
 
   if (currentSubmenu.value === attachTo) {
     // Emulate a toggle by not showing the same submenu again
-    currentSubmenu.value = null;
-    return;
+    currentSubmenu.value = null
+    return
   }
 
   // Display a new menu
-  const point = { x: rect.left, y: rect.top + rect.height };
+  const point = { x: rect.left, y: rect.top + rect.height }
   menuCloseCallback.value = showPopupMenu(point, items, (clickedID) => {
     // Trigger a click on the "real" menu item in the back
-    ipcRenderer.send("menu-provider", {
-      command: "click-menu-item",
-      payload: clickedID,
-    });
+    ipcRenderer.send('menu-provider', {
+      command: 'click-menu-item',
+      payload: clickedID
+    })
 
     // Reset the menu state, since the callback indicates the menu is now
     // closed.
-    menuCloseCallback.value = null;
-    currentSubmenu.value = null;
-  });
+    menuCloseCallback.value = null
+    currentSubmenu.value = null
+  })
 
   // Save the original ID for easy access
-  currentSubmenu.value = attachTo;
-  targetElement.value = null; // Reset
+  currentSubmenu.value = attachTo
+  targetElement.value = null // Reset
 }
 </script>
 

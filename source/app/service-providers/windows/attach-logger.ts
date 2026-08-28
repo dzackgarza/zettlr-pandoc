@@ -13,9 +13,9 @@
  * END HEADER
  */
 
-import type LogProvider from "@providers/log";
-import { type BrowserWindow } from "electron";
-import path from "path";
+import type LogProvider from '@providers/log'
+import { type BrowserWindow } from 'electron'
+import path from 'path'
 
 /**
  * Attaches the global log interface to the webContents in order to save
@@ -25,25 +25,25 @@ import path from "path";
  * @param   {BrowserWindow}  win  The BrowserWindow to attach to
  * @param   {string}         id   A human-readable identifier for the window
  */
-export default function attachLogger(logger: LogProvider, win: BrowserWindow, id: string): void {
+export default function attachLogger (logger: LogProvider, win: BrowserWindow, id: string): void {
   // See: https://www.electronjs.org/docs/api/web-contents#event-console-message
-  win.webContents.on("console-message", ({ message, sourceId, lineNumber, level }) => {
+  win.webContents.on('console-message', ({ message, sourceId, lineNumber, level }) => {
     // Prepare the generic log message and then log it using the appropriate
     // logger interface.
-    const logMessage = `[R] [${id}] ${message} (${path.basename(sourceId)}:${lineNumber})`;
+    const logMessage = `[R] [${id}] ${message} (${path.basename(sourceId)}:${lineNumber})`
     switch (level) {
-      case "debug": // Verbose
-        logger.verbose(logMessage);
-        break;
-      case "info": // Info
-        logger.info(logMessage);
-        break;
-      case "warning": // Warning
-        logger.warning(logMessage);
-        break;
-      case "error": // Error
-        logger.error(logMessage);
-        break;
+      case 'debug': // Verbose
+        logger.verbose(logMessage)
+        break
+      case 'info': // Info
+        logger.info(logMessage)
+        break
+      case 'warning': // Warning
+        logger.warning(logMessage)
+        break
+      case 'error': // Error
+        logger.error(logMessage)
+        break
     }
-  });
+  })
 }

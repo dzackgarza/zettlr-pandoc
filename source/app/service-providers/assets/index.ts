@@ -13,20 +13,20 @@
  * END HEADER
  */
 
-import { SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
-import { parseReaderWriter } from "@common/pandoc-util/parse-reader-writer";
-import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
-import { getCustomProfiles } from "@providers/commands/exporter";
-import { app, ipcMain, shell } from "electron";
-import { promises as fs } from "fs";
-import path from "path";
-import YAML from "yaml";
-import { getAppServiceContainer, isAppServiceContainerReady } from "../../app-service-container";
-import type LogProvider from "../log";
-import ProviderContract, { type IPCMessage } from "../provider-contract";
+import path from 'path'
+import { app, ipcMain, shell } from 'electron'
+import { promises as fs } from 'fs'
+import YAML from 'yaml'
+import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
+import ProviderContract, { type IPCMessage } from '../provider-contract'
+import type LogProvider from '../log'
+import { getCustomProfiles } from '@providers/commands/exporter'
+import { getAppServiceContainer, isAppServiceContainerReady } from '../../app-service-container'
+import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
+import { parseReaderWriter } from '@common/pandoc-util/parse-reader-writer'
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function isRecord (value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**
@@ -34,39 +34,39 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * wrong kind of value is its own case: it must never read as an absent key.
  */
 type YamlString =
-  | { kind: "absent" }
-  | { kind: "string"; value: string }
-  | { kind: "malformed"; observed: string };
+  { kind: 'absent' } |
+  { kind: 'string', value: string } |
+  { kind: 'malformed', observed: string }
 
 /**
  * Names the kind of value a YAML document holds, for use in a diagnostic.
  */
-function describeValue(value: unknown): string {
+function describeValue (value: unknown): string {
   if (value === null) {
-    return "null";
+    return 'null'
   }
-  return Array.isArray(value) ? "a list" : `a ${typeof value}`;
+  return Array.isArray(value) ? 'a list' : `a ${typeof value}`
 }
 
 /**
  * Reads a string property off a parsed YAML document.
  */
-function stringProperty(doc: Record<string, unknown>, key: string): YamlString {
-  const value = doc[key];
+function stringProperty (doc: Record<string, unknown>, key: string): YamlString {
+  const value = doc[key]
   if (value === undefined) {
-    return { kind: "absent" };
+    return { kind: 'absent' }
   }
 
-  return typeof value === "string"
-    ? { kind: "string", value }
-    : { kind: "malformed", observed: describeValue(value) };
+  return typeof value === 'string'
+    ? { kind: 'string', value }
+    : { kind: 'malformed', observed: describeValue(value) }
 }
 
 interface PandocProfileBase {
   /**
    * The filename of the defaults file
    */
-  name: string;
+  name: string
   /**
    * Zettlr ships with a few profiles by default. In order to ensure that there
    * is always a set of minimal profiles to export and import to, Zettlr will
@@ -74,7 +74,7 @@ interface PandocProfileBase {
    * flag, renderer elements can additionally indicate that. This helps prevent
    * some misconceptions, i.e. why certain files cannot be deleted.
    */
-  isProtected?: boolean;
+  isProtected?: boolean
 }
 
 /**
@@ -83,20 +83,20 @@ interface PandocProfileBase {
  * reach the exporter or the importer.
  */
 export interface ValidPandocProfile extends PandocProfileBase {
-  isInvalid: false;
+  isInvalid: false
   /**
    * The writer the profile declares, verbatim
    */
-  writer: string;
+  writer: string
   /**
    * The reader the profile declares, verbatim
    */
-  reader: string;
+  reader: string
   /**
    * The Pandoc template the profile declares (resolved by name from the Pandoc
    * data directory), if any. Surfaced for export observability.
    */
-  template?: string;
+  template?: string
 }
 
 /**
@@ -105,105 +105,105 @@ export interface ValidPandocProfile extends PandocProfileBase {
  * defaults editor still lists these so that the user can repair them.
  */
 export interface InvalidPandocProfile extends PandocProfileBase {
-  isInvalid: true;
+  isInvalid: true
   /**
    * What made the profile unusable, as observed while reading the file
    */
-  reason: string;
+  reason: string
 }
 
-export type PandocProfileMetadata = ValidPandocProfile | InvalidPandocProfile;
+export type PandocProfileMetadata = ValidPandocProfile|InvalidPandocProfile
 
 export type AssetsProviderIPCContract = {
-  "get-filter": {
-    request: { payload: { filename: string } };
-    response: string;
-  };
-  "set-filter": {
-    request: { payload: { filename: string; contents: string } };
-    response: boolean;
-  };
-  "rename-filter": {
-    request: { payload: { oldName: string; newName: string } };
-    response: boolean;
-  };
-  "remove-filter": {
-    request: { payload: { filename: string } };
-    response: boolean;
-  };
-  "list-filter": {
-    request: { payload?: undefined };
-    response: string[];
-  };
-  "list-protected-filter": {
-    request: { payload?: undefined };
-    response: string[];
-  };
-  "get-defaults-file": {
-    request: { payload: { filename: string } };
-    response: string;
-  };
-  "set-defaults-file": {
-    request: { payload: { filename: string; contents: string } };
-    response: boolean;
-  };
-  "rename-defaults-file": {
-    request: { payload: { oldName: string; newName: string } };
-    response: boolean;
-  };
-  "remove-defaults-file": {
-    request: { payload: { filename: string } };
-    response: boolean;
-  };
-  "get-snippet": {
-    request: { payload: { name: string } };
-    response: string;
-  };
-  "remove-snippet": {
-    request: { payload: { name: string } };
-    response: boolean;
-  };
-  "rename-snippet": {
-    request: { payload: { name: string; newName: string } };
-    response: boolean;
-  };
-  "set-snippet": {
-    request: { payload: { name: string; contents: string } };
-    response: boolean;
-  };
-  "list-defaults": {
-    request: { payload?: undefined };
-    response: PandocProfileMetadata[];
-  };
-  "list-export-profiles": {
-    request: { payload?: undefined };
-    response: PandocProfileMetadata[];
-  };
-  "list-available-filters": {
-    request: { payload?: undefined };
-    response: string[];
-  };
+  'get-filter': {
+    request: { payload: { filename: string } }
+    response: string
+  }
+  'set-filter': {
+    request: { payload: { filename: string, contents: string } }
+    response: boolean
+  }
+  'rename-filter': {
+    request: { payload: { oldName: string, newName: string } }
+    response: boolean
+  }
+  'remove-filter': {
+    request: { payload: { filename: string } }
+    response: boolean
+  }
+  'list-filter': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+  'list-protected-filter': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+  'get-defaults-file': {
+    request: { payload: { filename: string } }
+    response: string
+  }
+  'set-defaults-file': {
+    request: { payload: { filename: string, contents: string } }
+    response: boolean
+  }
+  'rename-defaults-file': {
+    request: { payload: { oldName: string, newName: string } }
+    response: boolean
+  }
+  'remove-defaults-file': {
+    request: { payload: { filename: string } }
+    response: boolean
+  }
+  'get-snippet': {
+    request: { payload: { name: string } }
+    response: string
+  }
+  'remove-snippet': {
+    request: { payload: { name: string } }
+    response: boolean
+  }
+  'rename-snippet': {
+    request: { payload: { name: string, newName: string } }
+    response: boolean
+  }
+  'set-snippet': {
+    request: { payload: { name: string, contents: string } }
+    response: boolean
+  }
+  'list-defaults': {
+    request: { payload?: undefined }
+    response: PandocProfileMetadata[]
+  }
+  'list-export-profiles': {
+    request: { payload?: undefined }
+    response: PandocProfileMetadata[]
+  }
+  'list-available-filters': {
+    request: { payload?: undefined }
+    response: string[]
+  }
   // The open-*-directory commands answer with shell.openPath's error string,
   // empty when the directory opened.
-  "open-defaults-directory": {
-    request: { payload?: undefined };
-    response: string;
-  };
-  "open-snippets-directory": {
-    request: { payload?: undefined };
-    response: string;
-  };
-  "open-filter-directory": {
-    request: { payload?: undefined };
-    response: string;
-  };
-  "list-snippets": {
-    request: { payload?: undefined };
-    response: string[];
-  };
-};
+  'open-defaults-directory': {
+    request: { payload?: undefined }
+    response: string
+  }
+  'open-snippets-directory': {
+    request: { payload?: undefined }
+    response: string
+  }
+  'open-filter-directory': {
+    request: { payload?: undefined }
+    response: string
+  }
+  'list-snippets': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+}
 
-export type AssetsProviderIPCAPI = IPCMessage<AssetsProviderIPCContract>;
+export type AssetsProviderIPCAPI = IPCMessage<AssetsProviderIPCContract>
 
 export default class AssetsProvider extends ProviderContract {
   /**
@@ -211,19 +211,19 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @var {string}
    */
-  private readonly _defaultsPath: string;
+  private readonly _defaultsPath: string
   /**
    * Holds the path where snippets can be found.
    *
    * @var {string}
    */
-  private readonly _snippetsPath: string;
+  private readonly _snippetsPath: string
   /**
    * Holds the path where Lua filters can be found.
    *
    * @var {string}
    */
-  private readonly _filterPath: string;
+  private readonly _filterPath: string
   /**
    * Holds a list of all protected defaults files. Protected defaults files are
    * those that come by default with the app. Protected simply means here that
@@ -232,7 +232,7 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @var {string[]}
    */
-  private readonly _protectedDefaults: string[];
+  private readonly _protectedDefaults: string[]
 
   /**
    * Holds a list of all protected filters. Protected filters are those that
@@ -241,122 +241,118 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @var {string[]}
    */
-  private readonly _protectedFilters: string[];
+  private readonly _protectedFilters: string[]
 
-  constructor(private readonly _logger: LogProvider) {
-    super();
+  constructor (private readonly _logger: LogProvider) {
+    super()
 
-    this._defaultsPath = path.join(app.getPath("userData"), "/defaults");
-    this._snippetsPath = path.join(app.getPath("userData"), "/snippets");
-    this._filterPath = path.join(app.getPath("userData"), "/lua-filter");
-    this._protectedDefaults = [];
-    this._protectedFilters = [];
+    this._defaultsPath = path.join(app.getPath('userData'), '/defaults')
+    this._snippetsPath = path.join(app.getPath('userData'), '/snippets')
+    this._filterPath = path.join(app.getPath('userData'), '/lua-filter')
+    this._protectedDefaults = []
+    this._protectedFilters = []
 
-    ipcMain.handle("assets-provider", async (event, message: AssetsProviderIPCAPI) => {
-      const { command, payload } = message;
+    ipcMain.handle('assets-provider', async (event, message: AssetsProviderIPCAPI) => {
+      const { command, payload } = message
       // NOTE: Any *renderer* who requests a defaults file will always receive
       // the verbatim file contents, not a parsed object. Renderers who need to
       // work with the file contents programmatically should thus make use of
       // the bundled YAML module to parse and stringify the files accordingly.
-      if (command === "get-filter") {
-        return await this.getFilter(payload.filename);
-      } else if (command === "set-filter") {
-        return await this.setFilter(payload.filename, payload.contents);
-      } else if (command === "rename-filter") {
-        return await this.renameFilter(payload.oldName, payload.newName);
-      } else if (command === "remove-filter") {
-        return await this.removeFilter(payload.filename);
-      } else if (command === "list-filter") {
-        return await this.listFilters();
-      } else if (command === "list-protected-filter") {
-        return this.listProtectedFilters();
-      } else if (command === "open-filter-directory") {
-        this._logger.info(`[Assets Provider] Opening path ${this._filterPath}`);
-        return await shell.openPath(this._filterPath);
-      } else if (command === "get-defaults-file") {
-        return await this.getDefaultsFileContents(payload.filename);
-      } else if (command === "set-defaults-file") {
-        return await this.setDefaultsFile(payload.filename, payload.contents, true);
-      } else if (command === "rename-defaults-file") {
-        return await this.renameDefaultsFile(payload.oldName, payload.newName);
-      } else if (command === "remove-defaults-file") {
-        return await this.removeDefaultsFile(payload.filename);
-      } else if (command === "list-defaults") {
-        return await this.listDefaults();
-      } else if (command === "list-export-profiles") {
-        const profiles = await this.listDefaults();
-        const scripts = isAppServiceContainerReady()
-          ? getAppServiceContainer().config.get().export.scripts
-          : [];
-        const custom = getCustomProfiles(scripts);
+      if (command === 'get-filter') {
+        return await this.getFilter(payload.filename)
+      } else if (command === 'set-filter') {
+        return await this.setFilter(payload.filename, payload.contents)
+      } else if (command === 'rename-filter') {
+        return await this.renameFilter(payload.oldName, payload.newName)
+      } else if (command === 'remove-filter') {
+        return await this.removeFilter(payload.filename)
+      } else if (command === 'list-filter') {
+        return await this.listFilters()
+      } else if (command === 'list-protected-filter') {
+        return this.listProtectedFilters()
+      } else if (command === 'open-filter-directory') {
+        this._logger.info(`[Assets Provider] Opening path ${this._filterPath}`)
+        return await shell.openPath(this._filterPath)
+      } else if (command === 'get-defaults-file') {
+        return await this.getDefaultsFileContents(payload.filename)
+      } else if (command === 'set-defaults-file') {
+        return await this.setDefaultsFile(payload.filename, payload.contents, true)
+      } else if (command === 'rename-defaults-file') {
+        return await this.renameDefaultsFile(payload.oldName, payload.newName)
+      } else if (command === 'remove-defaults-file') {
+        return await this.removeDefaultsFile(payload.filename)
+      } else if (command === 'list-defaults') {
+        return await this.listDefaults()
+      } else if (command === 'list-export-profiles') {
+        const profiles = await this.listDefaults()
+        const scripts = isAppServiceContainerReady() ? getAppServiceContainer().config.get().export.scripts : []
+        const custom = getCustomProfiles(scripts)
         // Custom profiles (e.g. the compile-pandoc PDF) override any same-named
         // defaults file. userData/defaults is copied once and never pruned, so a
         // stale shipped default (e.g. an old xelatex PDF.yaml renamed/removed in
         // a later version) can linger there; it must not shadow the custom
         // profile of the same name in the export menu.
-        const customNames = new Set(custom.map((p) => p.name));
-        return profiles.filter((p) => !customNames.has(p.name)).concat(custom);
-      } else if (command === "list-available-filters") {
-        return await this.listAvailableFilters();
-      } else if (command === "open-defaults-directory") {
-        this._logger.info(`[AssetsProvider] Opening path ${this._defaultsPath}`);
-        return await shell.openPath(this._defaultsPath);
-      } else if (command === "get-snippet") {
-        return await this.getSnippet(payload.name);
-      } else if (command === "set-snippet") {
-        return await this.setSnippet(payload.name, payload.contents);
-      } else if (command === "remove-snippet") {
-        return await this.removeSnippet(payload.name);
-      } else if (command === "list-snippets") {
-        return await this.listSnippets();
-      } else if (command === "rename-snippet") {
-        return await this.renameSnippet(payload.name, payload.newName);
-      } else if (command === "open-snippets-directory") {
-        this._logger.info(`[AssetsProvider] Opening path ${this._snippetsPath}`);
-        return await shell.openPath(this._snippetsPath);
+        const customNames = new Set(custom.map(p => p.name))
+        return profiles.filter(p => !customNames.has(p.name)).concat(custom)
+      } else if (command === 'list-available-filters') {
+        return await this.listAvailableFilters()
+      } else if (command === 'open-defaults-directory') {
+        this._logger.info(`[AssetsProvider] Opening path ${this._defaultsPath}`)
+        return await shell.openPath(this._defaultsPath)
+      } else if (command === 'get-snippet') {
+        return await this.getSnippet(payload.name)
+      } else if (command === 'set-snippet') {
+        return await this.setSnippet(payload.name, payload.contents)
+      } else if (command === 'remove-snippet') {
+        return await this.removeSnippet(payload.name)
+      } else if (command === 'list-snippets') {
+        return await this.listSnippets()
+      } else if (command === 'rename-snippet') {
+        return await this.renameSnippet(payload.name, payload.newName)
+      } else if (command === 'open-snippets-directory') {
+        this._logger.info(`[AssetsProvider] Opening path ${this._snippetsPath}`)
+        return await shell.openPath(this._snippetsPath)
       }
-    });
+    })
   }
 
-  async boot(): Promise<void> {
-    this._logger.verbose("Assets provider starting up ...");
+  async boot (): Promise<void> {
+    this._logger.verbose('Assets provider starting up ...')
     // First, ensure all required default files are where they should be.
     // Required are those defaults files which are in the assets/defaults
     // directory
 
-    const defaultsFiles = await fs.readdir(path.join(__dirname, "./assets/defaults"));
-    const defaults = defaultsFiles.filter((file) => /\.ya?ml$/.test(file));
+    const defaultsFiles = await fs.readdir(path.join(__dirname, './assets/defaults'))
+    const defaults = defaultsFiles.filter(file => /\.ya?ml$/.test(file))
     for (const file of defaults) {
-      this._protectedDefaults.push(file);
-      const absolutePath = path.join(this._defaultsPath, file);
+      this._protectedDefaults.push(file)
+      const absolutePath = path.join(this._defaultsPath, file)
       try {
-        await fs.lstat(absolutePath);
+        await fs.lstat(absolutePath)
       } catch {
-        this._logger.warning(
-          `[Assets Provider] Required defaults file ${file} not found. Copying ...`,
-        );
-        await fs.copyFile(path.join(__dirname, "./assets/defaults", file), absolutePath);
+        this._logger.warning(`[Assets Provider] Required defaults file ${file} not found. Copying ...`)
+        await fs.copyFile(path.join(__dirname, './assets/defaults', file), absolutePath)
       }
     }
 
     // Next, do the same for the filters
-    const filterFiles = await fs.readdir(path.join(__dirname, "./assets/lua-filter"));
-    const filters = filterFiles.filter((file) => /\.lua$/.test(file));
+    const filterFiles = await fs.readdir(path.join(__dirname, './assets/lua-filter'))
+    const filters = filterFiles.filter(file => /\.lua$/.test(file))
     for (const file of filters) {
-      this._protectedFilters.push(file);
-      const absolutePath = path.join(this._filterPath, file);
+      this._protectedFilters.push(file)
+      const absolutePath = path.join(this._filterPath, file)
       try {
         // If the file doesn't exist, lstat will throw an error. Otherwise, check
         // that the filter shipped with this version is newer. If so, replace.
-        const existingStat = await fs.lstat(absolutePath);
-        const newStat = await fs.lstat(path.join(__dirname, "./assets/lua-filter", file));
+        const existingStat = await fs.lstat(absolutePath)
+        const newStat = await fs.lstat(path.join(__dirname, './assets/lua-filter', file))
         if (newStat.mtimeMs > existingStat.mtimeMs) {
-          this._logger.warning(`[Assets Provider] Found outdated filter ${file}; copying ...`);
-          await fs.copyFile(path.join(__dirname, "./assets/lua-filter", file), absolutePath);
+          this._logger.warning(`[Assets Provider] Found outdated filter ${file}; copying ...`)
+          await fs.copyFile(path.join(__dirname, './assets/lua-filter', file), absolutePath)
         }
       } catch {
-        this._logger.warning(`[Assets Provider] Required filter ${file} not found. Copying ...`);
-        await fs.copyFile(path.join(__dirname, "./assets/lua-filter", file), absolutePath);
+        this._logger.warning(`[Assets Provider] Required filter ${file} not found. Copying ...`)
+        await fs.copyFile(path.join(__dirname, './assets/lua-filter', file), absolutePath)
       }
     }
   }
@@ -366,8 +362,8 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<void>} Resolves after successful shutdown
    */
-  async shutdown(): Promise<void> {
-    this._logger.verbose("Assets provider shutting down ...");
+  async shutdown (): Promise<void> {
+    this._logger.verbose('Assets provider shutting down ...')
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -381,10 +377,10 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<string>}            The filter contents
    */
-  async getFilter(filename: string): Promise<string> {
-    const absPath = path.join(this._filterPath, filename);
-    const lua = await fs.readFile(absPath, { encoding: "utf-8" });
-    return lua;
+  async getFilter (filename: string): Promise<string> {
+    const absPath = path.join(this._filterPath, filename)
+    const lua = await fs.readFile(absPath, { encoding: 'utf-8' })
+    return lua
   }
 
   /**
@@ -395,28 +391,25 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<boolean>}            Whether the command succeeded.
    */
-  async setFilter(filename: string, contents: string): Promise<boolean> {
-    filename = filename.trim();
-    if (filename === "") {
-      throw new Error("Cannot set Lua filter: Filename was empty.");
+  async setFilter (filename: string, contents: string): Promise<boolean> {
+    filename = filename.trim()
+    if (filename === '') {
+      throw new Error('Cannot set Lua filter: Filename was empty.')
     }
 
     if (!/\.lua$/i.test(filename)) {
-      filename += filename.endsWith(".") ? "lua" : ".lua";
+      filename += filename.endsWith('.') ? 'lua' : '.lua'
     }
 
-    const absPath = path.join(this._filterPath, filename);
+    const absPath = path.join(this._filterPath, filename)
 
     try {
       // Stringify the new defaults according to the verbatim flag
-      await fs.writeFile(absPath, contents);
-      return true;
+      await fs.writeFile(absPath, contents)
+      return true
     } catch (err: unknown) {
-      this._logger.error(
-        `[Assets Provider] Could not save lua filter: ${err instanceof Error ? err.message : "unknown error"}`,
-        err,
-      );
-      return false;
+      this._logger.error(`[Assets Provider] Could not save lua filter: ${err instanceof Error ? err.message : 'unknown error'}`, err)
+      return false
     }
   }
 
@@ -428,32 +421,29 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<boolean>}           Whether the command succeeded.
    */
-  async renameFilter(oldName: string, newName: string): Promise<boolean> {
-    newName = newName.trim();
-    oldName = oldName.trim();
-    if (newName === "" || oldName === "") {
-      throw new Error("Cannot rename lua filter: Filename was empty.");
+  async renameFilter (oldName: string, newName: string): Promise<boolean> {
+    newName = newName.trim()
+    oldName = oldName.trim()
+    if (newName === '' || oldName === '') {
+      throw new Error('Cannot rename lua filter: Filename was empty.')
     }
 
     if (!/\.lua$/i.test(newName)) {
-      newName += newName.endsWith(".") ? "lua" : ".lua";
+      newName += newName.endsWith('.') ? 'lua' : '.lua'
     }
 
-    const oldPath = path.join(this._filterPath, oldName);
-    const newPath = path.join(this._filterPath, newName);
+    const oldPath = path.join(this._filterPath, oldName)
+    const newPath = path.join(this._filterPath, newName)
 
     try {
-      await fs.rename(oldPath, newPath);
+      await fs.rename(oldPath, newPath)
       if (this._protectedFilters.includes(oldName)) {
-        await this.restoreFilterFor(oldName);
+        await this.restoreFilterFor(oldName)
       }
-      return true;
+      return true
     } catch (err: unknown) {
-      this._logger.error(
-        `[Assets Provider] Could not rename lua filter from ${oldPath} to ${newPath}.`,
-        err,
-      );
-      return false;
+      this._logger.error(`[Assets Provider] Could not rename lua filter from ${oldPath} to ${newPath}.`, err)
+      return false
     }
   }
 
@@ -464,19 +454,19 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<boolean>}            Whether the command succeeded.
    */
-  async removeFilter(filename: string): Promise<boolean> {
-    const absPath = path.join(this._filterPath, filename);
+  async removeFilter (filename: string): Promise<boolean> {
+    const absPath = path.join(this._filterPath, filename)
     try {
-      await fs.unlink(absPath);
+      await fs.unlink(absPath)
       // If removing that file removed a protected one, restore it immediately.
       // This is effectively the same as restoring the file.
       if (this._protectedFilters.includes(filename)) {
-        await this.restoreFilterFor(filename);
+        await this.restoreFilterFor(filename)
       }
-      return true;
+      return true
     } catch (err: unknown) {
-      this._logger.error(`[Assets Provider] Could not remove lua filter: ${absPath}`, err);
-      return false;
+      this._logger.error(`[Assets Provider] Could not remove lua filter: ${absPath}`, err)
+      return false
     }
   }
 
@@ -487,18 +477,18 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<boolean>}            Whether the command succeeded.
    */
-  async restoreFilterFor(filename: string): Promise<boolean> {
-    const source = path.join(__dirname, "./assets/lua-filter", filename);
-    const target = path.join(this._filterPath, filename);
+  async restoreFilterFor (filename: string): Promise<boolean> {
+    const source = path.join(__dirname, './assets/lua-filter', filename)
+    const target = path.join(this._filterPath, filename)
 
     try {
-      await fs.copyFile(source, target);
+      await fs.copyFile(source, target)
     } catch (err: unknown) {
-      this._logger.error(`[Assets Provider] Could not restore filter file ${filename}!`, err);
-      return false;
+      this._logger.error(`[Assets Provider] Could not restore filter file ${filename}!`, err)
+      return false
     }
 
-    return true;
+    return true
   }
 
   /**
@@ -511,11 +501,11 @@ export default class AssetsProvider extends ProviderContract {
    * @return  {Promise<string>[]}                       Resolves with an array
    *                                                    of filters.
    */
-  async listFilters(returnAbsolutePaths: boolean = false): Promise<string[]> {
-    const files = await fs.readdir(this._filterPath);
+  async listFilters (returnAbsolutePaths: boolean = false): Promise<string[]> {
+    const files = await fs.readdir(this._filterPath)
     return files
-      .filter((file) => /\.lua$/i.test(file))
-      .map((file) => (returnAbsolutePaths ? path.join(this._filterPath, file) : file));
+      .filter(file => /\.lua$/i.test(file))
+      .map(file => returnAbsolutePaths ? path.join(this._filterPath, file) : file)
   }
 
   /**
@@ -526,18 +516,18 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<string[]>}  Sorted, de-duplicated filter filenames.
    */
-  async listAvailableFilters(): Promise<string[]> {
-    const dirs = [path.join(app.getPath("home"), ".pandoc", "filters"), this._filterPath];
-    const names = new Set<string>();
+  async listAvailableFilters (): Promise<string[]> {
+    const dirs = [ path.join(app.getPath('home'), '.pandoc', 'filters'), this._filterPath ]
+    const names = new Set<string>()
     for (const dir of dirs) {
-      const files = await fs.readdir(dir).catch(() => [] as string[]);
+      const files = await fs.readdir(dir).catch(() => [] as string[])
       for (const file of files) {
         if (/\.lua$/i.test(file)) {
-          names.add(file);
+          names.add(file)
         }
       }
     }
-    return Array.from(names).sort();
+    return Array.from(names).sort()
   }
 
   /**
@@ -545,8 +535,8 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {string[]}  A list of protected filters
    */
-  public listProtectedFilters(): string[] {
-    return this._protectedFilters;
+  public listProtectedFilters (): string[] {
+    return this._protectedFilters
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -560,9 +550,9 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<string>}              The unparsed YAML source
    */
-  async getDefaultsFileContents(filename: string): Promise<string> {
-    const absPath = path.join(this._defaultsPath, filename);
-    return await fs.readFile(absPath, { encoding: "utf-8" });
+  async getDefaultsFileContents (filename: string): Promise<string> {
+    const absPath = path.join(this._defaultsPath, filename)
+    return await fs.readFile(absPath, { encoding: 'utf-8' })
   }
 
   /**
@@ -572,18 +562,16 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<Record<string, unknown>>}               The parsed defaults
    */
-  async getDefaultsFile(filename: string): Promise<Record<string, unknown>> {
-    const parsed: unknown = YAML.parse(await this.getDefaultsFileContents(filename));
+  async getDefaultsFile (filename: string): Promise<Record<string, unknown>> {
+    const parsed: unknown = YAML.parse(await this.getDefaultsFileContents(filename))
     if (!isRecord(parsed)) {
       // Not an invariant: listDefaults read the file when it built the profile
       // list, but this reads it again, and the user can have saved a broken
       // file in between. The message therefore goes to the user, who is the
       // only one who can fix it.
-      throw new Error(
-        `Defaults file ${filename} holds ${describeValue(parsed)} where a YAML mapping was expected. Repair the profile in the Assets Manager.`,
-      );
+      throw new Error(`Defaults file ${filename} holds ${describeValue(parsed)} where a YAML mapping was expected. Repair the profile in the Assets Manager.`)
     }
-    return parsed;
+    return parsed
   }
 
   /**
@@ -595,33 +583,26 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<boolean>}      Whether or not the operation was successful.
    */
-  async setDefaultsFile(
-    filename: string,
-    newDefaults: string,
-    verbatim: boolean = false,
-  ): Promise<boolean> {
-    filename = filename.trim();
-    if (filename === "") {
-      throw new Error("Cannot set defaults file: Filename was empty.");
+  async setDefaultsFile (filename: string, newDefaults: string, verbatim: boolean = false): Promise<boolean> {
+    filename = filename.trim()
+    if (filename === '') {
+      throw new Error('Cannot set defaults file: Filename was empty.')
     }
 
     if (!/\.ya?ml$/i.test(filename)) {
-      filename += filename.endsWith(".") ? "yaml" : ".yaml";
+      filename += filename.endsWith('.') ? 'yaml' : '.yaml'
     }
 
-    const absPath = path.join(this._defaultsPath, filename);
+    const absPath = path.join(this._defaultsPath, filename)
 
     try {
       // Stringify the new defaults according to the verbatim flag
-      const yaml = verbatim ? newDefaults : YAML.stringify(newDefaults);
-      await fs.writeFile(absPath, yaml);
-      return true;
+      const yaml = (verbatim) ? newDefaults : YAML.stringify(newDefaults)
+      await fs.writeFile(absPath, yaml)
+      return true
     } catch (err: unknown) {
-      this._logger.error(
-        `[Assets Provider] Could not save defaults file: ${err instanceof Error ? err.message : "unknown error"}`,
-        err,
-      );
-      return false;
+      this._logger.error(`[Assets Provider] Could not save defaults file: ${err instanceof Error ? err.message : 'unknown error'}`, err)
+      return false
     }
   }
 
@@ -633,31 +614,31 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<boolean>}           True upon success
    */
-  async renameDefaultsFile(oldName: string, newName: string): Promise<boolean> {
-    newName = newName.trim();
-    oldName = oldName.trim();
-    if (newName === "" || oldName === "") {
-      throw new Error("Cannot rename defaults file: Filename was empty.");
+  async renameDefaultsFile (oldName: string, newName: string): Promise<boolean> {
+    newName = newName.trim()
+    oldName = oldName.trim()
+    if (newName === '' || oldName === '') {
+      throw new Error('Cannot rename defaults file: Filename was empty.')
     }
 
     if (!/\.ya?ml$/i.test(newName)) {
-      newName += newName.endsWith(".") ? "yaml" : ".yaml";
+      newName += newName.endsWith('.') ? 'yaml' : '.yaml'
     }
 
-    const oldPath = path.join(this._defaultsPath, oldName);
-    const newPath = path.join(this._defaultsPath, newName);
+    const oldPath = path.join(this._defaultsPath, oldName)
+    const newPath = path.join(this._defaultsPath, newName)
 
     try {
-      await fs.rename(oldPath, newPath);
+      await fs.rename(oldPath, newPath)
       // If renaming that file removed a protected one, restore it immediately.
       // This is effectively the same as duplicating the file.
       if (this._protectedDefaults.includes(oldName)) {
-        await this.restoreDefaultsFor(oldName);
+        await this.restoreDefaultsFor(oldName)
       }
-      return true;
+      return true
     } catch (err: unknown) {
-      this._logger.error(`[Assets Provider] Could not rename file ${oldPath} to ${newPath}.`, err);
-      return false;
+      this._logger.error(`[Assets Provider] Could not rename file ${oldPath} to ${newPath}.`, err)
+      return false
     }
   }
 
@@ -670,19 +651,19 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<boolean>}           Returns true upon success
    */
-  async removeDefaultsFile(filename: string): Promise<boolean> {
-    const absPath = path.join(this._defaultsPath, filename);
+  async removeDefaultsFile (filename: string): Promise<boolean> {
+    const absPath = path.join(this._defaultsPath, filename)
     try {
-      await fs.unlink(absPath);
+      await fs.unlink(absPath)
       // If removing that file removed a protected one, restore it immediately.
       // This is effectively the same as restoring the file.
       if (this._protectedDefaults.includes(filename)) {
-        await this.restoreDefaultsFor(filename);
+        await this.restoreDefaultsFor(filename)
       }
-      return true;
+      return true
     } catch (err: unknown) {
-      this._logger.error(`[Assets Provider] Could not remove defaults file: ${absPath}`, err);
-      return false;
+      this._logger.error(`[Assets Provider] Could not remove defaults file: ${absPath}`, err)
+      return false
     }
   }
 
@@ -694,18 +675,18 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<boolean>}           Returns true on success
    */
-  async restoreDefaultsFor(filename: string): Promise<boolean> {
-    const source = path.join(__dirname, "./assets/defaults", filename);
-    const target = path.join(this._defaultsPath, filename);
+  async restoreDefaultsFor (filename: string): Promise<boolean> {
+    const source = path.join(__dirname, './assets/defaults', filename)
+    const target = path.join(this._defaultsPath, filename)
 
     try {
-      await fs.copyFile(source, target);
+      await fs.copyFile(source, target)
     } catch (err: unknown) {
-      this._logger.error(`[Assets Provider] Could not restore defaults file ${filename}!`, err);
-      return false;
+      this._logger.error(`[Assets Provider] Could not restore defaults file ${filename}!`, err)
+      return false
     }
 
-    return true;
+    return true
   }
 
   /**
@@ -713,22 +694,20 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<PandocProfileMetadata[]>}The parsed metadata for all profiles
    */
-  async listDefaults(): Promise<PandocProfileMetadata[]> {
-    const profiles: PandocProfileMetadata[] = [];
+  async listDefaults (): Promise<PandocProfileMetadata[]> {
+    const profiles: PandocProfileMetadata[] = []
 
-    const defaultsFiles = await fs.readdir(this._defaultsPath);
-    const defaults = defaultsFiles.filter((file) => /\.ya?ml$/.test(file));
+    const defaultsFiles = await fs.readdir(this._defaultsPath)
+    const defaults = defaultsFiles.filter(file => /\.ya?ml$/.test(file))
     for (const file of defaults) {
-      const profile = await this.readProfile(file);
+      const profile = await this.readProfile(file)
       if (profile.isInvalid) {
-        this._logger.warning(
-          `[Assets Provider] Installed profile ${file} is unusable: ${profile.reason}`,
-        );
+        this._logger.warning(`[Assets Provider] Installed profile ${file} is unusable: ${profile.reason}`)
       }
-      profiles.push(profile);
+      profiles.push(profile)
     }
 
-    return profiles;
+    return profiles
   }
 
   /**
@@ -744,62 +723,56 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<PandocProfileMetadata>}          The parsed profile
    */
-  private async readProfile(file: string): Promise<PandocProfileMetadata> {
-    const isProtected = this._protectedDefaults.includes(file);
+  private async readProfile (file: string): Promise<PandocProfileMetadata> {
+    const isProtected = this._protectedDefaults.includes(file)
     const invalid = (reason: string): InvalidPandocProfile => {
-      return { name: file, isProtected, isInvalid: true, reason };
-    };
-
-    let contents: string;
-    try {
-      contents = await fs.readFile(path.join(this._defaultsPath, file), { encoding: "utf-8" });
-    } catch (err: unknown) {
-      return invalid(
-        `the file could not be read: ${err instanceof Error ? err.message : "unknown error"}`,
-      );
+      return { name: file, isProtected, isInvalid: true, reason }
     }
 
-    let parsed: unknown;
+    let contents: string
     try {
-      parsed = YAML.parse(contents);
+      contents = await fs.readFile(path.join(this._defaultsPath, file), { encoding: 'utf-8' })
     } catch (err: unknown) {
-      return invalid(
-        `the file is not valid YAML: ${err instanceof Error ? err.message : "unknown error"}`,
-      );
+      return invalid(`the file could not be read: ${err instanceof Error ? err.message : 'unknown error'}`)
+    }
+
+    let parsed: unknown
+    try {
+      parsed = YAML.parse(contents)
+    } catch (err: unknown) {
+      return invalid(`the file is not valid YAML: ${err instanceof Error ? err.message : 'unknown error'}`)
     }
 
     if (!isRecord(parsed)) {
-      return invalid(`the file holds ${describeValue(parsed)} where a YAML mapping was expected`);
+      return invalid(`the file holds ${describeValue(parsed)} where a YAML mapping was expected`)
     }
 
-    const writer = stringProperty(parsed, "writer");
-    const reader = stringProperty(parsed, "reader");
-    const template = stringProperty(parsed, "template");
+    const writer = stringProperty(parsed, 'writer')
+    const reader = stringProperty(parsed, 'reader')
+    const template = stringProperty(parsed, 'template')
 
-    if (writer.kind === "malformed") {
-      return invalid(`the writer is ${writer.observed}, but it must be a string`);
+    if (writer.kind === 'malformed') {
+      return invalid(`the writer is ${writer.observed}, but it must be a string`)
     }
 
-    if (reader.kind === "malformed") {
-      return invalid(`the reader is ${reader.observed}, but it must be a string`);
+    if (reader.kind === 'malformed') {
+      return invalid(`the reader is ${reader.observed}, but it must be a string`)
     }
 
-    if (template.kind === "malformed") {
-      return invalid(`the template is ${template.observed}, but it must be a string`);
+    if (template.kind === 'malformed') {
+      return invalid(`the template is ${template.observed}, but it must be a string`)
     }
 
-    if (writer.kind === "absent" || reader.kind === "absent") {
-      return invalid("the profile declares no reader, no writer, or neither");
+    if (writer.kind === 'absent' || reader.kind === 'absent') {
+      return invalid('the profile declares no reader, no writer, or neither')
     }
 
     // Zettlr can only use a profile if one of its two ends speaks one of
     // Zettlr's own formats, since one end is always a Zettlr document.
-    const readsZettlr = SUPPORTED_READERS.includes(parseReaderWriter(reader.value).name);
-    const writesZettlr = SUPPORTED_READERS.includes(parseReaderWriter(writer.value).name);
+    const readsZettlr = SUPPORTED_READERS.includes(parseReaderWriter(reader.value).name)
+    const writesZettlr = SUPPORTED_READERS.includes(parseReaderWriter(writer.value).name)
     if (!readsZettlr && !writesZettlr) {
-      return invalid(
-        `neither the reader "${reader.value}" nor the writer "${writer.value}" is a format Zettlr supports`,
-      );
+      return invalid(`neither the reader "${reader.value}" nor the writer "${writer.value}" is a format Zettlr supports`)
     }
 
     return {
@@ -808,8 +781,8 @@ export default class AssetsProvider extends ProviderContract {
       isInvalid: false,
       writer: writer.value,
       reader: reader.value,
-      template: template.kind === "string" ? template.value : undefined,
-    };
+      template: template.kind === 'string' ? template.value : undefined
+    }
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -823,13 +796,13 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<string>}        The file contents
    */
-  async getSnippet(name: string): Promise<string> {
-    if (!name.toLowerCase().endsWith(".tpl.md")) {
-      name += ".tpl.md";
+  async getSnippet (name: string): Promise<string> {
+    if (!name.toLowerCase().endsWith('.tpl.md')) {
+      name += '.tpl.md'
     }
 
-    const filePath = path.join(this._snippetsPath, name);
-    return await fs.readFile(filePath, { encoding: "utf-8" });
+    const filePath = path.join(this._snippetsPath, name)
+    return await fs.readFile(filePath, { encoding: 'utf-8' })
   }
 
   /**
@@ -841,27 +814,24 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<boolean>}           Returns false if there was an error
    */
-  async setSnippet(name: string, content: string): Promise<boolean> {
-    name = name.trim();
-    if (name === "") {
-      throw new Error("Cannot set snippet: Name was empty.");
+  async setSnippet (name: string, content: string): Promise<boolean> {
+    name = name.trim()
+    if (name === '') {
+      throw new Error('Cannot set snippet: Name was empty.')
     }
 
-    if (!name.toLowerCase().endsWith(".tpl.md")) {
-      name += ".tpl.md";
+    if (!name.toLowerCase().endsWith('.tpl.md')) {
+      name += '.tpl.md'
     }
 
     try {
-      const filePath = path.join(this._snippetsPath, name);
-      await fs.writeFile(filePath, content);
-      broadcastIpcMessage("assets-provider", "snippets-updated");
-      return true;
+      const filePath = path.join(this._snippetsPath, name)
+      await fs.writeFile(filePath, content)
+      broadcastIpcMessage('assets-provider', 'snippets-updated')
+      return true
     } catch (err: unknown) {
-      this._logger.error(
-        `[Assets Provider] Could not save snippets file: ${err instanceof Error ? err.message : "unknown error"}`,
-        err,
-      );
-      return false;
+      this._logger.error(`[Assets Provider] Could not save snippets file: ${err instanceof Error ? err.message : 'unknown error'}`, err)
+      return false
     }
   }
 
@@ -872,21 +842,18 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<boolean>}        Returns false if there was an error
    */
-  async removeSnippet(name: string): Promise<boolean> {
+  async removeSnippet (name: string): Promise<boolean> {
     try {
-      if (!name.toLowerCase().endsWith(".tpl.md")) {
-        name += ".tpl.md";
+      if (!name.toLowerCase().endsWith('.tpl.md')) {
+        name += '.tpl.md'
       }
-      const filePath = path.join(this._snippetsPath, name);
-      await fs.unlink(filePath);
-      broadcastIpcMessage("assets-provider", "snippets-updated");
-      return true;
+      const filePath = path.join(this._snippetsPath, name)
+      await fs.unlink(filePath)
+      broadcastIpcMessage('assets-provider', 'snippets-updated')
+      return true
     } catch (err: unknown) {
-      this._logger.error(
-        `[Assets Provider] Could not remove snippets file: ${err instanceof Error ? err.message : "unknown error"}`,
-        err,
-      );
-      return false;
+      this._logger.error(`[Assets Provider] Could not remove snippets file: ${err instanceof Error ? err.message : 'unknown error'}`, err)
+      return false
     }
   }
 
@@ -898,34 +865,32 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<boolean>}           Returns false if there was an error.
    */
-  async renameSnippet(name: string, newName: string): Promise<boolean> {
-    name = name.trim();
-    newName = newName.trim();
+  async renameSnippet (name: string, newName: string): Promise<boolean> {
+    name = name.trim()
+    newName = newName.trim()
 
-    if (name === "" || newName === "") {
-      throw new Error("Cannot rename snippet: Name was empty.");
+    if (name === '' || newName === '') {
+      throw new Error('Cannot rename snippet: Name was empty.')
     }
 
-    if (!name.endsWith(".tpl.md")) {
-      name += ".tpl.md";
+    if (!name.endsWith('.tpl.md')) {
+      name += '.tpl.md'
     }
 
-    if (!newName.endsWith(".tpl.md")) {
-      newName += ".tpl.md";
+    if (!newName.endsWith('.tpl.md')) {
+      newName += '.tpl.md'
     }
 
     try {
-      const oldPath = path.join(this._snippetsPath, name);
-      const newPath = path.join(this._snippetsPath, newName);
-      await fs.rename(oldPath, newPath);
-      broadcastIpcMessage("assets-provider", "snippets-updated");
-      return true;
+
+      const oldPath = path.join(this._snippetsPath, name)
+      const newPath = path.join(this._snippetsPath, newName)
+      await fs.rename(oldPath, newPath)
+      broadcastIpcMessage('assets-provider', 'snippets-updated')
+      return true
     } catch (err: unknown) {
-      this._logger.error(
-        `[Assets Provider] Could not rename snippets file: ${err instanceof Error ? err.message : "unknown error"}`,
-        err,
-      );
-      return false;
+      this._logger.error(`[Assets Provider] Could not rename snippets file: ${err instanceof Error ? err.message : 'unknown error'}`, err)
+      return false
     }
   }
 
@@ -934,9 +899,9 @@ export default class AssetsProvider extends ProviderContract {
    *
    * @return  {Promise<string[]>}  The promise resolves with a list of existing snippets.
    */
-  async listSnippets(): Promise<string[]> {
-    const files = await fs.readdir(this._snippetsPath);
-    const snippetFiles = files.filter((file) => /\.tpl\.md$/.test(file));
-    return snippetFiles.map((file) => file.replace(/\.tpl\.md$/, ""));
+  async listSnippets (): Promise<string[]> {
+    const files = await fs.readdir(this._snippetsPath)
+    const snippetFiles = files.filter(file => /\.tpl\.md$/.test(file))
+    return snippetFiles.map(file => file.replace(/\.tpl\.md$/, ''))
   }
 }

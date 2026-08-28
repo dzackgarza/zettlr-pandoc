@@ -15,16 +15,16 @@
  * END HEADER
  */
 
-import { type AppServiceContainer } from "../../app-service-container";
-import { type FlowmarkResult, formatMarkdownText } from "../../util/flowmark-format";
-import ZettlrCommand from "./zettlr-command";
+import ZettlrCommand from './zettlr-command'
+import { formatMarkdownText, type FlowmarkResult } from '../../util/flowmark-format'
+import { type AppServiceContainer } from '../../app-service-container'
 
 export default class FormatDocument extends ZettlrCommand {
-  constructor(app: AppServiceContainer) {
-    super(app, "format-document");
+  constructor (app: AppServiceContainer) {
+    super(app, 'format-document')
   }
 
-  async run(evt: string, arg: string): Promise<FlowmarkResult> {
-    return await formatMarkdownText(arg, { env: process.env });
+  async run (evt: string, arg: string): Promise<FlowmarkResult> {
+    return await formatMarkdownText(arg, { env: process.env })
   }
 }

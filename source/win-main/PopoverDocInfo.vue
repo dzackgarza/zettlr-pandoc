@@ -55,45 +55,45 @@
  *
  * END HEADER
  */
-import { trans } from "@common/i18n-renderer";
-import { type DocumentInfo } from "@common/modules/markdown-editor";
-import localiseNumber from "@common/util/localise-number";
-import PopoverWrapper from "@common/vue/PopoverWrapper.vue";
-import { computed } from "vue";
+import { trans } from '@common/i18n-renderer'
+import localiseNumber from '@common/util/localise-number'
+import PopoverWrapper from '@common/vue/PopoverWrapper.vue'
+import { computed } from 'vue'
+import { type DocumentInfo } from '@common/modules/markdown-editor'
 
-const wordsLabel = trans("words");
-const charsLabel = trans("characters");
-const noDocumentMessage = trans("No open document");
+const wordsLabel = trans('words')
+const charsLabel = trans('characters')
+const noDocumentMessage = trans('No open document')
 
 const props = defineProps<{
-  target: HTMLElement;
-  docInfo: DocumentInfo | undefined;
-  shouldCountChars: boolean;
-}>();
+  target: HTMLElement
+  docInfo: DocumentInfo|undefined
+  shouldCountChars: boolean
+}>()
 
-const emit = defineEmits<(e: "close") => void>();
+const emit = defineEmits<(e: 'close') => void>()
 
 const selectedWords = computed(() => {
   if (props.docInfo == null) {
-    return "0";
+    return '0'
   } else {
-    return localiseNumber(props.docInfo.words);
+    return localiseNumber(props.docInfo.words)
   }
-});
+})
 
 const selectedChars = computed(() => {
   if (props.docInfo == null) {
-    return "0";
+    return '0'
   } else {
-    return localiseNumber(props.docInfo.chars);
+    return localiseNumber(props.docInfo.chars)
   }
-});
+})
 
-function getWdSelectedLabel(wordsOrChars: number): string {
+function getWdSelectedLabel (wordsOrChars: number): string {
   if (props.shouldCountChars) {
-    return trans("%s characters", localiseNumber(wordsOrChars));
+    return trans('%s characters', localiseNumber(wordsOrChars))
   } else {
-    return trans("%s words", localiseNumber(wordsOrChars));
+    return trans('%s words', localiseNumber(wordsOrChars))
   }
 }
 </script>

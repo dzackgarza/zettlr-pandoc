@@ -4,33 +4,29 @@
  * editor-pandoc-div-visual-entry.ts pattern.
  */
 
-import { EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
-import type { ProjectRootSpec } from "@dts/common/references";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import { EditorState } from '@codemirror/state'
+import { EditorView } from '@codemirror/view'
+import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
+import { renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
+import { renderCode } from 'source/common/modules/markdown-editor/renderers/render-code'
+import { renderEmphasis } from 'source/common/modules/markdown-editor/renderers/render-emphasis'
+import { renderReferenceChips } from 'source/common/modules/markdown-editor/renderers/render-reference-chips'
+import { renderReferenceDefinitions } from 'source/common/modules/markdown-editor/renderers/render-reference-definitions'
+import { renderPandocAttributes } from 'source/common/modules/markdown-editor/renderers/render-pandoc-attributes'
 import {
-  type EditorWorkspaceReferences,
   workspaceReferencesField,
   workspaceReferencesUpdate,
-} from "source/common/modules/markdown-editor/plugins/workspace-references-field";
-import { renderCitations } from "source/common/modules/markdown-editor/renderers/render-citations";
-import { renderCode } from "source/common/modules/markdown-editor/renderers/render-code";
-import { renderEmphasis } from "source/common/modules/markdown-editor/renderers/render-emphasis";
-import { renderPandocAttributes } from "source/common/modules/markdown-editor/renderers/render-pandoc-attributes";
-import { renderReferenceChips } from "source/common/modules/markdown-editor/renderers/render-reference-chips";
-import { renderReferenceDefinitions } from "source/common/modules/markdown-editor/renderers/render-reference-definitions";
-import {
-  defaultDark,
-  defaultLight,
-  editorTheme,
-} from "source/common/modules/markdown-editor/theme/editor";
-import { configField } from "source/common/modules/markdown-editor/util/configuration";
-import { extractReferences } from "source/common/pandoc-util/extract-references";
-import { resolveWorkspace } from "source/common/pandoc-util/resolve-references";
+  type EditorWorkspaceReferences
+} from 'source/common/modules/markdown-editor/plugins/workspace-references-field'
+import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
+import { extractReferences } from 'source/common/pandoc-util/extract-references'
+import { resolveWorkspace } from 'source/common/pandoc-util/resolve-references'
+import type { ProjectRootSpec } from '@dts/common/references'
 
 declare global {
   interface Window {
-    captureReady: Promise<void>;
+    captureReady: Promise<void>
   }
 }
 
@@ -58,7 +54,7 @@ $$ q(x) = x^2 $$ {#eq:intersection-form}
 \`\`\`{#lst:sage-run .python caption="Sage session"}
 L = IntegralLattice("U").direct_sum(IntegralLattice("E8").twist(2))
 \`\`\`
-`;
+`
 
 /** The citing document: chips, preserved punctuation, raw fallbacks. */
 const occurrences = `# Halphen surfaces of index two
@@ -76,7 +72,7 @@ Combine [@thm:torelli; @Ols04, Lem. 7.1] for the argument: the mixed cluster
 stays raw as well.
 
 For the construction of the pencil see [@Ols04, Lem. 7.1].
-`;
+`
 
 // ——— The resolution-states scene (ledger C4): a two-Project workspace in
 // which thm:torelli is defined in BOTH Projects (duplicate — the occurrence
@@ -93,7 +89,7 @@ points agree in the quotient of the type IV domain.
 :::
 
 $$ q(x) = x^2 $$ {#eq:intersection-form}
-`;
+`
 
 const stateDefinitionsB = `# Companion paper
 
@@ -106,7 +102,7 @@ which makes the key a workspace duplicate.
 Every Halphen pencil of index two degenerates to a union of two rational
 elliptic surfaces glued along a half-fiber.
 :::
-`;
+`
 
 const stateOccurrences = `# Reference resolution states
 
@@ -122,65 +118,61 @@ so it stays raw as well.
 
 The outside key @lem:halphen-degeneration resolves into ProjectB, so its
 chip renders normally.
-`;
+`
 
 const STATE_PROJECT_ROOTS: ProjectRootSpec[] = [
   {
-    rootPath: "ProjectA",
-    files: ["Definitions.md", "States.md"],
+    rootPath: 'ProjectA',
+    files: [ 'Definitions.md', 'States.md' ],
   },
   {
-    rootPath: "ProjectB",
-    files: ["Other_Paper.md"],
+    rootPath: 'ProjectB',
+    files: ['Other_Paper.md'],
   },
-];
+]
 
-function statesPayload(): EditorWorkspaceReferences {
+function statesPayload (): EditorWorkspaceReferences {
   const workspace = [
-    extractReferences("ProjectA/Definitions.md", stateDefinitionsA),
-    extractReferences("ProjectB/Other_Paper.md", stateDefinitionsB),
-    extractReferences("ProjectA/States.md", stateOccurrences),
-  ];
-  const snapshot = workspace[2];
+    extractReferences('ProjectA/Definitions.md', stateDefinitionsA),
+    extractReferences('ProjectB/Other_Paper.md', stateDefinitionsB),
+    extractReferences('ProjectA/States.md', stateOccurrences)
+  ]
+  const snapshot = workspace[2]
   return {
     snapshot,
-    workspaceOccurrences: workspace.flatMap((s) => s.occurrences),
+    workspaceOccurrences: workspace.flatMap(s => s.occurrences),
     resolutions: resolveWorkspace(workspace),
-    projectRoots: STATE_PROJECT_ROOTS,
-  };
+    projectRoots: STATE_PROJECT_ROOTS
+  }
 }
 
-function payloadFor(documentPath: string): EditorWorkspaceReferences {
+function payloadFor (documentPath: string): EditorWorkspaceReferences {
   const workspace = [
-    extractReferences("definitions.md", definitions),
-    extractReferences("occurrences.md", occurrences),
-  ];
-  const snapshot = workspace.find((candidate) => candidate.documentPath === documentPath);
+    extractReferences('definitions.md', definitions),
+    extractReferences('occurrences.md', occurrences)
+  ]
+  const snapshot = workspace.find(candidate => candidate.documentPath === documentPath)
   if (snapshot === undefined) {
-    throw new Error(`Unknown capture document: ${documentPath}`);
+    throw new Error(`Unknown capture document: ${documentPath}`)
   }
   return {
     snapshot,
-    workspaceOccurrences: workspace.flatMap((s) => s.occurrences),
-    resolutions: resolveWorkspace(workspace),
-  };
+    workspaceOccurrences: workspace.flatMap(s => s.occurrences),
+    resolutions: resolveWorkspace(workspace)
+  }
 }
 
-async function mount(): Promise<void> {
-  window.getCitationCallback = () => (citations) =>
-    citations
-      .map((citation) => {
-        return [citation.id, citation.locator, citation.suffix?.trimStart()]
-          .filter((part) => part !== undefined)
-          .join(" ");
-      })
-      .join("; ");
+async function mount (): Promise<void> {
+  window.getCitationCallback = () => citations => citations.map(citation => {
+    return [ citation.id, citation.locator, citation.suffix?.trimStart() ]
+      .filter(part => part !== undefined)
+      .join(' ')
+  }).join('; ')
 
-  const scene = document.body.dataset.scene ?? "occurrences";
-  const dark = document.body.dataset.dark === "true";
-  const documentPath = scene === "definitions" ? "definitions.md" : "occurrences.md";
-  const doc =
-    scene === "states" ? stateOccurrences : scene === "definitions" ? definitions : occurrences;
+  const scene = document.body.dataset.scene ?? 'occurrences'
+  const dark = document.body.dataset.dark === 'true'
+  const documentPath = scene === 'definitions' ? 'definitions.md' : 'occurrences.md'
+  const doc = scene === 'states' ? stateOccurrences : scene === 'definitions' ? definitions : occurrences
 
   const state = EditorState.create({
     doc,
@@ -204,24 +196,22 @@ async function mount(): Promise<void> {
       renderEmphasis,
       workspaceReferencesField,
     ],
-  });
+  })
 
-  const host = document.querySelector<HTMLElement>("#editor");
+  const host = document.querySelector<HTMLElement>('#editor')
   if (host === null) {
-    throw new Error("Visual capture host is missing");
+    throw new Error('Visual capture host is missing')
   }
 
-  const view = new EditorView({ state, parent: host });
+  const view = new EditorView({ state, parent: host })
   view.dispatch({
-    effects: workspaceReferencesUpdate.of(
-      scene === "states" ? statesPayload() : payloadFor(documentPath),
-    ),
-  });
-  await document.fonts.ready;
+    effects: workspaceReferencesUpdate.of(scene === 'states' ? statesPayload() : payloadFor(documentPath))
+  })
+  await document.fonts.ready
   // Give the badge layer its measure cycle before capturing.
   for (let i = 0; i < 3; i++) {
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
   }
 }
 
-window.captureReady = mount();
+window.captureReady = mount()

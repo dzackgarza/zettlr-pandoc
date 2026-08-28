@@ -15,16 +15,16 @@
  * END HEADER
  */
 
-import { app } from "electron";
-import fs from "fs";
-import path from "path";
-import { type Candidate } from "./find-lang-candidates";
-import isDir from "./is-dir";
-import isFile from "./is-file";
+import { type Candidate } from './find-lang-candidates'
+import path from 'path'
+import fs from 'fs'
+import { app } from 'electron'
+import isDir from './is-dir'
+import isFile from './is-file'
 
 export interface DictFileMetadata {
-  aff: string;
-  dic: string;
+  aff: string
+  dic: string
 }
 
 /**
@@ -32,34 +32,33 @@ export interface DictFileMetadata {
  * @param  {Array} [paths=[]] An array of paths to be searched. Defaults to standard paths.
  * @return {Array}       An array containing metadata for all found dictionaries.
  */
-export default function enumDictFiles(
-  paths = [path.join(app.getPath("userData"), "/dict"), path.join(__dirname, "dict")],
-): Array<Candidate & DictFileMetadata> {
-  let candidates: Array<Candidate & DictFileMetadata> = [];
+export default function enumDictFiles (paths = [ path.join(app.getPath('userData'), '/dict'), path.join(__dirname, 'dict') ]): Array<Candidate & DictFileMetadata> {
+  let candidates: Array<Candidate & DictFileMetadata> = []
 
   for (let p of paths) {
-    let list = fs.readdirSync(p);
+    let list = fs.readdirSync(p)
     for (let dir of list) {
       if (!isDir(path.join(p, dir))) {
-        continue;
+        continue
       }
       // Additional check to make sure the dictionaries are complete.
-      let aff = path.join(p, dir, dir + ".aff");
-      let dic = path.join(p, dir, dir + ".dic");
+      let aff = path.join(p, dir, dir + '.aff')
+      let dic = path.join(p, dir, dir + '.dic')
       if (!isFile(aff) || !isFile(dic)) {
         // Second try: index-based names
-        aff = path.join(p, dir, "index.aff");
-        dic = path.join(p, dir, "index.dic");
+        aff = path.join(p, dir, 'index.aff')
+        dic = path.join(p, dir, 'index.dic')
         if (!isFile(aff) || !isFile(dic)) {
-          continue;
+          continue
         }
       }
       // Only add the found dictionary if it is not already present. Useful
       // to override the shipped dictionaries.
-      if (candidates.find((elem) => elem.tag === dir) === undefined) {
-        candidates.push({ tag: dir, aff, dic });
+      if (candidates.find(elem => elem.tag === dir) === undefined) {
+        candidates.push({ tag: dir, aff, dic })
       }
+
     }
   }
-  return candidates;
+  return candidates
 }

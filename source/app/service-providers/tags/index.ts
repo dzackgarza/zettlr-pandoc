@@ -18,17 +18,17 @@
  * END HEADER
  */
 
-import PersistentDataContainer from "@common/modules/persistent-data-container";
-import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
-import { DP_EVENTS } from "@dts/common/documents";
-import { app, ipcMain } from "electron";
-import path from "path";
-import { extractFromFileDescriptors } from "source/common/util/extract-from-file-descriptors";
-import type ConfigProvider from "../config";
-import type DocumentManager from "../documents";
-import type FSAL from "../fsal";
-import type LogProvider from "../log";
-import ProviderContract from "../provider-contract";
+import path from 'path'
+import { app, ipcMain } from 'electron'
+import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
+import ProviderContract from '../provider-contract'
+import type LogProvider from '../log'
+import PersistentDataContainer from '@common/modules/persistent-data-container'
+import type DocumentManager from '../documents'
+import { DP_EVENTS } from '@dts/common/documents'
+import type FSAL from '../fsal'
+import { extractFromFileDescriptors } from 'source/common/util/extract-from-file-descriptors'
+import type ConfigProvider from '../config'
 
 /**
  * This interface describes a single tag within the files loaded in here.
@@ -37,29 +37,29 @@ export interface TagRecord {
   /**
    * The tag's name, e.g., #todo
    */
-  name: string;
+  name: string
   /**
    * A list of absolute paths to files which share this tag
    */
-  files: string[];
+  files: string[]
   /**
    * The IDF score of this tag (idf = Math.log(N / files.length))
    */
-  idf: number;
+  idf: number
   /**
    * An optional color for this tag
    */
-  color?: string;
+  color?: string
   /**
    * An optional description for thist ag
    */
-  desc?: string;
+  desc?: string
 }
 
 export interface ColoredTag {
-  name: string;
-  color: string;
-  desc: string;
+  name: string
+  color: string
+  desc: string
 }
 
 /**
@@ -67,43 +67,45 @@ export interface ColoredTag {
  * start of the app and writes them after they have been changed.
  */
 export default class TagProvider extends ProviderContract {
-  private readonly _file: string;
-  private readonly container: PersistentDataContainer<ColoredTag[]>;
-  private _coloredTags: ColoredTag[];
+  private readonly _file: string
+  private readonly container: PersistentDataContainer<ColoredTag[]>
+  private _coloredTags: ColoredTag[]
   /**
    * Create the instance on program start and initially load the tags.
    */
-  constructor(
+  constructor (
     private readonly _logger: LogProvider,
     private readonly _docs: DocumentManager,
     private readonly _config: ConfigProvider,
-    private readonly _fsal: FSAL,
+    private readonly _fsal: FSAL
   ) {
-    super();
-    this._file = path.join(app.getPath("userData"), "tags.json");
-    this._coloredTags = [];
-    this.container = new PersistentDataContainer(this._file, "json");
+    super()
+    this._file = path.join(app.getPath('userData'), 'tags.json')
+    this._coloredTags = []
+    this.container = new PersistentDataContainer(this._file, 'json')
 
-    ipcMain.handle("tag-provider", async (event, message) => {
-      const { command } = message;
+    ipcMain.handle('tag-provider', async (event, message) => {
+      const { command } = message
 
-      if (command === "get-all-tags") {
-        return await this.getAllTags();
-      } else if (command === "set-colored-tags") {
-        const tags: ColoredTag[] = message.payload;
-        this.setColoredTags(tags);
-      } else if (command === "get-colored-tags") {
-        return this._coloredTags;
+      if (command === 'get-all-tags') {
+        return await this.getAllTags()
+      } else if (command === 'set-colored-tags') {
+        const tags: ColoredTag[] = message.payload
+        this.setColoredTags(tags)
+      } else if (command === 'get-colored-tags') {
+        return this._coloredTags
       }
-    });
+    })
   }
 
-  async boot(): Promise<void> {
-    this._logger.verbose("Tag provider booting up ...");
-    if (!(await this.container.isInitialized())) {
-      await this.container.init([]);
+  async boot (): Promise<void> {
+    this._logger.verbose('Tag provider booting up ...')
+    if (!await this.container.isInitialized()) {
+      await this.container.init([])
     } else {
-      this.setColoredTags((await this.container.get()).filter((tag) => tag !== undefined));
+      this.setColoredTags(
+        (await this.container.get()).filter((tag) => tag !== undefined)
+      )
     }
 
     this._docs.on(DP_EVENTS.FILE_SAVED, () => {
@@ -115,20 +117,18 @@ export default class TagProvider extends ProviderContract {
       // add a sanity check before simply emitting this event, especially if we
       // do something to make the `getAllTags` method take significantly longer.
       this.getAllTags()
-        .then((tags) => broadcastIpcMessage("tag-provider", "tags-updated", tags))
-        .catch((err) =>
-          this._logger.error(`[TagProvider] Could not update tag database: ${err.message}`, err),
-        );
-    });
+        .then(tags => broadcastIpcMessage('tag-provider', 'tags-updated', tags))
+        .catch(err => this._logger.error(`[TagProvider] Could not update tag database: ${err.message}`, err))
+    })
   }
 
   /**
    * Shuts down the service provider
    * @return {Boolean} Returns true after successful shutdown
    */
-  async shutdown(): Promise<void> {
-    this._logger.verbose("Tag provider shutting down ...");
-    this.container.shutdown();
+  async shutdown (): Promise<void> {
+    this._logger.verbose('Tag provider shutting down ...')
+    this.container.shutdown()
   }
 
   /**
@@ -136,26 +136,24 @@ export default class TagProvider extends ProviderContract {
    *
    * @param  {ColoredTag[]} tags The new tags as an array
    */
-  setColoredTags(tags: ColoredTag[]): void {
+  setColoredTags (tags: ColoredTag[]): void {
     // First, remove anything that doesn't have a color set
-    tags = tags.filter((tag) => tag.color !== undefined && tag.desc !== undefined);
+    tags = tags.filter(tag => tag.color !== undefined && tag.desc !== undefined)
 
-    const uniqueTags: ColoredTag[] = [];
+    const uniqueTags: ColoredTag[] = []
     for (const tag of tags) {
-      const hasTag = uniqueTags.find((elem) => elem.name === tag.name);
+      const hasTag = uniqueTags.find(elem => elem.name === tag.name)
       if (hasTag === undefined) {
-        uniqueTags.push({ name: tag.name, color: tag.color as string, desc: tag.desc as string });
+        uniqueTags.push({ name: tag.name, color: tag.color as string, desc: tag.desc as string })
       }
     }
 
-    this._coloredTags = uniqueTags;
-    this.container.set(this._coloredTags);
-    broadcastIpcMessage("tag-provider", "colored-tags-updated", this.getColoredTags());
+    this._coloredTags = uniqueTags
+    this.container.set(this._coloredTags)
+    broadcastIpcMessage('tag-provider', 'colored-tags-updated', this.getColoredTags())
     this.getAllTags()
-      .then((tags) => broadcastIpcMessage("tag-provider", "tags-updated", tags))
-      .catch((err) =>
-        this._logger.error(`[TagProvider] Could not fetch tags: ${err.message}`, err),
-      );
+      .then(tags => broadcastIpcMessage('tag-provider', 'tags-updated', tags))
+      .catch(err => this._logger.error(`[TagProvider] Could not fetch tags: ${err.message}`, err))
   }
 
   /**
@@ -163,8 +161,8 @@ export default class TagProvider extends ProviderContract {
    *
    * @return  {ColoredTag[]}  The special tag array.
    */
-  getColoredTags(): ColoredTag[] {
-    return this._coloredTags;
+  getColoredTags (): ColoredTag[] {
+    return this._coloredTags
   }
 
   /**
@@ -172,42 +170,39 @@ export default class TagProvider extends ProviderContract {
    *
    * @return  {TagRecord[]}  The database
    */
-  async getAllTags(): Promise<TagRecord[]> {
-    const allDescriptors = (await this._fsal.getAllLoadedDescriptors()).filter(
-      (descriptor) => descriptor.type === "file",
-    );
+  async getAllTags (): Promise<TagRecord[]> {
+    const allDescriptors = (await this._fsal.getAllLoadedDescriptors())
+      .filter(descriptor => descriptor.type === 'file')
 
-    const tagDb = new Map(extractFromFileDescriptors(allDescriptors, "tags"));
+    const tagDb = new Map(extractFromFileDescriptors(allDescriptors, 'tags'))
 
-    const ret: TagRecord[] = [];
+    const ret: TagRecord[] = []
 
-    const tagToFileMap = new Map();
-    for (const [file, tags] of [...tagDb]) {
+    const tagToFileMap = new Map()
+    for (const [ file, tags ] of [...tagDb]) {
       for (const tag of tags) {
-        const entry = tagToFileMap.get(tag);
+        const entry = tagToFileMap.get(tag)
         if (entry === undefined) {
-          tagToFileMap.set(tag, [file]);
+          tagToFileMap.set(tag, [file])
         } else {
-          tagToFileMap.set(tag, [...entry, file]);
+          tagToFileMap.set(tag, [ ...entry, file ])
         }
       }
     }
 
-    for (const [name, files] of tagToFileMap) {
-      const tagColor = this._coloredTags.find((c) => c.name === name);
-      ret.push({ name, files, color: tagColor?.color, desc: tagColor?.desc, idf: 0 });
+    for (const [ name, files ] of tagToFileMap) {
+      const tagColor = this._coloredTags.find(c => c.name === name)
+      ret.push({ name, files, color: tagColor?.color, desc: tagColor?.desc, idf: 0 })
     }
 
     // Calculate idf based on the info we have for each tag
-    const N = ret.map((x) => x.files.length).reduce((prev, cur) => prev + cur, 0);
+    const N = ret.map(x => x.files.length).reduce((prev, cur) => prev + cur, 0)
     for (const tag of ret) {
-      tag.idf = Math.log(N / tag.files.length);
+      tag.idf = Math.log(N / tag.files.length)
     }
 
     // Before returning, make sure to sort the tags by count
-    ret.sort((a, b) => {
-      return b.files.length - a.files.length;
-    });
-    return ret;
+    ret.sort((a, b) => { return b.files.length - a.files.length })
+    return ret
   }
 }

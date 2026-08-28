@@ -12,115 +12,111 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-renderer";
-import { PreferencesGroups } from "./_preferences-groups";
-import { type PreferencesFieldset } from "./types";
+import { trans } from '@common/i18n-renderer'
+import { type PreferencesFieldset } from './types'
+import { PreferencesGroups } from './_preferences-groups'
 
-export function getAutocorrectFields(): PreferencesFieldset[] {
+export function getAutocorrectFields (): PreferencesFieldset[] {
   return [
     {
-      title: trans("Autocorrect"),
-      infoString: trans(
-        "Autocorrect can automatically replace certain sequences of characters with others, and use typographical quotes.",
-      ),
+      title: trans('Autocorrect'),
+      infoString: trans('Autocorrect can automatically replace certain sequences of characters with others, and use typographical quotes.'),
       group: PreferencesGroups.Autocorrect,
       titleField: {
-        type: "switch",
-        model: "editor.autoCorrect.active",
+        type: 'switch',
+        model: 'editor.autoCorrect.active'
       },
       help: undefined, // TODO
-      fields: [],
+      fields: []
     },
     {
-      title: trans("Autocorrect: Replacement Table"),
-      infoString: trans("Configure which sequences of characters get replaced by which symbols."),
+      title: trans('Autocorrect: Replacement Table'),
+      infoString: trans('Configure which sequences of characters get replaced by which symbols.'),
       group: PreferencesGroups.Autocorrect,
       fields: [
         {
-          type: "checkbox",
-          label: trans("Match whole words"),
-          info: trans("When checked, AutoCorrect will never replace parts of words"),
-          model: "editor.autoCorrect.matchWholeWords",
+          type: 'checkbox',
+          label: trans('Match whole words'),
+          info: trans('When checked, AutoCorrect will never replace parts of words'),
+          model: 'editor.autoCorrect.matchWholeWords'
         },
-        { type: "separator" },
+        { type: 'separator' },
         {
-          type: "list",
-          valueType: "record",
-          keyNames: ["key", "value"],
-          columnLabels: [trans("Replace"), trans("With")],
-          model: "editor.autoCorrect.replacements",
+          type: 'list',
+          valueType: 'record',
+          keyNames: [ 'key', 'value' ],
+          columnLabels: [ trans('Replace'), trans('With') ],
+          model: 'editor.autoCorrect.replacements',
           deletable: true,
           searchable: true,
           addable: true,
-          searchLabel: trans("Filter"),
-          editable: true, // All columns may be edited
-        },
-      ],
+          searchLabel: trans('Filter'),
+          editable: true // All columns may be edited
+        }
+      ]
     },
     {
-      title: trans("Magic Quotes"),
-      infoString: trans(
-        "This setting allows you to pick which typographical quotes Zettlr will insert when you insert a quotation mark. Requires Autocorrect to be enabled.",
-      ),
+      title: trans('Magic Quotes'),
+      infoString: trans('This setting allows you to pick which typographical quotes Zettlr will insert when you insert a quotation mark. Requires Autocorrect to be enabled.'),
       group: PreferencesGroups.Autocorrect,
       fields: [
         {
-          type: "style-group",
-          style: "columns",
+          type: 'style-group',
+          style: 'columns',
           fields: [
             // Taken from: https://de.wikipedia.org/wiki/Anf%C3%BChrungszeichen
             // ATTENTION when adding new pairs: They will be SPLIT using the hyphen character!
             {
               // TODO: Add a general title
-              type: "select",
+              type: 'select',
               inline: false,
-              label: trans("Double/Primary Quotes"),
-              model: "editor.autoCorrect.magicQuotes.primary",
+              label: trans('Double/Primary Quotes'),
+              model: 'editor.autoCorrect.magicQuotes.primary',
               options: {
-                '"…"': trans("Disable Magic Quotes"),
-                "“…”": "“…” (US primary)",
-                "‘…’": "‘…’ (UK primary)",
-                "”…”": "”…” (Finnish/Swedish primary)",
-                "»…»": "»…» (Finnish/Swedish primary alternative)",
-                "„…“": "„…“ (German primary)",
-                "»…«": "»…« (German primary alternative)",
-                "« … »": "« … » (French primary)",
-                "“ … ”": "“ … ” (French primary alternative)",
-                "„…”": "„…” (Hungarian/Croatian primary)",
-                "“…„": "“…„ (Hebrew/Albanian primary alternative)",
-                "«…»": "«…» (Most used primary/Esperanto and Georgian primary alternative)",
-                "「…」": "「…」 (Japanese/Taiwanese primary)",
-                "『…』": "『…』 (Japanese/Taiwanese primary alternative)",
-              },
+                '"…"': trans('Disable Magic Quotes'),
+                '“…”': '“…” (US primary)',
+                '‘…’': '‘…’ (UK primary)',
+                '”…”': '”…” (Finnish/Swedish primary)',
+                '»…»': '»…» (Finnish/Swedish primary alternative)',
+                '„…“': '„…“ (German primary)',
+                '»…«': '»…« (German primary alternative)',
+                '« … »': '« … » (French primary)',
+                '“ … ”': '“ … ” (French primary alternative)',
+                '„…”': '„…” (Hungarian/Croatian primary)',
+                '“…„': '“…„ (Hebrew/Albanian primary alternative)',
+                '«…»': '«…» (Most used primary/Esperanto and Georgian primary alternative)',
+                '「…」': '「…」 (Japanese/Taiwanese primary)',
+                '『…』': '『…』 (Japanese/Taiwanese primary alternative)'
+              }
             },
             {
-              type: "select",
+              type: 'select',
               inline: false,
-              label: trans("Single/Secondary Quotes"),
-              model: "editor.autoCorrect.magicQuotes.secondary",
+              label: trans('Single/Secondary Quotes'),
+              model: 'editor.autoCorrect.magicQuotes.secondary',
               options: {
-                "'…'": trans("Disable Magic Quotes"),
-                "‘…’": "‘…’ (US secondary)",
-                "“…”": "“…” (UK secondary)",
-                "’…’": "’…’ (Finnish/Swedish secondary)",
-                "›…›": "›…› (Swedish secondary alternative)",
-                "‚…‘": "‚…‘ (German secondary)",
-                "›…‹": "›…‹ (German secondary alternative)",
-                "‹ … ›": "‹ … › (French secondary)",
-                "‘ … ’": "‘ … ’ (French secondary alternative",
-                "‚…’": "‚…’ (Serbian secondary/Dutch secondary alternative)",
-                "‹…›": "‹…› (Albanian/Arabic/Swiss Secondary)",
-                "‘…‚": "‘…‚ (Albanian secondary alternative)",
-                "«…»": "«…» (Rumanian secondary)",
-                "„…“": "„…“ (Armenian/Belarussian/Russian/Ukrainian secondary)",
-                "„…”": "„…” (Estonian secondary)",
-                "『…』": "『…』 (Japanese secondary)",
-                "「…」": "「…」 (Korean secondary alternative)",
-              },
-            },
-          ],
-        },
-      ],
-    },
-  ];
+                '\'…\'': trans('Disable Magic Quotes'),
+                '‘…’': '‘…’ (US secondary)',
+                '“…”': '“…” (UK secondary)',
+                '’…’': '’…’ (Finnish/Swedish secondary)',
+                '›…›': '›…› (Swedish secondary alternative)',
+                '‚…‘': '‚…‘ (German secondary)',
+                '›…‹': '›…‹ (German secondary alternative)',
+                '‹ … ›': '‹ … › (French secondary)',
+                '‘ … ’': '‘ … ’ (French secondary alternative',
+                '‚…’': '‚…’ (Serbian secondary/Dutch secondary alternative)',
+                '‹…›': '‹…› (Albanian/Arabic/Swiss Secondary)',
+                '‘…‚': '‘…‚ (Albanian secondary alternative)',
+                '«…»': '«…» (Rumanian secondary)',
+                '„…“': '„…“ (Armenian/Belarussian/Russian/Ukrainian secondary)',
+                '„…”': '„…” (Estonian secondary)',
+                '『…』': '『…』 (Japanese secondary)',
+                '「…」': '「…」 (Korean secondary alternative)'
+              }
+            }
+          ]
+        }
+      ]
+    }    
+  ]
 }

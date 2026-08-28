@@ -57,7 +57,10 @@ export interface ReviewActionClient {
     chunkId: string;
     decision: "accept" | "reject";
   }) => Promise<void>;
-  acceptAll: (input: { reviewId: string; expectedReviewGeneration: number }) => Promise<void>;
+  acceptAll: (input: {
+    reviewId: string;
+    expectedReviewGeneration: number;
+  }) => Promise<void>;
   clear: (input: { reviewId: string; expectedReviewGeneration: number }) => Promise<void>;
   comment: (input: {
     reviewId: string;
@@ -71,7 +74,6 @@ export interface ReviewActionClient {
     text: string;
   }) => Promise<void>;
 }
-
 import { type TagRecord } from "@providers/tags";
 // Keymaps/Input modes
 import { emacs } from "@replit/codemirror-emacs";
@@ -140,9 +142,9 @@ import {
 } from "./plugins/workspace-references-field";
 import { darkModeEffect, useDarkModeEditor } from "./theme/dark-mode";
 import {
-  cloneEditorConfiguration,
   configField,
   configUpdateEffect,
+  cloneEditorConfiguration,
   type EditorConfigOptions,
   type EditorConfiguration,
   getDefaultConfig,
@@ -447,11 +449,14 @@ export default class MarkdownEditor extends EventEmitter {
               // ATTENTION: The document state is out of sync with the document
               // authority, so we must reload it.
               this.clearReviewDiffSession();
-              this.reload().catch((error) => this.emit("document-load-error", error));
+              this.reload().catch((error) =>
+                this.emit("document-load-error", error),
+              );
               return;
             }
           }
         }
+
       },
       domEventsListeners: clickListeners({
         onWikiLink(url) {
@@ -1030,9 +1035,7 @@ export default class MarkdownEditor extends EventEmitter {
    * upward. MainEditor forwards them to the provider, whose next broadcast is
    * the only thing that changes review state here.
    */
-  private buildReviewExtension(
-    session: ReviewDiffSession,
-  ): ReturnType<typeof reviewChunksExtension> {
+  private buildReviewExtension(session: ReviewDiffSession): ReturnType<typeof reviewChunksExtension> {
     // Every callback binds the generation of the session these widgets were
     // DRAWN from, not whatever the newest broadcast carries. That is the
     // whole point: the decision is bound to what the reviewer was looking at
@@ -1056,7 +1059,8 @@ export default class MarkdownEditor extends EventEmitter {
           chunkId,
           decision,
         }),
-      onAcceptAll: async () => await client().acceptAll({ reviewId, expectedReviewGeneration }),
+      onAcceptAll: async () =>
+        await client().acceptAll({ reviewId, expectedReviewGeneration }),
       onClear: async () => await client().clear({ reviewId, expectedReviewGeneration }),
       onComment: async (text) =>
         await client().comment({ reviewId, expectedReviewGeneration, text }),

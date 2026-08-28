@@ -49,6 +49,9 @@ export function surfaceFormatResult(result: FormatResult): void {
       "error",
     );
   } else {
-    showToast(`flowmark could not format the document: ${result.message}`, "error");
+    showToast(
+      `flowmark could not format the document: ${result.message}`,
+      "error",
+    );
   }
 }

@@ -61,60 +61,60 @@
  *
  * END HEADER
  */
-import { trans } from "@common/i18n-renderer";
-import { computed, ref, toRef, watch } from "vue";
+import { trans } from '@common/i18n-renderer'
+import { computed, ref, toRef, watch } from 'vue'
 
 const props = defineProps<{
-  modelValue: number;
-  min?: number;
-  max?: number;
-  label?: string;
-  name?: string;
-  reset?: number;
-  inline?: boolean;
-  disabled?: boolean;
-}>();
+  modelValue: number
+  min?: number
+  max?: number
+  label?: string
+  name?: string
+  reset?: number
+  inline?: boolean
+  disabled?: boolean
+}>()
 
 const emit = defineEmits<{
-  (e: "update:modelValue", value: number): void;
-  (e: "confirm", value: number): void;
-  (e: "escape", value: number): void;
-  (e: "blur", value: number): void;
-}>();
+  (e: 'update:modelValue', value: number): void
+  (e: 'confirm', value: number): void
+  (e: 'escape', value: number): void
+  (e: 'blur', value: number): void
+}>()
 
-const fieldID = computed<string>(() => "field-input-" + (props.name ?? ""));
+const fieldID = computed<string>(() => 'field-input-' + (props.name ?? ''))
 
-const value = ref<number | "">(props.modelValue);
+const value = ref<number|''>(props.modelValue)
 
-const resetLabel = trans("Reset");
+const resetLabel = trans('Reset')
 
-function resetValue(): void {
+function resetValue (): void {
   if (props.reset === undefined) {
-    return;
+    return
   }
-  value.value = props.reset;
-  emit("update:modelValue", props.reset ?? props.min ?? 0);
+  value.value = props.reset
+  emit('update:modelValue', props.reset ?? props.min ?? 0)
 }
 
 watch(value, (newValue) => {
-  if (newValue === "") {
-    value.value = props.reset ?? props.min ?? 0;
+  if (newValue === '') {
+    value.value = props.reset ?? props.min ?? 0
   }
-});
+})
 
-watch(toRef(props, "modelValue"), () => {
-  value.value = props.modelValue;
-});
+watch(toRef(props, 'modelValue'), () => {
+  value.value = props.modelValue
+})
 
-function sanitizeValue(newValue: number | ""): number {
-  if (newValue === "") {
-    return props.reset ?? props.min ?? 0;
+function sanitizeValue (newValue: number|''): number {
+  if (newValue === '') {
+    return props.reset ?? props.min ?? 0
   } else if (props.min !== undefined && newValue < props.min) {
-    return props.min;
+    return props.min
   } else if (props.max !== undefined && newValue > props.max) {
-    return props.max;
+    return props.max
   } else {
-    return newValue;
+    return newValue
   }
 }
 </script>

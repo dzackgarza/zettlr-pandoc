@@ -13,13 +13,13 @@
  * END HEADER
  */
 
-import { type DocumentType, DP_EVENTS, type SerializedUpdate } from "@dts/common/documents";
-import type { DocumentsUpdateContext } from "source/app/service-providers/documents";
-import { type DocumentAuthorityAPI } from "..";
+import { DP_EVENTS, type DocumentType, type SerializedUpdate } from '@dts/common/documents'
+import { type DocumentAuthorityAPI } from '..'
+import type { DocumentsUpdateContext } from 'source/app/service-providers/documents'
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
-async function pullUpdates(filePath: string, version: number): Promise<false | SerializedUpdate[]> {
+async function pullUpdates (filePath: string, version: number): Promise<false|SerializedUpdate[]> {
   // Requests new updates from the authority. It may be that the returned
   // promise pends for minutes or even hours -- until new changes are available.
   // Notice how we're not returning the promise from the IPC channel. The reason
@@ -27,50 +27,40 @@ async function pullUpdates(filePath: string, version: number): Promise<false | S
   // a dozen IPC calls are hanging in the air with no resolution in sight.
   return await new Promise((resolve, reject) => {
     // Begin listening for the correct event
-    const stopListening = ipcRenderer.on(
-      "documents-update",
-      (evt, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
-        const { event, context } = payload;
-        if (event !== DP_EVENTS.CHANGE_FILE_STATUS || context.filePath !== filePath) {
-          return;
-        }
+    const stopListening = ipcRenderer.on('documents-update', (evt, payload: { event: DP_EVENTS, context: DocumentsUpdateContext }) => {
+      const { event, context } = payload
+      if (event !== DP_EVENTS.CHANGE_FILE_STATUS || context.filePath !== filePath) {
+        return
+      }
 
-        ipcRenderer
-          .invoke("documents-authority", {
-            command: "pull-updates",
-            payload: { filePath, version },
-          })
-          .then((result: false | SerializedUpdate[]) => {
-            // Clean up to not pollute the event listener with millions of callbacks
-            stopListening();
-            resolve(result);
-          })
-          .catch((err) => reject(err));
-      },
-    );
-  });
+      ipcRenderer.invoke('documents-authority', {
+        command: 'pull-updates',
+        payload: { filePath, version }
+      })
+        .then((result: false|SerializedUpdate[]) => {
+          // Clean up to not pollute the event listener with millions of callbacks
+          stopListening()
+          resolve(result)
+        })
+        .catch(err => reject(err))
+    })
+  })
 }
 
-function pushUpdates(
-  filePath: string,
-  version: number,
-  updates: SerializedUpdate[],
-): Promise<boolean> {
+function pushUpdates (filePath: string, version: number, updates: SerializedUpdate[]): Promise<boolean> {
   // Submits new updates to the authority, returns true if successful
-  return ipcRenderer.invoke("documents-authority", {
-    command: "push-updates",
-    payload: { filePath, version, updates },
-  });
+  return ipcRenderer.invoke('documents-authority', {
+    command: 'push-updates',
+    payload: { filePath, version, updates }
+  })
 }
 
-function fetchDoc(
-  filePath: string,
-): Promise<{ content: string; type: DocumentType; startVersion: number }> {
+function fetchDoc (filePath: string): Promise<{ content: string, type: DocumentType, startVersion: number }> {
   // Fetches a fresh document
-  return ipcRenderer.invoke("documents-authority", {
-    command: "get-document",
-    payload: { filePath },
-  });
+  return ipcRenderer.invoke('documents-authority', {
+    command: 'get-document',
+    payload: { filePath }
+  })
 }
 
 /**
@@ -82,5 +72,5 @@ function fetchDoc(
 export const documentAuthorityIPCAPI: DocumentAuthorityAPI = {
   fetchDoc,
   pushUpdates,
-  pullUpdates,
-};
+  pullUpdates
+}

@@ -20,6 +20,6 @@
  *
  * @return  {string}                The path as a Unix path
  */
-export function pathToUnix(pathFragment: string): string {
-  return pathFragment.replace(/\\/g, "/");
+export function pathToUnix (pathFragment: string): string {
+  return pathFragment.replace(/\\/g, '/')
 }

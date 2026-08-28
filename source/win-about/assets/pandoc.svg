@@ -7,8 +7,10 @@ viewBox="0 0 15000 10000"
  xmlns:xodm="http://www.corel.com/coreldraw/odm/2003">
  <defs>
   <style type="text/css">
+   <![CDATA[
     .fil1 {fill:#85D0F5;fill-rule:nonzero}
     .fil0 {fill:#00A0E4;fill-rule:nonzero}
+   ]]>
   </style>
  </defs>
  <g id="Ebene_x0020_1">

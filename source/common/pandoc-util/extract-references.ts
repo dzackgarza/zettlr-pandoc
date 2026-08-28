@@ -7,23 +7,18 @@
  * built-ins and no CodeMirror imports.
  */
 
+import { markdownToAST } from '../modules/markdown-utils'
+import type { ASTNode, FencedCode, Heading, PandocDiv } from '../modules/markdown-utils/markdown-ast'
+import { parsePandocAttributes, type ParsedPandocAttributes } from './parse-pandoc-attributes'
+import { isReferenceableDivClass } from '../util/pandoc-quick-reference'
 import {
   CROSSREF_FAMILIES,
+  referenceFamilyOf,
   type DocumentReferenceSnapshot,
   type ReferenceDefinition,
   type ReferenceOccurrence,
-  referenceFamilyOf,
-  type SourceRange,
-} from "../../types/common/references";
-import { markdownToAST } from "../modules/markdown-utils";
-import type {
-  ASTNode,
-  FencedCode,
-  Heading,
-  PandocDiv,
-} from "../modules/markdown-utils/markdown-ast";
-import { isReferenceableDivClass } from "../util/pandoc-quick-reference";
-import { type ParsedPandocAttributes, parsePandocAttributes } from "./parse-pandoc-attributes";
+  type SourceRange
+} from '../../types/common/references'
 
 /**
  * Computes the deterministic content hash used to key reference snapshots
@@ -34,13 +29,13 @@ import { type ParsedPandocAttributes, parsePandocAttributes } from "./parse-pand
  *
  * @return  {string}            The hash, e.g. 'fnv1a-811c9dc5'
  */
-export function hashDocumentSource(markdown: string): string {
-  let hash = 0x811c9dc5;
+export function hashDocumentSource (markdown: string): string {
+  let hash = 0x811c9dc5
   for (let i = 0; i < markdown.length; i++) {
-    hash ^= markdown.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
+    hash ^= markdown.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
   }
-  return "fnv1a-" + (hash >>> 0).toString(16).padStart(8, "0");
+  return 'fnv1a-' + (hash >>> 0).toString(16).padStart(8, '0')
 }
 
 /**
@@ -49,11 +44,11 @@ export function hashDocumentSource(markdown: string): string {
  */
 export interface LocatedAttribute {
   /** The full authored id (parsePandocAttributes truncates ids at colons) */
-  key: string;
+  key: string
   /** The exact range of the id token including its `#` sigil */
-  range: SourceRange;
+  range: SourceRange
   /** The parsed attribute block (classes and properties) */
-  attributes: ParsedPandocAttributes;
+  attributes: ParsedPandocAttributes
 }
 
 /**
@@ -73,29 +68,27 @@ export interface LocatedAttribute {
  *
  * @return  {LocatedAttribute|undefined}  The located id, if one is authored
  */
-export function locateAttribute(attrText: string, offset: number): LocatedAttribute | undefined {
-  const attributes = parsePandocAttributes(attrText);
+export function locateAttribute (attrText: string, offset: number): LocatedAttribute|undefined {
+  const attributes = parsePandocAttributes(attrText)
   if (attributes.id === undefined) {
-    return undefined;
+    return undefined
   }
 
-  const idStart = attrText.indexOf("#" + attributes.id);
+  const idStart = attrText.indexOf('#' + attributes.id)
   if (idStart === -1) {
-    throw new Error(
-      `Inconsistent attribute block: id "${attributes.id}" not found in "${attrText}"`,
-    );
+    throw new Error(`Inconsistent attribute block: id "${attributes.id}" not found in "${attrText}"`)
   }
 
-  let idEnd = idStart + 1 + attributes.id.length;
-  while (idEnd < attrText.length && !" \t\n}".includes(attrText[idEnd])) {
-    idEnd++;
+  let idEnd = idStart + 1 + attributes.id.length
+  while (idEnd < attrText.length && !' \t\n}'.includes(attrText[idEnd])) {
+    idEnd++
   }
 
   return {
     key: attrText.slice(idStart + 1, idEnd),
     range: { from: offset + idStart, to: offset + idEnd },
-    attributes,
-  };
+    attributes
+  }
 }
 
 /**
@@ -106,18 +99,18 @@ export function locateAttribute(attrText: string, offset: number): LocatedAttrib
  *
  * @return  {ASTNode[]}      The children in document order
  */
-function childrenOf(node: ASTNode): ASTNode[] {
-  if ("children" in node) {
-    return node.children;
-  } else if ("items" in node) {
-    return node.items;
-  } else if ("rows" in node) {
-    return node.rows;
-  } else if ("cells" in node) {
-    return node.cells;
+function childrenOf (node: ASTNode): ASTNode[] {
+  if ('children' in node) {
+    return node.children
+  } else if ('items' in node) {
+    return node.items
+  } else if ('rows' in node) {
+    return node.rows
+  } else if ('cells' in node) {
+    return node.cells
   }
 
-  return [];
+  return []
 }
 
 /**
@@ -128,34 +121,34 @@ function childrenOf(node: ASTNode): ASTNode[] {
  *
  * @return  {string|undefined}  The alt text, if an image exists
  */
-function firstImageAlt(node: ASTNode): string | undefined {
-  if (node.type === "Image") {
-    return node.alt.value;
+function firstImageAlt (node: ASTNode): string|undefined {
+  if (node.type === 'Image') {
+    return node.alt.value
   }
 
   for (const child of childrenOf(node)) {
-    const alt = firstImageAlt(child);
+    const alt = firstImageAlt(child)
     if (alt !== undefined) {
-      return alt;
+      return alt
     }
   }
 
-  return undefined;
+  return undefined
 }
 
 /**
  * Returns the offset of the first character of the line containing pos.
  */
-function lineStart(markdown: string, pos: number): number {
-  return markdown.lastIndexOf("\n", pos) + 1;
+function lineStart (markdown: string, pos: number): number {
+  return markdown.lastIndexOf('\n', pos) + 1
 }
 
 /**
  * Returns the complete authored line containing pos (without the newline).
  */
-function lineAt(markdown: string, pos: number): string {
-  const end = markdown.indexOf("\n", pos);
-  return markdown.slice(lineStart(markdown, pos), end === -1 ? markdown.length : end);
+function lineAt (markdown: string, pos: number): string {
+  const end = markdown.indexOf('\n', pos)
+  return markdown.slice(lineStart(markdown, pos), end === -1 ? markdown.length : end)
 }
 
 /**
@@ -166,15 +159,15 @@ function lineAt(markdown: string, pos: number): string {
  *
  * @return  {string}         The clean heading text
  */
-function headingText(node: Heading): string {
-  if (Object.keys(node.attributes).length > 0 && node.content.endsWith("}")) {
-    const brace = node.content.lastIndexOf("{");
+function headingText (node: Heading): string {
+  if (Object.keys(node.attributes).length > 0 && node.content.endsWith('}')) {
+    const brace = node.content.lastIndexOf('{')
     if (brace !== -1) {
-      return node.content.slice(0, brace).trim();
+      return node.content.slice(0, brace).trim()
     }
   }
 
-  return node.content.trim();
+  return node.content.trim()
 }
 
 /**
@@ -186,11 +179,8 @@ function headingText(node: Heading): string {
  *
  * @return  {DocumentReferenceSnapshot}  The typed reference snapshot
  */
-export function extractReferences(
-  documentPath: string,
-  markdown: string,
-): DocumentReferenceSnapshot {
-  return extractReferencesFromAST(documentPath, markdown, markdownToAST(markdown));
+export function extractReferences (documentPath: string, markdown: string): DocumentReferenceSnapshot {
+  return extractReferencesFromAST(documentPath, markdown, markdownToAST(markdown))
 }
 
 /**
@@ -206,27 +196,23 @@ export function extractReferences(
  *
  * @return  {DocumentReferenceSnapshot}  The typed reference snapshot
  */
-export function extractReferencesFromAST(
-  documentPath: string,
-  markdown: string,
-  ast: ASTNode,
-): DocumentReferenceSnapshot {
-  const sourceHash = hashDocumentSource(markdown);
-  const definitions: ReferenceDefinition[] = [];
-  const occurrences: ReferenceOccurrence[] = [];
+export function extractReferencesFromAST (documentPath: string, markdown: string, ast: ASTNode): DocumentReferenceSnapshot {
+  const sourceHash = hashDocumentSource(markdown)
+  const definitions: ReferenceDefinition[] = []
+  const occurrences: ReferenceOccurrence[] = []
   // The clean text of the nearest preceding heading during the walk
-  let currentSection: string | undefined;
+  let currentSection: string|undefined
 
   const pushDefinition = (
     located: LocatedAttribute,
-    sourceKind: ReferenceDefinition["sourceKind"],
-    title: string | undefined,
-    previewSource: string,
+    sourceKind: ReferenceDefinition['sourceKind'],
+    title: string|undefined,
+    previewSource: string
   ): void => {
-    const family = referenceFamilyOf(located.key);
+    const family = referenceFamilyOf(located.key)
     if (family === undefined) {
       // Structurally not a definition: empty key or unsupported family.
-      return;
+      return
     }
 
     definitions.push({
@@ -239,31 +225,29 @@ export function extractReferencesFromAST(
       title,
       previewSource,
       enclosingSection: currentSection,
-      sourceHash,
-    });
-  };
+      sourceHash
+    })
+  }
 
   const visitHeading = (node: Heading): void => {
-    const slice = markdown.slice(node.from, node.to);
-    const brace =
-      typeof node.attributes.id === "string" && node.attributes.id !== ""
-        ? slice.lastIndexOf("{")
-        : -1;
+    const slice = markdown.slice(node.from, node.to)
+    const brace = typeof node.attributes.id === 'string' && node.attributes.id !== ''
+      ? slice.lastIndexOf('{')
+      : -1
     if (brace !== -1) {
-      const located = locateAttribute(slice.slice(brace), node.from + brace);
+      const located = locateAttribute(slice.slice(brace), node.from + brace)
       if (located !== undefined) {
-        const title = headingText(node);
+        const title = headingText(node)
         pushDefinition(
-          located,
-          "crossref-attr",
-          title === "" ? undefined : title,
-          lineAt(markdown, located.range.from),
-        );
+          located, 'crossref-attr',
+          title === '' ? undefined : title,
+          lineAt(markdown, located.range.from)
+        )
       }
     }
 
-    currentSection = headingText(node);
-  };
+    currentSection = headingText(node)
+  }
 
   /**
    * The caption paragraph of a pandoc-crossref wrapping div: the last child
@@ -271,49 +255,45 @@ export function extractReferencesFromAST(
    * image descendant. Subfigure groups author it below the images; wrapped
    * listings author it above the code block.
    */
-  const wrappingDivCaption = (node: PandocDiv): string | undefined => {
-    const children = childrenOf(node);
+  const wrappingDivCaption = (node: PandocDiv): string|undefined => {
+    const children = childrenOf(node)
     for (let i = children.length - 1; i >= 0; i--) {
-      const child = children[i];
-      if (child.type === "FencedCode" || firstImageAlt(child) !== undefined) {
-        continue;
+      const child = children[i]
+      if (child.type === 'FencedCode' || firstImageAlt(child) !== undefined) {
+        continue
       }
-      const text = markdown.slice(child.from, child.to).trim();
-      if (text === "" || /^:{3,}/.test(text)) {
-        continue; // Empty inter-block runs and the div's own fence lines
+      const text = markdown.slice(child.from, child.to).trim()
+      if (text === '' || /^:{3,}/.test(text)) {
+        continue // Empty inter-block runs and the div's own fence lines
       }
-      return text;
+      return text
     }
-    return undefined;
-  };
+    return undefined
+  }
 
   const visitPandocDiv = (node: PandocDiv): void => {
-    const openLineEnd = markdown.indexOf("\n", node.from);
-    const openLine = markdown.slice(
-      node.from,
-      openLineEnd === -1 || openLineEnd > node.to ? node.to : openLineEnd,
-    );
-    const brace = openLine.indexOf("{");
+    const openLineEnd = markdown.indexOf('\n', node.from)
+    const openLine = markdown.slice(node.from, openLineEnd === -1 || openLineEnd > node.to ? node.to : openLineEnd)
+    const brace = openLine.indexOf('{')
     if (brace === -1) {
-      return;
+      return
     }
 
-    const located = locateAttribute(openLine.slice(brace), node.from + brace);
+    const located = locateAttribute(openLine.slice(brace), node.from + brace)
     if (located === undefined) {
-      return;
+      return
     }
 
     // Theorem-like divs define targets through their class registry;
     // proof-like and other non-referenceable div classes never do.
-    const classes = located.attributes.classes ?? [];
+    const classes = located.attributes.classes ?? []
     if (classes.some(isReferenceableDivClass)) {
       pushDefinition(
-        located,
-        "theorem-div",
+        located, 'theorem-div',
         located.attributes.properties?.title,
-        markdown.slice(lineStart(markdown, node.from), node.to),
-      );
-      return;
+        markdown.slice(lineStart(markdown, node.from), node.to)
+      )
+      return
     }
 
     // pandoc-crossref wrapping/subfigure forms (issue #1, review A1): a div
@@ -323,107 +303,99 @@ export function extractReferencesFromAST(
     // attributed-block walk. Theorem-prefixed ids without their class stay
     // out (that class/prefix mismatch is reference-lint's diagnostic), as
     // does every unsupported family.
-    const family = referenceFamilyOf(located.key);
+    const family = referenceFamilyOf(located.key)
     if (family !== undefined && (CROSSREF_FAMILIES as readonly string[]).includes(family)) {
       pushDefinition(
-        located,
-        "crossref-attr",
+        located, 'crossref-attr',
         located.attributes.properties?.title ?? wrappingDivCaption(node),
-        markdown.slice(lineStart(markdown, node.from), node.to),
-      );
+        markdown.slice(lineStart(markdown, node.from), node.to)
+      )
     }
-  };
+  }
 
   const visitFencedCode = (node: FencedCode): void => {
-    if (!node.info.startsWith("{")) {
-      return;
+    if (!node.info.startsWith('{')) {
+      return
     }
 
-    const infoOffset = markdown.slice(node.from, node.to).indexOf(node.info);
+    const infoOffset = markdown.slice(node.from, node.to).indexOf(node.info)
     if (infoOffset === -1) {
-      throw new Error(
-        `Inconsistent fenced code node: info string not found in [${node.from},${node.to}]`,
-      );
+      throw new Error(`Inconsistent fenced code node: info string not found in [${node.from},${node.to}]`)
     }
 
-    const located = locateAttribute(node.info, node.from + infoOffset);
+    const located = locateAttribute(node.info, node.from + infoOffset)
     if (located !== undefined) {
       pushDefinition(
-        located,
-        "crossref-attr",
+        located, 'crossref-attr',
         located.attributes.properties?.caption,
-        markdown.slice(lineStart(markdown, node.from), node.to),
-      );
+        markdown.slice(lineStart(markdown, node.from), node.to)
+      )
     }
-  };
+  }
 
   // Handles attributes the parser attached to an enclosing block (table
   // caption lines, display math paragraphs, image paragraphs): the attribute
   // block trails the structure, so it is the last brace group of the node's
   // own slice.
   const visitAttributedBlock = (node: ASTNode): void => {
-    if (typeof node.attributes.id !== "string" || node.attributes.id === "") {
-      return;
+    if (typeof node.attributes.id !== 'string' || node.attributes.id === '') {
+      return
     }
 
-    const slice = markdown.slice(node.from, node.to);
-    const brace = slice.lastIndexOf("{");
+    const slice = markdown.slice(node.from, node.to)
+    const brace = slice.lastIndexOf('{')
     if (brace === -1) {
-      throw new Error(
-        `Inconsistent attributed node: no attribute block in [${node.from},${node.to}]`,
-      );
+      throw new Error(`Inconsistent attributed node: no attribute block in [${node.from},${node.to}]`)
     }
 
-    const located = locateAttribute(slice.slice(brace), node.from + brace);
+    const located = locateAttribute(slice.slice(brace), node.from + brace)
     if (located === undefined) {
-      return;
+      return
     }
 
-    const family = referenceFamilyOf(located.key);
-    let title: string | undefined;
-    if (family === "fig") {
-      title = firstImageAlt(node);
-    } else if (family === "tbl") {
+    const family = referenceFamilyOf(located.key)
+    let title: string|undefined
+    if (family === 'fig') {
+      title = firstImageAlt(node)
+    } else if (family === 'tbl') {
       // A table caption line is authored as `: Caption {#tbl:key}`
-      const caption = slice.slice(0, brace).trim();
-      if (caption.startsWith(":")) {
-        title = caption.slice(1).trim();
+      const caption = slice.slice(0, brace).trim()
+      if (caption.startsWith(':')) {
+        title = caption.slice(1).trim()
       }
     }
 
-    pushDefinition(located, "crossref-attr", title, lineAt(markdown, located.range.from));
-  };
+    pushDefinition(located, 'crossref-attr', title, lineAt(markdown, located.range.from))
+  }
 
   const visit = (node: ASTNode): void => {
     switch (node.type) {
-      case "Heading":
-        visitHeading(node);
-        break;
-      case "PandocDiv":
-        visitPandocDiv(node);
-        break;
-      case "FencedCode":
-        visitFencedCode(node);
-        break;
-      case "Citation": {
-        const cluster = node.value;
-        const syntaxKind = cluster.startsWith("[") ? "bracketed" : "bare";
-        let searchFrom = 0;
+      case 'Heading':
+        visitHeading(node)
+        break
+      case 'PandocDiv':
+        visitPandocDiv(node)
+        break
+      case 'FencedCode':
+        visitFencedCode(node)
+        break
+      case 'Citation': {
+        const cluster = node.value
+        const syntaxKind = cluster.startsWith('[') ? 'bracketed' : 'bare'
+        let searchFrom = 0
         for (const item of node.parsedCitation.items) {
-          const family = referenceFamilyOf(item.id);
+          const family = referenceFamilyOf(item.id)
           if (family === undefined) {
             // Bibliography citations (e.g. @Ols04) are never occurrences.
-            continue;
+            continue
           }
 
-          const token = "@" + item.id;
-          const idx = cluster.indexOf(token, searchFrom);
+          const token = '@' + item.id
+          const idx = cluster.indexOf(token, searchFrom)
           if (idx === -1) {
-            throw new Error(
-              `Inconsistent citation node: item "${item.id}" not found in "${cluster}"`,
-            );
+            throw new Error(`Inconsistent citation node: item "${item.id}" not found in "${cluster}"`)
           }
-          searchFrom = idx + token.length;
+          searchFrom = idx + token.length
 
           occurrences.push({
             key: item.id,
@@ -432,21 +404,21 @@ export function extractReferencesFromAST(
             syntaxKind,
             clusterRaw: cluster,
             documentPath,
-            sourceHash,
-          });
+            sourceHash
+          })
         }
-        break;
+        break
       }
       default:
-        visitAttributedBlock(node);
+        visitAttributedBlock(node)
     }
 
     for (const child of childrenOf(node)) {
-      visit(child);
+      visit(child)
     }
-  };
+  }
 
-  visit(ast);
+  visit(ast)
 
-  return { documentPath, sourceHash, definitions, occurrences };
+  return { documentPath, sourceHash, definitions, occurrences }
 }

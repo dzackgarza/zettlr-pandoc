@@ -12,8 +12,10 @@
  * END HEADER
  */
 
-import { EditorSelection } from "@codemirror/state";
+import { EditorSelection } from '@codemirror/state'
 
 export function selectAll(text: string): EditorSelection {
-  return EditorSelection.create([EditorSelection.range(0, text.length)]);
+  return EditorSelection.create([
+    EditorSelection.range(0, text.length)
+  ])
 }

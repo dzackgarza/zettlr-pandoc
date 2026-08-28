@@ -14,11 +14,11 @@
  * END HEADER
  */
 
-import { syntaxTree } from "@codemirror/language";
-import { type Diagnostic, linter } from "@codemirror/lint";
-import { type EditorState } from "@codemirror/state";
-import { type SyntaxNodeRef } from "@lezer/common";
-import YAML from "yaml";
+import { syntaxTree } from '@codemirror/language'
+import { linter, type Diagnostic } from '@codemirror/lint'
+import { type EditorState } from '@codemirror/state'
+import { type SyntaxNodeRef } from '@lezer/common'
+import YAML from 'yaml'
 
 /**
  * Takes a state and detects if there is a frontmatter. If so, it returns the
@@ -30,26 +30,26 @@ import YAML from "yaml";
  *
  * @return  {SyntaxNodeRef|undefined}         Either the node, or undefined
  */
-function findYamlFrontmatterNode(state: EditorState): SyntaxNodeRef | undefined {
-  let returnNode: SyntaxNodeRef | undefined;
+function findYamlFrontmatterNode (state: EditorState): SyntaxNodeRef|undefined {
+  let returnNode: SyntaxNodeRef|undefined
   syntaxTree(state).iterate({
-    enter(node) {
+    enter (node) {
       if (returnNode !== undefined) {
-        return false; // Quickly end the iteration
+        return false // Quickly end the iteration
       }
 
-      if (node.name === "YAMLFrontmatter") {
+      if (node.name === 'YAMLFrontmatter') {
         // The startNode identifies a YAML Frontmatter block ...
-        const startNode = node.node.getChild("YAMLFrontmatterStart");
+        const startNode = node.node.getChild('YAMLFrontmatterStart')
         // ... and the CodeText node contains the actual YAML frontmatter code.
-        const codeNode = node.node.getChild("CodeText");
+        const codeNode = node.node.getChild('CodeText')
         if (startNode !== null && codeNode !== null) {
-          returnNode = codeNode;
+          returnNode = codeNode
         }
       }
-    },
-  });
-  return returnNode;
+    }
+  })
+  return returnNode
 }
 
 /**
@@ -62,33 +62,33 @@ function findYamlFrontmatterNode(state: EditorState): SyntaxNodeRef | undefined 
  *
  * @var {Extension}
  */
-export const yamlFrontmatterLint = linter(async (view) => {
-  const diagnostics: Diagnostic[] = [];
+export const yamlFrontmatterLint = linter(async view => {
+  const diagnostics: Diagnostic[] = []
 
-  const frontmatterNode = findYamlFrontmatterNode(view.state);
+  const frontmatterNode = findYamlFrontmatterNode(view.state)
   if (frontmatterNode === undefined) {
-    return diagnostics;
+    return diagnostics
   }
 
-  const content = view.state.sliceDoc(frontmatterNode.from, frontmatterNode.to);
+  const content = view.state.sliceDoc(frontmatterNode.from, frontmatterNode.to)
 
   try {
-    const document = YAML.parseDocument(content);
+    const document = YAML.parseDocument(content)
     for (const error of document.errors) {
       diagnostics.push({
         // NOTE that we have to offset the error code positions
         from: error.pos[0] + frontmatterNode.from,
         to: error.pos[1] + frontmatterNode.from,
-        severity: "error",
+        severity: 'error',
         source: `yaml-lint(${error.code})`,
         message: error.message,
-        actions: [],
-      });
+        actions: []
+      })
     }
-    return diagnostics;
+    return diagnostics
   } catch (err: any) {
-    console.error("Could not lint YAML: Linter threw an error", err);
+    console.error('Could not lint YAML: Linter threw an error', err)
   }
 
-  return diagnostics;
-});
+  return diagnostics
+})

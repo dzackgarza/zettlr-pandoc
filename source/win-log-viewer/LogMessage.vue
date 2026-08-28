@@ -43,21 +43,21 @@
  * END HEADER
  */
 
-import { type LogMessage } from "source/app/service-providers/log";
-import { computed, ref } from "vue";
+import { type LogMessage } from 'source/app/service-providers/log'
+import { ref, computed } from 'vue'
 
 const props = defineProps<{
-  message: LogMessage;
-}>();
+  message: LogMessage
+}>()
 
-const showDetails = ref(false);
+const showDetails = ref(false)
 
 /**
  * Returns the shape for the CLR icon: either an arrow down or up
  *
  * @return  {string}  The clr icon's shape
  */
-const iconDirection = computed(() => (showDetails.value ? "up" : "down"));
+const iconDirection = computed(() => showDetails.value ? 'up' : 'down')
 
 /**
  * Determines if this log message has additional details
@@ -69,27 +69,27 @@ const hasDetails = computed(() => {
   // explicitly because `typeof null === 'object'` would otherwise send it into
   // the object branch below and throw in Object.keys.
   if (props.message.details == null) {
-    return false;
+    return false
   }
 
   if (props.message.details instanceof Error) {
-    return true;
+    return true
   }
 
   if (Array.isArray(props.message.details)) {
-    return props.message.details.length > 0;
+    return props.message.details.length > 0
   }
 
-  if (typeof props.message.details === "object") {
-    return Object.keys(props.message.details).length > 0;
+  if (typeof props.message.details === 'object') {
+    return Object.keys(props.message.details).length > 0
   }
 
-  if (Array.isArray(props.message.details) || typeof props.message.details === "string") {
-    return props.message.details.length > 0;
+  if (Array.isArray(props.message.details) || typeof props.message.details === 'string') {
+    return props.message.details.length > 0
   }
 
-  return true;
-});
+  return true
+})
 
 /**
  * Parses the details attached to this log message depending on its type
@@ -98,40 +98,36 @@ const hasDetails = computed(() => {
  * @return  {string}  The parsed message
  */
 const parsedDetails = computed(() => {
-  const detail = props.message.details;
-  let ret = "";
+  const detail = props.message.details
+  let ret = ''
   if (detail instanceof Error) {
-    const stack = detail.stack?.replace(/\n/g, "<br>") ?? "";
-    return [`Name: ${detail.name}`, `Message: ${detail.message}`, stack].join("\n");
+    const stack = detail.stack?.replace(/\n/g, '<br>') ?? ''
+    return [
+      `Name: ${detail.name}`,
+      `Message: ${detail.message}`,
+      stack
+    ].join('\n')
   } else if (Array.isArray(detail)) {
     for (let i = 0; i < detail.length; i++) {
-      let val = typeof detail[i] === "object" ? JSON.stringify(detail[i]) : String(detail[i]) + "";
+      let val = (typeof detail[i] === 'object') ? JSON.stringify(detail[i]) : String(detail[i]) + ''
       if (val.length > 1000) {
-        val =
-          val.substring(0, 1000) +
-          '… <span class="more">(' +
-          (val.length - 1000) +
-          " more characters)</span>";
+        val = val.substring(0, 1000) + '… <span class="more">(' + (val.length - 1000) + ' more characters)</span>'
       }
-      ret += `[${i}]: ${val}`;
+      ret += `[${i}]: ${val}`
     }
-  } else if (detail !== null && typeof detail === "object") {
+  } else if (detail !== null && typeof detail === 'object') {
     for (const [param, value] of Object.entries(detail)) {
-      let val = typeof value === "object" ? JSON.stringify(value) : String(value) + "";
+      let val = (typeof value === 'object') ? JSON.stringify(value) : String(value) + ''
       if (val.length > 1000) {
-        val =
-          val.substring(0, 1000) +
-          '… <span class="more">(' +
-          (val.length - 1000) +
-          " more characters)</span>";
+        val = val.substring(0, 1000) + '… <span class="more">(' + (val.length - 1000) + ' more characters)</span>'
       }
-      ret += `${param}: ${val}\n`;
+      ret += `${param}: ${val}\n`
     }
   } else {
-    ret += `${String(detail)}\n`;
+    ret += `${String(detail)}\n`
   }
-  return ret;
-});
+  return ret
+})
 
 /**
  * Determines the message class and maps the message levels into CSS classes
@@ -140,34 +136,34 @@ const parsedDetails = computed(() => {
  *
  * @return  {string}         The CSS classes
  */
-function messageClass(level: number): string {
-  const classes = ["message"];
+function messageClass (level: number): string {
+  const classes = ['message']
   switch (level) {
     case 1:
-      classes.push("verbose");
-      break;
+      classes.push('verbose')
+      break
     case 2:
-      classes.push("info");
-      break;
+      classes.push('info')
+      break
     case 3:
-      classes.push("warning");
-      break;
+      classes.push('warning')
+      break
     case 4:
-      classes.push("error");
-      break;
+      classes.push('error')
+      break
   }
-  return classes.join(" ");
+  return classes.join(' ')
 }
 
 /**
  * Toggles display of this message's details on or off
  */
-function toggleDetails(): void {
+function toggleDetails (): void {
   if (!hasDetails.value) {
-    return;
+    return
   }
 
-  showDetails.value = !showDetails.value;
+  showDetails.value = !showDetails.value
 }
 </script>
 

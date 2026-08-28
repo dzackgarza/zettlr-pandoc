@@ -75,89 +75,86 @@
  * END HEADER
  */
 
-import showPopupMenu, {
-  type AnyMenuItem,
-} from "@common/modules/window-register/application-menu-helper";
-import { trans } from "source/common/i18n-renderer";
-import { computed, ref } from "vue";
-import PopoverWrapper from "../../PopoverWrapper.vue";
-import TextControl from "./TextControl.vue";
+import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
+import { trans } from 'source/common/i18n-renderer'
+import { computed, ref } from 'vue'
+import PopoverWrapper from '../../PopoverWrapper.vue'
+import TextControl from './TextControl.vue'
 
 export interface SelectableListItem {
-  displayText: string;
-  infoString?: string;
-  infoStringClass?: "error";
-  icon?: string;
-  solidIcon?: boolean;
-  [key: string]: any; // Allow arbitrary items
+  displayText: string
+  infoString?: string
+  infoStringClass?: 'error'
+  icon?: string
+  solidIcon?: boolean
+  [key: string]: any // Allow arbitrary items
 }
 
 const props = defineProps<{
-  items: Array<string | SelectableListItem>;
-  noItemsLabel?: string;
-  selectedItem?: number;
-  editable?: boolean;
-  addTextItem?: boolean;
-  requestTextPlaceholder?: string;
-}>();
+  items: Array<string|SelectableListItem>
+  noItemsLabel?: string
+  selectedItem?: number
+  editable?: boolean
+  addTextItem?: boolean
+  requestTextPlaceholder?: string
+}>()
 
 const emit = defineEmits<{
-  (e: "select", value: number): void;
-  (e: "add", itemText?: string): void;
-  (e: "remove", value: number): void;
-}>();
+  (e: 'select', value: number): void
+  (e: 'add', itemText?: string): void
+  (e: 'remove', value: number): void
+}>()
 
-const addButton = ref<HTMLDivElement | null>(null);
-const requestTextInput = ref<boolean>(false);
-const requestTextInputPlaceholder = computed(
-  () => props.requestTextPlaceholder ?? trans("New item"),
-);
-const textInput = ref("");
+const addButton = ref<HTMLDivElement|null>(null)
+const requestTextInput = ref<boolean>(false)
+const requestTextInputPlaceholder = computed(() => props.requestTextPlaceholder ?? trans('New item'))
+const textInput = ref('')
 
-const noItemsLabel = computed(() => props.noItemsLabel ?? trans("No items"));
+const noItemsLabel = computed(() => props.noItemsLabel ?? trans('No items'))
 
 // If there is at least one icon, we need the icon column for the entire list
 const needsIconColumn = computed<boolean>(() => {
-  return props.items.find((i) => typeof i !== "string" && i.icon !== undefined) !== undefined;
-});
+  return props.items
+    .find(i => typeof i !== 'string' && i.icon !== undefined) !== undefined
+})
 
-function getDisplayText(listItem: string | SelectableListItem): string {
-  if (typeof listItem === "string") {
-    return listItem;
+function getDisplayText (listItem: string|SelectableListItem): string {
+  if (typeof listItem === 'string') {
+    return listItem
   } else {
-    return listItem.displayText;
+    return listItem.displayText
   }
 }
 
-function hasInfoString(listItem: string | SelectableListItem): boolean {
-  return typeof listItem !== "string" && listItem.infoString !== undefined;
+function hasInfoString (listItem: string|SelectableListItem): boolean {
+  return typeof listItem !== 'string' && listItem.infoString !== undefined
 }
 
-function hasInfoStringError(listItem: string | SelectableListItem): boolean {
-  return typeof listItem !== "string" && listItem.infoStringClass === "error";
+function hasInfoStringError (listItem: string|SelectableListItem): boolean {
+  return typeof listItem !== 'string' && listItem.infoStringClass === 'error'
 }
 
-function handleContextMenu(event: MouseEvent, idx: number): void {
+function handleContextMenu (event: MouseEvent, idx: number): void {
   if (!props.editable) {
-    return; // No action possible
+    return // No action possible
   }
 
   const menu: AnyMenuItem[] = [
     {
-      label: "Remove",
-      id: "remove-item",
-      type: "normal",
-    },
-  ];
+      label: 'Remove',
+      id: 'remove-item',
+      type: 'normal'
+    }
+  ]
 
   showPopupMenu({ x: event.clientX, y: event.clientY }, menu, (clickedID) => {
-    if (clickedID === "remove-item") {
-      emit("remove", idx);
+    if (clickedID === 'remove-item') {
+      emit('remove', idx)
     }
-  });
+  })
 }
 
-function addItem() {
+function addItem () {
   if (props.addTextItem) {
     // The parent of this list has requested the addition of a text-based item.
     // Requesting text input from the user is something we implement here, as
@@ -167,19 +164,19 @@ function addItem() {
     // trigger the first part of the text input, that is, show the corresponding
     // popover, which in turn will request text input from the user and then
     // trigger the finishTextInput button below.
-    requestTextInput.value = !requestTextInput.value;
+    requestTextInput.value = !requestTextInput.value
   } else {
-    emit("add");
+    emit('add')
   }
 }
 
-function finishTextInput(emitEvent: boolean) {
-  const name = textInput.value;
-  textInput.value = "";
-  requestTextInput.value = false;
+function finishTextInput (emitEvent: boolean) {
+  const name = textInput.value
+  textInput.value = ''
+  requestTextInput.value = false
 
   if (emitEvent) {
-    emit("add", name);
+    emit('add', name)
   }
 }
 </script>

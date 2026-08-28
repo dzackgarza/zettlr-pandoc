@@ -12,14 +12,14 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-main";
-import path from "path";
-import type { AppServiceContainer } from "source/app/app-service-container";
-import ZettlrCommand from "./zettlr-command";
+import ZettlrCommand from './zettlr-command'
+import { trans } from '@common/i18n-main'
+import path from 'path'
+import type { AppServiceContainer } from 'source/app/app-service-container'
 
 export default class RequestMove extends ZettlrCommand {
-  constructor(app: AppServiceContainer) {
-    super(app, "request-move");
+  constructor (app: AppServiceContainer) {
+    super(app, 'request-move')
   }
 
   /**
@@ -29,15 +29,15 @@ export default class RequestMove extends ZettlrCommand {
    * @param  {any}      arg  The origin and the destination
    * @return {boolean}       Whether or not the command succeeded.
    */
-  async run(evt: string, arg: { from: string; to: string }): Promise<boolean> {
+  async run (evt: string, arg: { from: string, to: string }): Promise<boolean> {
     // arg contains from and to. Prepare the necessary variables
-    const from = await this._app.fsal.getDescriptorFor(arg.from);
-    const to = await this._app.fsal.getAnyDirectoryDescriptor(arg.to);
+    const from = await this._app.fsal.getDescriptorFor(arg.from)
+    const to = await this._app.fsal.getAnyDirectoryDescriptor(arg.to)
 
     if (to === undefined || from === undefined) {
       // If findDir doesn't return anything then it's a file
-      this._app.log.error("Could not find the target directory for moving.");
-      return false;
+      this._app.log.error('Could not find the target directory for moving.')
+      return false
     }
 
     // It can happen that the user begins to drag a file but then realizes they
@@ -45,49 +45,47 @@ export default class RequestMove extends ZettlrCommand {
     // directory. Without the following check they would be presented with an
     // unwanted "file already exists in target directory"-message.
     if (to.path === from.dir) {
-      return false;
+      return false
     }
 
     // Let's check if the destination is a child of the source:
-    if (from.type === "directory" && to.path.startsWith(from.path)) {
+    if (from.type === 'directory' && to.path.startsWith(from.path)) {
       this._app.windows.prompt({
-        type: "error",
-        title: trans("Cannot move directory"),
-        message: trans("You cannot move a directory into one of its subdirectories."),
-      });
-      return false;
+        type: 'error',
+        title: trans('Cannot move directory'),
+        message: trans('You cannot move a directory into one of its subdirectories.')
+      })
+      return false
     }
 
     // Now check if there already is a directory/file with the same name
-    const newPath = path.join(to.path, from.name);
+    const newPath = path.join(to.path, from.name)
     if (await this._app.fsal.pathExists(newPath)) {
       this._app.windows.prompt({
-        type: "error",
-        title: trans("Cannot move directory or file"),
-        message: trans("The file/directory %s already exists in target.", from.name),
-      });
+        type: 'error',
+        title: trans('Cannot move directory or file'),
+        message: trans('The file/directory %s already exists in target.', from.name)
+      })
 
-      return false;
+      return false
     }
 
     // A final check: If from is a file, and the file is modified, we cannot
     // move, lest we want to induce data loss, see issue #2347
     if (this._app.documents.isModified(arg.from)) {
-      this._app.log.error(
-        `[Application] Cannot move file ${arg.from} to ${arg.to}, since it is modified.`,
-      );
-      return false;
+      this._app.log.error(`[Application] Cannot move file ${arg.from} to ${arg.to}, since it is modified.`)
+      return false
     }
 
     // Now we can move the source to the target.
-    await this._app.fsal.rename(from.path, newPath);
+    await this._app.fsal.rename(from.path, newPath)
     // Notify the documents provider so it can exchange any files if necessary
     if (await this._app.fsal.isFile(newPath)) {
-      await this._app.documents.hasMovedFile(from.path, newPath);
+      await this._app.documents.hasMovedFile(from.path, newPath)
     } else {
-      await this._app.documents.hasMovedDir(from.path, newPath);
+      await this._app.documents.hasMovedDir(from.path, newPath)
     }
 
-    return true;
+    return true
   }
 }

@@ -16,84 +16,83 @@
 // NOTE: This is the opposite of the parse-grid-table tester. The only difference
 // is that the grid table builder only uses up as much space as necessary, while
 // the parser can work with "too much" space well.
-import { deepStrictEqual } from "assert";
-import { buildPipeMarkdownTable } from "source/common/util/build-pipe-markdown-table";
+import { deepStrictEqual } from 'assert'
+import { buildPipeMarkdownTable } from 'source/common/util/build-pipe-markdown-table'
 
-const table: Array<{ ast: string[][]; colAlignments: Array<"left" | "right" | "center" | null> }> =
-  [];
-const tableResults: string[] = [];
+const table: Array<{ ast: string[][], colAlignments: Array<'left'|'right'|'center'|null> }> = []
+const tableResults: string[] = []
 
 /** * * * * * * * * * * * * * * * * * *
- * TABLE ONE
- */
+* TABLE ONE
+*/
 tableResults.push(`\
 |   |   |
 |:--|:--|
-|   |   |`);
+|   |   |`)
 
 table.push({
   ast: [
-    ["", ""],
-    ["", ""],
+    [ '', '' ],
+    [ '', '' ]
   ],
-  colAlignments: ["left", "left"],
-});
+  colAlignments: [ 'left', 'left' ]
+})
 
 /** * * * * * * * * * * * * * * * * * *
- * TABLE TWO
- */
+* TABLE TWO
+*/
 tableResults.push(`\
 |   |   |   |   |
 |:--|:--|:--|:--|
 |   |   |   |   |
-|   |   |   |   |`);
+|   |   |   |   |`)
 
 table.push({
   ast: [
-    ["", "", "", ""],
-    ["", "", "", ""],
-    ["", "", "", ""],
+    [ '', '', '', '' ],
+    [ '', '', '', '' ],
+    [ '', '', '', '' ]
   ],
-  colAlignments: ["left", "left", "left", "left"],
-});
+  colAlignments: [ 'left', 'left', 'left', 'left' ]
+})
 
 /** * * * * * * * * * * * * * * * * * *
- * TABLE THREE
- */
+* TABLE THREE
+*/
 tableResults.push(`\
 | Left   | Centered |  Right |
 |:-------|:--------:|-------:|
-| Col. 1 |  Col. 2  | Col. 3 |`);
+| Col. 1 |  Col. 2  | Col. 3 |`)
 
 table.push({
   ast: [
-    ["Left", "Centered", "Right"],
-    ["Col. 1", "Col. 2", "Col. 3"],
+    [ 'Left', 'Centered', 'Right' ],
+    [ 'Col. 1', 'Col. 2', 'Col. 3' ]
   ],
-  colAlignments: ["left", "center", "right"],
-});
+  colAlignments: [ 'left', 'center', 'right' ]
+})
 
 /** * * * * * * * * * * * * * * * * * *
- * TABLE FOUR
- */
+* TABLE FOUR
+*/
 tableResults.push(`\
 | One | Two | Three | Four | Five |
 |:----|-----|:-----:|------|-----:|
-| 1   | 2   |   3   | 4    |    5 |`);
+| 1   | 2   |   3   | 4    |    5 |`)
 
 table.push({
   ast: [
-    ["One", "Two", "Three", "Four", "Five"],
-    ["1", "2", "3", "4", "5"],
+    [ 'One', 'Two', 'Three', 'Four', 'Five' ],
+    [ '1', '2', '3', '4', '5' ]
   ],
-  colAlignments: ["left", null, "center", null, "right"],
-});
+  colAlignments: [ 'left', null, 'center', null, 'right' ]
+})
 
-describe("TableEditor#buildGrid()", function () {
+describe('TableEditor#buildGrid()', function () {
   for (let i = 0; i < table.length; i++) {
     it(`Should build test table ${i + 1} correctly`, function () {
-      const { ast, colAlignments } = table[i];
-      deepStrictEqual(buildPipeMarkdownTable(ast, colAlignments), tableResults[i]);
-    });
+      const { ast, colAlignments } = table[i]
+      deepStrictEqual(buildPipeMarkdownTable(ast, colAlignments), tableResults[i])
+    })
   }
-});
+})

@@ -12,11 +12,11 @@
  * END HEADER
  */
 
-import { EditorState, Transaction } from "@codemirror/state";
-import { strictEqual } from "assert";
-import { moveSection } from "source/common/modules/markdown-editor/commands/move-section";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
-import { tocField } from "source/common/modules/markdown-editor/plugins/toc-field";
+import { strictEqual } from 'assert'
+import { EditorState, Transaction } from '@codemirror/state'
+import { moveSection } from 'source/common/modules/markdown-editor/commands/move-section'
+import { tocField } from 'source/common/modules/markdown-editor/plugins/toc-field'
+import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 
 const baseDocument = `\
 # Section 1
@@ -39,7 +39,7 @@ This is the Section 3.1 body.
 
 ### Section 3.1.1
 
-This is the Section 3.1.1 body.`;
+This is the Section 3.1.1 body.`
 
 const moveSectionTests = [
   {
@@ -151,33 +151,37 @@ This is the Section 3.1 body.
 ### Section 3.1.1
 
 This is the Section 3.1.1 body.`,
-  },
-];
+  }
+]
 
-describe("MarkdownEditor#moveSection()", function () {
+describe('MarkdownEditor#moveSection()', function () {
+
   moveSectionTests.forEach((test, idx) => {
     it(`Move Sections: Test ${idx + 1}`, function () {
       const state = EditorState.create({
         doc: baseDocument,
-        extensions: [tocField, markdownParser()],
-      });
+        extensions: [
+          tocField,
+          markdownParser(),
+        ]
+      })
 
-      const toc = state.field(tocField);
+      const toc = state.field(tocField)
 
-      const { from, to, expected } = test;
+      const { from, to, expected } = test
 
-      let wasDispatched = false;
+      let wasDispatched = false
 
       const dispatch = (tx: Transaction) => {
-        wasDispatched = true;
+        wasDispatched = true
 
-        const contents = tx.newDoc.toString();
-        strictEqual(contents, expected, "Sections were moved incorrectly.");
-      };
+        const contents = tx.newDoc.toString()
+        strictEqual(contents, expected, "Sections were moved incorrectly.")
+      }
 
-      moveSection(toc, from, to)({ state, dispatch });
+      moveSection(toc, from, to)({ state, dispatch })
 
-      strictEqual(wasDispatched, true, "A transaction must have been dispatched");
-    });
-  });
-});
+      strictEqual(wasDispatched, true, "A transaction must have been dispatched")
+    })
+  })
+})

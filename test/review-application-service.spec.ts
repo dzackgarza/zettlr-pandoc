@@ -14,20 +14,20 @@
  * END HEADER
  */
 
-import { ChangeSet, Text } from "@codemirror/state";
-import serializeChangeSet from "@common/util/serialize-change-set";
-import { sha256Text } from "@common/util/sha256";
-import type { AgentEventType } from "@dts/common/agent-api";
-import type { SerializedUpdate } from "@dts/common/documents";
 import { strict as assert } from "assert";
-import { createPatch } from "diff";
 import { mkdirSync, mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { ChangeSet, Text } from "@codemirror/state";
+import { createPatch } from "diff";
+import type { AgentEventType } from "@dts/common/agent-api";
+import type { SerializedUpdate } from "@dts/common/documents";
+import { sha256Text } from "@common/util/sha256";
+import serializeChangeSet from "@common/util/serialize-change-set";
 import {
+  ReviewApplicationService,
   type AgentEventPayload,
   type PreparedDocumentMutation,
-  ReviewApplicationService,
   type ReviewDocumentAuthority,
 } from "source/app/service-providers/documents/review-application-service";
 import { reviewSidecarFilePath } from "source/app/service-providers/documents/review-sidecar-store";
@@ -83,7 +83,10 @@ class DocumentAuthority implements ReviewDocumentAuthority {
     return documentId === DOCUMENT_ID ? sha256Text(this.diskText) : undefined;
   }
 
-  prepareWorkingTextReplacement(documentId: string, nextText: string): PreparedDocumentMutation {
+  prepareWorkingTextReplacement(
+    documentId: string,
+    nextText: string,
+  ): PreparedDocumentMutation {
     assert.equal(documentId, DOCUMENT_ID);
     const currentText = this.text.toString();
     if (currentText === nextText) {
@@ -101,7 +104,8 @@ class DocumentAuthority implements ReviewDocumentAuthority {
     while (
       suffix < currentText.length - prefix &&
       suffix < nextText.length - prefix &&
-      currentText[currentText.length - suffix - 1] === nextText[nextText.length - suffix - 1]
+      currentText[currentText.length - suffix - 1] ===
+        nextText[nextText.length - suffix - 1]
     ) {
       suffix += 1;
     }
@@ -192,10 +196,13 @@ describe("ReviewApplicationService", function () {
     assert.equal(sidecar?.workingText, proposed);
     assert.equal(sidecar?.packets.length, 1);
 
-    const decided = await service.acceptAllChunks(submitted.reviewId, {
-      expectedReviewGeneration: submitted.reviewGeneration,
-      expectedWorkingSha256: sha256Text(proposed),
-    });
+    const decided = await service.acceptAllChunks(
+      submitted.reviewId,
+      {
+        expectedReviewGeneration: submitted.reviewGeneration,
+        expectedWorkingSha256: sha256Text(proposed),
+      },
+    );
     assert.equal(decided.ok, true);
     assert.equal(authority.readWorkingText(DOCUMENT_ID), proposed);
     assert.equal(service.reviewStore.getStatus(DOCUMENT_ID, proposed)?.unresolvedChunks, 0);
@@ -511,10 +518,15 @@ describe("ReviewApplicationService", function () {
 
     const restartedReview = restarted.getReview(DOCUMENT_ID);
     assert.ok(restartedReview !== undefined);
-    const accepted = await restarted.decideChunk(submitted.reviewId, second.chunkId, "accept", {
-      expectedReviewGeneration: restartedReview.generation,
-      expectedWorkingSha256: sha256Text(edited),
-    });
+    const accepted = await restarted.decideChunk(
+      submitted.reviewId,
+      second.chunkId,
+      "accept",
+      {
+        expectedReviewGeneration: restartedReview.generation,
+        expectedWorkingSha256: sha256Text(edited),
+      },
+    );
     assert.equal(accepted.ok, true);
     if (!accepted.ok) {
       return;
@@ -530,10 +542,15 @@ describe("ReviewApplicationService", function () {
       "accepting one suggestion must leave the other unresolved",
     );
 
-    const rejected = await restarted.decideChunk(submitted.reviewId, first.chunkId, "reject", {
-      expectedReviewGeneration: accepted.reviewGeneration,
-      expectedWorkingSha256: sha256Text(edited),
-    });
+    const rejected = await restarted.decideChunk(
+      submitted.reviewId,
+      first.chunkId,
+      "reject",
+      {
+        expectedReviewGeneration: accepted.reviewGeneration,
+        expectedWorkingSha256: sha256Text(edited),
+      },
+    );
     assert.equal(rejected.ok, true);
     assert.equal(authority.readWorkingText(DOCUMENT_ID), "oneowner middle TWO\n");
   });
@@ -677,10 +694,7 @@ describe("ReviewApplicationService", function () {
 
     const save = await service.prepareSave(DOCUMENT_ID, sha256Text(proposed));
     assert.ok(save !== undefined);
-    assert.equal(
-      (await service.readSidecar(DOCUMENT_PATH))?.pendingSave?.afterDiskSha256,
-      sha256Text(proposed),
-    );
+    assert.equal((await service.readSidecar(DOCUMENT_PATH))?.pendingSave?.afterDiskSha256, sha256Text(proposed));
     await service.completeSave(save!, sha256Text(proposed));
     assert.equal((await service.readSidecar(DOCUMENT_PATH))?.pendingSave, undefined);
 

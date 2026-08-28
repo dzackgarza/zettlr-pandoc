@@ -51,17 +51,15 @@
  * END HEADER
  */
 
-import { type RecoverableOutcome, runRecoverably } from "@common/util/run-recoverably";
-import type { ReferenceProviderIPCAPI } from "source/app/service-providers/references";
+import { runRecoverably, type RecoverableOutcome } from '@common/util/run-recoverably'
+import type { ReferenceProviderIPCAPI } from 'source/app/service-providers/references'
 
 /** The renderer ipc seam the invocations travel through (ipcRenderer.invoke). */
-export type ReferenceProviderInvoker = (
-  channel: "reference-provider",
-  message: ReferenceProviderIPCAPI,
-) => Promise<unknown>;
+export type ReferenceProviderInvoker =
+  (channel: 'reference-provider', message: ReferenceProviderIPCAPI) => Promise<unknown>
 
 /** The typed outcome of a recoverable reference-provider invocation. */
-export type RecoverableReferenceOutcome<T> = RecoverableOutcome<T>;
+export type RecoverableReferenceOutcome<T> = RecoverableOutcome<T>
 
 /**
  * Invokes a reference-provider command, surfacing any rejection as one
@@ -76,13 +74,10 @@ export type RecoverableReferenceOutcome<T> = RecoverableOutcome<T>;
  *
  * @return  {Promise<RecoverableReferenceOutcome<T>>}   The typed outcome
  */
-export async function invokeReferenceProviderRecoverably<T>(
+export async function invokeReferenceProviderRecoverably<T> (
   ipcInvoke: ReferenceProviderInvoker,
   message: ReferenceProviderIPCAPI,
-  operationLabel: string,
+  operationLabel: string
 ): Promise<RecoverableReferenceOutcome<T>> {
-  return await runRecoverably<T>(
-    async () => (await ipcInvoke("reference-provider", message)) as T,
-    operationLabel,
-  );
+  return await runRecoverably<T>(async () => await ipcInvoke('reference-provider', message) as T, operationLabel)
 }

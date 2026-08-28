@@ -12,13 +12,14 @@
  * END HEADER
  */
 
+import { app, nativeTheme } from "electron";
+import * as bcp47 from "bcp-47";
+import { v4 as uuid4 } from "uuid";
 import getLanguageFile from "@common/util/get-language-file";
 import { NAVIGATION_SHORTCUT_DEFAULTS } from "@common/util/navigation-shortcuts";
-import * as bcp47 from "bcp-47";
-import { app, nativeTheme } from "electron";
-import { v4 as uuid4 } from "uuid";
 
-export type MarkdownTheme = "berlin" | "frankfurt" | "bielefeld" | "karl-marx-stadt" | "bordeaux";
+export type MarkdownTheme =
+  "berlin" | "frankfurt" | "bielefeld" | "karl-marx-stadt" | "bordeaux";
 
 // This is a handy interface to add groups of file types to the settings in
 // order to allow users to display them in filemanager and/or sidebar, and open
@@ -208,7 +209,8 @@ export interface ConfigOptions {
     boldFormatting: "**" | "__";
     italicFormatting: "_" | "*";
     highlightFormatting: "span" | "==";
-    readabilityAlgorithm: "dale-chall" | "gunning-fog" | "coleman-liau" | "automated-readability";
+    readabilityAlgorithm:
+      "dale-chall" | "gunning-fog" | "coleman-liau" | "automated-readability";
     lint: {
       markdown: boolean;
       languageTool: {

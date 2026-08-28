@@ -19,10 +19,10 @@
  * END HEADER
  */
 
-import type { SyntaxNode } from "@lezer/common";
-import type { Table, TableCell, TableRow, TextNode } from "../markdown-ast";
-import { genericTextNode } from "./generic-text-node";
-import { parseChildren } from "./parse-children";
+import type { SyntaxNode } from '@lezer/common'
+import type { Table, TableRow, TableCell, TextNode } from '../markdown-ast'
+import { genericTextNode } from './generic-text-node'
+import { parseChildren } from './parse-children'
 
 /**
  * Parses a SyntaxNode of name "Table". NOTE the following caveats:
@@ -41,7 +41,7 @@ import { parseChildren } from "./parse-children";
  *                                      could not parse the table, a TextNode is
  *                                      returned instead.
  */
-export function parseTableNode(node: SyntaxNode, markdown: string): Table | TextNode {
+export function parseTableNode (node: SyntaxNode, markdown: string): Table|TextNode {
   // logLezerTree(node, { markdown, logNodes: true })
   // A few NOTEs on how the Lezer parser handles Markdown tables.
   // 1. It only supports GFM tables, i.e., pipe tables. Marijn has implemented
@@ -68,31 +68,29 @@ export function parseTableNode(node: SyntaxNode, markdown: string): Table | Text
   // 1. We determine the correct number of columns by looking at the
   //    TableDelimiter node that is a direct child of the Table node. If there
   //    is none, we return a generic Text Node (an error w/o losing information)
-  const delimitingRow = node.getChild("TableDelimiter");
+  const delimitingRow = node.getChild('TableDelimiter')
   if (delimitingRow === null) {
     // TODO: Right now, this line will trigger for grid tables (I literally
     // forgot that I implemented a parser for that).
-    console.warn(
-      "Could not parse Table: Could not find a delimiting row. This can be caused by ambiguous table markup.",
-    );
+    console.warn('Could not parse Table: Could not find a delimiting row. This can be caused by ambiguous table markup.')
     // logLezerTree(node)
     // console.log(markdown.slice(node.from, node.to))
-    return genericTextNode(node.from, node.to, markdown.slice(node.from, node.to));
+    return genericTextNode(node.from, node.to, markdown.slice(node.from, node.to))
   }
 
   const astNode: Table = {
-    type: "Table",
-    name: "Table",
+    type: 'Table',
+    name: 'Table',
     // Pipe tables must start with the header row while grid tables start with a
     // delimiter -> here we can distinguish them.
-    tableType: node.firstChild?.name === "TableDelimiter" ? "grid" : "pipe",
+    tableType: node.firstChild?.name === 'TableDelimiter' ? 'grid' : 'pipe',
     from: node.from,
     to: node.to,
-    whitespaceBefore: "",
+    whitespaceBefore: '',
     alignment: [],
     rows: [],
-    attributes: {},
-  };
+    attributes: {}
+  }
 
   // TODO: Create two sub-functions; one which does the same as below to parse
   // pipe tables, and one that parses grid tables.
@@ -103,50 +101,50 @@ export function parseTableNode(node: SyntaxNode, markdown: string): Table | Text
     .slice(delimitingRow.from, delimitingRow.to)
     // Account for Emacs tables which are essentially pipe tables with the one
     // single exception that they contain "+" instead of "|" in the delimiter.
-    .replace("+", "|")
-    .split("|")
+    .replace('+', '|')
+    .split('|')
     // We can throw away leading whitespace because table headers are required
     // to be non-empty cells and must contain hyphens, whitespace, and colons.
-    .map((c) => c.trim())
+    .map(c => c.trim())
     // NOTE: |-|-| will result in ['', '-', '-', ''] -> filter out
-    .filter((c) => c.length > 0)
-    .map((c) => {
+    .filter(c => c.length > 0)
+    .map(c => {
       // Now extract the alignment characters
-      if (c.startsWith(":") && c.endsWith(":")) {
-        return "center";
-      } else if (c.startsWith(":")) {
-        return "left";
-      } else if (c.endsWith(":")) {
-        return "right";
+      if (c.startsWith(':') && c.endsWith(':')) {
+        return 'center'
+      } else if (c.startsWith(':')) {
+        return 'left'
+      } else if (c.endsWith(':')) {
+        return 'right'
       } else {
-        return null;
+        return null
       }
-    });
+    })
 
   // Delimiter row determines alignment + correct number of columns
-  const nCols = astNode.alignment.length;
+  const nCols = astNode.alignment.length
 
   // 2. Iterate over all top-level children, which can be TableHeader or
   //    TableRow to extract all rows.
-  let row = node.firstChild;
+  let row = node.firstChild
   while (row !== null) {
-    if (row.name === "TableDelimiter") {
-      row = row.nextSibling;
-      continue; // Skip the delimiting row
+    if (row.name === 'TableDelimiter') {
+      row = row.nextSibling
+      continue // Skip the delimiting row
     }
 
     const tableRow: TableRow = {
-      type: "TableRow",
+      type: 'TableRow',
       name: row.name,
       from: row.from,
       to: row.to,
       cells: [],
-      isHeaderOrFooter: row.name === "TableHeader",
-      whitespaceBefore: "",
-      attributes: {},
-    };
+      isHeaderOrFooter: row.name === 'TableHeader',
+      whitespaceBefore: '',
+      attributes: {}
+    }
 
-    astNode.rows.push(tableRow);
+    astNode.rows.push(tableRow)
 
     // Each row consists of a mixture of TableCell and TableDelimiter. Note that
     // empty cells are not mounted as TableCell. Also, tables are still valid if
@@ -156,105 +154,106 @@ export function parseTableNode(node: SyntaxNode, markdown: string): Table | Text
     // row.from, we assume that this row starts with a delim. If delim.from >
     // row.from, we assume that this row starts with a whitespace-only cell that
     // hasn't been mounted by the parser.
-    let child = row.firstChild;
+    let child = row.firstChild
     if (child === null) {
-      console.warn("Could not parse Table: A row node had zero children.");
-      return genericTextNode(node.from, node.to, markdown.slice(node.from, node.to));
+      console.warn('Could not parse Table: A row node had zero children.')
+      return genericTextNode(node.from, node.to, markdown.slice(node.from, node.to))
     }
 
-    let hasHiddenFirstCell = false;
-    if (child.name === "TableDelimiter" && child.from > row.from) {
+    let hasHiddenFirstCell = false
+    if (child.name === 'TableDelimiter' && child.from > row.from) {
       // We assume the row starts with a non-mounted, whitespace-only cell
-      hasHiddenFirstCell = true;
+      hasHiddenFirstCell = true
       // Put the cell's start in the middle of the whitespace
-      const from = row.from + Math.ceil((child.from - row.from) / 2);
-      const to = from;
+      const from = row.from + Math.ceil((child.from - row.from) / 2)
+      const to = from
 
       tableRow.cells.push({
-        type: "TableCell",
-        name: "TableCell",
+        type: 'TableCell',
+        name: 'TableCell',
         from,
         to,
-        whitespaceBefore: "",
+        whitespaceBefore: '',
         children: [],
         padding: {
           // Retain the cell's padding (the entire cell content from delimiter to delimiter)
           from: row.from,
-          to: child.from,
+          to: child.from
         },
-        textContent: "",
-        attributes: {},
-      });
+        textContent: '',
+        attributes: {}
+      })
     }
 
     // At this point, we have accounted for a "hidden" first cell. Now we can
     // implement a simpler logic.
-    let wasDelim = false;
+    let wasDelim = false
     while (child !== null) {
-      if (child.name === "TableDelimiter" && !wasDelim) {
-        wasDelim = true;
-      } else if (child.name === "TableDelimiter" && wasDelim) {
+      if (child.name === 'TableDelimiter' && !wasDelim) {
+        wasDelim = true
+      } else if (child.name === 'TableDelimiter' && wasDelim) {
         // Last iteration was a TableDelimiter, and now again --> Unmounted cell
-        const prev = child.prevSibling!;
+        const prev = child.prevSibling!
         // Put the cell in the center of the whitespace span
-        const from = prev.to + Math.ceil((child.from - prev.to) / 2);
-        const to = from;
+        const from = prev.to + Math.ceil((child.from - prev.to) / 2)
+        const to = from
 
         const cellNode: TableCell = {
-          type: "TableCell",
-          name: tableRow.isHeaderOrFooter ? "th" : "td",
+          type: 'TableCell',
+          name: tableRow.isHeaderOrFooter ? 'th' : 'td',
           from,
           to,
-          whitespaceBefore: "",
+          whitespaceBefore: '',
           children: [],
           padding: {
             // Retain the cell's padding (the entire cell content from delimiter to delimiter)
             from: prev.to,
-            to: child.from,
+            to: child.from
           },
-          textContent: "",
-          attributes: {},
-        };
-        tableRow.cells.push(cellNode);
-      } else if (child.name === "TableCell") {
+          textContent: '',
+          attributes: {}
+        }
+        tableRow.cells.push(cellNode)
+      } else if (child.name === 'TableCell') {
         // Functional table cell. NOTE: The Lezer parser will trim whitespace
         // from the start and end.
         const cellNode: TableCell = {
-          type: "TableCell",
-          name: tableRow.isHeaderOrFooter ? "th" : "td",
+          type: 'TableCell',
+          name: tableRow.isHeaderOrFooter ? 'th' : 'td',
           from: child.from,
           to: child.to,
-          whitespaceBefore: "",
+          whitespaceBefore: '',
           children: [],
           padding: {
             // Retain the cell's padding (the entire cell content from delimiter to delimiter)
             from: child.prevSibling !== null ? child.prevSibling.to : row.from,
-            to: child.nextSibling !== null ? child.nextSibling.from : row.to,
+            to: child.nextSibling !== null ? child.nextSibling.from : row.to
           },
           textContent: markdown.slice(child.from, child.to),
-          attributes: {},
-        };
-        parseChildren(cellNode, child, markdown);
-        tableRow.cells.push(cellNode);
-        wasDelim = false;
+          attributes: {}
+        }
+        parseChildren(cellNode, child, markdown)
+        tableRow.cells.push(cellNode)
+        wasDelim = false
       } else {
-        console.warn(`Could not fully parse Table node: Unexpected node "${child.name}" in row.`);
-        wasDelim = false;
+        console.warn(`Could not fully parse Table node: Unexpected node "${child.name}" in row.`)
+        wasDelim = false
       }
-      child = child.nextSibling;
+      child = child.nextSibling
     }
+
 
     // There is one final thing to do before we are done with the table row. We
     // have to check our assumption of "hidden" first cells. If a row has one
     // too many cells, we need to remove the first one again, because our
     // assumption was clearly wrong in this case.
     if (hasHiddenFirstCell && tableRow.cells.length === nCols + 1) {
-      tableRow.cells.shift();
+      tableRow.cells.shift()
     }
 
     // Next row
-    row = row.nextSibling;
+    row = row.nextSibling
   }
 
-  return astNode;
+  return astNode
 }

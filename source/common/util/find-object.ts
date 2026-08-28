@@ -21,41 +21,36 @@
  *
  * @returns {any|undefined}           Either the correct object, or undefined
  */
-export default function findObject(
-  tree: any,
-  prop: string,
-  val: any,
-  traverse: string,
-): any | undefined {
+export default function findObject (tree: any, prop: string, val: any, traverse: string): any|undefined {
   // Is the tree even defined?
   if (tree == null) {
-    return undefined;
+    return undefined
   }
 
   // First let's see if we can shortcut
   if (!Array.isArray(tree) && prop in tree && tree[prop] === val) {
-    return tree;
+    return tree
   }
 
   // Now search the tree
   if (Array.isArray(tree)) {
     // The tree itself is an array
     for (const item of tree) {
-      const ret = findObject(item, prop, val, traverse);
+      const ret = findObject(item, prop, val, traverse)
       if (ret !== undefined) {
-        return ret;
+        return ret
       }
     }
   } else if (traverse in tree && Array.isArray(tree[traverse])) {
     // The descendants are an array
     for (const descendant of tree[traverse]) {
-      const ret = findObject(descendant, prop, val, traverse);
+      const ret = findObject(descendant, prop, val, traverse)
       if (ret !== undefined) {
-        return ret;
+        return ret
       }
     }
   } else if (traverse in tree) {
     // Neither tree nor descendants are an array -> simple traverse
-    return findObject(tree[traverse], prop, val, traverse);
+    return findObject(tree[traverse], prop, val, traverse)
   }
 }

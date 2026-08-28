@@ -12,69 +12,69 @@
   </Teleport>
 </template>
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from "vue";
+import { onBeforeUnmount, onMounted, onUpdated, ref, computed } from 'vue'
 
-type Placement = "above" | "below" | "left" | "right";
+type Placement = 'above'|'below'|'left'|'right'
 
 const props = defineProps<{
-  target: HTMLElement;
-  placementPriorities?: Placement[];
-}>();
+  target: HTMLElement
+  placementPriorities?: Placement[]
+}>()
 
-const emit = defineEmits<(e: "close") => void>();
+const emit = defineEmits<(e: 'close') => void>()
 
 const placementPriorities = computed<[Placement, Placement, Placement, Placement]>(() => {
   if (props.placementPriorities === undefined) {
-    return ["below", "right", "above", "left"] as [Placement, Placement, Placement, Placement];
+    return [ 'below', 'right', 'above', 'left' ] as [Placement, Placement, Placement, Placement]
   }
 
-  let placements = [...new Set(props.placementPriorities)];
+  let placements = [...new Set(props.placementPriorities)]
 
   // Ensure it includes all elements once
-  if (!placements.includes("below")) {
-    placements.push("below");
+  if (!placements.includes('below')) {
+    placements.push('below')
   }
-  if (!placements.includes("right")) {
-    placements.push("right");
-  }
-
-  if (!placements.includes("above")) {
-    placements.push("above");
+  if (!placements.includes('right')) {
+    placements.push('right')
   }
 
-  if (!placements.includes("left")) {
-    placements.push("left");
+  if (!placements.includes('above')) {
+    placements.push('above')
   }
 
-  return placements as [Placement, Placement, Placement, Placement];
-});
+  if (!placements.includes('left')) {
+    placements.push('left')
+  }
 
-const popupWrapper = ref<HTMLDivElement | null>(null);
-const popupArrow = ref<HTMLDivElement | null>(null);
+  return placements as [Placement, Placement, Placement, Placement]
+})
 
-const MAX_ARROW_SIZE = 20;
-const MIN_ARROW_SIZE = 5;
-const DOCUMENT_MARGIN = 10;
+const popupWrapper = ref<HTMLDivElement|null>(null)
+const popupArrow = ref<HTMLDivElement|null>(null)
+
+const MAX_ARROW_SIZE = 20
+const MIN_ARROW_SIZE = 5
+const DOCUMENT_MARGIN = 10
 
 onMounted(() => {
-  document.addEventListener("mousedown", onClick);
-  document.addEventListener("contextmenu", onClick);
-  document.addEventListener("resize", onResize);
+  document.addEventListener('mousedown', onClick)
+  document.addEventListener('contextmenu', onClick)
+  document.addEventListener('resize', onResize)
 
   // Allow closing of the popover with Escape
-  popupWrapper.value?.addEventListener("keydown", onKeydown);
+  popupWrapper.value?.addEventListener('keydown', onKeydown)
 
-  place(); // Initial placement
-});
+  place() // Initial placement
+})
 
 onBeforeUnmount(() => {
-  document.removeEventListener("mousedown", onClick);
-  document.removeEventListener("contextmenu", onClick);
-  document.removeEventListener("resize", onResize);
-  popupWrapper.value?.removeEventListener("keydown", onKeydown);
-});
+  document.removeEventListener('mousedown', onClick)
+  document.removeEventListener('contextmenu', onClick)
+  document.removeEventListener('resize', onResize)
+  popupWrapper.value?.removeEventListener('keydown', onKeydown)
+})
 
-onUpdated(place);
+onUpdated(place)
 
 /**
  * This function should be attached to the popover wrapper to allow easy closing
@@ -82,19 +82,19 @@ onUpdated(place);
  *
  * @param   {KeyboardEvent}  event  The keyboard event
  */
-function onKeydown(event: KeyboardEvent): void {
-  if (event.key === "Escape") {
-    event.preventDefault();
-    event.stopPropagation();
-    emit("close");
+function onKeydown (event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    emit('close')
   }
 }
 
-function onClick(event: MouseEvent): void {
-  const target = event.target as Node | null;
+function onClick (event: MouseEvent): void {
+  const target = event.target as Node | null
 
   if (popupWrapper.value === null || target === null) {
-    return;
+    return
   }
 
   // Clicks on the popup itself are cool
@@ -102,138 +102,126 @@ function onClick(event: MouseEvent): void {
   // Background for the following line:
   // https://github.com/Zettlr/Zettlr/issues/554
   if (popupWrapper.value.contains(target)) {
-    return;
+    return
   }
 
   // Ignore clicks on the popover's target element
   // so that clicking that closes the popover.
   if (props.target.contains(target)) {
-    return;
+    return
   }
 
-  let x = event.clientX;
-  let y = event.clientY;
+  let x = event.clientX
+  let y = event.clientY
 
   // Now determine where the popup is
-  let minX = popupWrapper.value.offsetLeft;
-  let maxX = minX + popupWrapper.value.offsetWidth;
-  let minY = popupWrapper.value.offsetTop;
-  let maxY = minY + popupWrapper.value.offsetHeight;
+  let minX = popupWrapper.value.offsetLeft
+  let maxX = minX + popupWrapper.value.offsetWidth
+  let minY = popupWrapper.value.offsetTop
+  let maxY = minY + popupWrapper.value.offsetHeight
 
   if (x < minX || maxX < x || y < minY || maxY < y) {
     // Clicked outside the popup -> close it
-    emit("close");
+    emit('close')
   }
 }
 
-function onResize(event: UIEvent): void {
-  place();
+function onResize (event: UIEvent): void {
+  place()
 }
 
 /**
  * Places the popover correctly.
  */
-function place(): void {
+function place (): void {
   if (popupWrapper.value === null || popupArrow.value === null) {
-    return;
+    return
   }
 
-  const wrapper = popupWrapper.value;
-  const arrow = popupArrow.value;
+  const wrapper = popupWrapper.value
+  const arrow = popupArrow.value
 
   // First, reset any applied styles to the elements
-  wrapper.style.height = "";
-  wrapper.style.width = "";
-  wrapper.style.left = "";
-  wrapper.style.top = "";
+  wrapper.style.height = ''
+  wrapper.style.width = ''
+  wrapper.style.left = ''
+  wrapper.style.top = ''
 
-  arrow.style.left = "";
-  arrow.style.top = "";
-  arrow.style.display = "";
-  arrow.style.borderWidth = "";
-  arrow.classList.remove("up", "down", "left", "right");
+  arrow.style.left = ''
+  arrow.style.top = ''
+  arrow.style.display = ''
+  arrow.style.borderWidth = ''
+  arrow.classList.remove('up', 'down', 'left', 'right')
 
   // Windows doesn't have arrows on their popovers, just as they call them
   // "flyouts" instead of PopOvers. So on Windows we shouldn't show them.
-  if (process.platform === "win32") {
-    arrow.style.display = "none";
+  if (process.platform === 'win32') {
+    arrow.style.display = 'none'
   }
 
   // Gather dimensions of window and target (which do not change here)
-  const windowWidth = window.innerWidth;
-  const windowHeight = window.innerHeight;
+  const windowWidth = window.innerWidth
+  const windowHeight = window.innerHeight
 
-  const targetRect = props.target.getBoundingClientRect();
-  const targetTop = targetRect.top;
-  const targetLeft = targetRect.left;
-  const targetWidth = targetRect.width;
-  const targetHeight = targetRect.height;
-  const targetRight = targetLeft + targetWidth;
-  const targetBottom = targetTop + targetHeight;
+  const targetRect = props.target.getBoundingClientRect()
+  const targetTop = targetRect.top
+  const targetLeft = targetRect.left
+  const targetWidth = targetRect.width
+  const targetHeight = targetRect.height
+  const targetRight = targetLeft + targetWidth
+  const targetBottom = targetTop + targetHeight
 
   // Dynamically calculate the arrow size, based on the shortest side of the popover.
-  const shortSide = Math.min(wrapper.offsetHeight, wrapper.offsetWidth);
-  const wantedArrowSize = Math.round(shortSide / 4);
+  const shortSide = Math.min(wrapper.offsetHeight, wrapper.offsetWidth)
+  const wantedArrowSize = Math.round(shortSide / 4)
   // Actual arrow size is constrained between min and max sizes.
-  const arrowSize = Math.min(Math.max(wantedArrowSize, MIN_ARROW_SIZE), MAX_ARROW_SIZE);
+  const arrowSize = Math.min(Math.max(wantedArrowSize, MIN_ARROW_SIZE), MAX_ARROW_SIZE)
 
-  arrow.style.borderWidth = `${arrowSize}px`;
+  arrow.style.borderWidth = `${arrowSize}px`
 
   // Safety checks: Here we adjust the popover dimensions if necessary
   // Ensure the popover is not higher or wider than the window itself
   if (wrapper.offsetHeight > windowHeight - 2 * DOCUMENT_MARGIN - 2 * arrowSize) {
-    wrapper.style.height = `${windowHeight - 2 * DOCUMENT_MARGIN - 2 * arrowSize}px`;
+    wrapper.style.height = `${windowHeight - 2 * DOCUMENT_MARGIN - 2 * arrowSize}px`
   }
   if (wrapper.offsetWidth > windowWidth - 2 * DOCUMENT_MARGIN - 2 * arrowSize) {
-    wrapper.style.width = `${windowWidth - 2 * DOCUMENT_MARGIN - 2 * arrowSize}px`;
+    wrapper.style.width = `${windowWidth - 2 * DOCUMENT_MARGIN - 2 * arrowSize}px`
   }
 
   // Now we can safely retrieve the popover dimensions
-  const wrapperHeight = wrapper.offsetHeight;
-  const wrapperWidth = wrapper.offsetWidth;
+  const wrapperHeight = wrapper.offsetHeight
+  const wrapperWidth = wrapper.offsetWidth
 
-  const spaceAbove = targetTop;
-  const spaceBelow = windowHeight - targetBottom;
-  const spaceLeft = targetLeft;
-  const spaceRight = windowWidth - targetRight;
+  const spaceAbove = targetTop
+  const spaceBelow = windowHeight - targetBottom
+  const spaceLeft = targetLeft
+  const spaceRight = windowWidth - targetRight
 
   // Check where we can place the popover. Usually this will yield more than one
   // `true` value.
-  const placementMargins = DOCUMENT_MARGIN + arrowSize;
-  const canPlaceBelow =
-    spaceBelow > wrapperHeight + placementMargins &&
-    spaceLeft > placementMargins &&
-    spaceRight > placementMargins;
-  const canPlaceRight =
-    spaceRight > wrapperWidth + placementMargins &&
-    spaceAbove > placementMargins &&
-    spaceBelow > placementMargins;
-  const canPlaceAbove =
-    spaceAbove > wrapperHeight + placementMargins &&
-    spaceLeft > placementMargins &&
-    spaceRight > placementMargins;
-  const canPlaceLeft =
-    spaceLeft > wrapperWidth + placementMargins &&
-    spaceAbove > placementMargins &&
-    spaceBelow > placementMargins;
+  const placementMargins = DOCUMENT_MARGIN + arrowSize
+  const canPlaceBelow = spaceBelow > wrapperHeight + placementMargins && spaceLeft > placementMargins && spaceRight > placementMargins
+  const canPlaceRight = spaceRight > wrapperWidth + placementMargins && spaceAbove > placementMargins && spaceBelow > placementMargins
+  const canPlaceAbove = spaceAbove > wrapperHeight + placementMargins && spaceLeft > placementMargins && spaceRight > placementMargins
+  const canPlaceLeft = spaceLeft > wrapperWidth + placementMargins && spaceAbove > placementMargins && spaceBelow > placementMargins
 
   // Fallback: below, if nothing actually fits.
-  let actualPlacement: Placement = "below";
+  let actualPlacement: Placement = 'below'
 
   // First priority that can be fulfilled wins
   for (const prio of placementPriorities.value) {
-    if (prio === "above" && canPlaceAbove) {
-      actualPlacement = "above";
-      break;
-    } else if (prio === "below" && canPlaceBelow) {
-      actualPlacement = "below";
-      break;
-    } else if (prio === "left" && canPlaceLeft) {
-      actualPlacement = "left";
-      break;
-    } else if (prio === "right" && canPlaceRight) {
-      actualPlacement = "right";
-      break;
+    if (prio === 'above' && canPlaceAbove) {
+      actualPlacement = 'above'
+      break
+    } else if (prio === 'below' && canPlaceBelow) {
+      actualPlacement = 'below'
+      break
+    } else if (prio === 'left' && canPlaceLeft) {
+      actualPlacement = 'left'
+      break
+    } else if (prio === 'right' && canPlaceRight) {
+      actualPlacement = 'right'
+      break
     }
   }
 
@@ -242,34 +230,34 @@ function place(): void {
   // for the arrow, albeit those values only take effect if the arrow is
   // actually shown.
 
-  if (actualPlacement === "below") {
-    wrapper.style.top = `${targetBottom + arrowSize}px`;
-    wrapper.style.left = `${targetLeft + targetWidth / 2 - wrapperWidth / 2}px`;
+  if (actualPlacement === 'below') {
+    wrapper.style.top = `${targetBottom + arrowSize}px`
+    wrapper.style.left = `${targetLeft + targetWidth / 2 - wrapperWidth / 2}px`
 
-    arrow.classList.add("up");
-    arrow.style.top = `${targetTop + targetHeight}px`;
-    arrow.style.left = `${targetLeft + targetWidth / 2 - arrow.offsetWidth / 2}px`;
-  } else if (actualPlacement === "right") {
-    wrapper.style.top = `${targetTop + targetHeight / 2 - wrapperHeight / 2}px`;
-    wrapper.style.left = `${targetRight + arrowSize}px`;
+    arrow.classList.add('up')
+    arrow.style.top = `${targetTop + targetHeight}px`
+    arrow.style.left = `${targetLeft + targetWidth / 2 - arrow.offsetWidth / 2}px`
+  } else if (actualPlacement === 'right') {
+    wrapper.style.top = `${targetTop + targetHeight / 2 - wrapperHeight / 2}px`
+    wrapper.style.left = `${targetRight + arrowSize}px`
 
-    arrow.classList.add("left");
-    arrow.style.top = `${targetTop + targetHeight / 2 - arrow.offsetHeight / 2}px`;
-    arrow.style.left = `${targetLeft + targetWidth}px`;
-  } else if (actualPlacement === "above") {
-    wrapper.style.top = `${targetTop - wrapperHeight - arrowSize}px`;
-    wrapper.style.left = `${targetLeft + targetWidth / 2 - wrapperWidth / 2}px`;
+    arrow.classList.add('left')
+    arrow.style.top = `${targetTop + targetHeight / 2 - arrow.offsetHeight / 2}px`
+    arrow.style.left = `${targetLeft + targetWidth}px`
+  } else if (actualPlacement === 'above') {
+    wrapper.style.top = `${targetTop - wrapperHeight - arrowSize}px`
+    wrapper.style.left = `${targetLeft + targetWidth / 2 - wrapperWidth / 2}px`
 
-    arrow.classList.add("down");
-    arrow.style.top = `${targetTop - arrowSize}px`;
-    arrow.style.left = `${targetLeft + targetWidth / 2 - arrow.offsetWidth / 2}px`;
-  } else if (actualPlacement === "left") {
-    wrapper.style.top = `${targetTop + targetHeight / 2 - wrapperHeight / 2}px`;
-    wrapper.style.left = `${targetLeft - wrapperWidth - arrowSize}px`;
+    arrow.classList.add('down')
+    arrow.style.top = `${targetTop - arrowSize}px`
+    arrow.style.left = `${targetLeft + targetWidth / 2 - arrow.offsetWidth / 2}px`
+  } else if (actualPlacement === 'left') {
+    wrapper.style.top = `${targetTop + targetHeight / 2 - wrapperHeight / 2}px`
+    wrapper.style.left = `${targetLeft - wrapperWidth - arrowSize}px`
 
-    arrow.classList.add("right");
-    arrow.style.top = `${targetTop + targetHeight / 2 - arrow.offsetHeight / 2}px`;
-    arrow.style.left = `${targetLeft + wrapperWidth}px`;
+    arrow.classList.add('right')
+    arrow.style.top = `${targetTop + targetHeight / 2 - arrow.offsetHeight / 2}px`
+    arrow.style.left = `${targetLeft + wrapperWidth}px`
   }
 
   // At this point, the popover is placed centrally next to the target in the
@@ -278,21 +266,19 @@ function place(): void {
   // example, if we have placed the popover to the left of the target, but the
   // target is close to the top/bottom viewport border, we may have to move it
   // up/down to ensure the popover is shown completely.
-  if (actualPlacement === "right" || actualPlacement === "left") {
-    const { top, bottom } = wrapper.getBoundingClientRect(); // Re-fetch the values
+  if (actualPlacement === 'right' || actualPlacement === 'left') {
+    const { top, bottom } = wrapper.getBoundingClientRect() // Re-fetch the values
     if (top < 0) {
-      wrapper.style.top = `${DOCUMENT_MARGIN}px`;
+      wrapper.style.top = `${DOCUMENT_MARGIN}px`
+    } if (bottom > windowHeight) {
+      wrapper.style.top = `${windowHeight - DOCUMENT_MARGIN - wrapperHeight}px`
     }
-    if (bottom > windowHeight) {
-      wrapper.style.top = `${windowHeight - DOCUMENT_MARGIN - wrapperHeight}px`;
-    }
-  } else if (actualPlacement === "above" || actualPlacement === "below") {
-    const { left, right } = wrapper.getBoundingClientRect(); // Re-fetch the values
+  } else if (actualPlacement === 'above' || actualPlacement === 'below') {
+    const { left, right } = wrapper.getBoundingClientRect() // Re-fetch the values
     if (left < 0) {
-      wrapper.style.left = `${DOCUMENT_MARGIN}px`;
-    }
-    if (right > windowWidth) {
-      wrapper.style.left = `${windowWidth - DOCUMENT_MARGIN - wrapperWidth}px`;
+      wrapper.style.left = `${DOCUMENT_MARGIN}px`
+    } if (right > windowWidth) {
+      wrapper.style.left = `${windowWidth - DOCUMENT_MARGIN - wrapperWidth}px`
     }
   }
 }

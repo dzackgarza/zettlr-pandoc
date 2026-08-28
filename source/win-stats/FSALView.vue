@@ -184,57 +184,55 @@
 </template>
 
 <script setup lang="ts">
-import { pathBasename } from "@common/util/renderer-path-polyfill";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
-import localiseNumber from "source/common/util/localise-number";
-import { useWorkspaceStore } from "source/pinia";
-import { computed } from "vue";
-import { generateStats } from "./generate-stats";
+import { pathBasename } from '@common/util/renderer-path-polyfill'
+import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
+import { computed } from 'vue'
+import { generateStats } from './generate-stats'
+import { useWorkspaceStore } from 'source/pinia'
+import localiseNumber from 'source/common/util/localise-number'
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
-const workspaceStore = useWorkspaceStore();
+const workspaceStore = useWorkspaceStore()
 
-const SVG_WIDTH = 1400;
-const SVG_HEIGHT = 200;
+const SVG_WIDTH = 1400
+const SVG_HEIGHT = 200
 
 const boxPlotData = computed(() => {
   const zTransform = (val: number): number => {
-    const percent = val / (stats.value.maxWords - stats.value.minWords);
-    return SVG_WIDTH * percent;
-  };
+    const percent = val / (stats.value.maxWords - stats.value.minWords)
+    return SVG_WIDTH * percent
+  }
 
   // Calculate the necessary measurements for the box plot
-  const ninetyFiveStart = zTransform(stats.value.words68PercentLower);
-  const ninetyFiveEnd = zTransform(stats.value.words68PercentUpper);
-  const ninetyNineStart = zTransform(stats.value.words95PercentLower);
-  const ninetyNineEnd = zTransform(stats.value.words95PercentUpper);
+  const ninetyFiveStart = zTransform(stats.value.words68PercentLower)
+  const ninetyFiveEnd = zTransform(stats.value.words68PercentUpper)
+  const ninetyNineStart = zTransform(stats.value.words95PercentLower)
+  const ninetyNineEnd = zTransform(stats.value.words95PercentUpper)
 
   return {
     mean: zTransform(stats.value.meanWords),
     interval68Start: ninetyFiveStart,
     interval68End: ninetyFiveEnd - ninetyFiveStart,
     interval95Start: ninetyNineStart,
-    interval95End: ninetyNineEnd - ninetyNineStart,
-  };
-});
+    interval95End: ninetyNineEnd - ninetyNineStart
+  }
+})
 
 const stats = computed(() => {
-  const allDescriptors = [...workspaceStore.descriptorMap.values()];
-  return generateStats(allDescriptors);
-});
+  const allDescriptors = [...workspaceStore.descriptorMap.values()]
+  return generateStats(allDescriptors)
+})
 
-function basename(absPath: string) {
-  return pathBasename(absPath);
+function basename (absPath: string) {
+  return pathBasename(absPath)
 }
 
-function openFile(absPath: string) {
-  ipcRenderer
-    .invoke("documents-provider", {
-      command: "open-file",
-      payload: { path: absPath, newTab: true },
-    } as DocumentManagerIPCAPI)
-    .catch((err) => console.error(err));
+function openFile (absPath: string) {
+  ipcRenderer.invoke('documents-provider', {
+    command: 'open-file',
+    payload: { path: absPath, newTab: true }
+  } as DocumentManagerIPCAPI).catch(err => console.error(err))
 }
 </script>
 

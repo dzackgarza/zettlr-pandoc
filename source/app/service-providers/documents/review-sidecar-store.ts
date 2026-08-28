@@ -29,12 +29,12 @@
  * END HEADER
  */
 
-import { sha256Text } from "@common/util/sha256";
 import Ajv from "ajv";
 import { promises as fs } from "fs";
 import path from "path";
 import writeFileAtomic from "write-file-atomic";
-import { type ReviewSidecarData, ReviewSidecarSchema } from "./review-sidecar-schema";
+import { sha256Text } from "@common/util/sha256";
+import { ReviewSidecarSchema, type ReviewSidecarData } from "./review-sidecar-schema";
 
 /**
  * The sidecar file for a document. Keyed by the hash of the canonical
@@ -106,10 +106,9 @@ function assertSuggestionCoordinates(
   if (suggestion.seam < 0 || suggestion.seam > length) {
     throw invalid("an invalid seam");
   }
-  const restorationPoints = suggestion.restorations.map((restoration) => ({
-    from: restoration.at,
-    to: restoration.at,
-  }));
+  const restorationPoints = suggestion.restorations.map(
+    (restoration) => ({ from: restoration.at, to: restoration.at }),
+  );
   if (!isOrderedWithin(restorationPoints, length)) {
     throw invalid("an invalid restoration");
   }
@@ -130,13 +129,9 @@ function isCoherentInsertion(
   suggestion: ReviewSidecarData["suggestions"][number],
   shape: AnchorShape,
 ): boolean {
-  return (
-    shape.owned.length > 0 &&
-    shape.seams.length === 0 &&
+  return shape.owned.length > 0 && shape.seams.length === 0 &&
     shape.owned[0].from === suggestion.seam &&
-    suggestion.restorations.length === 0 &&
-    suggestion.removedText === ""
-  );
+    suggestion.restorations.length === 0 && suggestion.removedText === "";
 }
 
 /** Owns no text, and restores what stood where it sits. */
@@ -144,12 +139,8 @@ function isCoherentDeletion(
   suggestion: ReviewSidecarData["suggestions"][number],
   shape: AnchorShape,
 ): boolean {
-  return (
-    shape.owned.length === 0 &&
-    shape.seams.length > 0 &&
-    shape.seams[0].from === suggestion.seam &&
-    shape.restores
-  );
+  return shape.owned.length === 0 && shape.seams.length > 0 &&
+    shape.seams[0].from === suggestion.seam && shape.restores;
 }
 
 /**
@@ -161,7 +152,8 @@ function isCoherentSubstitution(
   suggestion: ReviewSidecarData["suggestions"][number],
   shape: AnchorShape,
 ): boolean {
-  return shape.owned.length > 0 && suggestion.anchors[0].from === suggestion.seam && shape.restores;
+  return shape.owned.length > 0 &&
+    suggestion.anchors[0].from === suggestion.seam && shape.restores;
 }
 
 /** The three shapes a change comes in, and nothing else. */
@@ -223,11 +215,9 @@ function assertSuggestionIntegrity(
 function assertDisjointAnchors(sidecar: ReviewSidecarData, target: string): void {
   const anchors = sidecar.suggestions
     .filter((suggestion) => suggestion.state === "proposed")
-    .flatMap((suggestion) =>
-      suggestion.anchors
-        .filter((anchor) => anchor.from < anchor.to)
-        .map((anchor) => ({ ...anchor, suggestionId: suggestion.suggestionId })),
-    )
+    .flatMap((suggestion) => suggestion.anchors
+      .filter((anchor) => anchor.from < anchor.to)
+      .map((anchor) => ({ ...anchor, suggestionId: suggestion.suggestionId })))
     .sort((left, right) => left.from - right.from || left.to - right.to);
   for (let index = 1; index < anchors.length; index += 1) {
     const previous = anchors[index - 1];
@@ -240,7 +230,10 @@ function assertDisjointAnchors(sidecar: ReviewSidecarData, target: string): void
   }
 }
 
-function assertReviewSidecarSemantics(sidecar: ReviewSidecarData, target: string): void {
+function assertReviewSidecarSemantics(
+  sidecar: ReviewSidecarData,
+  target: string,
+): void {
   const packetIds = assertPacketIdentity(sidecar, target);
   const suggestionIds = assertSuggestionIntegrity(sidecar, packetIds, target);
   for (const comment of sidecar.chunkComments) {
@@ -262,16 +255,13 @@ function assertReviewSidecarSemantics(sidecar: ReviewSidecarData, target: string
  */
 function parseReviewSidecar(raw: string, target: string): ReviewSidecarData {
   let parsed: unknown;
-  let parseFailure: unknown;
-  let parsedOk = false;
   try {
     parsed = JSON.parse(raw);
-    parsedOk = true;
   } catch (error) {
-    parseFailure = error;
-  }
-  if (!parsedOk) {
-    throw new Error(`Review sidecar ${target} is not valid JSON`, { cause: parseFailure });
+    throw new Error(
+      `Review sidecar ${target} is not valid JSON: ` +
+        (error instanceof Error ? error.message : String(error)),
+    );
   }
   if (!validateReviewSidecar(parsed)) {
     throw new Error(
@@ -347,12 +337,10 @@ export class ReviewSidecarStore {
       throw error;
     }
     return await Promise.all(
-      names
-        .filter((name) => name.endsWith(".json"))
-        .map(async (name) => {
-          const target = path.join(this.directory, name);
-          return parseReviewSidecar(await fs.readFile(target, "utf8"), target);
-        }),
+      names.filter((name) => name.endsWith(".json")).map(async (name) => {
+        const target = path.join(this.directory, name);
+        return parseReviewSidecar(await fs.readFile(target, "utf8"), target);
+      }),
     );
   }
 }

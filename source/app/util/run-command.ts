@@ -12,9 +12,9 @@
  * END HEADER
  */
 
-import { spawn } from "child_process";
+import { spawn } from 'child_process'
 
-export type CMD_OUT = { code: number; stdout: string; stderr: string };
+export type CMD_OUT = { code: number, stdout: string, stderr: string }
 
 /**
  * A simple wrapper around Node's `spawn` utility. Provide a command, optional
@@ -34,34 +34,30 @@ export type CMD_OUT = { code: number; stdout: string; stderr: string };
  * @throws                      if spawning the process fails, or on any other
  *                              error. Does not throw if the return code is != 0
  */
-export async function runCommand(
-  command: string,
-  argv?: string[],
-  shell: boolean = false,
-): Promise<CMD_OUT> {
-  let stdout = "";
-  let stderr = "";
+export async function runCommand (command: string, argv?: string[], shell: boolean = false): Promise<CMD_OUT> {
+  let stdout = ''
+  let stderr = ''
 
   const code = await new Promise<number>((resolve, reject) => {
-    const process = spawn(command, argv, { shell });
+    const process = spawn(command, argv, { shell })
 
-    process.stderr?.on("data", (data) => {
-      stderr += String(data);
-    });
+    process.stderr?.on('data', (data) => {
+      stderr += String(data)
+    })
 
-    process.stdout?.on("data", (data) => {
-      stdout += String(data);
-    });
+    process.stdout?.on('data', (data) => {
+      stdout += String(data)
+    })
 
-    process.on("close", (code: number, _signal) => {
-      resolve(code);
-    });
+    process.on('close', (code: number, _signal) => {
+      resolve(code)
+    })
 
-    process.on("error", (err) => {
-      reject(err);
-    });
-  });
+    process.on('error', (err) => {
+      reject(err)
+    })
+  })
 
   // First line is the "pandoc 2.19.2" or any other version string
-  return { code, stdout, stderr };
+  return { code, stdout, stderr }
 }

@@ -98,32 +98,23 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-renderer";
-import localiseNumber from "@common/util/localise-number";
-import ButtonControl from "@common/vue/form/elements/ButtonControl.vue";
-import { DateTime } from "luxon";
-import tippy from "tippy.js";
-import { computed, ref } from "vue";
-import { useStatisticsStore } from "../pinia/statistics-store";
+import { DateTime } from 'luxon'
+import { trans } from '@common/i18n-renderer'
+import ButtonControl from '@common/vue/form/elements/ButtonControl.vue'
+import { ref, computed } from 'vue'
+import localiseNumber from '@common/util/localise-number'
+import { useStatisticsStore } from '../pinia/statistics-store'
+import tippy from 'tippy.js'
 
-const statisticsStore = useStatisticsStore();
+const statisticsStore = useStatisticsStore()
 
 // STATIC VARIABLES
-const calendarLabel = trans("Calendar");
+const calendarLabel = trans('Calendar')
 const MONTHS = [
-  trans("January"),
-  trans("February"),
-  trans("March"),
-  trans("April"),
-  trans("May"),
-  trans("June"),
-  trans("July"),
-  trans("August"),
-  trans("September"),
-  trans("October"),
-  trans("November"),
-  trans("December"),
-];
+  trans('January'), trans('February'), trans('March'), trans('April'),
+  trans('May'), trans('June'), trans('July'), trans('August'),
+  trans('September'), trans('October'), trans('November'), trans('December')
+]
 
 // The calendar will show it year-wise. We save this variable in order to do
 // some fancy stuff around sylvester. The thing is, people (like me) will want
@@ -134,117 +125,118 @@ const MONTHS = [
 // ensure it will. Am I crazy for respecting such a weird edge case? Very
 // likely. Does it cost me too much time to code? Luckily not, given the way Vue
 // works.
-const now = ref<DateTime>(DateTime.local());
+const now = ref<DateTime>(DateTime.local())
 
-const year = computed<number>(() => now.value.year);
-const isCurrentYear = computed<boolean>(() => DateTime.local().year === now.value.year);
+const year = computed<number>(() => now.value.year)
+const isCurrentYear = computed<boolean>(() => DateTime.local().year === now.value.year)
 const isMinimumYear = computed<boolean>(() => {
   // Returns true if `now` holds the minimum year for which there is data
   const minYear = Math.min(
-    ...Object.keys(statisticsStore.stats.wordCount).map((k) => parseInt(k.substring(0, 4), 10)),
-  );
-  return now.value.year === minYear;
-});
+    ...Object
+      .keys(statisticsStore.stats.wordCount)
+      .map(k => parseInt(k.substring(0, 4), 10))
+  )
+  return now.value.year === minYear
+})
 
-const months = computed<Array<{ name: string; padding: number; daysInMonth: number }>>(() => {
-  const ret: Array<{ name: string; padding: number; daysInMonth: number }> = [];
+const months = computed<Array<{ name: string, padding: number, daysInMonth: number }>>(() => {
+  const ret: Array<{ name: string, padding: number, daysInMonth: number }> = []
 
   for (let i = 1; i <= 12; i++) {
-    const month = now.value.set({ month: i });
-    const beginning = month.startOf("month");
+    const month = now.value.set({ month: i })
+    const beginning = month.startOf('month')
     ret.push({
       name: MONTHS[i - 1],
       padding: beginning.weekday - 1,
-      daysInMonth: month.daysInMonth ?? 0,
-    });
+      daysInMonth: month.daysInMonth ?? 0
+    })
   }
 
-  return ret;
-});
+  return ret
+})
 
 const distributiveStatistics = computed(() => {
-  let max = 0;
-  let min = Infinity;
-  const yearStr = String(year.value);
+  let max = 0
+  let min = Infinity
+  const yearStr = String(year.value)
   // For the calendar view, we only consider the current year
-  const entries = Object.entries(statisticsStore.stats.wordCount).filter(([date, count]) => {
-    return date.startsWith(yearStr);
-  });
-  const count = entries.length;
-  const sum = entries.reduce((prev, [date, words]) => {
+  const entries = Object.entries(statisticsStore.stats.wordCount)
+    .filter(([ date, count ]) => {
+      return date.startsWith(yearStr)
+    })
+  const count = entries.length
+  const sum = entries.reduce((prev, [ date, words ]) => {
     if (words > max) {
-      max = words;
+      max = words
     }
     if (words < min) {
-      min = words;
+      min = words
     }
 
-    return prev + words;
-  }, 0);
+    return prev + words
+  }, 0)
 
   return {
-    sum,
-    mean: sum / count,
-    min,
-    max,
+    sum, mean: sum / count,
+    min, max,
     maxLog: Math.log(max),
-    count,
-  };
-});
+    count }
+})
 
-function activityPercentileClass(year: number, month: number, date: number): string {
-  const parsedMonth = String(month).padStart(2, "0");
-  const parsedDate = String(date).padStart(2, "0");
-  const wordCount = statisticsStore.stats.wordCount[`${year}-${parsedMonth}-${parsedDate}`] ?? 0;
+function activityPercentileClass (year: number, month: number, date: number): string {
+  const parsedMonth = String(month).padStart(2, '0')
+  const parsedDate = String(date).padStart(2, '0')
+  const wordCount = statisticsStore.stats.wordCount[`${year}-${parsedMonth}-${parsedDate}`] ?? 0
 
   // Edge cases
   if (wordCount === 0) {
-    return "no-activity";
+    return 'no-activity'
   } else if (wordCount === distributiveStatistics.value.max) {
-    return "percentile-10";
+    return 'percentile-10'
   }
 
   // Statistics 101: We are logging the percentiles. This way, we can smooth out
   // the distribution, especially if there are only a few strong outliers. This
   // ensures that we make use of more of the available classes.
-  const percentile = Math.floor((Math.log(wordCount) / distributiveStatistics.value.maxLog) * 10);
-  return `percentile-0${percentile}`; // ranges from 00 to 09
+  const percentile = Math.floor(Math.log(wordCount) / distributiveStatistics.value.maxLog * 10)
+  return `percentile-0${percentile}` // ranges from 00 to 09
 }
 
-function getLocalizedWordCount(year: number, month: number, date: number): string {
-  const parsedMonth = String(month).padStart(2, "0");
-  const parsedDate = String(date).padStart(2, "0");
-  const wordCount = statisticsStore.stats.wordCount[`${year}-${parsedMonth}-${parsedDate}`];
+function getLocalizedWordCount (year: number, month: number, date: number): string {
+  const parsedMonth = String(month).padStart(2, '0')
+  const parsedDate = String(date).padStart(2, '0')
+  const wordCount = statisticsStore.stats.wordCount[`${year}-${parsedMonth}-${parsedDate}`]
 
-  return wordCount !== undefined ? localiseNumber(wordCount) : "0";
+  return wordCount !== undefined ? localiseNumber(wordCount) : '0'
 }
 
-function yearMinus(): void {
-  now.value = now.value.minus({ years: 1 });
+function yearMinus (): void {
+  now.value = now.value.minus({ years: 1 })
 }
 
-function yearPlus(): void {
+function yearPlus (): void {
   // Prevent going into the future
   if (isCurrentYear.value) {
-    return;
+    return
   }
 
-  now.value = now.value.plus({ years: 1 });
+  now.value = now.value.plus({ years: 1 })
 }
 
-function showTippy(event: MouseEvent) {
+function showTippy (event: MouseEvent) {
   if (event.target === null || !(event.target instanceof HTMLElement)) {
-    return;
+    return
   }
 
-  const content = event.target.getAttribute("title");
+  const content = event.target.getAttribute('title')
   if (content === null) {
-    return;
+    return
   }
 
-  const instance = tippy(event.target, { content, onHidden: (i) => i.destroy() });
-  instance.show();
+  const instance = tippy(event.target, { content, onHidden:  (i) => i.destroy() })
+  instance.show()
 }
+
 </script>
 
 <style lang="less">

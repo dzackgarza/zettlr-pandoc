@@ -24,31 +24,32 @@
  * END HEADER
  */
 
-import { loadData } from "@common/i18n-main";
-import type LogProvider from "@providers/log";
-import type { IPCMessage } from "@providers/provider-contract";
-import { BrowserWindow, type BrowserWindowConstructorOptions, ipcMain } from "electron";
-import attachLogger from "../windows/attach-logger";
-import setWindowChrome from "../windows/set-window-chrome";
-import type ConfigProvider from ".";
+import type LogProvider from '@providers/log'
+import { BrowserWindow, type BrowserWindowConstructorOptions, ipcMain } from 'electron'
+import type ConfigProvider from '.'
+import type { IPCMessage } from '@providers/provider-contract'
+import { loadData } from '@common/i18n-main'
+import setWindowChrome from '../windows/set-window-chrome'
+import attachLogger from '../windows/attach-logger'
 
 export interface OnboardingIPCCloseMessage {
-  command: "close";
+  command: 'close'
 }
 
 /** 'set-app-lang' carries its language at the message's top level. */
 export type OnboardingIPCContract = {
-  "set-app-lang": {
-    request: { language: string };
-    response: undefined;
-  };
-};
+  'set-app-lang': {
+    request: { language: string }
+    response: undefined
+  }
+}
 
-export type OnboardingIPCSetAppLangMessage = IPCMessage<OnboardingIPCContract>;
+export type OnboardingIPCSetAppLangMessage = IPCMessage<OnboardingIPCContract>
 
 // 'close' rides ipcMain.on, not invoke, so it is not part of the invoke
 // contract above.
-export type OnboardingIPCMessage = OnboardingIPCCloseMessage | OnboardingIPCSetAppLangMessage;
+export type OnboardingIPCMessage = OnboardingIPCCloseMessage |
+  OnboardingIPCSetAppLangMessage
 
 /**
  * Shows the onboarding window for Zettlr. This function will block until the
@@ -56,11 +57,7 @@ export type OnboardingIPCMessage = OnboardingIPCCloseMessage | OnboardingIPCSetA
  *
  * @param   {LogProvider}  logger  The logger for potential error messages.
  */
-export async function showOnboardingWindow(
-  config: ConfigProvider,
-  logger: LogProvider,
-  mode: "first-start" | "update",
-): Promise<void> {
+export async function showOnboardingWindow (config: ConfigProvider, logger: LogProvider, mode: 'first-start'|'update'): Promise<void> {
   const conf: BrowserWindowConstructorOptions = {
     width: 800,
     height: 600,
@@ -74,67 +71,65 @@ export async function showOnboardingWindow(
     fullscreenable: false,
     skipTaskbar: true,
     frame: false,
-    titleBarStyle: "hidden",
+    titleBarStyle: 'hidden',
     show: false,
     webPreferences: {
       // contextIsolation and sandbox mean: Preload scripts have access to
       // Node modules, the renderers not
       contextIsolation: true,
       sandbox: false,
-      preload: ONBOARDING_PRELOAD_WEBPACK_ENTRY,
-    },
-  };
-  setWindowChrome(config, conf, false);
-  const onboardingWindow = new BrowserWindow(conf);
-  attachLogger(logger, onboardingWindow, "Onboarding Window");
+      preload: ONBOARDING_PRELOAD_WEBPACK_ENTRY
+    }
+  }
+  setWindowChrome(config, conf, false)
+  const onboardingWindow = new BrowserWindow(conf)
+  attachLogger(logger, onboardingWindow, 'Onboarding Window')
 
-  const effectiveUrl = new URL(ONBOARDING_WEBPACK_ENTRY);
-  effectiveUrl.searchParams.append("mode", mode);
+  const effectiveUrl = new URL(ONBOARDING_WEBPACK_ENTRY)
+  effectiveUrl.searchParams.append('mode', mode)
 
-  onboardingWindow.loadURL(effectiveUrl.toString()).catch((e) => {
-    logger.error(
-      `Could not load URL ${ONBOARDING_WEBPACK_ENTRY}: ${e instanceof Error ? e.message : "unknown error"}`,
-      e,
-    );
-  });
+  onboardingWindow.loadURL(effectiveUrl.toString())
+    .catch(e => {
+      logger.error(`Could not load URL ${ONBOARDING_WEBPACK_ENTRY}: ${e instanceof Error ? e.message : 'unknown error'}`, e)
+    })
 
-  onboardingWindow.once("ready-to-show", () => {
-    onboardingWindow.show();
-  });
+  onboardingWindow.once('ready-to-show', () => {
+    onboardingWindow.show()
+  })
 
   return await new Promise((resolve, reject) => {
     // Synchronous messages
-    ipcMain.on("onboarding", (event, payload: OnboardingIPCMessage) => {
-      if (payload.command === "close") {
-        onboardingWindow.destroy();
+    ipcMain.on('onboarding', (event, payload: OnboardingIPCMessage) => {
+      if (payload.command === 'close') {
+        onboardingWindow.destroy()
       }
-    });
+    })
 
     // Asynchronous messages
-    ipcMain.handle("onboarding", async (event, payload: OnboardingIPCMessage) => {
-      if (payload.command === "set-app-lang") {
+    ipcMain.handle('onboarding', async (event, payload: OnboardingIPCMessage) => {
+      if (payload.command === 'set-app-lang') {
         // The user has changed the language. This unfortunately cannot be done
         // with the default config setters, since this will require a singular
         // reload of the translation strings, which is only possible here
         // because we are able to control this process entirely.
-        const { language } = payload;
+        const { language } = payload
         // We enforce a skip-check here to prevent a "restart required" modal.
-        config.set("appLang", language, true);
-        await loadData(language);
+        config.set('appLang', language, true)
+        await loadData(language)
       }
-    });
+    })
 
-    onboardingWindow.on("unresponsive", () => {
-      onboardingWindow.destroy();
-      reject();
-    });
+    onboardingWindow.on('unresponsive', () => {
+      onboardingWindow.destroy()
+      reject()
+    })
 
-    onboardingWindow.on("closed", () => {
-      console.log("CLOSED EVENT EMITTED");
+    onboardingWindow.on('closed', () => {
+      console.log('CLOSED EVENT EMITTED')
       // NOTE: We must "destroy" the window, because otherwise 'closable: false'
       // will prevent programmatic closing.
-      onboardingWindow.destroy();
-      resolve();
-    });
-  });
+      onboardingWindow.destroy()
+      resolve()
+    })
+  })
 }

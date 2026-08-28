@@ -25,51 +25,51 @@
  * END HEADER
  */
 
-import type { SaveFileResult } from "@dts/common/documents";
-import type { DocumentIpcHandlers } from "source/app/service-providers/documents";
+import type { DocumentIpcHandlers } from 'source/app/service-providers/documents'
+import type { SaveFileResult } from '@dts/common/documents'
 
-declare const invoke: ZettlrIpcInvoke;
+declare const invoke: ZettlrIpcInvoke
 
 /** A channel's payload, as its owning handler declares it. */
-type InputOf<C extends keyof DocumentIpcHandlers> = Parameters<DocumentIpcHandlers[C]>[0];
+type InputOf<C extends keyof DocumentIpcHandlers> = Parameters<DocumentIpcHandlers[C]>[0]
 
 /** The handler's own response type reaches the call site. */
-export async function respondsWithTheHandlerType(): Promise<SaveFileResult> {
-  return await invoke("documents:save-file", { path: "/tmp/a.md" });
+export async function respondsWithTheHandlerType (): Promise<SaveFileResult> {
+  return await invoke('documents:save-file', { path: '/tmp/a.md' })
 }
 
 /** A valid payload compiles against the typed overload. */
-export async function acceptsAFencedDecision(): Promise<void> {
-  await invoke("documents:decide-review-chunk", {
-    reviewId: "r1",
-    chunkId: "c1",
-    decision: "accept",
+export async function acceptsAFencedDecision (): Promise<void> {
+  await invoke('documents:decide-review-chunk', {
+    reviewId: 'r1',
+    chunkId: 'c1',
+    decision: 'accept',
     expectedReviewGeneration: 3,
-    expectedWorkingSha256: "0".repeat(64),
-  });
+    expectedWorkingSha256: '0'.repeat(64)
+  })
 }
 
 // @ts-expect-error An operation name outside the schema is not a channel.
-export const unknownChannel: keyof DocumentIpcHandlers = "documents:decide-review-chunks";
+export const unknownChannel: keyof DocumentIpcHandlers = 'documents:decide-review-chunks'
 
 // @ts-expect-error A decision without its fence fields has no contract.
-export const missingFence: InputOf<"documents:decide-review-chunk"> = {
-  reviewId: "r1",
-  chunkId: "c1",
-  decision: "accept",
-};
+export const missingFence: InputOf<'documents:decide-review-chunk'> = {
+  reviewId: 'r1',
+  chunkId: 'c1',
+  decision: 'accept'
+}
 
-export const wrongFenceType: InputOf<"documents:clear-review"> = {
-  reviewId: "r1",
+export const wrongFenceType: InputOf<'documents:clear-review'> = {
+  reviewId: 'r1',
   // @ts-expect-error The generation is a number, not prose.
-  expectedReviewGeneration: "three",
-  expectedWorkingSha256: "0".repeat(64),
-};
+  expectedReviewGeneration: 'three',
+  expectedWorkingSha256: '0'.repeat(64)
+}
 
-export const commentCarriesNoHash: InputOf<"documents:add-review-comment"> = {
-  reviewId: "r1",
-  text: "note",
+export const commentCarriesNoHash: InputOf<'documents:add-review-comment'> = {
+  reviewId: 'r1',
+  text: 'note',
   expectedReviewGeneration: 3,
   // @ts-expect-error A comment fences on the generation alone; there is no working hash.
-  expectedWorkingSha256: "0".repeat(64),
-};
+  expectedWorkingSha256: '0'.repeat(64)
+}

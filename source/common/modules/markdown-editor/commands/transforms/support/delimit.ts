@@ -17,20 +17,20 @@
  * A chunk of text not inside any delimiter.
  */
 export type NotDelimitedText = {
-  kind: "not-delimited-text";
-  text: string;
-};
+  kind: 'not-delimited-text'
+  text: string
+}
 
 /**
  * A chunk of delimited text.
  */
 export type DelimitedText = {
-  kind: "delimited-text";
+  kind: 'delimited-text'
 
   /**
    * The delimiter around the `text`.
    */
-  delimiter: string;
+  delimiter: string
 
   /**
    * The text _inside_ the `delimiter`.
@@ -40,12 +40,12 @@ export type DelimitedText = {
    * * the `text` will be `Blush`
    * * the `delimiter` will be `"`
    */
-  text: string;
-};
+  text: string
+}
 
-export type MaybeDelimitedText = NotDelimitedText | DelimitedText;
+export type MaybeDelimitedText = NotDelimitedText | DelimitedText
 
-export type NonEmptyArray<T> = [T, ...T[]];
+export type NonEmptyArray<T> = [T, ...T[]]
 
 /**
  * Build a function that chunks text by _pairs_ of the `delimiter`.
@@ -61,72 +61,73 @@ export type NonEmptyArray<T> = [T, ...T[]];
  *
  * @return  {Function}           A delimiting function.
  */
-export function delimit(delimiter: string) {
-  const pattern = new RegExp(`(${delimiter})(.+?)\\1`, "d");
+export function delimit (delimiter: string) {
+  const pattern = new RegExp(`(${delimiter})(.+?)\\1`, 'd')
 
   return (text: string): NonEmptyArray<MaybeDelimitedText> => {
-    const texts: MaybeDelimitedText[] = [];
+    const texts: MaybeDelimitedText[] = []
 
-    let exhausted = false;
-    let workingText = text;
+    let exhausted = false
+    let workingText = text
 
     do {
-      const match = pattern.exec(workingText);
+      const match = pattern.exec(workingText)
 
       if (match?.indices == null) {
-        exhausted = true;
+        exhausted = true
 
         texts.push({
-          kind: "not-delimited-text",
-          text: workingText,
-        });
+          kind: 'not-delimited-text',
+          text: workingText
+        })
       } else {
         // push everything up to the match
         texts.push({
-          kind: "not-delimited-text",
-          text: workingText.substring(0, match.index),
-        });
+          kind: 'not-delimited-text',
+          text: workingText.substring(0, match.index)
+        })
 
         // push the match itself
         texts.push({
-          kind: "delimited-text",
+          kind: 'delimited-text',
           delimiter,
-          text: match[2],
-        });
+          text: match[2]
+        })
 
         // and then change the working text to everything after the match
-        workingText = workingText.substring(match.indices[0]![1]);
+        workingText = workingText.substring(match.indices[0]![1])
       }
-    } while (!exhausted);
+    } while (!exhausted)
 
     if (texts.length === 0) {
       // degenerate case of no matches at all so just return the whole text
       texts.push({
-        kind: "not-delimited-text",
-        text: text,
-      });
+        kind: 'not-delimited-text',
+        text: text
+      })
     }
 
-    return texts as NonEmptyArray<MaybeDelimitedText>;
-  };
+    return texts as NonEmptyArray<MaybeDelimitedText>
+  }
 }
 
-export function replaceWith(replacement: string) {
+export function replaceWith (replacement: string) {
   return (chunks: Readonly<NonEmptyArray<MaybeDelimitedText>>) => {
     return chunks.reduce((changedText, chunk) => {
       switch (chunk.kind) {
-        case "not-delimited-text": {
-          return changedText + chunk.text;
+        case 'not-delimited-text': {
+          return changedText + chunk.text
         }
 
-        case "delimited-text": {
-          return changedText + replacement + chunk.text + replacement;
+        case 'delimited-text': {
+          return changedText +
+              replacement + chunk.text + replacement
         }
 
         default: {
-          return ((_: never) => changedText)(chunk);
+          return ((_: never) => changedText)(chunk)
         }
       }
-    }, "");
-  };
+    }, '')
+  }
 }

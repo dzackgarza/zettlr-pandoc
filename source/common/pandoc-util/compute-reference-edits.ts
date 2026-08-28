@@ -65,12 +65,12 @@
  */
 
 import {
+  referenceFamilyOf,
   type DocumentReferenceSnapshot,
   type ReferenceFamily,
-  referenceFamilyOf,
   type WorkspaceReferenceEdit,
-  type WorkspaceTextEdit,
-} from "../../types/common/references";
+  type WorkspaceTextEdit
+} from '../../types/common/references'
 
 /**
  * A typed reason for refusing to compute a rename. Rejections are values,
@@ -78,18 +78,18 @@ import {
  * `kind` to present the refusal.
  */
 export type ReferenceRenameRejection =
-  | { kind: "malformed-key"; newKey: string }
-  | { kind: "family-changed"; oldFamily: ReferenceFamily; newFamily: ReferenceFamily }
-  | { kind: "collision"; newKey: string; definitionPaths: string[] }
-  | { kind: "unknown-key"; oldKey: string };
+  | { kind: 'malformed-key', newKey: string }
+  | { kind: 'family-changed', oldFamily: ReferenceFamily, newFamily: ReferenceFamily }
+  | { kind: 'collision', newKey: string, definitionPaths: string[] }
+  | { kind: 'unknown-key', oldKey: string }
 
 /**
  * The outcome of a rename preview: either the complete previewed
  * WorkspaceReferenceEdit or a typed rejection.
  */
 export type ReferenceRenamePreview =
-  | { status: "ok"; edit: WorkspaceReferenceEdit }
-  | { status: "rejected"; reason: ReferenceRenameRejection };
+  | { status: 'ok', edit: WorkspaceReferenceEdit }
+  | { status: 'rejected', reason: ReferenceRenameRejection }
 
 /**
  * The wire outcome of ReferenceProvider's 'commit-rename' command.
@@ -102,21 +102,13 @@ export type ReferenceRenamePreview =
  */
 export type CommitRenameOutcome =
   | {
-      status: "applied";
-      /** Closed documents atomically rewritten on disk by the provider */
-      closedFilesWritten: string[];
-      /** Open documents whose authority updates were acknowledged */
-      openBuffersUpdated: string[];
-    }
-  | {
-      status: "conflict";
-      conflict: {
-        status: "conflict";
-        documentPath: string;
-        expectedSourceHash: string;
-        actualSourceHash: string;
-      };
-    };
+    status: 'applied'
+    /** Closed documents atomically rewritten on disk by the provider */
+    closedFilesWritten: string[]
+    /** Open documents whose authority updates were acknowledged */
+    openBuffersUpdated: string[]
+  }
+  | { status: 'conflict', conflict: { status: 'conflict', documentPath: string, expectedSourceHash: string, actualSourceHash: string } }
 
 /**
  * The wire outcome of ReferenceProvider's 'undo-rename' command. The undo
@@ -126,26 +118,18 @@ export type CommitRenameOutcome =
  */
 export type UndoRenameOutcome =
   | {
-      status: "applied";
-      closedFilesWritten: string[];
-      openBuffersUpdated: string[];
-    }
-  | {
-      status: "conflict";
-      conflict: {
-        status: "conflict";
-        documentPath: string;
-        expectedSourceHash: string;
-        actualSourceHash: string;
-      };
-    }
-  | { status: "no-pending-undo" };
+    status: 'applied'
+    closedFilesWritten: string[]
+    openBuffersUpdated: string[]
+  }
+  | { status: 'conflict', conflict: { status: 'conflict', documentPath: string, expectedSourceHash: string, actualSourceHash: string } }
+  | { status: 'no-pending-undo' }
 
 /**
  * Characters that would terminate the authored token if they appeared inside
  * a replacement key: whitespace plus the cluster/attribute delimiters.
  */
-const TOKEN_TERMINATORS = /[\s}\];,@]/;
+const TOKEN_TERMINATORS = /[\s}\];,@]/
 
 /**
  * Computes the previewed workspace rename of `oldKey` to `newKey` over the
@@ -172,117 +156,104 @@ const TOKEN_TERMINATORS = /[\s}\];,@]/;
  *
  * @return  {ReferenceRenamePreview}                  The previewed edit or a typed rejection
  */
-export function previewReferenceRename(
+export function previewReferenceRename (
   snapshots: DocumentReferenceSnapshot[],
   oldKey: string,
-  newKey: string,
+  newKey: string
 ): ReferenceRenamePreview {
   // 1. Structural validation of the replacement key
-  const newFamily = referenceFamilyOf(newKey);
+  const newFamily = referenceFamilyOf(newKey)
   if (newFamily === undefined || TOKEN_TERMINATORS.test(newKey)) {
-    return { status: "rejected", reason: { kind: "malformed-key", newKey } };
+    return { status: 'rejected', reason: { kind: 'malformed-key', newKey } }
   }
 
   // 2. Prefix preservation: renames never move a key across families. An
   // oldKey without a supported family cannot be defined anywhere, so it
   // falls through to the unknown-key rejection below.
-  const oldFamily = referenceFamilyOf(oldKey);
+  const oldFamily = referenceFamilyOf(oldKey)
   if (oldFamily !== undefined && newFamily !== oldFamily) {
-    return { status: "rejected", reason: { kind: "family-changed", oldFamily, newFamily } };
+    return { status: 'rejected', reason: { kind: 'family-changed', oldFamily, newFamily } }
   }
 
   // 3. Collision: the replacement key must be defined nowhere (a self-rename
   // collides with itself, never a silent no-op).
   const collidingPaths = snapshots
-    .filter((snapshot) => snapshot.definitions.some((definition) => definition.key === newKey))
-    .map((snapshot) => snapshot.documentPath);
+    .filter(snapshot => snapshot.definitions.some(definition => definition.key === newKey))
+    .map(snapshot => snapshot.documentPath)
   if (collidingPaths.length > 0) {
-    return {
-      status: "rejected",
-      reason: { kind: "collision", newKey, definitionPaths: collidingPaths },
-    };
+    return { status: 'rejected', reason: { kind: 'collision', newKey, definitionPaths: collidingPaths } }
   }
 
   // 4. The old key must actually be defined somewhere in the workspace.
-  const isDefined = snapshots.some((snapshot) =>
-    snapshot.definitions.some((definition) => definition.key === oldKey),
-  );
+  const isDefined = snapshots.some(snapshot => snapshot.definitions.some(definition => definition.key === oldKey))
   if (!isDefined) {
-    return { status: "rejected", reason: { kind: "unknown-key", oldKey } };
+    return { status: 'rejected', reason: { kind: 'unknown-key', oldKey } }
   }
 
   // Edit computation: EVERY definition and EVERY occurrence of oldKey across
   // every document (pinned duplicate-rename semantics), grouped per document
   // in document order, ordered by range within each document.
-  const edits: WorkspaceTextEdit[] = [];
-  const undo: WorkspaceTextEdit[] = [];
-  const expectedSourceHashes: Record<string, string> = {};
+  const edits: WorkspaceTextEdit[] = []
+  const undo: WorkspaceTextEdit[] = []
+  const expectedSourceHashes: Record<string, string> = {}
 
   for (const snapshot of snapshots) {
     // The forward token replacements of this document, tagged with the
     // inverse token so the undo edit restores the exact authored bytes.
-    const documentEdits: Array<{ edit: WorkspaceTextEdit; inverseInsert: string }> = [];
+    const documentEdits: Array<{ edit: WorkspaceTextEdit, inverseInsert: string }> = []
 
     for (const definition of snapshot.definitions) {
       if (definition.key === oldKey) {
         documentEdits.push({
-          edit: {
-            documentPath: snapshot.documentPath,
-            range: { ...definition.range },
-            insert: "#" + newKey,
-          },
-          inverseInsert: "#" + oldKey,
-        });
+          edit: { documentPath: snapshot.documentPath, range: { ...definition.range }, insert: '#' + newKey },
+          inverseInsert: '#' + oldKey
+        })
       }
     }
 
     for (const occurrence of snapshot.occurrences) {
       if (occurrence.key === oldKey) {
         documentEdits.push({
-          edit: {
-            documentPath: snapshot.documentPath,
-            range: { ...occurrence.range },
-            insert: "@" + newKey,
-          },
-          inverseInsert: "@" + oldKey,
-        });
+          edit: { documentPath: snapshot.documentPath, range: { ...occurrence.range }, insert: '@' + newKey },
+          inverseInsert: '@' + oldKey
+        })
       }
     }
 
     if (documentEdits.length === 0) {
-      continue;
+      continue
     }
 
-    documentEdits.sort((a, b) => a.edit.range.from - b.edit.range.from);
-    expectedSourceHashes[snapshot.documentPath] = snapshot.sourceHash;
+    documentEdits.sort((a, b) => a.edit.range.from - b.edit.range.from)
+    expectedSourceHashes[snapshot.documentPath] = snapshot.sourceHash
 
     // The inverse edits are expressed in POST-edit coordinates: walk the
     // ascending forward edits, tracking the cumulative length delta of the
     // preceding replacements.
-    let delta = 0;
+    let delta = 0
     for (const { edit, inverseInsert } of documentEdits) {
-      edits.push(edit);
-      const from = edit.range.from + delta;
+      edits.push(edit)
+      const from = edit.range.from + delta
       undo.push({
         documentPath: edit.documentPath,
         range: { from, to: from + edit.insert.length },
-        insert: inverseInsert,
-      });
-      delta += edit.insert.length - (edit.range.to - edit.range.from);
+        insert: inverseInsert
+      })
+      delta += edit.insert.length - (edit.range.to - edit.range.from)
     }
   }
 
   return {
-    status: "ok",
+    status: 'ok',
     edit: {
       edits,
       expectedSourceHashes,
       openBufferPaths: [],
       closedFilePaths: [],
-      conflict: { status: "clean" },
-      undo,
-    },
-  };
+      conflict: { status: 'clean' },
+      undo
+    }
+  }
 }
 
 /**
@@ -292,11 +263,11 @@ export function previewReferenceRename(
  * document order.
  */
 export interface RenamePreviewFileSummary {
-  documentPath: string;
+  documentPath: string
   /** The number of previewed text edits in this document */
-  editCount: number;
+  editCount: number
   /** One authored context snippet per affected range, in document order */
-  snippets: string[];
+  snippets: string[]
 }
 
 /**
@@ -313,57 +284,47 @@ export interface RenamePreviewFileSummary {
  *
  * @return  {RenamePreviewFileSummary[]}              The per-file summary
  */
-export function buildRenamePreviewSummary(
+export function buildRenamePreviewSummary (
   edit: WorkspaceReferenceEdit,
   snapshots: DocumentReferenceSnapshot[],
-  oldKey: string,
+  oldKey: string
 ): RenamePreviewFileSummary[] {
-  const summaries: RenamePreviewFileSummary[] = [];
-  const byPath = new Map(snapshots.map((snapshot) => [snapshot.documentPath, snapshot]));
+  const summaries: RenamePreviewFileSummary[] = []
+  const byPath = new Map(snapshots.map(snapshot => [ snapshot.documentPath, snapshot ]))
 
   for (const textEdit of edit.edits) {
-    let summary = summaries.find((candidate) => candidate.documentPath === textEdit.documentPath);
+    let summary = summaries.find(candidate => candidate.documentPath === textEdit.documentPath)
     if (summary === undefined) {
-      summary = { documentPath: textEdit.documentPath, editCount: 0, snippets: [] };
-      summaries.push(summary);
+      summary = { documentPath: textEdit.documentPath, editCount: 0, snippets: [] }
+      summaries.push(summary)
     }
-    summary.editCount++;
+    summary.editCount++
 
-    const snapshot = byPath.get(textEdit.documentPath);
+    const snapshot = byPath.get(textEdit.documentPath)
     if (snapshot === undefined) {
-      throw new Error(
-        `Rename preview summary: no snapshot for previewed document ${textEdit.documentPath}`,
-      );
+      throw new Error(`Rename preview summary: no snapshot for previewed document ${textEdit.documentPath}`)
     }
 
     // The affected range is either a definition id token or an occurrence
     // key token of oldKey; surface its authored context.
-    const definition = snapshot.definitions.find((candidate) => {
-      return (
-        candidate.key === oldKey &&
-        textEdit.range.from >= candidate.range.from &&
-        textEdit.range.to <= candidate.range.to
-      );
-    });
+    const definition = snapshot.definitions.find(candidate => {
+      return candidate.key === oldKey &&
+        textEdit.range.from >= candidate.range.from && textEdit.range.to <= candidate.range.to
+    })
     if (definition !== undefined) {
-      summary.snippets.push(definition.previewSource.split("\n", 1)[0]);
-      continue;
+      summary.snippets.push(definition.previewSource.split('\n', 1)[0])
+      continue
     }
 
-    const occurrence = snapshot.occurrences.find((candidate) => {
-      return (
-        candidate.key === oldKey &&
-        textEdit.range.from >= candidate.range.from &&
-        textEdit.range.to <= candidate.range.to
-      );
-    });
+    const occurrence = snapshot.occurrences.find(candidate => {
+      return candidate.key === oldKey &&
+        textEdit.range.from >= candidate.range.from && textEdit.range.to <= candidate.range.to
+    })
     if (occurrence === undefined) {
-      throw new Error(
-        `Rename preview summary: previewed range [${textEdit.range.from},${textEdit.range.to}] in ${textEdit.documentPath} matches no authored ${oldKey} token`,
-      );
+      throw new Error(`Rename preview summary: previewed range [${textEdit.range.from},${textEdit.range.to}] in ${textEdit.documentPath} matches no authored ${oldKey} token`)
     }
-    summary.snippets.push(occurrence.clusterRaw);
+    summary.snippets.push(occurrence.clusterRaw)
   }
 
-  return summaries;
+  return summaries
 }

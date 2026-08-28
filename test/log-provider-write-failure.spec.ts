@@ -24,15 +24,12 @@
 
 // The harness must load before any provider module: LogProvider imports
 // 'electron' at module scope.
-// biome-ignore-all assist/source/organizeImports: the harness installs the
-// electron stand-in at module scope, so it has to load before any module
-// that imports electron itself. Sorting these imports breaks the specs.
-import "./headless-electron-harness.cjs";
-import { strict as assert } from "assert";
-import { app } from "electron";
-import { mkdir, readFile, rm } from "fs/promises";
-import path from "path";
-import LogProvider from "source/app/service-providers/log";
+import './headless-electron-harness.cjs'
+import { strict as assert } from 'assert'
+import { app } from 'electron'
+import { mkdir, readFile, rm } from 'fs/promises'
+import path from 'path'
+import LogProvider from 'source/app/service-providers/log'
 
 /**
  * The real provider, writing to the real log directory, but under a filename of
@@ -40,80 +37,80 @@ import LogProvider from "source/app/service-providers/log";
  * today's logfile) cannot contribute lines to what this spec reads back.
  */
 class IsolatedLogProvider extends LogProvider {
-  public readonly filename = `log-write-failure-${process.pid}-${Date.now()}.log`;
+  public readonly filename = `log-write-failure-${process.pid}-${Date.now()}.log`
 
-  _getLogfileName(): string {
-    return this.filename;
+  _getLogfileName (): string {
+    return this.filename
   }
 }
 
-describe("LogProvider (failing file writes)", function () {
-  this.timeout(20000);
+describe('LogProvider (failing file writes)', function () {
+  this.timeout(20000)
 
-  const logDir = path.join(app.getPath("userData"), "logs");
-  let provider: IsolatedLogProvider;
-  let logfile: string;
+  const logDir = path.join(app.getPath('userData'), 'logs')
+  let provider: IsolatedLogProvider
+  let logfile: string
 
   beforeEach(async function () {
-    await mkdir(logDir, { recursive: true });
-    provider = new IsolatedLogProvider();
-    logfile = path.join(logDir, provider.filename);
-  });
+    await mkdir(logDir, { recursive: true })
+    provider = new IsolatedLogProvider()
+    logfile = path.join(logDir, provider.filename)
+  })
 
   afterEach(async function () {
-    await rm(logfile, { recursive: true, force: true });
-  });
+    await rm(logfile, { recursive: true, force: true })
+  })
 
-  it("flushes the newest entry and every arrival queued behind an in-flight append", async function () {
-    const entries = Array.from({ length: 64 }, (_, index) => `queued log entry ${index}`);
+  it('flushes the newest entry and every arrival queued behind an in-flight append', async function () {
+    const entries = Array.from({ length: 64 }, (_, index) => `queued log entry ${index}`)
 
     // The first call reaches fs.writeFile and yields. The remaining synchronous
     // calls therefore arrive while that append is active; shutdown is the only
     // explicit flush after the burst.
     for (const entry of entries) {
-      provider.info(entry);
+      provider.info(entry)
     }
 
-    await provider.shutdown();
+    await provider.shutdown()
 
-    const written = await readFile(logfile, "utf8");
+    const written = await readFile(logfile, 'utf8')
     const writtenEntries = written
-      .split("\n")
-      .filter((line) => line.includes("queued log entry "))
-      .map((line) => line.slice(line.indexOf("queued log entry ")));
+      .split('\n')
+      .filter(line => line.includes('queued log entry '))
+      .map(line => line.slice(line.indexOf('queued log entry ')))
 
     assert.deepEqual(
       writtenEntries,
       entries,
-      "one flush must preserve the complete accepted entry sequence, including the newest in-flight arrival",
-    );
-  });
+      'one flush must preserve the complete accepted entry sequence, including the newest in-flight arrival'
+    )
+  })
 
-  it("keeps a failed batch pending, exposes the failure, and accepts a later flush", async function () {
+  it('keeps a failed batch pending, exposes the failure, and accepts a later flush', async function () {
     // Occupy the logfile path with a directory: every append to it rejects.
-    await mkdir(logfile, { recursive: true });
+    await mkdir(logfile, { recursive: true })
 
-    provider.error("entry logged while the logfile could not be written");
+    provider.error('entry logged while the logfile could not be written')
     await assert.rejects(
       async () => await provider.shutdown(),
       Error,
-      "shutdown must expose a real filesystem append failure",
-    );
+      'shutdown must expose a real filesystem append failure'
+    )
 
     // Free the path again; the log must recover on its own.
-    await rm(logfile, { recursive: true, force: true });
+    await rm(logfile, { recursive: true, force: true })
 
-    provider.error("entry logged after the logfile became writable again");
-    await provider.shutdown();
+    provider.error('entry logged after the logfile became writable again')
+    await provider.shutdown()
 
-    const written = await readFile(logfile, "utf8");
+    const written = await readFile(logfile, 'utf8')
     assert.ok(
-      written.includes("entry logged while the logfile could not be written"),
-      `The entry the failed write dropped was never retried. Logfile:\n${written}`,
-    );
+      written.includes('entry logged while the logfile could not be written'),
+      `The entry the failed write dropped was never retried. Logfile:\n${written}`
+    )
     assert.ok(
-      written.includes("entry logged after the logfile became writable again"),
-      `The provider remained disabled after the failed append. Logfile:\n${written}`,
-    );
-  });
-});
+      written.includes('entry logged after the logfile became writable again'),
+      `The provider remained disabled after the failed append. Logfile:\n${written}`
+    )
+  })
+})

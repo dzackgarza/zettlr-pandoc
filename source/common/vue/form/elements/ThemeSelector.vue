@@ -73,23 +73,23 @@
  */
 
 export interface ThemeDescriptor {
-  name: string;
-  description: string;
-  textColor: string;
-  backgroundColor: string;
-  fontFamily: string;
+  name: string
+  description: string
+  textColor: string
+  backgroundColor: string
+  fontFamily: string
 }
 
 const props = defineProps<{
-  modelValue: string;
-  options: Record<string, ThemeDescriptor>;
-  label?: string;
-}>();
+  modelValue: string
+  options: Record<string, ThemeDescriptor>
+  label?: string
+}>()
 
-const emit = defineEmits<(e: "update:modelValue", value: string) => void>();
+const emit = defineEmits<(e: 'update:modelValue', value: string) => void>()
 
-function selectTheme(themeName: string): void {
-  emit("update:modelValue", themeName);
+function selectTheme (themeName: string): void {
+  emit('update:modelValue', themeName)
 }
 </script>
 

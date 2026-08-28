@@ -11,7 +11,7 @@
  * END HEADER
  */
 
-import replaceStringVariables from "./replace-string-variables";
+import replaceStringVariables from './replace-string-variables'
 
 /**
  * This function generates an ID using the given pattern (default: YYYYMMDDhhmmss)
@@ -21,6 +21,6 @@ import replaceStringVariables from "./replace-string-variables";
  *
  * @return  {String}                            The final string after replacements.
  */
-export default function generateId(pattern: string = "%Y%M%D%h%m%s"): string {
-  return replaceStringVariables(pattern);
+export default function generateId (pattern: string = '%Y%M%D%h%m%s'): string {
+  return replaceStringVariables(pattern)
 }

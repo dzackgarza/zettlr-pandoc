@@ -13,7 +13,7 @@
  * END HEADER
  */
 
-import { spawn } from "child_process";
+import { spawn } from 'child_process'
 
 /**
  * This command can check an arbitrary command's version by running `program
@@ -28,43 +28,39 @@ import { spawn } from "child_process";
  *
  * @return  {string|undefined}           Either a version string, or undefined
  */
-export async function getProgramVersion(program: string): Promise<string | undefined> {
-  let output: string = "";
+export async function getProgramVersion (program: string): Promise<string|undefined> {
+  let output: string = ''
   await new Promise<void>((resolve, reject) => {
-    let err: string = "";
-    const process = spawn(program, ["--version"], { shell: true });
+    let err: string = ''
+    const process = spawn(program, ['--version'], { shell: true })
 
-    process.stderr?.on("data", (data) => {
-      err += String(data);
-    });
+    process.stderr?.on('data', (data) => {
+      err += String(data)
+    })
 
-    process.stdout?.on("data", (data) => {
-      output += String(data);
-    });
+    process.stdout?.on('data', (data) => {
+      output += String(data)
+    })
 
-    process.on("close", (code: number, _signal) => {
+    process.on('close', (code: number, _signal) => {
       if (code !== 0) {
-        reject(
-          new Error(
-            `Could not check program version, process exited with code ${code}; stderr: ${err}`,
-          ),
-        );
+        reject(new Error(`Could not check program version, process exited with code ${code}; stderr: ${err}`))
       } else {
-        resolve();
+        resolve()
       }
-    });
+    })
 
-    process.on("error", (err) => {
-      reject(err);
-    });
-  });
+    process.on('error', (err) => {
+      reject(err)
+    })
+  })
 
   // First line is the "pandoc 2.19.2" or any other version string
-  output = output.split("\n")[0];
-  const match = /\d[\d.]+/.exec(output);
+  output = output.split('\n')[0]
+  const match = /\d[\d.]+/.exec(output)
   if (match === null) {
-    return undefined;
+    return undefined
   } else {
-    return match[0];
+    return match[0]
   }
 }

@@ -11,8 +11,8 @@
  * END HEADER
  */
 
-import { extname } from "path";
-import isFile from "./is-file";
+import { extname } from 'path'
+import isFile from './is-file'
 
 /**
  * This function determines whether or not a given path describes an attachment.
@@ -20,11 +20,7 @@ import isFile from "./is-file";
  * @param  {Boolean} skipExistenceCheck Whether or not to skip the existence check
  * @return {Boolean}   Returns true, if the path is an attachment, or false.
  */
-export default function isAttachment(
-  p: string,
-  ext: string[],
-  skipExistenceCheck: boolean = false,
-): boolean {
-  let fileExists = skipExistenceCheck ? true : isFile(p);
-  return fileExists && ext.includes(extname(p).toLowerCase());
+export default function isAttachment (p: string, ext: string[], skipExistenceCheck: boolean = false): boolean {
+  let fileExists = skipExistenceCheck ? true : isFile(p)
+  return fileExists && ext.includes(extname(p).toLowerCase())
 }

@@ -15,10 +15,10 @@
  * END HEADER
  */
 
-import { constants as FSConstants, promises as fs } from "fs";
-import { DateTime } from "luxon";
-import path from "path";
-import isDir from "source/common/util/is-dir";
+import path from 'path'
+import { promises as fs, constants as FSConstants } from 'fs'
+import isDir from 'source/common/util/is-dir'
+import { DateTime } from 'luxon'
 
 /**
  * Checks if a given absolute path exists on disk. This does not care about
@@ -30,12 +30,12 @@ import isDir from "source/common/util/is-dir";
  *
  * @return  {boolean}           Whether the path exists.
  */
-async function pathExists(absPath: string, mode = FSConstants.R_OK): Promise<boolean> {
+async function pathExists (absPath: string, mode = FSConstants.R_OK): Promise<boolean> {
   try {
-    await fs.access(absPath, mode);
-    return true;
+    await fs.access(absPath, mode)
+    return true
   } catch (err) {
-    return false;
+    return false
   }
 }
 
@@ -50,33 +50,31 @@ async function pathExists(absPath: string, mode = FSConstants.R_OK): Promise<boo
  *
  * @return  {Promise<string>}            The disambiguated name.
  */
-export async function disambiguateFile(filepath: string): Promise<string> {
-  if (!(await pathExists(filepath))) {
-    return filepath;
+export async function disambiguateFile (filepath: string): Promise<string> {
+  if (!await pathExists(filepath)) {
+    return filepath
   }
 
-  const dirpath = path.dirname(filepath);
-  const extname = path.extname(filepath);
-  const filenameBase = path.basename(filepath, extname);
+  const dirpath = path.dirname(filepath)
+  const extname = path.extname(filepath)
+  const filenameBase = path.basename(filepath, extname)
 
   if (!isDir(dirpath)) {
-    throw new Error(
-      `Cannot disambiguate file ${path.basename(filepath)}: Parent directory does not exist.`,
-    );
+    throw new Error(`Cannot disambiguate file ${path.basename(filepath)}: Parent directory does not exist.`)
   }
 
-  const now = DateTime.now();
-  let offsetSeconds = 0;
+  const now = DateTime.now()
+  let offsetSeconds = 0
 
   const genSuffix = (offset: number) => {
-    return now.plus({ seconds: offset }).toFormat("yyyyMMddHHmmss");
-  };
-
-  let dateOffset = genSuffix(offsetSeconds);
-  while (await pathExists(path.join(dirpath, `${filenameBase}-${dateOffset}${extname}`))) {
-    offsetSeconds++;
-    dateOffset = genSuffix(offsetSeconds);
+    return now.plus({ seconds: offset }).toFormat('yyyyMMddHHmmss')
   }
 
-  return path.join(dirpath, `${filenameBase}-${dateOffset}${extname}`);
+  let dateOffset = genSuffix(offsetSeconds)
+  while (await pathExists(path.join(dirpath, `${filenameBase}-${dateOffset}${extname}`))) {
+    offsetSeconds++
+    dateOffset = genSuffix(offsetSeconds)
+  }
+
+  return path.join(dirpath, `${filenameBase}-${dateOffset}${extname}`)
 }

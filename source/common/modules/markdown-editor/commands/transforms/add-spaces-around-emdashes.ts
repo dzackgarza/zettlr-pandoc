@@ -11,7 +11,7 @@
  *
  * END HEADER
  */
-import { transformSelectedText } from "./transform-selected-text";
+import { transformSelectedText } from './transform-selected-text'
 
 /**
  * Add spaces, as necessary, to ensure spaces exist around any emdashes in the
@@ -28,5 +28,5 @@ import { transformSelectedText } from "./transform-selected-text";
  *                          necessary.
  */
 export const addSpacesAroundEmdashes = transformSelectedText((text) => {
-  return text.replaceAll(/([^ ])—/g, "$1 —").replaceAll(/—([^ ])/g, "— $1");
-});
+  return text.replaceAll(/([^ ])—/g, '$1 —').replaceAll(/—([^ ])/g, '— $1')
+})

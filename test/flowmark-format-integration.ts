@@ -31,40 +31,33 @@
  * END HEADER
  */
 
-import { strict as assert } from "assert";
-import { formatMarkdownText } from "source/app/util/flowmark-format";
+import { strict as assert } from 'assert'
+import { formatMarkdownText } from 'source/app/util/flowmark-format'
 
-describe("flowmark real-toolchain integration (issue #26)", function () {
+describe('flowmark real-toolchain integration (issue #26)', function () {
   // uvx fetches flowmark from git on a cold cache; allow generously for it.
-  this.timeout(180000);
+  this.timeout(180000)
 
-  it("runs the production uvx flowmark command and applies the --semantic reflow", async function () {
+  it('runs the production uvx flowmark command and applies the --semantic reflow', async function () {
     // A single physical line holding two sentences. --semantic reflow must
     // break it into one sentence per line; if the production command string
     // were wrong the runner would not launch (flowmark-absent) and `ok` would
     // be false, so this asserts the real invocation, not a stand-in.
-    const input = "The cat sat. The dog ran.\n";
-    assert.equal(input.trimEnd().includes("\n"), false, "premise: input is a single physical line");
+    const input = 'The cat sat. The dog ran.\n'
+    assert.equal(input.trimEnd().includes('\n'), false, 'premise: input is a single physical line')
 
     // No opts -> the real FLOWMARK_COMMAND + FLOWMARK_ARGS_PREFIX are used.
-    const result = await formatMarkdownText(input);
+    const result = await formatMarkdownText(input)
 
-    assert.equal(result.ok, true, "the real production flowmark invocation must launch and exit 0");
+    assert.equal(result.ok, true, 'the real production flowmark invocation must launch and exit 0')
     if (result.ok) {
-      assert.notEqual(
-        result.formatted,
-        input,
-        "the semantic reflow must actually change the buffer",
-      );
-      const lines = result.formatted
-        .split("\n")
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0);
+      assert.notEqual(result.formatted, input, 'the semantic reflow must actually change the buffer')
+      const lines = result.formatted.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
       assert.deepEqual(
         lines,
-        ["The cat sat.", "The dog ran."],
-        "flowmark --semantic must place each sentence on its own line",
-      );
+        [ 'The cat sat.', 'The dog ran.' ],
+        'flowmark --semantic must place each sentence on its own line'
+      )
     }
-  });
-});
+  })
+})

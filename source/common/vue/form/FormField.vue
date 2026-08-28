@@ -171,22 +171,22 @@
 </template>
 
 <script setup lang="ts">
-import Button from "./elements/ButtonControl.vue";
-import CheckboxInput from "./elements/CheckboxControl.vue";
-import ColorInput from "./elements/ColorControl.vue";
-import FileInput from "./elements/FileControl.vue";
-import FilterSelector from "./elements/FilterSelector.vue";
-import ListControl from "./elements/ListControl.vue";
-import NumberInput from "./elements/NumberControl.vue";
-import RadioInput from "./elements/RadioControl.vue";
-import SelectInput from "./elements/SelectControl.vue";
-import SliderInput from "./elements/SliderControl.vue";
-import SwitchInput from "./elements/SwitchControl.vue";
-import TextInput from "./elements/TextControl.vue";
-import ThemeInput from "./elements/ThemeSelector.vue";
-import TimeInput from "./elements/TimeControl.vue";
-import TokenInput from "./elements/TokenList.vue";
-import type { FormField } from "./FormBuilder.vue";
+import type { FormField } from './FormBuilder.vue'
+import TextInput from './elements/TextControl.vue'
+import Button from './elements/ButtonControl.vue'
+import NumberInput from './elements/NumberControl.vue'
+import TimeInput from './elements/TimeControl.vue'
+import ColorInput from './elements/ColorControl.vue'
+import FileInput from './elements/FileControl.vue'
+import CheckboxInput from './elements/CheckboxControl.vue'
+import SwitchInput from './elements/SwitchControl.vue'
+import RadioInput from './elements/RadioControl.vue'
+import SelectInput from './elements/SelectControl.vue'
+import SliderInput from './elements/SliderControl.vue'
+import ListControl from './elements/ListControl.vue'
+import FilterSelector from './elements/FilterSelector.vue'
+import TokenInput from './elements/TokenList.vue'
+import ThemeInput from './elements/ThemeSelector.vue'
 
 /**
  * @ignore
@@ -204,8 +204,8 @@ import type { FormField } from "./FormBuilder.vue";
  * END HEADER
  */
 
-const props = defineProps<{ field: FormField; model: any }>();
-const emit = defineEmits<(e: "update:modelValue", newValue: any) => void>();
+const props = defineProps<{ field: FormField, model: any }>()
+const emit = defineEmits<(e: 'update:modelValue', newValue: any) => void>()
 </script>
 
 <style lang="less">

@@ -13,20 +13,20 @@
  * END HEADER
  */
 
-import { DateTime } from "luxon";
+import { DateTime } from 'luxon'
 
 /**
  * Returns today's date as an ISO string (YYYY-MM-DD)
  *
  * @return  {string}  Today's date in international standard form.
  */
-export function today(): string {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = (d.getMonth() + 1).toString().padStart(2, "0");
-  const dd = d.getDate().toString().padStart(2, "0");
+export function today (): string {
+  const d = new Date()
+  const yyyy = d.getFullYear()
+  const mm = (d.getMonth() + 1).toString().padStart(2, '0')
+  const dd = d.getDate().toString().padStart(2, '0')
 
-  return `${yyyy}-${mm}-${dd}`;
+  return `${yyyy}-${mm}-${dd}`
 }
 
 /**
@@ -37,10 +37,10 @@ export function today(): string {
  * @return  {boolean}        True if the date is tomorrow or further into the
  *                           future.
  */
-export function isDateInTheFuture(date: string): boolean {
-  const today = DateTime.now();
-  const dateToCheck = DateTime.fromISO(date);
-  return today.diff(dateToCheck, "days").days < 0;
+export function isDateInTheFuture (date: string): boolean {
+  const today = DateTime.now()
+  const dateToCheck = DateTime.fromISO(date)
+  return today.diff(dateToCheck, 'days').days < 0
 }
 
 /**
@@ -52,16 +52,14 @@ export function isDateInTheFuture(date: string): boolean {
  *
  * @return  {Array<[string, number]>}          The up to last 30 values
  */
-export function last30EntriesByDate(record: Record<string, number>): Array<[string, number]> {
-  return (
-    Object.entries(record)
-      // Sort by date (ascending; earlier first)
-      .sort((a, b) => a[0].localeCompare(b[0], "en"))
-      // Reverse (latest dates first)
-      .reverse()
-      // Take 30
-      .slice(0, 30)
-  );
+export function last30EntriesByDate (record: Record<string, number>): Array<[string, number]> {
+  return Object.entries(record)
+    // Sort by date (ascending; earlier first)
+    .sort((a, b) => a[0].localeCompare(b[0], 'en'))
+    // Reverse (latest dates first)
+    .reverse()
+    // Take 30
+    .slice(0, 30)
 }
 
 /**
@@ -71,10 +69,8 @@ export function last30EntriesByDate(record: Record<string, number>): Array<[stri
  *
  * @return  {number}                          The sum
  */
-export function sumAny30Days(record: Record<string, number>): number {
-  return last30EntriesByDate(record)
-    .map((x) => x[1])
-    .reduce((prev, cur) => prev + cur, 0);
+export function sumAny30Days (record: Record<string, number>): number {
+  return last30EntriesByDate(record).map(x => x[1]).reduce((prev, cur) => prev + cur, 0)
 }
 
 /**
@@ -84,10 +80,10 @@ export function sumAny30Days(record: Record<string, number>): number {
  *
  * @return  {number}                          The average
  */
-export function avgAny30Days(record: Record<string, number>): number {
+export function avgAny30Days (record: Record<string, number>): number {
   if (last30EntriesByDate(record).length === 0) {
-    return 0;
+    return 0
   }
 
-  return sumAny30Days(record) / last30EntriesByDate(record).length;
+  return sumAny30Days(record) / last30EntriesByDate(record).length
 }

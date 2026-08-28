@@ -19,13 +19,13 @@
  */
 export interface WindowPosition {
   // Holds the last unique display ID from the given structure
-  lastDisplayId: number;
+  lastDisplayId: number
   // The window bounds
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+  x: number
+  y: number
+  width: number
+  height: number
   // Whether the window was/is maximised (necessary if the display changes to
   // adapt the window bounds)
-  isMaximised: boolean;
+  isMaximised: boolean
 }

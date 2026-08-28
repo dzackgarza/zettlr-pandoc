@@ -11,7 +11,7 @@
  *
  * END HEADER
  */
-import { transformSelectedText } from "./transform-selected-text";
+import { transformSelectedText } from './transform-selected-text'
 
 /**
  * Straighten curly quotes, replacing `“ ‘ ’ ”` with `" ' ' "`.
@@ -21,5 +21,7 @@ import { transformSelectedText } from "./transform-selected-text";
  * @return  {string}        The text with curly quotes straightened.
  */
 export const straightenQuotes = transformSelectedText((text) => {
-  return text.replaceAll(/[„“”»«「」]/g, '"').replaceAll(/[‚‘’›‹『』]/g, "'");
-});
+  return text
+    .replaceAll(/[„“”»«「」]/g, '"')
+    .replaceAll(/[‚‘’›‹『』]/g, '\'')
+})

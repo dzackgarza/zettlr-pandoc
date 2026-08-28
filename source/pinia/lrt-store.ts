@@ -1,10 +1,7 @@
-import { defineStore } from "pinia";
-import type {
-  LRTIPCAsyncMessage,
-  LRTIPCSyncMessage,
-} from "source/app/service-providers/long-running-tasks";
-import type { LRT_JSON } from "source/app/service-providers/long-running-tasks/task";
-import { ref } from "vue";
+import { defineStore } from 'pinia'
+import type { LRTIPCAsyncMessage, LRTIPCSyncMessage } from 'source/app/service-providers/long-running-tasks'
+import type { LRT_JSON } from 'source/app/service-providers/long-running-tasks/task'
+import { ref } from 'vue'
 
 /**
  * Enum of all status a task can have. (Mirror from the provider, because it's
@@ -14,100 +11,91 @@ export enum TaskStatus {
   /**
    * The task is still ongoing
    */
-  ongoing,
+  'ongoing',
   /**
    * The task has finished successfully
    */
-  finished,
+  'finished',
   /**
    * The task has errored out
    */
-  error,
+  'error',
   /**
    * The task has been aborted
    */
-  aborted,
+  'aborted'
 }
 
-const ipcRenderer = window.ipc;
+const ipcRenderer = window.ipc
 
-async function fetchTasks(): Promise<LRT_JSON[]> {
-  return await ipcRenderer.invoke("lrt-provider", { command: "get-tasks" } as LRTIPCAsyncMessage);
+async function fetchTasks (): Promise<LRT_JSON[]> {
+  return await ipcRenderer.invoke('lrt-provider', { command: 'get-tasks' } as LRTIPCAsyncMessage)
 }
 
-export const useLRTStore = defineStore("lrt", () => {
-  const tasks = ref<LRT_JSON[]>([]);
+export const useLRTStore = defineStore('lrt', () => {
+  const tasks = ref<LRT_JSON[]>([])
 
   // Initial update
   fetchTasks()
-    .then((t) => {
-      tasks.value = t;
-    })
-    .catch((err) => console.error("Could not fetch long running tasks", err));
+    .then(t => { tasks.value = t })
+    .catch(err => console.error('Could not fetch long running tasks', err))
 
   // Hook event listeners
-  ipcRenderer.on("lrt-provider", (event, args: LRTIPCSyncMessage) => {
-    if (args.command === "update-task") {
+  ipcRenderer.on('lrt-provider', (event, args: LRTIPCSyncMessage) => {
+    if (args.command === 'update-task') {
       // A single task was updated
-      const { task } = args.payload;
-      const taskIdx = tasks.value.findIndex((t) => t.id === task.id);
-
+      const { task } = args.payload
+      const taskIdx = tasks.value.findIndex(t => t.id === task.id)
+  
       if (taskIdx > -1) {
-        tasks.value.splice(taskIdx, 1, task);
+        tasks.value.splice(taskIdx, 1, task)
       } else {
         // This can happen if the task has a rapid update before this store has
         // had a chance to re-fetch the new tasks.
-        tasks.value.push(task);
+        tasks.value.push(task)
       }
-    } else if (args.command === "delete-task") {
+    } else if (args.command === 'delete-task') {
       // A single task was deleted
-      const { id } = args.payload;
-      const taskIdx = tasks.value.findIndex((t) => t.id === id);
+      const { id } = args.payload
+      const taskIdx = tasks.value.findIndex(t => t.id === id)
 
       if (taskIdx > -1) {
-        tasks.value.splice(taskIdx, 1);
+        tasks.value.splice(taskIdx, 1)
       }
     }
-  });
+  })
 
-  ipcRenderer.on("lrt-provider", (event, args: LRTIPCSyncMessage) => {
-    if (args.command === "new-task") {
+  ipcRenderer.on('lrt-provider', (event, args: LRTIPCSyncMessage) => {
+    if (args.command === 'new-task') {
       // A new task has been started
-      tasks.value.push(args.payload.task);
+      tasks.value.push(args.payload.task)
     }
-  });
+  })
 
-  function abortTask(id: string) {
-    const task = tasks.value.find((t) => t.id === id);
+  function abortTask (id: string) {
+    const task = tasks.value.find(t => t.id === id)
 
     if (task === undefined) {
-      throw new Error(`Could not abort task with ID ${id}: Not found`);
+      throw new Error(`Could not abort task with ID ${id}: Not found`)
     }
 
     if (!task.abortable) {
-      throw new Error(`Cannot abort task ${id}: Not abortable.`);
+      throw new Error(`Cannot abort task ${id}: Not abortable.`)
     }
 
-    ipcRenderer.send("lrt-provider", {
-      command: "abort-task",
-      payload: { id },
-    } as LRTIPCSyncMessage);
+    ipcRenderer.send('lrt-provider', { command: 'abort-task', payload: { id } } as LRTIPCSyncMessage)
   }
 
-  function deleteTask(id: string) {
-    const task = tasks.value.find((t) => t.id === id);
+  function deleteTask (id: string) {
+    const task = tasks.value.find(t => t.id === id)
 
     if (task === undefined) {
-      throw new Error(`Could not delete task ${id}: Not found.`);
+      throw new Error(`Could not delete task ${id}: Not found.`)
     }
 
-    ipcRenderer
-      .invoke("lrt-provider", {
-        command: "delete-task",
-        payload: { id: task.id },
-      } as LRTIPCAsyncMessage)
-      .catch((err) => console.error("Could not delete task", err));
+    ipcRenderer.invoke('lrt-provider', { command: 'delete-task', payload: { id: task.id } } as LRTIPCAsyncMessage)
+      .catch(err => console.error('Could not delete task', err))
   }
 
-  return { tasks, abortTask, deleteTask };
-});
+  return { tasks, abortTask, deleteTask }
+})

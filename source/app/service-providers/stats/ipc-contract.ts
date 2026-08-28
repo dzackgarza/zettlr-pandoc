@@ -14,11 +14,11 @@
  * END HEADER
  */
 
-import type { Stats } from "./index";
+import type { Stats } from './index'
 
 export type StatsProviderIPCContract = {
-  "get-data": {
-    request: { payload?: undefined };
-    response: Stats;
-  };
-};
+  'get-data': {
+    request: { payload?: undefined }
+    response: Stats
+  }
+}

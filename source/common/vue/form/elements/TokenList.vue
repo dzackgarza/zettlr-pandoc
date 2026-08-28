@@ -39,45 +39,45 @@
  *
  * END HEADER
  */
-import { computed, ref } from "vue";
+import { computed, ref } from 'vue'
 
 const props = defineProps<{
-  modelValue: string[];
-  label?: string;
-  name?: string;
-  placeholder?: string;
-}>();
+  modelValue: string[]
+  label?: string
+  name?: string
+  placeholder?: string
+}>()
 
-const emit = defineEmits<(e: "update:modelValue", value: string[]) => void>();
+const emit = defineEmits<(e: 'update:modelValue', value: string[]) => void>()
 
-const inputValue = ref<string>("");
-const input = ref<HTMLInputElement | null>(null);
-const fieldID = computed<string>(() => "field-input-" + (props.name ?? ""));
+const inputValue = ref<string>('')
+const input = ref<HTMLInputElement|null>(null)
+const fieldID = computed<string>(() => 'field-input-' + (props.name ?? ''))
 
-function handleKey(event: KeyboardEvent): void {
-  if (inputValue.value.trim() === "") {
-    return;
+function handleKey (event: KeyboardEvent): void {
+  if (inputValue.value.trim() === '') {
+    return
   }
 
-  if (!["Space", "Enter", "Comma", "Tab"].includes(event.code)) {
-    return;
+  if (![ 'Space', 'Enter', 'Comma', 'Tab' ].includes(event.code)) {
+    return
   }
 
-  event.preventDefault();
+  event.preventDefault()
 
-  const arr = props.modelValue.map((token) => token);
+  const arr = props.modelValue.map(token => token)
   // Don't add duplicates
   if (!arr.includes(inputValue.value.trim())) {
-    arr.push(inputValue.value.trim());
-    emit("update:modelValue", arr);
+    arr.push(inputValue.value.trim())
+    emit('update:modelValue', arr)
   }
-  inputValue.value = "";
+  inputValue.value = ''
 }
 
-function removeToken(idx: number): void {
-  const arr = props.modelValue.map((token) => token);
-  arr.splice(idx, 1);
-  emit("update:modelValue", arr);
+function removeToken (idx: number): void {
+  const arr = props.modelValue.map(token => token)
+  arr.splice(idx, 1)
+  emit('update:modelValue', arr)
 }
 </script>
 

@@ -14,12 +14,12 @@
  * END HEADER
  */
 
-import type { LogMessage } from "./index";
+import type { LogMessage } from './index'
 
 /** nextIndex lives at the message's top level. */
 export type LogProviderIPCContract = {
-  "retrieve-log-chunk": {
-    request: { nextIndex: number };
-    response: LogMessage[];
-  };
-};
+  'retrieve-log-chunk': {
+    request: { nextIndex: number }
+    response: LogMessage[]
+  }
+}

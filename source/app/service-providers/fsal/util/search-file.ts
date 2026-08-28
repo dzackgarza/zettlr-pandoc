@@ -17,8 +17,8 @@
  * END HEADER
  */
 
-import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
-import type { SearchResult, SearchTerm } from "@dts/common/search";
+import type { SearchResult, SearchTerm } from '@dts/common/search'
+import type { MDFileDescriptor, CodeFileDescriptor } from '@dts/common/fsal'
 
 /**
  * Performs a full text search on the given fileObject, using terms. Returns a
@@ -27,29 +27,25 @@ import type { SearchResult, SearchTerm } from "@dts/common/search";
  *
  * @return  {SearchResult[]}  The result set
  */
-export default function searchFile(
-  fileObject: MDFileDescriptor | CodeFileDescriptor,
-  terms: SearchTerm[],
-  cnt: string,
-): SearchResult[] {
-  let termsMatched = 0;
-  let cntLower = cnt.toLowerCase();
-  const finalResults: SearchResult[] = [];
+export default function searchFile (fileObject: MDFileDescriptor|CodeFileDescriptor, terms: SearchTerm[], cnt: string): SearchResult[] {
+  let termsMatched = 0
+  let cntLower = cnt.toLowerCase()
+  const finalResults: SearchResult[] = []
 
   // First, divide the terms in NOT operators and the rest
-  const notOperators = terms.filter((elem) => elem.operator === "NOT");
-  const termsToSearch = terms.filter((elem) => elem.operator !== "NOT");
+  const notOperators = terms.filter(elem => elem.operator === 'NOT')
+  const termsToSearch = terms.filter(elem => elem.operator !== 'NOT')
 
   // Then, create an array of all NOT words
   const notWords: string[] = notOperators.reduce((acc: string[], curr) => {
-    return acc.concat(curr.words.map((w) => w.toLowerCase()));
-  }, []);
+    return acc.concat(curr.words.map(w => w.toLowerCase()))
+  }, [])
 
   for (const term of notWords) {
     // NOT is a strict stop indicator, meaning that if one NOT is found in the
     // file, the whole file is disqualified as a candidate.
     if (cntLower.includes(term) || fileObject.name.toLowerCase().includes(term)) {
-      return [];
+      return []
     }
   }
 
@@ -58,39 +54,30 @@ export default function searchFile(
   // files. What do we do? Easy, look above: We'll be returning an object to
   // indicate *as if* this file had a filename match.
   if (notOperators.length === terms.length) {
-    return [
-      {
-        line: -1,
-        ranges: [{ from: 0, to: fileObject.name.length }],
-        restext: fileObject.name,
-        weight: 2,
-      },
-    ];
+    return [{
+      line: -1,
+      ranges: [{ from: 0, to: fileObject.name.length }],
+      restext: fileObject.name,
+      weight: 2
+    }]
   }
 
   // First try to match the title and tags
   for (const t of termsToSearch) {
-    const matchedWords = new Set<string>();
+    const matchedWords = new Set<string>()
     for (const wd of t.words) {
-      if (
-        fileObject.name.toLowerCase().includes(wd.toLowerCase()) ||
-        (fileObject.type === "file" && fileObject.tags.includes(wd.toLowerCase()))
-      ) {
-        matchedWords.add(wd);
-        if (t.operator === "OR") {
+      if (fileObject.name.toLowerCase().includes(wd.toLowerCase()) || (fileObject.type === 'file' && fileObject.tags.includes(wd.toLowerCase()))) {
+        matchedWords.add(wd)
+        if (t.operator === 'OR') {
           // Break because only one match necessary
-          break;
+          break
         }
-      } else if (
-        wd[0] === "#" &&
-        fileObject.type === "file" &&
-        fileObject.tags.includes(wd.toLowerCase().substring(1))
-      ) {
+      } else if (wd[0] === '#' && fileObject.type === 'file' && fileObject.tags.includes(wd.toLowerCase().substring(1))) {
         // Account for a potential # in front of the tag
-        matchedWords.add(wd);
-        if (t.operator === "OR") {
+        matchedWords.add(wd)
+        if (t.operator === 'OR') {
           // Break because only one match necessary
-          break;
+          break
         }
       }
     }
@@ -98,35 +85,37 @@ export default function searchFile(
     // Now check if we have a go. We are accounting for any word that got any
     // match. This means, for an OR matchedWords must contain at least one word,
     // whereas for an AND, matchedWords must be the same size as t.words.
-    if (t.operator === "OR" && matchedWords.size > 0) {
-      termsMatched++;
+    if (t.operator === 'OR' && matchedWords.size > 0) {
+      termsMatched++
     } else if (matchedWords.size === t.words.length) {
-      termsMatched++;
+      termsMatched++
     }
   }
 
   // In case the title and/or tags matched, push an object of line -1 (indicating
   // filename or tag matches) and a huge weight first
   if (termsMatched === termsToSearch.length) {
-    finalResults.push({
-      line: -1,
-      ranges: [{ from: 0, to: fileObject.name.length }],
-      restext: fileObject.name,
-      weight: 2,
-    });
+    finalResults.push(
+      {
+        line: -1,
+        ranges: [{ from: 0, to: fileObject.name.length }],
+        restext: fileObject.name,
+        weight: 2
+      }
+    )
   }
 
   // Now begin to search the full text
-  const fileMatches: SearchResult[] = [];
-  const resultLines = new Set<number>(); // Necessary for combining results later
+  const fileMatches: SearchResult[] = []
+  const resultLines = new Set<number>() // Necessary for combining results later
 
   // Initialise the rest of the necessary variables
-  const lines = cnt.split("\n");
-  const linesLower = cntLower.split("\n");
-  termsMatched = 0; // Reset since we're doing the same search a second time
+  const lines = cnt.split('\n')
+  const linesLower = cntLower.split('\n')
+  termsMatched = 0 // Reset since we're doing the same search a second time
 
   for (const t of termsToSearch) {
-    const matchedWords = new Set<string>();
+    const matchedWords = new Set<string>()
     for (const wd of t.words) {
       for (let index = 0; index < lines.length; index++) {
         // Try both normal and lowercase
@@ -134,48 +123,44 @@ export default function searchFile(
           fileMatches.push({
             line: index,
             restext: lines[index],
-            ranges: [
-              {
-                from: lines[index].indexOf(wd),
-                to: lines[index].indexOf(wd) + wd.length,
-              },
-            ],
-            weight: 1, // Weight indicates that this was an exact match
-          });
-          matchedWords.add(wd);
-          resultLines.add(index);
-          if (t.operator === "OR") {
-            break;
+            ranges: [{
+              from: lines[index].indexOf(wd),
+              to: lines[index].indexOf(wd) + wd.length
+            }],
+            weight: 1 // Weight indicates that this was an exact match
+          })
+          matchedWords.add(wd)
+          resultLines.add(index)
+          if (t.operator === 'OR') {
+            break
           }
         } else if (linesLower[index].includes(wd.toLowerCase())) {
           fileMatches.push({
             line: index,
             restext: lines[index],
-            ranges: [
-              {
-                from: linesLower[index].indexOf(wd.toLowerCase()),
-                to: linesLower[index].indexOf(wd.toLowerCase()) + wd.length,
-              },
-            ],
-            weight: 1, // Weight indicates that this was an exact match
-          });
-          matchedWords.add(wd);
-          resultLines.add(index);
-          if (t.operator === "OR") {
-            break;
+            ranges: [{
+              from: linesLower[index].indexOf(wd.toLowerCase()),
+              to: linesLower[index].indexOf(wd.toLowerCase()) + wd.length
+            }],
+            weight: 1 // Weight indicates that this was an exact match
+          })
+          matchedWords.add(wd)
+          resultLines.add(index)
+          if (t.operator === 'OR') {
+            break
           }
         }
       }
 
-      if (t.operator === "OR" && matchedWords.size > 0) {
-        break;
+      if (t.operator === 'OR' && matchedWords.size > 0) {
+        break
       }
     }
 
-    if (t.operator === "OR" && matchedWords.size > 0) {
-      termsMatched++;
+    if (t.operator === 'OR' && matchedWords.size > 0) {
+      termsMatched++
     } else if (matchedWords.size === t.words.length) {
-      termsMatched++;
+      termsMatched++
     }
   }
 
@@ -184,7 +169,7 @@ export default function searchFile(
   if (termsMatched !== termsToSearch.length) {
     // Make sure we return the finalResults array instead of an empty array, so
     // we don't lose the file in case only its title has matched.
-    return finalResults;
+    return finalResults
   }
 
   // Post-process the search result. Right now, a lot of stuff is unsorted since
@@ -194,7 +179,7 @@ export default function searchFile(
   // are being performed here in between).
 
   // First, sort all search results with regard to the lines in which they occur
-  fileMatches.sort((resultA, resultB) => resultA.line - resultB.line);
+  fileMatches.sort((resultA, resultB) => resultA.line - resultB.line)
 
   // Second, we can also combine results from the same line!
   for (const line of [...resultLines].sort((a, b) => a - b)) {
@@ -206,33 +191,30 @@ export default function searchFile(
     // during the first iteration
 
     const newResult: SearchResult = fileMatches
-      .filter((result) => result.line === line)
-      .reduce(
-        (acc, curr) => {
-          if (Number.isNaN(acc.line)) {
-            acc.line = curr.line;
-            acc.restext = curr.restext;
-          }
+      .filter(result => result.line === line)
+      .reduce((acc, curr) => {
+        if (Number.isNaN(acc.line)) {
+          acc.line = curr.line
+          acc.restext = curr.restext
+        }
 
-          acc.weight += curr.weight;
-          acc.ranges = acc.ranges.concat(curr.ranges);
+        acc.weight += curr.weight
+        acc.ranges = acc.ranges.concat(curr.ranges)
 
-          return acc;
-        },
-        {
-          line: NaN,
-          restext: "",
-          weight: 0,
-          ranges: [],
-        },
-      );
+        return acc
+      }, {
+        line: NaN,
+        restext: '',
+        weight: 0,
+        ranges: []
+      })
 
     // Last but not least sort the ranges so they're lined up for the renderer
     // to consume without any more processing necessary
-    newResult.ranges.sort((rangeA, rangeB) => rangeA.to - rangeB.from);
+    newResult.ranges.sort((rangeA, rangeB) => rangeA.to - rangeB.from)
 
-    finalResults.push(newResult);
+    finalResults.push(newResult)
   }
 
-  return finalResults;
+  return finalResults
 }

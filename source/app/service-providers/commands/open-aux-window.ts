@@ -13,16 +13,16 @@
  * END HEADER
  */
 
-import type { AppServiceContainer } from "source/app/app-service-container";
-import ZettlrCommand from "./zettlr-command";
+import type { AppServiceContainer } from 'source/app/app-service-container'
+import ZettlrCommand from './zettlr-command'
 
 export enum ProgrammaticallyOpenableWindows {
-  AssetsWindow = "assets-window",
+  AssetsWindow = 'assets-window'
 }
 
 export default class OpenAuxWindow extends ZettlrCommand {
-  constructor(app: AppServiceContainer) {
-    super(app, "open-aux-window");
+  constructor (app: AppServiceContainer) {
+    super(app, 'open-aux-window')
   }
 
   /**
@@ -31,19 +31,14 @@ export default class OpenAuxWindow extends ZettlrCommand {
    * @param  {Object} arg An object containing a hash of a file to be searched
    * @return {Boolean}     Whether the call succeeded.
    */
-  async run(
-    evt: string,
-    arg: { window: ProgrammaticallyOpenableWindows; hash?: string },
-  ): Promise<boolean> {
+  async run (evt: string, arg: { window: ProgrammaticallyOpenableWindows, hash?: string }): Promise<boolean> {
     switch (arg.window) {
       case ProgrammaticallyOpenableWindows.AssetsWindow:
-        this._app.windows.showDefaultsWindow(arg.hash);
-        return true;
+        this._app.windows.showDefaultsWindow(arg.hash)
+        return true
       default:
-        this._app.log.error(
-          `Cannot programmatically open window ${arg.window as string}: Not available for opening`,
-        );
-        return false;
+        this._app.log.error(`Cannot programmatically open window ${arg.window as string}: Not available for opening`)
+        return false
     }
   }
 }

@@ -66,87 +66,86 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-renderer";
-import { resolveLangCode } from "@common/util/map-lang-code";
-import SelectableList from "@common/vue/form/elements/SelectableList.vue";
-import TextControl from "@common/vue/form/elements/TextControl.vue";
-import FormBuilder from "@common/vue/form/FormBuilder.vue";
-import SplitView from "@common/vue/window/SplitView.vue";
-import WindowChrome from "@common/vue/window/WindowChrome.vue";
-import { useConfigStore } from "source/pinia";
-import { computed, onBeforeMount, onMounted, ref, watch } from "vue";
-import { PreferencesGroups } from "./schema/_preferences-groups";
-import { getAdvancedFields } from "./schema/advanced";
-import { getAppearanceFields } from "./schema/appearance";
-import { getAutocorrectFields } from "./schema/autocorrect";
-import { getCitationFields } from "./schema/citations";
-import { getEditorFields } from "./schema/editor";
-import { getFileManagerFields } from "./schema/file-manager";
-import { getGeneralFields } from "./schema/general";
-import { getImportExportFields } from "./schema/import-export";
-import { getSnippetsFields } from "./schema/snippets";
-import { getSpellcheckingFields } from "./schema/spellchecking";
-import { getZettelkastenFields } from "./schema/zettelkasten";
+import FormBuilder from '@common/vue/form/FormBuilder.vue'
+import WindowChrome from '@common/vue/window/WindowChrome.vue'
+import { trans } from '@common/i18n-renderer'
 
-const ipcRenderer = window.ipc;
-const configStore = useConfigStore();
+import { getGeneralFields } from './schema/general'
+import { getEditorFields } from './schema/editor'
+import { getCitationFields } from './schema/citations'
+import { getZettelkastenFields } from './schema/zettelkasten'
+import { getSpellcheckingFields } from './schema/spellchecking'
+import { getAutocorrectFields } from './schema/autocorrect'
+import { getAdvancedFields } from './schema/advanced'
+import { ref, computed, watch, onMounted, onBeforeMount } from 'vue'
+import { resolveLangCode } from '@common/util/map-lang-code'
+import SplitView from '@common/vue/window/SplitView.vue'
+import SelectableList from '@common/vue/form/elements/SelectableList.vue'
+import TextControl from '@common/vue/form/elements/TextControl.vue'
+import { getAppearanceFields } from './schema/appearance'
+import { getFileManagerFields } from './schema/file-manager'
+import { getImportExportFields } from './schema/import-export'
+import { getSnippetsFields } from './schema/snippets'
+import { useConfigStore } from 'source/pinia'
+import { PreferencesGroups } from './schema/_preferences-groups'
+
+const ipcRenderer = window.ipc
+const configStore = useConfigStore()
 
 interface PreferencesCategoryFieldset {
-  group?: PreferencesGroups;
-  title: string;
-  help?: string;
-  fields: unknown[];
+  group?: PreferencesGroups
+  title: string
+  help?: string
+  fields: unknown[]
 }
 
 interface PreferencesListItem {
-  displayText: string;
-  infoString?: string;
-  icon?: string;
+  displayText: string
+  infoString?: string
+  icon?: string
 }
 
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
+function isStringArray (value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string')
 }
 
-const hasVibrancy = computed(
-  () => configStore.config.window.vibrancy && process.platform === "darwin",
-);
+const hasVibrancy = computed(() => configStore.config.window.vibrancy && process.platform === 'darwin')
 
-const currentGroup = ref(0);
-const query = ref("");
+const currentGroup = ref(0)
+const query = ref('')
 // Will be populated afterwards, contains the user dict
-const userDictionaryContents = ref<string[]>([]);
+const userDictionaryContents = ref<string[]>([])
 // Will be populated afterwards, contains all dictionaries
-const availableDictionaries = ref<Array<{ selected: boolean; value: string; key: string }>>([]);
+const availableDictionaries = ref<Array<{ selected: boolean, value: string, key: string }>>([])
 // Will be populated afterwards, contains the available languages
-const appLangOptions = ref<Record<string, string>>({});
+const appLangOptions = ref<Record<string, string>>({})
 
 // This will return the full object
-const config = computed(() => configStore.config);
+const config = computed(() => configStore.config)
 
-const noResultsMessage = computed(() => trans('No results for "%s"', query.value));
-const searchPlaceholder = trans("Search");
+const noResultsMessage = computed(() => trans('No results for "%s"', query.value))
+const searchPlaceholder = trans('Search')
 
 const schema = computed(() => {
   return {
     fieldsets: filteredFieldsets.value,
     getFieldsetCategory: (fieldset: PreferencesCategoryFieldset) => {
-      if (query.value === "") {
-        return undefined;
+      if (query.value === '') {
+        return undefined
       }
 
-      const group = groups.value.find((g) => g.id === fieldset.group);
+      const group = groups.value.find(g => g.id === fieldset.group)
 
       if (group !== undefined && group.icon !== undefined) {
-        return { icon: group.icon, title: group.displayText };
+        return { icon: group.icon, title: group.displayText }
       } else {
-        return undefined;
+        return undefined
       }
-    },
-  };
-});
+    }
+  }
+})
 
-const selectedItem = computed(() => (query.value === "" ? currentGroup.value : -1));
+const selectedItem = computed(() => query.value === '' ? currentGroup.value : -1)
 
 const fieldsets = computed(() => {
   return [
@@ -160,20 +159,20 @@ const fieldsets = computed(() => {
     ...getImportExportFields(),
     ...getSnippetsFields(),
     ...getSpellcheckingFields(configStore.config),
-    ...getZettelkastenFields(configStore.config),
-  ];
-});
+    ...getZettelkastenFields(configStore.config)
+  ]
+})
 
 const filteredFieldsets = computed(() => {
-  const q = query.value.toLowerCase().trim();
+  const q = query.value.toLowerCase().trim()
 
-  if (q === "") {
+  if (q === '') {
     // No active search, so simply return the currently active group
-    const activeGroup = groups.value[currentGroup.value].id;
-    return fieldsets.value.filter((f) => f.group === activeGroup);
+    const activeGroup = groups.value[currentGroup.value].id
+    return fieldsets.value.filter(f => f.group === activeGroup)
   }
 
-  return fieldsets.value.filter((f) => {
+  return fieldsets.value.filter(f => {
     // BUG: Somehow TypeScript (and ESLint!) knows that everything here works
     // out but STILL insists on explicitly casting everything to boolean. I
     // don't know why.
@@ -181,99 +180,99 @@ const filteredFieldsets = computed(() => {
     // Match relevancy:
     // 1. Search term is in card title
     if (Boolean(f.title.toLowerCase().includes(q))) {
-      return true;
+      return true
     }
 
-    if (Boolean(f.help?.toLowerCase().includes(q))) {
-      return true;
+    if (Boolean((f.help?.toLowerCase().includes(q)))) {
+      return true
     }
 
     for (const field of f.fields) {
-      if ("label" in field && Boolean(field.label?.toLowerCase().includes(q))) {
-        return true;
-      } else if ("info" in field && Boolean(field.info?.toLowerCase().includes(q))) {
-        return true;
-      } else if (field.type === "radio" || field.type === "select") {
+      if ('label' in field && (Boolean((field.label?.toLowerCase().includes(q))))) {
+        return true
+      } else if ('info' in field && (Boolean((field.info?.toLowerCase().includes(q))))) {
+        return true
+      } else if (field.type === 'radio' || field.type === 'select') {
         for (const option in field.options) {
           if (option.toLowerCase().includes(q)) {
-            return true;
+            return true
           }
         }
       }
     }
-    return false;
-  });
-});
+    return false
+  })
+})
 
 const groups = computed<Array<PreferencesListItem & { id: PreferencesGroups }>>(() => {
   return [
     {
-      displayText: trans("General"),
-      icon: "cog",
-      id: PreferencesGroups.General,
+      displayText: trans('General'),
+      icon: 'cog',
+      id: PreferencesGroups.General
     },
     {
-      displayText: trans("Appearance"),
-      icon: "paint-roller",
-      id: PreferencesGroups.Appearance,
+      displayText: trans('Appearance'),
+      icon: 'paint-roller',
+      id: PreferencesGroups.Appearance
     },
     {
-      displayText: trans("File Manager"),
-      icon: "folder-open",
-      id: PreferencesGroups.FileManager,
+      displayText: trans('File Manager'),
+      icon: 'folder-open',
+      id: PreferencesGroups.FileManager
     },
     {
-      displayText: trans("Editor"),
-      icon: "align-left-text",
-      id: PreferencesGroups.Editor,
+      displayText: trans('Editor'),
+      icon: 'align-left-text',
+      id: PreferencesGroups.Editor
     },
     {
-      displayText: trans("Spellchecking"),
-      icon: "text",
-      id: PreferencesGroups.Spellchecking,
+      displayText: trans('Spellchecking'),
+      icon: 'text',
+      id: PreferencesGroups.Spellchecking
     },
     {
-      displayText: trans("Autocorrect"),
-      icon: "wand", // 'block-quote'
-      id: PreferencesGroups.Autocorrect,
+      displayText: trans('Autocorrect'),
+      icon: 'wand', // 'block-quote'
+      id: PreferencesGroups.Autocorrect
     },
     {
-      displayText: trans("Citations"),
-      icon: "chat-bubble",
-      id: PreferencesGroups.Citations,
+      displayText: trans('Citations'),
+      icon: 'chat-bubble',
+      id: PreferencesGroups.Citations
     },
     {
-      displayText: trans("Zettelkasten"),
-      icon: "details",
-      id: PreferencesGroups.Zettelkasten,
+      displayText: trans('Zettelkasten'),
+      icon: 'details',
+      id: PreferencesGroups.Zettelkasten
     },
     {
-      displayText: trans("Snippets"),
-      icon: "add-text",
-      id: PreferencesGroups.Snippets,
+      displayText: trans('Snippets'),
+      icon: 'add-text',
+      id: PreferencesGroups.Snippets
     },
     {
-      displayText: trans("Import and Export"),
-      icon: "two-way-arrows",
-      id: PreferencesGroups.ImportExport,
+      displayText: trans('Import and Export'),
+      icon: 'two-way-arrows',
+      id: PreferencesGroups.ImportExport
     },
     {
-      displayText: trans("Advanced"),
-      icon: "cpu",
-      id: PreferencesGroups.Advanced,
-    },
-  ];
-});
+      displayText: trans('Advanced'),
+      icon: 'cpu',
+      id: PreferencesGroups.Advanced
+    }
+  ]
+})
 
 const windowTitle = computed(() => {
-  if (query.value !== "") {
-    return trans("Searching: %s", query.value);
-  } else if (process.platform === "darwin") {
-    return groups.value[currentGroup.value].displayText;
+  if (query.value !== '') {
+    return trans('Searching: %s', query.value)
+  } else if (process.platform === 'darwin') {
+    return groups.value[currentGroup.value].displayText
   } else {
-    return trans("Preferences");
+    return trans('Preferences')
   }
-});
+})
 
 const model = computed(() => {
   // The model to be passed on will simply be a merger of custom values
@@ -283,43 +282,43 @@ const model = computed(() => {
   return {
     userDictionaryContents: userDictionaryContents.value,
     availableDictionaries: availableDictionaries.value,
-    ...config.value,
-  };
-});
+    ...config.value
+  }
+})
 
 /**
  * Switches out the preferences tab based on the value of currentTab.
  */
 watch(currentGroup, () => {
-  setTitle();
-  location.hash = "#" + currentGroup.value;
-});
+  setTitle()
+  location.hash = '#' + currentGroup.value
+})
 
 /**
  * Initialise values during component mount
  */
 onMounted(() => {
-  setTitle();
-  populateDynamicValues();
-  if (location.hash !== "") {
-    const groupId = parseInt(location.hash.substring(1), 10);
+  setTitle()
+  populateDynamicValues()
+  if (location.hash !== '') {
+    const groupId = parseInt(location.hash.substring(1), 10)
     if (Object.values(PreferencesGroups).includes(groupId)) {
-      currentGroup.value = groupId;
+      currentGroup.value = groupId
     }
   }
-});
+})
 
 /**
- * Listen to events in order to adapt display.
- */
+   * Listen to events in order to adapt display.
+   */
 onBeforeMount(() => {
-  ipcRenderer.on("dictionary-provider", (event, message) => {
-    const { command } = message;
-    if (command === "invalidate-dict") {
-      populateDynamicValues();
+  ipcRenderer.on('dictionary-provider', (event, message) => {
+    const { command } = message
+    if (command === 'invalidate-dict') {
+      populateDynamicValues()
     }
-  });
-});
+  })
+})
 
 /**
  * Called whenever a form value changes, and updates that specific setting.
@@ -327,26 +326,24 @@ onBeforeMount(() => {
  * @param   {string}  prop  The property that has changed
  * @param   {any}     val   The value of that property.
  */
-function handleInput(prop: string, val: unknown): void {
+function handleInput (prop: string, val: unknown): void {
   // We do have an easy time here
-  if (prop === "userDictionaryContents") {
+  if (prop === 'userDictionaryContents') {
     // The user dictionary is not handled by the config
     if (!isStringArray(val)) {
-      console.error(new TypeError("The user dictionary form value was not a string array."));
-      return;
+      console.error(new TypeError('The user dictionary form value was not a string array.'))
+      return
     }
-    ipcRenderer
-      .invoke("dictionary-provider", {
-        command: "set-user-dictionary",
-        payload: val,
-      })
-      .catch((err) => console.error(err));
-  } else if (prop === "availableDictionaries") {
+    ipcRenderer.invoke('dictionary-provider', {
+      command: 'set-user-dictionary',
+      payload: val
+    })
+      .catch(err => console.error(err))
+  } else if (prop === 'availableDictionaries') {
     // We have to extract the selected dictionaries and send their keys only
-    const enabled = (val as Array<{ selected: boolean; value: string; key: string }>)
-      .filter((elem) => elem.selected)
-      .map((elem) => elem.key);
-    configStore.setConfigValue("selectedDicts", enabled);
+    const enabled = (val as Array<{ selected: boolean, value: string, key: string }>)
+      .filter(elem => elem.selected).map(elem => elem.key)
+    configStore.setConfigValue('selectedDicts', enabled)
     // Additionally, we have to backpropagate the new stuff down the pipe
     // so that the list view has them again
   } else {
@@ -358,18 +355,18 @@ function handleInput(prop: string, val: unknown): void {
     // do it the brute-force-way and stringify it. This will basically read
     // out every value from the proxy and store it in vanilla objects/arrays
     // again.
-    configStore.setConfigValue(prop, JSON.parse(JSON.stringify(val)));
+    configStore.setConfigValue(prop, JSON.parse(JSON.stringify(val)))
   }
 }
 
 /**
  * Sets the window title corresponding to the current tab.
  */
-function setTitle(): void {
-  if (process.platform === "darwin") {
+function setTitle (): void {
+  if (process.platform === 'darwin') {
     // Apple's Human Interface Guidelines state the window title should be
     // the current tab.
-    document.title = groups.value[currentGroup.value].displayText;
+    document.title = groups.value[currentGroup.value].displayText
   }
 }
 
@@ -377,59 +374,56 @@ function setTitle(): void {
  * Populates dynamic fields (that is, those configurations that are not
  * controlled by the configuration provider).
  */
-function populateDynamicValues(): void {
+function populateDynamicValues (): void {
   // Get a list of all available languages
-  ipcRenderer
-    .invoke("application", {
-      command: "get-available-languages",
-    })
+  ipcRenderer.invoke('application', {
+    command: 'get-available-languages'
+  })
     .then((languages) => {
-      const options: Record<string, string> = {};
+      const options: Record<string, string> = {}
       languages.map((lang: string) => {
-        options[lang] = resolveLangCode(lang, "name");
-        return null;
-      });
-      appLangOptions.value = options;
+        options[lang] = resolveLangCode(lang, 'name')
+        return null
+      })
+      appLangOptions.value = options
     })
-    .catch((err) => console.error(err));
+    .catch(err => console.error(err))
 
   // Also, get a list of all available dictionaries
-  ipcRenderer
-    .invoke("application", {
-      command: "get-available-dictionaries",
-    })
+  ipcRenderer.invoke('application', {
+    command: 'get-available-dictionaries'
+  })
     .then((dictionaries) => {
-      const values: Array<{ selected: boolean; value: string; key: string }> = [];
+      const values: Array<{ selected: boolean, value: string, key: string }> = []
       dictionaries.map((dict: string) => {
         values.push({
           selected: model.value.selectedDicts.includes(dict),
-          value: resolveLangCode(dict, "name"),
-          key: dict,
-        });
-        return null;
-      });
+          value: resolveLangCode(dict, 'name'),
+          key: dict
+        })
+        return null
+      })
 
-      availableDictionaries.value = values;
+      availableDictionaries.value = values
     })
-    .catch((err) => console.error(err));
+    .catch(err => console.error(err))
 
   // Retrieve the user dictionary
-  ipcRenderer
-    .invoke("dictionary-provider", {
-      command: "get-user-dictionary",
-    })
+  ipcRenderer.invoke('dictionary-provider', {
+    command: 'get-user-dictionary'
+  })
     .then((dictionary) => {
       if (!isStringArray(dictionary)) {
-        throw new TypeError("The dictionary provider returned a non-string array.");
+        throw new TypeError('The dictionary provider returned a non-string array.')
       }
-      userDictionaryContents.value = dictionary;
+      userDictionaryContents.value = dictionary
     })
-    .catch((err) => console.error(err));
+    .catch(err => console.error(err))
 }
 
-function selectGroup(which: number): void {
-  if (query.value === "") {
-    currentGroup.value = which;
+function selectGroup (which: number): void {
+  if (query.value === '') {
+    currentGroup.value = which
   }
 }
 </script>

@@ -19,17 +19,17 @@
 // package.json to make it work, but I don't want to start patching node modules
 // in the CI; hence it will remain ignored until the update is out.
 // Context: https://github.com/fiduswriter/biblatex-csl-converter/issues/135
-import assert from "assert";
-import { promises as fs } from "fs";
-import os from "os";
-import path from "path";
-import type { DatabaseRecord } from "../source/app/service-providers/citeproc";
-import { loadDatabase } from "../source/app/service-providers/citeproc/util/database-loader";
+import assert from 'assert'
+import os from 'os'
+import { promises as fs } from 'fs'
+import path from 'path'
+import type { DatabaseRecord } from '../source/app/service-providers/citeproc'
+import { loadDatabase } from '../source/app/service-providers/citeproc/util/database-loader'
 
 interface Test {
-  input: string;
-  type: "json" | "yaml" | "bib"; // Must correspond to the file types expected
-  expected: "throws" | DatabaseRecord;
+  input: string,
+  type: 'json'|'yaml'|'bib', // Must correspond to the file types expected
+  expected: 'throws'|DatabaseRecord
 }
 
 const dbTesters: Test[] = [
@@ -47,49 +47,48 @@ const dbTesters: Test[] = [
   isbn = {978-0-521-40088-6 978-0-521-40938-4 978-1-139-17383-4},
   file = {[redacted]}
 }`,
-    type: "bib",
+    type: 'bib',
     expected: {
-      path: "", // NOTE: Must be filled in by the test
-      type: "biblatex",
+      path: '', // NOTE: Must be filled in by the test
+      type: 'biblatex',
       cslData: {
-        "Skocpol1994:SRM": {
-          DOI: "10.1017/CBO9781139173834",
-          ISBN: "978-0-521-40088-6 978-0-521-40938-4 978-1-139-17383-4",
-          URL: "https://www.cambridge.org/core/product/identifier/9781139173834/type/book",
-          abstract: "In this collection of essays...",
-          accessed: { "date-parts": [[2021, 4, 5]] },
-          author: [{ family: "Skocpol", given: "Theda" }],
+        'Skocpol1994:SRM': {
+          DOI: '10.1017/CBO9781139173834',
+          ISBN: '978-0-521-40088-6 978-0-521-40938-4 978-1-139-17383-4',
+          URL: 'https://www.cambridge.org/core/product/identifier/9781139173834/type/book',
+          abstract: 'In this collection of essays...',
+          accessed: { 'date-parts': [[2021, 4, 5]] },
+          author: [{ family: 'Skocpol', given: 'Theda' }],
           edition: 1,
-          id: "Skocpol1994:SRM",
-          issued: { "date-parts": [[1994, 9, 30]] },
-          publisher: "Cambridge University Press",
-          title:
-            'Social <span class="nocase">Revolutions</span> in the <span class="nocase">Modern World</span>',
-          type: "book",
-        },
+          id: 'Skocpol1994:SRM',
+          issued: { 'date-parts': [[ 1994, 9, 30]] },
+          publisher: 'Cambridge University Press',
+          title: 'Social <span class="nocase">Revolutions</span> in the <span class="nocase">Modern World</span>',
+          type: 'book'
+        }
       },
-      bibtexAttachments: { 1: ["[redacted]"] },
-    },
-  },
-];
+      bibtexAttachments: { 1: ['[redacted]'] }
+    }
+  }
+]
 
-describe("CiteprocProvider#LoadDatabase()", async function () {
-  let idx = 0;
+describe('CiteprocProvider#LoadDatabase()', async function () {
+  let idx = 0
 
   for (const test of dbTesters) {
     it(`${idx}. should parse the ${test.type} content correctly`, async function () {
       // Write the input as a database to disk
-      const dbPath = path.join(os.tmpdir(), `test-database.${test.type}`);
-      await fs.writeFile(dbPath, test.input, "utf-8");
+      const dbPath = path.join(os.tmpdir(), `test-database.${test.type}`)
+      await fs.writeFile(dbPath, test.input, 'utf-8')
 
-      if (test.expected === "throws") {
-        assert.throws(async () => await loadDatabase(dbPath));
+      if (test.expected === 'throws') {
+        assert.throws(async () => await loadDatabase(dbPath))
       } else {
         // Ensure to provide the path to the expected result
-        test.expected.path = dbPath;
-        const result = await loadDatabase(dbPath);
-        assert.deepStrictEqual(result, test.expected);
+        test.expected.path = dbPath
+        const result = await loadDatabase(dbPath)
+        assert.deepStrictEqual(result, test.expected)
       }
-    });
+    })
   }
-});
+})

@@ -132,73 +132,70 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-renderer";
-import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
-import {
-  isCurrentProjectDefinition,
-  searchWorkspaceDefinitions,
-  type WorkspaceSearchContext,
-} from "@common/modules/markdown-editor/util/reference-search";
-import {
-  computeProjectReferenceStatus,
-  projectStatusDisplayName,
-} from "@common/pandoc-util/project-reference-status";
-import {
-  type ProjectRootSpec,
-  type ReferenceDefinition,
-  type ReferenceOccurrence,
-  referenceFamilyDisplayName,
-} from "@dts/common/references";
-import { computed, onMounted, ref, watch } from "vue";
 // The emitted ReferenceJumpIntent contract lives in component-contracts.ts,
 // where both vue-tsc and the type-aware linter can resolve it (issue #50).
-import type { ReferenceJumpIntent } from "./component-contracts";
+import type { ReferenceJumpIntent } from './component-contracts'
+import { computed, onMounted, ref, watch } from 'vue'
+import { trans } from '@common/i18n-renderer'
+import {
+  searchWorkspaceDefinitions,
+  isCurrentProjectDefinition,
+  type WorkspaceSearchContext
+} from '@common/modules/markdown-editor/util/reference-search'
+import {
+  computeProjectReferenceStatus,
+  projectStatusDisplayName
+} from '@common/pandoc-util/project-reference-status'
+import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
+import {
+  referenceFamilyDisplayName,
+  type ProjectRootSpec,
+  type ReferenceDefinition,
+  type ReferenceOccurrence
+} from '@dts/common/references'
 
-const props = withDefaults(
-  defineProps<{
-    definitions: ReferenceDefinition[];
-    /** The merged workspace occurrence list feeding the reverse lookup */
-    occurrences?: ReferenceOccurrence[];
-    /** The relayed request: null keeps the plain definition search */
-    initialRequest?: ReferenceSearchRequest;
-    /** Every visible Project root (review A3: current-Project-first ranking) */
-    projectRoots?: ProjectRootSpec[];
-    /** The document Mod-P was invoked from (review A3) */
-    activeDocumentPath?: string;
-  }>(),
-  {
-    occurrences: () => [],
-    initialRequest: null,
-    projectRoots: () => [],
-    activeDocumentPath: undefined,
-  },
-);
+const props = withDefaults(defineProps<{
+  definitions: ReferenceDefinition[]
+  /** The merged workspace occurrence list feeding the reverse lookup */
+  occurrences?: ReferenceOccurrence[]
+  /** The relayed request: null keeps the plain definition search */
+  initialRequest?: ReferenceSearchRequest
+  /** Every visible Project root (review A3: current-Project-first ranking) */
+  projectRoots?: ProjectRootSpec[]
+  /** The document Mod-P was invoked from (review A3) */
+  activeDocumentPath?: string
+}>(), {
+  occurrences: () => [],
+  initialRequest: null,
+  projectRoots: () => [],
+  activeDocumentPath: undefined
+})
 
 const emit = defineEmits<{
-  (e: "jump", intent: ReferenceJumpIntent): void;
-  (e: "close"): void;
-  (e: "open-help"): void;
-}>();
+  (e: 'jump', intent: ReferenceJumpIntent): void
+  (e: 'close'): void
+  (e: 'open-help'): void
+}>()
 
 /** The US-16 ranking context, when the host names the invoking document. */
-const searchContext = computed<WorkspaceSearchContext | undefined>(() => {
+const searchContext = computed<WorkspaceSearchContext|undefined>(() => {
   return props.activeDocumentPath === undefined
     ? undefined
-    : { activeDocumentPath: props.activeDocumentPath, projectRoots: props.projectRoots };
-});
+    : { activeDocumentPath: props.activeDocumentPath, projectRoots: props.projectRoots }
+})
 
 /** A keyed request opens the reverse lookup; null keeps definition search. */
-const mode = computed<"definitions" | "citing-locations">(() => {
-  return props.initialRequest === null ? "definitions" : "citing-locations";
-});
+const mode = computed<'definitions'|'citing-locations'>(() => {
+  return props.initialRequest === null ? 'definitions' : 'citing-locations'
+})
 
-const query = ref<string>(props.initialRequest?.key ?? "");
-const selectedIndex = ref<number>(0);
-const queryInput = ref<HTMLInputElement | null>(null);
+const query = ref<string>(props.initialRequest?.key ?? '')
+const selectedIndex = ref<number>(0)
+const queryInput = ref<HTMLInputElement|null>(null)
 
 const matches = computed<ReferenceDefinition[]>(() => {
-  return searchWorkspaceDefinitions(props.definitions, query.value, searchContext.value);
-});
+  return searchWorkspaceDefinitions(props.definitions, query.value, searchContext.value)
+})
 
 /**
  * The Project marker of a result row (review A3, US-16): current-Project
@@ -209,20 +206,18 @@ const matches = computed<ReferenceDefinition[]>(() => {
  *
  * @return  {{ status: string, display: string }|null}  The marker, if any
  */
-function projectMarkerOf(
-  definition: ReferenceDefinition,
-): { status: string; display: string } | null {
-  const context = searchContext.value;
+function projectMarkerOf (definition: ReferenceDefinition): { status: string, display: string }|null {
+  const context = searchContext.value
   if (context === undefined || isCurrentProjectDefinition(definition, context)) {
-    return null;
+    return null
   }
 
   const status = computeProjectReferenceStatus(
     definition.documentPath,
     context.activeDocumentPath,
-    context.projectRoots,
-  );
-  return { status, display: projectStatusDisplayName(status) };
+    context.projectRoots
+  )
+  return { status, display: projectStatusDisplayName(status) }
 }
 
 /**
@@ -230,13 +225,11 @@ function projectMarkerOf(
  * order (the merged occurrence list's own order): filtering never reorders.
  */
 const citingLocations = computed<ReferenceOccurrence[]>(() => {
-  return props.occurrences.filter((occurrence) => occurrence.key === query.value);
-});
+  return props.occurrences.filter(occurrence => occurrence.key === query.value)
+})
 
 // A new query re-ranks the rows, so the selection restarts at the top match.
-watch(query, () => {
-  selectedIndex.value = 0;
-});
+watch(query, () => { selectedIndex.value = 0 })
 
 /**
  * Returns the row headline: `Type — title`, or just the type when nothing
@@ -249,9 +242,9 @@ watch(query, () => {
  *
  * @return  {string}                           The row headline
  */
-function typeAndTitle(definition: ReferenceDefinition): string {
-  const type = referenceFamilyDisplayName(definition.family);
-  return definition.title === undefined ? type : `${type} — ${definition.title}`;
+function typeAndTitle (definition: ReferenceDefinition): string {
+  const type = referenceFamilyDisplayName(definition.family)
+  return definition.title === undefined ? type : `${type} — ${definition.title}`
 }
 
 /**
@@ -259,12 +252,12 @@ function typeAndTitle(definition: ReferenceDefinition): string {
  *
  * @param   {ReferenceDefinition}  definition  The chosen definition
  */
-function emitJump(definition: ReferenceDefinition): void {
-  emit("jump", {
+function emitJump (definition: ReferenceDefinition): void {
+  emit('jump', {
     key: definition.key,
     documentPath: definition.documentPath,
-    range: { from: definition.range.from, to: definition.range.to },
-  });
+    range: { from: definition.range.from, to: definition.range.to }
+  })
 }
 
 /**
@@ -273,18 +266,18 @@ function emitJump(definition: ReferenceDefinition): void {
  *
  * @param   {ReferenceOccurrence}  occurrence  The chosen citing location
  */
-function emitOccurrenceJump(occurrence: ReferenceOccurrence): void {
-  emit("jump", {
+function emitOccurrenceJump (occurrence: ReferenceOccurrence): void {
+  emit('jump', {
     key: occurrence.key,
     documentPath: occurrence.documentPath,
-    range: { from: occurrence.range.from, to: occurrence.range.to },
-  });
+    range: { from: occurrence.range.from, to: occurrence.range.to }
+  })
 }
 
 /** The row count of whichever result list the current mode presents. */
 const activeRowCount = computed<number>(() => {
-  return mode.value === "citing-locations" ? citingLocations.value.length : matches.value.length;
-});
+  return mode.value === 'citing-locations' ? citingLocations.value.length : matches.value.length
+})
 
 /**
  * Keyboard interface of the query input: ArrowUp/ArrowDown move the
@@ -293,39 +286,37 @@ const activeRowCount = computed<number>(() => {
  *
  * @param   {KeyboardEvent}  event  The keydown event
  */
-function handleKeydown(event: KeyboardEvent): void {
-  if (event.key === "ArrowDown") {
-    event.preventDefault();
+function handleKeydown (event: KeyboardEvent): void {
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
     if (selectedIndex.value < activeRowCount.value - 1) {
-      selectedIndex.value += 1;
+      selectedIndex.value += 1
     }
-  } else if (event.key === "ArrowUp") {
-    event.preventDefault();
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
     if (selectedIndex.value > 0) {
-      selectedIndex.value -= 1;
+      selectedIndex.value -= 1
     }
-  } else if (event.key === "Enter") {
-    event.preventDefault();
-    if (mode.value === "citing-locations") {
-      const selected = citingLocations.value[selectedIndex.value];
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
+    if (mode.value === 'citing-locations') {
+      const selected = citingLocations.value[selectedIndex.value]
       if (selected !== undefined) {
-        emitOccurrenceJump(selected);
+        emitOccurrenceJump(selected)
       }
     } else {
-      const selected = matches.value[selectedIndex.value];
+      const selected = matches.value[selectedIndex.value]
       if (selected !== undefined) {
-        emitJump(selected);
+        emitJump(selected)
       }
     }
-  } else if (event.key === "Escape") {
-    event.preventDefault();
-    emit("close");
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    emit('close')
   }
 }
 
-onMounted(() => {
-  queryInput.value?.focus();
-});
+onMounted(() => { queryInput.value?.focus() })
 </script>
 
 <style lang="less">

@@ -34,11 +34,7 @@
  *                                        `referenceObject` with values of `obj`
  *                                        merged in.
  */
-export default function safeAssign<A extends object>(
-  obj: Partial<A>,
-  referenceObject: A,
-  newObject: Partial<A> = {},
-): A {
+export default function safeAssign <A extends object> (obj: Partial<A>, referenceObject: A, newObject: Partial<A> = {}): A {
   // Iterate over all properties of referenceObject
   for (const prop in referenceObject) {
     if (prop in obj) {
@@ -46,26 +42,24 @@ export default function safeAssign<A extends object>(
       // either it's a sub-object --> in this case we'll have to apply
       // recursively. We perform an explicit null-check, since
       // `typeof null === 'object'`.
-      if (
-        typeof referenceObject[prop] === "object" &&
+      if (typeof referenceObject[prop] === 'object' &&
         !Array.isArray(referenceObject[prop]) &&
-        referenceObject[prop] !== null
-      ) {
+        referenceObject[prop] !== null) {
         // @ts-expect-error These properties will be filled in recursively
-        newObject[prop] = {};
+        newObject[prop] = {}
         // @ts-expect-error TypeScript wouldn't not treat this as an error.
         // (To be fair, we do violence to the type system here.)
-        safeAssign(obj[prop], referenceObject[prop], newObject[prop]);
+        safeAssign(obj[prop], referenceObject[prop], newObject[prop])
       } else {
         // Assign the primitive
-        newObject[prop] = obj[prop];
+        newObject[prop] = obj[prop]
       }
     } else {
       // `obj` doesn't have prop, so take the value from reference instead.
-      newObject[prop] = referenceObject[prop];
+      newObject[prop] = referenceObject[prop]
     }
   }
 
   // Type-cast, since now newObject is of type A
-  return newObject as A;
+  return newObject as A
 }

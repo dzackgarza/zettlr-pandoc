@@ -13,35 +13,23 @@
  * END HEADER
  */
 
-import assert from "assert";
-import isFunction from "../source/common/util/is-function";
+import isFunction from '../source/common/util/is-function'
+import assert from 'assert'
 
-const variableFunction = (): string => {
-  return "world";
-};
+const variableFunction = (): string => { return 'world' }
 
 const isFunctionTesters = [
-  {
-    input: function () {
-      return "something";
-    },
-    expected: true,
-  },
-  {
-    input: () => {
-      return "hello";
-    },
-    expected: true,
-  },
-  { input: variableFunction, expected: true },
-  { input: "A string", expected: false },
-  { input: -1234, expected: false },
-];
+  { 'input': function () { return 'something' }, 'expected': true },
+  { 'input': () => { return 'hello' }, 'expected': true },
+  { 'input': variableFunction, 'expected': true },
+  { 'input': 'A string', 'expected': false },
+  { 'input': -1234, 'expected': false }
+]
 
-describe("Utility#isFunction()", function () {
+describe('Utility#isFunction()', function () {
   for (let test of isFunctionTesters) {
     it(`should return ${test.expected.toString()} for ${test.input.toString()}`, function () {
-      assert.strictEqual(isFunction(test.input), test.expected);
-    });
+      assert.strictEqual(isFunction(test.input), test.expected)
+    })
   }
-});
+})
