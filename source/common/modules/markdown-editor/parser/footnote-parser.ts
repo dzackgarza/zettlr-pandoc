@@ -18,7 +18,9 @@ const FootnoteDelimiter: DelimiterType = {}
 
 const validFootnoteRe = /^[^\s\^\[\]]+$/
 
-const footnoteRefRe = /^\[\^[^\s\^\[\]]+\]:\s/
+// Group 1 is the label alone; the body may start after a space or on the next
+// line, so the separator is a space *or* the end of the line.
+const footnoteRefRe = /^(\[\^[^\s\^\[\]]+\]:)(?:\s|$)/
 
 export const footnoteParser: InlineParser = {
   name: 'footnotes',
@@ -78,7 +80,7 @@ export const footnoteRefParser: BlockParser = {
     if (!match) { return false }
 
     ctx.startComposite('FootnoteRef', 0)
-    ctx.addElement(ctx.elt('FootnoteRefLabel', ctx.lineStart, ctx.lineStart + match[0].length - 1))
+    ctx.addElement(ctx.elt('FootnoteRefLabel', ctx.lineStart, ctx.lineStart + match[1].length))
 
     line.moveBaseColumn(match[0].length)
 
