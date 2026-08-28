@@ -25,130 +25,154 @@
  * END HEADER
  */
 
-import { strict as assert } from 'assert'
-import { execFile } from 'child_process'
-import { mkdtemp, readFile, rm } from 'fs/promises'
-import { tmpdir } from 'os'
-import path from 'path'
-import { promisify } from 'util'
+import { strict as assert } from "assert";
+import { execFile } from "child_process";
+import { mkdtemp, readFile, rm } from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
+import { promisify } from "util";
 
-const execFileAsync = promisify(execFile)
+const execFileAsync = promisify(execFile);
 
 interface WidgetDiagnostics {
-  equation: string
-  onIndentedLine: boolean
-  lineTextIndent: string|null
-  containerLeft: number|null
-  innerLeft: number|null
-  leftEscape: number|null
+  equation: string;
+  onIndentedLine: boolean;
+  lineTextIndent: string | null;
+  containerLeft: number | null;
+  innerLeft: number | null;
+  leftEscape: number | null;
 }
 
 interface SceneDiagnostics {
-  indentedLineCount: number
-  widgetCount: number
-  widgets: WidgetDiagnostics[]
-  tableCellTexts: string[]|null
-  tableMathContainers: number|null
-  mermaidSvgChildCount: number|null
-  mermaidNodeLabels: string[]|null
+  indentedLineCount: number;
+  widgetCount: number;
+  widgets: WidgetDiagnostics[];
+  tableCellTexts: string[] | null;
+  tableMathContainers: number | null;
+  mermaidSvgChildCount: number | null;
+  mermaidNodeLabels: string[] | null;
 }
 
 const SCENES = [
-  'list-math-light-wide',
-  'list-math-dark-wide',
-  'list-math-light-narrow',
-  'quote-div-light',
-  'table-mermaid-light',
-]
+  "list-math-light-wide",
+  "list-math-dark-wide",
+  "list-math-light-narrow",
+  "quote-div-light",
+  "table-mermaid-light",
+];
 
-describe('Widget renderers under the visual-indent plugin (issue #15)', function () {
-  let outputDirectory: string|undefined
-  const diagnostics = new Map<string, SceneDiagnostics>()
+describe("Widget renderers under the visual-indent plugin (issue #15)", function () {
+  let outputDirectory: string | undefined;
+  const diagnostics = new Map<string, SceneDiagnostics>();
 
   before(async function () {
-    this.timeout(240000)
-    outputDirectory = await mkdtemp(path.join(tmpdir(), 'zettlr-widget-indent-'))
-    const root = process.cwd()
-    await execFileAsync(path.join(root, 'node_modules/.bin/esbuild'), [
-      path.join(root, 'test/editor-widget-indent-visual-entry.ts'),
-      '--bundle',
-      '--platform=browser',
-      '--format=iife',
+    this.timeout(240000);
+    outputDirectory = await mkdtemp(path.join(tmpdir(), "zettlr-widget-indent-"));
+    const root = process.cwd();
+    await execFileAsync(path.join(root, "node_modules/.bin/esbuild"), [
+      path.join(root, "test/editor-widget-indent-visual-entry.ts"),
+      "--bundle",
+      "--platform=browser",
+      "--format=iife",
       // The table editor imports its control icons as .svg files.
-      '--loader:.svg=dataurl',
-      `--tsconfig=${path.join(root, 'tsconfig.json')}`,
-      `--outfile=${path.join(outputDirectory, 'widget-indent-visual-bundle.js')}`,
-    ])
-    await execFileAsync('xvfb-run', [
-      '-a',
-      path.join(root, 'node_modules/.bin/electron'),
-      '--ozone-platform=x11',
-      '--disable-gpu',
-      // A fresh package-manager install leaves electron's chrome-sandbox without its
-      // root-owned SUID bits, which aborts Chromium under xvfb. The probe
-      // renders local test content only, so run unsandboxed rather than
-      // requiring sudo provisioning for the test suite.
-      '--no-sandbox',
-      path.join(root, 'test/editor-widget-indent-visual-capture.cjs'),
-      outputDirectory,
-    ], { maxBuffer: 8 * 1024 * 1024 })
+      "--loader:.svg=dataurl",
+      `--tsconfig=${path.join(root, "tsconfig.json")}`,
+      `--outfile=${path.join(outputDirectory, "widget-indent-visual-bundle.js")}`,
+    ]);
+    await execFileAsync(
+      "xvfb-run",
+      [
+        "-a",
+        path.join(root, "node_modules/.bin/electron"),
+        "--ozone-platform=x11",
+        "--disable-gpu",
+        // A fresh package-manager install leaves electron's chrome-sandbox without its
+        // root-owned SUID bits, which aborts Chromium under xvfb. The probe
+        // renders local test content only, so run unsandboxed rather than
+        // requiring sudo provisioning for the test suite.
+        "--no-sandbox",
+        path.join(root, "test/editor-widget-indent-visual-capture.cjs"),
+        outputDirectory,
+      ],
+      { maxBuffer: 8 * 1024 * 1024 },
+    );
     for (const scene of SCENES) {
-      const raw = await readFile(path.join(outputDirectory, `${scene}.json`), 'utf8')
-      diagnostics.set(scene, JSON.parse(raw) as SceneDiagnostics)
+      const raw = await readFile(path.join(outputDirectory, `${scene}.json`), "utf8");
+      diagnostics.set(scene, JSON.parse(raw) as SceneDiagnostics);
     }
-  })
+  });
 
   after(async function () {
     if (outputDirectory !== undefined) {
-      await rm(outputDirectory, { recursive: true, force: true })
+      await rm(outputDirectory, { recursive: true, force: true });
     }
-  })
+  });
 
-  it('arms the trap: list scenes render math widgets on visually indented lines', function () {
-    for (const scene of SCENES.filter(name => name.startsWith('list-math'))) {
-      const observed = diagnostics.get(scene)
-      assert.ok(observed !== undefined, `${scene} diagnostics missing`)
-      assert.ok(observed.indentedLineCount > 0, `${scene}: no visually indented line`)
+  it("arms the trap: list scenes render math widgets on visually indented lines", function () {
+    for (const scene of SCENES.filter((name) => name.startsWith("list-math"))) {
+      const observed = diagnostics.get(scene);
+      assert.ok(observed !== undefined, `${scene} diagnostics missing`);
+      assert.ok(observed.indentedLineCount > 0, `${scene}: no visually indented line`);
       assert.ok(
-        observed.widgets.some(widget => widget.onIndentedLine),
-        `${scene}: no math widget on an indented line — the proof is vacuous`
-      )
+        observed.widgets.some((widget) => widget.onIndentedLine),
+        `${scene}: no math widget on an indented line — the proof is vacuous`,
+      );
       // Both nesting depths must be present (issue acceptance criterion).
-      const depths = new Set(observed.widgets
-        .filter(widget => widget.onIndentedLine)
-        .map(widget => widget.lineTextIndent))
-      assert.ok(depths.size >= 2, `${scene}: expected widgets at more than one nesting depth, saw ${[...depths].join(', ')}`)
+      const depths = new Set(
+        observed.widgets
+          .filter((widget) => widget.onIndentedLine)
+          .map((widget) => widget.lineTextIndent),
+      );
+      assert.ok(
+        depths.size >= 2,
+        `${scene}: expected widgets at more than one nesting depth, saw ${[...depths].join(", ")}`,
+      );
     }
-  })
+  });
 
-  it('keeps every widget\'s content inside the widget\'s own box on indented lines', function () {
+  it("keeps every widget's content inside the widget's own box on indented lines", function () {
     for (const scene of SCENES) {
-      const observed = diagnostics.get(scene)
-      assert.ok(observed !== undefined, `${scene} diagnostics missing`)
+      const observed = diagnostics.get(scene);
+      assert.ok(observed !== undefined, `${scene} diagnostics missing`);
       for (const widget of observed.widgets) {
-        assert.ok(widget.leftEscape !== null, `${scene}: widget "${widget.equation}" has no measurable content box`)
+        assert.ok(
+          widget.leftEscape !== null,
+          `${scene}: widget "${widget.equation}" has no measurable content box`,
+        );
         assert.ok(
           widget.leftEscape <= 0.5,
           `${scene}: widget "${widget.equation}" escapes its box ${widget.leftEscape.toFixed(2)}px leftward ` +
-          `(line text-indent ${widget.lineTextIndent ?? 'none'}) and overdraws the text before it`
-        )
+            `(line text-indent ${widget.lineTextIndent ?? "none"}) and overdraws the text before it`,
+        );
       }
     }
-  })
+  });
 
-  it('renders table-editor cells and mermaid diagrams intact (issue #7 regression)', function () {
-    const observed = diagnostics.get('table-mermaid-light')
-    assert.ok(observed !== undefined, 'table-mermaid diagnostics missing')
+  it("renders table-editor cells and mermaid diagrams intact (issue #7 regression)", function () {
+    const observed = diagnostics.get("table-mermaid-light");
+    assert.ok(observed !== undefined, "table-mermaid diagnostics missing");
 
-    const cells = observed.tableCellTexts
-    assert.ok(cells !== null, 'the pipe table must render as a table-editor widget')
-    assert.ok(cells.includes('Lattice') && cells.includes('Signature'), `the table must keep its header cells, saw ${JSON.stringify(cells)}`)
-    assert.ok(observed.tableMathContainers !== null && observed.tableMathContainers >= 3, `table cell math must keep its MathJax containers, saw ${String(observed.tableMathContainers)}`)
+    const cells = observed.tableCellTexts;
+    assert.ok(cells !== null, "the pipe table must render as a table-editor widget");
+    assert.ok(
+      cells.includes("Lattice") && cells.includes("Signature"),
+      `the table must keep its header cells, saw ${JSON.stringify(cells)}`,
+    );
+    assert.ok(
+      observed.tableMathContainers !== null && observed.tableMathContainers >= 3,
+      `table cell math must keep its MathJax containers, saw ${String(observed.tableMathContainers)}`,
+    );
 
-    assert.ok(observed.mermaidSvgChildCount !== null && observed.mermaidSvgChildCount > 0, 'the mermaid diagram must render a populated SVG')
-    const labels = observed.mermaidNodeLabels ?? []
-    for (const expected of [ 'Coble', 'Halphen', 'Enriques' ]) {
-      assert.ok(labels.includes(expected), `mermaid must keep node label ${expected}, saw ${JSON.stringify(labels)}`)
+    assert.ok(
+      observed.mermaidSvgChildCount !== null && observed.mermaidSvgChildCount > 0,
+      "the mermaid diagram must render a populated SVG",
+    );
+    const labels = observed.mermaidNodeLabels ?? [];
+    for (const expected of ["Coble", "Halphen", "Enriques"]) {
+      assert.ok(
+        labels.includes(expected),
+        `mermaid must keep node label ${expected}, saw ${JSON.stringify(labels)}`,
+      );
     }
-  })
-})
+  });
+});

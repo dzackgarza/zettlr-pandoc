@@ -12,12 +12,12 @@
  * END HEADER
  */
 
-import type { AppServiceContainer } from 'source/app/app-service-container'
-import ZettlrCommand from './zettlr-command'
+import type { AppServiceContainer } from "source/app/app-service-container";
+import ZettlrCommand from "./zettlr-command";
 
 export default class RootClose extends ZettlrCommand {
-  constructor (app: AppServiceContainer) {
-    super(app, 'root-close')
+  constructor(app: AppServiceContainer) {
+    super(app, "root-close");
   }
 
   /**
@@ -25,9 +25,9 @@ export default class RootClose extends ZettlrCommand {
    * @param {String} evt The event name
    * @param  {Object} arg The hash of a root directory or file.
    */
-  async run (evt: string, arg: string): Promise<boolean> {
+  async run(evt: string, arg: string): Promise<boolean> {
     // We got a root, so now we need to unload it and remove it from config
-    this._app.config.removePath(arg)
-    return true
+    this._app.config.removePath(arg);
+    return true;
   }
 }

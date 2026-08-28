@@ -5,7 +5,11 @@
  * Renderer-safe: no Node built-ins and no CodeMirror imports.
  */
 
-import type { DocumentReferenceSnapshot, ReferenceDefinition, Resolution } from '../../types/common/references'
+import type {
+  DocumentReferenceSnapshot,
+  ReferenceDefinition,
+  Resolution,
+} from "../../types/common/references";
 
 /**
  * Resolves the workspace: every key that is defined or referenced in any
@@ -16,38 +20,41 @@ import type { DocumentReferenceSnapshot, ReferenceDefinition, Resolution } from 
  *
  * @return  {Map<string, Resolution>}  Resolution per reference key
  */
-export function resolveWorkspace (snapshots: DocumentReferenceSnapshot[]): Map<string, Resolution> {
-  const definitionsByKey = new Map<string, ReferenceDefinition[]>()
-  const referencedKeys = new Set<string>()
+export function resolveWorkspace(snapshots: DocumentReferenceSnapshot[]): Map<string, Resolution> {
+  const definitionsByKey = new Map<string, ReferenceDefinition[]>();
+  const referencedKeys = new Set<string>();
 
   for (const snapshot of snapshots) {
     for (const definition of snapshot.definitions) {
-      const existing = definitionsByKey.get(definition.key)
+      const existing = definitionsByKey.get(definition.key);
       if (existing === undefined) {
-        definitionsByKey.set(definition.key, [definition])
+        definitionsByKey.set(definition.key, [definition]);
       } else {
-        existing.push(definition)
+        existing.push(definition);
       }
     }
 
     for (const occurrence of snapshot.occurrences) {
-      referencedKeys.add(occurrence.key)
+      referencedKeys.add(occurrence.key);
     }
   }
 
-  const resolutions = new Map<string, Resolution>()
+  const resolutions = new Map<string, Resolution>();
 
-  for (const [ key, definitions ] of definitionsByKey) {
-    resolutions.set(key, definitions.length === 1
-      ? { status: 'resolved', definition: definitions[0] }
-      : { status: 'duplicate', definitions })
+  for (const [key, definitions] of definitionsByKey) {
+    resolutions.set(
+      key,
+      definitions.length === 1
+        ? { status: "resolved", definition: definitions[0] }
+        : { status: "duplicate", definitions },
+    );
   }
 
   for (const key of referencedKeys) {
     if (!resolutions.has(key)) {
-      resolutions.set(key, { status: 'missing' })
+      resolutions.set(key, { status: "missing" });
     }
   }
 
-  return resolutions
+  return resolutions;
 }

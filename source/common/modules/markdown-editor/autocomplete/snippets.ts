@@ -18,153 +18,160 @@
 // responsible for snippets in the old implementation, but now disentangled from
 // the other autocompletes thanks to the new plugin structure of Codemirror 6.
 
-import { type Completion } from '@codemirror/autocomplete'
+import { type Completion } from "@codemirror/autocomplete";
 import {
-  StateEffect,
-  StateField,
   EditorSelection,
+  type EditorState,
   Facet,
   MapMode,
-  type SelectionRange,
-  type EditorState,
   type Range,
-} from '@codemirror/state'
-import { type Command, Decoration, EditorView, WidgetType } from '@codemirror/view'
-import { type AutocompletePlugin } from '.'
-import { DateTime } from 'luxon'
-import { v4 as uuid } from 'uuid'
-import generateId from '@common/util/generate-id'
-import { configField } from '../util/configuration'
-import { gemoji } from 'gemoji'
-import { pathBasename, pathDirname, pathExtname } from '@common/util/renderer-path-polyfill'
+  type SelectionRange,
+  StateEffect,
+  StateField,
+} from "@codemirror/state";
+import { type Command, Decoration, EditorView, WidgetType } from "@codemirror/view";
+import generateId from "@common/util/generate-id";
+import { pathBasename, pathDirname, pathExtname } from "@common/util/renderer-path-polyfill";
+import { gemoji } from "gemoji";
+import { DateTime } from "luxon";
+import { v4 as uuid } from "uuid";
+import { configField } from "../util/configuration";
+import { type AutocompletePlugin } from ".";
 
 /**
  * This utility function inserts an emoji
  */
-const applyEmoji = function (view: EditorView, completion: Completion, from: number, to: number): void {
+const applyEmoji = function (
+  view: EditorView,
+  completion: Completion,
+  from: number,
+  to: number,
+): void {
   view.dispatch({
     changes: [{ from: from - 1, to, insert: completion.label }],
-    selection: { anchor: from - 1 + completion.label.length }
-  })
-}
+    selection: { anchor: from - 1 + completion.label.length },
+  });
+};
 
-const emojis: Completion[] = gemoji.map(g => {
+const emojis: Completion[] = gemoji.map((g) => {
   return {
     label: g.emoji,
-    detail: g.names.join(', '),
+    detail: g.names.join(", "),
     section: g.category,
-    info: g.tags.join(', '),
-    apply: applyEmoji
-  }
-})
+    info: g.tags.join(", "),
+    apply: applyEmoji,
+  };
+});
 
 // Define a class to highlight active tabstops
-const tabstopDeco = Decoration.mark({ class: 'tabstop' })
+const tabstopDeco = Decoration.mark({ class: "tabstop" });
 
 // This widget is used to mark simple tabstops with no default text (so that
 // they're visible and users can see where the cursor will end up next).
 class SnippetWidget extends WidgetType {
-  constructor (readonly content: string, readonly range: SelectionRange) {
-    super()
+  constructor(
+    readonly content: string,
+    readonly range: SelectionRange,
+  ) {
+    super();
   }
 
-  eq (other: SnippetWidget): boolean {
-    return other.content === this.content && other.range.eq(this.range)
+  eq(other: SnippetWidget): boolean {
+    return other.content === this.content && other.range.eq(this.range);
   }
 
-  toDOM (_view: EditorView): HTMLElement {
-    const elem = document.createElement('span')
-    elem.classList.add('tabstop')
-    elem.innerText = this.content
-    return elem
+  toDOM(_view: EditorView): HTMLElement {
+    const elem = document.createElement("span");
+    elem.classList.add("tabstop");
+    elem.innerText = this.content;
+    return elem;
   }
 
-  ignoreEvent (event: Event): boolean {
-    return true // By default ignore all events
+  ignoreEvent(event: Event): boolean {
+    return true; // By default ignore all events
   }
 }
 
 /**
  * This utility function inserts a snippet
  */
-function applySnippet (view: EditorView, completion: Completion, from: number, to: number): void {
+function applySnippet(view: EditorView, completion: Completion, from: number, to: number): void {
   template2snippet(view.state, completion.info as string, from - 1)
-    .then(([ textToInsert, selections ]) => {
+    .then(([textToInsert, selections]) => {
       // We can immediately take the first rangeset and set it as a selection, whilst
       // committing the rest into our StateField as an effect
-      const firstSelection = selections.shift()
+      const firstSelection = selections.shift();
       view.dispatch({
         changes: [{ from: from - 1, to, insert: textToInsert }],
         selection: firstSelection,
-        effects: snippetTabsEffect.of(selections)
-      })
+        effects: snippetTabsEffect.of(selections),
+      });
     })
-    .catch(err => console.error(err))
+    .catch((err) => console.error(err));
 }
 
 /**
  * Helper function to calculate the cursor association
  * based on whether any ranges are directly before `pos`
  */
-function getAssociation (selections: EditorSelection[], pos: number|undefined): -1|1 {
-  const isAdjacent = selections
-    .some(sel => sel.ranges.some(r => r.to === pos))
+function getAssociation(selections: EditorSelection[], pos: number | undefined): -1 | 1 {
+  const isAdjacent = selections.some((sel) => sel.ranges.some((r) => r.to === pos));
 
-  return isAdjacent ? -1 : 1
+  return isAdjacent ? -1 : 1;
 }
 
 /**
  * Used internally to add ranges for the snippets to the state
  */
-const snippetTabsEffect = StateEffect.define<EditorSelection[]>()
+const snippetTabsEffect = StateEffect.define<EditorSelection[]>();
 
 /**
  * This effect is used to indicate to the library that it should remove the
  * first active range (so that the widget decorator can immediately remove the
  * widget for the next selection range).
  */
-const shiftNextTabEffect = StateEffect.define()
+const shiftNextTabEffect = StateEffect.define();
 
 /**
  * Use this effect to provide the editor state with a set of new snippets to autocomplete
  */
-export const snippetsUpdate = StateEffect.define<Array<{ name: string, content: string }>>()
+export const snippetsUpdate = StateEffect.define<Array<{ name: string; content: string }>>();
 
 interface SnippetStateField {
-  availableSnippets: Completion[]
-  activeSelections: EditorSelection[]
-  association: number
+  availableSnippets: Completion[];
+  activeSelections: EditorSelection[];
+  association: number;
 }
 
 export const snippetsUpdateField = StateField.define<SnippetStateField>({
-  create (_state) {
+  create(_state) {
     return {
       availableSnippets: [],
       activeSelections: [],
       association: 1,
-    }
+    };
   },
-  update (val, transaction) {
+  update(val, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(snippetsUpdate)) {
-        val.availableSnippets = effect.value.map(entry => {
+        val.availableSnippets = effect.value.map((entry) => {
           return {
             label: entry.name,
             info: entry.content,
-            apply: applySnippet
-          }
-        })
+            apply: applySnippet,
+          };
+        });
 
-        return { ...val }
+        return { ...val };
       } else if (effect.is(snippetTabsEffect)) {
-        val.activeSelections = effect.value
+        val.activeSelections = effect.value;
 
         // Calculate the association when the effects come in
         // because we need access to the current tab stop
         // range, which is the `transaction.selection` value.
-        val.association = getAssociation(val.activeSelections, transaction.selection?.main.from)
+        val.association = getAssociation(val.activeSelections, transaction.selection?.main.from);
 
-        return { ...val }
+        return { ...val };
       } else if (effect.is(shiftNextTabEffect)) {
         // NOTE: We cannot shift the range in the nextTab() command, as this
         // change is not transparent to the library (hence it would render a
@@ -172,58 +179,66 @@ export const snippetsUpdateField = StateField.define<SnippetStateField>({
         // up the fact that this range doesn't exist anymore after the user
         // starts typing, which re-evaluates the length of the activeRanges
         // array.)
-        val.activeSelections.shift()
-        val.association = getAssociation(val.activeSelections, transaction.selection?.main.from)
+        val.activeSelections.shift();
+        val.association = getAssociation(val.activeSelections, transaction.selection?.main.from);
 
-        return { ...val }
+        return { ...val };
       }
     }
 
     if (!transaction.docChanged || val.activeSelections.length === 0) {
-      return val
+      return val;
     }
 
     // This monstrosity ensures that our ranges stay in sync while the user types
     val.activeSelections = val.activeSelections
-      .filter(selection => {
-        return selection.ranges
-          .some(r => transaction.changes.mapPos(r.from, 1, r.empty ? MapMode.TrackAfter : MapMode.TrackDel) !== null)
+      .filter((selection) => {
+        return selection.ranges.some(
+          (r) =>
+            transaction.changes.mapPos(
+              r.from,
+              1,
+              r.empty ? MapMode.TrackAfter : MapMode.TrackDel,
+            ) !== null,
+        );
       })
-      .map(selection => {
+      .map((selection) => {
         // Unforturnately, `selection.map` only applies the provided `assoc`
         // value to empty ranges, so we have to reimplement the logic here
         // for the association to apply correctly.
-        return EditorSelection.create(selection.ranges.map(range => {
-          const from = transaction.changes.mapPos(range.from, 1)
-          // The reason to change the association for the `range.to` position is
-          // so that the selection range of the tabstop expands when text is added
-          // to the end of the range. We do not need to do this for empty tabstops,
-          // as they should remain empty.
-          const to = transaction.changes.mapPos(range.to, range.empty ? 1 : val.association)
+        return EditorSelection.create(
+          selection.ranges.map((range) => {
+            const from = transaction.changes.mapPos(range.from, 1);
+            // The reason to change the association for the `range.to` position is
+            // so that the selection range of the tabstop expands when text is added
+            // to the end of the range. We do not need to do this for empty tabstops,
+            // as they should remain empty.
+            const to = transaction.changes.mapPos(range.to, range.empty ? 1 : val.association);
 
-          return EditorSelection.range(from, to)
-        }))
-      })
+            return EditorSelection.range(from, to);
+          }),
+        );
+      });
 
-    return { ...val }
+    return { ...val };
   },
   // Turns any active ranges into decorations to highlight them
-  provide: field => {
+  provide: (field) => {
     return EditorView.decorations.from(field, (fieldValue) => {
       if (fieldValue.activeSelections.length === 0) {
-        return Decoration.none
+        return Decoration.none;
       }
 
-      const decorations: Range<Decoration>[] = []
-      let position = 0
+      const decorations: Range<Decoration>[] = [];
+      let position = 0;
       for (const selection of fieldValue.activeSelections) {
-        position++
+        position++;
         for (const range of selection.ranges) {
           if (range.empty) {
-            const widget = new SnippetWidget(`$${position}`, range)
-            decorations.push(Decoration.widget({ widget, side: position }).range(range.from))
+            const widget = new SnippetWidget(`$${position}`, range);
+            decorations.push(Decoration.widget({ widget, side: position }).range(range.from));
           } else {
-            decorations.push(tabstopDeco.range(range.from, range.to))
+            decorations.push(tabstopDeco.range(range.from, range.to));
           }
         }
       }
@@ -233,74 +248,80 @@ export const snippetsUpdateField = StateField.define<SnippetStateField>({
       // their snippet. Since the library expects them to be sorted, we pass in
       // `true` as a second parameter so that the library sorts these ranges for
       // us.
-      return Decoration.set(decorations, true)
-    })
-  }
-})
+      return Decoration.set(decorations, true);
+    });
+  },
+});
 
 /**
  * Parses placeholders like $1, ${1:Default}, and ${1:foo ${2:bar}}. Supports arbitrary nesting.
  */
-function parsePlaceholders (template: string, offset = 0): { text: string, ranges: { position: number, ranges: SelectionRange[] }[] } {
-  const ranges: { position: number, ranges: SelectionRange[] }[] = []
+function parsePlaceholders(
+  template: string,
+  offset = 0,
+): { text: string; ranges: { position: number; ranges: SelectionRange[] }[] } {
+  const ranges: { position: number; ranges: SelectionRange[] }[] = [];
   // Matches $[0-9] as well as ${[0-9]:default string}
-  const tabStopRE = /(?<!\\)\$(\d+)|(?<!\\)\$\{(\d+):/
+  const tabStopRE = /(?<!\\)\$(\d+)|(?<!\\)\$\{(\d+):/;
 
-  let parsedText = ''
-  let i = 0
+  let parsedText = "";
+  let i = 0;
 
   while (i < template.length) {
-    const match = tabStopRE.exec(template.slice(i))
+    const match = tabStopRE.exec(template.slice(i));
     if (!match) {
       // No matches, so add the remainder of the text
-      parsedText += template.slice(i)
-      break
+      parsedText += template.slice(i);
+      break;
     }
 
-    const position = parseInt(match[1] ?? match[2], 10)
-    parsedText += template.slice(i, i + match.index)
-    i += match.index + match[0].length
+    const position = parseInt(match[1] ?? match[2], 10);
+    parsedText += template.slice(i, i + match.index);
+    i += match.index + match[0].length;
 
     // Matches $[0-9]
     if (match[1]) {
-      const from = offset + parsedText.length
-      ranges.push({ position, ranges: [EditorSelection.range(from, from)] })
-      continue
+      const from = offset + parsedText.length;
+      ranges.push({ position, ranges: [EditorSelection.range(from, from)] });
+      continue;
     }
 
     // Matches ${[0-9]:default string}
-    let braceDepth = 1
-    let startInner = i
+    let braceDepth = 1;
+    let startInner = i;
 
     // Track nested placeholders to find the
     // top-level matching brace.
     while (i < template.length && braceDepth > 0) {
-      if (template[i] === '{') {
-        braceDepth++
-      } else if (template[i] === '}') {
-        braceDepth--
+      if (template[i] === "{") {
+        braceDepth++;
+      } else if (template[i] === "}") {
+        braceDepth--;
       }
-      i++
+      i++;
     }
 
     // Return as regular text when there are unbalanced braces (malformed placeholders)
     if (braceDepth > 0) {
-      parsedText += template.slice(startInner - match[0].length, template.length)
-      break
+      parsedText += template.slice(startInner - match[0].length, template.length);
+      break;
     }
 
     // Drop the last '}' and recurse on the inner text.
-    const { text: innerText, ranges: innerRanges } = parsePlaceholders(template.slice(startInner, i - 1), offset + parsedText.length)
+    const { text: innerText, ranges: innerRanges } = parsePlaceholders(
+      template.slice(startInner, i - 1),
+      offset + parsedText.length,
+    );
 
-    const from = offset + parsedText.length
-    parsedText += innerText
-    const to = offset + parsedText.length
+    const from = offset + parsedText.length;
+    parsedText += innerText;
+    const to = offset + parsedText.length;
 
-    ranges.push({ position, ranges: [EditorSelection.range(from, to)] })
-    ranges.push(...innerRanges)
+    ranges.push({ position, ranges: [EditorSelection.range(from, to)] });
+    ranges.push(...innerRanges);
   }
 
-  return { text: parsedText, ranges }
+  return { text: parsedText, ranges };
 }
 
 /**
@@ -316,91 +337,101 @@ function parsePlaceholders (template: string, offset = 0): { text: string, range
  * @return  {[string, EditorSelection[]]}  The final text as well as tabstop
  *                                          ranges (if any)
  */
-export async function template2snippet (state: EditorState, template: string, rangeOffset: number): Promise<[string, EditorSelection[]]> {
-  let replacedText = await replaceSnippetVariables(state, template)
+export async function template2snippet(
+  state: EditorState,
+  template: string,
+  rangeOffset: number,
+): Promise<[string, EditorSelection[]]> {
+  let replacedText = await replaceSnippetVariables(state, template);
 
-  const { text, ranges } = parsePlaceholders(replacedText, rangeOffset)
+  const { text, ranges } = parsePlaceholders(replacedText, rangeOffset);
 
   if (ranges.length === 0) {
-    return [ text, [] ] // Already done!
+    return [text, []]; // Already done!
   }
 
   // Combine multiple ranges with the same position together
-  const combinedRanges = ranges.reduce<Array<{ position: number, ranges: SelectionRange[] }>>((acc, value) => {
-    const { position, ranges } = value
-    const existingRange = acc.find(v => v.position === position)
-    if (existingRange !== undefined) {
-      existingRange.ranges = existingRange.ranges.concat(ranges)
-    } else {
-      acc.push(value)
-    }
+  const combinedRanges = ranges.reduce<Array<{ position: number; ranges: SelectionRange[] }>>(
+    (acc, value) => {
+      const { position, ranges } = value;
+      const existingRange = acc.find((v) => v.position === position);
+      if (existingRange !== undefined) {
+        existingRange.ranges = existingRange.ranges.concat(ranges);
+      } else {
+        acc.push(value);
+      }
 
-    return acc
-  }, [])
+      return acc;
+    },
+    [],
+  );
 
   // Sort the ranges ascending, except the zero, which needs at the bottom
   combinedRanges.sort((a, b) => {
     if (a.position === 0) {
-      return 1 // Bring to back
+      return 1; // Bring to back
     } else if (b.position === 0) {
-      return -1
+      return -1;
     } else {
-      return a.position - b.position
+      return a.position - b.position;
     }
-  })
+  });
 
   // Check that there's a zero in there. If not, add one to the back.
   if (combinedRanges[combinedRanges.length - 1].position !== 0) {
-    combinedRanges.push({ position: 0, ranges: [EditorSelection.cursor(rangeOffset + text.length)] })
+    combinedRanges.push({
+      position: 0,
+      ranges: [EditorSelection.cursor(rangeOffset + text.length)],
+    });
   }
 
   // For the rest of the script, it's irrelevant which position the tabs had,
   // since it expects the array to be sorted anyways, so we can omit that info now.
-  const slections = combinedRanges.map(v => EditorSelection.create(v.ranges))
+  const slections = combinedRanges.map((v) => EditorSelection.create(v.ranges));
 
-  return [ text, slections ]
+  return [text, slections];
 }
 
 /**
-   * A utility function that replaces snippet variables with their correct values
-   * dynamically.
-   *
-   * @param   {string}             text  The text to modify
-   *
-   * @return  {string}                   The text with all variables replaced accordingly.
-   */
-async function replaceSnippetVariables (state: EditorState, text: string): Promise<string> {
+ * A utility function that replaces snippet variables with their correct values
+ * dynamically.
+ *
+ * @param   {string}             text  The text to modify
+ *
+ * @return  {string}                   The text with all variables replaced accordingly.
+ */
+async function replaceSnippetVariables(state: EditorState, text: string): Promise<string> {
   // First, prepare our replacement table
-  const now = DateTime.now()
-  const month = now.month
-  const day = now.day
-  const hour = now.hour
-  const minute = now.minute
-  const second = now.second
-  const clipboard = await navigator.clipboard.readText()
+  const now = DateTime.now();
+  const month = now.month;
+  const day = now.day;
+  const hour = now.hour;
+  const minute = now.minute;
+  const second = now.second;
+  const clipboard = await navigator.clipboard.readText();
 
-  const config = state.field(configField)
-  const absPath = config.metadata.path
+  const config = state.field(configField);
+  const absPath = config.metadata.path;
 
   const REPLACEMENTS = {
     CURRENT_YEAR: now.year,
     CURRENT_YEAR_SHORT: now.year.toString().substring(2),
-    CURRENT_MONTH: (month < 10) ? '0' + month.toString() : month,
+    CURRENT_MONTH: month < 10 ? "0" + month.toString() : month,
     CURRENT_MONTH_NAME: now.monthLong,
     CURRENT_MONTH_NAME_SHORT: now.monthShort,
-    CURRENT_DATE: (day < 10) ? '0' + day.toString() : day,
-    CURRENT_HOUR: (hour < 10) ? '0' + hour.toString() : hour,
-    CURRENT_MINUTE: (minute < 10) ? '0' + minute.toString() : minute,
-    CURRENT_SECOND: (second < 10) ? '0' + second.toString() : second,
+    CURRENT_DATE: day < 10 ? "0" + day.toString() : day,
+    CURRENT_HOUR: hour < 10 ? "0" + hour.toString() : hour,
+    CURRENT_MINUTE: minute < 10 ? "0" + minute.toString() : minute,
+    CURRENT_SECOND: second < 10 ? "0" + second.toString() : second,
     CURRENT_SECONDS_UNIX: now.toSeconds(),
     UUID: uuid(),
-    CLIPBOARD: (clipboard !== '') ? clipboard : undefined,
-    ZKN_ID: generateId(String(window.config.get('zkn.idGen'))),
+    CLIPBOARD: clipboard !== "" ? clipboard : undefined,
+    ZKN_ID: generateId(String(window.config.get("zkn.idGen"))),
     CURRENT_ID: config.metadata.id,
     FILENAME: pathBasename(absPath, pathExtname(absPath)),
     DIRECTORY: pathDirname(absPath),
-    EXTENSION: pathExtname(absPath)
-  }
+    EXTENSION: pathExtname(absPath),
+  };
 
   // Second: Replace those variables, and return the text. NOTE we're adding a
   // negative lookbehind -- (?<!\\) -- to make sure we're not including escaped ones.
@@ -408,19 +439,19 @@ async function replaceSnippetVariables (state: EditorState, text: string): Promi
     if (p1 !== undefined) {
       // We have a single variable, so only replace if it's a supported one
       if (REPLACEMENTS[p1 as keyof typeof REPLACEMENTS] !== undefined) {
-        return REPLACEMENTS[p1 as keyof typeof REPLACEMENTS]
+        return REPLACEMENTS[p1 as keyof typeof REPLACEMENTS];
       } else {
-        return match
+        return match;
       }
     } else {
       // We have a variable with placeholder, so replace it potentially with the default
       if (REPLACEMENTS[p2 as keyof typeof REPLACEMENTS] !== undefined) {
-        return REPLACEMENTS[p2 as keyof typeof REPLACEMENTS]
+        return REPLACEMENTS[p2 as keyof typeof REPLACEMENTS];
       } else {
-        return p3
+        return p3;
       }
     }
-  })
+  });
 }
 
 /**
@@ -428,111 +459,116 @@ async function replaceSnippetVariables (state: EditorState, text: string): Promi
  * autocompletion.
  */
 export const autocompleteTriggerCharacter: Facet<string, string> = Facet.define({
-  combine (val) { return val.length > 0 ? val[0] : ':' }
-})
+  combine(val) {
+    return val.length > 0 ? val[0] : ":";
+  },
+});
 
 export const snippets: AutocompletePlugin = {
-  applies (ctx) {
-    const trigger = ctx.state.facet(autocompleteTriggerCharacter)
+  applies(ctx) {
+    const trigger = ctx.state.facet(autocompleteTriggerCharacter);
     // A valid snippet applies whenever the user typed a colon
     if (ctx.state.doc.sliceString(ctx.pos - 1, ctx.pos) !== trigger) {
-      return false // Only applies after the user typed an #
+      return false; // Only applies after the user typed an #
     }
 
-    const lineObject = ctx.state.doc.lineAt(ctx.pos)
+    const lineObject = ctx.state.doc.lineAt(ctx.pos);
 
     if (ctx.pos - lineObject.from === 1) {
-      return ctx.pos // Start of Line, so perfectly fine
+      return ctx.pos; // Start of Line, so perfectly fine
     }
 
-    const charBefore = ctx.state.doc.sliceString(ctx.pos - 2, ctx.pos - 1)
-    if (charBefore === ' ') {
-      return ctx.pos // Valid char in front of the colon (so that `something:`
+    const charBefore = ctx.state.doc.sliceString(ctx.pos - 2, ctx.pos - 1);
+    if (charBefore === " ") {
+      return ctx.pos; // Valid char in front of the colon (so that `something:`
       // won't trigger)
     }
 
-    return false
+    return false;
   },
-  entries (ctx, query) {
-    query = query.toLowerCase()
+  entries(ctx, query) {
+    query = query.toLowerCase();
     // NOTE: We need to create a new array, otherwise we're going to have an
     // emoji party after ten characters typed
-    const entries = [...ctx.state.field(snippetsUpdateField).availableSnippets]
+    const entries = [...ctx.state.field(snippetsUpdateField).availableSnippets];
     if (ctx.state.field(configField).autocompleteSuggestEmojis) {
-      entries.push(...emojis)
+      entries.push(...emojis);
     }
 
-    return entries.filter(entry => {
-      if (entry.section === undefined) { // Snippets don't have a section
-        return entry.label.toLowerCase().includes(query)
+    return entries.filter((entry) => {
+      if (entry.section === undefined) {
+        // Snippets don't have a section
+        return entry.label.toLowerCase().includes(query);
       }
 
-      const inDetail = entry.detail?.toLowerCase().includes(query) ?? false
+      const inDetail = entry.detail?.toLowerCase().includes(query) ?? false;
 
-      if (typeof entry.info === 'string') {
+      if (typeof entry.info === "string") {
         // Allow to search the tags as well that are part of the info
-        return entry.info.toLowerCase().includes(query) || inDetail
+        return entry.info.toLowerCase().includes(query) || inDetail;
       } else {
-        return inDetail
+        return inDetail;
       }
-    })
+    });
   },
-  fields: [snippetsUpdateField]
-}
+  fields: [snippetsUpdateField],
+};
 
-export function nextSnippet (target: EditorView): boolean {
+export function nextSnippet(target: EditorView): boolean {
   // Progresses to the next tabstop if there's one available
-  const field = target.state.field(snippetsUpdateField, false)
+  const field = target.state.field(snippetsUpdateField, false);
   if (field === undefined) {
-    return false
+    return false;
   }
 
-  const { activeSelections } = field
+  const { activeSelections } = field;
   if (activeSelections.length === 0) {
-    return false
+    return false;
   }
 
   target.dispatch({
     selection: activeSelections[0],
     effects: [
       shiftNextTabEffect.of(null),
-      EditorView.scrollIntoView(activeSelections[0].main.from, { y: 'center' })
-    ]
-  })
-  return true
+      EditorView.scrollIntoView(activeSelections[0].main.from, { y: "center" }),
+    ],
+  });
+  return true;
 }
 
 export const abortSnippet: Command = (target: EditorView): boolean => {
   // Removes all tabstops, if there are any
-  const field = target.state.field(snippetsUpdateField, false)
+  const field = target.state.field(snippetsUpdateField, false);
   if (field === undefined) {
-    return false
+    return false;
   }
 
   if (field.activeSelections.length > 0) {
-    target.dispatch({ effects: snippetTabsEffect.of([]) })
-    return true
+    target.dispatch({ effects: snippetTabsEffect.of([]) });
+    return true;
   }
 
-  return false
-}
+  return false;
+};
 
 // Like `abortSnippet` above, but this also removes the placeholder content
 // of any pending tabstop.
 export const abortSnippetRemoveContent: Command = (target: EditorView): boolean => {
-  const field = target.state.field(snippetsUpdateField, false)
+  const field = target.state.field(snippetsUpdateField, false);
   if (field === undefined) {
-    return false
+    return false;
   }
 
   if (field.activeSelections.length > 0) {
     target.dispatch({
       // Cuts all of the pending placeholder insertions
-      changes: field.activeSelections.flatMap(sel => sel.ranges.map(r => ({ from: r.from, to: r.to }))),
-      effects: snippetTabsEffect.of([])
-    })
-    return true
+      changes: field.activeSelections.flatMap((sel) =>
+        sel.ranges.map((r) => ({ from: r.from, to: r.to })),
+      ),
+      effects: snippetTabsEffect.of([]),
+    });
+    return true;
   }
 
-  return false
-}
+  return false;
+};

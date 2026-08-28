@@ -38,30 +38,31 @@
  *
  * END HEADER
  */
-import { trans } from 'source/common/i18n-renderer'
-import PopoverWrapper from '@common/vue/PopoverWrapper.vue'
-import { ref, computed } from 'vue'
 
-const props = defineProps<{ target: HTMLElement }>()
+import PopoverWrapper from "@common/vue/PopoverWrapper.vue";
+import { trans } from "source/common/i18n-renderer";
+import { computed, ref } from "vue";
+
+const props = defineProps<{ target: HTMLElement }>();
 
 const emit = defineEmits<{
-  (e: 'close'): void
-  (e: 'insert-table', value: { rows: number, cols: number }): void
-}>()
+  (e: "close"): void;
+  (e: "insert-table", value: { rows: number; cols: number }): void;
+}>();
 
-const rows = ref(0)
-const cols = ref(0)
+const rows = ref(0);
+const cols = ref(0);
 
-const tableSizeLabel = computed(() => trans('Table size: %s &times; %s', rows.value, cols.value))
+const tableSizeLabel = computed(() => trans("Table size: %s &times; %s", rows.value, cols.value));
 
-function handleClick (): void {
-  emit('insert-table', { rows: rows.value, cols: cols.value })
-  emit('close')
+function handleClick(): void {
+  emit("insert-table", { rows: rows.value, cols: cols.value });
+  emit("close");
 }
 
-function setIntermediarySize (rowCount: number, colCount: number): void {
-  rows.value = rowCount
-  cols.value = colCount
+function setIntermediarySize(rowCount: number, colCount: number): void {
+  rows.value = rowCount;
+  cols.value = colCount;
 }
 </script>
 

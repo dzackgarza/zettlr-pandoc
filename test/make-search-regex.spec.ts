@@ -13,23 +13,23 @@
  * END HEADER
  */
 
-import makeSearchRegex from '../source/common/util/make-search-regex'
-import { strictEqual } from 'assert'
+import { strictEqual } from "assert";
+import makeSearchRegex from "../source/common/util/make-search-regex";
 
 const makeSearchRegexTesters = [
-  { 'input': 'hello', 'expected': /hello/i },
-  { 'input': '/\\w/g', 'expected': /\w/g },
-  { 'input': '/\\w/abide', 'expected': /\/\\w\/abide/i }, // Wrong flags, should be treated as a normal search
-  { 'input': '/[a-zA-Z0-9]/', 'expected': /[a-zA-Z0-9]/ },
-  { 'input': '/<a href="(.+?)">(.+?)<\\/a>/', 'expected': /<a href="(.+?)">(.+?)<\/a>/ }
-]
+  { input: "hello", expected: /hello/i },
+  { input: "/\\w/g", expected: /\w/g },
+  { input: "/\\w/abide", expected: /\/\\w\/abide/i }, // Wrong flags, should be treated as a normal search
+  { input: "/[a-zA-Z0-9]/", expected: /[a-zA-Z0-9]/ },
+  { input: '/<a href="(.+?)">(.+?)<\\/a>/', expected: /<a href="(.+?)">(.+?)<\/a>/ },
+];
 
-describe('Utility#makeSearchRegex()', function () {
+describe("Utility#makeSearchRegex()", function () {
   for (let test of makeSearchRegexTesters) {
     // For each tested unit, expect the string representations of both
     // the correct and the input regular expression to be equal.
     it(`should return the regular expression ${String(test.expected)}`, function () {
-      strictEqual(String(makeSearchRegex(test.input)), String(test.expected))
-    })
+      strictEqual(String(makeSearchRegex(test.input)), String(test.expected));
+    });
   }
-})
+});

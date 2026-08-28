@@ -13,8 +13,11 @@
  * END HEADER
  */
 
-import { strict as assert } from "assert";
+// biome-ignore-all assist/source/organizeImports: the harness installs the
+// electron stand-in at module scope, so it has to load before any module
+// that imports electron itself. Sorting these imports breaks the specs.
 import "./headless-electron-harness.cjs";
+import { strict as assert } from "assert";
 import { shutdownApplication } from "source/app/lifecycle";
 
 describe("application lifecycle", function () {

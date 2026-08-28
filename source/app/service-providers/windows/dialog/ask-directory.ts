@@ -12,9 +12,15 @@
  * END HEADER
  */
 
-import { app, type BrowserWindow, dialog, type OpenDialogOptions, type OpenDialogReturnValue } from 'electron'
-import isDir from '@common/util/is-dir'
-import type ConfigProvider from '@providers/config'
+import isDir from "@common/util/is-dir";
+import type ConfigProvider from "@providers/config";
+import {
+  app,
+  type BrowserWindow,
+  dialog,
+  type OpenDialogOptions,
+  type OpenDialogReturnValue,
+} from "electron";
 
 /**
  * Asks the user for directory path(s)
@@ -24,11 +30,17 @@ import type ConfigProvider from '@providers/config'
  * @param buttonLabel {string|null}    Label of the Button
  * @return  {Promise<string>[]}        Resolves with an array of paths
  */
-export default async function askDirectory (config: ConfigProvider, win: BrowserWindow|null, title: string, buttonLabel?: string, message?: string): Promise<string[]> {
-  let startDir = app.getPath('home')
+export default async function askDirectory(
+  config: ConfigProvider,
+  win: BrowserWindow | null,
+  title: string,
+  buttonLabel?: string,
+  message?: string,
+): Promise<string[]> {
+  let startDir = app.getPath("home");
 
-  if (isDir(config.get('dialogPaths.askDirDialog') as string)) {
-    startDir = config.get('dialogPaths.askDirDialog')
+  if (isDir(config.get("dialogPaths.askDirDialog") as string)) {
+    startDir = config.get("dialogPaths.askDirDialog");
   }
 
   const options: OpenDialogOptions = {
@@ -37,29 +49,29 @@ export default async function askDirectory (config: ConfigProvider, win: Browser
     message,
     defaultPath: startDir,
     properties: [
-      'openDirectory',
-      'createDirectory' // macOS only
-    ]
-  }
+      "openDirectory",
+      "createDirectory", // macOS only
+    ],
+  };
 
-  let response: OpenDialogReturnValue
+  let response: OpenDialogReturnValue;
   // DEBUG: Trying to resolve bug #1645, which seems to relate to modal status
   // vs. promise awaits. UPDATE 2024-03-11: In response to #4952, removing the
   // platform check again.
   if (win !== null) {
-    response = await dialog.showOpenDialog(win, options)
+    response = await dialog.showOpenDialog(win, options);
   } else {
-    response = await dialog.showOpenDialog(options)
+    response = await dialog.showOpenDialog(options);
   }
 
   // Save the path of the dir into the config
   if (!response.canceled && response.filePaths.length > 0) {
-    config.set('dialogPaths.askDirDialog', response.filePaths[0])
+    config.set("dialogPaths.askDirDialog", response.filePaths[0]);
   }
 
   if (response.canceled) {
-    return []
+    return [];
   } else {
-    return response.filePaths
+    return response.filePaths;
   }
 }

@@ -1,4 +1,4 @@
-import type { TabManagerJSON } from 'source/app/service-providers/documents/document-tree/tab-manager'
+import type { TabManagerJSON } from "source/app/service-providers/documents/document-tree/tab-manager";
 
 /**
  * A descriptor for some metadata that is associated to opened documents, such
@@ -8,16 +8,16 @@ export interface OpenDocument {
   /**
    * The full path to the document
    */
-  path: string
+  path: string;
   /**
    * Indicates whether this document should be handled as pinned
    */
-  pinned: boolean
+  pinned: boolean;
   /**
    * An icon that will allow us to save space by associating icons to documents
    * instead of the filenames
    */
-  icon?: string
+  icon?: string;
 }
 
 /**
@@ -37,11 +37,11 @@ export interface LeafNodeJSON extends TabManagerJSON {
   /**
    * Indicates that this is a leaf
    */
-  type: 'leaf'
+  type: "leaf";
   /**
    * The ID for this leaf (UUID)
    */
-  id: string
+  id: string;
 }
 
 /**
@@ -51,23 +51,23 @@ export interface BranchNodeJSON {
   /**
    * Indicates that this is a branch
    */
-  type: 'branch'
+  type: "branch";
   /**
    * The ID for this branch (UUID)
    */
-  id: string
+  id: string;
   /**
    * The direction into which this branch splits the tree
    */
-  direction: 'horizontal'|'vertical'
+  direction: "horizontal" | "vertical";
   /**
    * A list of all child nodes for this branch
    */
-  nodes: Array<LeafNodeJSON|BranchNodeJSON>
+  nodes: Array<LeafNodeJSON | BranchNodeJSON>;
   /**
    * The sizes (in percent) of the individual child nodes
    */
-  sizes: number[]
+  sizes: number[];
 }
 
 /**
@@ -76,22 +76,22 @@ export interface BranchNodeJSON {
  */
 export enum DP_EVENTS {
   // Opening/closing of files
-  OPEN_FILE = 'file-opened',
-  CLOSE_FILE = 'file-closed',
-  FILE_REMOTELY_CHANGED = 'file-remotely-changed',
-  FILE_REMOTE_CHANGE_ERROR = 'file-remote-change-error',
-  FILES_SORTED = 'files-sorted',
+  OPEN_FILE = "file-opened",
+  CLOSE_FILE = "file-closed",
+  FILE_REMOTELY_CHANGED = "file-remotely-changed",
+  FILE_REMOTE_CHANGE_ERROR = "file-remote-change-error",
+  FILES_SORTED = "files-sorted",
   // File status (pinned, modified, ...)
-  CHANGE_FILE_STATUS = 'file-status-changed',
-  FILE_SAVED = 'file-saved',
-  ACTIVE_FILE = 'active-file-changed',
-  REVIEW_DIFF = 'review-diff',
+  CHANGE_FILE_STATUS = "file-status-changed",
+  FILE_SAVED = "file-saved",
+  ACTIVE_FILE = "active-file-changed",
+  REVIEW_DIFF = "review-diff",
   // Leafs (editor panes)
-  NEW_LEAF = 'leaf-created',
-  LEAF_CLOSED = 'leaf-deleted',
+  NEW_LEAF = "leaf-created",
+  LEAF_CLOSED = "leaf-deleted",
   // Windows
-  NEW_WINDOW = 'window-created',
-  WINDOW_CLOSED = 'window-deleted'
+  NEW_WINDOW = "window-created",
+  WINDOW_CLOSED = "window-deleted",
 }
 
 /**
@@ -116,14 +116,14 @@ export enum DP_EVENTS {
  * renderer bundle, which fails the webpack build outright.
  */
 export type SaveRefusalReason =
-  | 'disk-changed'
+  | "disk-changed"
   // The review could not be written through, so the close was aborted and
   // the document is still open with its review intact.
-  | 'review-not-persisted'
+  | "review-not-persisted";
 
 export interface SaveRefusal {
-  reason: SaveRefusalReason
-  message: string
+  reason: SaveRefusalReason;
+  message: string;
 }
 
 /**
@@ -131,9 +131,7 @@ export interface SaveRefusal {
  * boolean: `false` is what let the save gate fail silently at the IPC boundary,
  * leaving the renderer to log "falsy result" with no cause.
  */
-export type SaveFileResult =
-  | { ok: true }
-  | { ok: false, refusal?: SaveRefusal }
+export type SaveFileResult = { ok: true } | { ok: false; refusal?: SaveRefusal };
 
 /**
  * Broadcast on SAVE_REFUSED_CHANNEL when a save the user did not initiate from
@@ -142,16 +140,16 @@ export type SaveFileResult =
  * closes and the window stays open with nothing explaining why.
  */
 export interface SaveRefusedBroadcast {
-  filePath: string
-  refusal?: SaveRefusal
+  filePath: string;
+  refusal?: SaveRefusal;
 }
 
-export const SAVE_REFUSED_CHANNEL = 'save-refused'
+export const SAVE_REFUSED_CHANNEL = "save-refused";
 
 /** Opaque `ChangeSet.toJSON()` payload; only `ChangeSet.fromJSON` reads it. */
-export type SerializedChanges = readonly (number | readonly (number | string)[])[]
+export type SerializedChanges = readonly (number | readonly (number | string)[])[];
 
 export interface SerializedUpdate {
-  changes: SerializedChanges
-  clientID: string
+  changes: SerializedChanges;
+  clientID: string;
 }

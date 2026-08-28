@@ -39,24 +39,24 @@
  *
  * END HEADER
  */
-import type { OpenDocument } from 'source/types/common/documents'
-import type { EditorCommands } from '../component-contracts'
-import makeValidUri from 'source/common/util/make-valid-uri'
-import { ref } from 'vue'
-import { pathBasename } from 'source/common/util/renderer-path-polyfill'
+
+import makeValidUri from "source/common/util/make-valid-uri";
+import { pathBasename } from "source/common/util/renderer-path-polyfill";
+import type { OpenDocument } from "source/types/common/documents";
+import { ref } from "vue";
+import type { EditorCommands } from "../component-contracts";
 
 const props = defineProps<{
-  leafId: string
-  windowId: string
-  activeFile: OpenDocument|null
-  editorCommands: EditorCommands
-  file: OpenDocument
-}>()
+  leafId: string;
+  windowId: string;
+  activeFile: OpenDocument | null;
+  editorCommands: EditorCommands;
+  file: OpenDocument;
+}>();
 
-const iframe = ref<HTMLIFrameElement|null>(null)
-const pdfViewerContainer = ref<HTMLDivElement|null>(null)
-const acceptsClicks = ref(false)
-
+const iframe = ref<HTMLIFrameElement | null>(null);
+const pdfViewerContainer = ref<HTMLDivElement | null>(null);
+const acceptsClicks = ref(false);
 </script>
 
 <style lang="css" scoped>

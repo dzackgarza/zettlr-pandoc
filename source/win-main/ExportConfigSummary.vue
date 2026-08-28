@@ -20,21 +20,26 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed } from "vue";
 
-const props = withDefaults(defineProps<{
-  // The ordered, declared export filter chain (config.export.filters).
-  filters: string[]
-  // The profile's declared Pandoc template, or '' for Pandoc's built-in default.
-  template: string
-  // The Pandoc data directory names/templates resolve from.
-  dataDir: string
-  // For script formats: a "profile -> command" summary. '' when not a script.
-  scriptInfo?: string
-}>(), { scriptInfo: '' })
+const props = withDefaults(
+  defineProps<{
+    // The ordered, declared export filter chain (config.export.filters).
+    filters: string[];
+    // The profile's declared Pandoc template, or '' for Pandoc's built-in default.
+    template: string;
+    // The Pandoc data directory names/templates resolve from.
+    dataDir: string;
+    // For script formats: a "profile -> command" summary. '' when not a script.
+    scriptInfo?: string;
+  }>(),
+  { scriptInfo: "" },
+);
 
-const filtersText = computed(() => props.filters.length > 0 ? props.filters.join('  →  ') : '(none)')
-const templateText = computed(() => props.template !== '' ? props.template : 'Pandoc default')
+const filtersText = computed(() =>
+  props.filters.length > 0 ? props.filters.join("  →  ") : "(none)",
+);
+const templateText = computed(() => (props.template !== "" ? props.template : "Pandoc default"));
 </script>
 
 <style>

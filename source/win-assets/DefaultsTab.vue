@@ -101,21 +101,23 @@
  * END HEADER
  */
 
-import SplitView from '@common/vue/window/SplitView.vue'
-import SelectableList, { type SelectableListItem } from '@common/vue/form/elements/SelectableList.vue'
-import TextControl from '@common/vue/form/elements/TextControl.vue'
-import ButtonControl from '@common/vue/form/elements/ButtonControl.vue'
-import CodeEditor from '@common/vue/CodeEditor.vue'
-import ZtrAdmonition from '@common/vue/ZtrAdmonition.vue'
-import { trans } from '@common/i18n-renderer'
-import { ref, computed, toRef, watch, onUnmounted } from 'vue'
-import type { PandocProfileMetadata, ValidPandocProfile } from '@providers/assets'
-import { PANDOC_READERS, PANDOC_WRITERS, SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
-import sanitizeFilename from 'sanitize-filename'
-import { DateTime } from 'luxon'
-import { parseReaderWriter } from 'source/common/pandoc-util/parse-reader-writer'
+import { trans } from "@common/i18n-renderer";
+import { PANDOC_READERS, PANDOC_WRITERS, SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
+import CodeEditor from "@common/vue/CodeEditor.vue";
+import ButtonControl from "@common/vue/form/elements/ButtonControl.vue";
+import SelectableList, {
+  type SelectableListItem,
+} from "@common/vue/form/elements/SelectableList.vue";
+import TextControl from "@common/vue/form/elements/TextControl.vue";
+import SplitView from "@common/vue/window/SplitView.vue";
+import ZtrAdmonition from "@common/vue/ZtrAdmonition.vue";
+import type { PandocProfileMetadata, ValidPandocProfile } from "@providers/assets";
+import { DateTime } from "luxon";
+import sanitizeFilename from "sanitize-filename";
+import { parseReaderWriter } from "source/common/pandoc-util/parse-reader-writer";
+import { computed, onUnmounted, ref, toRef, watch } from "vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 const NEW_DEFAULTS_FILE_CONTENTS = `# This is a new defaults file that you can use to define rules for exporting or
 # importing files to and from Zettlr. The only two required properties are the
@@ -126,237 +128,251 @@ const NEW_DEFAULTS_FILE_CONTENTS = `# This is a new defaults file that you can u
 # More info: https://pandoc.org/MANUAL.html.
 reader: markdown
 writer: markdown
-`
+`;
 const props = defineProps<{
   // "which" describes which kind of defaults files this instance controls
   // can be "import" (for any --> Markdown) or "export" (for Markdown --> any)
-  which: 'import'|'export'
-}>()
+  which: "import" | "export";
+}>();
 
-const currentItem = ref(0)
-const currentFilename = ref('')
-const editorContents = ref('')
-const lastLoadedEditorContents = ref('')
-const savingStatus = ref('')
-const availableDefaultsFiles = ref<PandocProfileMetadata[]>([])
+const currentItem = ref(0);
+const currentFilename = ref("");
+const editorContents = ref("");
+const lastLoadedEditorContents = ref("");
+const savingStatus = ref("");
+const availableDefaultsFiles = ref<PandocProfileMetadata[]>([]);
 
-const protectedProfileWarning = trans('This profile is protected. This means that it will be restored when you remove or rename it.')
-const invalidProfileWarning = trans('This profile is invalid. It may contain errors, or it may be missing the writer or reader property.')
-const renameFileLabel = trans('Rename file')
-const openDefaultsFolderLabel = trans('Open defaults folder')
-const defaultsExplanation = trans('Edit the default settings for imports or exports here.')
-const saveButtonLabel = trans('Save')
+const protectedProfileWarning = trans(
+  "This profile is protected. This means that it will be restored when you remove or rename it.",
+);
+const invalidProfileWarning = trans(
+  "This profile is invalid. It may contain errors, or it may be missing the writer or reader property.",
+);
+const renameFileLabel = trans("Rename file");
+const openDefaultsFolderLabel = trans("Open defaults folder");
+const defaultsExplanation = trans("Edit the default settings for imports or exports here.");
+const saveButtonLabel = trans("Save");
 
 // <PandocProfileMetadata[]>
 const visibleItems = computed(() => {
   // Display either the exporting or importing formats depending on the tab
-  return availableDefaultsFiles.value
-    .filter((e) => {
-      if (e.isInvalid) {
-        return true // We always need to show invalid files so users can fix them
-      }
-      // Retrieve which one we need to check
-      const readerWriter = (props.which === 'import') ? e.writer : e.reader
-      const parsedReaderWriter = parseReaderWriter(readerWriter)
-      return SUPPORTED_READERS.includes(parsedReaderWriter.name)
-    })
-})
+  return availableDefaultsFiles.value.filter((e) => {
+    if (e.isInvalid) {
+      return true; // We always need to show invalid files so users can fix them
+    }
+    // Retrieve which one we need to check
+    const readerWriter = props.which === "import" ? e.writer : e.reader;
+    const parsedReaderWriter = parseReaderWriter(readerWriter);
+    return SUPPORTED_READERS.includes(parsedReaderWriter.name);
+  });
+});
 
 /**
  * Describes the conversion a profile performs, resolving known and fully
  * supported extensions to their display names.
  */
-function conversionText (file: ValidPandocProfile): string {
-  const parsedReader = parseReaderWriter(file.reader)
-  const parsedWriter = parseReaderWriter(file.writer)
-  const reader = parsedReader.name in PANDOC_READERS ? PANDOC_READERS[parsedReader.name] : parsedReader.name
-  const writer = parsedWriter.name in PANDOC_WRITERS ? PANDOC_WRITERS[parsedWriter.name] : parsedWriter.name
-  return [ reader, writer ].join(' → ')
+function conversionText(file: ValidPandocProfile): string {
+  const parsedReader = parseReaderWriter(file.reader);
+  const parsedWriter = parseReaderWriter(file.writer);
+  const reader =
+    parsedReader.name in PANDOC_READERS ? PANDOC_READERS[parsedReader.name] : parsedReader.name;
+  const writer =
+    parsedWriter.name in PANDOC_WRITERS ? PANDOC_WRITERS[parsedWriter.name] : parsedWriter.name;
+  return [reader, writer].join(" → ");
 }
 
 const listItems = computed<SelectableListItem[]>(() => {
-  return visibleItems.value
-    .map(file => {
-      return {
-        displayText: file.name.substring(0, file.name.lastIndexOf('.')),
-        icon: file.isProtected === true ? 'lock' : undefined,
-        solidIcon: true,
-        infoString: file.isInvalid ? 'Invalid' : conversionText(file),
-        infoStringClass: file.isInvalid ? 'error' : undefined
-      }
-    })
-})
+  return visibleItems.value.map((file) => {
+    return {
+      displayText: file.name.substring(0, file.name.lastIndexOf(".")),
+      icon: file.isProtected === true ? "lock" : undefined,
+      solidIcon: true,
+      infoString: file.isInvalid ? "Invalid" : conversionText(file),
+      infoStringClass: file.isInvalid ? "error" : undefined,
+    };
+  });
+});
 
-watch(toRef(props, 'which'), function () {
+watch(toRef(props, "which"), function () {
   // Reset to the beginning of the list. The watcher right below will pick
   // that change up and re-load the defaults.
-  currentItem.value = -1
-  loadDefaultsForState().catch(e => console.error(e))
-})
+  currentItem.value = -1;
+  loadDefaultsForState().catch((e) => console.error(e));
+});
 
 watch(currentItem, () => {
-  loadDefaultsForState().catch(e => console.error(e))
-})
+  loadDefaultsForState().catch((e) => console.error(e));
+});
 
 watch(editorContents, () => {
   if (editorContents.value === lastLoadedEditorContents.value) {
-    savingStatus.value = ''
+    savingStatus.value = "";
   } else {
-    savingStatus.value = trans('Unsaved changes')
+    savingStatus.value = trans("Unsaved changes");
   }
-})
+});
 
 retrieveDefaultsFiles()
   .then(() => {
-    loadDefaultsForState().catch(e => console.error(e))
+    loadDefaultsForState().catch((e) => console.error(e));
   })
-  .catch(e => console.error(e))
+  .catch((e) => console.error(e));
 
-const offCallback = ipcRenderer.on('shortcut', (event, shortcut) => {
-  if (shortcut === 'save-file') {
-    saveDefaultsFile()
+const offCallback = ipcRenderer.on("shortcut", (event, shortcut) => {
+  if (shortcut === "save-file") {
+    saveDefaultsFile();
   }
-})
-onUnmounted(() => { offCallback() })
+});
+onUnmounted(() => {
+  offCallback();
+});
 
-async function loadDefaultsForState (): Promise<void> {
+async function loadDefaultsForState(): Promise<void> {
   // Loads a defaults file from main for the given state (tab + list item)
   if (availableDefaultsFiles.value.length === 0) {
-    currentFilename.value = ''
-    return
+    currentFilename.value = "";
+    return;
   }
 
   if (visibleItems.value.length === 0) {
-    return
+    return;
   }
 
   if (currentItem.value < 0) {
-    currentItem.value = 0
+    currentItem.value = 0;
   }
 
   if (currentItem.value >= visibleItems.value.length) {
-    currentItem.value = visibleItems.value.length - 1
+    currentItem.value = visibleItems.value.length - 1;
   }
 
-  const name = visibleItems.value[currentItem.value].name
+  const name = visibleItems.value[currentItem.value].name;
 
-  const data = await ipcRenderer.invoke('assets-provider', {
-    command: 'get-defaults-file',
-    payload: { filename: name }
-  })
+  const data = await ipcRenderer.invoke("assets-provider", {
+    command: "get-defaults-file",
+    payload: { filename: name },
+  });
 
-  lastLoadedEditorContents.value = data
-  editorContents.value = data
-  currentFilename.value = visibleItems.value[currentItem.value].name
+  lastLoadedEditorContents.value = data;
+  editorContents.value = data;
+  currentFilename.value = visibleItems.value[currentItem.value].name;
 }
 
-async function retrieveDefaultsFiles (): Promise<void> {
+async function retrieveDefaultsFiles(): Promise<void> {
   // NOTE: Here we are explicitly requesting only the defaults files, not
   // all export profiles, because here it's only about modifying them (which
   // does not work with the custom profiles the exporter provides).
-  const files: PandocProfileMetadata[] = await ipcRenderer.invoke('assets-provider', {
-    command: 'list-defaults'
-  })
+  const files: PandocProfileMetadata[] = await ipcRenderer.invoke("assets-provider", {
+    command: "list-defaults",
+  });
 
-  availableDefaultsFiles.value = files
+  availableDefaultsFiles.value = files;
   if (currentItem.value < 0) {
-    currentItem.value = 0
+    currentItem.value = 0;
   }
 
-  await loadDefaultsForState()
+  await loadDefaultsForState();
 }
 
-function saveDefaultsFile (): void {
-  savingStatus.value = trans('Saving …')
+function saveDefaultsFile(): void {
+  savingStatus.value = trans("Saving …");
 
-  const name = visibleItems.value[currentItem.value].name
+  const name = visibleItems.value[currentItem.value].name;
 
-  ipcRenderer.invoke('assets-provider', {
-    command: 'set-defaults-file',
-    payload: { filename: name, contents: editorContents.value }
-  })
+  ipcRenderer
+    .invoke("assets-provider", {
+      command: "set-defaults-file",
+      payload: { filename: name, contents: editorContents.value },
+    })
     .then(async () => {
-      lastLoadedEditorContents.value = editorContents.value
-      savingStatus.value = trans('Saved!')
-      await retrieveDefaultsFiles() // Always make sure to pull in any changes
-      setTimeout(() => { savingStatus.value = '' }, 1000)
+      lastLoadedEditorContents.value = editorContents.value;
+      savingStatus.value = trans("Saved!");
+      await retrieveDefaultsFiles(); // Always make sure to pull in any changes
+      setTimeout(() => {
+        savingStatus.value = "";
+      }, 1000);
     })
-    .catch(err => {
-      savingStatus.value = trans('Could not save changes')
-      console.error(err)
-    })
+    .catch((err) => {
+      savingStatus.value = trans("Could not save changes");
+      console.error(err);
+    });
 }
 
-function newDefaultsFile (newName?: string): void {
+function newDefaultsFile(newName?: string): void {
   // Create a new defaults file
-  const dt = DateTime.now()
+  const dt = DateTime.now();
   const timeString = dt.toISOTime({
     includeOffset: false,
-    suppressMilliseconds: true
-  })
+    suppressMilliseconds: true,
+  });
 
   if (newName !== undefined) {
-    newName = newName.trim()
+    newName = newName.trim();
   }
 
-  if (newName === undefined || newName === '') {
-    newName = `New Profile ${dt.toISODate()} ${timeString}.yaml`
+  if (newName === undefined || newName === "") {
+    newName = `New Profile ${dt.toISODate()} ${timeString}.yaml`;
   }
 
-  ipcRenderer.invoke('assets-provider', {
-    command: 'set-defaults-file',
-    payload: { filename: newName, contents: NEW_DEFAULTS_FILE_CONTENTS }
-  })
-    .then(async () => {
-      await retrieveDefaultsFiles() // Always make sure to pull in any changes
-      const idx = visibleItems.value.findIndex(val => val.name === newName)
-      currentItem.value = idx
-      console.log({ newName, idx })
+  ipcRenderer
+    .invoke("assets-provider", {
+      command: "set-defaults-file",
+      payload: { filename: newName, contents: NEW_DEFAULTS_FILE_CONTENTS },
     })
-    .catch(err => console.error(err))
+    .then(async () => {
+      await retrieveDefaultsFiles(); // Always make sure to pull in any changes
+      const idx = visibleItems.value.findIndex((val) => val.name === newName);
+      currentItem.value = idx;
+      console.log({ newName, idx });
+    })
+    .catch((err) => console.error(err));
 }
 
-function renameFile (): void {
-  let newName = currentFilename.value
-  if (!newName.endsWith('.yaml') && !newName.endsWith('.yml')) {
-    newName += '.yaml'
+function renameFile(): void {
+  let newName = currentFilename.value;
+  if (!newName.endsWith(".yaml") && !newName.endsWith(".yml")) {
+    newName += ".yaml";
   }
 
-  newName = sanitizeFilename(newName, { replacement: '-' })
+  newName = sanitizeFilename(newName, { replacement: "-" });
 
-  const oldName = visibleItems.value[currentItem.value].name
+  const oldName = visibleItems.value[currentItem.value].name;
 
-  ipcRenderer.invoke('assets-provider', {
-    command: 'rename-defaults-file',
-    payload: { oldName, newName }
-  })
-    .then(async () => {
-      await retrieveDefaultsFiles() // Always make sure to pull in any changes
+  ipcRenderer
+    .invoke("assets-provider", {
+      command: "rename-defaults-file",
+      payload: { oldName, newName },
     })
-    .catch(err => console.error(err))
+    .then(async () => {
+      await retrieveDefaultsFiles(); // Always make sure to pull in any changes
+    })
+    .catch((err) => console.error(err));
 }
 
-function removeFile (idx: number): void {
+function removeFile(idx: number): void {
   if (idx > visibleItems.value.length - 1 || idx < 0) {
-    return
+    return;
   }
 
-  const filename = visibleItems.value[idx].name
+  const filename = visibleItems.value[idx].name;
 
-  ipcRenderer.invoke('assets-provider', {
-    command: 'remove-defaults-file',
-    payload: { filename }
-  })
-    .then(async () => {
-      await retrieveDefaultsFiles() // Always make sure to pull in any changes
+  ipcRenderer
+    .invoke("assets-provider", {
+      command: "remove-defaults-file",
+      payload: { filename },
     })
-    .catch(err => console.error(err))
+    .then(async () => {
+      await retrieveDefaultsFiles(); // Always make sure to pull in any changes
+    })
+    .catch((err) => console.error(err));
 }
 
-function openDefaultsDirectory (): void {
-  ipcRenderer.invoke('assets-provider', {
-    command: 'open-defaults-directory'
-  }).catch(err => console.error(err))
+function openDefaultsDirectory(): void {
+  ipcRenderer
+    .invoke("assets-provider", {
+      command: "open-defaults-directory",
+    })
+    .catch((err) => console.error(err));
 }
 </script>
 

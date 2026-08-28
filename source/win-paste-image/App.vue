@@ -76,88 +76,95 @@
  * END HEADER
  */
 
-import WindowChrome from '@common/vue/window/WindowChrome.vue'
-import Checkbox from '@common/vue/form/elements/CheckboxControl.vue'
-import TextControl from '@common/vue/form/elements/TextControl.vue'
-import NumberControl from '@common/vue/form/elements/NumberControl.vue'
-import File from '@common/vue/form/elements/FileControl.vue'
-import { trans } from '@common/i18n-renderer'
-import { ref, watch } from 'vue'
-import { type StatusbarControl } from '@common/vue/window/WindowStatusbar.vue'
+import { trans } from "@common/i18n-renderer";
+import Checkbox from "@common/vue/form/elements/CheckboxControl.vue";
+import File from "@common/vue/form/elements/FileControl.vue";
+import NumberControl from "@common/vue/form/elements/NumberControl.vue";
+import TextControl from "@common/vue/form/elements/TextControl.vue";
+import WindowChrome from "@common/vue/window/WindowChrome.vue";
+import { type StatusbarControl } from "@common/vue/window/WindowStatusbar.vue";
+import { ref, watch } from "vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 // BEGIN READING RELEVANT INFO FROM CLIPBOARD
-async function retrieveClipboardData (): Promise<{ dataUrl: string, size: { width: number, height: number }, aspect: number, name: string }> {
-  return await ipcRenderer.invoke('paste-image-retrieve-data')
+async function retrieveClipboardData(): Promise<{
+  dataUrl: string;
+  size: { width: number; height: number };
+  aspect: number;
+  name: string;
+}> {
+  return await ipcRenderer.invoke("paste-image-retrieve-data");
 }
 
-retrieveClipboardData().then(({ aspect, name, size, dataUrl }) => {
-  imgWidth.value = size.width
-  originalWidth.value = size.width
-  imgHeight.value = size.height
-  originalHeight.value = size.height
-  aspectRatio.value = aspect
-  fileName.value = name
-  imgBase64.value = dataUrl
-}).catch(err => console.error(err))
+retrieveClipboardData()
+  .then(({ aspect, name, size, dataUrl }) => {
+    imgWidth.value = size.width;
+    originalWidth.value = size.width;
+    imgHeight.value = size.height;
+    originalHeight.value = size.height;
+    aspectRatio.value = aspect;
+    fileName.value = name;
+    imgBase64.value = dataUrl;
+  })
+  .catch((err) => console.error(err));
 
 // Retrieve the correct startPath from the searchParams
-const searchParams = new URLSearchParams(window.location.search)
-const startPath = searchParams.get('startPath')
+const searchParams = new URLSearchParams(window.location.search);
+const startPath = searchParams.get("startPath");
 
 // Finally set the data object
-const imgBase64 = ref<string>('')
-const imgWidth = ref<number>(0)
-const imgHeight = ref<number>(0)
-const originalWidth = ref<number>(0)
-const originalHeight = ref<number>(0)
-const aspectRatio = ref<number>(0)
-const retainAspect = ref<boolean>(true)
-const targetPath = ref<string>(startPath ?? '')
-const fileName = ref<string>('')
+const imgBase64 = ref<string>("");
+const imgWidth = ref<number>(0);
+const imgHeight = ref<number>(0);
+const originalWidth = ref<number>(0);
+const originalHeight = ref<number>(0);
+const aspectRatio = ref<number>(0);
+const retainAspect = ref<boolean>(true);
+const targetPath = ref<string>(startPath ?? "");
+const fileName = ref<string>("");
 
-const windowTitle = trans('Insert Image from Clipboard')
-const dimensionsLabel = trans('Image size')
-const aspectRatioLabel = trans('Retain aspect ratio')
-const resizeToLabel = trans('Resize image to')
-const pathLabel = trans('Filename')
-const pathPlaceholder = trans('A unique filename')
-const filenameLabel = trans('A unique filename')
+const windowTitle = trans("Insert Image from Clipboard");
+const dimensionsLabel = trans("Image size");
+const aspectRatioLabel = trans("Retain aspect ratio");
+const resizeToLabel = trans("Resize image to");
+const pathLabel = trans("Filename");
+const pathPlaceholder = trans("A unique filename");
+const filenameLabel = trans("A unique filename");
 const statusbarControls: StatusbarControl[] = [
   // primary: true // It's a primary button
-  { type: 'button', label: trans('Save'), id: 'save' },
-  { type: 'button', label: trans('Cancel'), id: 'cancel' }
-]
+  { type: "button", label: trans("Save"), id: "save" },
+  { type: "button", label: trans("Cancel"), id: "cancel" },
+];
 
 watch(retainAspect, () => {
-  recalculateDimensions('width')
-})
+  recalculateDimensions("width");
+});
 
-function recalculateDimensions (type: 'width'|'height'): void {
+function recalculateDimensions(type: "width" | "height"): void {
   if (!retainAspect.value) {
-    return
+    return;
   }
 
-  if (type === 'width') {
-    imgHeight.value = Math.round(imgWidth.value / aspectRatio.value)
+  if (type === "width") {
+    imgHeight.value = Math.round(imgWidth.value / aspectRatio.value);
   } else {
-    imgWidth.value = Math.round(imgHeight.value * aspectRatio.value)
+    imgWidth.value = Math.round(imgHeight.value * aspectRatio.value);
   }
 }
 
-function handleClick (controlID: string): void {
-  if (controlID === 'save') {
+function handleClick(controlID: string): void {
+  if (controlID === "save") {
     // Transmit the collected information to main. It will be received
     // by the window manager, which will pass it on to the caller.
-    ipcRenderer.send('paste-image-ready', {
+    ipcRenderer.send("paste-image-ready", {
       targetDir: targetPath.value,
       name: fileName.value,
       width: imgWidth.value,
-      height: imgHeight.value
-    })
-  } else if (controlID === 'cancel') {
-    ipcRenderer.send('window-controls', { command: 'win-close' })
+      height: imgHeight.value,
+    });
+  } else if (controlID === "cancel") {
+    ipcRenderer.send("window-controls", { command: "win-close" });
   }
 }
 </script>

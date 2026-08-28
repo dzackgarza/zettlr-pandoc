@@ -161,86 +161,85 @@
  * END HEADER
  */
 
-import Checkbox from './CheckboxControl.vue'
-import TextControl from './TextControl.vue'
-import NumberControl from './NumberControl.vue'
-
-import { trans } from '@common/i18n-renderer'
-import { computed, onBeforeUpdate, ref } from 'vue'
+import { trans } from "@common/i18n-renderer";
+import { computed, onBeforeUpdate, ref } from "vue";
+import Checkbox from "./CheckboxControl.vue";
+import NumberControl from "./NumberControl.vue";
+import TextControl from "./TextControl.vue";
 
 /**
  * What types of values can our cells have?
  */
-export type SupportedValues = boolean|string|number
+export type SupportedValues = boolean | string | number;
 
 /**
  * If the user passes a record, we need a Record of our SupportedValues
  */
-export type SupportedRecord = Record<string, SupportedValues>
+export type SupportedRecord = Record<string, SupportedValues>;
 
 const props = defineProps<{
   /**
    * The actual data, can be a 1D or 2D array, or a record of values.
    */
-  modelValue: SupportedValues[]|SupportedValues[][]|SupportedRecord[]
+  modelValue: SupportedValues[] | SupportedValues[][] | SupportedRecord[];
   /**
    * For type inference, you must pass the correct valueType
    */
-  valueType: 'simpleArray'|'multiArray'|'record'
+  valueType: "simpleArray" | "multiArray" | "record";
   /**
    * Provide the key names if your value type is object
    */
-  keyNames?: string[]
+  keyNames?: string[];
   /**
    * An optional label for the data table
    */
-  label?: string
+  label?: string;
   /**
    * User-defined, human-readable labels for the columns. This must correspond
    * to the amount of columns present in your data.
    */
-  columnLabels: string[]
+  columnLabels: string[];
   /**
    * The form element's name.
    */
-  name?: string
+  name?: string;
   /**
    * Use striped rows (default: false)
    */
-  striped?: boolean
+  striped?: boolean;
   /**
    * Whether users can add rows (default: false)
    */
-  addable?: boolean
+  addable?: boolean;
   /**
    * Controls editable columns. This variable can be either false (not at all
    * editable), true (all columns are editable), or an array with column
    * indices indicating which are editable.
    */
-  editable?: boolean | number[]
+  editable?: boolean | number[];
   /**
    * Whether rows are deletable (default: false)
    */
-  deletable?: boolean
+  deletable?: boolean;
   /**
    * An optional label for the delete button
    */
-  deleteLabel?: string
+  deleteLabel?: string;
   /**
    * Whether users can filter the table (default: false)
    */
-  searchable?: boolean
+  searchable?: boolean;
   /**
    * An optional search label, defaults to `trans('Find…')`
    */
-  searchLabel?: string
+  searchLabel?: string;
   /**
    * An optional message to show when the (filtered) list is empty.
    */
-  emptyMessage?: string
-}>()
+  emptyMessage?: string;
+}>();
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(["update:modelValue"]);
 
 // DATA
 /**
@@ -248,90 +247,90 @@ const emit = defineEmits(['update:modelValue'])
  *
  * @return  {string}  The filter value
  */
-const query = ref<string>('')
+const query = ref<string>("");
 /**
  * A record of the currently edited row and col (-1 if not editing)
  */
-const editing = ref<{ row: number, col: number }>({ row: -1, col: -1 })
+const editing = ref<{ row: number; col: number }>({ row: -1, col: -1 });
 
 /**
  * An array that contains the values to be added if the user confirms the
  * addition.
  */
-const valuesToAdd = ref<SupportedValues[]>([])
+const valuesToAdd = ref<SupportedValues[]>([]);
 
-const addButtonLabel = computed<string>(() => trans('Add'))
-const actionsLabel = computed<string>(() => trans('Actions'))
-const deleteButtonLabel = computed<string>(() => props.deleteLabel ?? trans('Delete'))
-const emptyListLabel = computed<string>(() => props.emptyMessage ?? trans('No records.'))
-const isStriped = computed<boolean>(() => props.striped ?? true)
+const addButtonLabel = computed<string>(() => trans("Add"));
+const actionsLabel = computed<string>(() => trans("Actions"));
+const deleteButtonLabel = computed<string>(() => props.deleteLabel ?? trans("Delete"));
+const emptyListLabel = computed<string>(() => props.emptyMessage ?? trans("No records."));
+const isStriped = computed<boolean>(() => props.striped ?? true);
 
 const columnCount = computed<number>(() => {
-  const baseCount = props.columnLabels.length
+  const baseCount = props.columnLabels.length;
   if (props.deletable || props.addable) {
-    return baseCount + 1
+    return baseCount + 1;
   } else {
-    return baseCount
+    return baseCount;
   }
-})
+});
 
 /**
  * Returns modelValue coerced to a simpleArray, or undefined if it is not.
  *
  * @return  {SupportedValues[]|undefined}  The properly coerced type
  */
-const asSimpleArray = computed<SupportedValues[]|undefined>(() => {
-  if (props.valueType === 'simpleArray') {
-    return props.modelValue as SupportedValues[]
+const asSimpleArray = computed<SupportedValues[] | undefined>(() => {
+  if (props.valueType === "simpleArray") {
+    return props.modelValue as SupportedValues[];
   } else {
-    return undefined
+    return undefined;
   }
-})
+});
 
 /**
  * Returns modelValue coerced to a multiArray, or undefined if it is not.
  *
  * @return  {SupportedValues[][]|undefined}  The properly coerced type
  */
-const asMultiArray = computed<SupportedValues[][]|undefined>(() => {
-  if (props.valueType === 'multiArray') {
-    return props.modelValue as SupportedValues[][]
+const asMultiArray = computed<SupportedValues[][] | undefined>(() => {
+  if (props.valueType === "multiArray") {
+    return props.modelValue as SupportedValues[][];
   } else {
-    return undefined
+    return undefined;
   }
-})
+});
 
 /**
  * Returns modelValue coerced to a record, or undefined if it is not.
  *
  * @return  {SupportedRecord|undefined}  The properly coerced type
  */
-const asRecord = computed<SupportedRecord[]|undefined>(() => {
-  if (props.valueType === 'record') {
-    return props.modelValue as SupportedRecord[]
+const asRecord = computed<SupportedRecord[] | undefined>(() => {
+  if (props.valueType === "record") {
+    return props.modelValue as SupportedRecord[];
   } else {
-    return undefined
+    return undefined;
   }
-})
+});
 
 /**
  * Contains the object keys if the data is a record, or undefined
  *
  * @return  {string[]|undefined}  The object keys or undefined
  */
-const objectKeys = computed<string[]|undefined>(() => {
-  if (props.valueType !== 'record' || props.keyNames === undefined) {
-    return undefined
+const objectKeys = computed<string[] | undefined>(() => {
+  if (props.valueType !== "record" || props.keyNames === undefined) {
+    return undefined;
   }
 
   if (props.keyNames.length > 0) {
-    return props.keyNames
+    return props.keyNames;
   } else if (props.modelValue.length > 0) {
-    return Object.keys(props.modelValue[0])
+    return Object.keys(props.modelValue[0]);
   } else {
-    return undefined
+    return undefined;
   }
-})
+});
 
 /**
  * modelValue, but filtered using query
@@ -340,48 +339,48 @@ const filteredValue = computed<SupportedValues[] | SupportedValues[][] | Support
   // If no options are passed, this indicates that
   // the list is rather populated as a very simple
   // list. In that case, we'll spit out the value.
-  const q = query.value.trim().toLowerCase()
-  if (q === '' || props.modelValue.length === 0) {
-    return props.modelValue
+  const q = query.value.trim().toLowerCase();
+  if (q === "" || props.modelValue.length === 0) {
+    return props.modelValue;
   }
 
-  const simple = asSimpleArray.value
-  const multi = asMultiArray.value
-  const record = asRecord.value
+  const simple = asSimpleArray.value;
+  const multi = asMultiArray.value;
+  const record = asRecord.value;
 
   if (simple !== undefined) {
-    return simple.filter(elem => {
-      return String(elem).toLowerCase().includes(q)
-    })
+    return simple.filter((elem) => {
+      return String(elem).toLowerCase().includes(q);
+    });
   } else if (multi !== undefined) {
-    return multi.filter(elem => {
+    return multi.filter((elem) => {
       for (const column of elem) {
         // Same, but for each column
         if (String(column).toLowerCase().includes(q)) {
-          return true
+          return true;
         }
       }
-      return false
-    })
+      return false;
+    });
   } else if (record !== undefined) {
-    return record.filter(elem => {
+    return record.filter((elem) => {
       // We have an object, so the same as multiArray, but with Object.keys()
       for (const key of Object.keys(elem)) {
         if (String(elem[key]).toLowerCase().includes(q)) {
-          return true
+          return true;
         }
       }
-      return false
-    })
+      return false;
+    });
   } else {
-    return []
+    return [];
   }
-})
+});
 
 onBeforeUpdate(() => {
   // Reset the available input columns
-  valuesToAdd.value = []
-})
+  valuesToAdd.value = [];
+});
 
 /**
  * Returns the values for a single column
@@ -392,16 +391,18 @@ onBeforeUpdate(() => {
  *
  * @return  {SupportedValues[]}                   The contents of the given row as an array of SupportedValues
  */
-function columnValues (element: SupportedRecord|SupportedValues[]|SupportedValues): SupportedValues[] {
+function columnValues(
+  element: SupportedRecord | SupportedValues[] | SupportedValues,
+): SupportedValues[] {
   // Returns the value of the given element in a way that can be display
   // in the table within the rendering template.
-  if (typeof element !== 'object') {
-    return [element] // One-element array
+  if (typeof element !== "object") {
+    return [element]; // One-element array
   } else if (Array.isArray(element)) {
-    return element // It's already an array
+    return element; // It's already an array
   } else {
     // Return all object values
-    return Object.values(element)
+    return Object.values(element);
   }
 }
 
@@ -412,13 +413,13 @@ function columnValues (element: SupportedRecord|SupportedValues[]|SupportedValue
  *
  * @return  {boolean}               Whether the column is editable
  */
-function isColumnEditable (columnIndex: number): boolean {
+function isColumnEditable(columnIndex: number): boolean {
   if (props.editable === undefined) {
-    return false
-  } else if (typeof props.editable === 'boolean') {
-    return props.editable // All or nothing
+    return false;
+  } else if (typeof props.editable === "boolean") {
+    return props.editable; // All or nothing
   } else {
-    return props.editable.includes(columnIndex)
+    return props.editable.includes(columnIndex);
   }
 }
 
@@ -429,23 +430,25 @@ function isColumnEditable (columnIndex: number): boolean {
  *
  * @return  {string}               The type of the column
  */
-function columnType (columnIndex: number): 'string'|'number'|'bigint'|'boolean'|'symbol'|'undefined'|'object'|'function' {
+function columnType(
+  columnIndex: number,
+): "string" | "number" | "bigint" | "boolean" | "symbol" | "undefined" | "object" | "function" {
   if (props.modelValue.length === 0) {
-    return 'string' // ¯\_(ツ)_/¯
+    return "string"; // ¯\_(ツ)_/¯
   }
 
-  const simple = asSimpleArray.value
-  const multi = asMultiArray.value
-  const record = asRecord.value
+  const simple = asSimpleArray.value;
+  const multi = asMultiArray.value;
+  const record = asRecord.value;
 
   if (simple !== undefined) {
-    return typeof simple[0]
+    return typeof simple[0];
   } else if (multi !== undefined) {
-    return typeof multi[0][columnIndex]
+    return typeof multi[0][columnIndex];
   } else if (record !== undefined && objectKeys.value !== undefined) {
-    return typeof record[0][objectKeys.value[columnIndex]]
+    return typeof record[0][objectKeys.value[columnIndex]];
   } else {
-    return 'string'
+    return "string";
   }
 }
 
@@ -455,19 +458,19 @@ function columnType (columnIndex: number): 'string'|'number'|'bigint'|'boolean'|
  * @param   {number}  row  The row index
  * @param   {number}  col  The column index
  */
-function handleDoubleClick (row: number, col: number): void {
+function handleDoubleClick(row: number, col: number): void {
   if (isColumnEditable(col)) {
-    editing.value.row = row
-    editing.value.col = col
+    editing.value.row = row;
+    editing.value.col = col;
   }
 }
 
 /**
  * Should be called after editing a cell to reset it to an uneditable state.
  */
-function finishEditing (): void {
-  editing.value.row = -1
-  editing.value.col = -1
+function finishEditing(): void {
+  editing.value.row = -1;
+  editing.value.col = -1;
 }
 
 /**
@@ -477,45 +480,45 @@ function finishEditing (): void {
  * @param   {number}           col       The column index
  * @param   {SupportedValues}  newValue  The new value
  */
-function handleInput (row: number, col: number, newValue: SupportedValues): void {
-  const emitValue = []
+function handleInput(row: number, col: number, newValue: SupportedValues): void {
+  const emitValue = [];
 
-  const simple = asSimpleArray.value
-  const multi = asMultiArray.value
-  const record = asRecord.value
+  const simple = asSimpleArray.value;
+  const multi = asMultiArray.value;
+  const record = asRecord.value;
 
   for (let i = 0; i < props.modelValue.length; i++) {
     if (i !== row) {
       // Nothing changed here, so retain the old value
-      emitValue.push(props.modelValue[i])
+      emitValue.push(props.modelValue[i]);
     } else if (simple !== undefined) {
       // Simply push the new value instead of the old one
-      emitValue.push(newValue)
+      emitValue.push(newValue);
     } else if (multi !== undefined) {
       // Exchange the correct column with the new value
-      const newRow = []
+      const newRow = [];
       for (let j = 0; j < multi[i].length; j++) {
         if (j !== col) {
-          newRow.push(multi[i][j])
+          newRow.push(multi[i][j]);
         } else {
-          newRow.push(newValue)
+          newRow.push(newValue);
         }
       }
-      emitValue.push(newRow)
+      emitValue.push(newRow);
     } else if (record !== undefined && objectKeys.value !== undefined) {
       // Set the correct key to the new value
-      const newObj = Object.assign({}, record[i])
-      newObj[objectKeys.value[col]] = newValue
-      emitValue.push(newObj)
+      const newObj = Object.assign({}, record[i]);
+      newObj[objectKeys.value[col]] = newValue;
+      emitValue.push(newObj);
     }
   }
 
   // After we have amended the value, emit the new array of values.
-  emit('update:modelValue', emitValue)
+  emit("update:modelValue", emitValue);
 
   // Also, in any case make sure we exit the editing mode after something
   // has changed.
-  finishEditing()
+  finishEditing();
 }
 
 /**
@@ -523,32 +526,32 @@ function handleInput (row: number, col: number, newValue: SupportedValues): void
  *
  * @param   {number}  key  The row to be deleted
  */
-function handleDeletion (key: number): void {
+function handleDeletion(key: number): void {
   // This function deletes elements
-  const simple = asSimpleArray.value
-  const multi = asMultiArray.value
-  const record = asRecord.value
+  const simple = asSimpleArray.value;
+  const multi = asMultiArray.value;
+  const record = asRecord.value;
 
   // Here we basically just find the element in the unfiltered original array
   // and emit an update that includes the array without the deleted row.
   if (simple !== undefined) {
-    const realIndex = simple.indexOf(filteredValue.value[key] as SupportedValues)
+    const realIndex = simple.indexOf(filteredValue.value[key] as SupportedValues);
     const newValue = simple.filter((elem, index) => {
-      return index !== realIndex
-    })
-    emit('update:modelValue', newValue)
+      return index !== realIndex;
+    });
+    emit("update:modelValue", newValue);
   } else if (multi !== undefined) {
-    const realIndex = multi.indexOf(filteredValue.value[key] as SupportedValues[])
+    const realIndex = multi.indexOf(filteredValue.value[key] as SupportedValues[]);
     const newValue = multi.filter((elem, index) => {
-      return index !== realIndex
-    })
-    emit('update:modelValue', newValue)
+      return index !== realIndex;
+    });
+    emit("update:modelValue", newValue);
   } else if (record !== undefined) {
-    const realIndex = record.indexOf(filteredValue.value[key] as SupportedRecord)
+    const realIndex = record.indexOf(filteredValue.value[key] as SupportedRecord);
     const newValue = record.filter((elem, index) => {
-      return index !== realIndex
-    })
-    emit('update:modelValue', newValue)
+      return index !== realIndex;
+    });
+    emit("update:modelValue", newValue);
   }
 }
 
@@ -556,44 +559,43 @@ function handleDeletion (key: number): void {
  * Allows the user to add a new entry -- is called after the user finishes the
  * addition workflow
  */
-function handleAddition (): void {
-  const simple = asSimpleArray.value
-  const multi = asMultiArray.value
-  const record = asRecord.value
+function handleAddition(): void {
+  const simple = asSimpleArray.value;
+  const multi = asMultiArray.value;
+  const record = asRecord.value;
 
-  const newValues = valuesToAdd.value
+  const newValues = valuesToAdd.value;
 
-  if (newValues.some(x => x === undefined)) {
-    console.error('Cannot add new record: Some value was undefined.', newValues)
-    return
+  if (newValues.some((x) => x === undefined)) {
+    console.error("Cannot add new record: Some value was undefined.", newValues);
+    return;
   }
 
   if (simple !== undefined) {
-    const newValue = simple.map(elem => elem)
-    newValue.push(newValues[0])
-    emit('update:modelValue', newValue)
+    const newValue = simple.map((elem) => elem);
+    newValue.push(newValues[0]);
+    emit("update:modelValue", newValue);
   } else if (multi !== undefined) {
-    const newValue = multi.map(elem => elem.map(elem => elem))
-    newValue.push(newValues.map(x => x))
-    emit('update:modelValue', newValue)
+    const newValue = multi.map((elem) => elem.map((elem) => elem));
+    newValue.push(newValues.map((x) => x));
+    emit("update:modelValue", newValue);
   } else if (record !== undefined && objectKeys.value !== undefined) {
     if (objectKeys.value.length !== newValues.length) {
-      console.error('Cannot add new record: Didn\'t receive the right amount of values to add.')
-      return
+      console.error("Cannot add new record: Didn't receive the right amount of values to add.");
+      return;
     }
 
-    const newValue = record.map(elem => Object.assign({}, elem))
-    const keys = objectKeys.value
-    const newObject: SupportedRecord = {}
+    const newValue = record.map((elem) => Object.assign({}, elem));
+    const keys = objectKeys.value;
+    const newObject: SupportedRecord = {};
     for (let i = 0; i < keys.length; i++) {
-      newObject[keys[i]] = newValues[i]
+      newObject[keys[i]] = newValues[i];
     }
 
-    newValue.push(newObject)
-    emit('update:modelValue', newValue)
+    newValue.push(newObject);
+    emit("update:modelValue", newValue);
   }
 }
-
 </script>
 
 <style lang="less">

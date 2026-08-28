@@ -28,105 +28,134 @@
  *   Phase 5; the emitted intent object is the assertion target now)
  */
 
-import { createApp, nextTick } from 'vue'
-import { extractReferences } from 'source/common/pandoc-util/extract-references'
-import type { ProjectRootSpec, ReferenceDefinition, ReferenceOccurrence, SourceRange } from '@dts/common/references'
+import type {
+  ProjectRootSpec,
+  ReferenceDefinition,
+  ReferenceOccurrence,
+  SourceRange,
+} from "@dts/common/references";
+import { extractReferences } from "source/common/pandoc-util/extract-references";
+import { createApp, nextTick } from "vue";
 
 interface ProbeDocument {
-  path: string
-  content: string
+  path: string;
+  content: string;
 }
 
 /** The US-16 ranking context of the plain scene (review A3). */
 interface ProbeSearchContext {
-  activeDocumentPath: string
-  projectRoots: ProjectRootSpec[]
+  activeDocumentPath: string;
+  projectRoots: ProjectRootSpec[];
 }
 
 interface JumpIntent {
-  key: string
-  documentPath: string
-  range: SourceRange
+  key: string;
+  documentPath: string;
+  range: SourceRange;
 }
 
 interface MountReport {
-  componentAvailable: boolean
-  componentFailure: string|null
-  expectedIntent: JumpIntent|null
+  componentAvailable: boolean;
+  componentFailure: string | null;
+  expectedIntent: JumpIntent | null;
 }
 
 interface ProbeRow {
-  key: string|null
-  documentPath: string|null
+  key: string | null;
+  documentPath: string | null;
   /** The row's Project marker status attribute (review A3), if marked */
-  projectStatus: string|null
-  text: string
+  projectStatus: string | null;
+  text: string;
 }
 
 /** One expected citing location, computed with the real extractor. */
 interface CitingLocation {
-  documentPath: string
-  range: SourceRange
-  clusterRaw: string
+  documentPath: string;
+  range: SourceRange;
+  clusterRaw: string;
 }
 
 interface KeyedMountReport {
-  componentAvailable: boolean
-  componentFailure: string|null
-  expectedCitingLocations: CitingLocation[]
+  componentAvailable: boolean;
+  componentFailure: string | null;
+  expectedCitingLocations: CitingLocation[];
 }
 
 interface KeyedProbeRow {
-  documentPath: string|null
-  from: number|null
-  text: string
+  documentPath: string | null;
+  from: number | null;
+  text: string;
 }
 
 declare global {
   interface Window {
-    referenceSearchProbeMount: (documents: ProbeDocument[], context?: ProbeSearchContext) => Promise<MountReport>
-    referenceSearchProbeState: () => { query: string|null, helpAffordancePresent: boolean, rows: ProbeRow[] }
-    referenceSearchProbeJumpIntents: () => JumpIntent[]
-    referenceSearchProbeOpenHelpCount: () => number
-    referenceSearchProbeMountKeyed: (documents: ProbeDocument[], key: string) => Promise<KeyedMountReport>
-    referenceSearchProbeKeyedState: () => { query: string|null, mode: string|null, rows: KeyedProbeRow[] }
-    referenceSearchProbeOverlayPresent: () => boolean
+    referenceSearchProbeMount: (
+      documents: ProbeDocument[],
+      context?: ProbeSearchContext,
+    ) => Promise<MountReport>;
+    referenceSearchProbeState: () => {
+      query: string | null;
+      helpAffordancePresent: boolean;
+      rows: ProbeRow[];
+    };
+    referenceSearchProbeJumpIntents: () => JumpIntent[];
+    referenceSearchProbeOpenHelpCount: () => number;
+    referenceSearchProbeMountKeyed: (
+      documents: ProbeDocument[],
+      key: string,
+    ) => Promise<KeyedMountReport>;
+    referenceSearchProbeKeyedState: () => {
+      query: string | null;
+      mode: string | null;
+      rows: KeyedProbeRow[];
+    };
+    referenceSearchProbeOverlayPresent: () => boolean;
   }
 }
 
 // Resolved through a context (not a static import) so the bundle builds and
 // reports structured absence while the component does not exist yet.
-const overlayContext = require.context('../source/win-main/', false, /ReferenceSearchOverlay\.vue$/)
+const overlayContext = require.context(
+  "../source/win-main/",
+  false,
+  /ReferenceSearchOverlay\.vue$/,
+);
 
-const recordedJumpIntents: JumpIntent[] = []
+const recordedJumpIntents: JumpIntent[] = [];
 /** Every 'open-help' emission of the overlay (review A2, US-06). */
-let recordedOpenHelpCount = 0
+let recordedOpenHelpCount = 0;
 
-window.referenceSearchProbeMount = async (documents: ProbeDocument[], context?: ProbeSearchContext): Promise<MountReport> => {
-  const definitions: ReferenceDefinition[] = documents
-    .flatMap(document => extractReferences(document.path, document.content).definitions)
+window.referenceSearchProbeMount = async (
+  documents: ProbeDocument[],
+  context?: ProbeSearchContext,
+): Promise<MountReport> => {
+  const definitions: ReferenceDefinition[] = documents.flatMap(
+    (document) => extractReferences(document.path, document.content).definitions,
+  );
 
-  const target = definitions.find(definition => definition.key === 'lem:kodaira:embedding')
-  const expectedIntent: JumpIntent|null = target === undefined
-    ? null
-    : { key: target.key, documentPath: target.documentPath, range: target.range }
+  const target = definitions.find((definition) => definition.key === "lem:kodaira:embedding");
+  const expectedIntent: JumpIntent | null =
+    target === undefined
+      ? null
+      : { key: target.key, documentPath: target.documentPath, range: target.range };
 
-  const overlayKey = overlayContext.keys().find(key => key.includes('ReferenceSearchOverlay'))
+  const overlayKey = overlayContext.keys().find((key) => key.includes("ReferenceSearchOverlay"));
   if (overlayKey === undefined) {
     return {
       componentAvailable: false,
-      componentFailure: 'source/win-main/ReferenceSearchOverlay.vue does not exist yet (issue #1 Phase 3b red)',
-      expectedIntent
-    }
+      componentFailure:
+        "source/win-main/ReferenceSearchOverlay.vue does not exist yet (issue #1 Phase 3b red)",
+      expectedIntent,
+    };
   }
 
-  const overlayModule = overlayContext(overlayKey) as { default?: unknown }
+  const overlayModule = overlayContext(overlayKey) as { default?: unknown };
   if (overlayModule.default === undefined) {
     return {
       componentAvailable: false,
-      componentFailure: 'ReferenceSearchOverlay.vue exists but has no default component export',
-      expectedIntent
-    }
+      componentFailure: "ReferenceSearchOverlay.vue exists but has no default component export",
+      expectedIntent,
+    };
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -135,45 +164,50 @@ window.referenceSearchProbeMount = async (documents: ProbeDocument[], context?: 
     projectRoots: context?.projectRoots ?? [],
     activeDocumentPath: context?.activeDocumentPath,
     onJump: (intent: JumpIntent) => {
-      recordedJumpIntents.push(intent)
+      recordedJumpIntents.push(intent);
       // Mirror the overlay's OWNER (App.vue): a jump intent closes the
       // overlay (v-on:jump -> showReferenceSearch = false), so the probe's
       // post-Enter frame shows the real closed state (ledger C4).
-      overlayApp.unmount()
+      overlayApp.unmount();
     },
-    onOpenHelp: () => { recordedOpenHelpCount++ }
-  })
-  overlayApp.mount('#app')
+    onOpenHelp: () => {
+      recordedOpenHelpCount++;
+    },
+  });
+  overlayApp.mount("#app");
 
-  await nextTick()
-  await document.fonts.ready
-  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  await nextTick();
+  await document.fonts.ready;
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
 
-  return { componentAvailable: true, componentFailure: null, expectedIntent }
-}
+  return { componentAvailable: true, componentFailure: null, expectedIntent };
+};
 
 window.referenceSearchProbeState = () => {
-  const input = document.querySelector<HTMLInputElement>('.reference-search-overlay input')
-  const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-reference-key]'))
+  const input = document.querySelector<HTMLInputElement>(".reference-search-overlay input");
+  const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-reference-key]"));
   return {
     query: input?.value ?? null,
-    helpAffordancePresent: document.querySelector('.reference-search-overlay [data-open-help]') !== null,
-    rows: rows.map(row => ({
-      key: row.getAttribute('data-reference-key'),
-      documentPath: row.getAttribute('data-reference-path'),
-      projectStatus: row.getAttribute('data-project-status'),
-      text: row.textContent ?? ''
-    }))
-  }
-}
+    helpAffordancePresent:
+      document.querySelector(".reference-search-overlay [data-open-help]") !== null,
+    rows: rows.map((row) => ({
+      key: row.getAttribute("data-reference-key"),
+      documentPath: row.getAttribute("data-reference-path"),
+      projectStatus: row.getAttribute("data-project-status"),
+      text: row.textContent ?? "",
+    })),
+  };
+};
 
-window.referenceSearchProbeJumpIntents = () => recordedJumpIntents
+window.referenceSearchProbeJumpIntents = () => recordedJumpIntents;
 
-window.referenceSearchProbeOpenHelpCount = () => recordedOpenHelpCount
+window.referenceSearchProbeOpenHelpCount = () => recordedOpenHelpCount;
 
 window.referenceSearchProbeOverlayPresent = () => {
-  return document.querySelector('.reference-search-overlay') !== null
-}
+  return document.querySelector(".reference-search-overlay") !== null;
+};
 
 /**
  * The Phase 8 reverse-lookup scene (issue #1 Phase 4 badge contract): a
@@ -207,35 +241,41 @@ window.referenceSearchProbeOverlayPresent = () => {
  *   { key, documentPath, range } for that CITING LOCATION (the occurrence's
  *   exact authored range, not the definition's)
  */
-window.referenceSearchProbeMountKeyed = async (documents: ProbeDocument[], key: string): Promise<KeyedMountReport> => {
-  const snapshots = documents.map(document => extractReferences(document.path, document.content))
-  const definitions: ReferenceDefinition[] = snapshots.flatMap(snapshot => snapshot.definitions)
-  const occurrences: ReferenceOccurrence[] = snapshots.flatMap(snapshot => snapshot.occurrences)
+window.referenceSearchProbeMountKeyed = async (
+  documents: ProbeDocument[],
+  key: string,
+): Promise<KeyedMountReport> => {
+  const snapshots = documents.map((document) => extractReferences(document.path, document.content));
+  const definitions: ReferenceDefinition[] = snapshots.flatMap((snapshot) => snapshot.definitions);
+  const occurrences: ReferenceOccurrence[] = snapshots.flatMap((snapshot) => snapshot.occurrences);
 
   const expectedCitingLocations: CitingLocation[] = occurrences
-    .filter(occurrence => occurrence.key === key)
-    .map(occurrence => ({
+    .filter((occurrence) => occurrence.key === key)
+    .map((occurrence) => ({
       documentPath: occurrence.documentPath,
       range: occurrence.range,
-      clusterRaw: occurrence.clusterRaw
-    }))
+      clusterRaw: occurrence.clusterRaw,
+    }));
 
-  const overlayKey = overlayContext.keys().find(contextKey => contextKey.includes('ReferenceSearchOverlay'))
+  const overlayKey = overlayContext
+    .keys()
+    .find((contextKey) => contextKey.includes("ReferenceSearchOverlay"));
   if (overlayKey === undefined) {
     return {
       componentAvailable: false,
-      componentFailure: 'source/win-main/ReferenceSearchOverlay.vue does not exist yet (issue #1 Phase 3b red)',
-      expectedCitingLocations
-    }
+      componentFailure:
+        "source/win-main/ReferenceSearchOverlay.vue does not exist yet (issue #1 Phase 3b red)",
+      expectedCitingLocations,
+    };
   }
 
-  const overlayModule = overlayContext(overlayKey) as { default?: unknown }
+  const overlayModule = overlayContext(overlayKey) as { default?: unknown };
   if (overlayModule.default === undefined) {
     return {
       componentAvailable: false,
-      componentFailure: 'ReferenceSearchOverlay.vue exists but has no default component export',
-      expectedCitingLocations
-    }
+      componentFailure: "ReferenceSearchOverlay.vue exists but has no default component export",
+      expectedCitingLocations,
+    };
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -244,34 +284,36 @@ window.referenceSearchProbeMountKeyed = async (documents: ProbeDocument[], key: 
     occurrences,
     initialRequest: { key },
     onJump: (intent: JumpIntent) => {
-      recordedJumpIntents.push(intent)
+      recordedJumpIntents.push(intent);
       // Mirror App.vue: the citing-location jump closes the overlay too.
-      keyedApp.unmount()
-    }
-  })
-  keyedApp.mount('#app')
+      keyedApp.unmount();
+    },
+  });
+  keyedApp.mount("#app");
 
-  await nextTick()
-  await document.fonts.ready
-  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  await nextTick();
+  await document.fonts.ready;
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
 
-  return { componentAvailable: true, componentFailure: null, expectedCitingLocations }
-}
+  return { componentAvailable: true, componentFailure: null, expectedCitingLocations };
+};
 
 window.referenceSearchProbeKeyedState = () => {
-  const overlay = document.querySelector<HTMLElement>('.reference-search-overlay')
-  const input = document.querySelector<HTMLInputElement>('.reference-search-overlay input')
-  const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-occurrence-path]'))
+  const overlay = document.querySelector<HTMLElement>(".reference-search-overlay");
+  const input = document.querySelector<HTMLInputElement>(".reference-search-overlay input");
+  const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-occurrence-path]"));
   return {
     query: input?.value ?? null,
-    mode: overlay?.getAttribute('data-search-mode') ?? null,
-    rows: rows.map(row => {
-      const from = row.getAttribute('data-occurrence-from')
+    mode: overlay?.getAttribute("data-search-mode") ?? null,
+    rows: rows.map((row) => {
+      const from = row.getAttribute("data-occurrence-from");
       return {
-        documentPath: row.getAttribute('data-occurrence-path'),
+        documentPath: row.getAttribute("data-occurrence-path"),
         from: from === null ? null : Number(from),
-        text: row.textContent ?? ''
-      }
-    })
-  }
-}
+        text: row.textContent ?? "",
+      };
+    }),
+  };
+};

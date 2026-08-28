@@ -15,7 +15,7 @@
  * END HEADER
  */
 
-import { Tag, tags } from '@lezer/highlight'
+import { Tag, tags } from "@lezer/highlight";
 
 // NOTE: Changes here must be reflected in theme/syntax.ts and parser/markdown-parser.ts
 export const customTags = {
@@ -63,4 +63,4 @@ export const customTags = {
   TableDelimiter: Tag.define(),
   TableRow: Tag.define(),
   TableCell: Tag.define(),
-}
+};

@@ -15,19 +15,19 @@
  * END HEADER
  */
 
-import { promises as fs } from 'fs'
-import path from 'path'
-import isFile from '@common/util/is-file'
-import { parseMathJaxMacros, type MathJaxMacro } from '@common/util/mathjax-config'
+import isFile from "@common/util/is-file";
+import { type MathJaxMacro, parseMathJaxMacros } from "@common/util/mathjax-config";
+import { promises as fs } from "fs";
+import path from "path";
 
-export const MATHJAX_MACROS_FILENAME = 'mathjax-macros.json'
+export const MATHJAX_MACROS_FILENAME = "mathjax-macros.json";
 
 /**
  * Resolves the macro file inside the given config directory (the app's
  * userData directory, which is XDG-compliant on Linux).
  */
-export function mathJaxMacrosPath (configDirectory: string): string {
-  return path.join(configDirectory, MATHJAX_MACROS_FILENAME)
+export function mathJaxMacrosPath(configDirectory: string): string {
+  return path.join(configDirectory, MATHJAX_MACROS_FILENAME);
 }
 
 /**
@@ -36,13 +36,16 @@ export function mathJaxMacrosPath (configDirectory: string): string {
  * place. Only writes if the user has no macro file yet, so it never clobbers
  * user edits or a symlinked macro set.
  */
-export async function seedDefaultMacros (configDirectory: string, defaultMacrosPath: string): Promise<void> {
-  const target = mathJaxMacrosPath(configDirectory)
+export async function seedDefaultMacros(
+  configDirectory: string,
+  defaultMacrosPath: string,
+): Promise<void> {
+  const target = mathJaxMacrosPath(configDirectory);
   if (isFile(target)) {
-    return
+    return;
   }
 
-  await fs.copyFile(defaultMacrosPath, target)
+  await fs.copyFile(defaultMacrosPath, target);
 }
 
 /**
@@ -51,11 +54,11 @@ export async function seedDefaultMacros (configDirectory: string, defaultMacrosP
  * file throws so the failure is visible rather than silently rendering without
  * the macros.
  */
-export async function loadMathJaxMacros (filePath: string): Promise<Record<string, MathJaxMacro>> {
+export async function loadMathJaxMacros(filePath: string): Promise<Record<string, MathJaxMacro>> {
   if (!isFile(filePath)) {
-    return {}
+    return {};
   }
 
-  const contents = await fs.readFile(filePath, { encoding: 'utf8' })
-  return parseMathJaxMacros(JSON.parse(contents))
+  const contents = await fs.readFile(filePath, { encoding: "utf8" });
+  return parseMathJaxMacros(JSON.parse(contents));
 }

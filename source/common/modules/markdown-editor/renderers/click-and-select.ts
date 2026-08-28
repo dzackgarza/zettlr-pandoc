@@ -13,7 +13,7 @@
  * END HEADER
  */
 
-import { type EditorView } from '@codemirror/view'
+import { type EditorView } from "@codemirror/view";
 
 /**
  * A helper function that returns a click-callback that can be used to set a
@@ -24,11 +24,11 @@ import { type EditorView } from '@codemirror/view'
  *
  * @return  {Function}           A callback compatible with mouse events
  */
-export default function clickAndSelect (view: EditorView): (event: MouseEvent) => void {
+export default function clickAndSelect(view: EditorView): (event: MouseEvent) => void {
   return function (event: MouseEvent) {
-    const { target } = event
+    const { target } = event;
     if (!(target instanceof HTMLElement)) {
-      return
+      return;
     }
 
     // The thing we're clicking on may span multiple lines in the editor; for
@@ -43,37 +43,38 @@ export default function clickAndSelect (view: EditorView): (event: MouseEvent) =
     // rendered text *must* only select (highlight) the rectangle of the
     // citation text itself.
 
-    const rects = Array.from(target.getClientRects())
+    const rects = Array.from(target.getClientRects());
 
     if (rects.length === 0) {
-      return
+      return;
     }
 
-    const { top, left, bottom, right } = (rects.length === 1)
-      // when there's just the one rectangle, use it's coords
-      ? {
-        top: rects.at(0).top,
-        left: rects.at(0).left,
-        bottom: rects.at(0).bottom,
-        right: rects.at(0).right
-      }
-      // when there are multiple rectangles, use the first and last for the coords
-      : {
-        top: rects.at(0).top,
-        left: rects.at(0).left,
-        bottom: rects.at(-1).bottom,
-        right: rects.at(-1).right
-      }
+    const { top, left, bottom, right } =
+      rects.length === 1
+        ? // when there's just the one rectangle, use it's coords
+          {
+            top: rects.at(0).top,
+            left: rects.at(0).left,
+            bottom: rects.at(0).bottom,
+            right: rects.at(0).right,
+          }
+        : // when there are multiple rectangles, use the first and last for the coords
+          {
+            top: rects.at(0).top,
+            left: rects.at(0).left,
+            bottom: rects.at(-1).bottom,
+            right: rects.at(-1).right,
+          };
 
-    const fromPos = view.posAtCoords({ x: left, y: top })
-    const toPos = view.posAtCoords({ x: right, y: bottom })
+    const fromPos = view.posAtCoords({ x: left, y: top });
+    const toPos = view.posAtCoords({ x: right, y: bottom });
 
     if (fromPos === null || toPos === null) {
-      return
+      return;
     }
 
-    event.stopPropagation()
-    event.preventDefault()
-    view.dispatch({ selection: { anchor: fromPos, head: toPos } })
-  }
+    event.stopPropagation();
+    event.preventDefault();
+    view.dispatch({ selection: { anchor: fromPos, head: toPos } });
+  };
 }

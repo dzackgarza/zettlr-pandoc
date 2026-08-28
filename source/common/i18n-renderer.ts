@@ -13,19 +13,19 @@
  * END HEADER
  */
 
-import { type GetTextTranslations } from 'gettext-parser'
+import { type GetTextTranslations } from "gettext-parser";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-let i18nData: GetTextTranslations|undefined
+let i18nData: GetTextTranslations | undefined;
 
 /**
  * Call this function during window registration to load the translation data
  * immediately after start so that the translations are available. NOTE: This
  * function produces a side-effect in that it sets the local module variable.
  */
-export async function loadData (): Promise<void> {
-  i18nData = await ipcRenderer.invoke('i18n')
+export async function loadData(): Promise<void> {
+  i18nData = await ipcRenderer.invoke("i18n");
 }
 
 /**
@@ -36,17 +36,17 @@ export async function loadData (): Promise<void> {
  *
  * @return  {string}         The translation, or the message ID if no translations were found.
  */
-function getTranslation (msgid: string): string {
-  if (i18nData === undefined || msgid === '') {
-    return msgid
+function getTranslation(msgid: string): string {
+  if (i18nData === undefined || msgid === "") {
+    return msgid;
   }
 
-  const context = i18nData.translations['']
+  const context = i18nData.translations[""];
 
-  if (msgid in context && context[msgid].msgstr[0] !== '') {
-    return context[msgid].msgstr[0]
+  if (msgid in context && context[msgid].msgstr[0] !== "") {
+    return context[msgid].msgstr[0];
   } else {
-    return msgid
+    return msgid;
   }
 }
 
@@ -59,12 +59,12 @@ function getTranslation (msgid: string): string {
  *
  * @return  {string}         The translated and replaced string.
  */
-export function trans (msgid: string, ...args: any[]): string {
-  let transString = getTranslation(msgid)
+export function trans(msgid: string, ...args: any[]): string {
+  let transString = getTranslation(msgid);
 
   for (const a of args) {
-    transString = transString.replace('%s', String(a)) // Always replace one %s with an arg
+    transString = transString.replace("%s", String(a)); // Always replace one %s with an arg
   }
 
-  return transString
+  return transString;
 }

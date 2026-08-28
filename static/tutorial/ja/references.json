@@ -11,9 +11,7 @@
     "edition": "4",
     "event-place": "Berlin",
     "issued": {
-      "date-parts": [
-        [ 1962 ]
-      ]
+      "date-parts": [[1962]]
     },
     "language": "de",
     "number-of-pages": "956",

@@ -119,9 +119,9 @@
  * END HEADER
  */
 
-import { trans } from '@common/i18n-renderer'
+import { trans } from "@common/i18n-renderer";
 
-const projectsIntro = trans('Zettlr also makes use of these projects:')
+const projectsIntro = trans("Zettlr also makes use of these projects:");
 </script>
 
 <style lang="less">

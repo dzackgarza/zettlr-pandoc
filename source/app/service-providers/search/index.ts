@@ -13,30 +13,35 @@
  * END HEADER
  */
 
-import type LogProvider from '../log'
-import type ProviderContract from '../provider-contract'
-import { ipcMain } from 'electron'
-import type { IPCMessage } from '../provider-contract'
-import { compileBooleanQuery, searchFileBoolean, type SearchResult, type SearchQueryBoolean } from './util/boolean-search'
-import type FSAL from '../fsal'
-import broadcastIPCMessage from 'source/common/util/broadcast-ipc-message'
-import type ConfigProvider from '../config'
-import path from 'path'
+import { ipcMain } from "electron";
+import path from "path";
+import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
+import type ConfigProvider from "../config";
+import type FSAL from "../fsal";
+import type LogProvider from "../log";
+import type ProviderContract from "../provider-contract";
+import type { IPCMessage } from "../provider-contract";
+import {
+  compileBooleanQuery,
+  type SearchQueryBoolean,
+  type SearchResult,
+  searchFileBoolean,
+} from "./util/boolean-search";
 
-export { SearchResult, FileContentSearchResult } from './util/boolean-search'
+export { FileContentSearchResult, SearchResult } from "./util/boolean-search";
 
 export type SearchProviderIPCContract = {
-  'start-full-text-search': {
-    request: { payload: { query: string, restrictToDirectory: string, caseInsensitive: boolean } }
-    response: number
-  }
-  'cancel-search': {
-    request: { payload?: undefined }
-    response: undefined
-  }
-}
+  "start-full-text-search": {
+    request: { payload: { query: string; restrictToDirectory: string; caseInsensitive: boolean } };
+    response: number;
+  };
+  "cancel-search": {
+    request: { payload?: undefined };
+    response: undefined;
+  };
+};
 
-export type SearchProviderIPCAPI = IPCMessage<SearchProviderIPCContract>
+export type SearchProviderIPCAPI = IPCMessage<SearchProviderIPCContract>;
 
 /**
  * The messages this provider broadcasts on the 'search-provider' channel
@@ -44,8 +49,8 @@ export type SearchProviderIPCAPI = IPCMessage<SearchProviderIPCContract>
  * type; the renderer's search UI imports it to type its listener.
  */
 export type SearchProviderBroadcast =
-  | { type: 'search-end' }
-  | { type: 'search-result', file: string, result: SearchResult|undefined, progress: number }
+  | { type: "search-end" }
+  | { type: "search-result"; file: string; result: SearchResult | undefined; progress: number };
 
 export class SearchProvider implements ProviderContract {
   /**
@@ -54,47 +59,53 @@ export class SearchProvider implements ProviderContract {
    *
    * @var {number}
    */
-  private sumFilesToSearch: number
+  private sumFilesToSearch: number;
   /**
    * Contains the absolute paths of all files that will be searched during the
    * ongoing search.
    *
    * @var {string[]}
    */
-  private fileSearchQueue: string[]
+  private fileSearchQueue: string[];
   /**
    * Contains the current search query.
    *
    * @var {SearchQueryBoolean|undefined}
    */
-  private currentQuery: SearchQueryBoolean|undefined
+  private currentQuery: SearchQueryBoolean | undefined;
 
-  constructor (private readonly _logger: LogProvider, private readonly _fsal: FSAL, private readonly _config: ConfigProvider) {
-    this.currentQuery = undefined
-    this.fileSearchQueue = []
-    this.sumFilesToSearch = 0
+  constructor(
+    private readonly _logger: LogProvider,
+    private readonly _fsal: FSAL,
+    private readonly _config: ConfigProvider,
+  ) {
+    this.currentQuery = undefined;
+    this.fileSearchQueue = [];
+    this.sumFilesToSearch = 0;
 
-    ipcMain.handle('search-provider', async (event, message: SearchProviderIPCAPI) => {
-      const { command, payload } = message
+    ipcMain.handle("search-provider", async (event, message: SearchProviderIPCAPI) => {
+      const { command, payload } = message;
 
-      if (command === 'start-full-text-search') {
+      if (command === "start-full-text-search") {
         return await this.startFullTextSearch(
-          payload.query, payload.restrictToDirectory, payload.caseInsensitive
-        )
-      } else if (command === 'cancel-search') {
+          payload.query,
+          payload.restrictToDirectory,
+          payload.caseInsensitive,
+        );
+      } else if (command === "cancel-search") {
         // By simply removing all remaining files, we can let the search agent
         // finish its current search and then just stop (& emit the correct
         // events).
-        this.currentQuery = undefined
-        this.fileSearchQueue = []
-        this.sumFilesToSearch = 0
+        this.currentQuery = undefined;
+        this.fileSearchQueue = [];
+        this.sumFilesToSearch = 0;
       }
-    })
+    });
   }
 
-  async boot () {}
+  async boot() {}
 
-  async shutdown () {}
+  async shutdown() {}
 
   /**
    * Begins a new full-text search
@@ -106,71 +117,81 @@ export class SearchProvider implements ProviderContract {
    *
    * @return  {number}                        The number of files that will be searched.
    */
-  private async startFullTextSearch (query: string, restrictToDirectory: string, caseInsensitive: boolean, type: 'boolean' = 'boolean'): Promise<number> {
-    if (type !== 'boolean') {
-      throw new Error(`Cannot start search: Type ${type} unrecognized.`)
+  private async startFullTextSearch(
+    query: string,
+    restrictToDirectory: string,
+    caseInsensitive: boolean,
+    type: "boolean" = "boolean",
+  ): Promise<number> {
+    if (type !== "boolean") {
+      throw new Error(`Cannot start search: Type ${type} unrecognized.`);
     }
 
-    this.currentQuery = compileBooleanQuery(query, caseInsensitive)
-    if (restrictToDirectory.trim() === '') {
+    this.currentQuery = compileBooleanQuery(query, caseInsensitive);
+    if (restrictToDirectory.trim() === "") {
       // The user wants to search all workspaces and files
-      const { openWorkspaces, openFiles } = this._config.get().app
+      const { openWorkspaces, openFiles } = this._config.get().app;
 
       // First, await all paths within all our workspaces to generate a list of
       // files recursively.
-      const promises = openWorkspaces.map(ws => this._fsal.readDirectoryRecursively(ws))
-      const workspacePaths = (await Promise.all(promises)).flat()
+      const promises = openWorkspaces.map((ws) => this._fsal.readDirectoryRecursively(ws));
+      const workspacePaths = (await Promise.all(promises)).flat();
 
       // Then, use that list plus all open files to create a file search queue.
-      const allPaths = workspacePaths.concat(openFiles)
+      const allPaths = workspacePaths.concat(openFiles);
 
       for (const p of allPaths) {
         if (await this._fsal.isFile(p)) {
-          this.fileSearchQueue.push(p)
+          this.fileSearchQueue.push(p);
         }
       }
     } else {
       // The user only wants to search a single directory.
-      this.fileSearchQueue = await this._fsal.readDirectoryRecursively(restrictToDirectory)
+      this.fileSearchQueue = await this._fsal.readDirectoryRecursively(restrictToDirectory);
     }
 
-    this.sumFilesToSearch = this.fileSearchQueue.length
+    this.sumFilesToSearch = this.fileSearchQueue.length;
 
     // Start the search
-    this.searchNextFile()
-    
+    this.searchNextFile();
+
     // Return the number of files to search
-    return this.fileSearchQueue.length
+    return this.fileSearchQueue.length;
   }
 
   /**
    * Runs a single search using the next available file to search
    */
-  private searchNextFile () {
-    const nextFile = this.fileSearchQueue.shift()
+  private searchNextFile() {
+    const nextFile = this.fileSearchQueue.shift();
     if (nextFile === undefined || this.currentQuery === undefined) {
-      broadcastIPCMessage('search-provider', { type: 'search-end' })
-      this.currentQuery = undefined
-      return
+      broadcastIPCMessage("search-provider", { type: "search-end" });
+      this.currentQuery = undefined;
+      return;
     }
 
     this.searchFileBoolean(nextFile, this.currentQuery)
-      .then(rawResult => {
+      .then((rawResult) => {
         // Save some resources both in the IPC and the renderer by not
         // reporting empty results. We do so by setting the result as undefined.
-        const result = rawResult.length > 0 ? rawResult : undefined
-        const total = this.sumFilesToSearch
-        const remaining = this.fileSearchQueue.length
-        const progress = (total - remaining) / total
-        broadcastIPCMessage('search-provider', { type: 'search-result', file: nextFile, result, progress })
+        const result = rawResult.length > 0 ? rawResult : undefined;
+        const total = this.sumFilesToSearch;
+        const remaining = this.fileSearchQueue.length;
+        const progress = (total - remaining) / total;
+        broadcastIPCMessage("search-provider", {
+          type: "search-result",
+          file: nextFile,
+          result,
+          progress,
+        });
       })
-      .catch(err => {
-        this._logger.error(`[Search Provider] Could not search file ${nextFile}: ${err}`, err)
+      .catch((err) => {
+        this._logger.error(`[Search Provider] Could not search file ${nextFile}: ${err}`, err);
       })
       .finally(() => {
         // Do the next search
-        this.searchNextFile()
-      })
+        this.searchNextFile();
+      });
   }
 
   /**
@@ -181,15 +202,18 @@ export class SearchProvider implements ProviderContract {
    *
    * @return  {SearchResult}                 The search result
    */
-  private async searchFileBoolean (absPath: string, query: SearchQueryBoolean): Promise<SearchResult> {
-    const descriptor = await this._fsal.getDescriptorForAnySupportedFile(absPath)
-    if (descriptor.type === 'other') {
-      return []
+  private async searchFileBoolean(
+    absPath: string,
+    query: SearchQueryBoolean,
+  ): Promise<SearchResult> {
+    const descriptor = await this._fsal.getDescriptorForAnySupportedFile(absPath);
+    if (descriptor.type === "other") {
+      return [];
     }
 
-    this._logger.verbose(`[Search Provider] Searching file ${path.basename(absPath)}...`)
+    this._logger.verbose(`[Search Provider] Searching file ${path.basename(absPath)}...`);
 
-    const fileContent = await this._fsal.loadAnySupportedFile(absPath)
-    return searchFileBoolean(descriptor, fileContent, query)
+    const fileContent = await this._fsal.loadAnySupportedFile(absPath);
+    return searchFileBoolean(descriptor, fileContent, query);
   }
 }

@@ -21,12 +21,12 @@
  * END HEADER
  */
 
-import { extractASTNodes, markdownToAST } from '.'
-import type { CitationNode, ASTNode, GenericNode, FootnoteRef } from './markdown-ast'
-import { type MarkdownParserConfig } from '../markdown-editor/parser/markdown-parser'
-import _ from 'underscore'
-import { mathJaxToHTML } from '@common/util/mathtex-to-html'
-import { mathDisplayForOpen } from '@common/util/math-delimiters'
+import { mathDisplayForOpen } from "@common/util/math-delimiters";
+import { mathJaxToHTML } from "@common/util/mathtex-to-html";
+import _ from "underscore";
+import { type MarkdownParserConfig } from "../markdown-editor/parser/markdown-parser";
+import { extractASTNodes, markdownToAST } from ".";
+import type { ASTNode, CitationNode, FootnoteRef, GenericNode } from "./markdown-ast";
 
 /**
  * Represents an HTML tag. This is a purposefully shallow representation
@@ -35,35 +35,35 @@ interface HTMLTag {
   /**
    * The tag name for the resulting HTML tag
    */
-  tagName: string
+  tagName: string;
   /**
    * Self closing are, e.g., <hr>
    */
-  selfClosing: boolean
+  selfClosing: boolean;
   /**
    * A simple map of attributes (e.g., ['class', 'my-class'])
    */
-  attributes: Array<[ string, string ]>
+  attributes: Array<[string, string]>;
   /**
    * A flag indicating whether this node includes raw HTML. This means that (a)
    * you might want to sanitize its contents if you wish to insert it into a DOM
    * and (b) that it should not have a surrounding tag.
    */
-  containsHTML: boolean
+  containsHTML: boolean;
 }
 
-export type CitationCallback = (citations: CiteItem[], composite: boolean) => string|undefined
+export type CitationCallback = (citations: CiteItem[], composite: boolean) => string | undefined;
 
 export interface MD2HTMLOptions {
   /**
    * The link format used in the Markdown source
    */
-  zknLinkFormat: 'link|title'|'title|link' // = 'link|title'
+  zknLinkFormat: "link|title" | "title|link"; // = 'link|title'
   /**
    * An optional section heading for the reference section. Will only be used if
    * there is a bibliography to render.
    */
-  referenceSectionTitle?: string
+  referenceSectionTitle?: string;
   /**
    * This is called whenever the parser finds a citation.
    *
@@ -72,7 +72,7 @@ export interface MD2HTMLOptions {
    *
    * @return  {[]}                     Should return the citation, or undefined.
    */
-  onCitation: (citations: CiteItem[], composite: boolean) => string|undefined
+  onCitation: (citations: CiteItem[], composite: boolean) => string | undefined;
   /**
    * If provided, this callback will be called after the Markdown-to-HTML
    * conversion is finished to generate a bibliography. The callback should
@@ -84,7 +84,9 @@ export interface MD2HTMLOptions {
    *
    * @return  {any}             The citeproc responde.
    */
-  onBibliography?: (keys: string[]) => Promise<[{ bibstart: string, bibend: string }, string[]]|undefined>
+  onBibliography?: (
+    keys: string[],
+  ) => Promise<[{ bibstart: string; bibend: string }, string[]] | undefined>;
   /**
    * Can be used to hook into the image tag generation to alter the image's
    * `src` attribute from the Markdown.
@@ -94,7 +96,7 @@ export interface MD2HTMLOptions {
    * @return  {string}       Returns whatever should be taken as the `src`
    *                         attribute for the resulting `<img>` tag.
    */
-  onImageSrc?: (src: string) => string
+  onImageSrc?: (src: string) => string;
 }
 
 /**
@@ -105,36 +107,36 @@ export interface MD2HTMLOptions {
  *
  * @return  {HTMLTag}            The HTML tag information
  */
-function getTagInfo (node: GenericNode): HTMLTag {
+function getTagInfo(node: GenericNode): HTMLTag {
   const ret: HTMLTag = {
-    tagName: 'div',
+    tagName: "div",
     selfClosing: false,
     attributes: [],
-    containsHTML: node.name === 'HTMLBlock' || node.name === 'HTMLTag'
-  }
+    containsHTML: node.name === "HTMLBlock" || node.name === "HTMLTag",
+  };
 
-  if (node.name === 'HorizontalRule') {
-    ret.tagName = 'hr'
-    ret.selfClosing = true
-  } else if (node.name === 'Paragraph') {
-    ret.tagName = 'p'
-  } else if (node.name === 'Blockquote') {
-    ret.tagName = 'blockquote'
-  } else if (node.name === 'FencedCode' || node.name === 'InlineCode') {
-    ret.tagName = 'code'
+  if (node.name === "HorizontalRule") {
+    ret.tagName = "hr";
+    ret.selfClosing = true;
+  } else if (node.name === "Paragraph") {
+    ret.tagName = "p";
+  } else if (node.name === "Blockquote") {
+    ret.tagName = "blockquote";
+  } else if (node.name === "FencedCode" || node.name === "InlineCode") {
+    ret.tagName = "code";
   } else if (node.children.length === 1) {
-    ret.tagName = 'span'
+    ret.tagName = "span";
   }
 
-  if (ret.tagName === 'p' && node.name !== 'Paragraph') {
-    ret.attributes.push([ 'class', node.name.toLowerCase() ])
+  if (ret.tagName === "p" && node.name !== "Paragraph") {
+    ret.attributes.push(["class", node.name.toLowerCase()]);
   }
 
-  if ([ 'span', 'div' ].includes(ret.tagName)) {
-    ret.attributes.push([ 'class', node.name.toLowerCase() ])
+  if (["span", "div"].includes(ret.tagName)) {
+    ret.attributes.push(["class", node.name.toLowerCase()]);
   }
 
-  return ret
+  return ret;
 }
 
 /**
@@ -144,31 +146,31 @@ function getTagInfo (node: GenericNode): HTMLTag {
  *
  * @return  {string}         The attribute string. Includes leading space if necessary.
  */
-function renderNodeAttributes (node: ASTNode): string {
-  const rawAttributes = Object.entries(node.attributes)
+function renderNodeAttributes(node: ASTNode): string {
+  const rawAttributes = Object.entries(node.attributes);
   if (rawAttributes.length === 0) {
-    return ''
+    return "";
   }
 
-  const attr: string[] = []
+  const attr: string[] = [];
 
-  for (const [ key, value ] of rawAttributes) {
-    let sanitizedValue = value
+  for (const [key, value] of rawAttributes) {
+    let sanitizedValue = value;
     if (Array.isArray(sanitizedValue)) {
       switch (key) {
-        case 'class':
-          sanitizedValue = sanitizedValue.join(' ')
-          break
+        case "class":
+          sanitizedValue = sanitizedValue.join(" ");
+          break;
         default:
           // Default: Simply retain the last value.
-          sanitizedValue = sanitizedValue.toReversed()[0]
+          sanitizedValue = sanitizedValue.toReversed()[0];
       }
     }
 
-    attr.push(`${key}="${sanitizedValue}"`)
+    attr.push(`${key}="${sanitizedValue}"`);
   }
 
-  return ' ' + attr.join(' ')
+  return " " + attr.join(" ");
 }
 
 /**
@@ -181,14 +183,14 @@ function renderNodeAttributes (node: ASTNode): string {
  *
  * @return  {void}              Modifies in place.
  */
-function addAttribute (node: ASTNode, attributeName: string, ...values: string[]): void {
-  const attr = node.attributes
-  attr[attributeName] = attr[attributeName] ?? []
+function addAttribute(node: ASTNode, attributeName: string, ...values: string[]): void {
+  const attr = node.attributes;
+  attr[attributeName] = attr[attributeName] ?? [];
 
   if (!Array.isArray(attr[attributeName])) {
-    attr[attributeName] = [attr[attributeName]]
+    attr[attributeName] = [attr[attributeName]];
   }
-  attr[attributeName].push(...values)
+  attr[attributeName].push(...values);
 }
 
 /**
@@ -200,172 +202,184 @@ function addAttribute (node: ASTNode, attributeName: string, ...values: string[]
  *
  * @return  {string}                The HTML string
  */
-export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, indent: number = 0): string {
-  const HIDDEN_GENERIC_NODES = ['Document']
+export function nodeToHTML(
+  node: ASTNode | ASTNode[],
+  options: MD2HTMLOptions,
+  indent: number = 0,
+): string {
+  const HIDDEN_GENERIC_NODES = ["Document"];
 
   // Convenience to convert a list of child nodes to HTML
   if (Array.isArray(node)) {
-    const body: string[] = []
+    const body: string[] = [];
     for (const child of node) {
-      body.push(nodeToHTML(child, options, indent))
+      body.push(nodeToHTML(child, options, indent));
     }
-    return body.join('')
-  } else if (node.type === 'Generic' && HIDDEN_GENERIC_NODES.includes(node.name)) {
+    return body.join("");
+  } else if (node.type === "Generic" && HIDDEN_GENERIC_NODES.includes(node.name)) {
     // Some nodes emitted from the AST serve as mere containers and should not
     // be actually emitted by the HTML parser. We do so by converting only its
     // children to HTML, omitting the node entirely.
-    return nodeToHTML(node.children, options, indent)
-  } else if (node.type === 'YAMLFrontmatter') {
-    return '' // Frontmatters must be removed upon HTML export
-  } else if (node.type === 'Citation') {
-    addAttribute(node, 'class', 'citation')
-    const attr = renderNodeAttributes(node)
-    const rendered = options.onCitation(node.parsedCitation.items, node.parsedCitation.composite)
-    return `${node.whitespaceBefore}<span${attr}>${rendered ?? _.escape(node.value)}</span>`
-  } else if (node.type === 'Footnote') {
-    addAttribute(node, 'class', 'footnote')
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<sup><a${attr} href="#fnref:${_.escape(node.label)}" name="fn:${_.escape(node.label)}">${_.escape(node.label)}</a></sup>`
-  } else if (node.type === 'FootnoteRefLabel') {
-    addAttribute(node, 'class', 'footnote-ref-label')
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<sup${attr}><a href="#fn:${_.escape(node.label)}" name="fnref:${_.escape(node.label)}">${node.label}</a></sup>`
-  } else if (node.type === 'FootnoteRef') {
-    addAttribute(node, 'class', 'footnote-ref')
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<div${attr}>${nodeToHTML(node.children, options, indent)}</div>`
-  } else if (node.type === 'Heading') {
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<h${node.level}${attr}>${nodeToHTML(node.children, options, indent)}</h${node.level}>`
-  } else if (node.type === 'Highlight') {
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<mark${attr}>${nodeToHTML(node.children, options, indent)}</mark>`
-  } else if (node.type === 'Superscript') {
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<sup${attr}>${nodeToHTML(node.children, options, indent)}</sup>`
-  } else if (node.type === 'Subscript') {
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<sub${attr}>${nodeToHTML(node.children, options, indent)}</sub>`
-  } else if (node.type === 'Image') {
-    addAttribute(node, 'src', options.onImageSrc !== undefined ? options.onImageSrc(node.url) : node.url)
-    addAttribute(node, 'alt', _.escape(node.alt.value))
-    addAttribute(node, 'title', node.title?.value ?? _.escape(node.alt.value))
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<img${attr} />`
-  } else if (node.type === 'Link') {
-    const title = _.escape(node.title?.value ?? node.alt.value)
-    addAttribute(node, 'href', node.url)
-    addAttribute(node, 'title', title)
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<a${attr}>${title}</a>`
-  } else if (node.type === 'OrderedList') {
+    return nodeToHTML(node.children, options, indent);
+  } else if (node.type === "YAMLFrontmatter") {
+    return ""; // Frontmatters must be removed upon HTML export
+  } else if (node.type === "Citation") {
+    addAttribute(node, "class", "citation");
+    const attr = renderNodeAttributes(node);
+    const rendered = options.onCitation(node.parsedCitation.items, node.parsedCitation.composite);
+    return `${node.whitespaceBefore}<span${attr}>${rendered ?? _.escape(node.value)}</span>`;
+  } else if (node.type === "Footnote") {
+    addAttribute(node, "class", "footnote");
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<sup><a${attr} href="#fnref:${_.escape(node.label)}" name="fn:${_.escape(node.label)}">${_.escape(node.label)}</a></sup>`;
+  } else if (node.type === "FootnoteRefLabel") {
+    addAttribute(node, "class", "footnote-ref-label");
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<sup${attr}><a href="#fn:${_.escape(node.label)}" name="fnref:${_.escape(node.label)}">${node.label}</a></sup>`;
+  } else if (node.type === "FootnoteRef") {
+    addAttribute(node, "class", "footnote-ref");
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<div${attr}>${nodeToHTML(node.children, options, indent)}</div>`;
+  } else if (node.type === "Heading") {
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<h${node.level}${attr}>${nodeToHTML(node.children, options, indent)}</h${node.level}>`;
+  } else if (node.type === "Highlight") {
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<mark${attr}>${nodeToHTML(node.children, options, indent)}</mark>`;
+  } else if (node.type === "Superscript") {
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<sup${attr}>${nodeToHTML(node.children, options, indent)}</sup>`;
+  } else if (node.type === "Subscript") {
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<sub${attr}>${nodeToHTML(node.children, options, indent)}</sub>`;
+  } else if (node.type === "Image") {
+    addAttribute(
+      node,
+      "src",
+      options.onImageSrc !== undefined ? options.onImageSrc(node.url) : node.url,
+    );
+    addAttribute(node, "alt", _.escape(node.alt.value));
+    addAttribute(node, "title", node.title?.value ?? _.escape(node.alt.value));
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<img${attr} />`;
+  } else if (node.type === "Link") {
+    const title = _.escape(node.title?.value ?? node.alt.value);
+    addAttribute(node, "href", node.url);
+    addAttribute(node, "title", title);
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<a${attr}>${title}</a>`;
+  } else if (node.type === "OrderedList") {
     if (node.startsAt > 1) {
-      addAttribute(node, 'start', String(node.startsAt))
+      addAttribute(node, "start", String(node.startsAt));
     }
     if (node.isTaskList) {
-      addAttribute(node, 'class', 'task-list')
+      addAttribute(node, "class", "task-list");
     }
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<ol${attr}>\n${nodeToHTML(node.items, options, indent)}\n</ol>`
-  } else if (node.type === 'BulletList') {
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<ol${attr}>\n${nodeToHTML(node.items, options, indent)}\n</ol>`;
+  } else if (node.type === "BulletList") {
     if (node.isTaskList) {
-      addAttribute(node, 'class', 'task-list')
+      addAttribute(node, "class", "task-list");
     }
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<ul${attr}>\n${nodeToHTML(node.items, options, indent)}\n</ul>`
-  } else if (node.type === 'ListItem') {
-    const attr = renderNodeAttributes(node)
-    const task = node.checked !== undefined ? `<input type="checkbox" disabled="disabled" ${node.checked ? 'checked="checked"' : ''}>` : ''
-    return `${node.whitespaceBefore}<li${attr}>${task}${nodeToHTML(node.children, options, indent + 1)}</li>`
-  } else if (node.type === 'Emphasis') {
-    const body = nodeToHTML(node.children, options, indent)
-    const attr = renderNodeAttributes(node)
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<ul${attr}>\n${nodeToHTML(node.items, options, indent)}\n</ul>`;
+  } else if (node.type === "ListItem") {
+    const attr = renderNodeAttributes(node);
+    const task =
+      node.checked !== undefined
+        ? `<input type="checkbox" disabled="disabled" ${node.checked ? 'checked="checked"' : ""}>`
+        : "";
+    return `${node.whitespaceBefore}<li${attr}>${task}${nodeToHTML(node.children, options, indent + 1)}</li>`;
+  } else if (node.type === "Emphasis") {
+    const body = nodeToHTML(node.children, options, indent);
+    const attr = renderNodeAttributes(node);
 
     switch (node.which) {
-      case 'bold':
-        return `${node.whitespaceBefore}<strong${attr}>${body}</strong>`
-      case 'italic':
-        return `${node.whitespaceBefore}<em${attr}>${body}</em>`
+      case "bold":
+        return `${node.whitespaceBefore}<strong${attr}>${body}</strong>`;
+      case "italic":
+        return `${node.whitespaceBefore}<em${attr}>${body}</em>`;
     }
-  } else if (node.type === 'Strikethrough') {
-    const body = nodeToHTML(node.children, options, indent)
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<s${attr}>${body}</s>`
-  } else if (node.type === 'Table') {
-    const rows: string[] = []
+  } else if (node.type === "Strikethrough") {
+    const body = nodeToHTML(node.children, options, indent);
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<s${attr}>${body}</s>`;
+  } else if (node.type === "Table") {
+    const rows: string[] = [];
     for (const row of node.rows) {
-      const cells: string[] = []
+      const cells: string[] = [];
       for (const cell of row.cells) {
-        cells.push(nodeToHTML(cell.children, options, indent))
+        cells.push(nodeToHTML(cell.children, options, indent));
       }
-      const tag = row.isHeaderOrFooter ? 'th' : 'td'
-      const content = cells.map(c => `<${tag}>${c}</${tag}>`).join('\n')
-      const attr = renderNodeAttributes(row)
+      const tag = row.isHeaderOrFooter ? "th" : "td";
+      const content = cells.map((c) => `<${tag}>${c}</${tag}>`).join("\n");
+      const attr = renderNodeAttributes(row);
       if (row.isHeaderOrFooter) {
-        rows.push(`${row.whitespaceBefore}<thead>\n<tr${attr}>\n${content}\n</tr>\n</thead>`)
+        rows.push(`${row.whitespaceBefore}<thead>\n<tr${attr}>\n${content}\n</tr>\n</thead>`);
       } else {
-        rows.push(`${row.whitespaceBefore}<tr${attr}>\n${content}\n</tr>`)
+        rows.push(`${row.whitespaceBefore}<tr${attr}>\n${content}\n</tr>`);
       }
     }
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<table${attr}>\n${rows.join('\n')}\n</table>`
-  } else if (node.type === 'Text') {
-    return node.whitespaceBefore + node.value // Plain text
-  } else if (node.type === 'FencedCode') {
-    const mathDisplay = mathDisplayForOpen(node.info)
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<table${attr}>\n${rows.join("\n")}\n</table>`;
+  } else if (node.type === "Text") {
+    return node.whitespaceBefore + node.value; // Plain text
+  } else if (node.type === "FencedCode") {
+    const mathDisplay = mathDisplayForOpen(node.info);
     if (mathDisplay !== null) {
-      return node.whitespaceBefore + mathJaxToHTML(node.source, mathDisplay ? 'display' : 'inline')
+      return node.whitespaceBefore + mathJaxToHTML(node.source, mathDisplay ? "display" : "inline");
     } else {
-      addAttribute(node, 'class', `language-${node.info}`)
-      const attr = renderNodeAttributes(node)
-      return `${node.whitespaceBefore}<pre><code${attr}>${_.escape(node.source)}</code></pre>`
+      addAttribute(node, "class", `language-${node.info}`);
+      const attr = renderNodeAttributes(node);
+      return `${node.whitespaceBefore}<pre><code${attr}>${_.escape(node.source)}</code></pre>`;
     }
-  } else if (node.type === 'InlineCode') {
-    const mathDisplay = mathDisplayForOpen(node.info)
+  } else if (node.type === "InlineCode") {
+    const mathDisplay = mathDisplayForOpen(node.info);
     if (mathDisplay !== null) {
-      return node.whitespaceBefore + mathJaxToHTML(node.source, mathDisplay ? 'display' : 'inline')
+      return node.whitespaceBefore + mathJaxToHTML(node.source, mathDisplay ? "display" : "inline");
     } else {
-      const attr = renderNodeAttributes(node)
-      return `${node.whitespaceBefore}<code${attr}>${_.escape(node.source)}</code>`
+      const attr = renderNodeAttributes(node);
+      return `${node.whitespaceBefore}<code${attr}>${_.escape(node.source)}</code>`;
     }
-  } else if (node.type === 'PandocDiv') {
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<div${attr}>${nodeToHTML(node.children, options, indent)}</div>`
-  } else if (node.type === 'PandocSpan') {
-    const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<span${attr}>${nodeToHTML(node.children, options, indent)}</span>`
-  } else if (node.type === 'Generic') {
+  } else if (node.type === "PandocDiv") {
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<div${attr}>${nodeToHTML(node.children, options, indent)}</div>`;
+  } else if (node.type === "PandocSpan") {
+    const attr = renderNodeAttributes(node);
+    return `${node.whitespaceBefore}<span${attr}>${nodeToHTML(node.children, options, indent)}</span>`;
+  } else if (node.type === "Generic") {
     // Generic nodes are differentiated by name. There are a few we can support,
     // but most we wrap in a div.
-    const tagInfo = getTagInfo(node)
+    const tagInfo = getTagInfo(node);
 
     if (tagInfo.containsHTML) {
-      return nodeToHTML(node.children, options, indent)
+      return nodeToHTML(node.children, options, indent);
     }
 
-    if ([ 'div', 'span' ].includes(tagInfo.tagName) && node.children.length === 0) {
-      return '' // Simplify the resulting HTML by removing empty elements
+    if (["div", "span"].includes(tagInfo.tagName) && node.children.length === 0) {
+      return ""; // Simplify the resulting HTML by removing empty elements
     }
 
-    const nodeAttr = renderNodeAttributes(node)
-    const attr = tagInfo.attributes.length > 0
-      ? ' ' + tagInfo.attributes.map(a => `${a[0]}="${a[1]}"`).join(' ') + nodeAttr
-      : nodeAttr
+    const nodeAttr = renderNodeAttributes(node);
+    const attr =
+      tagInfo.attributes.length > 0
+        ? " " + tagInfo.attributes.map((a) => `${a[0]}="${a[1]}"`).join(" ") + nodeAttr
+        : nodeAttr;
 
-    const open = `${node.whitespaceBefore}<${tagInfo.tagName}${attr}${tagInfo.selfClosing ? '/' : ''}>`
-    const close = tagInfo.selfClosing ? '' : `</${tagInfo.tagName}>`
-    const body = tagInfo.selfClosing ? '' : nodeToHTML(node.children, options, indent)
-    return `${open}${body}${close}`
-  } else if (node.type === 'ZettelkastenLink') {
+    const open = `${node.whitespaceBefore}<${tagInfo.tagName}${attr}${tagInfo.selfClosing ? "/" : ""}>`;
+    const close = tagInfo.selfClosing ? "" : `</${tagInfo.tagName}>`;
+    const body = tagInfo.selfClosing ? "" : nodeToHTML(node.children, options, indent);
+    return `${open}${body}${close}`;
+  } else if (node.type === "ZettelkastenLink") {
     // NOTE: We count a ZettelkastenLink's title as a TextNode for various
     // purposes, such as spellchecking it, but it should not contain any syntax
     // which is why we directly access its value here.
-    return `${node.whitespaceBefore}[[${node.title?.value ?? node.target}]]`
-  } else if (node.type === 'ZettelkastenTag') {
-    return `${node.whitespaceBefore}#${node.value}`
+    return `${node.whitespaceBefore}[[${node.title?.value ?? node.target}]]`;
+  } else if (node.type === "ZettelkastenTag") {
+    return `${node.whitespaceBefore}#${node.value}`;
   }
 
-  return ''
+  return "";
 }
 
 /**
@@ -377,15 +391,11 @@ export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, in
  *
  * @return  {string}                   The rendered HTML.
  */
-function footnotesToHTML (fn: FootnoteRef[], options: MD2HTMLOptions): string {
-  const fnHTML = fn.map(f => nodeToHTML(f, options, 0))
-  const html = [
-    '<div id="footnote-container">',
-    ...fnHTML,
-    '</div>'
-  ]
+function footnotesToHTML(fn: FootnoteRef[], options: MD2HTMLOptions): string {
+  const fnHTML = fn.map((f) => nodeToHTML(f, options, 0));
+  const html = ['<div id="footnote-container">', ...fnHTML, "</div>"];
 
-  return html.join('\n')
+  return html.join("\n");
 }
 
 /**
@@ -397,40 +407,45 @@ function footnotesToHTML (fn: FootnoteRef[], options: MD2HTMLOptions): string {
  *
  * @return  {string}                      The resulting HTML
  */
-export async function md2html (markdown: string, options: MD2HTMLOptions): Promise<string> {
+export async function md2html(markdown: string, options: MD2HTMLOptions): Promise<string> {
   const config: MarkdownParserConfig = {
-    zknLinkParserConfig: { format: options.zknLinkFormat }
+    zknLinkParserConfig: { format: options.zknLinkFormat },
+  };
+
+  const ast = markdownToAST(markdown, undefined, config);
+
+  if (ast.type !== "Document") {
+    throw new Error("Could not turn Markdown to HTML: No Document top node returned from parser.");
   }
 
-  const ast = markdownToAST(markdown, undefined, config)
+  const noFootnotes = ast.children.filter((node) => node.type !== "FootnoteRef");
+  const onlyFootnotes = ast.children.filter((node) => node.type === "FootnoteRef");
 
-  if (ast.type !== 'Document') {
-    throw new Error('Could not turn Markdown to HTML: No Document top node returned from parser.')
-  }
-
-  const noFootnotes = ast.children.filter(node => node.type !== 'FootnoteRef')
-  const onlyFootnotes = ast.children.filter(node => node.type === 'FootnoteRef')
-
-  const html = nodeToHTML(noFootnotes, options)
-  const fnHTML = onlyFootnotes.length > 0 ? '\n<hr>\n' + footnotesToHTML(onlyFootnotes, options) : ''
+  const html = nodeToHTML(noFootnotes, options);
+  const fnHTML =
+    onlyFootnotes.length > 0 ? "\n<hr>\n" + footnotesToHTML(onlyFootnotes, options) : "";
 
   if (options.onBibliography === undefined) {
-    return html + fnHTML // No bibliography wanted
+    return html + fnHTML; // No bibliography wanted
   }
 
   // Prepare and include a bibliography at the end.
   // We replicate what the fsal file parser does.
-  const keys = (extractASTNodes(ast, 'Citation') as CitationNode[])
-    .flatMap(node => node.parsedCitation.items.map(item => item.id))
+  const keys = (extractASTNodes(ast, "Citation") as CitationNode[]).flatMap((node) =>
+    node.parsedCitation.items.map((item) => item.id),
+  );
 
-  const bibHTML = await options.onBibliography([...new Set(keys)])
+  const bibHTML = await options.onBibliography([...new Set(keys)]);
   if (bibHTML !== undefined) {
-    const h1 = options.referenceSectionTitle !== undefined ? `<h1>${options.referenceSectionTitle}</h1>` : ''
+    const h1 =
+      options.referenceSectionTitle !== undefined
+        ? `<h1>${options.referenceSectionTitle}</h1>`
+        : "";
 
-    return html + h1 +
-      [ '\n', bibHTML[0].bibstart, ...bibHTML[1], bibHTML[0].bibend ].join('\n') +
-      fnHTML
+    return (
+      html + h1 + ["\n", bibHTML[0].bibstart, ...bibHTML[1], bibHTML[0].bibend].join("\n") + fnHTML
+    );
   }
 
-  return html + fnHTML
+  return html + fnHTML;
 }

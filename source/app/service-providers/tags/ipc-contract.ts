@@ -14,19 +14,19 @@
  * END HEADER
  */
 
-import type { ColoredTag, TagRecord } from './index'
+import type { ColoredTag, TagRecord } from "./index";
 
 export type TagProviderIPCContract = {
-  'get-all-tags': {
-    request: { payload?: undefined }
-    response: TagRecord[]
-  }
-  'get-colored-tags': {
-    request: { payload?: undefined }
-    response: ColoredTag[]
-  }
-  'set-colored-tags': {
-    request: { payload: ColoredTag[] }
-    response: undefined
-  }
-}
+  "get-all-tags": {
+    request: { payload?: undefined };
+    response: TagRecord[];
+  };
+  "get-colored-tags": {
+    request: { payload?: undefined };
+    response: ColoredTag[];
+  };
+  "set-colored-tags": {
+    request: { payload: ColoredTag[] };
+    response: undefined;
+  };
+};

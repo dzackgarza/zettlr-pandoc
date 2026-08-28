@@ -132,148 +132,151 @@
  * END HEADER
  */
 
-import WindowChrome from '@common/vue/window/WindowChrome.vue'
-import TextControl from '@common/vue/form/elements/TextControl.vue'
-import ColorControl from '@common/vue/form/elements/ColorControl.vue'
-import ButtonControl from '@common/vue/form/elements/ButtonControl.vue'
-import { trans } from '@common/i18n-renderer'
-import { ref, computed, unref } from 'vue'
-import { type StatusbarControl } from '@common/vue/window/WindowStatusbar.vue'
-import { useConfigStore, useTagsStore } from 'source/pinia'
+import { trans } from "@common/i18n-renderer";
+import ButtonControl from "@common/vue/form/elements/ButtonControl.vue";
+import ColorControl from "@common/vue/form/elements/ColorControl.vue";
+import TextControl from "@common/vue/form/elements/TextControl.vue";
+import WindowChrome from "@common/vue/window/WindowChrome.vue";
+import { type StatusbarControl } from "@common/vue/window/WindowStatusbar.vue";
+import { useConfigStore, useTagsStore } from "source/pinia";
+import { computed, ref, unref } from "vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-const assignColorLabel = trans('Assign color')
-const removeColorLabel = trans('Remove color')
-const tagNameLabel = trans('Tag name')
-const colorLabel = trans('Color')
-const countLabel = trans('Count')
-const descriptionPlaceholder = trans('A short description')
-const tagManagerIntro = trans('Here you can assign colors to different tags. If a tag is found in a file, its tile in the preview list will receive a colored indicator. The description will be shown on mouse hover.')
-const windowTitle = trans('Tags Manager')
-const filterPlaceholder = trans('Filter tags…')
-const newTagPlaceholderLabel = trans('New tag')
-const renameTagLabel = trans('Rename')
-const renameTagDefaultLabel = trans('Rename tag…')
+const assignColorLabel = trans("Assign color");
+const removeColorLabel = trans("Remove color");
+const tagNameLabel = trans("Tag name");
+const colorLabel = trans("Color");
+const countLabel = trans("Count");
+const descriptionPlaceholder = trans("A short description");
+const tagManagerIntro = trans(
+  "Here you can assign colors to different tags. If a tag is found in a file, its tile in the preview list will receive a colored indicator. The description will be shown on mouse hover.",
+);
+const windowTitle = trans("Tags Manager");
+const filterPlaceholder = trans("Filter tags…");
+const newTagPlaceholderLabel = trans("New tag");
+const renameTagLabel = trans("Rename");
+const renameTagDefaultLabel = trans("Rename tag…");
 
-const configStore = useConfigStore()
-const tagStore = useTagsStore()
+const configStore = useConfigStore();
+const tagStore = useTagsStore();
 
 // TODO const tags: [] as TagRecord[],
-const hasUnsavedChanges = ref(false)
-const renameActiveFor = ref('')
-const sortBy = ref<'name'|'idf'|'count'|'color'>('name')
-const descending = ref(false)
-const query = ref('')
-const newTag = ref('')
+const hasUnsavedChanges = ref(false);
+const renameActiveFor = ref("");
+const sortBy = ref<"name" | "idf" | "count" | "color">("name");
+const descending = ref(false);
+const query = ref("");
+const newTag = ref("");
 
 const filteredTags = computed(() => {
-  const q = query.value.toLowerCase()
-  const copy = tagStore.tags.map(x => x).filter(x => x.name.toLowerCase().includes(q))
+  const q = query.value.toLowerCase();
+  const copy = tagStore.tags.map((x) => x).filter((x) => x.name.toLowerCase().includes(q));
 
-  const languagePreferences = [ configStore.config.appLang, 'en' ]
-  const coll = new Intl.Collator(languagePreferences, { numeric: true })
+  const languagePreferences = [configStore.config.appLang, "en"];
+  const coll = new Intl.Collator(languagePreferences, { numeric: true });
   copy.sort((a, b) => {
-    if (sortBy.value === 'name') {
-      return coll.compare(a.name, b.name)
-    } else if (sortBy.value === 'color') {
-      const aCol = a.color !== undefined
-      const bCol = b.color !== undefined
+    if (sortBy.value === "name") {
+      return coll.compare(a.name, b.name);
+    } else if (sortBy.value === "color") {
+      const aCol = a.color !== undefined;
+      const bCol = b.color !== undefined;
       if (!aCol && bCol) {
-        return 1
+        return 1;
       } else if (aCol && !bCol) {
-        return -1
+        return -1;
       } else {
-        return 0
+        return 0;
       }
-    } else if (sortBy.value === 'count') {
-      return a.files.length - b.files.length
+    } else if (sortBy.value === "count") {
+      return a.files.length - b.files.length;
     } else {
-      return a.idf - b.idf
+      return a.idf - b.idf;
     }
-  })
+  });
 
   if (descending.value) {
-    copy.reverse()
+    copy.reverse();
   }
 
-  return copy
-})
+  return copy;
+});
 
 const statusbarControls = computed<StatusbarControl[]>(() => {
   return [
     {
-      type: 'button',
-      label: trans('Save'),
-      id: 'save',
-      buttonClass: 'primary' // It's a primary button
+      type: "button",
+      label: trans("Save"),
+      id: "save",
+      buttonClass: "primary", // It's a primary button
     },
     {
-      type: 'text',
-      label: hasUnsavedChanges.value ? trans('Unsaved changes') : ''
+      type: "text",
+      label: hasUnsavedChanges.value ? trans("Unsaved changes") : "",
     },
     {
-      type: 'button',
-      label: trans('Close'),
-      id: 'close'
-    }
-  ]
-})
+      type: "button",
+      label: trans("Close"),
+      id: "close",
+    },
+  ];
+});
 
-function handleStatusbar (controlID: string): void {
-  if (controlID === 'save') {
-    ipcRenderer.invoke('tag-provider', {
-      command: 'set-colored-tags',
-      // De-proxy the tags so they can be sent over IPC
-      payload: JSON.parse(JSON.stringify(unref(tagStore.tags)))
-    })
-      .then(() => {
-        ipcRenderer.send('window-controls', { command: 'win-close' })
+function handleStatusbar(controlID: string): void {
+  if (controlID === "save") {
+    ipcRenderer
+      .invoke("tag-provider", {
+        command: "set-colored-tags",
+        // De-proxy the tags so they can be sent over IPC
+        payload: JSON.parse(JSON.stringify(unref(tagStore.tags))),
       })
-      .catch(e => console.error(e))
-  } else if (controlID === 'close') {
-    ipcRenderer.send('window-controls', { command: 'win-close' })
+      .then(() => {
+        ipcRenderer.send("window-controls", { command: "win-close" });
+      })
+      .catch((e) => console.error(e));
+  } else if (controlID === "close") {
+    ipcRenderer.send("window-controls", { command: "win-close" });
   }
 }
 
-function removeColor (tagName: string): void {
-  const found = tagStore.tags.find(tag => tag.name === tagName)
+function removeColor(tagName: string): void {
+  const found = tagStore.tags.find((tag) => tag.name === tagName);
   if (found !== undefined) {
-    found.color = undefined
-    found.desc = undefined
-    hasUnsavedChanges.value = true
+    found.color = undefined;
+    found.desc = undefined;
+    hasUnsavedChanges.value = true;
   } else {
-    console.error(`Could not remove color for tag ${tagName}: Tag not found`)
+    console.error(`Could not remove color for tag ${tagName}: Tag not found`);
   }
 }
 
-function assignColor (tagName: string): void {
-  const found = tagStore.tags.find(tag => tag.name === tagName)
+function assignColor(tagName: string): void {
+  const found = tagStore.tags.find((tag) => tag.name === tagName);
   if (found !== undefined) {
-    found.color = '#1cb27e'
-    found.desc = ''
-    hasUnsavedChanges.value = true
+    found.color = "#1cb27e";
+    found.desc = "";
+    hasUnsavedChanges.value = true;
   } else {
-    console.error(`Could not assign color to tag ${tagName}: Tag not found`)
+    console.error(`Could not assign color to tag ${tagName}: Tag not found`);
   }
 }
 
-async function renameTag (tagName: string): Promise<void> {
-  await ipcRenderer.invoke('application', {
-    command: 'rename-tag',
-    payload: { oldName: tagName, newName: newTag.value }
-  })
+async function renameTag(tagName: string): Promise<void> {
+  await ipcRenderer.invoke("application", {
+    command: "rename-tag",
+    payload: { oldName: tagName, newName: newTag.value },
+  });
 
-  newTag.value = ''
-  renameActiveFor.value = tagName
+  newTag.value = "";
+  renameActiveFor.value = tagName;
 }
 
-function changeSorting (which: 'name'|'color'|'count'|'idf'): void {
+function changeSorting(which: "name" | "color" | "count" | "idf"): void {
   if (sortBy.value === which) {
-    descending.value = !descending.value
+    descending.value = !descending.value;
   } else {
-    sortBy.value = which
-    descending.value = false
+    sortBy.value = which;
+    descending.value = false;
   }
 }
 </script>

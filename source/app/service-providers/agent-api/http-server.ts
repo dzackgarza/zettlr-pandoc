@@ -21,14 +21,15 @@
  * END HEADER
  */
 
+import { sha256Text } from "@common/util/sha256";
 import type {
+  AddReviewCommentRequest,
   AgentApiOperations,
   AgentApiResponseBody,
-  AgentEvent,
-  AddReviewCommentRequest,
   AgentError,
   AgentErrorCode,
   AgentErrorResponse,
+  AgentEvent,
   PingResponse,
   ReadSide,
   ReviewEventsResponse,
@@ -39,30 +40,23 @@ import type {
 } from "@dts/common/agent-api";
 import type DocumentManager from "@providers/documents";
 import type { ReviewFailure } from "@providers/documents/review-application-service";
+import {
+  classifyReviewState,
+  reviewPatch,
+  sidecarOutstandingChunks,
+  sidecarUnresolvedChunks,
+  toWirePacket,
+} from "@providers/documents/review-diff-store";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import crypto from "crypto";
 import { app } from "electron";
 import fs from "fs";
 import http from "http";
-import OpenAPIBackend, {
-  type Context,
-  type Document as OpenApiDefinition,
-} from "openapi-backend";
+import OpenAPIBackend, { type Context, type Document as OpenApiDefinition } from "openapi-backend";
 import path from "path";
-import { parseDocument, type Document } from "yaml";
-import {
-  classifyReviewState,
-  sidecarUnresolvedChunks,
-  reviewPatch,
-  sidecarOutstandingChunks,
-  toWirePacket,
-} from "@providers/documents/review-diff-store";
-import { sha256Text } from "@common/util/sha256";
-import AgentDocumentQueries, {
-  SearchPatternError,
-  SearchTimeoutError,
-} from "./document-queries";
+import { type Document, parseDocument } from "yaml";
+import AgentDocumentQueries, { SearchPatternError, SearchTimeoutError } from "./document-queries";
 
 export { MAX_SEARCH_HITS } from "./document-queries";
 
@@ -76,6 +70,24 @@ const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
  * serves no one.
  */
 const REQUEST_BODY_DEADLINE_MS = 30_000;
+
+/**
+ * What the client is told about a body the document refused. Ajv names the
+ * offending field, which is more than the hand-written decoders could say
+ * about a body they rejected wholesale — but it reports nothing at all when
+ * the refusal has no field behind it, and the sentence below is the answer in
+ * that case rather than an empty message.
+ */
+function describeValidationFailure(errors: Context["validation"]["errors"]): string {
+  if (errors === null || errors === undefined || errors.length === 0) {
+    return "Request does not match the published schema";
+  }
+  return errors
+    .map((error) =>
+      typeof error === "string" ? error : `${error.instancePath} ${error.message}`.trim(),
+    )
+    .join("; ");
+}
 
 class RequestTooLargeError extends Error {
   constructor() {
@@ -100,7 +112,6 @@ class RequestAbandonedError extends Error {
     super("Client disconnected before the request body completed");
   }
 }
-
 
 /**
  * What openapi-backend hands a handler once it has matched the request against
@@ -290,10 +301,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       await fs.promises.writeFile(this._portFilePath, `${boundPort}\n`, "utf8");
     } catch (error) {
       await this.shutdown();
-      throw new Error(
-        `Agent API could not publish its endpoint to ${this._portFilePath}`,
-        { cause: error },
-      );
+      throw new Error(`Agent API could not publish its endpoint to ${this._portFilePath}`, {
+        cause: error,
+      });
     }
     this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${boundPort}`);
   }
@@ -376,12 +386,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       this._log.error(
         "[AgentHTTPProvider] Node delivered an HTTP request without a method or URL.",
       );
-      this.sendError(
-        res,
-        400,
-        "INVALID_PARAMS",
-        "HTTP method and request target are required",
-      );
+      this.sendError(res, 400, "INVALID_PARAMS", "HTTP method and request target are required");
       return;
     }
     // The async wrapper is what makes a handler that throws synchronously
@@ -490,9 +495,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     res.writeHead(200, {
       "Content-Type": asJson ? "application/json" : "application/yaml",
     });
-    res.end(
-      asJson ? JSON.stringify(specification.toJSON(), null, 2) : specification.toString(),
-    );
+    res.end(asJson ? JSON.stringify(specification.toJSON(), null, 2) : specification.toString());
   }
 
   /**
@@ -528,11 +531,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) =>
-        this.handleListWorkspaceDocuments(
-          res,
-          c.request.params.workspaceId,
-          c.request.query.query,
-        ),
+        this.handleListWorkspaceDocuments(res, c.request.params.workspaceId, c.request.query.query),
 
       listDocuments: (_c, _req, res) => this.handleListDocuments(res),
       getDocument: (c: OperationContext<"getDocument">, _req, res: http.ServerResponse) =>
@@ -593,18 +592,7 @@ export default class AgentHTTPProvider extends ProviderContract {
        * could say about a body they refused wholesale.
        */
       validationFail: (c: Context, _req: http.IncomingMessage, res: http.ServerResponse) =>
-        this.sendError(
-          res,
-          400,
-          "INVALID_PARAMS",
-          (c.validation.errors ?? [])
-            .map((error) =>
-              typeof error === "string"
-                ? error
-                : `${error.instancePath} ${error.message}`.trim(),
-            )
-            .join("; ") || "Request does not match the published schema",
-        ),
+        this.sendError(res, 400, "INVALID_PARAMS", describeValidationFailure(c.validation.errors)),
 
       notFound: (c: Context, req: http.IncomingMessage, res: http.ServerResponse) =>
         this.sendError(
@@ -912,7 +900,10 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 400, result.code, result.message);
       } else if (result.code === "REVIEW_INVALIDATED") {
         this.sendError(res, 409, "REVIEW_INVALIDATED", result.message);
-      } else if (result.code === "IDEMPOTENCY_CONFLICT" || result.code === "REVIEW_GENERATION_MISMATCH") {
+      } else if (
+        result.code === "IDEMPOTENCY_CONFLICT" ||
+        result.code === "REVIEW_GENERATION_MISMATCH"
+      ) {
         this.sendError(res, 409, result.code, result.message);
       } else if (result.code === "PERSISTENCE_FAILED") {
         this.sendError(res, 500, "PERSISTENCE_FAILED", result.message);
@@ -945,29 +936,29 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleListReviews(res: http.ServerResponse): Promise<void> {
-    const reviews: ReviewListEntry[] = (await this._documents.reviewQueries.listReviewQueries()).map(
-      (query) => {
-        if (query.attached) {
-          return {
-            ...query.status,
-            documentId: query.documentId,
-            documentPath: query.documentPath,
-            attached: true,
-          };
-        }
-        const { sidecar } = query;
-        const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
+    const reviews: ReviewListEntry[] = (
+      await this._documents.reviewQueries.listReviewQueries()
+    ).map((query) => {
+      if (query.attached) {
         return {
-          reviewId: sidecar.reviewId,
-          state: classifyReviewState(sidecar.invalidated, unresolvedChunks),
-          generation: sidecar.generation,
-          unresolvedChunks,
-          packetCount: sidecar.packets.length,
-          documentPath: sidecar.documentPath,
-          attached: false,
+          ...query.status,
+          documentId: query.documentId,
+          documentPath: query.documentPath,
+          attached: true,
         };
-      },
-    );
+      }
+      const { sidecar } = query;
+      const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
+      return {
+        reviewId: sidecar.reviewId,
+        state: classifyReviewState(sidecar.invalidated, unresolvedChunks),
+        generation: sidecar.generation,
+        unresolvedChunks,
+        packetCount: sidecar.packets.length,
+        documentPath: sidecar.documentPath,
+        attached: false,
+      };
+    });
     this.sendJson(res, 200, { reviews });
   }
 
@@ -976,10 +967,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    * 409 when the id names a detached review (it exists — /v1/reviews just
    * listed it — but its file is closed), 404 only when no review carries it.
    */
-  private async sendReviewLookupFailure(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): Promise<void> {
+  private async sendReviewLookupFailure(res: http.ServerResponse, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found.");
@@ -995,12 +983,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       );
       return;
     }
-    this.sendError(
-      res,
-      404,
-      "REVIEW_NOT_FOUND",
-      "Review not found.",
-    );
+    this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found.");
   }
 
   private async handleGetReview(res: http.ServerResponse, reviewId: string): Promise<void> {
@@ -1033,10 +1016,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewDiff(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): Promise<void> {
+  private async handleGetReviewDiff(res: http.ServerResponse, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1108,11 +1088,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       await this.sendReviewLookupFailure(res, reviewId);
       return;
     }
-    const result = await this._documents.addReviewComment(
-      reviewId,
-      text,
-      expectedReviewGeneration,
-    );
+    const result = await this._documents.addReviewComment(reviewId, text, expectedReviewGeneration);
     if (!result.ok) {
       this.sendError(
         res,
@@ -1135,10 +1111,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewChunks(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): Promise<void> {
+  private async handleGetReviewChunks(res: http.ServerResponse, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1170,10 +1143,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewPackets(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): Promise<void> {
+  private async handleGetReviewPackets(res: http.ServerResponse, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1217,10 +1187,16 @@ export default class AgentHTTPProvider extends ProviderContract {
       // longer the retractable one, or its file is closed. Both name the
       // review that owns the packet, which is the only thing the caller can
       // re-read from — disposing of the suggestions is the reviewer's.
-      this.sendError(res, result.code === "PERSISTENCE_FAILED" ? 500 : 409, result.code, result.message, {
-        reviewId: result.reviewId,
-        ...AgentHTTPProvider.conflictDetail(result),
-      });
+      this.sendError(
+        res,
+        result.code === "PERSISTENCE_FAILED" ? 500 : 409,
+        result.code,
+        result.message,
+        {
+          reviewId: result.reviewId,
+          ...AgentHTTPProvider.conflictDetail(result),
+        },
+      );
     }
   }
 

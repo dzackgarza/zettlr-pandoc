@@ -54,64 +54,64 @@
  *
  * END HEADER
  */
-import { trans } from '@common/i18n-renderer'
-import { defineComponent } from 'vue'
+import { trans } from "@common/i18n-renderer";
+import { defineComponent } from "vue";
 
 export default defineComponent({
-  name: 'FieldText',
+  name: "FieldText",
   props: {
     modelValue: {
       type: String,
-      default: ''
+      default: "",
     },
     disabled: {
       type: Boolean,
-      default: false
+      default: false,
     },
     placeholder: {
       type: String,
-      default: ''
+      default: "",
     },
     label: {
       type: String,
-      default: ''
+      default: "",
     },
     name: {
       type: String,
-      default: ''
+      default: "",
     },
     reset: {
-      type: [ String, Boolean ],
-      default: false
+      type: [String, Boolean],
+      default: false,
     },
     inline: {
       type: Boolean,
-      default: false
-    }
+      default: false,
+    },
   },
-  emits: ['update:modelValue'],
+  emits: ["update:modelValue"],
   computed: {
     fieldID: function (): string {
-      return 'field-input-' + this.name
+      return "field-input-" + this.name;
     },
     resetLabel: function (): string {
-      return trans('Reset')
+      return trans("Reset");
     },
     element: function (): HTMLInputElement {
-      return this.$refs.input as HTMLInputElement
-    }
+      return this.$refs.input as HTMLInputElement;
+    },
   },
   methods: {
     resetValue: function () {
-      if (this.reset === false || typeof this.reset !== 'string') {
-        return
+      if (this.reset === false || typeof this.reset !== "string") {
+        return;
       }
 
-      this.element.value = this.reset
-      this.$emit('update:modelValue', this.reset)
+      this.element.value = this.reset;
+      this.$emit("update:modelValue", this.reset);
     },
     focus: function () {
-      this.element.focus()
+      this.element.focus();
     },
     onKeydown: function (event: KeyboardEvent) {
       // We are closely following Electron's accelerators:
@@ -121,79 +121,74 @@ export default defineComponent({
       // Windows and Linux, Electron performs some weird magic under the hood
       // and I can't for the love of God figure out how the mappings work.
 
-      const MODS = [
-        'Meta',
-        'Alt',
-        'Shift',
-        'Control'
-      ]
+      const MODS = ["Meta", "Alt", "Shift", "Control"];
 
       if (MODS.includes(event.key)) {
-        return // Only trigger when a non-modifier key is pressed
+        return; // Only trigger when a non-modifier key is pressed
       }
 
-      const macOS = process.platform === 'darwin'
-      const win32 = process.platform === 'win32'
+      const macOS = process.platform === "darwin";
+      const win32 = process.platform === "win32";
 
       // macOS only modifiers
-      const cmd = (macOS) ? event.metaKey : false
-      const option = (macOS) ? event.key === 'Alt' : false
+      const cmd = macOS ? event.metaKey : false;
+      const option = macOS ? event.key === "Alt" : false;
 
       // Non-macOS only modifiers
-      const meta = (!macOS) ? event.metaKey : false
+      const meta = !macOS ? event.metaKey : false;
 
       // General modifiers
-      const ctrl = event.ctrlKey
-      const alt = event.altKey
-      const altGr = event.key === 'Alt' && event.code === 'AltRight'
-      const shift = event.shiftKey
+      const ctrl = event.ctrlKey;
+      const alt = event.altKey;
+      const altGr = event.key === "Alt" && event.code === "AltRight";
+      const shift = event.shiftKey;
 
       // Special keys
-      const plus = event.key === '+'
-      const space = event.key === ' '
-      const tab = event.key === 'Tab'
-      const del = event.key === 'Backspace'
+      const plus = event.key === "+";
+      const space = event.key === " ";
+      const tab = event.key === "Tab";
+      const del = event.key === "Backspace";
 
       // If this is true, we shouldn't add the event.key
-      const hasSpecial = plus || space || tab || del || /* Mods */ meta || alt || altGr
+      const hasSpecial = plus || space || tab || del || /* Mods */ meta || alt || altGr;
 
       // Now build the shortcut
-      let shortcut = []
+      let shortcut = [];
       if (cmd) {
-        shortcut.push('Cmd')
+        shortcut.push("Cmd");
       }
       if (ctrl) {
-        shortcut.push('Ctrl')
+        shortcut.push("Ctrl");
       }
       if (alt && !option) {
-        shortcut.push('Alt')
+        shortcut.push("Alt");
       } else if (!alt && option) {
-        shortcut.push('Option')
+        shortcut.push("Option");
       }
       if (altGr) {
-        shortcut.push('AltGr')
+        shortcut.push("AltGr");
       }
       if (shift) {
-        shortcut.push('Shift')
+        shortcut.push("Shift");
       }
       if (meta) {
-        shortcut.push('Meta')
+        shortcut.push("Meta");
       }
       if (plus) {
-        shortcut.push('Plus')
+        shortcut.push("Plus");
       }
       if (space) {
-        shortcut.push('Space')
+        shortcut.push("Space");
       }
       if (tab) {
-        shortcut.push('Tab')
+        shortcut.push("Tab");
       }
       if (del) {
-        shortcut.push('Delete')
+        shortcut.push("Delete");
       }
 
       // On macOS and Linux, if you use Alt as a modifier
-      const isRegularKey = /^(?:Key[A-Z])|(?:Digit[0-9])$/.test(event.code)
+      const isRegularKey = /^(?:Key[A-Z])|(?:Digit[0-9])$/.test(event.code);
 
       if (isRegularKey && !win32 && alt) {
         // The user has pressed a regular key on macOS or Linux, and has
@@ -201,17 +196,17 @@ export default defineComponent({
         // populated event.key with the third-layer-value. I.e. pressing
         // Cmd+Alt+F would yield Ƒ, but we instead should record a regular "F"
         // here.
-        shortcut.push(event.code[event.code.length - 1])
+        shortcut.push(event.code[event.code.length - 1]);
       } else if (!hasSpecial) {
         // Last but not least, add the actual pressed key
-        shortcut.push(event.key.toUpperCase())
+        shortcut.push(event.key.toUpperCase());
       }
 
-      const rendered = shortcut.join('+')
-      this.element.value = rendered
-    }
-  }
-})
+      const rendered = shortcut.join("+");
+      this.element.value = rendered;
+    },
+  },
+});
 </script>
 
 <style lang="css" scoped>

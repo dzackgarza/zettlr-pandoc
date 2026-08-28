@@ -52,63 +52,63 @@
  *
  * END HEADER
  */
-import { ref, computed, watch } from 'vue'
+import { computed, ref, watch } from "vue";
 
 export interface ToolbarThreeWayControl {
-  type: 'three-way-toggle'
-  id?: string
-  activeClass?: string
+  type: "three-way-toggle";
+  id?: string;
+  activeClass?: string;
   stateOne: {
-    id: string
-    title: string
-    icon: string
-  }
+    id: string;
+    title: string;
+    icon: string;
+  };
   stateTwo: {
-    id: string
-    title: string
-    icon: string
-  }
-  initialState: string|undefined
+    id: string;
+    title: string;
+    icon: string;
+  };
+  initialState: string | undefined;
   // Allow arbitrary properties that we ignore
-  [key: string]: unknown
+  [key: string]: unknown;
 }
-const props = defineProps< { control: ToolbarThreeWayControl }>()
-const emit = defineEmits<(e: 'toggle', value: string|undefined) => void>() // TODO
+const props = defineProps<{ control: ToolbarThreeWayControl }>();
+const emit = defineEmits<(e: "toggle", value: string | undefined) => void>(); // TODO
 
-const activeState = ref<string|undefined>(props.control.initialState)
+const activeState = ref<string | undefined>(props.control.initialState);
 
-const controlActiveChanged = computed<string|undefined>(() => {
-  return props.control.initialState
-})
+const controlActiveChanged = computed<string | undefined>(() => {
+  return props.control.initialState;
+});
 
 const isStateOneActive = computed<boolean>(() => {
-  return activeState.value === props.control.stateOne.id
-})
+  return activeState.value === props.control.stateOne.id;
+});
 
 const isStateTwoActive = computed<boolean>(() => {
-  return activeState.value === props.control.stateTwo.id
-})
+  return activeState.value === props.control.stateTwo.id;
+});
 
 watch(controlActiveChanged, () => {
-  activeState.value = props.control.initialState
-})
+  activeState.value = props.control.initialState;
+});
 
-function toggle (state: 'stateOne'|'stateTwo'): void {
-  if (state === 'stateOne' && isStateOneActive.value) {
+function toggle(state: "stateOne" | "stateTwo"): void {
+  if (state === "stateOne" && isStateOneActive.value) {
     // De-activate
-    activeState.value = undefined
-  } else if (state === 'stateOne') {
+    activeState.value = undefined;
+  } else if (state === "stateOne") {
     // Activate state one
-    activeState.value = props.control.stateOne.id
-  } else if (state === 'stateTwo' && isStateTwoActive.value) {
+    activeState.value = props.control.stateOne.id;
+  } else if (state === "stateTwo" && isStateTwoActive.value) {
     // De-activate
-    activeState.value = undefined
+    activeState.value = undefined;
   } else {
     // Activate state two
-    activeState.value = props.control.stateTwo.id
+    activeState.value = props.control.stateTwo.id;
   }
 
-  emit('toggle', activeState.value)
+  emit("toggle", activeState.value);
 }
 </script>
 

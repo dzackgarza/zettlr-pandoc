@@ -20,18 +20,15 @@
  *
  * @return  {RegExp}              The compiled Regular Expression
  */
-export function getIDRE (idGenPattern: string, exact: boolean = false): RegExp {
-  let idRegExpString: string = idGenPattern
+export function getIDRE(idGenPattern: string, exact: boolean = false): RegExp {
+  let idRegExpString: string = idGenPattern;
   // Make sure the ID definitely has at least one
   // capturing group to not produce errors.
-  if (!(/\(.+?\)/.test(idRegExpString))) {
-    idRegExpString = `(${idRegExpString})`
+  if (!/\(.+?\)/.test(idRegExpString)) {
+    idRegExpString = `(${idRegExpString})`;
   }
 
-  return RegExp(
-    (exact) ? `^${idRegExpString}$` : idRegExpString,
-    'g'
-  )
+  return RegExp(exact ? `^${idRegExpString}$` : idRegExpString, "g");
 }
 
 /**
@@ -41,10 +38,8 @@ export function getIDRE (idGenPattern: string, exact: boolean = false): RegExp {
  *
  * @return  {RegExp}           The compiled Regular Expression
  */
-export function getLinkRE (global: boolean = false): RegExp {
-  return RegExp(
-    /^.+\.[a-z0-9]+/.source,
-    (global) ? 'gi' : 'i')
+export function getLinkRE(global: boolean = false): RegExp {
+  return RegExp(/^.+\.[a-z0-9]+/.source, global ? "gi" : "i");
 }
 
 /**
@@ -54,10 +49,7 @@ export function getLinkRE (global: boolean = false): RegExp {
  *
  * @return  {RegExp}           The wanted regular expression
  */
-export function getProtocolRE (multiline: boolean = false): RegExp {
-  let flag = (multiline) ? 'm' : ''
-  return RegExp(
-    /^([a-z]{1,10}):\/\//,
-    'i' + flag
-  )
+export function getProtocolRE(multiline: boolean = false): RegExp {
+  let flag = multiline ? "m" : "";
+  return RegExp(/^([a-z]{1,10}):\/\//, "i" + flag);
 }

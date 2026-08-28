@@ -54,28 +54,28 @@
  * END HEADER
  */
 
-import { ref, computed, watch, toRef } from 'vue'
+import { computed, ref, toRef, watch } from "vue";
 
 const props = defineProps<{
-  modelValue: boolean
-  label?: string
-  name?: string
-  disabled?: boolean
-  inline?: boolean
-  info?: string
-}>()
+  modelValue: boolean;
+  label?: string;
+  name?: string;
+  disabled?: boolean;
+  inline?: boolean;
+  info?: string;
+}>();
 
-const isChecked = ref<boolean>(props.modelValue)
+const isChecked = ref<boolean>(props.modelValue);
 
-watch(toRef(props, 'modelValue'), (val) => {
-  isChecked.value = val
-})
+watch(toRef(props, "modelValue"), (val) => {
+  isChecked.value = val;
+});
 
-const emit = defineEmits<(e: 'update:modelValue', val: boolean) => void>()
+const emit = defineEmits<(e: "update:modelValue", val: boolean) => void>();
 
 const fieldID = computed<string>(() => {
-  return props.name !== undefined ? 'form-input-' + props.name : ''
-})
+  return props.name !== undefined ? "form-input-" + props.name : "";
+});
 </script>
 
 <style lang="less">

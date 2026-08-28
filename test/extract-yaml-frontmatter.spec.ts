@@ -12,13 +12,13 @@
  * END HEADER
  */
 
-import assert from 'assert'
-import extractYamlFrontmatter from '@common/util/extract-yaml-frontmatter'
+import extractYamlFrontmatter from "@common/util/extract-yaml-frontmatter";
+import assert from "assert";
 
 const tests = [
   {
-    input: 'Single line file that should not have a frontmatter',
-    expected: null
+    input: "Single line file that should not have a frontmatter",
+    expected: null,
   },
   {
     input: `---
@@ -29,10 +29,10 @@ keywords: 123
 
 Further Markdown content.`,
     expected: {
-      title: 'Here is some title',
-      author: 'Jane Doe',
-      keywords: 123
-    }
+      title: "Here is some title",
+      author: "Jane Doe",
+      keywords: 123,
+    },
   },
   {
     input: `---
@@ -43,10 +43,10 @@ keywords: 123, hello, true
 
 Further Markdown content.`,
     expected: {
-      title: 'Here is some title',
-      author: 'Jane Doe',
-      keywords: '123, hello, true'
-    }
+      title: "Here is some title",
+      author: "Jane Doe",
+      keywords: "123, hello, true",
+    },
   },
   {
     input: `This file does not start with a YAML frontmatter, so it should not
@@ -62,17 +62,17 @@ keywords:
 ---
 
 Further Markdown content .`,
-    expected: null
-  }
-]
+    expected: null,
+  },
+];
 
-describe('extractYamlFrontmatter()', function () {
+describe("extractYamlFrontmatter()", function () {
   for (const test of tests) {
-    const { frontmatter } = extractYamlFrontmatter(test.input)
-    const out = test.expected === null ? 'extracts no frontmatter' : 'extracts the existing frontmatter'
+    const { frontmatter } = extractYamlFrontmatter(test.input);
+    const out =
+      test.expected === null ? "extracts no frontmatter" : "extracts the existing frontmatter";
     it(out, function () {
-      assert.deepStrictEqual(frontmatter, test.expected)
-    })
+      assert.deepStrictEqual(frontmatter, test.expected);
+    });
   }
-})
- 
+});

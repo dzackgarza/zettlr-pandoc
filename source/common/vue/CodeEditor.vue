@@ -23,31 +23,44 @@
 
 // import { trans } from '@common/i18n-renderer'
 
-import { drawSelection, dropCursor, EditorView, lineNumbers } from '@codemirror/view'
-import { onMounted, ref, toRef, watch } from 'vue'
-import { autocompletion, closeBrackets } from '@codemirror/autocomplete'
-import { bracketMatching, codeFolding, foldGutter, indentOnInput, indentUnit, StreamLanguage } from '@codemirror/language'
-import { codeSyntaxHighlighter, markdownSyntaxHighlighter } from '@common/modules/markdown-editor/theme/syntax'
-import { yaml } from '@codemirror/lang-yaml'
-import { lua } from '@codemirror/legacy-modes/mode/lua'
-import { EditorState, type Extension } from '@codemirror/state'
-import { css } from '@codemirror/lang-css'
-import markdownParser from '@common/modules/markdown-editor/parser/markdown-parser'
-import { yamlLint } from '@common/modules/markdown-editor/linters/yaml-lint'
-import { lintGutter } from '@codemirror/lint'
-import { showStatusbarEffect, statusbar } from '@common/modules/markdown-editor/statusbar'
-import { search } from '@codemirror/search'
-import { history } from '@codemirror/commands'
-import { snippetSyntaxExtension } from '@common/modules/markdown-utils/snippets-syntax-extension'
-import { plainLinkHighlighter } from '@common/modules/markdown-utils/plain-link-highlighter'
-import { useConfigStore } from 'source/pinia'
-import { darkMode, darkModeEffect } from '../modules/markdown-editor/theme/dark-mode'
-import { highlightWhitespace, highlightWhitespaceEffect } from '../modules/markdown-editor/plugins/highlight-whitespace'
-import { defaultKeymap } from '../modules/markdown-editor/keymaps/default'
+import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
+import { history } from "@codemirror/commands";
+import { css } from "@codemirror/lang-css";
+import { yaml } from "@codemirror/lang-yaml";
+import {
+  bracketMatching,
+  codeFolding,
+  foldGutter,
+  indentOnInput,
+  indentUnit,
+  StreamLanguage,
+} from "@codemirror/language";
+import { lua } from "@codemirror/legacy-modes/mode/lua";
+import { lintGutter } from "@codemirror/lint";
+import { search } from "@codemirror/search";
+import { EditorState, type Extension } from "@codemirror/state";
+import { drawSelection, dropCursor, EditorView, lineNumbers } from "@codemirror/view";
+import { yamlLint } from "@common/modules/markdown-editor/linters/yaml-lint";
+import markdownParser from "@common/modules/markdown-editor/parser/markdown-parser";
+import { showStatusbarEffect, statusbar } from "@common/modules/markdown-editor/statusbar";
+import {
+  codeSyntaxHighlighter,
+  markdownSyntaxHighlighter,
+} from "@common/modules/markdown-editor/theme/syntax";
+import { plainLinkHighlighter } from "@common/modules/markdown-utils/plain-link-highlighter";
+import { snippetSyntaxExtension } from "@common/modules/markdown-utils/snippets-syntax-extension";
+import { useConfigStore } from "source/pinia";
+import { onMounted, ref, toRef, watch } from "vue";
+import { defaultKeymap } from "../modules/markdown-editor/keymaps/default";
+import {
+  highlightWhitespace,
+  highlightWhitespaceEffect,
+} from "../modules/markdown-editor/plugins/highlight-whitespace";
+import { darkMode, darkModeEffect } from "../modules/markdown-editor/theme/dark-mode";
 
-const configStore = useConfigStore()
+const configStore = useConfigStore();
 
-type SupportedLanguage = 'css'|'yaml'|'lua'|'markdown-snippets'
+type SupportedLanguage = "css" | "yaml" | "lua" | "markdown-snippets";
 
 /**
  * We have to define the CodeMirror instance outside of Vue, since the Proxy-
@@ -56,21 +69,21 @@ type SupportedLanguage = 'css'|'yaml'|'lua'|'markdown-snippets'
  *
  * @var {CodeMirror.Editor}
  */
-const cmInstance = new EditorView()
+const cmInstance = new EditorView();
 
 // TODO: This could break if we ever have more than one code editor on the same page
-const wrapperId = ref<string>('code-editor')
+const wrapperId = ref<string>("code-editor");
 
-const cleanFlag = ref<boolean>(true)
+const cleanFlag = ref<boolean>(true);
 
-function getExtensions (mode: SupportedLanguage): Extension[] {
-  const { editor } = configStore.config
+function getExtensions(mode: SupportedLanguage): Extension[] {
+  const { editor } = configStore.config;
 
-  let numSpaces = editor.indentUnit
-  let useTabs = editor.indentWithTabs
+  let numSpaces = editor.indentUnit;
+  let useTabs = editor.indentWithTabs;
 
-  if (mode === 'yaml') {
-    useTabs = false
+  if (mode === "yaml") {
+    useTabs = false;
   }
 
   const extensions = [
@@ -85,9 +98,11 @@ function getExtensions (mode: SupportedLanguage): Extension[] {
     statusbar,
     EditorState.allowMultipleSelections.of(true),
     EditorState.tabSize.of(numSpaces),
-    indentUnit.of(useTabs ? '\t' : ' '.repeat(numSpaces)),
+    indentUnit.of(useTabs ? "\t" : " ".repeat(numSpaces)),
     // Ensure the cursor never completely sticks to the top or bottom of the editor
-    EditorView.scrollMargins.of(_view => { return { top: 30, bottom: 30 } }),
+    EditorView.scrollMargins.of((_view) => {
+      return { top: 30, bottom: 30 };
+    }),
     lintGutter(),
     lineNumbers(),
     closeBrackets(),
@@ -100,25 +115,18 @@ function getExtensions (mode: SupportedLanguage): Extension[] {
     EditorView.updateListener.of((update) => {
       if (update.docChanged) {
         // Tell the main component that the contents have changed
-        cleanFlag.value = false
-        emit('update:modelValue', cmInstance.state.doc.toString())
+        cleanFlag.value = false;
+        emit("update:modelValue", cmInstance.state.doc.toString());
       }
-    })
-  ]
+    }),
+  ];
 
   switch (mode) {
-    case 'yaml':
-      return [
-        ...extensions,
-        yaml(),
-        yamlLint
-      ]
-    case 'css':
-      return [
-        ...extensions,
-        css(),
-      ]
-    case 'markdown-snippets':
+    case "yaml":
+      return [...extensions, yaml(), yamlLint];
+    case "css":
+      return [...extensions, css()];
+    case "markdown-snippets":
       return [
         ...extensions,
         snippetSyntaxExtension,
@@ -128,76 +136,73 @@ function getExtensions (mode: SupportedLanguage): Extension[] {
           // linkFormat explicitly, or changing it that often (they shouldn't,
           // after all). Should we ever need to add more configs, I can still
           // react to changes in the parser config.
-          zknLinkParserConfig: { format: configStore.config.zkn.linkFormat }
+          zknLinkParserConfig: { format: configStore.config.zkn.linkFormat },
         }), // Comes from the main editor
-        markdownSyntaxHighlighter() // Comes from the main editor
-      ]
-    case 'lua':
-      return [
-        ...extensions,
-        StreamLanguage.define(lua)
-      ]
+        markdownSyntaxHighlighter(), // Comes from the main editor
+      ];
+    case "lua":
+      return [...extensions, StreamLanguage.define(lua)];
   }
 }
 
-function setContents (contents: string, mode: SupportedLanguage): void {
+function setContents(contents: string, mode: SupportedLanguage): void {
   const state = EditorState.create({
     doc: contents,
-    extensions: getExtensions(mode)
-  })
+    extensions: getExtensions(mode),
+  });
 
-  cmInstance.setState(state)
+  cmInstance.setState(state);
   // Immediately show the statusbar
-  cmInstance.dispatch({ effects: showStatusbarEffect.of(true) })
+  cmInstance.dispatch({ effects: showStatusbarEffect.of(true) });
 }
 
 interface Props {
-  modelValue: string
-  mode: SupportedLanguage
-  readonly?: boolean
+  modelValue: string;
+  mode: SupportedLanguage;
+  readonly?: boolean;
 }
 
-const props = defineProps<Props>()
+const props = defineProps<Props>();
 
-const emit = defineEmits<(e: 'update:modelValue', newContents: string) => void>()
+const emit = defineEmits<(e: "update:modelValue", newContents: string) => void>();
 
 // Switch the darkMode variable in the editor based on the config
 configStore.$subscribe((_mutation, state) => {
   cmInstance.dispatch({
     effects: [
       darkModeEffect.of({ darkMode: state.config.darkMode }),
-      highlightWhitespaceEffect.of(state.config.editor.showWhitespace)
-    ]
-  })
-})
+      highlightWhitespaceEffect.of(state.config.editor.showWhitespace),
+    ],
+  });
+});
 
-watch(toRef(props, 'modelValue'), () => {
+watch(toRef(props, "modelValue"), () => {
   // Assign new contents, but only if not the same as the current contents
   if (cmInstance.state.doc.toString() !== props.modelValue) {
-    setContents(props.modelValue, props.mode)
+    setContents(props.modelValue, props.mode);
   }
-})
+});
 
 onMounted(() => {
-  const wrapper = document.getElementById(wrapperId.value)
+  const wrapper = document.getElementById(wrapperId.value);
 
   if (wrapper !== null) {
-    wrapper.replaceWith(cmInstance.dom)
+    wrapper.replaceWith(cmInstance.dom);
   }
 
-  setContents(props.modelValue, props.mode)
-})
+  setContents(props.modelValue, props.mode);
+});
 
 // Utility functions for those accessing this module
-function isClean (): boolean {
-  return cleanFlag.value
+function isClean(): boolean {
+  return cleanFlag.value;
 }
 
-function markClean (): void {
-  cleanFlag.value = true
+function markClean(): void {
+  cleanFlag.value = true;
 }
 
-defineExpose({ markClean, isClean })
+defineExpose({ markClean, isClean });
 </script>
 
 <style lang="less">

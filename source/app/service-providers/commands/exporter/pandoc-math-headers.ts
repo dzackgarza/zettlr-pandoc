@@ -1,85 +1,99 @@
-import { promises as fs } from 'fs'
-import path from 'path'
-import { pathToFileURL } from 'url'
-import { mathJaxPackages, type MathJaxMacro } from '@common/util/mathjax-config'
-import { parseReaderWriter } from '@common/pandoc-util/parse-reader-writer'
-import { isHtmlWriter, isTexWriter } from '@common/pandoc-util/pandoc-maps'
-import { projectTexHeader } from './macro-projections'
+import { isHtmlWriter, isTexWriter } from "@common/pandoc-util/pandoc-maps";
+import { parseReaderWriter } from "@common/pandoc-util/parse-reader-writer";
+import { type MathJaxMacro, mathJaxPackages } from "@common/util/mathjax-config";
+import { promises as fs } from "fs";
+import path from "path";
+import { pathToFileURL } from "url";
+import { projectTexHeader } from "./macro-projections";
 
-function headerFiles (defaults: Record<string, unknown>): string[] {
-  const headers = defaults['include-in-header']
+function headerFiles(defaults: Record<string, unknown>): string[] {
+  const headers = defaults["include-in-header"];
 
   if (headers === undefined) {
-    return []
+    return [];
   }
-  if (typeof headers === 'string') {
-    return [headers]
+  if (typeof headers === "string") {
+    return [headers];
   }
-  if (Array.isArray(headers) && headers.every(header => typeof header === 'string')) {
-    return headers
+  if (Array.isArray(headers) && headers.every((header) => typeof header === "string")) {
+    return headers;
   }
 
-  throw new TypeError('Pandoc include-in-header must be a string or an array of strings')
+  throw new TypeError("Pandoc include-in-header must be a string or an array of strings");
 }
 
 /**
  * Writes format-specific macro headers and attaches them to Pandoc defaults.
  */
-export async function injectPandocMathHeaders (
+export async function injectPandocMathHeaders(
   defaults: Record<string, unknown>,
   temporaryDirectory: string,
   mathJaxComponent: string,
-  macros: Record<string, MathJaxMacro>
+  macros: Record<string, MathJaxMacro>,
 ): Promise<void> {
-  const writer = parseReaderWriter(defaults.writer as string).name
+  const writer = parseReaderWriter(defaults.writer as string).name;
 
   if (isHtmlWriter(writer)) {
-    const header = path.join(temporaryDirectory, 'zettlr-mathjax-header.html')
-    const fontDirectory = path.join(path.dirname(mathJaxComponent), 'mathjax-font')
-    const config = JSON.stringify({
-      loader: {
-        paths: {
-          tex: `${pathToFileURL(path.join(path.dirname(mathJaxComponent), 'mathjax-tex-extensions')).href}/`,
-          fonts: `${pathToFileURL(path.dirname(mathJaxComponent)).href}/`,
-          sre: pathToFileURL(path.join(path.dirname(mathJaxComponent), 'mathjax-sre')).href,
-          mathmaps: pathToFileURL(path.join(path.dirname(mathJaxComponent), 'mathjax-sre', 'mathmaps')).href
+    const header = path.join(temporaryDirectory, "zettlr-mathjax-header.html");
+    const fontDirectory = path.join(path.dirname(mathJaxComponent), "mathjax-font");
+    const config = JSON.stringify(
+      {
+        loader: {
+          paths: {
+            tex: `${pathToFileURL(path.join(path.dirname(mathJaxComponent), "mathjax-tex-extensions")).href}/`,
+            fonts: `${pathToFileURL(path.dirname(mathJaxComponent)).href}/`,
+            sre: pathToFileURL(path.join(path.dirname(mathJaxComponent), "mathjax-sre")).href,
+            mathmaps: pathToFileURL(
+              path.join(path.dirname(mathJaxComponent), "mathjax-sre", "mathmaps"),
+            ).href,
+          },
+          load: ["[tex]/mhchem"],
         },
-        load: ['[tex]/mhchem']
-      },
-      options: {
-        enableSpeech: false,
-        enableBraille: false,
-        enableEnrichment: false,
-        a11y: {
-          speech: false,
-          braille: false
+        options: {
+          enableSpeech: false,
+          enableBraille: false,
+          enableEnrichment: false,
+          a11y: {
+            speech: false,
+            braille: false,
+          },
+          renderActions: {
+            assistiveMml: [],
+          },
+          worker: {
+            path: pathToFileURL(path.join(path.dirname(mathJaxComponent), "mathjax-sre")).href,
+            maps: pathToFileURL(
+              path.join(path.dirname(mathJaxComponent), "mathjax-sre", "mathmaps"),
+            ).href,
+            worker: "speech-worker.js",
+          },
         },
-        renderActions: {
-          assistiveMml: []
+        tex: {
+          inlineMath: { "[+]": [["$", "$"]] },
+          packages: { "[+]": mathJaxPackages.slice(1) },
+          macros,
         },
-        worker: {
-          path: pathToFileURL(path.join(path.dirname(mathJaxComponent), 'mathjax-sre')).href,
-          maps: pathToFileURL(path.join(path.dirname(mathJaxComponent), 'mathjax-sre', 'mathmaps')).href,
-          worker: 'speech-worker.js'
-        }
+        chtml: {
+          fontURL: pathToFileURL(path.join(fontDirectory, "woff2")).href,
+          dynamicPrefix: pathToFileURL(path.join(fontDirectory, "dynamic")).href,
+        },
       },
-      tex: {
-        inlineMath: { '[+]': [[ '$', '$' ]] },
-        packages: { '[+]': mathJaxPackages.slice(1) },
-        macros
-      },
-      chtml: {
-        fontURL: pathToFileURL(path.join(fontDirectory, 'woff2')).href,
-        dynamicPrefix: pathToFileURL(path.join(fontDirectory, 'dynamic')).href
-      }
-    }, null, 2).replace(/<\/script/gi, '<\\/script')
+      null,
+      2,
+    ).replace(/<\/script/gi, "<\\/script");
 
-    await fs.writeFile(header, `<script>\nwindow.MathJax = ${config};\n</script>\n<script defer src="${pathToFileURL(mathJaxComponent).href}"></script>\n`, { encoding: 'utf8' })
-    defaults['include-in-header'] = [ ...headerFiles(defaults), header ]
-    delete defaults['html-math-method']
+    await fs.writeFile(
+      header,
+      `<script>\nwindow.MathJax = ${config};\n</script>\n<script defer src="${pathToFileURL(mathJaxComponent).href}"></script>\n`,
+      { encoding: "utf8" },
+    );
+    defaults["include-in-header"] = [...headerFiles(defaults), header];
+    delete defaults["html-math-method"];
   } else if (isTexWriter(writer)) {
-    const header = path.join(temporaryDirectory, 'zettlr-mathjax-header.tex')
-    await fs.writeFile(header, `\\usepackage[version=4]{mhchem}\n${projectTexHeader(macros)}\n`, { encoding: 'utf8' })
-    defaults['include-in-header'] = [ ...headerFiles(defaults), header ]
+    const header = path.join(temporaryDirectory, "zettlr-mathjax-header.tex");
+    await fs.writeFile(header, `\\usepackage[version=4]{mhchem}\n${projectTexHeader(macros)}\n`, {
+      encoding: "utf8",
+    });
+    defaults["include-in-header"] = [...headerFiles(defaults), header];
   }
 }

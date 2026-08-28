@@ -16,16 +16,16 @@
  * END HEADER
  */
 
-import ZettlrCommand from './zettlr-command'
-import { trans } from '@common/i18n-main'
-import ky from 'ky'
-import { shell } from 'electron'
-import { getBibliographyForDescriptor as getBibliography } from '@common/util/get-bibliography-for-descriptor'
-import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
-import path from 'path'
-import type { MDFileDescriptor } from '@dts/common/fsal'
-import { showNativeNotification } from '@common/util/show-notification'
-import type { AppServiceContainer } from 'source/app/app-service-container'
+import { trans } from "@common/i18n-main";
+import { getBibliographyForDescriptor as getBibliography } from "@common/util/get-bibliography-for-descriptor";
+import { showNativeNotification } from "@common/util/show-notification";
+import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
+import type { MDFileDescriptor } from "@dts/common/fsal";
+import { shell } from "electron";
+import ky from "ky";
+import path from "path";
+import type { AppServiceContainer } from "source/app/app-service-container";
+import ZettlrCommand from "./zettlr-command";
 
 /**
  * Describes an error returned from the JSON RPC API from BetterBibTex.
@@ -41,19 +41,19 @@ class NoResultsError extends Error {}
 // the library is always absolute. We have to do it this ridiculously since the
 // function is called in both main and renderer processes, and we still have the
 // issue that path-browserify is entirely unusable.
-function getBibliographyForDescriptor (descriptor: MDFileDescriptor): string {
-  const library = getBibliography(descriptor)
+function getBibliographyForDescriptor(descriptor: MDFileDescriptor): string {
+  const library = getBibliography(descriptor);
 
   if (library !== CITEPROC_MAIN_DB && !path.isAbsolute(library)) {
-    return path.resolve(descriptor.dir, library)
+    return path.resolve(descriptor.dir, library);
   } else {
-    return library
+    return library;
   }
 }
 
 export default class OpenAttachment extends ZettlrCommand {
-  constructor (app: AppServiceContainer) {
-    super(app, 'open-attachment')
+  constructor(app: AppServiceContainer) {
+    super(app, "open-attachment");
   }
 
   /**
@@ -62,32 +62,32 @@ export default class OpenAttachment extends ZettlrCommand {
    * @param  {string}  evt The event name
    * @param  {any}     arg An object containing the citekey to open.
    */
-  async run (evt: string, arg: { filePath: string, citekey: string }): Promise<boolean> {
-    if (!('citekey' in arg) || typeof arg.citekey !== 'string') {
-      return false
+  async run(evt: string, arg: { filePath: string; citekey: string }): Promise<boolean> {
+    if (!("citekey" in arg) || typeof arg.citekey !== "string") {
+      return false;
     }
 
-    const descriptor = await this._app.fsal.getDescriptorFor(arg.filePath)
-    if (descriptor === undefined || descriptor.type !== 'file') {
-      return false
+    const descriptor = await this._app.fsal.getDescriptorFor(arg.filePath);
+    if (descriptor === undefined || descriptor.type !== "file") {
+      return false;
     }
-    const library = getBibliographyForDescriptor(descriptor)
+    const library = getBibliographyForDescriptor(descriptor);
 
-    let appearsToHaveNoAttachments = false
+    let appearsToHaveNoAttachments = false;
 
     // First let's see if we've got BibTex attachments, so we can
     // circumvent the Zotero thing directly
     if (this._app.citeproc.hasBibTexAttachments(library)) {
-      const attachments = this._app.citeproc.getBibTexAttachments(library, arg.citekey)
+      const attachments = this._app.citeproc.getBibTexAttachments(library, arg.citekey);
       if (attachments === false || attachments.length === 0) {
-        appearsToHaveNoAttachments = true
+        appearsToHaveNoAttachments = true;
       } else {
-        const potentialError = await shell.openPath(attachments[0])
-        if (potentialError !== '') {
-          this._app.log.warning('Error during opening of BibTex attachment', potentialError)
-          return false
+        const potentialError = await shell.openPath(attachments[0]);
+        if (potentialError !== "") {
+          this._app.log.warning("Error during opening of BibTex attachment", potentialError);
+          return false;
         }
-        return true
+        return true;
       }
     }
 
@@ -97,76 +97,95 @@ export default class OpenAttachment extends ZettlrCommand {
       // NOTE: We have replaced localhost with 127.0.0.1 since at some point
       // either got or Electron stopped resolving localhost there, resulting in
       // ECONNREFUSED errors. I have no idea how that happened, but it works now.
-      const res = await ky.post('http://127.0.0.1:23119/better-bibtex/json-rpc', {
-        json: {
-          jsonrpc: '2.0',
-          method: 'item.attachments',
-          // NOTE: The second parameter means that we wish to search across all
-          // libraries (not just the user library, but all groups, too). This
-          // allows Zettlr to retrieve items that have been exported from a
-          // group library, too.
-          // See BBT docs: https://retorque.re/zotero-better-bibtex/exporting/json-rpc/index.html
-          // See issue #5647
-          params: [ arg.citekey, '*' ]
-        }
-      }).json()
+      const res = await ky
+        .post("http://127.0.0.1:23119/better-bibtex/json-rpc", {
+          json: {
+            jsonrpc: "2.0",
+            method: "item.attachments",
+            // NOTE: The second parameter means that we wish to search across all
+            // libraries (not just the user library, but all groups, too). This
+            // allows Zettlr to retrieve items that have been exported from a
+            // group library, too.
+            // See BBT docs: https://retorque.re/zotero-better-bibtex/exporting/json-rpc/index.html
+            // See issue #5647
+            params: [arg.citekey, "*"],
+          },
+        })
+        .json();
 
-      if (typeof res !== 'object') {
-        throw new JSONRPCAPIError(`Result object had a wrong type: ${typeof res}`)
+      if (typeof res !== "object") {
+        throw new JSONRPCAPIError(`Result object had a wrong type: ${typeof res}`);
       }
       if (res === null) {
-        throw new JSONRPCAPIError('Result was null')
+        throw new JSONRPCAPIError("Result was null");
       }
 
-      if ('error' in res) {
-        const { message } = res.error as { message: string, code: number }
-        throw new JSONRPCAPIError(message)
+      if ("error" in res) {
+        const { message } = res.error as { message: string; code: number };
+        throw new JSONRPCAPIError(message);
       }
 
-      if (!('result' in res) || !Array.isArray(res.result) || !res.result.every(r => 'path' in r && 'open' in r)) {
-        throw new JSONRPCAPIError('Result was malformed: `result` was either not present or had an unexpected structure.')
+      if (
+        !("result" in res) ||
+        !Array.isArray(res.result) ||
+        !res.result.every((r) => "path" in r && "open" in r)
+      ) {
+        throw new JSONRPCAPIError(
+          "Result was malformed: `result` was either not present or had an unexpected structure.",
+        );
       }
 
-      const result = res.result as Array<{ open: string, path: string }>
+      const result = res.result as Array<{ open: string; path: string }>;
 
       // First, filter by PDF files, then map to the path strings.
       const pdfAttachments = result
-        .filter(elem => elem.path.toLowerCase().endsWith('.pdf'))
-        .map(elem => elem.path)
+        .filter((elem) => elem.path.toLowerCase().endsWith(".pdf"))
+        .map((elem) => elem.path);
 
       if (pdfAttachments.length === 0) {
-        throw new NoResultsError('Citation key does not have any PDF attachments.')
+        throw new NoResultsError("Citation key does not have any PDF attachments.");
       } else if (pdfAttachments.length > 1) {
         // Warn the user so that they can see in the logs what's going on if the
         // attachment opener consistently opens the wrong one.
-        this._app.log.warning('There was more than one PDF attachment. Opening only the first one.', pdfAttachments)
+        this._app.log.warning(
+          "There was more than one PDF attachment. Opening only the first one.",
+          pdfAttachments,
+        );
       }
 
-      const potentialError = await shell.openPath(pdfAttachments[0])
-      if (potentialError !== '') {
-        throw new Error(potentialError)
+      const potentialError = await shell.openPath(pdfAttachments[0]);
+      if (potentialError !== "") {
+        throw new Error(potentialError);
       }
-      return true
+      return true;
     } catch (err: unknown) {
       if (appearsToHaveNoAttachments || err instanceof NoResultsError) {
         // Citekey appears not to have any attachments
-        const msg = trans('The reference with key %s does not appear to have attachments.', arg.citekey)
-        this._app.log.info(msg)
-        showNativeNotification(msg)
+        const msg = trans(
+          "The reference with key %s does not appear to have attachments.",
+          arg.citekey,
+        );
+        this._app.log.info(msg);
+        showNativeNotification(msg);
       } else if (err instanceof JSONRPCAPIError) {
         // The BBT JSON RPC API has reported an error or gave us malformed output
-        this._app.log.error(`Error fetching attachments for ${arg.citekey}: ${err.message}`, err)
-        showNativeNotification(trans('Could not open attachment for key %s. Check the logs for more information.', arg.citekey))
+        this._app.log.error(`Error fetching attachments for ${arg.citekey}: ${err.message}`, err);
+        showNativeNotification(
+          trans(
+            "Could not open attachment for key %s. Check the logs for more information.",
+            arg.citekey,
+          ),
+        );
       } else if (err instanceof Error) {
         // This could be an error in the fetching stage
-        this._app.log.error(`Could not open attachment: ${err.message}`, err)
-        showNativeNotification(trans('Could not open attachment. Is Zotero running?'))
+        this._app.log.error(`Could not open attachment: ${err.message}`, err);
+        showNativeNotification(trans("Could not open attachment. Is Zotero running?"));
       } else {
         // Something else went wrong
-        this._app.log.error(`Unknown error when opening attachment for ${arg.citekey}`)
-        showNativeNotification(trans('Could not open attachment. Is Zotero running?'))
+        this._app.log.error(`Unknown error when opening attachment for ${arg.citekey}`);
+        showNativeNotification(trans("Could not open attachment. Is Zotero running?"));
       }
-      return false
+      return false;
     }
   }
 }

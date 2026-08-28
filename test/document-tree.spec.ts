@@ -13,105 +13,117 @@
  * END HEADER
  */
 
-import { DocumentTree, DTBranch, DTLeaf } from '../source/app/service-providers/documents/document-tree'
-import { v4 as uuid4 } from 'uuid'
-import assert from 'assert'
-import 'mocha'
+import assert from "assert";
+import { v4 as uuid4 } from "uuid";
+import {
+  DocumentTree,
+  DTBranch,
+  DTLeaf,
+} from "../source/app/service-providers/documents/document-tree";
+import "mocha";
 
-describe('Modules#DocumentTree', function () {
-  it('should successfully create a tree', function () {
-    const tree = new DocumentTree()
+describe("Modules#DocumentTree", function () {
+  it("should successfully create a tree", function () {
+    const tree = new DocumentTree();
 
-    assert(tree.node instanceof DTLeaf, 'tree.node is not a DTLeaf!')
-  })
+    assert(tree.node instanceof DTLeaf, "tree.node is not a DTLeaf!");
+  });
 
-  it('should successfully serialize itself to JSON', function () {
-    const tree = new DocumentTree()
+  it("should successfully serialize itself to JSON", function () {
+    const tree = new DocumentTree();
 
-    assert(tree.node instanceof DTLeaf, 'tree.node is not a DTLeaf!')
+    assert(tree.node instanceof DTLeaf, "tree.node is not a DTLeaf!");
 
     const correctJSON = {
-      type: 'leaf',
-      id: '',
+      type: "leaf",
+      id: "",
       openFiles: [],
-      activeFile: null
-    }
+      activeFile: null,
+    };
 
-    const testJSON = tree.toJSON()
+    const testJSON = tree.toJSON();
 
-    correctJSON.id = tree.node.id
+    correctJSON.id = tree.node.id;
 
-    assert.deepStrictEqual(testJSON, correctJSON, 'The serialized tree is not as expected!')
-  })
+    assert.deepStrictEqual(testJSON, correctJSON, "The serialized tree is not as expected!");
+  });
 
-  it('should successfully deserialize from JSON', async function () {
+  it("should successfully deserialize from JSON", async function () {
     const json = {
-      type: 'leaf',
+      type: "leaf",
       id: uuid4(),
       openFiles: [],
-      activeFile: null
-    }
+      activeFile: null,
+    };
 
-    const tree = await DocumentTree.fromJSON(json)
+    const tree = await DocumentTree.fromJSON(json);
 
-    assert.deepStrictEqual(json, tree.toJSON(), 'The serialized tree does not equal the original data!')
-  })
+    assert.deepStrictEqual(
+      json,
+      tree.toJSON(),
+      "The serialized tree does not equal the original data!",
+    );
+  });
 
-  it('should correctly add splits to the tree', function () {
-    const tree = new DocumentTree()
+  it("should correctly add splits to the tree", function () {
+    const tree = new DocumentTree();
 
     // This JSON represents a 1-1/1 split (two panes top, one pane bottom)
     const correctJSON = {
-      type: 'branch',
-      id: '',
-      sizes: [ 50, 50 ],
-      direction: 'vertical',
+      type: "branch",
+      id: "",
+      sizes: [50, 50],
+      direction: "vertical",
       nodes: [
         {
-          type: 'branch',
-          id: '',
-          sizes: [ 50, 50 ],
-          direction: 'horizontal',
+          type: "branch",
+          id: "",
+          sizes: [50, 50],
+          direction: "horizontal",
           nodes: [
             {
-              type: 'leaf',
-              id: '',
+              type: "leaf",
+              id: "",
               openFiles: [],
-              activeFile: null
+              activeFile: null,
             },
             {
-              type: 'leaf',
-              id: '',
+              type: "leaf",
+              id: "",
               openFiles: [],
-              activeFile: null
-            }
-          ]
+              activeFile: null,
+            },
+          ],
         },
         {
-          type: 'leaf',
-          id: '',
+          type: "leaf",
+          id: "",
           openFiles: [],
-          activeFile: null
-        }
-      ]
-    }
+          activeFile: null,
+        },
+      ],
+    };
 
-    const leaf = tree.node as DTLeaf
-    leaf.split('vertical', 'after') // Node tree.node is now a DTBranch
+    const leaf = tree.node as DTLeaf;
+    leaf.split("vertical", "after"); // Node tree.node is now a DTBranch
 
-    const branch = tree.node as DTBranch
-    correctJSON.id = branch.id
+    const branch = tree.node as DTBranch;
+    correctJSON.id = branch.id;
     // Let's split the upper leaf into a horizontal branch
-    const newLeaf = (branch.nodes[0] as DTLeaf).split('horizontal', 'after')
-    correctJSON.nodes[0].id = (newLeaf.parent as DTBranch).id
+    const newLeaf = (branch.nodes[0] as DTLeaf).split("horizontal", "after");
+    correctJSON.nodes[0].id = (newLeaf.parent as DTBranch).id;
 
     // Copy over the IDs as required for the assertion below
     // @ts-expect-error
-    correctJSON.nodes[0].nodes[0].id = (branch.nodes[0].nodes[0] as DTLeaf).id
+    correctJSON.nodes[0].nodes[0].id = (branch.nodes[0].nodes[0] as DTLeaf).id;
     // @ts-expect-error
-    correctJSON.nodes[0].nodes[1].id = (branch.nodes[0].nodes[1] as DTLeaf).id
-    correctJSON.nodes[1].id = (branch.nodes[1] as DTLeaf).id
+    correctJSON.nodes[0].nodes[1].id = (branch.nodes[0].nodes[1] as DTLeaf).id;
+    correctJSON.nodes[1].id = (branch.nodes[1] as DTLeaf).id;
 
-    assert.deepStrictEqual(correctJSON, tree.toJSON(), 'The tree did not serialize into the correct format!')
-  })
-})
+    assert.deepStrictEqual(
+      correctJSON,
+      tree.toJSON(),
+      "The tree did not serialize into the correct format!",
+    );
+  });
+});

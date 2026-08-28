@@ -24,38 +24,33 @@ import { countAll } from "@common/util/counter";
 import errorToString from "@common/util/error-to-string";
 import isFile from "@common/util/is-file";
 import serializeChangeSet from "@common/util/serialize-change-set";
-import {
-  type BranchNodeJSON,
-  DocumentType,
-  DP_EVENTS,
-  type LeafNodeJSON,
-  type OpenDocument,
-  type SerializedUpdate,
-} from "@dts/common/documents";
-import {
-  SAVE_REFUSED_CHANNEL,
-  type SaveFileResult,
-  type SaveRefusal,
-  type SaveRefusedBroadcast,
-} from "@dts/common/documents";
-import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
-import type {
-  DocumentLocation,
-  SourceRange,
-  WorkspaceTextEdit,
-} from "@dts/common/references";
+import { sha256Text } from "@common/util/sha256";
 import type {
   AgentErrorCode,
   AgentEvent,
   AgentEventType,
   ProposalClaim,
 } from "@dts/common/agent-api";
+import {
+  type BranchNodeJSON,
+  DocumentType,
+  DP_EVENTS,
+  type LeafNodeJSON,
+  type OpenDocument,
+  SAVE_REFUSED_CHANNEL,
+  type SaveFileResult,
+  type SaveRefusal,
+  type SaveRefusedBroadcast,
+  type SerializedUpdate,
+} from "@dts/common/documents";
+import type { CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
+import type { DocumentLocation, SourceRange, WorkspaceTextEdit } from "@dts/common/references";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import type { ActiveReviewState } from "@dts/common/review-domain";
-import { type TabManager } from "@providers/documents/document-tree/tab-manager";
-import type { ConfigOptions } from "@providers/config/get-config-template";
-import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { IpcListener } from "@electron-toolkit/typed-ipc/main";
+import type { ConfigOptions } from "@providers/config/get-config-template";
+import { type TabManager } from "@providers/documents/document-tree/tab-manager";
+import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
 import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions, shell } from "electron";
@@ -63,8 +58,6 @@ import EventEmitter from "events";
 import { constants as FSConstants } from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
-import { normalizeText } from "./review-diff-store";
-import { sha256Text } from "@common/util/sha256";
 import {
   getDocumentTypeForExtension,
   hasImageExt,
@@ -76,12 +69,9 @@ import { v4 as uuid4 } from "uuid";
 import { type AppServiceContainer } from "../../app-service-container";
 import { DocumentTree, type DTLeaf } from "./document-tree";
 import {
-  type ReviewStatus,
-} from "./review-diff-store";
-import {
-  ReviewApplicationService,
   type AgentEventPayload,
   type PreparedDocumentMutation,
+  ReviewApplicationService,
   type ReviewDocumentAuthority,
   type ReviewFailure,
   type ReviewMutationPrecondition,
@@ -89,6 +79,7 @@ import {
   type ReviewSavePreparation,
   type SubmittedProposal,
 } from "./review-application-service";
+import { normalizeText, type ReviewStatus } from "./review-diff-store";
 import {
   type AcceptAllChunksResponse,
   type AddReviewCommentResponse,
@@ -488,12 +479,9 @@ export type DocumentIpcHandlers = {
   "documents:add-review-comment": (
     input: ReviewCommentInput,
   ) => AddReviewCommentResponse | ReviewFailure;
-}
+};
 
-export default class DocumentManager
-  extends ProviderContract
-  implements ReviewDocumentAuthority
-{
+export default class DocumentManager extends ProviderContract implements ReviewDocumentAuthority {
   /**
    * This array holds all open windows, here represented as document trees
    *
@@ -725,7 +713,11 @@ export default class DocumentManager
       return await this.clearReview(reviewId, precondition);
     });
     operations.handle("documents:add-review-comment", async (_event, input) => {
-      return await this.addReviewComment(input.reviewId, input.text, input.expectedReviewGeneration);
+      return await this.addReviewComment(
+        input.reviewId,
+        input.text,
+        input.expectedReviewGeneration,
+      );
     });
 
     // Finally, listen to events from the renderer
@@ -1255,7 +1247,10 @@ export default class DocumentManager
     this.syncWatchedFilePaths();
   }
 
-  private async pullUpdates(filePath: string, clientVersion: number): Promise<SerializedUpdate[] | false> {
+  private async pullUpdates(
+    filePath: string,
+    clientVersion: number,
+  ): Promise<SerializedUpdate[] | false> {
     const doc = this.documents.find((doc) => doc.filePath === filePath);
     if (doc === undefined) {
       // Indicate to the editor that they should get the document (again). This
@@ -1365,7 +1360,8 @@ current contents from the editor somewhere else, and restart the application.`,
     }
 
     const documentId = this.getDocumentId(filePath);
-    const review = documentId === undefined ? undefined : this._reviewApplication.getReview(documentId);
+    const review =
+      documentId === undefined ? undefined : this._reviewApplication.getReview(documentId);
     const candidateWorkingText = normalizeText(candidateText.toString());
     const commitDocument = (): void => {
       doc.document = candidateText;
@@ -2515,8 +2511,7 @@ current contents from the editor somewhere else, and restart the application.`,
           mapped.reviewGeneration = review.generation;
         }
         if (!("unresolvedChunks" in mapped) && workingText !== undefined) {
-          mapped.unresolvedChunks =
-            this._reviewApplication.getStatus(documentId)?.unresolvedChunks;
+          mapped.unresolvedChunks = this._reviewApplication.getStatus(documentId)?.unresolvedChunks;
         }
       }
     }
@@ -2676,12 +2671,7 @@ current contents from the editor somewhere else, and restart the application.`,
     decision: ChunkDecision,
     precondition: ReviewMutationPrecondition,
   ): Promise<ChunkDecisionResponse | ReviewFailure> {
-    return this._reviewApplication.decideChunk(
-      reviewId,
-      chunkId,
-      decision,
-      precondition,
-    );
+    return this._reviewApplication.decideChunk(reviewId, chunkId, decision, precondition);
   }
 
   public commentReviewChunk(
@@ -2712,20 +2702,14 @@ current contents from the editor somewhere else, and restart the application.`,
     text: string,
     expectedReviewGeneration: number,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    return this._reviewApplication.addReviewComment(
-      reviewId,
-      text,
-      expectedReviewGeneration,
-    );
+    return this._reviewApplication.addReviewComment(reviewId, text, expectedReviewGeneration);
   }
 
   /**
    * Returns the reason a review blocks saving `filePath`, or undefined when the
    * save may proceed. Presentation is the renderer's job — see SaveRefusal.
    */
-  private async checkReviewDiffSaveGate(
-    filePath: string,
-  ): Promise<SaveRefusal | undefined> {
+  private async checkReviewDiffSaveGate(filePath: string): Promise<SaveRefusal | undefined> {
     const docId = this.getDocumentId(filePath);
     if (docId === undefined) {
       return undefined;
@@ -3039,11 +3023,7 @@ current contents from the editor somewhere else, and restart the application.`,
       return;
     }
     const diskContents = await this._app.fsal.loadAnySupportedFile(doc.filePath);
-    await this._reviewApplication.discardReview(
-      doc.documentId,
-      doc.filePath,
-      diskContents,
-    );
+    await this._reviewApplication.discardReview(doc.documentId, doc.filePath, diskContents);
     this._applyWorkingTextToDocument(doc.filePath, diskContents);
     doc.lastSavedContent = diskContents;
     doc.lastSavedVersion = doc.currentVersion;
@@ -3234,7 +3214,12 @@ current contents from the editor somewhere else, and restart the application.`,
       }
   > {
     const result = await this._reviewApplication.retractProposal(packetId, precondition);
-    if ("ok" in result && !result.ok && result.code === "PACKET_NOT_RETRACTABLE" && result.reviewId === "") {
+    if (
+      "ok" in result &&
+      !result.ok &&
+      result.code === "PACKET_NOT_RETRACTABLE" &&
+      result.reviewId === ""
+    ) {
       // GET /v1/reviews/{id}/packets hands out a detached review's packetIds,
       // so this route owes them an answer. The live store dropped them when
       // the file closed; the sidecar still carries them, and the refusal it
@@ -3242,8 +3227,7 @@ current contents from the editor somewhere else, and restart the application.`,
       // not the packet missing. Clearing is shut too, so say so.
       const detached = (await this._reviewApplication.listReviewQueries()).find(
         (query) =>
-          !query.attached &&
-          query.sidecar.packets.some((packet) => packet.packetId === packetId),
+          !query.attached && query.sidecar.packets.some((packet) => packet.packetId === packetId),
       );
       if (detached !== undefined && !detached.attached) {
         return {
@@ -3352,7 +3336,10 @@ current contents from the editor somewhere else, and restart the application.`,
     }> = [];
     for (const [filePath, documentEdits] of editsByDocument) {
       const document = this.documents.find((candidate) => candidate.filePath === filePath);
-      assert(document !== undefined, `[DocumentManager] Workspace edit names unopened document ${filePath}`);
+      assert(
+        document !== undefined,
+        `[DocumentManager] Workspace edit names unopened document ${filePath}`,
+      );
       assert(
         document.type === DocumentType.Markdown,
         `[DocumentManager] Workspace edit names non-Markdown document ${filePath}`,
@@ -3403,10 +3390,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * The session carries the mapped suggestions and decision identifiers.
    * Panes render this state locally and report no derived review state.
    */
-  private _broadcastReviewState(
-    filePath: string,
-    review: ActiveReviewState | undefined,
-  ): void {
+  private _broadcastReviewState(filePath: string, review: ActiveReviewState | undefined): void {
     if (review === undefined) {
       return;
     }
@@ -3420,10 +3404,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * The one constructor of the session shape a pane draws from: proposed
    * suggestion entities and their source descriptions.
    */
-  private _reviewSessionFor(
-    filePath: string,
-    review: ActiveReviewState,
-  ): ReviewDiffSession {
+  private _reviewSessionFor(filePath: string, review: ActiveReviewState): ReviewDiffSession {
     const document = this.documents.find((candidate) => candidate.filePath === filePath);
     if (document === undefined) {
       throw new Error(`Review ${review.reviewId} has no open document ${filePath}`);
@@ -3478,8 +3459,6 @@ current contents from the editor somewhere else, and restart the application.`,
     if (documentId === undefined) {
       return;
     }
-    this.commitWorkingTextReplacement(
-      this.prepareWorkingTextReplacement(documentId, workingText),
-    );
+    this.commitWorkingTextReplacement(this.prepareWorkingTextReplacement(documentId, workingText));
   }
 }

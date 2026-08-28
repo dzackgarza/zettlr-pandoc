@@ -12,53 +12,57 @@
  * END HEADER
  */
 
-import {
-  promises as fs,
-  createWriteStream as writeStream
-} from 'fs'
-import path from 'path'
-import { ZipArchive } from 'archiver'
-import { rimraf } from 'rimraf'
-import isFile from '@common/util/is-file'
-import type { ExporterOptions, ExporterPlugin, ExporterOutput, ExporterAPI } from './types'
-import sanitize from 'sanitize-filename'
+import isFile from "@common/util/is-file";
+import { ZipArchive } from "archiver";
+import { promises as fs, createWriteStream as writeStream } from "fs";
+import path from "path";
+import { rimraf } from "rimraf";
+import sanitize from "sanitize-filename";
+import type { ExporterAPI, ExporterOptions, ExporterOutput, ExporterPlugin } from "./types";
 
-const ASSETS_FOLDER_NAME = 'assets'
+const ASSETS_FOLDER_NAME = "assets";
 
-export const plugin: ExporterPlugin = async function (options: ExporterOptions, sourceFiles, _ctx: ExporterAPI): Promise<ExporterOutput> {
+export const plugin: ExporterPlugin = async function (
+  options: ExporterOptions,
+  sourceFiles,
+  _ctx: ExporterAPI,
+): Promise<ExporterOutput> {
   const output: ExporterOutput = {
     code: 0,
     stdout: [],
     stderr: [],
-    targetFile: ''
-  }
+    targetFile: "",
+  };
 
   if (sourceFiles.length > 1) {
-    throw new Error('Cannot export to Textbundle: Please only pass one single file.')
+    throw new Error("Cannot export to Textbundle: Please only pass one single file.");
   }
 
-  const baseName = path.basename(options.sourceFiles[0].name, options.sourceFiles[0].ext)
-  const title = (options.defaultsOverride?.title !== undefined) ? sanitize(options.defaultsOverride.title, { replacement: '-' }) : baseName
-  const ext = options.profile.writer === 'textpack' ? '.textpack' : '.textbundle'
-  const targetPath = path.join(options.targetDirectory, title + ext)
+  const baseName = path.basename(options.sourceFiles[0].name, options.sourceFiles[0].ext);
+  const title =
+    options.defaultsOverride?.title !== undefined
+      ? sanitize(options.defaultsOverride.title, { replacement: "-" })
+      : baseName;
+  const ext = options.profile.writer === "textpack" ? ".textpack" : ".textbundle";
+  const targetPath = path.join(options.targetDirectory, title + ext);
   try {
     output.targetFile = await makeTextbundle(
       sourceFiles[0],
       targetPath,
-      options.profile.writer === 'textpack',
-      path.basename(sourceFiles[0])
-    )
+      options.profile.writer === "textpack",
+      path.basename(sourceFiles[0]),
+    );
   } catch (err: unknown) {
-    output.code = 1
+    output.code = 1;
     if (err instanceof Error) {
-      output.stderr.push(err.message)
+      output.stderr.push(err.message);
     } else {
-      output.stderr.push('Unknown error')
+      output.stderr.push("Unknown error");
     }
   }
 
-  return output
-}
+  return output;
+};
 
 /**
  * Creates a textbundle and returns the path to the created folder/file.
@@ -70,7 +74,12 @@ export const plugin: ExporterPlugin = async function (options: ExporterOptions, 
  *
  * @return  {Promise<string>}                    Resolves with a path to the file.
  */
-async function makeTextbundle (sourceFile: string, targetFile: string, textpack: boolean = false, overrideFilename?: string): Promise<string> {
+async function makeTextbundle(
+  sourceFile: string,
+  targetFile: string,
+  textpack: boolean = false,
+  overrideFilename?: string,
+): Promise<string> {
   /*
    * We have to do the following (in order):
    * 1. Find all images in the Markdown file.
@@ -86,89 +95,98 @@ async function makeTextbundle (sourceFile: string, targetFile: string, textpack:
   // First of all we must make sure that the generated file is actually a
   // textbundle, and not a textpack. This way we can simply zip the bundle.
   if (textpack) {
-    targetFile = targetFile.replace('.textpack', '.textbundle')
+    targetFile = targetFile.replace(".textpack", ".textbundle");
   }
 
   // Create the textbundle folder
   try {
-    await fs.lstat(targetFile)
+    await fs.lstat(targetFile);
   } catch (err) {
-    await fs.mkdir(targetFile)
+    await fs.mkdir(targetFile);
   }
 
-  const dirName = path.dirname(sourceFile)
-  const imgRE = /!\[.*?\]\(([^)]+)\)/g
-  const imagesToCopy: string[] = []
+  const dirName = path.dirname(sourceFile);
+  const imgRE = /!\[.*?\]\(([^)]+)\)/g;
+  const imagesToCopy: string[] = [];
 
   // Read in the file and replace image paths, if applicable
-  let content = await fs.readFile(sourceFile, 'utf8')
+  let content = await fs.readFile(sourceFile, "utf8");
   content = content.replace(imgRE, (match: string, url: string) => {
-    const absPath = path.resolve(dirName, url)
+    const absPath = path.resolve(dirName, url);
 
     // We only care about images that are currently present on the filesystem.
     if (isFile(absPath)) {
-      match = match.replace(url, path.join(ASSETS_FOLDER_NAME, path.basename(url)))
-      imagesToCopy.push(absPath)
+      match = match.replace(url, path.join(ASSETS_FOLDER_NAME, path.basename(url)));
+      imagesToCopy.push(absPath);
     }
 
-    return match
-  })
+    return match;
+  });
 
   // Write the file into the target directory
-  await fs.writeFile(path.join(targetFile, 'text.md'), content, { encoding: 'utf8' })
+  await fs.writeFile(path.join(targetFile, "text.md"), content, { encoding: "utf8" });
 
   // Create the assets folder
   try {
-    await fs.lstat(path.join(targetFile, ASSETS_FOLDER_NAME))
+    await fs.lstat(path.join(targetFile, ASSETS_FOLDER_NAME));
   } catch (err) {
-    await fs.mkdir(path.join(targetFile, ASSETS_FOLDER_NAME))
+    await fs.mkdir(path.join(targetFile, ASSETS_FOLDER_NAME));
   }
 
   // Copy over all images
   for (const image of imagesToCopy) {
-    await fs.copyFile(image, path.join(targetFile, ASSETS_FOLDER_NAME, path.basename(image)))
+    await fs.copyFile(image, path.join(targetFile, ASSETS_FOLDER_NAME, path.basename(image)));
   }
 
   // Finally, create the info.json
-  await fs.writeFile(path.join(targetFile, 'info.json'), JSON.stringify({
-    version: 2,
-    type: 'net.daringfireball.markdown',
-    creatorIdentifier: 'com.zettlr.app',
-    sourceURL: overrideFilename ?? sourceFile
-  }, undefined, 4), { encoding: 'utf8' })
+  await fs.writeFile(
+    path.join(targetFile, "info.json"),
+    JSON.stringify(
+      {
+        version: 2,
+        type: "net.daringfireball.markdown",
+        creatorIdentifier: "com.zettlr.app",
+        sourceURL: overrideFilename ?? sourceFile,
+      },
+      undefined,
+      4,
+    ),
+    { encoding: "utf8" },
+  );
 
   // As a last step, check whether or not we should actually create a textpack
   if (textpack) {
     await new Promise<void>((resolve, reject) => {
-      const packFile = targetFile.replace('.textbundle', '.textpack')
-      const stream = writeStream(packFile)
+      const packFile = targetFile.replace(".textbundle", ".textpack");
+      const stream = writeStream(packFile);
       // Create a Zip file with compression 9
-      const archive = new ZipArchive({ zlib: { level: 9 } })
+      const archive = new ZipArchive({ zlib: { level: 9 } });
       // Throw the error for the engine to capture
-      archive.on('error', (err) => {
-        reject(err)
-      })
+      archive.on("error", (err) => {
+        reject(err);
+      });
       // Resolve the promise as soon as the archive has finished writing
-      stream.on('finish', () => {
-        resolve()
-      })
-      archive.pipe(stream) // Pipe the data through to our file
-      archive.directory(targetFile, path.basename(targetFile))
-      archive.finalize() // Done.
+      stream.on("finish", () => {
+        resolve();
+      });
+      archive.pipe(stream); // Pipe the data through to our file
+      archive.directory(targetFile, path.basename(targetFile));
+      archive
+        .finalize() // Done.
         .then(() => {
-          resolve()
+          resolve();
         })
-        .catch(err => {
-          err.message = `[TextBundler] Could not finalize the Textpack archive: ${err.message as string}`
-          reject(err)
-        })
+        .catch((err) => {
+          err.message = `[TextBundler] Could not finalize the Textpack archive: ${err.message as string}`;
+          reject(err);
+        });
       // Now we need to overwrite the targetFile with the pack name
-      targetFile = packFile
-    })
+      targetFile = packFile;
+    });
     // Afterwards remove the source file
-    await rimraf(targetFile.replace('.textpack', '.textbundle'))
+    await rimraf(targetFile.replace(".textpack", ".textbundle"));
   }
 
   // After all is done, return the written file (folder, to be exact).
-  return targetFile
+  return targetFile;
 }

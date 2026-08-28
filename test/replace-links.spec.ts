@@ -13,8 +13,8 @@
  * END HEADER
  */
 
-import replaceLinks from '@common/util/replace-links'
-import { strictEqual } from 'assert'
+import replaceLinks from "@common/util/replace-links";
+import { strictEqual } from "assert";
 
 // NOTE: THESE TESTS ASSUME THE DEFAULT SETTING `link|title` FOR LINKS.
 
@@ -39,7 +39,7 @@ Also, this needs to work if the ending is preserved, as in [[Zettelkasten.md]]
 or [[Zettelkasten (Luhmann).md]].
 
 Finally, users may use explicit title strings, which should be preserved as
-well: [[Zettelkasten|This is an arbitrary title that needs to be preserved.]]`
+well: [[Zettelkasten|This is an arbitrary title that needs to be preserved.]]`;
 
 // The second document represents the document after a replacement of
 // "Zettelkasten" with "Zettelkasten (Luhmann)"
@@ -62,7 +62,7 @@ Also, this needs to work if the ending is preserved, as in [[Zettelkasten (Luhma
 or [[Zettelkasten (Luhmann).md]].
 
 Finally, users may use explicit title strings, which should be preserved as
-well: [[Zettelkasten (Luhmann)|This is an arbitrary title that needs to be preserved.]]`
+well: [[Zettelkasten (Luhmann)|This is an arbitrary title that needs to be preserved.]]`;
 
 // Finally, the third document should change all links to just "Zettelkasten" again.
 const thirdDocument = `---
@@ -84,27 +84,27 @@ Also, this needs to work if the ending is preserved, as in [[Zettelkasten.md]]
 or [[Zettelkasten.md]].
 
 Finally, users may use explicit title strings, which should be preserved as
-well: [[Zettelkasten|This is an arbitrary title that needs to be preserved.]]`
+well: [[Zettelkasten|This is an arbitrary title that needs to be preserved.]]`;
 
 const replaceLinksTesters = [
   {
-    oldName: 'Zettelkasten.md',
-    newName: 'Zettelkasten (Luhmann).md',
+    oldName: "Zettelkasten.md",
+    newName: "Zettelkasten (Luhmann).md",
     input: firstDocument,
-    output: secondDocument
+    output: secondDocument,
   },
   {
-    oldName: 'Zettelkasten (Luhmann).md',
-    newName: 'Zettelkasten.md',
+    oldName: "Zettelkasten (Luhmann).md",
+    newName: "Zettelkasten.md",
     input: secondDocument,
-    output: thirdDocument
-  }
-]
+    output: thirdDocument,
+  },
+];
 
-describe('Utility#replaceLinks()', function () {
+describe("Utility#replaceLinks()", function () {
   for (const test of replaceLinksTesters) {
     it(`should replace "${test.oldName}" with "${test.newName}"`, function () {
-      strictEqual(replaceLinks(test.input, test.oldName, test.newName), test.output)
-    })
+      strictEqual(replaceLinks(test.input, test.oldName, test.newName), test.output);
+    });
   }
-})
+});

@@ -175,166 +175,174 @@
  * END HEADER
  */
 
-import WindowChrome from '@common/vue/window/WindowChrome.vue'
-import FileManager from './file-manager/FileManager.vue'
-import MainSidebar from './sidebar/MainSidebar.vue'
-import EditorPane from './EditorPane.vue'
-import EditorBranch from './EditorBranch.vue'
-import SplitView from '../common/vue/window/SplitView.vue'
-import GlobalSearch from './GlobalSearch.vue'
-import TikzLightbox from './TikzLightbox.vue'
-import PopoverExport from './PopoverExport.vue'
-import PopoverStats from './PopoverStats.vue'
-import PopoverTags from './PopoverTags.vue'
-import PopoverPomodoro from './PopoverPomodoro.vue'
-import PopoverTable from './PopoverTable.vue'
-import PopoverDocInfo from './PopoverDocInfo.vue'
-import PopoverPandoc from './PopoverPandoc.vue'
-import PandocQuickHelp from './PandocQuickHelp.vue'
-import ReferenceSearchOverlay from './ReferenceSearchOverlay.vue'
-import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
+import { trans } from "@common/i18n-renderer";
 import type {
   ConfirmReferenceLabelOutcome,
-  CreateReferenceLabelIntent
-} from '@common/modules/markdown-editor/plugins/create-reference-label'
-import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
-import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
+  CreateReferenceLabelIntent,
+} from "@common/modules/markdown-editor/plugins/create-reference-label";
+import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
+import { buildPipeMarkdownTable } from "@common/util/build-pipe-markdown-table";
+import generateId from "@common/util/generate-id";
+import localiseNumber from "@common/util/localise-number";
+import { pathBasename } from "@common/util/renderer-path-polyfill";
+import showToast from "@common/util/show-toast";
+import WindowChrome from "@common/vue/window/WindowChrome.vue";
+import { type ToolbarControl } from "@common/vue/window/WindowToolbar.vue";
+import {
+  DocumentType,
+  type LeafNodeJSON,
+  SAVE_REFUSED_CHANNEL,
+  type SaveRefusedBroadcast,
+} from "@dts/common/documents";
+import type {
+  ProjectRootSpec,
+  ReferenceDefinition,
+  ReferenceOccurrence,
+} from "@dts/common/references";
+import { type UpdateState } from "@providers/updates";
+import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
+import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
+import {
+  useConfigStore,
+  useDocumentTreeStore,
+  useLRTStore,
+  useWindowStateStore,
+  useWorkspaceStore,
+} from "source/pinia";
+import { TaskStatus } from "source/pinia/lrt-store";
+import { type AnyDescriptor } from "source/types/common/fsal";
+import { computed, nextTick, onBeforeMount, onMounted, ref, watch } from "vue";
+import SplitView from "../common/vue/window/SplitView.vue";
+import chimeFile from "./assets/chime.mp3";
+import alarmFile from "./assets/digital_alarm.mp3";
+// Import the sound effects for the pomodoro timer
+import glassFile from "./assets/glass.wav";
+import CreateReferenceLabelDialog from "./CreateReferenceLabelDialog.vue";
 import type {
   CreateReferenceLabelDialogPrompt,
   EditorCommands,
   PomodoroConfig,
-  ReferenceJumpIntent
-} from './component-contracts'
-import showToast from '@common/util/show-toast'
-import { trans } from '@common/i18n-renderer'
-import localiseNumber from '@common/util/localise-number'
-import generateId from '@common/util/generate-id'
-import {
-  nextTick,
-  ref,
-  computed,
-  watch,
-  onMounted,
-  onBeforeMount
-} from 'vue'
+  ReferenceJumpIntent,
+} from "./component-contracts";
+import EditorBranch from "./EditorBranch.vue";
+import EditorPane from "./EditorPane.vue";
+import FileManager from "./file-manager/FileManager.vue";
+import GlobalSearch from "./GlobalSearch.vue";
+import PandocQuickHelp from "./PandocQuickHelp.vue";
+import PopoverDocInfo from "./PopoverDocInfo.vue";
+import PopoverExport from "./PopoverExport.vue";
+import PopoverLRT from "./PopoverLRT.vue";
+import PopoverPandoc from "./PopoverPandoc.vue";
+import PopoverPomodoro from "./PopoverPomodoro.vue";
+import PopoverStats from "./PopoverStats.vue";
+import PopoverTable from "./PopoverTable.vue";
+import PopoverTags from "./PopoverTags.vue";
+import ReferenceSearchOverlay from "./ReferenceSearchOverlay.vue";
+import MainSidebar from "./sidebar/MainSidebar.vue";
+import TikzLightbox from "./TikzLightbox.vue";
+import getDocumentTitle from "./util/get-document-title";
+import { invokeReferenceProviderRecoverably } from "./util/recoverable-reference-errors";
 
-// Import the sound effects for the pomodoro timer
-import glassFile from './assets/glass.wav'
-import alarmFile from './assets/digital_alarm.mp3'
-import chimeFile from './assets/chime.mp3'
-import { DocumentType, type LeafNodeJSON } from '@dts/common/documents'
-import { buildPipeMarkdownTable } from '@common/util/build-pipe-markdown-table'
-import { type UpdateState } from '@providers/updates'
-import { type ToolbarControl } from '@common/vue/window/WindowToolbar.vue'
-import getDocumentTitle from './util/get-document-title'
-import { useConfigStore, useDocumentTreeStore, useLRTStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
-import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
-import { type AnyDescriptor } from 'source/types/common/fsal'
-import type { ProjectRootSpec, ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
-import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
-import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from '@dts/common/documents'
-import { pathBasename } from '@common/util/renderer-path-polyfill'
-import { TaskStatus } from 'source/pinia/lrt-store'
-import PopoverLRT from './PopoverLRT.vue'
+const ipcRenderer = window.ipc;
 
-const ipcRenderer = window.ipc
-
-const configStore = useConfigStore()
-const documentTreeStore = useDocumentTreeStore()
-const windowStateStore = useWindowStateStore()
-const workspaceStore = useWorkspaceStore()
-const LRTStore = useLRTStore()
+const configStore = useConfigStore();
+const documentTreeStore = useDocumentTreeStore();
+const windowStateStore = useWindowStateStore();
+const workspaceStore = useWorkspaceStore();
+const LRTStore = useLRTStore();
 
 const SOUND_EFFECTS = [
   {
     file: glassFile,
-    label: 'Glass'
+    label: "Glass",
   },
   {
     file: alarmFile,
-    label: 'Digital Alarm'
+    label: "Digital Alarm",
   },
   {
     file: chimeFile,
-    label: 'Chime'
-  }
-]
+    label: "Chime",
+  },
+];
 
-const searchParams = new URLSearchParams(window.location.search)
+const searchParams = new URLSearchParams(window.location.search);
 // The window number indicates which main window this one here is. This is only
 // necessary for the documents and split views to show up.
-const windowId = searchParams.get('window_id')!
+const windowId = searchParams.get("window_id")!;
 
-const fileManagerVisible = computed<boolean>(() => configStore.config.window.fileManagerVisible)
-const mainSplitViewVisibleComponent = ref<'fileManager'|'globalSearch'>('fileManager')
-const isUpdateAvailable = ref(false)
-const hasVibrancy = computed(() => configStore.config.window.vibrancy && process.platform === 'darwin')
+const fileManagerVisible = computed<boolean>(() => configStore.config.window.fileManagerVisible);
+const mainSplitViewVisibleComponent = ref<"fileManager" | "globalSearch">("fileManager");
+const isUpdateAvailable = ref(false);
+const hasVibrancy = computed(
+  () => configStore.config.window.vibrancy && process.platform === "darwin",
+);
 
 // Ensure the app remembers the previous sidebar sizes
-const fileManagerSplitComponentInitialSize = ref<[number, number]>([ 20, 80 ])
-const editorSidebarSplitComponentInitialSize = ref<[number, number]>([ 80, 20 ])
+const fileManagerSplitComponentInitialSize = ref<[number, number]>([20, 80]);
+const editorSidebarSplitComponentInitialSize = ref<[number, number]>([80, 20]);
 onBeforeMount(() => {
-  fileManagerSplitComponentInitialSize.value = configStore.config.ui.fileManagerSplitSize
-  editorSidebarSplitComponentInitialSize.value = configStore.config.ui.editorSidebarSplitSize
-})
+  fileManagerSplitComponentInitialSize.value = configStore.config.ui.fileManagerSplitSize;
+  editorSidebarSplitComponentInitialSize.value = configStore.config.ui.editorSidebarSplitSize;
+});
 
 // Popover targets
-const exportButton = ref<HTMLElement|null>(null)
-const showExportPopover = ref<boolean>(false)
-const statsButton = ref<HTMLElement|null>(null)
-const showStatsPopover = ref<boolean>(false)
-const tagsButton = ref<HTMLElement|null>(null)
-const showTagsPopover = ref<boolean>(false)
-const tableButton = ref<HTMLElement|null>(null)
-const showTablePopover = ref<boolean>(false)
-const docInfoButton = ref<HTMLElement|null>(null)
-const showDocInfoPopover = ref<boolean>(false)
-const pomodoroButton = ref<HTMLElement|null>(null)
-const showPomodoroPopover = ref<boolean>(false)
-const tasksButton = ref<HTMLElement|null>(null)
-const showTasksPopover = ref(false)
-const pandocButton = ref<HTMLElement|null>(null)
-const showPandocPopover = ref<boolean>(false)
-const showPandocQuickHelp = ref<boolean>(false)
+const exportButton = ref<HTMLElement | null>(null);
+const showExportPopover = ref<boolean>(false);
+const statsButton = ref<HTMLElement | null>(null);
+const showStatsPopover = ref<boolean>(false);
+const tagsButton = ref<HTMLElement | null>(null);
+const showTagsPopover = ref<boolean>(false);
+const tableButton = ref<HTMLElement | null>(null);
+const showTablePopover = ref<boolean>(false);
+const docInfoButton = ref<HTMLElement | null>(null);
+const showDocInfoPopover = ref<boolean>(false);
+const pomodoroButton = ref<HTMLElement | null>(null);
+const showPomodoroPopover = ref<boolean>(false);
+const tasksButton = ref<HTMLElement | null>(null);
+const showTasksPopover = ref(false);
+const pandocButton = ref<HTMLElement | null>(null);
+const showPandocPopover = ref<boolean>(false);
+const showPandocQuickHelp = ref<boolean>(false);
 
 // Mod-P workspace reference search (issue #1 Phase 3b) and the badge-keyed
 // reverse lookup (issue #1 Phase 8): the relayed request decides which mode
 // the overlay opens in, and the merged occurrence list feeds the
 // citing-locations rows.
-const showReferenceSearch = ref<boolean>(false)
-const referenceSearchDefinitions = ref<ReferenceDefinition[]>([])
-const referenceSearchOccurrences = ref<ReferenceOccurrence[]>([])
-const referenceSearchRequest = ref<ReferenceSearchRequest>(null)
+const showReferenceSearch = ref<boolean>(false);
+const referenceSearchDefinitions = ref<ReferenceDefinition[]>([]);
+const referenceSearchOccurrences = ref<ReferenceOccurrence[]>([]);
+const referenceSearchRequest = ref<ReferenceSearchRequest>(null);
 // The US-16 ranking context (review A3): every visible Project root plus the
 // document the search was invoked from, captured at open time.
-const referenceSearchProjectRoots = ref<ProjectRootSpec[]>([])
-const referenceSearchActiveDocumentPath = ref<string|undefined>(undefined)
+const referenceSearchProjectRoots = ref<ProjectRootSpec[]>([]);
+const referenceSearchActiveDocumentPath = ref<string | undefined>(undefined);
 
 /**
  * Every Project root visible in the workspace, projected to the pure
  * ProjectRootSpec shape the ranking consumes (the same projection
  * MainEditor.vue feeds the completion status computation).
  */
-function collectProjectRoots (): ProjectRootSpec[] {
-  const roots: ProjectRootSpec[] = []
+function collectProjectRoots(): ProjectRootSpec[] {
+  const roots: ProjectRootSpec[] = [];
   for (const descriptor of workspaceStore.descriptorMap.values()) {
-    if (descriptor.type === 'directory' && descriptor.settings.project !== null) {
+    if (descriptor.type === "directory" && descriptor.settings.project !== null) {
       roots.push({
         rootPath: descriptor.path,
-        files: [...descriptor.settings.project.files]
-      })
+        files: [...descriptor.settings.project.files],
+      });
     }
   }
-  return roots
+  return roots;
 }
 
 /**
  * The Mod-P overlay's help affordance (review A2, US-06): swap the search
  * overlay for the searchable Pandoc quick help.
  */
-function openQuickHelpFromOverlay (): void {
-  showReferenceSearch.value = false
-  showPandocQuickHelp.value = true
+function openQuickHelpFromOverlay(): void {
+  showReferenceSearch.value = false;
+  showPandocQuickHelp.value = true;
 }
 
 /**
@@ -346,35 +354,39 @@ function openQuickHelpFromOverlay (): void {
  *
  * @param   {ReferenceSearchRequest}  request  The relayed request payload
  */
-function openReferenceSearch (request: ReferenceSearchRequest = null): void {
+function openReferenceSearch(request: ReferenceSearchRequest = null): void {
   invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
     async (channel, message) => await ipcRenderer.invoke(channel, message),
-    { command: 'get-snapshot' },
-    trans('Loading workspace references')
+    { command: "get-snapshot" },
+    trans("Loading workspace references"),
   )
-    .then(outcome => {
-      if (outcome.status === 'failed') {
-        return // The boundary surfaced the closable toast; nothing to open.
+    .then((outcome) => {
+      if (outcome.status === "failed") {
+        return; // The boundary surfaced the closable toast; nothing to open.
       }
-      referenceSearchDefinitions.value = outcome.value.snapshots.flatMap(snapshot => snapshot.definitions)
+      referenceSearchDefinitions.value = outcome.value.snapshots.flatMap(
+        (snapshot) => snapshot.definitions,
+      );
       // ONE owner for the citing-locations fact (issues #53, #46): both
       // modes read the provider's freshly fetched merged snapshot, whose
       // live overlays the document authority feeds on load and edit. The
       // keyed request names only the key; the overlay filters these rows.
-      referenceSearchOccurrences.value = outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
-      referenceSearchRequest.value = request
-      referenceSearchProjectRoots.value = collectProjectRoots()
-      referenceSearchActiveDocumentPath.value = documentTreeStore.lastLeafActiveFile?.path
-      showReferenceSearch.value = true
+      referenceSearchOccurrences.value = outcome.value.snapshots.flatMap(
+        (snapshot) => snapshot.occurrences,
+      );
+      referenceSearchRequest.value = request;
+      referenceSearchProjectRoots.value = collectProjectRoots();
+      referenceSearchActiveDocumentPath.value = documentTreeStore.lastLeafActiveFile?.path;
+      showReferenceSearch.value = true;
     })
-    .catch(err => console.error('Could not open the reference search overlay', err))
+    .catch((err) => console.error("Could not open the reference search overlay", err));
 }
 
 // Create-reference-label dialog (issue #1 Phase 6): the relayed request
 // carries the fixed family, the slug proposal, and the editor-owned
 // insertion closure; the workspace key set feeds the live uniqueness verdict.
-const createLabelPrompt = ref<CreateReferenceLabelDialogPrompt|undefined>(undefined)
-const createLabelExistingKeys = ref<string[]>([])
+const createLabelPrompt = ref<CreateReferenceLabelDialogPrompt | undefined>(undefined);
+const createLabelExistingKeys = ref<string[]>([]);
 
 /**
  * Fetches the current workspace definition keys from the reference provider
@@ -383,22 +395,22 @@ const createLabelExistingKeys = ref<string[]>([])
  *
  * @param   {CreateReferenceLabelDialogPrompt}  prompt  The relayed request
  */
-function openCreateReferenceLabel (prompt: CreateReferenceLabelDialogPrompt): void {
+function openCreateReferenceLabel(prompt: CreateReferenceLabelDialogPrompt): void {
   invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
     async (channel, message) => await ipcRenderer.invoke(channel, message),
-    { command: 'get-snapshot' },
-    trans('Loading workspace references')
+    { command: "get-snapshot" },
+    trans("Loading workspace references"),
   )
-    .then(outcome => {
-      if (outcome.status === 'failed') {
-        return // The boundary surfaced the closable toast; nothing to open.
+    .then((outcome) => {
+      if (outcome.status === "failed") {
+        return; // The boundary surfaced the closable toast; nothing to open.
       }
       createLabelExistingKeys.value = outcome.value.snapshots
-        .flatMap(snapshot => snapshot.definitions)
-        .map(definition => definition.key)
-      createLabelPrompt.value = prompt
+        .flatMap((snapshot) => snapshot.definitions)
+        .map((definition) => definition.key);
+      createLabelPrompt.value = prompt;
     })
-    .catch(err => console.error('Could not open the create-reference-label dialog', err))
+    .catch((err) => console.error("Could not open the create-reference-label dialog", err));
 }
 
 /**
@@ -410,12 +422,14 @@ function openCreateReferenceLabel (prompt: CreateReferenceLabelDialogPrompt): vo
  *
  * @return  {string}                                 The user-facing message
  */
-function describeStaleCreateOutcome (outcome: ConfirmReferenceLabelOutcome & { status: 'stale' }): string {
+function describeStaleCreateOutcome(
+  outcome: ConfirmReferenceLabelOutcome & { status: "stale" },
+): string {
   switch (outcome.reason) {
-    case 'already-labeled':
-      return trans('No label created: the target gained a label while the dialog was open.')
-    case 'target-vanished':
-      return trans('No label created: the target no longer exists in the document.')
+    case "already-labeled":
+      return trans("No label created: the target gained a label while the dialog was open.");
+    case "target-vanished":
+      return trans("No label created: the target no longer exists in the document.");
   }
 }
 
@@ -428,27 +442,30 @@ function describeStaleCreateOutcome (outcome: ConfirmReferenceLabelOutcome & { s
  *
  * @param   {CreateReferenceLabelIntent}  intent  The confirmed intent
  */
-function handleCreateReferenceLabel (intent: CreateReferenceLabelIntent): void {
-  const prompt = createLabelPrompt.value
-  createLabelPrompt.value = undefined
+function handleCreateReferenceLabel(intent: CreateReferenceLabelIntent): void {
+  const prompt = createLabelPrompt.value;
+  createLabelPrompt.value = undefined;
   if (prompt === undefined) {
-    return
+    return;
   }
 
-  const outcome: ConfirmReferenceLabelOutcome = prompt.applyCreate(intent)
-  if (outcome.status === 'stale') {
-    showToast(describeStaleCreateOutcome(outcome), 'error')
-    return
+  const outcome: ConfirmReferenceLabelOutcome = prompt.applyCreate(intent);
+  if (outcome.status === "stale") {
+    showToast(describeStaleCreateOutcome(outcome), "error");
+    return;
   }
 
-  navigator.clipboard.writeText(intent.clipboardText)
+  navigator.clipboard
+    .writeText(intent.clipboardText)
     .then(() => {
-      showToast(trans('Created %s — %s copied to the clipboard.', intent.key, intent.clipboardText))
+      showToast(
+        trans("Created %s — %s copied to the clipboard.", intent.key, intent.clipboardText),
+      );
     })
-    .catch(err => {
-      console.error('Could not copy the reference to the clipboard', err)
-      showToast(trans('Created %s. The clipboard copy failed.', intent.key), 'error')
-    })
+    .catch((err) => {
+      console.error("Could not copy the reference to the clipboard", err);
+      showToast(trans("Created %s. The clipboard copy failed.", intent.key), "error");
+    });
 }
 
 /**
@@ -460,19 +477,20 @@ function handleCreateReferenceLabel (intent: CreateReferenceLabelIntent): void {
  *
  * @param   {ReferenceJumpIntent}  intent  The chosen jump intent
  */
-function handleReferenceJump (intent: ReferenceJumpIntent): void {
-  showReferenceSearch.value = false
-  ipcRenderer.invoke('documents-provider', {
-    command: 'open-file',
-    payload: {
-      path: intent.documentPath,
-      windowId,
-      leafId: lastLeafId.value,
-      newTab: false,
-      targetRange: intent.range
-    }
-  })
-    .catch(err => console.error(err))
+function handleReferenceJump(intent: ReferenceJumpIntent): void {
+  showReferenceSearch.value = false;
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "open-file",
+      payload: {
+        path: intent.documentPath,
+        windowId,
+        leafId: lastLeafId.value,
+        newTab: false,
+        targetRange: intent.range,
+      },
+    })
+    .catch((err) => console.error(err));
 }
 
 const pomodoro = ref<PomodoroConfig>({
@@ -480,10 +498,10 @@ const pomodoro = ref<PomodoroConfig>({
   soundEffect: new Audio(glassFile),
   intervalHandle: undefined,
   durations: { task: 1500, short: 300, long: 1200 },
-  phase: { type: 'task', elapsed: 0 },
+  phase: { type: "task", elapsed: 0 },
   counter: { task: 0, short: 0, long: 0 },
-  colour: { task: '#ff3366', short: '#ddff00', long: '#33ffcc' }
-})
+  colour: { task: "#ff3366", short: "#ddff00", long: "#33ffcc" },
+});
 
 // Editor commands state (the prop-as-event bus; see component-contracts.ts)
 const editorCommands = ref<EditorCommands>({
@@ -493,24 +511,24 @@ const editorCommands = ref<EditorCommands>({
   replaceSelection: false,
   insertPandoc: false,
   executeCommand: false,
-  data: undefined
-})
+  data: undefined,
+});
 
-const sidebarsBeforeDistractionfree = ref<{ fileManager: boolean, sidebar: boolean }>({
+const sidebarsBeforeDistractionfree = ref<{ fileManager: boolean; sidebar: boolean }>({
   fileManager: true,
-  sidebar: false
-})
+  sidebar: false,
+});
 
-const sidebarVisible = computed<boolean>(() => configStore.config.window.sidebarVisible)
-const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
-const shouldCountChars = computed<boolean>(() => configStore.config.editor.countChars)
+const sidebarVisible = computed<boolean>(() => configStore.config.window.sidebarVisible);
+const activeFile = computed(() => documentTreeStore.lastLeafActiveFile);
+const shouldCountChars = computed<boolean>(() => configStore.config.editor.countChars);
 const windowTitle = computed<string>(() => {
   if (activeFile.value === undefined) {
-    return 'Zettlr'
+    return "Zettlr";
   }
 
-  return `Zettlr - ${getDocumentTitle(activeFile.value)}`
-})
+  return `Zettlr - ${getDocumentTitle(activeFile.value)}`;
+});
 
 // Simple state machine to trigger which of the three shows up when. Below's the
 // corresponding truth table, which is relatively large, but by spotting some
@@ -548,268 +566,290 @@ const windowTitle = computed<string>(() => {
 */
 
 // The titlebar shall be shown on the main window in only one single instance
-const shouldShowTitlebar = computed<boolean>(() => process.platform === 'darwin' && configStore.config.display.hideToolbarInDistractionFree && distractionFree.value)
+const shouldShowTitlebar = computed<boolean>(
+  () =>
+    process.platform === "darwin" &&
+    configStore.config.display.hideToolbarInDistractionFree &&
+    distractionFree.value,
+);
 // The menubar is independent of other values; always shown on Windows, and on Linux only if native Appearance is off.
-const shouldShowMenubar = computed<boolean>(() => process.platform === 'win32' || (process.platform !== 'darwin' && !configStore.config.window.nativeAppearance))
+const shouldShowMenubar = computed<boolean>(
+  () =>
+    process.platform === "win32" ||
+    (process.platform !== "darwin" && !configStore.config.window.nativeAppearance),
+);
 
 // Finally, the toolbar. That one is a bit more iffy. It is always shown, EXCEPT
 // Hide Toolbar is True and DistractionFree is True
-const shouldShowToolbar = computed<boolean>(() => !distractionFree.value || !configStore.config.display.hideToolbarInDistractionFree)
+const shouldShowToolbar = computed<boolean>(
+  () => !distractionFree.value || !configStore.config.display.hideToolbarInDistractionFree,
+);
 
 const parsedDocumentInfo = computed<string[]>(() => {
-  const info = windowStateStore.activeDocumentInfo
+  const info = windowStateStore.activeDocumentInfo;
   if (info == null) {
-    return []
+    return [];
   }
 
-  const lines: string[] = []
+  const lines: string[] = [];
 
   if (info.selections.length > 0) {
     // We have selections to display.
-    let length = 0
-    info.selections.forEach(sel => {
-      length += shouldCountChars.value ? sel.chars : sel.words
-    })
+    let length = 0;
+    info.selections.forEach((sel) => {
+      length += shouldCountChars.value ? sel.chars : sel.words;
+    });
 
-    lines.push(trans('%s selected', localiseNumber(length)))
+    lines.push(trans("%s selected", localiseNumber(length)));
     if (info.selections.length === 1) {
-      const { head, anchor } = info.selections[0]
-      lines.push(`${anchor.line}:${anchor.ch} – ${head.line}:${head.ch}`)
+      const { head, anchor } = info.selections[0];
+      lines.push(`${anchor.line}:${anchor.ch} – ${head.line}:${head.ch}`);
     } else {
       // Multiple selections --> indicate
-      lines.push(trans('%s selections', info.selections.length))
+      lines.push(trans("%s selections", info.selections.length));
     }
   } else {
     // No selection.
-    lines.push(shouldCountChars.value
-      ? trans('%s characters', localiseNumber(info.chars))
-      : trans('%s words', localiseNumber(info.words)))
-    lines.push(`${info.cursor.line}:${info.cursor.ch}`)
+    lines.push(
+      shouldCountChars.value
+        ? trans("%s characters", localiseNumber(info.chars))
+        : trans("%s words", localiseNumber(info.words)),
+    );
+    lines.push(`${info.cursor.line}:${info.cursor.ch}`);
   }
 
-  return lines
-})
+  return lines;
+});
 
 // Long-Running-Task setup
-const hasTasks = computed(() => LRTStore.tasks.length > 0)
-const taskSuccess = computed(() => LRTStore.tasks.filter(t => t.status === TaskStatus.finished).length)
-const taskAborted = computed(() => LRTStore.tasks.filter(t => t.status === TaskStatus.aborted).length)
-const taskError = computed(() => LRTStore.tasks.filter(t => t.status === TaskStatus.error).length)
-const taskOngoing = computed(() => LRTStore.tasks.filter(t => t.status === TaskStatus.ongoing).length)
+const hasTasks = computed(() => LRTStore.tasks.length > 0);
+const taskSuccess = computed(
+  () => LRTStore.tasks.filter((t) => t.status === TaskStatus.finished).length,
+);
+const taskAborted = computed(
+  () => LRTStore.tasks.filter((t) => t.status === TaskStatus.aborted).length,
+);
+const taskError = computed(
+  () => LRTStore.tasks.filter((t) => t.status === TaskStatus.error).length,
+);
+const taskOngoing = computed(
+  () => LRTStore.tasks.filter((t) => t.status === TaskStatus.ongoing).length,
+);
 
 const toolbarControls = computed<ToolbarControl[]>(() => {
   return [
     {
-      type: 'three-way-toggle',
-      id: 'toggle-file-manager',
+      type: "three-way-toggle",
+      id: "toggle-file-manager",
       stateOne: {
-        id: 'fileManager',
-        title: trans('Toggle File Manager'),
-        icon: 'hard-disk'
+        id: "fileManager",
+        title: trans("Toggle File Manager"),
+        icon: "hard-disk",
       },
       stateTwo: {
-        id: 'globalSearch',
-        title: trans('Search across all files'),
-        icon: 'search'
+        id: "globalSearch",
+        title: trans("Search across all files"),
+        icon: "search",
       },
-      initialState: (fileManagerVisible.value) ? mainSplitViewVisibleComponent.value : undefined
+      initialState: fileManagerVisible.value ? mainSplitViewVisibleComponent.value : undefined,
     },
     {
-      type: 'button',
-      id: 'root-open-workspaces',
-      title: trans('Open workspace…'),
-      icon: 'folder-open'
+      type: "button",
+      id: "root-open-workspaces",
+      title: trans("Open workspace…"),
+      icon: "folder-open",
     },
     {
-      type: 'button',
-      id: 'show-stats',
-      title: trans('View writing statistics'),
-      icon: 'line-chart'
+      type: "button",
+      id: "show-stats",
+      title: trans("View writing statistics"),
+      icon: "line-chart",
     },
     {
-      type: 'button',
-      id: 'show-tag-cloud',
-      title: trans('View Tag Cloud'),
-      icon: 'tag',
-      badge: undefined // this.hasTagSuggestions
+      type: "button",
+      id: "show-tag-cloud",
+      title: trans("View Tag Cloud"),
+      icon: "tag",
+      badge: undefined, // this.hasTagSuggestions
     },
     {
-      type: 'button',
-      id: 'open-preferences',
-      title: trans('Open settings'),
-      icon: 'cog',
-      visible: getToolbarButtonDisplay('showOpenPreferencesButton')
+      type: "button",
+      id: "open-preferences",
+      title: trans("Open settings"),
+      icon: "cog",
+      visible: getToolbarButtonDisplay("showOpenPreferencesButton"),
     },
     {
-      type: 'button',
-      id: 'new-file',
-      title: trans('New file…'),
-      icon: 'plus',
-      visible: getToolbarButtonDisplay('showNewFileButton')
+      type: "button",
+      id: "new-file",
+      title: trans("New file…"),
+      icon: "plus",
+      visible: getToolbarButtonDisplay("showNewFileButton"),
     },
     // Compact Back/Forward navigation controls (issue #1 Phase 5): enabled
     // exactly when the focused pane's session history has an entry in that
     // direction.
     {
-      type: 'button',
-      id: 'previous-file',
-      title: trans('Navigate back'),
-      icon: 'arrow',
-      direction: 'left',
+      type: "button",
+      id: "previous-file",
+      title: trans("Navigate back"),
+      icon: "arrow",
+      direction: "left",
       disabled: !canGoBack.value,
-      visible: getToolbarButtonDisplay('showPreviousFileButton')
+      visible: getToolbarButtonDisplay("showPreviousFileButton"),
     },
     {
-      type: 'button',
-      id: 'next-file',
-      title: trans('Navigate forward'),
-      icon: 'arrow',
-      direction: 'right',
+      type: "button",
+      id: "next-file",
+      title: trans("Navigate forward"),
+      icon: "arrow",
+      direction: "right",
       disabled: !canGoForward.value,
-      visible: getToolbarButtonDisplay('showNextFileButton')
+      visible: getToolbarButtonDisplay("showNextFileButton"),
     },
     {
-      type: 'spacer',
-      size: '3x'
+      type: "spacer",
+      size: "3x",
     },
     {
-      type: 'button',
-      class: 'share',
-      id: 'export',
-      title: trans('Export current file'),
-      icon: 'export'
+      type: "button",
+      class: "share",
+      id: "export",
+      title: trans("Export current file"),
+      icon: "export",
     },
     {
-      type: 'spacer',
-      id: 'spacer-two',
-      size: '1x'
+      type: "spacer",
+      id: "spacer-two",
+      size: "1x",
     },
     {
-      type: 'button',
-      id: 'pandocDivOrSpan',
-      title: trans('Insert Pandoc Div or Span'),
-      icon: 'drag-handle',
-      visible: getToolbarButtonDisplay('showPandocDivSpanButton')
+      type: "button",
+      id: "pandocDivOrSpan",
+      title: trans("Insert Pandoc Div or Span"),
+      icon: "drag-handle",
+      visible: getToolbarButtonDisplay("showPandocDivSpanButton"),
     },
     {
-      type: 'button',
-      id: 'markdownComment',
-      title: trans('Insert comment'),
-      icon: 'code',
-      visible: getToolbarButtonDisplay('showMarkdownCommentButton')
+      type: "button",
+      id: "markdownComment",
+      title: trans("Insert comment"),
+      icon: "code",
+      visible: getToolbarButtonDisplay("showMarkdownCommentButton"),
     },
     {
-      type: 'button',
-      id: 'markdownLink',
-      title: trans('Insert link'),
-      icon: 'link',
-      visible: getToolbarButtonDisplay('showMarkdownLinkButton')
+      type: "button",
+      id: "markdownLink",
+      title: trans("Insert link"),
+      icon: "link",
+      visible: getToolbarButtonDisplay("showMarkdownLinkButton"),
     },
     {
-      type: 'button',
-      id: 'markdownImage',
-      title: trans('Insert image'),
-      icon: 'image',
-      visible: getToolbarButtonDisplay('showMarkdownImageButton')
+      type: "button",
+      id: "markdownImage",
+      title: trans("Insert image"),
+      icon: "image",
+      visible: getToolbarButtonDisplay("showMarkdownImageButton"),
     },
     {
-      type: 'button',
-      id: 'markdownMakeTaskList',
-      title: trans('Insert task list'),
-      icon: 'checkbox-list',
-      visible: getToolbarButtonDisplay('showMarkdownMakeTaskListButton')
+      type: "button",
+      id: "markdownMakeTaskList",
+      title: trans("Insert task list"),
+      icon: "checkbox-list",
+      visible: getToolbarButtonDisplay("showMarkdownMakeTaskListButton"),
     },
     {
-      type: 'button',
-      id: 'insert-table',
-      title: trans('Insert table'),
-      icon: 'table',
-      visible: getToolbarButtonDisplay('showInsertTableButton')
+      type: "button",
+      id: "insert-table",
+      title: trans("Insert table"),
+      icon: "table",
+      visible: getToolbarButtonDisplay("showInsertTableButton"),
     },
     {
-      type: 'button',
-      id: 'insertFootnote',
-      title: trans('Insert footnote'),
-      icon: 'footnote',
-      visible: getToolbarButtonDisplay('showInsertFootnoteButton')
+      type: "button",
+      id: "insertFootnote",
+      title: trans("Insert footnote"),
+      icon: "footnote",
+      visible: getToolbarButtonDisplay("showInsertFootnoteButton"),
     },
     {
-      type: 'spacer',
-      size: '3x'
+      type: "spacer",
+      size: "3x",
     },
     {
-      type: 'text',
-      align: 'center',
-      id: 'document-info',
+      type: "text",
+      align: "center",
+      id: "document-info",
       content: parsedDocumentInfo.value,
-      visible: getToolbarButtonDisplay('showDocumentInfoText')
+      visible: getToolbarButtonDisplay("showDocumentInfoText"),
     },
     {
-      type: 'spacer',
-      size: '1x'
+      type: "spacer",
+      size: "1x",
     },
     {
-      type: 'ring',
-      id: 'pomodoro',
-      title: trans('Pomodoro timer'),
+      type: "ring",
+      id: "pomodoro",
+      title: trans("Pomodoro timer"),
       // Good morning, we are verbose here
-      progressPercent: pomodoro.value.phase.elapsed / pomodoro.value.durations[pomodoro.value.phase.type] * 100,
+      progressPercent:
+        (pomodoro.value.phase.elapsed / pomodoro.value.durations[pomodoro.value.phase.type]) * 100,
       colour: pomodoro.value.colour[pomodoro.value.phase.type],
-      visible: getToolbarButtonDisplay('showPomodoroButton')
+      visible: getToolbarButtonDisplay("showPomodoroButton"),
     },
     {
-      type: 'iris-indicator',
-      id: 'long-running-tasks',
-      title: trans('Show tasks'),
+      type: "iris-indicator",
+      id: "long-running-tasks",
+      title: trans("Show tasks"),
       tasksInProgress: taskOngoing.value,
       tasksSuccess: taskSuccess.value,
       tasksFailed: taskError.value,
       tasksAborted: taskAborted.value,
-      visible: hasTasks.value
+      visible: hasTasks.value,
     },
     {
-      type: 'toggle',
-      id: 'toggle-sidebar',
-      title: trans('Toggle Sidebar'),
-      icon: 'view-columns',
-      initialState: sidebarVisible.value
+      type: "toggle",
+      id: "toggle-sidebar",
+      title: trans("Toggle Sidebar"),
+      icon: "view-columns",
+      initialState: sidebarVisible.value,
     },
     {
-      type: 'button',
-      id: 'open-updater',
-      title: trans('Update available'),
+      type: "button",
+      id: "open-updater",
+      title: trans("Update available"),
       showLabel: true,
-      buttonText: trans('Update available'),
-      icon: 'download',
-      visible: isUpdateAvailable.value
-    }
-  ] satisfies ToolbarControl[]
-})
+      buttonText: trans("Update available"),
+      icon: "download",
+      visible: isUpdateAvailable.value,
+    },
+  ] satisfies ToolbarControl[];
+});
 
 /** The surface SplitView.vue exposes to its template refs. */
 interface SplitViewHandle {
-  hideView: (viewNumber: 1|2) => void
-  unhide: () => void
+  hideView: (viewNumber: 1 | 2) => void;
+  unhide: () => void;
 }
 
 /** The surface GlobalSearch.vue exposes to its template refs. */
 interface GlobalSearchHandle {
-  focusQueryInput: () => void
-  startSearch: (overrideQuery?: string) => void
+  focusQueryInput: () => void;
+  startSearch: (overrideQuery?: string) => void;
 }
 
-const editorSidebarSplitComponent = ref<SplitViewHandle|null>(null)
-const fileManagerSplitComponent = ref<SplitViewHandle|null>(null)
-const globalSearchComponent = ref<GlobalSearchHandle|null>(null)
-const paneConfiguration = computed(() => documentTreeStore.paneStructure)
-const lastLeafId = computed(() => documentTreeStore.lastLeafId)
-const distractionFree = computed<boolean>(() => windowStateStore.distractionFreeMode !== undefined)
+const editorSidebarSplitComponent = ref<SplitViewHandle | null>(null);
+const fileManagerSplitComponent = ref<SplitViewHandle | null>(null);
+const globalSearchComponent = ref<GlobalSearchHandle | null>(null);
+const paneConfiguration = computed(() => documentTreeStore.paneStructure);
+const lastLeafId = computed(() => documentTreeStore.lastLeafId);
+const distractionFree = computed<boolean>(() => windowStateStore.distractionFreeMode !== undefined);
 
 // Per-pane session history position (issue #1 Phase 5): feeds the toolbar
 // Back/Forward controls' enabled state. Refreshed from the documents
 // provider whenever the focused leaf or its documents change.
-const canGoBack = ref(false)
-const canGoForward = ref(false)
+const canGoBack = ref(false);
+const canGoForward = ref(false);
 
 /**
  * Asks the documents provider to move the focused pane one step through its
@@ -817,454 +857,493 @@ const canGoForward = ref(false)
  *
  * @param   {'navigate-back'|'navigate-forward'}  command  The direction
  */
-function navigateHistory (command: 'navigate-back'|'navigate-forward'): void {
-  const leafId = lastLeafId.value
+function navigateHistory(command: "navigate-back" | "navigate-forward"): void {
+  const leafId = lastLeafId.value;
   if (leafId === undefined) {
-    return // No pane has been focused yet; there is no history to navigate
+    return; // No pane has been focused yet; there is no history to navigate
   }
 
-  ipcRenderer.invoke('documents-provider', {
-    command,
-    payload: { windowId, leafId }
-  }).catch(err => console.error(err))
-}
-
-function refreshNavigationState (): void {
-  const leafId = lastLeafId.value
-  if (leafId === undefined) {
-    canGoBack.value = false
-    canGoForward.value = false
-    return
-  }
-
-  ipcRenderer.invoke('documents-provider', {
-    command: 'get-navigation-state',
-    payload: { windowId, leafId }
-  })
-    .then(state => {
-      canGoBack.value = state.canGoBack
-      canGoForward.value = state.canGoForward
+  ipcRenderer
+    .invoke("documents-provider", {
+      command,
+      payload: { windowId, leafId },
     })
-    .catch(err => console.error(err))
+    .catch((err) => console.error(err));
 }
 
-watch(lastLeafId, refreshNavigationState)
-ipcRenderer.on('documents-update', () => { refreshNavigationState() })
-refreshNavigationState()
+function refreshNavigationState(): void {
+  const leafId = lastLeafId.value;
+  if (leafId === undefined) {
+    canGoBack.value = false;
+    canGoForward.value = false;
+    return;
+  }
+
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "get-navigation-state",
+      payload: { windowId, leafId },
+    })
+    .then((state) => {
+      canGoBack.value = state.canGoBack;
+      canGoForward.value = state.canGoForward;
+    })
+    .catch((err) => console.error(err));
+}
+
+watch(lastLeafId, refreshNavigationState);
+ipcRenderer.on("documents-update", () => {
+  refreshNavigationState();
+});
+refreshNavigationState();
 
 watch(sidebarVisible, (newValue) => {
   if (newValue) {
     if (distractionFree.value) {
       if (windowStateStore.distractionFreeMode !== undefined) {
-        windowStateStore.distractionFreeMode = undefined
+        windowStateStore.distractionFreeMode = undefined;
       }
     }
 
-    editorSidebarSplitComponent.value?.unhide()
+    editorSidebarSplitComponent.value?.unhide();
   } else {
-    editorSidebarSplitComponent.value?.hideView(2)
+    editorSidebarSplitComponent.value?.hideView(2);
   }
-})
+});
 
 watch(fileManagerVisible, (newValue) => {
   if (newValue) {
     if (distractionFree.value) {
       if (windowStateStore.distractionFreeMode !== undefined) {
-        windowStateStore.distractionFreeMode = undefined
+        windowStateStore.distractionFreeMode = undefined;
       }
     }
 
-    fileManagerSplitComponent.value?.unhide()
+    fileManagerSplitComponent.value?.unhide();
   } else {
-    fileManagerSplitComponent.value?.hideView(1)
+    fileManagerSplitComponent.value?.hideView(1);
   }
-})
+});
 
 watch(mainSplitViewVisibleComponent, (newValue) => {
-  if (newValue === 'globalSearch') {
+  if (newValue === "globalSearch") {
     // The global search just became visible, so focus the query input
-    nextTick().then(() => {
-      globalSearchComponent.value?.focusQueryInput()
-    }).catch(e => console.error(e))
+    nextTick()
+      .then(() => {
+        globalSearchComponent.value?.focusQueryInput();
+      })
+      .catch((e) => console.error(e));
   }
-})
+});
 
 watch(distractionFree, (newValue) => {
   if (newValue) {
     // Enter distraction free mode
     sidebarsBeforeDistractionfree.value = {
       fileManager: fileManagerVisible.value,
-      sidebar: sidebarVisible.value
-    }
-    configStore.setConfigValue('window.sidebarVisible', false)
-    configStore.setConfigValue('window.fileManagerVisible', false)
+      sidebar: sidebarVisible.value,
+    };
+    configStore.setConfigValue("window.sidebarVisible", false);
+    configStore.setConfigValue("window.fileManagerVisible", false);
   } else {
     // Leave distraction free mode
-    configStore.setConfigValue('window.sidebarVisible', sidebarsBeforeDistractionfree.value.sidebar)
-    configStore.setConfigValue('window.fileManagerVisible', sidebarsBeforeDistractionfree.value.fileManager)
+    configStore.setConfigValue(
+      "window.sidebarVisible",
+      sidebarsBeforeDistractionfree.value.sidebar,
+    );
+    configStore.setConfigValue(
+      "window.fileManagerVisible",
+      sidebarsBeforeDistractionfree.value.fileManager,
+    );
   }
-})
+});
 
 onMounted(() => {
-  exportButton.value = document.querySelector('#toolbar-export')
-  statsButton.value = document.querySelector('#toolbar-show-stats')
-  tagsButton.value = document.querySelector('#toolbar-show-tag-cloud')
-  tableButton.value = document.querySelector('#toolbar-insert-table')
-  docInfoButton.value = document.querySelector('#toolbar-document-info')
-  pomodoroButton.value = document.querySelector('#toolbar-pomodoro')
-  tasksButton.value = document.querySelector('#toolbar-long-running-tasks')
-  pandocButton.value = document.querySelector('#toolbar-pandocDivOrSpan')
+  exportButton.value = document.querySelector("#toolbar-export");
+  statsButton.value = document.querySelector("#toolbar-show-stats");
+  tagsButton.value = document.querySelector("#toolbar-show-tag-cloud");
+  tableButton.value = document.querySelector("#toolbar-insert-table");
+  docInfoButton.value = document.querySelector("#toolbar-document-info");
+  pomodoroButton.value = document.querySelector("#toolbar-pomodoro");
+  tasksButton.value = document.querySelector("#toolbar-long-running-tasks");
+  pandocButton.value = document.querySelector("#toolbar-pandocDivOrSpan");
 
   // Saves that main initiated — the close-and-save prompts — have no renderer
   // promise to carry their result, so the provider broadcasts refusals here.
   // Without this the prompt closes and the window stays open with no reason
   // given anywhere the user can see.
   ipcRenderer.on(SAVE_REFUSED_CHANNEL, (event, payload: SaveRefusedBroadcast) => {
-    const name = pathBasename(payload.filePath)
-    const message = payload.refusal === undefined
-      ? trans('Could not save "%s".', name)
-      : `${name}: ${payload.refusal.message}`
-    showToast(message, 'error', 12000)
-  })
+    const name = pathBasename(payload.filePath);
+    const message =
+      payload.refusal === undefined
+        ? trans('Could not save "%s".', name)
+        : `${name}: ${payload.refusal.message}`;
+    showToast(message, "error", 12000);
+  });
 
-  ipcRenderer.on('shortcut', (event, shortcut) => {
-    if (shortcut === 'toggle-sidebar') {
-      configStore.setConfigValue('window.sidebarVisible', !sidebarVisible.value)
-    } else if (shortcut === 'insert-id') {
-      editorCommands.value.data = generateId(configStore.config.zkn.idGen)
-      editorCommands.value.replaceSelection = !editorCommands.value.replaceSelection
-    } else if (shortcut === 'copy-current-id' && documentTreeStore.lastLeafActiveFile !== undefined) {
-      ipcRenderer.invoke('fsal', {
-        command: 'get-descriptor',
-        payload: documentTreeStore.lastLeafActiveFile.path
-      })
-        .then((descriptor: AnyDescriptor|AnyDescriptor[]|undefined) => {
-          if (descriptor !== undefined && !Array.isArray(descriptor) && descriptor.type === 'file' && descriptor.id !== '') {
-            navigator.clipboard.writeText(descriptor.id).catch(err => console.error(err))
+  ipcRenderer.on("shortcut", (event, shortcut) => {
+    if (shortcut === "toggle-sidebar") {
+      configStore.setConfigValue("window.sidebarVisible", !sidebarVisible.value);
+    } else if (shortcut === "insert-id") {
+      editorCommands.value.data = generateId(configStore.config.zkn.idGen);
+      editorCommands.value.replaceSelection = !editorCommands.value.replaceSelection;
+    } else if (
+      shortcut === "copy-current-id" &&
+      documentTreeStore.lastLeafActiveFile !== undefined
+    ) {
+      ipcRenderer
+        .invoke("fsal", {
+          command: "get-descriptor",
+          payload: documentTreeStore.lastLeafActiveFile.path,
+        })
+        .then((descriptor: AnyDescriptor | AnyDescriptor[] | undefined) => {
+          if (
+            descriptor !== undefined &&
+            !Array.isArray(descriptor) &&
+            descriptor.type === "file" &&
+            descriptor.id !== ""
+          ) {
+            navigator.clipboard.writeText(descriptor.id).catch((err) => console.error(err));
           }
         })
-        .catch(err => console.error(err))
-    } else if (shortcut === 'global-search') {
-      configStore.setConfigValue('window.fileManagerVisible', true)
-      mainSplitViewVisibleComponent.value = 'globalSearch'
+        .catch((err) => console.error(err));
+    } else if (shortcut === "global-search") {
+      configStore.setConfigValue("window.fileManagerVisible", true);
+      mainSplitViewVisibleComponent.value = "globalSearch";
       // Focus input
       nextTick()
-        .then(() => { globalSearchComponent.value?.focusQueryInput() })
-        .catch(err => console.error(err))
-    } else if (shortcut === 'toggle-file-manager') {
-      if (fileManagerVisible.value && mainSplitViewVisibleComponent.value === 'fileManager') {
-        configStore.setConfigValue('window.fileManagerVisible', false)
+        .then(() => {
+          globalSearchComponent.value?.focusQueryInput();
+        })
+        .catch((err) => console.error(err));
+    } else if (shortcut === "toggle-file-manager") {
+      if (fileManagerVisible.value && mainSplitViewVisibleComponent.value === "fileManager") {
+        configStore.setConfigValue("window.fileManagerVisible", false);
       } else if (!fileManagerVisible.value) {
-        configStore.setConfigValue('window.fileManagerVisible', true)
-        mainSplitViewVisibleComponent.value = 'fileManager'
-      } else if (mainSplitViewVisibleComponent.value === 'globalSearch') {
-        mainSplitViewVisibleComponent.value = 'fileManager'
+        configStore.setConfigValue("window.fileManagerVisible", true);
+        mainSplitViewVisibleComponent.value = "fileManager";
+      } else if (mainSplitViewVisibleComponent.value === "globalSearch") {
+        mainSplitViewVisibleComponent.value = "fileManager";
       }
-    } else if (shortcut === 'filter-files') {
+    } else if (shortcut === "filter-files") {
       // We need to immediately make the file manager visible, which will
       // -- in the next tick -- focus its filter input.
-      configStore.setConfigValue('window.fileManagerVisible', true)
-      mainSplitViewVisibleComponent.value = 'fileManager'
-    } else if (shortcut === 'export') {
-      showExportPopover.value = true
-    } else if (shortcut === 'pandoc-quick-help') {
-      showPandocQuickHelp.value = true
-    } else if (shortcut === 'print') {
+      configStore.setConfigValue("window.fileManagerVisible", true);
+      mainSplitViewVisibleComponent.value = "fileManager";
+    } else if (shortcut === "export") {
+      showExportPopover.value = true;
+    } else if (shortcut === "pandoc-quick-help") {
+      showPandocQuickHelp.value = true;
+    } else if (shortcut === "print") {
       if (activeFile.value !== undefined) {
-        ipcRenderer.invoke('application', { command: 'print', payload: activeFile.value.path })
-          .catch(err => console.error(err))
+        ipcRenderer
+          .invoke("application", { command: "print", payload: activeFile.value.path })
+          .catch((err) => console.error(err));
       }
-    } else if (shortcut === 'navigate-back') {
-      navigateHistory('navigate-back')
-    } else if (shortcut === 'navigate-forward') {
-      navigateHistory('navigate-forward')
+    } else if (shortcut === "navigate-back") {
+      navigateHistory("navigate-back");
+    } else if (shortcut === "navigate-forward") {
+      navigateHistory("navigate-forward");
     }
-  })
+  });
 
   // Initially, we need to hide the sidebar, since the view will be visible
   // by default.
   if (!sidebarVisible.value) {
-    editorSidebarSplitComponent.value?.hideView(2)
+    editorSidebarSplitComponent.value?.hideView(2);
   }
 
   // Similarly, if the file manager is set to hidden, do that, too.
   if (!fileManagerVisible.value) {
-    fileManagerSplitComponent.value?.hideView(1)
+    fileManagerSplitComponent.value?.hideView(1);
   }
 
   // Check if there is an update available.
-  ipcRenderer.invoke('update-provider', { command: 'update-status' })
-    .then(state => {
-      isUpdateAvailable.value = state.updateAvailable
+  ipcRenderer
+    .invoke("update-provider", { command: "update-status" })
+    .then((state) => {
+      isUpdateAvailable.value = state.updateAvailable;
     })
-    .catch(err => console.error(err))
+    .catch((err) => console.error(err));
 
   // Also, listen for any changes in the update available state
-  ipcRenderer.on('update-provider', (event, command: string, updateState: UpdateState) => {
-    if (command === 'state-changed') {
-      isUpdateAvailable.value = updateState.updateAvailable
+  ipcRenderer.on("update-provider", (event, command: string, updateState: UpdateState) => {
+    if (command === "state-changed") {
+      isUpdateAvailable.value = updateState.updateAvailable;
     }
-  })
-})
+  });
+});
 
-function fileManagerSplitComponentResized (sizes: [number, number]): void {
-  configStore.setConfigValue('ui.fileManagerSplitSize', sizes)
+function fileManagerSplitComponentResized(sizes: [number, number]): void {
+  configStore.setConfigValue("ui.fileManagerSplitSize", sizes);
 }
 
-function editorSidebarSplitComponentResized (sizes: [number, number]): void {
-  configStore.setConfigValue('ui.editorSidebarSplitSize', sizes)
+function editorSidebarSplitComponentResized(sizes: [number, number]): void {
+  configStore.setConfigValue("ui.editorSidebarSplitSize", sizes);
 }
 
-function insertTable (spec: { rows: number, cols: number }): void {
+function insertTable(spec: { rows: number; cols: number }): void {
   // Generate a simple table based on the info, and insert it.
-  const align = new Array<'center'|'left'|'right'|null>(spec.cols).fill(null)
-  const row = (): string[] => new Array<string>(spec.cols).fill('')
-  const ast: string[][] = Array.from({ length: spec.rows }, row)
+  const align = new Array<"center" | "left" | "right" | null>(spec.cols).fill(null);
+  const row = (): string[] => new Array<string>(spec.cols).fill("");
+  const ast: string[][] = Array.from({ length: spec.rows }, row);
 
-  editorCommands.value.data = buildPipeMarkdownTable(ast, align)
-  editorCommands.value.replaceSelection = !editorCommands.value.replaceSelection
+  editorCommands.value.data = buildPipeMarkdownTable(ast, align);
+  editorCommands.value.replaceSelection = !editorCommands.value.replaceSelection;
 }
 
-function insertPandoc (spec: { type: string, attributes: string }): void {
-  editorCommands.value.data = spec
-  editorCommands.value.insertPandoc = !editorCommands.value.insertPandoc
+function insertPandoc(spec: { type: string; attributes: string }): void {
+  editorCommands.value.data = spec;
+  editorCommands.value.insertPandoc = !editorCommands.value.insertPandoc;
 }
 
-function genericJtl (lineNumber: number): void {
+function genericJtl(lineNumber: number): void {
   // This function is called from the sidebar where we already know the file
   // is open (because its editor component has provided the table of
   // contents in the first place).
-  const doc = documentTreeStore.lastLeafActiveFile
+  const doc = documentTreeStore.lastLeafActiveFile;
   if (doc !== undefined) {
-    editorCommands.value.data = { filePath: doc.path, lineNumber }
-    editorCommands.value.jumpToLine = !editorCommands.value.jumpToLine
+    editorCommands.value.data = { filePath: doc.path, lineNumber };
+    editorCommands.value.jumpToLine = !editorCommands.value.jumpToLine;
   }
 }
 
-function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
+function jtl(filePath: string, lineNumber: number, newTab: boolean): void {
   // We need to make sure the given file is (a) open somewhere and (b) the
   // active file.
 
   // Simplest case: The file is already active somewhere
-  const activeFileLeaf = documentTreeStore.paneData
-    .find((pane: LeafNodeJSON) => pane.activeFile?.path === filePath)
+  const activeFileLeaf = documentTreeStore.paneData.find(
+    (pane: LeafNodeJSON) => pane.activeFile?.path === filePath,
+  );
   if (activeFileLeaf !== undefined) {
     // There is at least one leaf with the given file being active, so we
     // can simply emit the event
-    editorCommands.value.data = { filePath, lineNumber }
-    editorCommands.value.jumpToLine = !editorCommands.value.jumpToLine
-    return
+    editorCommands.value.data = { filePath, lineNumber };
+    editorCommands.value.jumpToLine = !editorCommands.value.jumpToLine;
+    return;
   }
 
-  const WAIT_TIME = 100 // How long to wait before re-executing the jtl()
+  const WAIT_TIME = 100; // How long to wait before re-executing the jtl()
 
   // Next, let's see if the file is at least open somewhere
-  const containingLeaf = documentTreeStore.paneData
-    .find((pane: LeafNodeJSON) => {
-      return pane.openFiles.find(doc => doc.path === filePath) !== undefined
-    })
+  const containingLeaf = documentTreeStore.paneData.find((pane: LeafNodeJSON) => {
+    return pane.openFiles.find((doc) => doc.path === filePath) !== undefined;
+  });
   if (containingLeaf !== undefined) {
     // Let's first make it the active file and then execute the command
-    ipcRenderer.invoke('documents-provider', {
-      command: 'open-file',
-      payload: { path: filePath, windowId, leafId: containingLeaf.id }
-    })
+    ipcRenderer
+      .invoke("documents-provider", {
+        command: "open-file",
+        payload: { path: filePath, windowId, leafId: containingLeaf.id },
+      })
       .then(() => {
         // Re-execute the jtl command
-        setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME)
+        setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME);
       })
-      .catch(e => console.error(e))
-    return
+      .catch((e) => console.error(e));
+    return;
   }
 
   // If we're here, the file was not open, so we have to do that first. At
   // least this both makes it an open file AND an active file somewhere in
   // the window.
-  ipcRenderer.invoke('documents-provider', {
-    command: 'open-file',
-    payload: {
-      path: filePath,
-      windowId,
-      leafId: lastLeafId.value,
-      newTab
-    }
-  })
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "open-file",
+      payload: {
+        path: filePath,
+        windowId,
+        leafId: lastLeafId.value,
+        newTab,
+      },
+    })
     .then(() => {
       // Re-execute the jtl command
-      setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME)
+      setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME);
     })
-    .catch(e => console.error(e))
+    .catch((e) => console.error(e));
 }
 
-function moveSection (data: { from: number, to: number }): void {
-  editorCommands.value.data = { from: data.from, to: data.to }
-  editorCommands.value.moveSection = !editorCommands.value.moveSection
+function moveSection(data: { from: number; to: number }): void {
+  editorCommands.value.data = { from: data.from, to: data.to };
+  editorCommands.value.moveSection = !editorCommands.value.moveSection;
 }
 
-function startGlobalSearch (terms: string): void {
-  mainSplitViewVisibleComponent.value = 'globalSearch'
-  configStore.setConfigValue('window.fileManagerVisible', true)
+function startGlobalSearch(terms: string): void {
+  mainSplitViewVisibleComponent.value = "globalSearch";
+  configStore.setConfigValue("window.fileManagerVisible", true);
   nextTick()
     .then(() => {
-      globalSearchComponent.value?.startSearch(terms)
+      globalSearchComponent.value?.startSearch(terms);
     })
-    .catch(err => console.error(err))
+    .catch((err) => console.error(err));
 }
 
-function handleClick (clickedID?: string): void {
-  if (clickedID === 'root-open-workspaces') {
-    ipcRenderer.invoke('application', { command: 'root-open-workspaces' })
-      .catch(e => console.error(e))
-  } else if (clickedID === 'open-preferences') {
-    ipcRenderer.invoke('application', { command: 'open-preferences' })
-      .catch(e => console.error(e))
-  } else if (clickedID === 'new-file') {
-    ipcRenderer.invoke('application', { command: 'file-new', payload: { type: DocumentType.Markdown } })
-      .catch(e => console.error(e))
-  } else if (clickedID === 'previous-file') {
+function handleClick(clickedID?: string): void {
+  if (clickedID === "root-open-workspaces") {
+    ipcRenderer
+      .invoke("application", { command: "root-open-workspaces" })
+      .catch((e) => console.error(e));
+  } else if (clickedID === "open-preferences") {
+    ipcRenderer
+      .invoke("application", { command: "open-preferences" })
+      .catch((e) => console.error(e));
+  } else if (clickedID === "new-file") {
+    ipcRenderer
+      .invoke("application", { command: "file-new", payload: { type: DocumentType.Markdown } })
+      .catch((e) => console.error(e));
+  } else if (clickedID === "previous-file") {
     if (!canGoBack.value) {
-      return // The control renders disabled; never navigate past the boundary
+      return; // The control renders disabled; never navigate past the boundary
     }
-    navigateHistory('navigate-back')
-  } else if (clickedID === 'next-file') {
+    navigateHistory("navigate-back");
+  } else if (clickedID === "next-file") {
     if (!canGoForward.value) {
-      return // The control renders disabled; never navigate past the boundary
+      return; // The control renders disabled; never navigate past the boundary
     }
-    navigateHistory('navigate-forward')
-  } else if (clickedID === 'export') {
-    showExportPopover.value = !showExportPopover.value
-  } else if (clickedID === 'show-stats') {
+    navigateHistory("navigate-forward");
+  } else if (clickedID === "export") {
+    showExportPopover.value = !showExportPopover.value;
+  } else if (clickedID === "show-stats") {
     // The user wants to display the stats
-    showStatsPopover.value = !showStatsPopover.value
-  } else if (clickedID === 'show-tag-cloud') {
-    showTagsPopover.value = !showTagsPopover.value
+    showStatsPopover.value = !showStatsPopover.value;
+  } else if (clickedID === "show-tag-cloud") {
+    showTagsPopover.value = !showTagsPopover.value;
     // TODO startGlobalSearch('#' + data.searchForTag)
     // editorCommands.value.data = data.suggestions
     // editorCommands.value.addKeywords = !editorCommands.value.addKeywords
-  } else if (clickedID === 'pomodoro') {
-    showPomodoroPopover.value = !showPomodoroPopover.value
-  } else if (clickedID === 'insert-table') {
+  } else if (clickedID === "pomodoro") {
+    showPomodoroPopover.value = !showPomodoroPopover.value;
+  } else if (clickedID === "insert-table") {
     // Display the insertion popover
-    showTablePopover.value = !showTablePopover.value
-  } else if (clickedID === 'long-running-tasks') {
+    showTablePopover.value = !showTablePopover.value;
+  } else if (clickedID === "long-running-tasks") {
     // The tasks button is only mounted conditionally
-    tasksButton.value = document.querySelector('#toolbar-long-running-tasks')
-    showTasksPopover.value = !showTasksPopover.value
-  } else if (clickedID === 'document-info') {
-    showDocInfoPopover.value = !showDocInfoPopover.value
-  } else if (clickedID === 'pandocDivOrSpan') {
-    showPandocPopover.value = !showPandocPopover.value
-  } else if (clickedID !== undefined && clickedID.startsWith('markdown') && clickedID.length > 8) {
+    tasksButton.value = document.querySelector("#toolbar-long-running-tasks");
+    showTasksPopover.value = !showTasksPopover.value;
+  } else if (clickedID === "document-info") {
+    showDocInfoPopover.value = !showDocInfoPopover.value;
+  } else if (clickedID === "pandocDivOrSpan") {
+    showPandocPopover.value = !showPandocPopover.value;
+  } else if (clickedID !== undefined && clickedID.startsWith("markdown") && clickedID.length > 8) {
     // The user clicked a command button, so we just have to run that.
-    editorCommands.value.data = clickedID
-    editorCommands.value.executeCommand = !editorCommands.value.executeCommand
-  } else if (clickedID === 'insertFootnote') {
-    editorCommands.value.data = clickedID
-    editorCommands.value.executeCommand = !editorCommands.value.executeCommand
-  } else if (clickedID === 'open-updater') {
-    ipcRenderer.invoke('application', {
-      command: 'open-update-window'
-    })
-      .catch(err => console.error(err))
+    editorCommands.value.data = clickedID;
+    editorCommands.value.executeCommand = !editorCommands.value.executeCommand;
+  } else if (clickedID === "insertFootnote") {
+    editorCommands.value.data = clickedID;
+    editorCommands.value.executeCommand = !editorCommands.value.executeCommand;
+  } else if (clickedID === "open-updater") {
+    ipcRenderer
+      .invoke("application", {
+        command: "open-update-window",
+      })
+      .catch((err) => console.error(err));
   }
 }
 
-function setPomodoroConfig (config: PomodoroConfig): void {
+function setPomodoroConfig(config: PomodoroConfig): void {
   // Update the durations as necessary
-  pomodoro.value.durations.task = config.durations.task
-  pomodoro.value.durations.short = config.durations.short
-  pomodoro.value.durations.long = config.durations.long
+  pomodoro.value.durations.task = config.durations.task;
+  pomodoro.value.durations.short = config.durations.short;
+  pomodoro.value.durations.long = config.durations.long;
 
-  const effectChanged = config.currentEffectFile !== pomodoro.value.currentEffectFile
-  const volumeChanged = config.soundEffect.volume !== pomodoro.value.soundEffect.volume
+  const effectChanged = config.currentEffectFile !== pomodoro.value.currentEffectFile;
+  const volumeChanged = config.soundEffect.volume !== pomodoro.value.soundEffect.volume;
   if (effectChanged) {
-    pomodoro.value.currentEffectFile = config.currentEffectFile
-    pomodoro.value.soundEffect = new Audio(config.currentEffectFile)
-    pomodoro.value.soundEffect.volume = config.soundEffect.volume
+    pomodoro.value.currentEffectFile = config.currentEffectFile;
+    pomodoro.value.soundEffect = new Audio(config.currentEffectFile);
+    pomodoro.value.soundEffect.volume = config.soundEffect.volume;
   }
   if (!effectChanged && volumeChanged) {
-    pomodoro.value.soundEffect.volume = config.soundEffect.volume
+    pomodoro.value.soundEffect.volume = config.soundEffect.volume;
   }
 
   if (effectChanged || volumeChanged) {
-    pomodoro.value.soundEffect.pause()
-    pomodoro.value.soundEffect.currentTime = 0
-    pomodoro.value.soundEffect.play().catch(_e => {
+    pomodoro.value.soundEffect.pause();
+    pomodoro.value.soundEffect.currentTime = 0;
+    pomodoro.value.soundEffect.play().catch((_e) => {
       /* We will be getting errors when pausing quickly */
-    })
+    });
   }
 }
 
-function handleToggle (controlState: { id?: string, state?: string | boolean }): void {
-  const { id, state } = controlState
-  if (id === 'toggle-sidebar') {
-    configStore.setConfigValue('window.sidebarVisible', state)
-  } else if (id === 'toggle-file-manager') {
+function handleToggle(controlState: { id?: string; state?: string | boolean }): void {
+  const { id, state } = controlState;
+  if (id === "toggle-sidebar") {
+    configStore.setConfigValue("window.sidebarVisible", state);
+  } else if (id === "toggle-file-manager") {
     // Since this is a three-way-toggle, we have to inspect the state.
-    configStore.setConfigValue('window.fileManagerVisible', state !== undefined)
-    if (typeof state === 'string' && (state === 'fileManager' || state === 'globalSearch')) {
+    configStore.setConfigValue("window.fileManagerVisible", state !== undefined);
+    if (typeof state === "string" && (state === "fileManager" || state === "globalSearch")) {
       // Set the shown component to the correct one
-      mainSplitViewVisibleComponent.value = state
+      mainSplitViewVisibleComponent.value = state;
     } else {
-      console.warn(`Could not toggle main split component; expected state to be 'fileManager' or 'globalSearch', received ${state}`)
+      console.warn(
+        `Could not toggle main split component; expected state to be 'fileManager' or 'globalSearch', received ${state}`,
+      );
     }
   }
 }
 
-function startPomodoro (): void {
-  pomodoro.value.soundEffect.pause()
-  pomodoro.value.soundEffect.currentTime = 0
+function startPomodoro(): void {
+  pomodoro.value.soundEffect.pause();
+  pomodoro.value.soundEffect.currentTime = 0;
   // Starts a new pomodoro timer
-  pomodoro.value.phase.type = 'task'
-  pomodoro.value.phase.elapsed = 0
+  pomodoro.value.phase.type = "task";
+  pomodoro.value.phase.elapsed = 0;
 
   pomodoro.value.intervalHandle = setInterval(() => {
-    pomodoroTick()
-  }, 1000)
+    pomodoroTick();
+  }, 1000);
 }
 
-function pomodoroTick (): void {
+function pomodoroTick(): void {
   // Progresses the pomodoro counter by one second
-  pomodoro.value.phase.elapsed += 1
+  pomodoro.value.phase.elapsed += 1;
 
-  const currentPhaseDur = pomodoro.value.durations[pomodoro.value.phase.type]
-  const phaseIsFinished = pomodoro.value.phase.elapsed === currentPhaseDur
+  const currentPhaseDur = pomodoro.value.durations[pomodoro.value.phase.type];
+  const phaseIsFinished = pomodoro.value.phase.elapsed === currentPhaseDur;
 
   if (phaseIsFinished) {
-    pomodoro.value.phase.elapsed = 0
-    pomodoro.value.counter[pomodoro.value.phase.type] += 1
+    pomodoro.value.phase.elapsed = 0;
+    pomodoro.value.counter[pomodoro.value.phase.type] += 1;
 
-    if (pomodoro.value.phase.type === 'task' && pomodoro.value.counter.task % 4 === 0) {
-      pomodoro.value.phase.type = 'long'
-    } else if (pomodoro.value.phase.type === 'task') {
-      pomodoro.value.phase.type = 'short'
+    if (pomodoro.value.phase.type === "task" && pomodoro.value.counter.task % 4 === 0) {
+      pomodoro.value.phase.type = "long";
+    } else if (pomodoro.value.phase.type === "task") {
+      pomodoro.value.phase.type = "short";
     } else {
       // Both breaks lead to a new task
-      pomodoro.value.phase.type = 'task'
+      pomodoro.value.phase.type = "task";
     }
 
-    pomodoro.value.soundEffect.play().catch(_e => { /* We will be getting errors when pausing quickly */ })
+    pomodoro.value.soundEffect.play().catch((_e) => {
+      /* We will be getting errors when pausing quickly */
+    });
   }
 }
 
-function stopPomodoro (): void {
-  pomodoro.value.soundEffect.pause()
-  pomodoro.value.soundEffect.currentTime = 0
+function stopPomodoro(): void {
+  pomodoro.value.soundEffect.pause();
+  pomodoro.value.soundEffect.currentTime = 0;
   // Stops the pomodoro timer
-  pomodoro.value.phase.type = 'task'
-  pomodoro.value.phase.elapsed = 0
-  pomodoro.value.counter.task = 0
-  pomodoro.value.counter.short = 0
-  pomodoro.value.counter.long = 0
+  pomodoro.value.phase.type = "task";
+  pomodoro.value.phase.elapsed = 0;
+  pomodoro.value.counter.task = 0;
+  pomodoro.value.counter.short = 0;
+  pomodoro.value.counter.long = 0;
 
   if (pomodoro.value.intervalHandle !== undefined) {
-    clearInterval(pomodoro.value.intervalHandle)
-    pomodoro.value.intervalHandle = undefined
+    clearInterval(pomodoro.value.intervalHandle);
+    pomodoro.value.intervalHandle = undefined;
   }
 }
 
-function getToolbarButtonDisplay (configName: keyof ConfigOptions['displayToolbarButtons']): boolean {
-  return configStore.config.displayToolbarButtons[configName]
+function getToolbarButtonDisplay(
+  configName: keyof ConfigOptions["displayToolbarButtons"],
+): boolean {
+  return configStore.config.displayToolbarButtons[configName];
 }
 </script>
 

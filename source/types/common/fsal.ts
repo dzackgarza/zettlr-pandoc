@@ -1,36 +1,36 @@
 // FSAL types available in both main process and renderer process
 
-import type { DocumentReferenceSnapshot } from './references'
+import type { DocumentReferenceSnapshot } from "./references";
 
 export interface ProjectSettings {
   /**
    * The title of the project, will be used, e.g., as title and filename for
    * projects.
    */
-  title: string
+  title: string;
   /**
    * A list of project filenames (found in the defaults folder in the app data)
    * to use for export.
    */
-  profiles: string[]
+  profiles: string[];
   /**
    * A sorted (!) list of project-relative paths to the files that should be
    * included in the export of this project, including the ordering in which
    * they should be included.
    */
-  files: string[]
+  files: string[];
   /**
    * An optional, deviating CSL Style to use for citations within this project.
    */
-  cslStyle: string
+  cslStyle: string;
   /**
    * Template files for various export profiles that override any templates
    * provided by the templates themselves.
    */
   templates: {
-    tex: string
-    html: string
-  }
+    tex: string;
+    html: string;
+  };
 }
 
 /**
@@ -38,34 +38,34 @@ export interface ProjectSettings {
  * descriptors should provide.
  */
 export interface FSMetaInfo {
-  path: string // absolutePath
-  dir: string // path.dirname(absolutePath)
-  name: string // path.basename(absolutePath)
-  type: 'file' | 'directory' | 'code' | 'other'
-  size: number
-  modtime: number
-  creationtime: number
+  path: string; // absolutePath
+  dir: string; // path.dirname(absolutePath)
+  name: string; // path.basename(absolutePath)
+  type: "file" | "directory" | "code" | "other";
+  size: number;
+  modtime: number;
+  creationtime: number;
 }
 
-export type SortMethod = 'name-up'|'name-down'|'time-up'|'time-down'
+export type SortMethod = "name-up" | "name-down" | "time-up" | "time-down";
 
 export interface DirectorySettings {
   /**
    * Describes the sorting that should be applied to the directory
    */
-  sorting: SortMethod
+  sorting: SortMethod;
   /**
    * Can hold an optional custom icon for the directory
    */
-  icon: string|null
+  icon: string | null;
   /**
    * Holds the project settings if it's a project.
    */
-  project: ProjectSettings|null
+  project: ProjectSettings | null;
   /**
    * Holds an optional color for the directory.
    */
-  color: string|null
+  color: string | null;
 }
 
 /**
@@ -74,54 +74,58 @@ export interface DirectorySettings {
 export interface DirDescriptor extends FSMetaInfo {
   // Settings are properties that must be persisted separately in a
   // .ztr-directory file, since they are not bound to the directory.
-  settings: DirectorySettings
-  type: 'directory'
-  isGitRepository: boolean
-  dirNotFoundFlag?: boolean // If the flag is set & true this directory has not been found
+  settings: DirectorySettings;
+  type: "directory";
+  isGitRepository: boolean;
+  dirNotFoundFlag?: boolean; // If the flag is set & true this directory has not been found
 }
 
 /**
  * The FSAL Markdown file descriptor
  */
 export interface MDFileDescriptor extends FSMetaInfo {
-  ext: string
-  id: string
-  type: 'file'
-  tags: string[]
-  links: string[] // Any outlinks declared in the file
-  citekeys: string[] // Any citation keys declared in the file
-  bom: string // An optional BOM
-  wordCount: number
-  charCount: number
-  firstHeading: string|null
-  yamlTitle: string|undefined
-  frontmatter: any|null
-  linefeed: string
+  ext: string;
+  id: string;
+  type: "file";
+  tags: string[];
+  links: string[]; // Any outlinks declared in the file
+  citekeys: string[]; // Any citation keys declared in the file
+  bom: string; // An optional BOM
+  wordCount: number;
+  charCount: number;
+  firstHeading: string | null;
+  yamlTitle: string | undefined;
+  frontmatter: any | null;
+  linefeed: string;
   /**
    * The document's saved reference surface (pandoc-crossref and theorem-div
    * definitions and occurrences), extracted in the same markdownToAST pass
    * that produces tags, links, and citekeys (issue #1).
    */
-  references: DocumentReferenceSnapshot
+  references: DocumentReferenceSnapshot;
 }
 
 /**
  * The FSAL code file descriptor (.tex, .yml)
  */
 export interface CodeFileDescriptor extends FSMetaInfo {
-  ext: string
-  type: 'code'
-  bom: string // An optional BOM
-  linefeed: string
+  ext: string;
+  type: "code";
+  bom: string; // An optional BOM
+  linefeed: string;
 }
 
 /**
  * The FSAL other (non-MD and non-Tex) file descriptor
  */
 export interface OtherFileDescriptor extends FSMetaInfo {
-  type: 'other'
-  ext: string
+  type: "other";
+  ext: string;
 }
 
-export type AnyDescriptor = DirDescriptor | MDFileDescriptor | CodeFileDescriptor | OtherFileDescriptor
-export type MaybeRootDescriptor = DirDescriptor | MDFileDescriptor | CodeFileDescriptor
+export type AnyDescriptor =
+  | DirDescriptor
+  | MDFileDescriptor
+  | CodeFileDescriptor
+  | OtherFileDescriptor;
+export type MaybeRootDescriptor = DirDescriptor | MDFileDescriptor | CodeFileDescriptor;

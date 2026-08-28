@@ -38,13 +38,13 @@
  */
 
 const props = defineProps<{
-  max?: number
-  value?: number
-  interruptible?: boolean
-  indeterminate?: boolean
-}>()
+  max?: number;
+  value?: number;
+  interruptible?: boolean;
+  indeterminate?: boolean;
+}>();
 
-const emit = defineEmits<(e: 'interrupt') => void>()
+const emit = defineEmits<(e: "interrupt") => void>();
 </script>
 
 <style lang="less">

@@ -22,8 +22,8 @@
  *
  * @return  {string}        Either \ or /
  */
-function sep (path: string): '\\'|'/' {
-  return isWin32Path(path) ? '\\' : '/'
+function sep(path: string): "\\" | "/" {
+  return isWin32Path(path) ? "\\" : "/";
 }
 
 /**
@@ -34,10 +34,10 @@ function sep (path: string): '\\'|'/' {
  * @return  {boolean}        Returns true if the path includes backslashes but
  *                           no forward slashes.
  */
-export function isWin32Path (path: string): boolean {
+export function isWin32Path(path: string): boolean {
   // We make use of the fact that on Windows, forward slashes are forbidden in
   // path names, and it is unusual to see backslashes in Unix paths.
-  return path.includes('\\') && !path.includes('/')
+  return path.includes("\\") && !path.includes("/");
 }
 
 /**
@@ -47,8 +47,8 @@ export function isWin32Path (path: string): boolean {
  *
  * @return  {boolean}        True if it equals the root directory
  */
-function isRootDir (path: string): boolean {
-  return path === '/' || /^[A-Z]:\\$/i.test(path)
+function isRootDir(path: string): boolean {
+  return path === "/" || /^[A-Z]:\\$/i.test(path);
 }
 
 /**
@@ -58,15 +58,15 @@ function isRootDir (path: string): boolean {
  *
  * @return  {boolean}        True if it's absolute
  */
-export function isAbsolutePath (path: string): boolean {
+export function isAbsolutePath(path: string): boolean {
   if (path.length < 2) {
-    return false // Invalid length
-  } else if (path.length >= 1 && path.startsWith('/')) {
-    return true // Unix
-  } else if (path.length >= 3 && (/^[A-Z]:[\\/]/i.test(path) || path.startsWith('\\\\'))) {
-    return true // Windows (drive letters + network drives)
+    return false; // Invalid length
+  } else if (path.length >= 1 && path.startsWith("/")) {
+    return true; // Unix
+  } else if (path.length >= 3 && (/^[A-Z]:[\\/]/i.test(path) || path.startsWith("\\\\"))) {
+    return true; // Windows (drive letters + network drives)
   } else {
-    return false
+    return false;
   }
 }
 
@@ -78,18 +78,22 @@ export function isAbsolutePath (path: string): boolean {
  *
  * @return  {string}        The relative path
  */
-export function relativePath (from: string, to: string): string {
+export function relativePath(from: string, to: string): string {
   if (sep(from) !== sep(to)) {
-    throw new Error('Cannot calculate relative path between win32 and Unix paths')
+    throw new Error("Cannot calculate relative path between win32 and Unix paths");
   }
 
   // Edge cases
   if (to.startsWith(from)) {
     // to is already the relative path
-    return to.substring(from.length + 1) // Remove path separator
-  } else if (isWin32Path(from) && isWin32Path(to) && to[0].toLowerCase() !== from[0].toLowerCase()) {
+    return to.substring(from.length + 1); // Remove path separator
+  } else if (
+    isWin32Path(from) &&
+    isWin32Path(to) &&
+    to[0].toLowerCase() !== from[0].toLowerCase()
+  ) {
     // Files are on different drives
-    return to
+    return to;
   } /* else if (pathDirname(from) === pathDirname(to)) {
     // Same directory
     return pathBasename(to)
@@ -97,29 +101,31 @@ export function relativePath (from: string, to: string): string {
 
   // After the edge cases, we have to do some more work. Finding the relative
   // path is a combination of adding '..' and parts of either path to the other.
-  const fromSegments = from.split(sep(from))
-  const toSegments = to.split(sep(to))
+  const fromSegments = from.split(sep(from));
+  const toSegments = to.split(sep(to));
   if (fromSegments.length === 1) {
     // Happens with, e.g., filenames. Node.js's path assumes traversing up from
     // both path starts here
-    fromSegments.unshift('..')
-    toSegments.unshift('..')
+    fromSegments.unshift("..");
+    toSegments.unshift("..");
   }
-  let lastCommonSegment = 0
+  let lastCommonSegment = 0;
   for (let i = 0; i < Math.min(fromSegments.length, toSegments.length); i++) {
     if (fromSegments[i] === toSegments[i]) {
-      lastCommonSegment = i
+      lastCommonSegment = i;
     } else {
-      break
+      break;
     }
   }
 
   // Now we have to do two things: (1) move up from from to the last common
   // segment and then (2) append the remaining segments from to
-  const seq = `..${sep(from)}`.repeat(fromSegments.length - lastCommonSegment - 1)
-  const appendix = toSegments.slice(lastCommonSegment + 1).join(sep(to))
-  const relativePath = seq + appendix
-  return relativePath.endsWith(sep(from)) ? relativePath.substring(0, relativePath.length - 1) : relativePath
+  const seq = `..${sep(from)}`.repeat(fromSegments.length - lastCommonSegment - 1);
+  const appendix = toSegments.slice(lastCommonSegment + 1).join(sep(to));
+  const relativePath = seq + appendix;
+  return relativePath.endsWith(sep(from))
+    ? relativePath.substring(0, relativePath.length - 1)
+    : relativePath;
 }
 
 /**
@@ -131,38 +137,38 @@ export function relativePath (from: string, to: string): string {
  *
  * @return  {string}        The path, turned absolute.
  */
-export function resolvePath (base: string, path: string): string {
+export function resolvePath(base: string, path: string): string {
   if (isAbsolutePath(path)) {
-    return path
+    return path;
   }
 
-  const pathSegments = path.split(sep(path))
-  if (pathSegments[0] === '.') {
+  const pathSegments = path.split(sep(path));
+  if (pathSegments[0] === ".") {
     // Remove a potential this-dir indicator
-    pathSegments.splice(0, 1)
+    pathSegments.splice(0, 1);
   }
 
   // NOTE: We reverse the array, which makes splicing path segments easier.
-  const baseSegments = base.split(sep(base)).reverse()
+  const baseSegments = base.split(sep(base)).reverse();
 
   for (let i = 0; i < pathSegments.length; i++) {
-    const segment = pathSegments[i]
+    const segment = pathSegments[i];
     // For each "go up", remove one base segment
-    if (segment === '..') {
-      baseSegments.splice(0, 1) // NOTE: basePath is reversed
-      pathSegments.splice(0, 1)
-      i--
+    if (segment === "..") {
+      baseSegments.splice(0, 1); // NOTE: basePath is reversed
+      pathSegments.splice(0, 1);
+      i--;
     } else {
-      break
+      break;
     }
   }
 
   // This ensures that the resolved path ends with a separator
   if (pathSegments.length === 0) {
-    pathSegments.push('')
+    pathSegments.push("");
   }
 
-  return [ ...baseSegments.reverse(), ...pathSegments ].join(sep(base))
+  return [...baseSegments.reverse(), ...pathSegments].join(sep(base));
 }
 
 /**
@@ -173,12 +179,12 @@ export function resolvePath (base: string, path: string): string {
  *
  * @return  {string}           The basename
  */
-export function pathBasename (path: string, extname?: string): string {
-  const basename = path.substring(path.lastIndexOf(sep(path)) + 1)
+export function pathBasename(path: string, extname?: string): string {
+  const basename = path.substring(path.lastIndexOf(sep(path)) + 1);
   if (extname !== undefined && basename.endsWith(extname)) {
-    return basename.substring(0, basename.length - extname.length)
+    return basename.substring(0, basename.length - extname.length);
   } else {
-    return basename
+    return basename;
   }
 }
 
@@ -190,8 +196,8 @@ export function pathBasename (path: string, extname?: string): string {
  *
  * @return  {string}        The extension name; empty string if no extension
  */
-export function pathExtname (path: string): string {
-  return path.includes('.') ? path.substring(path.lastIndexOf('.')) : ''
+export function pathExtname(path: string): string {
+  return path.includes(".") ? path.substring(path.lastIndexOf(".")) : "";
 }
 
 /**
@@ -203,16 +209,16 @@ export function pathExtname (path: string): string {
  *
  * @return  {string}        The directory name
  */
-export function pathDirname (path: string): string {
+export function pathDirname(path: string): string {
   if (isRootDir(path)) {
-    return path
+    return path;
   }
-  const s = sep(path)
-  const lastIndex = path.lastIndexOf(s)
+  const s = sep(path);
+  const lastIndex = path.lastIndexOf(s);
 
   // This is to handle direct children under the root directory,
   // so that the final path separator is not removed, such as
   // `C:\Notes`, `/notes`, etc.
-  const isRoot = isAbsolutePath(path) && path.indexOf(s) === lastIndex
-  return lastIndex > -1 ? path.substring(0, isRoot ? lastIndex + 1 : lastIndex) : '.'
+  const isRoot = isAbsolutePath(path) && path.indexOf(s) === lastIndex;
+  return lastIndex > -1 ? path.substring(0, isRoot ? lastIndex + 1 : lastIndex) : ".";
 }

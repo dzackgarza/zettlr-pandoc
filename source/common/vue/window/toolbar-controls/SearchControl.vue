@@ -32,28 +32,28 @@
  *
  * END HEADER
  */
-import { ref } from 'vue'
+import { ref } from "vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 export interface ToolbarSearchControl {
-  type: 'search'
-  id?: string
-  placeholder?: string
+  type: "search";
+  id?: string;
+  placeholder?: string;
   // Allow arbitrary properties that we ignore
-  [key: string]: unknown
+  [key: string]: unknown;
 }
 
-const props = defineProps<{ control: ToolbarSearchControl }>()
+const props = defineProps<{ control: ToolbarSearchControl }>();
 
-const emit = defineEmits<(e: 'update:modelValue', value: string) => void>()
-const input = ref<HTMLInputElement|null>(null)
+const emit = defineEmits<(e: "update:modelValue", value: string) => void>();
+const input = ref<HTMLInputElement | null>(null);
 
-ipcRenderer.on('shortcut', (event, shortcut) => {
-  if (shortcut === 'search') {
-    input.value?.focus()
+ipcRenderer.on("shortcut", (event, shortcut) => {
+  if (shortcut === "search") {
+    input.value?.focus();
   }
-})
+});
 </script>
 
 <style lang="less">

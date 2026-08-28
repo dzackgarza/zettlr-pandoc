@@ -13,18 +13,18 @@
  *
  * END HEADER
  */
-import { syntaxTree } from '@codemirror/language'
-import type { DOMEventHandlers } from '@codemirror/view'
-import type { SyntaxNode } from '@lezer/common'
-import openMarkdownLink from '../util/open-markdown-link'
+import { syntaxTree } from "@codemirror/language";
+import type { DOMEventHandlers } from "@codemirror/view";
+import type { SyntaxNode } from "@lezer/common";
+import openMarkdownLink from "../util/open-markdown-link";
 import {
   followReferenceNavigationIntent,
-  resolveReferenceNavigationIntent
-} from '../util/reference-navigation'
+  resolveReferenceNavigationIntent,
+} from "../util/reference-navigation";
 
 export interface ClickListenerCallbacks {
-  onWikiLink?: (url: string) => void
-  onTag?: (tag: string) => void
+  onWikiLink?: (url: string) => void;
+  onTag?: (tag: string) => void;
 }
 
 /**
@@ -36,51 +36,55 @@ export interface ClickListenerCallbacks {
  *
  * @return  {DOMEventHandlers<T>}                   The DOMEventHandlers.
  */
-export function clickListeners<T = unknown> (callbacks?: ClickListenerCallbacks): DOMEventHandlers<T> {
+export function clickListeners<T = unknown>(
+  callbacks?: ClickListenerCallbacks,
+): DOMEventHandlers<T> {
   return {
-    mousedown (event, view) {
-      const cmd = event.metaKey && process.platform === 'darwin'
-      const ctrl = event.ctrlKey && process.platform !== 'darwin'
+    mousedown(event, view) {
+      const cmd = event.metaKey && process.platform === "darwin";
+      const ctrl = event.ctrlKey && process.platform !== "darwin";
       if (!cmd && !ctrl) {
-        return false
+        return false;
       }
 
-      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
       if (pos === null) {
-        return false
+        return false;
       }
 
-      const nodeAt = syntaxTree(view.state).resolve(pos, 0)
+      const nodeAt = syntaxTree(view.state).resolve(pos, 0);
 
       // Both plain URLs as well as Zettelkasten links and tags are
       // implemented on the syntax tree.
-      if (nodeAt.type.name === 'URL') {
+      if (nodeAt.type.name === "URL") {
         // We found a plain link!
-        const url = view.state.sliceDoc(nodeAt.from, nodeAt.to)
-        if (url.startsWith('[[') && url.endsWith(']]')) {
-          callbacks?.onWikiLink?.(url.substring(2, url.length - 2))
+        const url = view.state.sliceDoc(nodeAt.from, nodeAt.to);
+        if (url.startsWith("[[") && url.endsWith("]]")) {
+          callbacks?.onWikiLink?.(url.substring(2, url.length - 2));
         } else {
-          openMarkdownLink(url, view)
+          openMarkdownLink(url, view);
         }
-        event.preventDefault()
-        return true
-      } else if ([ 'ZknLinkContent', 'ZknLinkTitle', 'ZknLinkPipe', 'ZknLinkMark' ].includes(nodeAt.type.name)) {
+        event.preventDefault();
+        return true;
+      } else if (
+        ["ZknLinkContent", "ZknLinkTitle", "ZknLinkPipe", "ZknLinkMark"].includes(nodeAt.type.name)
+      ) {
         // We found a Zettelkasten link!
-        event.preventDefault()
+        event.preventDefault();
         // In these cases, nodeAt.parent is always a ZettelkastenLink
-        const contentNode = nodeAt.parent?.getChild('ZknLinkContent')
+        const contentNode = nodeAt.parent?.getChild("ZknLinkContent");
         if (contentNode != null) {
-          const linkContents = view.state.sliceDoc(contentNode.from, contentNode.to)
-          callbacks?.onWikiLink?.(linkContents)
+          const linkContents = view.state.sliceDoc(contentNode.from, contentNode.to);
+          callbacks?.onWikiLink?.(linkContents);
         }
-        return true
-      } else if (nodeAt.type.name === 'ZknTag') {
+        return true;
+      } else if (nodeAt.type.name === "ZknTag") {
         // A tag!
-        const mark = nodeAt.getChild('ZknTagMark')
-        const tagContents = view.state.sliceDoc(mark ? mark.to : nodeAt.from, nodeAt.to)
-        callbacks?.onTag?.(tagContents)
-        event.preventDefault()
-        return true
+        const mark = nodeAt.getChild("ZknTagMark");
+        const tagContents = view.state.sliceDoc(mark ? mark.to : nodeAt.from, nodeAt.to);
+        callbacks?.onTag?.(tagContents);
+        event.preventDefault();
+        return true;
       }
 
       // Reference occurrences (supported-family Citation clusters) and
@@ -89,36 +93,36 @@ export function clickListeners<T = unknown> (callbacks?: ClickListenerCallbacks)
       // cross-file intents request the documents provider to open the
       // defining document. Ordinary clicks never reach this branch (the
       // Mod-key guard at the top), so edit-first behavior is untouched.
-      const intent = resolveReferenceNavigationIntent(view, pos)
+      const intent = resolveReferenceNavigationIntent(view, pos);
       if (intent !== null) {
-        event.preventDefault()
-        followReferenceNavigationIntent(view, intent)
-        return true
+        event.preventDefault();
+        followReferenceNavigationIntent(view, intent);
+        return true;
       }
 
       // Lastly, the user may have clicked somewhere in a link. However,
       // since the link description can take various inline elements, we
       // have to recursively move up the tree until we find a 'Link' element
       // or abort if we reach the top
-      let currentNode: SyntaxNode|null = nodeAt
-      while (currentNode !== null && currentNode.name !== 'Link') {
-        currentNode = currentNode.parent
+      let currentNode: SyntaxNode | null = nodeAt;
+      while (currentNode !== null && currentNode.name !== "Link") {
+        currentNode = currentNode.parent;
       }
 
       if (currentNode !== null) {
         // We have a link
-        const urlNode = currentNode.getChild('URL')
+        const urlNode = currentNode.getChild("URL");
         if (urlNode !== null) {
-          const url = view.state.sliceDoc(urlNode.from, urlNode.to)
-          if (url.startsWith('[[') && url.endsWith(']]')) {
-            callbacks?.onWikiLink?.(url.substring(2, url.length - 2))
+          const url = view.state.sliceDoc(urlNode.from, urlNode.to);
+          if (url.startsWith("[[") && url.endsWith("]]")) {
+            callbacks?.onWikiLink?.(url.substring(2, url.length - 2));
           } else {
-            openMarkdownLink(url, view)
+            openMarkdownLink(url, view);
           }
-          event.preventDefault()
-          return true
+          event.preventDefault();
+          return true;
         }
       }
-    }
-  }
+    },
+  };
 }

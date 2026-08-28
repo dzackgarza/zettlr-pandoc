@@ -12,30 +12,32 @@
  * END HEADER
  */
 
-import type { ProjectSettings } from '@dts/common/fsal'
-import ZettlrCommand from './zettlr-command'
-import type { AppServiceContainer } from 'source/app/app-service-container'
+import type { ProjectSettings } from "@dts/common/fsal";
+import type { AppServiceContainer } from "source/app/app-service-container";
+import ZettlrCommand from "./zettlr-command";
 
 export default class UpdateProjectProperties extends ZettlrCommand {
-  constructor (app: AppServiceContainer) {
-    super(app, 'update-project-properties')
+  constructor(app: AppServiceContainer) {
+    super(app, "update-project-properties");
   }
 
   /**
-    * Display the project settings
-    * @param {String} evt The event name
-    * @param  {Object} arg The hash of a directory.
-    */
-  async run (evt: string, arg: { path: string, properties: ProjectSettings }): Promise<void> {
+   * Display the project settings
+   * @param {String} evt The event name
+   * @param  {Object} arg The hash of a directory.
+   */
+  async run(evt: string, arg: { path: string; properties: ProjectSettings }): Promise<void> {
     // The properties come from the renderer with dot notation, but the action
     // expects them already in their expanded state.
     // let expanded = expandOptionObject(arg.properties)
     // Find the directory, and apply the properties to it!
-    const dir = await this._app.fsal.getAnyDirectoryDescriptor(arg.path)
+    const dir = await this._app.fsal.getAnyDirectoryDescriptor(arg.path);
     if (dir !== undefined) {
-      await this._app.fsal.updateProject(dir, arg.properties)
+      await this._app.fsal.updateProject(dir, arg.properties);
     } else {
-      this._app.log.warning(`Could not update project properties for ${String(arg.path)}: No directory found!`)
+      this._app.log.warning(
+        `Could not update project properties for ${String(arg.path)}: No directory found!`,
+      );
     }
   }
 }

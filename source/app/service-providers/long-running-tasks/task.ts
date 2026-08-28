@@ -12,13 +12,13 @@
  * END HEADER
  */
 
-import EventEmitter from 'events'
-import broadcastIPCMessage from 'source/common/util/broadcast-ipc-message'
-import type { LRTIPCSyncMessage } from '.'
-import { DateTime, type Duration } from 'luxon'
+import EventEmitter from "events";
+import { DateTime, type Duration } from "luxon";
+import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
+import type { LRTIPCSyncMessage } from ".";
 
 // How often should long running tasks broadcast a status update (in ms)?
-const LRT_UPDATE_DEBOUNCE = 100
+const LRT_UPDATE_DEBOUNCE = 100;
 
 /**
  * Enum of all status a task can have.
@@ -27,47 +27,47 @@ export enum TaskStatus {
   /**
    * The task is still ongoing
    */
-  'ongoing',
+  ongoing,
   /**
    * The task has finished successfully
    */
-  'finished',
+  finished,
   /**
    * The task has errored out
    */
-  'error',
+  error,
   /**
    * The task has been aborted
    */
-  'aborted'
+  aborted,
 }
 
 /**
  * A JSON-serializable representation of a task
  */
 export interface LRT_JSON {
-  id: string
-  status: TaskStatus
-  error?: { name: string, message: string }
-  startTime: string
-  endTime?: string
-  title: string
-  info?: string
-  currentTaskPercentage?: number
-  abortable: boolean
-  interactable: boolean
+  id: string;
+  status: TaskStatus;
+  error?: { name: string; message: string };
+  startTime: string;
+  endTime?: string;
+  title: string;
+  info?: string;
+  currentTaskPercentage?: number;
+  abortable: boolean;
+  interactable: boolean;
 }
 
 // Events the LRT can emit
 interface LRT_EventMap {
   // When the task is aborted
-  task_aborted: Array<() => void>
+  task_aborted: Array<() => void>;
   // When the task errors out
   // NOTE: We cannot emit a literal "error" event as these are special:
   // https://nodejs.org/docs/latest/api/events.html#error-events
-  task_errored: Array<() => void>
+  task_errored: Array<() => void>;
   // When the task finishes
-  task_finished: Array<() => void>
+  task_finished: Array<() => void>;
 }
 
 export class LongRunningTask extends EventEmitter<LRT_EventMap> {
@@ -76,7 +76,7 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
    *
    * @var {TaskStatus}
    */
-  private status: TaskStatus
+  private status: TaskStatus;
 
   /**
    * If this is not undefined, the task has experienced an error, and this
@@ -84,7 +84,7 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
    *
    * @var {Error|undefined}
    */
-  private error: Error|undefined
+  private error: Error | undefined;
 
   /**
    * Whether this task is user-abortable. The GUI component must implement a way
@@ -93,14 +93,14 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
    *
    * @var {boolean}
    */
-  private abortable: boolean
+  private abortable: boolean;
 
   /**
    * Holds the timestamp when this task was registered with the provider
    *
    * @var {DateTime}
    */
-  private startTime: DateTime<true>
+  private startTime: DateTime<true>;
 
   /**
    * Holds the timestamp when this task was marked ended (regardless of reason).
@@ -108,21 +108,21 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
    *
    * @var {DateTime|undefined}
    */
-  private endTime: DateTime|undefined
-  
+  private endTime: DateTime | undefined;
+
   /**
    * A short description of the task that should be presented as a title.
    *
    * @var {string}
    */
-  private title: string
+  private title: string;
 
   /**
    * An optional (longer) description of the task that can contain more info.
    *
    * @var {string|undefined}
    */
-  private info: string|undefined
+  private info: string | undefined;
 
   /**
    * Some tasks can have a definable progress. In that case, this property
@@ -130,7 +130,7 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
    *
    * @var {number|undefined}
    */
-  private currentTaskPercentage: number|undefined
+  private currentTaskPercentage: number | undefined;
 
   /**
    * An optional function that will perform an action when the user clicks this
@@ -138,7 +138,7 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
    *
    * @var  {Function}
    */
-  private successInteraction: (() => void)|undefined
+  private successInteraction: (() => void) | undefined;
 
   /**
    * This variable is used to hold a debounce promise to ensure the provider
@@ -147,8 +147,8 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
    *
    * @var {Promise<void>|undefined}
    */
-  private debouncePromise: Promise<void>|undefined
-  private debounceFlag: boolean
+  private debouncePromise: Promise<void> | undefined;
+  private debounceFlag: boolean;
 
   /**
    * Creates a new LRT representation object.
@@ -158,38 +158,49 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
    * @param {string}   info       Optional longer description/info-string.
    * @param {boolean}  abortable  Whether this task is user-abortable (default: true)
    */
-  constructor (public readonly id: string, title: string, info?: string, successInteraction?: () => void, abortable: boolean = true) {
-    super()
-    this.title = title
-    this.info = info
-    this.startTime = DateTime.now()
-    this.status = TaskStatus.ongoing
-    this.abortable = abortable
-    this.successInteraction = successInteraction
-    this.debounceFlag = false
+  constructor(
+    public readonly id: string,
+    title: string,
+    info?: string,
+    successInteraction?: () => void,
+    abortable: boolean = true,
+  ) {
+    super();
+    this.title = title;
+    this.info = info;
+    this.startTime = DateTime.now();
+    this.status = TaskStatus.ongoing;
+    this.abortable = abortable;
+    this.successInteraction = successInteraction;
+    this.debounceFlag = false;
   }
 
   /**
    * Broadcasts any changes to this task status to all open renderers. Utilizes
    * a debounce mechanism to ensure the updates are throttled.
    */
-  private broadcastChange () {
+  private broadcastChange() {
     if (this.debouncePromise !== undefined) {
-      this.debounceFlag = true
-      return
+      this.debounceFlag = true;
+      return;
     }
 
-    broadcastIPCMessage('lrt-provider', { command: 'update-task', payload: { task: this.toJSON() } } as LRTIPCSyncMessage)
-    let resolve = () => {}
-    this.debouncePromise = new Promise<void>((r) => { resolve = r })
+    broadcastIPCMessage("lrt-provider", {
+      command: "update-task",
+      payload: { task: this.toJSON() },
+    } as LRTIPCSyncMessage);
+    let resolve = () => {};
+    this.debouncePromise = new Promise<void>((r) => {
+      resolve = r;
+    });
     setTimeout(() => {
-      this.debouncePromise = undefined
-      resolve()
+      this.debouncePromise = undefined;
+      resolve();
       if (this.debounceFlag) {
-        this.debounceFlag = false
-        this.broadcastChange()
+        this.debounceFlag = false;
+        this.broadcastChange();
       }
-    }, LRT_UPDATE_DEBOUNCE)
+    }, LRT_UPDATE_DEBOUNCE);
   }
 
   /**
@@ -198,13 +209,21 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
    *
    * @param  {any}  data  The data to update.
    */
-  public update (data: Partial<{ title: string, info: string, percentage: number, abortable: boolean, successInteraction: () => void }>) {
-    this.title = data.title ?? this.title
-    this.info = data.info ?? this.info
-    this.currentTaskPercentage = data.percentage ?? this.currentTaskPercentage
-    this.abortable = data.abortable ?? this.abortable
-    this.successInteraction = data.successInteraction ?? this.successInteraction
-    this.broadcastChange()
+  public update(
+    data: Partial<{
+      title: string;
+      info: string;
+      percentage: number;
+      abortable: boolean;
+      successInteraction: () => void;
+    }>,
+  ) {
+    this.title = data.title ?? this.title;
+    this.info = data.info ?? this.info;
+    this.currentTaskPercentage = data.percentage ?? this.currentTaskPercentage;
+    this.abortable = data.abortable ?? this.abortable;
+    this.successInteraction = data.successInteraction ?? this.successInteraction;
+    this.broadcastChange();
   }
 
   /**
@@ -212,15 +231,15 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
    *
    * @return  {boolean}  Whether the task is abortable.
    */
-  public get isAbortable (): boolean {
-    return this.abortable
+  public get isAbortable(): boolean {
+    return this.abortable;
   }
 
   /**
    * Calls the interaction for the task (if applicable)
    */
-  public interactWith () {
-    this.successInteraction?.()
+  public interactWith() {
+    this.successInteraction?.();
   }
 
   /**
@@ -232,39 +251,39 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
    * @param   {Error}  error  If reason is "error", this must contain an error
    *                          object with more details.
    */
-  public endTask (reason: 'abort'|'success'): void
-  public endTask (reason: 'error', error: Error): void
-  public endTask (reason: 'abort'|'error'|'success' = 'success', error?: Error): void {
-    this.endTime = DateTime.now()
+  public endTask(reason: "abort" | "success"): void;
+  public endTask(reason: "error", error: Error): void;
+  public endTask(reason: "abort" | "error" | "success" = "success", error?: Error): void {
+    this.endTime = DateTime.now();
 
     switch (reason) {
-      case 'abort':
-        this.status = TaskStatus.aborted
-        this.emit('task_aborted')
-        break
-      case 'error':
-        this.status = TaskStatus.error
-        this.error = error
-        console.error(error)
-        this.emit('task_errored')
-        break
-      case 'success':
-        this.status = TaskStatus.finished
-        this.emit('task_finished')
+      case "abort":
+        this.status = TaskStatus.aborted;
+        this.emit("task_aborted");
+        break;
+      case "error":
+        this.status = TaskStatus.error;
+        this.error = error;
+        console.error(error);
+        this.emit("task_errored");
+        break;
+      case "success":
+        this.status = TaskStatus.finished;
+        this.emit("task_finished");
     }
-    this.broadcastChange()
+    this.broadcastChange();
   }
 
   //
 
-  public getElapsed (): Duration {
-    const end = (this.endTime ?? DateTime.now())
-    const dur = end.diff(this.startTime, [ 'days', 'hours', 'minutes', 'seconds', 'milliseconds' ])
-    return dur
+  public getElapsed(): Duration {
+    const end = this.endTime ?? DateTime.now();
+    const dur = end.diff(this.startTime, ["days", "hours", "minutes", "seconds", "milliseconds"]);
+    return dur;
   }
 
-  public getStatus (): TaskStatus {
-    return this.status
+  public getStatus(): TaskStatus {
+    return this.status;
   }
 
   /**
@@ -272,14 +291,21 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
    *
    * @return  {LRT_JSON}  A serialized JSON form of the task.
    */
-  public toJSON (): LRT_JSON {
+  public toJSON(): LRT_JSON {
     return {
-      id: this.id, title: this.title, info: this.info,
-      error: this.error !== undefined ? { name: this.error.name, message: this.error.message } : undefined,
-      status: this.status, startTime: this.startTime.toISO(), endTime: this.endTime?.toISO() ?? undefined,
+      id: this.id,
+      title: this.title,
+      info: this.info,
+      error:
+        this.error !== undefined
+          ? { name: this.error.name, message: this.error.message }
+          : undefined,
+      status: this.status,
+      startTime: this.startTime.toISO(),
+      endTime: this.endTime?.toISO() ?? undefined,
       currentTaskPercentage: this.currentTaskPercentage,
       abortable: this.abortable,
-      interactable: this.successInteraction !== undefined
-    }
+      interactable: this.successInteraction !== undefined,
+    };
   }
 }

@@ -35,53 +35,53 @@
  * END HEADER
  */
 
-import { trans } from '@common/i18n-renderer'
-import TabBar from '@common/vue/TabBar.vue'
-import { computed } from 'vue'
-import ToCTab from './ToCTab.vue'
-import ReferencesTab from './ReferencesTab.vue'
-import RelatedFilesTab from './RelatedFilesTab.vue'
-import OtherFilesTab from './OtherFilesTab.vue'
-import { useConfigStore } from 'source/pinia'
+import { trans } from "@common/i18n-renderer";
+import TabBar from "@common/vue/TabBar.vue";
+import { useConfigStore } from "source/pinia";
+import { computed } from "vue";
+import OtherFilesTab from "./OtherFilesTab.vue";
+import ReferencesTab from "./ReferencesTab.vue";
+import RelatedFilesTab from "./RelatedFilesTab.vue";
+import ToCTab from "./ToCTab.vue";
 
-const configStore = useConfigStore()
+const configStore = useConfigStore();
 
 const emit = defineEmits<{
-  (e: 'move-section', data: { from: number, to: number }): void
-  (e: 'jump-to-line', line: number): void
-}>()
+  (e: "move-section", data: { from: number; to: number }): void;
+  (e: "jump-to-line", line: number): void;
+}>();
 
-const currentTab = computed(() => configStore.config.window.currentSidebarTab)
+const currentTab = computed(() => configStore.config.window.currentSidebarTab);
 
 const tabs = [
   {
-    icon: 'indent',
-    id: 'toc',
-    target: 'sidebar-toc',
-    label: trans('Table of contents')
+    icon: "indent",
+    id: "toc",
+    target: "sidebar-toc",
+    label: trans("Table of contents"),
   },
   {
-    icon: 'book',
-    id: 'references',
-    target: 'sidebar-bibliography',
-    label: trans('References')
+    icon: "book",
+    id: "references",
+    target: "sidebar-bibliography",
+    label: trans("References"),
   },
   {
-    icon: 'file-group',
-    id: 'relatedFiles',
-    target: 'sidebar-related-files',
-    label: trans('Related files')
+    icon: "file-group",
+    id: "relatedFiles",
+    target: "sidebar-related-files",
+    label: trans("Related files"),
   },
   {
-    icon: 'paperclip',
-    id: 'attachments',
-    target: 'sidebar-files',
-    label: trans('Other files')
-  }
-]
+    icon: "paperclip",
+    id: "attachments",
+    target: "sidebar-files",
+    label: trans("Other files"),
+  },
+];
 
-function setCurrentTab (which: string): void {
-  configStore.setConfigValue('window.currentSidebarTab', which)
+function setCurrentTab(which: string): void {
+  configStore.setConfigValue("window.currentSidebarTab", which);
 }
 </script>
 

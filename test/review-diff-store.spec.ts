@@ -14,8 +14,8 @@
  * END HEADER
  */
 
-import { strict as assert } from "assert";
 import { ChangeSet } from "@codemirror/state";
+import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import {
   proposalRequestFingerprint,
@@ -23,7 +23,6 @@ import {
   reviewFromSidecar,
   reviewSidecar,
 } from "source/app/service-providers/documents/review-diff-store";
-import { sha256Text } from "source/common/util/sha256";
 import {
   isTransitionError,
   prepareChunkComment,
@@ -34,6 +33,7 @@ import {
   prepareWorkingTextEdit,
   type ReviewTransitionError,
 } from "source/app/service-providers/documents/review-transitions";
+import { sha256Text } from "source/common/util/sha256";
 
 const DOCUMENT_ID = "doc-test";
 const DOCUMENT_PATH = "/home/user/note.md";
@@ -42,11 +42,7 @@ function patch(oldText: string, newText: string): string {
   return createPatch(DOCUMENT_PATH, oldText, newText, "", "", { context: 3 });
 }
 
-function committedProposal(
-  baseline: string,
-  proposed: string,
-  clientRequestId = "request-1",
-) {
+function committedProposal(baseline: string, proposed: string, clientRequestId = "request-1") {
   const claims = [{ patch: patch(baseline, proposed), description: "one claim" }];
   const plan = prepareProposalSubmission({
     review: undefined,
@@ -74,10 +70,7 @@ function withReview(baseline: string, proposed: string) {
   return { review: plan.nextReview!, workingText: plan.nextWorkingText };
 }
 
-function assertTransitionError(
-  value: unknown,
-  code: string,
-): void {
+function assertTransitionError(value: unknown, code: string): void {
   assert.equal((value as { ok?: boolean }).ok, false);
   assert.equal((value as ReviewTransitionError).code, code);
 }
@@ -162,10 +155,12 @@ describe("pure review transitions", function () {
       documentPath: DOCUMENT_PATH,
       workingText: first.nextWorkingText,
       diskSha256: first.nextReview!.diskFenceSha256,
-      claims: [{
-        patch: patch(first.nextWorkingText, "prefix ALPHA\n"),
-        description: "prefix",
-      }],
+      claims: [
+        {
+          patch: patch(first.nextWorkingText, "prefix ALPHA\n"),
+          description: "prefix",
+        },
+      ],
       clientRequestId: "request-2",
       requestFingerprint: sha256Text("request-2"),
     });
@@ -245,21 +240,19 @@ describe("suggestions through owner edits and later claims", function () {
     const baseline = "one middle two\n";
     const proposed = " middle \n";
     const { review, workingText } = withReview(baseline, proposed);
-    assert.ok(review.suggestions.every((suggestion) =>
-      suggestion.anchors.every((anchor) => anchor.from === anchor.to),
-    ));
+    assert.ok(
+      review.suggestions.every((suggestion) =>
+        suggestion.anchors.every((anchor) => anchor.from === anchor.to),
+      ),
+    );
     const insertionAt = workingText.indexOf("dle");
     const ownerText = "OWNER";
-    const edited =
-      workingText.slice(0, insertionAt) + ownerText + workingText.slice(insertionAt);
+    const edited = workingText.slice(0, insertionAt) + ownerText + workingText.slice(insertionAt);
     const edit = prepareWorkingTextEdit({
       review,
       textBefore: workingText,
       workingText: edited,
-      changes: ChangeSet.of(
-        { from: insertionAt, insert: ownerText },
-        workingText.length,
-      ),
+      changes: ChangeSet.of({ from: insertionAt, insert: ownerText }, workingText.length),
     });
     assert.ok(edit !== undefined);
 
@@ -293,9 +286,7 @@ describe("suggestions through owner edits and later claims", function () {
     const store = new ReviewDiffStore();
     store.replaceReview(DOCUMENT_ID, submitted.nextReview!);
     const chunks = store.getOutstandingChunks(DOCUMENT_ID, final)!;
-    const capitalized = chunks.find((chunk) =>
-      chunk.descriptions.includes("capitalize alpha"),
-    );
+    const capitalized = chunks.find((chunk) => chunk.descriptions.includes("capitalize alpha"));
     const prefixed = chunks.find((chunk) => chunk.descriptions.includes("add prefix"));
     assert.equal(capitalized?.workingText, "ALPHA");
     assert.equal(prefixed?.workingText, "prefix ");

@@ -12,14 +12,13 @@
  * END HEADER
  */
 
-import path from 'path'
-import { promises as fs } from 'fs'
-import { app } from 'electron'
-import ZIP from 'adm-zip'
-
-import { trans } from '@common/i18n-main'
-import isFile from '@common/util/is-file'
-import type { DirDescriptor } from '@dts/common/fsal'
+import { trans } from "@common/i18n-main";
+import isFile from "@common/util/is-file";
+import type { DirDescriptor } from "@dts/common/fsal";
+import ZIP from "adm-zip";
+import { app } from "electron";
+import { promises as fs } from "fs";
+import path from "path";
 
 /**
  * Imports both textpacks and textbundles to the target directory.
@@ -27,67 +26,71 @@ import type { DirDescriptor } from '@dts/common/fsal'
  * @param  {String} target The destination directory
  * @return {void}        This thing only throws up.
  */
-export default async function importTextbundle (bundle: { path: string, knownFormat?: string }, target: DirDescriptor): Promise<void> {
-  if (bundle.knownFormat === 'textpack') {
+export default async function importTextbundle(
+  bundle: { path: string; knownFormat?: string },
+  target: DirDescriptor,
+): Promise<void> {
+  if (bundle.knownFormat === "textpack") {
     // We need to unzip it before importing.
-    let file = new ZIP(bundle.path)
-    file.extractAllTo(app.getPath('temp'), true) // Extract everything
+    let file = new ZIP(bundle.path);
+    file.extractAllTo(app.getPath("temp"), true); // Extract everything
     // Now modify the bundle so that the importer can do something with it
-    let parent = file.getEntries()[0].entryName
+    let parent = file.getEntries()[0].entryName;
     // It may be that there is no extra entry for the containing textbundle
     // directory. In that case, traverse up one level
-    if (path.extname(parent) !== '.textbundle') {
-      parent = path.dirname(parent)
+    if (path.extname(parent) !== ".textbundle") {
+      parent = path.dirname(parent);
     }
     // Second time check, in case the generating ZIP library has put an image
     // in the assets folder at entry position 0.
-    if (path.extname(parent) !== '.textbundle') {
-      parent = path.dirname(parent)
+    if (path.extname(parent) !== ".textbundle") {
+      parent = path.dirname(parent);
     }
-    bundle.path = path.join(app.getPath('temp'), parent)
-    bundle.knownFormat = 'textbundle'
+    bundle.path = path.join(app.getPath("temp"), parent);
+    bundle.knownFormat = "textbundle";
   }
 
   // Now we have for sure a textbundle which we can extract.
-  let mdName = path.join(target.path, path.basename(bundle.path, path.extname(bundle.path))) + '.md'
-  let assets = path.join(target.path, 'assets')
+  let mdName =
+    path.join(target.path, path.basename(bundle.path, path.extname(bundle.path))) + ".md";
+  let assets = path.join(target.path, "assets");
 
   // First copy over the markdown file (which may have ANY extension)
-  let bdl = await fs.readdir(bundle.path)
-  let foundMDFile = false
+  let bdl = await fs.readdir(bundle.path);
+  let foundMDFile = false;
   for (let f of bdl) {
-    if (f.indexOf('text.') === 0) {
-      foundMDFile = true
+    if (f.indexOf("text.") === 0) {
+      foundMDFile = true;
       // Gotcha
-      await fs.copyFile(path.join(bundle.path, f), mdName)
-      break
+      await fs.copyFile(path.join(bundle.path, f), mdName);
+      break;
     }
   }
 
   if (!foundMDFile) {
-    throw new Error(trans('Malformed Textbundle: %s', path.basename(bundle.path)))
+    throw new Error(trans("Malformed Textbundle: %s", path.basename(bundle.path)));
   }
 
   // Now the assets
   try {
-    bdl = await fs.readdir(path.join(bundle.path, 'assets'))
+    bdl = await fs.readdir(path.join(bundle.path, "assets"));
   } catch (err) {
-    throw new Error(trans('Malformed Textbundle: %s', path.basename(bundle.path)))
+    throw new Error(trans("Malformed Textbundle: %s", path.basename(bundle.path)));
   }
 
   if (bdl.length > 0) {
     // If there are assets to be copied, make sure the directory exists
     try {
-      await fs.lstat(assets)
+      await fs.lstat(assets);
     } catch (err) {
-      await fs.mkdir(assets)
+      await fs.mkdir(assets);
     }
   }
 
   // Now simply copy over all files
   for (let f of bdl) {
-    if (isFile(path.join(bundle.path, 'assets', f))) {
-      await fs.copyFile(path.join(bundle.path, 'assets', f), path.join(assets, f))
+    if (isFile(path.join(bundle.path, "assets", f))) {
+      await fs.copyFile(path.join(bundle.path, "assets", f), path.join(assets, f));
     }
   }
 

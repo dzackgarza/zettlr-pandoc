@@ -10,68 +10,78 @@
  *   review — an external review proposition adjudicated chunk by chunk
  */
 
-import { Compartment, EditorState } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
-import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
-import { renderEmphasis } from 'source/common/modules/markdown-editor/renderers/render-emphasis'
-import { renderLinks } from 'source/common/modules/markdown-editor/renderers/render-links'
-import { renderMath } from 'source/common/modules/markdown-editor/renderers/render-math'
-import { renderPandoc } from 'source/common/modules/markdown-editor/renderers/render-pandoc-div-span'
-import { defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
-import { initializeMathJax } from 'source/common/util/mathtex-to-html'
-import { configField } from 'source/common/modules/markdown-editor/util/configuration'
-import { reviewChunksExtension, type ReviewChunksConfig } from 'source/common/modules/markdown-editor/plugins/review-chunks'
-import type { ReviewChunkCommentView, ReviewSuggestionView } from '@dts/common/review-diff'
+import { Compartment, EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import type { ReviewChunkCommentView, ReviewSuggestionView } from "@dts/common/review-diff";
+import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import {
+  type ReviewChunksConfig,
+  reviewChunksExtension,
+} from "source/common/modules/markdown-editor/plugins/review-chunks";
+import { renderEmphasis } from "source/common/modules/markdown-editor/renderers/render-emphasis";
+import { renderLinks } from "source/common/modules/markdown-editor/renderers/render-links";
+import { renderMath } from "source/common/modules/markdown-editor/renderers/render-math";
+import { renderPandoc } from "source/common/modules/markdown-editor/renderers/render-pandoc-div-span";
+import { defaultLight, editorTheme } from "source/common/modules/markdown-editor/theme/editor";
+import { configField } from "source/common/modules/markdown-editor/util/configuration";
+import { initializeMathJax } from "source/common/util/mathtex-to-html";
 
 declare global {
   interface Window {
-    captureReady: Promise<void>
-    demoStepCount: number
+    captureReady: Promise<void>;
+    demoStepCount: number;
     /** Runs step i and returns the hold time (seconds) for its frame. */
-    runDemoStep: (index: number) => Promise<number>
+    runDemoStep: (index: number) => Promise<number>;
   }
 }
 
 interface Step {
-  run: () => void | Promise<void>
-  hold: number
+  run: () => void | Promise<void>;
+  hold: number;
 }
 
-const TYPE_HOLD = 0.07
-const steps: Step[] = []
-let view: EditorView
+const TYPE_HOLD = 0.07;
+const steps: Step[] = [];
+let view: EditorView;
 
 /** One step per character, inserted at the cursor like real typing. */
-function typeChars (text: string, hold: number = TYPE_HOLD): void {
+function typeChars(text: string, hold: number = TYPE_HOLD): void {
   for (const char of text) {
     steps.push({
       hold,
-      run: () => { view.dispatch(view.state.replaceSelection(char)) }
-    })
+      run: () => {
+        view.dispatch(view.state.replaceSelection(char));
+      },
+    });
   }
 }
 
 /** Moves the cursor to the given offset resolver in one step. */
-function moveCursor (position: () => number, hold: number): void {
+function moveCursor(position: () => number, hold: number): void {
   steps.push({
     hold,
     run: () => {
-      view.dispatch({ selection: { anchor: position() }, scrollIntoView: true })
-    }
-  })
+      view.dispatch({ selection: { anchor: position() }, scrollIntoView: true });
+    },
+  });
 }
 
-function pause (hold: number): void {
-  steps.push({ hold, run: () => { /* hold the current frame */ } })
+function pause(hold: number): void {
+  steps.push({
+    hold,
+    run: () => {
+      /* hold the current frame */
+    },
+  });
 }
 
 /** Offset of `needle` in the current document (throws when absent). */
-function docIndex (needle: string, shift: number = 0): number {
-  const index = view.state.doc.toString().indexOf(needle)
+function docIndex(needle: string, shift: number = 0): number {
+  const index = view.state.doc.toString().indexOf(needle);
   if (index === -1) {
-    throw new Error(`demo script lost its landmark: ${needle}`)
+    throw new Error(`demo script lost its landmark: ${needle}`);
   }
-  return index + shift
+  return index + shift;
 }
 
 const editorExtensions = [
@@ -83,247 +93,283 @@ const editorExtensions = [
   renderPandoc,
   renderEmphasis,
   renderLinks,
-  renderMath
-]
+  renderMath,
+];
 
-function mountEditor (doc: string): void {
-  const host = document.querySelector<HTMLElement>('#editor')
+function mountEditor(doc: string): void {
+  const host = document.querySelector<HTMLElement>("#editor");
   if (host === null) {
-    throw new Error('Demo capture host is missing')
+    throw new Error("Demo capture host is missing");
   }
   view = new EditorView({
     parent: host,
     state: EditorState.create({
       doc,
       selection: { anchor: doc.length },
-      extensions: editorExtensions
-    })
-  })
-  view.focus()
+      extensions: editorExtensions,
+    }),
+  });
+  view.focus();
 }
 
-function scriptMathScene (): void {
-  mountEditor('# MathJax with your own macros\n\n')
-  pause(0.8)
-  typeChars('Let $\\RR$ be the reals; the macro comes from your config file.')
-  pause(1.4)
-  typeChars('\n\nDisplay math renders the moment the cursor leaves it:\n\n')
-  typeChars('\\[\n\\int_{\\RR} e^{-\\pi x^2} \\, dx = 1\n\\]')
-  pause(0.9)
-  typeChars('\n\nDone.')
-  pause(1.8)
-  moveCursor(() => docIndex('\\pi x^2'), 1.4)
+function scriptMathScene(): void {
+  mountEditor("# MathJax with your own macros\n\n");
+  pause(0.8);
+  typeChars("Let $\\RR$ be the reals; the macro comes from your config file.");
+  pause(1.4);
+  typeChars("\n\nDisplay math renders the moment the cursor leaves it:\n\n");
+  typeChars("\\[\n\\int_{\\RR} e^{-\\pi x^2} \\, dx = 1\n\\]");
+  pause(0.9);
+  typeChars("\n\nDone.");
+  pause(1.8);
+  moveCursor(() => docIndex("\\pi x^2"), 1.4);
   steps.push({
     hold: 0.9,
     run: () => {
-      const from = docIndex('\\pi ')
-      view.dispatch({ changes: { from, to: from + 4 }, selection: { anchor: from } })
-    }
-  })
+      const from = docIndex("\\pi ");
+      view.dispatch({ changes: { from, to: from + 4 }, selection: { anchor: from } });
+    },
+  });
   steps.push({
     hold: 0.9,
     run: () => {
-      const from = docIndex('= 1', 2)
-      view.dispatch({ changes: { from, to: from + 1 }, selection: { anchor: from } })
-    }
-  })
-  typeChars('\\sqrt{\\pi}')
-  pause(0.7)
-  moveCursor(() => view.state.doc.length, 2.4)
+      const from = docIndex("= 1", 2);
+      view.dispatch({ changes: { from, to: from + 1 }, selection: { anchor: from } });
+    },
+  });
+  typeChars("\\sqrt{\\pi}");
+  pause(0.7);
+  moveCursor(() => view.state.doc.length, 2.4);
 }
 
-function scriptAmsthmScene (): void {
-  mountEditor('# Theorem environments\n\n')
-  pause(0.8)
-  typeChars('::: theorem\nEvery continuous function on a compact interval attains its maximum.\n:::\n', 0.05)
-  typeChars('\nProofs get a progressively lighter box:\n\n', 0.05)
-  typeChars('::: proof\nCover the interval, extract a finite subcover, compare endpoints.\n:::\n', 0.05)
-  typeChars('\nThe boxes stay plain Pandoc markdown.', 0.05)
-  pause(2.0)
-  moveCursor(() => docIndex('attains'), 1.6)
-  moveCursor(() => view.state.doc.length, 2.4)
+function scriptAmsthmScene(): void {
+  mountEditor("# Theorem environments\n\n");
+  pause(0.8);
+  typeChars(
+    "::: theorem\nEvery continuous function on a compact interval attains its maximum.\n:::\n",
+    0.05,
+  );
+  typeChars("\nProofs get a progressively lighter box:\n\n", 0.05);
+  typeChars(
+    "::: proof\nCover the interval, extract a finite subcover, compare endpoints.\n:::\n",
+    0.05,
+  );
+  typeChars("\nThe boxes stay plain Pandoc markdown.", 0.05);
+  pause(2.0);
+  moveCursor(() => docIndex("attains"), 1.6);
+  moveCursor(() => view.state.doc.length, 2.4);
 }
 
-function scriptGalleryScene (): void {
-  mountEditor([
-    '# Theorem environments',
-    '',
-    '::: theorem',
-    'Every compact interval has a maximum.',
-    ':::',
-    '',
-    '::: definition',
-    'A *proper map* preserves compact inverse images, with $\\RR$ as a familiar setting.',
-    ':::',
-    '',
-    '::: remark',
-    'The hypothesis matters at the boundary.',
-    ':::',
-    '',
-    '::: problem',
-    'Find a counterexample when compactness is removed.',
-    ':::',
-    '',
-    '::: warning',
-    'Do not silently replace local compactness by compactness.',
-    ':::',
-    '',
-    '::: proof',
-    'Apply the finite-subcover argument.',
-    ':::',
-    ''
-  ].join('\n'))
-  pause(0.5)
+function scriptGalleryScene(): void {
+  mountEditor(
+    [
+      "# Theorem environments",
+      "",
+      "::: theorem",
+      "Every compact interval has a maximum.",
+      ":::",
+      "",
+      "::: definition",
+      "A *proper map* preserves compact inverse images, with $\\RR$ as a familiar setting.",
+      ":::",
+      "",
+      "::: remark",
+      "The hypothesis matters at the boundary.",
+      ":::",
+      "",
+      "::: problem",
+      "Find a counterexample when compactness is removed.",
+      ":::",
+      "",
+      "::: warning",
+      "Do not silently replace local compactness by compactness.",
+      ":::",
+      "",
+      "::: proof",
+      "Apply the finite-subcover argument.",
+      ":::",
+      "",
+    ].join("\n"),
+  );
+  pause(0.5);
 }
 
 const reviewBaseline = [
-  '# Section 3: the main estimate',
-  '',
-  'The constant in the main inequality is at most 4.',
-  '',
-  'A long unchanged paragraph separates the two edits so each chunk stands alone.',
-  '',
-  'The proof of the corollary is left to the reader.',
-  ''
-].join('\n')
+  "# Section 3: the main estimate",
+  "",
+  "The constant in the main inequality is at most 4.",
+  "",
+  "A long unchanged paragraph separates the two edits so each chunk stands alone.",
+  "",
+  "The proof of the corollary is left to the reader.",
+  "",
+].join("\n");
 
 const reviewProposed = reviewBaseline
-  .replace('is at most 4', 'is at most 2, by the symmetrization argument')
-  .replace('is left to the reader', 'follows from Lemma 3.2 applied to the boundary case')
+  .replace("is at most 4", "is at most 2, by the symmetrization argument")
+  .replace("is left to the reader", "follows from Lemma 3.2 applied to the boundary case");
 
-function scriptReviewScene (): void {
-  const host = document.querySelector<HTMLElement>('#editor')
+function scriptReviewScene(): void {
+  const host = document.querySelector<HTMLElement>("#editor");
   if (host === null) {
-    throw new Error('Demo capture host is missing')
+    throw new Error("Demo capture host is missing");
   }
 
-  const compartment = new Compartment()
-  let chunkComments: ReviewChunkCommentView[] = []
-  const firstStart = reviewProposed.indexOf('is at most 2, by the symmetrization argument')
-  const secondStart = reviewProposed.indexOf('follows from Lemma 3.2 applied to the boundary case')
+  const compartment = new Compartment();
+  let chunkComments: ReviewChunkCommentView[] = [];
+  const firstStart = reviewProposed.indexOf("is at most 2, by the symmetrization argument");
+  const secondStart = reviewProposed.indexOf("follows from Lemma 3.2 applied to the boundary case");
   let suggestions: ReviewSuggestionView[] = [
     {
-      suggestionId: 'suggestion-constant',
-      removedText: 'is at most 4',
-      anchors: [{ from: firstStart, to: firstStart + 'is at most 2, by the symmetrization argument'.length }],
+      suggestionId: "suggestion-constant",
+      removedText: "is at most 4",
+      anchors: [
+        {
+          from: firstStart,
+          to: firstStart + "is at most 2, by the symmetrization argument".length,
+        },
+      ],
       seam: firstStart,
-      description: 'Tighten the constant to 2 via symmetrization.'
+      description: "Tighten the constant to 2 via symmetrization.",
     },
     {
-      suggestionId: 'suggestion-proof',
-      removedText: 'is left to the reader',
-      anchors: [{ from: secondStart, to: secondStart + 'follows from Lemma 3.2 applied to the boundary case'.length }],
+      suggestionId: "suggestion-proof",
+      removedText: "is left to the reader",
+      anchors: [
+        {
+          from: secondStart,
+          to: secondStart + "follows from Lemma 3.2 applied to the boundary case".length,
+        },
+      ],
       seam: secondStart,
-      description: 'Replace the reader hand-wave with Lemma 3.2.'
-    }
-  ]
+      description: "Replace the reader hand-wave with Lemma 3.2.",
+    },
+  ];
 
   const config = (): ReviewChunksConfig => ({
-    reviewId: 'readme-demo',
+    reviewId: "readme-demo",
     suggestions,
     chunkComments,
     onDecide: async (chunkId, decision) => {
-      const suggestion = suggestions.find(candidate => candidate.suggestionId === chunkId)
-      if (suggestion === undefined) {throw new Error(`demo decision on unknown suggestion ${chunkId}`)}
-      suggestions = suggestions.filter(candidate => candidate.suggestionId !== chunkId)
-      if (decision === 'accept') {
-        view.dispatch({ effects: compartment.reconfigure(reviewChunksExtension(config())) })
+      const suggestion = suggestions.find((candidate) => candidate.suggestionId === chunkId);
+      if (suggestion === undefined) {
+        throw new Error(`demo decision on unknown suggestion ${chunkId}`);
+      }
+      suggestions = suggestions.filter((candidate) => candidate.suggestionId !== chunkId);
+      if (decision === "accept") {
+        view.dispatch({ effects: compartment.reconfigure(reviewChunksExtension(config())) });
       } else {
-        const anchor = suggestion.anchors[0]
+        const anchor = suggestion.anchors[0];
         view.dispatch({
-          changes: anchor === undefined
-            ? { from: suggestion.seam, insert: suggestion.removedText }
-            : { from: anchor.from, to: anchor.to, insert: suggestion.removedText }
-        })
+          changes:
+            anchor === undefined
+              ? { from: suggestion.seam, insert: suggestion.removedText }
+              : { from: anchor.from, to: anchor.to, insert: suggestion.removedText },
+        });
       }
     },
-    onAcceptAll: async () => { /* not exercised by the demo script */ },
-    onClear: async () => { /* not exercised by the demo script */ },
-    onComment: async () => { /* not exercised by the demo script */ },
+    onAcceptAll: async () => {
+      /* not exercised by the demo script */
+    },
+    onClear: async () => {
+      /* not exercised by the demo script */
+    },
+    onComment: async () => {
+      /* not exercised by the demo script */
+    },
     onChunkComment: async (chunkId, text) => {
-      chunkComments = text === ''
-        ? chunkComments.filter(comment => comment.chunkId !== chunkId)
-        : [ ...chunkComments.filter(comment => comment.chunkId !== chunkId), { chunkId, comment: text } ]
-      view.dispatch({ effects: compartment.reconfigure(reviewChunksExtension(config())) })
-    }
-  })
+      chunkComments =
+        text === ""
+          ? chunkComments.filter((comment) => comment.chunkId !== chunkId)
+          : [
+              ...chunkComments.filter((comment) => comment.chunkId !== chunkId),
+              { chunkId, comment: text },
+            ];
+      view.dispatch({ effects: compartment.reconfigure(reviewChunksExtension(config())) });
+    },
+  });
 
   view = new EditorView({
     parent: host,
     state: EditorState.create({
       doc: reviewProposed,
-      extensions: [
-        ...editorExtensions,
-        compartment.of(reviewChunksExtension(config()))
-      ]
-    })
-  })
-  view.focus()
+      extensions: [...editorExtensions, compartment.of(reviewChunksExtension(config()))],
+    }),
+  });
+  view.focus();
 
-  pause(2.2)
+  pause(2.2);
   steps.push({
     hold: 2.0,
     run: () => {
-      const accept = document.querySelector<HTMLButtonElement>('button.cm-review-diff-control.accept')
-      accept?.click()
-    }
-  })
+      const accept = document.querySelector<HTMLButtonElement>(
+        "button.cm-review-diff-control.accept",
+      );
+      accept?.click();
+    },
+  });
   // Annotate the remaining chunk through its comment field, like a reviewer
   // leaving a note before deciding.
-  const note = 'Lemma 3.2 needs the closed boundary — check before merging.'
+  const note = "Lemma 3.2 needs the closed boundary — check before merging.";
   for (let i = 1; i <= note.length; i++) {
     steps.push({
       hold: 0.05,
       run: () => {
-        const input = document.querySelector<HTMLInputElement>('input.cm-chunkCommentInput')
+        const input = document.querySelector<HTMLInputElement>("input.cm-chunkCommentInput");
         if (input === null) {
-          throw new Error('demo review scene lost its comment field')
+          throw new Error("demo review scene lost its comment field");
         }
-        input.focus()
-        input.value = note.slice(0, i)
-        input.dispatchEvent(new Event('input', { bubbles: true }))
-      }
-    })
+        input.focus();
+        input.value = note.slice(0, i);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      },
+    });
   }
-  pause(1.4) // let the debounced comment commit and show as saved
+  pause(1.4); // let the debounced comment commit and show as saved
   steps.push({
     hold: 2.0,
     run: () => {
-      const reject = document.querySelector<HTMLButtonElement>('button.cm-review-diff-control.reject')
-      reject?.click()
-    }
-  })
-  pause(2.4)
+      const reject = document.querySelector<HTMLButtonElement>(
+        "button.cm-review-diff-control.reject",
+      );
+      reject?.click();
+    },
+  });
+  pause(2.4);
 }
 
-async function mount (): Promise<void> {
+async function mount(): Promise<void> {
   await initializeMathJax({
-    RR: '\\mathbb{R}',
-    abs: ['\\left\\lvert {#1} \\right\\rvert', 1]
-  })
-  const scene = document.body.dataset.scene ?? 'math'
-  if (scene === 'math') {
-    scriptMathScene()
-  } else if (scene === 'amsthm') {
-    scriptAmsthmScene()
-  } else if (scene === 'review') {
-    scriptReviewScene()
-  } else if (scene === 'gallery') {
-    scriptGalleryScene()
+    RR: "\\mathbb{R}",
+    abs: ["\\left\\lvert {#1} \\right\\rvert", 1],
+  });
+  const scene = document.body.dataset.scene ?? "math";
+  if (scene === "math") {
+    scriptMathScene();
+  } else if (scene === "amsthm") {
+    scriptAmsthmScene();
+  } else if (scene === "review") {
+    scriptReviewScene();
+  } else if (scene === "gallery") {
+    scriptGalleryScene();
   } else {
-    throw new Error(`Unknown demo scene: ${scene}`)
+    throw new Error(`Unknown demo scene: ${scene}`);
   }
-  await document.fonts.ready
-  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  await document.fonts.ready;
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
 }
 
-window.demoStepCount = 0
+window.demoStepCount = 0;
 window.runDemoStep = async (index: number) => {
-  const step = steps[index]
+  const step = steps[index];
   if (step === undefined) {
-    throw new Error(`demo step ${index} does not exist`)
+    throw new Error(`demo step ${index} does not exist`);
   }
-  await step.run()
-  return step.hold
-}
-window.captureReady = mount().then(() => { window.demoStepCount = steps.length })
+  await step.run();
+  return step.hold;
+};
+window.captureReady = mount().then(() => {
+  window.demoStepCount = steps.length;
+});

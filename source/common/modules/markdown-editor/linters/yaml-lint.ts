@@ -14,8 +14,8 @@
  * END HEADER
  */
 
-import { linter, type Diagnostic } from '@codemirror/lint'
-import YAML from 'yaml'
+import { type Diagnostic, linter } from "@codemirror/lint";
+import YAML from "yaml";
 
 /**
  * Include this linter in a YAML mode configuration to provide diagnostics
@@ -26,27 +26,27 @@ import YAML from 'yaml'
  *
  * @var {Extension}
  */
-export const yamlLint = linter(async view => {
-  const diagnostics: Diagnostic[] = []
+export const yamlLint = linter(async (view) => {
+  const diagnostics: Diagnostic[] = [];
 
-  const content = view.state.sliceDoc()
+  const content = view.state.sliceDoc();
 
   try {
-    const document = YAML.parseDocument(content)
+    const document = YAML.parseDocument(content);
     for (const error of document.errors) {
       diagnostics.push({
         from: error.pos[0],
         to: error.pos[1],
-        severity: 'error',
+        severity: "error",
         source: `yaml-lint(${error.code})`,
         message: error.message,
-        actions: []
-      })
+        actions: [],
+      });
     }
-    return diagnostics
+    return diagnostics;
   } catch (err: any) {
-    console.error('Could not lint YAML: Linter threw an error', err)
+    console.error("Could not lint YAML: Linter threw an error", err);
   }
 
-  return diagnostics
-})
+  return diagnostics;
+});

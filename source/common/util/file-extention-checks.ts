@@ -14,18 +14,18 @@
  *
  * END HEADER
  */
-import { DocumentType } from '@dts/common/documents'
+import { DocumentType } from "@dts/common/documents";
 
-export const MD_EXT = [ '.md', '.rmd', '.qmd', '.markdown', '.txt', '.mdx', '.mkd' ]
-export const LATEX_EXT = [ '.tex', '.latex' ]
-export const YAML_EXT = [ '.yaml', '.yml' ]
-export const JSON_EXT = ['.json']
-export const CODE_EXT = [ ...LATEX_EXT, ...YAML_EXT, ...JSON_EXT, '.dic' ]
-export const IMG_EXT = [ '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.bmp', '.tiff' ]
-export const PDF_EXT = ['.pdf']
-export const MS_OFFICE_EXT = [ '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx' ]
-export const OPEN_OFFICE_EXT = [ '.odt', '.ods', '.odp' ]
-export const DATA_EXT = [ '.csv', '.tsv', '.sav', '.zsav' ]
+export const MD_EXT = [".md", ".rmd", ".qmd", ".markdown", ".txt", ".mdx", ".mkd"];
+export const LATEX_EXT = [".tex", ".latex"];
+export const YAML_EXT = [".yaml", ".yml"];
+export const JSON_EXT = [".json"];
+export const CODE_EXT = [...LATEX_EXT, ...YAML_EXT, ...JSON_EXT, ".dic"];
+export const IMG_EXT = [".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".bmp", ".tiff"];
+export const PDF_EXT = [".pdf"];
+export const MS_OFFICE_EXT = [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"];
+export const OPEN_OFFICE_EXT = [".odt", ".ods", ".odp"];
+export const DATA_EXT = [".csv", ".tsv", ".sav", ".zsav"];
 
 const ALL_EXT = [
   ...MD_EXT,
@@ -35,7 +35,7 @@ const ALL_EXT = [
   ...MS_OFFICE_EXT,
   ...OPEN_OFFICE_EXT,
   ...DATA_EXT,
-]
+];
 
 /**
  * Returns true if the given path has a valid Markdown or Code extension
@@ -44,8 +44,8 @@ const ALL_EXT = [
  *
  * @return  {boolean}     True or false
  */
-export function hasMdOrCodeExt (p: string): boolean {
-  return hasMarkdownExt(p) || hasCodeExt(p)
+export function hasMdOrCodeExt(p: string): boolean {
+  return hasMarkdownExt(p) || hasCodeExt(p);
 }
 
 /**
@@ -57,8 +57,8 @@ export function hasMdOrCodeExt (p: string): boolean {
  *
  * @return  {boolean}               Whether the file has one of these extensions
  */
-export function hasExt (filePath: string, extensions: string[]): boolean {
-  return extensions.some(ext => filePath.endsWith(ext))
+export function hasExt(filePath: string, extensions: string[]): boolean {
+  return extensions.some((ext) => filePath.endsWith(ext));
 }
 
 /**
@@ -68,8 +68,8 @@ export function hasExt (filePath: string, extensions: string[]): boolean {
  *
  * @return  {boolean}            True or false
  */
-export function hasMarkdownExt (filePath: string): boolean {
-  return hasExt(filePath, MD_EXT)
+export function hasMarkdownExt(filePath: string): boolean {
+  return hasExt(filePath, MD_EXT);
 }
 
 /**
@@ -79,8 +79,8 @@ export function hasMarkdownExt (filePath: string): boolean {
  *
  * @return  {boolean}            True or false
  */
-export function hasCodeExt (filePath: string): boolean {
-  return hasExt(filePath, CODE_EXT)
+export function hasCodeExt(filePath: string): boolean {
+  return hasExt(filePath, CODE_EXT);
 }
 
 /**
@@ -90,8 +90,8 @@ export function hasCodeExt (filePath: string): boolean {
  *
  * @return  {boolean}            True or false
  */
-export function hasImageExt (filePath: string): boolean {
-  return hasExt(filePath, IMG_EXT)
+export function hasImageExt(filePath: string): boolean {
+  return hasExt(filePath, IMG_EXT);
 }
 
 /**
@@ -101,8 +101,8 @@ export function hasImageExt (filePath: string): boolean {
  *
  * @return  {boolean}            True or false
  */
-export function hasPDFExt (filePath: string): boolean {
-  return hasExt(filePath, PDF_EXT)
+export function hasPDFExt(filePath: string): boolean {
+  return hasExt(filePath, PDF_EXT);
 }
 
 /**
@@ -112,8 +112,8 @@ export function hasPDFExt (filePath: string): boolean {
  *
  * @return  {boolean}            True or false
  */
-export function hasMSOfficeExt (filePath: string): boolean {
-  return hasExt(filePath, MS_OFFICE_EXT)
+export function hasMSOfficeExt(filePath: string): boolean {
+  return hasExt(filePath, MS_OFFICE_EXT);
 }
 
 /**
@@ -123,8 +123,8 @@ export function hasMSOfficeExt (filePath: string): boolean {
  *
  * @return  {boolean}            True or false
  */
-export function hasOpenOfficeExt (filePath: string): boolean {
-  return hasExt(filePath, OPEN_OFFICE_EXT)
+export function hasOpenOfficeExt(filePath: string): boolean {
+  return hasExt(filePath, OPEN_OFFICE_EXT);
 }
 
 /**
@@ -134,8 +134,8 @@ export function hasOpenOfficeExt (filePath: string): boolean {
  *
  * @return  {boolean}            True or false
  */
-export function hasDataExt (filePath: string): boolean {
-  return hasExt(filePath, DATA_EXT)
+export function hasDataExt(filePath: string): boolean {
+  return hasExt(filePath, DATA_EXT);
 }
 
 /**
@@ -146,8 +146,11 @@ export function hasDataExt (filePath: string): boolean {
  *
  * @return  {boolean}            Whether the filePath has any recognized ext.
  */
-export function hasAnyRecognizedFileExtension (filePath: string, customExtensions: string[] = []): boolean {
-  return hasExt(filePath, [ ...ALL_EXT, ...customExtensions ])
+export function hasAnyRecognizedFileExtension(
+  filePath: string,
+  customExtensions: string[] = [],
+): boolean {
+  return hasExt(filePath, [...ALL_EXT, ...customExtensions]);
 }
 
 /**
@@ -157,16 +160,16 @@ export function hasAnyRecognizedFileExtension (filePath: string, customExtension
  *
  * @returns {string}            An appropriate file extension for the document type
  */
-export function getExtensionForDocumentType (type: DocumentType): string {
+export function getExtensionForDocumentType(type: DocumentType): string {
   switch (type) {
     case DocumentType.Markdown:
-      return '.md'
+      return ".md";
     case DocumentType.LaTeX:
-      return '.tex'
+      return ".tex";
     case DocumentType.YAML:
-      return '.yaml'
+      return ".yaml";
     case DocumentType.JSON:
-      return '.json'
+      return ".json";
   }
 }
 
@@ -179,20 +182,20 @@ export function getExtensionForDocumentType (type: DocumentType): string {
  *                                      file extension, or `undefined` if the
  *                                      extension does not match a DocumentType
  */
-export function getDocumentTypeForExtension (filePath: string): DocumentType|undefined {
+export function getDocumentTypeForExtension(filePath: string): DocumentType | undefined {
   if (hasMarkdownExt(filePath)) {
-    return DocumentType.Markdown
+    return DocumentType.Markdown;
   }
 
   if (hasExt(filePath, LATEX_EXT)) {
-    return DocumentType.LaTeX
+    return DocumentType.LaTeX;
   }
 
   if (hasExt(filePath, YAML_EXT)) {
-    return DocumentType.YAML
+    return DocumentType.YAML;
   }
 
   if (hasExt(filePath, JSON_EXT)) {
-    return DocumentType.JSON
+    return DocumentType.JSON;
   }
 }

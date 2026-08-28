@@ -14,16 +14,16 @@
  * END HEADER
  */
 
-import { syntaxTree } from '@codemirror/language'
-import { type Extension, type Range } from '@codemirror/state'
+import { syntaxTree } from "@codemirror/language";
+import { type Extension, type Range } from "@codemirror/state";
 import {
   Decoration,
-  ViewPlugin,
   type DecorationSet,
   type EditorView,
-  type ViewUpdate
-} from '@codemirror/view'
-import cssSafeString from 'source/common/util/css-safe-string'
+  ViewPlugin,
+  type ViewUpdate,
+} from "@codemirror/view";
+import cssSafeString from "source/common/util/css-safe-string";
 
 /**
  * This function returns a decoration set that wraps any found ZknTag with a
@@ -35,58 +35,61 @@ import cssSafeString from 'source/common/util/css-safe-string'
  *
  * @return  {DecorationSet}                         The built set
  */
-function retrieveTagClasses (view: EditorView, tagCache: Map<string, Decoration>): DecorationSet {
-  const decoRanges: Array<Range<Decoration>> = []
+function retrieveTagClasses(view: EditorView, tagCache: Map<string, Decoration>): DecorationSet {
+  const decoRanges: Array<Range<Decoration>> = [];
   for (const { from, to } of view.visibleRanges) {
     syntaxTree(view.state).iterate({
       from,
       to,
-      enter (node) {
-        if (node.name !== 'ZknTag') {
-          return
+      enter(node) {
+        if (node.name !== "ZknTag") {
+          return;
         }
 
-        const mark = node.node.getChild('ZknTagMark')
+        const mark = node.node.getChild("ZknTagMark");
 
         if (mark === null) {
-          return false
+          return false;
         }
 
-        const tagName = view.state.sliceDoc(mark.to, node.to)
-        const cssSafeTagName = cssSafeString(tagName)
-        const cssClass = `cm-zkn-tag-${cssSafeTagName}`
+        const tagName = view.state.sliceDoc(mark.to, node.to);
+        const cssSafeTagName = cssSafeString(tagName);
+        const cssClass = `cm-zkn-tag-${cssSafeTagName}`;
 
-        const deco = tagCache.get(cssClass) ?? Decoration.mark({ class: cssClass })
+        const deco = tagCache.get(cssClass) ?? Decoration.mark({ class: cssClass });
         if (!tagCache.has(cssClass)) {
-          tagCache.set(cssClass, deco)
+          tagCache.set(cssClass, deco);
         }
 
-        decoRanges.push(deco.range(node.from, node.to))
-      }
-    })
+        decoRanges.push(deco.range(node.from, node.to));
+      },
+    });
   }
 
-  return Decoration.set(decoRanges, true)
+  return Decoration.set(decoRanges, true);
 }
 
-const tagClassesPlugin = ViewPlugin.fromClass(class {
-  decorations: DecorationSet
-  tagDecorationCache: Map<string, Decoration>
+const tagClassesPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    tagDecorationCache: Map<string, Decoration>;
 
-  constructor (view: EditorView) {
-    this.tagDecorationCache = new Map()
-    this.decorations = retrieveTagClasses(view, this.tagDecorationCache)
-  }
-
-  update (update: ViewUpdate): void {
-    if (update.docChanged || update.viewportChanged) {
-      this.decorations = retrieveTagClasses(update.view, this.tagDecorationCache)
+    constructor(view: EditorView) {
+      this.tagDecorationCache = new Map();
+      this.decorations = retrieveTagClasses(view, this.tagDecorationCache);
     }
-  }
-}, {
-  decorations: v => v.decorations
-})
 
-export function tagClasses (): Extension[] {
-  return [tagClassesPlugin]
+    update(update: ViewUpdate): void {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = retrieveTagClasses(update.view, this.tagDecorationCache);
+      }
+    }
+  },
+  {
+    decorations: (v) => v.decorations,
+  },
+);
+
+export function tagClasses(): Extension[] {
+  return [tagClassesPlugin];
 }

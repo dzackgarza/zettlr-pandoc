@@ -60,20 +60,19 @@
  */
 
 const props = defineProps<{
-  modelValue: string
-  label?: string
-  name?: string
-  disabled?: boolean
-  inline?: boolean
-  options: Record<string, string>
-}>()
+  modelValue: string;
+  label?: string;
+  name?: string;
+  disabled?: boolean;
+  inline?: boolean;
+  options: Record<string, string>;
+}>();
 
-const emit = defineEmits<(e: 'update:modelValue', val: string) => void>()
+const emit = defineEmits<(e: "update:modelValue", val: string) => void>();
 
-function fieldID (key: string): string {
-  return `form-input-${props.name ?? ''}-${key}`
+function fieldID(key: string): string {
+  return `form-input-${props.name ?? ""}-${key}`;
 }
-
 </script>
 
 <style lang="less">

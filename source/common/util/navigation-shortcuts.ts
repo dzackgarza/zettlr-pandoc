@@ -26,15 +26,15 @@
  */
 export interface NavigationShortcutConfig {
   /** The combo bound to per-pane history Back */
-  back: string
+  back: string;
   /** The combo bound to per-pane history Forward */
-  forward: string
+  forward: string;
 }
 
 /**
  * The contract-named defaults: configurable Alt-Left/Alt-Right.
  */
 export const NAVIGATION_SHORTCUT_DEFAULTS: NavigationShortcutConfig = {
-  back: 'Alt-ArrowLeft',
-  forward: 'Alt-ArrowRight'
-}
+  back: "Alt-ArrowLeft",
+  forward: "Alt-ArrowRight",
+};

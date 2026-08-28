@@ -37,13 +37,13 @@
  * END HEADER
  */
 
-import { StateEffect, StateField } from '@codemirror/state'
+import { StateEffect, StateField } from "@codemirror/state";
 import type {
   DocumentReferenceSnapshot,
   ProjectRootSpec,
   ReferenceOccurrence,
-  Resolution
-} from '@dts/common/references'
+  Resolution,
+} from "@dts/common/references";
 
 /**
  * The complete typed reference view one editor needs to present references:
@@ -52,41 +52,41 @@ import type {
  */
 export interface EditorWorkspaceReferences {
   /** The current document's live reference snapshot (exact live ranges) */
-  snapshot: DocumentReferenceSnapshot
+  snapshot: DocumentReferenceSnapshot;
   /** Every occurrence across the merged workspace view (citing index) */
-  workspaceOccurrences: ReferenceOccurrence[]
+  workspaceOccurrences: ReferenceOccurrence[];
   /** The workspace resolution map over the merged snapshot view */
-  resolutions: Map<string, Resolution>
+  resolutions: Map<string, Resolution>;
   /**
    * Every visible Project root (issue #1 Phase 7). The hover tooltip derives
    * the displayed Project status from these roots plus the snapshot's own
    * documentPath (the active document). While undefined, presentation
    * surfaces show NO Project status — they never fabricate one.
    */
-  projectRoots?: ProjectRootSpec[]
+  projectRoots?: ProjectRootSpec[];
 }
 
 /**
  * Use this effect to provide the editor state with a new resolved workspace
  * reference view.
  */
-export const workspaceReferencesUpdate = StateEffect.define<EditorWorkspaceReferences>()
+export const workspaceReferencesUpdate = StateEffect.define<EditorWorkspaceReferences>();
 
 /**
  * Holds the resolved workspace reference view, or null until the first
  * update arrives. Consumers must present nothing (and never fabricate
  * resolutions) while the field is null.
  */
-export const workspaceReferencesField = StateField.define<EditorWorkspaceReferences|null>({
-  create (_state) {
-    return null
+export const workspaceReferencesField = StateField.define<EditorWorkspaceReferences | null>({
+  create(_state) {
+    return null;
   },
-  update (val, transaction) {
+  update(val, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(workspaceReferencesUpdate)) {
-        return effect.value
+        return effect.value;
       }
     }
-    return val
-  }
-})
+    return val;
+  },
+});

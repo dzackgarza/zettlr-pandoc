@@ -54,56 +54,56 @@
 </template>
 
 <script setup lang="ts">
-import EditorPane from './EditorPane.vue'
-import { type BranchNodeJSON } from '@dts/common/documents'
-import { ref, computed, watch, toRef } from 'vue'
-import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
-import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
-import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
+import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
+import { type BranchNodeJSON } from "@dts/common/documents";
+import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
+import { computed, ref, toRef, watch } from "vue";
+import type { CreateReferenceLabelDialogPrompt, EditorCommands } from "./component-contracts";
+import EditorPane from "./EditorPane.vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 const props = defineProps<{
-  node: BranchNodeJSON
-  windowId: string
-  availableWidth?: number
-  availableHeight?: number
-  isLast?: boolean
-  editorCommands: EditorCommands
-}>()
+  node: BranchNodeJSON;
+  windowId: string;
+  availableWidth?: number;
+  availableHeight?: number;
+  isLast?: boolean;
+  editorCommands: EditorCommands;
+}>();
 
 const emit = defineEmits<{
-  (e: 'globalSearch', query: string): void
-  (e: 'referenceSearch', request: ReferenceSearchRequest): void
-  (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
-  (e: 'openPandocQuickHelp'): void
-}>()
+  (e: "globalSearch", query: string): void;
+  (e: "referenceSearch", request: ReferenceSearchRequest): void;
+  (e: "createReferenceLabel", prompt: CreateReferenceLabelDialogPrompt): void;
+  (e: "openPandocQuickHelp"): void;
+}>();
 
-const sizes = ref<number[]>(props.node.sizes.map(s => s))
-const currentResizerIndex = ref<number>(-1)
-const lastOffset = ref<number>(0)
+const sizes = ref<number[]>(props.node.sizes.map((s) => s));
+const currentResizerIndex = ref<number>(-1);
+const lastOffset = ref<number>(0);
 
 const elementStyles = computed<string>(() => {
   const rules = [
-    `width: ${props.availableWidth ?? 100}%; height: ${props.availableHeight ?? 100}%`
-  ]
-  if (props.node.type === 'branch') {
-    if (props.node.direction === 'horizontal') {
-      rules.push('flex-direction: row')
+    `width: ${props.availableWidth ?? 100}%; height: ${props.availableHeight ?? 100}%`,
+  ];
+  if (props.node.type === "branch") {
+    if (props.node.direction === "horizontal") {
+      rules.push("flex-direction: row");
     } else {
-      rules.push('flex-direction: column')
+      rules.push("flex-direction: column");
     }
   }
-  return rules.join('; ')
-})
+  return rules.join("; ");
+});
 
-const rootElement = ref<HTMLDivElement|null>(null)
+const rootElement = ref<HTMLDivElement | null>(null);
 
-const isHorizontalBranch = computed<boolean>(() => props.node.direction === 'horizontal')
+const isHorizontalBranch = computed<boolean>(() => props.node.direction === "horizontal");
 
-watch(toRef(props, 'node'), () => {
-  sizes.value = props.node.sizes.map(s => s)
-})
+watch(toRef(props, "node"), () => {
+  sizes.value = props.node.sizes.map((s) => s);
+});
 
 /**
  * Should the pane with the provided index have a right border?
@@ -112,12 +112,12 @@ watch(toRef(props, 'node'), () => {
  *
  * @return  {boolean}         True if it should have a border
  */
-function paneShouldHaveBorderRight (index: number): boolean {
-  if (props.node.direction === 'horizontal') {
+function paneShouldHaveBorderRight(index: number): boolean {
+  if (props.node.direction === "horizontal") {
     // In horizontal mode, all panes except the last one get a border right
-    return index < props.node.nodes.length - 1
+    return index < props.node.nodes.length - 1;
   } else {
-    return false // The branch itself will have the border
+    return false; // The branch itself will have the border
   }
 }
 
@@ -128,65 +128,66 @@ function paneShouldHaveBorderRight (index: number): boolean {
  *
  * @return  {boolean}         True if it should have a border
  */
-function paneShouldHaveBorderBottom (index: number): boolean {
-  if (props.node.direction === 'vertical') {
+function paneShouldHaveBorderBottom(index: number): boolean {
+  if (props.node.direction === "vertical") {
     // Reversed: Bottom border applies to all but the last element in vertical mode
-    return index < props.node.nodes.length - 1
+    return index < props.node.nodes.length - 1;
   } else {
-    return false // The branch itself will have the border
+    return false; // The branch itself will have the border
   }
 }
 
-function beginResizing (event: MouseEvent, index: number): void {
-  currentResizerIndex.value = index
-  lastOffset.value = isHorizontalBranch.value ? event.clientX : event.clientY
-  rootElement.value?.addEventListener('mousemove', onResizing)
-  rootElement.value?.addEventListener('mouseup', onEndResizing)
+function beginResizing(event: MouseEvent, index: number): void {
+  currentResizerIndex.value = index;
+  lastOffset.value = isHorizontalBranch.value ? event.clientX : event.clientY;
+  rootElement.value?.addEventListener("mousemove", onResizing);
+  rootElement.value?.addEventListener("mouseup", onEndResizing);
 }
 
-function onResizing (event: MouseEvent): void {
+function onResizing(event: MouseEvent): void {
   if (currentResizerIndex.value < 0 || rootElement.value === null) {
-    return
+    return;
   }
 
-  const node1 = currentResizerIndex.value
-  const node2 = node1 + 1
-  const offset = isHorizontalBranch.value ? event.clientX : event.clientY
+  const node1 = currentResizerIndex.value;
+  const node2 = node1 + 1;
+  const offset = isHorizontalBranch.value ? event.clientX : event.clientY;
 
   // Convert from pixels to percent
-  const offsetPixels = Math.abs(lastOffset.value - offset)
-  const rect = rootElement.value.getBoundingClientRect()
-  const totalPixels = isHorizontalBranch.value ? rect.width : rect.height
-  const offsetPercent = offsetPixels / totalPixels * 100
+  const offsetPixels = Math.abs(lastOffset.value - offset);
+  const rect = rootElement.value.getBoundingClientRect();
+  const totalPixels = isHorizontalBranch.value ? rect.width : rect.height;
+  const offsetPercent = (offsetPixels / totalPixels) * 100;
 
   if (offset > lastOffset.value) {
     // Direction --> or v
-    sizes.value[node1] += offsetPercent
-    sizes.value[node2] -= offsetPercent
+    sizes.value[node1] += offsetPercent;
+    sizes.value[node2] -= offsetPercent;
   } else if (offset < lastOffset.value) {
     // Direction <-- or ^
-    sizes.value[node1] -= offsetPercent
-    sizes.value[node2] += offsetPercent
+    sizes.value[node1] -= offsetPercent;
+    sizes.value[node2] += offsetPercent;
   }
 
-  lastOffset.value = offset
+  lastOffset.value = offset;
 }
 
-function onEndResizing (_event: MouseEvent): void {
-  currentResizerIndex.value = -1
-  lastOffset.value = 0
-  rootElement.value?.removeEventListener('mousemove', onResizing)
-  rootElement.value?.removeEventListener('mouseup', onEndResizing)
+function onEndResizing(_event: MouseEvent): void {
+  currentResizerIndex.value = -1;
+  lastOffset.value = 0;
+  rootElement.value?.removeEventListener("mousemove", onResizing);
+  rootElement.value?.removeEventListener("mouseup", onEndResizing);
   // Inform main about the new sizes
-  ipcRenderer.invoke('documents-provider', {
-    command: 'set-branch-sizes',
-    payload: {
-      windowId: props.windowId,
-      branchId: props.node.id,
-      sizes: sizes.value.map(s => s) // Again, deproxy
-    }
-  } as DocumentManagerIPCAPI)
-    .catch(err => console.error(err))
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "set-branch-sizes",
+      payload: {
+        windowId: props.windowId,
+        branchId: props.node.id,
+        sizes: sizes.value.map((s) => s), // Again, deproxy
+      },
+    } as DocumentManagerIPCAPI)
+    .catch((err) => console.error(err));
 }
 </script>
 
