@@ -122,14 +122,8 @@ async function paintedMath (page: Page): Promise<PaintedMath[]> {
 async function reproConfig (): Promise<Record<string, unknown>|undefined> {
   const configPath = process.env.REPRO_CONFIG
   const library = process.env.REPRO_LIBRARY
-  // The Agent API is off in every case: a developer's own Zettlr may be
-  // running and holding the configured port, and this fixture must not
-  // compete with it for one.
   if (configPath === undefined) {
-    return {
-      agentApi: { enabled: false, port: 0 },
-      ...(library === undefined ? {} : { export: { cslLibrary: library } })
-    }
+    return library === undefined ? undefined : { export: { cslLibrary: library } }
   }
   const parsed = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>
   delete parsed.app

@@ -472,6 +472,11 @@ export async function createFixture (
           openWorkspaces: [workspaceDirectory]
         },
         system: { checkForUpdates: false },
+        // The shipped default binds the Agent API to a fixed port, which a
+        // fixture would take from whatever Zettlr the developer is running.
+        // A spec that needs the API asks for it and gets a kernel-assigned
+        // port; every other fixture leaves the port alone.
+        agentApi: { enabled: false, port: 0 },
         ...options.config
       },
       null,

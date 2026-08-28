@@ -89,7 +89,6 @@ describe('citation style in the editor', function () {
       await (await import('node:fs/promises')).readFile(configPath, 'utf8')
     ) as Record<string, unknown>
     config.export = { cslLibrary: libraryPath, cslStyle: stylePath }
-    config.agentApi = { enabled: false, port: 0 }
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8')
     const app = await attach(fixture.configDirectory, rendererEvents, this.timeout())
     appProcess = app.appProcess
