@@ -20,7 +20,7 @@ import { StateEffect, StateField } from '@codemirror/state'
 import safeAssign from '@common/util/safe-assign'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import { type MarkdownTheme } from '@providers/config/get-config-template'
-import { NAVIGATION_SHORTCUT_DEFAULTS, type NavigationShortcutConfig } from '@common/util/navigation-shortcuts'
+import { type CustomEditorShortcut } from '../keymaps/shortcuts'
 
 export interface AutocorrectOptions {
   active: boolean
@@ -32,6 +32,8 @@ export interface AutocorrectOptions {
 export interface EditorConfiguration {
   autocompleteSuggestEmojis: boolean
   snippetAutocompleteTriggerCharacter: ':'
+  autocompleteWithEnter: boolean
+  autocompleteWithTab: boolean
   autocorrect: AutocorrectOptions
   autoCloseBrackets: boolean
   renderingMode: 'preview'|'raw'
@@ -84,12 +86,7 @@ export interface EditorConfiguration {
   highlightWhitespace: boolean
   showMarkdownLineNumbers: boolean
   countChars: boolean
-  /**
-   * The per-pane history Back/Forward combos (issue #1 workstream 4). The
-   * default keymap reads these at extension-build time; defaults come from
-   * the shared NAVIGATION_SHORTCUT_DEFAULTS registry.
-   */
-  navigationShortcuts: NavigationShortcutConfig
+  shortcuts: CustomEditorShortcut[]
 }
 
 export function getDefaultConfig (): EditorConfiguration {
@@ -105,6 +102,8 @@ export function getDefaultConfig (): EditorConfiguration {
     },
     autocompleteSuggestEmojis: false,
     snippetAutocompleteTriggerCharacter: ':',
+    autocompleteWithEnter: false,
+    autocompleteWithTab: true,
     autoCloseBrackets: true,
     renderingMode: 'preview',
     previewModeShowSyntaxWhenCursorIsAdjacent: true,
@@ -156,7 +155,7 @@ export function getDefaultConfig (): EditorConfiguration {
     highlightWhitespace: false,
     showMarkdownLineNumbers: false,
     countChars: false,
-    navigationShortcuts: { ...NAVIGATION_SHORTCUT_DEFAULTS }
+    shortcuts: []
   }
 }
 
@@ -178,7 +177,7 @@ export function cloneEditorConfiguration(
       }))
     },
     metadata: { ...config.metadata },
-    navigationShortcuts: { ...config.navigationShortcuts }
+    shortcuts: config.shortcuts.map(({ name, shortcut }) => ({ name, shortcut }))
   }
 }
 

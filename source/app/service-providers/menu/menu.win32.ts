@@ -28,6 +28,8 @@ import type {
   MenuRecentDocuments,
   MenuWindows
 } from './menu-dependencies'
+import { getCustomShortcut, type MenuShortcutName } from './shortcuts'
+import { cmShortcutToElectron } from 'source/common/util/shortcuts'
 
 export default function getMenu (
   logger: MenuLogger,
@@ -94,6 +96,12 @@ export default function getMenu (
         return ret
       })
     ]
+  }
+
+  // Utility function to grab custom shortcuts
+  const shortcutMap = config.get().shortcuts.ui
+  const sc = (name: MenuShortcutName) => {
+    return cmShortcutToElectron(getCustomShortcut(name, shortcutMap))
   }
 
   const menu: MenuItemConstructorOptions[] = [
@@ -406,7 +414,7 @@ export default function getMenu (
         {
           id: 'menu.filter_files',
           label: trans('Filter files'),
-          accelerator: 'Ctrl+Shift+T',
+          accelerator: sc('filter-files'),
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'filter-files')
           }
@@ -592,7 +600,7 @@ export default function getMenu (
         {
           id: 'menu.tab_previous',
           label: trans('Previous Tab'),
-          accelerator: 'Ctrl+Shift+Tab',
+          accelerator: sc('previous-tab'),
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'previous-tab')
           }
@@ -600,7 +608,7 @@ export default function getMenu (
         {
           id: 'menu.tab_next',
           label: trans('Next Tab'),
-          accelerator: 'Ctrl+Tab',
+          accelerator: sc('next-tab'),
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'next-tab')
           }

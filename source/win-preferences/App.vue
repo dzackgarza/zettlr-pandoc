@@ -88,6 +88,7 @@ import { getImportExportFields } from './schema/import-export'
 import { getSnippetsFields } from './schema/snippets'
 import { useConfigStore } from 'source/pinia'
 import { PreferencesGroups } from './schema/_preferences-groups'
+import { getShortcutFields } from './schema/shortcuts'
 
 const ipcRenderer = window.ipc
 const configStore = useConfigStore()
@@ -157,6 +158,7 @@ const fieldsets = computed(() => {
     ...getFileManagerFields(configStore.config),
     ...getGeneralFields(appLangOptions.value),
     ...getImportExportFields(),
+    ...getShortcutFields(configStore.config),
     ...getSnippetsFields(),
     ...getSpellcheckingFields(configStore.config),
     ...getZettelkastenFields(configStore.config)
@@ -240,6 +242,11 @@ const groups = computed<Array<PreferencesListItem & { id: PreferencesGroups }>>(
       displayText: trans('Citations'),
       icon: 'chat-bubble',
       id: PreferencesGroups.Citations
+    },
+    {
+      displayText: trans('Shortcuts'),
+      icon: 'keyboard',
+      id: PreferencesGroups.Shortcuts
     },
     {
       displayText: trans('Zettelkasten'),

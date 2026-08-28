@@ -2,6 +2,44 @@
 
 ## GUI and Functionality
 
+- **Feature**: You can now choose whether you want to automatically accept the
+  selected autocomplete suggestion when pressing `Tab`, `Enter`, both, or
+  disable automatic accepting entirely (#6485).
+- Fixed an issue where in some places instead of showing you a proper file
+  title, the app would default to only showing you the filename, and neither a
+  heading or YAML title, if you specified it as such. Now, the logic has been
+  centralized and everywhere you expect a proper file title it should now show
+  you one (see #6471).
+- Set default mode for LanguageTool to `standard` for new installations. If you
+  prefer `picky`, simply set it accordingly.
+- Fixed an issue where configuration changes emitted from the onboarding dialog
+  for new users were one-way-only, with no way to undo the changes. This has now
+  been changed: the buttons accurately reflect the actual configuration state,
+  and pressing the buttons multiple times toggles between the two sets of
+  suggested settings (#6429).
+- Update translations:
+  - `ko-KO` (#6478).
+  - `de-DE`.
+  - `ja-JP` (#6480).
+- Renamed "Remove line breaks" to "Remove excess line breaks."
+
+## Under the Hood
+
+- Update Electron to `v43.4.0`.
+
+# 4.7.0
+
+## GUI and Functionality
+
+- **Feature**: Custom shortcuts are here. You can now customize many of the
+  available shortcuts and assign them to your likings. This also includes the
+  various text transformations that we introduced in version 3.6.0 so that you
+  can bind frequently used ones to a handy shortcut. The feature comes with all
+  the standards of custom shortcuts, including an interactive shortcut recording
+  that visualizes which keys will become part of the shortcuts as you type them,
+  a reset function to restore the default, and an automated conflict detection
+  that lets you know whether a shortcut you have provided might conflict with
+  another one.
 - **Feature**: You can now set the editor theme to use a light or dark
   appearance independent of the app appearance (#5851).
 - **Feature**: You can now click a long-running-task notification for both
@@ -38,9 +76,14 @@
   export popover would not be clickable.
 - Fixed a visual glitch when running multiple full-text searches in between
   showing and hiding the search pane (#6454).
+- Fixed bold and italic styling (#6472).
+- Fix an issue leading to buggy interactions between snippets and the typewriter
+  mode (#6473).
 
 ## Under the Hood
 
+- Update Pandoc to `v3.10.1`.
+- Update Electron to `v43.1.0`.
 - Zettlr now additionally trusts system certificates when making network
   connections, meaning that custom TLS certificates can be used, e.g., for
   corporate firewalls (#6006; #5271).

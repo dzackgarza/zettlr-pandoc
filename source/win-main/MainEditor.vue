@@ -90,6 +90,8 @@ import {
   type UndoRenameOutcome
 } from '@common/pandoc-util/compute-reference-edits'
 import type { WorkspaceReferenceEdit } from '@dts/common/references'
+import type { CustomEditorShortcut } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
+import getDocumentTitle from './util/get-document-title'
 
 const ipcRenderer = window.ipc
 
@@ -476,7 +478,7 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
   // right after setting the new configurations. Plus, the user won't update
   // everything all the time, but rather do one initial configuration, so
   // even if we incur a performance penalty, it won't be noticed that much.
-  const { editor, display, zkn, darkMode, darkModeEditor } = configStore.config
+  const { editor, display, zkn, darkMode, shortcuts, darkModeEditor } = configStore.config
   return {
     indentUnit: editor.indentUnit,
     indentWithTabs: editor.indentWithTabs,
@@ -493,6 +495,8 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
     },
     autocompleteSuggestEmojis: editor.autocompleteSuggestEmojis,
     snippetAutocompleteTriggerCharacter: editor.snippetAutocompleteTriggerCharacter,
+    autocompleteWithEnter: editor.autocompleteWithEnter,
+    autocompleteWithTab: editor.autocompleteWithTab,
     imagePreviewWidth: display.imageWidth,
     imagePreviewHeight: display.imageHeight,
     boldFormatting: editor.boldFormatting,
@@ -532,10 +536,9 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
     highlightWhitespace: editor.showWhitespace,
     showMarkdownLineNumbers: editor.showMarkdownLineNumbers,
     countChars: editor.countChars,
-    navigationShortcuts: {
-      back: editor.navigationShortcuts.back,
-      forward: editor.navigationShortcuts.forward
-    }
+    shortcuts: Object.entries(shortcuts.editor)
+      .map(([ name, shortcut ]) => ({ name, shortcut }))
+      .filter((shortcut): shortcut is CustomEditorShortcut => shortcut.shortcut !== undefined)
   } satisfies EditorConfigOptions
 })
 
@@ -1341,15 +1344,9 @@ async function updateFileDatabase (): Promise<void> {
 
   // First, add all existing files to the database ...
   for (const file of fsalFiles.value) {
-    let displayName = pathBasename(file.name, file.ext)
-    if (useTitle.value && file.yamlTitle !== undefined) {
-      displayName = file.yamlTitle
-    } else if (useH1.value && file.firstHeading !== null) {
-      displayName = file.firstHeading
-    }
     fileDatabase.push({
       filename: pathBasename(file.name, file.ext),
-      displayName,
+      displayName: getDocumentTitle(file),
       id: file.id
     })
   }
