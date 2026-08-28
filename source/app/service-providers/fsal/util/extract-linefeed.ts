@@ -12,26 +12,26 @@
  * END HEADER
  */
 
-type Linefeed = '\n'|'\r'|'\r\n'|'\n\r'
+type Linefeed = "\n" | "\r" | "\r\n" | "\n\r";
 
-export function extractLinefeed (text: string): Linefeed {
-  const CR = text.includes('\r')
-  const LF = text.includes('\n')
-  const CRLF = text.includes('\r\n')
-  const LFCR = text.includes('\n\r')
+export function extractLinefeed(text: string): Linefeed {
+  const CR = text.includes("\r");
+  const LF = text.includes("\n");
+  const CRLF = text.includes("\r\n");
+  const LFCR = text.includes("\n\r");
 
-  const indexCRLF = CRLF ? text.indexOf('\r\n') : Infinity
-  const indexLFCR = LFCR ? text.indexOf('\n\r') : Infinity
+  const indexCRLF = CRLF ? text.indexOf("\r\n") : Infinity;
+  const indexLFCR = LFCR ? text.indexOf("\n\r") : Infinity;
 
   if (LF && !CR) {
-    return '\n' // Unix-style (Linux/macOS)
+    return "\n"; // Unix-style (Linux/macOS)
   } else if (CR && !LF) {
-    return '\r' // Commodore 64 and old Apple II systems, also emails afaik
+    return "\r"; // Commodore 64 and old Apple II systems, also emails afaik
   } else if (CRLF && indexCRLF < indexLFCR) {
-    return '\r\n' // Windows and MS-DOS
+    return "\r\n"; // Windows and MS-DOS
   } else if (LFCR && indexLFCR < indexCRLF) {
-    return '\n\r' // According to Wikipedia, only Acorn BBC and RISC OS
+    return "\n\r"; // According to Wikipedia, only Acorn BBC and RISC OS
   } else {
-    return '\n' // By default, assume a simple newline
+    return "\n"; // By default, assume a simple newline
   }
 }

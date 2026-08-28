@@ -13,15 +13,15 @@
  * END HEADER
  */
 
-import { type PandocProfileMetadata, type ValidPandocProfile } from '@providers/assets'
+import { type PandocProfileMetadata, type ValidPandocProfile } from "@providers/assets";
 
 // The exporter only needs a few properties, so by defining a minimal type here
 // we can make the exporter more flexible to accept also objects that only
 // contain path information
 interface MinimalFile {
-  path: string
-  name: string
-  ext: string
+  path: string;
+  name: string;
+  ext: string;
 }
 
 interface DefaultsOverride {
@@ -29,16 +29,16 @@ interface DefaultsOverride {
    * This is an optional property. It allows to override the global CSL Stylesheet
    * defined in the preferences for the given export.
    */
-  csl?: string
+  csl?: string;
   /**
    * This is an optional property. It allows manually setting a title in the
    * defaults file metadata.
    */
-  title?: string
+  title?: string;
   /**
    * This allows overwriting the template as specified in the defaults file
    */
-  template?: string
+  template?: string;
 }
 
 /**
@@ -51,27 +51,27 @@ export interface ExporterOptions {
    * the assets provider) or any of the custom values we support. Callers narrow
    * to the valid variant before they reach the exporter.
    */
-  profile: ValidPandocProfile
+  profile: ValidPandocProfile;
   /**
    * This is an array of source files you wish to compile into the target file.
    */
-  sourceFiles: MinimalFile[]
+  sourceFiles: MinimalFile[];
   /**
    * This is the directory into which the exporter should put the exported file.
    */
-  targetDirectory: string
+  targetDirectory: string;
   /**
    * The current working directory for the Pandoc executable. Should be set
    * reasonably so that relative paths can be correctly resolved (especially
    * paths to images or other files).
    */
-  cwd?: string
+  cwd?: string;
   /**
    * This property allows overriding of any defaults value, which comes in handy
    * specifically for projects, since these feature some slightly divergent
    * options.
    */
-  defaultsOverride?: DefaultsOverride
+  defaultsOverride?: DefaultsOverride;
 }
 
 /**
@@ -84,27 +84,27 @@ export interface ExporterOutput {
    * A code, corresponds to the return codes Pandoc gives. Zero indicates a
    * successful run.
    */
-  code: number
+  code: number;
   /**
    * In case Pandoc outputs verbose information, stdout will contain it, one
    * line at a time.
    */
-  stdout: string[]
+  stdout: string[];
   /**
    * Any error given by Pandoc will be in this array, line by line.
    */
-  stderr: string[]
+  stderr: string[];
   /**
    * This property contains the absolute path to the generated output file. Then
    * you can, for example, open it.
    */
-  targetFile: string
+  targetFile: string;
 }
 
 export interface PandocRunnerOutput {
-  code: number
-  stdout: string[]
-  stderr: string[]
+  code: number;
+  stdout: string[];
+  stderr: string[];
 }
 
 /**
@@ -118,7 +118,7 @@ export interface ExporterAPI {
    *
    * @return  {Promise<PandocRunnerOutput>}                Any output produced by Pandoc.
    */
-  runPandoc: (defaultsFile: string) => Promise<PandocRunnerOutput>
+  runPandoc: (defaultsFile: string) => Promise<PandocRunnerOutput>;
 
   /**
    * Retrieves a user-customised defaults file, adds the given properties and
@@ -129,8 +129,8 @@ export interface ExporterAPI {
    *
    * @return  {Promise<string>}                      Resolves with an absolute path to the written file.
    */
-  writeDefaults: (writer: string, properties: Record<string, unknown> = {}) => Promise<string>
-  listDefaults: () => Promise<PandocProfileMetadata[]>
+  writeDefaults: (writer: string, properties: Record<string, unknown> = {}) => Promise<string>;
+  listDefaults: () => Promise<PandocProfileMetadata[]>;
 }
 
 /**
@@ -143,4 +143,8 @@ export interface ExporterAPI {
  *
  * @return  {Promise<ExporterOutput>}             Returns an ExporterOutput after finishing the export.
  */
-export type ExporterPlugin = (options: ExporterOptions, sourceFiles: string[], context: ExporterAPI) => Promise<ExporterOutput>
+export type ExporterPlugin = (
+  options: ExporterOptions,
+  sourceFiles: string[],
+  context: ExporterAPI,
+) => Promise<ExporterOutput>;

@@ -14,16 +14,21 @@
  * END HEADER
  */
 
-import { displayFileContext } from './file-item-context'
-import { displayDirContext } from './dir-item-context'
-import { useConfigStore, useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
-import type { AnyDescriptor } from 'source/types/common/fsal'
-import { ref, computed, type Ref, watch, nextTick } from 'vue'
-import { hasImageExt, hasPDFExt } from 'source/common/util/file-extention-checks'
-import makeValidUri from 'source/common/util/make-valid-uri'
-import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
+import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
+import { hasImageExt, hasPDFExt } from "source/common/util/file-extention-checks";
+import makeValidUri from "source/common/util/make-valid-uri";
+import {
+  useConfigStore,
+  useDocumentTreeStore,
+  useWindowStateStore,
+  useWorkspaceStore,
+} from "source/pinia";
+import type { AnyDescriptor } from "source/types/common/fsal";
+import { computed, nextTick, type Ref, ref, watch } from "vue";
+import { displayDirContext } from "./dir-item-context";
+import { displayFileContext } from "./file-item-context";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 /**
  * Close a file root path at `path`, including all open
@@ -31,25 +36,27 @@ const ipcRenderer = window.ipc
  *
  * @param {string}  path    The filepath to close
  */
-export function closeFile (path: string): void {
-  const workspaceStore = useWorkspaceStore()
+export function closeFile(path: string): void {
+  const workspaceStore = useWorkspaceStore();
 
   // First check if the path is actually a root path
-  if (!workspaceStore.rootDescriptors.find(r => r.path === path)) {
-    return
+  if (!workspaceStore.rootDescriptors.find((r) => r.path === path)) {
+    return;
   }
 
-  ipcRenderer.invoke('documents-provider', {
-    command: 'close-file-everywhere',
-    payload: { path }
-  } as DocumentManagerIPCAPI)
-    .catch(e => console.error(e))
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "close-file-everywhere",
+      payload: { path },
+    } as DocumentManagerIPCAPI)
+    .catch((e) => console.error(e));
 
-  ipcRenderer.invoke('application', {
-    command: 'root-close',
-    payload: path
-  })
-    .catch(err => console.error(err))
+  ipcRenderer
+    .invoke("application", {
+      command: "root-close",
+      payload: path,
+    })
+    .catch((err) => console.error(err));
 }
 
 /**
@@ -58,72 +65,76 @@ export function closeFile (path: string): void {
  *
  * @param {string}  path    The workspace path to close
  */
-export function closeWorkspace (path: string): void {
-  const workspaceStore = useWorkspaceStore()
+export function closeWorkspace(path: string): void {
+  const workspaceStore = useWorkspaceStore();
 
   // First check if the path is actually a root path
-  if (!workspaceStore.rootDescriptors.find(r => r.path === path)) {
-    return
+  if (!workspaceStore.rootDescriptors.find((r) => r.path === path)) {
+    return;
   }
 
-  ipcRenderer.invoke('documents-provider', {
-    command: 'get-open-workspace-files',
-    payload: {
-      path: path,
-    }
-  })
-    .then(openFiles => {
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "get-open-workspace-files",
+      payload: {
+        path: path,
+      },
+    })
+    .then((openFiles) => {
       for (const file of openFiles) {
-        ipcRenderer.invoke('documents-provider', {
-          command: 'close-file-everywhere',
-          payload: { path: file }
-        })
-          .catch(e => console.error(e))
+        ipcRenderer
+          .invoke("documents-provider", {
+            command: "close-file-everywhere",
+            payload: { path: file },
+          })
+          .catch((e) => console.error(e));
       }
     })
-    .catch(e => console.error(e))
+    .catch((e) => console.error(e));
 
-  ipcRenderer.invoke('application', {
-    command: 'root-close',
-    payload: path
-  })
-    .catch(err => console.error(err))
+  ipcRenderer
+    .invoke("application", {
+      command: "root-close",
+      payload: path,
+    })
+    .catch((err) => console.error(err));
 }
 
-export function useItemComposable (
+export function useItemComposable(
   object: AnyDescriptor,
-  rootElement: Ref<HTMLElement|null>,
+  rootElement: Ref<HTMLElement | null>,
   windowId: string,
-  nameEditingInput: Ref<HTMLInputElement|null>
+  nameEditingInput: Ref<HTMLInputElement | null>,
 ) {
-  const obj = ref(object)
-  const nameEditing = ref<boolean>(false)
-  const showPopover = ref<boolean>(false)
-  const operationType = ref<'createFile'|'createDir'|undefined>(undefined)
+  const obj = ref(object);
+  const nameEditing = ref<boolean>(false);
+  const showPopover = ref<boolean>(false);
+  const operationType = ref<"createFile" | "createDir" | undefined>(undefined);
 
-  const configStore = useConfigStore()
-  const documentTreeStore = useDocumentTreeStore()
-  const windowStateStore = useWindowStateStore()
+  const configStore = useConfigStore();
+  const documentTreeStore = useDocumentTreeStore();
+  const windowStateStore = useWindowStateStore();
 
-  const isDirectory = computed(() => obj.value.type === 'directory')
-  const selectedFile = computed(() => documentTreeStore.lastLeafActiveFile)
-  const selectedDir = computed(() => configStore.config.openDirectory)
+  const isDirectory = computed(() => obj.value.type === "directory");
+  const selectedFile = computed(() => documentTreeStore.lastLeafActiveFile);
+  const selectedDir = computed(() => configStore.config.openDirectory);
 
   watch(nameEditing, (newVal) => {
     if (!newVal) {
-      return // No need to select
+      return; // No need to select
     }
 
-    nextTick().then(() => {
-      if (nameEditingInput.value === null) {
-        return
-      }
-      nameEditingInput.value.focus()
-      const lastDot = nameEditingInput.value.value.lastIndexOf('.')
-      nameEditingInput.value.setSelectionRange(0, lastDot)
-    })
-      .catch(err => console.error(err))
-  })
+    nextTick()
+      .then(() => {
+        if (nameEditingInput.value === null) {
+          return;
+        }
+        nameEditingInput.value.focus();
+        const lastDot = nameEditingInput.value.value.lastIndexOf(".");
+        nameEditingInput.value.setSelectionRange(0, lastDot);
+      })
+      .catch((err) => console.error(err));
+  });
 
   /**
    * Requests a file or directory to be selected and sends an appropriate
@@ -131,81 +142,83 @@ export function useItemComposable (
    *
    * @param   {KeyboardEvent|MouseEvent}  event  The triggering event
    */
-  function requestSelection (event: MouseEvent): void {
+  function requestSelection(event: MouseEvent): void {
     // Dead directories can't be opened, so stop the propagation to
     // the file manager and don't do a thing.
-    if (obj.value.type === 'directory' && obj.value.dirNotFoundFlag === true) {
-      return event.stopPropagation()
+    if (obj.value.type === "directory" && obj.value.dirNotFoundFlag === true) {
+      return event.stopPropagation();
     }
 
     if (event.button === 2) {
-      return // The user requested a context menu
+      return; // The user requested a context menu
     }
 
     // Determine if we have a middle (wheel) click. The event-type check is
     // necessary since the left mouse button will have index 1 on click events,
     // whereas the middle mouse button will also have index 1, but on auxclick
     // events.
-    const middleClick = (event.type === 'auxclick' && event.button === 1)
-    const alt = event.altKey
-    const type = obj.value.type
+    const middleClick = event.type === "auxclick" && event.button === 1;
+    const alt = event.altKey;
+    const type = obj.value.type;
 
     if (middleClick) {
-      event.preventDefault() // Otherwise, on Windows we'd have a middle-click-scroll
+      event.preventDefault(); // Otherwise, on Windows we'd have a middle-click-scroll
     }
 
-    if ([ 'file', 'code' ].includes(type)) {
+    if (["file", "code"].includes(type)) {
       // Request the clicked file
-      ipcRenderer.invoke('documents-provider', {
-        command: 'open-file',
-        payload: {
-          path: obj.value.path,
-          windowId,
-          leafId: documentTreeStore.lastLeafId,
-          newTab: middleClick || (alt && type === 'file') // Force a new tab in this case.
-        }
-      } as DocumentManagerIPCAPI)
+      ipcRenderer
+        .invoke("documents-provider", {
+          command: "open-file",
+          payload: {
+            path: obj.value.path,
+            windowId,
+            leafId: documentTreeStore.lastLeafId,
+            newTab: middleClick || (alt && type === "file"), // Force a new tab in this case.
+          },
+        } as DocumentManagerIPCAPI)
         .then(() => {
-          configStore.setConfigValue('openDirectory', obj.value.dir)
+          configStore.setConfigValue("openDirectory", obj.value.dir);
           // Finally, since it's a directory, uncollapse it.
           if (!windowStateStore.uncollapsedDirectories.includes(obj.value.dir)) {
-            windowStateStore.uncollapsedDirectories.push(obj.value.dir)
+            windowStateStore.uncollapsedDirectories.push(obj.value.dir);
           }
         })
-        .catch(e => console.error(e))
-    } else if (type === 'other') {
-      const { files } = configStore.config
+        .catch((e) => console.error(e));
+    } else if (type === "other") {
+      const { files } = configStore.config;
       // Determine if we can open the file in Zettlr
       if (
-        (hasImageExt(obj.value.path) && files.images.openWith === 'zettlr') ||
-        (hasPDFExt(obj.value.path) && files.pdf.openWith === 'zettlr')
+        (hasImageExt(obj.value.path) && files.images.openWith === "zettlr") ||
+        (hasPDFExt(obj.value.path) && files.pdf.openWith === "zettlr")
       ) {
-        ipcRenderer.invoke('documents-provider', {
-          command: 'open-file',
-          // We leave leafId undefined
-          payload: { path: obj.value.path, windowId }
-        })
+        ipcRenderer
+          .invoke("documents-provider", {
+            command: "open-file",
+            // We leave leafId undefined
+            payload: { path: obj.value.path, windowId },
+          })
           .then(() => {
-            configStore.setConfigValue('openDirectory', obj.value.dir)
+            configStore.setConfigValue("openDirectory", obj.value.dir);
             // Finally, since it's a directory, uncollapse it.
             if (!windowStateStore.uncollapsedDirectories.includes(obj.value.dir)) {
-              windowStateStore.uncollapsedDirectories.push(obj.value.dir)
+              windowStateStore.uncollapsedDirectories.push(obj.value.dir);
             }
           })
-          .catch(e => console.error(e))
+          .catch((e) => console.error(e));
       } else {
         // Open the file externally (again, NOTE, this only works because main
         // intercepts every navigation attempt).
-        window.location.href = makeValidUri(obj.value.path)
+        window.location.href = makeValidUri(obj.value.path);
       }
     } else if (alt) {
       // Select the parent directory
-      configStore.setConfigValue('openDirectory', obj.value.dir)
-    } else if (type === 'directory') {
-      configStore.setConfigValue('openDirectory', obj.value.path)
+      configStore.setConfigValue("openDirectory", obj.value.dir);
+    } else if (type === "directory") {
+      configStore.setConfigValue("openDirectory", obj.value.path);
       // Finally, since it's a directory, uncollapse it.
       if (!windowStateStore.uncollapsedDirectories.includes(obj.value.path)) {
-        windowStateStore.uncollapsedDirectories.push(obj.value.path)
+        windowStateStore.uncollapsedDirectories.push(obj.value.path);
       }
     }
   }
@@ -215,75 +228,80 @@ export function useItemComposable (
    *
    * @param   {MouseEvent}  event  The triggering contextmenu event
    */
-  function handleContextMenu (event: MouseEvent): void {
+  function handleContextMenu(event: MouseEvent): void {
     if (rootElement.value === null) {
-      return
+      return;
     }
 
-    if (obj.value.type === 'directory') {
-      displayDirContext(event, obj.value, rootElement.value, clickedID => {
-        if (clickedID === 'menu.rename_dir') {
-          nameEditing.value = true
-        } else if (clickedID === 'menu.new_file') {
-          operationType.value = 'createFile'
-        } else if (clickedID === 'menu.new_dir') {
-          operationType.value = 'createDir'
-        } else if (clickedID === 'menu.delete_dir') {
-          ipcRenderer.invoke('application', {
-            command: 'dir-delete',
-            payload: { path: obj.value.path }
-          })
-            .catch(err => console.error(err))
-        } else if (clickedID === 'menu.close_workspace') {
-          closeWorkspace(obj.value.path)
-        } else if (clickedID === 'menu.project_build') {
+    if (obj.value.type === "directory") {
+      displayDirContext(event, obj.value, rootElement.value, (clickedID) => {
+        if (clickedID === "menu.rename_dir") {
+          nameEditing.value = true;
+        } else if (clickedID === "menu.new_file") {
+          operationType.value = "createFile";
+        } else if (clickedID === "menu.new_dir") {
+          operationType.value = "createDir";
+        } else if (clickedID === "menu.delete_dir") {
+          ipcRenderer
+            .invoke("application", {
+              command: "dir-delete",
+              payload: { path: obj.value.path },
+            })
+            .catch((err) => console.error(err));
+        } else if (clickedID === "menu.close_workspace") {
+          closeWorkspace(obj.value.path);
+        } else if (clickedID === "menu.project_build") {
           // We should trigger an export of this project.
-          ipcRenderer.invoke('application', {
-            command: 'dir-project-export',
-            payload: obj.value.path
-          })
-            .catch(err => console.error(err))
-        } else if (clickedID === 'menu.properties') {
-          showPopover.value = true
+          ipcRenderer
+            .invoke("application", {
+              command: "dir-project-export",
+              payload: obj.value.path,
+            })
+            .catch((err) => console.error(err));
+        } else if (clickedID === "menu.properties") {
+          showPopover.value = true;
         }
-      })
+      });
     } else {
-      displayFileContext(event, obj.value, rootElement.value, clickedID => {
-        if (clickedID === 'new-tab') {
+      displayFileContext(event, obj.value, rootElement.value, (clickedID) => {
+        if (clickedID === "new-tab") {
           // Request the clicked file, explicitly in a new tab
-          ipcRenderer.invoke('documents-provider', {
-            command: 'open-file',
-            payload: {
-              path: obj.value.path,
-              windowId,
-              newTab: true
-            }
-          } as DocumentManagerIPCAPI)
-            .catch(e => console.error(e))
-        } else if (clickedID === 'menu.rename_file') {
-          nameEditing.value = true
-        } else if (clickedID === 'menu.duplicate_file') {
-          ipcRenderer.invoke('application', {
-            command: 'file-duplicate',
-            payload: {
-              path: obj.value.path,
-              windowId,
-              leafId: documentTreeStore.lastLeafId
-            }
-          })
-            .catch(err => console.error(err))
-        } else if (clickedID === 'menu.delete_file') {
-          ipcRenderer.invoke('application', {
-            command: 'file-delete',
-            payload: { path: obj.value.path }
-          })
-            .catch(err => console.error(err))
-        } else if (clickedID === 'properties') {
-          showPopover.value = true
-        } else if (clickedID === 'menu.close_file') {
-          closeFile(obj.value.path)
+          ipcRenderer
+            .invoke("documents-provider", {
+              command: "open-file",
+              payload: {
+                path: obj.value.path,
+                windowId,
+                newTab: true,
+              },
+            } as DocumentManagerIPCAPI)
+            .catch((e) => console.error(e));
+        } else if (clickedID === "menu.rename_file") {
+          nameEditing.value = true;
+        } else if (clickedID === "menu.duplicate_file") {
+          ipcRenderer
+            .invoke("application", {
+              command: "file-duplicate",
+              payload: {
+                path: obj.value.path,
+                windowId,
+                leafId: documentTreeStore.lastLeafId,
+              },
+            })
+            .catch((err) => console.error(err));
+        } else if (clickedID === "menu.delete_file") {
+          ipcRenderer
+            .invoke("application", {
+              command: "file-delete",
+              payload: { path: obj.value.path },
+            })
+            .catch((err) => console.error(err));
+        } else if (clickedID === "properties") {
+          showPopover.value = true;
+        } else if (clickedID === "menu.close_file") {
+          closeFile(obj.value.path);
         }
-      })
+      });
     }
   }
 
@@ -292,27 +310,27 @@ export function useItemComposable (
    *
    * @param   {DragEvent}  event  The drag event.
    */
-  function onDragHandler (event: DragEvent): void {
-    if (obj.value.type === 'directory') {
-      return // Directories cannot be dragged out of the app
+  function onDragHandler(event: DragEvent): void {
+    if (obj.value.type === "directory") {
+      return; // Directories cannot be dragged out of the app
     }
 
     // If the drag x/y-coordinates are about to leave the window, we
     // have to continue the drag in the main process (as it's being
     // dragged out of the window)
-    const x = Number(event.x)
-    const y = Number(event.y)
-    const w = window.innerWidth
-    const h = window.innerHeight
+    const x = Number(event.x);
+    const y = Number(event.y);
+    const w = window.innerWidth;
+    const h = window.innerHeight;
 
     if (x === 0 || y === 0 || x === w || y === h) {
-      event.stopPropagation()
-      event.preventDefault()
+      event.stopPropagation();
+      event.preventDefault();
 
-      ipcRenderer.send('window-controls', {
-        command: 'drag-start',
-        payload: { filePath: obj.value.path }
-      })
+      ipcRenderer.send("window-controls", {
+        command: "drag-start",
+        payload: { filePath: obj.value.path },
+      });
     }
   }
 
@@ -321,26 +339,29 @@ export function useItemComposable (
    *
    * @param   {string}  newName  The new name given to the file or directory
    */
-  function finishNameEditing (newName: string): void {
+  function finishNameEditing(newName: string): void {
     if (newName === obj.value.name) {
-      return // Not changed
+      return; // Not changed
     }
 
-    const command = (obj.value.type === 'directory') ? 'dir-rename' : 'file-rename'
+    const command = obj.value.type === "directory" ? "dir-rename" : "file-rename";
 
-    ipcRenderer.invoke('application', {
-      command,
-      payload: {
-        path: obj.value.path,
-        name: newName
-      }
-    })
-      .catch(e => console.error(e))
-      .finally(() => { nameEditing.value = false })
+    ipcRenderer
+      .invoke("application", {
+        command,
+        payload: {
+          path: obj.value.path,
+          name: newName,
+        },
+      })
+      .catch((e) => console.error(e))
+      .finally(() => {
+        nameEditing.value = false;
+      });
   }
 
-  function updateObject (newObject: AnyDescriptor): void {
-    obj.value = newObject
+  function updateObject(newObject: AnyDescriptor): void {
+    obj.value = newObject;
   }
 
   return {
@@ -354,6 +375,6 @@ export function useItemComposable (
     isDirectory,
     selectedFile,
     selectedDir,
-    updateObject
-  }
+    updateObject,
+  };
 }

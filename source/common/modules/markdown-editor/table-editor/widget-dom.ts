@@ -1,8 +1,8 @@
-import { type EditorView } from '@codemirror/view'
-import { addColAfter, addColBefore } from './commands/columns'
-import { addRowAfter, addRowBefore } from './commands/rows'
-import arrowsIcon from './icons/arrows.svg'
-import plusIcon from './icons/plus.svg'
+import { type EditorView } from "@codemirror/view";
+import { addColAfter, addColBefore } from "./commands/columns";
+import { addRowAfter, addRowBefore } from "./commands/rows";
+import arrowsIcon from "./icons/arrows.svg";
+import plusIcon from "./icons/plus.svg";
 
 /**
  * This is the primary class applied to the table editor widget wrappers. This
@@ -10,32 +10,35 @@ import plusIcon from './icons/plus.svg'
  *
  * @var {string}
  */
-export const TABLE_WIDGET_WRAPPER_CLASS = 'cm-table-editor-widget-wrapper'
+export const TABLE_WIDGET_WRAPPER_CLASS = "cm-table-editor-widget-wrapper";
 
 /**
-* Generates an empty table widget element that represents a Markdown table. To
-* fill this element with content, use the updateTable function below.
-*
-* @return  {HTMLTableElement}  The empty table
-*/
-export function generateEmptyTableWidgetElement (): { wrapper: HTMLDivElement, table: HTMLTableElement } {
-  const table = document.createElement('table')
-  const wrapper = document.createElement('div')
-  wrapper.classList.add(TABLE_WIDGET_WRAPPER_CLASS)
-  wrapper.appendChild(table)
-  return { table, wrapper }
+ * Generates an empty table widget element that represents a Markdown table. To
+ * fill this element with content, use the updateTable function below.
+ *
+ * @return  {HTMLTableElement}  The empty table
+ */
+export function generateEmptyTableWidgetElement(): {
+  wrapper: HTMLDivElement;
+  table: HTMLTableElement;
+} {
+  const table = document.createElement("table");
+  const wrapper = document.createElement("div");
+  wrapper.classList.add(TABLE_WIDGET_WRAPPER_CLASS);
+  wrapper.appendChild(table);
+  return { table, wrapper };
 }
 
-export function tableTR (): HTMLTableRowElement {
-  return document.createElement('tr')
+export function tableTR(): HTMLTableRowElement {
+  return document.createElement("tr");
 }
 
-export function tableTD (): HTMLTableCellElement {
-  return document.createElement('td')
+export function tableTD(): HTMLTableCellElement {
+  return document.createElement("td");
 }
 
-export function tableTH (): HTMLTableCellElement {
-  return document.createElement('th')
+export function tableTH(): HTMLTableCellElement {
+  return document.createElement("th");
 }
 
 /**
@@ -48,30 +51,30 @@ export function tableTH (): HTMLTableCellElement {
  * @return  {HTMLElement[]}        The list of handles, need to be attached to
  *                                 the table cell element.
  */
-export function generateColumnControls (view: EditorView): HTMLElement[] {
-  const grabHandle = document.createElement('div')
-  grabHandle.classList.add('grab-handle', 'column')
-  grabHandle.innerHTML = arrowsIcon
+export function generateColumnControls(view: EditorView): HTMLElement[] {
+  const grabHandle = document.createElement("div");
+  grabHandle.classList.add("grab-handle", "column");
+  grabHandle.innerHTML = arrowsIcon;
 
-  const addButtonLeft = document.createElement('div')
-  addButtonLeft.classList.add('plus', 'left')
-  addButtonLeft.innerHTML = plusIcon
-  addButtonLeft.addEventListener('mousedown', event => {
-    event.preventDefault()
-    event.stopPropagation()
-    addColBefore(view)
-  })
+  const addButtonLeft = document.createElement("div");
+  addButtonLeft.classList.add("plus", "left");
+  addButtonLeft.innerHTML = plusIcon;
+  addButtonLeft.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    addColBefore(view);
+  });
 
-  const addButtonRight = document.createElement('div')
-  addButtonRight.classList.add('plus', 'right')
-  addButtonRight.innerHTML = plusIcon
-  addButtonRight.addEventListener('mousedown', event => {
-    event.preventDefault()
-    event.stopPropagation()
-    addColAfter(view)
-  })
+  const addButtonRight = document.createElement("div");
+  addButtonRight.classList.add("plus", "right");
+  addButtonRight.innerHTML = plusIcon;
+  addButtonRight.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    addColAfter(view);
+  });
 
-  return [ grabHandle, addButtonLeft, addButtonRight ]
+  return [grabHandle, addButtonLeft, addButtonRight];
 }
 
 /**
@@ -84,28 +87,28 @@ export function generateColumnControls (view: EditorView): HTMLElement[] {
  * @return  {HTMLElement[]}        The list of handles, need to be attached to
  *                                 the table cell element.
  */
-export function generateRowControls (view: EditorView): HTMLElement[] {
-  const grabHandle = document.createElement('div')
-  grabHandle.classList.add('grab-handle', 'row')
-  grabHandle.innerHTML = arrowsIcon
+export function generateRowControls(view: EditorView): HTMLElement[] {
+  const grabHandle = document.createElement("div");
+  grabHandle.classList.add("grab-handle", "row");
+  grabHandle.innerHTML = arrowsIcon;
 
-  const addButtonTop = document.createElement('div')
-  addButtonTop.classList.add('plus', 'top')
-  addButtonTop.innerHTML = plusIcon
-  addButtonTop.addEventListener('mousedown', event => {
-    event.preventDefault()
-    event.stopPropagation()
-    addRowBefore(view)
-  })
+  const addButtonTop = document.createElement("div");
+  addButtonTop.classList.add("plus", "top");
+  addButtonTop.innerHTML = plusIcon;
+  addButtonTop.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    addRowBefore(view);
+  });
 
-  const addButtonBottom = document.createElement('div')
-  addButtonBottom.classList.add('plus', 'bottom')
-  addButtonBottom.innerHTML = plusIcon
-  addButtonBottom.addEventListener('mousedown', event => {
-    event.preventDefault()
-    event.stopPropagation()
-    addRowAfter(view)
-  })
+  const addButtonBottom = document.createElement("div");
+  addButtonBottom.classList.add("plus", "bottom");
+  addButtonBottom.innerHTML = plusIcon;
+  addButtonBottom.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    addRowAfter(view);
+  });
 
-  return [ grabHandle, addButtonTop, addButtonBottom ]
+  return [grabHandle, addButtonTop, addButtonBottom];
 }

@@ -13,9 +13,10 @@
  * END HEADER
  */
 
+import { sha256Text } from "@common/util/sha256";
 import type {
-  EditorContext,
   DocumentSummary,
+  EditorContext,
   EditorViewSummary,
   ReadDocumentResponse,
   ReadSide,
@@ -27,25 +28,21 @@ import type {
 } from "@dts/common/agent-api";
 import { DocumentType } from "@dts/common/documents";
 import type DocumentManager from "@providers/documents";
-import type LogProvider from "@providers/log";
 import type { ReviewQueryPort } from "@providers/documents/review-application-service";
+import { normalizeText, reviewReferenceText } from "@providers/documents/review-diff-store";
+import type LogProvider from "@providers/log";
 import fs from "fs";
 import path from "path";
-import vm from "vm";
-import { sha256Text } from "@common/util/sha256";
 import makeSearchRegex from "source/common/util/make-search-regex";
-import {
-  normalizeText,
-  reviewReferenceText,
-} from "@providers/documents/review-diff-store";
+import vm from "vm";
 
 const SEARCH_CONTEXT_DEFAULT = 3;
 const SEARCH_DEADLINE_MS = 1000;
 export const MAX_SEARCH_HITS = 1000;
 
 export class SearchPatternError extends Error {
-  constructor() {
-    super("Invalid search pattern");
+  constructor(cause?: unknown) {
+    super("Invalid search pattern", { cause });
   }
 }
 
@@ -113,7 +110,9 @@ export default class AgentDocumentQueries {
     if (filePath === undefined) {
       return undefined;
     }
-    const document = this.documents.loadedDocuments.find((candidate) => candidate.filePath === filePath);
+    const document = this.documents.loadedDocuments.find(
+      (candidate) => candidate.filePath === filePath,
+    );
     if (document === undefined) {
       return undefined;
     }
@@ -207,8 +206,7 @@ export default class AgentDocumentQueries {
         viewId: `view-${windowId}-${leafId}`,
         windowId,
         leafId,
-        documentId:
-          activePath === undefined ? undefined : this.documents.getDocumentId(activePath),
+        documentId: activePath === undefined ? undefined : this.documents.getDocumentId(activePath),
         focused: isFocused,
         active: isFocused,
         documents: tabMan.openFiles.map((openFile) => ({
@@ -300,9 +298,7 @@ export default class AgentDocumentQueries {
       attached = true;
       working = document.document.toString();
       const review = this.reviews.getReview(documentId);
-      reference = review === undefined
-        ? working
-        : reviewReferenceText(review.suggestions, working);
+      reference = review === undefined ? working : reviewReferenceText(review.suggestions, working);
       reviewGeneration = review?.generation ?? 0;
     } else {
       const sidecar = await this.reviews.readSidecar(filePath);
@@ -347,11 +343,15 @@ export default class AgentDocumentQueries {
     if (document === undefined) {
       return undefined;
     }
-    let searchRegex: RegExp;
+    let searchRegex: RegExp | undefined;
+    let patternFailure: unknown;
     try {
       searchRegex = makeSearchRegex(request.literal, "g");
-    } catch {
-      throw new SearchPatternError();
+    } catch (error) {
+      patternFailure = error;
+    }
+    if (searchRegex === undefined) {
+      throw new SearchPatternError(patternFailure);
     }
     const content = document.document.toString();
     const lines = content.split("\n");
@@ -396,10 +396,7 @@ export default class AgentDocumentQueries {
     return false;
   }
 
-  private async isOpenableInWorkspace(
-    filePath: string,
-    workspacePath: string,
-  ): Promise<boolean> {
+  private async isOpenableInWorkspace(filePath: string, workspacePath: string): Promise<boolean> {
     let canonicalFilePath: string;
     try {
       canonicalFilePath = await fs.promises.realpath(filePath);

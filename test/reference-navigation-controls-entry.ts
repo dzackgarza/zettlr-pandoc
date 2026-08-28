@@ -14,14 +14,14 @@
  * - 'disabled': both at a history boundary (the App.vue initial state)
  */
 
-import { createApp, h, nextTick } from 'vue'
-import WindowToolbar, { type ToolbarControl } from 'source/common/vue/window/WindowToolbar.vue'
-import loadIcons from 'source/common/modules/window-register/load-icons'
-import { trans } from 'source/common/i18n-renderer'
+import { trans } from "source/common/i18n-renderer";
+import loadIcons from "source/common/modules/window-register/load-icons";
+import WindowToolbar, { type ToolbarControl } from "source/common/vue/window/WindowToolbar.vue";
+import { createApp, h, nextTick } from "vue";
 
 declare global {
   interface Window {
-    captureReady: Promise<void>
+    captureReady: Promise<void>;
   }
 }
 
@@ -30,41 +30,43 @@ declare global {
  * Phase 5): enabled exactly when the focused pane's session history has an
  * entry in that direction.
  */
-function navigationControls (canGoBack: boolean, canGoForward: boolean): ToolbarControl[] {
+function navigationControls(canGoBack: boolean, canGoForward: boolean): ToolbarControl[] {
   return [
     {
-      type: 'button',
-      id: 'previous-file',
-      title: trans('Navigate back'),
-      icon: 'arrow',
-      direction: 'left',
-      disabled: !canGoBack
+      type: "button",
+      id: "previous-file",
+      title: trans("Navigate back"),
+      icon: "arrow",
+      direction: "left",
+      disabled: !canGoBack,
     },
     {
-      type: 'button',
-      id: 'next-file',
-      title: trans('Navigate forward'),
-      icon: 'arrow',
-      direction: 'right',
-      disabled: !canGoForward
-    }
-  ]
+      type: "button",
+      id: "next-file",
+      title: trans("Navigate forward"),
+      icon: "arrow",
+      direction: "right",
+      disabled: !canGoForward,
+    },
+  ];
 }
 
-async function mount (): Promise<void> {
-  await loadIcons()
+async function mount(): Promise<void> {
+  await loadIcons();
 
-  const scene = document.body.dataset.scene ?? 'enabled'
-  const enabled = scene === 'enabled'
-  const controls = navigationControls(enabled, enabled)
+  const scene = document.body.dataset.scene ?? "enabled";
+  const enabled = scene === "enabled";
+  const controls = navigationControls(enabled, enabled);
 
   createApp({
-    render: () => h(WindowToolbar, { controls })
-  }).mount('#app')
+    render: () => h(WindowToolbar, { controls }),
+  }).mount("#app");
 
-  await nextTick()
-  await document.fonts.ready
-  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  await nextTick();
+  await document.fonts.ready;
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
 }
 
-window.captureReady = mount()
+window.captureReady = mount();

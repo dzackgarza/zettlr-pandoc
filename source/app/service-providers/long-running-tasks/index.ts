@@ -69,104 +69,106 @@
  * END HEADER
  */
 
-import ProviderContract, { type IPCAPI, type IPCMessage } from '../provider-contract'
-import { v4 as uuid } from 'uuid'
-import type LogProvider from '../log'
-import broadcastIPCMessage from 'source/common/util/broadcast-ipc-message'
-import { ipcMain } from 'electron'
-import { type LRT_JSON, LongRunningTask, TaskStatus } from './task'
+import { ipcMain } from "electron";
+import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
+import { v4 as uuid } from "uuid";
+import type LogProvider from "../log";
+import ProviderContract, { type IPCAPI, type IPCMessage } from "../provider-contract";
+import { LongRunningTask, type LRT_JSON, TaskStatus } from "./task";
 
 export type LRTIPCSyncMessage = IPCAPI<{
   // Retrieve all tasks from main
-  'get-tasks': unknown
+  "get-tasks": unknown;
   // Abort the provided task
-  'abort-task': { id: string }
+  "abort-task": { id: string };
   // Add a new task
-  'new-task': { task: LRT_JSON }
+  "new-task": { task: LRT_JSON };
   // Updates an existing task
-  'update-task': { task: LRT_JSON }
+  "update-task": { task: LRT_JSON };
   // Deletes a task
-  'delete-task': { id: string }
+  "delete-task": { id: string };
   // The user initiates an interaction with the task
-  'interact-task': { id: string }
-}>
+  "interact-task": { id: string };
+}>;
 
 export type LRTIPCContract = {
   // Retrieve all tasks from main
-  'get-tasks': {
-    request: { payload?: undefined }
-    response: LRT_JSON[]
-  }
+  "get-tasks": {
+    request: { payload?: undefined };
+    response: LRT_JSON[];
+  };
   // Deletes a task
-  'delete-task': {
-    request: { payload: { id: string } }
-    response: undefined
-  }
-}
+  "delete-task": {
+    request: { payload: { id: string } };
+    response: undefined;
+  };
+};
 
-export type LRTIPCAsyncMessage = IPCMessage<LRTIPCContract>
+export type LRTIPCAsyncMessage = IPCMessage<LRTIPCContract>;
 
 export default class LongRunningTaskProvider extends ProviderContract {
-  private tasks: LongRunningTask[]
+  private tasks: LongRunningTask[];
 
   /**
    * This provider manages long running tasks.
    *
    * @param   {LogProvider}  logger    The log provider
    */
-  constructor (private readonly logger: LogProvider) {
-    super()
-    this.tasks = []
+  constructor(private readonly logger: LogProvider) {
+    super();
+    this.tasks = [];
 
-    ipcMain.on('lrt-provider', (event, message: LRTIPCSyncMessage) => {
-      if (message.command === 'abort-task') {
-        const task = this.tasks.find(t => t.id === message.payload.id)
+    ipcMain.on("lrt-provider", (event, message: LRTIPCSyncMessage) => {
+      if (message.command === "abort-task") {
+        const task = this.tasks.find((t) => t.id === message.payload.id);
 
         if (task === undefined) {
-          throw new Error(`Cannot abort task with ID ${message.payload.id}: Not found.`)
+          throw new Error(`Cannot abort task with ID ${message.payload.id}: Not found.`);
         }
 
         if (!task.isAbortable) {
-          throw new Error(`Cannot abort task ${task.id}: This task cannot be aborted.`)
+          throw new Error(`Cannot abort task ${task.id}: This task cannot be aborted.`);
         }
 
-        task.endTask('abort')
-      } else if (message.command === 'interact-task') {
-        const task = this.tasks.find(t => t.id === message.payload.id)
+        task.endTask("abort");
+      } else if (message.command === "interact-task") {
+        const task = this.tasks.find((t) => t.id === message.payload.id);
 
         if (task === undefined) {
-          throw new Error(`Cannot interact with task ${message.payload.id}: Not found.`)
+          throw new Error(`Cannot interact with task ${message.payload.id}: Not found.`);
         }
 
-        task.interactWith()
+        task.interactWith();
       }
-    })
+    });
 
-    ipcMain.handle('lrt-provider', (event, args: LRTIPCAsyncMessage) => {
-      if (args.command === 'get-tasks') {
-        return this.tasks.map(task => task.toJSON())
-      } else if (args.command === 'delete-task') {
-        return this.deleteTask(args.payload.id)
+    ipcMain.handle("lrt-provider", (event, args: LRTIPCAsyncMessage) => {
+      if (args.command === "get-tasks") {
+        return this.tasks.map((task) => task.toJSON());
+      } else if (args.command === "delete-task") {
+        return this.deleteTask(args.payload.id);
       }
-    })
+    });
   }
 
   /**
    * Boots the provider
    */
-  public async boot () {}
+  public async boot() {}
 
   /**
    * Shuts down the provider
    */
-  public async shutdown () {
-    const stillRunning = this.tasks.filter(t => t.getStatus() === TaskStatus.ongoing)
+  public async shutdown() {
+    const stillRunning = this.tasks.filter((t) => t.getStatus() === TaskStatus.ongoing);
 
     if (stillRunning.length > 0) {
-      this.logger.warning(`[LRT Provider] There are still ${stillRunning.length} tasks running in the background. The provider will now abort them.`)
+      this.logger.warning(
+        `[LRT Provider] There are still ${stillRunning.length} tasks running in the background. The provider will now abort them.`,
+      );
 
       for (const t of stillRunning) {
-        t.endTask('abort')
+        t.endTask("abort");
       }
     }
   }
@@ -187,11 +189,19 @@ export default class LongRunningTaskProvider extends ProviderContract {
    *
    * @return  {LongRunningTask}                      The new task
    */
-  public registerTask (title: string, info?: string, successInteraction?: () => void, abortable: boolean = true): LongRunningTask {
-    const task = new LongRunningTask(uuid(), title, info, successInteraction, abortable)
-    this.tasks.push(task)
-    broadcastIPCMessage('lrt-provider', { command: 'new-task', payload: { task: task.toJSON() } } as LRTIPCSyncMessage)
-    return task
+  public registerTask(
+    title: string,
+    info?: string,
+    successInteraction?: () => void,
+    abortable: boolean = true,
+  ): LongRunningTask {
+    const task = new LongRunningTask(uuid(), title, info, successInteraction, abortable);
+    this.tasks.push(task);
+    broadcastIPCMessage("lrt-provider", {
+      command: "new-task",
+      payload: { task: task.toJSON() },
+    } as LRTIPCSyncMessage);
+    return task;
   }
 
   /**
@@ -199,11 +209,14 @@ export default class LongRunningTaskProvider extends ProviderContract {
    *
    * @param   {string}  id  The ID for the task to be deleted
    */
-  public deleteTask (id: string) {
-    const idx = this.tasks.findIndex(t => t.id === id)
+  public deleteTask(id: string) {
+    const idx = this.tasks.findIndex((t) => t.id === id);
     if (idx > -1) {
-      this.tasks.splice(idx, 1)
-      broadcastIPCMessage('lrt-provider', { command: 'delete-task', payload: { id } } as LRTIPCSyncMessage)
+      this.tasks.splice(idx, 1);
+      broadcastIPCMessage("lrt-provider", {
+        command: "delete-task",
+        payload: { id },
+      } as LRTIPCSyncMessage);
     }
   }
 }

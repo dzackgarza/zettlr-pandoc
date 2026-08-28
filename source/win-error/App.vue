@@ -32,38 +32,38 @@
  * END HEADER
  */
 
-import WindowChrome from '@common/vue/window/WindowChrome.vue'
-import { trans } from '@common/i18n-renderer'
-import { type StatusbarControl } from '@common/vue/window/WindowStatusbar.vue'
+import { trans } from "@common/i18n-renderer";
+import WindowChrome from "@common/vue/window/WindowChrome.vue";
+import { type StatusbarControl } from "@common/vue/window/WindowStatusbar.vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 // Retrieve the error information from the URL search params
-const searchParams = new URLSearchParams(window.location.search)
-const titleParam = searchParams.get('title')
-const message = searchParams.get('message')
-const contents = searchParams.get('contents')
+const searchParams = new URLSearchParams(window.location.search);
+const titleParam = searchParams.get("title");
+const message = searchParams.get("message");
+const contents = searchParams.get("contents");
 
 // Because they HAVE to provide both title AND message, those two
 // variables might be the same for a few error messages. In this
 // case, fall back to "error".
-const title = (titleParam === message || titleParam === null) ? 'Error' : titleParam
-const additionalInfo = (contents === '<no-contents>') ? '' : contents
+const title = titleParam === message || titleParam === null ? "Error" : titleParam;
+const additionalInfo = contents === "<no-contents>" ? "" : contents;
 
-function handleClick (controlID: string): void {
-  if (controlID === 'ok') {
-    ipcRenderer.send('window-controls', { command: 'win-close' })
+function handleClick(controlID: string): void {
+  if (controlID === "ok") {
+    ipcRenderer.send("window-controls", { command: "win-close" });
   }
 }
 
 const statusbarControls: StatusbarControl[] = [
   {
-    type: 'button',
-    label: trans('Ok'),
-    id: 'ok',
-    buttonClass: 'primary' // It's a primary button
-  }
-]
+    type: "button",
+    label: trans("Ok"),
+    id: "ok",
+    buttonClass: "primary", // It's a primary button
+  },
+];
 </script>
 
 <style lang="less">

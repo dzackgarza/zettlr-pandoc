@@ -17,8 +17,8 @@
  * END HEADER
  */
 
-import { StateEffect } from '@codemirror/state'
-import { type Command } from '@codemirror/view'
+import { StateEffect } from "@codemirror/state";
+import { type Command } from "@codemirror/view";
 
 /**
  * The intent carried by a reference search request: null is the plain Mod-P
@@ -31,13 +31,13 @@ import { type Command } from '@codemirror/view'
  * renderer-captured copy travelling with the click.
  */
 export type ReferenceSearchRequest = null | {
-  key: string
-}
+  key: string;
+};
 
 /**
  * Signals that the user requested the workspace reference search overlay.
  */
-export const openReferenceSearchEffect = StateEffect.define<ReferenceSearchRequest>()
+export const openReferenceSearchEffect = StateEffect.define<ReferenceSearchRequest>();
 
 /**
  * Dispatches the reference search request (bound to Mod-p in the default
@@ -47,7 +47,7 @@ export const openReferenceSearchEffect = StateEffect.define<ReferenceSearchReque
  *
  * @return  {boolean}           Always true — the request is always handled
  */
-export const openReferenceSearch: Command = view => {
-  view.dispatch({ effects: openReferenceSearchEffect.of(null) })
-  return true
-}
+export const openReferenceSearch: Command = (view) => {
+  view.dispatch({ effects: openReferenceSearchEffect.of(null) });
+  return true;
+};

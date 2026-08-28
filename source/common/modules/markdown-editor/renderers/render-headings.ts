@@ -16,113 +16,133 @@
  * END HEADER
  */
 
-import { type RangeSet, type Range, type Extension } from '@codemirror/state'
-import { rangeInPreviewSuppression, reviewSuppressionChanged } from '../util/range-in-preview-suppression'
-import { syntaxTree } from '@codemirror/language'
-import { Decoration, type DecorationSet, ViewPlugin, type ViewUpdate, EditorView, gutter, GutterMarker } from '@codemirror/view'
+import { syntaxTree } from "@codemirror/language";
+import { type Extension, type Range, type RangeSet } from "@codemirror/state";
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  GutterMarker,
+  gutter,
+  ViewPlugin,
+  type ViewUpdate,
+} from "@codemirror/view";
+import {
+  rangeInPreviewSuppression,
+  reviewSuppressionChanged,
+} from "../util/range-in-preview-suppression";
 
-function hideHeadingMarks (view: EditorView): RangeSet<Decoration> {
-  const ranges: Array<Range<Decoration>> = []
-  const hiddenDeco = Decoration.replace({})
+function hideHeadingMarks(view: EditorView): RangeSet<Decoration> {
+  const ranges: Array<Range<Decoration>> = [];
+  const hiddenDeco = Decoration.replace({});
 
   for (const { from, to } of view.visibleRanges) {
     syntaxTree(view.state).iterate({
-      from, to,
-      enter (node) {
+      from,
+      to,
+      enter(node) {
         // Headings must always show their syntax even if the cursor is only
         // adjacent for a proper UX. If we didn't do that, users would have to
         // click within this element to show the heading characters, which is
         // undesirable.
-        if(rangeInPreviewSuppression(view.state, node.from, node.to, true)) {
-          return
+        if (rangeInPreviewSuppression(view.state, node.from, node.to, true)) {
+          return;
         }
 
-        if (!node.name.startsWith('ATXHeading')) {
-          return
+        if (!node.name.startsWith("ATXHeading")) {
+          return;
         }
 
-        const mark = node.node.getChild('HeaderMark')
+        const mark = node.node.getChild("HeaderMark");
         if (mark === null) {
-          return
+          return;
         }
 
-        const span = view.state.sliceDoc(mark.to, node.to)
-        let offset = 0
-        while (span.charAt(offset) === ' ') {
-          offset++
+        const span = view.state.sliceDoc(mark.to, node.to);
+        let offset = 0;
+        while (span.charAt(offset) === " ") {
+          offset++;
         }
-        ranges.push(hiddenDeco.range(mark.from, mark.to + offset))
-        return false
-      }
-    })
+        ranges.push(hiddenDeco.range(mark.from, mark.to + offset));
+        return false;
+      },
+    });
   }
 
-  return Decoration.set(ranges, true)
+  return Decoration.set(ranges, true);
 }
 
-export const renderHeadings = ViewPlugin.fromClass(class {
-  decorations: DecorationSet
+export const renderHeadings = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
 
-  constructor (view: EditorView) {
-    this.decorations = hideHeadingMarks(view)
-  }
-
-  update (update: ViewUpdate): void {
-    if (update.docChanged || update.viewportChanged || update.selectionSet || reviewSuppressionChanged(update)) {
-      this.decorations = hideHeadingMarks(update.view)
+    constructor(view: EditorView) {
+      this.decorations = hideHeadingMarks(view);
     }
-  }
-}, {
-  decorations: v => v.decorations
-})
+
+    update(update: ViewUpdate): void {
+      if (
+        update.docChanged ||
+        update.viewportChanged ||
+        update.selectionSet ||
+        reviewSuppressionChanged(update)
+      ) {
+        this.decorations = hideHeadingMarks(update.view);
+      }
+    }
+  },
+  {
+    decorations: (v) => v.decorations,
+  },
+);
 
 // Second part of this file: Define a heading gutter.
 
 class HeadingMarkGutter extends GutterMarker {
-  constructor (private readonly level: number) {
-    super()
+  constructor(private readonly level: number) {
+    super();
   }
 
-  toDOM () {
-    const mark = document.createElement('div')
-    mark.textContent = `h${this.level}`
-    return mark
+  toDOM() {
+    const mark = document.createElement("div");
+    mark.textContent = `h${this.level}`;
+    return mark;
   }
 }
 
 export const headingGutter: Extension[] = [
   gutter({
-    class: 'cm-heading-gutter',
+    class: "cm-heading-gutter",
     renderEmptyElements: false,
     initialSpacer: () => new HeadingMarkGutter(1),
-    lineMarker (view, line, _otherMarkers) {
-      const node = syntaxTree(view.state).resolve(line.from, 1)
-      if (node.name !== 'HeaderMark') {
-        return null
+    lineMarker(view, line, _otherMarkers) {
+      const node = syntaxTree(view.state).resolve(line.from, 1);
+      if (node.name !== "HeaderMark") {
+        return null;
       }
 
-      const parent = node.parent
-      if (parent === null || !parent.name.startsWith('ATXHeading')) {
-        return null
+      const parent = node.parent;
+      if (parent === null || !parent.name.startsWith("ATXHeading")) {
+        return null;
       }
 
-      const level = parseInt(parent.name.slice(10), 10)
+      const level = parseInt(parent.name.slice(10), 10);
       if (Number.isNaN(level)) {
-        return null
+        return null;
       }
 
-      return new HeadingMarkGutter(level)
-    }
+      return new HeadingMarkGutter(level);
+    },
   }),
   EditorView.baseTheme({
-    '.cm-heading-gutter .cm-gutterElement': {
-      display: 'flex',
-      alignItems: 'center'
+    ".cm-heading-gutter .cm-gutterElement": {
+      display: "flex",
+      alignItems: "center",
     },
-    '.cm-heading-gutter .cm-gutterElement div': {
-      fontFamily: 'monospace',
-      opacity: '0.3',
-      fontSize: '80%'
-    }
-  })
-]
+    ".cm-heading-gutter .cm-gutterElement div": {
+      fontFamily: "monospace",
+      opacity: "0.3",
+      fontSize: "80%",
+    },
+  }),
+];

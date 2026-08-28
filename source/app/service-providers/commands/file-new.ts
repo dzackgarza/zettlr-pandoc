@@ -12,19 +12,23 @@
  * END HEADER
  */
 
-import ZettlrCommand from './zettlr-command'
-import { trans } from '@common/i18n-main'
-import path from 'path'
-import sanitize from 'sanitize-filename'
-import generateFilename from '@common/util/generate-filename'
-import { app } from 'electron'
-import { getDocumentTypeForExtension, getExtensionForDocumentType, hasAnyRecognizedFileExtension } from '@common/util/file-extention-checks'
-import type { AppServiceContainer } from 'source/app/app-service-container'
-import { DocumentType } from '@dts/common/documents'
+import { trans } from "@common/i18n-main";
+import {
+  getDocumentTypeForExtension,
+  getExtensionForDocumentType,
+  hasAnyRecognizedFileExtension,
+} from "@common/util/file-extention-checks";
+import generateFilename from "@common/util/generate-filename";
+import { DocumentType } from "@dts/common/documents";
+import { app } from "electron";
+import path from "path";
+import sanitize from "sanitize-filename";
+import type { AppServiceContainer } from "source/app/app-service-container";
+import ZettlrCommand from "./zettlr-command";
 
 export default class FileNew extends ZettlrCommand {
-  constructor (app: AppServiceContainer) {
-    super(app, ['file-new'])
+  constructor(app: AppServiceContainer) {
+    super(app, ["file-new"]);
   }
 
   /**
@@ -33,7 +37,10 @@ export default class FileNew extends ZettlrCommand {
    * @param  {Object} arg   An object containing information about the file to create.
    * @return {void}         This function does not return anything.
    */
-  async run (evt: string, arg: { leafId?: string, windowId?: string, name?: string, path?: string, type?: DocumentType }): Promise<void> {
+  async run(
+    evt: string,
+    arg: { leafId?: string; windowId?: string; name?: string; path?: string; type?: DocumentType },
+  ): Promise<void> {
     // A few notes on how this command works with respect to its input. As you
     // can see, all parameters are optional and all which are missing will be
     // inferred from context (otherwise the command will fail). The type
@@ -41,42 +48,43 @@ export default class FileNew extends ZettlrCommand {
     // the name has the following function: If it is given, the user will not
     // be asked for a filename, but if it's missing, a new name will be
     // generated and the user is asked to confirm the name.
-    const { newFileDontPrompt, newFileNamePattern, openDirectory, attachmentExtensions, zkn } = this._app.config.get()
+    const { newFileDontPrompt, newFileNamePattern, openDirectory, attachmentExtensions, zkn } =
+      this._app.config.get();
 
-    const generatedName = generateFilename(newFileNamePattern, zkn.idGen)
+    const generatedName = generateFilename(newFileNamePattern, zkn.idGen);
 
-    const leafId = arg.leafId
+    const leafId = arg.leafId;
 
     if (arg.windowId === undefined) {
       // The caller didn't provide a window number. This can happen with, e.g.
       // menu items. But since we want to fulfill the user's wish, we first try
       // to fallback onto any main window and only fail otherwise.
-      const firstMainWindow = this._app.windows.getFirstMainWindow()
+      const firstMainWindow = this._app.windows.getFirstMainWindow();
       if (firstMainWindow !== undefined) {
-        arg.windowId = this._app.windows.getMainWindowKey(firstMainWindow)
+        arg.windowId = this._app.windows.getMainWindowKey(firstMainWindow);
       }
     }
 
-    const windowId = arg.windowId
+    const windowId = arg.windowId;
 
     if (windowId === undefined) {
-      this._app.log.error('Cannot create new file: No window id provided')
-      return
+      this._app.log.error("Cannot create new file: No window id provided");
+      return;
     }
 
     // Assume there is no directory we could salvage, so choose the documents
     // directory, but (by setting isFallbackDir to true) allow the user to
     // change it.
-    let dirpath = app.getPath('documents')
-    let isFallbackDir = true
-    if (typeof arg.path === 'string' && await this._app.fsal.isDir(arg.path)) {
+    let dirpath = app.getPath("documents");
+    let isFallbackDir = true;
+    if (typeof arg.path === "string" && (await this._app.fsal.isDir(arg.path))) {
       // Explicitly provided directory
-      dirpath = arg.path
-      isFallbackDir = false
-    } else if (openDirectory !== null && await this._app.fsal.isDir(openDirectory)) {
+      dirpath = arg.path;
+      isFallbackDir = false;
+    } else if (openDirectory !== null && (await this._app.fsal.isDir(openDirectory))) {
       // Choose the openDirectory
-      dirpath = openDirectory
-      isFallbackDir = false
+      dirpath = openDirectory;
+      isFallbackDir = false;
     }
 
     // Make sure we have a filename and have the user confirm this if applicable
@@ -91,100 +99,103 @@ export default class FileNew extends ZettlrCommand {
       (newFileDontPrompt && isFallbackDir)
     ) {
       // The user wishes/needs to confirm the filename and/or the directory
-      const chosenPath = await this._app.windows.saveFile(path.join(dirpath, generatedName))
+      const chosenPath = await this._app.windows.saveFile(path.join(dirpath, generatedName));
       if (chosenPath === undefined) {
-        this._app.log.info('Did not create new file since the dialog was aborted.')
-        return
+        this._app.log.info("Did not create new file since the dialog was aborted.");
+        return;
       }
 
-      arg.name = path.basename(chosenPath)
+      arg.name = path.basename(chosenPath);
       // The user may also have selected a different directory altogether. If
       // that directory exists and is loaded by the FSAL, overwrite the dir.
       if (path.dirname(chosenPath) !== dirpath) {
-        dirpath = path.dirname(chosenPath)
+        dirpath = path.dirname(chosenPath);
       }
     } else if (arg.name === undefined) {
       // Just generate a name.
-      arg.name = generatedName
+      arg.name = generatedName;
     }
 
     try {
       // Then, make sure the name is correct.
-      let filename = sanitize(arg.name.trim(), { replacement: '-' })
-      if (filename === '') {
-        throw new Error('Could not create file: Filename was not valid')
+      let filename = sanitize(arg.name.trim(), { replacement: "-" });
+      if (filename === "") {
+        throw new Error("Could not create file: Filename was not valid");
       }
 
-      const docType = arg.type ?? DocumentType.Markdown
-      const docExtension = getExtensionForDocumentType(docType)
+      const docType = arg.type ?? DocumentType.Markdown;
+      const docExtension = getExtensionForDocumentType(docType);
 
       // No DocumentType was provided, so this could be a generic file.
       // Check if the file extension is recognized. If it is not, then
       // append the default DocumentType extension to the filename.
-      if (arg.type === undefined && !hasAnyRecognizedFileExtension(filename, attachmentExtensions)) {
-        filename += docExtension
+      if (
+        arg.type === undefined &&
+        !hasAnyRecognizedFileExtension(filename, attachmentExtensions)
+      ) {
+        filename += docExtension;
       }
 
       // A DocumentType was provided, so the DocumentType for the filename
       // must match the provided DocumentType. If it doees not, then append
       // the default DocumentType extension to the filename.
       if (arg.type !== undefined) {
-        const ext = path.extname(filename)
-        const extDocType = getDocumentTypeForExtension(ext)
+        const ext = path.extname(filename);
+        const extDocType = getDocumentTypeForExtension(ext);
 
         // If the document types do not match, then an invalid extension was provided.
         // Append the default wanted extension to the filename. Do not try to
         // strip and replace the existing extension, as this could clobber otherwise
         // normal user input, such as dot-separated filename schemes.
         if (docType !== extDocType) {
-          filename += docExtension
+          filename += docExtension;
         }
       }
 
-      const absPath = path.join(dirpath, filename)
+      const absPath = path.join(dirpath, filename);
 
       // Check if there's already a file with this name in the directory
       // NOTE: There are case-sensitive file systems, but we'll disallow this
       if (await this._app.fsal.pathExists(absPath)) {
         // Ask before overwriting
-        if (!await this._app.windows.shouldOverwriteFile(filename)) {
-          return
+        if (!(await this._app.windows.shouldOverwriteFile(filename))) {
+          return;
         } else {
           // Remove the file before creating it anew. We'll use the
           // corresponding command for that.
-          await this._app.documents.closeFileEverywhere(absPath)
-          await this._app.fsal.removeFile(absPath)
+          await this._app.documents.closeFileEverywhere(absPath);
+          await this._app.fsal.removeFile(absPath);
         }
       }
 
       // First create the file
-      await this._app.fsal.writeTextFile(absPath, '')
+      await this._app.fsal.writeTextFile(absPath, "");
 
       // And directly thereafter, open the file
-      await this._app.documents.openFile(windowId, leafId, absPath, true)
+      await this._app.documents.openFile(windowId, leafId, absPath, true);
       // Final check: If the file has been created outside of any loaded
       // workspace, we must add it as root so that some other functions of
       // Zettlr work fine (even though the editing should work flawlessly.).
       // Since at this point the events that add the file to the tree likely
       // haven't fired yet, we can check whether the parent directory exists.
       if ((await this._app.fsal.getAnyDirectoryDescriptor(path.dirname(absPath))) === undefined) {
-        this._app.config.addPath(absPath)
+        this._app.config.addPath(absPath);
       }
     } catch (err: unknown) {
       if (err instanceof Error) {
-        this._app.log.error(`Could not create file: ${err.message}`)
+        this._app.log.error(`Could not create file: ${err.message}`);
         this._app.windows.prompt({
-          type: 'error',
-          title: trans('Could not create file'),
-          message: err.message
-        })
+          type: "error",
+          title: trans("Could not create file"),
+          message: err.message,
+        });
       } else {
-        this._app.log.error('Unknown error during file creation')
+        this._app.log.error("Unknown error during file creation");
         this._app.windows.prompt({
-          type: 'error',
-          title: trans('Could not create file'),
-          message: trans('An unknown error occurred.')
-        })
+          type: "error",
+          title: trans("Could not create file"),
+          message: trans("An unknown error occurred."),
+        });
       }
     }
   }

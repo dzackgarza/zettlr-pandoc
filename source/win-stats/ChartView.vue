@@ -65,93 +65,109 @@
  * END HEADER
  */
 
-import { DateTime, type DateTimeMaybeValid } from 'luxon'
-import { trans } from '@common/i18n-renderer'
-import { computed } from 'vue'
-import { useStatisticsStore } from '../pinia/statistics-store'
+import { trans } from "@common/i18n-renderer";
+import { DateTime, type DateTimeMaybeValid } from "luxon";
+import { computed } from "vue";
+import { useStatisticsStore } from "../pinia/statistics-store";
 
-const statisticsStore = useStatisticsStore()
+const statisticsStore = useStatisticsStore();
 
 const weekdays = [
-  trans('Monday'),
-  trans('Tuesday'),
-  trans('Wednesday'),
-  trans('Thursday'),
-  trans('Friday'),
-  trans('Saturday'),
-  trans('Sunday')
-]
+  trans("Monday"),
+  trans("Tuesday"),
+  trans("Wednesday"),
+  trans("Thursday"),
+  trans("Friday"),
+  trans("Saturday"),
+  trans("Sunday"),
+];
 
 // Static properties
-const chartLabel = trans('Charts')
-const chartIntro = trans('This chart shows your current word count and compares it to the average of this and the previous year(s).')
-const legendThisWeek = trans('This week')
-const legendThisYear = trans('This year')
-const legendLastYear = trans('Last year')
+const chartLabel = trans("Charts");
+const chartIntro = trans(
+  "This chart shows your current word count and compares it to the average of this and the previous year(s).",
+);
+const legendThisWeek = trans("This week");
+const legendThisYear = trans("This year");
+const legendLastYear = trans("Last year");
 
-const today = DateTime.now()
+const today = DateTime.now();
 
 const maxValue = computed(() => {
-  return Math.max(...meansByWeekday.value.week, ...meansByWeekday.value.year, ...meansByWeekday.value.lastYear)
-})
+  return Math.max(
+    ...meansByWeekday.value.week,
+    ...meansByWeekday.value.year,
+    ...meansByWeekday.value.lastYear,
+  );
+});
 
 const minValue = computed(() => {
-  return Math.min(...meansByWeekday.value.week, ...meansByWeekday.value.year, ...meansByWeekday.value.lastYear)
-})
+  return Math.min(
+    ...meansByWeekday.value.week,
+    ...meansByWeekday.value.year,
+    ...meansByWeekday.value.lastYear,
+  );
+});
 
 const yTicks = computed(() => {
-  const range = maxValue.value - minValue.value
-  const nTicks = 5
-  const ticks = []
+  const range = maxValue.value - minValue.value;
+  const nTicks = 5;
+  const ticks = [];
   for (let i = 0; i < nTicks; i++) {
-    const interval = range / nTicks
-    ticks.push(Math.round(minValue.value + i * interval))
+    const interval = range / nTicks;
+    ticks.push(Math.round(minValue.value + i * interval));
   }
 
-  if (ticks.every(t => Number.isNaN(t))) {
-    return ticks.map((t, idx) => idx * 100).toReversed()
+  if (ticks.every((t) => Number.isNaN(t))) {
+    return ticks.map((t, idx) => idx * 100).toReversed();
   }
 
-  return ticks.toReversed()
-})
+  return ticks.toReversed();
+});
 
 const meansByWeekday = computed(() => {
   // Take our words ...
   const words = Object.entries(statisticsStore.stats.wordCount)
     // ... map them to DateTimes ...
-    .map<[ isoDate: DateTimeMaybeValid, count: number ]>(val => [ DateTime.fromISO(val[0]), val[1] ])
-    // ... and filter out invalids.
+    .map<[isoDate: DateTimeMaybeValid, count: number]>((val) => [DateTime.fromISO(val[0]), val[1]]);
+  // ... and filter out invalids.
 
   // Then, we need three arrays: this week, this year, and previous year.
 
   // First, filter out the numbers for this week.
-  const lastMonday = today.minus({ days: today.weekday - 1 })
-  const thisWeek = words.filter(val => val[0] >= lastMonday && val[0] <= today)
+  const lastMonday = today.minus({ days: today.weekday - 1 });
+  const thisWeek = words.filter((val) => val[0] >= lastMonday && val[0] <= today);
 
-  const week = [ 0, 0, 0, 0, 0, 0, 0 ]
-  for (const [ day, count ] of thisWeek) {
-    week[day.weekday - 1] = count
+  const week = [0, 0, 0, 0, 0, 0, 0];
+  for (const [day, count] of thisWeek) {
+    week[day.weekday - 1] = count;
   }
 
   // Next, we need averages for the entire year
   const year = words
-    .filter(val => val[0].year === today.year)
-    .reduce((acc, cur) => {
-      acc[cur[0].weekday - 1].push(cur[1])
-      return acc
-    }, [ [], [], [], [], [], [], [] ] as number[][])
-    .map(d => d.reduce((prev, cur) => prev + cur, 0) / d.length)
-  
-  const lastYear = words
-    .filter(val => val[0].year === today.year - 1)
-    .reduce((acc, cur) => {
-      acc[cur[0].weekday - 1].push(cur[1])
-      return acc
-    }, [ [], [], [], [], [], [], [] ] as number[][])
-    .map(d => d.reduce((prev, cur) => prev + cur, 0) / d.length)
+    .filter((val) => val[0].year === today.year)
+    .reduce(
+      (acc, cur) => {
+        acc[cur[0].weekday - 1].push(cur[1]);
+        return acc;
+      },
+      [[], [], [], [], [], [], []] as number[][],
+    )
+    .map((d) => d.reduce((prev, cur) => prev + cur, 0) / d.length);
 
-  return { week, year, lastYear }
-})
+  const lastYear = words
+    .filter((val) => val[0].year === today.year - 1)
+    .reduce(
+      (acc, cur) => {
+        acc[cur[0].weekday - 1].push(cur[1]);
+        return acc;
+      },
+      [[], [], [], [], [], [], []] as number[][],
+    )
+    .map((d) => d.reduce((prev, cur) => prev + cur, 0) / d.length);
+
+  return { week, year, lastYear };
+});
 </script>
 
 <style lang="less">

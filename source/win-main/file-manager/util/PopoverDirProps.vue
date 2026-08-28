@@ -109,237 +109,258 @@
  * END HEADER
  */
 
-import formatDate from '@common/util/format-date'
-import localiseNumber from '@common/util/localise-number'
-import PopoverWrapper from '@common/vue/PopoverWrapper.vue'
-import SelectControl from '@common/vue/form/elements/SelectControl.vue'
-import SwitchControl from '@common/vue/form/elements/SwitchControl.vue'
-import ButtonControl from '@common/vue/form/elements/ButtonControl.vue'
-import { trans } from '@common/i18n-renderer'
-import type { AnyDescriptor, DirDescriptor, MDFileDescriptor } from '@dts/common/fsal'
-import { ref, computed, watch, toRef, onBeforeMount } from 'vue'
-import { useConfigStore } from 'source/pinia'
-import type { DirSettingsCommandAPI } from 'source/app/service-providers/commands/dir-settings'
+import { trans } from "@common/i18n-renderer";
+import formatDate from "@common/util/format-date";
+import localiseNumber from "@common/util/localise-number";
+import ButtonControl from "@common/vue/form/elements/ButtonControl.vue";
+import SelectControl from "@common/vue/form/elements/SelectControl.vue";
+import SwitchControl from "@common/vue/form/elements/SwitchControl.vue";
+import PopoverWrapper from "@common/vue/PopoverWrapper.vue";
+import type { AnyDescriptor, DirDescriptor, MDFileDescriptor } from "@dts/common/fsal";
+import type { DirSettingsCommandAPI } from "source/app/service-providers/commands/dir-settings";
+import { useConfigStore } from "source/pinia";
+import { computed, onBeforeMount, ref, toRef, watch } from "vue";
 
 // Currently defined directory colors
 const AVAILABLE_DIRECTORY_COLORS = [
-  null, 'blue', 'purple', 'rose',
-  'red', 'orange', 'yellow', 'green'
-] as const // Necessary so that we can use it to index the labels
+  null,
+  "blue",
+  "purple",
+  "rose",
+  "red",
+  "orange",
+  "yellow",
+  "green",
+] as const; // Necessary so that we can use it to index the labels
 
 // Labels/titles for the swatches
 const COLOR_SWATCH_LABELS = {
-  null: trans('Remove the custom color'),
-  blue: trans('Assign a blue accent color'),
-  purple: trans('Assign a purple accent color'),
-  rose: trans('Assign a rose accent color'),
-  red: trans('Assign a red accent color'),
-  orange: trans('Assign a orange accent color'),
-  yellow: trans('Assign a yellow accent color'),
-  green: trans('Assign a green accent color'),
-} as const
+  null: trans("Remove the custom color"),
+  blue: trans("Assign a blue accent color"),
+  purple: trans("Assign a purple accent color"),
+  rose: trans("Assign a rose accent color"),
+  red: trans("Assign a red accent color"),
+  orange: trans("Assign a orange accent color"),
+  yellow: trans("Assign a yellow accent color"),
+  green: trans("Assign a green accent color"),
+} as const;
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-const foldersLabel = trans('Directories')
-const modifiedLabel = trans('Modified')
-const createdLabel = trans('Created')
-const filesLabel = trans('Files')
-const projectPropertiesLabel = trans('Project Settings…')
-const projectToggleLabel = trans('Enable Project')
-const sortByNameLabel = trans('Sort by name')
-const sortByTimeLabel = trans('Sort by time')
-const ascendingLabel = trans('ascending')
-const descendingLabel = trans('descending')
+const foldersLabel = trans("Directories");
+const modifiedLabel = trans("Modified");
+const createdLabel = trans("Created");
+const filesLabel = trans("Files");
+const projectPropertiesLabel = trans("Project Settings…");
+const projectToggleLabel = trans("Enable Project");
+const sortByNameLabel = trans("Sort by name");
+const sortByTimeLabel = trans("Sort by time");
+const ascendingLabel = trans("ascending");
+const descendingLabel = trans("descending");
 
 const icons = [
-  { shape: null, title: trans('Reset') },
-  { shape: 'cog', title: trans('Cog') },
-  { shape: 'cloud', title: trans('Cloud') },
-  { shape: 'check', title: trans('Check') },
-  { shape: 'times', title: trans('Times') },
-  { shape: 'help-info', title: trans('Help') },
-  { shape: 'info-standard', title: trans('Info') },
-  { shape: 'success-standard', title: trans('Success') },
-  { shape: 'error-standard', title: trans('Error') },
-  { shape: 'warning-standard', title: trans('Warning') },
-  { shape: 'bell', title: trans('Bell') },
-  { shape: 'user', title: trans('Person') },
-  { shape: 'users', title: trans('People') },
-  { shape: 'home', title: trans('Home') },
-  { shape: 'ban', title: trans('Ban') },
-  { shape: 'image', title: trans('Image') },
-  { shape: 'eye', title: trans('Eye') },
-  { shape: 'eye-hide', title: trans('Eye (crossed)') },
-  { shape: 'calendar', title: trans('Calendar') },
-  { shape: 'calculator', title: trans('Calculator') },
-  { shape: 'store', title: trans('Store') },
-  { shape: 'shopping-bag', title: trans('Shopping bag') },
-  { shape: 'shopping-cart', title: trans('Shopping cart') },
-  { shape: 'factory', title: trans('Factory') },
-  { shape: 'heart', title: trans('Heart') },
-  { shape: 'heart-broken', title: trans('Heart (broken)') },
-  { shape: 'talk-bubbles', title: trans('Bubbles') },
-  { shape: 'chat-bubble', title: trans('Bubble') },
-  { shape: 'bubble-exclamation', title: trans('Bubble (exclamation)') },
-  { shape: 'color-palette', title: trans('Colour Palette') },
-  { shape: 'bars', title: trans('Bars') },
-  { shape: 'thermometer', title: trans('Thermometer') },
-  { shape: 'book', title: trans('Book') },
-  { shape: 'library', title: trans('Library') },
-  { shape: 'bug', title: trans('Bug') },
-  { shape: 'note', title: trans('Note') },
-  { shape: 'lightbulb', title: trans('Lightbulb') },
-  { shape: 'trash', title: trans('Trash') },
-  { shape: 'snowflake', title: trans('Snowflake') },
-  { shape: 'asterisk', title: trans('Asterisk') },
-  { shape: 'key', title: trans('Key') },
-  { shape: 'bolt', title: trans('Bolt') },
-  { shape: 'wrench', title: trans('Wrench') },
-  { shape: 'flame', title: trans('Flame') },
-  { shape: 'hourglass', title: trans('Hourglass') },
-  { shape: 'briefcase', title: trans('Briefcase') },
-  { shape: 'tools', title: trans('Tools') },
-  { shape: 'moon', title: trans('Moon') },
-  { shape: 'sun', title: trans('Sun') },
-  { shape: 'tree', title: trans('Tree') },
-  { shape: 'dot-circle', title: trans('Circle (dot)') },
-  { shape: 'circle', title: trans('Circle') },
-  { shape: 'video-camera', title: trans('Video camera') },
-  { shape: 'film-strip', title: trans('Film strip') },
-  { shape: 'microphone', title: trans('Microphone') },
-  { shape: 'crown', title: trans('Crown') },
-  { shape: 'star', title: trans('Star') },
-  { shape: 'flag', title: trans('Flag') },
-  { shape: 'envelope', title: trans('Envelope') },
-  { shape: 'airplane', title: trans('Airplane') },
-  { shape: 'happy-face', title: trans('Happy emoji') },
-  { shape: 'neutral-face', title: trans('Neutral emoji') },
-  { shape: 'sad-face', title: trans('Sad emoji') },
-  { shape: 'thumbs-up', title: trans('Thumbs up') },
-  { shape: 'thumbs-down', title: trans('Thumbs down') },
-  { shape: 'map', title: trans('Map') },
-  { shape: 'compass', title: trans('Compass') },
-  { shape: 'map-marker', title: trans('Map marker') },
-  { shape: 'flask', title: trans('Flask') },
-  { shape: 'cd-dvd', title: trans('CD/DVD') }
-]
+  { shape: null, title: trans("Reset") },
+  { shape: "cog", title: trans("Cog") },
+  { shape: "cloud", title: trans("Cloud") },
+  { shape: "check", title: trans("Check") },
+  { shape: "times", title: trans("Times") },
+  { shape: "help-info", title: trans("Help") },
+  { shape: "info-standard", title: trans("Info") },
+  { shape: "success-standard", title: trans("Success") },
+  { shape: "error-standard", title: trans("Error") },
+  { shape: "warning-standard", title: trans("Warning") },
+  { shape: "bell", title: trans("Bell") },
+  { shape: "user", title: trans("Person") },
+  { shape: "users", title: trans("People") },
+  { shape: "home", title: trans("Home") },
+  { shape: "ban", title: trans("Ban") },
+  { shape: "image", title: trans("Image") },
+  { shape: "eye", title: trans("Eye") },
+  { shape: "eye-hide", title: trans("Eye (crossed)") },
+  { shape: "calendar", title: trans("Calendar") },
+  { shape: "calculator", title: trans("Calculator") },
+  { shape: "store", title: trans("Store") },
+  { shape: "shopping-bag", title: trans("Shopping bag") },
+  { shape: "shopping-cart", title: trans("Shopping cart") },
+  { shape: "factory", title: trans("Factory") },
+  { shape: "heart", title: trans("Heart") },
+  { shape: "heart-broken", title: trans("Heart (broken)") },
+  { shape: "talk-bubbles", title: trans("Bubbles") },
+  { shape: "chat-bubble", title: trans("Bubble") },
+  { shape: "bubble-exclamation", title: trans("Bubble (exclamation)") },
+  { shape: "color-palette", title: trans("Colour Palette") },
+  { shape: "bars", title: trans("Bars") },
+  { shape: "thermometer", title: trans("Thermometer") },
+  { shape: "book", title: trans("Book") },
+  { shape: "library", title: trans("Library") },
+  { shape: "bug", title: trans("Bug") },
+  { shape: "note", title: trans("Note") },
+  { shape: "lightbulb", title: trans("Lightbulb") },
+  { shape: "trash", title: trans("Trash") },
+  { shape: "snowflake", title: trans("Snowflake") },
+  { shape: "asterisk", title: trans("Asterisk") },
+  { shape: "key", title: trans("Key") },
+  { shape: "bolt", title: trans("Bolt") },
+  { shape: "wrench", title: trans("Wrench") },
+  { shape: "flame", title: trans("Flame") },
+  { shape: "hourglass", title: trans("Hourglass") },
+  { shape: "briefcase", title: trans("Briefcase") },
+  { shape: "tools", title: trans("Tools") },
+  { shape: "moon", title: trans("Moon") },
+  { shape: "sun", title: trans("Sun") },
+  { shape: "tree", title: trans("Tree") },
+  { shape: "dot-circle", title: trans("Circle (dot)") },
+  { shape: "circle", title: trans("Circle") },
+  { shape: "video-camera", title: trans("Video camera") },
+  { shape: "film-strip", title: trans("Film strip") },
+  { shape: "microphone", title: trans("Microphone") },
+  { shape: "crown", title: trans("Crown") },
+  { shape: "star", title: trans("Star") },
+  { shape: "flag", title: trans("Flag") },
+  { shape: "envelope", title: trans("Envelope") },
+  { shape: "airplane", title: trans("Airplane") },
+  { shape: "happy-face", title: trans("Happy emoji") },
+  { shape: "neutral-face", title: trans("Neutral emoji") },
+  { shape: "sad-face", title: trans("Sad emoji") },
+  { shape: "thumbs-up", title: trans("Thumbs up") },
+  { shape: "thumbs-down", title: trans("Thumbs down") },
+  { shape: "map", title: trans("Map") },
+  { shape: "compass", title: trans("Compass") },
+  { shape: "map-marker", title: trans("Map marker") },
+  { shape: "flask", title: trans("Flask") },
+  { shape: "cd-dvd", title: trans("CD/DVD") },
+];
 
-const configStore = useConfigStore()
+const configStore = useConfigStore();
 
-const props = defineProps<{ target: HTMLElement, directory: DirDescriptor, children: AnyDescriptor[] }>()
+const props = defineProps<{
+  target: HTMLElement;
+  directory: DirDescriptor;
+  children: AnyDescriptor[];
+}>();
 
-const emit = defineEmits<(e: 'close') => void>()
+const emit = defineEmits<(e: "close") => void>();
 
-const sortingType = ref<'name'|'time'>('name')
-const sortingDirection = ref<'up'|'down'>('up')
-const isProject = ref<boolean>(props.directory.settings.project !== null)
+const sortingType = ref<"name" | "time">("name");
+const sortingDirection = ref<"up" | "down">("up");
+const isProject = ref<boolean>(props.directory.settings.project !== null);
 
 const creationTime = computed(() => {
-  return formatDate(new Date(props.directory.creationtime), configStore.config.appLang, true)
-})
+  return formatDate(new Date(props.directory.creationtime), configStore.config.appLang, true);
+});
 
 const modificationTime = computed(() => {
-  return formatDate(new Date(props.directory.modtime), configStore.config.appLang, true)
-})
+  return formatDate(new Date(props.directory.modtime), configStore.config.appLang, true);
+});
 
 const formattedFiles = computed(() => {
-  return localiseNumber(props.children.filter(x => x.type !== 'directory').length)
-})
+  return localiseNumber(props.children.filter((x) => x.type !== "directory").length);
+});
 
 const formattedDirs = computed(() => {
-  return localiseNumber(props.children.filter(x => x.type === 'directory').length)
-})
+  return localiseNumber(props.children.filter((x) => x.type === "directory").length);
+});
 
 const formattedWordCount = computed(() => {
   const totalWords = props.children
-    .filter((x): x is MDFileDescriptor => x.type === 'file')
-    .map(x => x.wordCount)
-    .reduce((prev, cur) => { return prev + cur }, 0)
+    .filter((x): x is MDFileDescriptor => x.type === "file")
+    .map((x) => x.wordCount)
+    .reduce((prev, cur) => {
+      return prev + cur;
+    }, 0);
 
-  return trans('%s words', localiseNumber(totalWords))
-})
+  return trans("%s words", localiseNumber(totalWords));
+});
 
-watch(sortingType, updateSorting)
-watch(sortingDirection, updateSorting)
-watch(isProject, updateProject)
-watch(toRef(props, 'directory'), () => {
-  setSorting()
-  isProject.value = props.directory.settings.project !== null
-})
+watch(sortingType, updateSorting);
+watch(sortingDirection, updateSorting);
+watch(isProject, updateProject);
+watch(toRef(props, "directory"), () => {
+  setSorting();
+  isProject.value = props.directory.settings.project !== null;
+});
 
-onBeforeMount(setSorting)
+onBeforeMount(setSorting);
 
 /**
  * Presets the sorting value with the sorting of the directory descriptor prop.
  */
-function setSorting (): void {
-  const [ type, direction ] = props.directory.settings.sorting.split('-') as ['name'|'time', 'up'|'down']
-  sortingType.value = type
-  sortingDirection.value = direction
+function setSorting(): void {
+  const [type, direction] = props.directory.settings.sorting.split("-") as [
+    "name" | "time",
+    "up" | "down",
+  ];
+  sortingType.value = type;
+  sortingDirection.value = direction;
 }
 
-function openProjectPreferences (): void {
-  ipcRenderer.invoke('application', {
-    command: 'open-project-preferences',
-    payload: props.directory.path
-  })
-    .catch(err => console.error(err))
-  emit('close')
+function openProjectPreferences(): void {
+  ipcRenderer
+    .invoke("application", {
+      command: "open-project-preferences",
+      payload: props.directory.path,
+    })
+    .catch((err) => console.error(err));
+  emit("close");
 }
 
-function updateIcon (iconShape: string|null): void {
-  ipcRenderer.invoke('application', {
-    command: 'set-directory-setting',
-    payload: {
-      path: props.directory.path,
-      settings: { icon: iconShape }
-    } satisfies DirSettingsCommandAPI
-  })
-    .catch(e => console.error(e))
+function updateIcon(iconShape: string | null): void {
+  ipcRenderer
+    .invoke("application", {
+      command: "set-directory-setting",
+      payload: {
+        path: props.directory.path,
+        settings: { icon: iconShape },
+      } satisfies DirSettingsCommandAPI,
+    })
+    .catch((e) => console.error(e));
 }
 
-function updateColor (color: string|null): void {
-  ipcRenderer.invoke('application', {
-    command: 'set-directory-setting',
-    payload: {
-      path: props.directory.path,
-      settings: { color }
-    } satisfies DirSettingsCommandAPI
-  })
-    .catch(e => console.error(e))
+function updateColor(color: string | null): void {
+  ipcRenderer
+    .invoke("application", {
+      command: "set-directory-setting",
+      payload: {
+        path: props.directory.path,
+        settings: { color },
+      } satisfies DirSettingsCommandAPI,
+    })
+    .catch((e) => console.error(e));
 }
 
-function updateSorting (): void {
-  ipcRenderer.invoke('application', {
-    command: 'dir-sort',
-    payload: {
-      path: props.directory.path,
-      sorting: `${sortingType.value}-${sortingDirection.value}`
-    }
-  })
-    .catch(e => console.error(e))
+function updateSorting(): void {
+  ipcRenderer
+    .invoke("application", {
+      command: "dir-sort",
+      payload: {
+        path: props.directory.path,
+        sorting: `${sortingType.value}-${sortingDirection.value}`,
+      },
+    })
+    .catch((e) => console.error(e));
 }
 
-function updateProject (): void {
-  const hasProject = props.directory.settings.project !== null
+function updateProject(): void {
+  const hasProject = props.directory.settings.project !== null;
   if (isProject.value === hasProject) {
-    return
+    return;
   }
 
   // NOTE: The toggle describes *wanted* behavior
   if (isProject.value) {
-    ipcRenderer.invoke('application', {
-      command: 'dir-new-project',
-      payload: { path: props.directory.path }
-    })
-      .catch(e => console.error(e))
+    ipcRenderer
+      .invoke("application", {
+        command: "dir-new-project",
+        payload: { path: props.directory.path },
+      })
+      .catch((e) => console.error(e));
   } else {
-    ipcRenderer.invoke('application', {
-      command: 'dir-remove-project',
-      payload: { path: props.directory.path }
-    })
-      .catch(e => console.error(e))
+    ipcRenderer
+      .invoke("application", {
+        command: "dir-remove-project",
+        payload: { path: props.directory.path },
+      })
+      .catch((e) => console.error(e));
   }
 }
 </script>

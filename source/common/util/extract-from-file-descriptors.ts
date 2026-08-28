@@ -1,4 +1,4 @@
-import type { MDFileDescriptor, AnyDescriptor } from 'source/types/common/fsal'
+import type { AnyDescriptor, MDFileDescriptor } from "source/types/common/fsal";
 
 /**
  * Small utility function that extracts the given property from the provided
@@ -9,13 +9,16 @@ import type { MDFileDescriptor, AnyDescriptor } from 'source/types/common/fsal'
  *
  * @return  {Array<string, Type>}               A list of filename->property mappings
  */
-export function extractFromFileDescriptors<Key extends keyof MDFileDescriptor, Type = MDFileDescriptor[Key]> (descriptors: AnyDescriptor[], prop: Key): Array<[string, Type]> {
-  const retVals: Array<[string, Type]> = []
+export function extractFromFileDescriptors<
+  Key extends keyof MDFileDescriptor,
+  Type = MDFileDescriptor[Key],
+>(descriptors: AnyDescriptor[], prop: Key): Array<[string, Type]> {
+  const retVals: Array<[string, Type]> = [];
   for (const descriptor of descriptors) {
-    if (descriptor.type === 'file') {
-      retVals.push([ descriptor.path, descriptor[prop] ])
+    if (descriptor.type === "file") {
+      retVals.push([descriptor.path, descriptor[prop]]);
     }
   }
 
-  return retVals
+  return retVals;
 }

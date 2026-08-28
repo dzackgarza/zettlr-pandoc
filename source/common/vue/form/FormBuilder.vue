@@ -133,166 +133,189 @@
 // Reference for how to do all this stuff dynamically:
 // https://css-tricks.com/creating-vue-js-component-instances-programmatically/
 
-import type { ThemeDescriptor } from './elements/ThemeSelector.vue'
-import FormFieldControl from './FormField.vue'
-import type { FileFilter } from 'electron'
+import type { FileFilter } from "electron";
+import type { ThemeDescriptor } from "./elements/ThemeSelector.vue";
+import FormFieldControl from "./FormField.vue";
 
 interface BasicInfo {
   /**
    * The model in the underlying data structure this form element should update.
    */
-  model: string
+  model: string;
   /**
    * Optional label to put before the input
    */
-  label?: string
+  label?: string;
   /**
    * Whether the field should be displayed inline
    */
-  inline?: boolean
+  inline?: boolean;
   /**
    * An optional group that can be used to sort items into various groups
    */
-  group?: string
+  group?: string;
   /**
    * Whether the field is disabled
    */
-  disabled?: boolean
+  disabled?: boolean;
   /**
    * An optional placeholder, not supported everywhere
    */
-  placeholder?: string
+  placeholder?: string;
 }
 
 interface Separator {
-  type: 'separator'
+  type: "separator";
 }
 
 interface FormText {
-  type: 'form-text'
-  display: 'info'|'sub-heading'|'plain'
-  contents: string
+  type: "form-text";
+  display: "info" | "sub-heading" | "plain";
+  contents: string;
 }
 
 interface FormButton {
-  type: 'button'
-  label: string
-  onClick: () => void
+  type: "button";
+  label: string;
+  onClick: () => void;
 }
 
 interface TextField extends BasicInfo {
-  type: 'text'
+  type: "text";
   /**
    * Optional placeholder text
    */
-  placeholder?: string
+  placeholder?: string;
   /**
    * Optional resettability; if true will reset to empty, otherwise to the string
    */
-  reset?: string|boolean
+  reset?: string | boolean;
   /**
    * Optional info string to put below the field
    */
-  info?: string
+  info?: string;
   /**
    * Whether the field is disabled
    */
-  disabled?: boolean
+  disabled?: boolean;
 }
 
 interface NumberField extends BasicInfo {
-  type: 'number'
-  min?: number
-  max?: number
-  reset?: number
+  type: "number";
+  min?: number;
+  max?: number;
+  reset?: number;
 }
 
 interface TimeField extends BasicInfo {
-  type: 'time'
+  type: "time";
 }
 
 interface ColorField extends BasicInfo {
-  type: 'color'
+  type: "color";
 }
 
 interface FileField extends BasicInfo {
-  type: 'file'|'directory'
-  reset?: string|boolean
-  filter?: FileFilter[]
+  type: "file" | "directory";
+  reset?: string | boolean;
+  filter?: FileFilter[];
 }
 
 interface CheckboxField extends BasicInfo {
-  type: 'checkbox'|'switch'
-  info?: string
+  type: "checkbox" | "switch";
+  info?: string;
 }
 
 interface RadioField extends BasicInfo {
-  type: 'radio'
-  options: Record<string, string>
+  type: "radio";
+  options: Record<string, string>;
 }
 
 interface SelectField extends BasicInfo {
-  type: 'select'
-  options: Record<string, string>
+  type: "select";
+  options: Record<string, string>;
 }
 
 interface ListField extends BasicInfo {
-  type: 'list'
-  valueType: 'simpleArray'|'multiArray'|'record'
-  keyNames?: string[]
-  columnLabels: string[]
-  striped?: boolean
-  addable?: boolean
-  editable?: boolean | number[]
-  deletable?: boolean
-  deleteLabel?: string
-  searchable?: boolean
-  searchLabel?: string
-  emptyMessage?: string
+  type: "list";
+  valueType: "simpleArray" | "multiArray" | "record";
+  keyNames?: string[];
+  columnLabels: string[];
+  striped?: boolean;
+  addable?: boolean;
+  editable?: boolean | number[];
+  deletable?: boolean;
+  deleteLabel?: string;
+  searchable?: boolean;
+  searchLabel?: string;
+  emptyMessage?: string;
 }
 
 interface TokenField extends BasicInfo {
-  type: 'token'
+  type: "token";
 }
 
 interface SliderField extends BasicInfo {
-  type: 'slider'
-  min?: number
-  max?: number
+  type: "slider";
+  min?: number;
+  max?: number;
 }
 
 interface ThemeField extends BasicInfo {
-  type: 'theme'
-  options: Record<string, ThemeDescriptor>
+  type: "theme";
+  options: Record<string, ThemeDescriptor>;
 }
 
 interface FilterSelectField extends BasicInfo {
-  type: 'filter-select'
+  type: "filter-select";
 }
 
 /**
  * Fields that can occur within the form field list
  */
-export type FormField = Separator|FormText|FormButton|TextField|NumberField|
-TimeField|ColorField|FileField|CheckboxField|RadioField|SelectField|ListField|
-TokenField|SliderField|ThemeField|FilterSelectField
+export type FormField =
+  | Separator
+  | FormText
+  | FormButton
+  | TextField
+  | NumberField
+  | TimeField
+  | ColorField
+  | FileField
+  | CheckboxField
+  | RadioField
+  | SelectField
+  | ListField
+  | TokenField
+  | SliderField
+  | ThemeField
+  | FilterSelectField;
 
 /**
  * Fields that can only occur within the title area of a fieldset
  */
-export type TitleFormField = TextField|NumberField|TimeField|ColorField|
-FileField|CheckboxField|RadioField|SelectField|ListField|TokenField|
-SliderField
+export type TitleFormField =
+  | TextField
+  | NumberField
+  | TimeField
+  | ColorField
+  | FileField
+  | CheckboxField
+  | RadioField
+  | SelectField
+  | ListField
+  | TokenField
+  | SliderField;
 
 /**
  * This field can be used to apply styles to various groups of fields. Only
  * available directly as children of fieldsets
  */
 interface StyleGroup {
-  type: 'style-group'
-  style: 'columns'
-  label?: string
-  fields: FormField[]
+  type: "style-group";
+  style: "columns";
+  label?: string;
+  fields: FormField[];
 }
 
 /**
@@ -302,57 +325,57 @@ interface StyleGroup {
  * the same control type in a single column).
  */
 interface ControlGrid {
-  type: 'control-grid',
-  header?: string[],
-  rows: Array<FormField[]>
+  type: "control-grid";
+  header?: string[];
+  rows: Array<FormField[]>;
 }
 
 export interface Fieldset {
   /**
    * The section heading for the fieldset
    */
-  title: string
+  title: string;
   /**
    * An optional info string detailing what this fieldset does or contains.
    */
-  infoString?: string
+  infoString?: string;
   /**
    * An optional help string that can be shown in a questionmark tooltip
    */
-  help?: string
+  help?: string;
   /**
    * Each fieldset can have a single FormField within its title area. Thus, a
    * fieldset can kind of "represent" an entire toggle.
    */
-  titleField?: TitleFormField
+  titleField?: TitleFormField;
   /**
    * The fields which are part of this formfield
    */
-  fields: Array<FormField|StyleGroup|ControlGrid>
-  [key: string]: any // Allow arbitrary additional fields
+  fields: Array<FormField | StyleGroup | ControlGrid>;
+  [key: string]: any; // Allow arbitrary additional fields
 }
 
 export interface FormSchema {
-  fieldsets: Fieldset[]
-  getFieldsetCategory: (fieldset: Fieldset) => { title: string, icon: string }|undefined
+  fieldsets: Fieldset[];
+  getFieldsetCategory: (fieldset: Fieldset) => { title: string; icon: string } | undefined;
 }
 
 // END: INTERFACES
 const props = defineProps<{
-  model: any
-  schema: FormSchema
-}>()
+  model: any;
+  schema: FormSchema;
+}>();
 
-const emit = defineEmits<(e: 'update:modelValue', key: string, value: any) => void>()
+const emit = defineEmits<(e: "update:modelValue", key: string, value: any) => void>();
 
-function getModelValue (model: string): any {
-  const modelProps = model.split('.')
-  let modelValue = props.model
+function getModelValue(model: string): any {
+  const modelProps = model.split(".");
+  let modelValue = props.model;
   for (const key of modelProps) {
-    modelValue = modelValue[key]
+    modelValue = modelValue[key];
   }
 
-  return modelValue
+  return modelValue;
 }
 </script>
 

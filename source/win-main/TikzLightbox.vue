@@ -36,9 +36,9 @@
  * END HEADER
  */
 
-import { onBeforeUnmount, onMounted, ref } from 'vue'
-import ImageViewer from './file-viewers/ImageViewer.vue'
-import type { OpenDocument } from 'source/types/common/documents'
+import type { OpenDocument } from "source/types/common/documents";
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import ImageViewer from "./file-viewers/ImageViewer.vue";
 
 /**
  * The figure currently on screen, as the document the viewer displays. This is
@@ -46,46 +46,46 @@ import type { OpenDocument } from 'source/types/common/documents'
  * open", and the state carries no shape for "open, but at no location". The
  * viewer is mounted inside the v-if, so it is only ever handed a real figure.
  */
-const openFigure = ref<OpenDocument|null>(null)
+const openFigure = ref<OpenDocument | null>(null);
 
-function close (): void {
-  openFigure.value = null
+function close(): void {
+  openFigure.value = null;
 }
 
-function onLightboxRequest (event: Event): void {
-  const detail = (event as CustomEvent<{ svgPath: string }>).detail
-  if (typeof detail?.svgPath !== 'string') {
+function onLightboxRequest(event: Event): void {
+  const detail = (event as CustomEvent<{ svgPath: string }>).detail;
+  if (typeof detail?.svgPath !== "string") {
     // The request is app-internal: the TikZ figure widget dispatches it with
     // the SVG file the render service wrote. An event on this name carrying
     // anything else means something other than that widget is dispatching it,
     // which is a wiring defect and not a figure this component can decline to
     // show quietly.
     throw new Error(
-      'TikzLightbox: a zettlr-tikz-lightbox request arrived without an svgPath string ' +
-      `(detail=${JSON.stringify(detail)}). The event is emitted by the TikZ figure widget in ` +
-      'source/common/modules/markdown-editor/renderers/render-tikz.ts, which carries the path of ' +
-      'the SVG file renderTikz wrote for the clicked figure.'
-    )
+      "TikzLightbox: a zettlr-tikz-lightbox request arrived without an svgPath string " +
+        `(detail=${JSON.stringify(detail)}). The event is emitted by the TikZ figure widget in ` +
+        "source/common/modules/markdown-editor/renderers/render-tikz.ts, which carries the path of " +
+        "the SVG file renderTikz wrote for the clicked figure.",
+    );
   }
-  openFigure.value = { path: detail.svgPath, pinned: false }
+  openFigure.value = { path: detail.svgPath, pinned: false };
 }
 
-function onKeydown (event: KeyboardEvent): void {
-  if (event.key === 'Escape' && openFigure.value !== null) {
-    event.preventDefault()
-    close()
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key === "Escape" && openFigure.value !== null) {
+    event.preventDefault();
+    close();
   }
 }
 
 onMounted(() => {
-  document.addEventListener('zettlr-tikz-lightbox', onLightboxRequest)
-  document.addEventListener('keydown', onKeydown)
-})
+  document.addEventListener("zettlr-tikz-lightbox", onLightboxRequest);
+  document.addEventListener("keydown", onKeydown);
+});
 
 onBeforeUnmount(() => {
-  document.removeEventListener('zettlr-tikz-lightbox', onLightboxRequest)
-  document.removeEventListener('keydown', onKeydown)
-})
+  document.removeEventListener("zettlr-tikz-lightbox", onLightboxRequest);
+  document.removeEventListener("keydown", onKeydown);
+});
 </script>
 
 <style lang="less">

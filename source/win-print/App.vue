@@ -32,84 +32,89 @@
  * END HEADER
  */
 
-import { trans } from '@common/i18n-renderer'
-import WindowChrome from '@common/vue/window/WindowChrome.vue'
-import { computed, onMounted, ref } from 'vue'
-import { pathBasename, pathDirname, resolvePath } from '@common/util/renderer-path-polyfill'
-import { type ToolbarControl } from '@common/vue/window/WindowToolbar.vue'
-import { md2html } from 'source/common/modules/markdown-utils'
-import { CITEPROC_MAIN_DB } from 'source/types/common/citeproc'
-import extractYamlFrontmatter from 'source/common/util/extract-yaml-frontmatter'
+import { trans } from "@common/i18n-renderer";
+import { pathBasename, pathDirname, resolvePath } from "@common/util/renderer-path-polyfill";
+import WindowChrome from "@common/vue/window/WindowChrome.vue";
+import { type ToolbarControl } from "@common/vue/window/WindowToolbar.vue";
+import { md2html } from "source/common/modules/markdown-utils";
+import extractYamlFrontmatter from "source/common/util/extract-yaml-frontmatter";
+import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
+import { computed, onMounted, ref } from "vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 const toolbarControls: ToolbarControl[] = [
   {
-    type: 'spacer',
-    id: 'spacer-one',
-    size: '5x'
+    type: "spacer",
+    id: "spacer-one",
+    size: "5x",
   },
   {
-    type: 'button',
-    label: '',
-    id: 'print',
-    icon: 'printer'
-  }
-]
+    type: "button",
+    label: "",
+    id: "print",
+    icon: "printer",
+  },
+];
 
-const searchParams = new URLSearchParams(window.location.search)
-const filePath = searchParams.get('file') ?? ''
+const searchParams = new URLSearchParams(window.location.search);
+const filePath = searchParams.get("file") ?? "";
 
 const windowTitle = computed(() => {
-  if (filePath !== '') {
-    document.title = pathBasename(filePath)
-    return pathBasename(filePath)
+  if (filePath !== "") {
+    document.title = pathBasename(filePath);
+    return pathBasename(filePath);
   } else {
-    document.title = trans('Print…')
-    return trans('Print…')
+    document.title = trans("Print…");
+    return trans("Print…");
   }
-})
+});
 
-const printContainer = ref<HTMLDivElement|null>(null)
+const printContainer = ref<HTMLDivElement | null>(null);
 
 onMounted(async () => {
-  if (filePath === '' || printContainer.value === null) {
-    return
+  if (filePath === "" || printContainer.value === null) {
+    return;
   }
 
-  const fileContents: string = await ipcRenderer.invoke('application', {
-    command: 'get-file-contents',
-    payload: filePath
-  })
+  const fileContents: string = await ipcRenderer.invoke("application", {
+    command: "get-file-contents",
+    payload: filePath,
+  });
 
-  const base = pathDirname(filePath)
-  const { frontmatter } = extractYamlFrontmatter(fileContents)
-  const library = frontmatter !== null && 'bibliography' in frontmatter && typeof frontmatter.bibliography === 'string' ? frontmatter.bibliography : CITEPROC_MAIN_DB
+  const base = pathDirname(filePath);
+  const { frontmatter } = extractYamlFrontmatter(fileContents);
+  const library =
+    frontmatter !== null &&
+    "bibliography" in frontmatter &&
+    typeof frontmatter.bibliography === "string"
+      ? frontmatter.bibliography
+      : CITEPROC_MAIN_DB;
   md2html(fileContents, {
-    referenceSectionTitle: trans('References'),
+    referenceSectionTitle: trans("References"),
     onCitation: window.getCitationCallback(library),
     onBibliography: async (citations) => {
-      return await ipcRenderer.invoke('citeproc-provider', {
-        command: 'get-bibliography',
-        payload: { database: library, citations }
-      })
+      return await ipcRenderer.invoke("citeproc-provider", {
+        command: "get-bibliography",
+        payload: { database: library, citations },
+      });
     },
-    zknLinkFormat: window.config.get('zkn.linkFormat') ?? 'link|title',
-    onImageSrc (src) {
-      return 'safe-file://' + resolvePath(base, src)
-    }
+    zknLinkFormat: window.config.get("zkn.linkFormat") ?? "link|title",
+    onImageSrc(src) {
+      return "safe-file://" + resolvePath(base, src);
+    },
   })
-    .then(html => {
-      printContainer.value!.innerHTML = html
+    .then((html) => {
+      printContainer.value!.innerHTML = html;
     })
-    .catch(err => console.error(err))
-})
+    .catch((err) => console.error(err));
+});
 
-function handleClick (buttonID?: string): void {
-  if (buttonID === 'print') {
+function handleClick(buttonID?: string): void {
+  if (buttonID === "print") {
     // NOTE: Printing only works in production, as during development
     // contents are served from localhost:3000 (which gives a CORS error)
-    window.print()
+    window.print();
   }
 }
 </script>

@@ -26,7 +26,7 @@
  * END HEADER
  */
 
-import { Type, type Static } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 
 const Sha256 = Type.String({ pattern: "^[0-9a-f]{64}$" });
 

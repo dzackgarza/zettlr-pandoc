@@ -15,12 +15,12 @@
  */
 
 export type LinkProviderIPCContract = {
-  'get-inbound-links': {
-    request: { payload: { filePath: string } }
-    response: { inbound: string[], outbound: string[] }
-  }
-  'get-link-database': {
-    request: { payload?: undefined }
-    response: Record<string, string[]>
-  }
-}
+  "get-inbound-links": {
+    request: { payload: { filePath: string } };
+    response: { inbound: string[]; outbound: string[] };
+  };
+  "get-link-database": {
+    request: { payload?: undefined };
+    response: Record<string, string[]>;
+  };
+};

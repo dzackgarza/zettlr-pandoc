@@ -50,13 +50,13 @@
  * END HEADER
  */
 
-import { ref, onBeforeMount, onBeforeUnmount, watch } from 'vue'
+import { onBeforeMount, onBeforeUnmount, ref, watch } from "vue";
 
 export interface WindowTab {
-  icon: string
-  id: string
-  controls: string
-  label: string
+  icon: string;
+  id: string;
+  controls: string;
+  label: string;
 }
 
 /**
@@ -66,67 +66,67 @@ export interface TabbarControl {
   /**
    * This should match a Clarity icon shape
    */
-  icon: string
+  icon: string;
   /**
    * A unique ID for the tab
    */
-  id: string
+  id: string;
   /**
    * The target ID of whichever tab this represents (for a11y purposes)
    */
-  target: string
+  target: string;
   /**
    * A label, may be displayed.
    */
-  label: string
+  label: string;
 }
 
 const props = defineProps<{
-  tabs: WindowTab[],
-  hasVibrancy: boolean,
-  label?: string
-}>()
+  tabs: WindowTab[];
+  hasVibrancy: boolean;
+  label?: string;
+}>();
 
-const emit = defineEmits<(e: 'tab', value: number) => void>()
+const emit = defineEmits<(e: "tab", value: number) => void>();
 
-const currentTab = ref<number>(0)
+const currentTab = ref<number>(0);
 // The following are required to hide tab labels on win32 w/ narrow windows
-const currentWindowWidth = ref<number>(window.innerWidth)
-const platform = ref<typeof process.platform>(process.platform)
+const currentWindowWidth = ref<number>(window.innerWidth);
+const platform = ref<typeof process.platform>(process.platform);
 
 watch(currentTab, () => {
-  emit('tab', currentTab.value)
-})
+  emit("tab", currentTab.value);
+});
 
 onBeforeMount(() => {
-  window.addEventListener('resize', onWindowResize)
+  window.addEventListener("resize", onWindowResize);
   // On mount, if the URL contains a fragment that matches a tab ID, emit an
   // event to ensure the app actually switches to that.
-  const fragment = location.hash
-  if (fragment === '') {
-    return
+  const fragment = location.hash;
+  if (fragment === "") {
+    return;
   }
 
-  const tabId = fragment.substring(1)
-  const idx = props.tabs.findIndex(tab => tab.id === tabId)
+  const tabId = fragment.substring(1);
+  const idx = props.tabs.findIndex((tab) => tab.id === tabId);
   if (idx > -1) {
-    currentTab.value = idx
+    currentTab.value = idx;
   }
-})
+});
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', onWindowResize)
-})
+  window.removeEventListener("resize", onWindowResize);
+});
 
-function onTabClick (event: MouseEvent, id: string): void {
+function onTabClick(event: MouseEvent, id: string): void {
   // Modify history to retain active tab across reloads
-  const idx = props.tabs.findIndex(tab => tab.id === id)
-  location.hash = '#' + id
-  currentTab.value = idx
+  const idx = props.tabs.findIndex((tab) => tab.id === id);
+  location.hash = "#" + id;
+  currentTab.value = idx;
 }
 
-function onWindowResize (_event: UIEvent): void {
-  currentWindowWidth.value = window.innerWidth
+function onWindowResize(_event: UIEvent): void {
+  currentWindowWidth.value = window.innerWidth;
 }
 </script>
 

@@ -1,4 +1,4 @@
-'use strict';
+"use strict";
 
 module.exports = {
   // Mocha's default is 2000ms, which this suite cannot live with: specs here
@@ -9,7 +9,7 @@ module.exports = {
   // push gate uses, so the gate failed on a different real-tool spec each run.
   timeout: 120000,
   "node-option": ["import=tsx"],
-  require: ['./test/setup.js'],
+  require: ["./test/setup.js"],
   extension: ["ts"],
-  spec: ["test/**/*.js", "test/**/*.spec.ts"]
+  spec: ["test/**/*.js", "test/**/*.spec.ts"],
 };

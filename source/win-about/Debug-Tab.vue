@@ -48,8 +48,8 @@
 </template>
 
 <script setup lang="ts">
-import { DateTime } from 'luxon'
-import { useConfigStore } from 'source/pinia'
+import { DateTime } from "luxon";
+import { useConfigStore } from "source/pinia";
 
 /**
  * @ignore
@@ -65,23 +65,23 @@ import { useConfigStore } from 'source/pinia'
  * END HEADER
  */
 
-const configStore = useConfigStore()
+const configStore = useConfigStore();
 
-const versions = process.versions
-const argv = process.argv
-const arch = process.arch
-const env = Object.assign({}, process.env)
-const platform = process.platform
-const commit = __GIT_COMMIT_HASH__
-const buildDate = DateTime.fromISO(__BUILD_DATE__).toLocaleString({ dateStyle: 'full' })
+const versions = process.versions;
+const argv = process.argv;
+const arch = process.arch;
+const env = Object.assign({}, process.env);
+const platform = process.platform;
+const commit = __GIT_COMMIT_HASH__;
+const buildDate = DateTime.fromISO(__BUILD_DATE__).toLocaleString({ dateStyle: "full" });
 // DEBUG: getSystemVersion is a simple property in the renderer, not a function
-const platformVersion = process.getSystemVersion as unknown as string
+const platformVersion = process.getSystemVersion as unknown as string;
 // Add version strings for external helper programs Zettlr can use
 const programVersions = {
-  pandoc: process.env.PANDOC_VERSION ?? 'not available',
-  quarto: process.env.QUARTO_VERSION ?? 'not available',
-  git: process.env.GIT_VERSION ?? 'not available'
-}
+  pandoc: process.env.PANDOC_VERSION ?? "not available",
+  quarto: process.env.QUARTO_VERSION ?? "not available",
+  git: process.env.GIT_VERSION ?? "not available",
+};
 </script>
 
 <style lang="less">

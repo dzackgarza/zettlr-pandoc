@@ -72,84 +72,92 @@
  * END HEADER
  */
 
-import PopoverWrapper from '@common/vue/PopoverWrapper.vue'
-import NumberControl from '@common/vue/form/elements/NumberControl.vue'
-import SelectControl from '@common/vue/form/elements/SelectControl.vue'
-import { trans } from '@common/i18n-renderer'
-import formatDate from '@common/util/format-date'
-import formatSize from '@common/util/format-size'
-import localiseNumber from '@common/util/localise-number'
-import { ref, computed, watch } from 'vue'
-import type { CodeFileDescriptor, MDFileDescriptor, OtherFileDescriptor } from 'source/types/common/fsal'
-import { useConfigStore, useWritingTargetsStore, useTagsStore } from 'source/pinia'
+import { trans } from "@common/i18n-renderer";
+import formatDate from "@common/util/format-date";
+import formatSize from "@common/util/format-size";
+import localiseNumber from "@common/util/localise-number";
+import NumberControl from "@common/vue/form/elements/NumberControl.vue";
+import SelectControl from "@common/vue/form/elements/SelectControl.vue";
+import PopoverWrapper from "@common/vue/PopoverWrapper.vue";
+import { useConfigStore, useTagsStore, useWritingTargetsStore } from "source/pinia";
+import type {
+  CodeFileDescriptor,
+  MDFileDescriptor,
+  OtherFileDescriptor,
+} from "source/types/common/fsal";
+import { computed, ref, watch } from "vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 const props = defineProps<{
-  target: HTMLElement
-  file: MDFileDescriptor|CodeFileDescriptor|OtherFileDescriptor
-}>()
+  target: HTMLElement;
+  file: MDFileDescriptor | CodeFileDescriptor | OtherFileDescriptor;
+}>();
 
-const wordsLabel = trans('Words')
-const createdLabel = trans('Created')
-const modifiedLabel = trans('Modified')
-const resetLabel = trans('Reset')
-const writingTargetTitle = trans('Set writing target…')
-const charactersLabel = trans('Characters')
+const wordsLabel = trans("Words");
+const createdLabel = trans("Created");
+const modifiedLabel = trans("Modified");
+const resetLabel = trans("Reset");
+const writingTargetTitle = trans("Set writing target…");
+const charactersLabel = trans("Characters");
 
-const emit = defineEmits<(e: 'close') => void>()
+const emit = defineEmits<(e: "close") => void>();
 
-const configStore = useConfigStore()
-const writingTargetsStore = useWritingTargetsStore()
-const tagStore = useTagsStore()
+const configStore = useConfigStore();
+const writingTargetsStore = useWritingTargetsStore();
+const tagStore = useTagsStore();
 
 const creationTime = computed(() => {
-  return formatDate(new Date(props.file.creationtime), configStore.config.appLang, true)
-})
+  return formatDate(new Date(props.file.creationtime), configStore.config.appLang, true);
+});
 const modificationTime = computed(() => {
-  return formatDate(new Date(props.file.modtime), configStore.config.appLang, true)
-})
-const formattedSize = computed(() => formatSize(props.file.size))
+  return formatDate(new Date(props.file.modtime), configStore.config.appLang, true);
+});
+const formattedSize = computed(() => formatSize(props.file.size));
 const formattedWords = computed(() => {
-  if (props.file.type === 'file') {
-    return trans('%s words', localiseNumber(props.file.wordCount))
+  if (props.file.type === "file") {
+    return trans("%s words", localiseNumber(props.file.wordCount));
   } else {
-    return ''
+    return "";
   }
-})
+});
 
-const fileTarget = computed(() => writingTargetsStore.targets.find(t => t.path === props.file.path))
+const fileTarget = computed(() =>
+  writingTargetsStore.targets.find((t) => t.path === props.file.path),
+);
 
-const internalTargetValue = ref(fileTarget.value?.count ?? 0)
-const internalTargetMode = ref(fileTarget.value?.mode ?? 'words')
+const internalTargetValue = ref(fileTarget.value?.count ?? 0);
+const internalTargetMode = ref(fileTarget.value?.mode ?? "words");
 
-watch(internalTargetValue, updateWritingTarget)
-watch(internalTargetMode, updateWritingTarget)
+watch(internalTargetValue, updateWritingTarget);
+watch(internalTargetMode, updateWritingTarget);
 
 watch(fileTarget, () => {
-  internalTargetValue.value = fileTarget.value?.count ?? 0
-  internalTargetMode.value = fileTarget.value?.mode ?? 'words'
-})
+  internalTargetValue.value = fileTarget.value?.count ?? 0;
+  internalTargetMode.value = fileTarget.value?.mode ?? "words";
+});
 
-function reset (): void {
-  internalTargetValue.value = 0
-  internalTargetMode.value = 'words'
+function reset(): void {
+  internalTargetValue.value = 0;
+  internalTargetMode.value = "words";
 }
 
-function updateWritingTarget (): void {
-  ipcRenderer.invoke('targets-provider', {
-    command: 'set-writing-target',
-    payload: {
-      mode: internalTargetMode.value,
-      count: internalTargetValue.value,
-      path: props.file.path
-    }
-  }).catch(e => console.error(e))
+function updateWritingTarget(): void {
+  ipcRenderer
+    .invoke("targets-provider", {
+      command: "set-writing-target",
+      payload: {
+        mode: internalTargetMode.value,
+        count: internalTargetValue.value,
+        path: props.file.path,
+      },
+    })
+    .catch((e) => console.error(e));
 }
 
-function retrieveTagColour (tagName: string): string {
-  const foundTag = tagStore.coloredTags.find(tag => tag.name === tagName)
-  return foundTag !== undefined ? foundTag.color : ''
+function retrieveTagColour(tagName: string): string {
+  const foundTag = tagStore.coloredTags.find((tag) => tag.name === tagName);
+  return foundTag !== undefined ? foundTag.color : "";
 }
 </script>
 

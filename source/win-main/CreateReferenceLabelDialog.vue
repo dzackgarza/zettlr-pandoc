@@ -77,7 +77,7 @@
  * types in the create-reference-label plugin module (a plain TS module all
  * hosts resolve identically); it is re-exported here for dialog consumers.
  */
-export type { CreateReferenceLabelIntent } from '@common/modules/markdown-editor/plugins/create-reference-label'
+export type { CreateReferenceLabelIntent } from "@common/modules/markdown-editor/plugins/create-reference-label";
 </script>
 
 <script setup lang="ts">

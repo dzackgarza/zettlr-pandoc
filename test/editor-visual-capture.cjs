@@ -7,24 +7,24 @@
 // source/common/util/mathtex-to-html.ts) and <workDirectory>/mathjax/ with
 // the NewCM woff2 fonts. Each scene page executes initializeMathJax and
 // mathJaxToElem exactly as renderer windows do.
-'use strict'
+"use strict";
 
-const { app, BrowserWindow } = require('electron')
-const path = require('path')
-const fs = require('fs/promises')
-const { readFileSync } = require('fs')
+const { app, BrowserWindow } = require("electron");
+const path = require("path");
+const fs = require("fs/promises");
+const { readFileSync } = require("fs");
 
-const workDirectory = process.argv[process.argv.length - 1]
+const workDirectory = process.argv[process.argv.length - 1];
 
 // The app ships no macros; load the example fixture (the tex.macros format a
 // user drops into their config dir) and inject it into the page.
-const MACROS = readFileSync(path.join(__dirname, 'fixtures/mathjax-macros.json'), 'utf8')
+const MACROS = readFileSync(path.join(__dirname, "fixtures/mathjax-macros.json"), "utf8");
 
 const SCENES = [
-  { name: 'light-wide', width: 1400, height: 1000, dark: false },
-  { name: 'dark-wide', width: 1400, height: 1000, dark: true },
-  { name: 'light-narrow', width: 480, height: 1100, dark: false }
-]
+  { name: "light-wide", width: 1400, height: 1000, dark: false },
+  { name: "dark-wide", width: 1400, height: 1000, dark: true },
+  { name: "light-narrow", width: 480, height: 1100, dark: false },
+];
 
 const RENDER_SCRIPT = `(async () => {
   const mod = mathtex
@@ -62,32 +62,39 @@ const RENDER_SCRIPT = `(async () => {
 
   await document.fonts.ready
   return document.querySelectorAll('mjx-container').length
-})()`
+})()`;
 
-async function captureScene (win, scene) {
-  const colors = scene.dark ? 'background:#1a1a1a;color:#ddd;' : 'background:#ffffff;color:#333;'
+async function captureScene(win, scene) {
+  const colors = scene.dark ? "background:#1a1a1a;color:#ddd;" : "background:#ffffff;color:#333;";
   // The fork's main.css mjx-container rules, inlined for the harness page.
-  const forkCss = 'mjx-container { vertical-align: middle; } mjx-container[display="true"] { overflow-x: auto; overflow-y: hidden; }'
-  const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${forkCss}</style></head>` +
+  const forkCss =
+    'mjx-container { vertical-align: middle; } mjx-container[display="true"] { overflow-x: auto; overflow-y: hidden; }';
+  const page =
+    `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${forkCss}</style></head>` +
     `<body style="margin:2rem;font-family:sans-serif;${colors}"><main id="content"></main>` +
-    '<script src="./mathtex-bundle.cjs"></script></body></html>'
-  const pageFile = path.join(workDirectory, `${scene.name}.html`)
-  await fs.writeFile(pageFile, page)
+    '<script src="./mathtex-bundle.cjs"></script></body></html>';
+  const pageFile = path.join(workDirectory, `${scene.name}.html`);
+  await fs.writeFile(pageFile, page);
 
-  win.setSize(scene.width, scene.height)
-  await win.loadFile(pageFile)
-  const count = await win.webContents.executeJavaScript(RENDER_SCRIPT)
-  await new Promise(resolve => setTimeout(resolve, 400))
-  const image = await win.webContents.capturePage()
-  await fs.writeFile(path.join(workDirectory, `${scene.name}.png`), image.toPNG())
-  console.log(`captured ${scene.name}.png with ${count} containers`)
+  win.setSize(scene.width, scene.height);
+  await win.loadFile(pageFile);
+  const count = await win.webContents.executeJavaScript(RENDER_SCRIPT);
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const image = await win.webContents.capturePage();
+  await fs.writeFile(path.join(workDirectory, `${scene.name}.png`), image.toPNG());
+  console.log(`captured ${scene.name}.png with ${count} containers`);
 }
 
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ width: 1400, height: 1000, show: false, webPreferences: { offscreen: true } })
+  const win = new BrowserWindow({
+    width: 1400,
+    height: 1000,
+    show: false,
+    webPreferences: { offscreen: true },
+  });
   for (const scene of SCENES) {
-    await captureScene(win, scene)
+    await captureScene(win, scene);
   }
-  win.close()
-  app.quit()
-})
+  win.close();
+  app.quit();
+});

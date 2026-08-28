@@ -12,34 +12,36 @@
  * END HEADER
  */
 
-import { trans } from '@common/i18n-renderer'
-import { type PreferencesFieldset } from './types'
-import { PreferencesGroups } from './_preferences-groups'
-import { ProgrammaticallyOpenableWindows } from '@providers/commands/open-aux-window'
-const ipcRenderer = window.ipc
+import { trans } from "@common/i18n-renderer";
+import { ProgrammaticallyOpenableWindows } from "@providers/commands/open-aux-window";
+import { PreferencesGroups } from "./_preferences-groups";
+import { type PreferencesFieldset } from "./types";
 
-export function getSnippetsFields (): PreferencesFieldset[] {
+const ipcRenderer = window.ipc;
+
+export function getSnippetsFields(): PreferencesFieldset[] {
   return [
     {
-      title: trans('Snippets'),
+      title: trans("Snippets"),
       group: PreferencesGroups.Snippets,
       help: undefined, // TODO
       fields: [
         {
-          type: 'button',
-          label: trans('Open snippets editor'),
+          type: "button",
+          label: trans("Open snippets editor"),
           onClick: () => {
-            ipcRenderer.invoke('application', {
-              command: 'open-aux-window',
-              payload: {
-                window: ProgrammaticallyOpenableWindows.AssetsWindow,
-                hash: 'tab-snippets-control'
-              }
-            })
-              .catch(err => console.error(err))
-          }
-        }
-      ]
-    }
-  ]
+            ipcRenderer
+              .invoke("application", {
+                command: "open-aux-window",
+                payload: {
+                  window: ProgrammaticallyOpenableWindows.AssetsWindow,
+                  hash: "tab-snippets-control",
+                },
+              })
+              .catch((err) => console.error(err));
+          },
+        },
+      ],
+    },
+  ];
 }

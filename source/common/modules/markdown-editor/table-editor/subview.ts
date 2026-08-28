@@ -16,27 +16,42 @@
  * END HEADER
  */
 
-import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
-import { EditorState, MapMode, Prec, StateField, EditorSelection, type ChangeSpec, type Range } from '@codemirror/state'
-import { EditorView, drawSelection, type DecorationSet, Decoration, ViewPlugin, type ViewUpdate } from '@codemirror/view'
-import markdownParser from '../parser/markdown-parser'
-import { tableEditorKeymap } from '../keymaps/table-editor'
-import { dispatchFromSubview, maybeDispatchToSubview, syncAnnotation } from './util/data-exchange'
-import { configField, type EditorConfiguration } from '../util/configuration'
-import { getMainEditorThemes } from '../editor-extension-sets'
-import { darkMode, useDarkModeEditor } from '../theme/dark-mode'
-import { markdownSyntaxHighlighter } from '../theme/syntax'
-import { defaultKeymap } from '../keymaps/default'
-import { clickListeners } from '../plugins/click-listeners'
-import { type Extension } from '@codemirror/state'
-import { renderMath } from '../renderers/render-math'
-import { renderEmphasis } from '../renderers/render-emphasis'
-import { renderLinks } from '../renderers/render-links'
-import { renderCode } from '../renderers/render-code'
-import { renderCitations } from '../renderers/render-citations'
-import { renderReferenceChips } from '../renderers/render-reference-chips'
-import { renderReferenceDefinitions } from '../renderers/render-reference-definitions'
-import { renderPandocAttributes } from '../renderers/render-pandoc-attributes'
+import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import {
+  type ChangeSpec,
+  EditorSelection,
+  EditorState,
+  type Extension,
+  MapMode,
+  Prec,
+  type Range,
+  StateField,
+} from "@codemirror/state";
+import {
+  Decoration,
+  type DecorationSet,
+  drawSelection,
+  EditorView,
+  ViewPlugin,
+  type ViewUpdate,
+} from "@codemirror/view";
+import { getMainEditorThemes } from "../editor-extension-sets";
+import { defaultKeymap } from "../keymaps/default";
+import { tableEditorKeymap } from "../keymaps/table-editor";
+import markdownParser from "../parser/markdown-parser";
+import { clickListeners } from "../plugins/click-listeners";
+import { renderCitations } from "../renderers/render-citations";
+import { renderCode } from "../renderers/render-code";
+import { renderEmphasis } from "../renderers/render-emphasis";
+import { renderLinks } from "../renderers/render-links";
+import { renderMath } from "../renderers/render-math";
+import { renderPandocAttributes } from "../renderers/render-pandoc-attributes";
+import { renderReferenceChips } from "../renderers/render-reference-chips";
+import { renderReferenceDefinitions } from "../renderers/render-reference-definitions";
+import { darkMode, useDarkModeEditor } from "../theme/dark-mode";
+import { markdownSyntaxHighlighter } from "../theme/syntax";
+import { configField, type EditorConfiguration } from "../util/configuration";
+import { dispatchFromSubview, maybeDispatchToSubview, syncAnnotation } from "./util/data-exchange";
 
 /**
  * The renderers that run inside a table-editor cell subview (issue #23). Without
@@ -60,18 +75,28 @@ import { renderPandocAttributes } from '../renderers/render-pandoc-attributes'
  * config toggles the main editor uses, and only in preview mode. The subview is
  * rebuilt whenever the table re-renders, so the config is captured at creation.
  */
-function cellRenderers (cfg: EditorConfiguration): Extension[] {
-  if (cfg.renderingMode !== 'preview') {
-    return []
+function cellRenderers(cfg: EditorConfiguration): Extension[] {
+  if (cfg.renderingMode !== "preview") {
+    return [];
   }
 
-  const ext: Extension[] = [renderCode]
-  if (cfg.renderMath) { ext.push(renderMath) }
-  if (cfg.renderEmphasis) { ext.push(renderEmphasis) }
-  if (cfg.renderLinks) { ext.push(renderLinks) }
-  if (cfg.renderCitations) { ext.push(renderCitations, renderReferenceChips, renderReferenceDefinitions) }
-  if (cfg.renderPandoc) { ext.push(renderPandocAttributes) }
-  return ext
+  const ext: Extension[] = [renderCode];
+  if (cfg.renderMath) {
+    ext.push(renderMath);
+  }
+  if (cfg.renderEmphasis) {
+    ext.push(renderEmphasis);
+  }
+  if (cfg.renderLinks) {
+    ext.push(renderLinks);
+  }
+  if (cfg.renderCitations) {
+    ext.push(renderCitations, renderReferenceChips, renderReferenceDefinitions);
+  }
+  if (cfg.renderPandoc) {
+    ext.push(renderPandocAttributes);
+  }
+  return ext;
 }
 
 /**
@@ -81,7 +106,7 @@ function cellRenderers (cfg: EditorConfiguration): Extension[] {
  */
 const ensureBoundariesFilter = EditorState.transactionFilter.of((tr) => {
   if (tr.annotation(syncAnnotation) === true) {
-    return tr // Do not mess with synchronizing transactions
+    return tr; // Do not mess with synchronizing transactions
   }
 
   // NOTE: There are also cell boundaries written to the TD/TH's dataset, but
@@ -99,7 +124,7 @@ const ensureBoundariesFilter = EditorState.transactionFilter.of((tr) => {
   // only those through the ChangeSet and not recomputing the entire state
   // (e.g., by accessing tr.state), we keep the computational overhead small.
   // NOTE the associations (also in the hidden state updater)
-  const [ cellFrom, cellTo ] = tr.startState.field(hiddenSpanField).cellRange
+  const [cellFrom, cellTo] = tr.startState.field(hiddenSpanField).cellRange;
 
   // TODO: Right now it works all adequately for our purposes. There is one
   // edge-case, though: The CodeMirror parser counts as TableCell contents
@@ -111,59 +136,59 @@ const ensureBoundariesFilter = EditorState.transactionFilter.of((tr) => {
   // proper boundaries (they include any whitespace that was in the cell
   // before the view got instantiated, but exclude any whitespace added to the
   // cell after the fact.)
-  const mappedFrom = tr.changes.mapPos(cellFrom, -1, MapMode.TrackBefore)
-  const mappedTo =  tr.changes.mapPos(cellTo, 1, MapMode.TrackAfter)
+  const mappedFrom = tr.changes.mapPos(cellFrom, -1, MapMode.TrackBefore);
+  const mappedTo = tr.changes.mapPos(cellTo, 1, MapMode.TrackAfter);
 
-  const wasDeleted = mappedFrom === null || mappedTo === null
+  const wasDeleted = mappedFrom === null || mappedTo === null;
 
   if (wasDeleted) {
-    return [] // Disallow this transaction
+    return []; // Disallow this transaction
   }
 
-  let newSelection = tr.selection
+  let newSelection = tr.selection;
   if (tr.selection !== undefined) {
     // Check if ANY range (not just the main selection) exceeds the cell
     // boundaries. If so, clamp all ranges to the cell's bounds.
     const anyOutOfBounds = tr.selection.ranges.some(
-      range => range.from < mappedFrom || range.to > mappedTo
-    )
+      (range) => range.from < mappedFrom || range.to > mappedTo,
+    );
 
     if (anyOutOfBounds) {
-      const clampedRanges = tr.selection.ranges.map(range => {
-        const clampedAnchor = Math.max(mappedFrom, Math.min(mappedTo, range.anchor))
-        const clampedHead = Math.max(mappedFrom, Math.min(mappedTo, range.head))
-        return EditorSelection.range(clampedAnchor, clampedHead)
-      })
-      newSelection = EditorSelection.create(clampedRanges, tr.selection.mainIndex)
+      const clampedRanges = tr.selection.ranges.map((range) => {
+        const clampedAnchor = Math.max(mappedFrom, Math.min(mappedTo, range.anchor));
+        const clampedHead = Math.max(mappedFrom, Math.min(mappedTo, range.head));
+        return EditorSelection.range(clampedAnchor, clampedHead);
+      });
+      newSelection = EditorSelection.create(clampedRanges, tr.selection.mainIndex);
     }
   }
 
   if (!tr.docChanged) {
     if (newSelection !== tr.selection) {
-      return { ...tr, selection: newSelection }
+      return { ...tr, selection: newSelection };
     }
-    return tr
+    return tr;
   }
 
   // Ensure that any changes are safe to apply without breaking the table or
   // removing things people don't want to remove.
-  const safeChanges: ChangeSpec[] = []
+  const safeChanges: ChangeSpec[] = [];
   tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
     // Only pass through changes which are within the cell boundaries.
     if (fromA >= cellFrom && toA <= cellTo) {
       // Ensure that no newlines will be inserted into the table cell
-      const ins = inserted.toString()
-      const safeInsertion = ins.replace(/\n+/g, ' ')
-      safeChanges.push({ from: fromA, to: toA, insert: safeInsertion })
+      const ins = inserted.toString();
+      const safeInsertion = ins.replace(/\n+/g, " ");
+      safeChanges.push({ from: fromA, to: toA, insert: safeInsertion });
     }
-  })
+  });
 
-  return { ...tr, changes: safeChanges, selection: newSelection }
-})
+  return { ...tr, changes: safeChanges, selection: newSelection };
+});
 
 interface hiddenSpanState {
-  decorations: DecorationSet
-  cellRange: [number, number]
+  decorations: DecorationSet;
+  cellRange: [number, number];
 }
 
 /**
@@ -171,16 +196,16 @@ interface hiddenSpanState {
  * before and after the table cell contents.
  */
 export const hiddenSpanField = StateField.define<hiddenSpanState>({
-  create (state) {
+  create(state) {
     // NOTE: Override using `init`! Otherwise this extension won't do much.
     return {
       decorations: Decoration.none,
-      cellRange: [ 0, state.doc.length ]
-    }
+      cellRange: [0, state.doc.length],
+    };
   },
-  update (value, tr) {
+  update(value, tr) {
     if (!tr.docChanged) {
-      return value
+      return value;
     } else {
       // Ensure the range always stays the same
       return {
@@ -191,13 +216,13 @@ export const hiddenSpanField = StateField.define<hiddenSpanState>({
           // provide it, inserting a character in an empty range (from === to)
           // would cause that inserted character to end up right to the `to`.
           tr.changes.mapPos(value.cellRange[0], -1),
-          tr.changes.mapPos(value.cellRange[1], 1)
-        ]
-      }
+          tr.changes.mapPos(value.cellRange[1], 1),
+        ],
+      };
     }
   },
-  provide: f => EditorView.decorations.from(f, (value) => value.decorations)
-})
+  provide: (f) => EditorView.decorations.from(f, (value) => value.decorations),
+});
 
 /**
  * Creates a set of four decorations that hide the spans before and after the
@@ -208,60 +233,58 @@ export const hiddenSpanField = StateField.define<hiddenSpanState>({
  *
  * @return  {DecorationSet}                            The initial deco set
  */
-function createHiddenDecorations (state: EditorState, cellRange: { from: number, to: number }): DecorationSet {
-  const { from, to } = state.doc.lineAt(cellRange.from)
+function createHiddenDecorations(
+  state: EditorState,
+  cellRange: { from: number; to: number },
+): DecorationSet {
+  const { from, to } = state.doc.lineAt(cellRange.from);
   // The table cell can be at the start/end of a line/document, and CodeMirror
   // does not allow atomic ranges where from === to. Therefore, conditional
   // ranges
 
-  const decorations: Array<Range<Decoration>> = []
+  const decorations: Array<Range<Decoration>> = [];
 
   // 1: Block before
   if (from - 1 > 0) {
-    decorations.push(
-      Decoration.replace({ block: true, inclusive: true }).range(0, from - 1)
-    )
+    decorations.push(Decoration.replace({ block: true, inclusive: true }).range(0, from - 1));
   }
   // 2: Line until cellRange.from
   if (cellRange.from > from) {
     decorations.push(
-      Decoration.replace({ block: false, inclusive: false })
-        .range(from, cellRange.from)
-    )
+      Decoration.replace({ block: false, inclusive: false }).range(from, cellRange.from),
+    );
   }
   // 3: Line after cellRange.to
   if (to > cellRange.to) {
     decorations.push(
-      Decoration.replace({ block: false, inclusive: false })
-        .range(cellRange.to, to)
-    )
+      Decoration.replace({ block: false, inclusive: false }).range(cellRange.to, to),
+    );
   }
   // 4: Block after
   if (state.doc.length > to + 1) {
     decorations.push(
-      Decoration.replace({ block: true, inclusive: true })
-        .range(to + 1, state.doc.length)
-    )
+      Decoration.replace({ block: true, inclusive: true }).range(to + 1, state.doc.length),
+    );
   }
 
-  return Decoration.set(decorations)
+  return Decoration.set(decorations);
 }
 
 /**
-* Creates and mounts a sub-EditorView within the provided targetCell.
-*
-* @param  {EditorView}      mainView        The main view
-* @param  {HTMLDivElement}  contentWrapper  The cell's content wrapper
-*
-* @return {EditorView}                      The mounted cell subview
-*/
-export function createSubviewForCell (
+ * Creates and mounts a sub-EditorView within the provided targetCell.
+ *
+ * @param  {EditorView}      mainView        The main view
+ * @param  {HTMLDivElement}  contentWrapper  The cell's content wrapper
+ *
+ * @return {EditorView}                      The mounted cell subview
+ */
+export function createSubviewForCell(
   mainView: EditorView,
   contentWrapper: HTMLDivElement,
-  cellRange: { from: number, to: number }
+  cellRange: { from: number; to: number },
 ): EditorView {
-  const cfg: EditorConfiguration = JSON.parse(JSON.stringify(mainView.state.field(configField)))
-  const themes = getMainEditorThemes()
+  const cfg: EditorConfiguration = JSON.parse(JSON.stringify(mainView.state.field(configField)));
+  const themes = getMainEditorThemes();
 
   const state = EditorState.create({
     // Subviews always hold the entire document. This is to make synchronizing
@@ -282,8 +305,11 @@ export function createSubviewForCell (
       // Add the configuration and preset it with whatever is in the main view.
       // The config field will automagically update since we forward any effects
       // to the subview.
-      configField.init(_state => cfg),
-      darkMode({ darkMode: useDarkModeEditor(cfg.darkMode, cfg.darkModeEditor), ...themes[cfg.theme] }),
+      configField.init((_state) => cfg),
+      darkMode({
+        darkMode: useDarkModeEditor(cfg.darkMode, cfg.darkModeEditor),
+        ...themes[cfg.theme],
+      }),
       syntaxHighlighting(defaultHighlightStyle),
       markdownSyntaxHighlighter(),
       EditorView.lineWrapping,
@@ -294,52 +320,52 @@ export function createSubviewForCell (
       cellRenderers(cfg),
       // Two custom extensions that are required for the specific use-case of
       // this single-line minimal EditorView
-      hiddenSpanField.init(s => {
+      hiddenSpanField.init((s) => {
         return {
           decorations: createHiddenDecorations(s, cellRange),
-          cellRange: [ cellRange.from, cellRange.to ]
-        }
+          cellRange: [cellRange.from, cellRange.to],
+        };
       }),
       ensureBoundariesFilter,
-      EditorView.domEventHandlers(clickListeners())
-    ]
-  })
+      EditorView.domEventHandlers(clickListeners()),
+    ],
+  });
 
   const subview = new EditorView({
     state,
     parent: contentWrapper,
     // Route any updates to the main view. Apply those coming in from the main
     // view.
-    dispatch: dispatchFromSubview(mainView)
-  })
+    dispatch: dispatchFromSubview(mainView),
+  });
 
   // We must delay the subview focusing until the DOM has been updated and any
   // other callbacks and event listeners have been attached. We achieve this
   // using `setTimeout` which will execute its callback once the main loop is
   // empty.
-  setTimeout(() => subview.focus(), 0)
+  setTimeout(() => subview.focus(), 0);
 
-  return subview
+  return subview;
 }
 
 /**
  * A view plugin that passes any transaction from the main view into the various
  * subviews.
  */
-export const subviewUpdatePlugin = ViewPlugin.define(view => ({
-  update (u: ViewUpdate) {
+export const subviewUpdatePlugin = ViewPlugin.define((view) => ({
+  update(u: ViewUpdate) {
     const cells = [
-      ...view.dom.querySelectorAll('.cm-table-editor-widget td'),
-      ...view.dom.querySelectorAll('.cm-table-editor-widget th')
-    ] as HTMLTableCellElement[]
+      ...view.dom.querySelectorAll(".cm-table-editor-widget td"),
+      ...view.dom.querySelectorAll(".cm-table-editor-widget th"),
+    ] as HTMLTableCellElement[];
 
     for (const cell of cells) {
-      const subview = EditorView.findFromDOM(cell)
+      const subview = EditorView.findFromDOM(cell);
       if (subview !== null) {
         for (const tr of u.transactions) {
-          maybeDispatchToSubview(subview, tr)
+          maybeDispatchToSubview(subview, tr);
         }
       }
     }
-  }
-}))
+  },
+}));

@@ -18,9 +18,9 @@
  * END HEADER
  */
 
-import type { LeafNodeJSON, BranchNodeJSON } from '@dts/common/documents'
-import { DTBranch } from './document-tree-branch'
-import { DTLeaf } from './document-tree-leaf'
+import type { BranchNodeJSON, LeafNodeJSON } from "@dts/common/documents";
+import { DTBranch } from "./document-tree-branch";
+import { DTLeaf } from "./document-tree-leaf";
 
 /**
  * This is the root instance of a document tree. It can contain a single node
@@ -33,15 +33,15 @@ export class DocumentTree {
    *
    * @var {DTBranch|DTLeaf}
    */
-  private _node: DTBranch|DTLeaf
+  private _node: DTBranch | DTLeaf;
 
   /**
    * Creates a new document tree (i.e. a new Window)
    *
    * @return  {DocumentTree}  The new tree
    */
-  constructor () {
-    this._node = new DTLeaf(this)
+  constructor() {
+    this._node = new DTLeaf(this);
   }
 
   /**
@@ -49,8 +49,8 @@ export class DocumentTree {
    *
    * @param  {DTBranch|DTLeaf}  data  The new node
    */
-  public set node (data: DTBranch|DTLeaf) {
-    this._node = data
+  public set node(data: DTBranch | DTLeaf) {
+    this._node = data;
   }
 
   /**
@@ -58,8 +58,8 @@ export class DocumentTree {
    *
    * @return  {DTBranch|DTLeaf}  The root node
    */
-  public get node (): DTBranch|DTLeaf {
-    return this._node
+  public get node(): DTBranch | DTLeaf {
+    return this._node;
   }
 
   /**
@@ -69,12 +69,12 @@ export class DocumentTree {
    *
    * @return  {DTLeaf}      The leaf, or undefined
    */
-  public findLeaf (id: string): DTLeaf|undefined {
+  public findLeaf(id: string): DTLeaf | undefined {
     if (this._node === undefined) {
-      return undefined
+      return undefined;
     }
 
-    return this._node.findLeaf(id)
+    return this._node.findLeaf(id);
   }
 
   /**
@@ -84,11 +84,11 @@ export class DocumentTree {
    *
    * @return  {DTBranch}      The branch, or undefined
    */
-  public findBranch (id: string): DTBranch|undefined {
+  public findBranch(id: string): DTBranch | undefined {
     if (this._node === undefined || this._node instanceof DTLeaf) {
-      return undefined
+      return undefined;
     } else {
-      return this._node.findBranch(id)
+      return this._node.findBranch(id);
     }
   }
 
@@ -97,11 +97,11 @@ export class DocumentTree {
    *
    * @return  {DTLeaf[]}  The leaf list
    */
-  public getAllLeafs (): DTLeaf[] {
+  public getAllLeafs(): DTLeaf[] {
     if (this._node instanceof DTLeaf) {
-      return [this._node]
+      return [this._node];
     } else {
-      return this._node.getAllLeafs()
+      return this._node.getAllLeafs();
     }
   }
 
@@ -111,11 +111,11 @@ export class DocumentTree {
    *
    * @return  {string|undefined}  The direction, or undefined
    */
-  public get direction (): 'horizontal'|'vertical'|undefined {
+  public get direction(): "horizontal" | "vertical" | undefined {
     if (this._node instanceof DTLeaf) {
-      return undefined
+      return undefined;
     } else {
-      return this._node.direction
+      return this._node.direction;
     }
   }
 
@@ -124,10 +124,10 @@ export class DocumentTree {
    *
    * @param   {DTLeaf|DTBranch}  node  The node to remove
    */
-  public removeNode (node: DTLeaf|DTBranch): void {
+  public removeNode(node: DTLeaf | DTBranch): void {
     if (this._node === node) {
-      const newLeaf = new DTLeaf(this)
-      this._node = newLeaf
+      const newLeaf = new DTLeaf(this);
+      this._node = newLeaf;
     }
   }
 
@@ -138,34 +138,34 @@ export class DocumentTree {
    *
    * @return  {DocumentTree}        The tree
    */
-  static fromJSON (data: unknown): DocumentTree {
+  static fromJSON(data: unknown): DocumentTree {
     if (Array.isArray(data)) {
-      throw new Error('Could not instantiate tree: Data was an array')
+      throw new Error("Could not instantiate tree: Data was an array");
     }
 
-    if (typeof data !== 'object' || data === null) {
-      throw new Error('Could not instantiate tree: Data was null or not a valid object')
+    if (typeof data !== "object" || data === null) {
+      throw new Error("Could not instantiate tree: Data was null or not a valid object");
     }
 
-    const { type } = data as Partial<LeafNodeJSON|BranchNodeJSON>
+    const { type } = data as Partial<LeafNodeJSON | BranchNodeJSON>;
 
     if (type === undefined) {
-      throw new Error('Could not instantiate tree: Data missing required property "type"')
+      throw new Error('Could not instantiate tree: Data missing required property "type"');
     }
 
-    if (![ 'leaf', 'branch' ].includes(type)) {
-      throw new Error(`Could not instantiate tree: data.type contained unrecognized value ${type}`)
+    if (!["leaf", "branch"].includes(type)) {
+      throw new Error(`Could not instantiate tree: data.type contained unrecognized value ${type}`);
     }
 
-    const newTree = new DocumentTree()
+    const newTree = new DocumentTree();
 
-    if (type === 'leaf') {
-      newTree.node = DTLeaf.fromJSON(newTree, data)
-    } else if (type === 'branch') {
-      newTree.node = DTBranch.fromJSON(newTree, data)
+    if (type === "leaf") {
+      newTree.node = DTLeaf.fromJSON(newTree, data);
+    } else if (type === "branch") {
+      newTree.node = DTBranch.fromJSON(newTree, data);
     }
 
-    return newTree
+    return newTree;
   }
 
   /**
@@ -173,7 +173,7 @@ export class DocumentTree {
    *
    * @return  {any}     The tree as JSON
    */
-  public toJSON (): LeafNodeJSON|BranchNodeJSON {
-    return this._node.toJSON()
+  public toJSON(): LeafNodeJSON | BranchNodeJSON {
+    return this._node.toJSON();
   }
 }

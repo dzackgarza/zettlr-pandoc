@@ -177,280 +177,311 @@
  * END HEADER
  */
 
-import { trans } from '@common/i18n-renderer'
-import WindowChrome from '@common/vue/window/WindowChrome.vue'
-import ListControl from '@common/vue/form/elements/ListControl.vue'
-import FileControl from '@common/vue/form/elements/FileControl.vue'
-import TextControl from '@common/vue/form/elements/TextControl.vue'
-import ZtrAdmonition from '@common/vue/ZtrAdmonition.vue'
-import { ref, computed, watch, onMounted } from 'vue'
-import type { ProjectSettings, MDFileDescriptor, CodeFileDescriptor } from '@dts/common/fsal'
-import type { PandocProfileMetadata, ValidPandocProfile } from '@providers/assets'
-import { PANDOC_READERS, PANDOC_WRITERS, SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
-import { type WindowTab } from '@common/vue/window/WindowTabbar.vue'
-import { useConfigStore, useWorkspaceStore } from 'source/pinia'
-import { pathBasename } from 'source/common/util/renderer-path-polyfill'
-import { pathToUnix } from 'source/common/util/path-to-unix'
-import { parseReaderWriter } from 'source/common/pandoc-util/parse-reader-writer'
+import { trans } from "@common/i18n-renderer";
+import { PANDOC_READERS, PANDOC_WRITERS, SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
+import FileControl from "@common/vue/form/elements/FileControl.vue";
+import ListControl from "@common/vue/form/elements/ListControl.vue";
+import TextControl from "@common/vue/form/elements/TextControl.vue";
+import WindowChrome from "@common/vue/window/WindowChrome.vue";
+import { type WindowTab } from "@common/vue/window/WindowTabbar.vue";
+import ZtrAdmonition from "@common/vue/ZtrAdmonition.vue";
+import type { CodeFileDescriptor, MDFileDescriptor, ProjectSettings } from "@dts/common/fsal";
+import type { PandocProfileMetadata, ValidPandocProfile } from "@providers/assets";
+import { parseReaderWriter } from "source/common/pandoc-util/parse-reader-writer";
+import { pathToUnix } from "source/common/util/path-to-unix";
+import { pathBasename } from "source/common/util/renderer-path-polyfill";
+import { useConfigStore, useWorkspaceStore } from "source/pinia";
+import { computed, onMounted, ref, watch } from "vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-interface ExportProfile { selected: boolean, name: string, conversion: string }
-interface CustomCommand { displayName: string, command: string }
+interface ExportProfile {
+  selected: boolean;
+  name: string;
+  conversion: string;
+}
+interface CustomCommand {
+  displayName: string;
+  command: string;
+}
 
-const exportFormatLabel = trans('Export project to:')
-const exportFormatUseLabel = trans('Use')
-const exportFormatNameLabel = trans('Format')
-const conversionLabel = trans('Conversion')
-const exportFilesLabel = trans('Files to be included in the export')
-const projectBuildWarning = trans('Please select at least one profile to build this project.')
-const projectTitleLabel = trans('Project Title')
-const cslStyleLabel = trans('CSL Stylesheet')
-const texTemplateLabel = trans('LaTeX Template')
-const htmlTemplateLabel = trans('HTML Template')
-const removeButtonTitle = trans('Remove file from export')
-const addButtonTitle = trans('Add file to export')
-const upButtonTitle = trans('Move file up')
-const downButtonTitle = trans('Move file down')
-const noFilesSelectedMessage = trans('You have not selected any files for export.')
-const missingFilesMessage = trans('Some files are selected for export but no longer exist in the directory.')
+const exportFormatLabel = trans("Export project to:");
+const exportFormatUseLabel = trans("Use");
+const exportFormatNameLabel = trans("Format");
+const conversionLabel = trans("Conversion");
+const exportFilesLabel = trans("Files to be included in the export");
+const projectBuildWarning = trans("Please select at least one profile to build this project.");
+const projectTitleLabel = trans("Project Title");
+const cslStyleLabel = trans("CSL Stylesheet");
+const texTemplateLabel = trans("LaTeX Template");
+const htmlTemplateLabel = trans("HTML Template");
+const removeButtonTitle = trans("Remove file from export");
+const addButtonTitle = trans("Add file to export");
+const upButtonTitle = trans("Move file up");
+const downButtonTitle = trans("Move file down");
+const noFilesSelectedMessage = trans("You have not selected any files for export.");
+const missingFilesMessage = trans(
+  "Some files are selected for export but no longer exist in the directory.",
+);
 
-const configStore = useConfigStore()
-const workspaceStore = useWorkspaceStore()
-const useH1 = computed(() => configStore.config.fileNameDisplay.includes('heading'))
-const useTitle = computed(() => configStore.config.fileNameDisplay.includes('title'))
+const configStore = useConfigStore();
+const workspaceStore = useWorkspaceStore();
+const useH1 = computed(() => configStore.config.fileNameDisplay.includes("heading"));
+const useTitle = computed(() => configStore.config.fileNameDisplay.includes("title"));
 
-const hasVibrancy = computed(() => configStore.config.window.vibrancy && process.platform === 'darwin')
+const hasVibrancy = computed(
+  () => configStore.config.window.vibrancy && process.platform === "darwin",
+);
 
 const tabs: WindowTab[] = [
   {
-    id: 'formats-control',
-    label: trans('General'),
-    icon: 'cog',
-    controls: 'formats-panel'
+    id: "formats-control",
+    label: trans("General"),
+    icon: "cog",
+    controls: "formats-panel",
   },
   {
-    id: 'profiles-selector',
-    label: trans('Profiles'),
-    icon: 'export',
-    controls: 'profiles-panel'
+    id: "profiles-selector",
+    label: trans("Profiles"),
+    icon: "export",
+    controls: "profiles-panel",
   },
   {
-    id: 'files-control',
-    label: 'Files',
-    icon: 'file-settings',
-    controls: 'formats-panel'
-  }
-]
+    id: "files-control",
+    label: "Files",
+    icon: "file-settings",
+    controls: "formats-panel",
+  },
+];
 
-const searchParams = new URLSearchParams(window.location.search)
-const dirPath = searchParams.get('directory') ?? ''
+const searchParams = new URLSearchParams(window.location.search);
+const dirPath = searchParams.get("directory") ?? "";
 
-const updateLock = ref(true) // To ensure these defaults aren't written before the properties have been loaded
-const profiles = ref<PandocProfileMetadata[]>([])
-const customCommands = configStore.config.export.customCommands
+const updateLock = ref(true); // To ensure these defaults aren't written before the properties have been loaded
+const profiles = ref<PandocProfileMetadata[]>([]);
+const customCommands = configStore.config.export.customCommands;
 
 const projectSettings = ref<ProjectSettings>({
-  title: '',
+  title: "",
   profiles: [],
   files: [],
-  cslStyle: '',
-  templates: { tex: '', html: '' }
-})
+  cslStyle: "",
+  templates: { tex: "", html: "" },
+});
 
-const descriptor = computed(() => workspaceStore.descriptorMap.get(dirPath))
+const descriptor = computed(() => workspaceStore.descriptorMap.get(dirPath));
 
 // Holds all available files inside the directory
-const availableFiles = computed<Array<MDFileDescriptor|CodeFileDescriptor>>(() => {
-  if (descriptor.value === undefined || descriptor.value.type !== 'directory') {
-    return []
+const availableFiles = computed<Array<MDFileDescriptor | CodeFileDescriptor>>(() => {
+  if (descriptor.value === undefined || descriptor.value.type !== "directory") {
+    return [];
   }
 
-  const absPath = descriptor.value.path
+  const absPath = descriptor.value.path;
 
   return workspaceStore.pathList
-    .filter(p => p.startsWith(absPath))
-    .map(f => workspaceStore.descriptorMap.get(f))
-    .filter(d => d !== undefined && (d.type === 'code' || d.type === 'file'))
-})
+    .filter((p) => p.startsWith(absPath))
+    .map((f) => workspaceStore.descriptorMap.get(f))
+    .filter((d) => d !== undefined && (d.type === "code" || d.type === "file"));
+});
 
 // Returns a list of all files, prepared for enabling the user to add/remove
 // files from the export list
 const exportFileList = computed(() => {
-  const files: Array<{ displayName: string, included: boolean, relativePath: string }> = []
-  const projectFiles = projectSettings.value.files
+  const files: Array<{ displayName: string; included: boolean; relativePath: string }> = [];
+  const projectFiles = projectSettings.value.files;
 
   for (const file of availableFiles.value) {
-    let basename = pathBasename(file.path)
-    if (file.type === 'file') {
+    let basename = pathBasename(file.path);
+    if (file.type === "file") {
       if (useTitle.value && file.yamlTitle !== undefined) {
-        basename = file.yamlTitle
+        basename = file.yamlTitle;
       } else if (useH1.value && file.firstHeading !== null) {
-        basename = file.firstHeading
+        basename = file.firstHeading;
       }
     }
 
     // The app always defaults to the Unix path conventions (/ instead of \\)
-    const relativePath = pathToUnix(file.path.slice(dirPath.length + 1))
+    const relativePath = pathToUnix(file.path.slice(dirPath.length + 1));
     files.push({
       // NOTE: We must map the files to the relative paths from the directory!
       relativePath,
       displayName: basename,
-      included: projectFiles.includes(relativePath)
-    })
+      included: projectFiles.includes(relativePath),
+    });
   }
 
   files.sort((a, b) => {
     // Negative if a < b
-    const aIdx = projectFiles.indexOf(a.relativePath)
-    const bIdx = projectFiles.indexOf(b.relativePath)
+    const aIdx = projectFiles.indexOf(a.relativePath);
+    const bIdx = projectFiles.indexOf(b.relativePath);
 
     if (aIdx === bIdx) {
-      return 0 // Both are -1
+      return 0; // Both are -1
     } else if (aIdx < 0 && bIdx > -1) {
-      return 1
+      return 1;
     } else if (bIdx < 0 && aIdx > -1) {
-      return -1
+      return -1;
     } else {
       // Calculate from the indices
-      return aIdx - bIdx
+      return aIdx - bIdx;
     }
-  })
+  });
 
-  return files
-})
+  return files;
+});
 
 // Holds a list of files that are selected for export, but seem to be no longer
 // present in the project directory.
 const missingFiles = computed(() => {
-  const missing: string[] = []
-  const availablePaths = availableFiles.value.map(x => pathToUnix(x.path.slice(dirPath.length + 1)))
+  const missing: string[] = [];
+  const availablePaths = availableFiles.value.map((x) =>
+    pathToUnix(x.path.slice(dirPath.length + 1)),
+  );
 
   for (const file of projectSettings.value.files) {
     if (!availablePaths.includes(file)) {
       // This will be passed into "remove" so it needs to be the same as in the original array
-      missing.push(file)
+      missing.push(file);
     }
   }
-  return missing
-})
+  return missing;
+});
 
-const currentTab = ref(0)
+const currentTab = ref(0);
 
-const windowTitle = computed(() => projectSettings.value.title)
+const windowTitle = computed(() => projectSettings.value.title);
 
 const exportFormatList = computed<ExportProfile[]>(() => {
   // We need to return a list of { selected: boolean, name: string, conversion: string }
   // A project builds by running its profiles, so only profiles Zettlr can
   // actually run may be offered here.
-  return profiles.value.filter((e): e is ValidPandocProfile => !e.isInvalid).filter(e => {
-    return SUPPORTED_READERS.includes(parseReaderWriter(e.reader).name)
-  }).map(e => {
-    const plainReader = parseReaderWriter(e.reader).name
-    const plainWriter = parseReaderWriter(e.writer).name
-
-    const hasReaderExtensions = plainReader !== e.reader
-    const hasWriterExtensions = plainWriter !== e.writer
-
-    const reader = plainReader in PANDOC_READERS ? PANDOC_READERS[plainReader] : plainReader
-    const writer = plainWriter in PANDOC_WRITERS ? PANDOC_WRITERS[plainWriter] : plainWriter
-
-    const readerFull = hasReaderExtensions ? reader + ` (${e.reader})` : reader
-    const writerFull = hasWriterExtensions ? writer + ` (${e.writer})` : writer
-
-    return {
-      selected: projectSettings.value.profiles.includes(e.name),
-      name: getDisplayText(e.name),
-      conversion: [ readerFull, writerFull ].join(' → ')
-    }
-  }).concat(
-    customCommands.map(c => {
-      return {
-        selected: projectSettings.value.profiles.includes(c.command),
-        name: c.displayName,
-        conversion: c.command
-      }
+  return profiles.value
+    .filter((e): e is ValidPandocProfile => !e.isInvalid)
+    .filter((e) => {
+      return SUPPORTED_READERS.includes(parseReaderWriter(e.reader).name);
     })
-  )
-})
+    .map((e) => {
+      const plainReader = parseReaderWriter(e.reader).name;
+      const plainWriter = parseReaderWriter(e.writer).name;
 
-watch(projectSettings, updateProperties, { deep: true })
+      const hasReaderExtensions = plainReader !== e.reader;
+      const hasWriterExtensions = plainWriter !== e.writer;
+
+      const reader = plainReader in PANDOC_READERS ? PANDOC_READERS[plainReader] : plainReader;
+      const writer = plainWriter in PANDOC_WRITERS ? PANDOC_WRITERS[plainWriter] : plainWriter;
+
+      const readerFull = hasReaderExtensions ? reader + ` (${e.reader})` : reader;
+      const writerFull = hasWriterExtensions ? writer + ` (${e.writer})` : writer;
+
+      return {
+        selected: projectSettings.value.profiles.includes(e.name),
+        name: getDisplayText(e.name),
+        conversion: [readerFull, writerFull].join(" → "),
+      };
+    })
+    .concat(
+      customCommands.map((c) => {
+        return {
+          selected: projectSettings.value.profiles.includes(c.command),
+          name: c.displayName,
+          conversion: c.command,
+        };
+      }),
+    );
+});
+
+watch(projectSettings, updateProperties, { deep: true });
 
 // First, we need to get the available export formats
-ipcRenderer.invoke('assets-provider', { command: 'list-export-profiles' })
+ipcRenderer
+  .invoke("assets-provider", { command: "list-export-profiles" })
   .then((defaults: PandocProfileMetadata[]) => {
-    profiles.value = defaults
+    profiles.value = defaults;
   })
-  .catch(err => console.error(err))
+  .catch((err) => console.error(err));
 
 // On startup, fetch the properties immediately
-onMounted(fetchProperties)
+onMounted(fetchProperties);
 
-function selectExportProfile (newListVal: ExportProfile[]): void {
+function selectExportProfile(newListVal: ExportProfile[]): void {
   const newProfiles = newListVal
-    .filter(e => e.selected)
-    .map(e => {
-      return profiles.value.find(x => getDisplayText(x.name) === e.name) ?? customCommands.find(c => c.displayName === e.name)
+    .filter((e) => e.selected)
+    .map((e) => {
+      return (
+        profiles.value.find((x) => getDisplayText(x.name) === e.name) ??
+        customCommands.find((c) => c.displayName === e.name)
+      );
     })
-    .filter(x => x !== undefined) as Array<PandocProfileMetadata|CustomCommand>
+    .filter((x) => x !== undefined) as Array<PandocProfileMetadata | CustomCommand>;
 
-  projectSettings.value.profiles = newProfiles.map(x => {
-    return ('name' in x) ? x.name : x.command
-  })
+  projectSettings.value.profiles = newProfiles.map((x) => {
+    return "name" in x ? x.name : x.command;
+  });
 }
 
-function getDisplayText (name: string): string {
-  return name.substring(0, name.lastIndexOf('.'))
+function getDisplayText(name: string): string {
+  return name.substring(0, name.lastIndexOf("."));
 }
 
-function updateProperties (): void {
+function updateProperties(): void {
   if (updateLock.value) {
-    return
+    return;
   }
 
-  updateLock.value = true
+  updateLock.value = true;
 
-  ipcRenderer.invoke('fsal', {
-    command: 'get-descriptor',
-    payload: dirPath
-  })
-    .then(descriptor => {
-      if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== 'directory') {
-        throw new Error('Could not update project settings: No directory descriptor received!')
+  ipcRenderer
+    .invoke("fsal", {
+      command: "get-descriptor",
+      payload: dirPath,
+    })
+    .then((descriptor) => {
+      if (
+        descriptor === undefined ||
+        Array.isArray(descriptor) ||
+        descriptor.type !== "directory"
+      ) {
+        throw new Error("Could not update project settings: No directory descriptor received!");
       }
 
       if (descriptor.settings.project == null) {
-        throw new Error('Could not update project settings: Project was null!')
+        throw new Error("Could not update project settings: Project was null!");
       }
 
       // The JSON round trip de-proxies the reactive settings object.
-      const deproxiedSettings = JSON.parse(JSON.stringify(projectSettings.value)) as ProjectSettings
+      const deproxiedSettings = JSON.parse(
+        JSON.stringify(projectSettings.value),
+      ) as ProjectSettings;
 
-      return ipcRenderer.invoke('application', {
-        command: 'update-project-properties',
-        payload: { properties: deproxiedSettings, path: dirPath }
-      })
+      return ipcRenderer.invoke("application", {
+        command: "update-project-properties",
+        payload: { properties: deproxiedSettings, path: dirPath },
+      });
     })
-    .catch(err => console.error(err))
+    .catch((err) => console.error(err))
     .finally(() => {
-      updateLock.value = false
-    })
+      updateLock.value = false;
+    });
 }
 
-async function fetchProperties (): Promise<void> {
-  const descriptor = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: dirPath })
-  if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== 'directory') {
-    throw new Error('Could not fetch project properties: No directory descriptor received!')
+async function fetchProperties(): Promise<void> {
+  const descriptor = await ipcRenderer.invoke("fsal", {
+    command: "get-descriptor",
+    payload: dirPath,
+  });
+  if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== "directory") {
+    throw new Error("Could not fetch project properties: No directory descriptor received!");
   }
   // Save the actually used formats.
   if (descriptor.settings.project !== null) {
-    projectSettings.value = descriptor.settings.project
+    projectSettings.value = descriptor.settings.project;
   } else {
     // Apparently the user kept the window open and removed the project
     // state on this project. So let's close this window silently.
-    ipcRenderer.send('window-controls', { command: 'win-close' })
+    ipcRenderer.send("window-controls", { command: "win-close" });
   }
-  updateLock.value = false // Now the properties are fetched, so the
+  updateLock.value = false; // Now the properties are fetched, so the
   // handlers can overwrite them.
 }
 
@@ -459,13 +490,13 @@ async function fetchProperties (): Promise<void> {
  *
  * @param   {string}  relativeFilePath  The file path to add
  */
-function addFileToExportList (relativeFilePath: string): void {
+function addFileToExportList(relativeFilePath: string): void {
   if (projectSettings.value.files.includes(relativeFilePath)) {
-    return
+    return;
   }
 
   // Will automagically update
-  projectSettings.value.files.push(relativeFilePath)
+  projectSettings.value.files.push(relativeFilePath);
 }
 
 /**
@@ -474,13 +505,13 @@ function addFileToExportList (relativeFilePath: string): void {
  *
  * @param   {string}  relativeFilePath  The file path to remove
  */
-function removeFileFromExportList (relativeFilePath: string): void {
+function removeFileFromExportList(relativeFilePath: string): void {
   if (!projectSettings.value.files.includes(relativeFilePath)) {
-    return
+    return;
   }
 
-  const idx = projectSettings.value.files.indexOf(relativeFilePath)
-  projectSettings.value.files.splice(idx, 1)
+  const idx = projectSettings.value.files.indexOf(relativeFilePath);
+  projectSettings.value.files.splice(idx, 1);
 }
 
 /**
@@ -489,18 +520,18 @@ function removeFileFromExportList (relativeFilePath: string): void {
  *
  * @param   {string}  relativeFilePath  The file path to move
  */
-function moveFileDownInExportList (relativeFilePath: string): void {
+function moveFileDownInExportList(relativeFilePath: string): void {
   if (!projectSettings.value.files.includes(relativeFilePath)) {
-    return
+    return;
   }
 
-  const idx = projectSettings.value.files.indexOf(relativeFilePath)
+  const idx = projectSettings.value.files.indexOf(relativeFilePath);
   if (idx === projectSettings.value.files.length - 1) {
-    return
+    return;
   }
 
-  projectSettings.value.files.splice(idx, 1)
-  projectSettings.value.files.splice(idx + 1, 0, relativeFilePath)
+  projectSettings.value.files.splice(idx, 1);
+  projectSettings.value.files.splice(idx + 1, 0, relativeFilePath);
 }
 
 /**
@@ -509,18 +540,18 @@ function moveFileDownInExportList (relativeFilePath: string): void {
  *
  * @param   {string}  relativeFilePath  The file path to move
  */
-function moveFileUpInExportList (relativeFilePath: string): void {
+function moveFileUpInExportList(relativeFilePath: string): void {
   if (!projectSettings.value.files.includes(relativeFilePath)) {
-    return
+    return;
   }
 
-  const idx = projectSettings.value.files.indexOf(relativeFilePath)
+  const idx = projectSettings.value.files.indexOf(relativeFilePath);
   if (idx === 0) {
-    return
+    return;
   }
 
-  projectSettings.value.files.splice(idx, 1)
-  projectSettings.value.files.splice(idx - 1, 0, relativeFilePath)
+  projectSettings.value.files.splice(idx, 1);
+  projectSettings.value.files.splice(idx - 1, 0, relativeFilePath);
 }
 </script>
 

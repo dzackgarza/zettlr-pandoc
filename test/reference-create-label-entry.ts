@@ -54,164 +54,188 @@
  *   flag the stale uses) and is not part of this extension's contract.
  */
 
-import { createApp, nextTick } from 'vue'
-import { EditorState, type Extension } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
-import { extractReferences } from 'source/common/pandoc-util/extract-references'
-import type { SourceRange } from '@dts/common/references'
+import { EditorState, type Extension } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import type { SourceRange } from "@dts/common/references";
+import { extractReferences } from "source/common/pandoc-util/extract-references";
+import { createApp, nextTick } from "vue";
 
 interface ProbeDocument {
-  path: string
-  content: string
+  path: string;
+  content: string;
 }
 
 interface CreateIntent {
-  key: string
-  insertText: string
-  clipboardText: string
+  key: string;
+  insertText: string;
+  clipboardText: string;
 }
 
 interface KeyEditPromptIntent {
-  documentPath: string
-  oldKey: string
-  newKey: string
-  range: SourceRange
+  documentPath: string;
+  oldKey: string;
+  newKey: string;
+  range: SourceRange;
 }
 
 interface DialogMountReport {
-  componentAvailable: boolean
-  componentFailure: string|null
+  componentAvailable: boolean;
+  componentFailure: string | null;
 }
 
 interface DialogState {
-  prefix: string|null
-  slug: string|null
-  uniqueness: string|null
-  confirmDisabled: boolean|null
+  prefix: string | null;
+  slug: string | null;
+  uniqueness: string | null;
+  confirmDisabled: boolean | null;
 }
 
 interface KeyEditPromptReport {
-  extensionAvailable: boolean
-  extensionFailure: string|null
-  promptIntents: KeyEditPromptIntent[]
+  extensionAvailable: boolean;
+  extensionFailure: string | null;
+  promptIntents: KeyEditPromptIntent[];
 }
 
 declare global {
   interface Window {
-    createLabelProbeMount: (documents: ProbeDocument[]) => Promise<DialogMountReport>
-    createLabelProbeState: () => DialogState
-    createLabelProbeCreateIntents: () => CreateIntent[]
-    keyEditPromptProbeRun: (document: ProbeDocument) => Promise<KeyEditPromptReport>
+    createLabelProbeMount: (documents: ProbeDocument[]) => Promise<DialogMountReport>;
+    createLabelProbeState: () => DialogState;
+    createLabelProbeCreateIntents: () => CreateIntent[];
+    keyEditPromptProbeRun: (document: ProbeDocument) => Promise<KeyEditPromptReport>;
   }
 }
 
 // Resolved through contexts (not static imports) so the bundle builds and
 // reports structured absence while the surfaces do not exist yet.
-const dialogContext = require.context('../source/win-main/', false, /CreateReferenceLabelDialog\.vue$/)
-const promptContext = require.context('../source/common/modules/markdown-editor/plugins/', false, /reference-key-edit-prompt\.ts$/)
+const dialogContext = require.context(
+  "../source/win-main/",
+  false,
+  /CreateReferenceLabelDialog\.vue$/,
+);
+const promptContext = require.context(
+  "../source/common/modules/markdown-editor/plugins/",
+  false,
+  /reference-key-edit-prompt\.ts$/,
+);
 
-const recordedCreateIntents: CreateIntent[] = []
+const recordedCreateIntents: CreateIntent[] = [];
 
 window.createLabelProbeMount = async (documents: ProbeDocument[]): Promise<DialogMountReport> => {
   const existingKeys = documents
-    .flatMap(document => extractReferences(document.path, document.content).definitions)
-    .map(definition => definition.key)
+    .flatMap((document) => extractReferences(document.path, document.content).definitions)
+    .map((definition) => definition.key);
 
-  const dialogKey = dialogContext.keys().find(key => key.includes('CreateReferenceLabelDialog'))
+  const dialogKey = dialogContext.keys().find((key) => key.includes("CreateReferenceLabelDialog"));
   if (dialogKey === undefined) {
     return {
       componentAvailable: false,
-      componentFailure: 'source/win-main/CreateReferenceLabelDialog.vue does not exist yet (issue #1 Phase 6 red)'
-    }
+      componentFailure:
+        "source/win-main/CreateReferenceLabelDialog.vue does not exist yet (issue #1 Phase 6 red)",
+    };
   }
 
-  const dialogModule = dialogContext(dialogKey) as { default?: unknown }
+  const dialogModule = dialogContext(dialogKey) as { default?: unknown };
   if (dialogModule.default === undefined) {
     return {
       componentAvailable: false,
-      componentFailure: 'CreateReferenceLabelDialog.vue exists but has no default component export'
-    }
+      componentFailure: "CreateReferenceLabelDialog.vue exists but has no default component export",
+    };
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   createApp(dialogModule.default as any, {
-    family: 'thm',
-    proposedSlug: 'torelli',
+    family: "thm",
+    proposedSlug: "torelli",
     existingKeys,
-    onCreate: (intent: CreateIntent) => { recordedCreateIntents.push(intent) }
-  }).mount('#app')
+    onCreate: (intent: CreateIntent) => {
+      recordedCreateIntents.push(intent);
+    },
+  }).mount("#app");
 
-  await nextTick()
-  await document.fonts.ready
-  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  await nextTick();
+  await document.fonts.ready;
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
 
-  return { componentAvailable: true, componentFailure: null }
-}
+  return { componentAvailable: true, componentFailure: null };
+};
 
 window.createLabelProbeState = (): DialogState => {
-  const input = document.querySelector<HTMLInputElement>('.create-reference-label-dialog input')
-  const prefix = document.querySelector<HTMLElement>('[data-family-prefix]')
-  const uniqueness = document.querySelector<HTMLElement>('[data-uniqueness]')
-  const confirm = document.querySelector<HTMLButtonElement>('[data-confirm]')
+  const input = document.querySelector<HTMLInputElement>(".create-reference-label-dialog input");
+  const prefix = document.querySelector<HTMLElement>("[data-family-prefix]");
+  const uniqueness = document.querySelector<HTMLElement>("[data-uniqueness]");
+  const confirm = document.querySelector<HTMLButtonElement>("[data-confirm]");
   return {
     prefix: prefix?.textContent?.trim() ?? null,
     slug: input?.value ?? null,
-    uniqueness: uniqueness?.getAttribute('data-uniqueness') ?? null,
-    confirmDisabled: confirm === null ? null : confirm.disabled
-  }
-}
+    uniqueness: uniqueness?.getAttribute("data-uniqueness") ?? null,
+    confirmDisabled: confirm === null ? null : confirm.disabled,
+  };
+};
 
-window.createLabelProbeCreateIntents = () => recordedCreateIntents
+window.createLabelProbeCreateIntents = () => recordedCreateIntents;
 
-window.keyEditPromptProbeRun = async (probeDocument: ProbeDocument): Promise<KeyEditPromptReport> => {
-  const promptIntents: KeyEditPromptIntent[] = []
+window.keyEditPromptProbeRun = async (
+  probeDocument: ProbeDocument,
+): Promise<KeyEditPromptReport> => {
+  const promptIntents: KeyEditPromptIntent[] = [];
 
-  const promptKey = promptContext.keys().find(key => key.includes('reference-key-edit-prompt'))
-  const extensions: Extension[] = []
-  let extensionFailure: string|null = null
+  const promptKey = promptContext.keys().find((key) => key.includes("reference-key-edit-prompt"));
+  const extensions: Extension[] = [];
+  let extensionFailure: string | null = null;
   if (promptKey === undefined) {
-    extensionFailure = 'source/common/modules/markdown-editor/plugins/reference-key-edit-prompt.ts does not exist yet (issue #1 Phase 6 red)'
+    extensionFailure =
+      "source/common/modules/markdown-editor/plugins/reference-key-edit-prompt.ts does not exist yet (issue #1 Phase 6 red)";
   } else {
     const promptModule = promptContext(promptKey) as {
-      default?: (config: { documentPath: string, onPrompt: (intent: KeyEditPromptIntent) => void }) => Extension
-    }
+      default?: (config: {
+        documentPath: string;
+        onPrompt: (intent: KeyEditPromptIntent) => void;
+      }) => Extension;
+    };
     if (promptModule.default === undefined) {
-      extensionFailure = 'reference-key-edit-prompt.ts exists but has no default extension factory export'
+      extensionFailure =
+        "reference-key-edit-prompt.ts exists but has no default extension factory export";
     } else {
-      extensions.push(promptModule.default({
-        documentPath: probeDocument.path,
-        onPrompt: (intent) => { promptIntents.push(intent) }
-      }))
+      extensions.push(
+        promptModule.default({
+          documentPath: probeDocument.path,
+          onPrompt: (intent) => {
+            promptIntents.push(intent);
+          },
+        }),
+      );
     }
   }
 
-  const host = document.createElement('div')
-  host.id = 'key-edit-prompt-scene'
-  document.body.appendChild(host)
+  const host = document.createElement("div");
+  host.id = "key-edit-prompt-scene";
+  document.body.appendChild(host);
   const view = new EditorView({
     state: EditorState.create({ doc: probeDocument.content, extensions }),
-    parent: host
-  })
+    parent: host,
+  });
 
   // Edit the authored definition id: '#thm:torelli' -> '#thm:torelli-v2',
   // leaving the selection at the end of the edited token …
-  const token = '#thm:torelli'
-  const tokenStart = probeDocument.content.indexOf(token)
-  const editAt = tokenStart + token.length
+  const token = "#thm:torelli";
+  const tokenStart = probeDocument.content.indexOf(token);
+  const editAt = tokenStart + token.length;
   view.dispatch({
-    changes: { from: editAt, to: editAt, insert: '-v2' },
-    selection: { anchor: editAt + '-v2'.length }
-  })
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    changes: { from: editAt, to: editAt, insert: "-v2" },
+    selection: { anchor: editAt + "-v2".length },
+  });
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
   // … then move the selection OUT of the edited id range: this is the
   // moment the prompt intent must fire (exactly once).
-  view.dispatch({ selection: { anchor: 0 } })
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+  view.dispatch({ selection: { anchor: 0 } });
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
   return {
     extensionAvailable: promptKey !== undefined && extensionFailure === null,
     extensionFailure,
-    promptIntents
-  }
-}
+    promptIntents,
+  };
+};

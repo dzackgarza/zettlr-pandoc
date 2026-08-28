@@ -38,8 +38,7 @@ import {
   reviewSidecarFilePath,
 } from "source/app/service-providers/documents/review-sidecar-store";
 
-const FINGERPRINT =
-  "1111111111111111111111111111111111111111111111111111111111111111";
+const FINGERPRINT = "1111111111111111111111111111111111111111111111111111111111111111";
 
 function sidecar(documentPath: string): ReviewSidecarData {
   return {
@@ -203,8 +202,14 @@ describe("ReviewSidecarStore", function () {
 
   it("rejects unsorted, overlapping, and out-of-bounds anchors", async function () {
     const invalidAnchors = [
-      [{ from: 3, to: 5 }, { from: 1, to: 2 }],
-      [{ from: 0, to: 4 }, { from: 3, to: 5 }],
+      [
+        { from: 3, to: 5 },
+        { from: 1, to: 2 },
+      ],
+      [
+        { from: 0, to: 4 },
+        { from: 3, to: 5 },
+      ],
       [{ from: 0, to: 7 }],
       [{ from: -1, to: 1 }],
     ];
@@ -234,27 +239,25 @@ describe("ReviewSidecarStore", function () {
 
     persistRaw({
       ...valid,
-      suggestions: [{
-        ...valid.suggestions[0],
-        restorations: [{ at: valid.workingText.length + 1, text: "alpha" }],
-      }],
+      suggestions: [
+        {
+          ...valid.suggestions[0],
+          restorations: [{ at: valid.workingText.length + 1, text: "alpha" }],
+        },
+      ],
     });
-    await assert.rejects(
-      store.read(documentPath),
-      /has an invalid restoration|must be >= 0/,
-    );
+    await assert.rejects(store.read(documentPath), /has an invalid restoration|must be >= 0/);
 
     persistRaw({
       ...valid,
-      suggestions: [{
-        ...valid.suggestions[0],
-        restorations: [{ at: -1, text: "alpha" }],
-      }],
+      suggestions: [
+        {
+          ...valid.suggestions[0],
+          restorations: [{ at: -1, text: "alpha" }],
+        },
+      ],
     });
-    await assert.rejects(
-      store.read(documentPath),
-      /has an invalid restoration|must be >= 0/,
-    );
+    await assert.rejects(store.read(documentPath), /has an invalid restoration|must be >= 0/);
   });
 
   it("rejects incoherent insertion, deletion, and substitution data", async function () {
@@ -274,11 +277,13 @@ describe("ReviewSidecarStore", function () {
     const valid = sidecar(documentPath);
     const deletion: ReviewSidecarData = {
       ...valid,
-      suggestions: [{
-        ...valid.suggestions[0],
-        kind: "deletion",
-        anchors: [{ from: 0, to: 0 }],
-      }],
+      suggestions: [
+        {
+          ...valid.suggestions[0],
+          kind: "deletion",
+          anchors: [{ from: 0, to: 0 }],
+        },
+      ],
     };
     await store.write(deletion);
     assert.deepEqual(await store.read(documentPath), deletion);
@@ -288,12 +293,20 @@ describe("ReviewSidecarStore", function () {
     const valid = sidecar(documentPath);
     const deletion: ReviewSidecarData = {
       ...valid,
-      suggestions: [{
-        ...valid.suggestions[0],
-        kind: "deletion",
-        restorations: [{ at: 0, text: "al" }, { at: 2, text: "pha" }],
-        anchors: [{ from: 0, to: 0 }, { from: 2, to: 2 }],
-      }],
+      suggestions: [
+        {
+          ...valid.suggestions[0],
+          kind: "deletion",
+          restorations: [
+            { at: 0, text: "al" },
+            { at: 2, text: "pha" },
+          ],
+          anchors: [
+            { from: 0, to: 0 },
+            { from: 2, to: 2 },
+          ],
+        },
+      ],
     };
     await store.write(deletion);
     assert.deepEqual(await store.read(documentPath), deletion);
@@ -308,7 +321,10 @@ describe("ReviewSidecarStore", function () {
         { ...valid.suggestions[0], suggestionId: "suggestion-2" },
       ],
     });
-    await assert.rejects(store.read(documentPath), /suggestions suggestion-1 and suggestion-2 overlap/);
+    await assert.rejects(
+      store.read(documentPath),
+      /suggestions suggestion-1 and suggestion-2 overlap/,
+    );
   });
 
   it("rejects a sidecar whose payload path does not match its hashed filename", async function () {
@@ -333,8 +349,7 @@ describe("ReviewSidecarStore", function () {
     const second: ReviewSidecarData = { ...first, workingText: "SECOND\n", generation: 2 };
     await assert.rejects(
       store.write(second),
-      (error: unknown) =>
-        error instanceof Error && "code" in error && error.code === "EACCES",
+      (error: unknown) => error instanceof Error && "code" in error && error.code === "EACCES",
       "the refused write must surface the filesystem's own structured error",
     );
     chmodSync(sidecarDirectory, 0o700);
@@ -364,9 +379,7 @@ describe("ReviewSidecarStore", function () {
     // Read the bytes directly: a torn write parses as one payload only by
     // accident, and store.read would report that accident as success.
     assert.deepEqual(
-      JSON.parse(
-        readFileSync(reviewSidecarFilePath(sidecarDirectory, documentPath), "utf8"),
-      ),
+      JSON.parse(readFileSync(reviewSidecarFilePath(sidecarDirectory, documentPath), "utf8")),
       persisted,
     );
     assert.equal(readdirSync(sidecarDirectory).length, 1);

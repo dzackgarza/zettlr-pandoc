@@ -49,69 +49,68 @@
  * END HEADER
  */
 
-import WindowChrome from '@common/vue/window/WindowChrome.vue'
-import { trans } from '@common/i18n-renderer'
-import { ref, computed } from 'vue'
-
+import { trans } from "@common/i18n-renderer";
+import WindowChrome from "@common/vue/window/WindowChrome.vue";
+import { type WindowTab } from "@common/vue/window/WindowTabbar.vue";
+import { useConfigStore } from "source/pinia";
+import { computed, ref } from "vue";
+import DebugTab from "./Debug-Tab.vue";
+import FontLicenseTab from "./Font-License-Tab.vue";
 // Import the tabs
-import GeneralTab from './General-Tab.vue'
-import ProjectsTab from './Projects-Tab.vue'
-import SponsorsTab from './Sponsors-Tab.vue'
-import LicenseTab from './License-Tab.vue'
-import FontLicenseTab from './Font-License-Tab.vue'
-import DebugTab from './Debug-Tab.vue'
-import { type WindowTab } from '@common/vue/window/WindowTabbar.vue'
-import { useConfigStore } from 'source/pinia'
+import GeneralTab from "./General-Tab.vue";
+import LicenseTab from "./License-Tab.vue";
+import ProjectsTab from "./Projects-Tab.vue";
+import SponsorsTab from "./Sponsors-Tab.vue";
 
-const configStore = useConfigStore()
+const configStore = useConfigStore();
 
-const currentTab = ref(0)
+const currentTab = ref(0);
 const tabs: WindowTab[] = [
   {
-    label: trans('About Zettlr'),
-    controls: 'tab-general',
-    id: 'tab-general-control',
-    icon: 'info-standard'
+    label: trans("About Zettlr"),
+    controls: "tab-general",
+    id: "tab-general-control",
+    icon: "info-standard",
   },
   {
-    label: trans('Other projects'),
-    controls: 'tab-projects',
-    id: 'tab-projects-control',
-    icon: 'applications'
+    label: trans("Other projects"),
+    controls: "tab-projects",
+    id: "tab-projects-control",
+    icon: "applications",
   },
   {
-    label: trans('Sponsors'),
-    controls: 'tab-sponsors',
-    id: 'tab-sponsors-control',
-    icon: 'star'
+    label: trans("Sponsors"),
+    controls: "tab-sponsors",
+    id: "tab-sponsors-control",
+    icon: "star",
   },
   {
-    label: trans('License'),
-    controls: 'tab-license',
-    id: 'tab-license-control',
-    icon: 'cog'
+    label: trans("License"),
+    controls: "tab-license",
+    id: "tab-license-control",
+    icon: "cog",
   },
   {
-    label: 'SIL OFL',
-    controls: 'tab-font-license',
-    id: 'tab-font-license-control',
-    icon: 'font-size'
+    label: "SIL OFL",
+    controls: "tab-font-license",
+    id: "tab-font-license-control",
+    icon: "font-size",
   },
   {
-    label: 'Debug Information',
-    controls: 'tab-debug',
-    id: 'tab-debug-control',
-    icon: 'dashboard'
-  }
-]
+    label: "Debug Information",
+    controls: "tab-debug",
+    id: "tab-debug-control",
+    icon: "dashboard",
+  },
+];
 
 const windowTitle = computed(() => {
-  if (process.platform === 'darwin') {
-    return tabs[currentTab.value].label
+  if (process.platform === "darwin") {
+    return tabs[currentTab.value].label;
   } else {
-    return trans('About Zettlr') + ' ' + configStore.config.version
+    return trans("About Zettlr") + " " + configStore.config.version;
   }
-})
+});
 </script>
 
 <style lang="less">

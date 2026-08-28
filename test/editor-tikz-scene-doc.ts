@@ -29,4 +29,4 @@ A \\arrow[r] & B \\thisMacroDoesNotExist
 \\end{tikzcd}
 
 The trailing paragraph keeps the caret away from the figures.
-`
+`;

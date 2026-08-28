@@ -12,132 +12,144 @@
  * END HEADER
  */
 
-import { trans } from '@common/i18n-renderer'
-import { type PreferencesFieldset } from './types'
-import { PreferencesGroups } from './_preferences-groups'
-import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
+import { trans } from "@common/i18n-renderer";
+import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
+import { PreferencesGroups } from "./_preferences-groups";
+import { type PreferencesFieldset } from "./types";
 
-export function getFileManagerFields (config: ConfigOptions): PreferencesFieldset[] {
+export function getFileManagerFields(config: ConfigOptions): PreferencesFieldset[] {
   return [
     {
-      title: trans('Display mode'),
+      title: trans("Display mode"),
       group: PreferencesGroups.FileManager,
       help: undefined, // TODO
       fields: [
         {
-          type: 'radio',
-          model: 'fileManagerMode',
+          type: "radio",
+          model: "fileManagerMode",
           inline: true,
           options: {
-            thin: trans('Thin'),
-            expanded: trans('Expanded'),
-            combined: trans('Combined')
-          }
+            thin: trans("Thin"),
+            expanded: trans("Expanded"),
+            combined: trans("Combined"),
+          },
         },
         {
-          type: 'form-text',
-          display: 'info',
-          contents: trans('The Thin mode shows your directories and files separately. Select a directory to have its contents displayed in the file list. Switch between file list and directory tree by clicking on directories or the arrow button which appears at the top left corner of the file list.')
+          type: "form-text",
+          display: "info",
+          contents: trans(
+            "The Thin mode shows your directories and files separately. Select a directory to have its contents displayed in the file list. Switch between file list and directory tree by clicking on directories or the arrow button which appears at the top left corner of the file list.",
+          ),
         },
-        { type: 'separator' },
+        { type: "separator" },
         {
-          type: 'checkbox',
-          label: trans('Show file information'),
-          model: 'fileMeta'
+          type: "checkbox",
+          label: trans("Show file information"),
+          model: "fileMeta",
         },
         {
-          type: 'checkbox',
-          label: trans('Show folders above files'),
-          model: 'sortFoldersFirst'
-        }
-      ]
+          type: "checkbox",
+          label: trans("Show folders above files"),
+          model: "sortFoldersFirst",
+        },
+      ],
     },
     {
-      title: trans('Markdown document name display'),
-      infoString: trans('Determines how Zettlr will display files in various places such as the file manager.'),
+      title: trans("Markdown document name display"),
+      infoString: trans(
+        "Determines how Zettlr will display files in various places such as the file manager.",
+      ),
       group: PreferencesGroups.FileManager,
       help: undefined, // TODO
       fields: [
         {
-          type: 'radio',
-          model: 'fileNameDisplay',
+          type: "radio",
+          model: "fileNameDisplay",
           options: {
-            filename: trans('Filename only'),
-            title: trans('Title if applicable'),
-            heading: trans('First heading level 1 if applicable'),
-            'title+heading': trans('Title or first heading level 1 if applicable')
-          }
+            filename: trans("Filename only"),
+            title: trans("Title if applicable"),
+            heading: trans("First heading level 1 if applicable"),
+            "title+heading": trans("Title or first heading level 1 if applicable"),
+          },
         },
         {
           // TODO: Checkbox onto the first line of the radio
-          type: 'checkbox',
-          label: trans('Display Markdown file extensions'),
+          type: "checkbox",
+          label: trans("Display Markdown file extensions"),
           info: trans('Only available if name display is set to "Filename only"'),
-          model: 'display.markdownFileExtensions',
-          disabled: config.fileNameDisplay !== 'filename'
-        }
-      ]
+          model: "display.markdownFileExtensions",
+          disabled: config.fileNameDisplay !== "filename",
+        },
+      ],
     },
     {
-      title: trans('Time display and sorting'),
-      infoString: trans('Determine which timestamp Zettlr shows for files. This also affects sorting by time.'),
+      title: trans("Time display and sorting"),
+      infoString: trans(
+        "Determine which timestamp Zettlr shows for files. This also affects sorting by time.",
+      ),
       group: PreferencesGroups.FileManager,
       help: undefined, // TODO
       fields: [
         {
-          type: 'radio',
-          model: 'fileMetaTime',
+          type: "radio",
+          model: "fileMetaTime",
           options: {
-            modtime: trans('Last modification time'),
-            creationtime: trans('File creation time')
-          }
-        }
-      ]
+            modtime: trans("Last modification time"),
+            creationtime: trans("File creation time"),
+          },
+        },
+      ],
     },
     {
-      title: trans('Filename sorting'),
-      infoString: trans('Determines how Zettlr sorts files and folders when sorting by name.'),
+      title: trans("Filename sorting"),
+      infoString: trans("Determines how Zettlr sorts files and folders when sorting by name."),
       group: PreferencesGroups.FileManager,
       help: undefined, // TODO
       fields: [
         {
-          type: 'radio',
-          label: trans('When sorting documents…'),
-          model: 'sorting',
+          type: "radio",
+          label: trans("When sorting documents…"),
+          model: "sorting",
           options: {
-            natural: trans('Use natural order (2 comes before 10)'),
-            ascii: trans('Use ASCII order (2 comes after 10)')
-          }
-        }
-      ]
+            natural: trans("Use natural order (2 comes before 10)"),
+            ascii: trans("Use ASCII order (2 comes after 10)"),
+          },
+        },
+      ],
     },
     {
-      title: trans('Workspace sorting'),
-      infoString: trans('Zettlr automatically sorts your workspaces by name.'),
+      title: trans("Workspace sorting"),
+      infoString: trans("Zettlr automatically sorts your workspaces by name."),
       group: PreferencesGroups.FileManager,
       help: undefined, // TODO
       fields: [
         {
-          type: 'checkbox',
-          label: trans('Sort workspaces manually'),
-          info: trans('This will be active as soon as you manually change the sort order. Disable this to reinstate automatic sorting.'),
-          model: 'fileManager.sortWorkspacesManually'
-        }
-      ]
+          type: "checkbox",
+          label: trans("Sort workspaces manually"),
+          info: trans(
+            "This will be active as soon as you manually change the sort order. Disable this to reinstate automatic sorting.",
+          ),
+          model: "fileManager.sortWorkspacesManually",
+        },
+      ],
     },
     {
-      title: trans('Collapse Workspaces Behavior'),
+      title: trans("Collapse Workspaces Behavior"),
       group: PreferencesGroups.FileManager,
-      infoString: trans('Determine how the context menu item to collapse workspaces in the file manager behaves. You can choose single-step or two-step.'),
+      infoString: trans(
+        "Determine how the context menu item to collapse workspaces in the file manager behaves. You can choose single-step or two-step.",
+      ),
       help: undefined, // TODO
       fields: [
         {
-          type: 'checkbox',
-          label: trans('Require two steps to collapse workspaces'),
-          info: trans('When this is active, the first collapse workspace will only collapse subfolders, the second the workspaces.'),
-          model: 'fileManager.twoStepCollapseWorkspaces',
-        }
-      ]
-    }
-  ]
+          type: "checkbox",
+          label: trans("Require two steps to collapse workspaces"),
+          info: trans(
+            "When this is active, the first collapse workspace will only collapse subfolders, the second the workspaces.",
+          ),
+          model: "fileManager.twoStepCollapseWorkspaces",
+        },
+      ],
+    },
+  ];
 }

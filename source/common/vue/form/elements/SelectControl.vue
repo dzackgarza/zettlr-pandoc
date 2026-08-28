@@ -35,30 +35,30 @@
  * END HEADER
  */
 
-import { computed, ref, watch, toRef } from 'vue'
+import { computed, ref, toRef, watch } from "vue";
 
 const props = defineProps<{
-  modelValue: string
-  disabled?: boolean
-  inline?: boolean
-  label?: string
-  name?: string
-  options: Record<string, string>
-}>()
+  modelValue: string;
+  disabled?: boolean;
+  inline?: boolean;
+  label?: string;
+  name?: string;
+  options: Record<string, string>;
+}>();
 
-const inputValue = ref<string>(props.modelValue)
+const inputValue = ref<string>(props.modelValue);
 
-const emit = defineEmits<(e: 'update:modelValue', val: string) => void>()
+const emit = defineEmits<(e: "update:modelValue", val: string) => void>();
 
-watch(toRef(props, 'modelValue'), () => {
-  inputValue.value = props.modelValue
-})
+watch(toRef(props, "modelValue"), () => {
+  inputValue.value = props.modelValue;
+});
 
 watch(inputValue, () => {
-  emit('update:modelValue', inputValue.value)
-})
+  emit("update:modelValue", inputValue.value);
+});
 
-const fieldID = computed<string>(() => 'form-select-' + (props.name ?? ''))
+const fieldID = computed<string>(() => "form-select-" + (props.name ?? ""));
 </script>
 
 <style lang="css" scoped>

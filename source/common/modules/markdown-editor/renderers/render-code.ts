@@ -12,14 +12,20 @@
  * END HEADER
  */
 
-import type { Range, RangeSet } from '@codemirror/state'
-import { syntaxTree } from '@codemirror/language'
-import { Decoration, type DecorationSet, type EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
+import { syntaxTree } from "@codemirror/language";
+import type { Range, RangeSet } from "@codemirror/state";
+import {
+  Decoration,
+  type DecorationSet,
+  type EditorView,
+  ViewPlugin,
+  type ViewUpdate,
+} from "@codemirror/view";
 
-const codeDecorator = Decoration.mark({ class: 'code' })
+const codeDecorator = Decoration.mark({ class: "code" });
 
-function getCodeHighlighter (view: EditorView): RangeSet<Decoration> {
-  const ranges: Range<Decoration>[] = []
+function getCodeHighlighter(view: EditorView): RangeSet<Decoration> {
+  const ranges: Range<Decoration>[] = [];
 
   for (const { from, to } of view.visibleRanges) {
     syntaxTree(view.state).iterate({
@@ -27,33 +33,34 @@ function getCodeHighlighter (view: EditorView): RangeSet<Decoration> {
       to,
       enter: (node) => {
         // CodeText contains a single node that has all the code's contents
-        if ([ 'CodeText', 'InlineCode' ].includes(node.name) && node.from < node.to) {
-          ranges.push(codeDecorator.range(node.from, node.to))
-          return false
+        if (["CodeText", "InlineCode"].includes(node.name) && node.from < node.to) {
+          ranges.push(codeDecorator.range(node.from, node.to));
+          return false;
         }
-      }
-    })
+      },
+    });
   }
 
-  return Decoration.set(ranges, true)
+  return Decoration.set(ranges, true);
 }
 
-const renderCodePlugin = ViewPlugin.fromClass(class {
-  decorations: DecorationSet
+const renderCodePlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
 
-  constructor (view: EditorView) {
-    this.decorations = getCodeHighlighter(view)
-  }
-
-  update (update: ViewUpdate): void {
-    if (update.docChanged || update.viewportChanged) {
-      this.decorations = getCodeHighlighter(update.view)
+    constructor(view: EditorView) {
+      this.decorations = getCodeHighlighter(view);
     }
-  }
-}, {
-  decorations: v => v.decorations
-})
 
-export const renderCode = [
-  renderCodePlugin,
-]
+    update(update: ViewUpdate): void {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = getCodeHighlighter(update.view);
+      }
+    }
+  },
+  {
+    decorations: (v) => v.decorations,
+  },
+);
+
+export const renderCode = [renderCodePlugin];

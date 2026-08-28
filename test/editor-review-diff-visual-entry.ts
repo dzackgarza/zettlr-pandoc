@@ -1,46 +1,50 @@
-import { EditorState } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
-import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
+import { EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import {
   getReviewChunks,
-  reviewChunksExtension
-} from 'source/common/modules/markdown-editor/plugins/review-chunks'
+  reviewChunksExtension,
+} from "source/common/modules/markdown-editor/plugins/review-chunks";
+import {
+  defaultDark,
+  defaultLight,
+  editorTheme,
+} from "source/common/modules/markdown-editor/theme/editor";
 
 declare global {
   interface Window {
-    captureReady: Promise<void>
+    captureReady: Promise<void>;
     reviewDiffVisualDiagnostics: () => {
-      chunks: number
-      accepts: number
-      rejects: number
-      contentClientWidth: number|undefined
-      contentScrollWidth: number|undefined
-    }
+      chunks: number;
+      accepts: number;
+      rejects: number;
+      contentClientWidth: number | undefined;
+      contentScrollWidth: number | undefined;
+    };
   }
 }
 
 const baseline = [
-  '# Review target',
-  '',
-  'The first paragraph keeps the original theorem statement.',
-  '',
-  'A long unchanged line keeps the panes honest without turning the review into a marketing scene.',
-  '',
-  'The second paragraph keeps the original proof sketch.',
-  ''
-].join('\n')
+  "# Review target",
+  "",
+  "The first paragraph keeps the original theorem statement.",
+  "",
+  "A long unchanged line keeps the panes honest without turning the review into a marketing scene.",
+  "",
+  "The second paragraph keeps the original proof sketch.",
+  "",
+].join("\n");
 
 const proposed = baseline
-  .replace('original theorem statement', 'revised theorem statement')
-  .replace('original proof sketch', 'shorter proof sketch')
+  .replace("original theorem statement", "revised theorem statement")
+  .replace("original proof sketch", "shorter proof sketch");
 
-async function mount (): Promise<void> {
-  const theoremStart = proposed.indexOf('revised theorem statement')
-  const proofStart = proposed.indexOf('shorter proof sketch')
-  const dark = document.body.dataset.dark === 'true'
-  const host = document.querySelector<HTMLElement>('#editor')
+async function mount(): Promise<void> {
+  const theoremStart = proposed.indexOf("revised theorem statement");
+  const proofStart = proposed.indexOf("shorter proof sketch");
+  const dark = document.body.dataset.dark === "true";
+  const host = document.querySelector<HTMLElement>("#editor");
   if (host === null) {
-    throw new Error('Visual capture host is missing')
+    throw new Error("Visual capture host is missing");
   }
 
   const view = new EditorView({
@@ -52,51 +56,68 @@ async function mount (): Promise<void> {
         dark ? defaultDark : defaultLight,
         EditorView.lineWrapping,
         reviewChunksExtension({
-          reviewId: 'visual-capture',
+          reviewId: "visual-capture",
           suggestions: [
             {
-              suggestionId: 'suggestion-theorem',
-              removedText: 'original theorem statement',
-              anchors: [{ from: theoremStart, to: theoremStart + 'revised theorem statement'.length }],
+              suggestionId: "suggestion-theorem",
+              removedText: "original theorem statement",
+              anchors: [
+                { from: theoremStart, to: theoremStart + "revised theorem statement".length },
+              ],
               seam: theoremStart,
-              description: 'Revise the theorem statement to match the corrected constant.'
+              description: "Revise the theorem statement to match the corrected constant.",
             },
             {
-              suggestionId: 'suggestion-proof',
-              removedText: 'original proof sketch',
-              anchors: [{ from: proofStart, to: proofStart + 'shorter proof sketch'.length }],
+              suggestionId: "suggestion-proof",
+              removedText: "original proof sketch",
+              anchors: [{ from: proofStart, to: proofStart + "shorter proof sketch".length }],
               seam: proofStart,
-              description: 'Shorten the proof sketch.'
-            }
+              description: "Shorten the proof sketch.",
+            },
           ],
           chunkComments: [
-            { chunkId: 'suggestion-proof', comment: 'Checking this against the published erratum first.' }
+            {
+              chunkId: "suggestion-proof",
+              comment: "Checking this against the published erratum first.",
+            },
           ],
-          onDecide: async () => { /* capture harness: decisions are not exercised */ },
-          onAcceptAll: async () => { /* capture harness: decisions are not exercised */ },
-          onClear: async () => { /* capture harness: decisions are not exercised */ },
-          onComment: async () => { /* capture harness: comments are not exercised */ },
-          onChunkComment: async () => { /* capture harness: comments are not exercised */ }
-        })
-      ]
-    })
-  })
-  view.focus()
+          onDecide: async () => {
+            /* capture harness: decisions are not exercised */
+          },
+          onAcceptAll: async () => {
+            /* capture harness: decisions are not exercised */
+          },
+          onClear: async () => {
+            /* capture harness: decisions are not exercised */
+          },
+          onComment: async () => {
+            /* capture harness: comments are not exercised */
+          },
+          onChunkComment: async () => {
+            /* capture harness: comments are not exercised */
+          },
+        }),
+      ],
+    }),
+  });
+  view.focus();
 
   window.reviewDiffVisualDiagnostics = () => {
-    const chunks = getReviewChunks(view.state)
-    const content = document.querySelector<HTMLElement>('.cm-content')
+    const chunks = getReviewChunks(view.state);
+    const content = document.querySelector<HTMLElement>(".cm-content");
     return {
       chunks: chunks?.length ?? -1,
-      accepts: document.querySelectorAll('button.cm-review-diff-control.accept').length,
-      rejects: document.querySelectorAll('button.cm-review-diff-control.reject').length,
+      accepts: document.querySelectorAll("button.cm-review-diff-control.accept").length,
+      rejects: document.querySelectorAll("button.cm-review-diff-control.reject").length,
       contentClientWidth: content?.clientWidth,
-      contentScrollWidth: content?.scrollWidth
-    }
-  }
+      contentScrollWidth: content?.scrollWidth,
+    };
+  };
 
-  await document.fonts.ready
-  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  await document.fonts.ready;
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
 }
 
-window.captureReady = mount()
+window.captureReady = mount();

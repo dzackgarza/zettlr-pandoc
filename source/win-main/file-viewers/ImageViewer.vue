@@ -132,90 +132,95 @@
  *
  * END HEADER
  */
-import type { OpenDocument } from 'source/types/common/documents'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import makeValidUri from 'source/common/util/make-valid-uri'
-import SelectControl from 'source/common/vue/form/elements/SelectControl.vue'
-import NumberControl from 'source/common/vue/form/elements/NumberControl.vue'
-import ButtonControl from 'source/common/vue/form/elements/ButtonControl.vue'
-import { trans } from 'source/common/i18n-renderer'
-import { pathBasename } from 'source/common/util/renderer-path-polyfill'
 
-const MINIMUM_ZOOM = 1 // Percent, not ratio
-const ZOOM_STEP = 10 // By how much the +/- buttons should affect the zoom level
+import { trans } from "source/common/i18n-renderer";
+import makeValidUri from "source/common/util/make-valid-uri";
+import { pathBasename } from "source/common/util/renderer-path-polyfill";
+import ButtonControl from "source/common/vue/form/elements/ButtonControl.vue";
+import NumberControl from "source/common/vue/form/elements/NumberControl.vue";
+import SelectControl from "source/common/vue/form/elements/SelectControl.vue";
+import type { OpenDocument } from "source/types/common/documents";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+
+const MINIMUM_ZOOM = 1; // Percent, not ratio
+const ZOOM_STEP = 10; // By how much the +/- buttons should affect the zoom level
 
 // The viewer displays one file and nothing else: it holds no leaf, no window
 // and no editor commands, and never did. Declaring those as props described a
 // dependency the component does not have, which is what made it look as
 // though a host without them had to be tolerated rather than simply served.
 const props = defineProps<{
-  file: OpenDocument
-}>()
+  file: OpenDocument;
+}>();
 
-const zoomLevel = ref(100)
-const naturalWidth = ref(0)
-const naturalHeight = ref(0)
+const zoomLevel = ref(100);
+const naturalWidth = ref(0);
+const naturalHeight = ref(0);
 
-const imageWrapper = ref<HTMLDivElement|null>(null)
-const isDragging = ref(false)
+const imageWrapper = ref<HTMLDivElement | null>(null);
+const isDragging = ref(false);
 
-function startDragging () { isDragging.value = true }
-function stopDragging () { isDragging.value = false }
+function startDragging() {
+  isDragging.value = true;
+}
+function stopDragging() {
+  isDragging.value = false;
+}
 
 onMounted(() => {
-  document.addEventListener('mouseup', stopDragging)
-})
+  document.addEventListener("mouseup", stopDragging);
+});
 
 onBeforeUnmount(() => {
-  document.removeEventListener('mouseup', stopDragging)
-})
+  document.removeEventListener("mouseup", stopDragging);
+});
 
-const openExternallyLabel = trans('Open in system viewer')
+const openExternallyLabel = trans("Open in system viewer");
 
-type BackgroundPattern = 'transparent'|'white'|'black'|'checkerboard'
-const backgroundPattern = ref<BackgroundPattern>('transparent')
-const labelTransparent = trans('Use transparent background')
-const labelWhite = trans('Use white background')
-const labelBlack = trans('Use black background')
-const labelCheckerboard = trans('Use checkerboard background')
+type BackgroundPattern = "transparent" | "white" | "black" | "checkerboard";
+const backgroundPattern = ref<BackgroundPattern>("transparent");
+const labelTransparent = trans("Use transparent background");
+const labelWhite = trans("Use white background");
+const labelBlack = trans("Use black background");
+const labelCheckerboard = trans("Use checkerboard background");
 
-type ViewMode = 'fit'|'fit-width'|'fit-height'|'zoom'
-const viewMode = ref<ViewMode>('fit')
+type ViewMode = "fit" | "fit-width" | "fit-height" | "zoom";
+const viewMode = ref<ViewMode>("fit");
 const viewModeSelectOptins: Record<ViewMode, string> = {
-  'fit': 'Fit to screen',
-  'fit-height': 'Fit height',
-  'fit-width': 'Fit width',
-  'zoom': 'Zoom'
-}
+  fit: "Fit to screen",
+  "fit-height": "Fit height",
+  "fit-width": "Fit width",
+  zoom: "Zoom",
+};
 
-const imgElement = ref<HTMLImageElement|null>(null)
+const imgElement = ref<HTMLImageElement | null>(null);
 const imageClass = computed(() => {
-  if (viewMode.value === 'zoom') {
-    return ''
+  if (viewMode.value === "zoom") {
+    return "";
   } else {
-    return viewMode.value
+    return viewMode.value;
   }
-})
+});
 const imageStyle = computed(() => {
-  if (viewMode.value !== 'zoom') {
-    return ''
+  if (viewMode.value !== "zoom") {
+    return "";
   }
 
-  return `zoom: ${zoomLevel.value / 100};`
-})
+  return `zoom: ${zoomLevel.value / 100};`;
+});
 
-function updateNaturalSize () {
+function updateNaturalSize() {
   if (imgElement.value === null) {
-    return
+    return;
   }
 
-  naturalHeight.value = imgElement.value.naturalHeight
-  naturalWidth.value = imgElement.value.naturalWidth
+  naturalHeight.value = imgElement.value.naturalHeight;
+  naturalWidth.value = imgElement.value.naturalWidth;
 }
 
-function openImageExternally () {
+function openImageExternally() {
   // Works because main intercepts these requests
-  window.location.href = makeValidUri(props.file.path)
+  window.location.href = makeValidUri(props.file.path);
 }
 
 /**
@@ -223,35 +228,35 @@ function openImageExternally () {
  *
  * @param   {WheelEvent}  event  The Wheel event
  */
-function handleScroll (event: WheelEvent) {
+function handleScroll(event: WheelEvent) {
   // This function only reacts to vertical scrolling by zooming
   if (event.deltaY === 0) {
-    return
+    return;
   }
 
   // Set correct mode
-  if (viewMode.value !== 'zoom') {
-    viewMode.value = 'zoom'
+  if (viewMode.value !== "zoom") {
+    viewMode.value = "zoom";
   }
 
-  zoomLevel.value = Math.max(MINIMUM_ZOOM, zoomLevel.value + event.deltaY)
+  zoomLevel.value = Math.max(MINIMUM_ZOOM, zoomLevel.value + event.deltaY);
 }
 
-function handleMouseMove (event: MouseEvent) {
+function handleMouseMove(event: MouseEvent) {
   if (imageWrapper.value === null || !isDragging.value) {
-    return
+    return;
   }
 
-  const element = imageWrapper.value
+  const element = imageWrapper.value;
 
   // NOTE: We're inverting the values here so that moving occurs naturally:
   // Mouse --> means Image <--, and vice versa.
   if (element.scrollWidth > element.clientWidth) {
-    element.scrollLeft -= event.movementX
+    element.scrollLeft -= event.movementX;
   }
 
   if (element.scrollHeight > element.clientHeight) {
-    element.scrollTop -= event.movementY
+    element.scrollTop -= event.movementY;
   }
 }
 </script>

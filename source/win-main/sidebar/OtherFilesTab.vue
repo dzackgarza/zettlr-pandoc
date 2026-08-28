@@ -61,34 +61,34 @@
 </template>
 
 <script setup lang="ts">
-import { trans } from '@common/i18n-renderer'
-import makeValidUri from '@common/util/make-valid-uri'
-import { computed } from 'vue'
-import { useConfigStore } from 'source/pinia'
-import { hasImageExt } from 'source/common/util/file-extention-checks'
-import { useWorkspaceStore } from 'source/pinia/workspace-store'
-import { getAttachmentIconMarkup } from './attachment-icon-markup'
+import { trans } from "@common/i18n-renderer";
+import makeValidUri from "@common/util/make-valid-uri";
+import { hasImageExt } from "source/common/util/file-extention-checks";
+import { useConfigStore } from "source/pinia";
+import { useWorkspaceStore } from "source/pinia/workspace-store";
+import { computed } from "vue";
+import { getAttachmentIconMarkup } from "./attachment-icon-markup";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-const searchParams = new URLSearchParams(window.location.search)
-const windowIdParam = searchParams.get('window_id')
+const searchParams = new URLSearchParams(window.location.search);
+const windowIdParam = searchParams.get("window_id");
 
 if (windowIdParam === null) {
-  throw new Error('windowID was null')
+  throw new Error("windowID was null");
 }
 
 // Re-binding after the guard keeps the narrowing visible inside closures.
-const windowId: string = windowIdParam
+const windowId: string = windowIdParam;
 
-const configStore = useConfigStore()
-const workspaceStore = useWorkspaceStore()
+const configStore = useConfigStore();
+const workspaceStore = useWorkspaceStore();
 
-const otherFilesLabel = trans('Other files')
-const openDirLabel = trans('Open directory')
-const noAttachmentsMessage = trans('No other files')
+const otherFilesLabel = trans("Other files");
+const openDirLabel = trans("Open directory");
+const noAttachmentsMessage = trans("No other files");
 
-const attachments = computed(() => workspaceStore.otherFiles)
+const attachments = computed(() => workspaceStore.otherFiles);
 
 /**
  * Adds additional data to the dragevent
@@ -96,27 +96,27 @@ const attachments = computed(() => workspaceStore.otherFiles)
  * @param   {DragEvent}  event           The drag event
  * @param   {string}  attachmentPath  The path to add as a file
  */
-function handleDragStart (event: DragEvent, attachmentPath: string): void {
+function handleDragStart(event: DragEvent, attachmentPath: string): void {
   // Indicate with custom data that this is a file from the sidebar
-  const data = { type: 'other', path: attachmentPath }
-  event.dataTransfer?.setData('text/x-zettlr-file', JSON.stringify(data))
+  const data = { type: "other", path: attachmentPath };
+  event.dataTransfer?.setData("text/x-zettlr-file", JSON.stringify(data));
 }
 
-function handleClick (filePath: string) {
-  if (hasImageExt(filePath) && configStore.config.files.images.openWith === 'zettlr') {
+function handleClick(filePath: string) {
+  if (hasImageExt(filePath) && configStore.config.files.images.openWith === "zettlr") {
     // Open this image in Zettlr
-    ipcRenderer.invoke('documents-provider', {
-      command: 'open-file',
-      // We leave leafId undefined
-      payload: { path: filePath, windowId }
-    })
-      .catch(e => console.error(e))
+    ipcRenderer
+      .invoke("documents-provider", {
+        command: "open-file",
+        // We leave leafId undefined
+        payload: { path: filePath, windowId },
+      })
+      .catch((e) => console.error(e));
   } else {
     // Open the file externally (again, NOTE, this only works because main
     // intercepts every navigation attempt).
-    window.location.href = makeValidUri(filePath)
+    window.location.href = makeValidUri(filePath);
   }
-
 }
 
 /**
@@ -126,12 +126,12 @@ function handleClick (filePath: string) {
  *
  * @return  {boolean}                  Returns true for previewable attachments
  */
-function hasPreview (attachmentPath: string): boolean {
+function hasPreview(attachmentPath: string): boolean {
   if (hasImageExt(attachmentPath)) {
-    return true
+    return true;
   }
 
-  return false
+  return false;
 }
 
 /**
@@ -142,12 +142,12 @@ function hasPreview (attachmentPath: string): boolean {
  *
  * @return  {string}                  The image src attribute's contents
  */
-function getPreviewImageData (attachmentPath: string): string {
+function getPreviewImageData(attachmentPath: string): string {
   if (hasImageExt(attachmentPath)) {
-    return makeValidUri(attachmentPath) // Can be used (almost) as-is
+    return makeValidUri(attachmentPath); // Can be used (almost) as-is
   }
 
-  return ''
+  return "";
 }
 </script>
 

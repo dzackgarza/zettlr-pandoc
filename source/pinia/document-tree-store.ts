@@ -12,16 +12,20 @@
  * END HEADER
  */
 
-import { defineStore } from 'pinia'
-import { DP_EVENTS, type BranchNodeJSON, type LeafNodeJSON, type OpenDocument } from 'source/types/common/documents'
-import { ref, type Ref } from 'vue'
-import type { DocumentsUpdateContext } from '@providers/documents'
-import { useWindowStateStore } from 'source/pinia'
-import { useWorkspaceStore } from 'source/pinia'
-import { pathDirname } from 'source/common/util/renderer-path-polyfill'
+import type { DocumentsUpdateContext } from "@providers/documents";
+import { defineStore } from "pinia";
+import { pathDirname } from "source/common/util/renderer-path-polyfill";
+import { useWindowStateStore, useWorkspaceStore } from "source/pinia";
+import {
+  type BranchNodeJSON,
+  DP_EVENTS,
+  type LeafNodeJSON,
+  type OpenDocument,
+} from "source/types/common/documents";
+import { type Ref, ref } from "vue";
 
-const ipcRenderer = window.ipc
-type DocumentTree = BranchNodeJSON|LeafNodeJSON
+const ipcRenderer = window.ipc;
+type DocumentTree = BranchNodeJSON | LeafNodeJSON;
 
 /**
  * Finds a leaf within a document tree
@@ -31,14 +35,14 @@ type DocumentTree = BranchNodeJSON|LeafNodeJSON
  *
  * @return  {LeafNodeJSON}          The leaf, or undefined
  */
-function findLeaf (tree: DocumentTree, leafId: string): LeafNodeJSON|undefined {
-  if (tree.type === 'leaf' && tree.id === leafId) {
-    return tree
-  } else if (tree.type === 'branch') {
+function findLeaf(tree: DocumentTree, leafId: string): LeafNodeJSON | undefined {
+  if (tree.type === "leaf" && tree.id === leafId) {
+    return tree;
+  } else if (tree.type === "branch") {
     for (const node of tree.nodes) {
-      const found = findLeaf(node, leafId)
+      const found = findLeaf(node, leafId);
       if (found !== undefined) {
-        return found
+        return found;
       }
     }
   }
@@ -51,22 +55,22 @@ function findLeaf (tree: DocumentTree, leafId: string): LeafNodeJSON|undefined {
  *
  * @return  {LeafNodeJSON[]}        Only the nodes from the tree
  */
-function extractLeafs (tree: DocumentTree): LeafNodeJSON[] {
-  let arr: LeafNodeJSON[] = []
+function extractLeafs(tree: DocumentTree): LeafNodeJSON[] {
+  let arr: LeafNodeJSON[] = [];
 
-  if (tree.type === 'leaf') {
-    return [tree]
+  if (tree.type === "leaf") {
+    return [tree];
   } else {
     for (const node of tree.nodes) {
-      if (node.type === 'leaf') {
-        arr.push(node)
+      if (node.type === "leaf") {
+        arr.push(node);
       } else {
-        arr = arr.concat(extractLeafs(node))
+        arr = arr.concat(extractLeafs(node));
       }
     }
   }
 
-  return arr
+  return arr;
 }
 
 /**
@@ -78,14 +82,19 @@ function extractLeafs (tree: DocumentTree): LeafNodeJSON[] {
  * @param   {ZettlrState}   state     The store state
  * @param   {DocumentTree}  treedata  The new treedata to apply
  */
-function recoverState (paneStructure: Ref<BranchNodeJSON|LeafNodeJSON|undefined>, paneData: Ref<LeafNodeJSON[]>, lastLeafId: Ref<string|undefined>, treedata: DocumentTree): void {
+function recoverState(
+  paneStructure: Ref<BranchNodeJSON | LeafNodeJSON | undefined>,
+  paneData: Ref<LeafNodeJSON[]>,
+  lastLeafId: Ref<string | undefined>,
+  treedata: DocumentTree,
+): void {
   // By cloning one of the objects, we make sure that paneData and paneStructure
   // never share any pointers and hence cannot influence the respective other.
-  paneData.value = extractLeafs(structuredClone(treedata))
-  paneStructure.value = treedata
-  const lastLeafExists = paneData.value.find(pane => pane.id === lastLeafId.value) !== undefined
+  paneData.value = extractLeafs(structuredClone(treedata));
+  paneStructure.value = treedata;
+  const lastLeafExists = paneData.value.find((pane) => pane.id === lastLeafId.value) !== undefined;
   if (!lastLeafExists) {
-    lastLeafId.value = undefined
+    lastLeafId.value = undefined;
   }
 
   // Here we also need to set the last leaf ID so that the user can
@@ -93,7 +102,7 @@ function recoverState (paneStructure: Ref<BranchNodeJSON|LeafNodeJSON|undefined>
   // focus any of the leafs before clicking on a file does something, which
   // is unwanted behavior.
   if (paneData.value.length > 0 && lastLeafId.value === undefined) {
-    lastLeafId.value = paneData.value[0].id
+    lastLeafId.value = paneData.value[0].id;
   }
 }
 
@@ -104,15 +113,19 @@ function recoverState (paneStructure: Ref<BranchNodeJSON|LeafNodeJSON|undefined>
  * @param   {DocumentTree}  treedata  The new tree data
  * @param   {string}        leafId    The leaf in question
  */
-function copyDelta (paneData: Ref<LeafNodeJSON[]>, treedata: DocumentTree, context: DocumentsUpdateContext): void {
-  const { leafId } = context
+function copyDelta(
+  paneData: Ref<LeafNodeJSON[]>,
+  treedata: DocumentTree,
+  context: DocumentsUpdateContext,
+): void {
+  const { leafId } = context;
   if (leafId === undefined) {
-    console.warn('Could not apply delta: leafId was not given')
-    return
+    console.warn("Could not apply delta: leafId was not given");
+    return;
   }
 
-  const localLeaf = paneData.value.find(leaf => leaf.id === leafId)
-  const remoteLeaf = findLeaf(structuredClone(treedata), leafId)
+  const localLeaf = paneData.value.find((leaf) => leaf.id === leafId);
+  const remoteLeaf = findLeaf(structuredClone(treedata), leafId);
   if (localLeaf === undefined || remoteLeaf === undefined) {
     // This can happen since we retrieve the treedata after the main process has
     // broadcast the actual event. In case of a removal of a leaf, for example,
@@ -120,12 +133,17 @@ function copyDelta (paneData: Ref<LeafNodeJSON[]>, treedata: DocumentTree, conte
     // won't be present in the remote treedata anymore. Therefore, we can just
     // do nothing here and wait for the actual event that will subsequently
     // remove the complete leaf.
-    console.warn('Could not apply delta, either local or remote not available', localLeaf, remoteLeaf, leafId)
-    return
+    console.warn(
+      "Could not apply delta, either local or remote not available",
+      localLeaf,
+      remoteLeaf,
+      leafId,
+    );
+    return;
   }
 
-  localLeaf.activeFile = remoteLeaf.activeFile
-  localLeaf.openFiles = remoteLeaf.openFiles
+  localLeaf.activeFile = remoteLeaf.activeFile;
+  localLeaf.openFiles = remoteLeaf.openFiles;
 }
 
 /**
@@ -135,145 +153,167 @@ function copyDelta (paneData: Ref<LeafNodeJSON[]>, treedata: DocumentTree, conte
  *
  * @param   {string}  filePath  The file path
  */
-function maybeUncollapseDirectories (filePath: string): void {
-  const windowStateStore = useWindowStateStore()
-  const workspaceStore = useWorkspaceStore()
+function maybeUncollapseDirectories(filePath: string): void {
+  const windowStateStore = useWindowStateStore();
+  const workspaceStore = useWorkspaceStore();
 
-  const containingWs = workspaceStore.pathList.find(p => filePath.startsWith(p))
+  const containingWs = workspaceStore.pathList.find((p) => filePath.startsWith(p));
 
   if (containingWs === undefined) {
-    return // File path is not part of a workspace, uncollapsing not applicable
+    return; // File path is not part of a workspace, uncollapsing not applicable
   }
 
   // Extract all intermediary directories between the workspace root and the file
 
-  let dir = filePath
+  let dir = filePath;
 
   while (dir.startsWith(containingWs)) {
-    dir = pathDirname(dir)
+    dir = pathDirname(dir);
     if (!windowStateStore.uncollapsedDirectories.includes(dir)) {
-      windowStateStore.uncollapsedDirectories.push(dir)
+      windowStateStore.uncollapsedDirectories.push(dir);
     }
   }
 }
 
-export const useDocumentTreeStore = defineStore('document-tree', () => {
-  const windowStateStore = useWindowStateStore()
-  const searchParams = new URLSearchParams(window.location.search)
-  const windowId = searchParams.get('window_id')
+export const useDocumentTreeStore = defineStore("document-tree", () => {
+  const windowStateStore = useWindowStateStore();
+  const searchParams = new URLSearchParams(window.location.search);
+  const windowId = searchParams.get("window_id");
 
   if (windowId === null) {
-    console.warn('Could not instantiate documentTreeStore properly: Required search param window_id not present. The store will not update properly. This can happen if another store requires this store.')
+    console.warn(
+      "Could not instantiate documentTreeStore properly: Required search param window_id not present. The store will not update properly. This can happen if another store requires this store.",
+    );
   }
 
   /**
    * Contains a full document tree managed by this window
    */
-  const paneStructure = ref<BranchNodeJSON|LeafNodeJSON>() // TODO
+  const paneStructure = ref<BranchNodeJSON | LeafNodeJSON>(); // TODO
   /**
    * Contains just the data points of the document tree
    */
-  const paneData = ref<LeafNodeJSON[]>([])
+  const paneData = ref<LeafNodeJSON[]>([]);
 
   /**
    * Modified files are stored here (only the paths, though)
    */
-  const modifiedDocuments = ref<string[]>([])
+  const modifiedDocuments = ref<string[]>([]);
 
-  const lastLeafId = ref<undefined|string>(undefined)
-  const lastLeafActiveFile = ref<OpenDocument|undefined>(undefined)
+  const lastLeafId = ref<undefined | string>(undefined);
+  const lastLeafActiveFile = ref<OpenDocument | undefined>(undefined);
 
   // Initial update for the pane structure ...
   if (windowId !== null) {
-    ipcRenderer.invoke('documents-provider', { command: 'retrieve-tab-config', payload: { windowId } })
-      .then((treedata: LeafNodeJSON|BranchNodeJSON) => recoverState(paneStructure, paneData, lastLeafId, treedata))
-      .catch(err => console.error(err))
+    ipcRenderer
+      .invoke("documents-provider", { command: "retrieve-tab-config", payload: { windowId } })
+      .then((treedata: LeafNodeJSON | BranchNodeJSON) =>
+        recoverState(paneStructure, paneData, lastLeafId, treedata),
+      )
+      .catch((err) => console.error(err));
   }
 
-  ipcRenderer.invoke('documents-provider', { command: 'get-file-modification-status' })
-    .then((modifiedFiles: string[]) => { modifiedDocuments.value = modifiedFiles })
-    .catch(err => console.error(err))
+  ipcRenderer
+    .invoke("documents-provider", { command: "get-file-modification-status" })
+    .then((modifiedFiles: string[]) => {
+      modifiedDocuments.value = modifiedFiles;
+    })
+    .catch((err) => console.error(err));
 
   // ... and we listen to subsequent changes.
-  ipcRenderer.on('documents-update', (evt, payload: { event: DP_EVENTS, context: DocumentsUpdateContext }) => {
-    const { event, context } = payload
-    // A file has been saved or modified
-    if (event === DP_EVENTS.CHANGE_FILE_STATUS && context.status === 'modification') {
-      ipcRenderer.invoke('documents-provider', { command: 'get-file-modification-status' })
-        .then((modifiedFiles: string[]) => { modifiedDocuments.value = modifiedFiles })
-        .catch(err => console.error(err))
-    } else {
-      // We only tend to events that pertain this window
-      if (context.windowId !== windowId) {
-        return // None of our business
-      }
+  ipcRenderer.on(
+    "documents-update",
+    (evt, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
+      const { event, context } = payload;
+      // A file has been saved or modified
+      if (event === DP_EVENTS.CHANGE_FILE_STATUS && context.status === "modification") {
+        ipcRenderer
+          .invoke("documents-provider", { command: "get-file-modification-status" })
+          .then((modifiedFiles: string[]) => {
+            modifiedDocuments.value = modifiedFiles;
+          })
+          .catch((err) => console.error(err));
+      } else {
+        // We only tend to events that pertain this window
+        if (context.windowId !== windowId) {
+          return; // None of our business
+        }
 
-      // Something in the document status has changed, here we simply pull in
-      // the full config as it is in the main process, and dispatch it into
-      // the worker who then has the task to apply a delta update with as few
-      // changes as possible.
-      ipcRenderer.invoke('documents-provider', { command: 'retrieve-tab-config', payload: { windowId } })
-        .then((treedata: LeafNodeJSON|BranchNodeJSON) => {
-          // The task for this function is to apply the minimum necessary delta update
-          // for the document tree. Due to Vue's happy reactivity, we have to maintain
-          // two states: One for only the structure, and one only for the data. Since
-          // the tree that's coming from main has both structure and data, we have to
-          // disentangle both here and apply delta updates to each structure based on
-          // the events the document provider is emitting here.
+        // Something in the document status has changed, here we simply pull in
+        // the full config as it is in the main process, and dispatch it into
+        // the worker who then has the task to apply a delta update with as few
+        // changes as possible.
+        ipcRenderer
+          .invoke("documents-provider", { command: "retrieve-tab-config", payload: { windowId } })
+          .then((treedata: LeafNodeJSON | BranchNodeJSON) => {
+            // The task for this function is to apply the minimum necessary delta update
+            // for the document tree. Due to Vue's happy reactivity, we have to maintain
+            // two states: One for only the structure, and one only for the data. Since
+            // the tree that's coming from main has both structure and data, we have to
+            // disentangle both here and apply delta updates to each structure based on
+            // the events the document provider is emitting here.
 
-          switch (event) {
-            // At the beginning, and whenever the structure of the tree changes, we have
-            // to apply a full update.
-            case DP_EVENTS.LEAF_CLOSED:
-            case DP_EVENTS.NEW_LEAF:
-              recoverState(paneStructure, paneData, lastLeafId, treedata)
-              break
-            // Events that pertain only to one leaf: no structural change
-            case DP_EVENTS.ACTIVE_FILE:
-            case DP_EVENTS.CHANGE_FILE_STATUS:
-            case DP_EVENTS.OPEN_FILE:
-            case DP_EVENTS.CLOSE_FILE:
-            case DP_EVENTS.FILES_SORTED:
-              copyDelta(paneData, treedata, context)
-              break
-          }
-
-          // NOTE: We must ensure the paneData is correct before we potentially
-          // set the leaf IDs
-          if (event === DP_EVENTS.ACTIVE_FILE) {
-            const { leafId, filePath } = context
-            lastLeafId.value = leafId
-            const leaf = paneData.value.find(leaf => leaf.id === lastLeafId.value)
-            if (leaf?.activeFile != null && filePath !== undefined) {
-              lastLeafActiveFile.value = leaf.activeFile
-              // If applicable, uncollapse the parent directory(s).
-              maybeUncollapseDirectories(leaf.activeFile.path)
-            } else {
-              lastLeafActiveFile.value = undefined
+            switch (event) {
+              // At the beginning, and whenever the structure of the tree changes, we have
+              // to apply a full update.
+              case DP_EVENTS.LEAF_CLOSED:
+              case DP_EVENTS.NEW_LEAF:
+                recoverState(paneStructure, paneData, lastLeafId, treedata);
+                break;
+              // Events that pertain only to one leaf: no structural change
+              case DP_EVENTS.ACTIVE_FILE:
+              case DP_EVENTS.CHANGE_FILE_STATUS:
+              case DP_EVENTS.OPEN_FILE:
+              case DP_EVENTS.CLOSE_FILE:
+              case DP_EVENTS.FILES_SORTED:
+                copyDelta(paneData, treedata, context);
+                break;
             }
-          }
-        })
-        .catch(err => console.error(err))
-    }
-  })
 
-  ipcRenderer.on('shortcut', (event, command) => {
-    if (command === 'toggle-distraction-free') {
-      if (windowStateStore.distractionFreeMode === undefined && lastLeafId.value !== undefined) {
-        windowStateStore.distractionFreeMode = lastLeafId.value
-      } else if (windowStateStore.distractionFreeMode !== undefined && lastLeafId.value === windowStateStore.distractionFreeMode) {
-        windowStateStore.distractionFreeMode = undefined
-      } else if (windowStateStore.distractionFreeMode !== undefined && lastLeafId.value !== windowStateStore.distractionFreeMode) {
-        windowStateStore.distractionFreeMode = lastLeafId.value
+            // NOTE: We must ensure the paneData is correct before we potentially
+            // set the leaf IDs
+            if (event === DP_EVENTS.ACTIVE_FILE) {
+              const { leafId, filePath } = context;
+              lastLeafId.value = leafId;
+              const leaf = paneData.value.find((leaf) => leaf.id === lastLeafId.value);
+              if (leaf?.activeFile != null && filePath !== undefined) {
+                lastLeafActiveFile.value = leaf.activeFile;
+                // If applicable, uncollapse the parent directory(s).
+                maybeUncollapseDirectories(leaf.activeFile.path);
+              } else {
+                lastLeafActiveFile.value = undefined;
+              }
+            }
+          })
+          .catch((err) => console.error(err));
       }
-    } else if (command === 'delete-file' && lastLeafActiveFile.value !== undefined) {
-      ipcRenderer.invoke('application', {
-        command: 'file-delete',
-        payload: { path: lastLeafActiveFile.value.path }
-      })
-        .catch(err => console.error(err))
-    }
-  })
+    },
+  );
 
-  return { paneStructure, paneData, modifiedDocuments, lastLeafId, lastLeafActiveFile }
-})
+  ipcRenderer.on("shortcut", (event, command) => {
+    if (command === "toggle-distraction-free") {
+      if (windowStateStore.distractionFreeMode === undefined && lastLeafId.value !== undefined) {
+        windowStateStore.distractionFreeMode = lastLeafId.value;
+      } else if (
+        windowStateStore.distractionFreeMode !== undefined &&
+        lastLeafId.value === windowStateStore.distractionFreeMode
+      ) {
+        windowStateStore.distractionFreeMode = undefined;
+      } else if (
+        windowStateStore.distractionFreeMode !== undefined &&
+        lastLeafId.value !== windowStateStore.distractionFreeMode
+      ) {
+        windowStateStore.distractionFreeMode = lastLeafId.value;
+      }
+    } else if (command === "delete-file" && lastLeafActiveFile.value !== undefined) {
+      ipcRenderer
+        .invoke("application", {
+          command: "file-delete",
+          payload: { path: lastLeafActiveFile.value.path },
+        })
+        .catch((err) => console.error(err));
+    }
+  });
+
+  return { paneStructure, paneData, modifiedDocuments, lastLeafId, lastLeafActiveFile };
+});

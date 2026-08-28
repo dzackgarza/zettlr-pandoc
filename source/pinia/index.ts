@@ -12,11 +12,11 @@
  * END HEADER
  */
 
-export { useWorkspaceStore } from './workspace-store'
-export { useConfigStore } from './config'
-export { useStatisticsStore } from './statistics-store'
-export { useWindowStateStore } from './window-state-store'
-export { useDocumentTreeStore } from './document-tree-store'
-export { useWritingTargetsStore } from './writing-targets-store'
-export { useTagsStore } from './tags-store'
-export { useLRTStore } from './lrt-store'
+export { useConfigStore } from "./config";
+export { useDocumentTreeStore } from "./document-tree-store";
+export { useLRTStore } from "./lrt-store";
+export { useStatisticsStore } from "./statistics-store";
+export { useTagsStore } from "./tags-store";
+export { useWindowStateStore } from "./window-state-store";
+export { useWorkspaceStore } from "./workspace-store";
+export { useWritingTargetsStore } from "./writing-targets-store";

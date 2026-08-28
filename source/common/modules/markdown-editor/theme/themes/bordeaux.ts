@@ -12,71 +12,77 @@
  * END HEADER
  */
 
-import { EditorView } from '@codemirror/view'
-import { defaultVarsDark, defaultVarsLight, type ThemeVars } from '../editor'
+import { EditorView } from "@codemirror/view";
+import { defaultVarsDark, defaultVarsLight, type ThemeVars } from "../editor";
 
-const primaryColor = '#1bd4e9'
-const secondaryColor = '#d02325'
+const primaryColor = "#1bd4e9";
+const secondaryColor = "#d02325";
 
-const scrollerColor = 'var(--grey-5)'
-const scrollerColorDark = 'var(--grey-2)'
+const scrollerColor = "var(--grey-5)";
+const scrollerColorDark = "var(--grey-2)";
 
-const scrollerBackground = '#fffff8'
-const scrollerBackgroundDark = '#002b36'
+const scrollerBackground = "#fffff8";
+const scrollerBackgroundDark = "#002b36";
 
-const selectionLight = '#b8f0f6cc'
-const selectionDark = '#0c616acc'
+const selectionLight = "#b8f0f6cc";
+const selectionDark = "#0c616acc";
 
-const highlightDark = 'black'
+const highlightDark = "black";
 
-const font = 'Inconsolata, monospace'
-const codeFont = 'Inconsolata, monospace'
+const font = "Inconsolata, monospace";
+const codeFont = "Inconsolata, monospace";
 
-const citationBackgroundDark = '#002024'
+const citationBackgroundDark = "#002024";
 
-const codeColorDark = 'var(--grey-2)'
-const codeBackgroundDark = '#002024'
+const codeColorDark = "var(--grey-2)";
+const codeBackgroundDark = "#002024";
 
-const errorColor = '#d02325'
+const errorColor = "#d02325";
 
-const lineDecoration = 'underline'
+const lineDecoration = "underline";
 
 export const bordeauxVarsLight: ThemeVars = {
   ...defaultVarsLight,
-  '--zettlr-editor-primary-color': primaryColor,
-  '--zettlr-editor-secondary-color': secondaryColor,
-  '--zettlr-editor-scroller-color': scrollerColor,
-  '--zettlr-editor-scroller-bg': scrollerBackground,
-  '--zettlr-editor-selection-color': selectionLight,
-  '--zettlr-editor-font': font,
-  '--zettlr-editor-code-font': codeFont,
-  '--zettlr-editor-error-color': errorColor,
-  '--zettlr-editor-line-decoration': lineDecoration,
-}
+  "--zettlr-editor-primary-color": primaryColor,
+  "--zettlr-editor-secondary-color": secondaryColor,
+  "--zettlr-editor-scroller-color": scrollerColor,
+  "--zettlr-editor-scroller-bg": scrollerBackground,
+  "--zettlr-editor-selection-color": selectionLight,
+  "--zettlr-editor-font": font,
+  "--zettlr-editor-code-font": codeFont,
+  "--zettlr-editor-error-color": errorColor,
+  "--zettlr-editor-line-decoration": lineDecoration,
+};
 
 export const bordeauxVarsDark: ThemeVars = {
   ...defaultVarsDark,
-  '--zettlr-editor-primary-color': primaryColor,
-  '--zettlr-editor-secondary-color': secondaryColor,
-  '--zettlr-editor-scroller-color': scrollerColorDark,
-  '--zettlr-editor-scroller-bg': scrollerBackgroundDark,
-  '--zettlr-editor-selection-color': selectionDark,
-  '--zettlr-editor-highlight-color': highlightDark,
-  '--zettlr-editor-font': font,
-  '--zettlr-editor-code-font': codeFont,
-  '--zettlr-editor-citation-bg': citationBackgroundDark,
-  '--zettlr-editor-code-color': codeColorDark,
-  '--zettlr-editor-code-bg': codeBackgroundDark,
-  '--zettlr-editor-error-color': errorColor,
-  '--zettlr-editor-line-decoration': lineDecoration,
-}
+  "--zettlr-editor-primary-color": primaryColor,
+  "--zettlr-editor-secondary-color": secondaryColor,
+  "--zettlr-editor-scroller-color": scrollerColorDark,
+  "--zettlr-editor-scroller-bg": scrollerBackgroundDark,
+  "--zettlr-editor-selection-color": selectionDark,
+  "--zettlr-editor-highlight-color": highlightDark,
+  "--zettlr-editor-font": font,
+  "--zettlr-editor-code-font": codeFont,
+  "--zettlr-editor-citation-bg": citationBackgroundDark,
+  "--zettlr-editor-code-color": codeColorDark,
+  "--zettlr-editor-code-bg": codeBackgroundDark,
+  "--zettlr-editor-error-color": errorColor,
+  "--zettlr-editor-line-decoration": lineDecoration,
+};
 
-export const themeBordeauxLight = EditorView.theme({
-  '&': bordeauxVarsLight,
-  '.cm-link, .cm-strong, .cm-emphasis': { color: '#93a1a1' },
-}, { dark: false })
+export const themeBordeauxLight = EditorView.theme(
+  {
+    "&": bordeauxVarsLight,
+    ".cm-link, .cm-strong, .cm-emphasis": { color: "#93a1a1" },
+  },
+  { dark: false },
+);
 
-export const themeBordeauxDark = EditorView.theme({
-  '&': bordeauxVarsDark,
-  '.cm-link, .cm-strong, .cm-emphasis': { color: '#93a1a1' },
-}, { dark: true })
+export const themeBordeauxDark = EditorView.theme(
+  {
+    "&": bordeauxVarsDark,
+    ".cm-link, .cm-strong, .cm-emphasis": { color: "#93a1a1" },
+  },
+  { dark: true },
+);

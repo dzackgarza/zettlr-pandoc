@@ -24,8 +24,8 @@
 import type {
   ConfirmReferenceLabelOutcome,
   CreateReferenceLabelIntent,
-  CreateReferenceLabelRequest
-} from '@common/modules/markdown-editor/plugins/create-reference-label'
+  CreateReferenceLabelRequest,
+} from "@common/modules/markdown-editor/plugins/create-reference-label";
 
 /**
  * The payload accompanying an editor command: which shape applies is decided
@@ -33,10 +33,10 @@ import type {
  */
 export type EditorCommandData =
   | string
-  | { filePath: string, lineNumber: number }
-  | { from: number, to: number }
-  | { type: string, attributes: string }
-  | undefined
+  | { filePath: string; lineNumber: number }
+  | { from: number; to: number }
+  | { type: string; attributes: string }
+  | undefined;
 
 /**
  * Okay, hear me out. We have the following situation: We have a toolbar, and
@@ -67,13 +67,13 @@ export type EditorCommandData =
  *    function locally, and executes the command, providing the data.
  */
 export interface EditorCommands {
-  jumpToLine: boolean
-  moveSection: boolean
-  addKeywords: boolean
-  replaceSelection: boolean
-  insertPandoc: boolean
-  executeCommand: boolean
-  data: EditorCommandData
+  jumpToLine: boolean;
+  moveSection: boolean;
+  addKeywords: boolean;
+  replaceSelection: boolean;
+  insertPandoc: boolean;
+  executeCommand: boolean;
+  data: EditorCommandData;
 }
 
 /**
@@ -81,28 +81,28 @@ export interface EditorCommands {
  * runs the timer) and PopoverPomodoro.vue (which displays and configures it).
  */
 export interface PomodoroConfig {
-  currentEffectFile: string
-  soundEffect: HTMLAudioElement
-  intervalHandle: ReturnType<typeof setInterval>|undefined
+  currentEffectFile: string;
+  soundEffect: HTMLAudioElement;
+  intervalHandle: ReturnType<typeof setInterval> | undefined;
   durations: {
-    task: number
-    short: number
-    long: number
-  }
+    task: number;
+    short: number;
+    long: number;
+  };
   phase: {
-    type: 'task'|'short'|'long'
-    elapsed: number
-  }
+    type: "task" | "short" | "long";
+    elapsed: number;
+  };
   counter: {
-    task: number
-    short: number
-    long: number
-  }
+    task: number;
+    short: number;
+    long: number;
+  };
   colour: {
-    task: string
-    short: string
-    long: string
-  }
+    task: string;
+    short: string;
+    long: string;
+  };
 }
 
 /**
@@ -116,9 +116,9 @@ export interface PomodoroConfig {
  * toast.
  */
 export interface CreateReferenceLabelDialogPrompt {
-  family: CreateReferenceLabelRequest['family']
-  proposedSlug: string
-  applyCreate: (intent: CreateReferenceLabelIntent) => ConfirmReferenceLabelOutcome
+  family: CreateReferenceLabelRequest["family"];
+  proposedSlug: string;
+  applyCreate: (intent: CreateReferenceLabelIntent) => ConfirmReferenceLabelOutcome;
 }
 
 /**
@@ -126,7 +126,7 @@ export interface CreateReferenceLabelDialogPrompt {
  * definition or citing occurrence.
  */
 export interface ReferenceJumpIntent {
-  key: string
-  documentPath: string
-  range: { from: number, to: number }
+  key: string;
+  documentPath: string;
+  range: { from: number; to: number };
 }

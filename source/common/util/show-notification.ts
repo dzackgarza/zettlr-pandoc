@@ -12,53 +12,53 @@
  * END HEADER
  */
 
-import { Notification, nativeImage } from 'electron'
-import path from 'path'
+import { Notification, nativeImage } from "electron";
+import path from "path";
 
 /**
  * The default icon: The Zettlr logo
  */
-const defaultIcon = nativeImage.createFromPath(path.join(__dirname, '../img/image-preview.png'))
+const defaultIcon = nativeImage.createFromPath(path.join(__dirname, "../img/image-preview.png"));
 
 /**
-* Shows a native notification for the operating system. If the operating
-* system does not support notifications, the notification will be logged and
-* the function returns false.
-*
-* @param   {string}   message   The message (body) of the notification
-* @param   {string}   title     The (optional) title; default is "Zettlr"
-* @param   {void}     callback  Optional callback, invoked when user clicks the notification
-*
-* @return  {boolean}            False if the platform doesn't support notifications.
-*/
-export function showNativeNotification (
+ * Shows a native notification for the operating system. If the operating
+ * system does not support notifications, the notification will be logged and
+ * the function returns false.
+ *
+ * @param   {string}   message   The message (body) of the notification
+ * @param   {string}   title     The (optional) title; default is "Zettlr"
+ * @param   {void}     callback  Optional callback, invoked when user clicks the notification
+ *
+ * @return  {boolean}            False if the platform doesn't support notifications.
+ */
+export function showNativeNotification(
   message: string,
   title?: string,
-  callback?: () => void
+  callback?: () => void,
 ): boolean {
   if (!Notification.isSupported()) {
-    return false
+    return false;
   }
 
   const notification = new Notification({
-    title: title ?? 'Zettlr',
+    title: title ?? "Zettlr",
     body: message,
     silent: true,
     icon: defaultIcon,
     hasReply: false, // macOS only
-    timeoutType: 'default', // Windows/Linux only
-    urgency: 'low', // Linux only, we don't want to distract too much
-    closeButtonText: '' // macOS only, empty means to use localized text
-  })
+    timeoutType: "default", // Windows/Linux only
+    urgency: "low", // Linux only, we don't want to distract too much
+    closeButtonText: "", // macOS only, empty means to use localized text
+  });
 
   // Now show the notification
-  notification.show()
+  notification.show();
 
   if (callback !== undefined) {
-    notification.on('click', (event) => {
-      callback()
-    })
+    notification.on("click", (event) => {
+      callback();
+    });
   }
 
-  return true
+  return true;
 }

@@ -12,10 +12,10 @@
  * END HEADER
  */
 
-import { trans } from '@common/i18n-renderer'
-import { type PreferencesFieldset } from './types'
-import { PreferencesGroups } from './_preferences-groups'
-import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
+import { trans } from "@common/i18n-renderer";
+import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
+import { PreferencesGroups } from "./_preferences-groups";
+import { type PreferencesFieldset } from "./types";
 
 /**
  * Returns all available advanced preferences settings as a two-dimensional
@@ -24,332 +24,344 @@ import type { ConfigOptions } from 'source/app/service-providers/config/get-conf
  *
  * @return  {Fieldset[]}  The fields
  */
-export function getAdvancedFields (config: ConfigOptions): PreferencesFieldset[] {
+export function getAdvancedFields(config: ConfigOptions): PreferencesFieldset[] {
   const betaReleaseItem: PreferencesFieldset = {
-    title: trans('Beta releases'),
+    title: trans("Beta releases"),
     group: PreferencesGroups.Advanced,
-    infoString: trans('Requires that check for updates is also active.'),
+    infoString: trans("Requires that check for updates is also active."),
     help: undefined, // TODO
     fields: [
       {
-        type: 'checkbox',
-        label: trans('Notify me about beta releases'),
-        model: 'checkForBeta',
-        disabled: !config.system.checkForUpdates
-      }
-    ]
-  }
+        type: "checkbox",
+        label: trans("Notify me about beta releases"),
+        model: "checkForBeta",
+        disabled: !config.system.checkForUpdates,
+      },
+    ],
+  };
 
   return [
     {
-      title: trans('Pattern for new file names'),
-      infoString: trans('Zettlr uses this pattern to generate new filenames. By default, it just uses a new Zettelkasten ID.'),
+      title: trans("Pattern for new file names"),
+      infoString: trans(
+        "Zettlr uses this pattern to generate new filenames. By default, it just uses a new Zettelkasten ID.",
+      ),
       group: PreferencesGroups.Advanced,
       help: undefined, // TODO
       fields: [
         {
-          type: 'text',
-          model: 'newFileNamePattern',
-          info: trans('Available variables: %s', '%id, %Y, %y, %M, %D, %W, %h, %m, %s, %o, %X, %uuid4'),
-          reset: '%id.md',
-          group: 'advanced'
+          type: "text",
+          model: "newFileNamePattern",
+          info: trans(
+            "Available variables: %s",
+            "%id, %Y, %y, %M, %D, %W, %h, %m, %s, %o, %X, %uuid4",
+          ),
+          reset: "%id.md",
+          group: "advanced",
         },
-        { type: 'separator' },
+        { type: "separator" },
         {
-          type: 'checkbox',
-          label: trans('Automatically create new files without asking for confirmation.'),
-          model: 'newFileDontPrompt',
-          group: 'advanced'
-        }
-      ]
+          type: "checkbox",
+          label: trans("Automatically create new files without asking for confirmation."),
+          model: "newFileDontPrompt",
+          group: "advanced",
+        },
+      ],
     },
     {
-      title: trans('Appearance'),
+      title: trans("Appearance"),
       group: PreferencesGroups.Advanced,
       help: undefined, // TODO
       fields: [
         {
-          type: 'checkbox',
-          label: trans('Use native window appearance'),
-          info: trans('Only available on Linux; this is the default for macOS and Windows.'),
-          model: 'window.nativeAppearance',
-          disabled: process.platform !== 'linux'
+          type: "checkbox",
+          label: trans("Use native window appearance"),
+          info: trans("Only available on Linux; this is the default for macOS and Windows."),
+          model: "window.nativeAppearance",
+          disabled: process.platform !== "linux",
         },
         {
-          type: 'checkbox',
-          label: trans('Enable window vibrancy'),
-          info: trans('Only available on macOS; makes the window background opaque.'),
-          model: 'window.vibrancy',
-          disabled: process.platform !== 'darwin'
+          type: "checkbox",
+          label: trans("Enable window vibrancy"),
+          info: trans("Only available on macOS; makes the window background opaque."),
+          model: "window.vibrancy",
+          disabled: process.platform !== "darwin",
         },
         {
-          type: 'checkbox',
-          label: process.platform === 'darwin'
-            ? trans('Show app in the notification area')
-            : trans('Leave app running in the notification area'),
-          model: 'system.leaveAppRunning',
-          disabled: process.env.ZETTLR_IS_TRAY_SUPPORTED === '0',
-          info: process.env.ZETTLR_TRAY_ERROR
+          type: "checkbox",
+          label:
+            process.platform === "darwin"
+              ? trans("Show app in the notification area")
+              : trans("Leave app running in the notification area"),
+          model: "system.leaveAppRunning",
+          disabled: process.env.ZETTLR_IS_TRAY_SUPPORTED === "0",
+          info: process.env.ZETTLR_TRAY_ERROR,
         },
-        { type: 'separator' },
+        { type: "separator" },
         {
-          type: 'radio',
-          model: 'system.zoomBehavior',
-          label: trans('Zoom behavior'),
+          type: "radio",
+          model: "system.zoomBehavior",
+          label: trans("Zoom behavior"),
           inline: true,
           options: {
-            gui: trans('Resizes the whole GUI'),
-            editor: trans('Changes the editor font size')
-          }
-        }
-      ]
+            gui: trans("Resizes the whole GUI"),
+            editor: trans("Changes the editor font size"),
+          },
+        },
+      ],
     },
     {
-      title: trans('File Treatment'),
-      infoString: trans('Decide where various file types are displayed, and how to open them.'),
+      title: trans("File Treatment"),
+      infoString: trans("Decide where various file types are displayed, and how to open them."),
       group: PreferencesGroups.Advanced,
       help: undefined, // TODO
       fields: [
         {
-          type: 'separator'
+          type: "separator",
         },
         {
-          type: 'control-grid',
+          type: "control-grid",
           header: [
-            '',
-            trans('Display in file manager'),
-            trans('Display in sidebar'),
-            trans('Open with'),
+            "",
+            trans("Display in file manager"),
+            trans("Display in sidebar"),
+            trans("Open with"),
           ],
           rows: [
             /* First row: Built-in Markdown and code files, to show how it's supposed to work */
             [
               {
-                type: 'form-text',
-                display: 'plain',
-                contents: trans('Built-in Markdown and Code files')
+                type: "form-text",
+                display: "plain",
+                contents: trans("Built-in Markdown and Code files"),
               },
               {
-                type: 'checkbox',
+                type: "checkbox",
                 disabled: true,
-                model: 'files.builtin.showInFilemanager'
+                model: "files.builtin.showInFilemanager",
               },
               {
-                type: 'checkbox',
+                type: "checkbox",
                 disabled: true,
-                model: 'files.builtin.showInSidebar'
+                model: "files.builtin.showInSidebar",
               },
               {
-                type: 'form-text',
-                display: 'plain',
-                contents: 'Zettlr'
-              }
+                type: "form-text",
+                display: "plain",
+                contents: "Zettlr",
+              },
             ],
             // Image files
             [
               {
-                type: 'form-text',
-                display: 'plain',
-                contents: trans('Images')
+                type: "form-text",
+                display: "plain",
+                contents: trans("Images"),
               },
               {
-                type: 'checkbox',
-                model: 'files.images.showInFilemanager'
+                type: "checkbox",
+                model: "files.images.showInFilemanager",
               },
               {
-                type: 'checkbox',
-                model: 'files.images.showInSidebar'
+                type: "checkbox",
+                model: "files.images.showInSidebar",
               },
               {
-                type: 'select',
+                type: "select",
                 options: {
-                  'zettlr': 'Zettlr',
-                  'system': trans('System default')
+                  zettlr: "Zettlr",
+                  system: trans("System default"),
                 },
-                model: 'files.images.openWith'
-              }
+                model: "files.images.openWith",
+              },
             ],
             /* PDF files */
             [
               {
-                type: 'form-text',
-                display: 'plain',
-                contents: trans('PDF documents')
+                type: "form-text",
+                display: "plain",
+                contents: trans("PDF documents"),
               },
               {
-                type: 'checkbox',
-                model: 'files.pdf.showInFilemanager'
+                type: "checkbox",
+                model: "files.pdf.showInFilemanager",
               },
               {
-                type: 'checkbox',
-                model: 'files.pdf.showInSidebar'
+                type: "checkbox",
+                model: "files.pdf.showInSidebar",
               },
               {
-                type: 'select',
+                type: "select",
                 options: {
-                  'zettlr': 'Zettlr',
-                  'system': trans('System default')
+                  zettlr: "Zettlr",
+                  system: trans("System default"),
                 },
-                model: 'files.pdf.openWith'
-              }
+                model: "files.pdf.openWith",
+              },
             ],
             // Office documents
             [
               {
-                type: 'form-text',
-                display: 'plain',
-                contents: trans('MS Office Documents')
+                type: "form-text",
+                display: "plain",
+                contents: trans("MS Office Documents"),
               },
               {
-                type: 'checkbox',
-                model: 'files.msoffice.showInFilemanager'
+                type: "checkbox",
+                model: "files.msoffice.showInFilemanager",
               },
               {
-                type: 'checkbox',
-                model: 'files.msoffice.showInSidebar'
+                type: "checkbox",
+                model: "files.msoffice.showInSidebar",
               },
               {
-                type: 'form-text',
-                display: 'plain',
-                contents: trans('System default')
-              }
+                type: "form-text",
+                display: "plain",
+                contents: trans("System default"),
+              },
             ],
             // Open Office documents
             [
               {
-                type: 'form-text',
-                display: 'plain',
-                contents: trans('Open Office Documents')
+                type: "form-text",
+                display: "plain",
+                contents: trans("Open Office Documents"),
               },
               {
-                type: 'checkbox',
-                model: 'files.openOffice.showInFilemanager'
+                type: "checkbox",
+                model: "files.openOffice.showInFilemanager",
               },
               {
-                type: 'checkbox',
-                model: 'files.openOffice.showInSidebar'
+                type: "checkbox",
+                model: "files.openOffice.showInSidebar",
               },
               {
-                type: 'form-text',
-                display: 'plain',
-                contents: trans('System default')
-              }
+                type: "form-text",
+                display: "plain",
+                contents: trans("System default"),
+              },
             ],
             // Data files (tsv, csv, etc.)
             [
               {
-                type: 'form-text',
-                display: 'plain',
-                contents: trans('Data files (tsv, csv, etc.)')
+                type: "form-text",
+                display: "plain",
+                contents: trans("Data files (tsv, csv, etc.)"),
               },
               {
-                type: 'checkbox',
-                model: 'files.dataFiles.showInFilemanager'
+                type: "checkbox",
+                model: "files.dataFiles.showInFilemanager",
               },
               {
-                type: 'checkbox',
-                model: 'files.dataFiles.showInSidebar'
+                type: "checkbox",
+                model: "files.dataFiles.showInSidebar",
               },
               {
-                type: 'form-text',
-                display: 'plain',
-                contents: trans('System default')
-              }
+                type: "form-text",
+                display: "plain",
+                contents: trans("System default"),
+              },
             ],
             [
               {
-                type: 'form-text',
-                display: 'plain',
-                contents: trans('Dot Files and Folders')
+                type: "form-text",
+                display: "plain",
+                contents: trans("Dot Files and Folders"),
               },
               {
-                type: 'checkbox',
-                model: 'files.dotFiles.showInFilemanager'
+                type: "checkbox",
+                model: "files.dotFiles.showInFilemanager",
               },
               {
-                type: 'checkbox',
-                model: 'files.dotFiles.showInSidebar'
+                type: "checkbox",
+                model: "files.dotFiles.showInSidebar",
               },
               {
-                type: 'form-text',
-                display: 'plain',
-                contents: trans('System default')
-              }
-            ]
-          ]
+                type: "form-text",
+                display: "plain",
+                contents: trans("System default"),
+              },
+            ],
+          ],
         },
         {
-          type: 'separator'
+          type: "separator",
         },
         {
-          type: 'token',
-          label: trans('Add additional file extensions you wish to see in the file manager and sidebar below. Include the leading period, e.g., ".xml".'),
-          placeholder: trans('Enter an extension and press enter'),
-          model: 'attachmentExtensions'
-        }
-      ]
+          type: "token",
+          label: trans(
+            'Add additional file extensions you wish to see in the file manager and sidebar below. Include the leading period, e.g., ".xml".',
+          ),
+          placeholder: trans("Enter an extension and press enter"),
+          model: "attachmentExtensions",
+        },
+      ],
     },
     {
-      title: trans('Iframe rendering whitelist'),
-      infoString: trans('Iframes are potentially dangerous and can execute remote code. Each host listed here is automatically trusted. Iframes from these hosts will be automatically loaded.'),
+      title: trans("Iframe rendering whitelist"),
+      infoString: trans(
+        "Iframes are potentially dangerous and can execute remote code. Each host listed here is automatically trusted. Iframes from these hosts will be automatically loaded.",
+      ),
       group: PreferencesGroups.Advanced,
       help: undefined, // TODO
       fields: [
         {
-          type: 'list',
-          valueType: 'simpleArray',
-          model: 'system.iframeWhitelist',
+          type: "list",
+          valueType: "simpleArray",
+          model: "system.iframeWhitelist",
           deletable: true,
-          columnLabels: [trans('Hostname')],
+          columnLabels: [trans("Hostname")],
           searchable: true,
-          searchLabel: trans('Filter')
-        }
-      ]
+          searchLabel: trans("Filter"),
+        },
+      ],
     },
     {
-      title: trans('Watchdog polling'),
-      infoString: trans('In rare instances, Zettlr may be unable to check for changes to your files. In that case, you can try activating watchdog polling. Do not use this option unless necessary: Polling is very slow and resource-heavy.'),
+      title: trans("Watchdog polling"),
+      infoString: trans(
+        "In rare instances, Zettlr may be unable to check for changes to your files. In that case, you can try activating watchdog polling. Do not use this option unless necessary: Polling is very slow and resource-heavy.",
+      ),
       group: PreferencesGroups.Advanced,
       help: undefined, // TODO
       fields: [
         {
-          type: 'checkbox',
-          label: trans('Activate watchdog polling'),
-          model: 'watchdog.activatePolling'
+          type: "checkbox",
+          label: trans("Activate watchdog polling"),
+          model: "watchdog.activatePolling",
         },
         {
-          type: 'number',
-          label: trans('Time to wait before writing a file is considered done (in ms)'),
-          model: 'watchdog.stabilityThreshold',
-          disabled: !config.watchdog.activatePolling
-        }
-      ]
+          type: "number",
+          label: trans("Time to wait before writing a file is considered done (in ms)"),
+          model: "watchdog.stabilityThreshold",
+          disabled: !config.watchdog.activatePolling,
+        },
+      ],
     },
     {
-      title: trans('Deleting items'),
+      title: trans("Deleting items"),
       group: PreferencesGroups.Advanced,
       help: undefined, // TODO
       fields: [
         {
-          type: 'checkbox',
-          label: trans('Delete items irreversibly if moving them to trash fails'),
-          model: 'system.deleteOnFail'
-        }
-      ]
+          type: "checkbox",
+          label: trans("Delete items irreversibly if moving them to trash fails"),
+          model: "system.deleteOnFail",
+        },
+      ],
     },
     {
-      title: trans('Debug mode'),
+      title: trans("Debug mode"),
       group: PreferencesGroups.Advanced,
       help: undefined, // TODO
       fields: [
         {
-          type: 'checkbox',
-          label: trans('Enable debug mode'),
-          model: 'debug',
-          group: 'advanced'
-        }
-      ]
+          type: "checkbox",
+          label: trans("Enable debug mode"),
+          model: "debug",
+          group: "advanced",
+        },
+      ],
     },
-    ...(__UPDATES_DISABLED__ === '0'? [betaReleaseItem] : [])
-  ]
+    ...(__UPDATES_DISABLED__ === "0" ? [betaReleaseItem] : []),
+  ];
 }

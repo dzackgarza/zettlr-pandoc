@@ -25,46 +25,46 @@
  *   deliberately NOT faked here.
  */
 
-import { EditorState } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
-import { codeFolding, foldEffect, foldedRanges } from '@codemirror/language'
-import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
-import { clickListeners } from 'source/common/modules/markdown-editor/plugins/click-listeners'
-import { renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
-import { renderReferenceChips } from 'source/common/modules/markdown-editor/renderers/render-reference-chips'
-import { renderReferenceDefinitions } from 'source/common/modules/markdown-editor/renderers/render-reference-definitions'
+import { codeFolding, foldEffect, foldedRanges } from "@codemirror/language";
+import { EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import type { DocumentLocation, SourceRange } from "@dts/common/references";
+import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import { clickListeners } from "source/common/modules/markdown-editor/plugins/click-listeners";
 import {
+  type EditorWorkspaceReferences,
   workspaceReferencesField,
   workspaceReferencesUpdate,
-  type EditorWorkspaceReferences
-} from 'source/common/modules/markdown-editor/plugins/workspace-references-field'
-import { defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
-import { configField } from 'source/common/modules/markdown-editor/util/configuration'
-import { extractReferences } from 'source/common/pandoc-util/extract-references'
-import { resolveWorkspace } from 'source/common/pandoc-util/resolve-references'
+} from "source/common/modules/markdown-editor/plugins/workspace-references-field";
+import { renderCitations } from "source/common/modules/markdown-editor/renderers/render-citations";
+import { renderReferenceChips } from "source/common/modules/markdown-editor/renderers/render-reference-chips";
+import { renderReferenceDefinitions } from "source/common/modules/markdown-editor/renderers/render-reference-definitions";
+import { defaultLight, editorTheme } from "source/common/modules/markdown-editor/theme/editor";
+import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import {
   captureDocumentLocation,
   followReferenceNavigationIntent,
+  type ReferenceNavigationIntent,
   resolveReferenceNavigationIntent,
-  type ReferenceNavigationIntent
-} from 'source/common/modules/markdown-editor/util/reference-navigation'
-import type { DocumentLocation, SourceRange } from '@dts/common/references'
+} from "source/common/modules/markdown-editor/util/reference-navigation";
+import { extractReferences } from "source/common/pandoc-util/extract-references";
+import { resolveWorkspace } from "source/common/pandoc-util/resolve-references";
 
 interface ProbeDocument {
-  path: string
-  content: string
+  path: string;
+  content: string;
 }
 
 interface ProbeTarget {
-  x: number
-  y: number
-  from: number
-  to: number
+  x: number;
+  y: number;
+  from: number;
+  to: number;
 }
 
 interface ProbeSelection {
-  anchor: number
-  head: number
+  anchor: number;
+  head: number;
 }
 
 /**
@@ -74,74 +74,80 @@ interface ProbeSelection {
  * an integer on the captured side.
  */
 interface ExpectedLocation {
-  documentPath: string
-  selection: ProbeSelection
-  scrollTop: number
-  folds: SourceRange[]
+  documentPath: string;
+  selection: ProbeSelection;
+  scrollTop: number;
+  folds: SourceRange[];
 }
 
 declare global {
   interface Window {
-    __ipcInvocations: Array<{ channel: string, args: unknown[] }>
-    refNavProbeMount: (documents: ProbeDocument[], scenePath: string) => Promise<{ mounted: boolean }>
-    refNavProbeChipTarget: (key: string) => ProbeTarget | null
-    refNavProbeTextTarget: (text: string) => ProbeTarget | null
-    refNavProbeSelection: () => ProbeSelection
-    refNavProbeHasVisibleText: (text: string) => boolean
-    refNavProbeFold: (from: number, to: number) => void
-    refNavProbeSetScrollTop: (px: number) => number
-    refNavProbeExpectedLocation: () => ExpectedLocation
-    refNavProbeCaptureLocation: () => DocumentLocation | null
-    refNavProbeResolveIntentAt: (pos: number) => ReferenceNavigationIntent | null
-    refNavProbeFollowIntent: (intent: ReferenceNavigationIntent) => boolean
-    refNavProbeInvocations: () => Array<{ channel: string, args: unknown[] }>
-    refNavProbePosAtCoords: (x: number, y: number) => number | null
+    __ipcInvocations: Array<{ channel: string; args: unknown[] }>;
+    refNavProbeMount: (
+      documents: ProbeDocument[],
+      scenePath: string,
+    ) => Promise<{ mounted: boolean }>;
+    refNavProbeChipTarget: (key: string) => ProbeTarget | null;
+    refNavProbeTextTarget: (text: string) => ProbeTarget | null;
+    refNavProbeSelection: () => ProbeSelection;
+    refNavProbeHasVisibleText: (text: string) => boolean;
+    refNavProbeFold: (from: number, to: number) => void;
+    refNavProbeSetScrollTop: (px: number) => number;
+    refNavProbeExpectedLocation: () => ExpectedLocation;
+    refNavProbeCaptureLocation: () => DocumentLocation | null;
+    refNavProbeResolveIntentAt: (pos: number) => ReferenceNavigationIntent | null;
+    refNavProbeFollowIntent: (intent: ReferenceNavigationIntent) => boolean;
+    refNavProbeInvocations: () => Array<{ channel: string; args: unknown[] }>;
+    refNavProbePosAtCoords: (x: number, y: number) => number | null;
   }
 }
 
-let view: EditorView | null = null
-let currentDoc = ''
-let currentPath = ''
+let view: EditorView | null = null;
+let currentDoc = "";
+let currentPath = "";
 
-function requireView (): EditorView {
+function requireView(): EditorView {
   if (view === null) {
-    throw new Error('reference-navigation probe view is not mounted')
+    throw new Error("reference-navigation probe view is not mounted");
   }
-  return view
+  return view;
 }
 
-window.getCitationCallback = () => citations => citations.map(citation => {
-  return [ citation.id, citation.locator, citation.suffix?.trimStart() ]
-    .filter(part => part !== undefined)
-    .join(' ')
-}).join('; ')
+window.getCitationCallback = () => (citations) =>
+  citations
+    .map((citation) => {
+      return [citation.id, citation.locator, citation.suffix?.trimStart()]
+        .filter((part) => part !== undefined)
+        .join(" ");
+    })
+    .join("; ");
 
-function payloadFor (documents: ProbeDocument[], documentPath: string): EditorWorkspaceReferences {
-  const workspace = documents.map(document => extractReferences(document.path, document.content))
-  const snapshot = workspace.find(candidate => candidate.documentPath === documentPath)
+function payloadFor(documents: ProbeDocument[], documentPath: string): EditorWorkspaceReferences {
+  const workspace = documents.map((document) => extractReferences(document.path, document.content));
+  const snapshot = workspace.find((candidate) => candidate.documentPath === documentPath);
   if (snapshot === undefined) {
-    throw new Error(`Unknown probe scene document: ${documentPath}`)
+    throw new Error(`Unknown probe scene document: ${documentPath}`);
   }
   return {
     snapshot,
-    workspaceOccurrences: workspace.flatMap(candidate => candidate.occurrences),
-    resolutions: resolveWorkspace(workspace)
-  }
+    workspaceOccurrences: workspace.flatMap((candidate) => candidate.occurrences),
+    resolutions: resolveWorkspace(workspace),
+  };
 }
 
 window.refNavProbeMount = async (documents: ProbeDocument[], scenePath: string) => {
-  const sceneDocument = documents.find(document => document.path === scenePath)
+  const sceneDocument = documents.find((document) => document.path === scenePath);
   if (sceneDocument === undefined) {
-    throw new Error(`The probe scene path is not among the delivered documents: ${scenePath}`)
+    throw new Error(`The probe scene path is not among the delivered documents: ${scenePath}`);
   }
 
-  view?.destroy()
-  currentDoc = sceneDocument.content
-  currentPath = sceneDocument.path
+  view?.destroy();
+  currentDoc = sceneDocument.content;
+  currentPath = sceneDocument.path;
 
-  const host = document.querySelector<HTMLElement>('#editor')
+  const host = document.querySelector<HTMLElement>("#editor");
   if (host === null) {
-    throw new Error('Reference navigation probe host is missing')
+    throw new Error("Reference navigation probe host is missing");
   }
 
   view = new EditorView({
@@ -163,125 +169,127 @@ window.refNavProbeMount = async (documents: ProbeDocument[], scenePath: string) 
         workspaceReferencesField,
         // The production Mod-click mousedown path under test, registered
         // exactly like table-editor/subview.ts registers it.
-        EditorView.domEventHandlers(clickListeners())
-      ]
+        EditorView.domEventHandlers(clickListeners()),
+      ],
     }),
-    parent: host
-  })
-  view.dispatch({ effects: workspaceReferencesUpdate.of(payloadFor(documents, scenePath)) })
+    parent: host,
+  });
+  view.dispatch({ effects: workspaceReferencesUpdate.of(payloadFor(documents, scenePath)) });
 
-  view.focus()
-  await document.fonts.ready
-  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-  return { mounted: true }
-}
+  view.focus();
+  await document.fonts.ready;
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+  return { mounted: true };
+};
 
-function findVisibleTextNode (text: string): { node: Text, offset: number } | null {
-  const host = document.querySelector('#editor')
+function findVisibleTextNode(text: string): { node: Text; offset: number } | null {
+  const host = document.querySelector("#editor");
   if (host === null) {
-    return null
+    return null;
   }
-  const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
+  const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-    const value = node.textContent ?? ''
-    const offset = value.indexOf(text)
+    const value = node.textContent ?? "";
+    const offset = value.indexOf(text);
     if (offset >= 0 && node instanceof Text) {
-      return { node, offset }
+      return { node, offset };
     }
   }
-  return null
+  return null;
 }
 
 window.refNavProbeTextTarget = (text: string): ProbeTarget | null => {
-  const found = findVisibleTextNode(text)
+  const found = findVisibleTextNode(text);
   if (found === null) {
-    return null
+    return null;
   }
-  const range = document.createRange()
-  range.setStart(found.node, found.offset)
-  range.setEnd(found.node, found.offset + text.length)
-  const rect = range.getBoundingClientRect()
+  const range = document.createRange();
+  range.setStart(found.node, found.offset);
+  range.setEnd(found.node, found.offset + text.length);
+  const rect = range.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) {
-    return null
+    return null;
   }
-  const from = currentDoc.indexOf(text)
+  const from = currentDoc.indexOf(text);
   return {
     x: rect.left + rect.width / 2,
     y: rect.top + rect.height / 2,
     from,
-    to: from + text.length
-  }
-}
+    to: from + text.length,
+  };
+};
 
 window.refNavProbeChipTarget = (key: string): ProbeTarget | null => {
-  const chip = document.querySelector<HTMLElement>(`.reference-chip[data-reference-key="${key}"]`)
+  const chip = document.querySelector<HTMLElement>(`.reference-chip[data-reference-key="${key}"]`);
   if (chip === null) {
-    return null
+    return null;
   }
-  const rect = chip.getBoundingClientRect()
+  const rect = chip.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) {
-    return null
+    return null;
   }
-  const token = `@${key}`
-  const from = currentDoc.indexOf(token)
+  const token = `@${key}`;
+  const from = currentDoc.indexOf(token);
   return {
     x: rect.left + rect.width / 2,
     y: rect.top + rect.height / 2,
     from,
-    to: from >= 0 ? from + token.length : -1
-  }
-}
+    to: from >= 0 ? from + token.length : -1,
+  };
+};
 
 window.refNavProbeSelection = (): ProbeSelection => {
-  const main = requireView().state.selection.main
-  return { anchor: main.anchor, head: main.head }
-}
+  const main = requireView().state.selection.main;
+  return { anchor: main.anchor, head: main.head };
+};
 
 window.refNavProbeHasVisibleText = (text: string): boolean => {
-  return findVisibleTextNode(text) !== null
-}
+  return findVisibleTextNode(text) !== null;
+};
 
 window.refNavProbeFold = (from: number, to: number): void => {
-  requireView().dispatch({ effects: foldEffect.of({ from, to }) })
-}
+  requireView().dispatch({ effects: foldEffect.of({ from, to }) });
+};
 
 window.refNavProbeSetScrollTop = (px: number): number => {
-  const scroller = requireView().scrollDOM
-  scroller.scrollTop = px
-  return scroller.scrollTop
-}
+  const scroller = requireView().scrollDOM;
+  scroller.scrollTop = px;
+  return scroller.scrollTop;
+};
 
 window.refNavProbeExpectedLocation = (): ExpectedLocation => {
-  const liveView = requireView()
-  const folds: SourceRange[] = []
-  const iterator = foldedRanges(liveView.state).iter()
+  const liveView = requireView();
+  const folds: SourceRange[] = [];
+  const iterator = foldedRanges(liveView.state).iter();
   while (iterator.value !== null) {
-    folds.push({ from: iterator.from, to: iterator.to })
-    iterator.next()
+    folds.push({ from: iterator.from, to: iterator.to });
+    iterator.next();
   }
-  const main = liveView.state.selection.main
+  const main = liveView.state.selection.main;
   return {
     documentPath: currentPath,
     selection: { anchor: main.anchor, head: main.head },
     scrollTop: liveView.scrollDOM.scrollTop,
-    folds
-  }
-}
+    folds,
+  };
+};
 
 window.refNavProbeCaptureLocation = (): DocumentLocation | null => {
-  return captureDocumentLocation(requireView(), currentPath)
-}
+  return captureDocumentLocation(requireView(), currentPath);
+};
 
 window.refNavProbeResolveIntentAt = (pos: number): ReferenceNavigationIntent | null => {
-  return resolveReferenceNavigationIntent(requireView(), pos)
-}
+  return resolveReferenceNavigationIntent(requireView(), pos);
+};
 
 window.refNavProbeFollowIntent = (intent: ReferenceNavigationIntent): boolean => {
-  return followReferenceNavigationIntent(requireView(), intent)
-}
+  return followReferenceNavigationIntent(requireView(), intent);
+};
 
-window.refNavProbeInvocations = () => window.__ipcInvocations ?? []
+window.refNavProbeInvocations = () => window.__ipcInvocations ?? [];
 
 window.refNavProbePosAtCoords = (x: number, y: number): number | null => {
-  return requireView().posAtCoords({ x, y })
-}
+  return requireView().posAtCoords({ x, y });
+};

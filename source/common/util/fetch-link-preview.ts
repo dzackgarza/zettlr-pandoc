@@ -14,8 +14,8 @@
  * END HEADER
  */
 
-import got from 'got'
-import { type IncomingHttpHeaders } from 'http2'
+import got from "got";
+import { type IncomingHttpHeaders } from "http2";
 
 /**
  * This is the result that we
@@ -24,28 +24,31 @@ export interface LinkPreviewResult {
   /**
    * The title of the website behind the given URL
    */
-  title: string
+  title: string;
   /**
    * A summary of the website. This can be the meta description property, or a
    * custom response, depending on what's implemented.
    */
-  summary?: string
+  summary?: string;
   /**
    * If given, this contains the preview image (either from og:image or twitter:image)
    */
-  image?: string
+  image?: string;
 }
 
 interface MediaWikiAPIResponse {
-  batchcomplete: string
+  batchcomplete: string;
   query: {
-    pages: Record<string, {
-      pageid: string
-      ns: number
-      title: string
-      extract: string
-    }>
-  }
+    pages: Record<
+      string,
+      {
+        pageid: string;
+        ns: number;
+        title: string;
+        extract: string;
+      }
+    >;
+  };
 }
 
 /**
@@ -57,10 +60,10 @@ interface MediaWikiAPIResponse {
  *
  * @return  {Promise<IncomingHttpHeaders>}          Resolves with the headers
  */
-async function fetchHeaders (rawUrl: string): Promise<IncomingHttpHeaders> {
+async function fetchHeaders(rawUrl: string): Promise<IncomingHttpHeaders> {
   return await new Promise((resolve, reject) => {
     // Initiate request
-    const promise = got(rawUrl)
+    const promise = got(rawUrl);
 
     // Hook three listeners: As soon as 'response' is fired the headers are
     // available and the download begins. At that point, resolve with the
@@ -69,13 +72,13 @@ async function fetchHeaders (rawUrl: string): Promise<IncomingHttpHeaders> {
     // event response will be simultaneous), and finally add a catch for good
     // measure.
     promise
-      .on('response', response => {
-        resolve(response.headers)
-        promise.cancel()
+      .on("response", (response) => {
+        resolve(response.headers);
+        promise.cancel();
       })
-      .then(response => resolve(response.headers))
-      .catch(err => reject(err))
-  })
+      .then((response) => resolve(response.headers))
+      .catch((err) => reject(err));
+  });
 }
 
 /**
@@ -86,28 +89,28 @@ async function fetchHeaders (rawUrl: string): Promise<IncomingHttpHeaders> {
  *
  * @return  {boolean}                       Whether the content type is supported
  */
-function isPreviewableContent (headers: IncomingHttpHeaders): boolean {
+function isPreviewableContent(headers: IncomingHttpHeaders): boolean {
   const PREVIEWABLE_CONTENT_TYPES = [
-    'text/html' // Regular HTML content
+    "text/html", // Regular HTML content
     // TODO: Also allow images at some point (requires a larger amount of
     // rewrite to this module) -- and maybe even other types.
     // Full list of mime types: https://www.iana.org/assignments/media-types/media-types.xhtml
-  ]
+  ];
 
-  const contentType = headers['content-type']
+  const contentType = headers["content-type"];
   if (contentType === undefined) {
-    return false // Possibly a misconfigured webserver
+    return false; // Possibly a misconfigured webserver
   }
 
   // The actual contentType must be in the form of type/subtype in the beginning
   // of the content type header.
   for (const type of PREVIEWABLE_CONTENT_TYPES) {
     if (contentType.startsWith(type)) {
-      return true
+      return true;
     }
   }
 
-  return false
+  return false;
 }
 
 /**
@@ -122,85 +125,86 @@ function isPreviewableContent (headers: IncomingHttpHeaders): boolean {
  * @throws No error handling within the function. You either get a full result
  * or none.
  */
-export async function fetchLinkPreview (rawUrl: string): Promise<LinkPreviewResult> {
+export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreviewResult> {
   const returnValue: LinkPreviewResult = {
-    title: '',
+    title: "",
     summary: undefined,
-    image: undefined
-  }
+    image: undefined,
+  };
 
   // First, inspect the headers to see if we can even preview this piece of
   // information.
-  const responseHeaders = await fetchHeaders(rawUrl)
+  const responseHeaders = await fetchHeaders(rawUrl);
 
   if (!isPreviewableContent(responseHeaders)) {
-    throw new Error('Unsupported content type')
+    throw new Error("Unsupported content type");
   }
 
   // We will use the hostname to differentiate a few pages where we can do
   // better than just looking at the meta arguments; most prominently:
   // Wikipedia articles.
-  const url = new URL(rawUrl)
+  const url = new URL(rawUrl);
 
   // First, we need to fetch the HTML of the page
-  const result = await got(rawUrl)
-  const body = result.body
+  const result = await got(rawUrl);
+  const body = result.body;
 
   // Next, we can retrieve the title of the website
-  const title = body.match(/<title\s*>(.+?)<\/title\s*>/i)
+  const title = body.match(/<title\s*>(.+?)<\/title\s*>/i);
   if (title !== null) {
-    returnValue.title = title[1]
+    returnValue.title = title[1];
   } else {
-    throw new Error('No title field found')
+    throw new Error("No title field found");
   }
 
   // Extract all meta properties where we can find some of the info we want
-  const meta: Record<string, string> = {}
+  const meta: Record<string, string> = {};
   for (const match of body.matchAll(/<meta .+?>/gi)) {
     // NOTE: We have to do a two-stage extraction, because otherwise badly
     // formatted websites can cause the entire app to lock up (catastrophic
     // backtracking, see issue #4883)
-    const propMatches = [...match[0].matchAll(/(name|content)=(?:"(.+?)"|([^\s>]+))/gi)]
-    const name = propMatches.find(m => m[1] === 'name')
-    const content = propMatches.find(m => m[1] === 'content')
+    const propMatches = [...match[0].matchAll(/(name|content)=(?:"(.+?)"|([^\s>]+))/gi)];
+    const name = propMatches.find((m) => m[1] === "name");
+    const content = propMatches.find((m) => m[1] === "content");
     if (name !== undefined && content !== undefined) {
-      const key = name[2] ?? name[3]
-      const value = content[2] ?? content[3]
-      meta[key] = value
+      const key = name[2] ?? name[3];
+      const value = content[2] ?? content[3];
+      meta[key] = value;
     }
   }
 
   // Now with the meta at hand, we can fill in the image property (possibly)
-  if ('og:image' in meta) {
-    returnValue.image = meta['og:image']
-  } else if ('twitter:image' in meta) {
-    returnValue.image = meta['twitter:image']
+  if ("og:image" in meta) {
+    returnValue.image = meta["og:image"];
+  } else if ("twitter:image" in meta) {
+    returnValue.image = meta["twitter:image"];
   } // Else: No image
 
   // Special treatment for Wikipedia pages
-  if (url.hostname.endsWith('wikipedia.org') && url.pathname.startsWith('/wiki/')) {
-    const title = url.pathname.slice(6)
-    url.pathname = '/w/api.php'
-    url.search = `format=json&action=query&prop=extracts&exintro&explaintext&redirects=1&titles=${title}`
+  if (url.hostname.endsWith("wikipedia.org") && url.pathname.startsWith("/wiki/")) {
+    const title = url.pathname.slice(6);
+    url.pathname = "/w/api.php";
+    url.search = `format=json&action=query&prop=extracts&exintro&explaintext&redirects=1&titles=${title}`;
     // We have a Wikipedia page. Here, we can get a better description by using
     // the API
-    const result = await got(url.href)
-    const body: MediaWikiAPIResponse = JSON.parse(result.body)
-    returnValue.summary = Object.values(body.query.pages)[0].extract
+    const result = await got(url.href);
+    const body: MediaWikiAPIResponse = JSON.parse(result.body);
+    returnValue.summary = Object.values(body.query.pages)[0].extract;
   } else {
     // Otherwise, regular treatment
-    returnValue.summary = meta['description'] ?? meta['og:description'] ?? meta['twitter:description']
+    returnValue.summary =
+      meta["description"] ?? meta["og:description"] ?? meta["twitter:description"];
   }
 
   if (returnValue.summary !== undefined && returnValue.summary.length > 300) {
     // Shorten overly long summary
-    const shortened = returnValue.summary.slice(0, 300)
-    if (shortened.includes('.')) {
-      returnValue.summary = shortened.slice(0, shortened.lastIndexOf('.') + 1) + ' […]'
+    const shortened = returnValue.summary.slice(0, 300);
+    if (shortened.includes(".")) {
+      returnValue.summary = shortened.slice(0, shortened.lastIndexOf(".") + 1) + " […]";
     } else {
-      returnValue.summary = shortened + ' […]'
+      returnValue.summary = shortened + " […]";
     }
   }
 
-  return returnValue
+  return returnValue;
 }

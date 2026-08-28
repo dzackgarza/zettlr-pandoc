@@ -130,136 +130,136 @@
 </template>
 
 <script setup lang="ts">
-import type { OnboardingIPCMessage } from 'source/app/service-providers/config/onboarding-window'
-import { ref, computed } from 'vue'
-import WelcomePage from './pages/WelcomePage.vue'
-import SetAppLang from './pages/SetAppLang.vue'
-import FinishPage from './pages/FinishPage.vue'
-import UpdatingPage from './pages/UpdatingPage.vue'
-import LookAndFeelPage from './pages/LookAndFeelPage.vue'
-import WritingMarkdownPage from './pages/WritingMarkdownPage.vue'
-import CitingPage from './pages/CitingPage.vue'
-import WritingCheckPage from './pages/WritingCheckPage.vue'
-import OtherFilesPage from './pages/OtherFilesPage.vue'
-import PACKAGE_JSON from '../../package.json'
-import { trans } from 'source/common/i18n-renderer'
-import SupportLogos from './SupportLogos.vue'
-import { DateTime } from 'luxon'
-import { useConfigStore } from 'source/pinia'
+import { DateTime } from "luxon";
+import type { OnboardingIPCMessage } from "source/app/service-providers/config/onboarding-window";
+import { trans } from "source/common/i18n-renderer";
+import { useConfigStore } from "source/pinia";
+import { computed, ref } from "vue";
+import PACKAGE_JSON from "../../package.json";
+import CitingPage from "./pages/CitingPage.vue";
+import FinishPage from "./pages/FinishPage.vue";
+import LookAndFeelPage from "./pages/LookAndFeelPage.vue";
+import OtherFilesPage from "./pages/OtherFilesPage.vue";
+import SetAppLang from "./pages/SetAppLang.vue";
+import UpdatingPage from "./pages/UpdatingPage.vue";
+import WelcomePage from "./pages/WelcomePage.vue";
+import WritingCheckPage from "./pages/WritingCheckPage.vue";
+import WritingMarkdownPage from "./pages/WritingMarkdownPage.vue";
+import SupportLogos from "./SupportLogos.vue";
 
 // This is required because some elements (looking at you, RadioControl) are
 // completely namespaced to platform specific values and we don't include the
 // standard window chrome here.
-document.body.classList.add(process.platform)
+document.body.classList.add(process.platform);
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-const searchParams = new URLSearchParams(window.location.search)
-const mode: string|null = searchParams.get('mode')
-const version = PACKAGE_JSON.version
+const searchParams = new URLSearchParams(window.location.search);
+const mode: string | null = searchParams.get("mode");
+const version = PACKAGE_JSON.version;
 
-const configStore = useConfigStore()
+const configStore = useConfigStore();
 
-if (configStore.config.window.vibrancy && process.platform === 'darwin') {
-  document.body.classList.add('has-vibrancy')
+if (configStore.config.window.vibrancy && process.platform === "darwin") {
+  document.body.classList.add("has-vibrancy");
 }
 
 const pages = [
-  'welcome',
-  'app-lang',
-  'updates',
-  'look-and-feel',
-  'writing-markdown',
-  'citations',
-  'writing-check',
-  'other-files',
-  'finish'
-] as const
+  "welcome",
+  "app-lang",
+  "updates",
+  "look-and-feel",
+  "writing-markdown",
+  "citations",
+  "writing-check",
+  "other-files",
+  "finish",
+] as const;
 
 // Update labels
-const updateCompleteHeading = trans('Update complete!')
-const updateCompleteMessage = trans('Zettlr has been updated. You are now running Zettlr')
-const getStartedLabel = trans('Get started')
-const whatsChangedLabel = trans('See what\'s changed')
-const buildDate = DateTime.fromISO(__BUILD_DATE__).toLocaleString({ dateStyle: 'full' })
-const buildDateLabel = trans('Build date: %s', buildDate)
+const updateCompleteHeading = trans("Update complete!");
+const updateCompleteMessage = trans("Zettlr has been updated. You are now running Zettlr");
+const getStartedLabel = trans("Get started");
+const whatsChangedLabel = trans("See what's changed");
+const buildDate = DateTime.fromISO(__BUILD_DATE__).toLocaleString({ dateStyle: "full" });
+const buildDateLabel = trans("Build date: %s", buildDate);
 
 // Onboarding workflow labels
-const startSetupLabel = ref(trans('Start setup'))
-const skipLabel = ref(trans('Skip'))
-const previousLabel = ref(trans('Previous'))
-const nextLabel = ref(trans('Next'))
-const finishLabel = ref(trans('Finish'))
+const startSetupLabel = ref(trans("Start setup"));
+const skipLabel = ref(trans("Skip"));
+const previousLabel = ref(trans("Previous"));
+const nextLabel = ref(trans("Next"));
+const finishLabel = ref(trans("Finish"));
 
 // This function is called whenever the user switches the app language on the
 // app lang page. Pages will be mounted and unmounted, meaning that we get
 // re-translation for free, but the navigation will stay, so we have to manually
 // trigger a translation.
-function retranslateLabels () {
-  startSetupLabel.value = trans('Start setup')
-  skipLabel.value = trans('Skip')
-  previousLabel.value = trans('Previous')
-  nextLabel.value = trans('Next')
-  finishLabel.value = trans('Finish')
+function retranslateLabels() {
+  startSetupLabel.value = trans("Start setup");
+  skipLabel.value = trans("Skip");
+  previousLabel.value = trans("Previous");
+  nextLabel.value = trans("Next");
+  finishLabel.value = trans("Finish");
 }
 
-const currentPage = ref<typeof pages[number]>('welcome')
-const currentPageIndex = computed(() => pages.indexOf(currentPage.value))
+const currentPage = ref<(typeof pages)[number]>("welcome");
+const currentPageIndex = computed(() => pages.indexOf(currentPage.value));
 
-const transitionMode = ref<'forward'|'backward'>('forward')
+const transitionMode = ref<"forward" | "backward">("forward");
 
-const canGoBackward = computed(() => currentPageIndex.value > 0)
-const canGoForward = computed(() => currentPageIndex.value < pages.length - 1)
+const canGoBackward = computed(() => currentPageIndex.value > 0);
+const canGoForward = computed(() => currentPageIndex.value < pages.length - 1);
 
 // The app language page has the ability to disable navigating while the new
 // application language is being loaded.
-const navigationDisabled = ref(false)
+const navigationDisabled = ref(false);
 
-function forward () {
+function forward() {
   if (currentPageIndex.value > -1 && currentPageIndex.value === pages.length - 1) {
     // TODO: Finish
   } else {
-    transitionMode.value = 'forward'
-    currentPage.value = pages[currentPageIndex.value + 1]
+    transitionMode.value = "forward";
+    currentPage.value = pages[currentPageIndex.value + 1];
   }
 }
 
-function back () {
+function back() {
   if (currentPageIndex.value > 0) {
-    transitionMode.value = 'backward'
-    currentPage.value = pages[currentPageIndex.value - 1]
+    transitionMode.value = "backward";
+    currentPage.value = pages[currentPageIndex.value - 1];
   } else {
     // TODO: No more back
   }
 }
 
-function moveToPage (i: number) {
+function moveToPage(i: number) {
   if (navigationDisabled.value) {
-    return
+    return;
   }
 
   if (i < 0 || i >= pages.length || i === currentPageIndex.value) {
-    return
+    return;
   }
 
   if (i > currentPageIndex.value) {
-    transitionMode.value = 'forward'
+    transitionMode.value = "forward";
   } else {
-    transitionMode.value = 'backward'
+    transitionMode.value = "backward";
   }
-  currentPage.value = pages[i]
+  currentPage.value = pages[i];
 }
 
-function close () {
-  sendMessage({ command: 'close' })
+function close() {
+  sendMessage({ command: "close" });
 }
 
-function sendMessage (payload: OnboardingIPCMessage) {
-  ipcRenderer.send('onboarding', payload)
+function sendMessage(payload: OnboardingIPCMessage) {
+  ipcRenderer.send("onboarding", payload);
 }
 
-function loadUrl (url: string) {
-  window.location.href = url
+function loadUrl(url: string) {
+  window.location.href = url;
 }
 </script>
 

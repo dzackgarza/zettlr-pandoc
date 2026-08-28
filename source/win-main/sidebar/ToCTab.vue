@@ -29,31 +29,31 @@
 </template>
 
 <script setup lang="ts">
-import { trans } from '@common/i18n-renderer'
-import { ref, computed, watch, toRef, onMounted } from 'vue'
-import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
-import { type AnyDescriptor } from '@dts/common/fsal'
-import { md2html } from '@common/modules/markdown-utils'
-import { useConfigStore, useDocumentTreeStore, useWindowStateStore } from 'source/pinia'
+import { trans } from "@common/i18n-renderer";
+import { md2html } from "@common/modules/markdown-utils";
+import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
+import { type AnyDescriptor } from "@dts/common/fsal";
+import { useConfigStore, useDocumentTreeStore, useWindowStateStore } from "source/pinia";
+import { computed, onMounted, ref, toRef, watch } from "vue";
 
-const ipcRenderer = window.ipc
-const windowStateStore = useWindowStateStore()
-const documentTreeStore = useDocumentTreeStore()
-const configStore = useConfigStore()
+const ipcRenderer = window.ipc;
+const windowStateStore = useWindowStateStore();
+const documentTreeStore = useDocumentTreeStore();
+const configStore = useConfigStore();
 
 const emit = defineEmits<{
-  (e: 'move-section', data: { from: number, to: number }): void
-  (e: 'jump-to-line', line: number): void
-}>()
+  (e: "move-section", data: { from: number; to: number }): void;
+  (e: "jump-to-line", line: number): void;
+}>();
 
-const activeFileDescriptor = ref<AnyDescriptor|null>(null)
-const library = ref<string>(CITEPROC_MAIN_DB)
+const activeFileDescriptor = ref<AnyDescriptor | null>(null);
+const library = ref<string>(CITEPROC_MAIN_DB);
 
-const tableOfContents = computed(() => windowStateStore.tableOfContents)
-const tocEntryHTML = ref<string[]>([])
+const tableOfContents = computed(() => windowStateStore.tableOfContents);
+const tocEntryHTML = ref<string[]>([]);
 
-watch(toRef(tableOfContents), updateToCHTML)
-onMounted(updateToCHTML)
+watch(toRef(tableOfContents), updateToCHTML);
+onMounted(updateToCHTML);
 
 /**
  * Returns either the title property for the active file or the generic ToC
@@ -64,46 +64,51 @@ onMounted(updateToCHTML)
 const titleOrTocLabel = computed(() => {
   if (
     activeFileDescriptor.value === null ||
-    activeFileDescriptor.value.type !== 'file' ||
+    activeFileDescriptor.value.type !== "file" ||
     activeFileDescriptor.value.frontmatter == null
   ) {
-    return trans('Table of contents')
+    return trans("Table of contents");
   }
 
-  const frontmatter = activeFileDescriptor.value.frontmatter
+  const frontmatter = activeFileDescriptor.value.frontmatter;
 
-  if ('title' in frontmatter && frontmatter.title.length > 0) {
-    return frontmatter.title
+  if ("title" in frontmatter && frontmatter.title.length > 0) {
+    return frontmatter.title;
   } else {
-    return trans('Table of contents')
+    return trans("Table of contents");
   }
-})
+});
 
-const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
+const activeFile = computed(() => documentTreeStore.lastLeafActiveFile);
 
 watch(activeFile, async (newValue) => {
   if (newValue === undefined) {
-    activeFileDescriptor.value = null
+    activeFileDescriptor.value = null;
   } else {
-    const descriptor: AnyDescriptor|undefined = await ipcRenderer.invoke('fsal', {
-      command: 'get-descriptor',
-      payload: newValue.path
-    })
+    const descriptor: AnyDescriptor | undefined = await ipcRenderer.invoke("fsal", {
+      command: "get-descriptor",
+      payload: newValue.path,
+    });
 
-    activeFileDescriptor.value = descriptor ?? null
+    activeFileDescriptor.value = descriptor ?? null;
   }
-})
+});
 
 watch(activeFileDescriptor, (newValue) => {
-  if (newValue === null || newValue.type !== 'file') {
-    library.value = CITEPROC_MAIN_DB
+  if (newValue === null || newValue.type !== "file") {
+    library.value = CITEPROC_MAIN_DB;
   } else {
-    const fm = newValue.frontmatter
-    if (fm != null && 'bibliography' in fm && typeof fm.bibliography === 'string' && fm.bibliography.length > 0) {
-      library.value = fm.bibliography
+    const fm = newValue.frontmatter;
+    if (
+      fm != null &&
+      "bibliography" in fm &&
+      typeof fm.bibliography === "string" &&
+      fm.bibliography.length > 0
+    ) {
+      library.value = fm.bibliography;
     }
   }
-})
+});
 
 /**
  * Whether the cursor is within the corresponding document section
@@ -111,111 +116,111 @@ watch(activeFileDescriptor, (newValue) => {
  * @param   {number}  tocEntryLine          Line number of section heading
  * @param   {number}  tocEntryIdx           Index of heading in ToC
  */
-function tocEntryIsActive (tocEntryLine: number, tocEntryIdx: number): boolean {
+function tocEntryIsActive(tocEntryLine: number, tocEntryIdx: number): boolean {
   if (tableOfContents.value === undefined || windowStateStore.activeDocumentInfo === undefined) {
-    return false
+    return false;
   }
 
-  const cursorLine = windowStateStore.activeDocumentInfo.cursor.line
+  const cursorLine = windowStateStore.activeDocumentInfo.cursor.line;
 
   // Determine index of next heading in ToC list
-  const nextTocEntryIdx = Math.min(tocEntryIdx + 1, tableOfContents.value.length - 1)
+  const nextTocEntryIdx = Math.min(tocEntryIdx + 1, tableOfContents.value.length - 1);
 
   // Now, determine the next heading's line number
-  let nextTocEntryLine = Infinity
+  let nextTocEntryLine = Infinity;
   if (tocEntryIdx !== nextTocEntryIdx) {
-    nextTocEntryLine = tableOfContents.value[nextTocEntryIdx].line
+    nextTocEntryLine = tableOfContents.value[nextTocEntryIdx].line;
   }
 
   // True, when cursor lies between current and next heading
-  return (cursorLine >= tocEntryLine && cursorLine < nextTocEntryLine)
+  return cursorLine >= tocEntryLine && cursorLine < nextTocEntryLine;
 }
 
 /**
  * Converts the ToC entries's texts to (safe) HTML.
  */
-function updateToCHTML () {
+function updateToCHTML() {
   if (tableOfContents.value === undefined) {
-    return
+    return;
   }
 
-  const promises: Promise<string>[] = []
+  const promises: Promise<string>[] = [];
 
   for (const entry of tableOfContents.value) {
     promises.push(
       md2html(entry.text, {
         onCitation: window.getCitationCallback(library.value),
-        zknLinkFormat: configStore.config.zkn.linkFormat
-      })
-    )
+        zknLinkFormat: configStore.config.zkn.linkFormat,
+      }),
+    );
   }
 
   Promise.all(promises)
-    .then(values => {
-      tocEntryHTML.value = values
+    .then((values) => {
+      tocEntryHTML.value = values;
     })
-    .catch(err => console.error(err))
+    .catch((err) => console.error(err));
 }
 
-function startDragging (event: DragEvent): void {
+function startDragging(event: DragEvent): void {
   if (event.currentTarget === null) {
-    return
+    return;
   }
-  const fromLine = (event.currentTarget as HTMLElement).dataset.line
+  const fromLine = (event.currentTarget as HTMLElement).dataset.line;
   if (fromLine !== undefined) {
-    event.dataTransfer?.setData('x-zettlr/toc-drag', fromLine)
+    event.dataTransfer?.setData("x-zettlr/toc-drag", fromLine);
   }
 }
 
-function dragOver (event: DragEvent): void {
-  const elem = document.querySelectorAll('.toc-entry-container')
-  elem.forEach(e => e.classList.remove('toc-drop-effect'))
-  const container = event.currentTarget as HTMLElement
-  container.classList.add('toc-drop-effect')
+function dragOver(event: DragEvent): void {
+  const elem = document.querySelectorAll(".toc-entry-container");
+  elem.forEach((e) => e.classList.remove("toc-drop-effect"));
+  const container = event.currentTarget as HTMLElement;
+  container.classList.add("toc-drop-effect");
 }
 
-function drop (event: DragEvent): void {
+function drop(event: DragEvent): void {
   if (event.currentTarget === null || event.dataTransfer === null) {
-    return
+    return;
   }
 
-  const container = event.currentTarget as HTMLElement
-  container.classList.remove('toc-drop-effect')
+  const container = event.currentTarget as HTMLElement;
+  container.classList.remove("toc-drop-effect");
 
   if (container.dataset.line === undefined) {
-    return
+    return;
   }
 
-  const fromLine = parseInt(event.dataTransfer.getData('x-zettlr/toc-drag'), 10)
-  const toLine = parseInt(container.dataset.line, 10)
+  const fromLine = parseInt(event.dataTransfer.getData("x-zettlr/toc-drag"), 10);
+  const toLine = parseInt(container.dataset.line, 10);
   if (fromLine === toLine) {
-    return
+    return;
   }
 
-  const actualToLine = findEndOfEntry(toLine)
+  const actualToLine = findEndOfEntry(toLine);
   if (actualToLine === undefined) {
-    console.warn('Could not move section: Could not find correct target line')
-    return
+    console.warn("Could not move section: Could not find correct target line");
+    return;
   }
 
-  emit('move-section', { from: fromLine, to: actualToLine })
+  emit("move-section", { from: fromLine, to: actualToLine });
 }
 
-function findEndOfEntry (originalToLine: number): number|undefined {
+function findEndOfEntry(originalToLine: number): number | undefined {
   if (tableOfContents.value == null) {
-    return
+    return;
   }
 
-  const idx = tableOfContents.value.findIndex(elem => elem.line === originalToLine)
+  const idx = tableOfContents.value.findIndex((elem) => elem.line === originalToLine);
 
   if (idx < 0) {
-    return
+    return;
   }
 
   if (idx === tableOfContents.value.length - 1) {
-    return -1
+    return -1;
   } else {
-    return tableOfContents.value[idx + 1].line
+    return tableOfContents.value[idx + 1].line;
   }
 }
 </script>

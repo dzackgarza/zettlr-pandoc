@@ -12,30 +12,30 @@
  * END HEADER
  */
 
-import { StateEffect, StateField, type EditorState, type SelectionRange } from '@codemirror/state'
-import { Decoration, EditorView, type DecorationSet } from '@codemirror/view'
+import { type EditorState, type SelectionRange, StateEffect, StateField } from "@codemirror/state";
+import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 
 // cm-selectionMatch is defined in the search plugin
-const highlightDeco = Decoration.mark({ class: 'cm-selectionMatch' })
+const highlightDeco = Decoration.mark({ class: "cm-selectionMatch" });
 
-export const highlightRangesEffect = StateEffect.define<SelectionRange[]>()
+export const highlightRangesEffect = StateEffect.define<SelectionRange[]>();
 
 export const highlightRanges = StateField.define<DecorationSet>({
-  create (_state: EditorState) {
-    return Decoration.none
+  create(_state: EditorState) {
+    return Decoration.none;
   },
-  update (oldVal, transaction) {
+  update(oldVal, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(highlightRangesEffect)) {
-        const newDecos = []
+        const newDecos = [];
         for (const range of effect.value) {
-          newDecos.push(highlightDeco.range(range.from, range.to))
+          newDecos.push(highlightDeco.range(range.from, range.to));
         }
-        return Decoration.set(newDecos)
+        return Decoration.set(newDecos);
       }
     }
 
-    return oldVal.map(transaction.changes)
+    return oldVal.map(transaction.changes);
   },
-  provide: f => EditorView.decorations.from(f)
-})
+  provide: (f) => EditorView.decorations.from(f),
+});

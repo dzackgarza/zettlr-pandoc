@@ -38,26 +38,26 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed } from "vue";
 
 const props = defineProps<{
-  ratio: number
-  color?: string
-  circleSize?: number
-  lineWidth?: number
-}>()
+  ratio: number;
+  color?: string;
+  circleSize?: number;
+  lineWidth?: number;
+}>();
 
 const circleRadius = computed<number>(() => {
-  return (props.circleSize ?? 20 / 2) - (props.lineWidth ?? 2 * 2)
-})
+  return (props.circleSize ?? 20 / 2) - (props.lineWidth ?? 2 * 2);
+});
 
 const circleCircumference = computed<number>(() => {
-  return circleRadius.value * 2 * Math.PI
-})
+  return circleRadius.value * 2 * Math.PI;
+});
 
 const circleOffset = computed<number>(() => {
-  return circleCircumference.value - props.ratio * circleCircumference.value
-})
+  return circleCircumference.value - props.ratio * circleCircumference.value;
+});
 </script>
 
 <style lang="css" scoped>

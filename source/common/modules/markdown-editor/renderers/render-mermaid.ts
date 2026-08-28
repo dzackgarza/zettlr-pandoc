@@ -12,139 +12,151 @@
  * END HEADER
  */
 
-import { renderBlockWidgets } from './base-renderer'
-import { type SyntaxNode, type SyntaxNodeRef } from '@lezer/common'
-import { WidgetType, type EditorView } from '@codemirror/view'
-import mermaid, { type MermaidConfig } from 'mermaid'
-import { type EditorState } from '@codemirror/state'
-import clickAndSelect from './click-and-select'
-import { trans } from '@common/i18n-renderer'
+import { type EditorState } from "@codemirror/state";
+import { type EditorView, WidgetType } from "@codemirror/view";
+import { trans } from "@common/i18n-renderer";
+import { type SyntaxNode, type SyntaxNodeRef } from "@lezer/common";
+import mermaid, { type MermaidConfig } from "mermaid";
+import { renderBlockWidgets } from "./base-renderer";
+import clickAndSelect from "./click-and-select";
 
 // Define some default options
 const DEFAULT_MERMAID_OPTIONS: MermaidConfig = {
-  securityLevel: 'strict',
+  securityLevel: "strict",
   htmlLabels: false,
-  theme: 'default',
+  theme: "default",
   startOnLoad: false, // Do not immediately scan the document
-  suppressErrorRendering: true // Never render unasked error codes
-}
+  suppressErrorRendering: true, // Never render unasked error codes
+};
 
 // Always re-initialize mermaid as soon as the darkMode changes
-const ipcRenderer = window.ipc
-ipcRenderer.on('config-provider', (event, { command, payload }) => {
-  if (command === 'update' && payload === 'darkMode') {
-    const isDarkMode = window.config.get('darkMode') as boolean
-    const theme = isDarkMode ? 'dark' : 'default'
-    mermaid.initialize({ ...DEFAULT_MERMAID_OPTIONS, theme })
+const ipcRenderer = window.ipc;
+ipcRenderer.on("config-provider", (event, { command, payload }) => {
+  if (command === "update" && payload === "darkMode") {
+    const isDarkMode = window.config.get("darkMode") as boolean;
+    const theme = isDarkMode ? "dark" : "default";
+    mermaid.initialize({ ...DEFAULT_MERMAID_OPTIONS, theme });
   }
-})
+});
 
 // Initially, set the dark theme
-mermaid.initialize(DEFAULT_MERMAID_OPTIONS)
+mermaid.initialize(DEFAULT_MERMAID_OPTIONS);
 
-function onError (err: unknown, container: HTMLElement) {
-  container.classList.add('error')
+function onError(err: unknown, container: HTMLElement) {
+  container.classList.add("error");
   if (err instanceof Error) {
-    console.error(err)
-    container.innerText = `${trans('Could not render Graph:')}\n\n${err.message}`
+    console.error(err);
+    container.innerText = `${trans("Could not render Graph:")}\n\n${err.message}`;
   } else {
-    container.innerText = trans('Could not render Graph.')
+    container.innerText = trans("Could not render Graph.");
   }
 }
 
 class MermaidWidget extends WidgetType {
-  constructor (readonly graph: string, readonly node: SyntaxNode, readonly darkMode: boolean) {
-    super()
+  constructor(
+    readonly graph: string,
+    readonly node: SyntaxNode,
+    readonly darkMode: boolean,
+  ) {
+    super();
   }
 
-  eq (other: MermaidWidget): boolean {
-    return other.graph === this.graph &&
+  eq(other: MermaidWidget): boolean {
+    return (
+      other.graph === this.graph &&
       other.node.from === this.node.from &&
       other.node.to === this.node.to &&
       this.darkMode === other.darkMode
+    );
   }
 
-  toDOM (view: EditorView): HTMLElement {
-    const elem = document.createElement('span')
-    elem.classList.add('mermaid-chart')
-    elem.dataset.graph = this.graph
-    elem.dataset.darkTheme = String(this.darkMode)
+  toDOM(view: EditorView): HTMLElement {
+    const elem = document.createElement("span");
+    elem.classList.add("mermaid-chart");
+    elem.dataset.graph = this.graph;
+    elem.dataset.darkTheme = String(this.darkMode);
 
-    const id = `graphDiv${Date.now()}`
-    elem.innerText = trans('Rendering mermaid graph …')
-    mermaid.render(id, this.graph)
-      .then(result => { elem.innerHTML = result.svg })
-      .catch((err: unknown) => onError(err, elem))
+    const id = `graphDiv${Date.now()}`;
+    elem.innerText = trans("Rendering mermaid graph …");
+    mermaid
+      .render(id, this.graph)
+      .then((result) => {
+        elem.innerHTML = result.svg;
+      })
+      .catch((err: unknown) => onError(err, elem));
 
-    elem.addEventListener('click', clickAndSelect(view))
-    return elem
+    elem.addEventListener("click", clickAndSelect(view));
+    return elem;
   }
 
-  updateDOM (dom: HTMLElement, _view: EditorView): boolean {
+  updateDOM(dom: HTMLElement, _view: EditorView): boolean {
     if (dom.dataset.graph === this.graph && dom.dataset.darkTheme === String(this.darkMode)) {
-      return true // No update necessary
+      return true; // No update necessary
     }
 
-    const id = `graphDiv${Date.now()}`
-    dom.innerText = trans('Rendering mermaid graph …')
-    mermaid.render(id, this.graph)
-      .then(result => { dom.innerHTML = result.svg })
-      .catch((err: unknown) => onError(err, dom))
+    const id = `graphDiv${Date.now()}`;
+    dom.innerText = trans("Rendering mermaid graph …");
+    mermaid
+      .render(id, this.graph)
+      .then((result) => {
+        dom.innerHTML = result.svg;
+      })
+      .catch((err: unknown) => onError(err, dom));
 
-    return true
+    return true;
   }
 
-  ignoreEvent (event: Event): boolean {
-    return false // By default ignore all events
+  ignoreEvent(event: Event): boolean {
+    return false; // By default ignore all events
   }
 }
 
-function shouldHandleNode (node: SyntaxNodeRef): boolean {
+function shouldHandleNode(node: SyntaxNodeRef): boolean {
   // This parser should look for FencedCode with a CodeInfo string of at least 7
-  if (node.type.name !== 'FencedCode') {
-    return false
+  if (node.type.name !== "FencedCode") {
+    return false;
   }
 
   // We've got some code. Ensure we have an info string
-  const codeInfo = node.node.getChild('CodeInfo')
+  const codeInfo = node.node.getChild("CodeInfo");
   if (codeInfo === null) {
-    return false
+    return false;
   }
 
   // The span needs to be at least 7 characters (= `mermaid`) long, but may be
   // longer (to account for, e.g., Pandoc fenced attributes)
   if (codeInfo.to - codeInfo.from < 7) {
-    return false
+    return false;
   }
 
-  return true
+  return true;
 }
 
-function createWidget (state: EditorState, node: SyntaxNodeRef): MermaidWidget|undefined {
+function createWidget(state: EditorState, node: SyntaxNodeRef): MermaidWidget | undefined {
   // This function is called after the `shouldHandleNode` function, so we can
   // disregard its checks here.
-  const codeInfo = node.node.getChild('CodeInfo')!
-  const infoString = state.sliceDoc(codeInfo.from, codeInfo.to)
+  const codeInfo = node.node.getChild("CodeInfo")!;
+  const infoString = state.sliceDoc(codeInfo.from, codeInfo.to);
 
   // The infostring can either be plain "mermaid" or a Pandoc attribute string
   // that includes the class `.mermaid` (see the Pandoc manual:
   // https://pandoc.org/MANUAL.html#extension-fenced_code_attributes)
-  if (infoString !== 'mermaid' && !/^{.*\.mermaid.*}$/i.test(infoString)) {
-    return undefined
+  if (infoString !== "mermaid" && !/^{.*\.mermaid.*}$/i.test(infoString)) {
+    return undefined;
   }
 
-  const codeText = node.node.getChild('CodeText')
+  const codeText = node.node.getChild("CodeText");
 
   if (codeText === null) {
-    return undefined
+    return undefined;
   }
 
-  const graph = state.sliceDoc(codeText.from, codeText.to)
+  const graph = state.sliceDoc(codeText.from, codeText.to);
 
   // NOTE: We have to pass the current value of the darkMode config value to
   // see in what mode the mermaid graph has actually been rendered to re-render
   // the graph if necessary
-  return new MermaidWidget(graph, node.node, window.config.get('darkMode') as boolean)
+  return new MermaidWidget(graph, node.node, window.config.get("darkMode") as boolean);
 }
 
-export const renderMermaid = renderBlockWidgets(shouldHandleNode, createWidget)
+export const renderMermaid = renderBlockWidgets(shouldHandleNode, createWidget);

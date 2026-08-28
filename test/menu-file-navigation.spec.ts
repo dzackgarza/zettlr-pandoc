@@ -15,101 +15,104 @@
  * END HEADER
  */
 
-import { sentMessagesFor } from './headless-electron-harness.cjs'
-import { strict as assert } from 'assert'
+// biome-ignore-all assist/source/organizeImports: the harness installs the
+// electron stand-in at module scope, so it has to load before any module
+// that imports electron itself. Sorting these imports breaks the specs.
+import { sentMessagesFor } from "./headless-electron-harness.cjs";
+import { strict as assert } from "assert";
 import {
   BrowserWindow,
-  MenuItem,
   type KeyboardEvent,
-  type MenuItemConstructorOptions
-} from 'electron'
-import getWin32Menu from 'source/app/service-providers/menu/menu.win32'
-import getDarwinMenu from 'source/app/service-providers/menu/menu.darwin'
+  MenuItem,
+  type MenuItemConstructorOptions,
+} from "electron";
+import getDarwinMenu from "source/app/service-providers/menu/menu.darwin";
+import getWin32Menu from "source/app/service-providers/menu/menu.win32";
 import type {
   MenuCommands,
   MenuConfig,
   MenuDocuments,
   MenuLogger,
   MenuRecentDocuments,
-  MenuWindows
-} from 'source/app/service-providers/menu/menu-dependencies'
+  MenuWindows,
+} from "source/app/service-providers/menu/menu-dependencies";
 
-Object.defineProperty(globalThis, '__UPDATES_DISABLED__', {
+Object.defineProperty(globalThis, "__UPDATES_DISABLED__", {
   configurable: true,
-  value: '0'
-})
+  value: "0",
+});
 
-type MenuBuilder = typeof getWin32Menu
-type Send = unknown[]
+type MenuBuilder = typeof getWin32Menu;
+type Send = unknown[];
 
 class TestMenuConfig implements MenuConfig {
-  get (): { editor: { fontSize: number } }
-  get (key: 'system.zoomBehavior' | 'darkMode' | 'fileMeta' | 'debug'): unknown
-  get (
-    key?: 'system.zoomBehavior' | 'darkMode' | 'fileMeta' | 'debug'
-  ): unknown {
+  get(): { editor: { fontSize: number } };
+  get(key: "system.zoomBehavior" | "darkMode" | "fileMeta" | "debug"): unknown;
+  get(key?: "system.zoomBehavior" | "darkMode" | "fileMeta" | "debug"): unknown {
     if (key === undefined) {
-      return { editor: { fontSize: 14 } }
+      return { editor: { fontSize: 14 } };
     }
-    return key === 'system.zoomBehavior' ? 'editor' : false
+    return key === "system.zoomBehavior" ? "editor" : false;
   }
 
-  set (
-    _key: 'darkMode' | 'fileMeta' | 'editor.fontSize',
-    _value: boolean | number
-  ): void {}
+  set(_key: "darkMode" | "fileMeta" | "editor.fontSize", _value: boolean | number): void {}
 }
 
-function findItem (
+function findItem(
   items: MenuItemConstructorOptions[],
-  id: string
-): MenuItemConstructorOptions|undefined {
+  id: string,
+): MenuItemConstructorOptions | undefined {
   for (const item of items) {
     if (item.id === id) {
-      return item
+      return item;
     }
     if (Array.isArray(item.submenu)) {
-      const found = findItem(item.submenu, id)
+      const found = findItem(item.submenu, id);
       if (found !== undefined) {
-        return found
+        return found;
       }
     }
   }
-  return undefined
+  return undefined;
 }
 
-function clickMenuItem (getMenu: MenuBuilder, id: string): {
-  sent: Send[]
-  commandCalls: string[]
-  loggedErrors: string[]
+function clickMenuItem(
+  getMenu: MenuBuilder,
+  id: string,
+): {
+  sent: Send[];
+  commandCalls: string[];
+  loggedErrors: string[];
 } {
-  const commandCalls: string[] = []
-  const loggedErrors: string[] = []
+  const commandCalls: string[] = [];
+  const loggedErrors: string[] = [];
   const logger: MenuLogger = {
-    error: (message) => { loggedErrors.push(message) }
-  }
-  const config = new TestMenuConfig()
+    error: (message) => {
+      loggedErrors.push(message);
+    },
+  };
+  const config = new TestMenuConfig();
   const recentDocs: MenuRecentDocuments = {
     get: () => [],
-    clear: () => {}
-  }
+    clear: () => {},
+  };
   const commands: MenuCommands = {
     run: async (command) => {
-      commandCalls.push(command)
-      return undefined
-    }
-  }
+      commandCalls.push(command);
+      return undefined;
+    },
+  };
   const windows: MenuWindows = {
     showAboutWindow: () => {},
     showDefaultsWindow: () => {},
     showLogWindow: () => {},
     showPreferences: () => {},
-    showTagManager: () => {}
-  }
+    showTagManager: () => {},
+  };
   const documents: MenuDocuments = {
     newWindow: () => {},
-    openFile: async () => false
-  }
+    openFile: async () => false,
+  };
 
   const template = getMenu(
     logger,
@@ -119,46 +122,46 @@ function clickMenuItem (getMenu: MenuBuilder, id: string): {
     windows,
     documents,
     () => false,
-    () => {}
-  )
-  const item = findItem(template, id)
-  assert.ok(item !== undefined, `the menu must expose ${id}`)
-  const click = item.click
-  assert.ok(click !== undefined, `the menu item ${id} must be clickable`)
+    () => {},
+  );
+  const item = findItem(template, id);
+  assert.ok(item !== undefined, `the menu must expose ${id}`);
+  const click = item.click;
+  assert.ok(click !== undefined, `the menu item ${id} must be clickable`);
 
-  const focusedWindow = new BrowserWindow()
-  const menuItem = new MenuItem(item)
-  const event: KeyboardEvent = { triggeredByAccelerator: true }
-  click(menuItem, focusedWindow, event)
+  const focusedWindow = new BrowserWindow();
+  const menuItem = new MenuItem(item);
+  const event: KeyboardEvent = { triggeredByAccelerator: true };
+  click(menuItem, focusedWindow, event);
 
   return {
     sent: sentMessagesFor(focusedWindow),
     commandCalls,
-    loggedErrors
-  }
+    loggedErrors,
+  };
 }
 
-describe('File ▸ Previous/Next file menu navigation', function () {
+describe("File ▸ Previous/Next file menu navigation", function () {
   const platforms: Array<[string, MenuBuilder]> = [
-    ['win32/linux', getWin32Menu],
-    ['darwin', getDarwinMenu]
-  ]
+    ["win32/linux", getWin32Menu],
+    ["darwin", getDarwinMenu],
+  ];
 
   for (const [platform, getMenu] of platforms) {
     it(`${platform}: Previous file moves the focused pane back`, function () {
-      assert.deepEqual(clickMenuItem(getMenu, 'menu.previous_file'), {
-        sent: [['shortcut', 'navigate-back']],
+      assert.deepEqual(clickMenuItem(getMenu, "menu.previous_file"), {
+        sent: [["shortcut", "navigate-back"]],
         commandCalls: [],
-        loggedErrors: []
-      })
-    })
+        loggedErrors: [],
+      });
+    });
 
     it(`${platform}: Next file moves the focused pane forward`, function () {
-      assert.deepEqual(clickMenuItem(getMenu, 'menu.next_file'), {
-        sent: [['shortcut', 'navigate-forward']],
+      assert.deepEqual(clickMenuItem(getMenu, "menu.next_file"), {
+        sent: [["shortcut", "navigate-forward"]],
         commandCalls: [],
-        loggedErrors: []
-      })
-    })
+        loggedErrors: [],
+      });
+    });
   }
-})
+});

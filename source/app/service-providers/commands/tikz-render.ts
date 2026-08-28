@@ -16,36 +16,36 @@
  * END HEADER
  */
 
-import { app } from 'electron'
-import path from 'path'
-import ZettlrCommand from './zettlr-command'
+import { app } from "electron";
+import path from "path";
+import { type AppServiceContainer } from "../../app-service-container";
 import {
   renderTikz,
   resolveTikzDataDir,
   type TikzRenderRequest,
-  type TikzRenderResult
-} from '../../util/tikz-render'
-import { type AppServiceContainer } from '../../app-service-container'
+  type TikzRenderResult,
+} from "../../util/tikz-render";
+import ZettlrCommand from "./zettlr-command";
 
 export default class TikzRender extends ZettlrCommand {
-  constructor (app: AppServiceContainer) {
-    super(app, 'tikz-render')
+  constructor(app: AppServiceContainer) {
+    super(app, "tikz-render");
   }
 
-  async run (evt: string, arg: TikzRenderRequest): Promise<TikzRenderResult> {
+  async run(evt: string, arg: TikzRenderRequest): Promise<TikzRenderResult> {
     const tikzAssetDir = resolveTikzDataDir(
       this._app.config.get().tikz.dataDir,
-      app.getPath('home'),
-      path.join(__dirname, './assets/tikz')
-    )
+      app.getPath("home"),
+      path.join(__dirname, "./assets/tikz"),
+    );
     return await renderTikz(arg, {
       tikzAssetDir,
-      cacheDir: path.join(app.getPath('userData'), 'tikz-cache'),
+      cacheDir: path.join(app.getPath("userData"), "tikz-cache"),
       // The main process is where the app's environment is known, so this is
       // where the decision "renders run under the environment Electron was
       // started with" is made and recorded — the render service never reaches
       // for it.
       env: process.env,
-    })
+    });
   }
 }

@@ -13,25 +13,31 @@
  * END HEADER
  */
 
-import { Decoration, MatchDecorator, ViewPlugin, EditorView, type ViewUpdate } from '@codemirror/view'
-import { trans } from '@common/i18n-renderer'
+import {
+  Decoration,
+  EditorView,
+  MatchDecorator,
+  ViewPlugin,
+  type ViewUpdate,
+} from "@codemirror/view";
+import { trans } from "@common/i18n-renderer";
 
 /**
  * The class to be applied
  */
 const linkDeco = Decoration.mark({
   attributes: {
-    class: 'cm-clickable-link',
-    title: trans('Cmd/Ctrl-click to follow this link')
-  }
-})
+    class: "cm-clickable-link",
+    title: trans("Cmd/Ctrl-click to follow this link"),
+  },
+});
 
 /**
  * A very basic regexp for very coarse (but hence fast) link matching
  *
  * @var {RegExp}
  */
-const simpleLinkRegex = /https?:\/\/\S+/g
+const simpleLinkRegex = /https?:\/\/\S+/g;
 
 /**
  * A basic match decorator that applies the linkDeco to any plain link
@@ -40,8 +46,8 @@ const simpleLinkRegex = /https?:\/\/\S+/g
  */
 const linkDecorator = new MatchDecorator({
   regexp: simpleLinkRegex,
-  decoration: _m => linkDeco
-})
+  decoration: (_m) => linkDeco,
+});
 
 /**
  * This plugin uses the link match decorator to highlight plain links.
@@ -50,12 +56,15 @@ const linkDecorator = new MatchDecorator({
  *
  * @return  {ViewPlugin}        The finished view plugin
  */
-const linkHighlight = ViewPlugin.define(view => ({
-  decorations: linkDecorator.createDeco(view),
-  update (u: ViewUpdate) {
-    this.decorations = linkDecorator.updateDeco(u, this.decorations)
-  }
-}), { decorations: v => v.decorations })
+const linkHighlight = ViewPlugin.define(
+  (view) => ({
+    decorations: linkDecorator.createDeco(view),
+    update(u: ViewUpdate) {
+      this.decorations = linkDecorator.updateDeco(u, this.decorations);
+    },
+  }),
+  { decorations: (v) => v.decorations },
+);
 
 /**
  * If applicable, follows a link from the editor.
@@ -63,30 +72,30 @@ const linkHighlight = ViewPlugin.define(view => ({
  * @param   {MouseEvent}  event  The triggering MouseEvent
  * @param   {EditorView}  view   The editor view
  */
-function maybeOpenLink (event: MouseEvent, view: EditorView): void {
-  const cmd = process.platform === 'darwin' && event.metaKey
-  const ctrl = process.platform !== 'darwin' && event.ctrlKey
+function maybeOpenLink(event: MouseEvent, view: EditorView): void {
+  const cmd = process.platform === "darwin" && event.metaKey;
+  const ctrl = process.platform !== "darwin" && event.ctrlKey;
   if (!cmd && !ctrl) {
-    return
+    return;
   }
 
-  const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+  const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
   if (pos === null) {
-    return
+    return;
   }
 
-  const line = view.state.doc.lineAt(pos)
+  const line = view.state.doc.lineAt(pos);
 
   for (const match of line.text.matchAll(simpleLinkRegex)) {
     if (match.index === undefined) {
-      continue
+      continue;
     }
 
-    const offset = line.from + match.index
+    const offset = line.from + match.index;
 
     if (offset <= pos && offset + match[0].length >= pos) {
-      window.location.assign(match[0])
-      return
+      window.location.assign(match[0]);
+      return;
     }
   }
 }
@@ -97,8 +106,8 @@ function maybeOpenLink (event: MouseEvent, view: EditorView): void {
  * @return  {EditorView.theme}  The theme
  */
 const plainLinkTheme = EditorView.theme({
-  '.cm-clickable-link': { textDecoration: 'underline' }
-})
+  ".cm-clickable-link": { textDecoration: "underline" },
+});
 
 /**
  * This extension provides underline highlighting for plain links found in an
@@ -110,6 +119,6 @@ export const plainLinkHighlighter = [
   linkHighlight,
   plainLinkTheme,
   EditorView.domEventHandlers({
-    mousedown: maybeOpenLink
-  })
-]
+    mousedown: maybeOpenLink,
+  }),
+];

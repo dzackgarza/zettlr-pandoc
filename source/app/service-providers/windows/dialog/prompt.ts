@@ -12,9 +12,9 @@
  * END HEADER
  */
 
-import { dialog, type BrowserWindow, type MessageBoxOptions } from 'electron'
-import { trans } from '@common/i18n-main'
-import type LogProvider from '@providers/log'
+import { trans } from "@common/i18n-main";
+import type LogProvider from "@providers/log";
+import { type BrowserWindow, dialog, type MessageBoxOptions } from "electron";
 
 /**
  * Displays a prompt with information
@@ -22,18 +22,22 @@ import type LogProvider from '@providers/log'
  * @param   {BrowserWindow|null}  win      The window to attach to
  * @param   {any}            options  Options for the message box
  */
-export default function promptDialog (logger: LogProvider, win: BrowserWindow|null, options: Partial<MessageBoxOptions> & { message: string }|string): void {
-  if (typeof options === 'string') {
-    options = { message: options }
+export default function promptDialog(
+  logger: LogProvider,
+  win: BrowserWindow | null,
+  options: (Partial<MessageBoxOptions> & { message: string }) | string,
+): void {
+  if (typeof options === "string") {
+    options = { message: options };
   }
 
   const boxOptions: MessageBoxOptions = {
-    type: options.type ?? 'info',
-    buttons: [trans('Ok')],
+    type: options.type ?? "info",
+    buttons: [trans("Ok")],
     defaultId: 0,
-    title: options.title ?? 'Zettlr',
-    message: options.message
-  }
+    title: options.title ?? "Zettlr",
+    message: options.message,
+  };
 
   // The showmessageBox-function returns a promise,
   // nevertheless, we don't need a return.
@@ -41,10 +45,12 @@ export default function promptDialog (logger: LogProvider, win: BrowserWindow|nu
   // vs. promise awaits. UPDATE 2024-03-11: In response to #4952, removing the
   // platform check again.
   if (win !== null) {
-    dialog.showMessageBox(win, boxOptions)
-      .catch(e => logger.error('[Window Manager] Prompt threw an error', e))
+    dialog
+      .showMessageBox(win, boxOptions)
+      .catch((e) => logger.error("[Window Manager] Prompt threw an error", e));
   } else {
-    dialog.showMessageBox(boxOptions)
-      .catch(e => logger.error('[Window Manager] Prompt threw an error', e))
+    dialog
+      .showMessageBox(boxOptions)
+      .catch((e) => logger.error("[Window Manager] Prompt threw an error", e));
   }
 }

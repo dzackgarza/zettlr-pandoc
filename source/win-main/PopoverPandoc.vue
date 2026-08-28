@@ -48,52 +48,58 @@
  *
  * END HEADER
  */
-import PopoverWrapper from '@common/vue/PopoverWrapper.vue'
-import TextControl from '@common/vue/form/elements/TextControl.vue'
-import TabBar, { type TabbarControl } from '@common/vue/TabBar.vue'
-import { trans } from '@common/i18n-renderer'
-import { ref, computed } from 'vue'
+
+import { trans } from "@common/i18n-renderer";
+import TextControl from "@common/vue/form/elements/TextControl.vue";
+import PopoverWrapper from "@common/vue/PopoverWrapper.vue";
+import TabBar, { type TabbarControl } from "@common/vue/TabBar.vue";
+import { computed, ref } from "vue";
 
 const props = defineProps<{
-  target: HTMLElement
-}>()
+  target: HTMLElement;
+}>();
 
 const emit = defineEmits<{
-  (e: 'close'): void
-  (e: 'insert-pandoc', value: { type: string, attributes: string }): void
-}>()
+  (e: "close"): void;
+  (e: "insert-pandoc", value: { type: string; attributes: string }): void;
+}>();
 
-const pandocType = ref<'div'|'span'>('div')
+const pandocType = ref<"div" | "span">("div");
 
-const identifierQuery = ref('')
-const identifierPlaceholder: string = trans('#identifier')
+const identifierQuery = ref("");
+const identifierPlaceholder: string = trans("#identifier");
 
-const classesQuery = ref('')
-const classesPlaceholder: string = trans('.classes')
+const classesQuery = ref("");
+const classesPlaceholder: string = trans(".classes");
 
-const attributesQuery = ref('')
-const attributesPlaceholder: string = trans('key=value')
+const attributesQuery = ref("");
+const attributesPlaceholder: string = trans("key=value");
 
-const insertPandocButtonLabel = computed(() => trans(`Insert ${pandocType.value === 'div' ? 'Fenced Div' : 'Bracketed Span'}`))
+const insertPandocButtonLabel = computed(() =>
+  trans(`Insert ${pandocType.value === "div" ? "Fenced Div" : "Bracketed Span"}`),
+);
 
 const tabs: TabbarControl[] = [
-  { id: 'div', label: trans('Div'), target: 'div' },
-  { id: 'span', label: trans('Span'), target: 'span' },
-]
+  { id: "div", label: trans("Div"), target: "div" },
+  { id: "span", label: trans("Span"), target: "span" },
+];
 
-function handleClick (): void {
-  const formatAttributes = (input: string, prefix: string, join: string = ' '): string =>
+function handleClick(): void {
+  const formatAttributes = (input: string, prefix: string, join: string = " "): string =>
     input
       .trim()
       .split(/\s+/)
-      .filter(word => word.trim() !== '')
-      .map(word => word.startsWith(prefix) ? word : prefix + word)
-      .join(join)
+      .filter((word) => word.trim() !== "")
+      .map((word) => (word.startsWith(prefix) ? word : prefix + word))
+      .join(join);
 
-  const pandocAttributesString: string = formatAttributes(`${formatAttributes(formatAttributes(identifierQuery.value, '', '-'), '#')} ${formatAttributes(classesQuery.value, '.')} ${attributesQuery.value}`, '')
+  const pandocAttributesString: string = formatAttributes(
+    `${formatAttributes(formatAttributes(identifierQuery.value, "", "-"), "#")} ${formatAttributes(classesQuery.value, ".")} ${attributesQuery.value}`,
+    "",
+  );
 
-  emit('insert-pandoc', { type: pandocType.value, attributes: pandocAttributesString })
-  emit('close')
+  emit("insert-pandoc", { type: pandocType.value, attributes: pandocAttributesString });
+  emit("close");
 }
 </script>
 

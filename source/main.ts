@@ -13,24 +13,20 @@
  * END HEADER
  */
 
-import { app } from "electron";
-import path from "path";
-import { bootApplication, shutdownApplication } from "./app/lifecycle";
-
-// Helper function to extract files to open from process.argv
-import extractFilesFromArgv from "./app/util/extract-files-from-argv";
+import errorToString from "@common/util/error-to-string";
 import {
   DATA_DIR,
   DISABLE_HARDWARE_ACCELERATION,
-  OPEN_IN_RUNNING_INSTANCE,
   getCLIArgument,
   handleExitArguments,
+  OPEN_IN_RUNNING_INSTANCE,
 } from "@providers/cli-provider";
-import {
-  getAppServiceContainer,
-  isAppServiceContainerReady,
-} from "./app/app-service-container";
-import errorToString from "@common/util/error-to-string";
+import { app } from "electron";
+import path from "path";
+import { getAppServiceContainer, isAppServiceContainerReady } from "./app/app-service-container";
+import { bootApplication, shutdownApplication } from "./app/lifecycle";
+// Helper function to extract files to open from process.argv
+import extractFilesFromArgv from "./app/util/extract-files-from-argv";
 
 function logUnhandledProcessError(message: string): void {
   if (isAppServiceContainerReady()) {
@@ -41,9 +37,7 @@ function logUnhandledProcessError(message: string): void {
 }
 
 process.on("uncaughtExceptionMonitor", (error, origin) => {
-  logUnhandledProcessError(
-    `[Application] Uncaught exception (${origin})\n${errorToString(error)}`,
-  );
+  logUnhandledProcessError(`[Application] Uncaught exception (${origin})\n${errorToString(error)}`);
 });
 
 handleExitArguments();
@@ -65,9 +59,7 @@ if (typeof dataDir === "string") {
   }
 
   if (isAppServiceContainerReady()) {
-    getAppServiceContainer().log.info(
-      `[Application] Using custom data dir: ${dataDir}`,
-    );
+    getAppServiceContainer().log.info(`[Application] Using custom data dir: ${dataDir}`);
   }
   app.setPath("userData", dataDir);
   app.setAppLogsPath(path.join(dataDir, "logs"));
@@ -80,9 +72,7 @@ if (!app.requestSingleInstanceLock()) {
   if (!app.isPackaged) {
     // I always forget to close my system install before starting the
     // development app, so let's just add a small reminder to myself.
-    console.log(
-      "There is another instance of Zettlr running. Did you forget to close that one?",
-    );
+    console.log("There is another instance of Zettlr running. Did you forget to close that one?");
   }
   app.exit(0);
 }
@@ -93,9 +83,7 @@ if (!app.requestSingleInstanceLock()) {
 // to a live window, and booting a whole second app instead is the wrong outcome
 // nobody asked for. Say so and stop.
 if (getCLIArgument(OPEN_IN_RUNNING_INSTANCE) === true) {
-  console.error(
-    "No running Zettlr instance accepted the arguments; nothing was opened.",
-  );
+  console.error("No running Zettlr instance accepted the arguments; nothing was opened.");
   app.exit(1);
 }
 
@@ -159,10 +147,7 @@ app
     bootApplication()
       .then(() => {
         getAppServiceContainer()
-          .commands.run(
-            "roots-add",
-            filesBeforeOpen.concat(extractFilesFromArgv(process.argv)),
-          )
+          .commands.run("roots-add", filesBeforeOpen.concat(extractFilesFromArgv(process.argv)))
           .catch((err) => console.error(err));
       })
       .catch((err) => {
@@ -195,14 +180,9 @@ app.on("second-instance", (event, argv, _cwd) => {
   serviceContainer.windows.showAnyWindow();
 
   // In case the user wants to open a file/folder with this running instance
-  serviceContainer.commands
-    ?.run("roots-add", extractFilesFromArgv(argv))
-    .catch((err) => {
-      serviceContainer.log.error(
-        "[Application] Error while handling second-instance arguments",
-        err,
-      );
-    });
+  serviceContainer.commands?.run("roots-add", extractFilesFromArgv(argv)).catch((err) => {
+    serviceContainer.log.error("[Application] Error while handling second-instance arguments", err);
+  });
 });
 
 /**
@@ -216,10 +196,7 @@ app.on("open-file", (e, filePath) => {
     serviceContainer.log.info(`[Application] Opening file ${filePath}.`);
     serviceContainer.windows.showAnyWindow();
     serviceContainer.commands.run("roots-add", [filePath]).catch((err) => {
-      serviceContainer.log.error(
-        "[Application] Error while adding new roots",
-        err,
-      );
+      serviceContainer.log.error("[Application] Error while adding new roots", err);
     });
   } else {
     // The Zettlr object has yet to be created -> cache it
@@ -281,7 +258,5 @@ app.on("activate", function () {
  * a Promise is rejected somewhere.
  */
 process.on("unhandledRejection", (err: unknown) => {
-  logUnhandledProcessError(
-    `[Application] Unhandled rejection received\n${errorToString(err)}`,
-  );
+  logUnhandledProcessError(`[Application] Unhandled rejection received\n${errorToString(err)}`);
 });

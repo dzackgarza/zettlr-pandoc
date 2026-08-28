@@ -27,55 +27,59 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from "vue";
 
-const props = withDefaults(defineProps<{
-  // The enabled export filter chain, in order (config.export.filters).
-  modelValue: string[]
-  label?: string
-}>(), { label: '' })
+const props = withDefaults(
+  defineProps<{
+    // The enabled export filter chain, in order (config.export.filters).
+    modelValue: string[];
+    label?: string;
+  }>(),
+  { label: "" },
+);
 
-const emit = defineEmits<(e: 'update:modelValue', value: string[]) => void>()
+const emit = defineEmits<(e: "update:modelValue", value: string[]) => void>();
 
-const ipcRenderer = window.ipc
-const available = ref<string[]>([])
+const ipcRenderer = window.ipc;
+const available = ref<string[]>([]);
 
 onMounted(async () => {
-  const result = await ipcRenderer.invoke('assets-provider', { command: 'list-available-filters' })
-  available.value = Array.isArray(result) ? result as string[] : []
-})
+  const result = await ipcRenderer.invoke("assets-provider", { command: "list-available-filters" });
+  available.value = Array.isArray(result) ? (result as string[]) : [];
+});
 
 // Enabled filters (in configured order) first, then the remaining available ones.
 const ordered = computed<string[]>(() => {
-  const disabled = available.value.filter(f => !props.modelValue.includes(f))
-  return [ ...props.modelValue, ...disabled ]
-})
+  const disabled = available.value.filter((f) => !props.modelValue.includes(f));
+  return [...props.modelValue, ...disabled];
+});
 
-function isEnabled (name: string): boolean {
-  return props.modelValue.includes(name)
+function isEnabled(name: string): boolean {
+  return props.modelValue.includes(name);
 }
 
-function enabledIndex (name: string): number {
-  return props.modelValue.indexOf(name)
+function enabledIndex(name: string): number {
+  return props.modelValue.indexOf(name);
 }
 
-function toggle (name: string): void {
-  emit('update:modelValue', isEnabled(name)
-    ? props.modelValue.filter(f => f !== name)
-    : [ ...props.modelValue, name ])
+function toggle(name: string): void {
+  emit(
+    "update:modelValue",
+    isEnabled(name) ? props.modelValue.filter((f) => f !== name) : [...props.modelValue, name],
+  );
 }
 
-function move (name: string, delta: number): void {
-  const arr = [...props.modelValue]
-  const i = arr.indexOf(name)
-  const j = i + delta
+function move(name: string, delta: number): void {
+  const arr = [...props.modelValue];
+  const i = arr.indexOf(name);
+  const j = i + delta;
   if (i < 0 || j < 0 || j >= arr.length) {
-    return
+    return;
   }
-  const tmp = arr[i]
-  arr[i] = arr[j]
-  arr[j] = tmp
-  emit('update:modelValue', arr)
+  const tmp = arr[i];
+  arr[i] = arr[j];
+  arr[j] = tmp;
+  emit("update:modelValue", arr);
 }
 </script>
 
