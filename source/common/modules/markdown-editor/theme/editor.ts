@@ -62,8 +62,6 @@ export interface ThemeVars {
   /** CSS `<color>` value */
   '--zettlr-editor-citation-color': string,
   /** CSS `<color>` value */
-  '--zettlr-editor-citation-bg': string
-  /** CSS `<color>` value */
   '--zettlr-editor-code-color': string
   /** CSS `<color>` value */
   '--zettlr-editor-code-bg': string
@@ -143,11 +141,10 @@ const emphasisStyle = 'italic'
 const strongStyle = 'bold'
 const headerStyle = 'bold'
 
-const citationColor = 'var(--grey-1)'
-const citationColorDark = 'var(--grey-4)'
-
-const citationBackground = 'var(--grey-0)'
-const citationBackgroundDark = 'var(--grey-7)'
+// Rendered citations read as hyperref-style links, the way they look in a
+// typeset preprint: coloured text in the body font, no box around them.
+const citationColor = 'var(--blue-0)'
+const citationColorDark = 'color-mix(in srgb, var(--blue-0) 45%, white)'
 
 const codeColor = 'var(--grey-4)'
 const codeColorDark = 'var(--grey-2)'
@@ -246,7 +243,6 @@ export const defaultVarsLight: ThemeVars = {
   '--zettlr-editor-strong-style': strongStyle,
   '--zettlr-editor-header-style': headerStyle,
   '--zettlr-editor-citation-color': citationColor,
-  '--zettlr-editor-citation-bg': citationBackground,
   '--zettlr-editor-code-color': codeColor,
   '--zettlr-editor-code-bg': codeBackground,
   '--zettlr-editor-escape-color': escapeColor,
@@ -296,7 +292,6 @@ export const defaultVarsDark: ThemeVars = {
   '--zettlr-editor-strong-style': strongStyle,
   '--zettlr-editor-header-style': headerStyle,
   '--zettlr-editor-citation-color': citationColorDark,
-  '--zettlr-editor-citation-bg': citationBackgroundDark,
   '--zettlr-editor-code-color': codeColorDark,
   '--zettlr-editor-code-bg': codeBackgroundDark,
   '--zettlr-editor-escape-color': escapeColorDark,
@@ -396,7 +391,11 @@ export const editorTheme = EditorView.baseTheme({
     color: 'var(--zettlr-editor-code-color)',
   },
   '.citeproc-citation': {
-    backgroundColor: 'var(--zettlr-editor-citation-bg)',
+    color: 'var(--zettlr-editor-citation-color)',
+    cursor: 'pointer',
+  },
+  '.citeproc-citation:hover': {
+    textDecoration: 'underline',
   },
   '.code-block-line-background': {
     backgroundColor: 'var(--zettlr-editor-code-bg)',

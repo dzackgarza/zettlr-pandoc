@@ -32,8 +32,6 @@ const highlightDark = 'black'
 const font = 'Inconsolata, monospace'
 const codeFont = 'Inconsolata, monospace'
 
-const citationBackgroundDark = '#002024'
-
 const codeColorDark = 'var(--grey-2)'
 const codeBackgroundDark = '#002024'
 
@@ -64,7 +62,6 @@ export const bordeauxVarsDark: ThemeVars = {
   '--zettlr-editor-highlight-color': highlightDark,
   '--zettlr-editor-font': font,
   '--zettlr-editor-code-font': codeFont,
-  '--zettlr-editor-citation-bg': citationBackgroundDark,
   '--zettlr-editor-code-color': codeColorDark,
   '--zettlr-editor-code-bg': codeBackgroundDark,
   '--zettlr-editor-error-color': errorColor,
