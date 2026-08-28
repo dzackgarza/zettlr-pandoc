@@ -388,12 +388,18 @@ export class ReviewApplicationService {
       return;
     }
 
+    // Read before commitDocument: the authority still holds the text the
+    // owner's changes were made against, which is what a suggestion the edit
+    // rewrites has to restore. A review without its document is not a state
+    // to map anchors in.
+    const textBefore = this.deps.authority.readWorkingText(documentId);
+    if (textBefore === undefined) {
+      throw new Error(`Review ${review.reviewId} has no open document ${documentId}`);
+    }
+
     const plan = prepareWorkingTextEdit({
       review,
-      // Read before commitDocument: the authority still holds the text the
-      // owner's changes were made against, which is what a suggestion the
-      // edit rewrites has to restore.
-      textBefore: this.deps.authority.readWorkingText(documentId) ?? "",
+      textBefore,
       workingText: normalizeText(workingText),
       changes,
     });

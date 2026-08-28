@@ -47,12 +47,13 @@ export function mapSuggestionThroughChanges (
     true
   )
 
-  const mapped = anchors.length === 0
-    ? { anchors: [] as SuggestionSpan[], removedText }
-    : absorbReplacements(anchors, removedText, edits, changes, sliceBefore) ??
-      { anchors: splitAroundEdits(anchors, edits, changes), removedText }
+  const replacements = replacementsOver(anchors, edits)
+  const mapped = replacements.length > 0
+    ? absorbReplacements(anchors, removedText, replacements, changes, sliceBefore)
+    : { anchors: splitAroundEdits(anchors, edits, changes), removedText }
 
-  const mappedSeam = mapped.anchors[0]?.from ?? changes.mapPos(seam, 1)
+  const first = mapped.anchors[0]
+  const mappedSeam = first === undefined ? changes.mapPos(seam, 1) : first.from
   return {
     anchors: mapped.anchors,
     seam: mappedSeam,
@@ -70,9 +71,28 @@ export function mapSuggestionThroughChanges (
 }
 
 /**
+ * The edits that rewrote part of this suggestion: they delete some of it and
+ * put text back. An edit that only inserts, or only deletes, is not one.
+ */
+function replacementsOver (
+  anchors: readonly SuggestionSpan[],
+  edits: readonly Edit[]
+): Edit[] {
+  if (anchors.length === 0) {
+    return []
+  }
+  const from = anchors[0].from
+  const to = anchors[anchors.length - 1].to
+  return edits.filter(edit =>
+    edit.toA > edit.fromA && edit.toB > edit.fromB &&
+    edit.fromA < to && edit.toA > from
+  )
+}
+
+/**
  * The owner rewrote part of the region: one anchor over the whole rewritten
  * stretch, and a reference that holds what the stretch read before the
- * review. Returns undefined when no edit replaced anything here.
+ * review.
  */
 // ponytail: one replacement that spans TWO suggestions is claimed by both,
 // and the sidecar refuses the overlap rather than corrupting the review.
@@ -80,22 +100,14 @@ export function mapSuggestionThroughChanges (
 function absorbReplacements (
   anchors: readonly SuggestionSpan[],
   removedText: string,
-  edits: readonly Edit[],
+  replacements: readonly Edit[],
   changes: ChangeDesc,
   sliceBefore: SliceBefore
-): { anchors: SuggestionSpan[], removedText: string }|undefined {
+): { anchors: SuggestionSpan[], removedText: string } {
   const region = {
     from: anchors[0].from,
     to: anchors[anchors.length - 1].to
   }
-  const replacements = edits.filter(edit =>
-    edit.toA > edit.fromA && edit.toB > edit.fromB &&
-    edit.fromA < region.to && edit.toA > region.from
-  )
-  if (replacements.length === 0) {
-    return undefined
-  }
-
   const low = Math.min(region.from, ...replacements.map(edit => edit.fromA))
   const high = Math.max(region.to, ...replacements.map(edit => edit.toA))
   // The reference is the absorbed stretch as it stood before the review: the
