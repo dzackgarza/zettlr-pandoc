@@ -202,6 +202,7 @@ import type { SearchResultWrapper } from 'source/pinia/window-state-store'
 import CheckboxControl from 'source/common/vue/form/elements/CheckboxControl.vue'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import type { MetadataSearchResult } from 'source/app/service-providers/search/util/boolean-search'
+import getDocumentTitle from './util/get-document-title'
 
 const ipcRenderer = window.ipc
 
@@ -485,13 +486,15 @@ async function processSearchResult (progress: number, absPath: string, result: S
   const relativeDirectoryPath = root !== undefined
     ? relativePath(pathDirname(root), absPath)
     : filename
+  
+  const descriptor = workspaceStore.descriptorMap.get(absPath)
 
   const newResult: SearchResultWrapper = {
     key: absPath,
     file: {
       path: absPath, filename,
       relativeDirectoryPath,
-      displayName: filename
+      displayName: descriptor?.type === 'file' ? getDocumentTitle(descriptor) : filename
     },
     result,
     hideResultSet: toggleState.value,

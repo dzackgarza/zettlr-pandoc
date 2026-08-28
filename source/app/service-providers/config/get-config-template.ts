@@ -16,7 +16,8 @@ import { app, nativeTheme } from "electron";
 import * as bcp47 from "bcp-47";
 import { v4 as uuid4 } from "uuid";
 import getLanguageFile from "@common/util/get-language-file";
-import { NAVIGATION_SHORTCUT_DEFAULTS } from "@common/util/navigation-shortcuts";
+import type { EditorShortcutName } from "source/common/modules/markdown-editor/keymaps/shortcuts";
+import { type MenuShortcutName } from "../menu/shortcuts";
 
 export type MarkdownTheme =
   "berlin" | "frankfurt" | "bielefeld" | "karl-marx-stadt" | "bordeaux";
@@ -32,6 +33,23 @@ interface FileTypeSettings<F = boolean, S = boolean, O = "zettlr" | "system"> {
   showInSidebar: S;
   openWith: O;
 }
+
+// The following lines make a subset of all available editor/UI shortcuts
+// configurable. This way, we do not have to specify *all* shortcuts, but only
+// those that are actually configurable.
+type Extends<T, U extends T> = U // Helper type to allow for autocomplete
+export type ConfigurableEditorShortcuts = Extends<
+  EditorShortcutName,
+  'nav-history-back'|'nav-history-forward'|
+  'table-align'|'table-align-col-center'|'table-align-col-left'|
+  'table-align-col-right'|'tr-zap-gremlins'|'tr-emdash-add-spaces'|
+  'tr-double-quotes-to-single'|'tr-emdash-remove-spaces'|
+  'tr-ensure-double-quotes'|'tr-italics-to-quotes'|'tr-quotes-to-italics'|
+  'tr-quotes-to-magic'|'tr-remove-line-breaks'|'tr-sentence-case'|
+  'tr-single-quotes-to-double'|'tr-straighten-quotes'|
+  'tr-strip-duplicate-spaces'|'tr-title-case'
+>
+export type ConfigurableUIShortcuts = Extends<MenuShortcutName, 'previous-tab'|'next-tab'|'filter-files'>
 
 /**
  * This type describes an entry of the ignored rules array in the config. We
@@ -181,6 +199,8 @@ export interface ConfigOptions {
   editor: {
     autocompleteSuggestEmojis: boolean;
     snippetAutocompleteTriggerCharacter: ":";
+    autocompleteWithEnter: boolean;
+    autocompleteWithTab: boolean;
     autoSave: "off" | "immediately" | "delayed";
     // Run flowmark over the document on every save (issue #26). Off by default.
     formatOnSave: boolean;
@@ -198,13 +218,6 @@ export interface ConfigOptions {
     alwaysIndentLineOnTab: boolean;
     fontSize: number;
     countChars: boolean;
-    // The per-pane history Back/Forward combos (issue #1 workstream 4), in
-    // CodeMirror keybinding syntax. Defaults come from the shared
-    // NAVIGATION_SHORTCUT_DEFAULTS registry.
-    navigationShortcuts: {
-      back: string;
-      forward: string;
-    };
     inputMode: "default" | "vim" | "emacs";
     boldFormatting: "**" | "__";
     italicFormatting: "_" | "*";
@@ -296,6 +309,10 @@ export interface ConfigOptions {
     iframeWhitelist: string[];
     checkForUpdates: boolean;
     zoomBehavior: "gui" | "editor";
+  };
+  shortcuts: {
+    editor: Record<ConfigurableEditorShortcuts, string>;
+    ui: Record<MenuShortcutName, string>;
   };
   displayToolbarButtons: {
     showOpenPreferencesButton: boolean;
@@ -420,6 +437,8 @@ export function getConfigTemplate(): ConfigOptions {
       formatOnSave: false, // Run flowmark on save (issue #26)
       autocompleteSuggestEmojis: true,
       snippetAutocompleteTriggerCharacter: ":",
+      autocompleteWithEnter: false,
+      autocompleteWithTab: true,
       autoCloseBrackets: true,
       showLinkPreviews: true, // Whether to fetch link previews in the editor
       showWhitespace: false,
@@ -432,7 +451,6 @@ export function getConfigTemplate(): ConfigOptions {
       alwaysIndentLineOnTab: false, // Whether `Tab` always indents the current line
       fontSize: 18, // The editor's font size in pixels
       countChars: false, // Set to true to enable counting characters instead of words
-      navigationShortcuts: { ...NAVIGATION_SHORTCUT_DEFAULTS }, // Back/Forward history combos
       inputMode: "default", // Can be default, vim, emacs
       boldFormatting: "**", // Can be ** or __
       italicFormatting: "_", // Can be * or _
@@ -444,7 +462,7 @@ export function getConfigTemplate(): ConfigOptions {
         markdown: true, // Should Markdown be linted?
         languageTool: {
           active: false, // Utilize languageTool?
-          level: "picky", // API: https://languagetool.org/http-api/#!/default/post_check
+          level: "default", // API: https://languagetool.org/http-api/#!/default/post_check
           motherTongue: "", // Optional motherTongue property
           variants: {
             // These defaults are taken from LT's extension
@@ -616,6 +634,35 @@ export function getConfigTemplate(): ConfigOptions {
       showInsertFootnoteButton: true,
       showDocumentInfoText: true,
       showPomodoroButton: true,
+    },
+    shortcuts: {
+      ui: {
+        "next-tab": "",
+        "previous-tab": "",
+        "filter-files": "",
+      },
+      editor: {
+        "nav-history-back": "",
+        "nav-history-forward": "",
+        "table-align": "",
+        "table-align-col-left": "",
+        "table-align-col-center": "",
+        "table-align-col-right": "",
+        "tr-double-quotes-to-single": "",
+        "tr-single-quotes-to-double": "",
+        "tr-emdash-add-spaces": "",
+        "tr-emdash-remove-spaces": "",
+        "tr-ensure-double-quotes": "",
+        "tr-italics-to-quotes": "",
+        "tr-quotes-to-italics": "",
+        "tr-quotes-to-magic": "",
+        "tr-remove-line-breaks": "",
+        "tr-sentence-case": "",
+        "tr-straighten-quotes": "",
+        "tr-strip-duplicate-spaces": "",
+        "tr-title-case": "",
+        "tr-zap-gremlins": "",
+      },
     },
     uuid: uuid4(), // The app's unique anonymous identifier
     // Agent API HTTP server (OpenAPI / REST) — spec: Zettlr-Pandoc Editor Agent API

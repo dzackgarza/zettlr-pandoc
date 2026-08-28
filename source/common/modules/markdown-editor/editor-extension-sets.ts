@@ -70,7 +70,6 @@ import { highlightWhitespace } from './plugins/highlight-whitespace'
 import { showLineNumbers } from './plugins/line-numbers'
 import { tagClasses } from './plugins/tag-classes'
 import { autocompleteTriggerCharacter } from './autocomplete/snippets'
-import { defaultKeymap } from './keymaps/default'
 import { vimPlugin } from './plugins/vim-mode'
 import { projectInfoField } from './plugins/project-info-field'
 import { headingGutter } from './renderers/render-headings'
@@ -79,6 +78,7 @@ import { referenceTooltips } from './tooltips/references'
 import { referenceLint } from './linters/reference-lint'
 import { workspaceReferencesField } from './plugins/workspace-references-field'
 import referenceKeyEditPrompt, { type ReferenceKeyEditPromptIntent } from './plugins/reference-key-edit-prompt'
+import { zettlrKeymap } from './keymaps'
 
 /**
  * This interface describes the required properties which the extension sets
@@ -178,9 +178,8 @@ function getCoreExtensions (options: CoreExtensionOptions): Extension[] {
     // Both vim and emacs modes need to be included first, before any other
     // keymap.
     inputModeCompartment.of(inputMode),
-    // Then, include the default keymap, with the configured Back/Forward
-    // navigation combos (review A8) read at extension-build time.
-    defaultKeymap(options.initialConfig.navigationShortcuts),
+    // Then, include the default keymap
+    zettlrKeymap(options.initialConfig.shortcuts, options.initialConfig),
     darkMode({ darkMode: useDarkModeEditor(options.initialConfig.darkMode, options.initialConfig.darkModeEditor), ...themes[options.initialConfig.theme] }),
     // CODE FOLDING
     codeFolding(),

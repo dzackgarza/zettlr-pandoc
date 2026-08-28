@@ -33,6 +33,7 @@ import type {
   MenuRecentDocuments,
   MenuWindows
 } from 'source/app/service-providers/menu/menu-dependencies'
+import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
 
 Object.defineProperty(globalThis, '__UPDATES_DISABLED__', {
   configurable: true,
@@ -43,13 +44,21 @@ type MenuBuilder = typeof getWin32Menu
 type Send = unknown[]
 
 class TestMenuConfig implements MenuConfig {
-  get (): { editor: { fontSize: number } }
+  get (): {
+    editor: { fontSize: number }
+    shortcuts: { ui: ConfigOptions['shortcuts']['ui'] }
+  }
+
   get (key: 'system.zoomBehavior' | 'darkMode' | 'fileMeta' | 'debug'): unknown
   get (
     key?: 'system.zoomBehavior' | 'darkMode' | 'fileMeta' | 'debug'
   ): unknown {
     if (key === undefined) {
-      return { editor: { fontSize: 14 } }
+      return {
+        editor: { fontSize: 14 },
+        // No custom UI shortcuts: the menu falls back to its own defaults.
+        shortcuts: { ui: { 'next-tab': '', 'previous-tab': '', 'filter-files': '' } }
+      }
     }
     return key === 'system.zoomBehavior' ? 'editor' : false
   }
