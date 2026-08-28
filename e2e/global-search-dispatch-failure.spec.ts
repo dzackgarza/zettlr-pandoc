@@ -285,8 +285,10 @@ describe('global-search and project-properties failure recovery', function () {
     // not observation of that transient paint.
     await queryInput.fill('replacementtoken')
     await queryInput.press('Enter')
+    // The pane labels a result with the file's display name, and the default
+    // fileNameDisplay ('title+heading') resolves that to the document's H1.
     await page.locator(REPLACEMENT_RESULT).filter({
-      hasText: 'replacement-hit.md'
+      hasText: 'Replacement'
     }).waitFor({ state: 'visible', timeout: 60_000 })
   })
 
