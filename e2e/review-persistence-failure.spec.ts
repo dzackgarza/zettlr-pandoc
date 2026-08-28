@@ -171,7 +171,7 @@ async function proposalPreconditions (
  * before it detaches, so it cannot answer what a refused close leaves behind.
  */
 async function closeFileInPane (page: Page, filePath: string): Promise<unknown> {
-  return await page.evaluate(async (pathInPage: string) => {
+  return page.evaluate(async (pathInPage: string) => {
     const windowId = new URLSearchParams(location.search).get('window_id')
     if (windowId === null) {
       throw new Error('The main window carries no window_id')
@@ -191,8 +191,8 @@ async function closeFileInPane (page: Page, filePath: string): Promise<unknown> 
 }
 
 /** Every toast currently on screen, as its message text. */
-async function toastMessages (page: Page): Promise<string[]> {
-  return await page
+function toastMessages (page: Page): Promise<string[]> {
+  return page
     .locator('#zettlr-toast-container .zettlr-toast span:first-child')
     .allInnerTexts()
 }

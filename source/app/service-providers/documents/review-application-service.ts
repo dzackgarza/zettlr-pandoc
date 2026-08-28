@@ -403,16 +403,20 @@ export class ReviewApplicationService {
       workingText: normalizeText(workingText),
       changes,
     });
+    let writeFailure: unknown;
+    let written = false;
     try {
       await this.sidecars.write(
         reviewSidecar(plan?.nextReview ?? review, normalizeText(workingText)),
       );
+      written = true;
     } catch (error) {
-      throw new Error(
-        `The review could not be persisted before the editor update: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      writeFailure = error;
+    }
+    if (!written) {
+      throw new Error("The review could not be persisted before the editor update", {
+        cause: writeFailure,
+      });
     }
 
     commitDocument();
@@ -597,8 +601,8 @@ export class ReviewApplicationService {
     });
   }
 
-  public async readSidecar(documentPath: string): Promise<ReviewSidecarData | undefined> {
-    return await this.sidecars.read(documentPath);
+  public readSidecar(documentPath: string): Promise<ReviewSidecarData | undefined> {
+    return this.sidecars.read(documentPath);
   }
 
   private lockFor(documentId: string): Mutex {
@@ -616,11 +620,11 @@ export class ReviewApplicationService {
    * authority keeps its own transactions (editor updates, save, detach,
    * reattach) in its own module — it does not keep its own lock.
    */
-  public async withDocumentLock<T>(
+  public withDocumentLock<T>(
     documentId: string,
     run: () => Promise<T>,
   ): Promise<T> {
-    return await this.lockFor(documentId).runExclusive(run);
+    return this.lockFor(documentId).runExclusive(run);
   }
 
   // ==========================================================================
@@ -833,7 +837,7 @@ export class ReviewApplicationService {
     clientRequestId: string;
     expectedReviewGeneration: number;
   }): Promise<SubmittedProposal | { ok: false; code: string; message: string }> {
-    return await this.withDocumentLock(input.documentId, async () => {
+    return this.withDocumentLock(input.documentId, async () => {
       if (this.deps.authority.resolveDocumentPath(input.documentId) === undefined) {
         return { ok: false as const, code: "DOCUMENT_NOT_FOUND", message: "Document not found." };
       }
@@ -990,7 +994,7 @@ export class ReviewApplicationService {
     decision: ChunkDecision,
     precondition: ReviewMutationPrecondition,
   ): Promise<ChunkDecisionResponse | ReviewFailure> {
-    return await this.runKeyedByReview(reviewId, async (context) => {
+    return this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
@@ -999,7 +1003,7 @@ export class ReviewApplicationService {
       if (stale !== undefined) {
         return stale;
       }
-      return await this.commitReviewMutation(context, () => {
+      return this.commitReviewMutation(context, () => {
         const plan = prepareChunkDecision({
           review: context.review,
           workingText: context.workingText,
@@ -1032,7 +1036,7 @@ export class ReviewApplicationService {
     text: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<ChunkCommentResponse | ReviewFailure> {
-    return await this.runKeyedByReview(reviewId, async (context) => {
+    return this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
@@ -1063,7 +1067,7 @@ export class ReviewApplicationService {
     reviewId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<AcceptAllChunksResponse | ReviewFailure> {
-    return await this.runKeyedByReview(reviewId, async (context) => {
+    return this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
@@ -1089,7 +1093,7 @@ export class ReviewApplicationService {
     reviewId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<ClearReviewResponse | ReviewFailure> {
-    return await this.runKeyedByReview(reviewId, async (context) => {
+    return this.runKeyedByReview(reviewId, async (context) => {
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
         return fence;
@@ -1113,7 +1117,7 @@ export class ReviewApplicationService {
     text: string,
     expectedReviewGeneration: number,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    return await this.runKeyedByReview(reviewId, async (context) => {
+    return this.runKeyedByReview(reviewId, async (context) => {
       const stale = this.checkPrecondition(context, { expectedReviewGeneration });
       if (stale !== undefined) {
         return stale;

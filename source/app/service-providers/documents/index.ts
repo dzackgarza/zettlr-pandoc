@@ -1296,7 +1296,7 @@ export default class DocumentManager
     clientVersion: number,
     clientUpdates: SerializedUpdate[],
   ): Promise<boolean> {
-    return await this._reviewApplication.withDocumentLock(
+    return this._reviewApplication.withDocumentLock(
       this.ensureDocumentId(filePath),
       async () => await this.pushUpdatesLocked(filePath, clientVersion, clientUpdates),
     );
@@ -2540,7 +2540,7 @@ current contents from the editor somewhere else, and restart the application.`,
 
   /** The document's bytes as they currently are on disk. */
   public async readDiskText(documentPath: string): Promise<string> {
-    return await readFile(documentPath, "utf8");
+    return readFile(documentPath, "utf8");
   }
 
   /**
@@ -2670,13 +2670,13 @@ current contents from the editor somewhere else, and restart the application.`,
   // call these same methods; the service owns the transaction.
   // ==========================================================================
 
-  public async decideReviewChunk(
+  public decideReviewChunk(
     reviewId: string,
     chunkId: string,
     decision: ChunkDecision,
     precondition: ReviewMutationPrecondition,
   ): Promise<ChunkDecisionResponse | ReviewFailure> {
-    return await this._reviewApplication.decideChunk(
+    return this._reviewApplication.decideChunk(
       reviewId,
       chunkId,
       decision,
@@ -2684,35 +2684,35 @@ current contents from the editor somewhere else, and restart the application.`,
     );
   }
 
-  public async commentReviewChunk(
+  public commentReviewChunk(
     reviewId: string,
     chunkId: string,
     text: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<ChunkCommentResponse | ReviewFailure> {
-    return await this._reviewApplication.commentChunk(reviewId, chunkId, text, precondition);
+    return this._reviewApplication.commentChunk(reviewId, chunkId, text, precondition);
   }
 
-  public async acceptAllReviewChunks(
+  public acceptAllReviewChunks(
     reviewId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<AcceptAllChunksResponse | ReviewFailure> {
-    return await this._reviewApplication.acceptAllChunks(reviewId, precondition);
+    return this._reviewApplication.acceptAllChunks(reviewId, precondition);
   }
 
-  public async clearReview(
+  public clearReview(
     reviewId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<ClearReviewResponse | ReviewFailure> {
-    return await this._reviewApplication.clearReview(reviewId, precondition);
+    return this._reviewApplication.clearReview(reviewId, precondition);
   }
 
-  public async addReviewComment(
+  public addReviewComment(
     reviewId: string,
     text: string,
     expectedReviewGeneration: number,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    return await this._reviewApplication.addReviewComment(
+    return this._reviewApplication.addReviewComment(
       reviewId,
       text,
       expectedReviewGeneration,
@@ -2762,7 +2762,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * arriving mid-save is exactly what would break that.
    */
   public async saveFile(filePath: string): Promise<SaveFileResult> {
-    return await this._reviewApplication.withDocumentLock(
+    return this._reviewApplication.withDocumentLock(
       this.ensureDocumentId(filePath),
       async () => await this._saveFileLocked(filePath),
     );
@@ -3108,8 +3108,8 @@ current contents from the editor somewhere else, and restart the application.`,
     );
   }
 
-  public async readSupportedFile(filePath: string): Promise<string> {
-    return await this._app.fsal.loadAnySupportedFile(filePath);
+  public readSupportedFile(filePath: string): Promise<string> {
+    return this._app.fsal.loadAnySupportedFile(filePath);
   }
 
   /**
@@ -3209,7 +3209,7 @@ current contents from the editor somewhere else, and restart the application.`,
     clientRequestId: string,
     expectedReviewGeneration: number,
   ): Promise<SubmittedProposal | { ok: false; code: string; message: string }> {
-    return await this._reviewApplication.submitProposal({
+    return this._reviewApplication.submitProposal({
       documentId,
       baselineSha256,
       claims,

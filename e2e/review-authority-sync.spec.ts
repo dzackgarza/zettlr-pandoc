@@ -107,7 +107,7 @@ interface RaceInput {
  * looking at, and what every assertion below compares against.
  */
 async function raceEditsWithClick (page: Page, input: RaceInput): Promise<string> {
-  return await page.evaluate((options: RaceInput) => {
+  return page.evaluate((options: RaceInput) => {
     const contents = Array.from(
       document.querySelectorAll<PageContentElement>('.cm-content')
     )
@@ -311,8 +311,8 @@ async function propose (
 }
 
 /** Every toast currently on screen, as its message text. */
-async function toastMessages (page: Page): Promise<string[]> {
-  return await page
+function toastMessages (page: Page): Promise<string[]> {
+  return page
     .locator('#zettlr-toast-container .zettlr-toast span:first-child')
     .allInnerTexts()
 }

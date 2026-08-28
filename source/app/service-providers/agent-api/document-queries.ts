@@ -44,8 +44,8 @@ const SEARCH_DEADLINE_MS = 1000;
 export const MAX_SEARCH_HITS = 1000;
 
 export class SearchPatternError extends Error {
-  constructor() {
-    super("Invalid search pattern");
+  constructor(cause?: unknown) {
+    super("Invalid search pattern", { cause });
   }
 }
 
@@ -347,11 +347,15 @@ export default class AgentDocumentQueries {
     if (document === undefined) {
       return undefined;
     }
-    let searchRegex: RegExp;
+    let searchRegex: RegExp | undefined;
+    let patternFailure: unknown;
     try {
       searchRegex = makeSearchRegex(request.literal, "g");
-    } catch {
-      throw new SearchPatternError();
+    } catch (error) {
+      patternFailure = error;
+    }
+    if (searchRegex === undefined) {
+      throw new SearchPatternError(patternFailure);
     }
     const content = document.document.toString();
     const lines = content.split("\n");

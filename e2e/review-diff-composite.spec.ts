@@ -95,7 +95,7 @@ async function workspaceDocumentId (api: AgentClient, filePath: string): Promise
 }
 
 async function invokeSave (page: Page, filePath: string): Promise<unknown> {
-  return await page.evaluate(
+  return page.evaluate(
     async pathInPage => await window.ipc.invoke('documents:save-file', { path: pathInPage }),
     filePath
   )

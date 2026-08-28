@@ -255,13 +255,16 @@ function assertReviewSidecarSemantics(
  */
 function parseReviewSidecar(raw: string, target: string): ReviewSidecarData {
   let parsed: unknown;
+  let parseFailure: unknown;
+  let parsedOk = false;
   try {
     parsed = JSON.parse(raw);
+    parsedOk = true;
   } catch (error) {
-    throw new Error(
-      `Review sidecar ${target} is not valid JSON: ` +
-        (error instanceof Error ? error.message : String(error)),
-    );
+    parseFailure = error;
+  }
+  if (!parsedOk) {
+    throw new Error(`Review sidecar ${target} is not valid JSON`, { cause: parseFailure });
   }
   if (!validateReviewSidecar(parsed)) {
     throw new Error(
