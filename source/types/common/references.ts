@@ -8,6 +8,7 @@ import {
   THEOREM_FAMILY_METADATA,
   type TheoremFamilyPrefix
 } from '../../common/util/pandoc-quick-reference'
+import type { PandocExtractedCitation } from '../../common/pandoc-util/pandoc-ast-citations'
 
 /**
  * The explicit pandoc-crossref label families supported at launch.
@@ -338,6 +339,7 @@ export interface DocumentReferenceSnapshot {
   sourceHash: string
   definitions: ReferenceDefinition[]
   occurrences: ReferenceOccurrence[]
+  citations?: PandocExtractedCitation[]
 }
 
 /**

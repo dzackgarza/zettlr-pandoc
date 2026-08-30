@@ -20,6 +20,7 @@ import {
   type ReferenceOccurrence,
   type SourceRange
 } from '../../types/common/references'
+import { type PandocExtractedCitation, type PandocCitationItem } from './pandoc-ast-citations'
 
 /**
  * Computes the deterministic content hash used to key reference snapshots
@@ -201,6 +202,7 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
   const sourceHash = hashDocumentSource(markdown)
   const definitions: ReferenceDefinition[] = []
   const occurrences: ReferenceOccurrence[] = []
+  const citations: PandocExtractedCitation[] = []
   // The clean text of the nearest preceding heading during the walk
   let currentSection: string|undefined
 
@@ -409,30 +411,42 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
         const cluster = node.value
         const syntaxKind = cluster.startsWith('[') ? 'bracketed' : 'bare'
         let searchFrom = 0
+        const citationItems: PandocCitationItem[] = []
         for (const item of node.parsedCitation.items) {
           const family = referenceFamilyOf(item.id)
-          if (family === undefined) {
-            // Bibliography citations (e.g. @Ols04) are never occurrences.
-            continue
+          if (family !== undefined) {
+            const token = '@' + item.id
+            const idx = cluster.indexOf(token, searchFrom)
+            if (idx === -1) {
+              throw new Error(`Inconsistent citation node: item "${item.id}" not found in "${cluster}"`)
+            }
+            searchFrom = idx + token.length
+
+            occurrences.push({
+              key: item.id,
+              family,
+              range: { from: node.from + idx, to: node.from + idx + token.length },
+              syntaxKind,
+              clusterRaw: cluster,
+              documentPath,
+              sourceHash
+            })
           }
 
-          const token = '@' + item.id
-          const idx = cluster.indexOf(token, searchFrom)
-          if (idx === -1) {
-            throw new Error(`Inconsistent citation node: item "${item.id}" not found in "${cluster}"`)
-          }
-          searchFrom = idx + token.length
-
-          occurrences.push({
-            key: item.id,
-            family,
-            range: { from: node.from + idx, to: node.from + idx + token.length },
-            syntaxKind,
-            clusterRaw: cluster,
-            documentPath,
-            sourceHash
+          citationItems.push({
+            ...item,
+            mode: item['suppress-author'] === true
+              ? 'SuppressAuthor'
+              : (node.parsedCitation.composite ? 'AuthorInText' : 'NormalCitation')
           })
         }
+
+        citations.push({
+          range: { from: node.from, to: node.to },
+          source: cluster,
+          composite: node.parsedCitation.composite,
+          items: citationItems
+        })
         break
       }
       default:
@@ -446,5 +460,5 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
 
   visit(ast)
 
-  return { documentPath, sourceHash, definitions, occurrences }
+  return { documentPath, sourceHash, definitions, occurrences, citations }
 }
