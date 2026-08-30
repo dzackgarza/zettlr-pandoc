@@ -137,8 +137,8 @@ const configStore = useConfigStore()
 const documentTreeStore = useDocumentTreeStore()
 const currentView = ref<'files'|'book'>('files')
 const navigationTabs: TabbarControl[] = [
-  { icon: 'folder', id: 'files', target: 'file-tree', label: trans('Files') },
-  { icon: 'book', id: 'book', target: 'quarto-book-navigation', label: trans('Book') }
+  { id: 'files', target: 'file-tree', label: trans('Files') },
+  { id: 'book', target: 'quarto-book-navigation', label: trans('Book') }
 ]
 const activeFilePath = computed(() => documentTreeStore.lastLeafActiveFile?.path)
 const quartoProject = computed(() => {
@@ -154,6 +154,10 @@ const quartoProject = computed(() => {
       }
     })
   return projects.find(project => activeFilePath.value?.startsWith(project.path) === true) ?? projects[0]
+})
+
+watch(quartoProject, project => {
+  currentView.value = project === undefined ? 'files' : 'book'
 })
 
 const selectedDirectory = computed(() => configStore.config.openDirectory)
