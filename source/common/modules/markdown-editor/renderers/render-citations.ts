@@ -19,19 +19,24 @@ import { type EditorState } from '@codemirror/state'
 import clickAndSelect from './click-and-select'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import { citationMenu } from '../context-menu/citation-menu'
-import { configField } from '../util/configuration'
+import { configField, type EditorConfiguration } from '../util/configuration'
 import { type Citation, NODES, nodeToCiteItem } from '../parser/citation-parser'
 import { isSupportedPandocCrossref } from '@common/util/pandoc-quick-reference'
 import { referenceFamilyOf, referenceKeyParts } from '@dts/common/references'
 import { workspaceReferencesField } from '../plugins/workspace-references-field'
 
 class CitationWidget extends WidgetType {
-  constructor (readonly citation: Citation, readonly rawCitation: string, readonly node: SyntaxNode) {
+  constructor (
+    readonly citation: Citation,
+    readonly rawCitation: string,
+    readonly node: SyntaxNode,
+    readonly metadata: EditorConfiguration['metadata']
+  ) {
     super()
   }
 
   eq (other: CitationWidget): boolean {
-    return JSON.stringify(other.citation) === JSON.stringify(this.citation)
+    return other.metadata === this.metadata && JSON.stringify(other.citation) === JSON.stringify(this.citation)
   }
 
   toDOM (view: EditorView): HTMLElement {
@@ -124,7 +129,12 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): CitationWidget|
     if (hasWorkspaceReferences && citation.items.some(item => referenceFamilyOf(item.id) !== undefined)) {
       return undefined
     }
-    return new CitationWidget(citation, state.sliceDoc(node.from, node.to), node.node)
+    return new CitationWidget(
+      citation,
+      state.sliceDoc(node.from, node.to),
+      node.node,
+      state.field(configField).metadata
+    )
   } catch (err) {
     // nodeToCiteItem throws if it is unhappy
     return undefined
