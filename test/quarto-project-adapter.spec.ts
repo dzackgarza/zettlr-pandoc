@@ -7,7 +7,10 @@ import { parseQuartoProject } from "source/app/util/quarto-project";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import { getBibliographyForDescriptor } from "source/common/util/get-bibliography-for-descriptor";
 import type { MDFileDescriptor } from "source/types/common/fsal";
-import { buildQuartoBookOutline } from "source/win-main/file-manager/quarto-book-outline";
+import {
+  buildQuartoBookOutline,
+  extractQuartoBookSections,
+} from "source/win-main/file-manager/quarto-book-outline";
 
 const ROOT = path.resolve("test", "fixtures", "quarto-book");
 
@@ -87,6 +90,16 @@ describe("Quarto project adapter", function () {
           path.join(ROOT, "computation", "sage.md"),
         ],
       },
+    );
+  });
+
+  it("maps chapter headings to exact line targets", function () {
+    assert.deepStrictEqual(
+      extractQuartoBookSections("# Categories\n\nIntro.\n\n## Functors\n\n### Natural transformations\n"),
+      [
+        { title: "Functors", level: 2, line: 5 },
+        { title: "Natural transformations", level: 3, line: 7 },
+      ],
     );
   });
 
