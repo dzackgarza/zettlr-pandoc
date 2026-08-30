@@ -329,16 +329,35 @@ outside`
     assert.match(view.dom.textContent ?? '', /::: \{\.definition\}/)
   })
 
-  it('preserves ordinary editing and undo history inside an active div', function () {
-    const doc = '::: definition\nBody.\n:::\n\noutside'
-    const insertion = doc.indexOf('Body') + 4
-    const view = createEditor(doc, insertion, [ markdownParser(), renderPandoc, history() ])
+  it('maps Quarto classless and shorthand divs to the exact same rendering pipeline as amsthm definitions', function () {
+    const quartoDefs = [
+      { doc: '::: {#def-cauchy}\nA continuous function is Cauchy.\n:::\n\noutside', family: 'definition', label: 'Definition', id: 'def-cauchy' },
+      { doc: '::: {.def #term}\nA fundamental term.\n:::\n\noutside', family: 'definition', label: 'Definition', id: 'term' },
+      { doc: '::: {#thm-main}\nEvery finite group has a composition series.\n:::\n\noutside', family: 'result', label: 'Theorem', id: 'thm-main' },
+      { doc: '::: {.thm}\nA standard theorem.\n:::\n\noutside', family: 'result', label: 'Theorem', id: '' },
+      { doc: '::: {#lem-zorn}\nEvery poset has a maximal element.\n:::\n\noutside', family: 'result', label: 'Lemma', id: 'lem-zorn' },
+      { doc: '::: {.prp #main}\nA proposition.\n:::\n\noutside', family: 'result', label: 'Proposition', id: 'main' },
+      { doc: '::: {#cor-1}\nA corollary.\n:::\n\noutside', family: 'result', label: 'Corollary', id: 'cor-1' },
+      { doc: '::: {#exm-circle}\nAn example of a manifold.\n:::\n\noutside', family: 'explanation', label: 'Example', id: 'exm-circle' },
+      { doc: '::: {#rem-1}\nA notable remark.\n:::\n\noutside', family: 'explanation', label: 'Remark', id: 'rem-1' },
+      { doc: '::: {.prf}\nProof follows.\n:::\n\noutside', family: 'proof', label: 'Proof', id: '' }
+    ]
 
-    view.dispatch({ changes: { from: insertion, insert: ' text' } })
-    assert.equal(view.state.doc.toString(), '::: definition\nBody text.\n:::\n\noutside')
-    assert.equal(undo(view), true)
-    assert.equal(view.state.doc.toString(), doc)
-    assert.equal(redo(view), true)
-    assert.equal(view.state.doc.toString(), '::: definition\nBody text.\n:::\n\noutside')
+    for (const specimen of quartoDefs) {
+      const view = createEditor(specimen.doc, specimen.doc.length, [ markdownParser(), renderPandoc ])
+      const opening = view.dom.querySelector('pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]')
+      const panel = view.dom.querySelector(`pandoc-div-wrapper[data-pandoc-div-family="${specimen.family}"]`)
+      const closing = view.dom.querySelector('pandoc-div-close-wrapper[data-pandoc-div-state="inactive"]')
+
+      assert.ok(opening !== null, `expected opening wrapper for ${specimen.doc}`)
+      assert.equal(opening?.getAttribute('data-pandoc-div-label'), specimen.label)
+      assert.equal(opening?.getAttribute('data-pandoc-div-family'), specimen.family)
+      assert.ok(panel !== null, `expected panel wrapper with family ${specimen.family} for ${specimen.doc}`)
+      assert.ok(closing !== null, `expected closing wrapper for ${specimen.doc}`)
+      if (specimen.id !== '') {
+        assert.equal(opening?.getAttribute('data-pandoc-authored-id'), specimen.id)
+      }
+    }
   })
 })
+

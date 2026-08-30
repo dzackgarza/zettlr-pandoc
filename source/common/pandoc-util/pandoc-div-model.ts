@@ -49,44 +49,149 @@ export interface DivSourceDocument {
 }
 
 export const SEMANTIC_DIV_CLASSES: Record<string, PandocDivFamily> = {
-  theorem: 'result',
-  lemma: 'result',
-  proposition: 'result',
-  corollary: 'result',
-  conjecture: 'result',
-  claim: 'result',
+  // amsthm & Quarto definitions
   definition: 'definition',
+  def: 'definition',
   construction: 'definition',
   notation: 'definition',
   assumption: 'definition',
+  ass: 'definition',
+  axiom: 'definition',
+  hyp: 'definition',
+  hypothesis: 'definition',
+
+  // amsthm & Quarto results
+  theorem: 'result',
+  thm: 'result',
+  lemma: 'result',
+  lem: 'result',
+  proposition: 'result',
+  prop: 'result',
+  prp: 'result',
+  corollary: 'result',
+  cor: 'result',
+  conjecture: 'result',
+  conj: 'result',
+  cnj: 'result',
+  claim: 'result',
+  clm: 'result',
+
+  // amsthm & Quarto explanations
   example: 'explanation',
+  ex: 'explanation',
+  exm: 'explanation',
   remark: 'explanation',
+  rem: 'explanation',
+  rmk: 'explanation',
   observation: 'explanation',
+  obs: 'explanation',
   fact: 'explanation',
+
+  // amsthm & Quarto tasks
   exercise: 'task',
+  exr: 'task',
   problem: 'task',
+  prob: 'task',
+  prb: 'task',
   question: 'task',
+  qst: 'task',
+
+  // amsthm & Quarto warnings
   warning: 'warning',
+  warn: 'warning',
+  wrn: 'warning',
   caution: 'warning',
+  cau: 'warning',
   danger: 'warning',
   error: 'warning',
+
+  // amsthm & Quarto proofs
   proof: 'proof',
+  prf: 'proof',
   sketch: 'proof',
   solution: 'proof',
+  sol: 'proof'
+}
+
+const CANONICAL_LABELS: Record<string, string> = {
+  def: 'Definition',
+  definition: 'Definition',
+  thm: 'Theorem',
+  theorem: 'Theorem',
+  lem: 'Lemma',
+  lemma: 'Lemma',
+  cor: 'Corollary',
+  corollary: 'Corollary',
+  prop: 'Proposition',
+  prp: 'Proposition',
+  proposition: 'Proposition',
+  conj: 'Conjecture',
+  cnj: 'Conjecture',
+  conjecture: 'Conjecture',
+  clm: 'Claim',
+  claim: 'Claim',
+  ass: 'Assumption',
+  assumption: 'Assumption',
+  axiom: 'Axiom',
+  hyp: 'Hypothesis',
+  hypothesis: 'Hypothesis',
+  ex: 'Example',
+  exm: 'Example',
+  example: 'Example',
+  rem: 'Remark',
+  rmk: 'Remark',
+  remark: 'Remark',
+  obs: 'Observation',
+  observation: 'Observation',
+  fact: 'Fact',
+  exr: 'Exercise',
+  exercise: 'Exercise',
+  prob: 'Problem',
+  prb: 'Problem',
+  problem: 'Problem',
+  qst: 'Question',
+  question: 'Question',
+  warn: 'Warning',
+  wrn: 'Warning',
+  warning: 'Warning',
+  cau: 'Caution',
+  caution: 'Caution',
+  danger: 'Danger',
+  error: 'Error',
+  proof: 'Proof',
+  prf: 'Proof',
+  sketch: 'Sketch',
+  sol: 'Solution',
+  solution: 'Solution'
 }
 
 export function humanizeClassName (className: string): string {
+  const normalized = className.toLowerCase()
+  if (CANONICAL_LABELS[normalized] !== undefined) {
+    return CANONICAL_LABELS[normalized]
+  }
   return className
     .replace(/[._-]+/g, ' ')
     .replace(/\b\w/g, char => char.toUpperCase())
 }
 
-export function classifyDiv (classes: string[]): { family: PandocDivFamily, label: string } {
+export function classifyDiv (classes: string[], id?: string): { family: PandocDivFamily, label: string } {
   for (const authoredClass of classes) {
     const normalizedClass = authoredClass.toLowerCase()
     const family = SEMANTIC_DIV_CLASSES[normalizedClass]
     if (family !== undefined) {
       return { family, label: humanizeClassName(normalizedClass) }
+    }
+  }
+
+  if (id !== undefined && id !== '') {
+    const match = /^([a-zA-Z0-9]+)(?:[:-].*)$/.exec(id)
+    if (match !== null) {
+      const prefix = match[1].toLowerCase()
+      const family = SEMANTIC_DIV_CLASSES[prefix]
+      if (family !== undefined) {
+        return { family, label: humanizeClassName(prefix) }
+      }
     }
   }
 
@@ -127,7 +232,7 @@ export function divModelFromNode (doc: DivSourceDocument, node: SyntaxNode): Pan
     classes.push(...attributes.classes)
   }
 
-  const classification = classifyDiv(classes)
+  const classification = classifyDiv(classes, attributes.id)
   let depth = 0
   for (let parent = node.parent; parent !== null; parent = parent.parent) {
     if (parent.name === 'PandocDiv') {
