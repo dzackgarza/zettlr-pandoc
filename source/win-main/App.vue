@@ -24,6 +24,7 @@
           v-show="mainSplitViewVisibleComponent === 'fileManager'"
           ref="file-manager"
           :window-id="windowId"
+          @jump-to-line="jtl($event.filePath, $event.line, false)"
         />
         <!-- ... or the global search, if selected -->
         <GlobalSearch

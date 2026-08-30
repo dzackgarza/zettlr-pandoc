@@ -4,7 +4,11 @@
     ref="rootElement"
     role="region"
     aria-label="File Manager"
-    v-bind:class="{ expanded: isExpanded }"
+    v-bind:class="{
+      expanded: isExpanded,
+      'has-view-tabs': quartoProject !== undefined,
+      'book-view': currentView === 'book'
+    }"
     v-on:keydown="maybeNavigate"
     v-on:mouseenter="maybeShowArrowButton"
     v-on:mousemove="maybeShowArrowButton"
@@ -14,6 +18,12 @@
     v-on:dragstart="lockDirectoryTree"
     v-on:dragend="unlockDirectoryTree"
   >
+    <TabBar
+      v-if="quartoProject !== undefined"
+      v-bind:tabs="navigationTabs"
+      v-bind:current-tab="currentView"
+      v-on:tab="currentView = $event as 'files'|'book'"
+    ></TabBar>
     <!-- Display the arrow button in case we have a non-combined view -->
     <div
       id="arrow-button"
@@ -31,7 +41,7 @@
     </div>
 
     <!-- Filter field -->
-    <div class="file-manager-filter">
+    <div v-if="currentView === 'files'" class="file-manager-filter">
       <input
         ref="quickFilter"
         v-model="filterQuery"
@@ -44,8 +54,16 @@
     </div>
 
     <div id="component-container">
+      <QuartoBookOutline
+        v-if="currentView === 'book' && quartoProject !== undefined"
+        v-bind:root-path="quartoProject.path"
+        v-bind:navigation="quartoProject.navigation"
+        v-bind:active-item="activeFilePath"
+        v-on:jump="emit('jump-to-line', $event)"
+      ></QuartoBookOutline>
       <!-- Render a the file-tree -->
       <FileTree
+        v-show="currentView === 'files'"
         ref="fileTreeComponent"
         v-bind:is-visible="fileTreeVisible"
         v-bind:filter-query="filterQuery"
@@ -62,7 +80,7 @@
         idea what is happening, please come forward.
       -->
       <FileList
-        v-show="!isCombined"
+        v-show="currentView === 'files' && !isCombined"
         ref="fileListComponent"
         v-bind:is-visible="isFileListVisible"
         v-bind:filter-query="filterQuery"
@@ -89,14 +107,17 @@
  */
 import FileTree from './FileTree.vue'
 import FileList from './FileList.vue'
+import QuartoBookOutline from './QuartoBookOutline.vue'
+import TabBar, { type TabbarControl } from '@common/vue/TabBar.vue'
 import { trans } from '@common/i18n-renderer'
 import { nextTick, ref, computed, watch, onMounted } from 'vue'
-import { useConfigStore } from 'source/pinia'
+import { useConfigStore, useDocumentTreeStore } from 'source/pinia'
 import { useWorkspaceStore } from 'source/pinia/workspace-store'
 
 const ipcRenderer = window.ipc
 
 const props = defineProps<{ windowId: string }>()
+const emit = defineEmits<(event: 'jump-to-line', target: { filePath: string, line: number }) => void>()
 
 const previous = ref<'file-list'|'directories'|undefined>(undefined) // Can be "file-list" or "directories"
 const lockedTree = ref<boolean>(false)
@@ -113,6 +134,27 @@ const fileListComponent = ref<typeof FileList|null>(null)
 
 const workspaceStore = useWorkspaceStore()
 const configStore = useConfigStore()
+const documentTreeStore = useDocumentTreeStore()
+const currentView = ref<'files'|'book'>('files')
+const navigationTabs: TabbarControl[] = [
+  { icon: 'folder', id: 'files', target: 'file-tree', label: trans('Files') },
+  { icon: 'book', id: 'book', target: 'quarto-book-navigation', label: trans('Book') }
+]
+const activeFilePath = computed(() => documentTreeStore.lastLeafActiveFile?.path)
+const quartoProject = computed(() => {
+  const projects = workspaceStore.rootDescriptors
+    .filter(root => root.type === 'directory' && root.settings.project?.manifest.kind === 'quarto')
+    .map(root => {
+      if (root.type !== 'directory' || root.settings.project?.manifest.kind !== 'quarto') {
+        throw new Error('Invalid Quarto project descriptor')
+      }
+      return {
+        path: root.path,
+        navigation: root.settings.project.manifest.navigation
+      }
+    })
+  return projects.find(project => activeFilePath.value?.startsWith(project.path) === true) ?? projects[0]
+})
 
 const selectedDirectory = computed(() => configStore.config.openDirectory)
 
@@ -380,6 +422,18 @@ body #file-manager {
     position: relative;
     width: 100%;
     height: calc(100% - 37px); // 100% minus the filter
+  }
+
+  > .system-tablist {
+    height: 30px;
+  }
+
+  &.has-view-tabs #component-container {
+    height: calc(100% - 67px);
+  }
+
+  &.book-view #component-container {
+    height: calc(100% - 30px);
   }
 
   &.expanded {

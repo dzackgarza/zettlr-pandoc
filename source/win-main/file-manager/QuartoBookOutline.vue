@@ -20,23 +20,45 @@
           v-if="item.kind === 'chapter'"
           type="button"
           v-bind:class="{ chapter: true, active: item.path === activeItem }"
-          v-on:click.stop="openPath(item.path)"
+          v-on:click.stop="openPath(item.path, 1)"
         >
           <span class="chapter-number">{{ item.position }}</span>
           <span>{{ item.title }}</span>
         </button>
+        <div v-if="item.kind === 'chapter'" class="book-sections">
+          <button
+            v-for="section in sections[item.path]"
+            v-bind:key="`${item.path}:${section.line}`"
+            type="button"
+            v-bind:style="{ 'padding-left': `${Math.max(0, section.level - 2) * 12 + 34}px` }"
+            v-on:click.stop="openPath(item.path, section.line)"
+          >
+            {{ section.title }}
+          </button>
+        </div>
         <section v-else class="book-part">
           <h4>{{ item.title }}</h4>
-          <button
-            v-for="chapter in item.chapters"
-            v-bind:key="chapter.path"
-            type="button"
-            v-bind:class="{ chapter: true, active: chapter.path === activeItem }"
-            v-on:click.stop="openPath(chapter.path)"
-          >
-            <span class="chapter-number">{{ chapter.position }}</span>
-            <span>{{ chapter.title }}</span>
-          </button>
+          <div v-for="chapter in item.chapters" v-bind:key="chapter.path" class="book-chapter">
+            <button
+              type="button"
+              v-bind:class="{ chapter: true, active: chapter.path === activeItem }"
+              v-on:click.stop="openPath(chapter.path, 1)"
+            >
+              <span class="chapter-number">{{ chapter.position }}</span>
+              <span>{{ chapter.title }}</span>
+            </button>
+            <div class="book-sections">
+              <button
+                v-for="section in sections[chapter.path]"
+                v-bind:key="`${chapter.path}:${section.line}`"
+                type="button"
+                v-bind:style="{ 'padding-left': `${Math.max(0, section.level - 2) * 12 + 34}px` }"
+                v-on:click.stop="openPath(chapter.path, section.line)"
+              >
+                {{ section.title }}
+              </button>
+            </div>
+          </div>
         </section>
       </template>
     </nav>
@@ -44,12 +66,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { trans } from '@common/i18n-renderer'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
 import type { ProjectNavigationItem } from '@dts/common/fsal'
 import { useWorkspaceStore } from 'source/pinia'
-import { buildQuartoBookOutline } from './quarto-book-outline'
+import {
+  buildQuartoBookOutline,
+  extractQuartoBookSections,
+  type QuartoBookSection
+} from './quarto-book-outline'
 
 const ipcRenderer = window.ipc
 const workspaceStore = useWorkspaceStore()
@@ -58,6 +84,7 @@ const props = defineProps<{
   navigation: ProjectNavigationItem[]
   activeItem?: string
 }>()
+const emit = defineEmits<(event: 'jump', target: { filePath: string, line: number }) => void>()
 
 const bookLabel = trans('Book')
 const previousLabel = trans('Previous')
@@ -70,6 +97,18 @@ const outline = computed(() => buildQuartoBookOutline(props.rootPath, props.navi
   }
   return pathBasename(filePath)
 }))
+const sections = ref<Record<string, QuartoBookSection[]>>({})
+
+watch(() => outline.value.orderedPaths, async paths => {
+  const loaded = await Promise.all(paths.map(async filePath => {
+    const source: string = await ipcRenderer.invoke('application', {
+      command: 'get-file-contents',
+      payload: filePath
+    })
+    return [ filePath, extractQuartoBookSections(source) ] as const
+  }))
+  sections.value = Object.fromEntries(loaded)
+}, { immediate: true })
 
 const activeIndex = computed(() => props.activeItem === undefined
   ? -1
@@ -84,22 +123,19 @@ const currentPosition = computed(() => activeIndex.value < 0
   ? ''
   : `${activeIndex.value + 1} / ${outline.value.orderedPaths.length}`)
 
-function openPath (filePath: string|undefined): void {
+function openPath (filePath: string|undefined, line = 1): void {
   if (filePath === undefined) {
     return
   }
-  ipcRenderer.invoke('documents-provider', {
-    command: 'open-file',
-    payload: { path: filePath }
-  }).catch((error: Error) => console.error(error))
+  emit('jump', { filePath, line })
 }
 </script>
 
 <style lang="less">
 .quarto-book-outline {
-  margin: 4px 8px 8px 24px;
-  padding: 8px;
-  border-left: 2px solid var(--system-accent-color);
+  height: 100%;
+  padding: 10px;
+  overflow-y: auto;
 
   header,
   .book-controls {
@@ -131,7 +167,9 @@ function openPath (filePath: string|undefined): void {
   }
 
   nav,
-  .book-part {
+  .book-part,
+  .book-chapter,
+  .book-sections {
     display: flex;
     flex-direction: column;
   }
@@ -159,6 +197,20 @@ function openPath (filePath: string|undefined): void {
     &.active {
       color: var(--system-accent-color);
       font-weight: 600;
+    }
+  }
+
+  .book-sections button {
+    border: 0;
+    background: transparent;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    text-align: left;
+    opacity: 0.8;
+
+    &:hover {
+      color: var(--system-accent-color);
+      text-decoration: underline;
     }
   }
 }

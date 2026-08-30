@@ -95,7 +95,9 @@ describe("Quarto project adapter", function () {
 
   it("maps chapter headings to exact line targets", function () {
     assert.deepStrictEqual(
-      extractQuartoBookSections("# Categories\n\nIntro.\n\n## Functors\n\n### Natural transformations\n"),
+      extractQuartoBookSections(
+        "# Categories\n\nIntro.\n\n## Functors\n\n### Natural transformations\n",
+      ),
       [
         { title: "Functors", level: 2, line: 5 },
         { title: "Natural transformations", level: 3, line: 7 },
