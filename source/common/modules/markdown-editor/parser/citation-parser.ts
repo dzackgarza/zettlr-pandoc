@@ -100,6 +100,7 @@ const CHAR = {
   CR: 13,
   SPACE: 32,
   BRACE_OPEN: 40,
+  ASTERISK: 42,
   COMMA: 44,
   HYPHEN: 45,
   DOT: 46,
@@ -107,8 +108,10 @@ const CHAR = {
   AT: 64,
   BRACKET_OPEN: 91,
   BRACKET_CLOSE: 93,
+  UNDERSCORE: 95,
   CURLY_OPEN: 123,
-  CURLY_CLOSE: 125
+  CURLY_CLOSE: 125,
+  TILDE: 126
 }
 
 // Character code points for upper/lower case roman numerals (CDILMVX).
@@ -378,7 +381,17 @@ export const citationParser: InlineParser = {
     // include newlines, since single newlines are considered part of the same
     // line due to the hard wrapping rule.
     const prevChar = ctx.char(pos - 1)
-    const validBefore = Number.isNaN(prevChar) || [ CHAR.BRACE_OPEN, CHAR.BRACKET_CLOSE, CHAR.LF, CHAR.CR, CHAR.TAB, CHAR.SPACE ].includes(prevChar)
+    const validBefore = Number.isNaN(prevChar) || [
+      CHAR.BRACE_OPEN,
+      CHAR.BRACKET_CLOSE,
+      CHAR.ASTERISK,
+      CHAR.UNDERSCORE,
+      CHAR.TILDE,
+      CHAR.LF,
+      CHAR.CR,
+      CHAR.TAB,
+      CHAR.SPACE
+    ].includes(prevChar)
     if (!validBefore) {
       return -1
     }
@@ -574,24 +587,8 @@ export const citationParser: InlineParser = {
           continue
         }
 
-        // Code points 48-57 are digits. Implicit and explicit locators must be
-        // preceded by a space, bracketed locators do not.
-        const startsImplicitLocator = (ch >= 48 && ch <= 57) || startsWithRomanNumeralLocator(ctx.slice(i, ctxEndPos))
-        if (citekeyEnd > -1 && locatorStart < 0 && prevCh === CHAR.SPACE && startsImplicitLocator) {
-          // First, check if there are only punctuation marks and spaces between
-          // the citekey end and the locator start. If not, we should not detect
-          // this as a locator.
-          if (/^[\s,\.:;+-]*$/.test(ctx.slice(citekeyEnd, i - 1))) {
-            // Found a number -> begin implicit locator
-            locatorStart = i
-          }
-          continue
-        }
-
-        // Unfortunately, for explicit locators we have to perform string
-        // comparison, so we need to extract the actual text here.
-        // NOTE that we require each label to be followed by a space,
-        // so `lclocIndex` must be greater than 0
+        // Check explicit locator labels first so labels like "liv." or "c." or "v."
+        // are never misparsed as implicit Roman numerals.
         const slice = ctx.slice(i, i + maxLocatorLabelLength + 1)
         const lclocIndex = slice.indexOf(' ')
         const lcloc = slice.substring(0, lclocIndex).toLowerCase()
@@ -608,6 +605,19 @@ export const citationParser: InlineParser = {
             // logic can take over. This way, regardless of how a locator starts,
             // its end will be found the same way.
             i += explicitLabel.length + 1
+          }
+          continue
+        }
+
+        // Implicit locators: digits or canonical Roman numerals
+        const startsImplicitLocator = (ch >= 48 && ch <= 57) || startsWithRomanNumeralLocator(ctx.slice(i, ctxEndPos))
+        if (citekeyEnd > -1 && locatorStart < 0 && prevCh === CHAR.SPACE && startsImplicitLocator) {
+          // First, check if there are only punctuation marks and spaces between
+          // the citekey end and the locator start. If not, we should not detect
+          // this as a locator.
+          if (/^[\s,\.:;+-]*$/.test(ctx.slice(citekeyEnd, i - 1))) {
+            // Found a number -> begin implicit locator
+            locatorStart = i
           }
           continue
         }
