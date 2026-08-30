@@ -1,0 +1,17 @@
+project:
+  type: book
+book:
+  title: Lattice Notes
+  chapters:
+    - index.md
+    - part: Foundations
+      chapters:
+        - foundations/categories.md
+        - foundations/forms.md
+    - part: Computation
+      chapters:
+        - computation/sage.md
+bibliography:
+  - references.bib
+  - web.bib
+
