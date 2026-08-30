@@ -25,6 +25,7 @@ import type WindowProvider from '../windows'
 import type LogProvider from '../log'
 import type ConfigProvider from '@providers/config'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
+import type { CitationDatabase } from '@dts/common/citeproc'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
 import { showNativeNotification } from '@common/util/show-notification'
 import { loadDatabase } from './util/database-loader'
@@ -40,15 +41,15 @@ export interface DatabaseRecord {
 
 export type CiteprocIPCContract = {
   'get-items': {
-    request: { payload: { database: string } }
+    request: { payload: { database: CitationDatabase } }
     response: CSLItem[]
   }
   'get-citation': {
-    request: { payload: { database: string, citations: CiteItem[], composite: boolean } }
+    request: { payload: { database: CitationDatabase, citations: CiteItem[], composite: boolean } }
     response: string|undefined
   }
   'get-bibliography': {
-    request: { payload: { database: string, citations: string[] } }
+    request: { payload: { database: CitationDatabase, citations: string[] } }
     response: [BibliographyOptions, string[]]|undefined
   }
 }
@@ -56,7 +57,7 @@ export type CiteprocIPCContract = {
 // get-citation-sync rides ipcMain.on/sendSync, not invoke, so it is not part
 // of the invoke contract above.
 export type CiteprocProviderIPCAPI = IPCMessage<CiteprocIPCContract>
-  | { command: 'get-citation-sync', payload: { database: string, citations: CiteItem[], composite: boolean } }
+  | { command: 'get-citation-sync', payload: { database: CitationDatabase, citations: CiteItem[], composite: boolean } }
 
 // The default style Zettlr ships with
 const DEFAULT_CHICAGO_STYLE = path.join(__dirname, './assets/csl-styles/chicago-author-date.csl')
@@ -210,7 +211,10 @@ export default class CiteprocProvider extends ProviderContract {
       // Ensure the database is loaded in any case (will throw a visible error
       // if the database cannot be loaded)
       try {
-        await this.loadDatabase(database)
+        const databases = Array.isArray(database) ? database : [ database ]
+        for (const databasePath of databases) {
+          await this.loadDatabase(databasePath)
+        }
       } catch (err: unknown) {
         this._logger.error(`[Citeproc Provider] Could not load database ${String(database)}: ${err instanceof Error ? err.message : 'unknown error'}`, err)
         // Proper early return based on the command
@@ -218,13 +222,8 @@ export default class CiteprocProvider extends ProviderContract {
       }
 
       if (command === 'get-items') {
-        const dbPath = database === CITEPROC_MAIN_DB ? this.mainLibrary : database
-        const db = this.databases.get(dbPath)
-        if (db === undefined) {
-          return []
-        } else {
-          return Object.values(db.cslData)
-        }
+        this.selectDatabase(database)
+        return Object.values(this._items)
       } else if (command === 'get-citation') {
         const { citations, composite } = payload
         return this.getCitation(database, citations, composite)
@@ -236,22 +235,23 @@ export default class CiteprocProvider extends ProviderContract {
     })
   } // END constructor
 
-  public hasBibTexAttachments (dbPath: string): boolean {
-    const db = this.databases.get(dbPath)
-    if (db === undefined) {
-      return false
-    }
-
-    return Object.keys(db.bibtexAttachments).length > 0
+  public hasBibTexAttachments (database: CitationDatabase): boolean {
+    const paths = Array.isArray(database) ? database : [ database ]
+    return paths.some(dbPath => {
+      const db = this.databases.get(dbPath)
+      return db !== undefined && Object.keys(db.bibtexAttachments).length > 0
+    })
   }
 
-  public getBibTexAttachments (dbPath: string, id: string): string[]|false {
-    const db = this.databases.get(dbPath)
-    if (db === undefined) {
-      return false
+  public getBibTexAttachments (database: CitationDatabase, id: string): string[]|false {
+    const paths = Array.isArray(database) ? database : [ database ]
+    for (const dbPath of paths) {
+      const attachments = this.databases.get(dbPath)?.bibtexAttachments[id]
+      if (attachments !== undefined) {
+        return attachments
+      }
     }
-
-    return db.bibtexAttachments[id] ?? false
+    return false
   }
 
   public async boot (): Promise<void> {
@@ -401,26 +401,35 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @param   {string}  dbPath  The database to select
    */
-  private selectDatabase (dbPath: string): void {
-    if (dbPath === CITEPROC_MAIN_DB) {
-      dbPath = this.mainLibrary // No specific database requested
+  private selectDatabase (database: CitationDatabase): void {
+    const requestedPaths = Array.isArray(database) ? database : [ database ]
+    const paths = requestedPaths.map(databasePath => databasePath === CITEPROC_MAIN_DB ? this.mainLibrary : databasePath)
+    const identity = paths.join('\u0000')
+    const items: Record<string, CSLItem> = {}
+
+    for (const databasePath of paths) {
+      const record = this.databases.get(databasePath)
+      if (record === undefined) {
+        throw new Error(`Could not select database ${databasePath}: Not loaded.`)
+      }
+
+      for (const [ citekey, item ] of Object.entries(record.cslData)) {
+        if (citekey in items) {
+          throw new Error(`Citation key ${citekey} occurs in more than one project bibliography.`)
+        }
+        items[citekey] = item
+      }
     }
 
-    const database = this.databases.get(dbPath)
-
-    if (database === undefined) {
-      throw new Error(`Could not select database ${dbPath}: Not loaded.`)
+    if (this.lastSelectedDatabase !== identity) {
+      this._logger.verbose(`[Citeproc Provider] Selecting database ${paths.join(', ')}...`)
     }
 
-    if (this.lastSelectedDatabase !== dbPath) {
-      this._logger.verbose(`[Citeproc Provider] Selecting database ${dbPath}...`)
-    }
-
-    this._items = database.cslData
+    this._items = items
 
     // Remove the items from the registry
     this.engine.updateItems([])
-    this.lastSelectedDatabase = dbPath
+    this.lastSelectedDatabase = identity
   }
 
   /**
@@ -508,12 +517,12 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @return {string|undefined}             The rendered string
    */
-  getCitation (database: string, citations: CiteItem[], composite: boolean = false): string|undefined {
+  getCitation (database: CitationDatabase, citations: CiteItem[], composite: boolean = false): string|undefined {
     if (citations.length === 0) {
       return undefined // Nothing to render
     }
 
-    if (database === CITEPROC_MAIN_DB && !this.hasMainLibrary()) {
+    if (typeof database === 'string' && database === CITEPROC_MAIN_DB && !this.hasMainLibrary()) {
       return undefined
     }
 
@@ -563,12 +572,12 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @return {[BibliographyOptions, string[]]|undefined} A CSL object containing the bibliography.
    */
-  makeBibliography (database: string, citekeys: string[]): [BibliographyOptions, string[]]|undefined {
+  makeBibliography (database: CitationDatabase, citekeys: string[]): [BibliographyOptions, string[]]|undefined {
     if (citekeys.length === 0) {
       return undefined
     }
 
-    if (database === CITEPROC_MAIN_DB && !this.hasMainLibrary()) {
+    if (typeof database === 'string' && database === CITEPROC_MAIN_DB && !this.hasMainLibrary()) {
       return undefined
     }
 

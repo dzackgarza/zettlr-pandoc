@@ -22,8 +22,9 @@ import ky from 'ky'
 import { shell } from 'electron'
 import { getBibliographyForDescriptor as getBibliography } from '@common/util/get-bibliography-for-descriptor'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
+import type { CitationDatabase } from '@dts/common/citeproc'
 import path from 'path'
-import type { MDFileDescriptor } from '@dts/common/fsal'
+import type { MDFileDescriptor, ProjectSettings } from '@dts/common/fsal'
 import { showNativeNotification } from '@common/util/show-notification'
 import type { AppServiceContainer } from 'source/app/app-service-container'
 
@@ -41,14 +42,12 @@ class NoResultsError extends Error {}
 // the library is always absolute. We have to do it this ridiculously since the
 // function is called in both main and renderer processes, and we still have the
 // issue that path-browserify is entirely unusable.
-function getBibliographyForDescriptor (descriptor: MDFileDescriptor): string {
-  const library = getBibliography(descriptor)
-
-  if (library !== CITEPROC_MAIN_DB && !path.isAbsolute(library)) {
-    return path.resolve(descriptor.dir, library)
-  } else {
-    return library
-  }
+function getBibliographyForDescriptor (descriptor: MDFileDescriptor, project: ProjectSettings|null): CitationDatabase {
+  const library = getBibliography(descriptor, project)
+  const resolveLibrary = (filename: string): string => filename !== CITEPROC_MAIN_DB && !path.isAbsolute(filename)
+    ? path.resolve(descriptor.dir, filename)
+    : filename
+  return Array.isArray(library) ? library.map(resolveLibrary) : resolveLibrary(library)
 }
 
 export default class OpenAttachment extends ZettlrCommand {
@@ -71,7 +70,23 @@ export default class OpenAttachment extends ZettlrCommand {
     if (descriptor === undefined || descriptor.type !== 'file') {
       return false
     }
-    const library = getBibliographyForDescriptor(descriptor)
+    let project: ProjectSettings|null = null
+    let directoryPath = descriptor.dir
+    while (true) {
+      const directory = await this._app.fsal.getAnyDirectoryDescriptor(directoryPath)
+      if (directory === undefined) {
+        break
+      }
+      if (directory.settings.project !== null) {
+        project = directory.settings.project
+        break
+      }
+      if (directory.dir === directory.path) {
+        break
+      }
+      directoryPath = directory.dir
+    }
+    const library = getBibliographyForDescriptor(descriptor, project)
 
     let appearsToHaveNoAttachments = false
 

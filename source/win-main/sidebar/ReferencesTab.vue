@@ -27,30 +27,41 @@ import { trans } from '@common/i18n-renderer'
 import { getBibliographyForDescriptor as getBibliography } from '@common/util/get-bibliography-for-descriptor'
 import { isAbsolutePath, resolvePath } from '@common/util/renderer-path-polyfill'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
+import type { CitationDatabase } from '@dts/common/citeproc'
 import { DP_EVENTS } from '@dts/common/documents'
-import { type AnyDescriptor, type MDFileDescriptor } from '@dts/common/fsal'
+import { type AnyDescriptor, type DirDescriptor, type MDFileDescriptor, type ProjectSettings } from '@dts/common/fsal'
 import { onMounted, ref, computed, watch } from 'vue'
 import { type DocumentsUpdateContext } from 'source/app/service-providers/documents'
-import { useDocumentTreeStore } from 'source/pinia'
+import { useDocumentTreeStore, useWorkspaceStore } from 'source/pinia'
 import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
 import localiseNumber from 'source/common/util/localise-number'
 import { hasMarkdownExt } from 'source/common/util/file-extention-checks'
 
 const ipcRenderer = window.ipc
 const documentTreeStore = useDocumentTreeStore()
+const workspaceStore = useWorkspaceStore()
 
 // This function overwrites the getBibliographyForDescriptor function to ensure
 // the library is always absolute. We have to do it this ridiculously since the
 // function is called in both main and renderer processes, and we still have the
 // issue that path-browserify is entirely unusable.
-function getBibliographyForDescriptor (descriptor: MDFileDescriptor): string {
-  const library = getBibliography(descriptor)
-
-  if (library !== CITEPROC_MAIN_DB && !isAbsolutePath(library)) {
-    return resolvePath(descriptor.dir, library)
-  } else {
-    return library
+function projectForDescriptor (descriptor: MDFileDescriptor): ProjectSettings|null {
+  let directory = workspaceStore.descriptorMap.get(descriptor.dir) as DirDescriptor|undefined
+  while (directory !== undefined) {
+    if (directory.settings.project !== null) {
+      return directory.settings.project
+    }
+    directory = workspaceStore.descriptorMap.get(directory.dir) as DirDescriptor|undefined
   }
+  return null
+}
+
+function getBibliographyForDescriptor (descriptor: MDFileDescriptor): CitationDatabase {
+  const library = getBibliography(descriptor, projectForDescriptor(descriptor))
+  const resolveLibrary = (filename: string): string => filename !== CITEPROC_MAIN_DB && !isAbsolutePath(filename)
+    ? resolvePath(descriptor.dir, filename)
+    : filename
+  return Array.isArray(library) ? library.map(resolveLibrary) : resolveLibrary(library)
 }
 
 const bibliography = ref<[BibliographyOptions, string[]]|undefined>(undefined)

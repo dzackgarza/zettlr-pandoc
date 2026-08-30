@@ -252,6 +252,7 @@ describe('Project reference status computation (issue #1 Phase 7)', function () 
   describe('applyAppendPlan', function () {
     it('appends the planned files to a scratch ProjectSettings without touching anything else', function () {
       const settings: ProjectSettings = {
+        manifest: { kind: 'zettlr' },
         title: 'Coble Lattice Notes',
         profiles: [ 'PDF Document.yaml' ],
         files: [ 'Theorems.md' ],
@@ -270,6 +271,7 @@ describe('Project reference status computation (issue #1 Phase 7)', function () 
       // ordered files with the plan appended at the end, everything else
       // preserved.
       assert.deepStrictEqual(updated, {
+        manifest: { kind: 'zettlr' },
         title: 'Coble Lattice Notes',
         profiles: [ 'PDF Document.yaml' ],
         files: [ 'Theorems.md', 'Halphen_Surfaces.md', 'Coble_Lattice_Table.md' ],

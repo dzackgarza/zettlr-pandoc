@@ -22,7 +22,7 @@ import { citationMenu } from '../context-menu/citation-menu'
 import { configField } from '../util/configuration'
 import { type Citation, NODES, nodeToCiteItem } from '../parser/citation-parser'
 import { isSupportedPandocCrossref } from '@common/util/pandoc-quick-reference'
-import { referenceFamilyOf } from '@dts/common/references'
+import { referenceFamilyOf, referenceKeyParts } from '@dts/common/references'
 import { workspaceReferencesField } from '../plugins/workspace-references-field'
 
 class CitationWidget extends WidgetType {
@@ -58,9 +58,9 @@ class CitationWidget extends WidgetType {
       elem.classList.add('citeproc-citation')
       const citationTexts = []
       for (const item of items) {
-        const parts = item.id.split(':')
-        const type = parts[0]
-        const label = parts.slice(1).join(':')
+        const parts = referenceKeyParts(item.id)
+        const type = parts?.prefix ?? item.id
+        const label = parts?.remainder ?? item.id
         if (item.prefix !== undefined) {
           citationTexts.push(`${item.prefix.trimEnd()} #${label}`)
         } else if (item['suppress-author'] === true) {

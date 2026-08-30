@@ -48,8 +48,9 @@ import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './compone
 import { hasMarkdownExt } from '@common/util/file-extention-checks'
 import { DP_EVENTS, type OpenDocument } from '@dts/common/documents'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
+import type { CitationDatabase } from '@dts/common/citeproc'
 import { type EditorConfigOptions } from '@common/modules/markdown-editor/util/configuration'
-import type { CodeFileDescriptor, DirDescriptor, MDFileDescriptor } from '@dts/common/fsal'
+import type { CodeFileDescriptor, DirDescriptor, MDFileDescriptor, ProjectSettings } from '@dts/common/fsal'
 import { getBibliographyForDescriptor as getBibliography } from '@common/util/get-bibliography-for-descriptor'
 import { EditorSelection } from '@codemirror/state'
 import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ipc-api'
@@ -57,7 +58,10 @@ import { ipcMarkdownFormatter, surfaceFormatResult } from '@common/modules/markd
 import { useConfigStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { isAbsolutePath, pathBasename, pathDirname, resolvePath } from '@common/util/renderer-path-polyfill'
 import type { DocumentsUpdateContext } from 'source/app/service-providers/documents'
-import type { ProjectInfo } from 'source/common/modules/markdown-editor/plugins/project-info-field'
+import type {
+  ProjectInfo,
+  ProjectInfoNavigationItem
+} from 'source/common/modules/markdown-editor/plugins/project-info-field'
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
 import type { DocumentLocation, ProjectRootSpec, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
@@ -104,14 +108,23 @@ const ipcRenderer = window.ipc
 // the library is always absolute. We have to do it this ridiculously since the
 // function is called in both main and renderer processes, and we still have the
 // issue that path-browserify is entirely unusable.
-function getBibliographyForDescriptor (descriptor: MDFileDescriptor): string {
-  const library = getBibliography(descriptor)
-
-  if (library !== CITEPROC_MAIN_DB && !isAbsolutePath(library)) {
-    return resolvePath(descriptor.dir, library)
-  } else {
-    return library
+function projectForDescriptor (descriptor: MDFileDescriptor): ProjectSettings|null {
+  let directory = workspaceStore.descriptorMap.get(descriptor.dir)
+  while (directory?.type === 'directory') {
+    if (directory.settings.project !== null) {
+      return directory.settings.project
+    }
+    directory = workspaceStore.descriptorMap.get(directory.dir)
   }
+  return null
+}
+
+function getBibliographyForDescriptor (descriptor: MDFileDescriptor): CitationDatabase {
+  const library = getBibliography(descriptor, projectForDescriptor(descriptor))
+  const resolveLibrary = (filename: string): string => filename !== CITEPROC_MAIN_DB && !isAbsolutePath(filename)
+    ? resolvePath(descriptor.dir, filename)
+    : filename
+  return Array.isArray(library) ? library.map(resolveLibrary) : resolveLibrary(library)
 }
 
 const props = defineProps<{
@@ -563,24 +576,51 @@ function updateProjectInfo (): ProjectInfo|null {
   }
 
   const extractedMetadata = absPaths
-    .map(p => {
-      return workspaceStore.descriptorMap.get(p)
-    })
-    .filter (d => d !== undefined && d.type === 'file')
-    .map(d => {
-      return {
-        wordCount: d.wordCount,
-        charCount: d.charCount,
-        path: d.path,
-        displayName: d.yamlTitle ?? d.firstHeading ?? d.name
+    .map(p => workspaceStore.descriptorMap.get(p))
+    .filter((descriptor): descriptor is MDFileDescriptor => descriptor?.type === 'file')
+    .map(descriptor => ({
+      wordCount: descriptor.wordCount,
+      charCount: descriptor.charCount,
+      path: descriptor.path,
+      displayName: descriptor.yamlTitle ?? descriptor.firstHeading ?? descriptor.name
+    }))
+
+  const metadataByPath = new Map(extractedMetadata.map(file => [file.path, file]))
+  const makeChapter = (relativePath: string): Extract<ProjectInfoNavigationItem, { kind: 'chapter' }>|null => {
+    const absolutePath = resolvePath(dir.path, relativePath)
+    const metadata = metadataByPath.get(absolutePath)
+    return metadata === undefined
+      ? null
+      : { kind: 'chapter', path: metadata.path, displayName: metadata.displayName }
+  }
+
+  const navigation = dir.settings.project.manifest.kind === 'quarto'
+    ? dir.settings.project.manifest.navigation.flatMap((item): ProjectInfoNavigationItem[] => {
+      if (item.kind === 'chapter') {
+        const entry = makeChapter(item.path)
+        return entry === null ? [] : [entry]
       }
+
+      return [{
+        kind: 'part' as const,
+        title: item.title,
+        chapters: item.chapters
+          .map(makeChapter)
+          .filter((entry): entry is Extract<ProjectInfoNavigationItem, { kind: 'chapter' }> => entry !== null)
+      }]
     })
+    : extractedMetadata.map(file => ({
+      kind: 'chapter' as const,
+      path: file.path,
+      displayName: file.displayName
+    }))
 
   // It is! So now we can return the proper project info.
   return {
     name: dir.settings.project.title,
     files: extractedMetadata
       .map(p => ({ path: p.path, displayName: p.displayName })),
+    navigation,
     wordCount: extractedMetadata
       .map(p => p.wordCount)
       .reduce((p, c) => p + c, 0),
@@ -992,7 +1032,7 @@ function formatIssuedDate (issued: unknown): string {
   return ''
 }
 
-async function updateCitationKeys (library: string): Promise<void> {
+async function updateCitationKeys (library: CitationDatabase): Promise<void> {
   const items = (await ipcRenderer.invoke('citeproc-provider', {
     command: 'get-items',
     payload: { database: library }

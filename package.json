@@ -164,7 +164,8 @@
     "vue-virtual-scroller": "^3.0.5",
     "w3c-keyname": "^2.2.8",
     "write-file-atomic": "7",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "zod": "^4.5.4"
   },
   "optionalDependencies": {
     "fsevents": "^2.3.3"

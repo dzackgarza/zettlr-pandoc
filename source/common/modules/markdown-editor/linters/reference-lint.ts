@@ -61,7 +61,7 @@ import type { ASTNode } from '@common/modules/markdown-utils/markdown-ast'
 import { locateAttribute } from '@common/pandoc-util/extract-references'
 import { SEMANTIC_DIV_CLASSES } from '@common/pandoc-util/pandoc-div-model'
 import { THEOREM_FAMILY_METADATA, REFERENCEABLE_DIV_CLASSES } from '@common/util/pandoc-quick-reference'
-import { referenceFamilyOf, type ReferenceFamily } from '@dts/common/references'
+import { referenceFamilyOf, referenceKeyParts, type ReferenceFamily } from '@dts/common/references'
 import { workspaceReferencesField, type EditorWorkspaceReferences } from '../plugins/workspace-references-field'
 
 /**
@@ -77,8 +77,7 @@ const CLASS_TO_PREFIX: Record<string, string> = Object.fromEntries(
  * ['kodaira', 'embedding']), used to offer existing keys as candidates.
  */
 function remainderTokens (key: string): string[] {
-  return key
-    .slice(key.indexOf(':') + 1)
+  return (referenceKeyParts(key)?.remainder ?? key)
     .toLowerCase()
     .split(/[:_-]+/)
     .filter(token => token !== '')
@@ -216,13 +215,15 @@ function collectSnapshotDiagnostics (references: EditorWorkspaceReferences, diag
       const authoredClass = referenceableClasses.length > 0 ? referenceableClasses[0].toLowerCase() : undefined
       const expectedPrefix = authoredClass !== undefined ? CLASS_TO_PREFIX[authoredClass] : undefined
       if (authoredClass !== undefined && expectedPrefix !== undefined && definition.family !== expectedPrefix) {
-        const remainder = definition.key.slice(definition.key.indexOf(':') + 1)
-        const example = `#${expectedPrefix}:${remainder}`
+        const parts = referenceKeyParts(definition.key)
+        const separator = parts?.separator ?? ':'
+        const remainder = parts?.remainder ?? definition.key
+        const example = `#${expectedPrefix}${separator}${remainder}`
         diagnostics.push({
           from: definition.range.from,
           to: definition.range.to,
           severity: 'error',
-          message: `The div class "${authoredClass}" conflicts with the id "#${definition.key}": a ${authoredClass} div is labeled with the "${expectedPrefix}:" prefix, e.g. "${example}". Change one side to match the other.`,
+          message: `The div class "${authoredClass}" conflicts with the id "#${definition.key}": a ${authoredClass} div uses the "${expectedPrefix}" family, e.g. "${example}". Change one side to match the other.`,
           source: 'reference-lint'
         })
       }

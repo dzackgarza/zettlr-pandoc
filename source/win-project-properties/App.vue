@@ -249,6 +249,7 @@ const profiles = ref<PandocProfileMetadata[]>([])
 const customCommands = configStore.config.export.customCommands
 
 const projectSettings = ref<ProjectSettings>({
+  manifest: { kind: 'zettlr' },
   title: '',
   profiles: [],
   files: [],

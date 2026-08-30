@@ -28,8 +28,35 @@ const ipcRenderer = window.ipc
 export interface ProjectInfo {
   name: string // Project name
   files: Array<{ path: string, displayName: string }> // All files in the project
+  navigation: ProjectInfoNavigationItem[]
   wordCount: number // Total words across project files
   charCount: number // Total characters across project files
+}
+
+export type ProjectInfoNavigationItem =
+  | { kind: 'chapter', path: string, displayName: string }
+  | { kind: 'part', title: string, chapters: Array<{ path: string, displayName: string }> }
+
+function navigationMenuItems (navigation: ProjectInfoNavigationItem[]): AnyMenuItem[] {
+  return navigation.map(item => {
+    if (item.kind === 'chapter') {
+      return {
+        id: item.path,
+        label: item.displayName,
+        type: 'normal'
+      }
+    }
+
+    return {
+      label: item.title,
+      type: 'submenu',
+      submenu: item.chapters.map(chapter => ({
+        id: chapter.path,
+        label: chapter.displayName,
+        type: 'normal'
+      }))
+    }
+  })
 }
 
 /**
@@ -91,13 +118,7 @@ export function statusbarProjectInfo (state: EditorState, _view: EditorView): St
         }
       ]
 
-      for (const { path, displayName } of field.files) {
-        items.push({
-          id: path,
-          label: displayName,
-          type: 'normal'
-        })
-      }
+      items.push(...navigationMenuItems(field.navigation))
 
       showPopupMenu({ x: event.clientX, y: event.clientY }, items, clickedID => {
         ipcRenderer.invoke('documents-provider', {

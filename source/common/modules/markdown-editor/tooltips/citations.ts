@@ -18,6 +18,7 @@ import { type EditorView, hoverTooltip, type Tooltip } from '@codemirror/view'
 import { NODES, nodeToCiteItem } from '../parser/citation-parser'
 import { configField } from '../util/configuration'
 import { CITEPROC_MAIN_DB } from 'source/types/common/citeproc'
+import type { CitationDatabase } from 'source/types/common/citeproc'
 import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
 import { trans } from 'source/common/i18n-renderer'
 import type { SyntaxNode } from '@lezer/common'
@@ -32,7 +33,7 @@ const ipcRenderer = window.ipc
  *
  * @return  {any}                 The bibliography
  */
-async function fetchBibliography (citekeys: string[], database: string): Promise<[BibliographyOptions, string[]]> {
+async function fetchBibliography (citekeys: string[], database: CitationDatabase): Promise<[BibliographyOptions, string[]]> {
   return await ipcRenderer.invoke('citeproc-provider', {
     command: 'get-bibliography',
     payload: {

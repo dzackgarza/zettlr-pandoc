@@ -40,6 +40,30 @@ export type ReferenceFamily = CrossrefFamily | TheoremFamily
 
 export const REFERENCE_FAMILIES: readonly ReferenceFamily[] = [ ...CROSSREF_FAMILIES, ...THEOREM_FAMILIES ]
 
+const QUARTO_FAMILY_ALIASES = [
+  { prefix: 'prp', family: 'prop' },
+  { prefix: 'cnj', family: 'conj' },
+  { prefix: 'exm', family: 'ex' },
+  { prefix: 'rem', family: 'rmk' },
+  { prefix: 'wrn', family: 'warn' }
+] as const satisfies ReadonlyArray<{ prefix: string, family: ReferenceFamily }>
+
+function supportedFamily (prefix: string): ReferenceFamily|undefined {
+  for (const family of REFERENCE_FAMILIES) {
+    if (family === prefix) {
+      return family
+    }
+  }
+
+  for (const alias of QUARTO_FAMILY_ALIASES) {
+    if (alias.prefix === prefix) {
+      return alias.family
+    }
+  }
+
+  return undefined
+}
+
 /**
  * Returns the supported family of a full reference key, or undefined when the
  * key is structurally not a reference: no colon, an empty remainder after the
@@ -51,18 +75,42 @@ export const REFERENCE_FAMILIES: readonly ReferenceFamily[] = [ ...CROSSREF_FAMI
  */
 export function referenceFamilyOf (key: string): ReferenceFamily|undefined {
   const colon = key.indexOf(':')
-  if (colon <= 0 || colon === key.length - 1) {
-    return undefined
+  if (colon > 0 && colon < key.length - 1) {
+    return supportedFamily(key.slice(0, colon))
   }
 
-  const family = key.slice(0, colon)
-  for (const supportedFamily of REFERENCE_FAMILIES) {
-    if (supportedFamily === family) {
-      return supportedFamily
-    }
+  const hyphen = key.indexOf('-')
+  if (hyphen > 0 && hyphen < key.length - 1) {
+    return supportedFamily(key.slice(0, hyphen))
   }
 
   return undefined
+}
+
+export interface ReferenceKeyParts {
+  prefix: string
+  separator: ':'|'-'
+  remainder: string
+}
+
+export function referenceKeyParts (key: string): ReferenceKeyParts|undefined {
+  const colon = key.indexOf(':')
+  const hyphen = key.indexOf('-')
+  const separatorIndex = colon > 0 && (hyphen < 0 || colon < hyphen) ? colon : hyphen
+  if (separatorIndex <= 0 || separatorIndex >= key.length - 1) {
+    return undefined
+  }
+
+  const separator = key[separatorIndex]
+  if (separator !== ':' && separator !== '-') {
+    return undefined
+  }
+
+  return {
+    prefix: key.slice(0, separatorIndex),
+    separator,
+    remainder: key.slice(separatorIndex + 1)
+  }
 }
 
 /**

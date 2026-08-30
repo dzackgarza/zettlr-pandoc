@@ -20,6 +20,7 @@ import safeAssign from '@common/util/safe-assign'
 
 import type { DirDescriptor, SortMethod, ProjectSettings, DirectorySettings } from '@dts/common/fsal'
 import { getFilesystemMetadata } from './util/get-fs-metadata'
+import { parseQuartoProject } from 'source/app/util/quarto-project'
 
 /**
  * Determines what will be written to file (.ztr-directory)
@@ -35,6 +36,7 @@ const SETTINGS_TEMPLATE: DirectorySettings = {
  * Used to insert a default project
  */
 const PROJECT_TEMPLATE: ProjectSettings = {
+  manifest: { kind: 'zettlr' },
   // General values that not only pertain to the PDF generation
   title: 'Untitled', // Default project title is the directory's name
   profiles: [], // NOTE: Must correspond to the defaults in ProjectProperties.vue
@@ -43,6 +45,30 @@ const PROJECT_TEMPLATE: ProjectSettings = {
   templates: {
     tex: '', // An optional tex template
     html: '' // An optional HTML template
+  }
+}
+
+async function parseQuartoManifest (dir: DirDescriptor): Promise<void> {
+  if (dir.settings.project !== null) {
+    return
+  }
+
+  const manifestPath = path.join(dir.path, '_quarto.yml')
+  if (!isFile(manifestPath)) {
+    return
+  }
+
+  const quarto = parseQuartoProject(dir.path, await fs.readFile(manifestPath, 'utf8'))
+  dir.settings.project = {
+    ...PROJECT_TEMPLATE,
+    title: quarto.title,
+    files: quarto.files,
+    manifest: {
+      kind: 'quarto',
+      path: manifestPath,
+      bibliographies: quarto.bibliographies,
+      navigation: quarto.navigation
+    }
   }
 }
 
@@ -155,6 +181,7 @@ export async function parse (currentPath: string): Promise<DirDescriptor> {
     dir.modtime = metadata.modtime
     dir.creationtime = metadata.birthtime
     await parseSettings(dir)
+    await parseQuartoManifest(dir)
   } catch (err: any) {
     err.message = `Error reading metadata for directory ${dir.path}!`
     // Re-throw so that the caller knows something's afoul

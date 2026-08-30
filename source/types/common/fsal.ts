@@ -2,7 +2,22 @@
 
 import type { DocumentReferenceSnapshot } from './references'
 
+export type ProjectNavigationItem =
+  | { kind: 'chapter', path: string }
+  | { kind: 'part', title: string, chapters: string[] }
+
+export type ProjectManifest =
+  | { kind: 'zettlr' }
+  | {
+    kind: 'quarto'
+    path: string
+    bibliographies: string[]
+    navigation: ProjectNavigationItem[]
+  }
+
 export interface ProjectSettings {
+  /** The file that owns this project definition. */
+  manifest: ProjectManifest
   /**
    * The title of the project, will be used, e.g., as title and filename for
    * projects.

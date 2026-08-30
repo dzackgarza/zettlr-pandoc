@@ -135,7 +135,7 @@ declare interface Window {
    *
    * @return  {string|undefined}       The rendered citation, or undefined
    */
-  getCitationCallback: (database: string) => (citations: CiteItem[], composite: boolean) => string|undefined
+  getCitationCallback: (database: import('./types/common/citeproc').CitationDatabase) => (citations: CiteItem[], composite: boolean) => string|undefined
   ipc: {
     /**
      * Sends a message to main (fire-and-forget)

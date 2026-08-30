@@ -1,59 +1,97 @@
-import { strict as assert } from 'assert'
-import { readFileSync } from 'fs'
-import path from 'path'
-import { parseQuartoProject } from 'source/common/quarto-project'
-import { extractReferences } from 'source/common/pandoc-util/extract-references'
+import { strict as assert } from "assert";
+import { readFileSync } from "fs";
+import path from "path";
+import { extractReferences } from "source/common/pandoc-util/extract-references";
+import { parseQuartoProject } from "source/app/util/quarto-project";
+import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
+import { loadDatabase } from "source/app/service-providers/citeproc/util/database-loader";
+import { getBibliographyForDescriptor } from "source/common/util/get-bibliography-for-descriptor";
+import type { MDFileDescriptor } from "source/types/common/fsal";
 
-const ROOT = path.join('test', 'fixtures', 'quarto-book')
+const ROOT = path.resolve("test", "fixtures", "quarto-book");
 
-describe('Quarto project adapter', function () {
-  const project = parseQuartoProject(
-    ROOT,
-    readFileSync(path.join(ROOT, '_quarto.yml'), 'utf8')
-  )
+describe("Quarto project adapter", function () {
+  const project = parseQuartoProject(ROOT, readFileSync(path.join(ROOT, "_quarto.yml"), "utf8"));
 
-  it('projects the authored book structure into ordered navigation', function () {
+  it("projects the authored book structure into ordered navigation", function () {
     assert.deepStrictEqual(project.navigation, [
-      { kind: 'chapter', path: 'index.md' },
+      { kind: "chapter", path: "index.md" },
       {
-        kind: 'part',
-        title: 'Foundations',
-        chapters: [ 'foundations/categories.md', 'foundations/forms.md' ]
+        kind: "part",
+        title: "Foundations",
+        chapters: ["foundations/categories.md", "foundations/forms.md"],
       },
       {
-        kind: 'part',
-        title: 'Computation',
-        chapters: [ 'computation/sage.md' ]
-      }
-    ])
+        kind: "part",
+        title: "Computation",
+        chapters: ["computation/sage.md"],
+      },
+    ]);
     assert.deepStrictEqual(project.files, [
-      'index.md',
-      'foundations/categories.md',
-      'foundations/forms.md',
-      'computation/sage.md'
-    ])
-  })
+      "index.md",
+      "foundations/categories.md",
+      "foundations/forms.md",
+      "computation/sage.md",
+    ]);
+  });
 
-  it('resolves every inherited bibliography from the manifest root', function () {
+  it("resolves every inherited bibliography from the manifest root", function () {
     assert.deepStrictEqual(project.bibliographies, [
-      path.resolve(ROOT, 'references.bib'),
-      path.resolve(ROOT, 'web.bib')
-    ])
-  })
+      path.resolve(ROOT, "references.bib"),
+      path.resolve(ROOT, "web.bib"),
+    ]);
+  });
 
-  it('indexes Quarto definitions and occurrences through the workspace model', function () {
-    const definitionPath = path.join(ROOT, 'foundations', 'categories.md')
-    const occurrencePath = path.join(ROOT, 'index.md')
-    const definition = extractReferences(definitionPath, readFileSync(definitionPath, 'utf8'))
-    const occurrence = extractReferences(occurrencePath, readFileSync(occurrencePath, 'utf8'))
+  it("projects the manifest through the real FSAL directory boundary", async function () {
+    const descriptor = await parseDirectory(ROOT);
+
+    assert.deepStrictEqual(descriptor.settings.project, {
+      manifest: {
+        kind: "quarto",
+        path: path.resolve(ROOT, "_quarto.yml"),
+        bibliographies: [path.resolve(ROOT, "references.bib"), path.resolve(ROOT, "web.bib")],
+        navigation: project.navigation,
+      },
+      title: "Lattice Notes",
+      profiles: [],
+      files: project.files,
+      cslStyle: "",
+      templates: { tex: "", html: "" },
+    });
+  });
+
+  it("loads citations from every bibliography inherited through FSAL", async function () {
+    const projectRoot = await parseDirectory(ROOT);
+    const descriptor = {
+      path: path.join(ROOT, "index.md"),
+      frontmatter: null,
+    } as MDFileDescriptor;
+    const databases = getBibliographyForDescriptor(descriptor, projectRoot.settings.project);
+
+    assert.deepStrictEqual(databases, [path.join(ROOT, "references.bib"), path.join(ROOT, "web.bib")]);
+    assert.deepStrictEqual(
+      await Promise.all(databases.map(async (database) => Object.keys((await loadDatabase(database)).cslData))),
+      [["Mac98"], ["Stacks"]],
+    );
+  });
+
+  it("indexes Quarto definitions and occurrences through the workspace model", function () {
+    const definitionPath = path.join(ROOT, "foundations", "categories.md");
+    const occurrencePath = path.join(ROOT, "index.md");
+    const definition = extractReferences(definitionPath, readFileSync(definitionPath, "utf8"));
+    const occurrence = extractReferences(occurrencePath, readFileSync(occurrencePath, "utf8"));
 
     assert.deepStrictEqual(
-      definition.definitions.map(entry => ({ key: entry.key, family: entry.family, title: entry.title })),
-      [ { key: 'def-core', family: 'def', title: undefined } ]
-    )
+      definition.definitions.map((entry) => ({
+        key: entry.key,
+        family: entry.family,
+        title: entry.title,
+      })),
+      [{ key: "def-core", family: "def", title: undefined }],
+    );
     assert.deepStrictEqual(
-      occurrence.occurrences.map(entry => ({ key: entry.key, family: entry.family })),
-      [ { key: 'def-core', family: 'def' } ]
-    )
-  })
-})
+      occurrence.occurrences.map((entry) => ({ key: entry.key, family: entry.family })),
+      [{ key: "def-core", family: "def" }],
+    );
+  });
+});

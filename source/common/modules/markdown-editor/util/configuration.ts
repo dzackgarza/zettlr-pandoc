@@ -19,6 +19,7 @@
 import { StateEffect, StateField } from '@codemirror/state'
 import safeAssign from '@common/util/safe-assign'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
+import type { CitationDatabase } from '@dts/common/citeproc'
 import { type MarkdownTheme } from '@providers/config/get-config-template'
 import { type CustomEditorShortcut } from '../keymaps/shortcuts'
 
@@ -63,7 +64,7 @@ export interface EditorConfiguration {
   metadata: {
     path: string
     id: string
-    library: string
+    library: CitationDatabase
   }
   boldFormatting: '**'|'__'
   italicFormatting: '*'|'_'

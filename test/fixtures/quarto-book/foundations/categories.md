@@ -3,4 +3,3 @@
 
 The maximal subgroupoid.
 :::
-

@@ -47,15 +47,20 @@
       <hr>
       <div>
         <!-- Project options -->
-        <SwitchControl
-          v-model="isProject"
-          v-bind:label="projectToggleLabel"
-        ></SwitchControl>
-        <ButtonControl
-          v-if="isProject"
-          v-bind:label="projectPropertiesLabel"
-          v-on:click="openProjectPreferences"
-        ></ButtonControl>
+        <template v-if="isQuartoProject">
+          <span>{{ quartoProjectLabel }}</span>
+        </template>
+        <template v-else>
+          <SwitchControl
+            v-model="isProject"
+            v-bind:label="projectToggleLabel"
+          ></SwitchControl>
+          <ButtonControl
+            v-if="isProject"
+            v-bind:label="projectPropertiesLabel"
+            v-on:click="openProjectPreferences"
+          ></ButtonControl>
+        </template>
       </div>
       <hr style="clear: both;">
       <!-- Color selector -->
@@ -147,6 +152,7 @@ const createdLabel = trans('Created')
 const filesLabel = trans('Files')
 const projectPropertiesLabel = trans('Project Settings…')
 const projectToggleLabel = trans('Enable Project')
+const quartoProjectLabel = trans('Quarto project settings: _quarto.yml')
 const sortByNameLabel = trans('Sort by name')
 const sortByTimeLabel = trans('Sort by time')
 const ascendingLabel = trans('ascending')
@@ -234,6 +240,7 @@ const emit = defineEmits<(e: 'close') => void>()
 const sortingType = ref<'name'|'time'>('name')
 const sortingDirection = ref<'up'|'down'>('up')
 const isProject = ref<boolean>(props.directory.settings.project !== null)
+const isQuartoProject = computed(() => props.directory.settings.project?.manifest.kind === 'quarto')
 
 const creationTime = computed(() => {
   return formatDate(new Date(props.directory.creationtime), configStore.config.appLang, true)

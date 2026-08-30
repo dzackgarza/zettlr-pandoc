@@ -14,7 +14,8 @@
  */
 
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
-import type { MDFileDescriptor } from '@dts/common/fsal'
+import type { CitationDatabase } from '@dts/common/citeproc'
+import type { MDFileDescriptor, ProjectSettings } from '@dts/common/fsal'
 
 /**
  * Takes a descriptor and returns the appropriate citation library for it. NOTE:
@@ -25,27 +26,22 @@ import type { MDFileDescriptor } from '@dts/common/fsal'
  *
  * @return  {string}                        The appropriate library
  */
-export function getBibliographyForDescriptor (descriptor: MDFileDescriptor): string {
-  let library = CITEPROC_MAIN_DB
-
+export function getBibliographyForDescriptor (descriptor: MDFileDescriptor, project: ProjectSettings|null = null): CitationDatabase {
   if (descriptor.frontmatter != null && 'bibliography' in descriptor.frontmatter) {
-    library = descriptor.frontmatter.bibliography
+    const library = descriptor.frontmatter.bibliography
 
-    if (Array.isArray(library)) {
-      // While multiple bibliography libraries are supported by Pandoc, Zettlr
-      // cannot properly merge multiple libraries together, so we'll simply use
-      // the first found.
-      library = library[0]
+    if (typeof library === 'string' && library.trim() !== '') {
+      return library.trim()
+    }
+
+    if (Array.isArray(library) && library.length > 0 && library.every((item): item is string => typeof item === 'string')) {
+      return library.map(item => item.trim())
     }
   }
 
-  if (typeof library === 'string') {
-    library = library.trim()
+  if (project?.manifest.kind === 'quarto' && project.manifest.bibliographies.length > 0) {
+    return project.manifest.bibliographies
   }
 
-  if (library === '' || library === undefined) {
-    library = CITEPROC_MAIN_DB
-  }
-
-  return library
+  return CITEPROC_MAIN_DB
 }

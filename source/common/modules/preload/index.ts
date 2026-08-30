@@ -16,6 +16,7 @@
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
+import type { CitationDatabase } from '@dts/common/citeproc'
 
 // PREPARATION: Since we have multiple editor panes and all of them need to
 // listen to a few events, we need to ramp up some of the channels' max
@@ -69,7 +70,7 @@ contextBridge.exposeInMainWorld('config', {
 
 contextBridge.exposeInMainWorld(
   'getCitationCallback',
-  function (database: string): (citations: CiteItem[], composite: boolean) => string|undefined {
+  function (database: CitationDatabase): (citations: CiteItem[], composite: boolean) => string|undefined {
     return function (citations: CiteItem[], composite: boolean): string|undefined {
       return ipcRenderer.sendSync('citeproc-provider', {
         command: 'get-citation-sync',

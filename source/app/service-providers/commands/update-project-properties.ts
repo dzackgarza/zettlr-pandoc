@@ -33,6 +33,9 @@ export default class UpdateProjectProperties extends ZettlrCommand {
     // Find the directory, and apply the properties to it!
     const dir = await this._app.fsal.getAnyDirectoryDescriptor(arg.path)
     if (dir !== undefined) {
+      if (dir.settings.project?.manifest.kind === 'quarto') {
+        throw new Error(`Project settings for ${arg.path} are owned by ${dir.settings.project.manifest.path}`)
+      }
       await this._app.fsal.updateProject(dir, arg.properties)
     } else {
       this._app.log.warning(`Could not update project properties for ${String(arg.path)}: No directory found!`)
