@@ -102,6 +102,7 @@ const CHAR = {
   BRACE_OPEN: 40,
   COMMA: 44,
   HYPHEN: 45,
+  DOT: 46,
   SEMICOLON: 59,
   AT: 64,
   BRACKET_OPEN: 91,
@@ -377,7 +378,7 @@ export const citationParser: InlineParser = {
     // include newlines, since single newlines are considered part of the same
     // line due to the hard wrapping rule.
     const prevChar = ctx.char(pos - 1)
-    const validBefore = Number.isNaN(prevChar) || [ CHAR.BRACE_OPEN, CHAR.LF, CHAR.CR, CHAR.TAB, CHAR.SPACE ].includes(prevChar)
+    const validBefore = Number.isNaN(prevChar) || [ CHAR.BRACE_OPEN, CHAR.BRACKET_CLOSE, CHAR.LF, CHAR.CR, CHAR.TAB, CHAR.SPACE ].includes(prevChar)
     if (!validBefore) {
       return -1
     }
@@ -623,7 +624,7 @@ export const citationParser: InlineParser = {
             }
             parts.push(ctx.elt(NODES.MARK, i, i + 1))
             continue
-          } else if (((ch < 48 || ch > 57) && !ROMAN_NUMERAL_CODES.includes(ch) && ch !== CHAR.HYPHEN)) {
+          } else if (((ch < 48 || ch > 57) && !ROMAN_NUMERAL_CODES.includes(ch) && ch !== CHAR.HYPHEN && ch !== CHAR.DOT)) {
             // Both implicit and explicit locators end if we no longer have
             // valid (implicit) locator characters.
             locatorEnd = i
@@ -730,7 +731,7 @@ export const citationParser: InlineParser = {
         if (locatorStart > -1) {
           // There was an implicit or explicit locator; so now we just have to
           // move i forward until no more valid locator chars exist
-          while (i < ctxEndPos && ((ctx.char(i) >= 48 && ctx.char(i) <= 57) || ROMAN_NUMERAL_CODES.includes(ctx.char(i)) || ctx.char(i) === CHAR.HYPHEN)) {
+          while (i < ctxEndPos && ((ctx.char(i) >= 48 && ctx.char(i) <= 57) || ROMAN_NUMERAL_CODES.includes(ctx.char(i)) || ctx.char(i) === CHAR.HYPHEN || ctx.char(i) === CHAR.DOT)) {
             i++
           }
 
