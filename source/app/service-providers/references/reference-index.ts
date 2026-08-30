@@ -95,10 +95,15 @@ export class ReferenceIndex {
    * for its document; the last report wins unconditionally (the single
    * feeder is the in-order main-process authority).
    *
-   * @param   {DocumentReferenceSnapshot}  snapshot  The live snapshot
+   * @return  {boolean}                    True if the snapshot differed from current live state
    */
-  reportLiveBuffer (snapshot: DocumentReferenceSnapshot): void {
+  reportLiveBuffer (snapshot: DocumentReferenceSnapshot): boolean {
+    const existing = this.live.get(snapshot.documentPath)
+    if (existing !== undefined && existing.sourceHash === snapshot.sourceHash) {
+      return false
+    }
     this.live.set(snapshot.documentPath, snapshot)
+    return true
   }
 
   /**

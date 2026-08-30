@@ -1116,7 +1116,10 @@ function collectProjectRoots (): ProjectRootSpec[] {
   return roots
 }
 
+let latestReferenceRequestId = 0
+
 async function updateReferenceEntries (): Promise<void> {
+  const requestId = ++latestReferenceRequestId
   // Routed through the recoverable-error boundary (issue #1 Phase 8): a
   // failed fetch surfaces one closable toast and the editor keeps its last
   // known reference state — never a fabricated fallback, never an
@@ -1126,7 +1129,7 @@ async function updateReferenceEntries (): Promise<void> {
     { command: 'get-snapshot' },
     trans('Loading workspace references')
   )
-  if (outcome.status === 'failed') {
+  if (outcome.status === 'failed' || requestId !== latestReferenceRequestId) {
     return
   }
   const state = outcome.value

@@ -36,29 +36,16 @@ class CitationWidget extends WidgetType {
   }
 
   eq (other: CitationWidget): boolean {
-    return other.metadata === this.metadata && JSON.stringify(other.citation) === JSON.stringify(this.citation)
+    return other.metadata === this.metadata &&
+      this.rawCitation === other.rawCitation &&
+      this.citation.composite === other.citation.composite
   }
 
   toDOM (view: EditorView): HTMLElement {
     const { items } = this.citation
-    // PREDICATE SPLIT (review B5, deliberate): createWidget's takeover gate
-    // uses referenceFamilyOf — a key counts as a workspace reference only
-    // with a supported family AND a non-empty slug, because those are the
-    // keys the chips renderer can resolve. THIS branch uses the looser
-    // prefix predicate isSupportedPandocCrossref (empty slugs included) so
-    // that every all-prefix-shaped cluster renders as crossref TEXT instead
-    // of being sent to citeproc as a fake bibliography lookup. The branch is
-    // production-reachable: a bracketed empty-slug cluster such as
-    // `[-@fig:]` parses to the item id 'fig:', which referenceFamilyOf
-    // rejects (no slug) but isSupportedPandocCrossref accepts — with the
-    // workspaceReferencesField present, such clusters land exactly here.
-    // Field-less harness states additionally exercise it for full keys.
     const hasCrossref = items.every(i => isSupportedPandocCrossref(i.id))
 
     if (hasCrossref) {
-      // We're not dealing with a citation, but rather with a crossref-style
-      // cross-reference. So we can render it directly. NOTE: We're only
-      // supporting all-crossref citations here, not mixed.
       const elem = document.createElement('span')
       elem.classList.add('citeproc-citation')
       const citationTexts = []

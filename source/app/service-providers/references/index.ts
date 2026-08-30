@@ -249,8 +249,9 @@ export default class ReferenceProvider extends ProviderContract {
         return
       }
 
-      this._index.reportLiveBuffer(extractReferences(filePath, content))
-      broadcastIpcMessage('references')
+      if (this._index.reportLiveBuffer(extractReferences(filePath, content))) {
+        broadcastIpcMessage('references')
+      }
     }, immediate ? 0 : this._authorityReportDebounceMs))
   }
 
