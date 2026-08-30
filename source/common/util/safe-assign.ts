@@ -34,32 +34,41 @@
  *                                        `referenceObject` with values of `obj`
  *                                        merged in.
  */
-export default function safeAssign <A extends object> (obj: Partial<A>, referenceObject: A, newObject: Partial<A> = {}): A {
-  // Iterate over all properties of referenceObject
-  for (const prop in referenceObject) {
-    if (prop in obj) {
-      // The object has the property, so now we have to decide over two cases:
-      // either it's a sub-object --> in this case we'll have to apply
-      // recursively. We perform an explicit null-check, since
-      // `typeof null === 'object'`.
-      if (typeof referenceObject[prop] === 'object' &&
-        !Array.isArray(referenceObject[prop]) &&
-        referenceObject[prop] !== null) {
-        // @ts-expect-error These properties will be filled in recursively
-        newObject[prop] = {}
-        // @ts-expect-error TypeScript wouldn't not treat this as an error.
-        // (To be fair, we do violence to the type system here.)
-        safeAssign(obj[prop], referenceObject[prop], newObject[prop])
+export default function safeAssign <A extends object> (
+  obj: Partial<A> | undefined,
+  referenceObject: A
+): A {
+  if (obj === undefined || obj === null) {
+    return { ...referenceObject }
+  }
+
+  const result = { ...referenceObject }
+  const refRecord = referenceObject as Record<string, unknown>
+  const objRecord = obj as Record<string, unknown>
+  const resRecord = result as Record<string, unknown>
+
+  for (const key of Object.keys(refRecord)) {
+    if (key in objRecord && objRecord[key] !== undefined) {
+      const refVal = refRecord[key]
+      const objVal = objRecord[key]
+
+      if (
+        typeof refVal === 'object' &&
+        refVal !== null &&
+        !Array.isArray(refVal) &&
+        typeof objVal === 'object' &&
+        objVal !== null &&
+        !Array.isArray(objVal)
+      ) {
+        resRecord[key] = safeAssign(
+          objVal as Record<string, unknown>,
+          refVal as Record<string, unknown>
+        )
       } else {
-        // Assign the primitive
-        newObject[prop] = obj[prop]
+        resRecord[key] = objVal
       }
-    } else {
-      // `obj` doesn't have prop, so take the value from reference instead.
-      newObject[prop] = referenceObject[prop]
     }
   }
 
-  // Type-cast, since now newObject is of type A
-  return newObject as A
+  return result
 }

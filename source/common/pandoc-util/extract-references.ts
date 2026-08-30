@@ -22,22 +22,18 @@ import {
 } from '../../types/common/references'
 import { type PandocExtractedCitation, type PandocCitationItem } from './pandoc-ast-citations'
 
+import { sha256Text } from '../util/sha256'
+
 /**
  * Computes the deterministic content hash used to key reference snapshots
- * and to gate workspace edits. FNV-1a (32 bit) over UTF-16 code units:
- * dependency-free and identical in main and renderer processes.
+ * and to gate workspace edits using standard @noble/hashes SHA-256.
  *
  * @param   {string}  markdown  The full markdown source
  *
- * @return  {string}            The hash, e.g. 'fnv1a-811c9dc5'
+ * @return  {string}            The hash, e.g. 'sha256-...'
  */
 export function hashDocumentSource (markdown: string): string {
-  let hash = 0x811c9dc5
-  for (let i = 0; i < markdown.length; i++) {
-    hash ^= markdown.charCodeAt(i)
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return 'fnv1a-' + (hash >>> 0).toString(16).padStart(8, '0')
+  return 'sha256-' + sha256Text(markdown)
 }
 
 /**
@@ -81,13 +77,10 @@ export function locateAttribute (attrText: string, offset: number): LocatedAttri
     throw new Error(`Inconsistent attribute block: id "${attributes.id}" not found in "${attrText}"`)
   }
 
-  let idEnd = idStart + 1 + attributes.id.length
-  while (idEnd < attrText.length && !' \t\n}'.includes(attrText[idEnd])) {
-    idEnd++
-  }
+  const idEnd = idStart + 1 + attributes.id.length
 
   return {
-    key: attrText.slice(idStart + 1, idEnd),
+    key: attributes.id,
     range: { from: offset + idStart, to: offset + idEnd },
     attributes
   }
