@@ -190,4 +190,14 @@ describe("Editor preserves citation suffixes beginning with Roman-numeral letter
     assert.equal(item.locator, "7");
     assert.equal(item.suffix, undefined);
   });
+
+  it("does not treat an adjacent bracketed citation as a locator suffix of an in-text reference", function () {
+    const doc = "@def-higher-category [@nlab:grothendieck_construction]";
+    const state = EditorState.create({ doc, extensions: [markdownParser()] });
+    const nodes = extractCitationNodes(state);
+
+    assert.equal(nodes.length, 2, "must parse into two separate citation nodes");
+    assert.equal(nodeToCiteItem(nodes[0], doc).items[0].id, "def-higher-category");
+    assert.equal(nodeToCiteItem(nodes[1], doc).items[0].id, "nlab:grothendieck_construction");
+  });
 });

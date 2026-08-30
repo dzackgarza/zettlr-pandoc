@@ -687,8 +687,13 @@ export const citationParser: InlineParser = {
 
       // At this point we are guaranteed to have a citekey. Next, check if there
       // is a locator/suffix bracket. Must be separated from the citekey by a
-      // space.
-      if (i < ctxEndPos - 1 && ctx.char(i) === CHAR.SPACE && ctx.char(i + 1) === CHAR.BRACKET_OPEN) {
+      // space, and must not start a new bracketed citation (e.g. `[@...]` or `[-@...]`).
+      const hasBracket = i < ctxEndPos - 1 && ctx.char(i) === CHAR.SPACE && ctx.char(i + 1) === CHAR.BRACKET_OPEN
+      const isBracketedCitation = hasBracket && (
+        ctx.char(i + 2) === CHAR.AT ||
+        (ctx.char(i + 2) === CHAR.HYPHEN && ctx.char(i + 3) === CHAR.AT)
+      )
+      if (hasBracket && !isBracketedCitation) {
         // Yes, there seems to be a locator bracket.
 
         // Remember the end of the citekey if the bracket turns out to not be
