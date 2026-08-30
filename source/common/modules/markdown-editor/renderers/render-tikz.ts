@@ -282,6 +282,7 @@ export const renderTikzFigures = [
       cursor: 'zoom-in',
     },
     '.tikz-figure svg': {
+      width: 'min(90%, 52rem)',
       maxWidth: '100%',
       height: 'auto',
     },
