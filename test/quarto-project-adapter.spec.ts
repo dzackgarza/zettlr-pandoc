@@ -162,7 +162,7 @@ describe("Quarto project adapter", function () {
         family: entry.family,
         title: entry.title,
       })),
-      [{ key: "def-core", family: "def", title: undefined }],
+      [{ key: "def-core", family: "def", title: "Core" }],
     );
     assert.deepStrictEqual(
       occurrence.occurrences.map((entry) => ({ key: entry.key, family: entry.family })),

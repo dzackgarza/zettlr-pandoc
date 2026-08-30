@@ -101,18 +101,10 @@ describe('Subfigure/wrapping crossref extraction (review A1)', function () {
     )
   })
 
-  it('never extracts near-miss div ids: unclassed theorem prefixes and unsupported families', function () {
-    // A theorem-prefixed id on a div WITHOUT its theorem class is the
-    // class/prefix mismatch case owned by reference-lint, and an
-    // unsupported family stays outside the contract entirely — neither may
-    // ride in through the wrapping-div rule.
+  it('never extracts unsupported families from div ids', function () {
     const nearMiss = [
-      '::: {#thm:orphan}',
-      'A theorem-prefixed id without the .theorem class defines nothing.',
-      ':::',
-      '',
       '::: {#table:wrong-prefix}',
-      'An unsupported family defines nothing either.',
+      'An unsupported family defines nothing.',
       ':::',
       ''
     ].join('\n')
@@ -120,3 +112,4 @@ describe('Subfigure/wrapping crossref extraction (review A1)', function () {
     assert.deepStrictEqual(nearMissSnapshot.definitions, [])
   })
 })
+

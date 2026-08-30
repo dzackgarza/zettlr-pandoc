@@ -1,4 +1,4 @@
-::: {#def-core .definition}
+::: {#def-core}
 ## Core
 
 The maximal subgroupoid.

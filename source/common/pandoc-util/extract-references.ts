@@ -13,6 +13,7 @@ import { parsePandocAttributes, type ParsedPandocAttributes } from './parse-pand
 import { isReferenceableDivClass } from '../util/pandoc-quick-reference'
 import {
   CROSSREF_FAMILIES,
+  THEOREM_FAMILIES,
   referenceFamilyOf,
   type DocumentReferenceSnapshot,
   type ReferenceDefinition,
@@ -271,6 +272,16 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
     return undefined
   }
 
+  const firstChildHeadingText = (node: PandocDiv): string|undefined => {
+    for (const child of childrenOf(node)) {
+      if (child.type === 'Heading') {
+        const title = headingText(child as Heading)
+        return title === '' ? undefined : title
+      }
+    }
+    return undefined
+  }
+
   const visitPandocDiv = (node: PandocDiv): void => {
     const openLineEnd = markdown.indexOf('\n', node.from)
     const openLine = markdown.slice(node.from, openLineEnd === -1 || openLineEnd > node.to ? node.to : openLineEnd)
@@ -287,29 +298,44 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
     // Theorem-like divs define targets through their class registry;
     // proof-like and other non-referenceable div classes never do.
     const classes = located.attributes.classes ?? []
+    const isProofLike = classes.some(divClass => {
+      const lower = divClass.toLowerCase()
+      return lower === 'proof' || lower === 'sketch' || lower === 'solution'
+    })
+    if (isProofLike) {
+      return
+    }
+
+    const theoremTitle = located.attributes.properties?.title ??
+      located.attributes.properties?.name ??
+      firstChildHeadingText(node)
+
     if (classes.some(isReferenceableDivClass)) {
       pushDefinition(
         located, 'theorem-div',
-        located.attributes.properties?.title,
+        theoremTitle,
         markdown.slice(lineStart(markdown, node.from), node.to)
       )
       return
     }
 
-    // pandoc-crossref wrapping/subfigure forms (issue #1, review A1): a div
-    // whose OWN id bears a supported crossref family prefix (`::: {#fig:…}`
-    // subfigure groups, `::: {#lst:…}` wrapped listings) defines a target;
-    // its nested image ids are extracted independently by the generic
-    // attributed-block walk. Theorem-prefixed ids without their class stay
-    // out (that class/prefix mismatch is reference-lint's diagnostic), as
-    // does every unsupported family.
+    // pandoc-crossref wrapping/subfigure forms (issue #1, review A1) and
+    // Quarto classless theorem divs (::: {#def-core}, ::: {#thm-main}):
     const family = referenceFamilyOf(located.key)
-    if (family !== undefined && (CROSSREF_FAMILIES as readonly string[]).includes(family)) {
-      pushDefinition(
-        located, 'crossref-attr',
-        located.attributes.properties?.title ?? wrappingDivCaption(node),
-        markdown.slice(lineStart(markdown, node.from), node.to)
-      )
+    if (family !== undefined) {
+      if ((CROSSREF_FAMILIES as readonly string[]).includes(family)) {
+        pushDefinition(
+          located, 'crossref-attr',
+          located.attributes.properties?.title ?? located.attributes.properties?.name ?? wrappingDivCaption(node),
+          markdown.slice(lineStart(markdown, node.from), node.to)
+        )
+      } else if ((THEOREM_FAMILIES as readonly string[]).includes(family)) {
+        pushDefinition(
+          located, 'theorem-div',
+          theoremTitle,
+          markdown.slice(lineStart(markdown, node.from), node.to)
+        )
+      }
     }
   }
 
