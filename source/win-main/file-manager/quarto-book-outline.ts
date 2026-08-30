@@ -1,5 +1,5 @@
-import path from 'path'
 import type { ProjectNavigationItem } from '@dts/common/fsal'
+import { resolvePath } from '@common/util/renderer-path-polyfill'
 
 export interface QuartoBookChapter {
   path: string
@@ -23,7 +23,7 @@ export function buildQuartoBookOutline (
 ): QuartoBookOutline {
   let position = 0
   const chapter = (relativePath: string): QuartoBookChapter => {
-    const filePath = path.resolve(rootPath, relativePath)
+    const filePath = resolvePath(rootPath, relativePath)
     position += 1
     return { path: filePath, title: titleForPath(filePath), position }
   }
