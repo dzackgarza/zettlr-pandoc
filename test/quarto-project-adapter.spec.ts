@@ -7,6 +7,7 @@ import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-
 import { loadDatabase } from "source/app/service-providers/citeproc/util/database-loader";
 import { getBibliographyForDescriptor } from "source/common/util/get-bibliography-for-descriptor";
 import type { MDFileDescriptor } from "source/types/common/fsal";
+import { buildQuartoBookOutline } from "source/win-main/file-manager/quarto-book-outline";
 
 const ROOT = path.resolve("test", "fixtures", "quarto-book");
 
@@ -33,6 +34,40 @@ describe("Quarto project adapter", function () {
       "foundations/forms.md",
       "computation/sage.md",
     ]);
+  });
+
+  it("builds a visible book hierarchy with ordered chapter actions", function () {
+    const titles = new Map([
+      [path.join(ROOT, "index.md"), "Lattice Notes"],
+      [path.join(ROOT, "foundations", "categories.md"), "Categories"],
+      [path.join(ROOT, "foundations", "forms.md"), "Forms"],
+      [path.join(ROOT, "computation", "sage.md"), "Sage"],
+    ]);
+
+    assert.deepStrictEqual(buildQuartoBookOutline(ROOT, project.navigation, filePath => titles.get(filePath)), {
+      items: [
+        { kind: "chapter", path: path.join(ROOT, "index.md"), title: "Lattice Notes", position: 1 },
+        {
+          kind: "part",
+          title: "Foundations",
+          chapters: [
+            { path: path.join(ROOT, "foundations", "categories.md"), title: "Categories", position: 2 },
+            { path: path.join(ROOT, "foundations", "forms.md"), title: "Forms", position: 3 },
+          ],
+        },
+        {
+          kind: "part",
+          title: "Computation",
+          chapters: [{ path: path.join(ROOT, "computation", "sage.md"), title: "Sage", position: 4 }],
+        },
+      ],
+      orderedPaths: [
+        path.join(ROOT, "index.md"),
+        path.join(ROOT, "foundations", "categories.md"),
+        path.join(ROOT, "foundations", "forms.md"),
+        path.join(ROOT, "computation", "sage.md"),
+      ],
+    });
   });
 
   it("resolves every inherited bibliography from the manifest root", function () {
