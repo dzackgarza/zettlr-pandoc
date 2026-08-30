@@ -136,9 +136,12 @@ export type ReferenceDocumentAuthority = WorkspaceEditAuthority
  * subscription surface. The real FSAL satisfies it directly, and specs
  * inject a plain EventEmitter — no type escapes anywhere.
  */
+import type { AnyDescriptor } from '@dts/common/fsal'
+
 export interface ReferenceFSALEvents {
   on: (evt: 'fsal-event', callback: (event: FSALEventPayload) => void) => void
   off: (evt: 'fsal-event', callback: (event: FSALEventPayload) => void) => void
+  getAllLoadedDescriptors?: () => Promise<AnyDescriptor[]>
 }
 
 /** A scheduled deferred extraction that can be cancelled before it fires. */
@@ -274,6 +277,19 @@ export default class ReferenceProvider extends ProviderContract {
    */
   public async boot (): Promise<void> {
     this._fsal.on('fsal-event', this._onFsalEvent)
+    if (typeof this._fsal.getAllLoadedDescriptors === 'function') {
+      try {
+        const descriptors = await this._fsal.getAllLoadedDescriptors()
+        for (const descriptor of descriptors) {
+          if (descriptor.type === 'file' && descriptor.references !== undefined) {
+            this._index.applySavedSnapshot(descriptor.references)
+          }
+        }
+        broadcastIpcMessage('references')
+      } catch (err: unknown) {
+        this._logger.error('[Reference Provider] Could not load initial descriptors from FSAL', err)
+      }
+    }
     const restored = await recoverWorkspaceEditJournal(this._journalDirectory)
     if (restored.length > 0) {
       this._logger.warning(

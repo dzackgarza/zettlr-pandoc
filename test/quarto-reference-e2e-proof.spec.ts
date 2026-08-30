@@ -83,8 +83,7 @@ describe('Quarto theorem cross-reference E2E and linter proof', function () {
       snapshot: activeSnap,
       workspaceOccurrences: workspace.flatMap(s => s.occurrences),
       resolutions: resolveWorkspace(workspace),
-      projectRoots: [{ rootDirectory: '/home/dzack/research/docs', files: workspace.map(s => s.documentPath) }],
-      activeDocumentPath: activeSnap.documentPath
+      projectRoots: [{ rootPath: '/home/dzack/research/docs', files: workspace.map(s => s.documentPath) }]
     }
 
     const state = EditorState.create({
