@@ -24,7 +24,7 @@ import {
 import { renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
 import { renderPandoc } from 'source/common/modules/markdown-editor/renderers/render-pandoc-div-span'
 import { markdownSyntaxHighlighter } from 'source/common/modules/markdown-editor/theme/syntax'
-import { configField } from 'source/common/modules/markdown-editor/util/configuration'
+import { configField, configUpdateEffect, getDefaultConfig } from 'source/common/modules/markdown-editor/util/configuration'
 
 function polyfillJsdomForCodeMirror (): void {
   const global = globalThis as any
@@ -129,6 +129,26 @@ describe('Editor preserves citation suffixes beginning with Roman-numeral letter
 
     assert.ok(citation !== null)
     assert.equal(citation.textContent, 'Ols04 Lem. 7.1, 7.2')
+  })
+
+  it('redraws an open citation after its bibliography becomes available', function () {
+    window.getCitationCallback = () => () => undefined
+    const config = getDefaultConfig()
+    config.renderingMode = 'preview'
+    const doc = 'See [@Ols04] for the classification.'
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: doc.length },
+      extensions: [ markdownParser(), configField.init(() => config), renderCitations ],
+    })
+    const view = new EditorView({ state, parent: document.body })
+    views.push(view)
+    assert.equal(view.dom.querySelector('.citeproc-citation')?.classList.contains('error'), true)
+
+    window.getCitationCallback = () => () => '(Olsson 2004)'
+    view.dispatch({ effects: configUpdateEffect.of({ metadata: { ...config.metadata } }) })
+
+    assert.equal(view.dom.querySelector('.citeproc-citation')?.textContent, '(Olsson 2004)')
   })
 
   it('styles the complete lemma reference as suffix text while editing', function () {
