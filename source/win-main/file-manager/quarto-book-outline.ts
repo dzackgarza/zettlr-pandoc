@@ -1,6 +1,6 @@
 import type { ProjectNavigationItem } from '@dts/common/fsal'
 import { resolvePath } from '@common/util/renderer-path-polyfill'
-import { extractASTNodes, markdownToAST } from '@common/modules/markdown-utils'
+import { extractASTNodes, extractTextnodes, markdownToAST } from '@common/modules/markdown-utils'
 import type { Heading } from '@common/modules/markdown-utils/markdown-ast'
 
 export interface QuartoBookSection {
@@ -29,7 +29,10 @@ export function extractQuartoBookSections (source: string): QuartoBookSection[] 
   const sections = headings[0]?.level === 1 ? headings.slice(1) : headings
 
   return sections.map(heading => ({
-    title: heading.content,
+    title: extractTextnodes(heading)
+      .map(node => node.whitespaceBefore + node.value)
+      .join('')
+      .trim(),
     level: heading.level,
     line: source.slice(0, heading.from).split('\n').length
   }))

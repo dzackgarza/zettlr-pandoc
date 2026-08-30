@@ -25,7 +25,7 @@
           <span class="chapter-number">{{ item.position }}</span>
           <span>{{ item.title }}</span>
         </button>
-        <div v-if="item.kind === 'chapter'" class="book-sections">
+        <div v-if="item.kind === 'chapter' && item.path === activeItem" class="book-sections">
           <button
             v-for="section in sections[item.path]"
             v-bind:key="`${item.path}:${section.line}`"
@@ -36,7 +36,7 @@
             {{ section.title }}
           </button>
         </div>
-        <section v-else class="book-part">
+        <section v-else-if="item.kind === 'part'" class="book-part">
           <h4>{{ item.title }}</h4>
           <div v-for="chapter in item.chapters" v-bind:key="chapter.path" class="book-chapter">
             <button
@@ -47,7 +47,7 @@
               <span class="chapter-number">{{ chapter.position }}</span>
               <span>{{ chapter.title }}</span>
             </button>
-            <div class="book-sections">
+            <div v-if="chapter.path === activeItem" class="book-sections">
               <button
                 v-for="section in sections[chapter.path]"
                 v-bind:key="`${chapter.path}:${section.line}`"
