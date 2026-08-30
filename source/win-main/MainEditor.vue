@@ -252,9 +252,23 @@ ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
   }
 
   const library = getBibliographyForDescriptor(descriptor)
-  updateCitationKeys(library).catch(e => {
-    console.error('Could not update citation keys', e)
-  })
+  updateCitationKeys(library)
+    .then(() => {
+      if (activeFileDescriptor.value?.path !== descriptor.path) {
+        return
+      }
+
+      currentEditor?.setOptions({
+        metadata: {
+          path: descriptor.path,
+          id: descriptor.id,
+          library,
+        },
+      })
+    })
+    .catch(e => {
+      console.error('Could not update citation keys', e)
+    })
 })
 
 // Combined @-completion label feed (issue #1). Mirrors the citation-keys
