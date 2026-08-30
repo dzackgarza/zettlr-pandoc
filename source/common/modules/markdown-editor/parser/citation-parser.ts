@@ -54,7 +54,7 @@ export type CSL_LOCATOR_TERM =
 /**
  * Multilingual locator label dictionary (English, German, French).
  */
-const LOCATOR_LABELS: Record<CSL_LOCATOR_TERM, string[]> = {
+export const LOCATOR_LABELS: Record<CSL_LOCATOR_TERM, string[]> = {
   'article-locator': ['Art.', 'Artikel', 'art.', 'arts.', 'article', 'articles'],
   book: ['Buch', 'Bücher', 'B.', 'book', 'books', 'bk.', 'bks.', 'livre', 'livres', 'liv.'],
   canon: ['can.', 'cann.', 'canon', 'canons'],
@@ -82,8 +82,8 @@ const LOCATOR_LABELS: Record<CSL_LOCATOR_TERM, string[]> = {
   volume: ['Band', 'Bände', 'Bd.', 'Bde.', 'volume', 'volumes', 'vol.', 'vols.']
 }
 
-const SANITIZED_LOCATOR_LABELS: Partial<Record<CSL_LOCATOR_TERM, Set<string>>> = {}
-let ALL_VALID_LOCATOR_LABELS: Set<string> = new Set()
+export const SANITIZED_LOCATOR_LABELS: Partial<Record<CSL_LOCATOR_TERM, Set<string>>> = {}
+export let ALL_VALID_LOCATOR_LABELS: Set<string> = new Set()
 
 for (const key in LOCATOR_LABELS) {
   const setLabels = new Set(LOCATOR_LABELS[key as CSL_LOCATOR_TERM].map(e => e.toLowerCase()))
@@ -91,7 +91,7 @@ for (const key in LOCATOR_LABELS) {
   ALL_VALID_LOCATOR_LABELS = ALL_VALID_LOCATOR_LABELS.union(setLabels)
 }
 
-const MAX_LOCATOR_LABEL_LENGTH = Math.max(...ALL_VALID_LOCATOR_LABELS.values().map(x => x.length))
+export const MAX_LOCATOR_LABEL_LENGTH = Math.max(...ALL_VALID_LOCATOR_LABELS.values().map(x => x.length))
 
 const CHAR = {
   TAB: 9,
@@ -496,6 +496,39 @@ function parseNarrativeCitation (ctx: InlineContext, pos: number, hasHyphen: boo
     }
 
     while (i < ctxEndPos && ctx.char(i) !== CHAR.BRACKET_CLOSE) {
+      const ch = ctx.char(i)
+      const prevCh = ctx.char(i - 1)
+      const nextCh = ctx.char(i + 1)
+
+      if (ch === CHAR.SEMICOLON) {
+        if (intextSuffixStart < i) {
+          temporaryParts.push(ctx.elt(NODES.SUFFIX, intextSuffixStart, i))
+        }
+        temporaryParts.push(ctx.elt(NODES.MARK, i, i + 1))
+        intextSuffixStart = i + 1
+        i++
+        continue
+      }
+
+      if (ch === CHAR.HYPHEN && nextCh === CHAR.AT) {
+        temporaryParts.push(ctx.elt(NODES.AUTHORFLAG, i, i + 1))
+        i++
+        continue
+      }
+
+      if (ch === CHAR.AT && [CHAR.SPACE, CHAR.HYPHEN, CHAR.SEMICOLON].includes(prevCh)) {
+        temporaryParts.push(ctx.elt(NODES.AT, i, i + 1))
+        const keyStart = i + 1
+        i++
+        while (i < ctxEndPos && /[\w:\.#$%&\-+?<>~/]/.test(String.fromCharCode(ctx.char(i)))) {
+          i++
+        }
+        temporaryParts.push(ctx.elt(NODES.KEY, keyStart, i))
+        keysFound++
+        intextSuffixStart = i
+        continue
+      }
+
       i++
     }
 

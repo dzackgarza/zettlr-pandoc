@@ -437,7 +437,7 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
             ...item,
             mode: item['suppress-author'] === true
               ? 'SuppressAuthor'
-              : (node.parsedCitation.composite ? 'AuthorInText' : 'NormalCitation')
+              : (node.parsedCitation.composite && citationItems.length === 0 ? 'AuthorInText' : 'NormalCitation')
           })
         }
 
