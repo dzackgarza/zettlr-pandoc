@@ -8,7 +8,7 @@
  * License:         GNU GPL v3
  *
  * Description:     Extracts official Pandoc Cite elements and citation items
- *                  directly from Pandoc JSON AST with character range resolution.
+ *                  directly from Pandoc JSON AST with exact source character ranges.
  *
  * END HEADER
  */
@@ -67,7 +67,6 @@ function cleanSuffix (raw: string | undefined): { suffix?: string, locator?: str
   if (raw === undefined || raw.trim() === '') {
     return {}
   }
-  // Normalize non-breaking spaces (\u00a0) to regular spaces
   let text = raw.replace(/\u00a0/g, ' ').trim()
   if (text.startsWith(',')) {
     text = text.slice(1).trim()
@@ -130,16 +129,19 @@ export function extractCitationsFromPandocAST (ast: unknown, markdown: string): 
       let to = -1
       let rawSource = fallbackText
 
-      if (items.length > 0) {
+      // 1. Try exact match of fallbackText from searchOffset
+      const directIndex = fallbackText !== '' ? markdown.indexOf(fallbackText, searchOffset) : -1
+      if (directIndex !== -1) {
+        from = directIndex
+        to = directIndex + fallbackText.length
+        rawSource = fallbackText
+      } else if (items.length > 0) {
+        // 2. Fallback key search
         const firstKey = '@' + items[0].id
         const keyPos = markdown.indexOf(firstKey, searchOffset)
-
         if (keyPos !== -1) {
           if (composite) {
-            from = keyPos
-            if (keyPos > 0 && markdown[keyPos - 1] === '-') {
-              from = keyPos - 1
-            }
+            from = keyPos > 0 && markdown[keyPos - 1] === '-' ? keyPos - 1 : keyPos
             to = keyPos + firstKey.length
             if (to < markdown.length && markdown[to] === ' ' && markdown[to + 1] === '[') {
               const closeBracket = markdown.indexOf(']', to + 1)
@@ -149,19 +151,22 @@ export function extractCitationsFromPandocAST (ast: unknown, markdown: string): 
             }
           } else {
             const openBracket = markdown.lastIndexOf('[', keyPos)
-            if (openBracket !== -1) {
+            if (openBracket >= 0 && (searchOffset === 0 || openBracket >= searchOffset - 1)) {
               from = openBracket
               const closeBracket = markdown.indexOf(']', keyPos)
               if (closeBracket !== -1) {
                 to = closeBracket + 1
               }
+            } else {
+              from = keyPos
+              to = keyPos + firstKey.length
             }
           }
+          rawSource = markdown.slice(from, to)
         }
       }
 
       if (from !== -1 && to !== -1) {
-        rawSource = markdown.slice(from, to)
         searchOffset = to
         results.push({
           range: { from, to },
