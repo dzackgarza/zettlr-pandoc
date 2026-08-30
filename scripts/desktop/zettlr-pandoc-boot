@@ -183,19 +183,20 @@ if [[ -x "$packaged_binary" && -f "$stamp_file" ]] && [[ $(<"$stamp_file") == "$
   spinner_label='Starting (no rebuild)'
   tput civis >/dev/null 2>&1
   printf '[boot] %s launching packaged binary (fingerprint matched, no build)\n' "$(date +%T)" >>"$log"
-  # Detach into its own session so closing the splash does not terminate
-  # the running app.
-  setsid "$packaged_binary" "$@" >>"$log" 2>&1 </dev/null &
+  # Remote debugging port for agent/inspection access without colliding with Chrome (9222):
+  debug_port="--remote-debugging-port=27413"
+  setsid "$packaged_binary" "$debug_port" "$@" >>"$log" 2>&1 </dev/null &
   launch_pid=$!
 else
   printf '\n   Source changed \342\200\224 rebuilding \033[1mZettlr-Pandoc\033[0m before launch\n\n'
   tput civis >/dev/null 2>&1
   # `just package` computes and writes the stamp itself, fingerprinting
   # BEFORE the build so a mid-build edit reads as stale on the next launch.
+  debug_port="--remote-debugging-port=27413"
   setsid sh -c '
-    repo="$1"; binary="$2"; shift 2
-    cd -- "$repo" && just package && exec "$binary" "$@"
-  ' sh "$repo" "$packaged_binary" "$@" \
+    repo="$1"; binary="$2"; debug="$3"; shift 3
+    cd -- "$repo" && just package && exec "$binary" "$debug" "$@"
+  ' sh "$repo" "$packaged_binary" "$debug_port" "$@" \
     >>"$log" 2>&1 </dev/null &
   launch_pid=$!
   launch_timeout=$rebuild_launch_timeout
