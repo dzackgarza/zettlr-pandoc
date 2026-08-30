@@ -6,6 +6,7 @@ import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-
 import { parseQuartoProject } from "source/app/util/quarto-project";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import { getBibliographyForDescriptor } from "source/common/util/get-bibliography-for-descriptor";
+import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
 import type { MDFileDescriptor } from "source/types/common/fsal";
 import {
   buildQuartoBookOutline,
@@ -141,10 +142,12 @@ describe("Quarto project adapter", function () {
     assert.deepStrictEqual(databases, [
       path.join(ROOT, "references.bib"),
       path.join(ROOT, "web.bib"),
+      CITEPROC_MAIN_DB,
     ]);
+    const localDbs = databases.filter((db) => db !== CITEPROC_MAIN_DB);
     assert.deepStrictEqual(
       await Promise.all(
-        databases.map(async (database) => Object.keys((await loadDatabase(database)).cslData)),
+        localDbs.map(async (database) => Object.keys((await loadDatabase(database)).cslData)),
       ),
       [["Mac98"], ["Stacks"]],
     );

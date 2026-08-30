@@ -40,7 +40,11 @@ export function getBibliographyForDescriptor (descriptor: MDFileDescriptor, proj
   }
 
   if (project?.manifest.kind === 'quarto' && project.manifest.bibliographies.length > 0) {
-    return project.manifest.bibliographies
+    const bibliographies = [ ...project.manifest.bibliographies ]
+    if (!bibliographies.includes(CITEPROC_MAIN_DB)) {
+      bibliographies.push(CITEPROC_MAIN_DB)
+    }
+    return bibliographies
   }
 
   return CITEPROC_MAIN_DB

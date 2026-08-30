@@ -414,10 +414,9 @@ export default class CiteprocProvider extends ProviderContract {
       }
 
       for (const [ citekey, item ] of Object.entries(record.cslData)) {
-        if (citekey in items) {
-          throw new Error(`Citation key ${citekey} occurs in more than one project bibliography.`)
+        if (!(citekey in items)) {
+          items[citekey] = item
         }
-        items[citekey] = item
       }
     }
 

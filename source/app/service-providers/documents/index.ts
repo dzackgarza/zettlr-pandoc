@@ -38,7 +38,7 @@ import {
   type SaveRefusal,
   type SaveRefusedBroadcast,
 } from '@dts/common/documents'
-import type { CodeFileDescriptor, MDFileDescriptor } from '@dts/common/fsal'
+import type { AnyDescriptor, CodeFileDescriptor, MDFileDescriptor } from '@dts/common/fsal'
 import type {
   DocumentLocation,
   SourceRange,
@@ -132,6 +132,7 @@ type DocumentManagerApp = {
   fsal: {
     getWatchdog(): DocumentWatchdog
     getFilesystemMetadata(filePath: string): Promise<{ modtime: number }>
+    getAllLoadedDescriptors?(): Promise<AnyDescriptor[]>
   } & Pick<
     AppServiceContainer['fsal'],
     | 'getDescriptorFor'
@@ -1470,9 +1471,32 @@ current contents from the editor somewhere else, and restart the application.`,
         'bibliography' in frontmatter
       ) {
         const bib = frontmatter.bibliography
-        if (typeof bib === 'string' && path.isAbsolute(bib)) {
+        if (typeof bib === 'string' && path.isAbsolute(bib) && !libraries.includes(bib)) {
           libraries.push(bib)
+        } else if (Array.isArray(bib)) {
+          for (const item of bib) {
+            if (typeof item === 'string' && path.isAbsolute(item) && !libraries.includes(item)) {
+              libraries.push(item)
+            }
+          }
         }
+      }
+    }
+
+    if (typeof this._app.fsal.getAllLoadedDescriptors === 'function') {
+      try {
+        const descriptors = await this._app.fsal.getAllLoadedDescriptors()
+        for (const descriptor of descriptors) {
+          if (descriptor.type === 'directory' && descriptor.settings.project?.manifest.kind === 'quarto') {
+            for (const bibPath of descriptor.settings.project.manifest.bibliographies) {
+              if (path.isAbsolute(bibPath) && !libraries.includes(bibPath)) {
+                libraries.push(bibPath)
+              }
+            }
+          }
+        }
+      } catch (err: unknown) {
+        this._app.log.error('[Document Manager] Could not collect project bibliographies from FSAL', err)
       }
     }
 

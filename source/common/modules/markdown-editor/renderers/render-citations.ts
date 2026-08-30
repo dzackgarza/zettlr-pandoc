@@ -63,9 +63,9 @@ class CitationWidget extends WidgetType {
       elem.classList.add('citeproc-citation')
       const citationTexts = []
       for (const item of items) {
-        const parts = referenceKeyParts(item.id)
-        const type = parts?.prefix ?? item.id
-        const label = parts?.remainder ?? item.id
+        const separatorMatch = /^([a-zA-Z0-9]+)([:-])(.*)$/.exec(item.id)
+        const type = separatorMatch !== null ? separatorMatch[1] : item.id
+        const label = separatorMatch !== null ? separatorMatch[3] : item.id
         if (item.prefix !== undefined) {
           citationTexts.push(`${item.prefix.trimEnd()} #${label}`)
         } else if (item['suppress-author'] === true) {
