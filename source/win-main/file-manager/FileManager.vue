@@ -140,7 +140,10 @@ const navigationTabs: TabbarControl[] = [
   { id: 'files', target: 'file-tree', label: trans('Files') },
   { id: 'book', target: 'quarto-book-navigation', label: trans('Book') }
 ]
-const activeFilePath = computed(() => documentTreeStore.lastLeafActiveFile?.path)
+const activeFilePath = computed(() => {
+  const activeLeaf = documentTreeStore.paneData.find(leaf => leaf.id === documentTreeStore.lastLeafId)
+  return documentTreeStore.lastLeafActiveFile?.path ?? activeLeaf?.activeFile?.path
+})
 const quartoProject = computed(() => {
   const projects = workspaceStore.rootDescriptors
     .filter(root => root.type === 'directory' && root.settings.project?.manifest.kind === 'quarto')
