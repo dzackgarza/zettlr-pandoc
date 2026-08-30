@@ -1,10 +1,10 @@
 import { strict as assert } from "assert";
 import { readFileSync } from "fs";
 import path from "path";
-import { extractReferences } from "source/common/pandoc-util/extract-references";
-import { parseQuartoProject } from "source/app/util/quarto-project";
-import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import { loadDatabase } from "source/app/service-providers/citeproc/util/database-loader";
+import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
+import { parseQuartoProject } from "source/app/util/quarto-project";
+import { extractReferences } from "source/common/pandoc-util/extract-references";
 import { getBibliographyForDescriptor } from "source/common/util/get-bibliography-for-descriptor";
 import type { MDFileDescriptor } from "source/types/common/fsal";
 import { buildQuartoBookOutline } from "source/win-main/file-manager/quarto-book-outline";
@@ -37,37 +37,57 @@ describe("Quarto project adapter", function () {
   });
 
   it("builds a visible book hierarchy with ordered chapter actions", function () {
-    const titles = new Map([
+    const titles = new Map<string, string>([
       [path.join(ROOT, "index.md"), "Lattice Notes"],
       [path.join(ROOT, "foundations", "categories.md"), "Categories"],
       [path.join(ROOT, "foundations", "forms.md"), "Forms"],
       [path.join(ROOT, "computation", "sage.md"), "Sage"],
     ]);
 
-    assert.deepStrictEqual(buildQuartoBookOutline(ROOT, project.navigation, filePath => titles.get(filePath)), {
-      items: [
-        { kind: "chapter", path: path.join(ROOT, "index.md"), title: "Lattice Notes", position: 1 },
-        {
-          kind: "part",
-          title: "Foundations",
-          chapters: [
-            { path: path.join(ROOT, "foundations", "categories.md"), title: "Categories", position: 2 },
-            { path: path.join(ROOT, "foundations", "forms.md"), title: "Forms", position: 3 },
-          ],
-        },
-        {
-          kind: "part",
-          title: "Computation",
-          chapters: [{ path: path.join(ROOT, "computation", "sage.md"), title: "Sage", position: 4 }],
-        },
-      ],
-      orderedPaths: [
-        path.join(ROOT, "index.md"),
-        path.join(ROOT, "foundations", "categories.md"),
-        path.join(ROOT, "foundations", "forms.md"),
-        path.join(ROOT, "computation", "sage.md"),
-      ],
-    });
+    assert.deepStrictEqual(
+      buildQuartoBookOutline(ROOT, project.navigation, (filePath) => {
+        const title = titles.get(filePath);
+        if (title === undefined) {
+          throw new Error(`Missing title for ${filePath}`);
+        }
+        return title;
+      }),
+      {
+        items: [
+          {
+            kind: "chapter",
+            path: path.join(ROOT, "index.md"),
+            title: "Lattice Notes",
+            position: 1,
+          },
+          {
+            kind: "part",
+            title: "Foundations",
+            chapters: [
+              {
+                path: path.join(ROOT, "foundations", "categories.md"),
+                title: "Categories",
+                position: 2,
+              },
+              { path: path.join(ROOT, "foundations", "forms.md"), title: "Forms", position: 3 },
+            ],
+          },
+          {
+            kind: "part",
+            title: "Computation",
+            chapters: [
+              { path: path.join(ROOT, "computation", "sage.md"), title: "Sage", position: 4 },
+            ],
+          },
+        ],
+        orderedPaths: [
+          path.join(ROOT, "index.md"),
+          path.join(ROOT, "foundations", "categories.md"),
+          path.join(ROOT, "foundations", "forms.md"),
+          path.join(ROOT, "computation", "sage.md"),
+        ],
+      },
+    );
   });
 
   it("resolves every inherited bibliography from the manifest root", function () {
@@ -103,9 +123,14 @@ describe("Quarto project adapter", function () {
     } as MDFileDescriptor;
     const databases = getBibliographyForDescriptor(descriptor, projectRoot.settings.project);
 
-    assert.deepStrictEqual(databases, [path.join(ROOT, "references.bib"), path.join(ROOT, "web.bib")]);
+    assert.deepStrictEqual(databases, [
+      path.join(ROOT, "references.bib"),
+      path.join(ROOT, "web.bib"),
+    ]);
     assert.deepStrictEqual(
-      await Promise.all(databases.map(async (database) => Object.keys((await loadDatabase(database)).cslData))),
+      await Promise.all(
+        databases.map(async (database) => Object.keys((await loadDatabase(database)).cslData)),
+      ),
       [["Mac98"], ["Stacks"]],
     );
   });

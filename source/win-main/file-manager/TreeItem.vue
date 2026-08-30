@@ -118,6 +118,12 @@
       >
     </div>
     <div v-if="item.type === 'directory' && !shouldBeCollapsed">
+      <QuartoBookOutline
+        v-if="quartoNavigation !== undefined"
+        v-bind:root-path="item.path"
+        v-bind:navigation="quartoNavigation"
+        v-bind:active-item="activeItem"
+      ></QuartoBookOutline>
       <TreeItem
         v-for="child in projectSortedFilteredChildren"
         v-bind:key="child.path"
@@ -168,6 +174,7 @@ import generateFilename from '@common/util/generate-filename'
 import { trans } from '@common/i18n-renderer'
 import PopoverDirProps from './util/PopoverDirProps.vue'
 import PopoverFileProps from './util/PopoverFileProps.vue'
+import QuartoBookOutline from './QuartoBookOutline.vue'
 
 import RingProgress from '@common/vue/window/toolbar-controls/RingProgress.vue'
 import { nextTick, ref, computed, watch, onMounted, toRef } from 'vue'
@@ -248,6 +255,12 @@ function sel (event: MouseEvent): void {
 }
 
 const shouldBeCollapsed = computed<boolean>(() => props.filterResults.length === 0 && collapsed.value)
+const quartoNavigation = computed(() => {
+  if (props.item.type !== 'directory' || props.item.settings.project?.manifest.kind !== 'quarto') {
+    return undefined
+  }
+  return props.item.settings.project.manifest.navigation
+})
 
 const showDotFiles = ref<boolean>(configStore.config.files.dotFiles.showInFilemanager)
 configStore.$subscribe((_mutation, state) => {
