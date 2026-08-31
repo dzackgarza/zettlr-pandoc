@@ -60,17 +60,19 @@ import { markdownToAST } from '@common/modules/markdown-utils'
 import type { ASTNode } from '@common/modules/markdown-utils/markdown-ast'
 import { locateAttribute } from '@common/pandoc-util/extract-references'
 import { SEMANTIC_DIV_CLASSES } from '@common/pandoc-util/pandoc-div-model'
-import { THEOREM_FAMILY_METADATA, REFERENCEABLE_DIV_CLASSES } from '@common/util/pandoc-quick-reference'
-import { referenceFamilyOf, referenceKeyParts, type ReferenceFamily } from '@dts/common/references'
+import { THEOREM_FAMILY_METADATA } from '@common/util/pandoc-quick-reference'
+import { referenceFamilyOf, referenceKeyParts, QUARTO_FAMILY_ALIASES, type ReferenceFamily } from '@dts/common/references'
 import { workspaceReferencesField, type EditorWorkspaceReferences } from '../plugins/workspace-references-field'
 
 /**
  * The label prefix of each referenceable div class, inverted from the fixed
- * theorem-family registry ('lemma' -> 'lem').
+ * theorem-family registry ('lemma' -> 'lem', 'prp' -> 'prop', 'thm' -> 'thm').
  */
-const CLASS_TO_PREFIX: Record<string, string> = Object.fromEntries(
-  THEOREM_FAMILY_METADATA.map(metadata => [ metadata.divClass, metadata.prefix ])
-)
+const CLASS_TO_PREFIX: Record<string, string> = Object.fromEntries([
+  ...THEOREM_FAMILY_METADATA.map(metadata => [ metadata.divClass.toLowerCase(), metadata.prefix ]),
+  ...THEOREM_FAMILY_METADATA.map(metadata => [ metadata.prefix.toLowerCase(), metadata.prefix ]),
+  ...QUARTO_FAMILY_ALIASES.map(alias => [ alias.prefix.toLowerCase(), alias.family ])
+])
 
 /**
  * The comparable remainder tokens of a key ('lem:kodaira:embedding' ->
@@ -211,8 +213,9 @@ function collectSnapshotDiagnostics (references: EditorWorkspaceReferences, diag
     if (definition.sourceKind === 'theorem-div') {
       // The authored classes ride on the definition itself (review B6):
       // previewSource is a display excerpt and is never re-parsed here.
-      const referenceableClasses = definition.classes.filter(divClass => REFERENCEABLE_DIV_CLASSES.includes(divClass.toLowerCase()))
-      const authoredClass = referenceableClasses.length > 0 ? referenceableClasses[0].toLowerCase() : undefined
+      const authoredClass = definition.classes
+        .map(c => c.toLowerCase())
+        .find(c => CLASS_TO_PREFIX[c] !== undefined)
       const expectedPrefix = authoredClass !== undefined ? CLASS_TO_PREFIX[authoredClass] : undefined
       if (authoredClass !== undefined && expectedPrefix !== undefined && definition.family !== expectedPrefix) {
         const parts = referenceKeyParts(definition.key)

@@ -8,7 +8,25 @@ import {
   THEOREM_FAMILY_METADATA,
   type TheoremFamilyPrefix
 } from '../../common/util/pandoc-quick-reference'
-import type { PandocExtractedCitation } from '../../common/pandoc-util/pandoc-ast-citations'
+import type { CSL_LOCATOR_TERM } from '../../common/modules/markdown-editor/parser/citation-parser'
+
+export interface PandocCitationItem {
+  id: string
+  prefix?: string
+  suffix?: string
+  mode: 'AuthorInText' | 'SuppressAuthor' | 'NormalCitation'
+  noteNum?: number
+  hash?: number
+  locator?: string
+  label?: CSL_LOCATOR_TERM
+}
+
+export interface PandocExtractedCitation {
+  raw: string
+  range: SourceRange
+  composite: boolean
+  items: PandocCitationItem[]
+}
 
 /**
  * The explicit pandoc-crossref label families supported at launch.
@@ -41,12 +59,13 @@ export type ReferenceFamily = CrossrefFamily | TheoremFamily
 
 export const REFERENCE_FAMILIES: readonly ReferenceFamily[] = [ ...CROSSREF_FAMILIES, ...THEOREM_FAMILIES ]
 
-const QUARTO_FAMILY_ALIASES = [
+export const QUARTO_FAMILY_ALIASES = [
   { prefix: 'prp', family: 'prop' },
   { prefix: 'cnj', family: 'conj' },
   { prefix: 'exm', family: 'ex' },
   { prefix: 'rem', family: 'rmk' },
-  { prefix: 'wrn', family: 'warn' }
+  { prefix: 'wrn', family: 'warn' },
+  { prefix: 'prb', family: 'prob' }
 ] as const satisfies ReadonlyArray<{ prefix: string, family: ReferenceFamily }>
 
 function supportedFamily (prefix: string): ReferenceFamily|undefined {

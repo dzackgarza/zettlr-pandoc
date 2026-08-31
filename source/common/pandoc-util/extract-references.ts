@@ -18,9 +18,11 @@ import {
   type DocumentReferenceSnapshot,
   type ReferenceDefinition,
   type ReferenceOccurrence,
-  type SourceRange
+  type SourceRange,
+  type PandocExtractedCitation,
+  type PandocCitationItem
 } from '../../types/common/references'
-import { type PandocExtractedCitation, type PandocCitationItem } from './pandoc-ast-citations'
+import { classifyDiv } from './pandoc-div-model'
 
 import { sha256Text } from '../util/sha256'
 
@@ -293,11 +295,8 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
     // Theorem-like divs define targets through their class registry;
     // proof-like and other non-referenceable div classes never do.
     const classes = located.attributes.classes ?? []
-    const isProofLike = classes.some(divClass => {
-      const lower = divClass.toLowerCase()
-      return lower === 'proof' || lower === 'sketch' || lower === 'solution'
-    })
-    if (isProofLike) {
+    const classification = classifyDiv(classes, located.key)
+    if (classification.family === 'proof') {
       return
     }
 
@@ -436,7 +435,7 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
 
         citations.push({
           range: { from: node.from, to: node.to },
-          source: cluster,
+          raw: cluster,
           composite: node.parsedCitation.composite,
           items: citationItems
         })

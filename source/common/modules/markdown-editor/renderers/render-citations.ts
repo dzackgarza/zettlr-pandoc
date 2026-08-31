@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { syntaxTree } from '@codemirror/language'
 import { renderBlockWidgets } from './base-renderer'
 import { type SyntaxNodeRef, type SyntaxNode } from '@lezer/common'
 import { WidgetType, type EditorView } from '@codemirror/view'
@@ -82,10 +83,11 @@ class CitationWidget extends WidgetType {
       elem.classList.add('error')
     }
     elem.addEventListener('click', clickAndSelect(view))
-
     elem.addEventListener('contextmenu', (event) => {
       const coords = { x: event.clientX, y: event.clientY }
-      citationMenu(view, coords, this.node)
+      const pos = view.posAtDOM(elem)
+      const currentNode = syntaxTree(view.state).resolveInner(pos, 1)
+      citationMenu(view, coords, currentNode)
     })
 
     return elem

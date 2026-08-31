@@ -18,6 +18,12 @@
 
 import type { SyntaxNode } from '@lezer/common'
 import { parsePandocAttributes } from './parse-pandoc-attributes'
+import { THEOREM_FAMILY_METADATA } from '../util/pandoc-quick-reference'
+import {
+  referenceFamilyOf,
+  referenceFamilyDisplayName,
+  QUARTO_FAMILY_ALIASES
+} from '../../types/common/references'
 
 export type PandocDivFamily = 'result'|'definition'|'explanation'|'task'|'warning'|'proof'|'generic'
 
@@ -48,128 +54,87 @@ export interface DivSourceDocument {
   sliceString: (from: number, to: number) => string
 }
 
-export const SEMANTIC_DIV_CLASSES: Record<string, PandocDivFamily> = {
-  // amsthm & Quarto definitions
-  definition: 'definition',
-  def: 'definition',
-  construction: 'definition',
-  notation: 'definition',
-  assumption: 'definition',
-  ass: 'definition',
-  axiom: 'definition',
-  hyp: 'definition',
-  hypothesis: 'definition',
-
-  // amsthm & Quarto results
-  theorem: 'result',
+const THEOREM_PREFIX_TO_DIV_FAMILY: Record<string, PandocDivFamily> = {
   thm: 'result',
-  lemma: 'result',
   lem: 'result',
-  proposition: 'result',
   prop: 'result',
-  prp: 'result',
-  corollary: 'result',
   cor: 'result',
-  conjecture: 'result',
   conj: 'result',
-  cnj: 'result',
-  claim: 'result',
   clm: 'result',
-
-  // amsthm & Quarto explanations
-  example: 'explanation',
-  ex: 'explanation',
-  exm: 'explanation',
-  remark: 'explanation',
-  rem: 'explanation',
+  def: 'definition',
+  ass: 'definition',
   rmk: 'explanation',
-  observation: 'explanation',
+  ex: 'explanation',
   obs: 'explanation',
-  fact: 'explanation',
-
-  // amsthm & Quarto tasks
-  exercise: 'task',
-  exr: 'task',
-  problem: 'task',
-  prob: 'task',
-  prb: 'task',
-  question: 'task',
   qst: 'task',
-
-  // amsthm & Quarto warnings
-  warning: 'warning',
+  prob: 'task',
+  exr: 'task',
   warn: 'warning',
-  wrn: 'warning',
-  caution: 'warning',
-  cau: 'warning',
-  danger: 'warning',
-  error: 'warning',
-
-  // amsthm & Quarto proofs
-  proof: 'proof',
-  prf: 'proof',
-  sketch: 'proof',
-  solution: 'proof',
-  sol: 'proof'
 }
 
-const CANONICAL_LABELS: Record<string, string> = {
-  def: 'Definition',
-  definition: 'Definition',
-  thm: 'Theorem',
-  theorem: 'Theorem',
-  lem: 'Lemma',
-  lemma: 'Lemma',
-  cor: 'Corollary',
-  corollary: 'Corollary',
-  prop: 'Proposition',
-  prp: 'Proposition',
-  proposition: 'Proposition',
-  conj: 'Conjecture',
-  cnj: 'Conjecture',
-  conjecture: 'Conjecture',
-  clm: 'Claim',
-  claim: 'Claim',
-  ass: 'Assumption',
-  assumption: 'Assumption',
-  axiom: 'Axiom',
-  hyp: 'Hypothesis',
-  hypothesis: 'Hypothesis',
-  ex: 'Example',
-  exm: 'Example',
-  example: 'Example',
-  rem: 'Remark',
-  rmk: 'Remark',
-  remark: 'Remark',
-  obs: 'Observation',
-  observation: 'Observation',
-  fact: 'Fact',
-  exr: 'Exercise',
-  exercise: 'Exercise',
-  prob: 'Problem',
-  prb: 'Problem',
-  problem: 'Problem',
-  qst: 'Question',
-  question: 'Question',
-  warn: 'Warning',
-  wrn: 'Warning',
-  warning: 'Warning',
-  cau: 'Caution',
-  caution: 'Caution',
-  danger: 'Danger',
-  error: 'Error',
-  proof: 'Proof',
-  prf: 'Proof',
-  sketch: 'Sketch',
-  sol: 'Solution',
-  solution: 'Solution'
+const EXTRA_SEMANTIC_DIV_CLASSES: Record<string, { family: PandocDivFamily, label: string }> = {
+  // Proof environments (unnumbered/unreferenceable)
+  proof: { family: 'proof', label: 'Proof' },
+  prf: { family: 'proof', label: 'Proof' },
+  sketch: { family: 'proof', label: 'Sketch' },
+  solution: { family: 'proof', label: 'Solution' },
+  sol: { family: 'proof', label: 'Solution' },
+
+  // Additional semantic and admonition environments
+  caution: { family: 'warning', label: 'Caution' },
+  cau: { family: 'warning', label: 'Caution' },
+  danger: { family: 'warning', label: 'Danger' },
+  error: { family: 'warning', label: 'Error' },
+  fact: { family: 'explanation', label: 'Fact' },
+  construction: { family: 'definition', label: 'Construction' },
+  notation: { family: 'definition', label: 'Notation' },
+  axiom: { family: 'definition', label: 'Axiom' },
+  hyp: { family: 'definition', label: 'Hypothesis' },
+  hypothesis: { family: 'definition', label: 'Hypothesis' },
+}
+
+export const SEMANTIC_DIV_CLASSES: Record<string, PandocDivFamily> = {
+  // Derive all theorem families from the single authority
+  ...Object.fromEntries(
+    THEOREM_FAMILY_METADATA.flatMap(metadata => [
+      [metadata.divClass.toLowerCase(), THEOREM_PREFIX_TO_DIV_FAMILY[metadata.prefix] ?? 'result'],
+      [metadata.prefix.toLowerCase(), THEOREM_PREFIX_TO_DIV_FAMILY[metadata.prefix] ?? 'result']
+    ])
+  ),
+  // Derive all Quarto shorthand aliases
+  ...Object.fromEntries(
+    QUARTO_FAMILY_ALIASES.map(alias => [
+      alias.prefix.toLowerCase(),
+      THEOREM_PREFIX_TO_DIV_FAMILY[alias.family] ?? 'result'
+    ])
+  ),
+  // Extra semantic classes (proofs, warnings, definitions)
+  ...Object.fromEntries(
+    Object.entries(EXTRA_SEMANTIC_DIV_CLASSES).map(([name, item]) => [name, item.family])
+  )
 }
 
 export function humanizeClassName (className: string): string {
-  const normalized = className.toLowerCase()
-  if (CANONICAL_LABELS[normalized] !== undefined) {
-    return CANONICAL_LABELS[normalized]
+  const lower = className.toLowerCase()
+  const extra = EXTRA_SEMANTIC_DIV_CLASSES[lower]
+  if (extra !== undefined) {
+    return extra.label
   }
+
+  // Check theorem families
+  const theoremMatch = THEOREM_FAMILY_METADATA.find(
+    m => m.divClass.toLowerCase() === lower || m.prefix.toLowerCase() === lower
+  )
+  if (theoremMatch !== undefined) {
+    return theoremMatch.displayName
+  }
+
+  // Check Quarto aliases
+  const alias = QUARTO_FAMILY_ALIASES.find(a => a.prefix.toLowerCase() === lower)
+  if (alias !== undefined) {
+    return referenceFamilyDisplayName(alias.family)
+  }
+
   return className
     .replace(/[._-]+/g, ' ')
     .replace(/\b\w/g, char => char.toUpperCase())
@@ -185,12 +150,14 @@ export function classifyDiv (classes: string[], id?: string): { family: PandocDi
   }
 
   if (id !== undefined && id !== '') {
-    const match = /^([a-zA-Z0-9]+)(?:[:-].*)$/.exec(id)
-    if (match !== null) {
-      const prefix = match[1].toLowerCase()
-      const family = SEMANTIC_DIV_CLASSES[prefix]
-      if (family !== undefined) {
-        return { family, label: humanizeClassName(prefix) }
+    const refFamily = referenceFamilyOf(id)
+    if (refFamily !== undefined) {
+      const divFamily = THEOREM_PREFIX_TO_DIV_FAMILY[refFamily]
+      if (divFamily !== undefined) {
+        return {
+          family: divFamily,
+          label: referenceFamilyDisplayName(refFamily)
+        }
       }
     }
   }
