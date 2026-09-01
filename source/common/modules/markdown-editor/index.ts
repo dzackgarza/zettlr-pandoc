@@ -1188,6 +1188,8 @@ export default class MarkdownEditor extends EventEmitter {
    * @param   {boolean}  shouldBeFullscreen  Whether the editor should be in distraction free
    */
   set distractionFree (shouldBeFullscreen: boolean) {
+    this.config.distractionFree = shouldBeFullscreen
+    this._instance.dispatch({ effects: configUpdateEffect.of(this.config) })
   }
 
   /**

@@ -115,26 +115,39 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       // Now we can set up the watchers. (We need to do this afterwards to not cause a hiccup)
       // Finally, listen to FSAL events and keep the descriptor map updated.
       ipcRenderer.on('fsal-event', (_, payload: FSALEventPayload) => {
-        // @ts-expect-error asdasd
-        console.log(`[WorkspaceStore] Received event ${payload.event}:${payload.path ?? payload.descriptor.path}`)
+        const eventPath = 'path' in payload ? payload.path : payload.descriptor.path
+        console.log(`[WorkspaceStore] Received event ${payload.event}:${eventPath}`)
+
+        function isUnderRoot (targetPath: string, rootPath: string): boolean {
+          return targetPath === rootPath || targetPath.startsWith(rootPath + '/') || targetPath.startsWith(rootPath + '\\')
+        }
+
         if (payload.event === 'unlink' || payload.event === 'unlinkDir') {
-          const root = [...workspaceMap.value.keys()].find(p => payload.path.startsWith(p))
+          const root = [...workspaceMap.value.keys()].find(p => isUnderRoot(payload.path, p))
           if (root !== undefined) {
-            const arr = workspaceMap.value.get(root)!
-            arr.splice(arr.indexOf(payload.path), 1)
-            workspaceMap.value.set(root, arr)
+            const arr = workspaceMap.value.get(root)
+            if (arr !== undefined) {
+              const idx = arr.indexOf(payload.path)
+              if (idx !== -1) {
+                arr.splice(idx, 1)
+                workspaceMap.value.set(root, arr)
+              }
+            }
           }
 
           descriptorMap.value.delete(payload.path)
         } else if (payload.event === 'change' || payload.event === 'add' || payload.event === 'addDir') {
-          const root = [...workspaceMap.value.keys()].find(p => payload.descriptor.path.startsWith(p))
+          const targetPath = payload.descriptor.path
+          const root = [...workspaceMap.value.keys()].find(p => isUnderRoot(targetPath, p))
           if (root !== undefined && payload.event !== 'change') {
-            const arr = workspaceMap.value.get(root)!
-            arr.push(payload.descriptor.path)
-            workspaceMap.value.set(root, arr)
+            const arr = workspaceMap.value.get(root)
+            if (arr !== undefined && !arr.includes(targetPath)) {
+              arr.push(targetPath)
+              workspaceMap.value.set(root, arr)
+            }
           }
 
-          descriptorMap.value.set(payload.descriptor.path, payload.descriptor)
+          descriptorMap.value.set(targetPath, payload.descriptor)
         }
       })
     })

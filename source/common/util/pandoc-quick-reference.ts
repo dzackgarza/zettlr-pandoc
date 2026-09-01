@@ -100,7 +100,7 @@ export function filterHelpEntries<T> (
 }
 
 export function isSupportedPandocCrossref (id: string): boolean {
-  return PANDOC_CROSSREF_PREFIXES.some(prefix => id.startsWith(`${prefix}:`))
+  return PANDOC_CROSSREF_PREFIXES.some(prefix => id.startsWith(`${prefix}:`) || id.startsWith(`${prefix}-`))
 }
 
 /**

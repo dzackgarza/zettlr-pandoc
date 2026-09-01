@@ -244,7 +244,7 @@ function fetchActiveReviewDiffSession (): void {
 }
 
 // EVENT LISTENERS
-ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
+const handleCiteprocUpdate = (_event: unknown, _dbPath: string): void => {
   const descriptor = activeFileDescriptor.value
 
   if (descriptor === undefined || descriptor.type !== 'file') {
@@ -269,21 +269,18 @@ ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
     .catch(e => {
       console.error('Could not update citation keys', e)
     })
-})
+}
 
 // Combined @-completion label feed (issue #1). Mirrors the citation-keys
 // feed above: whenever main broadcasts changed workspace references, fetch
 // the snapshot and push the typed 'references' completion database.
-// updateReferenceEntries() itself routes provider failures through the
-// recoverable-error boundary (closable toast, typed outcome); this catch
-// only guards against unexpected renderer-side faults.
-ipcRenderer.on('references', _event => {
+const handleReferencesUpdate = (): void => {
   updateReferenceEntries().catch(e => {
     console.error('Could not update workspace reference entries', e)
   })
-})
+}
 
-ipcRenderer.on('shortcut', (event, command) => {
+const handleShortcut = (_event: unknown, command: string): void => {
   if (currentEditor?.hasFocusWithin() !== true) {
     return // None of our business
   }
@@ -311,19 +308,6 @@ ipcRenderer.on('shortcut', (event, command) => {
         .catch(e => console.error(e))
     }
 
-    // Format-on-save (issue #26): when enabled for a Markdown file, run flowmark
-    // over the buffer first and wait for the format's collab update to reach the
-    // document authority, so the on-disk write sees the formatted bytes. The
-    // format is a single undo step, so one undo reverts an unwanted auto-format.
-    //
-    // A formatter that reports a typed failure (flowmark absent, bad exit) left
-    // the buffer untouched, surfaceFormatResult tells the author why, and the
-    // save proceeds on the unchanged text. But if the format DID change the
-    // buffer and whenSynced cannot promise those bytes reached the authority,
-    // saving would write the pre-format text and report an ordinary success —
-    // the author would find out by diffing the file. Refuse the save and say so
-    // instead; the buffer keeps the formatted text and pressing save again
-    // retries the whole thing.
     if (configStore.config.editor.formatOnSave && isMarkdown.value && currentEditor !== undefined) {
       const editor = currentEditor
       editor.runFormatter(ipcMarkdownFormatter)
@@ -355,9 +339,9 @@ ipcRenderer.on('shortcut', (event, command) => {
   } else if (command === 'paste-as-plain') {
     currentEditor.pasteAsPlainText()
   }
-})
+}
 
-ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: DocumentsUpdateContext }) => {
+const handleDocumentsUpdate = (_e: unknown, payload: { event: DP_EVENTS, context: DocumentsUpdateContext }): void => {
   const { event, context } = payload
   if (
     event === DP_EVENTS.ACTIVE_FILE && context.leafId === props.leafId &&
@@ -385,22 +369,9 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     }
     surfaceDocumentLoadFailure(context.filePath, context.documentLoadError)
   } else if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
-    // The currently loaded document has been changed remotely. This event indicates
-    // that the document provider has already reloaded the document and we only
-    // need to tell the main editor to reload it as well.
-    //
-    // Drop the review first. notifyRemoteChange closed the provider-owned review
-    // when it accepted the external edit, so this pane's session is already dead;
-    // leaving it set would let the reload restore accept/reject controls over the
-    // externally reloaded text. Rejecting one of those phantom chunks would
-    // reinstate the stale review reference, and with the provider's review gone
-    // the save gate would not stop that text being written over the external
-    // edit.
     currentEditor?.clearReviewDiffSession()
     currentEditor?.reload().catch(reportDocumentLoadError)
   } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
-    // The file has been saved to disk. This means we should probably update the
-    // descriptor to know of, e.g., library changes.
     ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: props.file.path })
       .then(descriptor => {
         if (descriptor === undefined || Array.isArray(descriptor) || (descriptor.type !== 'file' && descriptor.type !== 'code')) {
@@ -413,7 +384,6 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
           updateCitationKeys(library).catch(e => console.error('Could not update citation keys', e))
         }
 
-        // Provide the editor instance with updated metadata
         currentEditor?.setOptions({
           metadata: {
             path: props.file.path,
@@ -428,7 +398,6 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     context.filePath === props.file.path &&
     context.reviewCleared === true
   ) {
-    // Provider closed or completed the review — exit review mode
     currentEditor?.clearReviewDiffSession(context.reviewId)
   } else if (
     event === DP_EVENTS.REVIEW_DIFF &&
@@ -438,26 +407,38 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
   ) {
     applyReviewDiffSession(context.reviewDiffSession)
   }
-})
+}
 
-ipcRenderer.on('reload-editors', _e => {
+const handleReloadEditors = (): void => {
   currentEditor?.reload().catch(reportDocumentLoadError)
-})
+}
 
-// Update the file database whenever links have been updated
-ipcRenderer.on('links', _e => {
+const handleLinksUpdate = (): void => {
   updateFileDatabase().catch(err => console.error('Could not update file database', err))
-})
+}
+
+const unbindListeners: Array<() => void> = []
 
 // MOUNTED HOOK
 onMounted(() => {
+  unbindListeners.push(
+    ipcRenderer.on('citeproc-database-updated', handleCiteprocUpdate),
+    ipcRenderer.on('references', handleReferencesUpdate),
+    ipcRenderer.on('shortcut', handleShortcut),
+    ipcRenderer.on('documents-update', handleDocumentsUpdate),
+    ipcRenderer.on('reload-editors', handleReloadEditors),
+    ipcRenderer.on('links', handleLinksUpdate)
+  )
   loadDocument().catch(reportDocumentLoadError)
 })
 
 onBeforeUnmount(() => {
+  for (const unbind of unbindListeners) {
+    unbind()
+  }
+  unbindListeners.length = 0
   if (currentEditor !== null) {
     props.persistentStateMap.set(props.file.path, currentEditor.persistentState)
-    // Clear out the table of contents before unmounting the component.
     windowStateStore.tableOfContents = undefined
     currentEditor.unmount()
   }

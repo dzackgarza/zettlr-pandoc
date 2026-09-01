@@ -22,12 +22,12 @@
  */
 export default function formatSize (size: number, short: boolean = false): string {
   if (size < 1024) {
-    return `${size} ` + (short ? 'B' : 'Byte')
-  } else if (size < 1024 * 1000) {
-    return `${Math.round(size / 1000)} ` + (short ? 'KB' : 'Kilobyte')
-  } else if (size < 1024 * 1000 * 1000) {
-    return `${Math.round(size / (1000 * 1000))} ` + (short ? 'MB' : 'Megabyte')
+    return `${size} ` + (short ? 'B' : (size === 1 ? 'Byte' : 'Bytes'))
+  } else if (size < 1024 * 1024) {
+    return `${Math.round(size / 1024)} ` + (short ? 'KB' : 'Kilobyte')
+  } else if (size < 1024 * 1024 * 1024) {
+    return `${Math.round(size / (1024 * 1024))} ` + (short ? 'MB' : 'Megabyte')
   } else {
-    return `${Math.round(size / (1000 * 1000 * 1000))} ` + (short ? 'GB' : 'Gigabyte')
+    return `${Math.round(size / (1024 * 1024 * 1024))} ` + (short ? 'GB' : 'Gigabyte')
   }
 }

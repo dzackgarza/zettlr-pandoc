@@ -15,12 +15,11 @@
 
 import { StateField, type EditorState } from '@codemirror/state'
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
+import { parsePandocAttributes } from '@common/pandoc-util/parse-pandoc-attributes'
 
 /**
- * Takes a heading (the full line) and transforms it into an ID. This function
- * will first look for a Pandoc-style ID ({#heading-id}), then for a named
- * anchor (<a name="heading-id"></a>), and if both fail, transform the text into
- * an ID utilizing the Pandoc algorithm.
+ * Given a heading string, extracts its ID using Pandoc attribute parsing
+ * or derives an automatic ID using Pandoc's algorithm.
  *
  * @param   {string}  headingString  The heading string to generate an ID for
  *
@@ -29,12 +28,11 @@ import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
 function headingToID (headingString: string): string {
   // If there are Pandoc attributes inside this header, and they include an ID,
   // then we should use that one.
-  const pandocAttrs = /\{(.+)\}$/.exec(headingString)
+  const pandocAttrs = /\{[^}]+\}$/.exec(headingString)
   if (pandocAttrs !== null) {
-    const attrs = pandocAttrs[1].split(' ').map(x => x.trim()).filter(x => x !== '')
-    const id = attrs.find(x => x.startsWith('#'))
-    if (id !== undefined) {
-      return id.substring(1)
+    const parsed = parsePandocAttributes(pandocAttrs[0])
+    if (parsed.id !== undefined) {
+      return parsed.id
     }
   }
 
