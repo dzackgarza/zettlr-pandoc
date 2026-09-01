@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Zettlr 2.3.0\n"
 "Report-Msgid-Bugs-To: https://github.com/Zettlr/Zettlr/issues\n"
-"POT-Creation-Date: 2026-08-25 03:14+0000\n"
+"POT-Creation-Date: 2026-09-01 07:52+0000\n"
 "PO-Revision-Date: 2024-04-03 00:00+UTC\n"
 "Last-Translator: Hung Vu <hung.v.vu.cs@gmail.com>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,42 +17,42 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: source/app/app-service-container.ts:180
+#: source/app/app-service-container.ts:252
 #, javascript-format
 msgid "Indexing %s…"
 msgstr ""
 
-#: source/app/app-service-container.ts:302
+#: source/app/app-service-container.ts:442
 #, javascript-format
 msgid "Booting %s…"
 msgstr ""
 
-#: source/app/service-providers/citeproc/index.ts:259
-#: source/app/service-providers/citeproc/index.ts:426
+#: source/app/service-providers/citeproc/index.ts:272
+#: source/app/service-providers/citeproc/index.ts:463
 msgid "The citation database could not be loaded"
 msgstr "Cơ sở dữ liệu trích dẫn không thể mở được"
 
-#: source/app/service-providers/citeproc/index.ts:413
+#: source/app/service-providers/citeproc/index.ts:450
 msgid "Changes to the library file detected. Reloading …"
 msgstr "Thay đổi trong tập tin thư viện được phát hiện. Đang tải lại ..."
 
 #. Register a LRT. NOTE: We only do that if "onFile" is not defined, because
 #. this function is called also from within the lifecycle when the FSAL
 #. cache is cleared on startup.
-#: source/app/service-providers/fsal/index.ts:295
+#: source/app/service-providers/fsal/index.ts:296
 msgid "Indexing files"
 msgstr ""
 
-#: source/app/service-providers/fsal/index.ts:295
+#: source/app/service-providers/fsal/index.ts:296
 msgid "Discovering paths to index…"
 msgstr ""
 
-#: source/app/service-providers/fsal/index.ts:330
+#: source/app/service-providers/fsal/index.ts:331
 #, javascript-format
 msgid "Indexing %s paths…"
 msgstr ""
 
-#: source/app/service-providers/fsal/index.ts:349
+#: source/app/service-providers/fsal/index.ts:350
 msgid "Indexing complete."
 msgstr ""
 
@@ -61,8 +61,8 @@ msgid "Show Zettlr"
 msgstr "Hiển thị Zettlr"
 
 #: source/app/service-providers/tray/index.ts:172
-#: source/app/service-providers/menu/menu.darwin.ts:123
-#: source/app/service-providers/menu/menu.win32.ts:321
+#: source/app/service-providers/menu/menu.darwin.ts:126
+#: source/app/service-providers/menu/menu.win32.ts:328
 msgid "Quit"
 msgstr "Thoát"
 
@@ -70,8 +70,8 @@ msgstr "Thoát"
 msgid "Zettlr"
 msgstr "Zettlr"
 
-#: source/app/service-providers/menu/menu.darwin.ts:43
-#: source/app/service-providers/menu/menu.win32.ts:44
+#: source/app/service-providers/menu/menu.darwin.ts:46
+#: source/app/service-providers/menu/menu.win32.ts:47
 #: source/tmp/win-update/App.vue.ts:38
 msgid "Check for updates"
 msgstr "Kiểm tra cập nhật"
@@ -124,421 +124,425 @@ msgstr "Kiểm tra cập nhật"
 # msgstr "Ghim tab"
 # msgid "Copy full path"
 # msgstr "Sao chép đường dẫn đầy đủ"
-#: source/app/service-providers/menu/menu.darwin.ts:65
-#: source/app/service-providers/menu/menu.darwin.ts:651
-#: source/app/service-providers/menu/menu.win32.ts:627
+#: source/app/service-providers/menu/menu.darwin.ts:68
+#: source/app/service-providers/menu/menu.darwin.ts:658
+#: source/app/service-providers/menu/menu.win32.ts:634
 #: source/tmp/win-about/App.vue.ts:35 source/tmp/win-about/App.vue.ts:76
 #, fuzzy
 msgid "About Zettlr"
 msgstr "Về Zettlr"
 
-#: source/app/service-providers/menu/menu.darwin.ts:70
-#: source/app/service-providers/menu/menu.win32.ts:242
-#: source/app/service-providers/menu/menu.win32.ts:246
+#: source/app/service-providers/menu/menu.darwin.ts:73
+#: source/app/service-providers/menu/menu.win32.ts:249
+#: source/app/service-providers/menu/menu.win32.ts:253
 msgid "Preferences…"
 msgstr "Các tuỳ chọn..."
 
-#: source/app/service-providers/menu/menu.darwin.ts:78
-#: source/app/service-providers/menu/menu.win32.ts:254
+#: source/app/service-providers/menu/menu.darwin.ts:81
+#: source/app/service-providers/menu/menu.win32.ts:261
 #: source/tmp/win-assets/App.vue.ts:17
 msgid "Assets Manager"
 msgstr "Quản Lý Tuỳ Chỉnh Nâng Cao"
 
-#: source/app/service-providers/menu/menu.darwin.ts:86
-#: source/app/service-providers/menu/menu.win32.ts:262
+#: source/app/service-providers/menu/menu.darwin.ts:89
+#: source/app/service-providers/menu/menu.win32.ts:269
 #: source/tmp/win-tag-manager/App.vue.ts:34
 msgid "Tags Manager"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:96
+#: source/app/service-providers/menu/menu.darwin.ts:99
 msgid "Services"
 msgstr "Các dịch vụ"
 
-#: source/app/service-providers/menu/menu.darwin.ts:105
+#: source/app/service-providers/menu/menu.darwin.ts:108
 msgid "Hide"
 msgstr "Ẩn"
 
-#: source/app/service-providers/menu/menu.darwin.ts:110
+#: source/app/service-providers/menu/menu.darwin.ts:113
 msgid "Hide others"
 msgstr "Lực chọn ẩn khác"
 
-#: source/app/service-providers/menu/menu.darwin.ts:115
+#: source/app/service-providers/menu/menu.darwin.ts:118
 msgid "Show"
 msgstr "Hiển thị"
 
-#: source/app/service-providers/menu/menu.darwin.ts:132
-#: source/app/service-providers/menu/menu.win32.ts:108
+#: source/app/service-providers/menu/menu.darwin.ts:135
+#: source/app/service-providers/menu/menu.win32.ts:111
 msgid "File"
 msgstr "Tập Tin"
 
-#: source/app/service-providers/menu/menu.darwin.ts:135
-#: source/app/service-providers/menu/menu.win32.ts:111
+#: source/app/service-providers/menu/menu.darwin.ts:138
+#: source/app/service-providers/menu/menu.win32.ts:114
 #: source/win-main/file-manager/util/dir-item-context.ts:38
-#: source/tmp/win-main/App.vue.ts:349
+#: source/tmp/win-main/App.vue.ts:484
 msgid "New file…"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:174
-#: source/app/service-providers/menu/menu.win32.ts:150
+#: source/app/service-providers/menu/menu.darwin.ts:177
+#: source/app/service-providers/menu/menu.win32.ts:153
 #: source/win-main/file-manager/util/dir-item-context.ts:43
 msgid "New directory…"
 msgstr "Thư mục mới..."
 
-#: source/app/service-providers/menu/menu.darwin.ts:184
-#: source/app/service-providers/menu/menu.win32.ts:160
+#: source/app/service-providers/menu/menu.darwin.ts:187
+#: source/app/service-providers/menu/menu.win32.ts:163
 msgid "Open file…"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:193
-#: source/app/service-providers/menu/menu.win32.ts:169
-#: source/tmp/win-main/App.vue.ts:323
+#: source/app/service-providers/menu/menu.darwin.ts:196
+#: source/app/service-providers/menu/menu.win32.ts:172
+#: source/tmp/win-main/App.vue.ts:458
 msgid "Open workspace…"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:202
-#: source/app/service-providers/menu/menu.win32.ts:57
-#: source/app/service-providers/menu/menu.win32.ts:69
+#: source/app/service-providers/menu/menu.darwin.ts:205
+#: source/app/service-providers/menu/menu.win32.ts:60
+#: source/app/service-providers/menu/menu.win32.ts:72
 msgid "Recent files"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:206
-#: source/app/service-providers/menu/menu.win32.ts:61
-#: source/app/service-providers/menu/menu.win32.ts:73
+#: source/app/service-providers/menu/menu.darwin.ts:209
+#: source/app/service-providers/menu/menu.win32.ts:64
+#: source/app/service-providers/menu/menu.win32.ts:76
 msgid "Clear"
 msgstr ""
 
 #. primary: true // It's a primary button
-#: source/app/service-providers/menu/menu.darwin.ts:215
-#: source/app/service-providers/menu/menu.win32.ts:182
-#: source/app/service-providers/commands/export.ts:149
+#: source/app/service-providers/menu/menu.darwin.ts:218
+#: source/app/service-providers/menu/menu.win32.ts:185
+#: source/app/service-providers/commands/export.ts:173
 #: source/tmp/win-paste-image/App.vue.ts:66
 #: source/tmp/win-tag-manager/App.vue.ts:88
 #: source/tmp/win-assets/DefaultsTab.vue.ts:61
-#: source/tmp/win-assets/SnippetsTab.vue.ts:30
-#: source/tmp/win-assets/FilterTab.vue.ts:30
+#: source/tmp/win-assets/SnippetsTab.vue.ts:37
+#: source/tmp/win-assets/FilterTab.vue.ts:37
 #: source/tmp/win-assets/CustomCSS.vue.ts:26
 msgid "Save"
 msgstr "Lưu"
 
-#: source/app/service-providers/menu/menu.darwin.ts:226
-#: source/app/service-providers/menu/menu.win32.ts:193
-#: source/tmp/win-main/App.vue.ts:356
+#: source/app/service-providers/menu/menu.darwin.ts:229
+#: source/app/service-providers/menu/menu.win32.ts:196
 msgid "Previous file"
 msgstr "Tập tin trước"
 
-#: source/app/service-providers/menu/menu.darwin.ts:237
-#: source/app/service-providers/menu/menu.win32.ts:204
-#: source/tmp/win-main/App.vue.ts:364
+#: source/app/service-providers/menu/menu.darwin.ts:243
+#: source/app/service-providers/menu/menu.win32.ts:210
 msgid "Next file"
 msgstr "Tập tin tiếp theo"
 
-#: source/app/service-providers/menu/menu.darwin.ts:251
-#: source/app/service-providers/menu/menu.win32.ts:218
+#: source/app/service-providers/menu/menu.darwin.ts:256
+#: source/app/service-providers/menu/menu.win32.ts:223
 msgid "Import files…"
 msgstr "Nhập thêm tập tin..."
 
-#: source/app/service-providers/menu/menu.darwin.ts:259
-#: source/app/service-providers/menu/menu.win32.ts:226
+#: source/app/service-providers/menu/menu.darwin.ts:264
+#: source/app/service-providers/menu/menu.win32.ts:231
 msgid "Export…"
 msgstr "Xuất..."
 
-#: source/app/service-providers/menu/menu.darwin.ts:267
-#: source/app/service-providers/menu/menu.win32.ts:234
-#: source/tmp/win-print/App.vue.ts:50 source/tmp/win-print/App.vue.ts:51
+#: source/app/service-providers/menu/menu.darwin.ts:272
+#: source/app/service-providers/menu/menu.win32.ts:239
+#: source/tmp/win-print/App.vue.ts:49 source/tmp/win-print/App.vue.ts:50
 msgid "Print…"
 msgstr "In..."
 
-#: source/app/service-providers/menu/menu.darwin.ts:278
-#: source/app/service-providers/menu/menu.win32.ts:274
+#: source/app/service-providers/menu/menu.darwin.ts:285
+#: source/app/service-providers/menu/menu.win32.ts:281
 msgid "Import translation…"
 msgstr "Nhập thêm bản dịch..."
 
-#: source/app/service-providers/menu/menu.darwin.ts:286
-#: source/app/service-providers/menu/menu.win32.ts:282
+#: source/app/service-providers/menu/menu.darwin.ts:293
+#: source/app/service-providers/menu/menu.win32.ts:289
 msgid "Import dictionary…"
 msgstr "Nhập thêm từ điển..."
 
-#: source/app/service-providers/menu/menu.darwin.ts:305
-#: source/app/service-providers/menu/menu.win32.ts:301
+#: source/app/service-providers/menu/menu.darwin.ts:312
+#: source/app/service-providers/menu/menu.win32.ts:308
 #: source/win-main/file-manager/util/file-item-context.ts:43
 #: source/tmp/win-assets/DefaultsTab.vue.ts:58
 msgid "Rename file"
 msgstr "Đổi tên tập tin"
 
-#: source/app/service-providers/menu/menu.darwin.ts:316
-#: source/app/service-providers/menu/menu.win32.ts:312
+#: source/app/service-providers/menu/menu.darwin.ts:323
+#: source/app/service-providers/menu/menu.win32.ts:319
 #: source/win-main/file-manager/util/file-item-context.ts:54
 msgid "Delete file"
 msgstr "Xoá tập tin"
 
-#: source/app/service-providers/menu/menu.darwin.ts:327
-#: source/app/service-providers/menu/menu.win32.ts:331
-#: source/common/modules/markdown-editor/tooltips/footnotes.ts:114
+#: source/app/service-providers/menu/menu.darwin.ts:334
+#: source/app/service-providers/menu/menu.win32.ts:338
+#: source/common/modules/markdown-editor/tooltips/footnotes.ts:113
 msgid "Edit"
 msgstr "Sửa"
 
-#: source/app/service-providers/menu/menu.darwin.ts:332
-#: source/app/service-providers/menu/menu.win32.ts:336
+#: source/app/service-providers/menu/menu.darwin.ts:339
+#: source/app/service-providers/menu/menu.win32.ts:343
+#: source/tmp/win-main/MainEditor.vue.ts:1274
 msgid "Undo"
 msgstr "Undo"
 
-#: source/app/service-providers/menu/menu.darwin.ts:338
-#: source/app/service-providers/menu/menu.win32.ts:342
+#: source/app/service-providers/menu/menu.darwin.ts:345
+#: source/app/service-providers/menu/menu.win32.ts:349
 msgid "Redo"
 msgstr "Redo"
 
-#: source/app/service-providers/menu/menu.darwin.ts:347
-#: source/app/service-providers/menu/menu.win32.ts:351
+#: source/app/service-providers/menu/menu.darwin.ts:354
+#: source/app/service-providers/menu/menu.win32.ts:358
 #: source/common/modules/window-register/register-default-context.ts:75
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:239
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:247
 #: source/common/modules/markdown-editor/table-editor/context-menu.ts:49
 msgid "Cut"
 msgstr "Cắt"
 
-#: source/app/service-providers/menu/menu.darwin.ts:353
-#: source/app/service-providers/menu/menu.win32.ts:357
+#: source/app/service-providers/menu/menu.darwin.ts:360
+#: source/app/service-providers/menu/menu.win32.ts:364
 #: source/common/modules/window-register/register-default-context.ts:82
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:245
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:253
 #: source/common/modules/markdown-editor/table-editor/context-menu.ts:55
-#: source/tmp/win-main/GlobalSearch.vue.ts:83
+#: source/tmp/win-main/GlobalSearch.vue.ts:61
 msgid "Copy"
 msgstr "Sao chép"
 
-#: source/app/service-providers/menu/menu.darwin.ts:358
-#: source/app/service-providers/menu/menu.win32.ts:362
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:251
+#: source/app/service-providers/menu/menu.darwin.ts:365
+#: source/app/service-providers/menu/menu.win32.ts:369
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:259
 #: source/common/modules/markdown-editor/table-editor/context-menu.ts:61
 msgid "Copy as HTML"
 msgstr "Sao chép dưới dạng HTML"
 
-#: source/app/service-providers/menu/menu.darwin.ts:367
-#: source/app/service-providers/menu/menu.win32.ts:371
+#: source/app/service-providers/menu/menu.darwin.ts:374
+#: source/app/service-providers/menu/menu.win32.ts:378
 #: source/common/modules/window-register/register-default-context.ts:88
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:257
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:265
 #: source/common/modules/markdown-editor/table-editor/context-menu.ts:67
 msgid "Paste"
 msgstr "Dán"
 
-#: source/app/service-providers/menu/menu.darwin.ts:372
-#: source/app/service-providers/menu/menu.win32.ts:376
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:263
+#: source/app/service-providers/menu/menu.darwin.ts:379
+#: source/app/service-providers/menu/menu.win32.ts:383
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:271
 #: source/common/modules/markdown-editor/table-editor/context-menu.ts:73
 msgid "Paste without style"
 msgstr "Dán không có định dạng"
 
-#: source/app/service-providers/menu/menu.darwin.ts:381
-#: source/app/service-providers/menu/menu.win32.ts:385
+#: source/app/service-providers/menu/menu.darwin.ts:388
+#: source/app/service-providers/menu/menu.win32.ts:392
 #: source/common/modules/window-register/register-default-context.ts:98
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:272
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:280
 #: source/common/modules/markdown-editor/table-editor/context-menu.ts:82
 msgid "Select all"
 msgstr "Chọn tất cả"
 
-#: source/app/service-providers/menu/menu.darwin.ts:389
-#: source/app/service-providers/menu/menu.win32.ts:393
+#: source/app/service-providers/menu/menu.darwin.ts:396
+#: source/app/service-providers/menu/menu.win32.ts:400
 msgid "Find in current file"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:397
-#: source/app/service-providers/menu/menu.win32.ts:401
+#: source/app/service-providers/menu/menu.darwin.ts:404
+#: source/app/service-providers/menu/menu.win32.ts:408
 msgid "Search all files"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:405
-#: source/app/service-providers/menu/menu.win32.ts:409
-#: source/win-preferences/schema/shortcuts.ts:285
+#: source/app/service-providers/menu/menu.darwin.ts:412
+#: source/app/service-providers/menu/menu.win32.ts:416
+#: source/win-preferences/schema/shortcuts.ts:307
 msgid "Filter files"
 msgstr "Lọc tập tin"
 
-#: source/app/service-providers/menu/menu.darwin.ts:416
-#: source/app/service-providers/menu/menu.win32.ts:420
+#: source/app/service-providers/menu/menu.darwin.ts:423
+#: source/app/service-providers/menu/menu.win32.ts:427
 msgid "Generate new ID"
 msgstr "Tạo ID mới"
 
-#: source/app/service-providers/menu/menu.darwin.ts:424
-#: source/app/service-providers/menu/menu.win32.ts:428
+#: source/app/service-providers/menu/menu.darwin.ts:431
+#: source/app/service-providers/menu/menu.win32.ts:435
 #: source/win-main/file-manager/util/file-item-context.ts:73
-#: source/tmp/win-main/DocumentTabs.vue.ts:492
+#: source/tmp/win-main/DocumentTabs.vue.ts:500
 msgid "Copy ID"
 msgstr "Sao chép ID"
 
-#: source/app/service-providers/menu/menu.darwin.ts:435
+#: source/app/service-providers/menu/menu.darwin.ts:442
 msgid "Speech"
 msgstr "Phát âm"
 
-#: source/app/service-providers/menu/menu.darwin.ts:439
+#: source/app/service-providers/menu/menu.darwin.ts:446
 msgid "Start speaking"
 msgstr "Bắt đầu nói"
 
-#: source/app/service-providers/menu/menu.darwin.ts:444
+#: source/app/service-providers/menu/menu.darwin.ts:451
 msgid "Stop speaking"
 msgstr "Ngừng nói"
 
-#: source/app/service-providers/menu/menu.darwin.ts:454
-#: source/app/service-providers/menu/menu.win32.ts:439
+#: source/app/service-providers/menu/menu.darwin.ts:461
+#: source/app/service-providers/menu/menu.win32.ts:446
 msgid "View"
 msgstr "Xem"
 
-#: source/app/service-providers/menu/menu.darwin.ts:458
-#: source/app/service-providers/menu/menu.win32.ts:443
+#: source/app/service-providers/menu/menu.darwin.ts:465
+#: source/app/service-providers/menu/menu.win32.ts:450
 #: source/win-preferences/schema/appearance.ts:26
 msgid "Dark mode"
 msgstr "Chế độ nền tối"
 
-#: source/app/service-providers/menu/menu.darwin.ts:468
-#: source/app/service-providers/menu/menu.win32.ts:453
+#: source/app/service-providers/menu/menu.darwin.ts:475
+#: source/app/service-providers/menu/menu.win32.ts:460
 msgid "Additional information"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:478
-#: source/app/service-providers/menu/menu.win32.ts:463
+#: source/app/service-providers/menu/menu.darwin.ts:485
+#: source/app/service-providers/menu/menu.win32.ts:470
 #: source/win-preferences/schema/editor.ts:225
 #, fuzzy
 msgid "Distraction-free mode"
 msgstr "Chế độ không làm phiền"
 
-#: source/app/service-providers/menu/menu.darwin.ts:486
-#: source/app/service-providers/menu/menu.win32.ts:471
+#: source/app/service-providers/menu/menu.darwin.ts:493
+#: source/app/service-providers/menu/menu.win32.ts:478
 msgid "Typewriter mode"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:497
-#: source/app/service-providers/menu/menu.win32.ts:482
-#: source/tmp/win-main/App.vue.ts:310
+#: source/app/service-providers/menu/menu.darwin.ts:504
+#: source/app/service-providers/menu/menu.win32.ts:489
+#: source/tmp/win-main/App.vue.ts:445
 msgid "Toggle File Manager"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:505
-#: source/app/service-providers/menu/menu.win32.ts:490
-#: source/tmp/win-main/App.vue.ts:471
+#: source/app/service-providers/menu/menu.darwin.ts:512
+#: source/app/service-providers/menu/menu.win32.ts:497
+#: source/tmp/win-main/App.vue.ts:611
 msgid "Toggle Sidebar"
 msgstr "Bật/tắt cột bên"
 
-#: source/app/service-providers/menu/menu.darwin.ts:519
-#: source/app/service-providers/menu/menu.win32.ts:501
+#: source/app/service-providers/menu/menu.darwin.ts:526
+#: source/app/service-providers/menu/menu.win32.ts:508
 msgid "Reset zoom"
 msgstr "Đặt lại chế độ phóng to"
 
-#: source/app/service-providers/menu/menu.darwin.ts:528
-#: source/app/service-providers/menu/menu.win32.ts:510
+#: source/app/service-providers/menu/menu.darwin.ts:535
+#: source/app/service-providers/menu/menu.win32.ts:517
 msgid "Zoom in"
 msgstr "Phóng to"
 
-#: source/app/service-providers/menu/menu.darwin.ts:535
-#: source/app/service-providers/menu/menu.win32.ts:517
+#: source/app/service-providers/menu/menu.darwin.ts:542
+#: source/app/service-providers/menu/menu.win32.ts:524
 msgid "Zoom out"
 msgstr "Thu nhỏ"
 
-#: source/app/service-providers/menu/menu.darwin.ts:545
-#: source/app/service-providers/menu/menu.win32.ts:527
+#: source/app/service-providers/menu/menu.darwin.ts:552
+#: source/app/service-providers/menu/menu.win32.ts:534
 msgid "Toggle fullscreen"
 msgstr "Bật/tắt toàn màn hình"
 
-#: source/app/service-providers/menu/menu.darwin.ts:553
-#: source/app/service-providers/menu/menu.win32.ts:536
+#: source/app/service-providers/menu/menu.darwin.ts:560
+#: source/app/service-providers/menu/menu.win32.ts:543
 msgid "Develop"
 msgstr "Phát triển"
 
-#: source/app/service-providers/menu/menu.darwin.ts:557
-#: source/app/service-providers/menu/menu.win32.ts:540
+#: source/app/service-providers/menu/menu.darwin.ts:564
+#: source/app/service-providers/menu/menu.win32.ts:547
 msgid "Reload"
 msgstr "Tải lại"
 
-#: source/app/service-providers/menu/menu.darwin.ts:565
-#: source/app/service-providers/menu/menu.win32.ts:548
+#: source/app/service-providers/menu/menu.darwin.ts:572
+#: source/app/service-providers/menu/menu.win32.ts:555
 msgid "Toggle developer tools"
 msgstr "Bật/tắt công cụ cho nhà phát triển"
 
-#: source/app/service-providers/menu/menu.darwin.ts:573
-#: source/app/service-providers/menu/menu.win32.ts:556
+#: source/app/service-providers/menu/menu.darwin.ts:580
+#: source/app/service-providers/menu/menu.win32.ts:563
 msgid "View logs"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:584
-#: source/app/service-providers/menu/menu.win32.ts:567
+#: source/app/service-providers/menu/menu.darwin.ts:591
+#: source/app/service-providers/menu/menu.win32.ts:574
 msgid "Window"
 msgstr "Cửa Sổ"
 
-#: source/app/service-providers/menu/menu.darwin.ts:589
-#: source/app/service-providers/menu/menu.win32.ts:572
+#: source/app/service-providers/menu/menu.darwin.ts:596
+#: source/app/service-providers/menu/menu.win32.ts:579
 msgid "Minimize"
 msgstr "Thu nhỏ"
 
-#: source/app/service-providers/menu/menu.darwin.ts:597
-#: source/app/service-providers/menu/menu.win32.ts:578
+#: source/app/service-providers/menu/menu.darwin.ts:604
+#: source/app/service-providers/menu/menu.win32.ts:585
 #: source/tmp/win-tag-manager/App.vue.ts:98
 msgid "Close"
 msgstr "Đóng"
 
-#: source/app/service-providers/menu/menu.darwin.ts:603
+#: source/app/service-providers/menu/menu.darwin.ts:610
 msgid "Bring All to Front"
 msgstr "Đưa Tất cả lên Trước"
 
-#: source/app/service-providers/menu/menu.darwin.ts:611
-#: source/app/service-providers/menu/menu.win32.ts:587
+#: source/app/service-providers/menu/menu.darwin.ts:618
+#: source/app/service-providers/menu/menu.win32.ts:594
 msgid "Close Tab"
 msgstr "Đóng Tab"
 
-#: source/app/service-providers/menu/menu.darwin.ts:619
-#: source/app/service-providers/menu/menu.win32.ts:595
+#: source/app/service-providers/menu/menu.darwin.ts:626
+#: source/app/service-providers/menu/menu.win32.ts:602
 msgid "Previous Tab"
 msgstr "Tab trước"
 
-#: source/app/service-providers/menu/menu.darwin.ts:627
-#: source/app/service-providers/menu/menu.win32.ts:603
+#: source/app/service-providers/menu/menu.darwin.ts:634
+#: source/app/service-providers/menu/menu.win32.ts:610
 msgid "Next Tab"
 msgstr "Tab tiếp theo"
 
-#: source/app/service-providers/menu/menu.darwin.ts:635
-#: source/app/service-providers/menu/menu.win32.ts:611
+#: source/app/service-providers/menu/menu.darwin.ts:642
+#: source/app/service-providers/menu/menu.win32.ts:618
 #, fuzzy
 msgid "New window"
 msgstr "Cửa Sổ"
 
-#: source/app/service-providers/menu/menu.darwin.ts:646
-#: source/app/service-providers/menu/menu.win32.ts:622
+#: source/app/service-providers/menu/menu.darwin.ts:653
+#: source/app/service-providers/menu/menu.win32.ts:629
 #: source/tmp/win-main/file-manager/util/PopoverDirProps.vue.ts:65
 msgid "Help"
 msgstr "Trợ Giúp"
 
-#: source/app/service-providers/menu/menu.darwin.ts:662
-#: source/app/service-providers/menu/menu.win32.ts:638
+#: source/app/service-providers/menu/menu.darwin.ts:669
+#: source/app/service-providers/menu/menu.win32.ts:645
 msgid "Support Zettlr ↗︎"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:672
-#: source/app/service-providers/menu/menu.win32.ts:648
+#: source/app/service-providers/menu/menu.darwin.ts:679
+#: source/app/service-providers/menu/menu.win32.ts:655
 msgid "Visit website ↗︎"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:682
-#: source/app/service-providers/menu/menu.win32.ts:658
+#: source/app/service-providers/menu/menu.darwin.ts:689
+#: source/app/service-providers/menu/menu.win32.ts:665
 msgid "Open user manual ↗︎"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:696
-#: source/app/service-providers/menu/menu.win32.ts:672
+#: source/app/service-providers/menu/menu.darwin.ts:700
+#: source/app/service-providers/menu/menu.win32.ts:676
+msgid "Pandoc quick reference…"
+msgstr ""
+
+#: source/app/service-providers/menu/menu.darwin.ts:710
+#: source/app/service-providers/menu/menu.win32.ts:686
 msgid "Open tutorial"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:704
-#: source/app/service-providers/menu/menu.win32.ts:680
+#: source/app/service-providers/menu/menu.darwin.ts:718
+#: source/app/service-providers/menu/menu.win32.ts:694
 msgid "Clear FSAL cache…"
 msgstr ""
 
-#: source/app/service-providers/menu/menu.darwin.ts:708
-#: source/app/service-providers/menu/menu.win32.ts:684
+#: source/app/service-providers/menu/menu.darwin.ts:722
+#: source/app/service-providers/menu/menu.win32.ts:698
 #, fuzzy
 msgid "Clear FSAL Cache"
 msgstr "Xóa cache FSAL …"
 
-#: source/app/service-providers/menu/menu.darwin.ts:709
-#: source/app/service-providers/menu/menu.win32.ts:685
+#: source/app/service-providers/menu/menu.darwin.ts:723
+#: source/app/service-providers/menu/menu.win32.ts:699
 msgid "Clearing the FSAL cache requires a restart."
 msgstr "Cần khởi động lại ứng dụng để Xóa cache FSAL."
 
-#: source/app/service-providers/menu/menu.darwin.ts:710
-#: source/app/service-providers/menu/menu.win32.ts:686
+#: source/app/service-providers/menu/menu.darwin.ts:724
+#: source/app/service-providers/menu/menu.win32.ts:700
 msgid ""
 "After the restart, Zettlr will recreate the entire cache, which may take a "
 "few moments, depending on the amount of files you have loaded and the speed "
@@ -548,17 +552,17 @@ msgstr ""
 "thời gian, tùy theo lượng tập tin bạn đã mở và tốc độ xử lý bộ nhớ. Các cửa "
 "sổ sẽ được hiển thị sau khi hoàn tất."
 
-#: source/app/service-providers/menu/menu.darwin.ts:713
-#: source/app/service-providers/menu/menu.win32.ts:689
+#: source/app/service-providers/menu/menu.darwin.ts:727
+#: source/app/service-providers/menu/menu.win32.ts:703
 #: source/app/service-providers/config/index.ts:596
 #, fuzzy
 msgid "Restart now"
 msgstr "Khởi động lại ngay"
 
 #. 1: Omit all changes
-#: source/app/service-providers/menu/menu.darwin.ts:714
-#: source/app/service-providers/menu/menu.win32.ts:690
-#: source/app/service-providers/documents/index.ts:396
+#: source/app/service-providers/menu/menu.darwin.ts:728
+#: source/app/service-providers/menu/menu.win32.ts:704
+#: source/app/service-providers/documents/index.ts:870
 #: source/app/service-providers/commands/dir-delete.ts:37
 #: source/app/service-providers/commands/file-delete.ts:38
 #: source/app/service-providers/commands/rename-tag.ts:48
@@ -567,54 +571,54 @@ msgstr "Khởi động lại ngay"
 #: source/app/service-providers/windows/dialog/should-close-all.ts:36
 #: source/app/service-providers/windows/dialog/should-overwrite-file.ts:32
 #: source/tmp/win-paste-image/App.vue.ts:67
-#: source/tmp/win-main/GlobalSearch.vue.ts:65
+#: source/tmp/win-main/GlobalSearch.vue.ts:43
 msgid "Cancel"
 msgstr "Huỷ"
 
-#: source/app/service-providers/updates/index.ts:285
+#: source/app/service-providers/updates/index.ts:288
 msgid "Cannot check for update"
 msgstr ""
 
-#: source/app/service-providers/updates/index.ts:286
+#: source/app/service-providers/updates/index.ts:289
 #, javascript-format
 msgid "There was an error while checking for updates. %s: %s"
 msgstr ""
 
-#: source/app/service-providers/updates/index.ts:345
-#: source/tmp/win-main/App.vue.ts:478 source/tmp/win-main/App.vue.ts:480
+#: source/app/service-providers/updates/index.ts:348
+#: source/tmp/win-main/App.vue.ts:618 source/tmp/win-main/App.vue.ts:620
 msgid "Update available"
 msgstr ""
 
-#: source/app/service-providers/updates/index.ts:346
+#: source/app/service-providers/updates/index.ts:349
 #, javascript-format
 msgid "An update to version %s is available!"
 msgstr "Một cập nhật cho phiên bản %s đang khả dụng!"
 
-#: source/app/service-providers/updates/index.ts:347
+#: source/app/service-providers/updates/index.ts:350
 msgid ""
 "Please update at your earliest convenience. You can open the updater now, or "
 "update later."
 msgstr ""
 
-#: source/app/service-providers/updates/index.ts:349
+#: source/app/service-providers/updates/index.ts:352
 msgid "Open updater"
 msgstr ""
 
-#: source/app/service-providers/updates/index.ts:350
+#: source/app/service-providers/updates/index.ts:353
 msgid "Not now"
 msgstr ""
 
-#: source/app/service-providers/updates/index.ts:387
+#: source/app/service-providers/updates/index.ts:390
 #, javascript-format
 msgid "Could not check for updates: Server Error (Status code: %s)"
 msgstr "Không thể kiểm tra cập nhật: Lỗi Máy Chủ (Mã lỗi: %s)"
 
-#: source/app/service-providers/updates/index.ts:390
+#: source/app/service-providers/updates/index.ts:393
 #, javascript-format
 msgid "Could not check for updates: Client Error (Status code: %s)"
 msgstr "Không thể kiểm tra cập nhật: Lỗi ở máy khách (Mã lỗi: %s)"
 
-#: source/app/service-providers/updates/index.ts:393
+#: source/app/service-providers/updates/index.ts:396
 #, javascript-format
 msgid ""
 "Could not check for updates: The server tried to redirect (Status code: %s)"
@@ -623,7 +627,7 @@ msgstr "Không thể kiểm tra cập nhật: Máy chủ cố gắng chuyển h�
 #. getaddrinfo has reported that the host has not been found.
 #. This normally only happens if the networking interface is
 #. offline. In this case, no need to inform the user every hour.
-#: source/app/service-providers/updates/index.ts:399
+#: source/app/service-providers/updates/index.ts:402
 msgid "Could not check for updates: Could not establish connection"
 msgstr "Không thể kiểm tra cập nhật: Không thể thiết lập kết nối"
 
@@ -631,46 +635,46 @@ msgstr "Không thể kiểm tra cập nhật: Không thể thiết lập kết n
 #. connection attempt. In any case, this can happen often with, e.g.,
 #. company VPNs and other firewalls, and would be distracting to see every
 #. hour or so. See #5944 for context.
-#: source/app/service-providers/updates/index.ts:406
+#: source/app/service-providers/updates/index.ts:409
 msgid "Could not check for updates: The connection attempt timed out."
 msgstr ""
 
 #. Something else has occurred. GotError objects have a name property.
-#: source/app/service-providers/updates/index.ts:410
+#: source/app/service-providers/updates/index.ts:413
 #, javascript-format
 msgid "Could not check for updates. %s: %s"
 msgstr "Không thể kiểm tra cập nhật: %s: %s"
 
-#: source/app/service-providers/updates/index.ts:425
+#: source/app/service-providers/updates/index.ts:428
 msgid "Could not check for updates: Server hasn't sent any data"
 msgstr "Không thể kiểm tra cập nhật: Máy chủ không gửi bất kì dữ liệu nào"
 
-#: source/app/service-providers/updates/index.ts:503
+#: source/app/service-providers/updates/index.ts:506
 msgid "The SHA256 checksums file seems to be missing for this release."
 msgstr ""
 
-#: source/app/service-providers/updates/index.ts:526
+#: source/app/service-providers/updates/index.ts:529
 #, javascript-format
 msgid "Cannot retrieve SHA256 checksums: %s"
 msgstr ""
 
-#: source/app/service-providers/updates/index.ts:567
+#: source/app/service-providers/updates/index.ts:570
 msgid "Could not accept data for application update: Write stream is gone."
 msgstr ""
 
-#: source/app/service-providers/updates/index.ts:622
+#: source/app/service-providers/updates/index.ts:625
 msgid ""
 "Could not verify the integrity of the downloaded update. Please retry or "
 "update manually."
 msgstr ""
 
-#: source/app/service-providers/updates/index.ts:634
+#: source/app/service-providers/updates/index.ts:637
 msgid ""
 "The downloaded file has a different checksum than the server reported. "
 "Please retry or update manually."
 msgstr ""
 
-#: source/app/service-providers/updates/index.ts:653
+#: source/app/service-providers/updates/index.ts:656
 #, javascript-format
 msgid "Could not start update. Please retry or update manually. Error was: %s"
 msgstr ""
@@ -719,12 +723,12 @@ msgstr "Tuỳ chọn %s phải tối thiểu là %s (độ dài kí tự)."
 msgid "Option %s is required."
 msgstr "Tuỳ chọn %s là bắt buộc"
 
-#: source/app/service-providers/documents/index.ts:394
+#: source/app/service-providers/documents/index.ts:868
 #, fuzzy
 msgid "Save changes"
 msgstr "Thay đổi chưa được lưu"
 
-#: source/app/service-providers/documents/index.ts:395
+#: source/app/service-providers/documents/index.ts:869
 #, fuzzy
 msgid "Discard changes"
 msgstr "Thay đổi chưa được lưu"
@@ -754,37 +758,38 @@ msgstr "Thay đổi chưa được lưu"
 # msgid "Copy of %s"
 # msgstr "Sao chép vào %s"
 #. If the user cancels, do not omit (the default) but actually cancel
-#: source/app/service-providers/documents/index.ts:400
+#: source/app/service-providers/documents/index.ts:874
 #: source/app/service-providers/windows/dialog/ask-save-changes.ts:40
 #: source/tmp/win-tag-manager/App.vue.ts:94
-#: source/tmp/win-assets/DefaultsTab.vue.ts:113
-#: source/tmp/win-assets/SnippetsTab.vue.ts:49
-#: source/tmp/win-assets/FilterTab.vue.ts:62
+#: source/tmp/win-main/DocumentTabs.vue.ts:59
+#: source/tmp/win-assets/DefaultsTab.vue.ts:118
+#: source/tmp/win-assets/SnippetsTab.vue.ts:56
+#: source/tmp/win-assets/FilterTab.vue.ts:69
 #: source/tmp/win-assets/CustomCSS.vue.ts:36
 msgid "Unsaved changes"
 msgstr "Thay đổi chưa được lưu"
 
-#: source/app/service-providers/documents/index.ts:401
+#: source/app/service-providers/documents/index.ts:875
 #, fuzzy
 msgid "There are unsaved changes. Do you want to save or discard them?"
 msgstr "Có những thay đổi chưa lưu lại. Bạn muốn lưu hay bỏ qua chúng?"
 
-#: source/app/service-providers/documents/index.ts:948
+#: source/app/service-providers/documents/index.ts:1680
 #, javascript-format
 msgid "File: %s"
 msgstr ""
 
-#: source/app/service-providers/documents/index.ts:1111
+#: source/app/service-providers/documents/index.ts:1909
 #, fuzzy
 msgid "File changed on disk"
 msgstr "Tập tin được thay đổi trên bộ nhớ"
 
-#: source/app/service-providers/documents/index.ts:1112
+#: source/app/service-providers/documents/index.ts:1910
 #, javascript-format
 msgid "%s changed on disk"
 msgstr "%s được thay đổi trên bộ nhớ"
 
-#: source/app/service-providers/documents/index.ts:1114
+#: source/app/service-providers/documents/index.ts:1913
 #, javascript-format
 msgid ""
 "%s has changed on disk, but the editor contains unsaved changes. Do you want "
@@ -794,41 +799,47 @@ msgstr ""
 "đượclưu. Bạn muốn giữ nội dung của trình soạn thảo hay tải nội dung được lưu "
 "trên đĩa?"
 
-#: source/app/service-providers/documents/index.ts:1115
+#: source/app/service-providers/documents/index.ts:1916
 msgid ""
 "Do you want to keep the current editor contents or load the file from disk?"
 msgstr ""
 "Bạn muốn giữ nội dung của trình soản thảo hay tải nội dung được lưu trên đĩa?"
 
-#: source/app/service-providers/documents/index.ts:1118
+#: source/app/service-providers/documents/index.ts:1919
 msgid "Keep editor contents"
 msgstr "Giữ nội dung của trình soạn thảo"
 
-#: source/app/service-providers/documents/index.ts:1119
+#: source/app/service-providers/documents/index.ts:1920
 msgid "Load changes from disk"
 msgstr "Tải nội dung từ đĩa"
 
-#: source/app/service-providers/documents/index.ts:1122
+#: source/app/service-providers/documents/index.ts:1924
 msgid ""
 "Always load changes from disk if there are no unsaved changes in the editor"
 msgstr ""
 "Luôn tải nội dung từ đĩa nếu không có thay đổi chưa được lưu trong trình "
 "soạn thảo"
 
-#: source/app/service-providers/documents/index.ts:1592
+#: source/app/service-providers/documents/index.ts:2756
+msgid ""
+"The document changed on disk after this review opened. The external edit was "
+"preserved."
+msgstr ""
+
+#: source/app/service-providers/documents/index.ts:2875
 msgid "Could not save file"
 msgstr ""
 
-#: source/app/service-providers/documents/index.ts:1592
+#: source/app/service-providers/documents/index.ts:2876
 #, javascript-format
 msgid "Could not save file %s: %s"
 msgstr ""
 
-#: source/app/service-providers/commands/save-image-from-clipboard.ts:104
+#: source/app/service-providers/commands/save-image-from-clipboard.ts:117
 msgid "The provided name did not contain any allowed letters."
 msgstr "Tên định dùng không chứa bất kì kí tự nào được cho phép."
 
-#: source/app/service-providers/commands/save-image-from-clipboard.ts:125
+#: source/app/service-providers/commands/save-image-from-clipboard.ts:138
 msgid "The requested directory was not found."
 msgstr "Không thể tìm thấy thư mục được yêu cầu"
 
@@ -1037,18 +1048,18 @@ msgstr "Tích hợp thất bại"
 msgid "Unknown error"
 msgstr ""
 
-#: source/app/service-providers/commands/importer/index.ts:86
+#: source/app/service-providers/commands/importer/index.ts:87
 msgid ""
 "Zettlr can import this file, but it requires an import profile. Please "
 "create one first."
 msgstr ""
 
-#: source/app/service-providers/commands/importer/index.ts:97
 #: source/app/service-providers/commands/importer/index.ts:98
+#: source/app/service-providers/commands/importer/index.ts:99
 msgid "Select import profile"
 msgstr "Chọn tùy chỉnh tích hợp"
 
-#: source/app/service-providers/commands/importer/index.ts:99
+#: source/app/service-providers/commands/importer/index.ts:100
 #, javascript-format
 msgid "There are multiple profiles that can import %s. Please choose one."
 msgstr "Có nhiều tùy chỉnh có thể tích hợp %s. Vui lòng chọn một."
@@ -1091,67 +1102,67 @@ msgstr "Chưa đặt tên"
 msgid "Could not create directory"
 msgstr "Không thể tạo thư mục"
 
-#: source/app/service-providers/commands/export.ts:67
+#: source/app/service-providers/commands/export.ts:90
 #, javascript-format
 msgid "Exporting file \"%s\""
 msgstr ""
 
-#: source/app/service-providers/commands/export.ts:67
-#: source/app/service-providers/commands/dir-project-export.ts:161
-#: source/app/service-providers/commands/dir-project-export.ts:200
+#: source/app/service-providers/commands/export.ts:90
+#: source/app/service-providers/commands/dir-project-export.ts:166
+#: source/app/service-providers/commands/dir-project-export.ts:205
 #, javascript-format
 msgid "Exporting using custom command %s"
 msgstr ""
 
-#: source/app/service-providers/commands/export.ts:75
-#: source/app/service-providers/commands/export.ts:206
+#: source/app/service-providers/commands/export.ts:98
+#: source/app/service-providers/commands/export.ts:230
 msgid "Export failed"
 msgstr "Xuất thất bại"
 
-#: source/app/service-providers/commands/export.ts:76
+#: source/app/service-providers/commands/export.ts:99
 #, fuzzy, javascript-format
 msgid "An error occurred during export: %s"
 msgstr "Lỗi xuất hiện khi xuất: %s"
 
-#: source/app/service-providers/commands/export.ts:81
+#: source/app/service-providers/commands/export.ts:104
 msgid "Exported file successfully."
 msgstr ""
 
-#: source/app/service-providers/commands/export.ts:149
+#: source/app/service-providers/commands/export.ts:173
 msgid "Choose export destination"
 msgstr "Chọn điểm xuất"
 
-#: source/app/service-providers/commands/export.ts:173
+#: source/app/service-providers/commands/export.ts:197
 #, javascript-format
 msgid "Exporting file %s"
 msgstr ""
 
-#: source/app/service-providers/commands/export.ts:173
+#: source/app/service-providers/commands/export.ts:197
 #, javascript-format
 msgid "Exporting using profile %s"
 msgstr ""
 
-#: source/app/service-providers/commands/export.ts:182
+#: source/app/service-providers/commands/export.ts:206
 #, javascript-format
 msgid "Exported to %s"
 msgstr ""
 
-#: source/app/service-providers/commands/export.ts:184
+#: source/app/service-providers/commands/export.ts:208
 #, javascript-format
 msgid "File %s has been exported"
 msgstr ""
 
-#: source/app/service-providers/commands/export.ts:185
+#: source/app/service-providers/commands/export.ts:209
 #, javascript-format
 msgid "File has been exported to %s"
 msgstr ""
 
-#: source/app/service-providers/commands/export.ts:207
+#: source/app/service-providers/commands/export.ts:231
 #, javascript-format
 msgid "An error occurred on export: %s"
 msgstr "Lỗi xuất hiện khi xuất: %s"
 
-#: source/app/service-providers/commands/export.ts:215
+#: source/app/service-providers/commands/export.ts:239
 msgid "Export error"
 msgstr ""
 
@@ -1177,57 +1188,57 @@ msgid ""
 "would like to export are included."
 msgstr ""
 
-#: source/app/service-providers/commands/dir-project-export.ts:135
+#: source/app/service-providers/commands/dir-project-export.ts:140
 #, javascript-format
 msgid "Project \"%s\" successfully exported. Click to show."
 msgstr "Dự án \"%s\" được xuất thành công. Nhấn để hiển thị."
 
-#: source/app/service-providers/commands/dir-project-export.ts:136
+#: source/app/service-providers/commands/dir-project-export.ts:141
 #, fuzzy
 msgid "Project Export"
 msgstr "Xuất dự án"
 
-#: source/app/service-providers/commands/dir-project-export.ts:160
-#: source/app/service-providers/commands/dir-project-export.ts:199
+#: source/app/service-providers/commands/dir-project-export.ts:165
+#: source/app/service-providers/commands/dir-project-export.ts:204
 #, javascript-format
 msgid "Exporting project \"%s\""
 msgstr ""
 
-#: source/app/service-providers/commands/dir-project-export.ts:168
+#: source/app/service-providers/commands/dir-project-export.ts:173
 #, javascript-format
 msgid "Project export failed: %s"
 msgstr ""
 
-#: source/app/service-providers/commands/dir-project-export.ts:178
-#: source/app/service-providers/commands/dir-project-export.ts:248
-#: source/app/service-providers/commands/dir-project-export.ts:271
+#: source/app/service-providers/commands/dir-project-export.ts:183
+#: source/app/service-providers/commands/dir-project-export.ts:253
+#: source/app/service-providers/commands/dir-project-export.ts:276
 #, javascript-format
 msgid "Could not export project \"%s\"."
 msgstr ""
 
-#: source/app/service-providers/commands/dir-project-export.ts:179
+#: source/app/service-providers/commands/dir-project-export.ts:184
 #, javascript-format
 msgid "Export with command %s was unsuccessful: %s."
 msgstr ""
 
 #. Error
-#: source/app/service-providers/commands/dir-project-export.ts:246
+#: source/app/service-providers/commands/dir-project-export.ts:251
 #, javascript-format
 msgid "Export failed: %s"
 msgstr ""
 
-#: source/app/service-providers/commands/dir-project-export.ts:249
-#: source/app/service-providers/commands/dir-project-export.ts:272
+#: source/app/service-providers/commands/dir-project-export.ts:254
+#: source/app/service-providers/commands/dir-project-export.ts:277
 #, javascript-format
 msgid "Export with profile %s was unsuccessful: %s."
 msgstr ""
 
-#: source/app/service-providers/commands/dir-project-export.ts:256
+#: source/app/service-providers/commands/dir-project-export.ts:261
 #, javascript-format
 msgid "Project \"%s\" has been exported."
 msgstr ""
 
-#: source/app/service-providers/commands/dir-project-export.ts:257
+#: source/app/service-providers/commands/dir-project-export.ts:262
 #, javascript-format
 msgid "Project has been exported to %s."
 msgstr ""
@@ -1245,7 +1256,7 @@ msgstr ""
 msgid "There was an error renaming the file."
 msgstr ""
 
-#: source/app/service-providers/windows/index.ts:243
+#: source/app/service-providers/windows/index.ts:254
 msgid "Open project folder"
 msgstr "Mở thư mục dự án"
 
@@ -1261,7 +1272,7 @@ msgid ""
 msgstr ""
 
 #: source/app/service-providers/windows/dialog/should-replace-file.ts:33
-#: source/win-preferences/schema/general.ts:97
+#: source/win-preferences/schema/general.ts:103
 msgid "Always load remote changes to the current file"
 msgstr "Luôn luôn lấy các thay đổi bên ngoài vào tập tin hiện tại"
 
@@ -1275,12 +1286,12 @@ msgid "Close all"
 msgstr ""
 
 #: source/app/service-providers/windows/dialog/should-close-all.ts:31
-#: source/tmp/win-main/file-manager/FileTree.vue.ts:199
+#: source/tmp/win-main/file-manager/FileTree.vue.ts:196
 msgid "Close all files"
 msgstr ""
 
 #: source/app/service-providers/windows/dialog/should-close-all.ts:31
-#: source/tmp/win-main/file-manager/FileTree.vue.ts:277
+#: source/tmp/win-main/file-manager/FileTree.vue.ts:274
 msgid "Close all workspaces"
 msgstr ""
 
@@ -1313,34 +1324,34 @@ msgstr "Tập tin %s tồn tại trong thư mục này. Ghi đè?"
 msgid "Current folder"
 msgstr ""
 
-#: source/common/modules/markdown-editor/renderers/index.ts:140
+#: source/common/modules/markdown-editor/renderers/index.ts:153
 msgid "Preview"
 msgstr ""
 
-#: source/common/modules/markdown-editor/renderers/index.ts:140
+#: source/common/modules/markdown-editor/renderers/index.ts:153
 msgid "Raw"
 msgstr ""
 
-#: source/common/modules/markdown-editor/renderers/index.ts:139
+#: source/common/modules/markdown-editor/renderers/index.ts:152
 #, javascript-format
 msgid "Rendering: %s"
 msgstr ""
 
-#: source/common/modules/markdown-editor/renderers/index.ts:142
+#: source/common/modules/markdown-editor/renderers/index.ts:155
 msgid "Enable or disable the preview mode for Markdown files by clicking"
 msgstr ""
 
-#: source/common/modules/markdown-editor/renderers/render-mermaid.ts:50
+#: source/common/modules/markdown-editor/renderers/render-mermaid.ts:49
 #, fuzzy
 msgid "Could not render Graph:"
 msgstr "Không thể tạo biểu đồ"
 
-#: source/common/modules/markdown-editor/renderers/render-mermaid.ts:52
+#: source/common/modules/markdown-editor/renderers/render-mermaid.ts:51
 msgid "Could not render Graph."
 msgstr ""
 
-#: source/common/modules/markdown-editor/renderers/render-mermaid.ts:75
-#: source/common/modules/markdown-editor/renderers/render-mermaid.ts:90
+#: source/common/modules/markdown-editor/renderers/render-mermaid.ts:74
+#: source/common/modules/markdown-editor/renderers/render-mermaid.ts:89
 msgid "Rendering mermaid graph …"
 msgstr "Đang tạo biểu đồ mermaid …"
 
@@ -1377,7 +1388,7 @@ msgstr "Tuỳ chỉnh CSS"
 
 #: source/common/modules/markdown-editor/statusbar/info-fields.ts:53
 #: source/common/modules/markdown-editor/plugins/project-info-field.ts:77
-#: source/tmp/win-main/App.vue.ts:289
+#: source/tmp/win-main/App.vue.ts:424
 #: source/tmp/win-main/PopoverDocInfo.vue.ts:53
 #: source/tmp/win-main/file-manager/FileItem.vue.ts:158
 #: source/tmp/win-main/file-manager/FileItem.vue.ts:227
@@ -1389,7 +1400,7 @@ msgstr "%s từ"
 
 #: source/common/modules/markdown-editor/statusbar/info-fields.ts:72
 #: source/common/modules/markdown-editor/plugins/project-info-field.ts:76
-#: source/tmp/win-main/App.vue.ts:288
+#: source/tmp/win-main/App.vue.ts:423
 #: source/tmp/win-main/PopoverDocInfo.vue.ts:51
 #: source/tmp/win-main/file-manager/FileItem.vue.ts:156
 #: source/tmp/win-main/file-manager/FileItem.vue.ts:225
@@ -1402,9 +1413,19 @@ msgstr "%s kí tự"
 msgid "This file is part of project \"%s\""
 msgstr ""
 
+#: source/common/modules/markdown-editor/plugins/default-context-menu.ts:62
+msgid "Create reference label…"
+msgstr ""
+
 #: source/common/modules/markdown-editor/plugins/footnote-gutter.ts:31
 msgid "Go to footnote reference"
 msgstr "Đi đến chú thích cuối trang"
+
+#: source/common/modules/markdown-editor/plugins/vim-mode.ts:58
+#: source/tmp/win-main/MainEditor.vue.ts:251 source/tmp/win-main/App.vue.ts:763
+#, javascript-format
+msgid "Could not save \"%s\"."
+msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/link-image-menu.ts:101
 msgid "Open link"
@@ -1434,7 +1455,7 @@ msgstr "Mở ảnh"
 #: source/common/modules/markdown-editor/context-menu/link-image-menu.ts:147
 #: source/win-main/file-manager/util/dir-item-context.ts:72
 #: source/win-main/file-manager/util/file-item-context.ts:82
-#: source/tmp/win-main/DocumentTabs.vue.ts:482
+#: source/tmp/win-main/DocumentTabs.vue.ts:490
 msgid "Reveal in Finder"
 msgstr "Hiển thị trong Finder"
 
@@ -1443,15 +1464,15 @@ msgstr "Hiển thị trong Finder"
 msgid "Open in File Browser"
 msgstr "Mở trong File Browser"
 
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:151
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:156
 msgid "No suggestions"
 msgstr "Không có gợi ý"
 
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:160
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:165
 msgid "Add to dictionary"
 msgstr "Thêm vào từ điển"
 
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:189
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:197
 #: source/common/modules/markdown-editor/tooltips/formatting-toolbar.ts:44
 #: source/common/modules/markdown-editor/table-editor/context-menu.ts:25
 #: source/win-preferences/schema/editor.ts:158
@@ -1459,36 +1480,36 @@ msgstr "Thêm vào từ điển"
 msgid "Bold"
 msgstr "In đậm"
 
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:195
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:203
 #: source/common/modules/markdown-editor/table-editor/context-menu.ts:31
 msgid "Italic"
 msgstr "In nghiêng"
 
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:204
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:212
 #: source/common/modules/markdown-editor/table-editor/context-menu.ts:40
-#: source/tmp/win-main/App.vue.ts:402
+#: source/tmp/win-main/App.vue.ts:542
 msgid "Insert link"
 msgstr "Chèn đường dẫn"
 
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:210
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:218
 msgid "Insert unordered list"
 msgstr "Chèn danh sách không có thứ tự"
 
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:215
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:223
 msgid "Insert numbered list"
 msgstr "Chèn danh sách đánh số"
 
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:220
-#: source/tmp/win-main/App.vue.ts:416
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:228
+#: source/tmp/win-main/App.vue.ts:556
 msgid "Insert task list"
 msgstr ""
 
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:226
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:234
 msgid "Insert blockquote"
 msgstr ""
 
-#: source/common/modules/markdown-editor/context-menu/default-menu.ts:231
-#: source/tmp/win-main/App.vue.ts:423
+#: source/common/modules/markdown-editor/context-menu/default-menu.ts:239
+#: source/tmp/win-main/App.vue.ts:563
 msgid "Insert table"
 msgstr ""
 
@@ -1501,67 +1522,67 @@ msgid "Zap gremlins"
 msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/transform-items.ts:56
-#: source/win-preferences/schema/shortcuts.ts:172
+#: source/win-preferences/schema/shortcuts.ts:194
 msgid "Strip duplicate spaces"
 msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/transform-items.ts:62
-#: source/win-preferences/schema/shortcuts.ts:179
+#: source/win-preferences/schema/shortcuts.ts:201
 msgid "Italics to quotes"
 msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/transform-items.ts:68
-#: source/win-preferences/schema/shortcuts.ts:186
+#: source/win-preferences/schema/shortcuts.ts:208
 msgid "Quotes to italics"
 msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/transform-items.ts:74
-#: source/win-preferences/schema/shortcuts.ts:193
+#: source/win-preferences/schema/shortcuts.ts:215
 msgid "Remove excess line breaks"
 msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/transform-items.ts:83
-#: source/win-preferences/schema/shortcuts.ts:200
+#: source/win-preferences/schema/shortcuts.ts:222
 msgid "Straighten quotes"
 msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/transform-items.ts:89
-#: source/win-preferences/schema/shortcuts.ts:207
+#: source/win-preferences/schema/shortcuts.ts:229
 msgid "Convert quotes to Magic Quotes"
 msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/transform-items.ts:95
-#: source/win-preferences/schema/shortcuts.ts:214
+#: source/win-preferences/schema/shortcuts.ts:236
 msgid "Ensure double quotes"
 msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/transform-items.ts:101
-#: source/win-preferences/schema/shortcuts.ts:221
+#: source/win-preferences/schema/shortcuts.ts:243
 msgid "Double quotes to single"
 msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/transform-items.ts:107
-#: source/win-preferences/schema/shortcuts.ts:228
+#: source/win-preferences/schema/shortcuts.ts:250
 msgid "Single quotes to double"
 msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/transform-items.ts:116
-#: source/win-preferences/schema/shortcuts.ts:235
+#: source/win-preferences/schema/shortcuts.ts:257
 msgid "Emdash — Add spaces around"
 msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/transform-items.ts:122
-#: source/win-preferences/schema/shortcuts.ts:242
+#: source/win-preferences/schema/shortcuts.ts:264
 msgid "Emdash — Remove spaces around"
 msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/transform-items.ts:131
-#: source/win-preferences/schema/shortcuts.ts:249
+#: source/win-preferences/schema/shortcuts.ts:271
 msgid "To sentence case"
 msgstr ""
 
 #: source/common/modules/markdown-editor/context-menu/transform-items.ts:137
-#: source/win-preferences/schema/shortcuts.ts:256
+#: source/win-preferences/schema/shortcuts.ts:278
 msgid "To title case"
 msgstr ""
 
@@ -1578,16 +1599,16 @@ msgstr ""
 msgid "Fetching link preview…"
 msgstr ""
 
-#: source/common/modules/markdown-editor/tooltips/footnotes.ts:97
+#: source/common/modules/markdown-editor/tooltips/footnotes.ts:96
 msgid "No footnote text found."
 msgstr "Không tìm thấy chú thích."
 
-#: source/common/modules/markdown-editor/tooltips/citations.ts:68
+#: source/common/modules/markdown-editor/tooltips/citations.ts:67
 #: source/tmp/win-splash-screen/App.vue.ts:22
 msgid "Loading…"
 msgstr ""
 
-#: source/common/modules/markdown-editor/tooltips/citations.ts:101
+#: source/common/modules/markdown-editor/tooltips/citations.ts:100
 msgid "Could not fetch bibliography for citation."
 msgstr ""
 
@@ -1629,30 +1650,30 @@ msgstr "Ghi chú"
 msgid "Code"
 msgstr "Mã"
 
-#: source/common/modules/markdown-editor/tooltips/file-preview.ts:67
+#: source/common/modules/markdown-editor/tooltips/file-preview.ts:66
 #, javascript-format
 msgid "File %s does not exist."
 msgstr "Tếp %s không tồn tại."
 
-#: source/common/modules/markdown-editor/tooltips/file-preview.ts:97
+#: source/common/modules/markdown-editor/tooltips/file-preview.ts:96
 msgid "Generating preview…"
 msgstr ""
 
-#: source/common/modules/markdown-editor/tooltips/file-preview.ts:124
+#: source/common/modules/markdown-editor/tooltips/file-preview.ts:123
 msgid "Word count"
 msgstr "Số từ"
 
-#: source/common/modules/markdown-editor/tooltips/file-preview.ts:126
+#: source/common/modules/markdown-editor/tooltips/file-preview.ts:125
 #: source/tmp/win-main/file-manager/util/PopoverDirProps.vue.ts:49
 #: source/tmp/win-main/file-manager/util/PopoverFileProps.vue.ts:36
 msgid "Modified"
 msgstr "Đã chỉnh sửa"
 
-#: source/common/modules/markdown-editor/tooltips/file-preview.ts:144
+#: source/common/modules/markdown-editor/tooltips/file-preview.ts:143
 msgid "Open…"
 msgstr "Mở..."
 
-#: source/common/modules/markdown-editor/tooltips/file-preview.ts:165
+#: source/common/modules/markdown-editor/tooltips/file-preview.ts:164
 msgid "Open in a new tab"
 msgstr "Mở trong một tab mới"
 
@@ -1660,12 +1681,27 @@ msgstr "Mở trong một tab mới"
 msgid "No highlighting"
 msgstr "Không highlight"
 
+#. The append continuation surfaces failures through the recoverable
+#. boundary (review B8): one closable error toast, never a silent
+#. console-only line. The insertion above already happened either way.
+#: source/common/modules/markdown-editor/autocomplete/at-symbols.ts:228
+msgid "Appending to the Project"
+msgstr ""
+
 #: source/common/modules/markdown-editor/linters/spellcheck.ts:149
 msgid "Spelling mistake"
 msgstr "Lỗi chính tả"
 
 #: source/common/modules/markdown-editor/linters/language-tool.ts:269
 msgid "Disable Rule"
+msgstr ""
+
+#: source/common/modules/markdown-editor/util/reference-navigation.ts:335
+msgid "Following the reference"
+msgstr ""
+
+#: source/common/modules/markdown-editor/util/reference-navigation.ts:359
+msgid "History navigation"
 msgstr ""
 
 #: source/common/modules/markdown-editor/table-editor/context-menu.ts:96
@@ -1737,6 +1773,7 @@ msgid "Delete column"
 msgstr ""
 
 #: source/common/modules/markdown-editor/table-editor/context-menu.ts:213
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:79
 msgid "Table"
 msgstr ""
 
@@ -1755,6 +1792,12 @@ msgstr "Giữ Cmd/Ctrl và nhấp để theo đường dẫn"
 #: source/common/util/format-date.ts:33
 msgid "just now"
 msgstr "Vừa xong"
+
+#: source/common/util/run-recoverably.ts:62
+#: source/tmp/win-main/GlobalSearch.vue.ts:292
+#, javascript-format
+msgid "%s failed: %s"
+msgstr ""
 
 #: source/common/util/map-lang-code.ts:33
 msgid "Afrikaans"
@@ -2195,7 +2238,7 @@ msgid "."
 msgstr ","
 
 #: source/win-preferences/schema/spellchecking.ts:26
-#: source/tmp/win-preferences/App.vue.ts:164
+#: source/tmp/win-preferences/App.vue.ts:179
 msgid "Spellchecking"
 msgstr "Kiểm tra chính tả"
 
@@ -2362,6 +2405,7 @@ msgid ""
 msgstr ""
 
 #: source/win-preferences/schema/spellchecking.ts:227
+#: source/win-preferences/schema/import-export.ts:181
 #: source/tmp/win-main/PopoverTags.vue.ts:39
 msgid "Name"
 msgstr "Tên"
@@ -2611,9 +2655,68 @@ msgid "Display name"
 msgstr "Hiển thị tên"
 
 #: source/win-preferences/schema/import-export.ts:125
+#: source/win-preferences/schema/import-export.ts:181
 #, fuzzy
 msgid "Command"
 msgstr "Lệnh"
+
+#: source/win-preferences/schema/import-export.ts:135
+msgid "Export templates"
+msgstr ""
+
+#: source/win-preferences/schema/import-export.ts:136
+msgid ""
+"Default Pandoc templates, applied when the export profile declares none. "
+"Choose a file, or type a name resolved from Pandoc's data directory (~/."
+"pandoc/templates)."
+msgstr ""
+
+#: source/win-preferences/schema/import-export.ts:142
+msgid "HTML template (HTML, reveal.js)"
+msgstr ""
+
+#: source/win-preferences/schema/import-export.ts:144
+#: source/win-preferences/schema/import-export.ts:152
+msgid "Pandoc default"
+msgstr ""
+
+#: source/win-preferences/schema/import-export.ts:150
+msgid "LaTeX template (LaTeX, PDF, Beamer)"
+msgstr ""
+
+#: source/win-preferences/schema/import-export.ts:159
+msgid "Export filters"
+msgstr ""
+
+#: source/win-preferences/schema/import-export.ts:160
+msgid ""
+"Lua filters discovered in Pandoc's data directory (~/.pandoc/filters) and "
+"Zettlr's lua-filter directory. Enable the ones to run on every export; "
+"enabled filters run in the order shown (before the profile's own filters)."
+msgstr ""
+
+#: source/win-preferences/schema/import-export.ts:166
+msgid "Enabled export filters"
+msgstr ""
+
+#: source/win-preferences/schema/import-export.ts:172
+msgid "Export scripts"
+msgstr ""
+
+#: source/win-preferences/schema/import-export.ts:173
+msgid ""
+"Declare a compilation script as an export format. The source is exported "
+"through the base Pandoc profile to an intermediate file, then the command "
+"runs with the intermediate path and the output path as its two arguments."
+msgstr ""
+
+#: source/win-preferences/schema/import-export.ts:181
+msgid "Base profile"
+msgstr ""
+
+#: source/win-preferences/schema/import-export.ts:181
+msgid "Extension"
+msgstr ""
 
 #: source/win-preferences/schema/file-manager.ts:23
 #, fuzzy
@@ -2766,7 +2869,7 @@ msgid ""
 msgstr ""
 
 #: source/win-preferences/schema/snippets.ts:24
-#: source/tmp/win-preferences/App.vue.ts:189
+#: source/tmp/win-preferences/App.vue.ts:204
 #: source/tmp/win-assets/App.vue.ts:44
 msgid "Snippets"
 msgstr "Đoạn Mẫu"
@@ -3154,7 +3257,7 @@ msgid "Path to folder"
 msgstr "Đường dẫn tập tin"
 
 #: source/win-preferences/schema/autocorrect.ts:22
-#: source/tmp/win-preferences/App.vue.ts:169
+#: source/tmp/win-preferences/App.vue.ts:184
 #, fuzzy
 msgid "Autocorrect"
 msgstr "Bật Tự Chỉnh Sửa"
@@ -3261,16 +3364,20 @@ msgid "After a short delay"
 msgstr "Sau một khoảng trễ ngắn"
 
 #: source/win-preferences/schema/general.ts:73
+msgid "Format the document with flowmark on save"
+msgstr ""
+
+#: source/win-preferences/schema/general.ts:79
 msgid "Default image folder"
 msgstr "Thư mục hình ảnh mặc định"
 
-#: source/win-preferences/schema/general.ts:74
+#: source/win-preferences/schema/general.ts:80
 msgid ""
 "Automatically suggests this folder to save images to, and searches this "
 "folder to propose \"other files\"."
 msgstr ""
 
-#: source/win-preferences/schema/general.ts:86
+#: source/win-preferences/schema/general.ts:92
 msgid ""
 "Click \"Select folder…\" or type an absolute or relative path directly into "
 "the input field."
@@ -3278,17 +3385,17 @@ msgstr ""
 "Nhấn \"Chọn thư mục…\" hoặc nhập đường dẫn tuyệt đối hoặc tương đối vào "
 "trường nhập liệu."
 
-#: source/win-preferences/schema/general.ts:91
+#: source/win-preferences/schema/general.ts:97
 #, fuzzy
 msgid "Behavior"
 msgstr "Thiết lập thu phóng"
 
-#: source/win-preferences/schema/general.ts:102
+#: source/win-preferences/schema/general.ts:108
 msgid "Avoid opening files in new tabs if possible"
 msgstr "Tránh mở tập tin trong cửa sổ mới nếu có thể"
 
 #: source/win-preferences/schema/citations.ts:22
-#: source/tmp/win-preferences/App.vue.ts:174
+#: source/tmp/win-preferences/App.vue.ts:189
 #: source/tmp/win-onboarding/pages/CitingPage.vue.ts:7
 #, fuzzy
 msgid "Citations"
@@ -3313,54 +3420,70 @@ msgid "CSL style (optional)"
 msgstr ""
 
 #: source/win-preferences/schema/shortcuts.ts:122
-msgid "Table Shortcuts"
+msgid "Navigation Shortcuts"
 msgstr ""
 
 #: source/win-preferences/schema/shortcuts.ts:123
-msgid "Customize the available table shortcuts for the editor."
+msgid "Customize the per-pane Back/Forward history shortcuts."
 msgstr ""
 
 #: source/win-preferences/schema/shortcuts.ts:129
-msgid "Align Markdown table under cursor"
+msgid "Go back in this pane's history"
 msgstr ""
 
 #: source/win-preferences/schema/shortcuts.ts:136
-msgid "Align table column left"
+msgid "Go forward in this pane's history"
 msgstr ""
 
-#: source/win-preferences/schema/shortcuts.ts:143
-msgid "Align table column center"
+#: source/win-preferences/schema/shortcuts.ts:144
+msgid "Table Shortcuts"
 msgstr ""
 
-#: source/win-preferences/schema/shortcuts.ts:150
-msgid "Align table column right"
+#: source/win-preferences/schema/shortcuts.ts:145
+msgid "Customize the available table shortcuts for the editor."
+msgstr ""
+
+#: source/win-preferences/schema/shortcuts.ts:151
+msgid "Align Markdown table under cursor"
 msgstr ""
 
 #: source/win-preferences/schema/shortcuts.ts:158
-msgid "Transform Shortcuts"
-msgstr ""
-
-#: source/win-preferences/schema/shortcuts.ts:159
-msgid "Assign shortcuts to your frequently used text transformations here."
+msgid "Align table column left"
 msgstr ""
 
 #: source/win-preferences/schema/shortcuts.ts:165
+msgid "Align table column center"
+msgstr ""
+
+#: source/win-preferences/schema/shortcuts.ts:172
+msgid "Align table column right"
+msgstr ""
+
+#: source/win-preferences/schema/shortcuts.ts:180
+msgid "Transform Shortcuts"
+msgstr ""
+
+#: source/win-preferences/schema/shortcuts.ts:181
+msgid "Assign shortcuts to your frequently used text transformations here."
+msgstr ""
+
+#: source/win-preferences/schema/shortcuts.ts:187
 msgid "Zap Gremlins"
 msgstr ""
 
-#: source/win-preferences/schema/shortcuts.ts:264
+#: source/win-preferences/schema/shortcuts.ts:286
 msgid "UI Shortcuts"
 msgstr ""
 
-#: source/win-preferences/schema/shortcuts.ts:265
+#: source/win-preferences/schema/shortcuts.ts:287
 msgid "Customize general user interface shortcuts here."
 msgstr ""
 
-#: source/win-preferences/schema/shortcuts.ts:271
+#: source/win-preferences/schema/shortcuts.ts:293
 msgid "Switch to next tab"
 msgstr ""
 
-#: source/win-preferences/schema/shortcuts.ts:278
+#: source/win-preferences/schema/shortcuts.ts:300
 msgid "Switch to previous tab"
 msgstr ""
 
@@ -3397,7 +3520,7 @@ msgid "Automatically create new files without asking for confirmation."
 msgstr ""
 
 #: source/win-preferences/schema/advanced.ts:67
-#: source/tmp/win-preferences/App.vue.ts:149
+#: source/tmp/win-preferences/App.vue.ts:164
 msgid "Appearance"
 msgstr "Giao diện"
 
@@ -3577,20 +3700,20 @@ msgstr "Xoá thư mục"
 
 #: source/win-main/file-manager/util/dir-item-context.ts:64
 #: source/win-main/file-manager/util/file-item-context.ts:63
-#: source/tmp/win-main/DocumentTabs.vue.ts:475
+#: source/tmp/win-main/DocumentTabs.vue.ts:483
 #, fuzzy
 msgid "Copy path"
 msgstr "Sao chép đường dẫn đầy đủ"
 
 #: source/win-main/file-manager/util/dir-item-context.ts:72
 #: source/win-main/file-manager/util/file-item-context.ts:82
-#: source/tmp/win-main/DocumentTabs.vue.ts:482
+#: source/tmp/win-main/DocumentTabs.vue.ts:490
 msgid "Reveal in Explorer"
 msgstr "Hiển thị trong Explorer"
 
 #: source/win-main/file-manager/util/dir-item-context.ts:72
 #: source/win-main/file-manager/util/file-item-context.ts:82
-#: source/tmp/win-main/DocumentTabs.vue.ts:482
+#: source/tmp/win-main/DocumentTabs.vue.ts:490
 msgid "Reveal in File Browser"
 msgstr "Hiển thị trong File Browser"
 
@@ -3607,7 +3730,7 @@ msgid "Close workspace"
 msgstr ""
 
 #: source/win-main/file-manager/util/file-item-context.ts:30
-#: source/tmp/win-main/GlobalSearch.vue.ts:78
+#: source/tmp/win-main/GlobalSearch.vue.ts:56
 msgid "Open in new tab"
 msgstr ""
 
@@ -3616,17 +3739,22 @@ msgid "Duplicate file"
 msgstr "Tạo tập tin bản sao"
 
 #: source/win-main/file-manager/util/file-item-context.ts:68
-#: source/tmp/win-main/DocumentTabs.vue.ts:468
+#: source/tmp/win-main/DocumentTabs.vue.ts:476
 msgid "Copy filename"
 msgstr "Sao chép tên tập tin"
 
 #: source/win-main/file-manager/util/file-item-context.ts:94
-#: source/tmp/win-main/DocumentTabs.vue.ts:505
+#: source/tmp/win-main/DocumentTabs.vue.ts:513
 msgid "Close file"
 msgstr "Đóng tập tin"
 
-#: source/tmp/win-print/App.vue.ts:71
-#: source/tmp/win-main/sidebar/ReferencesTab.vue.ts:35
+#: source/win-main/util/surface-document-load-error.ts:32
+#, javascript-format
+msgid "Could not load \"%s\": %s"
+msgstr ""
+
+#: source/tmp/win-print/App.vue.ts:70
+#: source/tmp/win-main/sidebar/ReferencesTab.vue.ts:34
 #: source/tmp/win-main/sidebar/MainSidebar.vue.ts:45
 msgid "References"
 msgstr "Tài liệu tham khảo"
@@ -3640,7 +3768,7 @@ msgid "Use"
 msgstr ""
 
 #: source/tmp/win-project-properties/App.vue.ts:39
-#: source/tmp/win-main/PopoverExport.vue.ts:31
+#: source/tmp/win-main/PopoverExport.vue.ts:32
 msgid "Format"
 msgstr ""
 
@@ -3698,7 +3826,7 @@ msgid ""
 msgstr ""
 
 #: source/tmp/win-project-properties/App.vue.ts:62
-#: source/tmp/win-preferences/App.vue.ts:144
+#: source/tmp/win-preferences/App.vue.ts:159
 msgid "General"
 msgstr ""
 
@@ -3769,7 +3897,7 @@ msgid "No records."
 msgstr ""
 
 #: source/tmp/common/vue/IrisIndicator.vue.ts:40
-#: source/tmp/win-main/App.vue.ts:461
+#: source/tmp/win-main/App.vue.ts:601
 msgid "Show tasks"
 msgstr ""
 
@@ -3794,46 +3922,46 @@ msgstr ""
 msgid "A unique filename"
 msgstr ""
 
-#: source/tmp/win-preferences/App.vue.ts:59
+#: source/tmp/win-preferences/App.vue.ts:74
 #, javascript-format
 msgid "No results for \"%s\""
 msgstr ""
 
-#: source/tmp/win-preferences/App.vue.ts:60
-#: source/tmp/win-main/GlobalSearch.vue.ts:64
+#: source/tmp/win-preferences/App.vue.ts:75
+#: source/tmp/win-main/GlobalSearch.vue.ts:42
 msgid "Search"
 msgstr "Tìm kiếm"
 
-#: source/tmp/win-preferences/App.vue.ts:154
+#: source/tmp/win-preferences/App.vue.ts:169
 msgid "File Manager"
 msgstr ""
 
-#: source/tmp/win-preferences/App.vue.ts:159
+#: source/tmp/win-preferences/App.vue.ts:174
 msgid "Editor"
 msgstr ""
 
-#: source/tmp/win-preferences/App.vue.ts:179
+#: source/tmp/win-preferences/App.vue.ts:194
 msgid "Shortcuts"
 msgstr ""
 
-#: source/tmp/win-preferences/App.vue.ts:184
+#: source/tmp/win-preferences/App.vue.ts:199
 msgid "Zettelkasten"
 msgstr ""
 
-#: source/tmp/win-preferences/App.vue.ts:194
+#: source/tmp/win-preferences/App.vue.ts:209
 msgid "Import and Export"
 msgstr ""
 
-#: source/tmp/win-preferences/App.vue.ts:199
+#: source/tmp/win-preferences/App.vue.ts:214
 msgid "Advanced"
 msgstr ""
 
-#: source/tmp/win-preferences/App.vue.ts:208
+#: source/tmp/win-preferences/App.vue.ts:223
 #, javascript-format
 msgid "Searching: %s"
 msgstr ""
 
-#: source/tmp/win-preferences/App.vue.ts:212
+#: source/tmp/win-preferences/App.vue.ts:227
 msgid "Preferences"
 msgstr ""
 
@@ -3951,55 +4079,129 @@ msgstr ""
 msgid "Rename tag…"
 msgstr ""
 
-#: source/tmp/win-main/GlobalSearch.vue.ts:56
-#: source/tmp/win-main/App.vue.ts:315
+#: source/tmp/win-main/GlobalSearch.vue.ts:34
+#: source/tmp/win-main/App.vue.ts:450
 msgid "Search across all files"
 msgstr ""
 
-#: source/tmp/win-main/GlobalSearch.vue.ts:57
+#: source/tmp/win-main/GlobalSearch.vue.ts:35
 msgid "Enter your search terms below"
 msgstr "Nhập chuỗi tìm kiếm của bạn bên dưới"
 
-#: source/tmp/win-main/GlobalSearch.vue.ts:58
+#: source/tmp/win-main/GlobalSearch.vue.ts:36
 msgid "Find…"
 msgstr "Tìm..."
 
-#: source/tmp/win-main/GlobalSearch.vue.ts:59
+#: source/tmp/win-main/GlobalSearch.vue.ts:37
 #: source/tmp/win-main/file-manager/FileManager.vue.ts:44
 msgid "Filter…"
 msgstr ""
 
-#: source/tmp/win-main/GlobalSearch.vue.ts:60
+#: source/tmp/win-main/GlobalSearch.vue.ts:38
 msgid "Filter search results"
 msgstr "Lọc kết quả tìm kiếm"
 
-#: source/tmp/win-main/GlobalSearch.vue.ts:61
+#: source/tmp/win-main/GlobalSearch.vue.ts:39
 msgid "Restrict search to directory"
 msgstr "Giới hạn tìm kiếm trong thư mục"
 
-#: source/tmp/win-main/GlobalSearch.vue.ts:62
+#: source/tmp/win-main/GlobalSearch.vue.ts:40
 msgid "Case insensitive"
 msgstr ""
 
-#: source/tmp/win-main/GlobalSearch.vue.ts:63
+#: source/tmp/win-main/GlobalSearch.vue.ts:41
 msgid "Choose directory…"
 msgstr ""
 
-#: source/tmp/win-main/GlobalSearch.vue.ts:66
+#: source/tmp/win-main/GlobalSearch.vue.ts:44
 msgid "Clear search"
 msgstr "Xoá tìm kiếm"
 
-#: source/tmp/win-main/GlobalSearch.vue.ts:67
+#: source/tmp/win-main/GlobalSearch.vue.ts:45
 msgid "Toggle results"
 msgstr "Ẩn/hiện các kết quả"
 
-#: source/tmp/win-main/GlobalSearch.vue.ts:68
+#: source/tmp/win-main/GlobalSearch.vue.ts:46
 msgid "No results for your search."
 msgstr ""
 
-#: source/tmp/win-main/GlobalSearch.vue.ts:171
+#: source/tmp/win-main/GlobalSearch.vue.ts:151
 #, javascript-format
 msgid "%s matches across %s files"
+msgstr ""
+
+#: source/tmp/win-main/MainEditor.vue.ts:286
+#, javascript-format
+msgid ""
+"Could not save \"%s\": format-on-save did not complete, so nothing was "
+"written. Press save again."
+msgstr ""
+
+#: source/tmp/win-main/MainEditor.vue.ts:1047
+#: source/tmp/win-main/MainEditor.vue.ts:1200
+#: source/tmp/win-main/App.vue.ts:191 source/tmp/win-main/App.vue.ts:228
+msgid "Loading workspace references"
+msgstr ""
+
+#: source/tmp/win-main/MainEditor.vue.ts:1102
+#, javascript-format
+msgid "Cannot rename: \"%s\" is not a valid reference key."
+msgstr ""
+
+#: source/tmp/win-main/MainEditor.vue.ts:1104
+#, javascript-format
+msgid ""
+"Cannot rename: references keep their family prefix (\"%s:\" cannot become "
+"\"%s:\")."
+msgstr ""
+
+#: source/tmp/win-main/MainEditor.vue.ts:1106
+#, javascript-format
+msgid "Cannot rename: %s is already defined in %s."
+msgstr ""
+
+#: source/tmp/win-main/MainEditor.vue.ts:1108
+#, javascript-format
+msgid "Cannot rename: %s is not defined anywhere in this workspace."
+msgstr ""
+
+#: source/tmp/win-main/MainEditor.vue.ts:1128
+#, javascript-format
+msgid "Rename \"%s\" to \"%s\" across the workspace…"
+msgstr ""
+
+#. A failed rename protocol run surfaces through the recoverable
+#. boundary (review B8): one closable error toast, never a silent
+#. console-only line.
+#: source/tmp/win-main/MainEditor.vue.ts:1135
+msgid "Workspace rename"
+msgstr ""
+
+#: source/tmp/win-main/MainEditor.vue.ts:1139
+msgid "Keep this edit only"
+msgstr ""
+
+#: source/tmp/win-main/MainEditor.vue.ts:1258
+#, javascript-format
+msgid "Rename aborted: %s changed concurrently. No document was modified."
+msgstr ""
+
+#: source/tmp/win-main/MainEditor.vue.ts:1266
+#, javascript-format
+msgid "Renamed %s to %s across %s documents."
+msgstr ""
+
+#: source/tmp/win-main/MainEditor.vue.ts:1296
+msgid "Nothing to undo: no workspace rename is pending."
+msgstr ""
+
+#: source/tmp/win-main/MainEditor.vue.ts:1302
+#, javascript-format
+msgid "Undo aborted: %s changed after the rename. No document was modified."
+msgstr ""
+
+#: source/tmp/win-main/MainEditor.vue.ts:1308
+msgid "Workspace rename undone."
 msgstr ""
 
 #: source/tmp/win-main/PopoverTable.vue.ts:30
@@ -4007,33 +4209,42 @@ msgstr ""
 msgid "Table size: %s &times; %s"
 msgstr ""
 
-#: source/tmp/win-main/PopoverExport.vue.ts:32
-msgid "Open after export"
+#: source/tmp/win-main/RenameReferencePreviewDialog.vue.ts:57
+msgid "1 occurrence"
+msgstr ""
+
+#: source/tmp/win-main/RenameReferencePreviewDialog.vue.ts:57
+#, javascript-format
+msgid "%s occurrences"
 msgstr ""
 
 #: source/tmp/win-main/PopoverExport.vue.ts:33
-msgid "Temporary directory"
+msgid "Open after export"
 msgstr ""
 
 #: source/tmp/win-main/PopoverExport.vue.ts:34
-msgid "Current directory"
+msgid "Temporary directory"
 msgstr ""
 
 #: source/tmp/win-main/PopoverExport.vue.ts:35
+msgid "Current directory"
+msgstr ""
+
+#: source/tmp/win-main/PopoverExport.vue.ts:36
 msgid "Select directory"
 msgstr ""
 
-#: source/tmp/win-main/PopoverExport.vue.ts:85
+#: source/tmp/win-main/PopoverExport.vue.ts:86
 #, fuzzy
 msgid "Exporting…"
 msgstr "Xuất..."
 
-#: source/tmp/win-main/PopoverExport.vue.ts:85
+#: source/tmp/win-main/PopoverExport.vue.ts:86
 #, fuzzy
 msgid "Export"
 msgstr "Xuất..."
 
-#: source/tmp/win-main/PopoverExport.vue.ts:98
+#: source/tmp/win-main/PopoverExport.vue.ts:103
 msgid "command"
 msgstr "lệnh"
 
@@ -4041,50 +4252,76 @@ msgstr "lệnh"
 msgid "Clear finished tasks"
 msgstr ""
 
-#: source/tmp/win-main/App.vue.ts:277
+#: source/tmp/win-main/App.vue.ts:254
+msgid "No label created: the target gained a label while the dialog was open."
+msgstr ""
+
+#: source/tmp/win-main/App.vue.ts:256
+msgid "No label created: the target no longer exists in the document."
+msgstr ""
+
+#: source/tmp/win-main/App.vue.ts:284
+#, javascript-format
+msgid "Created %s — %s copied to the clipboard."
+msgstr ""
+
+#: source/tmp/win-main/App.vue.ts:288
+#, javascript-format
+msgid "Created %s. The clipboard copy failed."
+msgstr ""
+
+#: source/tmp/win-main/App.vue.ts:412
 #, javascript-format
 msgid "%s selected"
 msgstr ""
 
 #. Multiple selections --> indicate
-#: source/tmp/win-main/App.vue.ts:283
+#: source/tmp/win-main/App.vue.ts:418
 #, javascript-format
 msgid "%s selections"
 msgstr ""
 
-#: source/tmp/win-main/App.vue.ts:329
+#: source/tmp/win-main/App.vue.ts:464
 msgid "View writing statistics"
 msgstr ""
 
-#: source/tmp/win-main/App.vue.ts:335
+#: source/tmp/win-main/App.vue.ts:470
 msgid "View Tag Cloud"
 msgstr ""
 
-#: source/tmp/win-main/App.vue.ts:342
+#: source/tmp/win-main/App.vue.ts:477
 msgid "Open settings"
 msgstr ""
 
-#: source/tmp/win-main/App.vue.ts:377
+#: source/tmp/win-main/App.vue.ts:494
+msgid "Navigate back"
+msgstr ""
+
+#: source/tmp/win-main/App.vue.ts:503
+msgid "Navigate forward"
+msgstr ""
+
+#: source/tmp/win-main/App.vue.ts:517
 msgid "Export current file"
 msgstr ""
 
-#: source/tmp/win-main/App.vue.ts:388
+#: source/tmp/win-main/App.vue.ts:528
 msgid "Insert Pandoc Div or Span"
 msgstr ""
 
-#: source/tmp/win-main/App.vue.ts:395
+#: source/tmp/win-main/App.vue.ts:535
 msgid "Insert comment"
 msgstr ""
 
-#: source/tmp/win-main/App.vue.ts:409
+#: source/tmp/win-main/App.vue.ts:549
 msgid "Insert image"
 msgstr ""
 
-#: source/tmp/win-main/App.vue.ts:430
+#: source/tmp/win-main/App.vue.ts:570
 msgid "Insert footnote"
 msgstr ""
 
-#: source/tmp/win-main/App.vue.ts:452
+#: source/tmp/win-main/App.vue.ts:592
 msgid "Pomodoro timer"
 msgstr ""
 
@@ -4152,37 +4389,101 @@ msgstr "✍🏼 Tiếp tục viết để vượt qua thành tích thường ng�
 msgid "More statistics …"
 msgstr "Thêm thống kê …"
 
-#: source/tmp/win-main/DocumentTabs.vue.ts:391
+#: source/tmp/win-main/DocumentTabs.vue.ts:399
 msgid "Close tab"
 msgstr ""
 
-#: source/tmp/win-main/DocumentTabs.vue.ts:402
+#: source/tmp/win-main/DocumentTabs.vue.ts:410
 msgid "Close other tabs"
 msgstr "Đóng các tab khác"
 
-#: source/tmp/win-main/DocumentTabs.vue.ts:418
+#: source/tmp/win-main/DocumentTabs.vue.ts:426
 msgid "Close all tabs"
 msgstr "Đóng tất cả tab"
 
-#: source/tmp/win-main/DocumentTabs.vue.ts:434
+#: source/tmp/win-main/DocumentTabs.vue.ts:442
 msgid "Move"
 msgstr ""
 
-#: source/tmp/win-main/DocumentTabs.vue.ts:439
+#: source/tmp/win-main/DocumentTabs.vue.ts:447
 msgid "Move to start"
 msgstr ""
 
-#: source/tmp/win-main/DocumentTabs.vue.ts:445
+#: source/tmp/win-main/DocumentTabs.vue.ts:453
 msgid "Move to end"
 msgstr ""
 
-#: source/tmp/win-main/DocumentTabs.vue.ts:453
+#: source/tmp/win-main/DocumentTabs.vue.ts:461
 msgid "Unpin tab"
 msgstr "Bỏ ghim tab"
 
-#: source/tmp/win-main/DocumentTabs.vue.ts:453
+#: source/tmp/win-main/DocumentTabs.vue.ts:461
 msgid "Pin tab"
 msgstr "Ghim tab"
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:66
+msgid "Parenthetical"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:67
+msgid "In text"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:68
+msgid "With locator"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:69
+msgid "Prefix and suffix"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:70
+msgid "Multiple sources"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:71
+msgid "Suppress author"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:78
+msgid "Figure"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:80
+msgid "Equation"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:81
+msgid "Section"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:82
+msgid "Listing"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:98
+msgid "Group references"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:99
+msgid "Custom prefix"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:100
+msgid "Suppress prefix"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:107
+msgid "Attribute list"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:108
+msgid "Fenced div"
+msgstr ""
+
+#: source/tmp/win-main/PandocQuickHelp.vue.ts:109
+msgid "Bracketed span"
+msgstr ""
 
 #: source/tmp/win-main/sidebar/RelatedFilesTab.vue.ts:33
 #: source/tmp/win-main/sidebar/MainSidebar.vue.ts:51
@@ -4210,51 +4511,51 @@ msgstr "Quan hệ này được dựa trên liên kết tới."
 msgid "This relation is based on %s shared tags: %s"
 msgstr "Quan hệ này được dựa trên %s thẻ chung: %s"
 
-#: source/tmp/win-main/sidebar/OtherFilesTab.vue.ts:26
+#: source/tmp/win-main/sidebar/OtherFilesTab.vue.ts:25
 #: source/tmp/win-main/sidebar/MainSidebar.vue.ts:57
 msgid "Other files"
 msgstr "Các tập tin khác"
 
-#: source/tmp/win-main/sidebar/OtherFilesTab.vue.ts:27
+#: source/tmp/win-main/sidebar/OtherFilesTab.vue.ts:26
 msgid "Open directory"
 msgstr "Mở thư mục"
 
-#: source/tmp/win-main/sidebar/OtherFilesTab.vue.ts:28
+#: source/tmp/win-main/sidebar/OtherFilesTab.vue.ts:27
 msgid "No other files"
 msgstr "Không có tập tin khác"
 
-#: source/tmp/win-main/sidebar/ReferencesTab.vue.ts:45
+#: source/tmp/win-main/sidebar/ReferencesTab.vue.ts:44
 msgid "There are no citations in this document."
 msgstr "Không có trích dẫn trong tài liệu này."
 
-#: source/tmp/win-main/sidebar/ReferencesTab.vue.ts:68
+#: source/tmp/win-main/sidebar/ReferencesTab.vue.ts:67
 #, javascript-format
 msgid "circa %s words"
 msgstr ""
 
-#: source/tmp/win-main/sidebar/ToCTab.vue.ts:41
-#: source/tmp/win-main/sidebar/ToCTab.vue.ts:49
+#: source/tmp/win-main/sidebar/ToCTab.vue.ts:40
+#: source/tmp/win-main/sidebar/ToCTab.vue.ts:48
 #: source/tmp/win-main/sidebar/MainSidebar.vue.ts:39
 msgid "Table of contents"
 msgstr ""
 
-#: source/tmp/win-main/file-viewers/ImageViewer.vue.ts:58
+#: source/tmp/win-main/file-viewers/ImageViewer.vue.ts:57
 msgid "Open in system viewer"
 msgstr ""
 
-#: source/tmp/win-main/file-viewers/ImageViewer.vue.ts:62
+#: source/tmp/win-main/file-viewers/ImageViewer.vue.ts:61
 msgid "Use transparent background"
 msgstr ""
 
-#: source/tmp/win-main/file-viewers/ImageViewer.vue.ts:63
+#: source/tmp/win-main/file-viewers/ImageViewer.vue.ts:62
 msgid "Use white background"
 msgstr ""
 
-#: source/tmp/win-main/file-viewers/ImageViewer.vue.ts:64
+#: source/tmp/win-main/file-viewers/ImageViewer.vue.ts:63
 msgid "Use black background"
 msgstr ""
 
-#: source/tmp/win-main/file-viewers/ImageViewer.vue.ts:65
+#: source/tmp/win-main/file-viewers/ImageViewer.vue.ts:64
 msgid "Use checkerboard background"
 msgstr ""
 
@@ -4662,15 +4963,15 @@ msgstr ""
 msgid "Switch to automatic sorting"
 msgstr ""
 
-#: source/tmp/win-main/file-manager/FileTree.vue.ts:264
+#: source/tmp/win-main/file-manager/FileTree.vue.ts:261
 msgid "Collapse workspaces"
 msgstr ""
 
-#: source/tmp/win-main/file-manager/FileTree.vue.ts:264
+#: source/tmp/win-main/file-manager/FileTree.vue.ts:261
 msgid "Collapse subfolders"
 msgstr ""
 
-#: source/tmp/win-main/file-manager/FileTree.vue.ts:269
+#: source/tmp/win-main/file-manager/FileTree.vue.ts:266
 msgid "Sort workspaces…"
 msgstr ""
 
@@ -4701,6 +5002,20 @@ msgstr "Hiệu Ứng Âm Thanh"
 #: source/tmp/win-main/PopoverPomodoro.vue.ts:30
 msgid "Volume"
 msgstr "Âm Lượng"
+
+#: source/tmp/win-main/CreateReferenceLabelDialog.vue.ts:75
+msgid "Enter a label key"
+msgstr ""
+
+#: source/tmp/win-main/CreateReferenceLabelDialog.vue.ts:79
+#, javascript-format
+msgid "%s is already defined in this workspace"
+msgstr ""
+
+#: source/tmp/win-main/CreateReferenceLabelDialog.vue.ts:80
+#, javascript-format
+msgid "%s is available"
+msgstr ""
 
 #: source/tmp/win-main/PopoverTags.vue.ts:48
 msgid "Tag Cloud"
@@ -5155,23 +5470,23 @@ msgstr ""
 msgid "Edit the default settings for imports or exports here."
 msgstr "Chỉnh sửa các tuỳ chọn mặc định cho việc xuất hay nhập tại đây"
 
-#: source/tmp/win-assets/DefaultsTab.vue.ts:178
-#: source/tmp/win-assets/SnippetsTab.vue.ts:108
-#: source/tmp/win-assets/FilterTab.vue.ts:134
+#: source/tmp/win-assets/DefaultsTab.vue.ts:183
+#: source/tmp/win-assets/SnippetsTab.vue.ts:115
+#: source/tmp/win-assets/FilterTab.vue.ts:141
 #: source/tmp/win-assets/CustomCSS.vue.ts:58
 msgid "Saving …"
 msgstr "Đang lưu …"
 
-#: source/tmp/win-assets/DefaultsTab.vue.ts:188
-#: source/tmp/win-assets/SnippetsTab.vue.ts:118
-#: source/tmp/win-assets/FilterTab.vue.ts:145
+#: source/tmp/win-assets/DefaultsTab.vue.ts:193
+#: source/tmp/win-assets/SnippetsTab.vue.ts:125
+#: source/tmp/win-assets/FilterTab.vue.ts:152
 #: source/tmp/win-assets/CustomCSS.vue.ts:65
 msgid "Saved!"
 msgstr "Đã Lưu!"
 
-#: source/tmp/win-assets/DefaultsTab.vue.ts:193
-#: source/tmp/win-assets/SnippetsTab.vue.ts:122
-#: source/tmp/win-assets/FilterTab.vue.ts:149
+#: source/tmp/win-assets/DefaultsTab.vue.ts:198
+#: source/tmp/win-assets/SnippetsTab.vue.ts:129
+#: source/tmp/win-assets/FilterTab.vue.ts:156
 #: source/tmp/win-assets/CustomCSS.vue.ts:69
 msgid "Could not save changes"
 msgstr ""
@@ -5188,43 +5503,43 @@ msgstr ""
 msgid "Lua Filter"
 msgstr ""
 
-#: source/tmp/win-assets/SnippetsTab.vue.ts:29
+#: source/tmp/win-assets/SnippetsTab.vue.ts:36
 msgid "No snippet selected."
 msgstr ""
 
-#: source/tmp/win-assets/SnippetsTab.vue.ts:31
+#: source/tmp/win-assets/SnippetsTab.vue.ts:38
 msgid "Rename snippet"
 msgstr "Thay đổi tên snippet"
 
-#: source/tmp/win-assets/SnippetsTab.vue.ts:32
+#: source/tmp/win-assets/SnippetsTab.vue.ts:39
 msgid "Snippets let you define reusable pieces of text with variables."
 msgstr ""
 "Snippets cho phép bạn chèn nhanh những đoạn văn bản thường dùng, đi cùng các "
 "biến giá trị (variables) có thể tuỳ chỉnh."
 
-#: source/tmp/win-assets/SnippetsTab.vue.ts:33
+#: source/tmp/win-assets/SnippetsTab.vue.ts:40
 msgid "Open snippets folder"
 msgstr ""
 
-#: source/tmp/win-assets/FilterTab.vue.ts:28
+#: source/tmp/win-assets/FilterTab.vue.ts:35
 msgid "No filter selected."
 msgstr ""
 
-#: source/tmp/win-assets/FilterTab.vue.ts:29
+#: source/tmp/win-assets/FilterTab.vue.ts:36
 msgid ""
 "This filter is protected. It will be restored if you rename or remove this "
 "file."
 msgstr ""
 
-#: source/tmp/win-assets/FilterTab.vue.ts:31
+#: source/tmp/win-assets/FilterTab.vue.ts:38
 msgid "Rename filter"
 msgstr ""
 
-#: source/tmp/win-assets/FilterTab.vue.ts:32
+#: source/tmp/win-assets/FilterTab.vue.ts:39
 msgid "Lua filters allow customization of your Pandoc exports."
 msgstr ""
 
-#: source/tmp/win-assets/FilterTab.vue.ts:33
+#: source/tmp/win-assets/FilterTab.vue.ts:40
 msgid "Open filters folder"
 msgstr ""
 
