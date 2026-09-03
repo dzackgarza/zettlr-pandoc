@@ -308,8 +308,10 @@ export default class AgentDocumentQueries {
       const sidecar = await this.reviews.readSidecar(filePath);
       if (sidecar !== undefined) {
         working = sidecar.workingText;
-        reference = reviewReferenceText(sidecar.suggestions, working);
-        reviewGeneration = sidecar.generation;
+        reference = sidecar.review === null
+          ? working
+          : reviewReferenceText(sidecar.review.suggestions, working);
+        reviewGeneration = sidecar.review?.generation ?? 0;
       } else {
         working = normalizeText(await this.documents.readSupportedFile(filePath));
         reference = working;

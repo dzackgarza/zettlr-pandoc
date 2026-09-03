@@ -47,12 +47,13 @@ import {
   normalizeText,
   ReviewDiffStore,
   reviewFromSidecar,
+  type ReviewBearingSidecar,
   type ReviewStatus,
   type ReviewDiffStore as ReviewDiffStoreType,
 } from "./review-diff-store";
 import { sha256Text } from "@common/util/sha256";
-import { ReviewSidecarStore } from "./review-sidecar-store";
-import type { ReviewSidecarData } from "./review-sidecar-schema";
+import { CollaborationSidecarStore } from "./collaboration-sidecar-store";
+import type { CollaborationSidecarData } from "./collaboration-sidecar-schema";
 import {
   isTransitionError,
   prepareAcceptAll,
@@ -196,7 +197,7 @@ export interface AttachedReviewQuery {
 
 export interface DetachedReviewQuery {
   attached: false;
-  sidecar: ReviewSidecarData;
+  sidecar: ReviewBearingSidecar;
 }
 
 export type ReviewQuery = AttachedReviewQuery | DetachedReviewQuery;
@@ -212,7 +213,7 @@ export interface ReviewQueryPort {
   findDocumentIdByReviewId: (reviewId: string) => string | undefined;
   findReviewQuery: (reviewId: string) => Promise<ReviewQuery | undefined>;
   listReviewQueries: () => Promise<ReviewQuery[]>;
-  readSidecar: (documentPath: string) => Promise<ReviewSidecarData | undefined>;
+  readSidecar: (documentPath: string) => Promise<CollaborationSidecarData | undefined>;
 }
 
 export interface ReviewSavePreparation {
@@ -259,10 +260,10 @@ export class ReviewApplicationService {
    */
   private readonly locks = new Map<string, Mutex>();
   private readonly reviews = new ReviewDiffStore();
-  private readonly sidecars: ReviewSidecarStore;
+  private readonly sidecars: CollaborationSidecarStore;
 
   constructor(private readonly deps: ReviewApplicationDependencies) {
-    this.sidecars = new ReviewSidecarStore(deps.sidecarDirectory);
+    this.sidecars = new CollaborationSidecarStore(deps.sidecarDirectory);
   }
 
   /** Read projections and persistence are owned by this service. */
@@ -324,6 +325,7 @@ export class ReviewApplicationService {
   private async detachedReviewQueries(): Promise<DetachedReviewQuery[]> {
     const sidecars = await this.sidecars.list();
     return sidecars
+      .filter((sidecar): sidecar is ReviewBearingSidecar => sidecar.review !== null)
       .filter((sidecar) => !this.deps.authority.isDocumentOpen(sidecar.documentPath))
       .map((sidecar) => ({ attached: false as const, sidecar }));
   }
@@ -340,7 +342,7 @@ export class ReviewApplicationService {
       return attached;
     }
     return (await this.detachedReviewQueries()).find(
-      (query) => query.sidecar.reviewId === reviewId,
+      (query) => query.sidecar.review.reviewId === reviewId,
     );
   }
 
@@ -528,10 +530,11 @@ export class ReviewApplicationService {
     const preserveSavedReview =
       review !== undefined &&
       persisted !== undefined &&
-      persisted.reviewId === review.reviewId &&
-      !persisted.invalidated &&
+      persisted.review !== null &&
+      persisted.review.reviewId === review.reviewId &&
+      !persisted.review.invalidated &&
       persisted.diskFenceSha256 === sha256Text(normalizedDisk) &&
-      persisted.suggestions.some((suggestion) => suggestion.state === "proposed");
+      persisted.review.suggestions.some((suggestion) => suggestion.state === "proposed");
 
     if (preserveSavedReview) {
       return;
@@ -576,7 +579,7 @@ export class ReviewApplicationService {
       return undefined;
     }
 
-    if (!sidecar.suggestions.some((suggestion) => suggestion.state === "proposed")) {
+    if (sidecar.review === null || !sidecar.review.suggestions.some((suggestion) => suggestion.state === "proposed")) {
       await this.sidecars.delete(documentPath);
       return undefined;
     }
@@ -586,22 +589,29 @@ export class ReviewApplicationService {
     return { review, workingText: sidecar.workingText };
   }
 
+  /**
+   * ponytail: this deletes the whole sidecar, annotations included. Today
+   * every persisted sidecar's review comes from reviewSidecar(), which never
+   * carries annotations, so nothing is lost. Once M3's unified pipeline lets
+   * annotations persist independently of a review, disk-drift handling for a
+   * document with both must preserve the annotations here instead.
+   */
   private async discardDriftedSidecar(
     documentId: string,
     documentPath: string,
-    sidecar: ReviewSidecarData,
+    sidecar: CollaborationSidecarData,
   ): Promise<void> {
     await this.sidecars.delete(documentPath);
     this.deps.warn(
-      `Review ${sidecar.reviewId} for ${documentPath} was discarded after disk drift.`,
+      `Review ${sidecar.review?.reviewId ?? "(unknown)"} for ${documentPath} was discarded after disk drift.`,
     );
     this.deps.emit("review.invalidated", {
-      reviewId: sidecar.reviewId,
+      reviewId: sidecar.review?.reviewId ?? "",
       documentId,
     });
   }
 
-  public readSidecar(documentPath: string): Promise<ReviewSidecarData | undefined> {
+  public readSidecar(documentPath: string): Promise<CollaborationSidecarData | undefined> {
     return this.sidecars.read(documentPath);
   }
 

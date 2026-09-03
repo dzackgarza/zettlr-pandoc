@@ -958,11 +958,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         const { sidecar } = query;
         const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
         return {
-          reviewId: sidecar.reviewId,
-          state: classifyReviewState(sidecar.invalidated, unresolvedChunks),
-          generation: sidecar.generation,
+          reviewId: sidecar.review.reviewId,
+          state: classifyReviewState(sidecar.review.invalidated, unresolvedChunks),
+          generation: sidecar.review.generation,
           unresolvedChunks,
-          packetCount: sidecar.packets.length,
+          packetCount: sidecar.review.packets.length,
           documentPath: sidecar.documentPath,
           attached: false,
         };
@@ -1013,12 +1013,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       const { sidecar } = query;
       const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
       this.sendJson(res, 200, {
-        reviewId: sidecar.reviewId,
-        state: classifyReviewState(sidecar.invalidated, unresolvedChunks),
-        generation: sidecar.generation,
+        reviewId: sidecar.review.reviewId,
+        state: classifyReviewState(sidecar.review.invalidated, unresolvedChunks),
+        generation: sidecar.review.generation,
         unresolvedChunks,
-        packetCount: sidecar.packets.length,
-        comments: sidecar.comments,
+        packetCount: sidecar.review.packets.length,
+        comments: sidecar.review.comments,
         attached: false,
       });
       return;
@@ -1045,9 +1045,9 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (!query.attached) {
       const { sidecar } = query;
       this.sendJson(res, 200, {
-        reviewId: sidecar.reviewId,
-        patch: reviewPatch(sidecar.suggestions, sidecar.workingText),
-        generation: sidecar.generation,
+        reviewId: sidecar.review.reviewId,
+        patch: reviewPatch(sidecar.review.suggestions, sidecar.workingText),
+        generation: sidecar.review.generation,
       });
       return;
     }
@@ -1147,8 +1147,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (!query.attached) {
       const { sidecar } = query;
       this.sendJson(res, 200, {
-        reviewId: sidecar.reviewId,
-        generation: sidecar.generation,
+        reviewId: sidecar.review.reviewId,
+        generation: sidecar.review.generation,
         chunks: sidecarOutstandingChunks(sidecar),
       });
       return;
@@ -1182,10 +1182,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (!query.attached) {
       const { sidecar } = query;
       this.sendJson(res, 200, {
-        reviewId: sidecar.reviewId,
+        reviewId: sidecar.review.reviewId,
         // A stored packet carries its reference spans and no patch format;
         // the wire packet is the ledger entry with the format stamped on.
-        packets: sidecar.packets.map(toWirePacket),
+        packets: sidecar.review.packets.map(toWirePacket),
       });
       return;
     }

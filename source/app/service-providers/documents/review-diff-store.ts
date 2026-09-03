@@ -37,9 +37,10 @@ import type {
   ReviewSuggestion,
 } from "@dts/common/review-domain";
 import { sha256Text } from "@common/util/sha256";
-import type { ReviewSidecarData } from "./review-sidecar-schema";
+import type { CollaborationSidecarData, PersistedReviewState } from "./collaboration-sidecar-schema";
 
-export type { ReviewSidecarData };
+/** A sidecar known, at the type level, to carry an open review. */
+export type ReviewBearingSidecar = CollaborationSidecarData & { review: PersistedReviewState };
 
 // ============================================================================
 // Persisted shape
@@ -207,12 +208,12 @@ function dressSuggestions(
  * The sidecar stores the working text and suggestion entities. No live
  * document or reconstruction is needed to answer.
  */
-export function sidecarOutstandingChunks(sidecar: ReviewSidecarData): OutstandingChunk[] {
+export function sidecarOutstandingChunks(sidecar: ReviewBearingSidecar): OutstandingChunk[] {
   return dressSuggestions(
-    sidecar.suggestions,
+    sidecar.review.suggestions,
     sidecar.workingText,
-    sidecar.packets,
-    sidecar.chunkComments,
+    sidecar.review.packets,
+    sidecar.review.chunkComments,
   );
 }
 
@@ -224,32 +225,42 @@ export function sidecarOutstandingChunks(sidecar: ReviewSidecarData): Outstandin
  * Serialize a review for its sidecar: everything reviewFromSidecar needs to
  * rebuild identical state, and nothing derived from it. The working text is
  * passed in because its owner is the document, not this module.
+ *
+ * ponytail: annotations always come back empty here. Nothing on this path
+ * knows about a document's annotation state yet — the transaction boundary
+ * that reads-modifies-writes the whole sidecar (review AND annotations) in
+ * one persist is M3's unified mutation pipeline. Until that lands, a review
+ * mutation cannot silently drop annotations because nothing before M3 can
+ * create one.
  */
 export function reviewSidecar(
   review: ActiveReviewState,
   workingText: string,
-  pendingSave?: ReviewSidecarData["pendingSave"],
-): ReviewSidecarData {
+  pendingSave?: CollaborationSidecarData["pendingSave"],
+): CollaborationSidecarData {
   return {
-    version: 4,
-    reviewId: review.reviewId,
+    version: 5,
     documentPath: review.documentPath,
     workingText,
-    generation: review.generation,
     diskFenceSha256: review.diskFenceSha256,
-    invalidated: review.invalidated,
-    packets: review.packets.map((packet) => ({ ...packet })),
-    suggestions: review.suggestions.map((suggestion) => ({
-      ...suggestion,
-      anchors: suggestion.anchors.map((span) => ({ ...span })),
-      restorations: suggestion.restorations.map((restoration) => ({ ...restoration })),
-    })),
-    submissions: review.submissions.map((submission) => ({
-      ...submission,
-      packetIds: [...submission.packetIds],
-    })),
-    chunkComments: review.chunkComments.map((note) => ({ ...note })),
-    comments: review.comments.map((comment) => ({ ...comment })),
+    review: {
+      reviewId: review.reviewId,
+      generation: review.generation,
+      invalidated: review.invalidated,
+      packets: review.packets.map((packet) => ({ ...packet })),
+      suggestions: review.suggestions.map((suggestion) => ({
+        ...suggestion,
+        anchors: suggestion.anchors.map((span) => ({ ...span })),
+        restorations: suggestion.restorations.map((restoration) => ({ ...restoration })),
+      })),
+      submissions: review.submissions.map((submission) => ({
+        ...submission,
+        packetIds: [...submission.packetIds],
+      })),
+      chunkComments: review.chunkComments.map((note) => ({ ...note })),
+      comments: review.comments.map((comment) => ({ ...comment })),
+    },
+    annotations: { generation: 0, items: [] },
     ...(pendingSave === undefined ? {} : { pendingSave }),
   };
 }
@@ -257,8 +268,8 @@ export function reviewSidecar(
 /**
  * The unresolved suggestion count of a detached review.
  */
-export function sidecarUnresolvedChunks(sidecar: ReviewSidecarData): number {
-  return sidecar.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
+export function sidecarUnresolvedChunks(sidecar: ReviewBearingSidecar): number {
+  return sidecar.review.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
 }
 
 /**
@@ -268,27 +279,31 @@ export function sidecarUnresolvedChunks(sidecar: ReviewSidecarData): number {
  */
 export function reviewFromSidecar(
   documentId: string,
-  sidecar: ReviewSidecarData,
+  sidecar: CollaborationSidecarData,
 ): ActiveReviewState {
+  if (sidecar.review === null) {
+    throw new Error(`Collaboration sidecar for ${sidecar.documentPath} has no review to restore`);
+  }
+  const review = sidecar.review;
   return {
-    reviewId: sidecar.reviewId,
+    reviewId: review.reviewId,
     documentId,
     documentPath: sidecar.documentPath,
-    suggestions: sidecar.suggestions.map((suggestion) => ({
+    suggestions: review.suggestions.map((suggestion) => ({
       ...suggestion,
       anchors: suggestion.anchors.map((span) => ({ ...span })),
       restorations: suggestion.restorations.map((restoration) => ({ ...restoration })),
     })),
-    generation: sidecar.generation,
-    packets: sidecar.packets.map((packet) => ({ ...packet })),
-    submissions: sidecar.submissions.map((submission) => ({
+    generation: review.generation,
+    packets: review.packets.map((packet) => ({ ...packet })),
+    submissions: review.submissions.map((submission) => ({
       ...submission,
       packetIds: [...submission.packetIds],
     })),
-    chunkComments: sidecar.chunkComments.map((note) => ({ ...note })),
-    comments: sidecar.comments.map((comment) => ({ ...comment })),
+    chunkComments: review.chunkComments.map((note) => ({ ...note })),
+    comments: review.comments.map((comment) => ({ ...comment })),
     diskFenceSha256: sidecar.diskFenceSha256,
-    invalidated: sidecar.invalidated,
+    invalidated: review.invalidated,
   };
 }
 

@@ -3273,7 +3273,7 @@ current contents from the editor somewhere else, and restart the application.`,
       const detached = (await this._reviewApplication.listReviewQueries()).find(
         (query) =>
           !query.attached &&
-          query.sidecar.packets.some((packet) => packet.packetId === packetId),
+          query.sidecar.review.packets.some((packet) => packet.packetId === packetId),
       )
       if (detached !== undefined && !detached.attached) {
         return {
@@ -3282,7 +3282,7 @@ current contents from the editor somewhere else, and restart the application.`,
           message:
             `The reviewed document ${detached.sidecar.documentPath} is not open. ` +
             'Open it to reattach this review, then retract this packet.',
-          reviewId: detached.sidecar.reviewId,
+          reviewId: detached.sidecar.review.reviewId,
           canClearUnresolved: false,
         }
       }

@@ -30,7 +30,7 @@ import {
   type PreparedDocumentMutation,
   type ReviewDocumentAuthority,
 } from "source/app/service-providers/documents/review-application-service";
-import { reviewSidecarFilePath } from "source/app/service-providers/documents/review-sidecar-store";
+import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
 
 const DOCUMENT_ID = "doc-service";
 const DOCUMENT_PATH = "/tmp/review-service-note.md";
@@ -194,7 +194,7 @@ describe("ReviewApplicationService", function () {
 
     const sidecar = await service.readSidecar(DOCUMENT_PATH);
     assert.equal(sidecar?.workingText, proposed);
-    assert.equal(sidecar?.packets.length, 1);
+    assert.equal(sidecar?.review?.packets.length, 1);
 
     const decided = await service.acceptAllChunks(
       submitted.reviewId,
@@ -206,7 +206,7 @@ describe("ReviewApplicationService", function () {
     assert.equal(decided.ok, true);
     assert.equal(authority.readWorkingText(DOCUMENT_ID), proposed);
     assert.equal(service.reviewStore.getStatus(DOCUMENT_ID, proposed)?.unresolvedChunks, 0);
-    assert.equal((await service.readSidecar(DOCUMENT_PATH))?.generation, 2);
+    assert.equal((await service.readSidecar(DOCUMENT_PATH))?.review?.generation, 2);
     assert.equal(emitted.at(-1)?.event, "review.resolved");
   });
 
@@ -590,7 +590,7 @@ describe("ReviewApplicationService", function () {
     const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
     mkdirSync(sidecarDirectory, { recursive: true });
     writeFileSync(
-      reviewSidecarFilePath(sidecarDirectory, DOCUMENT_PATH),
+      collaborationSidecarFilePath(sidecarDirectory, DOCUMENT_PATH),
       JSON.stringify({ version: 3 }),
       "utf8",
     );
@@ -602,7 +602,7 @@ describe("ReviewApplicationService", function () {
     });
     await assert.rejects(
       service.reattachReview(DOCUMENT_ID, DOCUMENT_PATH, baseline),
-      /not a valid review sidecar.*version/,
+      /not a valid collaboration sidecar.*version/,
     );
   });
 
@@ -654,7 +654,7 @@ describe("ReviewApplicationService", function () {
       "discarding the unsaved edit must not destroy the saved held review",
     );
     assert.equal(
-      (await service.readSidecar(DOCUMENT_PATH))?.reviewId,
+      (await service.readSidecar(DOCUMENT_PATH))?.review?.reviewId,
       submitted.reviewId,
       "the saved review's sidecar must survive the discard",
     );
