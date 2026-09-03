@@ -50,6 +50,11 @@ import type {
   AgentEventType,
   ProposalClaim,
 } from '@dts/common/agent-api'
+import type {
+  AnnotationActor,
+  AnnotationMessage,
+  TextAnnotation,
+} from '@dts/common/annotation-domain'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
 import type { ActiveReviewState } from '@dts/common/review-domain'
 import { type TabManager } from '@providers/documents/document-tree/tab-manager'
@@ -81,6 +86,7 @@ import {
 import {
   CollaborationApplicationService,
   type AgentEventPayload,
+  type AnnotationFailure,
   type PreparedDocumentMutation,
   type CollaborationDocumentAuthority,
   type ReviewFailure,
@@ -3292,6 +3298,116 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * The owner comments on a stretch of the document. Not reachable from the
+   * agent HTTP API — only the renderer's owner-facing IPC calls this with
+   * `actor: 'owner'`.
+   */
+  public async createAnnotation(
+    documentId: string,
+    actor: AnnotationActor,
+    from: number,
+    to: number,
+    instruction: string,
+    expectedAnnotationGeneration: number,
+  ): Promise<TextAnnotation | AnnotationFailure> {
+    return this._reviewApplication.createAnnotation({
+      documentId,
+      actor,
+      from,
+      to,
+      instruction,
+      expectedAnnotationGeneration,
+    })
+  }
+
+  /**
+   * One more turn of an annotation thread. The only annotation mutation the
+   * agent HTTP API exposes — every other move routes through `actor` and is
+   * refused by the pure transition (I3).
+   */
+  public async addAnnotationMessage(
+    documentId: string,
+    annotationId: string,
+    actor: AnnotationActor,
+    text: string,
+    clientRequestId: string | undefined,
+    expectedAnnotationGeneration: number,
+  ): Promise<AnnotationMessage | AnnotationFailure> {
+    return this._reviewApplication.addAnnotationMessage({
+      documentId,
+      annotationId,
+      actor,
+      text,
+      clientRequestId,
+      expectedAnnotationGeneration,
+    })
+  }
+
+  /** Owner-only lifecycle move (I3); not wired to any agent HTTP route. */
+  public async resolveAnnotation(
+    documentId: string,
+    annotationId: string,
+    actor: AnnotationActor,
+    expectedAnnotationGeneration: number,
+  ): Promise<TextAnnotation | AnnotationFailure> {
+    return this._reviewApplication.resolveAnnotation({
+      documentId,
+      annotationId,
+      actor,
+      expectedAnnotationGeneration,
+    })
+  }
+
+  /** Owner-only lifecycle move (I3); not wired to any agent HTTP route. */
+  public async reopenAnnotation(
+    documentId: string,
+    annotationId: string,
+    actor: AnnotationActor,
+    expectedAnnotationGeneration: number,
+  ): Promise<TextAnnotation | AnnotationFailure> {
+    return this._reviewApplication.reopenAnnotation({
+      documentId,
+      annotationId,
+      actor,
+      expectedAnnotationGeneration,
+    })
+  }
+
+  /** Owner-only lifecycle move (I3); not wired to any agent HTTP route. */
+  public async reattachAnnotation(
+    documentId: string,
+    annotationId: string,
+    actor: AnnotationActor,
+    from: number,
+    to: number,
+    expectedAnnotationGeneration: number,
+  ): Promise<TextAnnotation | AnnotationFailure> {
+    return this._reviewApplication.reattachAnnotation({
+      documentId,
+      annotationId,
+      actor,
+      from,
+      to,
+      expectedAnnotationGeneration,
+    })
+  }
+
+  /** Owner-only lifecycle move (I3); not wired to any agent HTTP route. */
+  public async deleteAnnotation(
+    documentId: string,
+    annotationId: string,
+    actor: AnnotationActor,
+    expectedAnnotationGeneration: number,
+  ): Promise<TextAnnotation | AnnotationFailure> {
+    return this._reviewApplication.deleteAnnotation({
+      documentId,
+      annotationId,
+      actor,
+      expectedAnnotationGeneration,
+    })
+  }
+
+  /**
    * Get the review store for direct agent API method dispatch.
    */
   public get reviewStore(): CollaborationApplicationService['reviewStore'] {
@@ -3300,6 +3416,11 @@ current contents from the editor somewhere else, and restart the application.`,
 
   /** Read-only review projections for transport providers. */
   public get reviewQueries(): ReviewQueryPort {
+    return this._reviewApplication
+  }
+
+  /** Read-only annotation projections for transport providers. */
+  public get annotationQueries(): Pick<CollaborationApplicationService, 'getAnnotations'> {
     return this._reviewApplication
   }
 

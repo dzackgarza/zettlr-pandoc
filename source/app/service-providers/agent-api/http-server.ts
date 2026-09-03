@@ -25,6 +25,7 @@ import type {
   AgentApiOperations,
   AgentApiResponseBody,
   AgentEvent,
+  AddAnnotationMessageRequest,
   AddReviewCommentRequest,
   AgentError,
   AgentErrorCode,
@@ -37,8 +38,9 @@ import type {
   SearchDocumentRequest,
   SubmitProposalRequest,
 } from "@dts/common/agent-api";
+import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
 import type DocumentManager from "@providers/documents";
-import type { ReviewFailure } from "@providers/documents/document-collaboration-application-service";
+import type { AnnotationFailure, ReviewFailure } from "@providers/documents/document-collaboration-application-service";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import crypto from "crypto";
@@ -181,7 +183,13 @@ export default class AgentHTTPProvider extends ProviderContract {
   ) {
     super();
     this._instanceId = crypto.randomUUID();
-    this._queries = new AgentDocumentQueries(_documents, _documents.reviewQueries, _app, _log);
+    this._queries = new AgentDocumentQueries(
+      _documents,
+      _documents.reviewQueries,
+      _documents.annotationQueries,
+      _app,
+      _log,
+    );
     // Load the OpenAPI YAML spec (dev: sibling to this file; packaged: assets/openapi.yaml)
     const candidatePaths = [
       path.join(__dirname, "openapi.yaml"),
@@ -554,6 +562,31 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => this.handleSubmitProposal(res, c.request.params.documentId, c.request.requestBody),
+
+      listAnnotations: (c: OperationContext<"listAnnotations">, _req, res: http.ServerResponse) =>
+        this.handleListAnnotations(res, c.request.query.state),
+      listDocumentAnnotations: (
+        c: OperationContext<"listDocumentAnnotations">,
+        _req,
+        res: http.ServerResponse,
+      ) =>
+        this.handleListDocumentAnnotations(
+          res,
+          c.request.params.documentId,
+          c.request.query.state,
+        ),
+      getAnnotation: (c: OperationContext<"getAnnotation">, _req, res: http.ServerResponse) =>
+        this.handleGetAnnotation(res, c.request.params.annotationId),
+      addAnnotationMessage: (
+        c: OperationContext<"addAnnotationMessage", AddAnnotationMessageRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) =>
+        this.handleAddAnnotationMessage(
+          res,
+          c.request.params.annotationId,
+          c.request.requestBody,
+        ),
 
       listReviews: (_c, _req, res) => this.handleListReviews(res),
       getReview: (c: OperationContext<"getReview">, _req, res: http.ServerResponse) =>
@@ -941,6 +974,116 @@ export default class AgentHTTPProvider extends ProviderContract {
       reviewGeneration: result.reviewGeneration,
       unresolvedChunks: result.unresolvedChunks,
       state: result.state,
+    });
+  }
+
+  // ==========================================================================
+  // Annotations — read and reply only. Lifecycle (resolve, reopen, reattach,
+  // delete, create) is owner-only (I3) and has no operationId in the
+  // published document: the API cannot express it, not merely refuse it.
+  // ==========================================================================
+
+  private async handleListAnnotations(
+    res: http.ServerResponse,
+    state: "open" | "resolved" | undefined,
+  ): Promise<void> {
+    this.sendJson(res, 200, await this._queries.listAnnotations(state));
+  }
+
+  private async handleListDocumentAnnotations(
+    res: http.ServerResponse,
+    documentId: string,
+    state: "open" | "resolved" | undefined,
+  ): Promise<void> {
+    const result = await this._queries.listDocumentAnnotations(documentId, state);
+    if (result === undefined) {
+      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
+      return;
+    }
+    this.sendJson(res, 200, result);
+  }
+
+  private async handleGetAnnotation(
+    res: http.ServerResponse,
+    annotationId: string,
+  ): Promise<void> {
+    const annotation = await this._queries.getAnnotation(annotationId);
+    if (annotation === undefined) {
+      this.sendError(res, 404, "ANNOTATION_NOT_FOUND", "Annotation not found");
+      return;
+    }
+    this.sendJson(res, 200, annotation);
+  }
+
+  /**
+   * The HTTP status an annotation refusal earns. ANNOTATION_GENERATION_MISMATCH
+   * and ANNOTATION_RESOLVED are 409: the caller's picture of the thread is
+   * stale, not wrong, and re-reading resolves it. ANNOTATION_OWNER_ONLY is
+   * unreachable through this route — addAnnotationMessage never checks
+   * ownership — but is mapped for defense in depth rather than falling
+   * through to 500 if that ever changes.
+   */
+  private static annotationStatus(code: AgentErrorCode): number {
+    switch (code) {
+      case "ANNOTATION_NOT_FOUND":
+        return 404;
+      case "ANNOTATION_OWNER_ONLY":
+        return 403;
+      case "ANNOTATION_GENERATION_MISMATCH":
+      case "ANNOTATION_RESOLVED":
+      case "ANNOTATION_ORPHANED":
+      case "DOCUMENT_CLOSED":
+        return 409;
+      case "INVALID_PARAMS":
+        return 400;
+      case "PERSISTENCE_FAILED":
+        return 500;
+      default:
+        return 500;
+    }
+  }
+
+  /**
+   * POST /v1/annotations/{annotationId}/messages — the one annotation
+   * mutation an agent may perform. The document is resolved from the
+   * annotationId alone, since the request carries no documentId.
+   */
+  private async handleAddAnnotationMessage(
+    res: http.ServerResponse,
+    annotationId: string,
+    body: AddAnnotationMessageRequest,
+  ): Promise<void> {
+    const located = await this._queries.findAnnotationQuery(annotationId);
+    if (located === undefined) {
+      this.sendError(res, 404, "ANNOTATION_NOT_FOUND", "Annotation not found");
+      return;
+    }
+    const result: DomainAnnotationMessage | AnnotationFailure =
+      await this._documents.addAnnotationMessage(
+        located.documentId,
+        annotationId,
+        "agent",
+        body.text,
+        body.clientRequestId,
+        body.expectedAnnotationGeneration,
+      );
+    if (!("messageId" in result)) {
+      this.sendError(
+        res,
+        AgentHTTPProvider.annotationStatus(result.code),
+        result.code,
+        result.message,
+      );
+      return;
+    }
+    const annotationGeneration = this._documents.annotationQueries.getAnnotations(
+      located.documentId,
+    ).generation;
+    this.sendJson(res, 200, {
+      annotationId,
+      documentId: located.documentId,
+      message: result,
+      annotationGeneration,
     });
   }
 

@@ -1036,6 +1036,213 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ReviewListEntry'
+    AnnotationTarget:
+      type: object
+      additionalProperties: false
+      description: >-
+        Where an annotation points, reported in UTF-16 code-unit offsets and
+        1-based line/column together. orphaned carries neither: I6 says the
+        honest answer to lost text is a marker and Reattach, never a guessed
+        position.
+      required:
+        - state
+        - quotedText
+      properties:
+        state:
+          type: string
+          enum:
+            - range
+            - point
+            - orphaned
+        quotedText:
+          type: string
+          description: The text the annotation was created against. Never rewritten (I1).
+        from:
+          type: integer
+          description: UTF-16 offset where the target starts. Present when state is range.
+        to:
+          type: integer
+          description: UTF-16 offset where the target ends. Present when state is range.
+        at:
+          type: integer
+          description: UTF-16 offset of the collapsed seam. Present when state is point.
+        line:
+          type: integer
+          description: >-
+            1-based line of from (range) or at (point). Absent when state is
+            orphaned.
+        column:
+          type: integer
+          description: >-
+            1-based UTF-16 column of from (range) or at (point). Absent when
+            state is orphaned.
+        endLine:
+          type: integer
+          description: 1-based line of to. Present only when state is range.
+        endColumn:
+          type: integer
+          description: 1-based UTF-16 column of to. Present only when state is range.
+        reason:
+          type: string
+          enum:
+            - target-deleted
+            - external-drift
+            - unmapped-document-change
+          description: >-
+            Present when state is point (always target-deleted) or orphaned
+            (external-drift or unmapped-document-change).
+    AnnotationMessage:
+      type: object
+      additionalProperties: false
+      required:
+        - messageId
+        - author
+        - text
+        - createdAt
+      properties:
+        messageId:
+          type: string
+        author:
+          type: string
+          enum:
+            - owner
+            - agent
+        text:
+          type: string
+        createdAt:
+          type: string
+        clientRequestId:
+          type: string
+          description: Present when author is agent — the id that made posting this message idempotent.
+    AnnotationProposalAction:
+      type: object
+      additionalProperties: false
+      required:
+        - actionId
+        - packetId
+        - reviewId
+        - linkedAt
+      properties:
+        actionId:
+          type: string
+        packetId:
+          type: string
+        reviewId:
+          type: string
+        linkedAt:
+          type: string
+        terminalOutcome:
+          type: string
+          enum:
+            - accepted
+            - rejected
+            - mixed
+            - withdrawn
+            - cleared
+    AnnotationResponse:
+      type: object
+      additionalProperties: false
+      description: >-
+        A durable comment on a stretch of one document. Lifecycle (resolve,
+        reopen, reattach, delete, create) is owner-only (I3) and has no
+        operation in this API — only its thread accepts an agent reply.
+      required:
+        - annotationId
+        - documentId
+        - target
+        - state
+        - messages
+        - proposalActions
+        - annotationGeneration
+        - createdAt
+        - updatedAt
+      properties:
+        annotationId:
+          type: string
+        documentId:
+          type: string
+        target:
+          $ref: '#/components/schemas/AnnotationTarget'
+        state:
+          type: string
+          enum:
+            - open
+            - resolved
+        messages:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AnnotationMessage'
+          description: The thread, owner-first, in creation order.
+        proposalActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnnotationProposalAction'
+        annotationGeneration:
+          type: integer
+          description: >-
+            The document's annotation generation this read reflects — send it
+            back as expectedAnnotationGeneration on the next message.
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        resolvedAt:
+          type: string
+    AnnotationListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - annotations
+      properties:
+        annotations:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnnotationResponse'
+    AddAnnotationMessageRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - text
+        - clientRequestId
+        - expectedAnnotationGeneration
+      properties:
+        text:
+          type: string
+          minLength: 1
+        clientRequestId:
+          type: string
+          minLength: 1
+          description: >-
+            Client-chosen unique string. Replaying it returns the original
+            message rather than posting a second one.
+        expectedAnnotationGeneration:
+          type: integer
+          minimum: 0
+          description: >-
+            The annotationGeneration this request was formed against — the
+            most recent AnnotationResponse or AnnotationListResponse read. A
+            stale value is refused as ANNOTATION_GENERATION_MISMATCH; a
+            replayed clientRequestId is answered before this check runs, so a
+            retry against a generation the first post already advanced still
+            succeeds.
+    AddAnnotationMessageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - annotationId
+        - documentId
+        - message
+        - annotationGeneration
+      properties:
+        annotationId:
+          type: string
+        documentId:
+          type: string
+        message:
+          $ref: '#/components/schemas/AnnotationMessage'
+        annotationGeneration:
+          type: integer
 paths:
   /openapi.yaml:
     get:
@@ -1354,6 +1561,138 @@ paths:
           description: >-
             The proposal could not be persisted or the server could not
             complete the submission.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/annotations:
+    get:
+      operationId: listAnnotations
+      summary: List annotations across every open document
+      description: >-
+        Aggregates every currently open document's annotations. Lifecycle —
+        resolve, reopen, reattach, delete, create — is owner-only (I3) and has
+        no operation here; only a thread's reply is agent-writable.
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum:
+              - open
+              - resolved
+            default: open
+          description: >-
+            open (the default) answers with annotations that still have a
+            thread to read or reply to; resolved answers with the ones that
+            do not.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationListResponse'
+  /v1/documents/{documentId}/annotations:
+    get:
+      operationId: listDocumentAnnotations
+      summary: List one document's annotations
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum:
+              - open
+              - resolved
+          description: Omitted, both open and resolved annotations are returned.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationListResponse'
+        '404':
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/annotations/{annotationId}:
+    get:
+      operationId: getAnnotation
+      summary: Get one annotation's full detail
+      parameters:
+        - name: annotationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationResponse'
+        '404':
+          description: Annotation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/annotations/{annotationId}/messages:
+    post:
+      operationId: addAnnotationMessage
+      summary: Reply in an annotation's thread
+      description: >-
+        The only annotation mutation this API exposes (I3): lifecycle moves
+        (resolve, reopen, reattach, delete, create) are owner-only and
+        inexpressible here. Replaying clientRequestId returns the original
+        message instead of posting a duplicate, even against a stale
+        expectedAnnotationGeneration.
+      parameters:
+        - name: annotationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddAnnotationMessageRequest'
+      responses:
+        '200':
+          description: Message posted, or the original message from a replayed clientRequestId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddAnnotationMessageResponse'
+        '404':
+          description: Annotation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: >-
+            ANNOTATION_GENERATION_MISMATCH when expectedAnnotationGeneration
+            is stale, or ANNOTATION_RESOLVED when the thread is resolved —
+            reopen it first. Neither refusal mutates anything.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '400':
+          description: Missing or empty text, or a missing clientRequestId
           content:
             application/json:
               schema:
