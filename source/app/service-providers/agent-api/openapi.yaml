@@ -319,6 +319,11 @@ components:
             - PATCH_NOT_APPLICABLE
             - PACKET_NOT_RETRACTABLE
             - CHUNK_NOT_FOUND
+            - ANNOTATION_NOT_FOUND
+            - ANNOTATION_GENERATION_MISMATCH
+            - ANNOTATION_RESOLVED
+            - ANNOTATION_ORPHANED
+            - ANNOTATION_OWNER_ONLY
             - IDEMPOTENCY_CONFLICT
             - REQUEST_TOO_LARGE
             - REQUEST_BODY_TIMEOUT
@@ -369,6 +374,14 @@ components:
             - review.sidecar-error
             - proposal.applied
             - proposal.retracted
+            - annotation.created
+            - annotation.message-added
+            - annotation.target-changed
+            - annotation.orphaned
+            - annotation.resolved
+            - annotation.reopened
+            - annotation.deleted
+            - annotation.proposal-linked
         timestamp:
           type: string
         reviewId:
@@ -381,6 +394,14 @@ components:
           type: integer
         unresolvedChunks:
           type: integer
+        annotationId:
+          type: string
+          description: >-
+            annotation.*: the annotation the event is about.
+        annotationGeneration:
+          type: integer
+          description: >-
+            annotation.*: the document's annotation generation after the event.
         packetId:
           type: string
           description: >-

@@ -77,3 +77,20 @@ export interface TextAnnotation {
   updatedAt: string;
   resolvedAt?: string;
 }
+
+/**
+ * Every annotation of one document, and the counter that fences a decision
+ * made against them. The counter is the annotations' own: it moves when an
+ * annotation moves and stands still while a review advances, so the two
+ * kinds of work never invalidate each other's reads.
+ */
+export interface AnnotationSet {
+  generation: number;
+  items: TextAnnotation[];
+}
+
+/**
+ * Who asked for a mutation. Lifecycle belongs to the owner alone; an agent
+ * may query, reply, and submit proposals, and nothing else.
+ */
+export type AnnotationActor = "owner" | "agent";

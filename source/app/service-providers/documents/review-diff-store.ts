@@ -36,6 +36,7 @@ import type {
   ReviewPacket,
   ReviewSuggestion,
 } from "@dts/common/review-domain";
+import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
 import { sha256Text } from "@common/util/sha256";
 import type { CollaborationSidecarData, PersistedReviewState } from "./collaboration-sidecar-schema";
 
@@ -77,16 +78,28 @@ export function proposalRequestFingerprint(request: {
   documentId: string;
   baselineSha256: string;
   expectedReviewGeneration: number;
-  claims: ReadonlyArray<{ description: string; patch: string }>;
+  claims: ReadonlyArray<{
+    description: string;
+    patch: string;
+    addressesAnnotationIds?: readonly string[];
+  }>;
 }): string {
   return sha256Text(
     JSON.stringify({
       documentId: request.documentId,
       baselineSha256: request.baselineSha256,
       expectedReviewGeneration: request.expectedReviewGeneration,
+      // Which annotations a claim answers is part of what the request says,
+      // so two requests that link differently are different requests. The
+      // key is omitted when nothing is addressed, because a claim that
+      // addresses nothing and one that addresses an empty list are the same
+      // claim and must hash alike.
       claims: request.claims.map((claim) => ({
         description: claim.description,
         patch: claim.patch,
+        ...((claim.addressesAnnotationIds ?? []).length === 0
+          ? {}
+          : { addressesAnnotationIds: [...claim.addressesAnnotationIds!] }),
       })),
     }),
   );
@@ -223,45 +236,64 @@ export function sidecarOutstandingChunks(sidecar: ReviewBearingSidecar): Outstan
 
 /**
  * Serialize a review for its sidecar: everything reviewFromSidecar needs to
- * rebuild identical state, and nothing derived from it. The working text is
- * passed in because its owner is the document, not this module.
- *
- * ponytail: annotations always come back empty here. Nothing on this path
- * knows about a document's annotation state yet — the transaction boundary
- * that reads-modifies-writes the whole sidecar (review AND annotations) in
- * one persist is M3's unified mutation pipeline. Until that lands, a review
- * mutation cannot silently drop annotations because nothing before M3 can
- * create one.
+ * rebuild identical state, and nothing derived from it. The working text and
+ * the disk fence are not here, because they belong to the document rather
+ * than to the review nested inside its sidecar.
  */
-export function reviewSidecar(
-  review: ActiveReviewState,
-  workingText: string,
-  pendingSave?: CollaborationSidecarData["pendingSave"],
-): CollaborationSidecarData {
+function persistedReview(review: ActiveReviewState): PersistedReviewState {
+  return {
+    reviewId: review.reviewId,
+    generation: review.generation,
+    invalidated: review.invalidated,
+    packets: review.packets.map((packet) => ({ ...packet })),
+    suggestions: review.suggestions.map((suggestion) => ({
+      ...suggestion,
+      anchors: suggestion.anchors.map((span) => ({ ...span })),
+      restorations: suggestion.restorations.map((restoration) => ({ ...restoration })),
+    })),
+    submissions: review.submissions.map((submission) => ({
+      ...submission,
+      packetIds: [...submission.packetIds],
+    })),
+    chunkComments: review.chunkComments.map((note) => ({ ...note })),
+    comments: review.comments.map((comment) => ({ ...comment })),
+  };
+}
+
+/**
+ * One document's whole persisted collaboration state. Both halves are named
+ * arguments with no defaults, so a caller that has just changed a review
+ * cannot write a sidecar that silently forgets the document's annotations —
+ * the omission does not compile.
+ *
+ * The disk fence is the caller's to decide and is required, because a
+ * document may carry annotations with no review at all: drift has to stay
+ * detectable for a sidecar that has no review to read a fence off.
+ */
+export function collaborationSidecar(input: {
+  documentPath: string;
+  workingText: string;
+  diskFenceSha256: string;
+  review: ActiveReviewState | undefined;
+  annotations: AnnotationSet;
+  pendingSave?: CollaborationSidecarData["pendingSave"];
+}): CollaborationSidecarData {
   return {
     version: 5,
-    documentPath: review.documentPath,
-    workingText,
-    diskFenceSha256: review.diskFenceSha256,
-    review: {
-      reviewId: review.reviewId,
-      generation: review.generation,
-      invalidated: review.invalidated,
-      packets: review.packets.map((packet) => ({ ...packet })),
-      suggestions: review.suggestions.map((suggestion) => ({
-        ...suggestion,
-        anchors: suggestion.anchors.map((span) => ({ ...span })),
-        restorations: suggestion.restorations.map((restoration) => ({ ...restoration })),
+    documentPath: input.documentPath,
+    workingText: input.workingText,
+    diskFenceSha256: input.diskFenceSha256,
+    review: input.review === undefined ? null : persistedReview(input.review),
+    annotations: {
+      generation: input.annotations.generation,
+      items: input.annotations.items.map((annotation) => ({
+        ...annotation,
+        anchor: { ...annotation.anchor },
+        messages: [...annotation.messages] as TextAnnotation["messages"],
+        proposalActions: annotation.proposalActions.map((action) => ({ ...action })),
       })),
-      submissions: review.submissions.map((submission) => ({
-        ...submission,
-        packetIds: [...submission.packetIds],
-      })),
-      chunkComments: review.chunkComments.map((note) => ({ ...note })),
-      comments: review.comments.map((comment) => ({ ...comment })),
     },
-    annotations: { generation: 0, items: [] },
-    ...(pendingSave === undefined ? {} : { pendingSave }),
+    ...(input.pendingSave === undefined ? {} : { pendingSave: input.pendingSave }),
   };
 }
 

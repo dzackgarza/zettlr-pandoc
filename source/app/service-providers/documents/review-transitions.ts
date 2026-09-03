@@ -105,9 +105,13 @@ export interface RetractionError {
   canClearUnresolved: true;
 }
 
-/** A plan and an error are told apart by the discriminant only errors carry. */
-export function isTransitionError<Response, Error extends { ok: false }>(
-  result: ReviewMutationPlan<Response> | Error,
+/**
+ * A plan and an error are told apart by the discriminant only errors carry.
+ * Written over any plan shape, so the annotation transitions and the review
+ * transitions share one guard rather than each growing their own.
+ */
+export function isTransitionError<Plan extends object, Error extends { ok: false }>(
+  result: Plan | Error,
 ): result is Error {
   return "ok" in result;
 }
@@ -116,10 +120,19 @@ export function isTransitionError<Response, Error extends { ok: false }>(
 // Request and response shapes owned here
 // ============================================================================
 
-/** One ordered claim of a proposal: prose plus the patch implementing it. */
+/**
+ * One ordered claim of a proposal: prose plus the patch implementing it, and
+ * the annotations it answers.
+ *
+ * Linkage rides the claim rather than the individual suggestions the patch
+ * decomposes into: an agent answers an owner's instruction with a claim, and
+ * which characters that claim happened to split into is an artefact of the
+ * diff, not something the agent said anything about.
+ */
 export interface ClaimInput {
   patch: string;
   description: string;
+  addressesAnnotationIds?: readonly string[];
 }
 
 /** What the reviewer can decide about one chunk. */

@@ -38,7 +38,7 @@ import type {
   SubmitProposalRequest,
 } from "@dts/common/agent-api";
 import type DocumentManager from "@providers/documents";
-import type { ReviewFailure } from "@providers/documents/review-application-service";
+import type { ReviewFailure } from "@providers/documents/document-collaboration-application-service";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import crypto from "crypto";

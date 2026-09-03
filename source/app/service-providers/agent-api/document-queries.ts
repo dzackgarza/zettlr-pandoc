@@ -28,7 +28,7 @@ import type {
 import { DocumentType } from "@dts/common/documents";
 import type DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
-import type { ReviewQueryPort } from "@providers/documents/review-application-service";
+import type { ReviewQueryPort } from "@providers/documents/document-collaboration-application-service";
 import fs from "fs";
 import path from "path";
 import vm from "vm";

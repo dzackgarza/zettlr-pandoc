@@ -539,7 +539,7 @@ export interface components {
         };
         AgentError: {
             /** @enum {string} */
-            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR";
+            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR";
             message: string;
             documentId?: string;
             expected?: components["schemas"]["DocumentRevision"];
@@ -553,13 +553,17 @@ export interface components {
         };
         AgentEvent: {
             /** @enum {string} */
-            event: "review.started" | "review.changed" | "review.resolved" | "review.commented" | "review.cleared" | "review.invalidated" | "review.completed" | "review.discarded" | "review.sidecar-error" | "proposal.applied" | "proposal.retracted";
+            event: "review.started" | "review.changed" | "review.resolved" | "review.commented" | "review.cleared" | "review.invalidated" | "review.completed" | "review.discarded" | "review.sidecar-error" | "proposal.applied" | "proposal.retracted" | "annotation.created" | "annotation.message-added" | "annotation.target-changed" | "annotation.orphaned" | "annotation.resolved" | "annotation.reopened" | "annotation.deleted" | "annotation.proposal-linked";
             timestamp: string;
             reviewId?: string;
             documentId?: string;
             documentRevision?: components["schemas"]["DocumentRevision"];
             reviewGeneration?: number;
             unresolvedChunks?: number;
+            /** @description annotation.*: the annotation the event is about. */
+            annotationId?: string;
+            /** @description annotation.*: the document's annotation generation after the event. */
+            annotationGeneration?: number;
             /** @description proposal.applied and proposal.retracted: the packet affected by the event. */
             packetId?: string;
             /** @description review.commented: the outstanding chunk the comment is anchored to, when it is chunk-anchored. */

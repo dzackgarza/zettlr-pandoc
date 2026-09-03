@@ -79,16 +79,16 @@ import {
   type ReviewStatus,
 } from './review-diff-store'
 import {
-  ReviewApplicationService,
+  CollaborationApplicationService,
   type AgentEventPayload,
   type PreparedDocumentMutation,
-  type ReviewDocumentAuthority,
+  type CollaborationDocumentAuthority,
   type ReviewFailure,
   type ReviewMutationPrecondition,
   type ReviewQueryPort,
   type ReviewSavePreparation,
   type SubmittedProposal,
-} from './review-application-service'
+} from './document-collaboration-application-service'
 import {
   type AcceptAllChunksResponse,
   type AddReviewCommentResponse,
@@ -493,7 +493,7 @@ export type DocumentIpcHandlers = {
 
 export default class DocumentManager
   extends ProviderContract
-  implements ReviewDocumentAuthority
+  implements CollaborationDocumentAuthority
 {
   /**
    * This array holds all open windows, here represented as document trees
@@ -564,17 +564,13 @@ export default class DocumentManager
   private readonly _documentIdByPath: Map<string, string>
 
   /**
-   * One persisted sidecar per reviewed file, in app data, keyed by canonical
-   * path. Written through on every review mutation, so closing a reviewed
-   * file (or crashing) destroys nothing; opening the file reattaches.
+   * The one owner of a document's collaboration transactions — its review
+   * and its annotations: per-document locking, persist-before-commit
+   * ordering, and committed-event emission. Every mutation of either half,
+   * from every transport, runs through it, and one sidecar per document (in
+   * app data, keyed by canonical path) is what it writes through to.
    */
-
-  /**
-   * The one owner of review transactions: per-document locking,
-   * persist-before-commit ordering, and committed-event emission. Every
-   * review mutation from every transport runs through it.
-   */
-  private readonly _reviewApplication: ReviewApplicationService
+  private readonly _reviewApplication: CollaborationApplicationService
 
   /**
    * This holds all currently opened documents somewhere across the app.
@@ -604,7 +600,7 @@ export default class DocumentManager
     this._ignoreChanges = []
     this._remoteChangeDialogShownFor = []
     this._remoteChangeErrorShownFor = []
-    this._reviewApplication = new ReviewApplicationService({
+    this._reviewApplication = new CollaborationApplicationService({
       authority: this,
       sidecarDirectory: path.join(app.getPath('userData'), 'review-sidecars'),
       emit: (event, payload) => {
@@ -1083,7 +1079,7 @@ export default class DocumentManager
       this._app.log.info(`[Documents Manager] Closing window ${windowId}!`)
       for (const document of this._windowExclusiveDocuments(windowId)) {
         try {
-          await this._detachReview(document.documentId)
+          await this._detachCollaboration(document.documentId)
         } catch (err) {
           this._announceDetachFailure(document.filePath, err)
           return
@@ -1180,7 +1176,7 @@ export default class DocumentManager
     // Reattachment: a sidecar for this path means a review detached here.
     // On a verified fence this restores the buffer to the review's working
     // text, so the content and version returned must be read AFTER it.
-    await this._reattachReviewSidecar(doc)
+    await this._reattachCollaborationSidecar(doc)
 
     // The authority loaded a markdown buffer: feed the references provider's
     // live overlay (issue #53). Reporting on LOAD — not only on the first
@@ -1710,7 +1706,7 @@ current contents from the editor somewhere else, and restart the application.`,
         // document is about to leave the live registry, so detach that
         // preserved review before removing its working-text resolver.
         try {
-          await this._detachReview(openFile.documentId)
+          await this._detachCollaboration(openFile.documentId)
         } catch (err) {
           this._announceDetachFailure(filePath, err)
           return false
@@ -1729,7 +1725,7 @@ current contents from the editor somewhere else, and restart the application.`,
         // live registry. Detach before the splice so closed-file API reads do
         // not observe a review whose working-text authority is gone.
         try {
-          await this._detachReview(openFile.documentId)
+          await this._detachCollaboration(openFile.documentId)
         } catch (err) {
           this._announceDetachFailure(filePath, err)
           return false
@@ -1750,7 +1746,7 @@ current contents from the editor somewhere else, and restart the application.`,
       const _id = this.getDocumentId(filePath)
       if (_id !== undefined) {
         try {
-          await this._detachReview(_id)
+          await this._detachCollaboration(_id)
         } catch (err) {
           this._announceDetachFailure(filePath, err)
           return false
@@ -1820,7 +1816,7 @@ current contents from the editor somewhere else, and restart the application.`,
     const documentId = this.getDocumentId(filePath)
     if (documentId !== undefined) {
       try {
-        await this._detachReview(documentId)
+        await this._detachCollaboration(documentId)
       } catch (err) {
         // The file is gone from disk, so there is no reopening it to retry
         // the export; the review stays in memory and the buffer stays loaded
@@ -2180,7 +2176,7 @@ current contents from the editor somewhere else, and restart the application.`,
     const _id = this.getDocumentId(filePath)
     if (_id !== undefined) {
       try {
-        await this._detachReview(_id)
+        await this._detachCollaboration(_id)
       } catch (err) {
         // The reload is what would discard the in-memory review, so it does
         // not happen: the buffer and the review stay, and the renderer is
@@ -2560,8 +2556,8 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   // ==========================================================================
-  // ReviewDocumentAuthority — what the review application service may ask of
-  // the document authority, and nothing more.
+  // CollaborationDocumentAuthority — what the collaboration application
+  // service may ask of the document authority, and nothing more.
   // ==========================================================================
 
   public resolveDocumentPath(documentId: string): string | undefined {
@@ -2680,7 +2676,7 @@ current contents from the editor somewhere else, and restart the application.`,
     }
   }
 
-  public broadcastReviewState(documentId: string): void {
+  public broadcastCollaborationState(documentId: string): void {
     const filePath = this.getDocumentPath(documentId)
     if (filePath === undefined) {
       return
@@ -2986,16 +2982,18 @@ current contents from the editor somewhere else, and restart the application.`,
    * An invalidated review is the one exception. Its in-process resolution
    * was always destruction (the disk moved underneath it, and reloading
    * from disk closes it), so detaching would only preserve a review that
-   * can never be decided again — the sidecar is deleted instead.
+   * can never be decided again — it is dropped instead. The same document's
+   * annotations are written through regardless: they outlive the review
+   * that was answering them.
    *
    * A failed write ABORTS the close. It throws, the review stays in memory,
    * the document stays open, and the sidecar keeps its previous valid state.
    * Catching the error and closing anyway is what turned an unwritable
    * sidecar into a silently destroyed review.
    */
-  private async _detachReview(documentId: string): Promise<void> {
+  private async _detachCollaboration(documentId: string): Promise<void> {
     await this._reviewApplication.withDocumentLock(documentId, async () => {
-      await this._reviewApplication.detachReview(documentId)
+      await this._reviewApplication.detachCollaboration(documentId)
     })
   }
 
@@ -3028,12 +3026,12 @@ current contents from the editor somewhere else, and restart the application.`,
 
   /**
    * The user's "Don't save" answer, applied to one document. DESTROY, where
-   * _detachReview preserves: the bytes thrown away die everywhere this
+   * _detachCollaboration preserves: the bytes thrown away die everywhere this
    * provider captured them — the buffer, the in-memory review, and the
    * review's sidecar file.
    *
    * Every close prompt used to hand-roll this as
-   * `lastSavedVersion = currentVersion` plus _detachReview, and both halves
+   * `lastSavedVersion = currentVersion` plus _detachCollaboration, and both halves
    * reversed the decision. Silencing the dirty flag left the discarded text
    * in the buffer, where a pane in another window still showed it and the
    * next save would write it. Detaching wrote that same live text through to
@@ -3051,7 +3049,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * the claim true.
    *
    * The sidecar deletion is deliberately NOT wrapped in the error handling
-   * _detachReview uses: a discard whose file removal failed leaves those
+   * _detachCollaboration uses: a discard whose file removal failed leaves those
    * bytes reattachable, and swallowing that would reinstate the defect. It
    * throws, and the close it was called from aborts.
    */
@@ -3069,7 +3067,7 @@ current contents from the editor somewhere else, and restart the application.`,
       return
     }
     const diskContents = await this._app.fsal.loadAnySupportedFile(doc.filePath)
-    await this._reviewApplication.discardReview(
+    await this._reviewApplication.discardCollaboration(
       doc.documentId,
       doc.filePath,
       diskContents,
@@ -3099,17 +3097,20 @@ current contents from the editor somewhere else, and restart the application.`,
    * review to its reference. A fence mismatch is external drift observed
    * across a gap in time instead of within a process, and gets the same
    * terminal treatment drift-then-reload gets in-process: the review is
-   * announced invalidated and destroyed (its sidecar deleted), and the file
-   * opens with the disk content preserved.
+   * announced invalidated and destroyed, and the file opens with the disk
+   * content preserved. The document's annotations survive that; their
+   * anchors become `orphaned` and wait for the owner to reattach them.
    */
-  private async _reattachReviewSidecar(doc: Document): Promise<void> {
+  private async _reattachCollaborationSidecar(doc: Document): Promise<void> {
     try {
-      const restored = await this._reviewApplication.reattachReview(
+      const restored = await this._reviewApplication.reattachCollaboration(
         doc.documentId,
         doc.filePath,
         doc.lastSavedContent,
       )
-      if (restored === undefined) {
+      // Annotations restore silently: only a restored review gives the
+      // sidecar's working text a claim on the buffer.
+      if (restored?.workingText === undefined) {
         return
       }
       this._applyWorkingTextToDocument(doc.filePath, restored.workingText)
@@ -3293,7 +3294,7 @@ current contents from the editor somewhere else, and restart the application.`,
   /**
    * Get the review store for direct agent API method dispatch.
    */
-  public get reviewStore(): ReviewApplicationService['reviewStore'] {
+  public get reviewStore(): CollaborationApplicationService['reviewStore'] {
     return this._reviewApplication.reviewStore
   }
 
