@@ -29,6 +29,7 @@ import { type SyntaxNode, type SyntaxNodeRef } from '@lezer/common'
 import { WidgetType, EditorView } from '@codemirror/view'
 import { type EditorState } from '@codemirror/state'
 import { configField } from '../util/configuration'
+import { wholeEnvironment } from '@common/util/math-delimiters'
 import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-render'
 
 /**
@@ -37,8 +38,6 @@ import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-r
  * missing picture or only a paragraph boundary.
  */
 export const FIGURE_ENVIRONMENTS: ReadonlySet<string> = new Set([ 'tikzcd', 'tikzpicture' ])
-
-const RAW_OPEN_RE = /^\\begin\{(tikzcd|tikzpicture)\}/
 
 /**
  * The environment a paragraph renders as a raw figure, or null when it does
@@ -52,11 +51,8 @@ const RAW_OPEN_RE = /^\\begin\{(tikzcd|tikzpicture)\}/
  * and the figure can never disagree about what renders.
  */
 export function rawTikzEnvironment (paragraphText: string): string|null {
-  const open = RAW_OPEN_RE.exec(paragraphText)
-  if (open === null || !paragraphText.trimEnd().endsWith(`\\end{${open[1]}}`)) {
-    return null
-  }
-  return open[1]
+  const environment = wholeEnvironment(paragraphText)
+  return environment !== null && FIGURE_ENVIRONMENTS.has(environment) ? environment : null
 }
 
 /**

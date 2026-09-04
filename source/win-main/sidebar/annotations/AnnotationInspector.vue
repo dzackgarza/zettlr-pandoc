@@ -4,8 +4,8 @@
       <button
         type="button"
         class="annotation-inspector-back"
-        v-bind:title="backLabel"
-        v-bind:aria-label="backLabel"
+        v-bind:title="trans('Back to the annotation list')"
+        v-bind:aria-label="trans('Back to the annotation list')"
         v-on:click="emit('back')"
       >
         <cds-icon shape="arrow" direction="left" role="presentation"></cds-icon>
@@ -15,8 +15,8 @@
       <button
         type="button"
         class="annotation-inspector-close"
-        v-bind:title="closeLabel"
-        v-bind:aria-label="closeLabel"
+        v-bind:title="trans('Close')"
+        v-bind:aria-label="trans('Close')"
         v-on:click="emit('close')"
       >
         <cds-icon shape="times" role="presentation"></cds-icon>
@@ -25,7 +25,7 @@
 
     <section class="annotation-inspector-source">
       <h2>
-        {{ sourceLabel }}
+        {{ trans('Source') }}
         <button
           v-if="card.lineNumber !== undefined"
           type="button"
@@ -52,7 +52,7 @@
 
     <div class="annotation-inspector-actions">
       <button type="button" class="annotation-action-reply" v-on:click="replyOpen = !replyOpen">
-        <cds-icon shape="undo" role="presentation"></cds-icon> {{ replyLabel }}
+        <cds-icon shape="undo" role="presentation"></cds-icon> {{ trans('Reply') }}
       </button>
       <button
         v-if="actionRow.canShowProposal"
@@ -60,7 +60,7 @@
         class="annotation-action-show-proposal"
         v-on:click="emit('show-proposal')"
       >
-        <cds-icon shape="eye" role="presentation"></cds-icon> {{ showProposalLabel }}
+        <cds-icon shape="eye" role="presentation"></cds-icon> {{ trans('Show proposal') }}
       </button>
       <button
         v-if="actionRow.canReattach"
@@ -68,7 +68,7 @@
         class="annotation-action-reattach"
         v-on:click="emit('begin-reattach')"
       >
-        <cds-icon shape="paperclip" role="presentation"></cds-icon> {{ reattachLabel }}
+        <cds-icon shape="paperclip" role="presentation"></cds-icon> {{ trans('Reattach') }}
       </button>
       <button
         type="button"
@@ -133,13 +133,6 @@ const pendingProposalCount = computed(() => props.card.annotation.proposalAction
 const lifecycleLabel = computed(() => props.card.annotation.state === 'resolved' ? trans('Resolved') : trans('Open'))
 const eyebrowLabel = computed(() => trans('Annotation %s', String(props.card.ordinal)))
 const resolveLabel = computed(() => actionRow.value.resolveLabel === 'Reopen' ? trans('Reopen') : trans('Resolve'))
-
-const backLabel = trans('Back to the annotation list')
-const closeLabel = trans('Close')
-const sourceLabel = trans('Source')
-const replyLabel = trans('Reply')
-const showProposalLabel = trans('Show proposal')
-const reattachLabel = trans('Reattach')
 </script>
 
 <style lang="less">

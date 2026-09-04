@@ -65,7 +65,6 @@ import {
   deriveActionRow,
   deriveCardTitle,
   filterCards,
-  formatLineLocator,
   lineNumberFor,
   openAnnotationCount,
   partitionByResolution,
@@ -139,8 +138,10 @@ describe("annotation-panel-model", function () {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    assert.equal(formatLineLocator(orphaned.anchor, workingText), "Orphaned");
     assert.equal(lineNumberFor(orphaned.anchor, workingText), undefined);
+    const [orphanedCard] = buildAnnotationCards([orphaned], workingText);
+    assert.equal(orphanedCard.lineLocator, "Orphaned");
+    assert.equal(orphanedCard.lineNumber, undefined);
   });
 
   it("partitions resolved cards out of the primary list entirely (S9)", function () {

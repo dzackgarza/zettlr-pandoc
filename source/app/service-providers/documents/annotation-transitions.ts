@@ -78,22 +78,16 @@ export function emptyAnnotationSet(): AnnotationSet {
 // ============================================================================
 
 /**
- * A deep-enough copy: every container a transition may append to or rewrite.
- * The anchor and the messages are replaced wholesale rather than edited, so
- * copying the arrays is enough to keep the committed set unreachable from a
- * plan that is never committed.
+ * A full copy of the annotation and every container it holds, so a
+ * transition can mutate the returned value without the committed set — still
+ * reachable from other in-flight reads — ever seeing the change.
  */
 function cloneAnnotation(annotation: TextAnnotation): TextAnnotation {
-  return {
-    ...annotation,
-    anchor: { ...annotation.anchor },
-    messages: [...annotation.messages] as TextAnnotation["messages"],
-    proposalActions: annotation.proposalActions.map((action) => ({ ...action })),
-  };
+  return structuredClone(annotation);
 }
 
 function cloneItems(annotations: AnnotationSet): TextAnnotation[] {
-  return annotations.items.map(cloneAnnotation);
+  return structuredClone(annotations.items);
 }
 
 /**

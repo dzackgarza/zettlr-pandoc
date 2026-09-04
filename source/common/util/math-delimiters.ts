@@ -71,6 +71,23 @@ export function mathEnvironmentName (text: string): string|null {
 }
 
 /**
+ * The LaTeX environment name if `text` (ignoring trailing whitespace) is
+ * exactly one `\begin{name}…\end{name}` block, or null otherwise. Agnostic of
+ * which environment it is — this is the "is this whole text one LaTeX
+ * environment" predicate shared by the environment linter
+ * (latex-environment-lint.ts) and the TikZ raw-block renderer
+ * (render-tikz.ts), each of which narrows the returned name to its own set
+ * (MATH_ENVIRONMENTS, FIGURE_ENVIRONMENTS).
+ */
+export function wholeEnvironment (text: string): string|null {
+  const match = ENVIRONMENT_OPEN_RE.exec(text)
+  if (match === null) {
+    return null
+  }
+  return text.trimEnd().endsWith(`\\end{${match[1]}}`) ? match[1] : null
+}
+
+/**
  * The math a code node carries, from the parts the Markdown AST keeps: the
  * opening mark and the source between the marks. Returns null for a genuine
  * code span.
@@ -115,8 +132,8 @@ export function stripMathDelimiters (text: string): { display: boolean, equation
   }
   // A math environment is its own delimiter, and keeps it: `align` without its
   // `\begin`/`\end` is not an alignment, just rows of `&`.
-  const environment = mathEnvironmentName(trimmed)
-  if (environment !== null && trimmed.endsWith(`\\end{${environment}}`)) {
+  const environment = wholeEnvironment(trimmed)
+  if (environment !== null && MATH_ENVIRONMENTS.has(environment)) {
     return { display: true, equation: trimmed }
   }
   return null

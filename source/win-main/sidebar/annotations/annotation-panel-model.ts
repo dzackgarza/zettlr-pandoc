@@ -87,16 +87,6 @@ export function lineNumberFor (anchor: AnnotationAnchor, workingText: string): n
   return pos === undefined ? undefined : lineOfPosition(pos, workingText)
 }
 
-/**
- * "Ln N" for a target that still has a position (range or the seam a
- * deletion left behind); an orphaned anchor has no position at all, so it
- * reports that instead of a fabricated line.
- */
-export function formatLineLocator (anchor: AnnotationAnchor, workingText: string): string {
-  const line = lineNumberFor(anchor, workingText)
-  return line === undefined ? 'Orphaned' : `Ln ${line}`
-}
-
 function wordCount (text: string): number {
   const trimmed = text.trim()
   return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length
@@ -121,12 +111,13 @@ export function buildAnnotationCards (annotations: TextAnnotation[], workingText
   return sorted.map((annotation, index) => {
     const firstMessage = annotation.messages[0]
     const quotedText = annotation.anchor.quotedText
+    const lineNumber = lineNumberFor(annotation.anchor, workingText)
     return {
       annotation,
       ordinal: index + 1,
       title: deriveCardTitle(firstMessage.text),
-      lineLocator: formatLineLocator(annotation.anchor, workingText),
-      lineNumber: lineNumberFor(annotation.anchor, workingText),
+      lineLocator: lineNumber === undefined ? 'Orphaned' : `Ln ${lineNumber}`,
+      lineNumber,
       wordCount: wordCount(quotedText),
       quotedText,
       instructionPreview: truncatePreview(firstMessage.text),

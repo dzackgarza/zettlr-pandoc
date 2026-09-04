@@ -79,6 +79,51 @@ const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
  */
 const REQUEST_BODY_DEADLINE_MS = 30_000;
 
+/**
+ * The HTTP status an AgentErrorCode earns when a route has no code-specific
+ * reason to answer otherwise. `Record<AgentErrorCode, number>` is exhaustive
+ * over the OpenAPI contract's own enum, so a code added there without an
+ * entry added here is a compile error instead of a silent 500.
+ *
+ * A route may still answer a particular code with something other than its
+ * entry here when the status depends on more than the code alone. submitProposal
+ * answers REVISION_MISMATCH with 412 and an ETag header — an optimistic-
+ * concurrency precondition, not a generic conflict — and keeps that as its
+ * own branch rather than folding it in here.
+ */
+const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
+  APP_NOT_RUNNING: 503,
+  PROTOCOL_MISMATCH: 400,
+  NO_FOCUSED_DOCUMENT: 404,
+  DOCUMENT_NOT_FOUND: 404,
+  DOCUMENT_CLOSED: 409,
+  REVISION_MISMATCH: 409,
+  REVIEW_GENERATION_MISMATCH: 409,
+  REVIEW_NOT_FOUND: 404,
+  REVIEW_INVALIDATED: 409,
+  PATCH_INVALID: 400,
+  PATCH_NOT_APPLICABLE: 400,
+  PACKET_NOT_RETRACTABLE: 409,
+  CHUNK_NOT_FOUND: 404,
+  ANNOTATION_NOT_FOUND: 404,
+  ANNOTATION_GENERATION_MISMATCH: 409,
+  ANNOTATION_RESOLVED: 409,
+  ANNOTATION_ORPHANED: 409,
+  // Unreachable through addAnnotationMessage, the only route that consults
+  // this code (I3: lifecycle is owner-only, and that route never checks
+  // ownership) — kept here because the Record is exhaustive, not as a
+  // defense-in-depth branch a reviewer has to trust by inspection.
+  ANNOTATION_OWNER_ONLY: 403,
+  IDEMPOTENCY_CONFLICT: 409,
+  REQUEST_TOO_LARGE: 413,
+  REQUEST_BODY_TIMEOUT: 408,
+  SEARCH_TIMEOUT: 422,
+  METHOD_NOT_FOUND: 404,
+  INVALID_PARAMS: 400,
+  PERSISTENCE_FAILED: 500,
+  INTERNAL_ERROR: 500,
+};
+
 class RequestTooLargeError extends Error {
   constructor() {
     super("Request body exceeds the API limit");
@@ -936,30 +981,30 @@ export default class AgentHTTPProvider extends ProviderContract {
         // there is then no live revision to advertise. The caller re-reads
         // the content either way; an ETag naming a buffer nobody holds would
         // only invite a retry against a baseline that no longer exists.
+        //
+        // This is its own branch, not a STATUS_BY_CODE entry, because the
+        // status here (412, an ETag precondition) and the header above are
+        // both specific to this route — STATUS_BY_CODE's own entry for this
+        // code is the generic 409 every other route uses.
         const current = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
         if (current !== undefined) {
           res.setHeader("ETag", `"sha256:${sha256Text(current.document.toString())}"`);
         }
         this.sendError(res, 412, "REVISION_MISMATCH", result.message);
-      } else if (result.code === "PATCH_INVALID" || result.code === "PATCH_NOT_APPLICABLE") {
-        this.sendError(res, 400, result.code, result.message);
-      } else if (result.code === "REVIEW_INVALIDATED") {
-        this.sendError(res, 409, "REVIEW_INVALIDATED", result.message);
-      } else if (result.code === "IDEMPOTENCY_CONFLICT" || result.code === "REVIEW_GENERATION_MISMATCH") {
-        this.sendError(res, 409, result.code, result.message);
-      } else if (result.code === "ANNOTATION_NOT_FOUND") {
-        // A claim's addressesAnnotationIds named an id this document does
-        // not have. The linkage check runs before the sidecar write, so the
-        // whole submission — this claim's patch included — committed
-        // nothing (I2, and the plan's "commits with the annotation change
-        // or not at all").
-        this.sendError(res, 404, result.code, result.message);
-      } else if (result.code === "ANNOTATION_RESOLVED" || result.code === "ANNOTATION_ORPHANED") {
-        this.sendError(res, 409, result.code, result.message);
-      } else if (result.code === "PERSISTENCE_FAILED") {
-        this.sendError(res, 500, "PERSISTENCE_FAILED", result.message);
       } else {
-        this.sendError(res, 500, "INTERNAL_ERROR", result.message);
+        // Every other refusal, including ANNOTATION_NOT_FOUND — a claim's
+        // addressesAnnotationIds named an id this document does not have.
+        // The linkage check runs before the sidecar write, so the whole
+        // submission (this claim's patch included) committed nothing (I2,
+        // and the plan's "commits with the annotation change or not at
+        // all") — earns its status from STATUS_BY_CODE like any other route.
+        //
+        // submitProposal's own return type widens its failure code to
+        // `string`: every value it actually produces is one of the OpenAPI
+        // contract's AgentErrorCode members, so the cast back is safe, and
+        // `?? 500` only guards a code genuinely outside that contract.
+        const code = result.code as AgentErrorCode;
+        this.sendError(res, STATUS_BY_CODE[code] ?? 500, code, result.message);
       }
       return;
     }
@@ -1025,34 +1070,6 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   /**
-   * The HTTP status an annotation refusal earns. ANNOTATION_GENERATION_MISMATCH
-   * and ANNOTATION_RESOLVED are 409: the caller's picture of the thread is
-   * stale, not wrong, and re-reading resolves it. ANNOTATION_OWNER_ONLY is
-   * unreachable through this route — addAnnotationMessage never checks
-   * ownership — but is mapped for defense in depth rather than falling
-   * through to 500 if that ever changes.
-   */
-  private static annotationStatus(code: AgentErrorCode): number {
-    switch (code) {
-      case "ANNOTATION_NOT_FOUND":
-        return 404;
-      case "ANNOTATION_OWNER_ONLY":
-        return 403;
-      case "ANNOTATION_GENERATION_MISMATCH":
-      case "ANNOTATION_RESOLVED":
-      case "ANNOTATION_ORPHANED":
-      case "DOCUMENT_CLOSED":
-        return 409;
-      case "INVALID_PARAMS":
-        return 400;
-      case "PERSISTENCE_FAILED":
-        return 500;
-      default:
-        return 500;
-    }
-  }
-
-  /**
    * POST /v1/annotations/{annotationId}/messages — the one annotation
    * mutation an agent may perform. The document is resolved from the
    * annotationId alone, since the request carries no documentId.
@@ -1079,7 +1096,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (!("messageId" in result)) {
       this.sendError(
         res,
-        AgentHTTPProvider.annotationStatus(result.code),
+        STATUS_BY_CODE[result.code],
         result.code,
         result.message,
       );
@@ -1365,11 +1382,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         documentRevision: result.documentRevision,
       });
     } else {
-      // Two different refusals share the 409: the packet is live but no
-      // longer the retractable one, or its file is closed. Both name the
-      // review that owns the packet, which is the only thing the caller can
-      // re-read from — disposing of the suggestions is the reviewer's.
-      this.sendError(res, result.code === "PERSISTENCE_FAILED" ? 500 : 409, result.code, result.message, {
+      // PACKET_NOT_RETRACTABLE and DOCUMENT_CLOSED both land on STATUS_BY_CODE's
+      // 409: the packet is live but no longer the retractable one, or its file
+      // is closed. Both name the review that owns the packet, which is the
+      // only thing the caller can re-read from — disposing of the suggestions
+      // is the reviewer's.
+      this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message, {
         reviewId: result.reviewId,
         ...AgentHTTPProvider.conflictDetail(result),
       });
