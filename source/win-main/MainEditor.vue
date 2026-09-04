@@ -55,7 +55,7 @@ import { getBibliographyForDescriptor as getBibliography } from '@common/util/ge
 import { EditorSelection } from '@codemirror/state'
 import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ipc-api'
 import { ipcMarkdownFormatter, surfaceFormatResult } from '@common/modules/markdown-editor/commands/format-document-ipc'
-import { useConfigStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
+import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { isAbsolutePath, pathBasename, pathDirname, resolvePath } from '@common/util/renderer-path-polyfill'
 import type { DocumentsUpdateContext } from 'source/app/service-providers/documents'
 import type {
@@ -149,6 +149,15 @@ const documentTreeStore = useDocumentTreeStore()
 const workspaceStore = useWorkspaceStore()
 const configStore = useConfigStore()
 const tagStore = useTagsStore()
+const collaborationStore = useDocumentCollaborationStore()
+
+/**
+ * This pane's own slice of the one cached DocumentCollaborationSession for
+ * its file — the only collaboration state this component reads. Every
+ * other pane on the same document, and the annotations panel, read the same
+ * store entry; nothing here pulls the sidecar or a session of its own.
+ */
+const collaborationSession = computed(() => collaborationStore.sessionsByDocumentPath[props.file.path])
 
 // UNREFFED STUFF
 let currentEditor: MarkdownEditor|null = null
@@ -228,19 +237,6 @@ function throwOnReviewRefusal (
     showToast(trans(result.message), 'error')
     throw new Error(result.message)
   }
-}
-
-function fetchActiveReviewDiffSession (): void {
-  ipcRenderer.invoke('documents-provider', {
-    command: 'get-review-diff-session',
-    payload: { path: props.file.path }
-  })
-    .then(session => {
-      if (session !== undefined) {
-        applyReviewDiffSession(session)
-      }
-    })
-    .catch(err => console.error('Could not fetch active review-diff session', err))
 }
 
 // EVENT LISTENERS
@@ -423,21 +419,10 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
         })
       })
       .catch(err => console.error(err))
-  } else if (
-    event === DP_EVENTS.REVIEW_DIFF &&
-    context.filePath === props.file.path &&
-    context.reviewCleared === true
-  ) {
-    // Provider closed or completed the review — exit review mode
-    currentEditor?.clearReviewDiffSession(context.reviewId)
-  } else if (
-    event === DP_EVENTS.REVIEW_DIFF &&
-    context.filePath === props.file.path &&
-    context.reviewDiffSession !== undefined &&
-    !(context.windowId === props.windowId && context.leafId === props.leafId)
-  ) {
-    applyReviewDiffSession(context.reviewDiffSession)
   }
+  // Collaboration state (annotations, review) is not handled here: it
+  // reaches this pane through the document-collaboration store and the
+  // `collaborationSession` watcher below, not through this raw event.
 })
 
 ipcRenderer.on('reload-editors', _e => {
@@ -766,6 +751,19 @@ watch(tags, (newValue) => {
   currentEditor?.setCompletionDatabase('tags', newValue)
 })
 
+// The store is the only thing that moves review state in this pane: a
+// session appearing starts (or re-syncs) the review-diff widgets, and a
+// session disappearing clears them. `immediate` covers the pane that mounts
+// onto a document another pane already cached the session for, where the
+// store never changes again to re-fire this watcher on its own.
+watch(() => collaborationSession.value?.review, (nextReview, previousReview) => {
+  if (nextReview !== undefined) {
+    applyReviewDiffSession(nextReview)
+  } else if (previousReview !== undefined) {
+    currentEditor?.clearReviewDiffSession(previousReview.id)
+  }
+}, { immediate: true })
+
 // METHODS
 /**
  * Returns a MarkdownEditor for the provided path.
@@ -1002,11 +1000,15 @@ async function loadDocument (): Promise<void> {
   currentEditor.projectInfo = updateProjectInfo()
   await updateReferenceEntries()
 
+  // A review that arrived (via the store watcher above) before this editor
+  // was ready is buffered here; apply it now that it is. Otherwise, pull
+  // this pane's collaboration session: a no-op if another pane already
+  // cached it, a single IPC read if this is the first pane to ask.
   if (pendingReviewDiffSession !== null) {
     applyReviewDiffSession(pendingReviewDiffSession)
-  } else {
-    fetchActiveReviewDiffSession()
   }
+  collaborationStore.ensureSession(props.file.path)
+    .catch(err => console.error('Could not fetch the collaboration session', err))
 }
 
 function jtl (lineNumber: number): void {

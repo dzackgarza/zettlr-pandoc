@@ -55,8 +55,7 @@ import type {
   AnnotationMessage,
   TextAnnotation,
 } from '@dts/common/annotation-domain'
-import type { ReviewDiffSession } from '@dts/common/review-diff'
-import type { ActiveReviewState } from '@dts/common/review-domain'
+import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import { type TabManager } from '@providers/documents/document-tree/tab-manager'
 import type { ConfigOptions } from '@providers/config/get-config-template'
 import ProviderContract, { type IPCMessage } from '@providers/provider-contract'
@@ -82,6 +81,7 @@ import { type AppServiceContainer } from '../../app-service-container'
 import { DocumentTree, type DTLeaf } from './document-tree'
 import {
   type ReviewStatus,
+  collaborationSessionFor,
 } from './review-diff-store'
 import {
   CollaborationApplicationService,
@@ -197,22 +197,12 @@ export interface DocumentsUpdateContext {
    */
   targetRange?: SourceRange
   /**
-   * Additive (issue #34): a validated single-document diff proposition to
-   * mount in the active editor. For REVIEW_DIFF broadcasts, windowId/leafId
-   * identify the source pane whose status update has already applied locally.
+   * A document's whole collaboration state — its annotations, and its
+   * review if one is active — as one snapshot. Broadcast on every
+   * annotation and review mutation (DP_EVENTS.DOCUMENT_COLLABORATION); the
+   * renderer's document-collaboration Pinia store is the only reader.
    */
-  reviewDiffSession?: ReviewDiffSession
-  /** Signal that a review was closed/completed/invalidated. */
-  reviewCleared?: boolean
-  /** The reviewId that was cleared, for renderer session matching. */
-  reviewId?: string
-  /** Provider-owned review state. */
-  reviewState?: {
-    reviewId: string
-    generation: number
-    workingText: string
-    unresolvedChunks: number
-  }
+  collaborationSession?: DocumentCollaborationSession
   /**
    * The renderer-ready failure payload for FILE_REMOTE_CHANGE_ERROR events.
    * The message is suitable for the visible error surface; diagnostic retains
@@ -379,9 +369,12 @@ export type DocumentManagerIPCContract = {
     request: { payload?: undefined }
     response: string[]
   }
-  'get-review-diff-session': {
+  // The store's hydration pull: one caller resolves it and caches the
+  // result, every other pane of the same path reads the cache. Every
+  // subsequent update reaches the store through the broadcast alone.
+  'get-collaboration-session': {
     request: { payload: { path: string } }
-    response: ReviewDiffSession | undefined
+    response: DocumentCollaborationSession | undefined
   }
   'move-file': {
     request: {
@@ -772,16 +765,9 @@ export default class DocumentManager
         case 'get-file-modification-status': {
           return this.documents.filter((x) => this.isModified(x.filePath)).map((x) => x.filePath)
         }
-        case 'get-review-diff-session': {
+        case 'get-collaboration-session': {
           const docId = this.getDocumentId(payload.path)
-          if (docId === undefined) {
-            return undefined
-          }
-          const review = this._reviewApplication.getReview(docId)
-          if (review === undefined) {
-            return undefined
-          }
-          return this._reviewSessionFor(payload.path, review)
+          return docId === undefined ? undefined : this._collaborationSessionFor(docId, payload.path)
         }
         case 'move-file': {
           const {
@@ -2682,19 +2668,39 @@ current contents from the editor somewhere else, and restart the application.`,
     }
   }
 
+  /**
+   * Broadcast a document's whole collaboration state — annotations, and
+   * review if one is active — as one DocumentCollaborationSession. Every
+   * annotation and review mutation ends here: one event, one shape, so a
+   * pane and the annotations panel can never observe one half updated and
+   * the other stale.
+   */
   public broadcastCollaborationState(documentId: string): void {
     const filePath = this.getDocumentPath(documentId)
     if (filePath === undefined) {
       return
     }
-    this._broadcastReviewState(filePath, this._reviewApplication.getReview(documentId))
+    const session = this._collaborationSessionFor(documentId, filePath)
+    if (session === undefined) {
+      return
+    }
+    this.broadcastEvent(DP_EVENTS.DOCUMENT_COLLABORATION, {
+      filePath,
+      collaborationSession: session,
+    })
   }
 
-  public broadcastReviewCleared(documentId: string, reviewId: string): void {
-    const filePath = this.getDocumentPath(documentId)
-    if (filePath !== undefined) {
-      this._broadcastReviewCleared(filePath, reviewId)
-    }
+  /**
+   * A review closed, completed, or was invalidated. The service has already
+   * removed it before calling this, so the rebuilt session naturally reports
+   * `review: undefined` — the same one broadcast path as every other
+   * collaboration change, with no second wire shape for "cleared" to drift
+   * from the first. `reviewId` is kept on the signature because the
+   * CollaborationDocumentAuthority seam (owned by M3) declares it; nothing
+   * here still needs the value once the rebuilt session already says so.
+   */
+  public broadcastReviewCleared(documentId: string, _reviewId: string): void {
+    this.broadcastCollaborationState(documentId)
   }
 
   // ==========================================================================
@@ -3551,72 +3557,27 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Broadcast the current review state to all renderers displaying a document.
-   * The session carries the mapped suggestions and decision identifiers.
-   * Panes render this state locally and report no derived review state.
+   * The DocumentCollaborationSession every renderer pane and the
+   * annotations panel read, built by the one pure constructor of that shape
+   * (review-diff-store.ts's collaborationSessionFor) so a spec can prove the
+   * same merge production broadcasts. `undefined` only when the document
+   * itself is not open — annotations and review are each a real
+   * empty/absent answer on their own, never a reason to skip the broadcast.
    */
-  private _broadcastReviewState(
+  private _collaborationSessionFor(
+    documentId: string,
     filePath: string,
-    review: ActiveReviewState | undefined,
-  ): void {
-    if (review === undefined) {
-      return
-    }
-    this.broadcastEvent(DP_EVENTS.REVIEW_DIFF, {
-      filePath,
-      reviewDiffSession: this._reviewSessionFor(filePath, review),
-    })
-  }
-
-  /**
-   * The one constructor of the session shape a pane draws from: proposed
-   * suggestion entities and their source descriptions.
-   */
-  private _reviewSessionFor(
-    filePath: string,
-    review: ActiveReviewState,
-  ): ReviewDiffSession {
+  ): DocumentCollaborationSession | undefined {
     const document = this.documents.find((candidate) => candidate.filePath === filePath)
     if (document === undefined) {
-      throw new Error(`Review ${review.reviewId} has no open document ${filePath}`)
+      return undefined
     }
-    return {
-      id: review.reviewId,
-      reviewGeneration: review.generation,
+    return collaborationSessionFor({
+      documentId,
       documentPath: filePath,
       workingText: document.document.toString(),
-      suggestions: review.suggestions
-        .filter((suggestion) => suggestion.state === 'proposed')
-        .map((suggestion) => {
-          const packet = review.packets.find(
-            (candidate) => candidate.packetId === suggestion.packetId,
-          )
-          if (packet === undefined) {
-            throw new Error(`Suggestion ${suggestion.suggestionId} has no packet`)
-          }
-          return {
-            suggestionId: suggestion.suggestionId,
-            removedText: suggestion.removedText,
-            anchors: suggestion.anchors.map((span) => ({ ...span })),
-            seam: suggestion.seam,
-            description: packet.description,
-          }
-        }),
-      chunkComments: review.chunkComments.map((note) => ({ ...note })),
-    }
-  }
-
-  /**
-   * Broadcast a review-cleared signal to all renderers displaying a document.
-   * Tells the renderer to exit review mode (clear review mode
-   * when the provider closes or invalidates the session).
-   */
-  private _broadcastReviewCleared(filePath: string, reviewId: string): void {
-    this.broadcastEvent(DP_EVENTS.REVIEW_DIFF, {
-      filePath,
-      reviewDiffSession: undefined,
-      reviewCleared: true,
-      reviewId,
+      review: this._reviewApplication.getReview(documentId),
+      annotations: this._reviewApplication.getAnnotations(documentId),
     })
   }
 
