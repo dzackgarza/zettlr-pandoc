@@ -25,9 +25,11 @@ import type {
   AddAnnotationMessageResponse,
   AnnotationListResponse,
   AnnotationResponse,
+  SubmitProposalResponse,
 } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
+import { createPatch } from "diff";
 import {
   mkdirSync,
   mkdtempSync,
@@ -43,6 +45,7 @@ import path from "path";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
+import { sha256Text } from "@common/util/sha256";
 
 // ============================================================================
 // Schema conformance — validates every response against the OpenAPI document
@@ -215,6 +218,20 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     body: { text: string; clientRequestId: string; expectedAnnotationGeneration: number },
   ): Promise<{ status: number; body: string }> {
     return httpRequest("POST", `/v1/annotations/${annotationId}/messages`, {
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function postProposal(
+    documentId: string,
+    body: {
+      baselineSha256: string;
+      expectedReviewGeneration: number;
+      clientRequestId: string;
+      claims: Array<{ description: string; patch: string; addressesAnnotationIds?: string[] }>;
+    },
+  ): Promise<{ status: number; body: string }> {
+    return httpRequest("POST", `/v1/documents/${documentId}/proposals`, {
       body: JSON.stringify(body),
     });
   }
@@ -549,5 +566,110 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     assert.equal(after.target.from, 0);
     assert.equal(after.target.to, 20);
     assert.equal(after.annotationGeneration, 1, "no refused attempt may have advanced the generation");
+  });
+
+  // ==========================================================================
+  // Packet-level proposal linkage (invariant 4): a claim's
+  // addressesAnnotationIds reaches CollaborationApplicationService and lands
+  // atomically with the packet it names.
+  // ==========================================================================
+
+  it("links a submitted proposal to the annotation it addresses", async function () {
+    const original = "The quick brown fox jumps over the lazy dog.\n";
+    const revised = "The quick red fox jumps over the lazy dog.\n";
+    const documentId = await openFile(path.join(scratch, "linked.md"), original);
+    const from = original.indexOf("brown fox");
+    const to = from + "brown fox".length;
+    const created = await provider.createAnnotation(
+      documentId,
+      "owner",
+      from,
+      to,
+      "The fox's color is wrong.",
+      0,
+    );
+    assert.ok("annotationId" in created);
+    const annotationId = created.annotationId;
+
+    const submitted = await postProposal(documentId, {
+      baselineSha256: sha256Text(original),
+      expectedReviewGeneration: 0,
+      clientRequestId: "agent-linked-claim-1",
+      claims: [
+        {
+          description: "Correct the fox's color from brown to red.",
+          patch: createPatch("document", original, revised, "", "", { context: 0 }),
+          addressesAnnotationIds: [annotationId],
+        },
+      ],
+    });
+    assert.equal(submitted.status, 200);
+    const result = JSON.parse(submitted.body) as SubmitProposalResponse;
+    assert.equal(result.packetIds.length, 1);
+    const [packetId] = result.packetIds;
+
+    // Prove the link landed by reading it back, not by trusting the POST
+    // response: the annotation itself now carries a proposalAction for
+    // exactly this packet and review.
+    const annotation = JSON.parse(
+      (await httpRequest("GET", `/v1/annotations/${annotationId}`)).body,
+    ) as AnnotationResponse;
+    assert.equal(annotation.proposalActions.length, 1);
+    assert.equal(annotation.proposalActions[0].packetId, packetId);
+    assert.equal(annotation.proposalActions[0].reviewId, result.reviewId);
+    assert.equal(annotation.proposalActions[0].terminalOutcome, undefined);
+  });
+
+  it("refuses a claim addressing a non-open annotation, committing neither the packet nor the annotation", async function () {
+    const original = "The quick brown fox jumps over the lazy dog.\n";
+    const revised = "The quick red fox jumps over the lazy dog.\n";
+    const documentId = await openFile(path.join(scratch, "refused-link.md"), original);
+    const from = original.indexOf("brown fox");
+    const to = from + "brown fox".length;
+    const created = await provider.createAnnotation(
+      documentId,
+      "owner",
+      from,
+      to,
+      "The fox's color is wrong.",
+      0,
+    );
+    assert.ok("annotationId" in created);
+    const annotationId = created.annotationId;
+    const resolved = await provider.resolveAnnotation(documentId, annotationId, "owner", 1);
+    assert.ok("annotationId" in resolved);
+
+    const submitted = await postProposal(documentId, {
+      baselineSha256: sha256Text(original),
+      expectedReviewGeneration: 0,
+      clientRequestId: "agent-linked-claim-refused",
+      claims: [
+        {
+          description: "Correct the fox's color from brown to red.",
+          patch: createPatch("document", original, revised, "", "", { context: 0 }),
+          addressesAnnotationIds: [annotationId],
+        },
+      ],
+    });
+    assert.equal(submitted.status, 409);
+    const error = JSON.parse(submitted.body) as { error: { code: string } };
+    assert.equal(error.error.code, "ANNOTATION_RESOLVED");
+
+    // Nothing committed: the document text is unchanged, no review exists,
+    // and the annotation carries no proposalAction (M3's guarantee — the
+    // linked proposal commits with the annotation change or not at all).
+    const document = JSON.parse((await httpRequest("GET", `/v1/documents/${documentId}`)).body) as {
+      review?: unknown;
+    };
+    assert.equal(document.review, undefined);
+    const content = JSON.parse(
+      (await httpRequest("GET", `/v1/documents/${documentId}/content`)).body,
+    ) as { content: string };
+    assert.equal(content.content.trimEnd(), original.trimEnd());
+    const annotation = JSON.parse(
+      (await httpRequest("GET", `/v1/annotations/${annotationId}`)).body,
+    ) as AnnotationResponse;
+    assert.equal(annotation.proposalActions.length, 0);
+    assert.equal(annotation.state, "resolved");
   });
 });

@@ -588,6 +588,8 @@ export interface components {
             description: string;
             /** @description Unified diff implementing exactly this claim. Name the target in the ---/+++ headers as the literal `document` or as the document's absolute path (a git-style a/ or b/ prefix is allowed); any other filename, a create/delete/rename/binary/mode patch, or a diff that leaves the text unchanged is PATCH_INVALID. */
             patch: string;
+            /** @description Annotation ids this claim answers. Each must belong to the target document, be open, and not be orphaned; otherwise the whole submission is refused — ANNOTATION_NOT_FOUND, ANNOTATION_RESOLVED, or ANNOTATION_ORPHANED — with nothing committed, not this claim's patch and not any other claim in the same submission. On success, each addressed annotation records this claim's packet as a linked proposal action, visible on GET /v1/annotations/{annotationId}. */
+            addressesAnnotationIds?: string[];
         };
         SubmitProposalRequest: {
             /** @description SHA-256 returned by the most recent working-content read. It pins the exact text the patches must apply to; a stale hash is refused as REVISION_MISMATCH. */
