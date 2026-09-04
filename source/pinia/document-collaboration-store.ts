@@ -28,6 +28,13 @@
  *                  and reaches this cache only through the broadcast
  *                  handler above, the same as any other mutation.
  *
+ *                  Both halves of the session are mutated from here. The
+ *                  annotation calls go over the documents-provider
+ *                  multiplexer; the review calls (M9, moved out of the
+ *                  editor's chunk widgets) go over their own typed
+ *                  operation channels, which already existed for the
+ *                  editor's controls and now have exactly one caller again.
+ *
  * END HEADER
  */
 
@@ -37,7 +44,14 @@ import { DP_EVENTS } from '@dts/common/documents'
 import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import type { AnnotationMessage, TextAnnotation } from '@dts/common/annotation-domain'
 import type { DocumentsUpdateContext } from 'source/app/service-providers/documents'
-import type { AnnotationFailure } from 'source/app/service-providers/documents/document-collaboration-application-service'
+import type { AnnotationFailure, ReviewFailure, ReviewMutationPrecondition } from 'source/app/service-providers/documents/document-collaboration-application-service'
+import type {
+  AcceptAllChunksResponse,
+  AddReviewCommentResponse,
+  ChunkCommentResponse,
+  ChunkDecisionResponse,
+  ClearReviewResponse
+} from 'source/app/service-providers/documents/review-transitions'
 
 const ipcRenderer = window.ipc
 
@@ -194,6 +208,73 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
     })
   }
 
+  /**
+   * The fence a review mutation carries: the generation and the exact working
+   * bytes of the snapshot the panel rendered the chunk from. Both come out of
+   * the cached DocumentCollaborationSession, which is also what the owner is
+   * looking at — an owner keystroke on a reviewed document rebroadcasts, so
+   * this pair moves with the text rather than going stale behind it.
+   *
+   * A mutation with no cached review has no chunk to name, so this throws
+   * instead of inventing a fence: the panel only offers these controls while
+   * `session.review` exists.
+   */
+  function reviewFence (documentPath: string): { reviewId: string } & ReviewMutationPrecondition {
+    const session = sessionsByDocumentPath[documentPath]
+    if (session?.review === undefined) {
+      throw new Error(`No review is active on ${documentPath}`)
+    }
+    return {
+      reviewId: session.review.id,
+      expectedReviewGeneration: session.review.reviewGeneration,
+      expectedWorkingSha256: session.workingSha256
+    }
+  }
+
+  /**
+   * The five review adjudication calls the SuggestionInspector makes (M9).
+   * Like the annotation mutations above, none of them writes
+   * sessionsByDocumentPath: the resulting session reaches this cache only
+   * through the DP_EVENTS.DOCUMENT_COLLABORATION broadcast the mutation
+   * provokes. Each resolves to the provider's own response, so a refusal is
+   * a value the caller surfaces rather than a rejection it has to catch.
+   */
+  async function decideReviewChunk (documentPath: string, chunkId: string, decision: 'accept' | 'reject'): Promise<ChunkDecisionResponse | ReviewFailure> {
+    return await ipcRenderer.invoke('documents:decide-review-chunk', {
+      ...reviewFence(documentPath),
+      chunkId,
+      decision
+    })
+  }
+
+  /** Annotate one outstanding chunk without deciding it; empty text removes the note. */
+  async function commentReviewChunk (documentPath: string, chunkId: string, text: string): Promise<ChunkCommentResponse | ReviewFailure> {
+    return await ipcRenderer.invoke('documents:comment-review-chunk', {
+      ...reviewFence(documentPath),
+      chunkId,
+      text
+    })
+  }
+
+  async function acceptAllReviewChunks (documentPath: string): Promise<AcceptAllChunksResponse | ReviewFailure> {
+    return await ipcRenderer.invoke('documents:accept-all-review-chunks', reviewFence(documentPath))
+  }
+
+  async function clearReview (documentPath: string): Promise<ClearReviewResponse | ReviewFailure> {
+    return await ipcRenderer.invoke('documents:clear-review', reviewFence(documentPath))
+  }
+
+  /** A review-level comment adjudicates nothing and moves no text, so it
+   *  fences on the generation alone — the working hash has no reader. */
+  async function addReviewComment (documentPath: string, text: string): Promise<AddReviewCommentResponse | ReviewFailure> {
+    const { reviewId, expectedReviewGeneration } = reviewFence(documentPath)
+    return await ipcRenderer.invoke('documents:add-review-comment', {
+      reviewId,
+      text,
+      expectedReviewGeneration
+    })
+  }
+
   return {
     sessionsByDocumentPath,
     selectedAnnotationId,
@@ -206,6 +287,11 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
     addAnnotationMessage,
     resolveAnnotation,
     reopenAnnotation,
-    reattachAnnotation
+    reattachAnnotation,
+    decideReviewChunk,
+    commentReviewChunk,
+    acceptAllReviewChunks,
+    clearReview,
+    addReviewComment
   }
 })

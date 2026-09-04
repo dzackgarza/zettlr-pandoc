@@ -31,6 +31,18 @@
       v-on:begin-reattach="emit('begin-reattach', selectedCard.annotation.annotationId)"
       v-on:resolve-toggle="onResolveToggle"
     ></AnnotationInspector>
+
+    <SuggestionInspector
+      v-if="review !== undefined"
+      v-bind:review="review"
+      v-bind:busy="reviewBusy"
+      v-on:jump-to-line="emit('jump-to-line', $event)"
+      v-on:decide="onDecide"
+      v-on:comment-chunk="onCommentChunk"
+      v-on:accept-all="onAcceptAll"
+      v-on:clear="onClearReview"
+      v-on:comment="onReviewComment"
+    ></SuggestionInspector>
   </div>
 </template>
 
@@ -44,25 +56,35 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     M7's root: a right-sidebar tab holding the compact list
- *                  above the detail inspector (S1/S3), fed exclusively from
- *                  useDocumentCollaborationStore — never a second read of
- *                  the sidecar (plan section 6). Container queries on this
+ * Description:     The panel's root: a right-sidebar tab holding the compact
+ *                  list above the detail inspector (S1/S3), fed exclusively
+ *                  from useDocumentCollaborationStore — never a second read
+ *                  of the sidecar (plan section 6). Container queries on this
  *                  root switch between the wide arrangement (list and
  *                  detail both visible, mockup 4) and the narrow
  *                  arrangement (one at a time, with the inspector's back
  *                  button, structural gate scene 11) — see the style block.
  *
+ *                  S3 says the panel owns adjudication too, so the review
+ *                  half of the same session snapshot renders here as the
+ *                  SuggestionInspector (M9). The editor keeps no control of
+ *                  its own (I4); this root is the only place a review
+ *                  decision is raised from.
+ *
  * END HEADER
  */
 
 import { computed, ref, watch } from 'vue'
+import { trans } from '@common/i18n-renderer'
+import showToast from '@common/util/show-toast'
 import AnnotationHeader from './annotations/AnnotationHeader.vue'
 import AnnotationList from './annotations/AnnotationList.vue'
 import AnnotationInspector from './annotations/AnnotationInspector.vue'
+import SuggestionInspector from './annotations/SuggestionInspector.vue'
 import { buildAnnotationCards, filterCards, openAnnotationCount, type AnnotationCardView } from './annotations/annotation-panel-model'
 import { useDocumentCollaborationStore, useDocumentTreeStore } from 'source/pinia'
 import type { TextAnnotation } from '@dts/common/annotation-domain'
+import type { ReviewFailure } from 'source/app/service-providers/documents/document-collaboration-application-service'
 
 const emit = defineEmits<{
   (e: 'jump-to-line', line: number): void
@@ -78,6 +100,9 @@ const filterQuery = ref('')
 
 const session = computed(() => activeFile.value === undefined ? undefined : collaborationStore.getSession(activeFile.value.path))
 const annotations = computed(() => session.value?.annotations.items ?? [])
+// The review half of the same snapshot (M9). A document with no active
+// review reports undefined and the inspector never mounts.
+const review = computed(() => session.value?.review)
 const openCount = computed(() => openAnnotationCount(annotations.value))
 
 const cards = computed(() => buildAnnotationCards(annotations.value, session.value?.workingText ?? ''))
@@ -113,6 +138,52 @@ function onResolveToggle (): void {
     ? collaborationStore.resolveAnnotation(path, annotation.annotationId)
     : collaborationStore.reopenAnnotation(path, annotation.annotationId)
   call.catch(err => console.error('[AnnotationsTab] Could not change the annotation resolution', err))
+}
+
+// M9: the panel's review adjudication path. Every control the editor's chunk
+// widgets and status bar used to carry lands here, and nothing about the
+// round trip is local: the store sends the fenced request, the provider
+// decides, and its DP_EVENTS.DOCUMENT_COLLABORATION broadcast is what
+// redraws the inspector. A refusal — a competing decision, or an edit that
+// moved the chunk — is toasted so the owner reads WHY nothing changed.
+const reviewBusy = ref(false)
+
+function runReviewAction (
+  action: (path: string) => Promise<{ ok: true } | ReviewFailure>
+): void {
+  const path = activeFile.value?.path
+  if (path === undefined || reviewBusy.value) {
+    return
+  }
+  reviewBusy.value = true
+  action(path)
+    .then(result => {
+      if (!result.ok) {
+        showToast(trans(result.message), 'error')
+      }
+    })
+    .catch(err => console.error('[AnnotationsTab] Could not send the review mutation', err))
+    .finally(() => { reviewBusy.value = false })
+}
+
+function onDecide (chunkId: string, decision: 'accept' | 'reject'): void {
+  runReviewAction(path => collaborationStore.decideReviewChunk(path, chunkId, decision))
+}
+
+function onCommentChunk (chunkId: string, text: string): void {
+  runReviewAction(path => collaborationStore.commentReviewChunk(path, chunkId, text))
+}
+
+function onAcceptAll (): void {
+  runReviewAction(path => collaborationStore.acceptAllReviewChunks(path))
+}
+
+function onClearReview (): void {
+  runReviewAction(path => collaborationStore.clearReview(path))
+}
+
+function onReviewComment (text: string): void {
+  runReviewAction(path => collaborationStore.addReviewComment(path, text))
 }
 </script>
 

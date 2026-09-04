@@ -199,32 +199,6 @@
     font-size: 13px;
   }
 
-  &.review-diff-active {
-    button.cm-review-diff-control {
-      white-space: nowrap;
-      min-width: 64px;
-      height: 24px;
-      padding: 0 8px;
-      border: 1px solid transparent;
-      border-radius: 4px;
-      color: #ffffff;
-      font: inherit;
-      font-size: 12px;
-      line-height: 22px;
-      cursor: pointer;
-    }
-
-    button.cm-review-diff-control.accept {
-      background-color: var(--zettlr-editor-review-accept-bg);
-      border-color: var(--zettlr-editor-review-accept-border);
-    }
-
-    button.cm-review-diff-control.reject {
-      background-color: var(--zettlr-editor-review-reject-bg);
-      border-color: var(--zettlr-editor-review-reject-border);
-    }
-  }
-
   .cm-formatting-bar {
     background-color: #f5f5f5;
     border-color: #f5f5f5;

@@ -27,6 +27,14 @@
 
 type IpcListener = (event: unknown, payload: unknown) => void
 
+/**
+ * The renderer sends collaboration work over two shapes of channel: the
+ * `documents-provider` multiplexer, where the operation is a `command` field
+ * (the annotation mutations), and a typed operation channel per operation,
+ * where the channel name IS the operation and the whole message is the
+ * payload (the review mutations — see DocumentIpcHandlers). Both reach the
+ * responder here, and both are counted under the operation's own name.
+ */
 interface InvokeMessage {
   command: string
   payload?: unknown
@@ -44,11 +52,11 @@ export const documentCollaborationIpcDouble = {
       listener(undefined, payload)
     }
   },
-  /** How many times `invoke` was called for one documents-provider command. */
+  /** How many times `invoke` named one operation, by command or channel. */
   invokeCallCount (command: string): number {
     return invokeCallCountByCommand.get(command) ?? 0
   },
-  /** Install what `invoke('documents-provider', { command, payload })` resolves to. */
+  /** Install what an `invoke` resolves to. */
   setInvokeResponder (responder: (message: InvokeMessage) => Promise<unknown>): void {
     invokeResponder = responder
   },
@@ -79,11 +87,12 @@ const ipcTransport = {
     }
   },
   invoke: async (channel: string, message: InvokeMessage): Promise<unknown> => {
-    if (channel === 'documents-provider') {
-      invokeCallCountByCommand.set(message.command, (invokeCallCountByCommand.get(message.command) ?? 0) + 1)
-      return await invokeResponder(message)
-    }
-    return undefined
+    const operation = channel === 'documents-provider' ? message.command : channel
+    const request = channel === 'documents-provider'
+      ? message
+      : { command: channel, payload: message }
+    invokeCallCountByCommand.set(operation, (invokeCallCountByCommand.get(operation) ?? 0) + 1)
+    return await invokeResponder(request)
   },
   send: () => {},
   sendSync: () => undefined

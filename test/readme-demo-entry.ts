@@ -21,7 +21,7 @@ import { defaultLight, editorTheme } from 'source/common/modules/markdown-editor
 import { initializeMathJax } from 'source/common/util/mathtex-to-html'
 import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 import { reviewChunksExtension, type ReviewChunksConfig } from 'source/common/modules/markdown-editor/plugins/review-chunks'
-import type { ReviewChunkCommentView, ReviewSuggestionView } from '@dts/common/review-diff'
+import type { ReviewSuggestionView } from '@dts/common/review-diff'
 
 declare global {
   interface Window {
@@ -198,7 +198,6 @@ function scriptReviewScene (): void {
   }
 
   const compartment = new Compartment()
-  let chunkComments: ReviewChunkCommentView[] = []
   const firstStart = reviewProposed.indexOf('is at most 2, by the symmetrization argument')
   const secondStart = reviewProposed.indexOf('follows from Lemma 3.2 applied to the boundary case')
   let suggestions: ReviewSuggestionView[] = [
@@ -218,35 +217,31 @@ function scriptReviewScene (): void {
     }
   ]
 
-  const config = (): ReviewChunksConfig => ({
-    reviewId: 'readme-demo',
-    suggestions,
-    chunkComments,
-    onDecide: async (chunkId, decision) => {
-      const suggestion = suggestions.find(candidate => candidate.suggestionId === chunkId)
-      if (suggestion === undefined) {throw new Error(`demo decision on unknown suggestion ${chunkId}`)}
-      suggestions = suggestions.filter(candidate => candidate.suggestionId !== chunkId)
-      if (decision === 'accept') {
-        view.dispatch({ effects: compartment.reconfigure(reviewChunksExtension(config())) })
-      } else {
-        const anchor = suggestion.anchors[0]
-        view.dispatch({
-          changes: anchor === undefined
-            ? { from: suggestion.seam, insert: suggestion.removedText }
-            : { from: anchor.from, to: anchor.to, insert: suggestion.removedText }
-        })
-      }
-    },
-    onAcceptAll: async () => { /* not exercised by the demo script */ },
-    onClear: async () => { /* not exercised by the demo script */ },
-    onComment: async () => { /* not exercised by the demo script */ },
-    onChunkComment: async (chunkId, text) => {
-      chunkComments = text === ''
-        ? chunkComments.filter(comment => comment.chunkId !== chunkId)
-        : [ ...chunkComments.filter(comment => comment.chunkId !== chunkId), { chunkId, comment: text } ]
+  const config = (): ReviewChunksConfig => ({ suggestions })
+
+  /**
+   * What the provider's broadcast does to this pane when the owner
+   * adjudicates a chunk in the annotations panel: the decided suggestion
+   * leaves the set, and a rejection puts its removed text back. The editor
+   * itself raises nothing — it carries locators only — so the demo drives
+   * the decision the way the real broadcast does rather than by clicking a
+   * control that no longer exists there.
+   */
+  const decide = (chunkId: string, decision: 'accept'|'reject'): void => {
+    const suggestion = suggestions.find(candidate => candidate.suggestionId === chunkId)
+    if (suggestion === undefined) {throw new Error(`demo decision on unknown suggestion ${chunkId}`)}
+    suggestions = suggestions.filter(candidate => candidate.suggestionId !== chunkId)
+    if (decision === 'accept') {
       view.dispatch({ effects: compartment.reconfigure(reviewChunksExtension(config())) })
+    } else {
+      const anchor = suggestion.anchors[0]
+      view.dispatch({
+        changes: anchor === undefined
+          ? { from: suggestion.seam, insert: suggestion.removedText }
+          : { from: anchor.from, to: anchor.to, insert: suggestion.removedText }
+      })
     }
-  })
+  }
 
   view = new EditorView({
     parent: host,
@@ -261,38 +256,9 @@ function scriptReviewScene (): void {
   view.focus()
 
   pause(2.2)
-  steps.push({
-    hold: 2.0,
-    run: () => {
-      const accept = document.querySelector<HTMLButtonElement>('button.cm-review-diff-control.accept')
-      accept?.click()
-    }
-  })
-  // Annotate the remaining chunk through its comment field, like a reviewer
-  // leaving a note before deciding.
-  const note = 'Lemma 3.2 needs the closed boundary — check before merging.'
-  for (let i = 1; i <= note.length; i++) {
-    steps.push({
-      hold: 0.05,
-      run: () => {
-        const input = document.querySelector<HTMLInputElement>('input.cm-chunkCommentInput')
-        if (input === null) {
-          throw new Error('demo review scene lost its comment field')
-        }
-        input.focus()
-        input.value = note.slice(0, i)
-        input.dispatchEvent(new Event('input', { bubbles: true }))
-      }
-    })
-  }
-  pause(1.4) // let the debounced comment commit and show as saved
-  steps.push({
-    hold: 2.0,
-    run: () => {
-      const reject = document.querySelector<HTMLButtonElement>('button.cm-review-diff-control.reject')
-      reject?.click()
-    }
-  })
+  steps.push({ hold: 2.0, run: () => { decide('suggestion-constant', 'accept') } })
+  pause(2.0) // the accepted chunk's marks leave; the second one still stands
+  steps.push({ hold: 2.0, run: () => { decide('suggestion-proof', 'reject') } })
   pause(2.4)
 }
 

@@ -11,8 +11,14 @@ declare global {
     captureReady: Promise<void>
     reviewDiffVisualDiagnostics: () => {
       chunks: number
-      accepts: number
-      rejects: number
+      /** Every element in the editor that could adjudicate: a button, an
+       *  input, or the status panel the review UI used to mount. The
+       *  structural gate expects zero of each (I4). */
+      buttons: number
+      inputs: number
+      panels: number
+      deletions: number
+      insertions: number
       contentClientWidth: number|undefined
       contentScrollWidth: number|undefined
     }
@@ -52,7 +58,6 @@ async function mount (): Promise<void> {
         dark ? defaultDark : defaultLight,
         EditorView.lineWrapping,
         reviewChunksExtension({
-          reviewId: 'visual-capture',
           suggestions: [
             {
               suggestionId: 'suggestion-theorem',
@@ -68,15 +73,7 @@ async function mount (): Promise<void> {
               seam: proofStart,
               description: 'Shorten the proof sketch.'
             }
-          ],
-          chunkComments: [
-            { chunkId: 'suggestion-proof', comment: 'Checking this against the published erratum first.' }
-          ],
-          onDecide: async () => { /* capture harness: decisions are not exercised */ },
-          onAcceptAll: async () => { /* capture harness: decisions are not exercised */ },
-          onClear: async () => { /* capture harness: decisions are not exercised */ },
-          onComment: async () => { /* capture harness: comments are not exercised */ },
-          onChunkComment: async () => { /* capture harness: comments are not exercised */ }
+          ]
         })
       ]
     })
@@ -88,8 +85,11 @@ async function mount (): Promise<void> {
     const content = document.querySelector<HTMLElement>('.cm-content')
     return {
       chunks: chunks?.length ?? -1,
-      accepts: document.querySelectorAll('button.cm-review-diff-control.accept').length,
-      rejects: document.querySelectorAll('button.cm-review-diff-control.reject').length,
+      buttons: view.dom.querySelectorAll('button').length,
+      inputs: view.dom.querySelectorAll('input, textarea, select').length,
+      panels: view.dom.querySelectorAll('.cm-panels').length,
+      deletions: view.dom.querySelectorAll('del.cm-deletedText').length,
+      insertions: view.dom.querySelectorAll('.cm-changedText').length,
       contentClientWidth: content?.clientWidth,
       contentScrollWidth: content?.scrollWidth
     }

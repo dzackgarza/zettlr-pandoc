@@ -9,17 +9,28 @@
 
 type InvokeMessage = { command: string, payload?: unknown }
 
+/** One request the panel raised, as it reached the preload bridge. */
+export interface RecordedRequest {
+  channel: string
+  message: unknown
+}
+
 let sceneSession: unknown
+const recorded: RecordedRequest[] = []
 
 window.ipc = {
-  invoke: async (_channel: string, message: InvokeMessage) => {
+  invoke: async (channel: string, message: InvokeMessage) => {
+    recorded.push({ channel, message })
     switch (message.command) {
       case 'get-collaboration-session':
         return sceneSession
       case 'get-file-modification-status':
         return []
       default:
-        return undefined
+        // The typed operation channels (the review mutations) answer with
+        // the provider's success shape, so the panel's own busy state
+        // settles the way it does in the app.
+        return channel.startsWith('documents:') ? { ok: true } : undefined
     }
   },
   on: () => () => {},
@@ -30,4 +41,9 @@ window.ipc = {
 
 export function setAnnotationsSceneSession (session: unknown): void {
   sceneSession = session
+}
+
+/** Every request the mounted panel raised, in order. */
+export function recordedRequests (): RecordedRequest[] {
+  return recorded
 }

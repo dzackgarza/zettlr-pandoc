@@ -14,11 +14,17 @@
  *                  open thread with a pending linked proposal, and a
  *                  resolved thread.
  *
+ *                  The same fixture also carries the OTHER half of a
+ *                  collaboration session on demand: buildSceneSessionWithReview
+ *                  adds two outstanding suggestions over the same working
+ *                  text, which is what the SuggestionInspector (M9) reads.
+ *
  * END HEADER
  */
 
 import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import type { TextAnnotation } from '@dts/common/annotation-domain'
+import type { ReviewDiffSession } from '@dts/common/review-diff'
 
 export const SCENE_DOCUMENT_ID = 'doc-annotations-scene'
 export const SCENE_DOCUMENT_PATH = '/tmp/annotations-scene-note.md'
@@ -125,8 +131,55 @@ export function buildSceneSession (): DocumentCollaborationSession {
     documentId: SCENE_DOCUMENT_ID,
     documentPath: SCENE_DOCUMENT_PATH,
     workingText: SCENE_WORKING_TEXT,
-    workingSha256: 'scene-fixture-sha256',
+    workingSha256: SCENE_WORKING_SHA256,
     annotations: { generation: 1, items: buildSceneAnnotations() },
     review: undefined
   }
+}
+
+export const SCENE_WORKING_SHA256 = 'a'.repeat(64)
+export const SCENE_REVIEW_ID = 'review-scene'
+export const SCENE_REVIEW_GENERATION = 4
+export const SCENE_CHUNK_TASKS_ID = 'suggestion-tasks'
+export const SCENE_CHUNK_GOAL_ID = 'suggestion-goal'
+export const SCENE_CHUNK_GOAL_NOTE = 'Check this against the published erratum first.'
+
+/**
+ * Two outstanding suggestions over the SAME working text the annotations
+ * above anchor into — a replacement early in the document and one late, so
+ * the panel's chunk order and line locators are both observable. One of them
+ * already carries a reviewer note, which is what proves the note field is
+ * prefilled from the provider rather than starting empty.
+ */
+export function buildSceneReview (): ReviewDiffSession {
+  const tasks = locate('well-defined tasks')
+  const goal = locate('to work with it')
+  return {
+    id: SCENE_REVIEW_ID,
+    reviewGeneration: SCENE_REVIEW_GENERATION,
+    documentPath: SCENE_DOCUMENT_PATH,
+    workingText: SCENE_WORKING_TEXT,
+    suggestions: [
+      {
+        suggestionId: SCENE_CHUNK_TASKS_ID,
+        removedText: 'narrow tasks',
+        anchors: [tasks],
+        seam: tasks.from,
+        description: 'Say which tasks automation actually handles.'
+      },
+      {
+        suggestionId: SCENE_CHUNK_GOAL_ID,
+        removedText: 'to replace it',
+        anchors: [goal],
+        seam: goal.from,
+        description: 'Frame the goal as collaboration, not replacement.'
+      }
+    ],
+    chunkComments: [{ chunkId: SCENE_CHUNK_GOAL_ID, comment: SCENE_CHUNK_GOAL_NOTE }]
+  }
+}
+
+/** The same document, with an active review alongside its annotations. */
+export function buildSceneSessionWithReview (): DocumentCollaborationSession {
+  return { ...buildSceneSession(), review: buildSceneReview() }
 }

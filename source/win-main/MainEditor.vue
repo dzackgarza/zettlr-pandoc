@@ -85,7 +85,6 @@ import { annotateCompletionEntries } from '@common/pandoc-util/project-reference
 import { trans } from '@common/i18n-renderer'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import showToast from '@common/util/show-toast'
-import { sha256Text } from '@common/util/sha256'
 import type { ReferenceKeyEditPromptIntent } from '@common/modules/markdown-editor/plugins/reference-key-edit-prompt'
 import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
 import {
@@ -200,9 +199,8 @@ function requestAnnotationComposer (event: Event): void {
 /**
  * Closes the composer, on Cancel or on a successful Save alike. A save
  * changes nothing locally: the provider's DP_EVENTS.DOCUMENT_COLLABORATION
- * broadcast is the only thing that moves collaboration state in this pane
- * (mirrors throwOnReviewRefusal's own "success changes nothing locally"
- * contract below), so closing is the whole of this handler.
+ * broadcast is the only thing that moves collaboration state in this pane,
+ * so closing is the whole of this handler.
  */
 function closeAnnotationComposer (): void {
   annotationComposerRequest.value = null
@@ -260,32 +258,6 @@ function applyReviewDiffSession (session: ReviewDiffSession): void {
 
   pendingReviewDiffSession = null
   currentEditor.startReviewDiffSession(session)
-}
-
-/**
- * The working-text hash a review decision is bound to. The sync comes first:
- * hashing before the pane's pending edits have reached the document authority
- * would bind text main has not been told about, and main would then refuse a
- * decision that was in fact current.
- */
-async function syncedWorkingSha256 (editor: MarkdownEditor): Promise<string> {
-  await editor.whenSynced()
-  return sha256Text(editor.value)
-}
-
-/**
- * Surfaces a refused review mutation. Success changes nothing locally — the
- * provider's broadcast is the only thing that moves review state in this pane
- * — so this is the whole of the response handling. A refusal is toasted and
- * rethrown, which is what tells the widget to hand its controls back.
- */
-function throwOnReviewRefusal (
-  result: { ok: true }|{ ok: false, message: string }
-): void {
-  if (!result.ok) {
-    showToast(trans(result.message), 'error')
-    throw new Error(result.message)
-  }
 }
 
 // EVENT LISTENERS
@@ -862,58 +834,6 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   editor.on('docUpdate', () => {
     if (currentEditor === editor) {
       windowStateStore.activeDocumentInfo = currentEditor.documentInfo
-    }
-  })
-
-  // The pane's one path to a review decision. Nothing here mutates review
-  // state: the provider owns it, and its broadcast is what redraws the
-  // widgets. Every call binds the decision to the generation the widgets were
-  // drawn from and to the exact bytes the reviewer is looking at, so a
-  // decision formed against a stale pane is refused instead of landing on a
-  // chunk that moved.
-  editor.setReviewActionClient({
-    decide: async input => {
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents:decide-review-chunk', {
-        reviewId: input.reviewId,
-        chunkId: input.chunkId,
-        decision: input.decision,
-        expectedReviewGeneration: input.expectedReviewGeneration,
-        expectedWorkingSha256: await syncedWorkingSha256(editor)
-      }))
-    },
-    commentChunk: async input => {
-      // Annotation, not adjudication — but the chunk id is content-addressed
-      // over the working text, so it fences exactly like a decision.
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents:comment-review-chunk', {
-        reviewId: input.reviewId,
-        chunkId: input.chunkId,
-        text: input.text,
-        expectedReviewGeneration: input.expectedReviewGeneration,
-        expectedWorkingSha256: await syncedWorkingSha256(editor)
-      }))
-    },
-    acceptAll: async input => {
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents:accept-all-review-chunks', {
-        reviewId: input.reviewId,
-        expectedReviewGeneration: input.expectedReviewGeneration,
-        expectedWorkingSha256: await syncedWorkingSha256(editor)
-      }))
-    },
-    clear: async input => {
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents:clear-review', {
-        reviewId: input.reviewId,
-        expectedReviewGeneration: input.expectedReviewGeneration,
-        expectedWorkingSha256: await syncedWorkingSha256(editor)
-      }))
-    },
-    comment: async input => {
-      // A comment adjudicates nothing and moves no text, so it fences on the
-      // review generation alone and needs no sync.
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents:add-review-comment', {
-        reviewId: input.reviewId,
-        text: input.text,
-        expectedReviewGeneration: input.expectedReviewGeneration
-      }))
     }
   })
 

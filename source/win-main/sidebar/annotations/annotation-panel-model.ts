@@ -19,6 +19,7 @@
 
 import { Text } from '@codemirror/state'
 import type { AnnotationAnchor, TextAnnotation } from '@dts/common/annotation-domain'
+import type { ReviewDiffSession } from '@dts/common/review-diff'
 
 export interface AnnotationCardView {
   annotation: TextAnnotation
@@ -73,15 +74,17 @@ function anchorPosition (anchor: AnnotationAnchor): number | undefined {
   return undefined
 }
 
+/** The 1-based source line a document offset falls on, clamped into the text. */
+function lineOfPosition (position: number, workingText: string): number {
+  const doc = Text.of(workingText.length === 0 ? [''] : workingText.split('\n'))
+  return doc.lineAt(Math.min(Math.max(position, 0), doc.length)).number
+}
+
 /** The 1-based source line an anchor's position falls on, or undefined for
  *  an orphaned anchor (no position to report). */
 export function lineNumberFor (anchor: AnnotationAnchor, workingText: string): number | undefined {
   const pos = anchorPosition(anchor)
-  if (pos === undefined) {
-    return undefined
-  }
-  const doc = Text.of(workingText.length === 0 ? [''] : workingText.split('\n'))
-  return doc.lineAt(Math.min(Math.max(pos, 0), doc.length)).number
+  return pos === undefined ? undefined : lineOfPosition(pos, workingText)
 }
 
 /**
@@ -172,4 +175,66 @@ export function deriveActionRow (annotation: TextAnnotation): AnnotationActionRo
     canReattach: annotation.anchor.state === 'orphaned',
     resolveLabel: annotation.state === 'open' ? 'Resolve' : 'Reopen'
   }
+}
+
+/**
+ * One outstanding suggestion as the SuggestionInspector shows it (M9). The
+ * editor renders the same chunk as a locator — a struck-through deletion and
+ * a highlighted insertion in the document flow — so this card carries the
+ * identity the owner adjudicates on: which claim, which line, and both sides
+ * of the change.
+ */
+export interface SuggestionCardView {
+  suggestionId: string
+  /** The packet's claim: why the agent proposed this change. */
+  description: string
+  lineLocator: string
+  /** The line the chunk starts on, as a jump-to-line target. */
+  lineNumber: number
+  /** What the chunk takes out of the working text; '' for a pure insertion. */
+  removedText: string
+  /** What it puts in, read out of the working text the anchors index; ''
+   *  for a pure deletion, which has no span on the working side. */
+  insertedText: string
+  /** The reviewer's own note on this chunk; '' when none was written. */
+  comment: string
+}
+
+/**
+ * The panel's view of a review's outstanding chunks, in the order the
+ * provider projected them. `insertedText` is sliced out of the SAME
+ * workingText the anchors were mapped against — the snapshot's own bytes —
+ * so a card can never show a span from a different moment of the document
+ * than the offsets that produced it.
+ */
+export function buildSuggestionCards (review: ReviewDiffSession): SuggestionCardView[] {
+  return review.suggestions.map(suggestion => {
+    const position = suggestion.anchors[0]?.from ?? suggestion.seam
+    return {
+      suggestionId: suggestion.suggestionId,
+      description: suggestion.description,
+      lineLocator: `Ln ${lineOfPosition(position, review.workingText)}`,
+      lineNumber: lineOfPosition(position, review.workingText),
+      removedText: suggestion.removedText,
+      insertedText: suggestion.anchors
+        .map(span => review.workingText.slice(span.from, span.to))
+        .join(''),
+      comment: review.chunkComments
+        .find(note => note.chunkId === suggestion.suggestionId)?.comment ?? ''
+    }
+  })
+}
+
+/**
+ * What a chunk-note field commits, or `undefined` when it commits nothing.
+ *
+ * A note that did not change is not a mutation: every commit bumps the
+ * review generation, writes the sidecar, and raises an agent event, so
+ * sending one for text nobody edited would invalidate the decision the owner
+ * is about to make. An EMPTIED field is a change, and the empty string is
+ * what removes the note.
+ */
+export function chunkNoteCommit (card: SuggestionCardView, value: string): string | undefined {
+  const text = value.trim()
+  return text === card.comment ? undefined : text
 }
