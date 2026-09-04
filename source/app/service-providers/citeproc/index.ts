@@ -403,7 +403,13 @@ export default class CiteprocProvider extends ProviderContract {
    */
   private selectDatabase (database: CitationDatabase): void {
     const requestedPaths = Array.isArray(database) ? database : [ database ]
-    const paths = requestedPaths.map(databasePath => databasePath === CITEPROC_MAIN_DB ? this.mainLibrary : databasePath)
+    // The sentinel names the globally configured library, and `export.cslLibrary`
+    // is optional: it contributes that library when one is configured and loaded,
+    // and contributes nothing otherwise. An empty selection selects no items --
+    // the same state as a library holding nothing -- rather than an error.
+    const paths = requestedPaths
+      .filter(databasePath => databasePath !== CITEPROC_MAIN_DB || this.hasMainLibrary())
+      .map(databasePath => databasePath === CITEPROC_MAIN_DB ? this.mainLibrary : databasePath)
     const identity = paths.join('\u0000')
     const items: Record<string, CSLItem> = {}
 
