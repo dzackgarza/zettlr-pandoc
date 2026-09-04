@@ -34,6 +34,25 @@ import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-r
 const RAW_OPEN_RE = /^\\begin\{(tikzcd|tikzpicture)\}/
 
 /**
+ * The environment a paragraph renders as a raw figure, or null when it does
+ * not render as one.
+ *
+ * A raw block is only a figure when it is the WHOLE paragraph. Markdown folds
+ * a line written directly under prose into that prose's paragraph, and the
+ * result reads as one paragraph that merely contains the environment — so
+ * there is no block for this renderer to replace. tikz-lint.ts asks the same
+ * question to tell the author, and asks it through this function so the marker
+ * and the figure can never disagree about what renders.
+ */
+export function rawTikzEnvironment (paragraphText: string): string|null {
+  const open = RAW_OPEN_RE.exec(paragraphText)
+  if (open === null || !paragraphText.trimEnd().endsWith(`\\end{${open[1]}}`)) {
+    return null
+  }
+  return open[1]
+}
+
+/**
  * One in-flight/settled render per figure source. The main process holds the
  * durable content-addressed cache; this memo only prevents a redraw from
  * re-crossing the IPC boundary for a figure already rendered this session.
@@ -248,8 +267,7 @@ function shouldHandleNode (node: SyntaxNodeRef): boolean {
 function createWidget (state: EditorState, node: SyntaxNodeRef): TikzWidget|undefined {
   if (node.type.name === 'Paragraph') {
     const text = state.sliceDoc(node.from, node.to)
-    const open = RAW_OPEN_RE.exec(text)
-    if (open === null || !text.trimEnd().endsWith(`\\end{${open[1]}}`)) {
+    if (rawTikzEnvironment(text) === null) {
       return undefined
     }
     return new TikzWidget(text, 'raw', node.node)
