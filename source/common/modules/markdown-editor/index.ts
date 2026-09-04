@@ -45,36 +45,6 @@ import {
 import type { ReviewDiffSession } from '@dts/common/review-diff'
 import type { AnnotationSet } from '@dts/common/annotation-domain'
 
-/**
- * What the pane must do with a review decision. Every method carries the
- * review generation the widgets were drawn from; the implementation adds the
- * hash of the text they were drawn over, and main refuses anything that no
- * longer matches. A method rejects when the mutation was refused.
- */
-export interface ReviewActionClient {
-  decide: (input: {
-    reviewId: string
-    expectedReviewGeneration: number
-    chunkId: string
-    decision: 'accept' | 'reject'
-  }) => Promise<void>
-  acceptAll: (input: {
-    reviewId: string
-    expectedReviewGeneration: number
-  }) => Promise<void>
-  clear: (input: { reviewId: string; expectedReviewGeneration: number }) => Promise<void>
-  comment: (input: {
-    reviewId: string
-    expectedReviewGeneration: number
-    text: string
-  }) => Promise<void>
-  commentChunk: (input: {
-    reviewId: string
-    expectedReviewGeneration: number
-    chunkId: string
-    text: string
-  }) => Promise<void>
-}
 import { type TagRecord } from '@providers/tags'
 // Keymaps/Input modes
 import { emacs } from '@replit/codemirror-emacs'
@@ -297,8 +267,6 @@ export default class MarkdownEditor extends EventEmitter {
 
   private readonly reviewDiffCompartment: Compartment
 
-  /** Installed by the pane that owns this editor; see setReviewActionClient. */
-  private reviewActionClient: ReviewActionClient | null = null
   private activeReviewDiffSession: ReviewDiffSession | null
   private pendingReviewDiffSession: ReviewDiffSession | null = null
 
@@ -997,17 +965,6 @@ export default class MarkdownEditor extends EventEmitter {
     })
   }
 
-  /**
-   * Installs the one thing allowed to act on a review decision. The editor
-   * raises no review events of its own: a fire-and-forget event left the
-   * click and the IPC call unordered, so a decision could reach main before
-   * the edit the reviewer made just above it. The client awaits instead, and
-   * its rejection is what hands the widget's controls back.
-   */
-  setReviewActionClient(client: ReviewActionClient): void {
-    this.reviewActionClient = client
-  }
-
   startReviewDiffSession(session: ReviewDiffSession): void {
     if (session.documentPath !== this.representedDocument) {
       return
@@ -1034,43 +991,14 @@ export default class MarkdownEditor extends EventEmitter {
   }
 
   /**
-   * The review extension for a session: chunk widgets computed from the
-   * provider's merge reference against this buffer, with decisions emitted
-   * upward. MainEditor forwards them to the provider, whose next broadcast is
-   * the only thing that changes review state here.
+   * The review extension for a session: the provider's mapped suggestion
+   * anchors, rendered over this buffer as locators. The pane emits nothing —
+   * the annotations panel adjudicates the same suggestions from the same
+   * broadcast, and the next broadcast is the only thing that changes what is
+   * drawn here.
    */
   private buildReviewExtension(session: ReviewDiffSession): ReturnType<typeof reviewChunksExtension> {
-    // Every callback binds the generation of the session these widgets were
-    // DRAWN from, not whatever the newest broadcast carries. That is the
-    // whole point: the decision is bound to what the reviewer was looking at
-    // when they clicked, so a session that changed underneath refuses.
-    const client = (): ReviewActionClient => {
-      if (this.reviewActionClient === null) {
-        throw new Error('no review action client is installed on this editor')
-      }
-      return this.reviewActionClient
-    }
-    const reviewId = session.id
-    const expectedReviewGeneration = session.reviewGeneration
-    return reviewChunksExtension({
-      reviewId,
-      suggestions: session.suggestions,
-      chunkComments: session.chunkComments,
-      onDecide: async (chunkId, decision) =>
-        await client().decide({
-          reviewId,
-          expectedReviewGeneration,
-          chunkId,
-          decision,
-        }),
-      onAcceptAll: async () =>
-        await client().acceptAll({ reviewId, expectedReviewGeneration }),
-      onClear: async () => await client().clear({ reviewId, expectedReviewGeneration }),
-      onComment: async (text) =>
-        await client().comment({ reviewId, expectedReviewGeneration, text }),
-      onChunkComment: async (chunkId, text) =>
-        await client().commentChunk({ reviewId, expectedReviewGeneration, chunkId, text }),
-    })
+    return reviewChunksExtension({ suggestions: session.suggestions })
   }
 
   private activatePendingReviewDiffSession(): void {

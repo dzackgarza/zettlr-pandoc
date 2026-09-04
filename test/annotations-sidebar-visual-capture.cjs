@@ -10,6 +10,7 @@
 
 'use strict'
 
+const assert = require('assert').strict
 const { app, BrowserWindow } = require('electron')
 const fs = require('fs/promises')
 const path = require('path')
@@ -18,6 +19,11 @@ const outputDirectory = process.argv[process.argv.length - 1]
 
 const SCENE_THREAD_ID = 'annotation-thread'
 const SCENE_PROPOSAL_ID = 'annotation-proposal'
+const SCENE_CHUNK_TASKS_ID = 'suggestion-tasks'
+const SCENE_REVIEW_ID = 'review-scene'
+const SCENE_REVIEW_GENERATION = 4
+const SCENE_WORKING_SHA256 = 'a'.repeat(64)
+const SCENE_CHUNK_GOAL_NOTE = 'Check this against the published erratum first.'
 
 const WIDE = { width: 440, height: 760 }
 const NARROW = { width: 320, height: 760 }
@@ -58,6 +64,14 @@ async function select (window, annotationId) {
 
 async function setShowResolved (window, value) {
   await window.webContents.executeJavaScript(`window.annotationsSceneSetShowResolved(${JSON.stringify(value)})`)
+}
+
+async function setReview (window, active) {
+  await window.webContents.executeJavaScript(`window.annotationsSceneSetReview(${JSON.stringify(active)})`)
+}
+
+async function acceptChunk (window, index) {
+  return await window.webContents.executeJavaScript(`window.annotationsSceneAcceptChunk(${JSON.stringify(index)})`)
 }
 
 app.whenReady().then(async () => {
@@ -116,7 +130,129 @@ app.whenReady().then(async () => {
   }
   await capture(window, '11-narrow-sidebar-drilldown')
 
-  console.error('annotations-sidebar-visual-capture: all four scenes captured and structurally verified')
+  // M9: the review adjudication controls the editor used to carry. The
+  // structural gate's other half — the editor's own capture proves no
+  // control renders there; this proves they render HERE, and that clicking
+  // one raises the fenced provider request rather than deciding locally.
+  await select(window, null)
+  window.setSize(WIDE.width, WIDE.height)
+  await setReview(window, true)
+  diag = await diagnostics(window)
+  if (!diag.suggestionInspectorPresent || diag.suggestionChunkCount !== 2) {
+    throw new Error(`review-suggestion-inspector: the panel did not render both chunks ${JSON.stringify(diag)}`)
+  }
+  if (diag.acceptCount !== 2 || diag.rejectCount !== 2) {
+    throw new Error(`review-suggestion-inspector: expected one Accept and one Reject per chunk, got ${JSON.stringify(diag)}`)
+  }
+  if (diag.massActionCount !== 2 || !diag.reviewCommentPresent) {
+    throw new Error(`review-suggestion-inspector: the mass actions or the review comment are missing ${JSON.stringify(diag)}`)
+  }
+  if (diag.chunkNoteValues.length !== 2 || diag.chunkNoteValues[0] !== '' || diag.chunkNoteValues[1] !== SCENE_CHUNK_GOAL_NOTE) {
+    throw new Error(`review-suggestion-inspector: a chunk note field is not prefilled from the provider ${JSON.stringify(diag.chunkNoteValues)}`)
+  }
+  await capture(window, 'review-suggestion-inspector-light')
+
+  const request = await acceptChunk(window, 0)
+  const expected = {
+    channel: 'documents:decide-review-chunk',
+    message: {
+      reviewId: SCENE_REVIEW_ID,
+      chunkId: SCENE_CHUNK_TASKS_ID,
+      decision: 'accept',
+      expectedReviewGeneration: SCENE_REVIEW_GENERATION,
+      expectedWorkingSha256: SCENE_WORKING_SHA256,
+    },
+  }
+  assert.deepStrictEqual(
+    request,
+    expected,
+    `review-suggestion-inspector: Accept raised ${JSON.stringify(request)}`,
+  )
+  // The panel decided nothing locally: only the provider's broadcast may.
+  diag = await diagnostics(window)
+  if (diag.suggestionChunkCount !== 2) {
+    throw new Error(`review-suggestion-inspector: the panel applied a decision itself ${JSON.stringify(diag)}`)
+  }
+  if (diag.outstandingLabel !== '2 outstanding') {
+    throw new Error(`review-suggestion-inspector: outstanding label reads ${JSON.stringify(diag.outstandingLabel)}`)
+  }
+
+  // A chunk note commits on blur, trimmed, addressing its own chunk.
+  assert.deepStrictEqual(
+    await window.webContents.executeJavaScript(
+      `window.annotationsSceneWriteChunkNote(0, "  check the constant  ")`,
+    ),
+    {
+      channel: 'documents:comment-review-chunk',
+      message: {
+        reviewId: SCENE_REVIEW_ID,
+        chunkId: SCENE_CHUNK_TASKS_ID,
+        text: 'check the constant',
+        expectedReviewGeneration: SCENE_REVIEW_GENERATION,
+        expectedWorkingSha256: SCENE_WORKING_SHA256,
+      },
+    },
+  )
+
+  // A review-level comment commits trimmed, and fences on the generation
+  // alone: it adjudicates nothing and moves no text.
+  assert.deepStrictEqual(
+    await window.webContents.executeJavaScript(
+      `window.annotationsSceneWriteReviewComment("  overall note  ")`,
+    ),
+    {
+      channel: 'documents:add-review-comment',
+      message: {
+        reviewId: SCENE_REVIEW_ID,
+        text: 'overall note',
+        expectedReviewGeneration: SCENE_REVIEW_GENERATION,
+      },
+    },
+  )
+
+  // Every commit is a review mutation, and its broadcast re-renders this
+  // panel. A reviewer still typing in a note field must keep the characters
+  // they have not sent, and the caret with them.
+  const throughEcho = await window.webContents.executeJavaScript(
+    `window.annotationsSceneTypeThroughEcho(0, "first second")`,
+  )
+  assert.deepStrictEqual(
+    throughEcho,
+    { value: 'first second', focused: true },
+    'the commit echo must not eat unsent keystrokes or focus',
+  )
+
+  // The review ends: its whole surface leaves with it rather than standing
+  // as a bar of dead controls.
+  await setReview(window, false)
+  diag = await diagnostics(window)
+  if (diag.suggestionInspectorPresent || diag.acceptCount !== 0) {
+    throw new Error(`review-suggestion-inspector: a resolved review left controls behind ${JSON.stringify(diag)}`)
+  }
+  await setReview(window, true)
+
+  // The panel at its narrowest: every decision must stay reachable, and the
+  // chunk rows must not push the sidebar into horizontal scrolling.
+  window.setSize(NARROW.width, NARROW.height)
+  await new Promise(resolve => setTimeout(resolve, 50))
+  const overflow = await window.webContents.executeJavaScript(
+    `(() => { const el = document.querySelector('.suggestion-inspector'); return { scroll: el.scrollWidth, client: el.clientWidth } })()`,
+  )
+  if (overflow.scroll > overflow.client + 1) {
+    throw new Error(`review-suggestion-inspector-narrow: horizontal overflow ${JSON.stringify(overflow)}`)
+  }
+  await capture(window, 'review-suggestion-inspector-narrow')
+
+  window.setSize(WIDE.width, WIDE.height)
+  await page(window, true)
+  await setReview(window, true)
+  diag = await diagnostics(window)
+  if (!diag.suggestionInspectorPresent || diag.acceptCount !== 2) {
+    throw new Error(`review-suggestion-inspector-dark: unexpected diagnostics ${JSON.stringify(diag)}`)
+  }
+  await capture(window, 'review-suggestion-inspector-dark')
+
+  console.error('annotations-sidebar-visual-capture: all seven scenes captured and structurally verified')
 
   // The S10 boundary proof (issue: helper-level openAnnotationCount() proof
   // does not prove the rendered badge): read the annotations tab's TabBar

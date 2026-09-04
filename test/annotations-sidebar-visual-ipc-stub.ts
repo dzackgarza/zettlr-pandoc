@@ -7,6 +7,11 @@
  * reason. (Only the type-only import below is exempt: TypeScript erases it
  * entirely, so it carries no runtime module and cannot affect evaluation
  * order.)
+ *
+ * It also records what the panel asked for. The review adjudication the
+ * editor used to own now lives in this panel, and the claim that matters is
+ * that a click raises the provider's fenced request instead of deciding
+ * locally — which is only observable at this bridge.
  */
 
 import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
@@ -20,6 +25,12 @@ interface DocumentsProviderMessage {
 
 interface ConfigProviderMessage {
   command: string
+}
+
+/** One request the panel raised, as it reached the preload bridge. */
+export interface RecordedRequest {
+  channel: string
+  message: unknown
 }
 
 /**
@@ -39,21 +50,27 @@ interface SceneConfig {
 /**
  * The surface this stub actually serves: the 'documents-provider' calls the
  * mounted collaboration store issues (get-collaboration-session,
- * get-file-modification-status), one synchronous 'config-provider' read
- * (get-config), and no-op listen/send — nothing else this capture ever
- * calls. window.ipc's ambient type (source/types/renderer/ipc-bridge.ts) is
- * the full per-provider contract across every channel in the app; the cast
- * at the bottom is the one named site that gap is bridged, instead of
- * widening this object's own type.
+ * get-file-modification-status, retrieve-tab-config), the typed
+ * `documents:*` operation channels the panel's adjudication controls raise,
+ * one synchronous 'config-provider' read (get-config), and no-op
+ * listen/send — nothing else this capture ever calls. window.ipc's ambient
+ * type (source/types/renderer/ipc-bridge.ts) is the full per-provider
+ * contract across every channel in the app; the cast at the bottom is the
+ * one named site that gap is bridged, instead of widening this object's own
+ * type.
  */
 interface AnnotationsSceneIpcBridge {
-  invoke: (channel: string, message?: DocumentsProviderMessage) => Promise<DocumentCollaborationSession | string[] | LeafNodeJSON | undefined>
+  invoke: (
+    channel: string,
+    message?: DocumentsProviderMessage
+  ) => Promise<DocumentCollaborationSession | string[] | LeafNodeJSON | { ok: true } | undefined>
   on: (channel: string, listener: (event: undefined, ...args: never[]) => void) => () => void
   send: (channel: string, ...args: unknown[]) => void
   sendSync: (channel: string, message?: ConfigProviderMessage) => SceneConfig | undefined
 }
 
 let sceneSession: DocumentCollaborationSession | undefined
+const recorded: RecordedRequest[] = []
 
 const sceneConfig: SceneConfig = {
   window: { currentSidebarTab: 'annotations' },
@@ -76,19 +93,23 @@ const sceneLeaf: LeafNodeJSON = {
 
 const ipcBridge: AnnotationsSceneIpcBridge = {
   invoke: async (channel, message) => {
-    if (channel !== 'documents-provider' || message === undefined) {
-      return undefined
+    recorded.push({ channel, message })
+    if (channel === 'documents-provider' && message !== undefined) {
+      switch (message.command) {
+        case 'get-collaboration-session':
+          return sceneSession
+        case 'get-file-modification-status':
+          return []
+        case 'retrieve-tab-config':
+          return sceneLeaf
+        default:
+          return undefined
+      }
     }
-    switch (message.command) {
-      case 'get-collaboration-session':
-        return sceneSession
-      case 'get-file-modification-status':
-        return []
-      case 'retrieve-tab-config':
-        return sceneLeaf
-      default:
-        return undefined
-    }
+    // The typed operation channels (the review and annotation mutations)
+    // answer with the provider's success shape, so the panel's own busy
+    // state settles the way it does in the app.
+    return channel.startsWith('documents:') ? { ok: true } : undefined
   },
   on: () => () => {},
   send: () => {},
@@ -104,4 +125,9 @@ window.ipc = ipcBridge as unknown as typeof window.ipc
 
 export function setAnnotationsSceneSession (session: DocumentCollaborationSession): void {
   sceneSession = session
+}
+
+/** Every request the mounted panel raised, in order. */
+export function recordedRequests (): RecordedRequest[] {
+  return recorded
 }

@@ -98,17 +98,6 @@ export interface ThemeVars {
   '--zettlr-editor-review-insert-mark-bg': string
   '--zettlr-editor-review-delete-bg': string
   '--zettlr-editor-review-delete-accent': string
-  '--zettlr-editor-review-controls-bg': string
-  '--zettlr-editor-review-accept-bg': string
-  '--zettlr-editor-review-accept-border': string
-  '--zettlr-editor-review-reject-bg': string
-  '--zettlr-editor-review-reject-border': string
-  /**
-   * CSS `<color>` value for the chunk comment field's unsaved indicator.
-   * Meta-state, not diff semantics: deliberately outside the green/red
-   * attention colors.
-   */
-  '--zettlr-editor-review-note-unsaved': string
   /** CSS `<color>` values for the text-annotations locator layer (M5) */
   '--zettlr-editor-annotation-mark-bg': string
   '--zettlr-editor-annotation-mark-active-bg': string
@@ -213,12 +202,6 @@ const reviewLight = {
   insertMarkBg: 'rgba(26, 178, 74, 0.45)',
   deleteBg: 'rgba(207, 34, 46, 0.30)',
   deleteAccent: '#cf222e',
-  controlsBg: 'rgba(128, 128, 128, 0.06)',
-  acceptBg: '#1f7a45',
-  acceptBorder: '#176238',
-  rejectBg: '#b33a3a',
-  rejectBorder: '#8e2f2f',
-  noteUnsaved: '#9a6700',
 }
 
 const reviewDark = {
@@ -226,12 +209,6 @@ const reviewDark = {
   insertMarkBg: 'rgba(63, 185, 80, 0.48)',
   deleteBg: 'rgba(248, 81, 73, 0.38)',
   deleteAccent: '#f85149',
-  controlsBg: 'rgba(128, 128, 128, 0.12)',
-  acceptBg: '#2ea043',
-  acceptBorder: '#238636',
-  rejectBg: '#da3633',
-  rejectBorder: '#b62324',
-  noteUnsaved: '#d29922',
 }
 
 // Locator layer (M5): a golden-amber hue that does not collide with the
@@ -307,12 +284,6 @@ export const defaultVarsLight: ThemeVars = {
   '--zettlr-editor-review-insert-mark-bg': reviewLight.insertMarkBg,
   '--zettlr-editor-review-delete-bg': reviewLight.deleteBg,
   '--zettlr-editor-review-delete-accent': reviewLight.deleteAccent,
-  '--zettlr-editor-review-controls-bg': reviewLight.controlsBg,
-  '--zettlr-editor-review-accept-bg': reviewLight.acceptBg,
-  '--zettlr-editor-review-accept-border': reviewLight.acceptBorder,
-  '--zettlr-editor-review-reject-bg': reviewLight.rejectBg,
-  '--zettlr-editor-review-reject-border': reviewLight.rejectBorder,
-  '--zettlr-editor-review-note-unsaved': reviewLight.noteUnsaved,
   '--zettlr-editor-annotation-mark-bg': annotationLight.markBg,
   '--zettlr-editor-annotation-mark-active-bg': annotationLight.markActiveBg,
   '--zettlr-editor-annotation-mark-resolved-bg': annotationLight.markResolvedBg,
@@ -366,12 +337,6 @@ export const defaultVarsDark: ThemeVars = {
   '--zettlr-editor-review-insert-mark-bg': reviewDark.insertMarkBg,
   '--zettlr-editor-review-delete-bg': reviewDark.deleteBg,
   '--zettlr-editor-review-delete-accent': reviewDark.deleteAccent,
-  '--zettlr-editor-review-controls-bg': reviewDark.controlsBg,
-  '--zettlr-editor-review-accept-bg': reviewDark.acceptBg,
-  '--zettlr-editor-review-accept-border': reviewDark.acceptBorder,
-  '--zettlr-editor-review-reject-bg': reviewDark.rejectBg,
-  '--zettlr-editor-review-reject-border': reviewDark.rejectBorder,
-  '--zettlr-editor-review-note-unsaved': reviewDark.noteUnsaved,
   '--zettlr-editor-annotation-mark-bg': annotationDark.markBg,
   '--zettlr-editor-annotation-mark-active-bg': annotationDark.markActiveBg,
   '--zettlr-editor-annotation-mark-resolved-bg': annotationDark.markResolvedBg,

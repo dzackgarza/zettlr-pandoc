@@ -26,27 +26,6 @@ async function capture (window, scene) {
     .cm-editor { min-height: ${scene.height - 60}px; font-size: 16px; line-height: 1.5; }
     .cm-scroller { padding: 16px 20px 40px; overflow-x: hidden; }
     .cm-content { overflow-wrap: anywhere; }
-    .review-diff-active button.cm-review-diff-control {
-      white-space: nowrap;
-      min-width: 64px;
-      height: 24px;
-      padding: 0 8px;
-      border: 1px solid transparent;
-      border-radius: 4px;
-      color: #ffffff;
-      font: inherit;
-      font-size: 12px;
-      line-height: 22px;
-      cursor: pointer;
-    }
-    .review-diff-active button.cm-review-diff-control.accept {
-      background-color: var(--zettlr-editor-review-accept-bg);
-      border-color: var(--zettlr-editor-review-accept-border);
-    }
-    .review-diff-active button.cm-review-diff-control.reject {
-      background-color: var(--zettlr-editor-review-reject-bg);
-      border-color: var(--zettlr-editor-review-reject-border);
-    }
   </style></head><body data-scene="${scene.scene}">
     <main id="editor"></main><script src="../readme-demo-bundle.js"></script>
   </body></html>`

@@ -29,6 +29,13 @@
  *                  sessionsByDocumentPath itself: the cache only ever moves
  *                  through the DP_EVENTS.DOCUMENT_COLLABORATION broadcast.
  *
+ *                  Both halves also cover REVIEW adjudication, which M9
+ *                  moved out of the editor's chunk widgets and into this
+ *                  panel (S3, invariant I4): what a suggestion card derives
+ *                  from the session's review half, what a chunk note
+ *                  commits, and the five fenced review mutations the
+ *                  SuggestionInspector raises.
+ *
  *                  The third half proves the tab badge is the OPEN count, on
  *                  screen, from a REAL mounted MainSidebar.vue — not just
  *                  from openAnnotationCount() in isolation, which cannot
@@ -43,17 +50,18 @@ import { execFile } from "child_process";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { promisify } from "util";
 // Must be the first local import: it installs window.ipc as a side effect,
 // before the store below reads window.ipc at its own module top level.
 import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
 import { createPinia, setActivePinia } from "pinia";
-import { useDocumentCollaborationStore } from "source/pinia";
+import { useDocumentCollaborationStore } from "source/pinia/document-collaboration-store";
 import { CollaborationApplicationService } from "source/app/service-providers/documents/document-collaboration-application-service";
 import { DocumentAuthority as SharedDocumentAuthority } from "./collaboration-test-authority";
 import type { TextAnnotation, AnnotationMessage } from "@dts/common/annotation-domain";
 import {
   buildAnnotationCards,
+  buildSuggestionCards,
+  chunkNoteCommit,
   deriveActionRow,
   deriveCardTitle,
   filterCards,
@@ -63,7 +71,21 @@ import {
   partitionByResolution,
   truncatePreview,
 } from "source/win-main/sidebar/annotations/annotation-panel-model";
-import { buildSceneSession, SCENE_ANNOTATION_PROPOSAL_ID, SCENE_ANNOTATION_RESOLVED_ID, SCENE_ANNOTATION_THREAD_ID } from "./annotations-sidebar-scene-fixture";
+import {
+  buildSceneReview,
+  buildSceneSession,
+  buildSceneSessionWithReview,
+  SCENE_ANNOTATION_PROPOSAL_ID,
+  SCENE_ANNOTATION_RESOLVED_ID,
+  SCENE_ANNOTATION_THREAD_ID,
+  SCENE_CHUNK_GOAL_ID,
+  SCENE_CHUNK_GOAL_NOTE,
+  SCENE_CHUNK_TASKS_ID,
+  SCENE_REVIEW_GENERATION,
+  SCENE_REVIEW_ID,
+  SCENE_WORKING_SHA256,
+} from "./annotations-sidebar-scene-fixture";
+import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
 
@@ -301,6 +323,203 @@ describe("useDocumentCollaborationStore panel surface", function () {
       to: 52,
       expectedAnnotationGeneration: session.annotations.generation,
     });
+  });
+});
+
+describe("suggestion inspector model", function () {
+  const review = buildSceneReview();
+  const cards = buildSuggestionCards(review);
+
+  it("shows each outstanding chunk with the claim that proposed it", function () {
+    assert.deepEqual(cards.map(card => card.suggestionId), [SCENE_CHUNK_TASKS_ID, SCENE_CHUNK_GOAL_ID]);
+    assert.deepEqual(cards.map(card => card.description), [
+      "Say which tasks automation actually handles.",
+      "Frame the goal as collaboration, not replacement.",
+    ]);
+  });
+
+  it("reads both sides of a chunk out of the same working text its anchors index", function () {
+    // The insertion is SLICED from review.workingText, never carried
+    // alongside it: a card cannot show a span from a different moment of the
+    // document than the offsets that produced it.
+    assert.deepEqual(cards.map(card => card.insertedText), ["well-defined tasks", "to work with it"]);
+    assert.deepEqual(cards.map(card => card.removedText), ["narrow tasks", "to replace it"]);
+  });
+
+  it("locates each chunk on its own source line", function () {
+    assert.deepEqual(cards.map(card => card.lineLocator), ["Ln 7", "Ln 11"]);
+    assert.deepEqual(cards.map(card => card.lineNumber), [7, 11]);
+  });
+
+  it("prefills a chunk's note field from the provider, and only its own chunk's", function () {
+    assert.equal(cards[1].comment, SCENE_CHUNK_GOAL_NOTE);
+    assert.equal(cards[0].comment, "", "a chunk with no note starts empty rather than borrowing another's");
+  });
+
+  it("commits a trimmed note, commits nothing when it did not change, and commits an emptied field as the removal", function () {
+    const noted = cards[1];
+    assert.equal(chunkNoteCommit(noted, `  ${SCENE_CHUNK_GOAL_NOTE}  `), undefined, "an unchanged note is no mutation");
+    assert.equal(chunkNoteCommit(noted, "  rewritten  "), "rewritten");
+    assert.equal(chunkNoteCommit(noted, ""), "", "an emptied field removes the note");
+    assert.equal(chunkNoteCommit(cards[0], "   "), undefined, "whitespace in an already-empty field is still no mutation");
+  });
+});
+
+describe("useDocumentCollaborationStore review surface", function () {
+  const session = buildSceneSessionWithReview();
+
+  beforeEach(function () {
+    setActivePinia(createPinia());
+    documentCollaborationIpcDouble.reset();
+  });
+
+  /** A store hydrated with the reviewed session, ready to adjudicate. */
+  async function hydratedStore (): Promise<ReturnType<typeof useDocumentCollaborationStore>> {
+    documentCollaborationIpcDouble.setInvokeResponder(async () => session);
+    const store = useDocumentCollaborationStore();
+    await store.ensureSession(session.documentPath);
+    return store;
+  }
+
+  /** Records the next invoke and answers it with the provider's own shape. */
+  function captureNextRequest (response: unknown): { seen: { command?: string, payload?: unknown } } {
+    const seen: { command?: string, payload?: unknown } = {};
+    documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+      seen.command = message.command;
+      seen.payload = message.payload;
+      return response;
+    });
+    return { seen };
+  }
+
+  const fence = {
+    reviewId: SCENE_REVIEW_ID,
+    expectedReviewGeneration: SCENE_REVIEW_GENERATION,
+    expectedWorkingSha256: SCENE_WORKING_SHA256,
+  };
+
+  it("sends a chunk decision on its own typed channel, addressing the chunk and fencing on the snapshot it was formed against", async function () {
+    const store = await hydratedStore();
+    const before = store.getSession(session.documentPath);
+    const { seen } = captureNextRequest({ ok: true, chunkId: SCENE_CHUNK_TASKS_ID });
+
+    const result = await store.decideReviewChunk(session.documentPath, SCENE_CHUNK_TASKS_ID, "accept");
+
+    assert.equal(seen.command, "documents:decide-review-chunk");
+    assert.deepEqual(seen.payload, { ...fence, chunkId: SCENE_CHUNK_TASKS_ID, decision: "accept" });
+    assert.deepEqual(result, { ok: true, chunkId: SCENE_CHUNK_TASKS_ID });
+    // A decision decides nothing locally: only the broadcast moves the cache.
+    assert.deepEqual(store.getSession(session.documentPath), before);
+  });
+
+  it("addresses the second chunk when the second chunk is decided, not the first", async function () {
+    const store = await hydratedStore();
+    const { seen } = captureNextRequest({ ok: true });
+
+    await store.decideReviewChunk(session.documentPath, SCENE_CHUNK_GOAL_ID, "reject");
+
+    assert.deepEqual(seen.payload, { ...fence, chunkId: SCENE_CHUNK_GOAL_ID, decision: "reject" });
+  });
+
+  it("sends a chunk note under the same fence a decision uses, since the chunk id is content-addressed", async function () {
+    const store = await hydratedStore();
+    const { seen } = captureNextRequest({ ok: true });
+
+    await store.commentReviewChunk(session.documentPath, SCENE_CHUNK_GOAL_ID, "rewritten");
+
+    assert.equal(seen.command, "documents:comment-review-chunk");
+    assert.deepEqual(seen.payload, { ...fence, chunkId: SCENE_CHUNK_GOAL_ID, text: "rewritten" });
+  });
+
+  it("sends the two mass actions under the fence one decision uses, and changes nothing locally", async function () {
+    const store = await hydratedStore();
+    const before = store.getSession(session.documentPath);
+
+    const acceptAll = captureNextRequest({ ok: true, acceptedChunks: 2 });
+    await store.acceptAllReviewChunks(session.documentPath);
+    assert.equal(acceptAll.seen.command, "documents:accept-all-review-chunks");
+    assert.deepEqual(acceptAll.seen.payload, fence);
+
+    const clear = captureNextRequest({ ok: true });
+    await store.clearReview(session.documentPath);
+    assert.equal(clear.seen.command, "documents:clear-review");
+    assert.deepEqual(clear.seen.payload, fence);
+
+    assert.deepEqual(store.getSession(session.documentPath), before);
+  });
+
+  it("fences a review-level comment on the generation alone: it adjudicates nothing and moves no text", async function () {
+    const store = await hydratedStore();
+    const { seen } = captureNextRequest({ ok: true });
+
+    await store.addReviewComment(session.documentPath, "overall note");
+
+    assert.equal(seen.command, "documents:add-review-comment");
+    assert.deepEqual(seen.payload, {
+      reviewId: SCENE_REVIEW_ID,
+      text: "overall note",
+      expectedReviewGeneration: SCENE_REVIEW_GENERATION,
+    });
+  });
+
+  it("hands a provider refusal back as a value the panel can surface, without touching the cache", async function () {
+    const store = await hydratedStore();
+    const before = store.getSession(session.documentPath);
+    captureNextRequest({
+      ok: false,
+      code: "REVIEW_GENERATION_MISMATCH",
+      message: "The review is at generation 5, not 4.",
+      reviewGeneration: 5,
+    });
+
+    const result = await store.decideReviewChunk(session.documentPath, SCENE_CHUNK_TASKS_ID, "accept");
+
+    assert.equal(result.ok, false);
+    assert.deepEqual(store.getSession(session.documentPath), before);
+  });
+
+  it("fences against the snapshot on screen now, not the one the panel first rendered", async function () {
+    // Every review mutation broadcasts a new session, and a chunk nobody
+    // touched keeps its card. A decision bound to the generation the card was
+    // BUILT with would name a review state nobody is looking at any more, and
+    // the provider would refuse a decision that is in fact current.
+    const store = await hydratedStore();
+    documentCollaborationIpcDouble.emit("documents-update", {
+      event: "document-collaboration",
+      context: {
+        filePath: session.documentPath,
+        collaborationSession: {
+          ...session,
+          workingSha256: "b".repeat(64),
+          review: { ...session.review!, reviewGeneration: SCENE_REVIEW_GENERATION + 3 },
+        },
+      },
+    });
+
+    const { seen } = captureNextRequest({ ok: true });
+    await store.decideReviewChunk(session.documentPath, SCENE_CHUNK_TASKS_ID, "accept");
+
+    assert.deepEqual(seen.payload, {
+      reviewId: SCENE_REVIEW_ID,
+      chunkId: SCENE_CHUNK_TASKS_ID,
+      decision: "accept",
+      expectedReviewGeneration: SCENE_REVIEW_GENERATION + 3,
+      expectedWorkingSha256: "b".repeat(64),
+    });
+  });
+
+  it("refuses to fabricate a fence for a document carrying no review", async function () {
+    const annotationsOnly = buildSceneSession();
+    documentCollaborationIpcDouble.setInvokeResponder(async () => annotationsOnly);
+    const store = useDocumentCollaborationStore();
+    await store.ensureSession(annotationsOnly.documentPath);
+
+    await assert.rejects(async () => await store.acceptAllReviewChunks(annotationsOnly.documentPath));
+    assert.equal(
+      documentCollaborationIpcDouble.invokeCallCount("documents:accept-all-review-chunks"),
+      0,
+      "a mutation with no review to name never reaches the provider",
+    );
   });
 });
 
