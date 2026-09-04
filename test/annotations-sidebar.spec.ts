@@ -611,11 +611,8 @@ describe("MainSidebar annotations tab badge, and the two M10 emit boundaries (S7
       "xvfb-run",
       [
         "-a",
-        join(root, "node_modules/.bin/electron"),
-        "--ozone-platform=x11",
-        "--disable-gpu",
-        "--no-sandbox",
-        join(root, "test/annotations-sidebar-visual-capture.cjs"),
+        "node",
+        join(root, "test/annotations-sidebar-visual-capture.mjs"),
         outputDirectory,
       ],
       { maxBuffer: 16 * 1024 * 1024 },

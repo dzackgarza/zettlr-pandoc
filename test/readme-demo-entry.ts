@@ -1,7 +1,7 @@
 /**
  * Mounts the production editor renderers and exposes a scripted step
  * sequence for the README demo GIFs. The capture driver replays the steps
- * one frame at a time (see readme-demo-capture.cjs); each step returns how
+ * one frame at a time (see readme-demo-capture.mjs); each step returns how
  * long the resulting frame should hold in the assembled animation.
  *
  * Scenes (selected via <body data-scene>):

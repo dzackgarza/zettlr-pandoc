@@ -1,6 +1,6 @@
 /**
  * Mounts the production editor renderer for the Phase 5 reference navigation
- * Chromium probe (reference-navigation-probe.cjs). Follows the
+ * Chromium probe (reference-navigation-probe.mjs). Follows the
  * editor-pandoc-div-click-entry.ts / editor-reference-chips-visual-entry.ts
  * pattern: real markdownParser, real chip renderers, the real
  * workspaceReferencesField fed by the REAL extractor over the fixture

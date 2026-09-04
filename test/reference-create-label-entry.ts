@@ -1,7 +1,7 @@
 /**
  * Mounts the production Create-reference-label dialog and the definition
  * key-edit prompt editor scene for the Chromium input probe
- * (reference-create-label-probe.cjs). Issue #1, Phase 6 red.
+ * (reference-create-label-probe.mjs). Issue #1, Phase 6 red.
  *
  * The probe delivers the raw fixture documents; this entry runs the REAL
  * extractor over them for the workspace key set. Both production surfaces
