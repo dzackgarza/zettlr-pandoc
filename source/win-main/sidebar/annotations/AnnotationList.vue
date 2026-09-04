@@ -1,7 +1,7 @@
 <template>
   <div class="annotation-list">
     <p v-if="open.length === 0" class="annotation-list-empty">
-      {{ emptyLabel }}
+      {{ trans('No open annotations in this document.') }}
     </p>
     <AnnotationListItem
       v-for="card in open"
@@ -74,7 +74,6 @@ const emit = defineEmits<{
 const partitioned = computed(() => partitionByResolution(props.cards))
 const open = computed(() => partitioned.value.open)
 const resolved = computed(() => partitioned.value.resolved)
-const emptyLabel = trans('No open annotations in this document.')
 const resolvedDisclosureLabel = computed(() => trans('View resolved (%s)', String(resolved.value.length)))
 </script>
 

@@ -28,6 +28,7 @@ import type {
   WorkspaceFileEntry,
 } from "@dts/common/agent-api";
 import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
+import { Text } from "@codemirror/state";
 import { DocumentType } from "@dts/common/documents";
 import type DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
@@ -112,20 +113,14 @@ export type AnnotationQueryPort = Pick<CollaborationApplicationService, "getAnno
 
 /**
  * Converts a UTF-16 code-unit offset into a 1-based line and column, the
- * shape the agent API reports every annotation target in. Linear in the
- * offset — fine at loopback-API scale, and it keeps this module free of a
- * rope or line-index structure no other query here needs.
+ * shape the agent API reports every annotation target in. `Text.lineAt`
+ * throws for an out-of-range offset rather than clamping — every offset
+ * reaching this function comes from a validated anchor, so that is the
+ * correct failure mode, not a defect to work around.
  */
 function offsetToLineColumn(text: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let lineStart = 0;
-  for (let i = 0; i < offset && i < text.length; i++) {
-    if (text.charCodeAt(i) === 10 /* \n */) {
-      line++;
-      lineStart = i + 1;
-    }
-  }
-  return { line, column: offset - lineStart + 1 };
+  const line = Text.of(text.split("\n")).lineAt(offset);
+  return { line: line.number, column: offset - line.from + 1 };
 }
 
 /**

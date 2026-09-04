@@ -29,6 +29,7 @@ import { type SyntaxNode, type SyntaxNodeRef } from '@lezer/common'
 import { WidgetType, EditorView } from '@codemirror/view'
 import { type EditorState } from '@codemirror/state'
 import { configField } from '../util/configuration'
+import { wholeEnvironment } from '@common/util/math-delimiters'
 import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-render'
 
 /**
@@ -38,8 +39,6 @@ import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-r
  */
 export const FIGURE_ENVIRONMENTS: ReadonlySet<string> = new Set([ 'tikzcd', 'tikzpicture' ])
 
-const RAW_OPEN_RE = /^\\begin\{(tikzcd|tikzpicture)\}/
-
 /**
  * The environment a paragraph renders as a raw figure, or null when it does
  * not render as one.
@@ -47,16 +46,16 @@ const RAW_OPEN_RE = /^\\begin\{(tikzcd|tikzpicture)\}/
  * A raw block is only a figure when it is the WHOLE paragraph. Markdown folds
  * a line written directly under prose into that prose's paragraph, and the
  * result reads as one paragraph that merely contains the environment — so
- * there is no block for this renderer to replace. tikz-lint.ts asks the same
- * question to tell the author, and asks it through this function so the marker
- * and the figure can never disagree about what renders.
+ * there is no block for this renderer to replace.
+ *
+ * The "is this text one whole environment" half lives in math-delimiters.ts,
+ * which latex-environment-lint.ts also reads; this narrows the answer to the
+ * environments drawn here. Both sides therefore answer from one predicate and
+ * one set, and cannot disagree about what renders.
  */
 export function rawTikzEnvironment (paragraphText: string): string|null {
-  const open = RAW_OPEN_RE.exec(paragraphText)
-  if (open === null || !paragraphText.trimEnd().endsWith(`\\end{${open[1]}}`)) {
-    return null
-  }
-  return open[1]
+  const environment = wholeEnvironment(paragraphText)
+  return environment !== null && FIGURE_ENVIRONMENTS.has(environment) ? environment : null
 }
 
 /**

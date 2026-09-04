@@ -4,7 +4,7 @@
       v-model="draft"
       class="annotation-composer-input"
       rows="2"
-      v-bind:placeholder="placeholderLabel"
+      v-bind:placeholder="trans('Reply…')"
       v-on:keydown.enter.exact.prevent="submit"
     ></textarea>
     <button
@@ -12,7 +12,7 @@
       class="annotation-composer-send"
       v-bind:disabled="draft.trim().length === 0"
       v-on:click="submit"
-    >{{ sendLabel }}</button>
+    >{{ trans('Send') }}</button>
   </div>
 </template>
 
@@ -42,8 +42,6 @@ import { ref } from 'vue'
 const emit = defineEmits<(e: 'submit', text: string) => void>()
 
 const draft = ref('')
-const placeholderLabel = trans('Reply…')
-const sendLabel = trans('Send')
 
 function submit (): void {
   const text = draft.value.trim()
