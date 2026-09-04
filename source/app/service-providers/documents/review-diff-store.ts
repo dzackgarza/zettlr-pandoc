@@ -37,6 +37,8 @@ import type {
   ReviewSuggestion,
 } from "@dts/common/review-domain";
 import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
+import type { ReviewDiffSession } from "@dts/common/review-diff";
+import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
 import { sha256Text } from "@common/util/sha256";
 import type { CollaborationSidecarData, PersistedReviewState } from "./collaboration-sidecar-schema";
 
@@ -294,6 +296,70 @@ export function collaborationSidecar(input: {
       })),
     },
     ...(input.pendingSave === undefined ? {} : { pendingSave: input.pendingSave }),
+  };
+}
+
+/**
+ * The review half of a DocumentCollaborationSession: proposed suggestion
+ * entities and their source descriptions, over the caller's working text.
+ * `workingText` is a parameter rather than read off the review because the
+ * review does not carry the live buffer — only the authority does.
+ */
+export function reviewSessionFor(
+  filePath: string,
+  workingText: string,
+  review: ActiveReviewState,
+): ReviewDiffSession {
+  return {
+    id: review.reviewId,
+    reviewGeneration: review.generation,
+    documentPath: filePath,
+    workingText,
+    suggestions: review.suggestions
+      .filter((suggestion) => suggestion.state === "proposed")
+      .map((suggestion) => {
+        const packet = review.packets.find(
+          (candidate) => candidate.packetId === suggestion.packetId,
+        );
+        if (packet === undefined) {
+          throw new Error(`Suggestion ${suggestion.suggestionId} has no packet`);
+        }
+        return {
+          suggestionId: suggestion.suggestionId,
+          removedText: suggestion.removedText,
+          anchors: suggestion.anchors.map((span) => ({ ...span })),
+          seam: suggestion.seam,
+          description: packet.description,
+        };
+      }),
+    chunkComments: review.chunkComments.map((note) => ({ ...note })),
+  };
+}
+
+/**
+ * The one constructor of the DocumentCollaborationSession every renderer
+ * pane and the annotations panel read: annotations always, the review
+ * projection only when a review is active. Pure over its arguments, so the
+ * same function proves the merge in a spec and produces the broadcast in
+ * production — there is no second, drifted assembly of this shape.
+ */
+export function collaborationSessionFor(input: {
+  documentId: string;
+  documentPath: string;
+  workingText: string;
+  review: ActiveReviewState | undefined;
+  annotations: AnnotationSet;
+}): DocumentCollaborationSession {
+  return {
+    documentId: input.documentId,
+    documentPath: input.documentPath,
+    workingText: input.workingText,
+    workingSha256: sha256Text(input.workingText),
+    annotations: input.annotations,
+    review:
+      input.review === undefined
+        ? undefined
+        : reviewSessionFor(input.documentPath, input.workingText, input.review),
   };
 }
 

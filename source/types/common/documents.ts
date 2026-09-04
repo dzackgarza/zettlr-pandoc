@@ -85,7 +85,13 @@ export enum DP_EVENTS {
   CHANGE_FILE_STATUS = 'file-status-changed',
   FILE_SAVED = 'file-saved',
   ACTIVE_FILE = 'active-file-changed',
-  REVIEW_DIFF = 'review-diff',
+  /**
+   * One document's whole collaboration state — its annotations and its
+   * review, if any — as one snapshot. The renderer's document-collaboration
+   * Pinia store is the only listener that reads this event; every pane and
+   * the annotations panel read the store, never this event directly.
+   */
+  DOCUMENT_COLLABORATION = 'document-collaboration',
   // Leafs (editor panes)
   NEW_LEAF = 'leaf-created',
   LEAF_CLOSED = 'leaf-deleted',
