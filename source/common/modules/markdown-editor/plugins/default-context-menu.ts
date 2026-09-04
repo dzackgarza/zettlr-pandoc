@@ -24,6 +24,7 @@ import { nodeAtPos } from '../util/node-in-selection'
 import { NODES } from '../parser/citation-parser'
 import { citationMenu } from '../context-menu/citation-menu'
 import { requestCreateReferenceLabel, resolveCreateReferenceLabelRequest } from './create-reference-label'
+import { resolveAnnotateSelectionMenuItem } from './annotate-selection'
 
 export const defaultContextMenu = EditorView.domEventHandlers({
   contextmenu (event, view) {
@@ -54,25 +55,11 @@ export const defaultContextMenu = EditorView.domEventHandlers({
 
     const extraItems: AnyMenuItem[] = []
 
-    // Selection-anchored annotation composer (M6): checked against the
-    // selection BEFORE the word-selection fallback below can turn an empty
-    // selection into a non-empty one — a context click with no selection
-    // must never offer this command. The composer itself is a DOM
-    // CustomEvent on the view's own element, not a CodeMirror StateEffect:
-    // MainEditor.vue listens for it on the stable pane wrapper, so this
-    // plugin needs no relay wired into the editor core.
-    const selection = view.state.selection.main
-    if (selection.from !== selection.to) {
-      extraItems.unshift({
-        label: trans('Annotate for AI…'),
-        type: 'normal',
-        action () {
-          view.dom.dispatchEvent(new CustomEvent('zettlr-annotate-selection', {
-            bubbles: true,
-            detail: { from: selection.from, to: selection.to }
-          }))
-        }
-      })
+    // Selection-anchored annotation composer (M6): resolved before the
+    // word-selection fallback below can turn an empty selection non-empty.
+    const annotateItem = resolveAnnotateSelectionMenuItem(view)
+    if (annotateItem !== null) {
+      extraItems.unshift(annotateItem)
     }
 
     // Node-routed create-label entry (issue #1 Phase 6): a supported,

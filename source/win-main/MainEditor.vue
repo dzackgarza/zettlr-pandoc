@@ -66,6 +66,7 @@ import { getBibliographyForDescriptor as getBibliography } from '@common/util/ge
 import { EditorSelection } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import AnnotationCreateDialog from './AnnotationCreateDialog.vue'
+import { ANNOTATE_SELECTION_EVENT } from '@common/modules/markdown-editor/plugins/annotate-selection'
 import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ipc-api'
 import { ipcMarkdownFormatter, surfaceFormatResult } from '@common/modules/markdown-editor/commands/format-document-ipc'
 import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
@@ -175,7 +176,7 @@ const collaborationSession = computed(() => collaborationStore.sessionsByDocumen
 
 /**
  * The open selection-creation composer request (M6), or null when none is
- * open. Set by the 'zettlr-annotate-selection' DOM event the context menu's
+ * open. Set by the ANNOTATE_SELECTION_EVENT DOM event the context menu's
  * "Annotate for AI…" entry dispatches on the editor's own DOM (bubbling up
  * to mainEditorWrapper, listened for below) — a plain DOM CustomEvent
  * rather than a CodeMirror StateEffect relay, so this composer needs no
@@ -488,11 +489,11 @@ onMounted(() => {
   // mainEditorWrapper is stable across a file switch (currentEditor's own
   // DOM is replaced underneath it), so this one listener, attached once,
   // catches every "Annotate for AI…" request for the pane's whole lifetime.
-  mainEditorWrapper.value?.addEventListener('zettlr-annotate-selection', requestAnnotationComposer)
+  mainEditorWrapper.value?.addEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer)
 })
 
 onBeforeUnmount(() => {
-  mainEditorWrapper.value?.removeEventListener('zettlr-annotate-selection', requestAnnotationComposer)
+  mainEditorWrapper.value?.removeEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer)
   if (currentEditor !== null) {
     props.persistentStateMap.set(props.file.path, currentEditor.persistentState)
     // Clear out the table of contents before unmounting the component.
