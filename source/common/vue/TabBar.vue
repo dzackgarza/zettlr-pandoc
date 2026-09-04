@@ -5,6 +5,8 @@
       v-bind:key="idx"
       role="tab"
       v-bind:aria-label="tab.label"
+      v-bind:aria-selected="props.currentTab === tab.id"
+      v-bind:aria-controls="tab.target"
       v-bind:data-target="tab.target"
       v-bind:class="{
         'system-tab': true,
@@ -22,6 +24,10 @@
       <template v-else>
         {{ tab.label }}
       </template>
+      <span
+        v-if="tab.badge !== undefined && tab.badge > 0"
+        class="system-tab-badge"
+      >{{ tab.badge }}</span>
     </button>
   </div>
 </template>
@@ -42,27 +48,9 @@
  * END HEADER
  */
 
-/**
- * This interface represents a Tabbar control
- */
-export interface TabbarControl {
-  /**
-   * This should match a Clarity icon shape
-   */
-  icon?: string
-  /**
-   * A unique ID for the tab
-   */
-  id: string
-  /**
-   * The target ID of whichever tab this represents (for a11y purposes)
-   */
-  target: string
-  /**
-   * A label, may be displayed.
-   */
-  label: string
-}
+import type { TabbarControl } from '@dts/common/tabbar'
+
+export type { TabbarControl }
 
 const props = defineProps<{
   tabs: TabbarControl[]
@@ -80,6 +68,22 @@ body .system-tablist {
   .system-tab {
     flex-grow: 1;
     text-align: center;
+    position: relative;
+  }
+
+  .system-tab-badge {
+    display: inline-block;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    margin-left: 4px;
+    border-radius: 999px;
+    background-color: var(--system-accent-color, #4c8dca);
+    color: white;
+    font-size: 10px;
+    line-height: 15px;
+    text-align: center;
+    vertical-align: middle;
   }
 }
 

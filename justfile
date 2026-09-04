@@ -283,6 +283,14 @@ capture-editor-annotations output: sync-dependencies
 capture-selection-composer output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" selection-composer "{{output}}"
 
+# M7 annotations panel structural-conformance scenes (plan section 4: 03
+# selected-thread, 05 linked-proposal-pending, 10 resolved-annotations-view,
+# 11 narrow-sidebar-drilldown), captured in isolated offscreen Electron
+# against a real Pinia store and a fixture DocumentCollaborationSession.
+# This never starts Forge, a dev server, xdg-open, or the system browser.
+capture-annotations-panel output: sync-dependencies
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" annotations-panel "{{output}}"
+
 # Run a real export headlessly (no GUI), via the app's own makeExport with the
 # exact profile list the GUI sees (userData/defaults + custom profiles). Proves
 # an export end-to-end from the terminal. Usage:

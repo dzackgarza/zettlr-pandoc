@@ -376,6 +376,58 @@ export type DocumentManagerIPCContract = {
     request: { payload: { path: string } }
     response: DocumentCollaborationSession | undefined
   }
+  // The annotations panel's owner-only mutation calls (M7). Every one
+  // resolves `path` to a documentId and delegates to the DocumentManager
+  // method of the same name; the resulting DocumentCollaborationSession
+  // reaches the renderer only through the DOCUMENT_COLLABORATION broadcast
+  // those methods already provoke, never through this response.
+  'add-annotation-message': {
+    request: {
+      payload: {
+        path: string
+        annotationId: string
+        actor: AnnotationActor
+        text: string
+        expectedAnnotationGeneration: number
+      }
+    }
+    response: AnnotationMessage | AnnotationFailure
+  }
+  'resolve-annotation': {
+    request: {
+      payload: {
+        path: string
+        annotationId: string
+        actor: AnnotationActor
+        expectedAnnotationGeneration: number
+      }
+    }
+    response: TextAnnotation | AnnotationFailure
+  }
+  'reopen-annotation': {
+    request: {
+      payload: {
+        path: string
+        annotationId: string
+        actor: AnnotationActor
+        expectedAnnotationGeneration: number
+      }
+    }
+    response: TextAnnotation | AnnotationFailure
+  }
+  'reattach-annotation': {
+    request: {
+      payload: {
+        path: string
+        annotationId: string
+        actor: AnnotationActor
+        from: number
+        to: number
+        expectedAnnotationGeneration: number
+      }
+    }
+    response: TextAnnotation | AnnotationFailure
+  }
   'move-file': {
     request: {
       payload: {
@@ -876,6 +928,34 @@ export default class DocumentManager
         case 'get-collaboration-session': {
           const docId = this.getDocumentId(payload.path)
           return docId === undefined ? undefined : this._collaborationSessionFor(docId, payload.path)
+        }
+        case 'add-annotation-message': {
+          const docId = this.getDocumentId(payload.path)
+          if (docId === undefined) {
+            return { ok: false, code: 'DOCUMENT_NOT_FOUND', message: `Document is not open: ${payload.path}` }
+          }
+          return await this.addAnnotationMessage(docId, payload.annotationId, payload.actor, payload.text, undefined, payload.expectedAnnotationGeneration)
+        }
+        case 'resolve-annotation': {
+          const docId = this.getDocumentId(payload.path)
+          if (docId === undefined) {
+            return { ok: false, code: 'DOCUMENT_NOT_FOUND', message: `Document is not open: ${payload.path}` }
+          }
+          return await this.resolveAnnotation(docId, payload.annotationId, payload.actor, payload.expectedAnnotationGeneration)
+        }
+        case 'reopen-annotation': {
+          const docId = this.getDocumentId(payload.path)
+          if (docId === undefined) {
+            return { ok: false, code: 'DOCUMENT_NOT_FOUND', message: `Document is not open: ${payload.path}` }
+          }
+          return await this.reopenAnnotation(docId, payload.annotationId, payload.actor, payload.expectedAnnotationGeneration)
+        }
+        case 'reattach-annotation': {
+          const docId = this.getDocumentId(payload.path)
+          if (docId === undefined) {
+            return { ok: false, code: 'DOCUMENT_NOT_FOUND', message: `Document is not open: ${payload.path}` }
+          }
+          return await this.reattachAnnotation(docId, payload.annotationId, payload.actor, payload.from, payload.to, payload.expectedAnnotationGeneration)
         }
         case 'move-file': {
           const {
