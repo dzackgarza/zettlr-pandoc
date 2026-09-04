@@ -264,6 +264,16 @@ capture-rename-preview output: sync-dependencies
 capture-review-diff output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" review-diff "{{output}}"
 
+# Capture M5's four structural-gate scenes (doc-collaboration plan, section
+# 10 names 02/07/08/09): several open targets each carrying an ordinal
+# marker, a point target's hollow marker at its deletion seam, an orphaned
+# target's marker with no span, and overlapping targets collapsed to one
+# marker with a count — light and dark. Scoped to what the editor alone
+# renders (no panel, no thread, no button — invariant I4); M10 assembles the
+# full twelve-scene `just capture-annotations` around these.
+capture-editor-annotations output: sync-dependencies
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" editor-annotations "{{output}}"
+
 # Run a real export headlessly (no GUI), via the app's own makeExport with the
 # exact profile list the GUI sees (userData/defaults + custom profiles). Proves
 # an export end-to-end from the terminal. Usage:
