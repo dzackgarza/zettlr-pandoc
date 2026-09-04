@@ -65,6 +65,7 @@ import type {
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
 import type { DocumentLocation, ProjectRootSpec, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
+import type { AnnotationSet } from '@dts/common/annotation-domain'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import { annotateCompletionEntries } from '@common/pandoc-util/project-reference-status'
 import { trans } from '@common/i18n-renderer'
@@ -763,6 +764,16 @@ watch(() => collaborationSession.value?.review, (nextReview, previousReview) => 
     currentEditor?.clearReviewDiffSession(previousReview.id)
   }
 }, { immediate: true })
+
+const EMPTY_ANNOTATION_SET: AnnotationSet = { generation: 0, items: [] }
+
+// Annotations are never absent on a session (unlike review), so this just
+// forwards the current set — the editor's own field only distinguishes and
+// re-renders locators, never mutates them. `immediate` covers the pane that
+// mounts onto a document another pane already cached the session for.
+watch(() => collaborationSession.value?.annotations, (annotations) => {
+  currentEditor?.setAnnotations(annotations ?? EMPTY_ANNOTATION_SET)
+}, { immediate: true, deep: true })
 
 // METHODS
 /**

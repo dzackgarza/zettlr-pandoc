@@ -109,6 +109,17 @@ export interface ThemeVars {
    * attention colors.
    */
   '--zettlr-editor-review-note-unsaved': string
+  /** CSS `<color>` values for the text-annotations locator layer (M5) */
+  '--zettlr-editor-annotation-mark-bg': string
+  '--zettlr-editor-annotation-mark-active-bg': string
+  '--zettlr-editor-annotation-mark-resolved-bg': string
+  '--zettlr-editor-annotation-marker-bg': string
+  '--zettlr-editor-annotation-marker-fg': string
+  '--zettlr-editor-annotation-marker-active-bg': string
+  '--zettlr-editor-annotation-marker-resolved-bg': string
+  '--zettlr-editor-annotation-marker-resolved-fg': string
+  '--zettlr-editor-annotation-marker-orphaned-fg': string
+  '--zettlr-editor-annotation-draft-border': string
   /** CSS `opacity` value */
   '--zettlr-editor-opacity': string|number
   /** CSS `text-decoration` value */
@@ -223,6 +234,36 @@ const reviewDark = {
   noteUnsaved: '#d29922',
 }
 
+// Locator layer (M5): a golden-amber hue that does not collide with the
+// review attention layer (green/red/amber-note) or the pandoc-div structure
+// layer (slate/purple/blue/cyan/indigo/magenta). Owner comments, not diff
+// valence, so it stays warm and neutral rather than signalling accept/reject.
+const annotationLight = {
+  markBg: 'rgba(191, 143, 0, 0.22)',
+  markActiveBg: 'rgba(191, 143, 0, 0.40)',
+  markResolvedBg: 'rgba(191, 143, 0, 0.10)',
+  markerBg: '#8a6600',
+  markerFg: '#fffaf0',
+  markerActiveBg: '#5c4400',
+  markerResolvedBg: 'rgba(128, 128, 128, 0.35)',
+  markerResolvedFg: 'var(--zettlr-editor-scroller-color)',
+  markerOrphanedFg: '#9a5b00',
+  draftBorder: '#8a6600',
+}
+
+const annotationDark = {
+  markBg: 'rgba(230, 179, 51, 0.22)',
+  markActiveBg: 'rgba(230, 179, 51, 0.42)',
+  markResolvedBg: 'rgba(230, 179, 51, 0.10)',
+  markerBg: '#e6b333',
+  markerFg: '#2b2200',
+  markerActiveBg: '#ffd166',
+  markerResolvedBg: 'rgba(200, 200, 200, 0.25)',
+  markerResolvedFg: 'var(--zettlr-editor-scroller-color)',
+  markerOrphanedFg: '#f0a93c',
+  draftBorder: '#e6b333',
+}
+
 const opacity = 0.65
 
 const linkDecoration = 'none'
@@ -272,6 +313,16 @@ export const defaultVarsLight: ThemeVars = {
   '--zettlr-editor-review-reject-bg': reviewLight.rejectBg,
   '--zettlr-editor-review-reject-border': reviewLight.rejectBorder,
   '--zettlr-editor-review-note-unsaved': reviewLight.noteUnsaved,
+  '--zettlr-editor-annotation-mark-bg': annotationLight.markBg,
+  '--zettlr-editor-annotation-mark-active-bg': annotationLight.markActiveBg,
+  '--zettlr-editor-annotation-mark-resolved-bg': annotationLight.markResolvedBg,
+  '--zettlr-editor-annotation-marker-bg': annotationLight.markerBg,
+  '--zettlr-editor-annotation-marker-fg': annotationLight.markerFg,
+  '--zettlr-editor-annotation-marker-active-bg': annotationLight.markerActiveBg,
+  '--zettlr-editor-annotation-marker-resolved-bg': annotationLight.markerResolvedBg,
+  '--zettlr-editor-annotation-marker-resolved-fg': annotationLight.markerResolvedFg,
+  '--zettlr-editor-annotation-marker-orphaned-fg': annotationLight.markerOrphanedFg,
+  '--zettlr-editor-annotation-draft-border': annotationLight.draftBorder,
   '--zettlr-editor-opacity': opacity,
   '--zettlr-editor-line-decoration': linkDecoration,
 }
@@ -321,6 +372,16 @@ export const defaultVarsDark: ThemeVars = {
   '--zettlr-editor-review-reject-bg': reviewDark.rejectBg,
   '--zettlr-editor-review-reject-border': reviewDark.rejectBorder,
   '--zettlr-editor-review-note-unsaved': reviewDark.noteUnsaved,
+  '--zettlr-editor-annotation-mark-bg': annotationDark.markBg,
+  '--zettlr-editor-annotation-mark-active-bg': annotationDark.markActiveBg,
+  '--zettlr-editor-annotation-mark-resolved-bg': annotationDark.markResolvedBg,
+  '--zettlr-editor-annotation-marker-bg': annotationDark.markerBg,
+  '--zettlr-editor-annotation-marker-fg': annotationDark.markerFg,
+  '--zettlr-editor-annotation-marker-active-bg': annotationDark.markerActiveBg,
+  '--zettlr-editor-annotation-marker-resolved-bg': annotationDark.markerResolvedBg,
+  '--zettlr-editor-annotation-marker-resolved-fg': annotationDark.markerResolvedFg,
+  '--zettlr-editor-annotation-marker-orphaned-fg': annotationDark.markerOrphanedFg,
+  '--zettlr-editor-annotation-draft-border': annotationDark.draftBorder,
   '--zettlr-editor-opacity': opacity,
   '--zettlr-editor-line-decoration': linkDecoration,
 }

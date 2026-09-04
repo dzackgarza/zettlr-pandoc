@@ -58,6 +58,7 @@ import { renderers } from './renderers'
 import { mdPasteDropHandlers } from './plugins/md-paste-drop-handlers'
 import { footnoteBackground } from './plugins/footnote-background'
 import { footnoteGutter } from './plugins/footnote-gutter'
+import { textAnnotationsExtension } from './plugins/text-annotations'
 import { yamlFrontmatterLint } from './linters/yaml-frontmatter-lint'
 import {
   mainThemes, darkMode, useDarkModeEditor,
@@ -356,6 +357,7 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     formattingToolbar,
     footnoteHover,
     footnoteGutter, // Should be after markdownFolding
+    textAnnotationsExtension(), // Locator gutter markers + span highlights (M5)
     urlHover,
     filePreview,
     citationTooltips,

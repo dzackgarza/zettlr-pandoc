@@ -43,6 +43,7 @@ import {
   type SourceRange,
 } from '@dts/common/references'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
+import type { AnnotationSet } from '@dts/common/annotation-domain'
 
 /**
  * What the pane must do with a review decision. Every method carries the
@@ -133,6 +134,13 @@ import {
   reloadStateEffect,
 } from './plugins/remote-doc'
 import { reviewChunksExtension } from './plugins/review-chunks'
+import {
+  clearAnnotationDraftEffect,
+  setActiveAnnotationEffect,
+  setAnnotationDraftEffect,
+  setAnnotationSessionEffect,
+  showResolvedAnnotationsEffect
+} from './plugins/text-annotations'
 import { countField, updateWordCountEffect } from './plugins/statistics-fields'
 import { type ToCEntry, tocField } from './plugins/toc-field'
 import { vimPlugin } from './plugins/vim-mode'
@@ -1089,6 +1097,36 @@ export default class MarkdownEditor extends EventEmitter {
     this._instance.dispatch({
       effects: this.reviewDiffCompartment.reconfigure([]),
     })
+  }
+
+  /**
+   * Replaces the visible annotation set with the given broadcast. Always
+   * present — an annotation-only document reports an empty set — so this is
+   * a plain effect dispatch, unlike the review compartment: there is nothing
+   * to (re)configure, only new state to render from.
+   */
+  setAnnotations (annotations: AnnotationSet): void {
+    this._instance.dispatch({ effects: setAnnotationSessionEffect.of(annotations) })
+  }
+
+  /** Gives one annotation's marker and highlight the stronger "active" treatment; `null` clears it. */
+  setActiveAnnotation (annotationId: string | null): void {
+    this._instance.dispatch({ effects: setActiveAnnotationEffect.of(annotationId) })
+  }
+
+  /** Shows the transient drafting treatment over a range the creation composer is drafting. */
+  setAnnotationDraft (range: { from: number, to: number }): void {
+    this._instance.dispatch({ effects: setAnnotationDraftEffect.of(range) })
+  }
+
+  /** Clears the drafting treatment — the composer saved or was cancelled. */
+  clearAnnotationDraft (): void {
+    this._instance.dispatch({ effects: clearAnnotationDraftEffect.of(null) })
+  }
+
+  /** Toggles whether resolved annotations render at all. */
+  setShowResolvedAnnotations (show: boolean): void {
+    this._instance.dispatch({ effects: showResolvedAnnotationsEffect.of(show) })
   }
 
   /* * * * * * * * * * * *
