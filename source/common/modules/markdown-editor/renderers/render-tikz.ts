@@ -46,9 +46,12 @@ export const FIGURE_ENVIRONMENTS: ReadonlySet<string> = new Set([ 'tikzcd', 'tik
  * A raw block is only a figure when it is the WHOLE paragraph. Markdown folds
  * a line written directly under prose into that prose's paragraph, and the
  * result reads as one paragraph that merely contains the environment — so
- * there is no block for this renderer to replace. tikz-lint.ts asks the same
- * question to tell the author, and asks it through this function so the marker
- * and the figure can never disagree about what renders.
+ * there is no block for this renderer to replace.
+ *
+ * The "is this text one whole environment" half lives in math-delimiters.ts,
+ * which latex-environment-lint.ts also reads; this narrows the answer to the
+ * environments drawn here. Both sides therefore answer from one predicate and
+ * one set, and cannot disagree about what renders.
  */
 export function rawTikzEnvironment (paragraphText: string): string|null {
   const environment = wholeEnvironment(paragraphText)
