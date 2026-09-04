@@ -270,11 +270,12 @@ describe("useDocumentCollaborationStore panel surface", function () {
     });
 
     const result = await store.resolveAnnotation(session.documentPath, SCENE_ANNOTATION_THREAD_ID);
-    assert.equal(seenCommand, "resolve-annotation");
+    assert.equal(seenCommand, "documents:resolve-annotation");
+    // No `actor`: the typed channel's input type declares no such field and
+    // its handler hardcodes 'owner', so the renderer has nothing to send.
     assert.deepEqual(seenPayload, {
       path: session.documentPath,
       annotationId: SCENE_ANNOTATION_THREAD_ID,
-      actor: "owner",
       expectedAnnotationGeneration: session.annotations.generation,
     });
     assert.deepEqual(result, resolvedAnnotation);
@@ -288,18 +289,20 @@ describe("useDocumentCollaborationStore panel surface", function () {
     const store = useDocumentCollaborationStore();
     await store.ensureSession(session.documentPath);
 
+    let seenCommand: string | undefined;
     let seenPayload: unknown;
     const postedMessage: AnnotationMessage = { messageId: "reply-1", author: "owner", text: "Please add a source.", createdAt: new Date().toISOString() };
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+      seenCommand = message.command;
       seenPayload = message.payload;
       return postedMessage;
     });
 
     const result = await store.addAnnotationMessage(session.documentPath, SCENE_ANNOTATION_PROPOSAL_ID, "Please add a source.");
+    assert.equal(seenCommand, "documents:add-annotation-message");
     assert.deepEqual(seenPayload, {
       path: session.documentPath,
       annotationId: SCENE_ANNOTATION_PROPOSAL_ID,
-      actor: "owner",
       text: "Please add a source.",
       expectedAnnotationGeneration: session.annotations.generation,
     });
@@ -311,19 +314,43 @@ describe("useDocumentCollaborationStore panel surface", function () {
     const store = useDocumentCollaborationStore();
     await store.ensureSession(session.documentPath);
 
+    let seenCommand: string | undefined;
     let seenPayload: unknown;
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+      seenCommand = message.command;
       seenPayload = message.payload;
       return { ...session.annotations.items[0], anchor: { state: "range", from: 40, to: 52, quotedText: "replacement" } };
     });
 
     await store.reattachAnnotation(session.documentPath, SCENE_ANNOTATION_THREAD_ID, 40, 52);
+    assert.equal(seenCommand, "documents:reattach-annotation");
     assert.deepEqual(seenPayload, {
       path: session.documentPath,
       annotationId: SCENE_ANNOTATION_THREAD_ID,
-      actor: "owner",
       from: 40,
       to: 52,
+      expectedAnnotationGeneration: session.annotations.generation,
+    });
+  });
+
+  it("reopenAnnotation names its own channel, fenced on the same snapshot resolve is", async function () {
+    documentCollaborationIpcDouble.setInvokeResponder(async () => session);
+    const store = useDocumentCollaborationStore();
+    await store.ensureSession(session.documentPath);
+
+    let seenCommand: string | undefined;
+    let seenPayload: unknown;
+    documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+      seenCommand = message.command;
+      seenPayload = message.payload;
+      return { ...session.annotations.items[0], state: "open" };
+    });
+
+    await store.reopenAnnotation(session.documentPath, SCENE_ANNOTATION_THREAD_ID);
+    assert.equal(seenCommand, "documents:reopen-annotation");
+    assert.deepEqual(seenPayload, {
+      path: session.documentPath,
+      annotationId: SCENE_ANNOTATION_THREAD_ID,
       expectedAnnotationGeneration: session.annotations.generation,
     });
   });

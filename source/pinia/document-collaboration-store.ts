@@ -28,12 +28,14 @@
  *                  and reaches this cache only through the broadcast
  *                  handler above, the same as any other mutation.
  *
- *                  Both halves of the session are mutated from here. The
- *                  annotation calls go over the documents-provider
- *                  multiplexer; the review calls (M9, moved out of the
- *                  editor's chunk widgets) go over their own typed
- *                  operation channels, which already existed for the
- *                  editor's controls and now have exactly one caller again.
+ *                  Both halves of the session are mutated from here, and
+ *                  both go over the provider's typed operation channels:
+ *                  the annotation calls on 'documents:*-annotation', the
+ *                  review calls (M9, moved out of the editor's chunk
+ *                  widgets) on 'documents:*-review-*'. The payload and the
+ *                  response of each are the main-process handler's own
+ *                  signature, so a wrong field here is a compile error
+ *                  rather than a runtime refusal.
  *
  * END HEADER
  */
@@ -43,7 +45,7 @@ import { reactive, ref } from 'vue'
 import { DP_EVENTS } from '@dts/common/documents'
 import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import type { AnnotationMessage, TextAnnotation } from '@dts/common/annotation-domain'
-import type { DocumentsUpdateContext } from 'source/app/service-providers/documents'
+import type { AnnotationLifecycleIpcInput, DocumentsUpdateContext } from 'source/app/service-providers/documents'
 import type { AnnotationFailure, ReviewFailure, ReviewMutationPrecondition } from 'source/app/service-providers/documents/document-collaboration-application-service'
 import type {
   AcceptAllChunksResponse,
@@ -142,8 +144,20 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
     showResolved.value = value ?? !showResolved.value
   }
 
-  function currentAnnotationGeneration (documentPath: string): number {
-    return sessionsByDocumentPath[documentPath]?.annotations.generation ?? 0
+  /**
+   * The fence an annotation mutation carries: which document, which
+   * annotation, and the generation of the snapshot the panel rendered that
+   * annotation from. Every one of the four calls below names it, and two of
+   * them add a field of their own. No call names an actor: the handlers
+   * hardcode 'owner' and their input types declare no such field, so the
+   * renderer cannot claim to be anyone else.
+   */
+  function annotationFence (documentPath: string, annotationId: string): AnnotationLifecycleIpcInput {
+    return {
+      path: documentPath,
+      annotationId,
+      expectedAnnotationGeneration: sessionsByDocumentPath[documentPath]?.annotations.generation ?? 0
+    }
   }
 
   /**
@@ -156,55 +170,27 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
    * mutation (including another pane's) already takes.
    */
   async function addAnnotationMessage (documentPath: string, annotationId: string, text: string): Promise<AnnotationMessage | AnnotationFailure> {
-    return await ipcRenderer.invoke('documents-provider', {
-      command: 'add-annotation-message',
-      payload: {
-        path: documentPath,
-        annotationId,
-        actor: 'owner',
-        text,
-        expectedAnnotationGeneration: currentAnnotationGeneration(documentPath)
-      }
+    return await ipcRenderer.invoke('documents:add-annotation-message', {
+      ...annotationFence(documentPath, annotationId),
+      text
     })
   }
 
   async function resolveAnnotation (documentPath: string, annotationId: string): Promise<TextAnnotation | AnnotationFailure> {
-    return await ipcRenderer.invoke('documents-provider', {
-      command: 'resolve-annotation',
-      payload: {
-        path: documentPath,
-        annotationId,
-        actor: 'owner',
-        expectedAnnotationGeneration: currentAnnotationGeneration(documentPath)
-      }
-    })
+    return await ipcRenderer.invoke('documents:resolve-annotation', annotationFence(documentPath, annotationId))
   }
 
   async function reopenAnnotation (documentPath: string, annotationId: string): Promise<TextAnnotation | AnnotationFailure> {
-    return await ipcRenderer.invoke('documents-provider', {
-      command: 'reopen-annotation',
-      payload: {
-        path: documentPath,
-        annotationId,
-        actor: 'owner',
-        expectedAnnotationGeneration: currentAnnotationGeneration(documentPath)
-      }
-    })
+    return await ipcRenderer.invoke('documents:reopen-annotation', annotationFence(documentPath, annotationId))
   }
 
   /** S8: reattachment is a visible owner action, never a background guess —
    *  the caller supplies the new range the owner just selected. */
   async function reattachAnnotation (documentPath: string, annotationId: string, from: number, to: number): Promise<TextAnnotation | AnnotationFailure> {
-    return await ipcRenderer.invoke('documents-provider', {
-      command: 'reattach-annotation',
-      payload: {
-        path: documentPath,
-        annotationId,
-        actor: 'owner',
-        from,
-        to,
-        expectedAnnotationGeneration: currentAnnotationGeneration(documentPath)
-      }
+    return await ipcRenderer.invoke('documents:reattach-annotation', {
+      ...annotationFence(documentPath, annotationId),
+      from,
+      to
     })
   }
 
