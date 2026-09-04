@@ -468,6 +468,44 @@ export interface ReviewCommentInput {
 }
 
 /**
+ * The owner comments on a selection. `path` resolves to the loaded
+ * document's documentId inside the handler; there is no `actor` field here
+ * because the renderer's owner-facing channel is the only caller and the
+ * handler hardcodes `'owner'` — an agent has no path to this channel at all.
+ */
+export interface CreateAnnotationIpcInput {
+  path: string
+  from: number
+  to: number
+  instruction: string
+  expectedAnnotationGeneration: number
+}
+
+/** One more turn of an annotation thread, posted by the owner. */
+export interface AddAnnotationMessageIpcInput {
+  path: string
+  annotationId: string
+  text: string
+  expectedAnnotationGeneration: number
+}
+
+/** The shape shared by resolve, reopen, and delete: an id and a fence. */
+export interface AnnotationLifecycleIpcInput {
+  path: string
+  annotationId: string
+  expectedAnnotationGeneration: number
+}
+
+/** Reattach carries the owner's freshly picked range alongside the id. */
+export interface ReattachAnnotationIpcInput {
+  path: string
+  annotationId: string
+  from: number
+  to: number
+  expectedAnnotationGeneration: number
+}
+
+/**
  * The document operations the renderer invokes on their own typed channels,
  * one handler signature each. This provider owns the schema; the renderer
  * bridge composes it, so a wrong payload or a changed return type is a
@@ -488,6 +526,24 @@ export type DocumentIpcHandlers = {
   'documents:add-review-comment': (
     input: ReviewCommentInput,
   ) => AddReviewCommentResponse | ReviewFailure
+  'documents:create-annotation': (
+    input: CreateAnnotationIpcInput,
+  ) => TextAnnotation | AnnotationFailure
+  'documents:add-annotation-message': (
+    input: AddAnnotationMessageIpcInput,
+  ) => AnnotationMessage | AnnotationFailure
+  'documents:resolve-annotation': (
+    input: AnnotationLifecycleIpcInput,
+  ) => TextAnnotation | AnnotationFailure
+  'documents:reopen-annotation': (
+    input: AnnotationLifecycleIpcInput,
+  ) => TextAnnotation | AnnotationFailure
+  'documents:reattach-annotation': (
+    input: ReattachAnnotationIpcInput,
+  ) => TextAnnotation | AnnotationFailure
+  'documents:delete-annotation': (
+    input: AnnotationLifecycleIpcInput,
+  ) => TextAnnotation | AnnotationFailure
 }
 
 export default class DocumentManager
@@ -722,6 +778,58 @@ export default class DocumentManager
     })
     operations.handle('documents:add-review-comment', async (_event, input) => {
       return await this.addReviewComment(input.reviewId, input.text, input.expectedReviewGeneration)
+    })
+    // The owner-facing annotation channels. Each resolves `path` to a
+    // documentId before touching the application service, and each
+    // hardcodes 'owner' as the actor — the renderer has no field to smuggle
+    // a different actor through, since the input types above declare none.
+    operations.handle('documents:create-annotation', async (_event, input) => {
+      const documentId = this.getDocumentId(input.path)
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path)
+      }
+      return await this.createAnnotation(
+        documentId, 'owner', input.from, input.to, input.instruction, input.expectedAnnotationGeneration,
+      )
+    })
+    operations.handle('documents:add-annotation-message', async (_event, input) => {
+      const documentId = this.getDocumentId(input.path)
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path)
+      }
+      return await this.addAnnotationMessage(
+        documentId, input.annotationId, 'owner', input.text, undefined, input.expectedAnnotationGeneration,
+      )
+    })
+    operations.handle('documents:resolve-annotation', async (_event, input) => {
+      const documentId = this.getDocumentId(input.path)
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path)
+      }
+      return await this.resolveAnnotation(documentId, input.annotationId, 'owner', input.expectedAnnotationGeneration)
+    })
+    operations.handle('documents:reopen-annotation', async (_event, input) => {
+      const documentId = this.getDocumentId(input.path)
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path)
+      }
+      return await this.reopenAnnotation(documentId, input.annotationId, 'owner', input.expectedAnnotationGeneration)
+    })
+    operations.handle('documents:reattach-annotation', async (_event, input) => {
+      const documentId = this.getDocumentId(input.path)
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path)
+      }
+      return await this.reattachAnnotation(
+        documentId, input.annotationId, 'owner', input.from, input.to, input.expectedAnnotationGeneration,
+      )
+    })
+    operations.handle('documents:delete-annotation', async (_event, input) => {
+      const documentId = this.getDocumentId(input.path)
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path)
+      }
+      return await this.deleteAnnotation(documentId, input.annotationId, 'owner', input.expectedAnnotationGeneration)
     })
 
     // Finally, listen to events from the renderer
@@ -2954,6 +3062,15 @@ current contents from the editor somewhere else, and restart the application.`,
   public getDocumentId(filePath: string): string | undefined {
     return this._documentIdByPath.get(filePath)
 }
+
+  /** The typed refusal every owner-facing annotation channel gives an unresolved path. */
+  private _annotationDocumentNotFound(filePath: string): AnnotationFailure {
+    return {
+      ok: false,
+      code: 'DOCUMENT_NOT_FOUND',
+      message: `No open document at ${filePath}.`,
+    }
+  }
 
   public ensureDocumentId(filePath: string): string {
     return this._assignDocumentId(filePath)

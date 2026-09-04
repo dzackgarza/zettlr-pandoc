@@ -21,6 +21,17 @@
       @apply="applyWorkspaceRename()"
       @close="cancelWorkspaceRename()"
     />
+    <AnnotationCreateDialog
+      v-if="annotationComposerRequest !== null"
+      :editor-view="annotationComposerRequest.editorView"
+      :document-path="props.file.path"
+      :from="annotationComposerRequest.from"
+      :to="annotationComposerRequest.to"
+      :quoted-text="annotationComposerRequest.quotedText"
+      :annotation-generation="collaborationSession?.annotations.generation ?? 0"
+      @saved="closeAnnotationComposer()"
+      @close="closeAnnotationComposer()"
+    />
   </div>
 </template>
 
@@ -43,7 +54,7 @@
 
 import MarkdownEditor, { type EditorViewPersistentState } from '@common/modules/markdown-editor'
 
-import { ref, computed, onMounted, onBeforeUnmount, watch, toRef, onUpdated } from 'vue'
+import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, toRef, onUpdated } from 'vue'
 import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
 import { hasMarkdownExt } from '@common/util/file-extention-checks'
 import { DP_EVENTS, type OpenDocument } from '@dts/common/documents'
@@ -53,6 +64,8 @@ import { type EditorConfigOptions } from '@common/modules/markdown-editor/util/c
 import type { CodeFileDescriptor, DirDescriptor, MDFileDescriptor, ProjectSettings } from '@dts/common/fsal'
 import { getBibliographyForDescriptor as getBibliography } from '@common/util/get-bibliography-for-descriptor'
 import { EditorSelection } from '@codemirror/state'
+import type { EditorView } from '@codemirror/view'
+import AnnotationCreateDialog from './AnnotationCreateDialog.vue'
 import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ipc-api'
 import { ipcMarkdownFormatter, surfaceFormatResult } from '@common/modules/markdown-editor/commands/format-document-ipc'
 import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
@@ -159,6 +172,40 @@ const collaborationStore = useDocumentCollaborationStore()
  * store entry; nothing here pulls the sidecar or a session of its own.
  */
 const collaborationSession = computed(() => collaborationStore.sessionsByDocumentPath[props.file.path])
+
+/**
+ * The open selection-creation composer request (M6), or null when none is
+ * open. Set by the 'zettlr-annotate-selection' DOM event the context menu's
+ * "Annotate for AI…" entry dispatches on the editor's own DOM (bubbling up
+ * to mainEditorWrapper, listened for below) — a plain DOM CustomEvent
+ * rather than a CodeMirror StateEffect relay, so this composer needs no
+ * change to the editor core or the annotation decoration plugin.
+ */
+const annotationComposerRequest = shallowRef<{ editorView: EditorView, from: number, to: number, quotedText: string }|null>(null)
+
+function requestAnnotationComposer (event: Event): void {
+  if (currentEditor === null) {
+    return
+  }
+  const { from, to } = (event as CustomEvent<{ from: number, to: number }>).detail
+  annotationComposerRequest.value = {
+    editorView: currentEditor.instance,
+    from,
+    to,
+    quotedText: currentEditor.instance.state.sliceDoc(from, to)
+  }
+}
+
+/**
+ * Closes the composer, on Cancel or on a successful Save alike. A save
+ * changes nothing locally: the provider's DP_EVENTS.DOCUMENT_COLLABORATION
+ * broadcast is the only thing that moves collaboration state in this pane
+ * (mirrors throwOnReviewRefusal's own "success changes nothing locally"
+ * contract below), so closing is the whole of this handler.
+ */
+function closeAnnotationComposer (): void {
+  annotationComposerRequest.value = null
+}
 
 // UNREFFED STUFF
 let currentEditor: MarkdownEditor|null = null
@@ -438,9 +485,14 @@ ipcRenderer.on('links', _e => {
 // MOUNTED HOOK
 onMounted(() => {
   loadDocument().catch(reportDocumentLoadError)
+  // mainEditorWrapper is stable across a file switch (currentEditor's own
+  // DOM is replaced underneath it), so this one listener, attached once,
+  // catches every "Annotate for AI…" request for the pane's whole lifetime.
+  mainEditorWrapper.value?.addEventListener('zettlr-annotate-selection', requestAnnotationComposer)
 })
 
 onBeforeUnmount(() => {
+  mainEditorWrapper.value?.removeEventListener('zettlr-annotate-selection', requestAnnotationComposer)
   if (currentEditor !== null) {
     props.persistentStateMap.set(props.file.path, currentEditor.persistentState)
     // Clear out the table of contents before unmounting the component.
