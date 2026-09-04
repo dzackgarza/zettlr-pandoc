@@ -8,16 +8,19 @@
  * License: GNU GPL v3
  *
  * Description: A review decision is bound to the bytes the reviewer was
- *              looking at when they clicked. Those bytes only mean something
- *              to main once the editor's collab updates have reached the
- *              document authority, so every decision waits for that
- *              confirmation before it hashes anything and before the provider
- *              is asked to mutate.
+ *              looking at when they clicked. M9 moved every review control
+ *              out of the editor and into the annotations panel, so the panel
+ *              is what forms that binding: it sends the working-text hash of
+ *              the collaboration snapshot it drew the chunk from, and main
+ *              refuses any decision whose hash no longer names the text main
+ *              holds.
  *
- *              Only the assembled app can prove it: the wait lives in the
- *              renderer, the hash comparison lives in main, and the failure
- *              they produce together — a decision refused for text main was
- *              never told about — appears nowhere below the two processes.
+ *              Only the assembled app can prove it: the buffer is edited in
+ *              one renderer surface, the fence is formed in another out of a
+ *              main-process broadcast, and the hash comparison lives in main.
+ *              Both outcomes they produce together — a decision that lands on
+ *              the edited chunk, and one refused for text main was never told
+ *              about — appear nowhere below the two processes.
  *
  * END HEADER
  */
@@ -26,7 +29,7 @@ import { strict as assert } from 'node:assert'
 import type { ChildProcess } from 'node:child_process'
 import { readFile, rm } from 'node:fs/promises'
 import { createPatch } from 'diff'
-import type { Browser, Page } from 'playwright'
+import type { Browser, Locator, Page } from 'playwright'
 import {
   agentClient,
   attach,
@@ -70,57 +73,56 @@ interface PageContentElement extends Element {
   cmTile?: { root?: { view?: PageEditorView } }
 }
 
-interface RaceInput {
+/** The annotations panel: where every review control lives after M9. */
+const PANEL = '#annotations-panel'
+
+interface EditInput {
   /** Which mounted pane is edited, in DOM order. */
   editPane: number
-  /** Which mounted pane is clicked. The same one, unless a race needs two. */
-  clickPane: number
   /** The working line edited twice, by its exact text before the first edit. */
   line: string
   /** What that line reads after the first, then the second, edit. */
   edits: [string, string]
-  /** The control clicked, as a selector resolved inside the clicked pane. */
-  control?: string
-  /** Id of the chunk whose control is clicked, if any. */
-  chunk?: string
   /**
-   * Text committed through the chunk's comment field instead of a control
-   * click: the value is typed and Enter fires the immediate commit, in the
-   * same renderer task as the edits.
+   * A panel control clicked in the SAME renderer task as the edits. Omitted,
+   * the helper only edits, and the caller clicks once the panel has redrawn
+   * from the authority — which is what a reviewer can actually do.
    */
-  commentText?: string
+  click?: {
+    /** Id of the chunk whose card is clicked, if any. */
+    chunk?: string
+    /** The control, as a selector resolved inside the panel or that card. */
+    control: string
+  }
 }
 
 /**
- * Two editor edits and one review click, in a SINGLE renderer task.
+ * Two editor edits, and optionally one panel click, in a SINGLE renderer task.
  *
- * This is the authority-push barrier the race needs, and it is the product's
- * own: the remote-doc plugin pushes one batch at a time and drops any further
- * push while one is in flight. Dispatching both edits and then clicking
- * without ever yielding the renderer's event loop therefore GUARANTEES the
- * state the race requires — the first push unresolved, the second edit never
- * sent — with no sleep, no timing assumption, and nothing injected into the
- * product. A build whose decision did not wait would send its hash from
- * exactly here, before main has either edit, and be refused for it.
+ * The barrier is the product's own: the remote-doc plugin pushes one batch at
+ * a time and drops any further push while one is in flight. Dispatching both
+ * edits without ever yielding the renderer's event loop therefore GUARANTEES
+ * the first push is unresolved and the second edit unsent — with no sleep, no
+ * timing assumption, and nothing injected into the product.
  *
- * Returns the edited pane's buffer text at click time: what the reviewer was
- * looking at, and what every assertion below compares against.
+ * A click issued from that same task carries the fence of the snapshot the
+ * panel was DRAWN with, while the first edit is already travelling the same
+ * ordered channel to the authority and takes its per-document lock first.
+ * That is the refusal case, and the only one this helper clicks for.
+ *
+ * Returns the edited pane's buffer text at the end of the task.
  */
-async function raceEditsWithClick (page: Page, input: RaceInput): Promise<string> {
-  return page.evaluate((options: RaceInput) => {
+async function editLines (page: Page, input: EditInput): Promise<string> {
+  return page.evaluate((options: EditInput) => {
     const contents = Array.from(
       document.querySelectorAll<PageContentElement>('.cm-content')
     )
-    const paneAt = (index: number): PageContentElement => {
-      const content = contents[index]
-      if (content === undefined) {
-        throw new Error(
-          `No editor pane at index ${index}; ${contents.length} are mounted`
-        )
-      }
-      return content
+    const content = contents[options.editPane]
+    if (content === undefined) {
+      throw new Error(
+        `No editor pane at index ${options.editPane}; ${contents.length} are mounted`
+      )
     }
-    const content = paneAt(options.editPane)
     const view = content.cmTile?.root?.view
     if (view === undefined) {
       throw new Error('The mounted pane exposes no CodeMirror view')
@@ -144,46 +146,51 @@ async function raceEditsWithClick (page: Page, input: RaceInput): Promise<string
     replaceLine(options.line, options.edits[0])
     replaceLine(options.edits[0], options.edits[1])
 
-    // Resolved after the edits: an edit inside a chunk rebuilds its widget, so
-    // a node found beforehand would be detached by the time it was clicked.
-    const pane = paneAt(options.clickPane).closest('.cm-editor')
-    if (pane === null) {
-      throw new Error('The editor content is not inside a .cm-editor')
-    }
-    // The controls carry the chunk's own id, which is what the provider
-    // listing names it by too.
-    const scope = options.chunk === undefined
-      ? pane
-      : pane.querySelector(`.cm-chunkControls[data-chunk-id="${options.chunk}"]`)
-    if (scope === null || scope === undefined) {
-      throw new Error(`No chunk widget carries the id ${JSON.stringify(options.chunk)}`)
-    }
-    if (options.commentText !== undefined) {
-      const noteInput = scope.querySelector('input.cm-chunkCommentInput')
-      if (!(noteInput instanceof HTMLInputElement)) {
-        throw new Error('No chunk comment field to type into')
-      }
-      noteInput.value = options.commentText
-      const textAtClick = view.state.doc.toString()
-      // Enter is the field's immediate commit point, fired in this same task.
-      noteInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
-      return textAtClick
-    }
-    if (options.control === undefined) {
-      throw new Error('raceEditsWithClick needs a control selector or commentText')
-    }
-    const button = scope.querySelector(options.control)
-    if (!(button instanceof HTMLButtonElement)) {
-      throw new Error(`No control matches ${options.control}`)
-    }
-    if (button.disabled) {
-      throw new Error(`The control ${options.control} is disabled`)
+    const textAfterEdits = view.state.doc.toString()
+    if (options.click === undefined) {
+      return textAfterEdits
     }
 
-    const textAtClick = view.state.doc.toString()
+    const panel = document.querySelector('#annotations-panel')
+    if (panel === null) {
+      throw new Error('The annotations panel is not mounted')
+    }
+    // The cards carry the chunk's own id, which is what the provider listing
+    // names it by too.
+    const scope = options.click.chunk === undefined
+      ? panel
+      : panel.querySelector(`.suggestion-chunk[data-chunk-id="${options.click.chunk}"]`)
+    if (scope === null) {
+      throw new Error(`No suggestion card carries the id ${JSON.stringify(options.click.chunk)}`)
+    }
+    const button = scope.querySelector(options.click.control)
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error(`No control matches ${options.click.control}`)
+    }
+    if (button.disabled) {
+      throw new Error(`The control ${options.click.control} is disabled`)
+    }
     button.click()
-    return textAtClick
+    return textAfterEdits
   }, input)
+}
+
+/** The pane's buffer text: the bytes the reviewer is looking at right now. */
+async function bufferText (page: Page, pane = 0): Promise<string> {
+  return page.evaluate((index: number) => {
+    const view = document
+      .querySelectorAll<PageContentElement>('.cm-content')[index]
+      ?.cmTile?.root?.view
+    if (view === undefined) {
+      throw new Error(`No mounted pane at index ${index} exposes a CodeMirror view`)
+    }
+    return view.state.doc.toString()
+  }, pane)
+}
+
+/** The card the panel draws for one chunk. */
+function panelChunk (page: Page, chunkId: string): Locator {
+  return page.locator(`${PANEL} .suggestion-chunk[data-chunk-id="${chunkId}"]`)
 }
 
 /**
@@ -282,7 +289,7 @@ async function chunkListing (
 
 /**
  * Submits one proposal against whatever the provider currently holds, and
- * returns its review id once the pane has rendered the controls.
+ * returns its review id once the panel has rendered the controls.
  */
 async function propose (
   api: AgentClient,
@@ -304,7 +311,7 @@ async function propose (
     'reviewId'
   )
   await page
-    .locator('button.cm-review-diff-control.accept')
+    .locator(`${PANEL} .suggestion-decision.accept`)
     .first()
     .waitFor({ state: 'visible', timeout: 30_000 })
   return reviewId
@@ -337,11 +344,11 @@ async function waitFor<T> (
 }
 
 /**
- * The provider's chunk list once it satisfies `holds`, with the pane redrawn
- * from it. A decision is settled only when both agree, and waiting on the
- * widgets alone would not do: they leave the pane for as long as the buffer
- * runs ahead of the authority, which is exactly the window this spec puts
- * them in. Their absence is the race, not the outcome.
+ * The provider's chunk list once it satisfies `holds`, with the panel redrawn
+ * from it. A decision is settled only when both agree: the panel is where the
+ * next decision is raised AND where its fence is formed, so acting on the
+ * provider's answer alone would decide against a snapshot the reviewer has
+ * not been shown.
  */
 async function settledChunks (
   api: AgentClient,
@@ -355,11 +362,44 @@ async function settledChunks (
     'the provider to commit the decision'
   )
   await waitFor(
-    async () => await page.locator('.cm-chunkControls').count(),
+    async () => await page.locator(`${PANEL} .suggestion-chunk`).count(),
     count => count === chunks.length,
-    `the pane to redraw ${chunks.length} chunk widget(s)`
+    `the panel to redraw ${chunks.length} suggestion card(s)`
   )
   return chunks
+}
+
+/**
+ * Waits until the panel's card for `chunkId` reads `text` on its inserted
+ * side. The card slices that text out of the SAME working snapshot its fence
+ * comes from, so this is the moment the panel stopped showing the chunk it
+ * was drawn with and started showing the edited one. Nothing but the
+ * authority's own broadcast can move it: the panel never reads the buffer.
+ */
+async function panelShowsInsertedText (
+  page: Page,
+  chunkId: string,
+  text: string
+): Promise<void> {
+  await waitFor(
+    async () => await panelChunk(page, chunkId).locator('ins').innerText(),
+    value => value === text,
+    `the panel card for ${chunkId} to redraw as ${JSON.stringify(text)}`
+  )
+}
+
+/**
+ * Waits until the panel offers no decision at all. A review outlives its last
+ * decision — resolved, awaiting the save that closes it — so the inspector
+ * itself stays mounted; what leaves is every card, because nothing is
+ * outstanding to adjudicate.
+ */
+async function waitForNoCards (page: Page): Promise<void> {
+  await waitFor(
+    async () => await page.locator(`${PANEL} .suggestion-chunk`).count(),
+    count => count === 0,
+    'every suggestion card to leave the panel'
+  )
 }
 
 describe('a review decision waits for the document authority', function () {
@@ -378,7 +418,13 @@ describe('a review decision waits for the document authority', function () {
     const fixture = await createFixture('zettlr-review-authority-sync-', {
       documentName: 'authority-sync.md',
       documentContents: BASELINE,
-      config: { agentApi: { enabled: true, port: 0 } }
+      config: {
+        agentApi: { enabled: true, port: 0 },
+        // Every review control lives in the sidebar's annotations panel (M9),
+        // so the fixture opens the sidebar on that tab: the surface under
+        // test has to be mounted before a review reaches it.
+        window: { sidebarVisible: true, currentSidebarTab: 'annotations' }
+      }
     })
     fixtureRoot = fixture.root
     documentPath = fixture.documentPath
@@ -418,14 +464,17 @@ describe('a review decision waits for the document authority', function () {
     assert.equal(drawn.length, 5, 'the proposal must partition into five chunks')
 
     const acceptedChunk = chunkOnLine(drawn, await workingText(activeApi), 'alpha proposed')
-    const textAtClick = await raceEditsWithClick(activePage, {
+    await editLines(activePage, {
       editPane: 0,
-      clickPane: 0,
       line: 'alpha proposed',
-      edits: ['alpha proposed one', 'alpha proposed one two'],
-      chunk: acceptedChunk,
-      control: 'button.cm-review-diff-control.accept'
+      edits: ['alpha proposed one', 'alpha proposed one two']
     })
+    await panelShowsInsertedText(activePage, acceptedChunk, 'alpha proposed one two')
+
+    const textAtClick = await bufferText(activePage)
+    await panelChunk(activePage, acceptedChunk)
+      .locator('.suggestion-decision.accept')
+      .click()
 
     const chunks = await settledChunks(activeApi, activePage, activeReviewId, list =>
       list.every(chunk => chunk.chunkId !== acceptedChunk)
@@ -434,7 +483,7 @@ describe('a review decision waits for the document authority', function () {
     assert.deepEqual(
       await toastMessages(activePage),
       [],
-      'a decision that waited for the authority is never refused'
+      'a decision fenced on the snapshot the panel drew is never refused'
     )
     assert.equal(
       await workingText(activeApi),
@@ -443,9 +492,9 @@ describe('a review decision waits for the document authority', function () {
     )
 
     // The decisive part: the accepted reference is the EDITED text. Had the
-    // provider accepted the chunk as the pane was drawn — before either edit
-    // was confirmed — the two edits would still differ from the reference and
-    // would be sitting here as a fresh outstanding chunk.
+    // provider accepted the chunk as the panel was first drawn — before either
+    // edit reached the authority — the two edits would still differ from the
+    // reference and would be sitting here as a fresh outstanding chunk.
     assert.deepEqual(
       chunks.filter(chunk => chunk.workingText.includes('alpha')),
       [],
@@ -463,14 +512,17 @@ describe('a review decision waits for the document authority', function () {
       await workingText(activeApi),
       'bravo proposed'
     )
-    const textAtClick = await raceEditsWithClick(activePage, {
+    await editLines(activePage, {
       editPane: 0,
-      clickPane: 0,
       line: 'bravo proposed',
-      edits: ['bravo proposed one', 'bravo proposed one two'],
-      chunk: rejectedChunk,
-      control: 'button.cm-review-diff-control.reject'
+      edits: ['bravo proposed one', 'bravo proposed one two']
     })
+    await panelShowsInsertedText(activePage, rejectedChunk, 'bravo proposed one two')
+
+    const textAtClick = await bufferText(activePage)
+    await panelChunk(activePage, rejectedChunk)
+      .locator('.suggestion-decision.reject')
+      .click()
 
     const chunks = await settledChunks(activeApi, activePage, activeReviewId, list =>
       list.every(chunk => chunk.chunkId !== rejectedChunk)
@@ -489,30 +541,37 @@ describe('a review decision waits for the document authority', function () {
     const activePage = requireInitialized(page, 'the editor page must be initialized')
     const activeReviewId = requireInitialized(reviewId, 'the review must be open')
 
-    const textAtClick = await raceEditsWithClick(activePage, {
+    const notedChunk = chunkOnLine(
+      (await chunkListing(activeApi, activeReviewId)).chunks,
+      await workingText(activeApi),
+      'charlie proposed'
+    )
+    await editLines(activePage, {
       editPane: 0,
-      clickPane: 0,
       line: 'charlie proposed',
-      edits: ['charlie proposed one', 'charlie proposed one two'],
-      chunk: chunkOnLine(
-        (await chunkListing(activeApi, activeReviewId)).chunks,
-        await workingText(activeApi),
-        'charlie proposed'
-      ),
-      commentText: 'second thoughts'
+      edits: ['charlie proposed one', 'charlie proposed one two']
     })
+    await panelShowsInsertedText(activePage, notedChunk, 'charlie proposed one two')
+
+    const textAtClick = await bufferText(activePage)
+    const noteField = panelChunk(activePage, notedChunk)
+      .locator('input.suggestion-chunk-comment')
+    await noteField.fill('second thoughts')
+    // Enter is the field's commit gesture; the note is a fenced mutation like
+    // any other decision, not a local draft.
+    await noteField.press('Enter')
 
     const chunks = await settledChunks(activeApi, activePage, activeReviewId, list =>
       list.some(chunk => chunk.comment !== undefined)
     )
     assert.equal(chunks.length, 3, 'a comment adjudicates nothing, so nothing leaves')
-    // The field keeps the keystrokes either way; the saved indicator on the
-    // same widget is what proves the note's commit was acknowledged.
-    await activePage.waitForFunction(() =>
-      Array.from(document.querySelectorAll<HTMLInputElement>('input.cm-chunkCommentInput'))
-        .some(input => input.value === 'second thoughts' &&
-          input.parentElement?.querySelector('.cm-chunkCommentDirty:not(.unsaved)') !== null),
-    undefined, { timeout: 30_000 })
+    // The field is re-seeded from the provider's own note on every broadcast,
+    // so what it reads back is the committed value, not the keystrokes.
+    assert.equal(
+      await noteField.inputValue(),
+      'second thoughts',
+      'the committed note is what the field keeps'
+    )
     assert.deepEqual(await toastMessages(activePage), [])
     // A comment moves no text, so the provider's working text must be, byte
     // for byte, what was on screen when the control was clicked.
@@ -523,7 +582,7 @@ describe('a review decision waits for the document authority', function () {
     assert.equal(
       noted[0].workingText,
       'charlie proposed one two',
-      'the note must land on the edited chunk, not the one the pane was drawn with'
+      'the note must land on the edited chunk, not the one the panel was drawn with'
     )
   })
 
@@ -532,13 +591,20 @@ describe('a review decision waits for the document authority', function () {
     const activePage = requireInitialized(page, 'the editor page must be initialized')
     const activeReviewId = requireInitialized(reviewId, 'the review must be open')
 
-    const textAtClick = await raceEditsWithClick(activePage, {
+    const sweptChunk = chunkOnLine(
+      (await chunkListing(activeApi, activeReviewId)).chunks,
+      await workingText(activeApi),
+      'delta proposed'
+    )
+    await editLines(activePage, {
       editPane: 0,
-      clickPane: 0,
       line: 'delta proposed',
-      edits: ['delta proposed one', 'delta proposed one two'],
-      control: 'button.cm-reviewAcceptAll'
+      edits: ['delta proposed one', 'delta proposed one two']
     })
+    await panelShowsInsertedText(activePage, sweptChunk, 'delta proposed one two')
+
+    const textAtClick = await bufferText(activePage)
+    await activePage.locator(`${PANEL} .suggestion-accept-all`).click()
 
     await waitFor(
       async () => await activeApi.get(`/v1/reviews/${activeReviewId}`),
@@ -547,15 +613,8 @@ describe('a review decision waits for the document authority', function () {
     )
     // The review survives its last decision — it is resolved, awaiting the
     // save that closes it — but that state is the agent's to read: with
-    // nothing outstanding, every chunk widget AND the status panel leave.
-    await waitFor(
-      async () => await activePage.locator('.cm-chunkControls').count(),
-      count => count === 0,
-      'every chunk widget to leave the pane'
-    )
-    await activePage
-      .locator('.cm-reviewStatusPanel')
-      .waitFor({ state: 'detached', timeout: 30_000 })
+    // nothing outstanding, the panel offers no decision at all.
+    await waitForNoCards(activePage)
     assert.deepEqual(await toastMessages(activePage), [])
     assert.equal(
       await workingText(activeApi),
@@ -576,28 +635,33 @@ describe('a review decision waits for the document authority', function () {
         patch: patch(activePath, before, before.replace('echo proposed', 'echo revised'))
       }
     ])
-    await settledChunks(activeApi, activePage, rejectedReviewId, chunks => chunks.length === 1)
+    const [echoChunk] = await settledChunks(
+      activeApi,
+      activePage,
+      rejectedReviewId,
+      chunks => chunks.length === 1
+    )
 
-    const textAtClick = await raceEditsWithClick(activePage, {
+    await editLines(activePage, {
       editPane: 0,
-      clickPane: 0,
       line: 'echo revised',
-      edits: ['echo revised one', 'echo revised one two'],
-      control: 'button.cm-reviewClear'
+      edits: ['echo revised one', 'echo revised one two']
     })
+    await panelShowsInsertedText(activePage, echoChunk.chunkId, 'echo revised one two')
+
+    const textAtClick = await bufferText(activePage)
     assert.ok(
       textAtClick.includes('echo revised one two'),
       'both edits must be in the buffer when the control is clicked'
     )
+    await activePage.locator(`${PANEL} .suggestion-clear`).click()
 
     await waitFor(
       async () => await workingText(activeApi),
       text => text === before,
       'the rejected proposal to leave the text it was made against'
     )
-    await activePage
-      .locator('.cm-reviewStatusPanel')
-      .waitFor({ state: 'detached', timeout: 30_000 })
+    await waitForNoCards(activePage)
     assert.deepEqual(await toastMessages(activePage), [])
   })
 
@@ -663,29 +727,22 @@ describe('a review decision waits for the document authority', function () {
     ])
     const beforeDecision = await chunkListing(activeApi, staleReviewId)
     assert.equal(beforeDecision.chunks.length, 1)
-    // One chunk, drawn in both panes.
-    await waitFor(
-      async () => await activePage.locator('.cm-chunkControls').count(),
-      count => count === 2,
-      'both panes to draw the chunk'
-    )
+    // One chunk, drawn once: the panel belongs to the window, not to a pane.
+    await settledChunks(activeApi, activePage, staleReviewId, chunks => chunks.length === 1)
 
     // The second pane's edit is issued first and travels the same ordered IPC
-    // channel, so it reaches the authority between the first pane's sync and
-    // the provider taking its lock. The first pane has nothing unsent, so its
-    // hash is formed at once — and names text that no longer exists by the
-    // time the decision is applied.
-    await raceEditsWithClick(activePage, {
+    // channel, so it takes the provider's per-document lock before the
+    // decision does. The panel's fence was formed in that same renderer task,
+    // out of the snapshot it was drawn with — and names text that no longer
+    // exists by the time the decision is applied.
+    await editLines(activePage, {
       editPane: 1,
-      clickPane: 0,
       line: '# Authority sync',
       edits: ['# Authority sync edited', '# Authority sync edited twice'],
-      chunk: chunkOnLine(
-        (await chunkListing(activeApi, staleReviewId)).chunks,
-        await workingText(activeApi),
-        'delta final'
-      ),
-      control: 'button.cm-review-diff-control.accept'
+      click: {
+        chunk: beforeDecision.chunks[0].chunkId,
+        control: '.suggestion-decision.accept'
+      }
     })
 
     const toast = activePage.locator('#zettlr-toast-container .zettlr-toast.error')
@@ -718,22 +775,12 @@ describe('a review decision waits for the document authority', function () {
 
     // Leave the window closable: resolve the review and flush the buffer.
     await toast.first().click()
-    // Disposing of the remaining chunks is the reviewer's: the status panel's
-    // own control, which is the only surface that offers it. Clicked in the
-    // pane under test, the way a reviewer with a split window clicks one of
-    // the two panels drawing the same review.
-    await activePage
-      .locator('.cm-editor')
-      .nth(0)
-      .locator('button.cm-reviewClear')
-      .click()
-    // Both panels go, so the wait is on the count: a detached-wait on the
-    // two-element locator is a strict-mode violation, not a passing test.
-    await waitFor(
-      async () => await activePage.locator('.cm-reviewStatusPanel').count(),
-      count => count === 0,
-      'both panes to drop the review panel'
-    )
+    // Disposing of the remaining chunks is the reviewer's: the panel's own
+    // control, which is the only surface that offers it. It carries the fence
+    // the panel now holds, which is why the refusal above had to be settled
+    // first.
+    await activePage.locator(`${PANEL} .suggestion-clear`).click()
+    await waitForNoCards(activePage)
     assert.deepEqual(
       await activePage.evaluate(
         async (pathInPage: string) =>
