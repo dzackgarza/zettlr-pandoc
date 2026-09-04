@@ -35,7 +35,10 @@ async function page (window, dark) {
   </body></html>`
   const pagePath = path.join(outputDirectory, 'annotations-sidebar-scene.html')
   await fs.writeFile(pagePath, html)
-  await window.loadFile(pagePath)
+  // documentTreeStore (constructed by the MainSidebar mount, for the tab
+  // badge boundary proof) reads window_id from the page URL; without one,
+  // RelatedFilesTab.vue/OtherFilesTab.vue throw outright on construction.
+  await window.loadFile(pagePath, { query: { window_id: 'scene-window' } })
   await window.webContents.executeJavaScript('window.captureReady')
 }
 
@@ -104,14 +107,26 @@ app.whenReady().then(async () => {
   window.setSize(NARROW.width, NARROW.height)
   await new Promise(resolve => setTimeout(resolve, 50))
   const narrowListDisplay = await window.webContents.executeJavaScript(
-    `getComputedStyle(document.querySelector('.annotation-list')).display`,
+    // Scoped to #app: the off-screen MainSidebar mount (badge proof, below)
+    // renders its own nested .annotation-list too.
+    `getComputedStyle(document.querySelector('#app .annotation-list')).display`,
   )
   if (narrowListDisplay !== 'none') {
     throw new Error(`11-narrow-sidebar-drilldown: expected the list hidden behind the detail, got display=${narrowListDisplay}`)
   }
   await capture(window, '11-narrow-sidebar-drilldown')
 
-  console.log('annotations-sidebar-visual-capture: all four scenes captured and structurally verified')
+  console.error('annotations-sidebar-visual-capture: all four scenes captured and structurally verified')
+
+  // The S10 boundary proof (issue: helper-level openAnnotationCount() proof
+  // does not prove the rendered badge): read the annotations tab's TabBar
+  // badge out of a REAL, separately-mounted MainSidebar.vue sharing the
+  // same Pinia session as the panel above. Printed as the LAST stdout line
+  // so annotations-sidebar.spec.ts can parse it — every other line above
+  // goes to stderr for exactly this reason.
+  const mainSidebarBadge = await window.webContents.executeJavaScript('window.annotationsSceneMainSidebarBadge()')
+  console.log(JSON.stringify({ mainSidebarAnnotationsBadge: mainSidebarBadge }))
+
   window.destroy()
   app.quit()
 }).catch(error => {

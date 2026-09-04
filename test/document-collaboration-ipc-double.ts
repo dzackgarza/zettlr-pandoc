@@ -36,6 +36,14 @@ const listenersByChannel = new Map<string, IpcListener[]>()
 const invokeCallCountByCommand = new Map<string, number>()
 
 let invokeResponder: (message: InvokeMessage) => Promise<unknown> = async () => undefined
+// Real synchronous readers (useConfigStore's retrieveConfig, resolved via
+// window.ipc.sendSync at store construction) run at construction time of
+// any component tree that transitively depends on the config store — not
+// only documents-provider ones. Defaulting to undefined is correct for a
+// suite that never mounts such a tree; a suite that does (e.g. mounting
+// MainSidebar.vue to prove the annotations tab's rendered badge) installs
+// its own responder instead of adding config-specific knowledge here.
+let sendSyncResponder: (channel: string, message: InvokeMessage | undefined) => unknown = () => undefined
 
 export const documentCollaborationIpcDouble = {
   /** Simulate a main-process broadcast reaching every renderer listener. */
@@ -52,6 +60,10 @@ export const documentCollaborationIpcDouble = {
   setInvokeResponder (responder: (message: InvokeMessage) => Promise<unknown>): void {
     invokeResponder = responder
   },
+  /** Install what `sendSync(channel, { command, payload })` returns. */
+  setSendSyncResponder (responder: (channel: string, message: InvokeMessage | undefined) => unknown): void {
+    sendSyncResponder = responder
+  },
   /**
    * Drop every registered listener and call count. Each test creates its own
    * Pinia store, which registers its own 'documents-update' listener onto
@@ -63,6 +75,7 @@ export const documentCollaborationIpcDouble = {
     listenersByChannel.clear()
     invokeCallCountByCommand.clear()
     invokeResponder = async () => undefined
+    sendSyncResponder = () => undefined
   }
 }
 
@@ -86,7 +99,7 @@ const ipcTransport = {
     return undefined
   },
   send: () => {},
-  sendSync: () => undefined
+  sendSync: (channel: string, message?: InvokeMessage) => sendSyncResponder(channel, message)
 }
 
 // jsdom's `window` (installed by test/setup.js) is not the ambient

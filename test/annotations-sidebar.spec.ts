@@ -29,18 +29,26 @@
  *                  sessionsByDocumentPath itself: the cache only ever moves
  *                  through the DP_EVENTS.DOCUMENT_COLLABORATION broadcast.
  *
+ *                  The third half proves the tab badge is the OPEN count, on
+ *                  screen, from a REAL mounted MainSidebar.vue — not just
+ *                  from openAnnotationCount() in isolation, which cannot
+ *                  catch MainSidebar.vue's own wiring passing the wrong
+ *                  number or no number at all.
+ *
  * END HEADER
  */
 
 import { strict as assert } from "assert";
+import { execFile } from "child_process";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { promisify } from "util";
 // Must be the first local import: it installs window.ipc as a side effect,
 // before the store below reads window.ipc at its own module top level.
 import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
 import { createPinia, setActivePinia } from "pinia";
-import { useDocumentCollaborationStore } from "source/pinia/document-collaboration-store";
+import { useDocumentCollaborationStore } from "source/pinia";
 import { CollaborationApplicationService } from "source/app/service-providers/documents/document-collaboration-application-service";
 import { DocumentAuthority as SharedDocumentAuthority } from "./collaboration-test-authority";
 import type { TextAnnotation, AnnotationMessage } from "@dts/common/annotation-domain";
@@ -56,6 +64,8 @@ import {
   truncatePreview,
 } from "source/win-main/sidebar/annotations/annotation-panel-model";
 import { buildSceneSession, SCENE_ANNOTATION_PROPOSAL_ID, SCENE_ANNOTATION_RESOLVED_ID, SCENE_ANNOTATION_THREAD_ID } from "./annotations-sidebar-scene-fixture";
+
+const execFileAsync = promisify(execFile);
 
 describe("annotation-panel-model", function () {
   const session = buildSceneSession();
@@ -291,5 +301,61 @@ describe("useDocumentCollaborationStore panel surface", function () {
       to: 52,
       expectedAnnotationGeneration: session.annotations.generation,
     });
+  });
+});
+
+describe("MainSidebar annotations tab badge (S10 boundary proof)", function () {
+  // Counting open-only (openAnnotationCount) is proved as a pure function
+  // above. That does not prove the badge on screen shows it: the wiring
+  // that reads the store and hands TabBar.vue a number lives in
+  // MainSidebar.vue's own script, where a mistake (passing the total
+  // instead, or omitting the prop) would leave that pure-function test
+  // green while the tab itself lied.
+  //
+  // vue-tsc/tsx cannot import a .vue SFC directly (confirmed: attempting it
+  // here throws "Unexpected token '<'" on MainSidebar.vue's <template>), so
+  // this cannot mount MainSidebar in-process the way the store tests above
+  // exercise the Pinia store directly. It instead follows this repository's
+  // established pattern for proving real Vue rendering from a plain mocha
+  // spec (test/reference-search-overlay.spec.ts): build the real webpack
+  // renderer bundle, mount BOTH AnnotationsTab.vue (for the four capture
+  // scenes) and a real, separately mounted MainSidebar.vue sharing the same
+  // Pinia session in isolated offscreen Electron, and read the rendered
+  // badge text out of that mount's DOM — the same bundle and driver `just
+  // capture-annotations-panel` uses, with one JSON line appended as the
+  // proof this spec asserts on.
+  it("renders the annotations tab badge as the OPEN count, not the total, for a mounted session carrying both", async function () {
+    this.timeout(240000);
+    const outputDirectory = mkdtempSync(join(tmpdir(), "zettlr-annotations-badge-"));
+    const root = process.cwd();
+    await execFileAsync("node", [join(root, "test/annotations-sidebar-visual-build.cjs"), outputDirectory], {
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    const { stdout } = await execFileAsync(
+      "xvfb-run",
+      [
+        "-a",
+        join(root, "node_modules/.bin/electron"),
+        "--ozone-platform=x11",
+        "--disable-gpu",
+        "--no-sandbox",
+        join(root, "test/annotations-sidebar-visual-capture.cjs"),
+        outputDirectory,
+      ],
+      { maxBuffer: 16 * 1024 * 1024 },
+    );
+    const jsonLine = stdout.trim().split("\n").at(-1);
+    assert.ok(jsonLine !== undefined, "the capture driver must print the badge probe result");
+    const result = JSON.parse(jsonLine as string) as { mainSidebarAnnotationsBadge: string | null };
+
+    // The fixture session (annotations-sidebar-scene-fixture.ts) carries
+    // exactly 2 open and 1 resolved annotation — 3 total, so a badge
+    // reading "3" would mean MainSidebar passed the total, and no badge at
+    // all would mean the prop was never wired.
+    assert.equal(
+      result.mainSidebarAnnotationsBadge,
+      "2",
+      `the rendered badge must read the OPEN count (2), not the total (3) or nothing: got ${JSON.stringify(result.mainSidebarAnnotationsBadge)}`,
+    );
   });
 });
