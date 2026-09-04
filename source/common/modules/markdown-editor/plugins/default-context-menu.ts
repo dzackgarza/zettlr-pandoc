@@ -52,11 +52,33 @@ export const defaultContextMenu = EditorView.domEventHandlers({
       return true
     }
 
+    const extraItems: AnyMenuItem[] = []
+
+    // Selection-anchored annotation composer (M6): checked against the
+    // selection BEFORE the word-selection fallback below can turn an empty
+    // selection into a non-empty one — a context click with no selection
+    // must never offer this command. The composer itself is a DOM
+    // CustomEvent on the view's own element, not a CodeMirror StateEffect:
+    // MainEditor.vue listens for it on the stable pane wrapper, so this
+    // plugin needs no relay wired into the editor core.
+    const selection = view.state.selection.main
+    if (selection.from !== selection.to) {
+      extraItems.unshift({
+        label: trans('Annotate for AI…'),
+        type: 'normal',
+        action () {
+          view.dom.dispatchEvent(new CustomEvent('zettlr-annotate-selection', {
+            bubbles: true,
+            detail: { from: selection.from, to: selection.to }
+          }))
+        }
+      })
+    }
+
     // Node-routed create-label entry (issue #1 Phase 6): a supported,
     // still-unlabeled reference target (theorem-like div, heading, figure
     // image, listing, display math) offers "Create reference label…" on top
     // of the default menu.
-    const extraItems: AnyMenuItem[] = []
     if (resolveCreateReferenceLabelRequest(view, pos) !== null) {
       extraItems.push({
         label: trans('Create reference label…'),

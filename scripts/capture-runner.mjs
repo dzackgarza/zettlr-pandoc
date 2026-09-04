@@ -68,6 +68,11 @@ const captures = {
     driver: "test/reference-rename-preview-probe.cjs",
     electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
   },
+  "selection-composer": {
+    build: "test/annotation-composer-visual-build.cjs",
+    driver: "test/annotation-composer-visual-capture.cjs",
+    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+  },
   "review-diff": {
     entry: "test/editor-review-diff-visual-entry.ts",
     bundle: "review-diff-visual-bundle.js",

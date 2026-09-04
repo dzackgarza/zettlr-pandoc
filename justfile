@@ -264,6 +264,15 @@ capture-rename-preview output: sync-dependencies
 capture-review-diff output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" review-diff "{{output}}"
 
+# Capture the M6 selection-creation composer (plan scene
+# 01-selection-composer, gated against mockup-2-creation-dialog.png) in
+# isolated offscreen Electron: bundles the probe entry with the production
+# renderer webpack config, mounts the REAL AnnotationCreateDialog over a
+# real EditorView, types a real instruction, and screenshots the result.
+# This never starts Forge, a dev server, xdg-open, or the system browser.
+capture-selection-composer output: sync-dependencies
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" selection-composer "{{output}}"
+
 # Run a real export headlessly (no GUI), via the app's own makeExport with the
 # exact profile list the GUI sees (userData/defaults + custom profiles). Proves
 # an export end-to-end from the terminal. Usage:
