@@ -21,9 +21,24 @@ import { promises as fs, readFileSync, constants as FS_CONSTANTS } from 'fs'
 import path from 'path'
 import { trans } from '@common/i18n-main'
 import ProviderContract, { type IPCMessage } from '../provider-contract'
-import type WindowProvider from '../windows'
 import type LogProvider from '../log'
-import type ConfigProvider from '@providers/config'
+
+/**
+ * The configuration surface this provider consumes: the update signal, and
+ * the three settings it reads. Declared narrow, following the ReferenceProvider
+ * pattern (../references/index.ts), so that a member added here is a compile
+ * error at every injection site -- depending on the whole ConfigProvider would
+ * hide that, and force injectors to satisfy members this provider never touches.
+ */
+export interface CiteprocConfig {
+  on: (evt: 'update', callback: (option: string) => void) => void
+  get: () => { appLang: string, export: { cslLibrary: string, cslStyle: string } }
+}
+
+/** The user-facing error surface this provider consumes. */
+export interface CiteprocErrorDisplay {
+  showErrorMessage: (title: string, message: string, contents?: string) => void
+}
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import type { CitationDatabase } from '@dts/common/citeproc'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
@@ -122,8 +137,8 @@ export default class CiteprocProvider extends ProviderContract {
 
   constructor (
     private readonly _logger: LogProvider,
-    private readonly _config: ConfigProvider,
-    private readonly _windows: WindowProvider
+    private readonly _config: CiteprocConfig,
+    private readonly _windows: CiteprocErrorDisplay
   ) {
     super()
 

@@ -17,10 +17,13 @@
  *                  registered 'citeproc-provider' ipcMain handler -- the same
  *                  channel and 'get-items' command the editor's
  *                  updateCitationKeys() calls for every document it opens.
- *                  Config is the injected seam (the real provider reads a
- *                  webpack-copied `lang/` asset directory at construction and
- *                  cannot be built headlessly); it carries the three fields
- *                  citeproc consumes, at their shipped defaults.
+ *                  Config and the error display are injected as the narrow
+ *                  CiteprocConfig / CiteprocErrorDisplay surfaces the provider
+ *                  declares, so both doubles implement a complete interface
+ *                  and a member added to either fails compilation here. The
+ *                  whole ConfigProvider cannot be built headlessly anyway: it
+ *                  reads a webpack-copied `lang/` asset directory at
+ *                  construction. The config values are its shipped defaults.
  *
  * END HEADER
  */
@@ -33,9 +36,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
 import CiteprocProvider from 'source/app/service-providers/citeproc'
+import type { CiteprocConfig, CiteprocErrorDisplay } from 'source/app/service-providers/citeproc'
 import LogProvider from 'source/app/service-providers/log'
-import type ConfigProvider from 'source/app/service-providers/config'
-import type WindowProvider from 'source/app/service-providers/windows'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import type { CitationDatabase } from '@dts/common/citeproc'
 
@@ -63,12 +65,11 @@ const GLOBAL_LIBRARY = `@article{Nik80,
 type IpcHandler = (event: unknown, message: { command: string, payload?: unknown }) => Promise<unknown>|unknown
 
 /** The config surface CiteprocProvider consumes, at its shipped defaults. */
-function makeConfigSeam (cslLibrary: string): ConfigProvider {
-  const seam = {
+function makeConfigSeam (cslLibrary: string): CiteprocConfig {
+  return {
     on: () => {},
     get: () => ({ appLang: 'en-US', export: { cslLibrary, cslStyle: CHICAGO_STYLE } })
   }
-  return seam as unknown as ConfigProvider
 }
 
 /**
@@ -78,12 +79,14 @@ function makeConfigSeam (cslLibrary: string): ConfigProvider {
  */
 interface RecordedDialog { title: string, message: string }
 
-function makeWindowRecorder (): { dialogs: RecordedDialog[], provider: WindowProvider } {
+function makeWindowRecorder (): { dialogs: RecordedDialog[], display: CiteprocErrorDisplay } {
   const dialogs: RecordedDialog[] = []
-  const provider = {
-    showErrorMessage: (title: string, message: string) => { dialogs.push({ title, message }) }
+  return {
+    dialogs,
+    display: {
+      showErrorMessage: (title: string, message: string) => { dialogs.push({ title, message }) }
+    }
   }
-  return { dialogs, provider: provider as unknown as WindowProvider }
 }
 
 function handler (): IpcHandler {
@@ -128,7 +131,7 @@ describe('CITEPROC_MAIN_DB sentinel', function () {
     before(async function () {
       const windows = makeWindowRecorder()
       dialogs = windows.dialogs
-      provider = new CiteprocProvider(log, makeConfigSeam(''), windows.provider)
+      provider = new CiteprocProvider(log, makeConfigSeam(''), windows.display)
       await provider.boot()
     })
 
@@ -157,7 +160,7 @@ describe('CITEPROC_MAIN_DB sentinel', function () {
       provider = new CiteprocProvider(
         log,
         makeConfigSeam(globalLibraryPath),
-        makeWindowRecorder().provider
+        makeWindowRecorder().display
       )
       await provider.boot()
     })
