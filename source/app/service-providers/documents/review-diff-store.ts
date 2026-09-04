@@ -330,6 +330,7 @@ export function reviewSessionFor(
           anchors: suggestion.anchors.map((span) => ({ ...span })),
           seam: suggestion.seam,
           description: packet.description,
+          packetId: packet.packetId,
         };
       }),
     chunkComments: review.chunkComments.map((note) => ({ ...note })),

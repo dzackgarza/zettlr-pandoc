@@ -178,6 +178,20 @@ export function deriveActionRow (annotation: TextAnnotation): AnnotationActionRo
 }
 
 /**
+ * S7: the chunk ids of a review's outstanding suggestions that came from any
+ * of the given packets — how "Show proposal" finds what an annotation's
+ * linked AnnotationProposalAction actually points at. Empty when the review
+ * has no outstanding chunk from those packets (already decided, or no
+ * review at all): the caller has nothing to focus, not an error.
+ */
+export function suggestionIdsForPacketIds (review: ReviewDiffSession, packetIds: string[]): string[] {
+  const wanted = new Set(packetIds)
+  return review.suggestions
+    .filter(suggestion => suggestion.packetId !== undefined && wanted.has(suggestion.packetId))
+    .map(suggestion => suggestion.suggestionId)
+}
+
+/**
  * One outstanding suggestion as the SuggestionInspector shows it (M9). The
  * editor renders the same chunk as a locator — a struck-through deletion and
  * a highlighted insertion in the document flow — so this card carries the
@@ -186,6 +200,10 @@ export function deriveActionRow (annotation: TextAnnotation): AnnotationActionRo
  */
 export interface SuggestionCardView {
   suggestionId: string
+  /** The packet this chunk came from — how a linked annotation's "Show
+   *  proposal" finds it (plan S7). Undefined only for a fixture that never
+   *  named one. */
+  packetId: string | undefined
   /** The packet's claim: why the agent proposed this change. */
   description: string
   lineLocator: string
@@ -212,6 +230,7 @@ export function buildSuggestionCards (review: ReviewDiffSession): SuggestionCard
     const position = suggestion.anchors[0]?.from ?? suggestion.seam
     return {
       suggestionId: suggestion.suggestionId,
+      packetId: suggestion.packetId,
       description: suggestion.description,
       lineLocator: `Ln ${lineOfPosition(position, review.workingText)}`,
       lineNumber: lineOfPosition(position, review.workingText),

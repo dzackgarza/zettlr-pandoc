@@ -69,12 +69,15 @@ import {
   lineNumberFor,
   openAnnotationCount,
   partitionByResolution,
+  suggestionIdsForPacketIds,
   truncatePreview,
 } from "source/win-main/sidebar/annotations/annotation-panel-model";
 import {
   buildSceneReview,
   buildSceneSession,
+  buildSceneSessionWithOrphan,
   buildSceneSessionWithReview,
+  SCENE_ANNOTATION_ORPHANED_ID,
   SCENE_ANNOTATION_PROPOSAL_ID,
   SCENE_ANNOTATION_RESOLVED_ID,
   SCENE_ANNOTATION_THREAD_ID,
@@ -363,6 +366,18 @@ describe("suggestion inspector model", function () {
     assert.equal(chunkNoteCommit(noted, ""), "", "an emptied field removes the note");
     assert.equal(chunkNoteCommit(cards[0], "   "), undefined, "whitespace in an already-empty field is still no mutation");
   });
+
+  it("finds only the chunk(s) a given set of packets produced (S7: Show proposal)", function () {
+    // buildSceneReview links SCENE_CHUNK_GOAL_ID to packet-1 alone
+    // (annotations-sidebar-scene-fixture.ts) — the packet
+    // SCENE_ANNOTATION_PROPOSAL_ID's proposalActions name.
+    assert.deepEqual(suggestionIdsForPacketIds(review, ["packet-1"]), [SCENE_CHUNK_GOAL_ID]);
+    assert.deepEqual(
+      suggestionIdsForPacketIds(review, ["packet-nobody-linked"]),
+      [],
+      "a packet with no outstanding chunk must find nothing, not throw or fabricate one",
+    );
+  });
 });
 
 describe("useDocumentCollaborationStore review surface", function () {
@@ -523,7 +538,7 @@ describe("useDocumentCollaborationStore review surface", function () {
   });
 });
 
-describe("MainSidebar annotations tab badge (S10 boundary proof)", function () {
+describe("MainSidebar annotations tab badge, and the two M10 emit boundaries (S7/S8/I6)", function () {
   // Counting open-only (openAnnotationCount) is proved as a pure function
   // above. That does not prove the badge on screen shows it: the wiring
   // that reads the store and hands TabBar.vue a number lives in
@@ -537,13 +552,20 @@ describe("MainSidebar annotations tab badge (S10 boundary proof)", function () {
   // exercise the Pinia store directly. It instead follows this repository's
   // established pattern for proving real Vue rendering from a plain mocha
   // spec (test/reference-search-overlay.spec.ts): build the real webpack
-  // renderer bundle, mount BOTH AnnotationsTab.vue (for the four capture
+  // renderer bundle, mount BOTH AnnotationsTab.vue (for the seven capture
   // scenes) and a real, separately mounted MainSidebar.vue sharing the same
   // Pinia session in isolated offscreen Electron, and read the rendered
-  // badge text out of that mount's DOM — the same bundle and driver `just
-  // capture-annotations-panel` uses, with one JSON line appended as the
-  // proof this spec asserts on.
-  it("renders the annotations tab badge as the OPEN count, not the total, for a mounted session carrying both", async function () {
+  // badge text (and, below, MainSidebar's own emitted begin-reattach
+  // payload) out of that mount — the same bundle and driver
+  // `just capture-annotations-panel` uses, with one JSON line appended as
+  // the proof this spec asserts on.
+  //
+  // The SAME run also proves the two emits M10 wires (PART C): AnnotationsTab
+  // used to emit 'show-proposal' and 'begin-reattach' into a MainSidebar
+  // that forwarded only 'jump-to-line', so both died at that boundary.
+  // suggestionIdsForPacketIds above proves the pure resolution; this proves
+  // it is actually WIRED to a click, on a real button, in a real mount.
+  it("renders the badge, and proves show-proposal (S7) and begin-reattach (S8/I6) reach their real handlers", async function () {
     this.timeout(240000);
     const outputDirectory = mkdtempSync(join(tmpdir(), "zettlr-annotations-badge-"));
     const root = process.cwd();
@@ -564,8 +586,12 @@ describe("MainSidebar annotations tab badge (S10 boundary proof)", function () {
       { maxBuffer: 16 * 1024 * 1024 },
     );
     const jsonLine = stdout.trim().split("\n").at(-1);
-    assert.ok(jsonLine !== undefined, "the capture driver must print the badge probe result");
-    const result = JSON.parse(jsonLine as string) as { mainSidebarAnnotationsBadge: string | null };
+    assert.ok(jsonLine !== undefined, "the capture driver must print the probe result");
+    const result = JSON.parse(jsonLine as string) as {
+      mainSidebarAnnotationsBadge: string | null;
+      showProposalLinkedChunkIds: string[];
+      beginReattachAnnotationIds: string[];
+    };
 
     // The fixture session (annotations-sidebar-scene-fixture.ts) carries
     // exactly 2 open and 1 resolved annotation — 3 total, so a badge
@@ -576,5 +602,34 @@ describe("MainSidebar annotations tab badge (S10 boundary proof)", function () {
       "2",
       `the rendered badge must read the OPEN count (2), not the total (3) or nothing: got ${JSON.stringify(result.mainSidebarAnnotationsBadge)}`,
     );
+
+    // S7: clicking "Show proposal" on SCENE_ANNOTATION_PROPOSAL_ID's card
+    // must land on the ONE outstanding chunk its linked packet actually
+    // produced (SCENE_CHUNK_GOAL_ID) — not every chunk, and not none.
+    assert.deepEqual(
+      result.showProposalLinkedChunkIds,
+      [SCENE_CHUNK_GOAL_ID],
+      `Show proposal must focus exactly the linked chunk: got ${JSON.stringify(result.showProposalLinkedChunkIds)}`,
+    );
+
+    // S8/I6: clicking "Reattach" must reach the REAL MainSidebar.vue's own
+    // begin-reattach listener, carrying the exact annotation id — the
+    // boundary this milestone wires (MainSidebar used to forward nothing).
+    assert.deepEqual(
+      result.beginReattachAnnotationIds,
+      [SCENE_ANNOTATION_ORPHANED_ID],
+      `MainSidebar must forward the orphaned annotation's Reattach intent: got ${JSON.stringify(result.beginReattachAnnotationIds)}`,
+    );
+  });
+
+  it("buildSceneSessionWithOrphan carries a fourth, orphaned, OPEN annotation alongside the base three", function () {
+    // Guards the fixture itself: if this stops being true the Electron
+    // proof above would silently stop exercising Reattach at all.
+    const session = buildSceneSessionWithOrphan();
+    assert.equal(session.annotations.items.length, 4);
+    const orphaned = session.annotations.items.find(a => a.annotationId === SCENE_ANNOTATION_ORPHANED_ID);
+    assert.ok(orphaned !== undefined);
+    assert.equal(orphaned.anchor.state, "orphaned");
+    assert.equal(orphaned.state, "open");
   });
 });

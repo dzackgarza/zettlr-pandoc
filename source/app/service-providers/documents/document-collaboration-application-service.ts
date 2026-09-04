@@ -707,6 +707,33 @@ export class CollaborationApplicationService {
   }
 
   /**
+   * Carry a document's collaboration state to its new path when the file is
+   * renamed or moved. documentId is stable across a rename (DocumentManager
+   * keeps the same Document object, only its filePath changes), so the two
+   * in-memory halves need their own documentPath field moved as well as the
+   * sidecar file on disk — otherwise the NEXT mutation would relocate the
+   * file out from under a read that still asks for the old path, and a
+   * restart before that next mutation would find nothing at the new path.
+   */
+  public async renameCollaboration(
+    documentId: string,
+    oldPath: string,
+    newPath: string,
+  ): Promise<void> {
+    await this.withDocumentLock(documentId, async () => {
+      await this.sidecars.rename(oldPath, newPath);
+      const annotationState = this.annotationStates.get(documentId);
+      if (annotationState !== undefined) {
+        this.annotationStates.set(documentId, { ...annotationState, documentPath: newPath });
+      }
+      const review = this.reviews.getReview(documentId);
+      if (review !== undefined) {
+        this.reviews.replaceReview(documentId, { ...review, documentPath: newPath });
+      }
+    });
+  }
+
+  /**
    * Discard dirty editor bytes without fabricating a review projection.
    *
    * The bytes the annotations were measured against are exactly the bytes

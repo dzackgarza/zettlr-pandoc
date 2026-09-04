@@ -27,7 +27,7 @@
       v-on:back="collaborationStore.selectAnnotation(null)"
       v-on:jump-to-line="emit('jump-to-line', $event)"
       v-on:reply="onReply"
-      v-on:show-proposal="emit('show-proposal', selectedCard.annotation)"
+      v-on:show-proposal="onShowProposal(selectedCard.annotation)"
       v-on:begin-reattach="emit('begin-reattach', selectedCard.annotation.annotationId)"
       v-on:resolve-toggle="onResolveToggle"
     ></AnnotationInspector>
@@ -36,6 +36,7 @@
       v-if="review !== undefined"
       v-bind:review="review"
       v-bind:busy="reviewBusy"
+      v-bind:focused-chunk-ids="focusedProposalChunkIds"
       v-on:jump-to-line="emit('jump-to-line', $event)"
       v-on:decide="onDecide"
       v-on:comment-chunk="onCommentChunk"
@@ -81,14 +82,16 @@ import AnnotationHeader from './annotations/AnnotationHeader.vue'
 import AnnotationList from './annotations/AnnotationList.vue'
 import AnnotationInspector from './annotations/AnnotationInspector.vue'
 import SuggestionInspector from './annotations/SuggestionInspector.vue'
-import { buildAnnotationCards, filterCards, openAnnotationCount, type AnnotationCardView } from './annotations/annotation-panel-model'
+import { buildAnnotationCards, filterCards, openAnnotationCount, suggestionIdsForPacketIds, type AnnotationCardView } from './annotations/annotation-panel-model'
 import { useDocumentCollaborationStore, useDocumentTreeStore } from 'source/pinia'
 import type { TextAnnotation } from '@dts/common/annotation-domain'
 import type { ReviewFailure } from 'source/app/service-providers/documents/document-collaboration-application-service'
 
 const emit = defineEmits<{
   (e: 'jump-to-line', line: number): void
-  (e: 'show-proposal', annotation: TextAnnotation): void
+  // S8/I6: only the annotation id crosses this boundary — the replacement
+  // range comes from a fresh editor selection, which this panel does not
+  // own (see MainSidebar.vue -> App.vue -> MainEditor.vue).
   (e: 'begin-reattach', annotationId: string): void
 }>()
 
@@ -127,6 +130,30 @@ function onReply (text: string): void {
   collaborationStore.addAnnotationMessage(path, annotationId, text)
     .catch(err => console.error('[AnnotationsTab] Could not send the reply', err))
 }
+
+/**
+ * S7: a proposal is "a count, plus an affordance to open it" — the review
+ * surface it opens is the SuggestionInspector already rendered below (M9
+ * moved it into this same panel), so there is no navigation to do. Opening
+ * it means finding the specific chunk(s) this annotation's linked
+ * proposal(s) produced, among however many chunks the review carries, and
+ * bringing them into view. Nothing is applied from here (S7): the owner
+ * still accepts or rejects in the SuggestionInspector itself.
+ */
+const focusedProposalChunkIds = ref<string[]>([])
+
+function onShowProposal (annotation: TextAnnotation): void {
+  const currentReview = review.value
+  if (currentReview === undefined) {
+    return
+  }
+  focusedProposalChunkIds.value = suggestionIdsForPacketIds(
+    currentReview,
+    annotation.proposalActions.map(action => action.packetId)
+  )
+}
+
+watch(selectedCard, () => { focusedProposalChunkIds.value = [] })
 
 function onResolveToggle (): void {
   const path = activeFile.value?.path

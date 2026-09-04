@@ -67,6 +67,7 @@ import { EditorSelection } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import AnnotationCreateDialog from './AnnotationCreateDialog.vue'
 import { ANNOTATE_SELECTION_EVENT } from '@common/modules/markdown-editor/plugins/annotate-selection'
+import { resolveReattachSelection } from './util/annotation-reattach-selection'
 import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ipc-api'
 import { ipcMarkdownFormatter, surfaceFormatResult } from '@common/modules/markdown-editor/commands/format-document-ipc'
 import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
@@ -666,7 +667,7 @@ workspaceStore.$subscribe(() => {
 // External commands/"event" system
 watch(toRef(props.editorCommands, 'jumpToLine'), () => {
   const data = props.editorCommands.data
-  if (typeof data !== 'object' || data === undefined || !('filePath' in data)) {
+  if (typeof data !== 'object' || data === undefined || !('lineNumber' in data)) {
     return // The toggled command carried no jump payload
   }
 
@@ -710,6 +711,42 @@ watch(toRef(props.editorCommands, 'executeCommand'), () => {
   }
   currentEditor.runCommand(data)
   currentEditor.focus()
+})
+
+/**
+ * S8/I6: the annotations panel's Reattach only ever names an annotation
+ * (component-contracts.ts) — the replacement range is whatever the owner
+ * has just selected in THIS, the last focused pane for the document. There
+ * is no arming step and no background guess: an empty selection means the
+ * owner has not picked a location yet, so this refuses with a toast that
+ * says exactly that, rather than silently doing nothing or fabricating a
+ * point range.
+ */
+watch(toRef(props.editorCommands, 'beginAnnotationReattach'), () => {
+  if (props.activeFile?.path !== props.file.path || currentEditor === null) {
+    return
+  }
+  if (documentTreeStore.lastLeafId !== props.leafId) {
+    // Mirrors executeCommand/replaceSelection above: an unfocused pane
+    // showing the same file is not where the owner's selection lives.
+    return
+  }
+  const data = props.editorCommands.data
+  if (typeof data !== 'object' || data === undefined || !('annotationId' in data) || data.filePath !== props.file.path) {
+    return
+  }
+  const selection = resolveReattachSelection(currentEditor.instance)
+  if (!selection.ok) {
+    showToast(trans('Select the new location for this annotation, then click Reattach again.'), 'error')
+    return
+  }
+  collaborationStore.reattachAnnotation(props.file.path, data.annotationId, selection.from, selection.to)
+    .then(result => {
+      if ('ok' in result && !result.ok) {
+        showToast(result.message, 'error')
+      }
+    })
+    .catch(err => console.error('[MainEditor] Could not reattach the annotation', err))
 })
 
 watch(toRef(props.editorCommands, 'replaceSelection'), () => {

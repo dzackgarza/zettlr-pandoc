@@ -2166,6 +2166,11 @@ current contents from the editor somewhere else, and restart the application.`,
       return // Nothing to do
     }
 
+    // The collaboration sidecar is keyed by the OLD path's hash; carry it to
+    // the new path before anything else touches openDoc.filePath, so a crash
+    // between the two never leaves the sidecar unreachable under either name.
+    await this._reviewApplication.renameCollaboration(openDoc.documentId, oldPath, newPath)
+
     openDoc.filePath = newPath
     openDoc.descriptor.path = newPath
     openDoc.descriptor.dir = path.dirname(newPath)

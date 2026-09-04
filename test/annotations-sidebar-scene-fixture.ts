@@ -172,7 +172,11 @@ export function buildSceneReview (): ReviewDiffSession {
         removedText: 'to replace it',
         anchors: [goal],
         seam: goal.from,
-        description: 'Frame the goal as collaboration, not replacement.'
+        description: 'Frame the goal as collaboration, not replacement.',
+        // The chunk SCENE_ANNOTATION_PROPOSAL_ID's proposalActions link to
+        // (action-1 / packet-1) — how "Show proposal" finds this one card
+        // among the review's outstanding chunks (S7).
+        packetId: 'packet-1'
       }
     ],
     chunkComments: [{ chunkId: SCENE_CHUNK_GOAL_ID, comment: SCENE_CHUNK_GOAL_NOTE }]
@@ -182,4 +186,138 @@ export function buildSceneReview (): ReviewDiffSession {
 /** The same document, with an active review alongside its annotations. */
 export function buildSceneSessionWithReview (): DocumentCollaborationSession {
   return { ...buildSceneSession(), review: buildSceneReview() }
+}
+
+export const SCENE_ANNOTATION_MULTITURN_ID = 'annotation-multiturn'
+export const SCENE_ANNOTATION_PARTIAL_ID = 'annotation-partial-proposal'
+
+/**
+ * Scene 04 (04-ai-reply-no-proposal): a genuinely multi-turn back-and-forth
+ * — owner, agent, owner, agent — carrying NO linked proposal, so
+ * ProposalActionCard never mounts for it. Kept out of buildSceneAnnotations
+ * so scenes 03/05/10/11's hard-coded card and open counts stay untouched.
+ */
+function buildMultiTurnAnnotation (): TextAnnotation {
+  // A DIFFERENT target and first message than SCENE_ANNOTATION_THREAD_ID's
+  // (both derive their card title from the first message, so reusing that
+  // text would make the two cards read as duplicates in the list).
+  const target = locate('premium will be on human abilities that are difficult to automate')
+  return {
+    annotationId: SCENE_ANNOTATION_MULTITURN_ID,
+    documentId: SCENE_DOCUMENT_ID,
+    anchor: { state: 'range', ...target, quotedText: 'premium will be on human abilities that are difficult to automate' },
+    state: 'open',
+    messages: [
+      { messageId: 'mt-1', author: 'owner', text: "What's the strongest single example of a human ability like this?", createdAt: at(0) },
+      {
+        messageId: 'mt-2',
+        author: 'agent',
+        clientRequestId: 'mt-reply-1',
+        text: 'Contextual judgment under ambiguity — weighing competing values with no single correct answer (see @Pan et al., 2023).',
+        createdAt: at(2)
+      },
+      { messageId: 'mt-3', author: 'owner', text: 'Good — can you say more precisely where that claim comes from?', createdAt: at(5) },
+      {
+        messageId: 'mt-4',
+        author: 'agent',
+        clientRequestId: 'mt-reply-2',
+        text: 'Added the precise citation to the argument above (@Pan et al., 2023, sec. 4).',
+        createdAt: at(6)
+      }
+    ],
+    proposalActions: [],
+    createdAt: at(0),
+    updatedAt: at(6)
+  }
+}
+
+/**
+ * Scene 06 (06-linked-proposal-partial): two linked proposalActions, one
+ * already decided (terminalOutcome: 'accepted') and one still pending —
+ * ProposalActionCard's "N pending" reading against a total > 1, with the
+ * review's own outstanding chunks still visible below as the "remaining
+ * chunks" the scene name calls out.
+ */
+function buildPartialProposalAnnotation (): TextAnnotation {
+  const target = locate('Automation excels at well-defined tasks')
+  return {
+    annotationId: SCENE_ANNOTATION_PARTIAL_ID,
+    documentId: SCENE_DOCUMENT_ID,
+    anchor: { state: 'range', ...target, quotedText: 'Automation excels at well-defined tasks' },
+    state: 'open',
+    messages: [
+      { messageId: 'pp-1', author: 'owner', text: 'Which tasks, specifically?', createdAt: at(15) },
+      {
+        messageId: 'pp-2',
+        author: 'agent',
+        clientRequestId: 'pp-reply-1',
+        text: 'Split into two proposed edits: one naming the tasks, one softening the claim.',
+        createdAt: at(16)
+      }
+    ],
+    proposalActions: [
+      { actionId: 'action-partial-1', packetId: 'packet-partial-accepted', reviewId: SCENE_REVIEW_ID, linkedAt: at(16), terminalOutcome: 'accepted' },
+      { actionId: 'action-partial-2', packetId: 'packet-partial-pending', reviewId: SCENE_REVIEW_ID, linkedAt: at(17) }
+    ],
+    createdAt: at(15),
+    updatedAt: at(17)
+  }
+}
+
+/**
+ * The session M10's own capture scenes need (04, 06, 12): the base three
+ * annotations plus the multi-turn and partial-proposal ones above, with the
+ * review active so scene 06's "remaining chunks" and scene 12's editor
+ * locators both have something to show. Isolated from buildSceneSession so
+ * the M7 structural-gate scenes never see these extra cards.
+ */
+export function buildSceneSessionForM10Captures (): DocumentCollaborationSession {
+  const base = buildSceneSession()
+  return {
+    ...base,
+    annotations: {
+      generation: base.annotations.generation + 1,
+      items: [...base.annotations.items, buildMultiTurnAnnotation(), buildPartialProposalAnnotation()]
+    },
+    review: buildSceneReview()
+  }
+}
+
+export const SCENE_ANNOTATION_ORPHANED_ID = 'annotation-orphaned'
+
+/**
+ * A fourth annotation, orphaned by external drift — the M10 Reattach
+ * wiring proof's fixture. Kept OUT of buildSceneAnnotations(): the M7
+ * structural-gate scenes (03/05/10/11) hard-code that fixture's card and
+ * open counts, and this annotation exists for a different scene entirely.
+ */
+function buildOrphanedAnnotation (): TextAnnotation {
+  return {
+    annotationId: SCENE_ANNOTATION_ORPHANED_ID,
+    documentId: SCENE_DOCUMENT_ID,
+    anchor: {
+      state: 'orphaned',
+      quotedText: 'framing problems, judgment, empathy, and meaning-making.',
+      reason: 'external-drift'
+    },
+    state: 'open',
+    messages: [
+      { messageId: 'msg-6', author: 'owner', text: 'This used to point at the intro line.', createdAt: at(30) }
+    ],
+    proposalActions: [],
+    createdAt: at(30),
+    updatedAt: at(30)
+  }
+}
+
+/** The base scene session plus one orphaned annotation (M10, S8/I6). */
+export function buildSceneSessionWithOrphan (): DocumentCollaborationSession {
+  const base = buildSceneSession()
+  return {
+    ...base,
+    annotations: {
+      generation: base.annotations.generation + 1,
+      items: [...base.annotations.items, buildOrphanedAnnotation()]
+    }
+  }
 }

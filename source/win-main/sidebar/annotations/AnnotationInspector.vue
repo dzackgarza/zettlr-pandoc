@@ -51,12 +51,13 @@
     ></AnnotationComposer>
 
     <div class="annotation-inspector-actions">
-      <button type="button" v-on:click="replyOpen = !replyOpen">
+      <button type="button" class="annotation-action-reply" v-on:click="replyOpen = !replyOpen">
         <cds-icon shape="undo" role="presentation"></cds-icon> {{ replyLabel }}
       </button>
       <button
         v-if="actionRow.canShowProposal"
         type="button"
+        class="annotation-action-show-proposal"
         v-on:click="emit('show-proposal')"
       >
         <cds-icon shape="eye" role="presentation"></cds-icon> {{ showProposalLabel }}
@@ -64,6 +65,7 @@
       <button
         v-if="actionRow.canReattach"
         type="button"
+        class="annotation-action-reattach"
         v-on:click="emit('begin-reattach')"
       >
         <cds-icon shape="paperclip" role="presentation"></cds-icon> {{ reattachLabel }}

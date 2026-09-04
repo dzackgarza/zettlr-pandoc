@@ -19,6 +19,7 @@
       <AnnotationsTab
         v-show="currentTab === 'annotations'"
         v-on:jump-to-line="emit('jump-to-line', $event)"
+        v-on:begin-reattach="emit('begin-reattach', $event)"
       ></AnnotationsTab>
     </div>
   </div>
@@ -58,6 +59,9 @@ const documentTreeStore = useDocumentTreeStore()
 const emit = defineEmits<{
   (e: 'move-section', data: { from: number, to: number }): void
   (e: 'jump-to-line', line: number): void
+  // S8/I6: the panel emits only an annotation id — the replacement range
+  // comes from a fresh editor selection, which lives outside this sidebar.
+  (e: 'begin-reattach', annotationId: string): void
 }>()
 
 const currentTab = computed(() => configStore.config.window.currentSidebarTab)

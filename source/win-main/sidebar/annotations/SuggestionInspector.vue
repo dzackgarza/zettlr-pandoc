@@ -1,5 +1,5 @@
 <template>
-  <section class="suggestion-inspector">
+  <section class="suggestion-inspector" ref="root">
     <div class="suggestion-inspector-header">
       <span class="suggestion-inspector-eyebrow">{{ headingLabel }}</span>
       <span class="suggestion-outstanding">{{ outstandingLabel }}</span>
@@ -25,6 +25,7 @@
         v-for="card in cards"
         v-bind:key="card.suggestionId"
         class="suggestion-chunk"
+        v-bind:class="{ 'suggestion-chunk-linked': focusedChunkIds.includes(card.suggestionId) }"
         v-bind:data-chunk-id="card.suggestionId"
       >
         <div class="suggestion-chunk-header">
@@ -118,18 +119,24 @@
  */
 
 import { trans } from '@common/i18n-renderer'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { buildSuggestionCards, chunkNoteCommit, type SuggestionCardView } from './annotation-panel-model'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   review: ReviewDiffSession
   /** True while a mutation this component emitted is in flight. Every
    *  control locks for the round trip, so two sweeps cannot be launched over
    *  one partition and a second click cannot land on a chunk the first one
    *  already decided. */
   busy: boolean
-}>()
+  /** S7: the chunk ids AnnotationsTab wants surfaced right now — an
+   *  annotation's linked proposal, opened via "Show proposal". Empty means
+   *  nothing is currently pointed at. */
+  focusedChunkIds?: string[]
+}>(), {
+  focusedChunkIds: () => []
+})
 
 const emit = defineEmits<{
   (e: 'decide', chunkId: string, decision: 'accept' | 'reject'): void
@@ -142,6 +149,23 @@ const emit = defineEmits<{
 
 const cards = computed(() => buildSuggestionCards(props.review))
 const reviewComment = ref('')
+const root = ref<HTMLElement | null>(null)
+
+/** Brings the first focused chunk on screen the moment AnnotationsTab names
+ *  one — "Show proposal" is a navigation action (S7), not a silent flag. */
+watch(() => props.focusedChunkIds, ids => {
+  const target = ids[0]
+  if (target === undefined) {
+    return
+  }
+  nextTick()
+    .then(() => {
+      root.value
+        ?.querySelector(`.suggestion-chunk[data-chunk-id="${CSS.escape(target)}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+    .catch(err => console.error('[SuggestionInspector] Could not scroll to the linked proposal', err))
+})
 
 const headingLabel = trans('Proposal')
 const outstandingLabel = computed(() => trans('%s outstanding', String(props.review.suggestions.length)))
@@ -273,8 +297,18 @@ body {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    transition: outline-color 0.2s ease;
 
     p { margin: 0; font-size: 12px; }
+
+    // S7: "Show proposal" landed here — the same accent the editor uses to
+    // link a marker to its card (S4), so the connection reads consistently.
+    &.suggestion-chunk-linked {
+      outline-color: var(--system-accent-color, #4c8dca);
+      background-color: rgba(76, 141, 202, 0.12);
+    }
 
     del {
       background-color: @review-delete-bg;
