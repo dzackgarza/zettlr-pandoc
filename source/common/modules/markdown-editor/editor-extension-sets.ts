@@ -78,7 +78,7 @@ import { headingGutter } from './renderers/render-headings'
 import { citationTooltips } from './tooltips/citations'
 import { referenceTooltips } from './tooltips/references'
 import { referenceLint } from './linters/reference-lint'
-import { tikzLint } from './linters/tikz-lint'
+import { latexEnvironmentLint } from './linters/latex-environment-lint'
 import { workspaceReferencesField } from './plugins/workspace-references-field'
 import referenceKeyEditPrompt, { type ReferenceKeyEditPromptIntent } from './plugins/reference-key-edit-prompt'
 import { zettlrKeymap } from './keymaps'
@@ -291,11 +291,12 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     // frontmatter, so the linter is always active (issue #1 Phase 4). It
     // reports nothing until the workspace reference view arrives.
     referenceLint,
-    // A raw TikZ block folded into the paragraph around it never renders, and
-    // nothing downstream says so: Pandoc exports the figure either way, so an
-    // export cannot tell the author what the editor did not draw. Always
-    // active, for the same reason referenceLint is.
-    tikzLint
+    // A \begin{…} folded into the paragraph around it: a figure that never
+    // renders (an error, and nothing downstream says so — Pandoc exports it
+    // either way), or any other environment sitting inside a paragraph rather
+    // than standing alone (a warning). Always active, for the same reason
+    // referenceLint is.
+    latexEnvironmentLint
   ]
 
   if (options.initialConfig.lintMarkdown) {

@@ -22,6 +22,7 @@
 
 import type { DelimiterType, InlineParser, BlockParser } from '@lezer/markdown'
 import { StreamLanguage } from '@codemirror/language'
+import { mathEnvironmentName } from '@common/util/math-delimiters'
 import { stexMath } from '@codemirror/legacy-modes/mode/stex'
 
 const stexLang = StreamLanguage.define(stexMath)
@@ -135,6 +136,58 @@ export const inlineBracketMathParser: InlineParser = {
     const innerElements = ctx.elt(stexLang.parser.parse(ctx.slice(contentFrom, contentTo)), contentFrom)
     const openingMark = ctx.elt('CodeMark', pos, contentFrom)
     const closingMark = ctx.elt('CodeMark', contentTo, closeTo)
+
+    return ctx.addElement(ctx.elt('InlineCode', pos, closeTo, [ openingMark, innerElements, closingMark ]))
+  }
+}
+
+/**
+ * Inline parser for LaTeX math environments (`\begin{align} … \end{align}`).
+ *
+ * Pandoc converts these to display math whether or not a blank line separates
+ * them from the prose around them, so this runs as an inline parser for the
+ * same reason `\[ … \]` does: a block parser never sees a line that Markdown
+ * folded into the preceding paragraph.
+ *
+ * The opener must START a line. Pandoc is more permissive, but an environment
+ * written mid-sentence is nearly always already inside `$ … $`, where the
+ * dollar parser owns it and opening a second, display-mode equation inside
+ * that one would nest two equations.
+ */
+export const inlineMathEnvironmentParser: InlineParser = {
+  name: 'inlineMathEnvironment',
+  // Same reason as the bracket parser: Escape would eat the backslash first.
+  before: 'Escape',
+  parse: (ctx, next, pos) => {
+    if (next !== 92) { // 92 === '\'
+      return -1
+    }
+
+    const relative = pos - ctx.offset
+    const lineStart = ctx.text.lastIndexOf('\n', relative - 1) + 1
+    if (ctx.text.slice(lineStart, relative).trim() !== '') {
+      return -1 // Not the first thing on its line.
+    }
+
+    const rest = ctx.slice(pos, ctx.end)
+    const environment = mathEnvironmentName(rest)
+    if (environment === null) {
+      return -1
+    }
+
+    const openTo = pos + `\\begin{${environment}}`.length
+    const closeToken = `\\end{${environment}}`
+    const closeOffset = rest.indexOf(closeToken, openTo - pos)
+    if (closeOffset === -1) {
+      return -1 // Unterminated: leave the document alone.
+    }
+
+    const closeFrom = pos + closeOffset
+    const closeTo = closeFrom + closeToken.length
+
+    const innerElements = ctx.elt(stexLang.parser.parse(ctx.slice(openTo, closeFrom)), openTo)
+    const openingMark = ctx.elt('CodeMark', pos, openTo)
+    const closingMark = ctx.elt('CodeMark', closeFrom, closeTo)
 
     return ctx.addElement(ctx.elt('InlineCode', pos, closeTo, [ openingMark, innerElements, closingMark ]))
   }

@@ -31,6 +31,13 @@ import { type EditorState } from '@codemirror/state'
 import { configField } from '../util/configuration'
 import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-render'
 
+/**
+ * The environments this renderer draws as a figure. latex-environment-lint.ts
+ * reads the same set to decide whether a folded environment costs the author a
+ * missing picture or only a paragraph boundary.
+ */
+export const FIGURE_ENVIRONMENTS: ReadonlySet<string> = new Set([ 'tikzcd', 'tikzpicture' ])
+
 const RAW_OPEN_RE = /^\\begin\{(tikzcd|tikzpicture)\}/
 
 /**
