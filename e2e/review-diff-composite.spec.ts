@@ -148,13 +148,25 @@ interface ChunkView {
   workingSpans: Array<{ from: number, to: number }>
 }
 
-/** The provider's outstanding chunks, in document order. */
+/**
+ * The provider's outstanding chunks, in document order.
+ *
+ * Every outstanding chunk owns at least one working span — that is what makes
+ * it locatable — so a chunk without one is a provider defect, and the sort
+ * asserts rather than substituting a position for it. Ordering an unlocatable
+ * chunk as if it sat at offset 0 would silently reorder the list the callers
+ * index by position.
+ */
 async function chunkViews (api: AgentClient, reviewId: string): Promise<ChunkView[]> {
   const payload = await api.get(`/v1/reviews/${reviewId}/chunks`)
   assert.ok(isRecord(payload) && Array.isArray(payload.chunks))
-  return (payload.chunks as ChunkView[])
-    .slice()
-    .sort((left, right) => (left.workingSpans[0]?.from ?? 0) - (right.workingSpans[0]?.from ?? 0))
+  const chunks = payload.chunks as ChunkView[]
+  const startOf = (chunk: ChunkView): number => {
+    const span = chunk.workingSpans[0]
+    assert.ok(span !== undefined, `chunk ${chunk.chunkId} carries no working span, so it has no document position`)
+    return span.from
+  }
+  return chunks.slice().sort((left, right) => startOf(left) - startOf(right))
 }
 
 /** The provider's authoritative working text, as bytes. */
