@@ -39,25 +39,11 @@ import { linter } from '@codemirror/lint'
 import { syntaxTree } from '@codemirror/language'
 import { EditorView } from '@codemirror/view'
 import { FIGURE_ENVIRONMENTS } from '../renderers/render-tikz'
+import { wholeEnvironment } from '@common/util/math-delimiters'
 
 /** An environment opening a line. Anchored per line, so prose that merely
  *  names one mid-sentence is not an environment. */
 const OPEN_LINE_RE = /^\\begin\{([A-Za-z]+\*?)\}/gm
-
-const WHOLE_RE = /^\\begin\{([A-Za-z]+\*?)\}/
-
-/**
- * The environment this text consists of, or null when the text is not exactly
- * one environment. A paragraph that IS an environment is already the block the
- * author wanted, whatever the environment does.
- */
-function wholeEnvironment (text: string): string|null {
-  const open = WHOLE_RE.exec(text)
-  if (open === null) {
-    return null
-  }
-  return text.trimEnd().endsWith(`\\end{${open[1]}}`) ? open[1] : null
-}
 
 export function latexEnvironmentLintSource (view: EditorView): Diagnostic[] {
   const diagnostics: Diagnostic[] = []

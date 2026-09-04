@@ -1,7 +1,7 @@
 <template>
   <div class="annotations-header">
     <h1>
-      {{ headingLabel }}
+      {{ trans('Open annotations') }}
       <small class="annotation-open-count">({{ openCount }})</small>
     </h1>
     <div class="annotations-header-controls">
@@ -9,8 +9,8 @@
         type="button"
         class="annotations-filter-toggle"
         v-bind:class="{ active: filterOpen }"
-        v-bind:title="filterLabel"
-        v-bind:aria-label="filterLabel"
+        v-bind:title="trans('Filter annotations')"
+        v-bind:aria-label="trans('Filter annotations')"
         v-on:click="filterOpen = !filterOpen"
       >
         <cds-icon shape="filter" role="presentation"></cds-icon>
@@ -21,7 +21,7 @@
       v-bind:value="query"
       type="search"
       class="annotations-filter-input"
-      v-bind:placeholder="filterLabel"
+      v-bind:placeholder="trans('Filter annotations')"
       v-on:input="emit('update:query', ($event.target as HTMLInputElement).value)"
     >
   </div>
@@ -56,8 +56,6 @@ defineProps<{
 const emit = defineEmits<(e: 'update:query', value: string) => void>()
 
 const filterOpen = ref(false)
-const headingLabel = trans('Open annotations')
-const filterLabel = trans('Filter annotations')
 </script>
 
 <style lang="less">

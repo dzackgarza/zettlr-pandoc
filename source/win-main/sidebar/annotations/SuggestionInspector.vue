@@ -1,7 +1,7 @@
 <template>
   <section class="suggestion-inspector" ref="root">
     <div class="suggestion-inspector-header">
-      <span class="suggestion-inspector-eyebrow">{{ headingLabel }}</span>
+      <span class="suggestion-inspector-eyebrow">{{ trans('Proposal') }}</span>
       <span class="suggestion-outstanding">{{ outstandingLabel }}</span>
     </div>
 
@@ -11,13 +11,13 @@
         class="suggestion-accept-all"
         v-bind:disabled="busy"
         v-on:click="emit('accept-all')"
-      >{{ acceptAllLabel }}</button>
+      >{{ trans('Accept all') }}</button>
       <button
         type="button"
         class="suggestion-clear"
         v-bind:disabled="busy"
         v-on:click="emit('clear')"
-      >{{ clearLabel }}</button>
+      >{{ trans('Reject remaining') }}</button>
     </div>
 
     <ol class="suggestion-chunk-list">
@@ -49,8 +49,8 @@
             v-model="drafts[card.suggestionId]"
             type="text"
             class="suggestion-chunk-comment"
-            v-bind:placeholder="commentPlaceholder"
-            v-bind:title="commentTitle"
+            v-bind:placeholder="trans('Comment…')"
+            v-bind:title="trans('Annotate this change without deciding it; clearing the field removes the note')"
             v-bind:disabled="busy"
             v-on:keydown.enter.prevent="commitComment(card)"
             v-on:blur="commitComment(card)"
@@ -60,13 +60,13 @@
             class="suggestion-decision accept"
             v-bind:disabled="busy"
             v-on:click="emit('decide', card.suggestionId, 'accept')"
-          >{{ acceptLabel }}</button>
+          >{{ trans('Accept') }}</button>
           <button
             type="button"
             class="suggestion-decision reject"
             v-bind:disabled="busy"
             v-on:click="emit('decide', card.suggestionId, 'reject')"
-          >{{ rejectLabel }}</button>
+          >{{ trans('Reject') }}</button>
         </div>
       </li>
     </ol>
@@ -76,7 +76,7 @@
         v-model="reviewComment"
         type="text"
         class="suggestion-review-comment-input"
-        v-bind:placeholder="reviewCommentPlaceholder"
+        v-bind:placeholder="trans('Review comment…')"
         v-bind:disabled="busy"
         v-on:keydown.enter.prevent="submitReviewComment"
       >
@@ -85,7 +85,7 @@
         class="suggestion-review-comment-submit"
         v-bind:disabled="busy || reviewComment.trim().length === 0"
         v-on:click="submitReviewComment"
-      >{{ commentLabel }}</button>
+      >{{ trans('Comment') }}</button>
     </div>
   </section>
 </template>
@@ -167,16 +167,7 @@ watch(() => props.focusedChunkIds, ids => {
     .catch(err => console.error('[SuggestionInspector] Could not scroll to the linked proposal', err))
 })
 
-const headingLabel = trans('Proposal')
 const outstandingLabel = computed(() => trans('%s outstanding', String(props.review.suggestions.length)))
-const acceptAllLabel = trans('Accept all')
-const clearLabel = trans('Reject remaining')
-const acceptLabel = trans('Accept')
-const rejectLabel = trans('Reject')
-const commentLabel = trans('Comment')
-const commentPlaceholder = trans('Comment…')
-const commentTitle = trans('Annotate this change without deciding it; clearing the field removes the note')
-const reviewCommentPlaceholder = trans('Review comment…')
 
 /** The note field of the chunk the reviewer is typing in right now, if any. */
 function isBeingTypedIn (chunkId: string): boolean {
