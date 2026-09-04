@@ -74,6 +74,11 @@ const captures = {
     driver: "test/editor-review-diff-visual-capture.cjs",
     electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
   },
+  "annotations-panel": {
+    build: "test/annotations-sidebar-visual-build.cjs",
+    driver: "test/annotations-sidebar-visual-capture.cjs",
+    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+  },
   "readme-demos": {
     entry: "test/readme-demo-entry.ts",
     bundle: "readme-demo-bundle.js",

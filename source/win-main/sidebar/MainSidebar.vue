@@ -16,6 +16,10 @@
       <ReferencesTab v-show="currentTab === 'references'"></ReferencesTab>
       <RelatedFilesTab v-show="currentTab === 'relatedFiles'"></RelatedFilesTab>
       <OtherFilesTab v-show="currentTab === 'attachments'"></OtherFilesTab>
+      <AnnotationsTab
+        v-show="currentTab === 'annotations'"
+        v-on:jump-to-line="emit('jump-to-line', $event)"
+      ></AnnotationsTab>
     </div>
   </div>
 </template>
@@ -37,14 +41,19 @@
 
 import { trans } from '@common/i18n-renderer'
 import TabBar from '@common/vue/TabBar.vue'
+import type { TabbarControl } from '@dts/common/tabbar'
 import { computed } from 'vue'
 import ToCTab from './ToCTab.vue'
 import ReferencesTab from './ReferencesTab.vue'
 import RelatedFilesTab from './RelatedFilesTab.vue'
 import OtherFilesTab from './OtherFilesTab.vue'
-import { useConfigStore } from 'source/pinia'
+import AnnotationsTab from './AnnotationsTab.vue'
+import { openAnnotationCount } from './annotations/annotation-panel-model'
+import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore } from 'source/pinia'
 
 const configStore = useConfigStore()
+const collaborationStore = useDocumentCollaborationStore()
+const documentTreeStore = useDocumentTreeStore()
 
 const emit = defineEmits<{
   (e: 'move-section', data: { from: number, to: number }): void
@@ -53,7 +62,18 @@ const emit = defineEmits<{
 
 const currentTab = computed(() => configStore.config.window.currentSidebarTab)
 
-const tabs = [
+// S10: the tab badge counts OPEN annotations of the active document only —
+// the exact same count the panel's own header shows.
+const activeAnnotationCount = computed(() => {
+  const activeFile = documentTreeStore.lastLeafActiveFile
+  if (activeFile === undefined) {
+    return 0
+  }
+  const session = collaborationStore.getSession(activeFile.path)
+  return session === undefined ? 0 : openAnnotationCount(session.annotations.items)
+})
+
+const tabs = computed<TabbarControl[]>(() => [
   {
     icon: 'indent',
     id: 'toc',
@@ -77,8 +97,15 @@ const tabs = [
     id: 'attachments',
     target: 'sidebar-files',
     label: trans('Other files')
+  },
+  {
+    icon: 'chat-bubble',
+    id: 'annotations',
+    target: 'annotations-panel',
+    label: trans('Annotations'),
+    badge: activeAnnotationCount.value
   }
-]
+])
 
 function setCurrentTab (which: string): void {
   configStore.setConfigValue('window.currentSidebarTab', which)

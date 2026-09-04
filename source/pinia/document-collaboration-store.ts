@@ -18,19 +18,39 @@
  *                  DP_EVENTS.DOCUMENT_COLLABORATION broadcast this store is
  *                  the sole listener for.
  *
+ *                  The panel-only fields below (selectedAnnotationId,
+ *                  inspectorMode, showResolved) and the mutation actions
+ *                  were left for the annotations panel to add: nothing here
+ *                  is read by more than one pane, so nothing here needed to
+ *                  exist before the panel did. The mutation actions never
+ *                  write sessionsByDocumentPath themselves — every owner
+ *                  action goes over IPC to CollaborationApplicationService
+ *                  and reaches this cache only through the broadcast
+ *                  handler above, the same as any other mutation.
+ *
  * END HEADER
  */
 
 import { defineStore } from 'pinia'
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { DP_EVENTS } from '@dts/common/documents'
 import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
+import type { AnnotationMessage, TextAnnotation } from '@dts/common/annotation-domain'
 import type { DocumentsUpdateContext } from 'source/app/service-providers/documents'
+import type { AnnotationFailure } from 'source/app/service-providers/documents/document-collaboration-application-service'
 
 const ipcRenderer = window.ipc
 
+/** The annotations panel's two arrangements: both the list and the detail
+ *  inspector at once (the wide layout), or one at a time behind a
+ *  back-button drilldown (the narrow layout, S structural gate 11). */
+export type AnnotationInspectorMode = 'list' | 'detail'
+
 export const useDocumentCollaborationStore = defineStore('document-collaboration', () => {
   const sessionsByDocumentPath = reactive<Record<string, DocumentCollaborationSession>>({})
+  const selectedAnnotationId = ref<string | null>(null)
+  const inspectorMode = ref<AnnotationInspectorMode>('list')
+  const showResolved = ref(false)
 
   // Fetches in flight, keyed by path. Two panes mounting on the same
   // document in the same tick must not turn into two IPC reads: the second
@@ -96,5 +116,96 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
     return sessionsByDocumentPath[documentPath]
   }
 
-  return { sessionsByDocumentPath, ensureSession, getSession }
+  /** Select an annotation in the panel, or clear the selection (null). The
+   *  narrow-width layout reads inspectorMode to decide which of its two
+   *  panes to show, so selecting one drills into the detail. */
+  function selectAnnotation (annotationId: string | null): void {
+    selectedAnnotationId.value = annotationId
+    inspectorMode.value = annotationId === null ? 'list' : 'detail'
+  }
+
+  function toggleShowResolved (value?: boolean): void {
+    showResolved.value = value ?? !showResolved.value
+  }
+
+  function currentAnnotationGeneration (documentPath: string): number {
+    return sessionsByDocumentPath[documentPath]?.annotations.generation ?? 0
+  }
+
+  /**
+   * Every one of these four calls is the whole of what an owner control in
+   * the panel is allowed to do: ask CollaborationApplicationService, over
+   * IPC, for the mutation, and hand the caller its result. None of them
+   * touches sessionsByDocumentPath — the resulting DocumentCollaborationSession
+   * reaches this cache only through the DP_EVENTS.DOCUMENT_COLLABORATION
+   * broadcast the mutation itself provokes, the same path every other
+   * mutation (including another pane's) already takes.
+   */
+  async function addAnnotationMessage (documentPath: string, annotationId: string, text: string): Promise<AnnotationMessage | AnnotationFailure> {
+    return await ipcRenderer.invoke('documents-provider', {
+      command: 'add-annotation-message',
+      payload: {
+        path: documentPath,
+        annotationId,
+        actor: 'owner',
+        text,
+        expectedAnnotationGeneration: currentAnnotationGeneration(documentPath)
+      }
+    })
+  }
+
+  async function resolveAnnotation (documentPath: string, annotationId: string): Promise<TextAnnotation | AnnotationFailure> {
+    return await ipcRenderer.invoke('documents-provider', {
+      command: 'resolve-annotation',
+      payload: {
+        path: documentPath,
+        annotationId,
+        actor: 'owner',
+        expectedAnnotationGeneration: currentAnnotationGeneration(documentPath)
+      }
+    })
+  }
+
+  async function reopenAnnotation (documentPath: string, annotationId: string): Promise<TextAnnotation | AnnotationFailure> {
+    return await ipcRenderer.invoke('documents-provider', {
+      command: 'reopen-annotation',
+      payload: {
+        path: documentPath,
+        annotationId,
+        actor: 'owner',
+        expectedAnnotationGeneration: currentAnnotationGeneration(documentPath)
+      }
+    })
+  }
+
+  /** S8: reattachment is a visible owner action, never a background guess —
+   *  the caller supplies the new range the owner just selected. */
+  async function reattachAnnotation (documentPath: string, annotationId: string, from: number, to: number): Promise<TextAnnotation | AnnotationFailure> {
+    return await ipcRenderer.invoke('documents-provider', {
+      command: 'reattach-annotation',
+      payload: {
+        path: documentPath,
+        annotationId,
+        actor: 'owner',
+        from,
+        to,
+        expectedAnnotationGeneration: currentAnnotationGeneration(documentPath)
+      }
+    })
+  }
+
+  return {
+    sessionsByDocumentPath,
+    selectedAnnotationId,
+    inspectorMode,
+    showResolved,
+    ensureSession,
+    getSession,
+    selectAnnotation,
+    toggleShowResolved,
+    addAnnotationMessage,
+    resolveAnnotation,
+    reopenAnnotation,
+    reattachAnnotation
+  }
 })
