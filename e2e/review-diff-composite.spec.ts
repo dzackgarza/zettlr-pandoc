@@ -23,10 +23,14 @@ import type { Browser, Locator, Page } from 'playwright'
 import {
   attach,
   createFixture,
+  delay,
   findEditorPage,
   readAgentApiPort,
   shutdown
 } from './support/electron-app'
+
+/** The annotations panel: where every review control lives after M9. */
+const PANEL = '#annotations-panel'
 
 const BASELINE = [
   '# Composite review', '',
@@ -102,14 +106,79 @@ async function invokeSave (page: Page, filePath: string): Promise<unknown> {
 }
 
 async function waitForReview (page: Page): Promise<void> {
-  await page.locator('.cm-reviewStatusPanel').waitFor({ state: 'visible', timeout: 30_000 })
-  await page.locator('.cm-review-diff-control.accept').first().waitFor({ state: 'visible', timeout: 30_000 })
+  await page.locator(`${PANEL} .suggestion-inspector`).waitFor({ state: 'visible', timeout: 30_000 })
+  await page.locator(`${PANEL} .suggestion-decision.accept`).first().waitFor({ state: 'visible', timeout: 30_000 })
 }
 
-async function widgetWithText (page: Page, text: string): Promise<Locator> {
-  const widget = page.locator('.cm-chunkControls').filter({ hasText: text }).first()
-  await widget.waitFor({ state: 'visible', timeout: 20_000 })
-  return widget
+/** Every outstanding chunk the panel currently offers a decision on. */
+function panelCards (page: Page): Locator {
+  return page.locator(`${PANEL} .suggestion-chunk`)
+}
+
+async function cardWithText (page: Page, text: string): Promise<Locator> {
+  const card = panelCards(page).filter({ hasText: text }).first()
+  await card.waitFor({ state: 'visible', timeout: 20_000 })
+  return card
+}
+
+/** Polls `probe` until `holds` accepts what it answers. */
+async function waitUntil<T> (
+  probe: () => Promise<T>,
+  holds: (value: T) => boolean,
+  what: string,
+  timeoutMs = 30_000
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs
+  let last = await probe()
+  while (Date.now() < deadline) {
+    if (holds(last)) {
+      return last
+    }
+    await delay(150)
+    last = await probe()
+  }
+  throw new Error(`Timed out waiting for ${what}. Last value: ${JSON.stringify(last)}`)
+}
+
+interface ChunkView {
+  chunkId: string
+  /** The bytes the chunk currently owns on the working side. */
+  workingText: string
+  descriptions: string[]
+  workingSpans: Array<{ from: number, to: number }>
+}
+
+/** The provider's outstanding chunks, in document order. */
+async function chunkViews (api: AgentClient, reviewId: string): Promise<ChunkView[]> {
+  const payload = await api.get(`/v1/reviews/${reviewId}/chunks`)
+  assert.ok(isRecord(payload) && Array.isArray(payload.chunks))
+  return (payload.chunks as ChunkView[])
+    .slice()
+    .sort((left, right) => (left.workingSpans[0]?.from ?? 0) - (right.workingSpans[0]?.from ?? 0))
+}
+
+/** The provider's authoritative working text, as bytes. */
+async function workingSide (api: AgentClient, documentId: string): Promise<string> {
+  const payload = await api.get(`/v1/documents/${documentId}/content?side=working`)
+  return stringField(payload, 'content')
+}
+
+/** Every note the provider currently holds against a chunk of this review. */
+async function chunkNotes (api: AgentClient, reviewId: string): Promise<string[]> {
+  const payload = await api.get(`/v1/reviews/${reviewId}/chunks`)
+  assert.ok(isRecord(payload) && Array.isArray(payload.chunks))
+  return payload.chunks
+    .map(chunk => (isRecord(chunk) ? chunk.comment : undefined))
+    .filter((comment): comment is string => typeof comment === 'string')
+}
+
+/** Every review-level comment the provider currently holds. */
+async function reviewComments (api: AgentClient, reviewId: string): Promise<string[]> {
+  const payload = await api.get(`/v1/reviews/${reviewId}`)
+  assert.ok(isRecord(payload) && Array.isArray(payload.comments))
+  return payload.comments
+    .map(comment => (isRecord(comment) ? comment.text : undefined))
+    .filter((text): text is string => typeof text === 'string')
 }
 
 /**
@@ -174,7 +243,12 @@ describe('review-diff closure contract composite lifecycle', function () {
     const fixture = await createFixture('zettlr-review-diff-composite-', {
       documentName: 'composite.md',
       documentContents: BASELINE,
-      config: { agentApi: { enabled: true, port: 0 } }
+      config: {
+        agentApi: { enabled: true, port: 0 },
+        // Every review control lives in the sidebar's annotations panel (M9),
+        // so the fixture opens the sidebar on that tab.
+        window: { sidebarVisible: true, currentSidebarTab: 'annotations' }
+      }
     })
     fixtureRoot = fixture.root
     configDirectory = fixture.configDirectory
@@ -203,69 +277,96 @@ describe('review-diff closure contract composite lifecycle', function () {
     // two identical occurrences; every packet still retains its description.
     // Six here: alpha, the two repeated occurrences, the two lines of the
     // display-math rewrite, and the blank line.
-    assert.equal(await page.locator('.cm-chunkDescription').count(), 6)
+    assert.equal(await page.locator(`${PANEL} .suggestion-chunk-description`).count(), 6)
 
-    // Accept alpha through its real widget. The controls strip names its
-    // chunk by the claim description, not the replaced reference text.
-    await (await widgetWithText(page, 'Revise alpha wording')).locator('button.accept').click()
-    await page.locator('.cm-chunkControls').filter({ hasText: 'Revise alpha wording' }).waitFor({ state: 'detached' })
+    // Accept alpha through its real card. The card names its chunk by the
+    // claim description, not the replaced reference text.
+    await (await cardWithText(page, 'Revise alpha wording'))
+      .locator('.suggestion-decision.accept')
+      .click()
+    await panelCards(page).filter({ hasText: 'Revise alpha wording' }).waitFor({ state: 'detached' })
 
     // Edit the repeated proposal in the ordinary editor, then accept the
     // edited proposal: the provider must accept the bytes now displayed.
-    const repeatedWidgets = page.locator('.cm-chunkControls').filter({ hasText: 'Change both repeated occurrences' })
-    await repeatedWidgets.nth(1).waitFor({ state: 'visible' })
+    const repeatedCards = panelCards(page).filter({ hasText: 'Change both repeated occurrences' })
+    await repeatedCards.nth(1).waitFor({ state: 'visible' })
+    // Named by id before the edit: a rewrite re-anchors the chunk, so what it
+    // reads afterwards is the provider's answer, not something to predict.
+    const repeatedBefore = (await chunkViews(api, reviewId))
+      .filter(chunk => chunk.descriptions.includes('Change both repeated occurrences'))
+    assert.equal(repeatedBefore.length, 2, 'the repeated claim must be two decidable chunks')
+    const editedChunkId = repeatedBefore[0].chunkId
+
     const diffLine = page.locator('.cm-line').filter({ hasText: 'DIFF' }).first()
     await diffLine.click()
     await page.keyboard.press('Home')
     await page.keyboard.press('Shift+End')
     await page.keyboard.type('DIFF edited')
-    // Wait for the pane to redraw from the edit BEFORE clicking: a decision
-    // binds to the bytes on screen, so a click issued while the buffer still
-    // runs ahead of the authority names text the provider has not been told
-    // about. A reviewer types and then clicks what they can see.
-    await page.locator('.cm-content').filter({ hasText: 'DIFF edited' }).waitFor({ state: 'visible' })
-    await repeatedWidgets.nth(0).locator('button.accept').click()
-    await repeatedWidgets.nth(1).waitFor({ state: 'detached' })
+    // Wait for the PANEL to redraw from the edit before clicking. The panel
+    // never reads the buffer: it redraws, and forms its fence, only from the
+    // authority's broadcast, so a card holding exactly the bytes the provider
+    // projected is the proof the edit landed first. A click issued earlier
+    // names text the provider has not seen, and is refused for it.
+    await waitUntil(
+      async () => await workingSide(api, documentIdOf(await api.get('/v1/documents'))),
+      text => text.includes('DIFF edited'),
+      'the authority to hold the edited line'
+    )
+    const editedChunk = (await chunkViews(api, reviewId))
+      .find(chunk => chunk.chunkId === editedChunkId)
+    assert.ok(editedChunk !== undefined, 'the owner rewrite must not destroy the chunk it rewrote')
+    const editedCard = page.locator(`${PANEL} .suggestion-chunk[data-chunk-id="${editedChunkId}"]`)
+    await waitUntil(
+      async () => await editedCard.locator('ins').innerText(),
+      value => value === editedChunk.workingText,
+      'the panel to redraw the edited card from the authority'
+    )
+    await editedCard.locator('.suggestion-decision.accept').click()
+    await repeatedCards.nth(1).waitFor({ state: 'detached' })
 
     // Reject the second identical occurrence independently of the first.
-    const rejectedRepeated = repeatedWidgets.nth(0)
-    await rejectedRepeated.locator('button.reject').click()
-    await rejectedRepeated.waitFor({ state: 'detached' })
+    await repeatedCards.first().locator('.suggestion-decision.reject').click()
+    await repeatedCards.first().waitFor({ state: 'detached' })
 
     // Annotate the display-math chunk with a note and add a review-level
-    // comment. The note decides nothing: the chunk stays outstanding. There
-    // is no submit gesture — the field autosaves after the typing pause,
-    // and the saved indicator is the commit's own acknowledgment.
-    const math = await widgetWithText(page, 'Rewrite the display-math environment')
-    const noteInput = math.locator('input.cm-chunkCommentInput')
+    // comment. The note decides nothing: the chunk stays outstanding. Both
+    // are fenced mutations like any decision, so the provider answering with
+    // them is the only acknowledgment there is — neither renders anywhere
+    // else in the panel.
+    const math = await cardWithText(page, 'Rewrite the display-math environment')
+    const noteInput = math.locator('input.suggestion-chunk-comment')
     await noteInput.fill('check the constants')
-    await math.locator('.cm-chunkCommentDirty:not(.unsaved)').waitFor({ state: 'visible' })
-    await page.locator('.cm-reviewCommentInput').fill('overall composite note')
-    await page.locator('.cm-reviewCommentSubmit').click()
-    // The field clears only once the comment is committed — committed
-    // comments render nowhere; they are read back through the API below.
-    await page.waitForFunction(() => {
-      const input = document.querySelector<HTMLInputElement>('.cm-reviewCommentInput')
-      return input !== null && input.value === ''
-    })
+    await noteInput.press('Enter')
+    await waitUntil(
+      async () => await chunkNotes(api, reviewId),
+      notes => notes.includes('check the constants'),
+      'the chunk note to reach the provider'
+    )
+    await page.locator(`${PANEL} .suggestion-review-comment-input`).fill('overall composite note')
+    await page.locator(`${PANEL} .suggestion-review-comment-submit`).click()
+    await waitUntil(
+      async () => await reviewComments(api, reviewId),
+      comments => comments.includes('overall composite note'),
+      'the review comment to reach the provider'
+    )
 
     // The blank-line-only chunk is still undecided too. The API vouches for
     // it by the one character it owns and the nothing it replaced; the
-    // reviewer resolves it from its own widget, which a chunk that renders no
+    // reviewer resolves it from its own card, which a chunk that renders no
     // visible text must still draw controls for.
     const blankChunks = await api.get(`/v1/reviews/${reviewId}/chunks`)
     assert.ok(isRecord(blankChunks) && Array.isArray(blankChunks.chunks))
     const blankChunk = blankChunks.chunks.find(chunk =>
       isRecord(chunk) && chunk.referenceText === '' && chunk.workingText === '\n')
     assert.ok(isRecord(blankChunk), 'blank-line-only proposal must remain actionable')
-    const blankWidget = page.locator('.cm-chunkControls').filter({ hasText: 'Preserve the intentional blank line' })
+    const blankCard = panelCards(page).filter({ hasText: 'Preserve the intentional blank line' })
     assert.equal(
-      await blankWidget.count(),
+      await blankCard.count(),
       1,
-      'the blank chunk must render its own widget to click'
+      'the blank chunk must render its own card to click'
     )
-    await blankWidget.locator('button.cm-review-diff-control.accept').click()
-    await blankWidget.waitFor({ state: 'detached' })
+    await blankCard.locator('.suggestion-decision.accept').click()
+    await blankCard.waitFor({ state: 'detached' })
 
     // The annotated chunk is still outstanding, and the save persists the
     // document as-is with the review — the note included — alongside it.
@@ -283,8 +384,8 @@ describe('review-diff closure contract composite lifecycle', function () {
     await api.post(`/v1/documents/${await workspaceDocumentId(api, documentPath)}/focus`)
     await waitForReview(page)
     assert.equal(
-      await (await widgetWithText(page, 'Rewrite the display-math environment'))
-        .locator('input.cm-chunkCommentInput').inputValue(),
+      await (await cardWithText(page, 'Rewrite the display-math environment'))
+        .locator('input.suggestion-chunk-comment').inputValue(),
       'check the constants',
       'the reattached review restores the note into its field'
     )
@@ -334,19 +435,20 @@ describe('review-diff closure contract composite lifecycle', function () {
     )
 
     // Resolve the annotated block through the UI and prove exact final bytes.
-    // Each region is its own decision; the panel leaves with the last of them.
-    const widgets = restartedPage.locator('.cm-chunkControls')
-    await widgets.first().locator('button.accept').click()
-    await widgets.nth(1).waitFor({ state: 'detached', timeout: 30_000 })
-    await widgets.first().locator('button.accept').click()
-    await restartedPage.locator('.cm-reviewStatusPanel').waitFor({ state: 'detached', timeout: 30_000 })
+    // Each region is its own decision; the last card leaves with the last of
+    // them, and the review itself outlives them until the save that closes it.
+    const cards = panelCards(restartedPage)
+    await cards.first().locator('.suggestion-decision.accept').click()
+    await cards.nth(1).waitFor({ state: 'detached', timeout: 30_000 })
+    await cards.first().locator('.suggestion-decision.accept').click()
+    await cards.first().waitFor({ state: 'detached', timeout: 30_000 })
     const resolvedSave = await invokeSave(restartedPage, documentPath)
     assert.ok(isRecord(resolvedSave) && resolvedSave.ok === true)
     assert.equal(await readFile(documentPath, 'utf8'), mixedExpected)
 
-    // The ordinary editor's existing clear operation is the mass-reject path:
-    // it must be reachable from the real status panel and restore the current
-    // review reference before the normal save completes the review.
+    // The panel's clear operation is the mass-reject path: it must be
+    // reachable from the real inspector and restore the current review
+    // reference before the normal save completes the review.
     const clearProposal = mixedExpected.replace('tail', 'tail clear candidate')
     const clearDocumentId = documentIdOf(await restartedApi.get('/v1/documents'))
     const clearReview = await restartedApi.post(`/v1/documents/${clearDocumentId}/proposals`, {
@@ -361,8 +463,8 @@ describe('review-diff closure contract composite lifecycle', function () {
     })
     assert.ok(isRecord(clearReview) && typeof clearReview.reviewId === 'string')
     await waitForReview(restartedPage)
-    await restartedPage.locator('button.cm-reviewClear').click()
-    await restartedPage.locator('.cm-reviewStatusPanel').waitFor({ state: 'detached', timeout: 30_000 })
+    await restartedPage.locator(`${PANEL} .suggestion-clear`).click()
+    await panelCards(restartedPage).first().waitFor({ state: 'detached', timeout: 30_000 })
     assert.deepEqual(
       await invokeSave(restartedPage, documentPath),
       { ok: true },
