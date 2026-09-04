@@ -92,7 +92,9 @@ describe('Mod-P reference search overlay', function () {
     outputDirectory = await mkdtemp(path.join(tmpdir(), 'zettlr-reference-search-'))
     const root = process.cwd()
     await execFileAsync('node', [
-      path.join(root, 'test/reference-search-overlay-build.cjs'),
+      path.join(root, 'test/visual-build.cjs'),
+      path.join(root, 'test/reference-search-overlay-entry.ts'),
+      'reference-search-overlay-bundle.js',
       outputDirectory,
     ], { maxBuffer: 8 * 1024 * 1024 })
     const { stdout } = await execFileAsync('xvfb-run', [

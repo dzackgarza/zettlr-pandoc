@@ -3,7 +3,7 @@
 // Drives the Mod-P reference search overlay with REAL Chromium keyboard
 // input (webContents.sendInputEvent), modeled on
 // editor-pandoc-div-click-probe.cjs. Loads the webpack bundle produced by
-// reference-search-overlay-build.cjs, feeds the entry the raw
+// visual-build.cjs, feeds the entry the raw
 // reference-workspace fixture documents, types the fuzzy query, presses
 // Enter, screenshots the rendered overlay, and prints one JSON result line
 // the spec asserts on. When the overlay component does not exist (the Phase

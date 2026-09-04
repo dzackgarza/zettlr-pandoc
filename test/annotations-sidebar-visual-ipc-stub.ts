@@ -1,12 +1,11 @@
 /**
- * A real preload-bridge stub for the visual capture entry, serving the
- * fixture session. No imports of its own — the entry imports this FIRST, so
- * window.ipc exists before the Pinia stores it mounts (which read
- * window.ipc at their own module-evaluation top level) are ever imported.
- * Mirrors document-collaboration-ipc-double.ts's header note for the same
- * reason. (Only the type-only import below is exempt: TypeScript erases it
- * entirely, so it carries no runtime module and cannot affect evaluation
- * order.)
+ * Installs the fixture responses this capture serves onto the shared
+ * preload-bridge double (document-collaboration-ipc-double.ts), rather than
+ * re-implementing the bridge itself. The double already normalizes both the
+ * `documents-provider` multiplexer and the typed `documents:*` operation
+ * channels into one `{ command, payload }` shape and counts calls by
+ * operation; this module only supplies what THIS capture's fixtures answer
+ * with, and what it must record for the driver to inspect.
  *
  * It also records what the panel asked for. The review adjudication the
  * editor used to own now lives in this panel, and the claim that matters is
@@ -16,18 +15,14 @@
 
 import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import type { LeafNodeJSON } from '@dts/common/documents'
+import { documentCollaborationIpcDouble } from './document-collaboration-ipc-double'
 import { SCENE_DOCUMENT_PATH } from './annotations-sidebar-scene-fixture'
 
-interface DocumentsProviderMessage {
-  command: string
-  payload?: { path?: string, windowId?: string }
-}
-
-interface ConfigProviderMessage {
-  command: string
-}
-
-/** One request the panel raised, as it reached the preload bridge. */
+/**
+ * One request the panel raised, as it reached the preload bridge: the
+ * channel name (the typed `documents:*` channel, or the multiplexer's own
+ * inner command) and the raw request the caller sent on it.
+ */
 export interface RecordedRequest {
   channel: string
   message: unknown
@@ -45,28 +40,6 @@ export interface RecordedRequest {
 interface SceneConfig {
   window: { currentSidebarTab: string }
   app: { openFiles: string[], openWorkspaces: string[] }
-}
-
-/**
- * The surface this stub actually serves: the 'documents-provider' calls the
- * mounted collaboration store issues (get-collaboration-session,
- * get-file-modification-status, retrieve-tab-config), the typed
- * `documents:*` operation channels the panel's adjudication controls raise,
- * one synchronous 'config-provider' read (get-config), and no-op
- * listen/send — nothing else this capture ever calls. window.ipc's ambient
- * type (source/types/renderer/ipc-bridge.ts) is the full per-provider
- * contract across every channel in the app; the cast at the bottom is the
- * one named site that gap is bridged, instead of widening this object's own
- * type.
- */
-interface AnnotationsSceneIpcBridge {
-  invoke: (
-    channel: string,
-    message?: DocumentsProviderMessage
-  ) => Promise<DocumentCollaborationSession | string[] | LeafNodeJSON | { ok: true } | undefined>
-  on: (channel: string, listener: (event: undefined, ...args: never[]) => void) => () => void
-  send: (channel: string, ...args: unknown[]) => void
-  sendSync: (channel: string, message?: ConfigProviderMessage) => SceneConfig | undefined
 }
 
 let sceneSession: DocumentCollaborationSession | undefined
@@ -91,37 +64,29 @@ const sceneLeaf: LeafNodeJSON = {
   activeFile: { path: SCENE_DOCUMENT_PATH, pinned: false },
 }
 
-const ipcBridge: AnnotationsSceneIpcBridge = {
-  invoke: async (channel, message) => {
-    recorded.push({ channel, message })
-    if (channel === 'documents-provider' && message !== undefined) {
-      switch (message.command) {
-        case 'get-collaboration-session':
-          return sceneSession
-        case 'get-file-modification-status':
-          return []
-        case 'retrieve-tab-config':
-          return sceneLeaf
-        default:
-          return undefined
-      }
-    }
-    // The typed operation channels (the review and annotation mutations)
-    // answer with the provider's success shape, so the panel's own busy
-    // state settles the way it does in the app.
-    return channel.startsWith('documents:') ? { ok: true } : undefined
-  },
-  on: () => () => {},
-  send: () => {},
-  sendSync: (channel, message) => {
-    if (channel === 'config-provider' && message?.command === 'get-config') {
-      return sceneConfig
-    }
-    return undefined
-  },
-}
+documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+  recorded.push({ channel: message.command, message: message.payload })
+  switch (message.command) {
+    case 'get-collaboration-session':
+      return sceneSession
+    case 'get-file-modification-status':
+      return []
+    case 'retrieve-tab-config':
+      return sceneLeaf
+    default:
+      // Every typed documents:* mutation channel answers with the
+      // provider's success shape, so the panel's own busy state settles
+      // the way it does in the app.
+      return message.command.startsWith('documents:') ? { ok: true } : undefined
+  }
+})
 
-window.ipc = ipcBridge as unknown as typeof window.ipc
+documentCollaborationIpcDouble.setSendSyncResponder((channel, message) => {
+  if (channel === 'config-provider' && message?.command === 'get-config') {
+    return sceneConfig
+  }
+  return undefined
+})
 
 export function setAnnotationsSceneSession (session: DocumentCollaborationSession): void {
   sceneSession = session

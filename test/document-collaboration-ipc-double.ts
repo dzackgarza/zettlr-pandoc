@@ -29,11 +29,12 @@ type IpcListener = (event: unknown, payload: unknown) => void
 
 /**
  * The renderer sends collaboration work over two shapes of channel: the
- * `documents-provider` multiplexer, where the operation is a `command` field
- * (the annotation mutations), and a typed operation channel per operation,
- * where the channel name IS the operation and the whole message is the
- * payload (the review mutations — see DocumentIpcHandlers). Both reach the
- * responder here, and both are counted under the operation's own name.
+ * `documents-provider` multiplexer, where the operation is a `command`
+ * field (only the session read, get-collaboration-session, still goes over
+ * it), and a typed operation channel per operation, where the channel name
+ * IS the operation and the whole message is the payload (every annotation
+ * and review mutation — see DocumentIpcHandlers). Both reach the responder
+ * here, and both are counted under the operation's own name.
  */
 interface InvokeMessage {
   command: string

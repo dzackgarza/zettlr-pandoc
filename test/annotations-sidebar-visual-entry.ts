@@ -10,6 +10,7 @@
 // Must be the first local import: it installs window.ipc as a side effect,
 // before the Pinia stores below (imported transitively through
 // AnnotationsTab) read window.ipc at their own module top level.
+import './document-collaboration-ipc-double'
 import { recordedRequests, setAnnotationsSceneSession } from './annotations-sidebar-visual-ipc-stub'
 import { createApp, h, nextTick } from 'vue'
 import { createPinia } from 'pinia'
@@ -136,7 +137,7 @@ setAnnotationsSceneSession(sceneSession)
  * state from plan section 3, for scene 12 (12-dark-mode-complete) — the ONE
  * scene that needs "every surface" (not just the panel) on screen at once.
  * Reuses the SAME webpack bundle as the panel above (it already resolves
- * @codemirror/*, per test/annotations-sidebar-visual-build.cjs), so this
+ * @codemirror/*, per test/visual-build.cjs), so this
  * needs no second build pipeline (M10's own instruction: follow the
  * existing registry conventions rather than inventing a parallel one).
  */

@@ -35,15 +35,9 @@
  */
 
 import { strict as assert } from 'assert'
-import { mkdtempSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import {
-  CollaborationApplicationService,
-  type AnnotationFailure
-} from 'source/app/service-providers/documents/document-collaboration-application-service'
+import type { CollaborationApplicationService } from 'source/app/service-providers/documents/document-collaboration-application-service'
 import type { TextAnnotation } from '@dts/common/annotation-domain'
-import { DocumentAuthority } from './collaboration-test-authority'
+import { committed, harness as sharedHarness, reopened as sharedReopened, type Harness } from './collaboration-test-authority'
 
 const DOCUMENT_ID = 'doc-lifecycle'
 const DOCUMENT_PATH = '/tmp/annotation-lifecycle-note.md'
@@ -52,44 +46,23 @@ const BASELINE = 'The quick brown fox\njumps over the lazy dog\n'
 const TARGET = { from: 10, to: 19 }
 const INSTRUCTION = 'Say what kind of fox this is.'
 
-class LifecycleAuthority extends DocumentAuthority {
-  constructor (diskText = BASELINE) {
-    super(diskText, DOCUMENT_ID, DOCUMENT_PATH)
-  }
-}
-
-interface Harness {
-  authority: LifecycleAuthority
-  service: CollaborationApplicationService
-  sidecarDirectory: string
-}
-
-function harness (diskText = BASELINE, sidecarDirectory?: string): Harness {
-  const authority = new LifecycleAuthority(diskText)
-  const directory = sidecarDirectory ?? mkdtempSync(join(tmpdir(), 'zettlr-annotation-restart-'))
-  return {
-    authority,
-    sidecarDirectory: directory,
-    service: new CollaborationApplicationService({
-      authority,
-      sidecarDirectory: directory,
-      emit: () => undefined,
-      warn: () => undefined
-    })
-  }
+function harness (options: { diskText?: string, sidecarDirectory?: string } = {}): Harness {
+  return sharedHarness({
+    documentId: DOCUMENT_ID,
+    documentPath: DOCUMENT_PATH,
+    tmpPrefix: 'zettlr-annotation-restart-',
+    diskText: BASELINE,
+    ...options
+  })
 }
 
 /** A second process over the same sidecar directory: a real app restart. */
-function reopened (sidecarDirectory: string, diskText: string): Harness {
-  return harness(diskText, sidecarDirectory)
-}
-
-function committed<T extends object> (result: T | AnnotationFailure): T {
-  if ('ok' in result) {
-    const failure = result as AnnotationFailure
-    assert.fail(`expected a committed annotation, got ${failure.code}: ${failure.message}`)
-  }
-  return result
+function reopened (options: { sidecarDirectory: string, diskText: string }): Harness {
+  return sharedReopened({
+    documentId: DOCUMENT_ID,
+    documentPath: DOCUMENT_PATH,
+    ...options
+  })
 }
 
 async function createOne (
@@ -157,7 +130,7 @@ describe('Journey 1 — create, close, reopen (plan section 9)', function () {
     // A second, independent process reading the same directory sees the
     // identical state — proving it is the sidecar carrying it, not this
     // service instance's memory.
-    const restarted = reopened(sidecarDirectory, BASELINE)
+    const restarted = reopened({ sidecarDirectory, diskText: BASELINE })
     const afterRestart = await restarted.service.reattachCollaboration(DOCUMENT_ID, DOCUMENT_PATH, BASELINE)
     assert.deepEqual(afterRestart?.annotations.items, restored.annotations.items)
   })
@@ -309,7 +282,7 @@ describe('Rename carries the sidecar (plan section 4, M10 acceptance)', function
 
     // A restart that only ever knew the NEW path must still find it — the
     // scenario "rename, then the app never reopens the old name again."
-    const restarted = reopened(sidecarDirectory, BASELINE)
+    const restarted = reopened({ sidecarDirectory, diskText: BASELINE })
     const afterRestart = await restarted.service.reattachCollaboration(DOCUMENT_ID, newPath, BASELINE)
     assert.equal(afterRestart?.annotations.items[0]?.annotationId, created.annotationId)
   })

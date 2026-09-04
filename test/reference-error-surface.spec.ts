@@ -60,7 +60,9 @@ describe('Recoverable reference-error surface', function () {
     outputDirectory = await mkdtemp(path.join(tmpdir(), 'zettlr-error-surface-'))
     const root = process.cwd()
     await execFileAsync('node', [
-      path.join(root, 'test/reference-error-surface-build.cjs'),
+      path.join(root, 'test/visual-build.cjs'),
+      path.join(root, 'test/reference-error-surface-entry.ts'),
+      'reference-error-surface-bundle.js',
       outputDirectory,
     ], { maxBuffer: 8 * 1024 * 1024 })
     const { stdout } = await execFileAsync('xvfb-run', [

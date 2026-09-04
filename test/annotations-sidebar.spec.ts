@@ -569,9 +569,16 @@ describe("MainSidebar annotations tab badge, and the two M10 emit boundaries (S7
     this.timeout(240000);
     const outputDirectory = mkdtempSync(join(tmpdir(), "zettlr-annotations-badge-"));
     const root = process.cwd();
-    await execFileAsync("node", [join(root, "test/annotations-sidebar-visual-build.cjs"), outputDirectory], {
-      maxBuffer: 16 * 1024 * 1024,
-    });
+    await execFileAsync(
+      "node",
+      [
+        join(root, "test/visual-build.cjs"),
+        join(root, "test/annotations-sidebar-visual-entry.ts"),
+        "annotations-sidebar-visual-bundle.js",
+        outputDirectory,
+      ],
+      { maxBuffer: 16 * 1024 * 1024 },
+    );
     const { stdout } = await execFileAsync(
       "xvfb-run",
       [

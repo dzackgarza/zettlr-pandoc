@@ -84,7 +84,9 @@ describe('Create-reference-label dialog and key-edit prompt', function () {
     outputDirectory = await mkdtemp(path.join(tmpdir(), 'zettlr-create-label-'))
     const root = process.cwd()
     await execFileAsync('node', [
-      path.join(root, 'test/reference-create-label-build.cjs'),
+      path.join(root, 'test/visual-build.cjs'),
+      path.join(root, 'test/reference-create-label-entry.ts'),
+      'reference-create-label-bundle.js',
       outputDirectory,
     ], { maxBuffer: 8 * 1024 * 1024 })
     const { stdout } = await execFileAsync('xvfb-run', [

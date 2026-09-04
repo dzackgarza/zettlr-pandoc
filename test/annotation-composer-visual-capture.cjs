@@ -2,7 +2,7 @@
 
 // Drives the selection-creation composer (M6) with real Chromium input,
 // modeled on reference-rename-preview-probe.cjs. Loads the webpack bundle
-// produced by annotation-composer-visual-build.cjs, mounts the REAL
+// produced by visual-build.cjs, mounts the REAL
 // AnnotationCreateDialog over a real (bare) EditorView, types a real
 // instruction into the textarea, and screenshots the result — the plan's
 // scene 01-selection-composer, the evidence for M6's structural gate

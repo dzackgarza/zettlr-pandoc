@@ -29,11 +29,8 @@
  */
 
 import { strict as assert } from "assert";
-import { chmodSync, mkdtempSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { chmodSync } from "fs";
 import { createPatch } from "diff";
-import type { AgentEventType } from "@dts/common/agent-api";
 import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
 import { sha256Text } from "@common/util/sha256";
 import {
@@ -47,12 +44,16 @@ import {
   type AnnotationMutationPlan,
   type AnnotationTransitionError,
 } from "source/app/service-providers/documents/annotation-transitions";
-import {
+import type {
+  AnnotationFailure,
   CollaborationApplicationService,
-  type AgentEventPayload,
-  type AnnotationFailure,
 } from "source/app/service-providers/documents/document-collaboration-application-service";
-import { DocumentAuthority } from "./collaboration-test-authority";
+import {
+  committed,
+  harness as sharedHarness,
+  reopened as sharedReopened,
+  type Harness,
+} from "./collaboration-test-authority";
 
 const DOCUMENT_ID = "doc-annotated";
 const DOCUMENT_PATH = "/tmp/annotation-transactions-note.md";
@@ -61,51 +62,26 @@ const BASELINE = "The quick brown fox\njumps over the lazy dog\n";
 const TARGET = { from: 10, to: 19 };
 const INSTRUCTION = "Say what kind of fox this is.";
 
-class AnnotatedDocumentAuthority extends DocumentAuthority {
-  constructor(diskText = BASELINE) {
-    super(diskText, DOCUMENT_ID, DOCUMENT_PATH);
-  }
-}
-
-interface Harness {
-  authority: AnnotatedDocumentAuthority;
-  service: CollaborationApplicationService;
-  sidecarDirectory: string;
-  emitted: Array<{ event: AgentEventType; payload: AgentEventPayload }>;
-  warnings: string[];
-}
-
-function harness(diskText = BASELINE, sidecarDirectory?: string): Harness {
-  const authority = new AnnotatedDocumentAuthority(diskText);
-  const emitted: Array<{ event: AgentEventType; payload: AgentEventPayload }> = [];
-  const warnings: string[] = [];
-  const directory =
-    sidecarDirectory ?? mkdtempSync(join(tmpdir(), "zettlr-annotation-transactions-"));
-  return {
-    authority,
-    sidecarDirectory: directory,
-    emitted,
-    warnings,
-    service: new CollaborationApplicationService({
-      authority,
-      sidecarDirectory: directory,
-      emit: (event, payload) => emitted.push({ event, payload }),
-      warn: (message) => warnings.push(message),
-    }),
-  };
+// Binds this file's document identity once so call sites below only ever
+// name what varies (diskText, sidecarDirectory) — never documentId/Path, and
+// never a bare positional string that could be either.
+function harness(options: { diskText?: string; sidecarDirectory?: string } = {}): Harness {
+  return sharedHarness({
+    documentId: DOCUMENT_ID,
+    documentPath: DOCUMENT_PATH,
+    tmpPrefix: "zettlr-annotation-transactions-",
+    diskText: BASELINE,
+    ...options,
+  });
 }
 
 /** A second process over the same sidecar directory: a real reload. */
-function reopened(sidecarDirectory: string, diskText: string): Harness {
-  return harness(diskText, sidecarDirectory);
-}
-
-function committed<T extends object>(result: T | AnnotationFailure): T {
-  if ("ok" in result) {
-    const failure = result as AnnotationFailure;
-    assert.fail(`expected a committed annotation, got ${failure.code}: ${failure.message}`);
-  }
-  return result;
+function reopened(options: { sidecarDirectory: string; diskText: string }): Harness {
+  return sharedReopened({
+    documentId: DOCUMENT_ID,
+    documentPath: DOCUMENT_PATH,
+    ...options,
+  });
 }
 
 function refused(result: object | undefined): AnnotationFailure {
@@ -514,7 +490,7 @@ describe("the annotation transaction boundary", function () {
     assert.equal(emitted[0].payload.annotationId, annotation.annotationId);
 
     // A second process over the same directory: what a restart would read.
-    const restarted = reopened(sidecarDirectory, BASELINE);
+    const restarted = reopened({ sidecarDirectory, diskText: BASELINE });
     const restored = await restarted.service.reattachCollaboration(
       DOCUMENT_ID,
       DOCUMENT_PATH,
@@ -546,7 +522,7 @@ describe("the annotation transaction boundary", function () {
     assert.deepEqual(service.getAnnotations(DOCUMENT_ID), beforeMemory);
     assert.deepEqual(await service.readSidecar(DOCUMENT_PATH), beforeDisk);
 
-    const restarted = reopened(sidecarDirectory, BASELINE);
+    const restarted = reopened({ sidecarDirectory, diskText: BASELINE });
     const restored = await restarted.service.reattachCollaboration(
       DOCUMENT_ID,
       DOCUMENT_PATH,
@@ -590,7 +566,7 @@ describe("the annotation transaction boundary", function () {
     assert.equal(persisted?.annotations.items.length, 1);
     assert.equal(persisted?.annotations.generation, 1);
 
-    const restarted = reopened(sidecarDirectory, BASELINE);
+    const restarted = reopened({ sidecarDirectory, diskText: BASELINE });
     const restored = await restarted.service.reattachCollaboration(
       DOCUMENT_ID,
       DOCUMENT_PATH,
@@ -638,7 +614,7 @@ describe("the annotation transaction boundary", function () {
     assert.equal(persisted?.workingText, authority.readWorkingText(DOCUMENT_ID));
     assert.deepEqual(persisted?.annotations, service.getAnnotations(DOCUMENT_ID));
 
-    const restarted = reopened(sidecarDirectory, BASELINE);
+    const restarted = reopened({ sidecarDirectory, diskText: BASELINE });
     const restored = await restarted.service.reattachCollaboration(
       DOCUMENT_ID,
       DOCUMENT_PATH,
@@ -696,7 +672,7 @@ describe("the annotation transaction boundary", function () {
 
     // The saved bytes must not read as drift when the file is opened again.
     await service.detachCollaboration(DOCUMENT_ID);
-    const restarted = reopened(sidecarDirectory, edit.nextText);
+    const restarted = reopened({ sidecarDirectory, diskText: edit.nextText });
     const restored = await restarted.service.reattachCollaboration(
       DOCUMENT_ID,
       DOCUMENT_PATH,
@@ -727,7 +703,7 @@ describe("the annotation transaction boundary", function () {
     await service.detachCollaboration(DOCUMENT_ID);
 
     const drifted = "Something else entirely.\nWritten by another program.\n";
-    const restarted = reopened(sidecarDirectory, drifted);
+    const restarted = reopened({ sidecarDirectory, diskText: drifted });
     const restored = await restarted.service.reattachCollaboration(
       DOCUMENT_ID,
       DOCUMENT_PATH,

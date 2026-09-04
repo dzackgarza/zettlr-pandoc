@@ -22,22 +22,21 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createPatch } from "diff";
-import type { AgentEventType } from "@dts/common/agent-api";
 import { sha256Text } from "@common/util/sha256";
-import {
-  CollaborationApplicationService,
-  type AgentEventPayload,
-} from "source/app/service-providers/documents/document-collaboration-application-service";
+import { CollaborationApplicationService } from "source/app/service-providers/documents/document-collaboration-application-service";
 import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
-import { DocumentAuthority as SharedDocumentAuthority } from "./collaboration-test-authority";
+import { harness as sharedHarness, type Harness } from "./collaboration-test-authority";
 
 const DOCUMENT_ID = "doc-service";
 const DOCUMENT_PATH = "/tmp/review-service-note.md";
 
-class DocumentAuthority extends SharedDocumentAuthority {
-  constructor(diskText: string) {
-    super(diskText, DOCUMENT_ID, DOCUMENT_PATH);
-  }
+function harness(options: { diskText: string; sidecarDirectory?: string }): Harness {
+  return sharedHarness({
+    documentId: DOCUMENT_ID,
+    documentPath: DOCUMENT_PATH,
+    tmpPrefix: "zettlr-review-service-",
+    ...options,
+  });
 }
 
 function makePatch(oldText: string, newText: string): string {
@@ -48,17 +47,7 @@ describe("CollaborationApplicationService", function () {
   it("commits review state, document text, sidecars, and typed events together", async function () {
     const baseline = "alpha\nbeta\n";
     const proposed = "ALPHA\nBETA\n";
-    const authority = new DocumentAuthority(baseline);
-    const emitted: Array<{ event: AgentEventType; payload: AgentEventPayload }> = [];
-    const service = new CollaborationApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: (event, payload) => {
-        emitted.push({ event, payload });
-        authority.events.push(event);
-      },
-      warn: () => undefined,
-    });
+    const { authority, service, emitted } = harness({ diskText: baseline });
 
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
@@ -73,7 +62,10 @@ describe("CollaborationApplicationService", function () {
     }
     assert.equal(authority.readWorkingText(DOCUMENT_ID), proposed);
     assert.equal(service.reviewStore.getReview(DOCUMENT_ID)?.generation, 1);
-    assert.deepEqual(authority.events, ["review.started", "proposal.applied"]);
+    assert.deepEqual(
+      emitted.map((entry) => entry.event),
+      ["review.started", "proposal.applied"],
+    );
 
     const sidecar = await service.readSidecar(DOCUMENT_PATH);
     assert.equal(sidecar?.workingText, proposed);
@@ -97,13 +89,7 @@ describe("CollaborationApplicationService", function () {
     const baseline = "alpha\n\nmiddle\n\nomega\n";
     const proposed = "ALPHA\n\nmiddle\n\nomega\n";
     const typed = "ALPHA\n\nmiddle\n\nomega typed\n";
-    const authority = new DocumentAuthority(baseline);
-    const service = new CollaborationApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -159,13 +145,7 @@ describe("CollaborationApplicationService", function () {
     const baseline = "alpha\n\nmiddle\n\nomega\n";
     const proposed = "ALPHA\n\nmiddle\n\nomega\n";
     const typed = "ALPHA\n\nmiddle\n\nomega typed\n";
-    const authority = new DocumentAuthority(baseline);
-    const service = new CollaborationApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -202,13 +182,7 @@ describe("CollaborationApplicationService", function () {
     const baseline = "prefix suffix\n";
     const proposed = "prefix AGENT suffix\n";
     const edited = "prefix AGUSERENT suffix\n";
-    const authority = new DocumentAuthority(baseline);
-    const service = new CollaborationApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -250,13 +224,7 @@ describe("CollaborationApplicationService", function () {
     const baseline = "prefix suffix\n";
     const proposed = "prefix AGENT suffix\n";
     const edited = "prefix USERAGENT suffix\n";
-    const authority = new DocumentAuthority(baseline);
-    const service = new CollaborationApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -288,13 +256,7 @@ describe("CollaborationApplicationService", function () {
     const baseline = "prefix removed tail\n";
     const proposed = "prefix tail\n";
     const edited = "prefix OWNER tail\n";
-    const authority = new DocumentAuthority(baseline);
-    const service = new CollaborationApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -330,14 +292,7 @@ describe("CollaborationApplicationService", function () {
     const firstProposal = "ONE middle two\n";
     const proposed = "ONE middle TWO\n";
     const edited = "OownerNE middle TWO\n";
-    const authority = new DocumentAuthority(baseline);
-    const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
-    const service = new CollaborationApplicationService({
-      authority,
-      sidecarDirectory,
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service, sidecarDirectory } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -440,13 +395,7 @@ describe("CollaborationApplicationService", function () {
 
   it("refuses a closed review through an explicit service error", async function () {
     const baseline = "alpha\n";
-    const authority = new DocumentAuthority(baseline);
-    const service = new CollaborationApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -469,7 +418,6 @@ describe("CollaborationApplicationService", function () {
 
   it("fails reattachment when persisted state is version 3 (#68)", async function () {
     const baseline = "alpha\n";
-    const authority = new DocumentAuthority(baseline);
     const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
     mkdirSync(sidecarDirectory, { recursive: true });
     writeFileSync(
@@ -477,12 +425,7 @@ describe("CollaborationApplicationService", function () {
       JSON.stringify({ version: 3 }),
       "utf8",
     );
-    const service = new CollaborationApplicationService({
-      authority,
-      sidecarDirectory,
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { service } = harness({ diskText: baseline, sidecarDirectory });
     await assert.rejects(
       service.reattachCollaboration(DOCUMENT_ID, DOCUMENT_PATH, baseline),
       /not a valid collaboration sidecar.*version/,
@@ -495,14 +438,7 @@ describe("CollaborationApplicationService", function () {
     // is separately persisted state and is not the discard's to destroy.
     const baseline = "alpha\nbeta\n";
     const proposed = "ALPHA\nbeta\n";
-    const authority = new DocumentAuthority(baseline);
-    const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
-    const service = new CollaborationApplicationService({
-      authority,
-      sidecarDirectory,
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service, sidecarDirectory } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -547,14 +483,7 @@ describe("CollaborationApplicationService", function () {
     const baseline = "alpha\nbeta\n";
     const proposed = "ALPHA\nbeta\n";
     const edited = "ALPHA\nBETA edited\n";
-    const authority = new DocumentAuthority(baseline);
-    const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
-    const service = new CollaborationApplicationService({
-      authority,
-      sidecarDirectory,
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service, sidecarDirectory } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),

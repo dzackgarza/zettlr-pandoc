@@ -1,7 +1,7 @@
 // Captures the M7 annotations panel structural-conformance scenes (plan
 // section 4, M7's structural gate: 03/05/10/11 against mockup 4) in isolated
 // offscreen Electron. Loads the webpack bundle produced by
-// annotations-sidebar-visual-build.cjs once, then drives the mounted
+// visual-build.cjs once, then drives the mounted
 // AnnotationsTab's real Pinia store through the window functions the entry
 // exposes (select an annotation, toggle the resolved disclosure, resize for
 // the narrow-container drilldown) between screenshots.

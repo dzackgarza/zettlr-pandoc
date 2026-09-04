@@ -19,14 +19,20 @@
  */
 
 import { strict as assert } from "assert";
+import { mkdtempSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { ChangeSet, Text } from "@codemirror/state";
 import type { AgentEventType } from "@dts/common/agent-api";
 import type { SerializedUpdate } from "@dts/common/documents";
 import { sha256Text } from "@common/util/sha256";
 import serializeChangeSet from "@common/util/serialize-change-set";
-import type {
-  CollaborationDocumentAuthority,
-  PreparedDocumentMutation,
+import {
+  CollaborationApplicationService,
+  type AgentEventPayload,
+  type AnnotationFailure,
+  type CollaborationDocumentAuthority,
+  type PreparedDocumentMutation,
 } from "source/app/service-providers/documents/document-collaboration-application-service";
 
 export class DocumentAuthority implements CollaborationDocumentAuthority {
@@ -191,4 +197,78 @@ export class DocumentAuthority implements CollaborationDocumentAuthority {
     assert.ok(reviewId.length > 0);
     this.broadcasts.push("cleared");
   }
+}
+
+/**
+ * A real authority, a real temporary sidecar directory, and a real
+ * CollaborationApplicationService wired over both — the complete boundary
+ * every collaboration spec drives. Every field a caller might read back.
+ */
+export interface Harness {
+  authority: DocumentAuthority;
+  service: CollaborationApplicationService;
+  sidecarDirectory: string;
+  emitted: Array<{ event: AgentEventType; payload: AgentEventPayload }>;
+  warnings: string[];
+}
+
+export interface HarnessOptions {
+  /** Which document this authority answers for — required, never guessed. */
+  documentId: string;
+  documentPath: string;
+  /** The disk contents the authority starts from. Defaults to empty. */
+  diskText?: string;
+  /** Reuse an existing sidecar directory to simulate a second process over it. */
+  sidecarDirectory?: string;
+  /** Prefix for a freshly minted temp directory when sidecarDirectory is omitted. */
+  tmpPrefix?: string;
+}
+
+/**
+ * Build one authority + service pair. A named options object rather than
+ * positional parameters: every field here is an optional string except
+ * documentId/documentPath, so positional args would let a call meant for one
+ * spec's convention silently typecheck against another's (a document path
+ * passed where a sidecar directory was expected, and vice versa).
+ */
+export function harness(options: HarnessOptions): Harness {
+  const {
+    documentId,
+    documentPath,
+    diskText = "",
+    sidecarDirectory,
+    tmpPrefix = "zettlr-collaboration-test-",
+  } = options;
+  const authority = new DocumentAuthority(diskText, documentId, documentPath);
+  const emitted: Array<{ event: AgentEventType; payload: AgentEventPayload }> = [];
+  const warnings: string[] = [];
+  const directory = sidecarDirectory ?? mkdtempSync(join(tmpdir(), tmpPrefix));
+  return {
+    authority,
+    sidecarDirectory: directory,
+    emitted,
+    warnings,
+    service: new CollaborationApplicationService({
+      authority,
+      sidecarDirectory: directory,
+      emit: (event, payload) => emitted.push({ event, payload }),
+      warn: (message) => warnings.push(message),
+    }),
+  };
+}
+
+/**
+ * A second process over the same sidecar directory: a real reload or app
+ * restart, reading persisted state rather than surviving memory.
+ */
+export function reopened(options: HarnessOptions & { sidecarDirectory: string }): Harness {
+  return harness(options);
+}
+
+export function committed<T extends object>(result: T | AnnotationFailure): T {
+  if ("ok" in result) {
+    const failure = result as AnnotationFailure;
+    assert.fail(`expected a committed annotation, got ${failure.code}: ${failure.message}`);
+  }
+  return result;
 }

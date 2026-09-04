@@ -29,19 +29,16 @@
  */
 
 import { strict as assert } from "assert";
-import { chmodSync, mkdtempSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { chmodSync } from "fs";
 import { createPatch } from "diff";
-import type { AgentEventType } from "@dts/common/agent-api";
 import type { TextAnnotation } from "@dts/common/annotation-domain";
 import { sha256Text } from "@common/util/sha256";
+import type { CollaborationApplicationService } from "source/app/service-providers/documents/document-collaboration-application-service";
 import {
-  CollaborationApplicationService,
-  type AgentEventPayload,
-  type AnnotationFailure,
-} from "source/app/service-providers/documents/document-collaboration-application-service";
-import { DocumentAuthority } from "./collaboration-test-authority";
+  committed,
+  harness as sharedHarness,
+  type Harness,
+} from "./collaboration-test-authority";
 
 const DOCUMENT_ID = "doc-linked";
 const DOCUMENT_PATH = "/tmp/annotation-linkage-note.md";
@@ -51,42 +48,14 @@ const PROPOSED = "The quick brown fox\nleaps over the lazy dog\n";
 const TARGET = { from: 10, to: 19 };
 const INSTRUCTION = "Make this fox move more vividly.";
 
-class LinkedDocumentAuthority extends DocumentAuthority {
-  constructor(diskText = BASELINE) {
-    super(diskText, DOCUMENT_ID, DOCUMENT_PATH);
-  }
-}
-
-interface Harness {
-  authority: LinkedDocumentAuthority;
-  service: CollaborationApplicationService;
-  sidecarDirectory: string;
-  emitted: Array<{ event: AgentEventType; payload: AgentEventPayload }>;
-}
-
-function harness(sidecarDirectory?: string, diskText = BASELINE): Harness {
-  const authority = new LinkedDocumentAuthority(diskText);
-  const emitted: Array<{ event: AgentEventType; payload: AgentEventPayload }> = [];
-  const directory = sidecarDirectory ?? mkdtempSync(join(tmpdir(), "zettlr-annotation-linkage-"));
-  return {
-    authority,
-    emitted,
-    sidecarDirectory: directory,
-    service: new CollaborationApplicationService({
-      authority,
-      sidecarDirectory: directory,
-      emit: (event, payload) => emitted.push({ event, payload }),
-      warn: () => undefined,
-    }),
-  };
-}
-
-function committed<T extends object>(result: T | AnnotationFailure): T {
-  if ("ok" in result) {
-    const failure = result as AnnotationFailure;
-    assert.fail(`expected a committed annotation, got ${failure.code}: ${failure.message}`);
-  }
-  return result;
+function harness(options: { sidecarDirectory?: string; diskText?: string } = {}): Harness {
+  return sharedHarness({
+    documentId: DOCUMENT_ID,
+    documentPath: DOCUMENT_PATH,
+    tmpPrefix: "zettlr-annotation-linkage-",
+    diskText: BASELINE,
+    ...options,
+  });
 }
 
 function patch(oldText: string, newText: string): string {
@@ -158,7 +127,7 @@ describe("cross-section proposal linkage", function () {
       ),
     );
 
-    const restarted = harness(sidecarDirectory);
+    const restarted = harness({ sidecarDirectory });
     const restored = await restarted.service.reattachCollaboration(
       DOCUMENT_ID,
       DOCUMENT_PATH,
@@ -209,7 +178,7 @@ describe("cross-section proposal linkage", function () {
     await service.detachCollaboration(DOCUMENT_ID);
 
     const drifted = "A different document altogether.\n";
-    const restarted = harness(sidecarDirectory, drifted);
+    const restarted = harness({ sidecarDirectory, diskText: drifted });
     const restored = await restarted.service.reattachCollaboration(
       DOCUMENT_ID,
       DOCUMENT_PATH,

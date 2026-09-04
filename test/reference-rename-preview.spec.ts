@@ -73,7 +73,9 @@ describe('Rename preview dialog', function () {
     outputDirectory = await mkdtemp(path.join(tmpdir(), 'zettlr-rename-preview-'))
     const root = process.cwd()
     await execFileAsync('node', [
-      path.join(root, 'test/reference-rename-preview-build.cjs'),
+      path.join(root, 'test/visual-build.cjs'),
+      path.join(root, 'test/reference-rename-preview-entry.ts'),
+      'reference-rename-preview-bundle.js',
       outputDirectory,
     ], { maxBuffer: 8 * 1024 * 1024 })
     const { stdout } = await execFileAsync('xvfb-run', [
