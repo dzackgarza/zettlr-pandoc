@@ -52,7 +52,7 @@ const sceneConfig: SceneConfig = {
 
 // RelatedFilesTab.vue and OtherFilesTab.vue (both mounted, v-show, inside
 // MainSidebar) throw outright without a window_id search param — the
-// capture page carries one (see annotations-sidebar-visual-capture.cjs's
+// capture page carries one (see annotations-sidebar-visual-capture.mjs's
 // page() query), which makes documentTreeStore request this leaf on
 // construction. One pane, holding the scene document, is enough for the
 // mounted tree to settle without that pane's own contents ever appearing on

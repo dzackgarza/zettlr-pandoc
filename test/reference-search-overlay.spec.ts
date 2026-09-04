@@ -99,15 +99,8 @@ describe('Mod-P reference search overlay', function () {
     ], { maxBuffer: 8 * 1024 * 1024 })
     const { stdout } = await execFileAsync('xvfb-run', [
       '-a',
-      path.join(root, 'node_modules/.bin/electron'),
-      '--ozone-platform=x11',
-      '--disable-gpu',
-      // A fresh package-manager install leaves electron's chrome-sandbox without its
-      // root-owned SUID bits, which aborts Chromium under xvfb. The probe
-      // renders local test content only, so run unsandboxed rather than
-      // requiring sudo provisioning for the test suite.
-      '--no-sandbox',
-      path.join(root, 'test/reference-search-overlay-probe.cjs'),
+      'node',
+      path.join(root, 'test/reference-search-overlay-probe.mjs'),
       outputDirectory,
     ], { maxBuffer: 8 * 1024 * 1024 })
     const jsonLine = stdout.trim().split('\n').at(-1)

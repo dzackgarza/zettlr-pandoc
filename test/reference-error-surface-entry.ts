@@ -1,6 +1,6 @@
 /**
  * Mounts the recoverable reference-error scene for the Chromium probe
- * (reference-error-surface-probe.cjs). Issue #1, Phase 8 red (workstream 5).
+ * (reference-error-surface-probe.mjs). Issue #1, Phase 8 red (workstream 5).
  *
  * The scene: a REAL CodeMirror editor is on screen, and a
  * reference-provider invocation fails (the injected ipc seam rejects —
