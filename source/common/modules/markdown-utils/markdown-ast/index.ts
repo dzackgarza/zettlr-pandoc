@@ -39,6 +39,7 @@ import { genericTextNode } from './generic-text-node'
 import { parseChildren } from './parse-children'
 import { nodeToCiteItem, type Citation } from '../../markdown-editor/parser/citation-parser'
 import { parsePandocAttributes } from 'source/common/pandoc-util/parse-pandoc-attributes'
+import { mathDisplayForOpen, mathEnvironmentName } from '@common/util/math-delimiters'
 
 /**
  * Basic info every ASTNode needs to provide
@@ -947,7 +948,11 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
       const [ start, end ] = node.getChildren('CodeMark')
       let info = ''
       const codeMark = markdown.substring(start.from, start.to)
-      if (codeMark === '$$' || codeMark === '$' || codeMark === '\\(' || codeMark === '\\[') {
+      // The mark opens math when the delimiter table or the math-environment
+      // set recognizes it; anything else is a genuine code span. Asked of
+      // math-delimiters rather than restated here, so the four delimiters and
+      // the environments have one owner.
+      if (mathDisplayForOpen(codeMark) !== null || mathEnvironmentName(codeMark) !== null) {
         info = codeMark
       }
 

@@ -24,6 +24,7 @@ import { nodeAtPos } from '../util/node-in-selection'
 import { NODES } from '../parser/citation-parser'
 import { citationMenu } from '../context-menu/citation-menu'
 import { requestCreateReferenceLabel, resolveCreateReferenceLabelRequest } from './create-reference-label'
+import { resolveAnnotateSelectionMenuItem } from './annotate-selection'
 
 export const defaultContextMenu = EditorView.domEventHandlers({
   contextmenu (event, view) {
@@ -52,11 +53,19 @@ export const defaultContextMenu = EditorView.domEventHandlers({
       return true
     }
 
+    const extraItems: AnyMenuItem[] = []
+
+    // Selection-anchored annotation composer (M6): resolved before the
+    // word-selection fallback below can turn an empty selection non-empty.
+    const annotateItem = resolveAnnotateSelectionMenuItem(view)
+    if (annotateItem !== null) {
+      extraItems.unshift(annotateItem)
+    }
+
     // Node-routed create-label entry (issue #1 Phase 6): a supported,
     // still-unlabeled reference target (theorem-like div, heading, figure
     // image, listing, display math) offers "Create reference label…" on top
     // of the default menu.
-    const extraItems: AnyMenuItem[] = []
     if (resolveCreateReferenceLabelRequest(view, pos) !== null) {
       extraItems.push({
         label: trans('Create reference label…'),

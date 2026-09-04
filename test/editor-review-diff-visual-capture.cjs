@@ -22,27 +22,6 @@ async function capture (window, scene) {
     .cm-editor { min-height: 620px; height: 620px; font-size: 16px; line-height: 1.45; }
     .cm-scroller { padding: 18px 18px 48px; overflow-x: hidden; }
     .cm-content { overflow-wrap: anywhere; }
-    .review-diff-active button.cm-review-diff-control {
-      white-space: nowrap;
-      min-width: 64px;
-      height: 24px;
-      padding: 0 8px;
-      border: 1px solid transparent;
-      border-radius: 4px;
-      color: #ffffff;
-      font: inherit;
-      font-size: 12px;
-      line-height: 22px;
-      cursor: pointer;
-    }
-    .review-diff-active button.cm-review-diff-control.accept {
-      background-color: var(--zettlr-editor-review-accept-bg);
-      border-color: var(--zettlr-editor-review-accept-border);
-    }
-    .review-diff-active button.cm-review-diff-control.reject {
-      background-color: var(--zettlr-editor-review-reject-bg);
-      border-color: var(--zettlr-editor-review-reject-border);
-    }
   </style></head><body class="${scene.dark ? 'dark' : ''}" data-dark="${scene.dark}">
     <main id="editor"></main><script src="./review-diff-visual-bundle.js"></script>
   </body></html>`
@@ -54,8 +33,15 @@ async function capture (window, scene) {
   await new Promise(resolve => setTimeout(resolve, 150))
   const diagnostics = await window.webContents.executeJavaScript('window.reviewDiffVisualDiagnostics()')
   console.log(scene.name, JSON.stringify(diagnostics))
-  if (diagnostics.chunks !== 2 || diagnostics.accepts !== 2 || diagnostics.rejects !== 2) {
-    throw new Error(`${scene.name} did not render two independently actionable chunks`)
+  // The M9 structural gate, executable: both chunks are LOCATED in the
+  // editor — a struck-through deletion and a highlighted insertion each —
+  // and nothing in the editor can adjudicate them (I4). Adjudication is the
+  // annotations panel's, captured by annotations-sidebar-visual-capture.
+  if (diagnostics.chunks !== 2 || diagnostics.deletions !== 2 || diagnostics.insertions !== 2) {
+    throw new Error(`${scene.name} did not render two located chunks: ${JSON.stringify(diagnostics)}`)
+  }
+  if (diagnostics.buttons !== 0 || diagnostics.inputs !== 0 || diagnostics.panels !== 0) {
+    throw new Error(`${scene.name} renders an adjudication control inside the editor: ${JSON.stringify(diagnostics)}`)
   }
   if (diagnostics.contentScrollWidth > diagnostics.contentClientWidth + 1) {
     throw new Error(`${scene.name} has horizontal editor overflow`)

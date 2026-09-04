@@ -217,6 +217,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/annotations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List annotations across every open document
+         * @description Aggregates every currently open document's annotations. Lifecycle — resolve, reopen, reattach, delete, create — is owner-only (I3) and has no operation here; only a thread's reply is agent-writable.
+         */
+        get: operations["listAnnotations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{documentId}/annotations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List one document's annotations */
+        get: operations["listDocumentAnnotations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/annotations/{annotationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one annotation's full detail */
+        get: operations["getAnnotation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/annotations/{annotationId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply in an annotation's thread
+         * @description The only annotation mutation this API exposes (I3): lifecycle moves (resolve, reopen, reattach, delete, create) are owner-only and inexpressible here. Replaying clientRequestId returns the original message instead of posting a duplicate, even against a stale expectedAnnotationGeneration.
+         */
+        post: operations["addAnnotationMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/reviews": {
         parameters: {
             query?: never;
@@ -514,6 +588,8 @@ export interface components {
             description: string;
             /** @description Unified diff implementing exactly this claim. Name the target in the ---/+++ headers as the literal `document` or as the document's absolute path (a git-style a/ or b/ prefix is allowed); any other filename, a create/delete/rename/binary/mode patch, or a diff that leaves the text unchanged is PATCH_INVALID. */
             patch: string;
+            /** @description Annotation ids this claim answers. Each must belong to the target document, be open, and not be orphaned; otherwise the whole submission is refused — ANNOTATION_NOT_FOUND, ANNOTATION_RESOLVED, or ANNOTATION_ORPHANED — with nothing committed, not this claim's patch and not any other claim in the same submission. On success, each addressed annotation records this claim's packet as a linked proposal action, visible on GET /v1/annotations/{annotationId}. */
+            addressesAnnotationIds?: string[];
         };
         SubmitProposalRequest: {
             /** @description SHA-256 returned by the most recent working-content read. It pins the exact text the patches must apply to; a stale hash is refused as REVISION_MISMATCH. */
@@ -539,7 +615,7 @@ export interface components {
         };
         AgentError: {
             /** @enum {string} */
-            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR";
+            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR";
             message: string;
             documentId?: string;
             expected?: components["schemas"]["DocumentRevision"];
@@ -553,13 +629,17 @@ export interface components {
         };
         AgentEvent: {
             /** @enum {string} */
-            event: "review.started" | "review.changed" | "review.resolved" | "review.commented" | "review.cleared" | "review.invalidated" | "review.completed" | "review.discarded" | "review.sidecar-error" | "proposal.applied" | "proposal.retracted";
+            event: "review.started" | "review.changed" | "review.resolved" | "review.commented" | "review.cleared" | "review.invalidated" | "review.completed" | "review.discarded" | "review.sidecar-error" | "proposal.applied" | "proposal.retracted" | "annotation.created" | "annotation.message-added" | "annotation.target-changed" | "annotation.orphaned" | "annotation.resolved" | "annotation.reopened" | "annotation.deleted" | "annotation.proposal-linked";
             timestamp: string;
             reviewId?: string;
             documentId?: string;
             documentRevision?: components["schemas"]["DocumentRevision"];
             reviewGeneration?: number;
             unresolvedChunks?: number;
+            /** @description annotation.*: the annotation the event is about. */
+            annotationId?: string;
+            /** @description annotation.*: the document's annotation generation after the event. */
+            annotationGeneration?: number;
             /** @description proposal.applied and proposal.retracted: the packet affected by the event. */
             packetId?: string;
             /** @description review.commented: the outstanding chunk the comment is anchored to, when it is chunk-anchored. */
@@ -790,6 +870,81 @@ export interface components {
         };
         ReviewListResponse: {
             reviews: components["schemas"]["ReviewListEntry"][];
+        };
+        /** @description Where an annotation points, reported in UTF-16 code-unit offsets and 1-based line/column together. orphaned carries neither: I6 says the honest answer to lost text is a marker and Reattach, never a guessed position. */
+        AnnotationTarget: {
+            /** @enum {string} */
+            state: "range" | "point" | "orphaned";
+            /** @description The text the annotation was created against. Never rewritten (I1). */
+            quotedText: string;
+            /** @description UTF-16 offset where the target starts. Present when state is range. */
+            from?: number;
+            /** @description UTF-16 offset where the target ends. Present when state is range. */
+            to?: number;
+            /** @description UTF-16 offset of the collapsed seam. Present when state is point. */
+            at?: number;
+            /** @description 1-based line of from (range) or at (point). Absent when state is orphaned. */
+            line?: number;
+            /** @description 1-based UTF-16 column of from (range) or at (point). Absent when state is orphaned. */
+            column?: number;
+            /** @description 1-based line of to. Present only when state is range. */
+            endLine?: number;
+            /** @description 1-based UTF-16 column of to. Present only when state is range. */
+            endColumn?: number;
+            /**
+             * @description Present when state is point (always target-deleted) or orphaned (external-drift or unmapped-document-change).
+             * @enum {string}
+             */
+            reason?: "target-deleted" | "external-drift" | "unmapped-document-change";
+        };
+        AnnotationMessage: {
+            messageId: string;
+            /** @enum {string} */
+            author: "owner" | "agent";
+            text: string;
+            createdAt: string;
+            /** @description Present when author is agent — the id that made posting this message idempotent. */
+            clientRequestId?: string;
+        };
+        AnnotationProposalAction: {
+            actionId: string;
+            packetId: string;
+            reviewId: string;
+            linkedAt: string;
+            /** @enum {string} */
+            terminalOutcome?: "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
+        };
+        /** @description A durable comment on a stretch of one document. Lifecycle (resolve, reopen, reattach, delete, create) is owner-only (I3) and has no operation in this API — only its thread accepts an agent reply. */
+        AnnotationResponse: {
+            annotationId: string;
+            documentId: string;
+            target: components["schemas"]["AnnotationTarget"];
+            /** @enum {string} */
+            state: "open" | "resolved";
+            /** @description The thread, owner-first, in creation order. */
+            messages: components["schemas"]["AnnotationMessage"][];
+            proposalActions: components["schemas"]["AnnotationProposalAction"][];
+            /** @description The document's annotation generation this read reflects — send it back as expectedAnnotationGeneration on the next message. */
+            annotationGeneration: number;
+            createdAt: string;
+            updatedAt: string;
+            resolvedAt?: string;
+        };
+        AnnotationListResponse: {
+            annotations: components["schemas"]["AnnotationResponse"][];
+        };
+        AddAnnotationMessageRequest: {
+            text: string;
+            /** @description Client-chosen unique string. Replaying it returns the original message rather than posting a second one. */
+            clientRequestId: string;
+            /** @description The annotationGeneration this request was formed against — the most recent AnnotationResponse or AnnotationListResponse read. A stale value is refused as ANNOTATION_GENERATION_MISMATCH; a replayed clientRequestId is answered before this check runs, so a retry against a generation the first post already advanced still succeeds. */
+            expectedAnnotationGeneration: number;
+        };
+        AddAnnotationMessageResponse: {
+            annotationId: string;
+            documentId: string;
+            message: components["schemas"]["AnnotationMessage"];
+            annotationGeneration: number;
         };
     };
     responses: never;
@@ -1157,6 +1312,147 @@ export interface operations {
             };
             /** @description The proposal could not be persisted or the server could not complete the submission. */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    listAnnotations: {
+        parameters: {
+            query?: {
+                /** @description open (the default) answers with annotations that still have a thread to read or reply to; resolved answers with the ones that do not. */
+                state?: "open" | "resolved";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationListResponse"];
+                };
+            };
+        };
+    };
+    listDocumentAnnotations: {
+        parameters: {
+            query?: {
+                /** @description Omitted, both open and resolved annotations are returned. */
+                state?: "open" | "resolved";
+            };
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationListResponse"];
+                };
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    getAnnotation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                annotationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationResponse"];
+                };
+            };
+            /** @description Annotation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    addAnnotationMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                annotationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddAnnotationMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Message posted, or the original message from a replayed clientRequestId */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AddAnnotationMessageResponse"];
+                };
+            };
+            /** @description Missing or empty text, or a missing clientRequestId */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Annotation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description ANNOTATION_GENERATION_MISMATCH when expectedAnnotationGeneration is stale, or ANNOTATION_RESOLVED when the thread is resolved — reopen it first. Neither refusal mutates anything. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

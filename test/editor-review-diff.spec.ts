@@ -2,17 +2,23 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Editor review-chunk rendering and control specs
+ * Contains:        Editor review-chunk locator specs
  * CVM-Role:        Test
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
  * Description:     Mounts the production CodeMirror review-chunks plugin and
- *                  exercises only behavior owned by the editor view: chunk
- *                  rendering, control emissions, attribution, navigation, and
- *                  preview suppression. Provider decisions and persistence are
- *                  exercised by the assembled-app review lifecycle tests; this
- *                  suite does not simulate them.
+ *                  exercises only behavior owned by the editor view: where a
+ *                  chunk's marks land, how they map through the owner's own
+ *                  typing, chunk navigation, and preview suppression.
+ *
+ *                  The plugin renders locators and nothing else (plan
+ *                  invariant I4), so the decisive claim here is a negative
+ *                  one: no button, no field, and no panel appears inside the
+ *                  editor for any chunk shape. Adjudication itself — the
+ *                  decisions, the notes, the mass actions, the review
+ *                  comment — is the annotations panel's, and is proved in
+ *                  annotations-sidebar.spec.ts against the real IPC bridge.
  *
  * END HEADER
  */
@@ -76,16 +82,6 @@ function polyfillJsdomForCodeMirror (): void {
   }
 }
 
-interface ChunkNoteView {
-  chunkId: string
-  comment: string
-}
-
-interface ReviewViewOptions {
-  suggestions: ReviewSuggestionView[]
-  chunkComments?: ChunkNoteView[]
-}
-
 function replacementSuggestion (
   workingText: string,
   removedText: string,
@@ -106,19 +102,6 @@ function replacementSuggestion (
   }
 }
 
-interface DecisionCall {
-  chunkId: string
-  decision: 'accept'|'reject'
-}
-
-interface ReviewCalls {
-  decisions: DecisionCall[]
-  acceptAll: number
-  clear: number
-  comments: string[]
-  chunkNotes: Array<{ chunkId: string, text: string }>
-}
-
 describe('Editor review-chunk view', function () {
   const views: EditorView[] = []
 
@@ -135,38 +118,20 @@ describe('Editor review-chunk view', function () {
 
   function createReviewView (
     workingText: string,
-    options: ReviewViewOptions
-  ): { view: EditorView, calls: ReviewCalls } {
-    const calls: ReviewCalls = {
-      decisions: [],
-      acceptAll: 0,
-      clear: 0,
-      comments: [],
-      chunkNotes: []
-    }
+    suggestions: ReviewSuggestionView[]
+  ): EditorView {
     const view = new EditorView({
       parent: document.body,
       state: EditorState.create({
         doc: workingText,
         extensions: [
-          reviewChunksExtension({
-            reviewId: 'review-test',
-            suggestions: options.suggestions,
-            chunkComments: options.chunkComments ?? [],
-            onDecide: async (chunkId, decision) => {
-              calls.decisions.push({ chunkId, decision })
-            },
-            onAcceptAll: async () => { calls.acceptAll += 1 },
-            onClear: async () => { calls.clear += 1 },
-            onComment: async (text) => { calls.comments.push(text) },
-            onChunkComment: async (chunkId, text) => { calls.chunkNotes.push({ chunkId, text }) }
-          }),
+          reviewChunksExtension({ suggestions }),
           EditorView.updateListener.of(() => {})
         ]
       })
     })
     views.push(view)
-    return { view, calls }
+    return view
   }
 
   function chunksOf (view: EditorView): NonNullable<ReturnType<typeof getReviewChunks>> {
@@ -175,7 +140,27 @@ describe('Editor review-chunk view', function () {
     return chunks
   }
 
-  it('renders one decision control set per chunk and emits the addressed ids', function () {
+  /**
+   * Everything in a review pane that could adjudicate a chunk. I4 admits
+   * locators only, so each of these must be zero for every chunk shape — a
+   * replacement, a pure deletion, a heavy rewrite, several chunks at once.
+   * `.cm-panels` catches the status bar specifically: a panel mounts
+   * OUTSIDE the scroller, so a control count taken from the content alone
+   * would miss it.
+   */
+  function adjudicationControlsIn (view: EditorView): {
+    buttons: number
+    fields: number
+    panels: number
+  } {
+    return {
+      buttons: view.dom.querySelectorAll('button').length,
+      fields: view.dom.querySelectorAll('input, textarea, select').length,
+      panels: view.dom.querySelectorAll('.cm-panels').length
+    }
+  }
+
+  it('locates every chunk and adjudicates none of them (I4)', function () {
     const baseline = [
       '# Note', '', 'first baseline', '', 'middle unchanged', '', 'second baseline', ''
     ].join('\n')
@@ -191,292 +176,31 @@ describe('Editor review-chunk view', function () {
       to: anchor.to + proposed.indexOf('middle unchanged')
     }))
     suggestions[1].seam += proposed.indexOf('middle unchanged')
-    const { view, calls } = createReviewView(proposed, { suggestions })
-    const chunks = chunksOf(view)
-    assert.equal(chunks.length, 2)
+    const view = createReviewView(proposed, suggestions)
+    assert.equal(chunksOf(view).length, 2)
 
-    const accepts = view.dom.querySelectorAll<HTMLButtonElement>('button.cm-review-diff-control.accept')
-    const rejects = view.dom.querySelectorAll<HTMLButtonElement>('button.cm-review-diff-control.reject')
-    assert.equal(accepts.length, 2)
-    assert.equal(rejects.length, 2)
-    assert.equal(view.dom.querySelectorAll('input.cm-chunkCommentInput').length, 2)
-    assert.equal(
-      view.dom.querySelector('button.cm-review-diff-control.comment'),
-      null,
-      'the comment field IS the comment: no submit button exists'
-    )
-
-    accepts[0].click()
-    rejects[1].click()
-
-    assert.deepEqual(calls.decisions, [
-      { chunkId: chunks[0].suggestionId, decision: 'accept' },
-      { chunkId: chunks[1].suggestionId, decision: 'reject' }
-    ])
-    assert.equal(
-      chunksOf(view).length,
-      2,
-      'the view must not optimistically apply provider decisions'
-    )
-  })
-
-  /** The debounce plus a settle margin: what a test waits for an autosave. */
-  const AUTOSAVE_WAIT_MS = 850
-
-  function tick (ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms))
-  }
-
-  function noteInputOf (view: EditorView): HTMLInputElement {
-    const input = view.dom.querySelector<HTMLInputElement>('input.cm-chunkCommentInput')
-    assert.ok(input !== null, 'the chunk must render its comment field')
-    return input
-  }
-
-  function typeInto (input: HTMLInputElement, value: string): void {
-    input.value = value
-    input.dispatchEvent(new window.Event('input', { bubbles: true }))
-  }
-
-  function dirtyDotOf (view: EditorView): HTMLElement {
-    const dot = view.dom.querySelector<HTMLElement>('.cm-chunkCommentDirty')
-    assert.ok(dot !== null, 'the comment field must render its saved/unsaved indicator')
-    return dot
-  }
-
-  it('autosaves a trimmed chunk note after a typing pause, without blur', async function () {
-    const { view, calls } = createReviewView('proposal\n', {
-      suggestions: [replacementSuggestion('proposal\n', 'baseline', 'proposal')]
-    })
-    const chunk = chunksOf(view)[0]
-    const input = noteInputOf(view)
-    const dot = dirtyDotOf(view)
-    assert.equal(dot.classList.contains('unsaved'), false, 'an untouched field is saved')
-    input.focus()
-    typeInto(input, '  check the constant  ')
-
-    assert.deepEqual(calls.chunkNotes, [], 'no commit fires on the keystroke itself')
-    assert.equal(dot.classList.contains('unsaved'), true, 'divergence flips the indicator at the keystroke')
-    assert.equal(dot.title, 'Unsaved — not yet visible to agents')
-    await tick(AUTOSAVE_WAIT_MS)
-    assert.deepEqual(calls.chunkNotes, [
-      { chunkId: chunk.suggestionId, text: 'check the constant' }
-    ])
-    assert.equal(document.activeElement, input, 'autosave must not steal focus')
-    assert.equal(dot.classList.contains('unsaved'), false, 'the acknowledgment flips it back to saved')
-    assert.equal(dot.title, 'Note saved — visible to agents')
-    assert.deepEqual(calls.decisions, [], 'a chunk comment decides nothing')
-  })
-
-  it('commits immediately on blur and on Enter', async function () {
-    const { view, calls } = createReviewView('proposal\n', {
-      suggestions: [replacementSuggestion('proposal\n', 'baseline', 'proposal')]
-    })
-    const chunk = chunksOf(view)[0]
-    const input = noteInputOf(view)
-
-    typeInto(input, 'first thought')
-    input.dispatchEvent(new window.Event('blur'))
-    await tick(0)
-    assert.deepEqual(calls.chunkNotes, [
-      { chunkId: chunk.suggestionId, text: 'first thought' }
-    ], 'blur must commit without waiting out the debounce')
-
-    // The commit echo has not arrived in this harness, so the field retries
-    // on its own schedule; an Enter on a fresh view proves the immediate
-    // path independently.
-    const second = createReviewView('other proposal\n', {
-      suggestions: [replacementSuggestion('other proposal\n', 'baseline', 'proposal')]
-    })
-    const secondChunk = chunksOf(second.view)[0]
-    const secondInput = noteInputOf(second.view)
-    typeInto(secondInput, 'second thought')
-    secondInput.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter' }))
-    await tick(0)
-    assert.deepEqual(second.calls.chunkNotes, [
-      { chunkId: secondChunk.suggestionId, text: 'second thought' }
-    ], 'Enter must commit without waiting out the debounce')
-  })
-
-  it('commits nothing when the value did not change', async function () {
-    const baseline = 'first baseline\n\nsecond baseline\n'
-    const proposed = baseline.replace('first baseline', 'first proposed')
-    const suggestion = replacementSuggestion(proposed, 'baseline', 'proposed')
-    const { view, calls } = createReviewView(proposed, {
-      suggestions: [suggestion],
-      chunkComments: [{ chunkId: suggestion.suggestionId, comment: 'as written' }]
-    })
-    const input = noteInputOf(view)
-    assert.equal(input.value, 'as written', 'the field is prefilled with the note')
-
-    input.dispatchEvent(new window.Event('blur'))
-    typeInto(input, '  as written ')
-    input.dispatchEvent(new window.Event('blur'))
-    await tick(AUTOSAVE_WAIT_MS)
-    assert.deepEqual(calls.chunkNotes, [], 'an unchanged note is no mutation')
-  })
-
-  it('commits an emptied field as the note\'s removal', async function () {
-    const baseline = 'first baseline\n\nsecond baseline\n'
-    const proposed = baseline.replace('first baseline', 'first proposed')
-    const suggestion = replacementSuggestion(proposed, 'baseline', 'proposed')
-    const { view, calls } = createReviewView(proposed, {
-      suggestions: [suggestion],
-      chunkComments: [{ chunkId: suggestion.suggestionId, comment: 'kill me' }]
-    })
-    const input = noteInputOf(view)
-
-    typeInto(input, '')
-    input.dispatchEvent(new window.Event('blur'))
-    await tick(0)
-    assert.deepEqual(calls.chunkNotes, [
-      { chunkId: suggestion.suggestionId, text: '' }
-    ], 'an emptied field removes the annotation')
-  })
-
-  it('keeps focus and unsent keystrokes across the commit echo redraw', async function () {
-    // The critical autosave hazard: a commit mutates the review, the
-    // broadcast reconfigures this extension, and the decoration rebuild
-    // replaces widgets whose eq() changed — which is exactly this strip,
-    // because its note changed. Replacing the DOM would eat the reviewer's
-    // focus, cursor, and every character typed since the commit fired.
-    const baseline = 'first baseline\n\nsecond baseline\n'
-    const proposed = baseline.replace('first baseline', 'first proposed')
-    const notes: Array<{ chunkId: string, text: string }> = []
-    const compartment = new Compartment()
-    const configFor = (chunkComments: ChunkNoteView[]): Parameters<typeof reviewChunksExtension>[0] => ({
-      reviewId: 'review-test',
-      suggestions: [replacementSuggestion(proposed, 'baseline', 'proposed')],
-      chunkComments,
-      onDecide: async () => {},
-      onAcceptAll: async () => {},
-      onClear: async () => {},
-      onComment: async () => {},
-      onChunkComment: async (chunkId, text) => { notes.push({ chunkId, text }) }
-    })
-    const view = new EditorView({
-      parent: document.body,
-      state: EditorState.create({
-        doc: proposed,
-        extensions: [compartment.of(reviewChunksExtension(configFor([])))]
-      })
-    })
-    views.push(view)
-    const chunk = chunksOf(view)[0]
-    const input = noteInputOf(view)
-    input.focus()
-
-    typeInto(input, 'first')
-    await tick(AUTOSAVE_WAIT_MS)
-    assert.deepEqual(notes, [{ chunkId: chunk.suggestionId, text: 'first' }])
-
-    // Keep typing BEFORE the provider's echo lands...
-    typeInto(input, 'first second')
-    assert.equal(
-      dirtyDotOf(view).classList.contains('unsaved'),
-      true,
-      'the resumed typing is not agent-visible yet'
-    )
-    // ...then the echo: the broadcast MainEditor would apply, carrying the
-    // committed note. The widget's eq() changes, decorations rebuild.
-    view.dispatch({
-      effects: compartment.reconfigure(
-        reviewChunksExtension(configFor([{ chunkId: chunk.suggestionId, comment: 'first' }]))
-      )
-    })
-
-    assert.equal(document.activeElement, input, 'the echo redraw must not eat focus')
-    assert.equal(input.value, 'first second', 'unsent keystrokes must survive the redraw')
-    assert.equal(
-      dirtyDotOf(view).classList.contains('unsaved'),
-      true,
-      'the in-place redraw keeps the indicator honest: still unsaved'
-    )
-    assert.equal(
-      view.dom.querySelector<HTMLElement>('.cm-chunkComment'),
-      null,
-      'the field is the note\'s only rendering — the echo must not append a copy to the strip'
-    )
-
-    // The interrupted typing commits on its own once the echo has settled.
-    await tick(AUTOSAVE_WAIT_MS)
-    assert.deepEqual(notes, [
-      { chunkId: chunk.suggestionId, text: 'first' },
-      { chunkId: chunk.suggestionId, text: 'first second' }
-    ])
-    assert.equal(
-      dirtyDotOf(view).classList.contains('unsaved'),
-      false,
-      'everything typed is acknowledged: saved again'
-    )
-  })
-
-  it('shows a provider-supplied chunk comment only in the comment field', function () {
-    const baseline = 'first baseline\n\nsecond baseline\n'
-    const proposed = baseline.replace('first baseline', 'first proposed')
-    const suggestion = replacementSuggestion(proposed, 'baseline', 'proposed')
-    const { view } = createReviewView(proposed, {
-      suggestions: [suggestion],
-      chunkComments: [{ chunkId: suggestion.suggestionId, comment: 'check the constant' }]
-    })
-
-    const widget = view.dom.querySelector<HTMLElement>('.cm-chunkControls')
-    assert.ok(widget !== null)
-    assert.equal(
-      widget.querySelector<HTMLInputElement>('input.cm-chunkCommentInput')?.value,
-      'check the constant',
-      'the field is prefilled so editing it replaces the note'
-    )
-    assert.equal(
-      widget.querySelector<HTMLElement>('.cm-chunkComment'),
-      null,
-      'the note is not duplicated into the strip alongside the claim descriptions'
-    )
-    assert.ok(widget.querySelector('button.accept') !== null)
-    assert.ok(widget.querySelector('button.reject') !== null)
-  })
-
-  it('shows each claim description and maps it across a working-text tweak', function () {
-    const baseline = [
-      '# Note', '', 'first baseline', '', 'middle unchanged', '', 'second baseline', ''
-    ].join('\n')
-    const proposed = baseline
-      .replace('first baseline', 'first proposed')
-      .replace('second baseline', 'second proposed')
-    const secondOffset = proposed.indexOf('second proposed')
-    const { view } = createReviewView(proposed, {
-      suggestions: [
-        replacementSuggestion(proposed, 'baseline', 'proposed', 'opening', 'Sharpen the opening claim'),
-        {
-          ...replacementSuggestion(proposed.slice(secondOffset), 'baseline', 'proposed', 'closing', 'Fix the closing claim'),
-          anchors: [{ from: secondOffset + 7, to: secondOffset + 15 }],
-          seam: secondOffset + 7
-        }
-      ]
-    })
-
-    const widgets = [...view.dom.querySelectorAll<HTMLElement>('.cm-chunkControls')]
+    // Both chunks are located: each shows what it takes out and what it puts
+    // in, at the position it lands on.
     assert.deepEqual(
-      widgets.map(widget =>
-        [...widget.querySelectorAll('.cm-chunkDescription')].map(entry => entry.textContent)
-      ),
-      [['Sharpen the opening claim'], ['Fix the closing claim']]
+      [...view.dom.querySelectorAll<HTMLElement>('del.cm-deletedText')].map(el => el.textContent),
+      ['baseline', 'baseline']
+    )
+    assert.deepEqual(
+      [...view.dom.querySelectorAll<HTMLElement>('.cm-changedText')].map(el => el.textContent),
+      ['proposed', 'proposed']
     )
 
-    const firstChunk = chunksOf(view)[0]
-    const insertAt = view.state.doc.lineAt(firstChunk.anchors[0].from).to
-    view.dispatch({ changes: { from: insertAt, insert: ' (tweaked)' } })
-
-    assert.equal(
-      view.dom.querySelector<HTMLElement>('.cm-chunkControls .cm-chunkDescription')?.textContent,
-      'Sharpen the opening claim'
+    assert.deepEqual(
+      adjudicationControlsIn(view),
+      { buttons: 0, fields: 0, panels: 0 },
+      'the editor carries locators only: the panel owns every decision'
     )
   })
 
   it('maps a local owner insertion out of the rendered suggestion immediately', function () {
     const working = 'prefix AGENT suffix\n'
     const suggestion = replacementSuggestion(working, '', 'AGENT', 'agent-text')
-    const { view } = createReviewView(working, { suggestions: [suggestion] })
+    const view = createReviewView(working, [suggestion])
     const insertAt = working.indexOf('AGENT') + 2
     view.dispatch({ changes: { from: insertAt, insert: 'USER' } })
 
@@ -491,29 +215,27 @@ describe('Editor review-chunk view', function () {
     )
   })
 
-  it('never renders controls over a region the user typed (#65)', function () {
+  it('never marks a region the user typed (#65)', function () {
     // Adjudication is a decision about a proposal. A paragraph the reviewer
     // edited themselves disagrees with the frozen reference just as loudly,
-    // but no packet claims it — so it carries no controls, no highlight, and
-    // no place in the outstanding count.
+    // but no packet claims it — so it carries no mark and no place in the
+    // outstanding set.
     const working = 'first proposed\n\nsecond typed by hand\n'
-    const { view } = createReviewView(working, {
-      suggestions: [replacementSuggestion(
-        working,
-        'baseline',
-        'proposed',
-        'opening',
-        'Sharpen the opening claim'
-      )]
-    })
+    const view = createReviewView(working, [replacementSuggestion(
+      working,
+      'baseline',
+      'proposed',
+      'opening',
+      'Sharpen the opening claim'
+    )])
 
     const chunks = chunksOf(view)
     assert.equal(chunks.length, 1, 'only the attributed edit is adjudicable')
     assert.equal(view.state.doc.sliceString(chunks[0].anchors[0].from, chunks[0].anchors[0].to), 'proposed')
-    assert.equal(view.dom.querySelectorAll('.cm-chunkControls').length, 1)
-    assert.equal(
-      view.dom.querySelector<HTMLElement>('.cm-reviewStatusLabel')?.textContent,
-      '1 outstanding'
+    assert.deepEqual(
+      [...view.dom.querySelectorAll<HTMLElement>('.cm-changedText')].map(el => el.textContent),
+      ['proposed'],
+      'the user\'s own paragraph is not marked as a proposal'
     )
     const typedLine = view.state.doc.line(3)
     assert.equal(
@@ -523,12 +245,12 @@ describe('Editor review-chunk view', function () {
     )
   })
 
-  it('renders a small replacement as inline track changes with one controls strip', function () {
+  it('renders a small replacement as inline track changes', function () {
     const baseline = ['alpha', '', 'the original wording stays here', ''].join('\n')
     const proposed = baseline.replace('original wording', 'revised wording')
-    const { view } = createReviewView(proposed, {
-      suggestions: [replacementSuggestion(proposed, 'original', 'revised', 'wording', 'Revise the wording')]
-    })
+    const view = createReviewView(proposed, [
+      replacementSuggestion(proposed, 'original', 'revised', 'wording', 'Revise the wording')
+    ])
 
     assert.equal(view.dom.querySelector('.cm-deletedChunk'), null, 'the delta renders in the document flow, not a block above it')
     const deleted = view.dom.querySelector<HTMLElement>('del.cm-deletedText')
@@ -541,47 +263,34 @@ describe('Editor review-chunk view', function () {
       'the originalrevised wording stays here',
       'the deleted span reads before its replacement, in one pass'
     )
-
-    const strips = view.dom.querySelectorAll<HTMLElement>('.cm-chunkControls')
-    assert.equal(strips.length, 1)
-    assert.ok(strips[0].querySelector('button.cm-review-diff-control.accept') !== null)
-    assert.ok(strips[0].querySelector('button.cm-review-diff-control.reject') !== null)
-    assert.ok(strips[0].querySelector('input.cm-chunkCommentInput') !== null)
-    assert.equal(
-      strips[0].querySelector<HTMLElement>('.cm-chunkDescription')?.textContent,
-      'Revise the wording'
-    )
+    assert.deepEqual(adjudicationControlsIn(view), { buttons: 0, fields: 0, panels: 0 })
   })
 
-  it('renders a whole-line deletion as inline strikethrough with its controls strip', function () {
+  it('renders a whole-line deletion as inline strikethrough', function () {
     const working = 'prefix\nunchanged\n'
-    const { view } = createReviewView(working, {
-      suggestions: [{
-        suggestionId: 'removed-lines',
-        removedText: 'first removed\nsecond removed',
-        anchors: [{
-          from: working.indexOf('unchanged'),
-          to: working.indexOf('unchanged')
-        }],
-        seam: working.indexOf('unchanged'),
-        description: 'proposal'
-      }]
-    })
+    const view = createReviewView(working, [{
+      suggestionId: 'removed-lines',
+      removedText: 'first removed\nsecond removed',
+      anchors: [{
+        from: working.indexOf('unchanged'),
+        to: working.indexOf('unchanged')
+      }],
+      seam: working.indexOf('unchanged'),
+      description: 'proposal'
+    }])
 
     assert.equal(view.dom.querySelector('.cm-deletedChunk'), null)
     const deleted = view.dom.querySelectorAll<HTMLElement>('del.cm-deletedText')
     assert.equal(deleted.length, 1)
     assert.equal(deleted[0].textContent, 'first removed\nsecond removed')
-    const strips = view.dom.querySelectorAll<HTMLElement>('.cm-chunkControls')
-    assert.equal(strips.length, 1)
-    assert.ok(strips[0].querySelector('button.cm-review-diff-control.accept') !== null)
+    assert.deepEqual(adjudicationControlsIn(view), { buttons: 0, fields: 0, panels: 0 })
   })
 
   it('keeps a heavy rewrite merged in the document flow', function () {
     const working = 'completely different words now\n'
-    const { view } = createReviewView(working, {
-      suggestions: [replacementSuggestion(working, 'alpha beta gamma delta', 'completely different words now')]
-    })
+    const view = createReviewView(working, [
+      replacementSuggestion(working, 'alpha beta gamma delta', 'completely different words now')
+    ])
 
     assert.equal(view.dom.querySelector('.cm-deletedChunk'), null)
     const deleted = view.dom.querySelector<HTMLElement>('del.cm-deletedText')
@@ -590,7 +299,7 @@ describe('Editor review-chunk view', function () {
     assert.ok(line !== null && line !== undefined, 'the deleted span sits inside a document line')
     const lineText = line.textContent
     assert.ok(lineText !== null && lineText.includes('completely different words now'))
-    assert.equal(view.dom.querySelectorAll('.cm-chunkControls').length, 1)
+    assert.deepEqual(adjudicationControlsIn(view), { buttons: 0, fields: 0, panels: 0 })
   })
 
   it('suppresses live-preview rendering only over a range carrying a review chunk', function () {
@@ -598,9 +307,9 @@ describe('Editor review-chunk view', function () {
       'intro paragraph', '', '$$', 'p_a(C) = 10', '$$', '', 'closing paragraph', ''
     ].join('\n')
     const proposed = baseline.replace('p_a(C) = 10', 'g(C) = 10')
-    const { view } = createReviewView(proposed, {
-      suggestions: [replacementSuggestion(proposed, 'p_a(C) = 10', 'g(C) = 10')]
-    })
+    const view = createReviewView(proposed, [
+      replacementSuggestion(proposed, 'p_a(C) = 10', 'g(C) = 10')
+    ])
 
     assert.equal(
       rangeInPreviewSuppression(
@@ -616,9 +325,9 @@ describe('Editor review-chunk view', function () {
 
   it('uses half-open chunk overlap while preserving deletion-point suppression', function () {
     const adjacentText = 'ALPHA\nunchanged'
-    const adjacent = createReviewView(adjacentText, {
-      suggestions: [replacementSuggestion(adjacentText, 'alpha', 'ALPHA')]
-    }).view
+    const adjacent = createReviewView(adjacentText, [
+      replacementSuggestion(adjacentText, 'alpha', 'ALPHA')
+    ])
     const unchanged = adjacent.state.doc.line(2)
     assert.equal(
       rangeInPreviewSuppression(adjacent.state, unchanged.from, unchanged.to),
@@ -626,18 +335,16 @@ describe('Editor review-chunk view', function () {
     )
 
     const deletionText = 'prefix\nunchanged'
-    const deletion = createReviewView(deletionText, {
-      suggestions: [{
-        suggestionId: 'middle-deletion',
-        removedText: 'removed\n',
-        anchors: [{
-          from: deletionText.indexOf('unchanged'),
-          to: deletionText.indexOf('unchanged')
-        }],
-        seam: deletionText.indexOf('unchanged'),
-        description: 'proposal'
-      }]
-    }).view
+    const deletion = createReviewView(deletionText, [{
+      suggestionId: 'middle-deletion',
+      removedText: 'removed\n',
+      anchors: [{
+        from: deletionText.indexOf('unchanged'),
+        to: deletionText.indexOf('unchanged')
+      }],
+      seam: deletionText.indexOf('unchanged'),
+      description: 'proposal'
+    }])
     const surviving = deletion.state.doc.line(2)
     assert.equal(
       rangeInPreviewSuppression(deletion.state, surviving.from, surviving.to),
@@ -645,18 +352,16 @@ describe('Editor review-chunk view', function () {
     )
 
     const deletionAtEndText = 'prefix\nunchanged\ntail'
-    const deletionAtEnd = createReviewView(deletionAtEndText, {
-      suggestions: [{
-        suggestionId: 'later-deletion',
-        removedText: 'removed\n',
-        anchors: [{
-          from: deletionAtEndText.indexOf('tail'),
-          to: deletionAtEndText.indexOf('tail')
-        }],
-        seam: deletionAtEndText.indexOf('tail'),
-        description: 'proposal'
-      }]
-    }).view
+    const deletionAtEnd = createReviewView(deletionAtEndText, [{
+      suggestionId: 'later-deletion',
+      removedText: 'removed\n',
+      anchors: [{
+        from: deletionAtEndText.indexOf('tail'),
+        to: deletionAtEndText.indexOf('tail')
+      }],
+      seam: deletionAtEndText.indexOf('tail'),
+      description: 'proposal'
+    }])
     const beforeDeletion = deletionAtEnd.state.doc.line(2)
     const deletionChunks = chunksOf(deletionAtEnd)
     assert.equal(deletionChunks.length, 1)
@@ -678,7 +383,7 @@ describe('Editor review-chunk view', function () {
     // Reviews install and clear through compartment reconfiguration, which
     // changes no document, selection, or viewport — the renderer must still
     // rebuild, or widgets stay rendered over active chunks and hide their
-    // controls (and stay raw after the review clears).
+    // marks (and stay raw after the review clears).
     const working = 'see [text](https://example.com) here\n'
     const reviewCompartment = new Compartment()
     const view = new EditorView({
@@ -696,14 +401,7 @@ describe('Editor review-chunk view', function () {
 
     view.dispatch({
       effects: reviewCompartment.reconfigure(reviewChunksExtension({
-        reviewId: 'review-renderer-rebuild',
-        suggestions: [replacementSuggestion(working, 'old', 'text')],
-        chunkComments: [],
-        onDecide: async () => {},
-        onAcceptAll: async () => {},
-        onClear: async () => {},
-        onComment: async () => {},
-        onChunkComment: async () => {}
+        suggestions: [replacementSuggestion(working, 'old', 'text')]
       }))
     })
     assert.equal(
@@ -729,15 +427,13 @@ describe('Editor review-chunk view', function () {
       .replace('second baseline', 'second proposed')
     const first = replacementSuggestion(proposed, 'baseline', 'proposed', 'first')
     const secondStart = proposed.indexOf('second proposed') + 'second '.length
-    const { view } = createReviewView(proposed, {
-      suggestions: [first, {
-        suggestionId: 'second',
-        removedText: 'baseline',
-        anchors: [{ from: secondStart, to: secondStart + 'proposed'.length }],
-        seam: secondStart,
-        description: 'proposal'
-      }]
-    })
+    const view = createReviewView(proposed, [first, {
+      suggestionId: 'second',
+      removedText: 'baseline',
+      anchors: [{ from: secondStart, to: secondStart + 'proposed'.length }],
+      seam: secondStart,
+      description: 'proposal'
+    }])
     const chunks = chunksOf(view)
     const anchorOf = (index: number): number =>
       view.state.doc.lineAt(chunks[index].anchors[0]?.from ?? chunks[index].seam).from
@@ -762,121 +458,17 @@ describe('Editor review-chunk view', function () {
     assert.equal(selectPreviousReviewChunk(view), false)
   })
 
-  it('shows outstanding progress and emits mass actions without mutating local review state', async function () {
-    const baseline = 'first baseline\n\nsecond baseline\n'
-    const proposed = baseline
-      .replace('first baseline', 'first proposed')
-      .replace('second baseline', 'second proposed')
-    const first = replacementSuggestion(proposed, 'baseline', 'proposed', 'first')
-    const secondStart = proposed.indexOf('second proposed') + 'second '.length
-    const { view, calls } = createReviewView(proposed, { suggestions: [first, {
-      suggestionId: 'second',
-      removedText: 'baseline',
-      anchors: [{ from: secondStart, to: secondStart + 'proposed'.length }],
-      seam: secondStart,
-      description: 'proposal'
-    }] })
-    const label = view.dom.querySelector<HTMLElement>('.cm-reviewStatusLabel')
-    const acceptAll = view.dom.querySelector<HTMLButtonElement>('button.cm-reviewAcceptAll')
-    const clear = view.dom.querySelector<HTMLButtonElement>('button.cm-reviewClear')
-    assert.equal(label?.textContent, '2 outstanding')
-    assert.ok(acceptAll !== null)
-    assert.ok(clear !== null)
-
-    // A mass action locks every control of the panel for its round trip, so
-    // the second click here lands on a disabled button and does nothing. That
-    // is the point: two sweeps must not be launched over one partition.
-    acceptAll.click()
-    assert.equal(acceptAll.disabled, true)
-    assert.equal(clear.disabled, true)
-    clear.click()
-    assert.equal(calls.acceptAll, 1)
-    assert.equal(calls.clear, 0)
-
-    // Once it settles the controls come back, and the pane has still changed
-    // nothing: only the provider's broadcast may do that.
-    await new Promise(resolve => setTimeout(resolve, 0))
-    assert.equal(acceptAll.disabled, false)
-    clear.click()
-    assert.equal(calls.clear, 1)
-    assert.equal(chunksOf(view).length, 2)
-    assert.equal(label?.textContent, '2 outstanding')
-  })
-
-  it('decides through the configuration on screen, not the one its widget was built with', async function () {
-    // Every review mutation broadcasts a new session and the pane
-    // reconfigures. A chunk nobody touched keeps its widget — CodeMirror
-    // reuses one whose `eq` reports it unchanged — so a control closed over
-    // the configuration it was BUILT with decides against a review state that
-    // has since moved on. The generation the provider fences on lives in that
-    // closure, and a click carrying the older one is refused.
-    const baseline = 'first baseline\n\nsecond baseline\n'
-    const proposed = baseline
-      .replace('first baseline', 'first proposed')
-      .replace('second baseline', 'second proposed')
-    const built: DecisionCall[] = []
-    const current: DecisionCall[] = []
-    const suggestions = [replacementSuggestion(proposed, 'baseline', 'proposed')]
-    const configFor = (sink: DecisionCall[]): Parameters<typeof reviewChunksExtension>[0] => ({
-      reviewId: 'review-test',
-      suggestions,
-      chunkComments: [],
-      onDecide: async (chunkId, decision) => {
-        sink.push({ chunkId, decision })
-      },
-      onAcceptAll: async () => {},
-      onClear: async () => {},
-      onComment: async () => {},
-      onChunkComment: async () => {}
-    })
-    const compartment = new Compartment()
-    const view = new EditorView({
-      parent: document.body,
-      state: EditorState.create({
-        doc: proposed,
-        extensions: [compartment.of(reviewChunksExtension(configFor(built)))]
-      })
-    })
-    views.push(view)
-    const chunks = chunksOf(view)
-    const widgetBefore = view.dom.querySelector('.cm-chunkControls')
-
-    view.dispatch({
-      effects: compartment.reconfigure(reviewChunksExtension(configFor(current)))
-    })
-    assert.equal(
-      view.dom.querySelector('.cm-chunkControls'),
-      widgetBefore,
-      'the untouched chunk must keep its widget, or this proves nothing'
-    )
-
-    view.dom.querySelector<HTMLButtonElement>('button.cm-review-diff-control.accept')?.click()
-    await new Promise(resolve => setTimeout(resolve, 0))
-    assert.deepEqual(current, [
-      { chunkId: chunks[0].suggestionId, decision: 'accept' }
-    ])
-    assert.deepEqual(built, [], 'the retired configuration must never be called')
-  })
-
   it('carries the styling scope as an editor attribute owned by CodeMirror', function () {
     // The class used to be added by hand on view.dom, where CodeMirror's
-    // attribute syncing wiped it on the next re-measure or focus change:
-    // the controls kept working but dropped to unstyled buttons. Declared
-    // as an editorAttributes facet, CodeMirror itself maintains it.
+    // attribute syncing wiped it on the next re-measure or focus change.
+    // Declared as an editorAttributes facet, CodeMirror itself maintains it.
     const compartment = new Compartment()
     const view = new EditorView({
       parent: document.body,
       state: EditorState.create({
         doc: 'proposal\n',
         extensions: [compartment.of(reviewChunksExtension({
-          reviewId: 'review-test',
-          suggestions: [replacementSuggestion('proposal\n', 'baseline', 'proposal')],
-          chunkComments: [],
-          onDecide: async () => {},
-          onAcceptAll: async () => {},
-          onClear: async () => {},
-          onComment: async () => {},
-          onChunkComment: async () => {}
+          suggestions: [replacementSuggestion('proposal\n', 'baseline', 'proposal')]
         }))]
       })
     })
@@ -898,114 +490,31 @@ describe('Editor review-chunk view', function () {
     )
   })
 
-  it('unmounts the status panel once nothing is outstanding', function () {
-    // The provider's accept-echo moves the reference onto the working text:
-    // the review survives, resolved and awaiting its save, but the panel is
-    // chunk controls and must leave with the last chunk.
+  it('drops a chunk\'s marks when the provider reports it decided', function () {
+    // The provider's echo is the ONLY thing that resolves a chunk here: the
+    // pane reconfigures from the new broadcast and the decided chunk's marks
+    // leave with it. Nothing local decided anything.
     const compartment = new Compartment()
-    const configFor = (suggestions: ReviewSuggestionView[]): Parameters<typeof reviewChunksExtension>[0] => ({
-      reviewId: 'review-test',
-      suggestions,
-      chunkComments: [],
-      onDecide: async () => {},
-      onAcceptAll: async () => {},
-      onClear: async () => {},
-      onComment: async () => {},
-      onChunkComment: async () => {}
-    })
     const view = new EditorView({
       parent: document.body,
       state: EditorState.create({
         doc: 'proposal\n',
-        extensions: [compartment.of(reviewChunksExtension(configFor([
-          replacementSuggestion('proposal\n', 'baseline', 'proposal')
-        ])))]
+        extensions: [compartment.of(reviewChunksExtension({
+          suggestions: [replacementSuggestion('proposal\n', 'baseline', 'proposal')]
+        }))]
       })
     })
     views.push(view)
-    assert.ok(
-      view.dom.querySelector('.cm-reviewStatusPanel') !== null,
-      'an outstanding chunk mounts the panel'
-    )
+    assert.equal(view.dom.querySelectorAll('del.cm-deletedText').length, 1)
 
     view.dispatch({
-      effects: compartment.reconfigure(reviewChunksExtension(configFor([])))
+      effects: compartment.reconfigure(reviewChunksExtension({ suggestions: [] }))
     })
+    assert.equal(chunksOf(view).length, 0)
     assert.equal(
-      view.dom.querySelector('.cm-reviewStatusPanel'),
-      null,
-      'a resolved review shows no bar of dead controls'
-    )
-  })
-
-  it('lets a mass action end the review without an unhandled rejection', async function () {
-    // Rejecting the last chunks ends the review, and the provider's broadcast
-    // takes this extension out of the state. The panel's post-action render
-    // then runs against a state carrying no review at all: reading the field
-    // unconditionally threw "Field is not present in this state" out of a
-    // promise nobody was holding, and in the running app that error covered
-    // the window with the dev-server overlay and blocked every later click.
-    const compartment = new Compartment()
-    let cleared = 0
-    let view: EditorView
-    const extension = reviewChunksExtension({
-      reviewId: 'review-test',
-      suggestions: [replacementSuggestion('proposal\n', 'baseline', 'proposal')],
-      chunkComments: [],
-      onDecide: async () => {},
-      onAcceptAll: async () => {},
-      onClear: async () => {
-        cleared += 1
-        // What MainEditor does when the provider reports the review gone.
-        view.dispatch({ effects: compartment.reconfigure([]) })
-      },
-      onComment: async () => {},
-      onChunkComment: async () => {}
-    })
-    view = new EditorView({
-      parent: document.body,
-      state: EditorState.create({
-        doc: 'proposal\n',
-        extensions: [compartment.of(extension)]
-      })
-    })
-    views.push(view)
-
-    const rejections: unknown[] = []
-    const collect = (reason: unknown): void => { rejections.push(reason) }
-    process.on('unhandledRejection', collect)
-    view.dom.querySelector<HTMLButtonElement>('button.cm-reviewClear')?.click()
-    await new Promise(resolve => setTimeout(resolve, 0))
-    await new Promise(resolve => setTimeout(resolve, 0))
-    process.off('unhandledRejection', collect)
-
-    assert.equal(cleared, 1)
-    assert.deepEqual(rejections, [], 'ending a review must raise nothing')
-    assert.equal(
-      view.dom.querySelector('.cm-reviewStatusPanel'),
-      null,
-      'the ended review takes its panel with it'
-    )
-  })
-
-  it('emits trimmed review comments and never renders committed ones', function () {
-    const { view, calls } = createReviewView('proposal', {
-      suggestions: [replacementSuggestion('proposal', 'baseline', 'proposal')]
-    })
-
-    const input = view.dom.querySelector<HTMLInputElement>('.cm-reviewCommentInput')
-    const submit = view.dom.querySelector<HTMLButtonElement>('.cm-reviewCommentSubmit')
-    assert.ok(input !== null)
-    assert.ok(submit !== null)
-    input.value = '  overall note  '
-    input.dispatchEvent(new window.Event('input', { bubbles: true }))
-    submit.click()
-
-    assert.deepEqual(calls.comments, ['overall note'])
-    assert.equal(
-      view.dom.querySelector('.cm-reviewComment'),
-      null,
-      'committed comments are the agent\'s data: the panel never lists them'
+      view.dom.querySelectorAll('del.cm-deletedText').length,
+      0,
+      'a resolved review leaves no mark behind'
     )
   })
 
@@ -1031,9 +540,9 @@ describe('Editor review-chunk view', function () {
     const proposed = lines
       .map(line => line === 'line 30' ? 'line 30 corrected' : line)
       .join('\n')
-    const { view } = createReviewView(proposed, {
-      suggestions: [replacementSuggestion(proposed, 'line 30', 'line 30 corrected')]
-    })
+    const view = createReviewView(proposed, [
+      replacementSuggestion(proposed, 'line 30', 'line 30 corrected')
+    ])
 
     assert.equal(chunksOf(view).length, 1)
     assert.equal(view.dom.querySelectorAll('.cm-collapsedLines').length, 0)

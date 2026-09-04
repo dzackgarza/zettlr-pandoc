@@ -50,8 +50,12 @@ import type {
   AgentEventType,
   ProposalClaim,
 } from '@dts/common/agent-api'
-import type { ReviewDiffSession } from '@dts/common/review-diff'
-import type { ActiveReviewState } from '@dts/common/review-domain'
+import type {
+  AnnotationActor,
+  AnnotationMessage,
+  TextAnnotation,
+} from '@dts/common/annotation-domain'
+import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import { type TabManager } from '@providers/documents/document-tree/tab-manager'
 import type { ConfigOptions } from '@providers/config/get-config-template'
 import ProviderContract, { type IPCMessage } from '@providers/provider-contract'
@@ -77,18 +81,20 @@ import { type AppServiceContainer } from '../../app-service-container'
 import { DocumentTree, type DTLeaf } from './document-tree'
 import {
   type ReviewStatus,
+  collaborationSessionFor,
 } from './review-diff-store'
 import {
-  ReviewApplicationService,
+  CollaborationApplicationService,
   type AgentEventPayload,
+  type AnnotationFailure,
   type PreparedDocumentMutation,
-  type ReviewDocumentAuthority,
+  type CollaborationDocumentAuthority,
   type ReviewFailure,
   type ReviewMutationPrecondition,
   type ReviewQueryPort,
   type ReviewSavePreparation,
   type SubmittedProposal,
-} from './review-application-service'
+} from './document-collaboration-application-service'
 import {
   type AcceptAllChunksResponse,
   type AddReviewCommentResponse,
@@ -191,22 +197,12 @@ export interface DocumentsUpdateContext {
    */
   targetRange?: SourceRange
   /**
-   * Additive (issue #34): a validated single-document diff proposition to
-   * mount in the active editor. For REVIEW_DIFF broadcasts, windowId/leafId
-   * identify the source pane whose status update has already applied locally.
+   * A document's whole collaboration state — its annotations, and its
+   * review if one is active — as one snapshot. Broadcast on every
+   * annotation and review mutation (DP_EVENTS.DOCUMENT_COLLABORATION); the
+   * renderer's document-collaboration Pinia store is the only reader.
    */
-  reviewDiffSession?: ReviewDiffSession
-  /** Signal that a review was closed/completed/invalidated. */
-  reviewCleared?: boolean
-  /** The reviewId that was cleared, for renderer session matching. */
-  reviewId?: string
-  /** Provider-owned review state. */
-  reviewState?: {
-    reviewId: string
-    generation: number
-    workingText: string
-    unresolvedChunks: number
-  }
+  collaborationSession?: DocumentCollaborationSession
   /**
    * The renderer-ready failure payload for FILE_REMOTE_CHANGE_ERROR events.
    * The message is suitable for the visible error surface; diagnostic retains
@@ -373,9 +369,12 @@ export type DocumentManagerIPCContract = {
     request: { payload?: undefined }
     response: string[]
   }
-  'get-review-diff-session': {
+  // The store's hydration pull: one caller resolves it and caches the
+  // result, every other pane of the same path reads the cache. Every
+  // subsequent update reaches the store through the broadcast alone.
+  'get-collaboration-session': {
     request: { payload: { path: string } }
-    response: ReviewDiffSession | undefined
+    response: DocumentCollaborationSession | undefined
   }
   'move-file': {
     request: {
@@ -469,6 +468,44 @@ export interface ReviewCommentInput {
 }
 
 /**
+ * The owner comments on a selection. `path` resolves to the loaded
+ * document's documentId inside the handler; there is no `actor` field here
+ * because the renderer's owner-facing channel is the only caller and the
+ * handler hardcodes `'owner'` — an agent has no path to this channel at all.
+ */
+export interface CreateAnnotationIpcInput {
+  path: string
+  from: number
+  to: number
+  instruction: string
+  expectedAnnotationGeneration: number
+}
+
+/** One more turn of an annotation thread, posted by the owner. */
+export interface AddAnnotationMessageIpcInput {
+  path: string
+  annotationId: string
+  text: string
+  expectedAnnotationGeneration: number
+}
+
+/** The shape shared by resolve, reopen, and delete: an id and a fence. */
+export interface AnnotationLifecycleIpcInput {
+  path: string
+  annotationId: string
+  expectedAnnotationGeneration: number
+}
+
+/** Reattach carries the owner's freshly picked range alongside the id. */
+export interface ReattachAnnotationIpcInput {
+  path: string
+  annotationId: string
+  from: number
+  to: number
+  expectedAnnotationGeneration: number
+}
+
+/**
  * The document operations the renderer invokes on their own typed channels,
  * one handler signature each. This provider owns the schema; the renderer
  * bridge composes it, so a wrong payload or a changed return type is a
@@ -489,11 +526,29 @@ export type DocumentIpcHandlers = {
   'documents:add-review-comment': (
     input: ReviewCommentInput,
   ) => AddReviewCommentResponse | ReviewFailure
+  'documents:create-annotation': (
+    input: CreateAnnotationIpcInput,
+  ) => TextAnnotation | AnnotationFailure
+  'documents:add-annotation-message': (
+    input: AddAnnotationMessageIpcInput,
+  ) => AnnotationMessage | AnnotationFailure
+  'documents:resolve-annotation': (
+    input: AnnotationLifecycleIpcInput,
+  ) => TextAnnotation | AnnotationFailure
+  'documents:reopen-annotation': (
+    input: AnnotationLifecycleIpcInput,
+  ) => TextAnnotation | AnnotationFailure
+  'documents:reattach-annotation': (
+    input: ReattachAnnotationIpcInput,
+  ) => TextAnnotation | AnnotationFailure
+  'documents:delete-annotation': (
+    input: AnnotationLifecycleIpcInput,
+  ) => TextAnnotation | AnnotationFailure
 }
 
 export default class DocumentManager
   extends ProviderContract
-  implements ReviewDocumentAuthority
+  implements CollaborationDocumentAuthority
 {
   /**
    * This array holds all open windows, here represented as document trees
@@ -564,17 +619,13 @@ export default class DocumentManager
   private readonly _documentIdByPath: Map<string, string>
 
   /**
-   * One persisted sidecar per reviewed file, in app data, keyed by canonical
-   * path. Written through on every review mutation, so closing a reviewed
-   * file (or crashing) destroys nothing; opening the file reattaches.
+   * The one owner of a document's collaboration transactions — its review
+   * and its annotations: per-document locking, persist-before-commit
+   * ordering, and committed-event emission. Every mutation of either half,
+   * from every transport, runs through it, and one sidecar per document (in
+   * app data, keyed by canonical path) is what it writes through to.
    */
-
-  /**
-   * The one owner of review transactions: per-document locking,
-   * persist-before-commit ordering, and committed-event emission. Every
-   * review mutation from every transport runs through it.
-   */
-  private readonly _reviewApplication: ReviewApplicationService
+  private readonly _reviewApplication: CollaborationApplicationService
 
   /**
    * This holds all currently opened documents somewhere across the app.
@@ -604,7 +655,7 @@ export default class DocumentManager
     this._ignoreChanges = []
     this._remoteChangeDialogShownFor = []
     this._remoteChangeErrorShownFor = []
-    this._reviewApplication = new ReviewApplicationService({
+    this._reviewApplication = new CollaborationApplicationService({
       authority: this,
       sidecarDirectory: path.join(app.getPath('userData'), 'review-sidecars'),
       emit: (event, payload) => {
@@ -728,6 +779,58 @@ export default class DocumentManager
     operations.handle('documents:add-review-comment', async (_event, input) => {
       return await this.addReviewComment(input.reviewId, input.text, input.expectedReviewGeneration)
     })
+    // The owner-facing annotation channels. Each resolves `path` to a
+    // documentId before touching the application service, and each
+    // hardcodes 'owner' as the actor — the renderer has no field to smuggle
+    // a different actor through, since the input types above declare none.
+    operations.handle('documents:create-annotation', async (_event, input) => {
+      const documentId = this.getDocumentId(input.path)
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path)
+      }
+      return await this.createAnnotation(
+        documentId, 'owner', input.from, input.to, input.instruction, input.expectedAnnotationGeneration,
+      )
+    })
+    operations.handle('documents:add-annotation-message', async (_event, input) => {
+      const documentId = this.getDocumentId(input.path)
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path)
+      }
+      return await this.addAnnotationMessage(
+        documentId, input.annotationId, 'owner', input.text, undefined, input.expectedAnnotationGeneration,
+      )
+    })
+    operations.handle('documents:resolve-annotation', async (_event, input) => {
+      const documentId = this.getDocumentId(input.path)
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path)
+      }
+      return await this.resolveAnnotation(documentId, input.annotationId, 'owner', input.expectedAnnotationGeneration)
+    })
+    operations.handle('documents:reopen-annotation', async (_event, input) => {
+      const documentId = this.getDocumentId(input.path)
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path)
+      }
+      return await this.reopenAnnotation(documentId, input.annotationId, 'owner', input.expectedAnnotationGeneration)
+    })
+    operations.handle('documents:reattach-annotation', async (_event, input) => {
+      const documentId = this.getDocumentId(input.path)
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path)
+      }
+      return await this.reattachAnnotation(
+        documentId, input.annotationId, 'owner', input.from, input.to, input.expectedAnnotationGeneration,
+      )
+    })
+    operations.handle('documents:delete-annotation', async (_event, input) => {
+      const documentId = this.getDocumentId(input.path)
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path)
+      }
+      return await this.deleteAnnotation(documentId, input.annotationId, 'owner', input.expectedAnnotationGeneration)
+    })
 
     // Finally, listen to events from the renderer
     ipcMain.handle('documents-provider', async (event, message: DocumentManagerIPCAPI) => {
@@ -770,16 +873,9 @@ export default class DocumentManager
         case 'get-file-modification-status': {
           return this.documents.filter((x) => this.isModified(x.filePath)).map((x) => x.filePath)
         }
-        case 'get-review-diff-session': {
+        case 'get-collaboration-session': {
           const docId = this.getDocumentId(payload.path)
-          if (docId === undefined) {
-            return undefined
-          }
-          const review = this._reviewApplication.getReview(docId)
-          if (review === undefined) {
-            return undefined
-          }
-          return this._reviewSessionFor(payload.path, review)
+          return docId === undefined ? undefined : this._collaborationSessionFor(docId, payload.path)
         }
         case 'move-file': {
           const {
@@ -1083,7 +1179,7 @@ export default class DocumentManager
       this._app.log.info(`[Documents Manager] Closing window ${windowId}!`)
       for (const document of this._windowExclusiveDocuments(windowId)) {
         try {
-          await this._detachReview(document.documentId)
+          await this._detachCollaboration(document.documentId)
         } catch (err) {
           this._announceDetachFailure(document.filePath, err)
           return
@@ -1180,7 +1276,7 @@ export default class DocumentManager
     // Reattachment: a sidecar for this path means a review detached here.
     // On a verified fence this restores the buffer to the review's working
     // text, so the content and version returned must be read AFTER it.
-    await this._reattachReviewSidecar(doc)
+    await this._reattachCollaborationSidecar(doc)
 
     // The authority loaded a markdown buffer: feed the references provider's
     // live overlay (issue #53). Reporting on LOAD — not only on the first
@@ -1710,7 +1806,7 @@ current contents from the editor somewhere else, and restart the application.`,
         // document is about to leave the live registry, so detach that
         // preserved review before removing its working-text resolver.
         try {
-          await this._detachReview(openFile.documentId)
+          await this._detachCollaboration(openFile.documentId)
         } catch (err) {
           this._announceDetachFailure(filePath, err)
           return false
@@ -1729,7 +1825,7 @@ current contents from the editor somewhere else, and restart the application.`,
         // live registry. Detach before the splice so closed-file API reads do
         // not observe a review whose working-text authority is gone.
         try {
-          await this._detachReview(openFile.documentId)
+          await this._detachCollaboration(openFile.documentId)
         } catch (err) {
           this._announceDetachFailure(filePath, err)
           return false
@@ -1750,7 +1846,7 @@ current contents from the editor somewhere else, and restart the application.`,
       const _id = this.getDocumentId(filePath)
       if (_id !== undefined) {
         try {
-          await this._detachReview(_id)
+          await this._detachCollaboration(_id)
         } catch (err) {
           this._announceDetachFailure(filePath, err)
           return false
@@ -1820,7 +1916,7 @@ current contents from the editor somewhere else, and restart the application.`,
     const documentId = this.getDocumentId(filePath)
     if (documentId !== undefined) {
       try {
-        await this._detachReview(documentId)
+        await this._detachCollaboration(documentId)
       } catch (err) {
         // The file is gone from disk, so there is no reopening it to retry
         // the export; the review stays in memory and the buffer stays loaded
@@ -1989,6 +2085,11 @@ current contents from the editor somewhere else, and restart the application.`,
     if (openDoc === undefined) {
       return // Nothing to do
     }
+
+    // The collaboration sidecar is keyed by the OLD path's hash; carry it to
+    // the new path before anything else touches openDoc.filePath, so a crash
+    // between the two never leaves the sidecar unreachable under either name.
+    await this._reviewApplication.renameCollaboration(openDoc.documentId, oldPath, newPath)
 
     openDoc.filePath = newPath
     openDoc.descriptor.path = newPath
@@ -2180,7 +2281,7 @@ current contents from the editor somewhere else, and restart the application.`,
     const _id = this.getDocumentId(filePath)
     if (_id !== undefined) {
       try {
-        await this._detachReview(_id)
+        await this._detachCollaboration(_id)
       } catch (err) {
         // The reload is what would discard the in-memory review, so it does
         // not happen: the buffer and the review stay, and the renderer is
@@ -2560,8 +2661,8 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   // ==========================================================================
-  // ReviewDocumentAuthority — what the review application service may ask of
-  // the document authority, and nothing more.
+  // CollaborationDocumentAuthority — what the collaboration application
+  // service may ask of the document authority, and nothing more.
   // ==========================================================================
 
   public resolveDocumentPath(documentId: string): string | undefined {
@@ -2680,19 +2781,39 @@ current contents from the editor somewhere else, and restart the application.`,
     }
   }
 
-  public broadcastReviewState(documentId: string): void {
+  /**
+   * Broadcast a document's whole collaboration state — annotations, and
+   * review if one is active — as one DocumentCollaborationSession. Every
+   * annotation and review mutation ends here: one event, one shape, so a
+   * pane and the annotations panel can never observe one half updated and
+   * the other stale.
+   */
+  public broadcastCollaborationState(documentId: string): void {
     const filePath = this.getDocumentPath(documentId)
     if (filePath === undefined) {
       return
     }
-    this._broadcastReviewState(filePath, this._reviewApplication.getReview(documentId))
+    const session = this._collaborationSessionFor(documentId, filePath)
+    if (session === undefined) {
+      return
+    }
+    this.broadcastEvent(DP_EVENTS.DOCUMENT_COLLABORATION, {
+      filePath,
+      collaborationSession: session,
+    })
   }
 
-  public broadcastReviewCleared(documentId: string, reviewId: string): void {
-    const filePath = this.getDocumentPath(documentId)
-    if (filePath !== undefined) {
-      this._broadcastReviewCleared(filePath, reviewId)
-    }
+  /**
+   * A review closed, completed, or was invalidated. The service has already
+   * removed it before calling this, so the rebuilt session naturally reports
+   * `review: undefined` — the same one broadcast path as every other
+   * collaboration change, with no second wire shape for "cleared" to drift
+   * from the first. `reviewId` is kept on the signature because the
+   * CollaborationDocumentAuthority seam (owned by M3) declares it; nothing
+   * here still needs the value once the rebuilt session already says so.
+   */
+  public broadcastReviewCleared(documentId: string, _reviewId: string): void {
+    this.broadcastCollaborationState(documentId)
   }
 
   // ==========================================================================
@@ -2947,6 +3068,15 @@ current contents from the editor somewhere else, and restart the application.`,
     return this._documentIdByPath.get(filePath)
 }
 
+  /** The typed refusal every owner-facing annotation channel gives an unresolved path. */
+  private _annotationDocumentNotFound(filePath: string): AnnotationFailure {
+    return {
+      ok: false,
+      code: 'DOCUMENT_NOT_FOUND',
+      message: `No open document at ${filePath}.`,
+    }
+  }
+
   public ensureDocumentId(filePath: string): string {
     return this._assignDocumentId(filePath)
   }
@@ -2986,16 +3116,18 @@ current contents from the editor somewhere else, and restart the application.`,
    * An invalidated review is the one exception. Its in-process resolution
    * was always destruction (the disk moved underneath it, and reloading
    * from disk closes it), so detaching would only preserve a review that
-   * can never be decided again — the sidecar is deleted instead.
+   * can never be decided again — it is dropped instead. The same document's
+   * annotations are written through regardless: they outlive the review
+   * that was answering them.
    *
    * A failed write ABORTS the close. It throws, the review stays in memory,
    * the document stays open, and the sidecar keeps its previous valid state.
    * Catching the error and closing anyway is what turned an unwritable
    * sidecar into a silently destroyed review.
    */
-  private async _detachReview(documentId: string): Promise<void> {
+  private async _detachCollaboration(documentId: string): Promise<void> {
     await this._reviewApplication.withDocumentLock(documentId, async () => {
-      await this._reviewApplication.detachReview(documentId)
+      await this._reviewApplication.detachCollaboration(documentId)
     })
   }
 
@@ -3028,12 +3160,12 @@ current contents from the editor somewhere else, and restart the application.`,
 
   /**
    * The user's "Don't save" answer, applied to one document. DESTROY, where
-   * _detachReview preserves: the bytes thrown away die everywhere this
+   * _detachCollaboration preserves: the bytes thrown away die everywhere this
    * provider captured them — the buffer, the in-memory review, and the
    * review's sidecar file.
    *
    * Every close prompt used to hand-roll this as
-   * `lastSavedVersion = currentVersion` plus _detachReview, and both halves
+   * `lastSavedVersion = currentVersion` plus _detachCollaboration, and both halves
    * reversed the decision. Silencing the dirty flag left the discarded text
    * in the buffer, where a pane in another window still showed it and the
    * next save would write it. Detaching wrote that same live text through to
@@ -3051,7 +3183,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * the claim true.
    *
    * The sidecar deletion is deliberately NOT wrapped in the error handling
-   * _detachReview uses: a discard whose file removal failed leaves those
+   * _detachCollaboration uses: a discard whose file removal failed leaves those
    * bytes reattachable, and swallowing that would reinstate the defect. It
    * throws, and the close it was called from aborts.
    */
@@ -3069,7 +3201,7 @@ current contents from the editor somewhere else, and restart the application.`,
       return
     }
     const diskContents = await this._app.fsal.loadAnySupportedFile(doc.filePath)
-    await this._reviewApplication.discardReview(
+    await this._reviewApplication.discardCollaboration(
       doc.documentId,
       doc.filePath,
       diskContents,
@@ -3099,17 +3231,20 @@ current contents from the editor somewhere else, and restart the application.`,
    * review to its reference. A fence mismatch is external drift observed
    * across a gap in time instead of within a process, and gets the same
    * terminal treatment drift-then-reload gets in-process: the review is
-   * announced invalidated and destroyed (its sidecar deleted), and the file
-   * opens with the disk content preserved.
+   * announced invalidated and destroyed, and the file opens with the disk
+   * content preserved. The document's annotations survive that; their
+   * anchors become `orphaned` and wait for the owner to reattach them.
    */
-  private async _reattachReviewSidecar(doc: Document): Promise<void> {
+  private async _reattachCollaborationSidecar(doc: Document): Promise<void> {
     try {
-      const restored = await this._reviewApplication.reattachReview(
+      const restored = await this._reviewApplication.reattachCollaboration(
         doc.documentId,
         doc.filePath,
         doc.lastSavedContent,
       )
-      if (restored === undefined) {
+      // Annotations restore silently: only a restored review gives the
+      // sidecar's working text a claim on the buffer.
+      if (restored?.workingText === undefined) {
         return
       }
       this._applyWorkingTextToDocument(doc.filePath, restored.workingText)
@@ -3273,7 +3408,7 @@ current contents from the editor somewhere else, and restart the application.`,
       const detached = (await this._reviewApplication.listReviewQueries()).find(
         (query) =>
           !query.attached &&
-          query.sidecar.packets.some((packet) => packet.packetId === packetId),
+          query.sidecar.review.packets.some((packet) => packet.packetId === packetId),
       )
       if (detached !== undefined && !detached.attached) {
         return {
@@ -3282,7 +3417,7 @@ current contents from the editor somewhere else, and restart the application.`,
           message:
             `The reviewed document ${detached.sidecar.documentPath} is not open. ` +
             'Open it to reattach this review, then retract this packet.',
-          reviewId: detached.sidecar.reviewId,
+          reviewId: detached.sidecar.review.reviewId,
           canClearUnresolved: false,
         }
       }
@@ -3291,14 +3426,129 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * The owner comments on a stretch of the document. Not reachable from the
+   * agent HTTP API — only the renderer's owner-facing IPC calls this with
+   * `actor: 'owner'`.
+   */
+  public async createAnnotation(
+    documentId: string,
+    actor: AnnotationActor,
+    from: number,
+    to: number,
+    instruction: string,
+    expectedAnnotationGeneration: number,
+  ): Promise<TextAnnotation | AnnotationFailure> {
+    return this._reviewApplication.createAnnotation({
+      documentId,
+      actor,
+      from,
+      to,
+      instruction,
+      expectedAnnotationGeneration,
+    })
+  }
+
+  /**
+   * One more turn of an annotation thread. The only annotation mutation the
+   * agent HTTP API exposes — every other move routes through `actor` and is
+   * refused by the pure transition (I3).
+   */
+  public async addAnnotationMessage(
+    documentId: string,
+    annotationId: string,
+    actor: AnnotationActor,
+    text: string,
+    clientRequestId: string | undefined,
+    expectedAnnotationGeneration: number,
+  ): Promise<AnnotationMessage | AnnotationFailure> {
+    return this._reviewApplication.addAnnotationMessage({
+      documentId,
+      annotationId,
+      actor,
+      text,
+      clientRequestId,
+      expectedAnnotationGeneration,
+    })
+  }
+
+  /** Owner-only lifecycle move (I3); not wired to any agent HTTP route. */
+  public async resolveAnnotation(
+    documentId: string,
+    annotationId: string,
+    actor: AnnotationActor,
+    expectedAnnotationGeneration: number,
+  ): Promise<TextAnnotation | AnnotationFailure> {
+    return this._reviewApplication.resolveAnnotation({
+      documentId,
+      annotationId,
+      actor,
+      expectedAnnotationGeneration,
+    })
+  }
+
+  /** Owner-only lifecycle move (I3); not wired to any agent HTTP route. */
+  public async reopenAnnotation(
+    documentId: string,
+    annotationId: string,
+    actor: AnnotationActor,
+    expectedAnnotationGeneration: number,
+  ): Promise<TextAnnotation | AnnotationFailure> {
+    return this._reviewApplication.reopenAnnotation({
+      documentId,
+      annotationId,
+      actor,
+      expectedAnnotationGeneration,
+    })
+  }
+
+  /** Owner-only lifecycle move (I3); not wired to any agent HTTP route. */
+  public async reattachAnnotation(
+    documentId: string,
+    annotationId: string,
+    actor: AnnotationActor,
+    from: number,
+    to: number,
+    expectedAnnotationGeneration: number,
+  ): Promise<TextAnnotation | AnnotationFailure> {
+    return this._reviewApplication.reattachAnnotation({
+      documentId,
+      annotationId,
+      actor,
+      from,
+      to,
+      expectedAnnotationGeneration,
+    })
+  }
+
+  /** Owner-only lifecycle move (I3); not wired to any agent HTTP route. */
+  public async deleteAnnotation(
+    documentId: string,
+    annotationId: string,
+    actor: AnnotationActor,
+    expectedAnnotationGeneration: number,
+  ): Promise<TextAnnotation | AnnotationFailure> {
+    return this._reviewApplication.deleteAnnotation({
+      documentId,
+      annotationId,
+      actor,
+      expectedAnnotationGeneration,
+    })
+  }
+
+  /**
    * Get the review store for direct agent API method dispatch.
    */
-  public get reviewStore(): ReviewApplicationService['reviewStore'] {
+  public get reviewStore(): CollaborationApplicationService['reviewStore'] {
     return this._reviewApplication.reviewStore
   }
 
   /** Read-only review projections for transport providers. */
   public get reviewQueries(): ReviewQueryPort {
+    return this._reviewApplication
+  }
+
+  /** Read-only annotation projections for transport providers. */
+  public get annotationQueries(): Pick<CollaborationApplicationService, 'getAnnotations'> {
     return this._reviewApplication
   }
 
@@ -3429,72 +3679,27 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Broadcast the current review state to all renderers displaying a document.
-   * The session carries the mapped suggestions and decision identifiers.
-   * Panes render this state locally and report no derived review state.
+   * The DocumentCollaborationSession every renderer pane and the
+   * annotations panel read, built by the one pure constructor of that shape
+   * (review-diff-store.ts's collaborationSessionFor) so a spec can prove the
+   * same merge production broadcasts. `undefined` only when the document
+   * itself is not open — annotations and review are each a real
+   * empty/absent answer on their own, never a reason to skip the broadcast.
    */
-  private _broadcastReviewState(
+  private _collaborationSessionFor(
+    documentId: string,
     filePath: string,
-    review: ActiveReviewState | undefined,
-  ): void {
-    if (review === undefined) {
-      return
-    }
-    this.broadcastEvent(DP_EVENTS.REVIEW_DIFF, {
-      filePath,
-      reviewDiffSession: this._reviewSessionFor(filePath, review),
-    })
-  }
-
-  /**
-   * The one constructor of the session shape a pane draws from: proposed
-   * suggestion entities and their source descriptions.
-   */
-  private _reviewSessionFor(
-    filePath: string,
-    review: ActiveReviewState,
-  ): ReviewDiffSession {
+  ): DocumentCollaborationSession | undefined {
     const document = this.documents.find((candidate) => candidate.filePath === filePath)
     if (document === undefined) {
-      throw new Error(`Review ${review.reviewId} has no open document ${filePath}`)
+      return undefined
     }
-    return {
-      id: review.reviewId,
-      reviewGeneration: review.generation,
+    return collaborationSessionFor({
+      documentId,
       documentPath: filePath,
       workingText: document.document.toString(),
-      suggestions: review.suggestions
-        .filter((suggestion) => suggestion.state === 'proposed')
-        .map((suggestion) => {
-          const packet = review.packets.find(
-            (candidate) => candidate.packetId === suggestion.packetId,
-          )
-          if (packet === undefined) {
-            throw new Error(`Suggestion ${suggestion.suggestionId} has no packet`)
-          }
-          return {
-            suggestionId: suggestion.suggestionId,
-            removedText: suggestion.removedText,
-            anchors: suggestion.anchors.map((span) => ({ ...span })),
-            seam: suggestion.seam,
-            description: packet.description,
-          }
-        }),
-      chunkComments: review.chunkComments.map((note) => ({ ...note })),
-    }
-  }
-
-  /**
-   * Broadcast a review-cleared signal to all renderers displaying a document.
-   * Tells the renderer to exit review mode (clear review mode
-   * when the provider closes or invalidates the session).
-   */
-  private _broadcastReviewCleared(filePath: string, reviewId: string): void {
-    this.broadcastEvent(DP_EVENTS.REVIEW_DIFF, {
-      filePath,
-      reviewDiffSession: undefined,
-      reviewCleared: true,
-      reviewId,
+      review: this._reviewApplication.getReview(documentId),
+      annotations: this._reviewApplication.getAnnotations(documentId),
     })
   }
 

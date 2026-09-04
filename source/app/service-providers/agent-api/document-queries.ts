@@ -14,6 +14,8 @@
  */
 
 import type {
+  AnnotationListResponse,
+  AnnotationResponse,
   EditorContext,
   DocumentSummary,
   EditorViewSummary,
@@ -25,10 +27,12 @@ import type {
   WorkspaceDocumentEntry,
   WorkspaceFileEntry,
 } from "@dts/common/agent-api";
+import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
+import { Text } from "@codemirror/state";
 import { DocumentType } from "@dts/common/documents";
 import type DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
-import type { ReviewQueryPort } from "@providers/documents/review-application-service";
+import type { CollaborationApplicationService, ReviewQueryPort } from "@providers/documents/document-collaboration-application-service";
 import fs from "fs";
 import path from "path";
 import vm from "vm";
@@ -100,10 +104,90 @@ export interface AgentDocumentQueryHost {
   };
 }
 
+/**
+ * Read-only annotation projections for transport providers. Annotation
+ * mutation is a separate, narrower surface (DocumentManager.addAnnotationMessage)
+ * — the only annotation write the agent HTTP API exposes (I3).
+ */
+export type AnnotationQueryPort = Pick<CollaborationApplicationService, "getAnnotations">;
+
+/**
+ * Converts a UTF-16 code-unit offset into a 1-based line and column, the
+ * shape the agent API reports every annotation target in. `Text.lineAt`
+ * throws for an out-of-range offset rather than clamping — every offset
+ * reaching this function comes from a validated anchor, so that is the
+ * correct failure mode, not a defect to work around.
+ */
+function offsetToLineColumn(text: string, offset: number): { line: number; column: number } {
+  const line = Text.of(text.split("\n")).lineAt(offset);
+  return { line: line.number, column: offset - line.from + 1 };
+}
+
+/**
+ * Projects one annotation's anchor into the wire's flat, always-UTF-16
+ * target shape. `orphaned` carries no position: I6 says the honest answer to
+ * lost text is a marker and Reattach, never a guessed location.
+ */
+function buildAnnotationTarget(
+  anchor: TextAnnotation["anchor"],
+  workingText: string,
+): AnnotationResponse["target"] {
+  if (anchor.state === "range") {
+    const start = offsetToLineColumn(workingText, anchor.from);
+    const end = offsetToLineColumn(workingText, anchor.to);
+    return {
+      state: "range",
+      quotedText: anchor.quotedText,
+      from: anchor.from,
+      to: anchor.to,
+      line: start.line,
+      column: start.column,
+      endLine: end.line,
+      endColumn: end.column,
+    };
+  }
+  if (anchor.state === "point") {
+    const at = offsetToLineColumn(workingText, anchor.at);
+    return {
+      state: "point",
+      quotedText: anchor.quotedText,
+      at: anchor.at,
+      line: at.line,
+      column: at.column,
+      reason: anchor.reason,
+    };
+  }
+  return {
+    state: "orphaned",
+    quotedText: anchor.quotedText,
+    reason: anchor.reason,
+  };
+}
+
+function buildAnnotationResponse(
+  annotation: TextAnnotation,
+  annotationGeneration: number,
+  workingText: string,
+): AnnotationResponse {
+  return {
+    annotationId: annotation.annotationId,
+    documentId: annotation.documentId,
+    target: buildAnnotationTarget(annotation.anchor, workingText),
+    state: annotation.state,
+    messages: annotation.messages,
+    proposalActions: annotation.proposalActions,
+    annotationGeneration,
+    createdAt: annotation.createdAt,
+    updatedAt: annotation.updatedAt,
+    resolvedAt: annotation.resolvedAt,
+  };
+}
+
 export default class AgentDocumentQueries {
   constructor(
     private readonly documents: DocumentManager,
     private readonly reviews: ReviewQueryPort,
+    private readonly annotations: AnnotationQueryPort,
     private readonly app: AgentDocumentQueryHost,
     private readonly log: LogProvider,
   ) {}
@@ -171,6 +255,87 @@ export default class AgentDocumentQueries {
       }
     }
     return documents;
+  }
+
+  /**
+   * Every annotation of one open document. Undefined when documentId names no
+   * document this manager knows — the caller's signal to answer
+   * DOCUMENT_NOT_FOUND rather than an empty list. A known-but-closed document
+   * has no queryable annotation state: the sidecar is not scanned here.
+   */
+  public async listDocumentAnnotations(
+    documentId: string,
+    state: "open" | "resolved" | undefined,
+  ): Promise<AnnotationListResponse | undefined> {
+    const filePath = this.documents.getDocumentPath(documentId);
+    if (filePath === undefined) {
+      return undefined;
+    }
+    const document = this.documents.loadedDocuments.find(
+      (candidate) => candidate.documentId === documentId,
+    );
+    if (document === undefined) {
+      return { annotations: [] };
+    }
+    const workingText = document.document.toString();
+    const set: AnnotationSet = this.annotations.getAnnotations(documentId);
+    const items = state === undefined ? set.items : set.items.filter((item) => item.state === state);
+    return {
+      annotations: items.map((item) => buildAnnotationResponse(item, set.generation, workingText)),
+    };
+  }
+
+  /**
+   * Every annotation across every currently open document. `state` narrows to
+   * one lifecycle state and defaults to `open` — the annotations with a
+   * thread to read or reply to, matching the OpenAPI document's declared
+   * default.
+   */
+  public async listAnnotations(
+    state: "open" | "resolved" = "open",
+  ): Promise<AnnotationListResponse> {
+    const annotations: AnnotationResponse[] = [];
+    for (const document of this.documents.loadedDocuments) {
+      const workingText = document.document.toString();
+      const set: AnnotationSet = this.annotations.getAnnotations(document.documentId);
+      for (const item of set.items) {
+        if (item.state === state) {
+          annotations.push(buildAnnotationResponse(item, set.generation, workingText));
+        }
+      }
+    }
+    return { annotations };
+  }
+
+  /**
+   * Locate one annotation by id alone, across every open document — the
+   * lookup `GET /v1/annotations/{annotationId}` and the reply endpoint both
+   * need, since neither carries a documentId.
+   */
+  public async findAnnotationQuery(
+    annotationId: string,
+  ): Promise<{ documentId: string; annotation: TextAnnotation; annotationGeneration: number } | undefined> {
+    for (const document of this.documents.loadedDocuments) {
+      const set: AnnotationSet = this.annotations.getAnnotations(document.documentId);
+      const found = set.items.find((item) => item.annotationId === annotationId);
+      if (found !== undefined) {
+        return { documentId: document.documentId, annotation: found, annotationGeneration: set.generation };
+      }
+    }
+    return undefined;
+  }
+
+  /** One annotation's full detail, wire-shaped, or undefined if unknown. */
+  public async getAnnotation(annotationId: string): Promise<AnnotationResponse | undefined> {
+    const located = await this.findAnnotationQuery(annotationId);
+    if (located === undefined) {
+      return undefined;
+    }
+    const document = this.documents.loadedDocuments.find(
+      (candidate) => candidate.documentId === located.documentId,
+    );
+    const workingText = document === undefined ? "" : document.document.toString();
+    return buildAnnotationResponse(located.annotation, located.annotationGeneration, workingText);
   }
 
   public async getContext(): Promise<EditorContext> {
@@ -308,8 +473,10 @@ export default class AgentDocumentQueries {
       const sidecar = await this.reviews.readSidecar(filePath);
       if (sidecar !== undefined) {
         working = sidecar.workingText;
-        reference = reviewReferenceText(sidecar.suggestions, working);
-        reviewGeneration = sidecar.generation;
+        reference = sidecar.review === null
+          ? working
+          : reviewReferenceText(sidecar.review.suggestions, working);
+        reviewGeneration = sidecar.review?.generation ?? 0;
       } else {
         working = normalizeText(await this.documents.readSupportedFile(filePath));
         reference = working;

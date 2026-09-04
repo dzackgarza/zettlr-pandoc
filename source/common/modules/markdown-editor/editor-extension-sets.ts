@@ -58,6 +58,7 @@ import { renderers } from './renderers'
 import { mdPasteDropHandlers } from './plugins/md-paste-drop-handlers'
 import { footnoteBackground } from './plugins/footnote-background'
 import { footnoteGutter } from './plugins/footnote-gutter'
+import { textAnnotationsExtension } from './plugins/text-annotations'
 import { yamlFrontmatterLint } from './linters/yaml-frontmatter-lint'
 import {
   mainThemes, darkMode, useDarkModeEditor,
@@ -77,6 +78,7 @@ import { headingGutter } from './renderers/render-headings'
 import { citationTooltips } from './tooltips/citations'
 import { referenceTooltips } from './tooltips/references'
 import { referenceLint } from './linters/reference-lint'
+import { latexEnvironmentLint } from './linters/latex-environment-lint'
 import { workspaceReferencesField } from './plugins/workspace-references-field'
 import referenceKeyEditPrompt, { type ReferenceKeyEditPromptIntent } from './plugins/reference-key-edit-prompt'
 import { zettlrKeymap } from './keymaps'
@@ -288,32 +290,32 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     // class/prefix mismatches) are correctness findings like a broken
     // frontmatter, so the linter is always active (issue #1 Phase 4). It
     // reports nothing until the workspace reference view arrives.
-    referenceLint
+    referenceLint,
+    // A \begin{…} folded into the paragraph around it: a figure that never
+    // renders (an error, and nothing downstream says so — Pandoc exports it
+    // either way), or any other environment sitting inside a paragraph rather
+    // than standing alone (a warning). Always active, for the same reason
+    // referenceLint is.
+    latexEnvironmentLint
   ]
 
-  let hasLinters = false
-
   if (options.initialConfig.lintMarkdown) {
-    hasLinters = true
     mdLinterExtensions.push(mdLint)
   }
 
-  if (options.initialConfig.lintLanguageTool) {
-    hasLinters = true // We always add this linter
-  }
-
-  if (hasLinters) {
-    // If there's any linter (except the spellchecker), add a lint gutter
-    mdLinterExtensions.push(
-      lintGutter({
-        markerFilter (diagnostics) {
-          // Show any linter warnings and errors in the gutter *except* wrongly
-          // spelled words, since that would be weird.
-          return diagnostics.filter(d => d.source !== 'spellcheck' && d.source?.startsWith('language-tool') === false)
-        }
-      })
-    )
-  }
+  // The correctness linters above report whatever the user's lint settings
+  // say, so the gutter they report INTO cannot be optional either — without
+  // it their findings have nowhere to appear. The gutter draws nothing while
+  // no diagnostic exists.
+  mdLinterExtensions.push(
+    lintGutter({
+      markerFilter (diagnostics) {
+        // Show any linter warnings and errors in the gutter *except* wrongly
+        // spelled words, since that would be weird.
+        return diagnostics.filter(d => d.source !== 'spellcheck' && d.source?.startsWith('language-tool') === false)
+      }
+    })
+  )
 
   return [
     ...getCoreExtensions(options),
@@ -356,6 +358,7 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     formattingToolbar,
     footnoteHover,
     footnoteGutter, // Should be after markdownFolding
+    textAnnotationsExtension(), // Locator gutter markers + span highlights (M5)
     urlHover,
     filePreview,
     citationTooltips,

@@ -34,6 +34,7 @@ import type {
 export type EditorCommandData =
   | string
   | { filePath: string, lineNumber: number }
+  | { filePath: string, annotationId: string }
   | { from: number, to: number }
   | { type: string, attributes: string }
   | undefined
@@ -73,6 +74,10 @@ export interface EditorCommands {
   replaceSelection: boolean
   insertPandoc: boolean
   executeCommand: boolean
+  /** S8/I6: the panel's Reattach only emits an intent (an annotation id) —
+   *  the replacement range is whatever the owner has selected in the last
+   *  focused editor pane for that same document when this toggles. */
+  beginAnnotationReattach: boolean
   data: EditorCommandData
 }
 

@@ -34,6 +34,13 @@ export interface ReviewSuggestionView {
   anchors: Array<{ from: number, to: number }>;
   seam: number;
   description: string;
+  /**
+   * The packet this suggestion came from — how the annotations panel finds
+   * the chunk(s) a linked AnnotationProposalAction's "Show proposal" points
+   * at (plan S7). Optional because fixtures that never test proposal
+   * linkage have no packet to name.
+   */
+  packetId?: string;
 }
 
 export interface ReviewDiffDocumentSnapshot {

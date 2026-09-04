@@ -9,7 +9,7 @@
  *
  * Description:     Tests the pure review transitions and the store's read
  *                  projections. Application ordering belongs to the
- *                  ReviewApplicationService tests.
+ *                  collaboration application service tests.
  *
  * END HEADER
  */
@@ -21,7 +21,7 @@ import {
   proposalRequestFingerprint,
   ReviewDiffStore,
   reviewFromSidecar,
-  reviewSidecar,
+  collaborationSidecar,
 } from "source/app/service-providers/documents/review-diff-store";
 import { sha256Text } from "source/common/util/sha256";
 import {
@@ -385,7 +385,16 @@ describe("suggestions through owner edits and later claims", function () {
 
   it("round-trips packet attribution through the sidecar", function () {
     const { review, workingText } = withReview("alpha\n", "ALPHA\n");
-    const restored = reviewFromSidecar("restored", reviewSidecar(review, workingText));
+    const restored = reviewFromSidecar(
+      "restored",
+      collaborationSidecar({
+        documentPath: review.documentPath,
+        workingText,
+        diskFenceSha256: review.diskFenceSha256,
+        review,
+        annotations: { generation: 0, items: [] },
+      }),
+    );
     assert.deepEqual(restored.suggestions, review.suggestions);
     assert.deepEqual(restored.submissions, review.submissions);
   });

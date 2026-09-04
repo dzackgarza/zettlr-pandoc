@@ -13,6 +13,32 @@ Before changing architecture, search both project and global memory:
 agent-memory search --scope both "<task or subsystem>"
 ```
 
+## Read the plan before starting work
+
+This project's plans live in the vault as cards, not in the repository. Before writing
+code, proposing a design, or reporting on the state of a feature, list the plans and read
+the one that covers the task:
+
+```bash
+agent-memory list --type plan --scope project
+agent-memory plan show <PLAN-ID>
+agent-memory plan progress --scope project
+```
+
+A plan card carries phase children with their own gates and acceptance criteria. Read
+those too before starting a phase:
+
+```bash
+agent-memory phase show <PHASE-ID>
+```
+
+`agent-memory retrieve` reads memory notes and takes a vault-relative key, not a card id.
+Use `plan show`, `phase show`, or `card show` for cards; they take the id.
+
+The vault card is authoritative. Repository files that restate a plan — `.pr/PR_BODY.md`,
+design transcripts, mockup directories — are derived copies that go stale. Read the card,
+and when the two disagree, the card wins.
+
 Record durable repo-specific lessons with:
 
 ```bash

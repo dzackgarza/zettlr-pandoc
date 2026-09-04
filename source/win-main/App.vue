@@ -74,6 +74,7 @@
             <MainSidebar
               @move-section="moveSection($event)"
               @jump-to-line="genericJtl($event)"
+              @begin-reattach="beginAnnotationReattach($event)"
             />
           </template>
         </SplitView>
@@ -494,6 +495,7 @@ const editorCommands = ref<EditorCommands>({
   replaceSelection: false,
   insertPandoc: false,
   executeCommand: false,
+  beginAnnotationReattach: false,
   data: undefined
 })
 
@@ -1095,6 +1097,23 @@ function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
       setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME)
     })
     .catch(e => console.error(e))
+}
+
+/**
+ * S8/I6: forwards the panel's Reattach intent (an annotation id — never a
+ * range the panel guessed) to the last focused editor pane for the active
+ * document. The pane itself decides whether the owner's current selection
+ * is a usable replacement range (component-contracts.ts EditorCommands).
+ *
+ * @param   {string}  annotationId  The orphaned annotation to reattach
+ */
+function beginAnnotationReattach (annotationId: string): void {
+  const doc = documentTreeStore.lastLeafActiveFile
+  if (doc === undefined) {
+    return
+  }
+  editorCommands.value.data = { filePath: doc.path, annotationId }
+  editorCommands.value.beginAnnotationReattach = !editorCommands.value.beginAnnotationReattach
 }
 
 function moveSection (data: { from: number, to: number }): void {

@@ -25,6 +25,7 @@ import type {
   AgentApiOperations,
   AgentApiResponseBody,
   AgentEvent,
+  AddAnnotationMessageRequest,
   AddReviewCommentRequest,
   AgentError,
   AgentErrorCode,
@@ -37,8 +38,9 @@ import type {
   SearchDocumentRequest,
   SubmitProposalRequest,
 } from "@dts/common/agent-api";
+import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
 import type DocumentManager from "@providers/documents";
-import type { ReviewFailure } from "@providers/documents/review-application-service";
+import type { AnnotationFailure, ReviewFailure } from "@providers/documents/document-collaboration-application-service";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import crypto from "crypto";
@@ -76,6 +78,51 @@ const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
  * serves no one.
  */
 const REQUEST_BODY_DEADLINE_MS = 30_000;
+
+/**
+ * The HTTP status an AgentErrorCode earns when a route has no code-specific
+ * reason to answer otherwise. `Record<AgentErrorCode, number>` is exhaustive
+ * over the OpenAPI contract's own enum, so a code added there without an
+ * entry added here is a compile error instead of a silent 500.
+ *
+ * A route may still answer a particular code with something other than its
+ * entry here when the status depends on more than the code alone. submitProposal
+ * answers REVISION_MISMATCH with 412 and an ETag header — an optimistic-
+ * concurrency precondition, not a generic conflict — and keeps that as its
+ * own branch rather than folding it in here.
+ */
+const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
+  APP_NOT_RUNNING: 503,
+  PROTOCOL_MISMATCH: 400,
+  NO_FOCUSED_DOCUMENT: 404,
+  DOCUMENT_NOT_FOUND: 404,
+  DOCUMENT_CLOSED: 409,
+  REVISION_MISMATCH: 409,
+  REVIEW_GENERATION_MISMATCH: 409,
+  REVIEW_NOT_FOUND: 404,
+  REVIEW_INVALIDATED: 409,
+  PATCH_INVALID: 400,
+  PATCH_NOT_APPLICABLE: 400,
+  PACKET_NOT_RETRACTABLE: 409,
+  CHUNK_NOT_FOUND: 404,
+  ANNOTATION_NOT_FOUND: 404,
+  ANNOTATION_GENERATION_MISMATCH: 409,
+  ANNOTATION_RESOLVED: 409,
+  ANNOTATION_ORPHANED: 409,
+  // Unreachable through addAnnotationMessage, the only route that consults
+  // this code (I3: lifecycle is owner-only, and that route never checks
+  // ownership) — kept here because the Record is exhaustive, not as a
+  // defense-in-depth branch a reviewer has to trust by inspection.
+  ANNOTATION_OWNER_ONLY: 403,
+  IDEMPOTENCY_CONFLICT: 409,
+  REQUEST_TOO_LARGE: 413,
+  REQUEST_BODY_TIMEOUT: 408,
+  SEARCH_TIMEOUT: 422,
+  METHOD_NOT_FOUND: 404,
+  INVALID_PARAMS: 400,
+  PERSISTENCE_FAILED: 500,
+  INTERNAL_ERROR: 500,
+};
 
 class RequestTooLargeError extends Error {
   constructor() {
@@ -181,7 +228,13 @@ export default class AgentHTTPProvider extends ProviderContract {
   ) {
     super();
     this._instanceId = crypto.randomUUID();
-    this._queries = new AgentDocumentQueries(_documents, _documents.reviewQueries, _app, _log);
+    this._queries = new AgentDocumentQueries(
+      _documents,
+      _documents.reviewQueries,
+      _documents.annotationQueries,
+      _app,
+      _log,
+    );
     // Load the OpenAPI YAML spec (dev: sibling to this file; packaged: assets/openapi.yaml)
     const candidatePaths = [
       path.join(__dirname, "openapi.yaml"),
@@ -555,6 +608,31 @@ export default class AgentHTTPProvider extends ProviderContract {
         res: http.ServerResponse,
       ) => this.handleSubmitProposal(res, c.request.params.documentId, c.request.requestBody),
 
+      listAnnotations: (c: OperationContext<"listAnnotations">, _req, res: http.ServerResponse) =>
+        this.handleListAnnotations(res, c.request.query.state),
+      listDocumentAnnotations: (
+        c: OperationContext<"listDocumentAnnotations">,
+        _req,
+        res: http.ServerResponse,
+      ) =>
+        this.handleListDocumentAnnotations(
+          res,
+          c.request.params.documentId,
+          c.request.query.state,
+        ),
+      getAnnotation: (c: OperationContext<"getAnnotation">, _req, res: http.ServerResponse) =>
+        this.handleGetAnnotation(res, c.request.params.annotationId),
+      addAnnotationMessage: (
+        c: OperationContext<"addAnnotationMessage", AddAnnotationMessageRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) =>
+        this.handleAddAnnotationMessage(
+          res,
+          c.request.params.annotationId,
+          c.request.requestBody,
+        ),
+
       listReviews: (_c, _req, res) => this.handleListReviews(res),
       getReview: (c: OperationContext<"getReview">, _req, res: http.ServerResponse) =>
         this.handleGetReview(res, c.request.params.reviewId),
@@ -903,21 +981,30 @@ export default class AgentHTTPProvider extends ProviderContract {
         // there is then no live revision to advertise. The caller re-reads
         // the content either way; an ETag naming a buffer nobody holds would
         // only invite a retry against a baseline that no longer exists.
+        //
+        // This is its own branch, not a STATUS_BY_CODE entry, because the
+        // status here (412, an ETag precondition) and the header above are
+        // both specific to this route — STATUS_BY_CODE's own entry for this
+        // code is the generic 409 every other route uses.
         const current = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
         if (current !== undefined) {
           res.setHeader("ETag", `"sha256:${sha256Text(current.document.toString())}"`);
         }
         this.sendError(res, 412, "REVISION_MISMATCH", result.message);
-      } else if (result.code === "PATCH_INVALID" || result.code === "PATCH_NOT_APPLICABLE") {
-        this.sendError(res, 400, result.code, result.message);
-      } else if (result.code === "REVIEW_INVALIDATED") {
-        this.sendError(res, 409, "REVIEW_INVALIDATED", result.message);
-      } else if (result.code === "IDEMPOTENCY_CONFLICT" || result.code === "REVIEW_GENERATION_MISMATCH") {
-        this.sendError(res, 409, result.code, result.message);
-      } else if (result.code === "PERSISTENCE_FAILED") {
-        this.sendError(res, 500, "PERSISTENCE_FAILED", result.message);
       } else {
-        this.sendError(res, 500, "INTERNAL_ERROR", result.message);
+        // Every other refusal, including ANNOTATION_NOT_FOUND — a claim's
+        // addressesAnnotationIds named an id this document does not have.
+        // The linkage check runs before the sidecar write, so the whole
+        // submission (this claim's patch included) committed nothing (I2,
+        // and the plan's "commits with the annotation change or not at
+        // all") — earns its status from STATUS_BY_CODE like any other route.
+        //
+        // submitProposal's own return type widens its failure code to
+        // `string`: every value it actually produces is one of the OpenAPI
+        // contract's AgentErrorCode members, so the cast back is safe, and
+        // `?? 500` only guards a code genuinely outside that contract.
+        const code = result.code as AgentErrorCode;
+        this.sendError(res, STATUS_BY_CODE[code] ?? 500, code, result.message);
       }
       return;
     }
@@ -944,6 +1031,88 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
+  // ==========================================================================
+  // Annotations — read and reply only. Lifecycle (resolve, reopen, reattach,
+  // delete, create) is owner-only (I3) and has no operationId in the
+  // published document: the API cannot express it, not merely refuse it.
+  // ==========================================================================
+
+  private async handleListAnnotations(
+    res: http.ServerResponse,
+    state: "open" | "resolved" | undefined,
+  ): Promise<void> {
+    this.sendJson(res, 200, await this._queries.listAnnotations(state));
+  }
+
+  private async handleListDocumentAnnotations(
+    res: http.ServerResponse,
+    documentId: string,
+    state: "open" | "resolved" | undefined,
+  ): Promise<void> {
+    const result = await this._queries.listDocumentAnnotations(documentId, state);
+    if (result === undefined) {
+      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
+      return;
+    }
+    this.sendJson(res, 200, result);
+  }
+
+  private async handleGetAnnotation(
+    res: http.ServerResponse,
+    annotationId: string,
+  ): Promise<void> {
+    const annotation = await this._queries.getAnnotation(annotationId);
+    if (annotation === undefined) {
+      this.sendError(res, 404, "ANNOTATION_NOT_FOUND", "Annotation not found");
+      return;
+    }
+    this.sendJson(res, 200, annotation);
+  }
+
+  /**
+   * POST /v1/annotations/{annotationId}/messages — the one annotation
+   * mutation an agent may perform. The document is resolved from the
+   * annotationId alone, since the request carries no documentId.
+   */
+  private async handleAddAnnotationMessage(
+    res: http.ServerResponse,
+    annotationId: string,
+    body: AddAnnotationMessageRequest,
+  ): Promise<void> {
+    const located = await this._queries.findAnnotationQuery(annotationId);
+    if (located === undefined) {
+      this.sendError(res, 404, "ANNOTATION_NOT_FOUND", "Annotation not found");
+      return;
+    }
+    const result: DomainAnnotationMessage | AnnotationFailure =
+      await this._documents.addAnnotationMessage(
+        located.documentId,
+        annotationId,
+        "agent",
+        body.text,
+        body.clientRequestId,
+        body.expectedAnnotationGeneration,
+      );
+    if (!("messageId" in result)) {
+      this.sendError(
+        res,
+        STATUS_BY_CODE[result.code],
+        result.code,
+        result.message,
+      );
+      return;
+    }
+    const annotationGeneration = this._documents.annotationQueries.getAnnotations(
+      located.documentId,
+    ).generation;
+    this.sendJson(res, 200, {
+      annotationId,
+      documentId: located.documentId,
+      message: result,
+      annotationGeneration,
+    });
+  }
+
   private async handleListReviews(res: http.ServerResponse): Promise<void> {
     const reviews: ReviewListEntry[] = (await this._documents.reviewQueries.listReviewQueries()).map(
       (query) => {
@@ -958,11 +1127,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         const { sidecar } = query;
         const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
         return {
-          reviewId: sidecar.reviewId,
-          state: classifyReviewState(sidecar.invalidated, unresolvedChunks),
-          generation: sidecar.generation,
+          reviewId: sidecar.review.reviewId,
+          state: classifyReviewState(sidecar.review.invalidated, unresolvedChunks),
+          generation: sidecar.review.generation,
           unresolvedChunks,
-          packetCount: sidecar.packets.length,
+          packetCount: sidecar.review.packets.length,
           documentPath: sidecar.documentPath,
           attached: false,
         };
@@ -1013,12 +1182,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       const { sidecar } = query;
       const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
       this.sendJson(res, 200, {
-        reviewId: sidecar.reviewId,
-        state: classifyReviewState(sidecar.invalidated, unresolvedChunks),
-        generation: sidecar.generation,
+        reviewId: sidecar.review.reviewId,
+        state: classifyReviewState(sidecar.review.invalidated, unresolvedChunks),
+        generation: sidecar.review.generation,
         unresolvedChunks,
-        packetCount: sidecar.packets.length,
-        comments: sidecar.comments,
+        packetCount: sidecar.review.packets.length,
+        comments: sidecar.review.comments,
         attached: false,
       });
       return;
@@ -1045,9 +1214,9 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (!query.attached) {
       const { sidecar } = query;
       this.sendJson(res, 200, {
-        reviewId: sidecar.reviewId,
-        patch: reviewPatch(sidecar.suggestions, sidecar.workingText),
-        generation: sidecar.generation,
+        reviewId: sidecar.review.reviewId,
+        patch: reviewPatch(sidecar.review.suggestions, sidecar.workingText),
+        generation: sidecar.review.generation,
       });
       return;
     }
@@ -1147,8 +1316,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (!query.attached) {
       const { sidecar } = query;
       this.sendJson(res, 200, {
-        reviewId: sidecar.reviewId,
-        generation: sidecar.generation,
+        reviewId: sidecar.review.reviewId,
+        generation: sidecar.review.generation,
         chunks: sidecarOutstandingChunks(sidecar),
       });
       return;
@@ -1182,10 +1351,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (!query.attached) {
       const { sidecar } = query;
       this.sendJson(res, 200, {
-        reviewId: sidecar.reviewId,
+        reviewId: sidecar.review.reviewId,
         // A stored packet carries its reference spans and no patch format;
         // the wire packet is the ledger entry with the format stamped on.
-        packets: sidecar.packets.map(toWirePacket),
+        packets: sidecar.review.packets.map(toWirePacket),
       });
       return;
     }
@@ -1213,11 +1382,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         documentRevision: result.documentRevision,
       });
     } else {
-      // Two different refusals share the 409: the packet is live but no
-      // longer the retractable one, or its file is closed. Both name the
-      // review that owns the packet, which is the only thing the caller can
-      // re-read from — disposing of the suggestions is the reviewer's.
-      this.sendError(res, result.code === "PERSISTENCE_FAILED" ? 500 : 409, result.code, result.message, {
+      // PACKET_NOT_RETRACTABLE and DOCUMENT_CLOSED both land on STATUS_BY_CODE's
+      // 409: the packet is live but no longer the retractable one, or its file
+      // is closed. Both name the review that owns the packet, which is the
+      // only thing the caller can re-read from — disposing of the suggestions
+      // is the reviewer's.
+      this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message, {
         reviewId: result.reviewId,
         ...AgentHTTPProvider.conflictDetail(result),
       });

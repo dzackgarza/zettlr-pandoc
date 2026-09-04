@@ -23,15 +23,21 @@ const captures = {
     loader: ".svg=dataurl",
   },
   tikz: {
-    build: "test/editor-tikz-visual-build.cjs",
+    build: "test/visual-build.cjs",
+    entry: "test/editor-tikz-visual-entry.ts",
+    bundle: "tikz-visual-bundle.js",
     driver: "test/editor-tikz-visual-capture.cjs",
   },
   "pandoc-help": {
-    build: "test/pandoc-quick-help-visual-build.cjs",
+    build: "test/visual-build.cjs",
+    entry: "test/pandoc-quick-help-visual-entry.ts",
+    bundle: "pandoc-quick-help-bundle.js",
     driver: "test/pandoc-quick-help-visual-capture.cjs",
   },
   "reference-search": {
-    build: "test/reference-search-overlay-build.cjs",
+    build: "test/visual-build.cjs",
+    entry: "test/reference-search-overlay-entry.ts",
+    bundle: "reference-search-overlay-bundle.js",
     driver: "test/reference-search-overlay-probe.cjs",
     electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
   },
@@ -59,19 +65,43 @@ const captures = {
     electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
   },
   "navigation-controls": {
-    build: "test/reference-navigation-controls-build.cjs",
+    build: "test/visual-build.cjs",
+    entry: "test/reference-navigation-controls-entry.ts",
+    bundle: "reference-navigation-controls-bundle.js",
     driver: "test/reference-navigation-controls-capture.cjs",
     electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
   },
   "rename-preview": {
-    build: "test/reference-rename-preview-build.cjs",
+    build: "test/visual-build.cjs",
+    entry: "test/reference-rename-preview-entry.ts",
+    bundle: "reference-rename-preview-bundle.js",
     driver: "test/reference-rename-preview-probe.cjs",
+    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+  },
+  "selection-composer": {
+    build: "test/visual-build.cjs",
+    entry: "test/annotation-composer-visual-entry.ts",
+    bundle: "annotation-composer-visual-bundle.js",
+    driver: "test/annotation-composer-visual-capture.cjs",
     electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
   },
   "review-diff": {
     entry: "test/editor-review-diff-visual-entry.ts",
     bundle: "review-diff-visual-bundle.js",
     driver: "test/editor-review-diff-visual-capture.cjs",
+    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+  },
+  "editor-annotations": {
+    entry: "test/editor-annotations-visual-entry.ts",
+    bundle: "editor-annotations-visual-bundle.js",
+    driver: "test/editor-annotations-visual-capture.cjs",
+    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+  },
+  "annotations-panel": {
+    build: "test/visual-build.cjs",
+    entry: "test/annotations-sidebar-visual-entry.ts",
+    bundle: "annotations-sidebar-visual-bundle.js",
+    driver: "test/annotations-sidebar-visual-capture.cjs",
     electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
   },
   "readme-demos": {
@@ -102,7 +132,12 @@ run("python3", [path.join(root, "scripts", "assert-dev-server-stopped.py")]);
 mkdirSync(output, { recursive: true });
 
 if (capture.build !== undefined) {
-  run(process.execPath, [path.join(root, capture.build), output]);
+  run(process.execPath, [
+    path.join(root, capture.build),
+    path.join(root, capture.entry),
+    capture.bundle,
+    output,
+  ]);
 } else {
   const args = [
     path.join(root, capture.entry),

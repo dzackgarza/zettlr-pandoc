@@ -2,14 +2,17 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        ReviewApplicationService boundary tests
+ * Contains:        CollaborationApplicationService boundary tests
  * CVM-Role:        Test
  * Maintainer:     D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Exercises the real application service with a narrow
- *                  document-authority implementation. The service owns the
- *                  review store, sidecar persistence, ordering, and events.
+ * Description:     The review half of the collaboration service, exercised
+ *                  against the real document authority and a real sidecar
+ *                  directory. The service owns the review store, sidecar
+ *                  persistence, ordering, and events; the annotation half and
+ *                  the transaction boundary they share are proved in
+ *                  annotation-transitions.spec.ts.
  *
  * END HEADER
  */
@@ -18,164 +21,33 @@ import { strict as assert } from "assert";
 import { mkdirSync, mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { ChangeSet, Text } from "@codemirror/state";
 import { createPatch } from "diff";
-import type { AgentEventType } from "@dts/common/agent-api";
-import type { SerializedUpdate } from "@dts/common/documents";
 import { sha256Text } from "@common/util/sha256";
-import serializeChangeSet from "@common/util/serialize-change-set";
-import {
-  ReviewApplicationService,
-  type AgentEventPayload,
-  type PreparedDocumentMutation,
-  type ReviewDocumentAuthority,
-} from "source/app/service-providers/documents/review-application-service";
-import { reviewSidecarFilePath } from "source/app/service-providers/documents/review-sidecar-store";
+import { CollaborationApplicationService } from "source/app/service-providers/documents/document-collaboration-application-service";
+import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
+import { harness as sharedHarness, type Harness } from "./collaboration-test-authority";
 
 const DOCUMENT_ID = "doc-service";
 const DOCUMENT_PATH = "/tmp/review-service-note.md";
 
-class DocumentAuthority implements ReviewDocumentAuthority {
-  public text: Text;
-  public readonly events: AgentEventType[] = [];
-  private version = 0;
-  private open = true;
-
-  constructor(private diskText: string) {
-    this.text = Text.of(diskText.split("\n"));
-  }
-
-  resolveDocumentPath(documentId: string): string | undefined {
-    return documentId === DOCUMENT_ID && this.open ? DOCUMENT_PATH : undefined;
-  }
-
-  isDocumentOpen(documentPath: string): boolean {
-    return documentPath === DOCUMENT_PATH && this.open;
-  }
-
-  close(): void {
-    this.open = false;
-  }
-
-  reopen(): void {
-    this.open = true;
-  }
-
-  setDiskText(text: string): void {
-    this.diskText = text;
-  }
-
-  async acquireDocument(documentId: string) {
-    assert.equal(documentId, DOCUMENT_ID);
-    return { documentId, documentPath: DOCUMENT_PATH, wasAlreadyLoaded: true };
-  }
-
-  readWorkingText(documentId: string): string | undefined {
-    return documentId === DOCUMENT_ID ? this.text.toString() : undefined;
-  }
-
-  async readDiskText(documentPath: string): Promise<string> {
-    assert.equal(documentPath, DOCUMENT_PATH);
-    return this.diskText;
-  }
-
-  readSavedDiskSha256(documentId: string): string | undefined {
-    return documentId === DOCUMENT_ID ? sha256Text(this.diskText) : undefined;
-  }
-
-  prepareWorkingTextReplacement(
-    documentId: string,
-    nextText: string,
-  ): PreparedDocumentMutation {
-    assert.equal(documentId, DOCUMENT_ID);
-    const currentText = this.text.toString();
-    if (currentText === nextText) {
-      return { documentId, documentPath: DOCUMENT_PATH, change: undefined };
-    }
-    let prefix = 0;
-    while (
-      prefix < currentText.length &&
-      prefix < nextText.length &&
-      currentText[prefix] === nextText[prefix]
-    ) {
-      prefix += 1;
-    }
-    let suffix = 0;
-    while (
-      suffix < currentText.length - prefix &&
-      suffix < nextText.length - prefix &&
-      currentText[currentText.length - suffix - 1] ===
-        nextText[nextText.length - suffix - 1]
-    ) {
-      suffix += 1;
-    }
-    const changes = ChangeSet.of(
-      [
-        {
-          from: prefix,
-          to: currentText.length - suffix,
-          insert: nextText.slice(prefix, nextText.length - suffix),
-        },
-      ],
-      this.text.length,
-    );
-    const update: SerializedUpdate = {
-      changes: serializeChangeSet(changes),
-      clientID: "review-service-test",
-    };
-    return {
-      documentId,
-      documentPath: DOCUMENT_PATH,
-      change: {
-        changes,
-        update,
-        nextText: Text.of(nextText.split("\n")),
-        nextVersion: this.version + 1,
-      },
-    };
-  }
-
-  commitWorkingTextReplacement(prepared: PreparedDocumentMutation): void {
-    if (prepared.change === undefined) {
-      return;
-    }
-    this.text = prepared.change.nextText;
-    this.version = prepared.change.nextVersion;
-  }
-
-  async releaseTemporaryDocument(documentId: string): Promise<void> {
-    assert.equal(documentId, DOCUMENT_ID);
-  }
-
-  broadcastReviewState(documentId: string): void {
-    assert.equal(documentId, DOCUMENT_ID);
-  }
-
-  broadcastReviewCleared(documentId: string, reviewId: string): void {
-    assert.equal(documentId, DOCUMENT_ID);
-    assert.ok(reviewId.length > 0);
-  }
+function harness(options: { diskText: string; sidecarDirectory?: string }): Harness {
+  return sharedHarness({
+    documentId: DOCUMENT_ID,
+    documentPath: DOCUMENT_PATH,
+    tmpPrefix: "zettlr-review-service-",
+    ...options,
+  });
 }
 
 function makePatch(oldText: string, newText: string): string {
   return createPatch(DOCUMENT_PATH, oldText, newText, "", "", { context: 3 });
 }
 
-describe("ReviewApplicationService", function () {
+describe("CollaborationApplicationService", function () {
   it("commits review state, document text, sidecars, and typed events together", async function () {
     const baseline = "alpha\nbeta\n";
     const proposed = "ALPHA\nBETA\n";
-    const authority = new DocumentAuthority(baseline);
-    const emitted: Array<{ event: AgentEventType; payload: AgentEventPayload }> = [];
-    const service = new ReviewApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: (event, payload) => {
-        emitted.push({ event, payload });
-        authority.events.push(event);
-      },
-      warn: () => undefined,
-    });
+    const { authority, service, emitted } = harness({ diskText: baseline });
 
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
@@ -190,11 +62,14 @@ describe("ReviewApplicationService", function () {
     }
     assert.equal(authority.readWorkingText(DOCUMENT_ID), proposed);
     assert.equal(service.reviewStore.getReview(DOCUMENT_ID)?.generation, 1);
-    assert.deepEqual(authority.events, ["review.started", "proposal.applied"]);
+    assert.deepEqual(
+      emitted.map((entry) => entry.event),
+      ["review.started", "proposal.applied"],
+    );
 
     const sidecar = await service.readSidecar(DOCUMENT_PATH);
     assert.equal(sidecar?.workingText, proposed);
-    assert.equal(sidecar?.packets.length, 1);
+    assert.equal(sidecar?.review?.packets.length, 1);
 
     const decided = await service.acceptAllChunks(
       submitted.reviewId,
@@ -206,7 +81,7 @@ describe("ReviewApplicationService", function () {
     assert.equal(decided.ok, true);
     assert.equal(authority.readWorkingText(DOCUMENT_ID), proposed);
     assert.equal(service.reviewStore.getStatus(DOCUMENT_ID, proposed)?.unresolvedChunks, 0);
-    assert.equal((await service.readSidecar(DOCUMENT_PATH))?.generation, 2);
+    assert.equal((await service.readSidecar(DOCUMENT_PATH))?.review?.generation, 2);
     assert.equal(emitted.at(-1)?.event, "review.resolved");
   });
 
@@ -214,13 +89,7 @@ describe("ReviewApplicationService", function () {
     const baseline = "alpha\n\nmiddle\n\nomega\n";
     const proposed = "ALPHA\n\nmiddle\n\nomega\n";
     const typed = "ALPHA\n\nmiddle\n\nomega typed\n";
-    const authority = new DocumentAuthority(baseline);
-    const service = new ReviewApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -276,13 +145,7 @@ describe("ReviewApplicationService", function () {
     const baseline = "alpha\n\nmiddle\n\nomega\n";
     const proposed = "ALPHA\n\nmiddle\n\nomega\n";
     const typed = "ALPHA\n\nmiddle\n\nomega typed\n";
-    const authority = new DocumentAuthority(baseline);
-    const service = new ReviewApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -319,13 +182,7 @@ describe("ReviewApplicationService", function () {
     const baseline = "prefix suffix\n";
     const proposed = "prefix AGENT suffix\n";
     const edited = "prefix AGUSERENT suffix\n";
-    const authority = new DocumentAuthority(baseline);
-    const service = new ReviewApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -367,13 +224,7 @@ describe("ReviewApplicationService", function () {
     const baseline = "prefix suffix\n";
     const proposed = "prefix AGENT suffix\n";
     const edited = "prefix USERAGENT suffix\n";
-    const authority = new DocumentAuthority(baseline);
-    const service = new ReviewApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -405,13 +256,7 @@ describe("ReviewApplicationService", function () {
     const baseline = "prefix removed tail\n";
     const proposed = "prefix tail\n";
     const edited = "prefix OWNER tail\n";
-    const authority = new DocumentAuthority(baseline);
-    const service = new ReviewApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -447,14 +292,7 @@ describe("ReviewApplicationService", function () {
     const firstProposal = "ONE middle two\n";
     const proposed = "ONE middle TWO\n";
     const edited = "OownerNE middle TWO\n";
-    const authority = new DocumentAuthority(baseline);
-    const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
-    const service = new ReviewApplicationService({
-      authority,
-      sidecarDirectory,
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service, sidecarDirectory } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -497,14 +335,14 @@ describe("ReviewApplicationService", function () {
     assert.ok(first !== undefined);
     assert.ok(second !== undefined);
 
-    await service.detachReview(DOCUMENT_ID);
-    const restarted = new ReviewApplicationService({
+    await service.detachCollaboration(DOCUMENT_ID);
+    const restarted = new CollaborationApplicationService({
       authority,
       sidecarDirectory,
       emit: () => undefined,
       warn: () => undefined,
     });
-    await restarted.reattachReview(DOCUMENT_ID, DOCUMENT_PATH, baseline);
+    await restarted.reattachCollaboration(DOCUMENT_ID, DOCUMENT_PATH, baseline);
     assert.deepEqual(
       restarted.getOutstandingChunks(DOCUMENT_ID)?.map((chunk) => chunk.chunkId),
       [first.chunkId, second.chunkId],
@@ -557,13 +395,7 @@ describe("ReviewApplicationService", function () {
 
   it("refuses a closed review through an explicit service error", async function () {
     const baseline = "alpha\n";
-    const authority = new DocumentAuthority(baseline);
-    const service = new ReviewApplicationService({
-      authority,
-      sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-review-service-")),
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -586,23 +418,17 @@ describe("ReviewApplicationService", function () {
 
   it("fails reattachment when persisted state is version 3 (#68)", async function () {
     const baseline = "alpha\n";
-    const authority = new DocumentAuthority(baseline);
     const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
     mkdirSync(sidecarDirectory, { recursive: true });
     writeFileSync(
-      reviewSidecarFilePath(sidecarDirectory, DOCUMENT_PATH),
+      collaborationSidecarFilePath(sidecarDirectory, DOCUMENT_PATH),
       JSON.stringify({ version: 3 }),
       "utf8",
     );
-    const service = new ReviewApplicationService({
-      authority,
-      sidecarDirectory,
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { service } = harness({ diskText: baseline, sidecarDirectory });
     await assert.rejects(
-      service.reattachReview(DOCUMENT_ID, DOCUMENT_PATH, baseline),
-      /not a valid review sidecar.*version/,
+      service.reattachCollaboration(DOCUMENT_ID, DOCUMENT_PATH, baseline),
+      /not a valid collaboration sidecar.*version/,
     );
   });
 
@@ -612,14 +438,7 @@ describe("ReviewApplicationService", function () {
     // is separately persisted state and is not the discard's to destroy.
     const baseline = "alpha\nbeta\n";
     const proposed = "ALPHA\nbeta\n";
-    const authority = new DocumentAuthority(baseline);
-    const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
-    const service = new ReviewApplicationService({
-      authority,
-      sidecarDirectory,
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service, sidecarDirectory } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -647,14 +466,14 @@ describe("ReviewApplicationService", function () {
       authority.commitWorkingTextReplacement(prepared);
     });
 
-    await service.discardReview(DOCUMENT_ID, DOCUMENT_PATH, proposed);
+    await service.discardCollaboration(DOCUMENT_ID, DOCUMENT_PATH, proposed);
     assert.equal(
       service.getReview(DOCUMENT_ID)?.reviewId,
       submitted.reviewId,
       "discarding the unsaved edit must not destroy the saved held review",
     );
     assert.equal(
-      (await service.readSidecar(DOCUMENT_PATH))?.reviewId,
+      (await service.readSidecar(DOCUMENT_PATH))?.review?.reviewId,
       submitted.reviewId,
       "the saved review's sidecar must survive the discard",
     );
@@ -664,14 +483,7 @@ describe("ReviewApplicationService", function () {
     const baseline = "alpha\nbeta\n";
     const proposed = "ALPHA\nbeta\n";
     const edited = "ALPHA\nBETA edited\n";
-    const authority = new DocumentAuthority(baseline);
-    const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
-    const service = new ReviewApplicationService({
-      authority,
-      sidecarDirectory,
-      emit: () => undefined,
-      warn: () => undefined,
-    });
+    const { authority, service, sidecarDirectory } = harness({ diskText: baseline });
     const submitted = await service.submitProposal({
       documentId: DOCUMENT_ID,
       baselineSha256: sha256Text(baseline),
@@ -698,15 +510,15 @@ describe("ReviewApplicationService", function () {
     await service.completeSave(save!, sha256Text(proposed));
     assert.equal((await service.readSidecar(DOCUMENT_PATH))?.pendingSave, undefined);
 
-    await service.detachReview(DOCUMENT_ID);
+    await service.detachCollaboration(DOCUMENT_ID);
     assert.equal(service.getReview(DOCUMENT_ID), undefined);
     authority.close();
     authority.reopen();
-    const restored = await service.reattachReview(DOCUMENT_ID, DOCUMENT_PATH, proposed);
+    const restored = await service.reattachCollaboration(DOCUMENT_ID, DOCUMENT_PATH, proposed);
     assert.equal(restored?.workingText, edited);
     assert.equal(service.getReview(DOCUMENT_ID)?.reviewId, submitted.reviewId);
 
-    await service.discardReview(DOCUMENT_ID, DOCUMENT_PATH, baseline);
+    await service.discardCollaboration(DOCUMENT_ID, DOCUMENT_PATH, baseline);
     assert.equal(service.getReview(DOCUMENT_ID), undefined);
     assert.equal(await service.readSidecar(DOCUMENT_PATH), undefined);
 
@@ -719,9 +531,9 @@ describe("ReviewApplicationService", function () {
       expectedReviewGeneration: 0,
     });
     assert.equal(secondSubmission.ok, true);
-    await service.detachReview(DOCUMENT_ID);
+    await service.detachCollaboration(DOCUMENT_ID);
     assert.equal(service.getReview(DOCUMENT_ID), undefined);
-    await service.discardReview(DOCUMENT_ID, DOCUMENT_PATH, baseline);
+    await service.discardCollaboration(DOCUMENT_ID, DOCUMENT_PATH, baseline);
     assert.equal(await service.readSidecar(DOCUMENT_PATH), undefined);
   });
 });

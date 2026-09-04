@@ -2,7 +2,7 @@
 
 // Drives the recoverable reference-error scene in Chromium, modeled on
 // reference-create-label-probe.cjs. Loads the webpack bundle produced by
-// reference-error-surface-build.cjs, forces a rejecting reference-provider
+// visual-build.cjs, forces a rejecting reference-provider
 // invocation through the production error boundary, records the toast
 // surface before and after a dismissal click, then types REAL keyboard
 // input into the CodeMirror editor to prove it stayed interactive.

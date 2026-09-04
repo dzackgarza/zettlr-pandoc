@@ -264,6 +264,51 @@ capture-rename-preview output: sync-dependencies
 capture-review-diff output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" review-diff "{{output}}"
 
+# Capture M5's four structural-gate scenes (doc-collaboration plan, section
+# 10 names 02/07/08/09): several open targets each carrying an ordinal
+# marker, a point target's hollow marker at its deletion seam, an orphaned
+# target's marker with no span, and overlapping targets collapsed to one
+# marker with a count — light and dark. Scoped to what the editor alone
+# renders (no panel, no thread, no button — invariant I4); M10 assembles the
+# full twelve-scene `just capture-annotations` around these.
+capture-editor-annotations output: sync-dependencies
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" editor-annotations "{{output}}"
+
+# Capture the M6 selection-creation composer (plan scene
+# 01-selection-composer, gated against mockup-2-creation-dialog.png) in
+# isolated offscreen Electron: bundles the probe entry with the production
+# renderer webpack config, mounts the REAL AnnotationCreateDialog over a
+# real EditorView, types a real instruction, and screenshots the result.
+# This never starts Forge, a dev server, xdg-open, or the system browser.
+capture-selection-composer output: sync-dependencies
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" selection-composer "{{output}}"
+
+# M7 annotations panel structural-conformance scenes (plan section 4: 03
+# selected-thread, 05 linked-proposal-pending, 10 resolved-annotations-view,
+# 11 narrow-sidebar-drilldown), extended by M9 with the review-suggestion-
+# inspector scenes and by M10 with 04 (a genuinely multi-turn thread with no
+# linked proposal), 06 (a partially-decided proposal alongside the review's
+# remaining outstanding chunks), and 12 (every distinguishable editor state
+# from plan section 3, dark theme, beside the panel — this scene's only
+# variant). Captured in isolated offscreen Electron against a real Pinia
+# store and a fixture DocumentCollaborationSession. This never starts Forge,
+# a dev server, xdg-open, or the system browser.
+capture-annotations-panel output: sync-dependencies
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" annotations-panel "{{output}}"
+
+# M10's gate: assembles the plan's full twelve-scene capture suite (section
+# 10) into ONE output directory, from the three registrations that already
+# own its scenes — capture-editor-annotations (02/07/08/09, light+dark),
+# capture-selection-composer (01), and capture-annotations-panel (03/05/10/11
+# plus 04/06/12) — rather than inventing a fourth, parallel mechanism. Usage:
+#   bun run test test/annotation-restart.spec.ts && just capture-annotations
+# This never starts Forge, a dev server, xdg-open, or the system browser.
+capture-annotations output="/tmp/zettlr-pandoc-annotations-captures": sync-dependencies
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" editor-annotations "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" selection-composer "{{output}}"
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" annotations-panel "{{output}}"
+    @echo "Twelve-scene capture suite written to {{output}}"
+
 # Run a real export headlessly (no GUI), via the app's own makeExport with the
 # exact profile list the GUI sees (userData/defaults + custom profiles). Proves
 # an export end-to-end from the terminal. Usage:

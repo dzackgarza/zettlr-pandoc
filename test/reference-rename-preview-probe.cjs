@@ -2,7 +2,7 @@
 
 // Drives the rename-preview dialog with real Chromium input, modeled on
 // reference-create-label-probe.cjs. Loads the webpack bundle produced by
-// reference-rename-preview-build.cjs, mounts the dialog over the previewed
+// visual-build.cjs, mounts the dialog over the previewed
 // fixture rename, screenshots the rendered preview (the contract's
 // "rename preview" capture), exercises Cancel in one scene and Apply in a
 // fresh scene, and prints one JSON result line the spec asserts on. While

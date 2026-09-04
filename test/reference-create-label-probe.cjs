@@ -4,7 +4,7 @@
 // prompt scene with REAL Chromium keyboard input
 // (webContents.sendInputEvent), modeled on
 // reference-search-overlay-probe.cjs. Loads the webpack bundle produced by
-// reference-create-label-build.cjs, mounts the dialog with the raw
+// visual-build.cjs, mounts the dialog with the raw
 // reference-workspace fixture documents, appends to the proposed slug,
 // presses Enter, runs the key-edit prompt scene, screenshots the rendered
 // states, and prints one JSON result line the spec asserts on. While the

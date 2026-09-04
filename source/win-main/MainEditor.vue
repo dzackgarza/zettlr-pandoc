@@ -21,6 +21,17 @@
       @apply="applyWorkspaceRename()"
       @close="cancelWorkspaceRename()"
     />
+    <AnnotationCreateDialog
+      v-if="annotationComposerRequest !== null"
+      :editor-view="annotationComposerRequest.editorView"
+      :document-path="props.file.path"
+      :from="annotationComposerRequest.from"
+      :to="annotationComposerRequest.to"
+      :quoted-text="annotationComposerRequest.quotedText"
+      :annotation-generation="collaborationSession?.annotations.generation ?? 0"
+      @saved="closeAnnotationComposer()"
+      @close="closeAnnotationComposer()"
+    />
   </div>
 </template>
 
@@ -43,7 +54,7 @@
 
 import MarkdownEditor, { type EditorViewPersistentState } from '@common/modules/markdown-editor'
 
-import { ref, computed, onMounted, onBeforeUnmount, watch, toRef, onUpdated } from 'vue'
+import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, toRef, onUpdated } from 'vue'
 import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
 import { hasMarkdownExt } from '@common/util/file-extention-checks'
 import { DP_EVENTS, type OpenDocument } from '@dts/common/documents'
@@ -53,9 +64,13 @@ import { type EditorConfigOptions } from '@common/modules/markdown-editor/util/c
 import type { CodeFileDescriptor, DirDescriptor, MDFileDescriptor, ProjectSettings } from '@dts/common/fsal'
 import { getBibliographyForDescriptor as getBibliography } from '@common/util/get-bibliography-for-descriptor'
 import { EditorSelection } from '@codemirror/state'
+import type { EditorView } from '@codemirror/view'
+import AnnotationCreateDialog from './AnnotationCreateDialog.vue'
+import { ANNOTATE_SELECTION_EVENT } from '@common/modules/markdown-editor/plugins/annotate-selection'
+import { resolveReattachSelection } from './util/annotation-reattach-selection'
 import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ipc-api'
 import { ipcMarkdownFormatter, surfaceFormatResult } from '@common/modules/markdown-editor/commands/format-document-ipc'
-import { useConfigStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
+import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { isAbsolutePath, pathBasename, pathDirname, resolvePath } from '@common/util/renderer-path-polyfill'
 import type { DocumentsUpdateContext } from 'source/app/service-providers/documents'
 import type {
@@ -65,12 +80,12 @@ import type {
 import type { FileContentSearchResult } from 'source/app/service-providers/search'
 import type { DocumentLocation, ProjectRootSpec, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
+import type { AnnotationSet } from '@dts/common/annotation-domain'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import { annotateCompletionEntries } from '@common/pandoc-util/project-reference-status'
 import { trans } from '@common/i18n-renderer'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import showToast from '@common/util/show-toast'
-import { sha256Text } from '@common/util/sha256'
 import type { ReferenceKeyEditPromptIntent } from '@common/modules/markdown-editor/plugins/reference-key-edit-prompt'
 import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
 import {
@@ -149,6 +164,48 @@ const documentTreeStore = useDocumentTreeStore()
 const workspaceStore = useWorkspaceStore()
 const configStore = useConfigStore()
 const tagStore = useTagsStore()
+const collaborationStore = useDocumentCollaborationStore()
+
+/**
+ * This pane's own slice of the one cached DocumentCollaborationSession for
+ * its file — the only collaboration state this component reads. Every
+ * other pane on the same document, and the annotations panel, read the same
+ * store entry; nothing here pulls the sidecar or a session of its own.
+ */
+const collaborationSession = computed(() => collaborationStore.sessionsByDocumentPath[props.file.path])
+
+/**
+ * The open selection-creation composer request (M6), or null when none is
+ * open. Set by the ANNOTATE_SELECTION_EVENT DOM event the context menu's
+ * "Annotate for AI…" entry dispatches on the editor's own DOM (bubbling up
+ * to mainEditorWrapper, listened for below) — a plain DOM CustomEvent
+ * rather than a CodeMirror StateEffect relay, so this composer needs no
+ * change to the editor core or the annotation decoration plugin.
+ */
+const annotationComposerRequest = shallowRef<{ editorView: EditorView, from: number, to: number, quotedText: string }|null>(null)
+
+function requestAnnotationComposer (event: Event): void {
+  if (currentEditor === null) {
+    return
+  }
+  const { from, to } = (event as CustomEvent<{ from: number, to: number }>).detail
+  annotationComposerRequest.value = {
+    editorView: currentEditor.instance,
+    from,
+    to,
+    quotedText: currentEditor.instance.state.sliceDoc(from, to)
+  }
+}
+
+/**
+ * Closes the composer, on Cancel or on a successful Save alike. A save
+ * changes nothing locally: the provider's DP_EVENTS.DOCUMENT_COLLABORATION
+ * broadcast is the only thing that moves collaboration state in this pane,
+ * so closing is the whole of this handler.
+ */
+function closeAnnotationComposer (): void {
+  annotationComposerRequest.value = null
+}
 
 // UNREFFED STUFF
 let currentEditor: MarkdownEditor|null = null
@@ -202,45 +259,6 @@ function applyReviewDiffSession (session: ReviewDiffSession): void {
 
   pendingReviewDiffSession = null
   currentEditor.startReviewDiffSession(session)
-}
-
-/**
- * The working-text hash a review decision is bound to. The sync comes first:
- * hashing before the pane's pending edits have reached the document authority
- * would bind text main has not been told about, and main would then refuse a
- * decision that was in fact current.
- */
-async function syncedWorkingSha256 (editor: MarkdownEditor): Promise<string> {
-  await editor.whenSynced()
-  return sha256Text(editor.value)
-}
-
-/**
- * Surfaces a refused review mutation. Success changes nothing locally — the
- * provider's broadcast is the only thing that moves review state in this pane
- * — so this is the whole of the response handling. A refusal is toasted and
- * rethrown, which is what tells the widget to hand its controls back.
- */
-function throwOnReviewRefusal (
-  result: { ok: true }|{ ok: false, message: string }
-): void {
-  if (!result.ok) {
-    showToast(trans(result.message), 'error')
-    throw new Error(result.message)
-  }
-}
-
-function fetchActiveReviewDiffSession (): void {
-  ipcRenderer.invoke('documents-provider', {
-    command: 'get-review-diff-session',
-    payload: { path: props.file.path }
-  })
-    .then(session => {
-      if (session !== undefined) {
-        applyReviewDiffSession(session)
-      }
-    })
-    .catch(err => console.error('Could not fetch active review-diff session', err))
 }
 
 // EVENT LISTENERS
@@ -423,21 +441,10 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
         })
       })
       .catch(err => console.error(err))
-  } else if (
-    event === DP_EVENTS.REVIEW_DIFF &&
-    context.filePath === props.file.path &&
-    context.reviewCleared === true
-  ) {
-    // Provider closed or completed the review — exit review mode
-    currentEditor?.clearReviewDiffSession(context.reviewId)
-  } else if (
-    event === DP_EVENTS.REVIEW_DIFF &&
-    context.filePath === props.file.path &&
-    context.reviewDiffSession !== undefined &&
-    !(context.windowId === props.windowId && context.leafId === props.leafId)
-  ) {
-    applyReviewDiffSession(context.reviewDiffSession)
   }
+  // Collaboration state (annotations, review) is not handled here: it
+  // reaches this pane through the document-collaboration store and the
+  // `collaborationSession` watcher below, not through this raw event.
 })
 
 ipcRenderer.on('reload-editors', _e => {
@@ -452,9 +459,14 @@ ipcRenderer.on('links', _e => {
 // MOUNTED HOOK
 onMounted(() => {
   loadDocument().catch(reportDocumentLoadError)
+  // mainEditorWrapper is stable across a file switch (currentEditor's own
+  // DOM is replaced underneath it), so this one listener, attached once,
+  // catches every "Annotate for AI…" request for the pane's whole lifetime.
+  mainEditorWrapper.value?.addEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer)
 })
 
 onBeforeUnmount(() => {
+  mainEditorWrapper.value?.removeEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer)
   if (currentEditor !== null) {
     props.persistentStateMap.set(props.file.path, currentEditor.persistentState)
     // Clear out the table of contents before unmounting the component.
@@ -655,7 +667,7 @@ workspaceStore.$subscribe(() => {
 // External commands/"event" system
 watch(toRef(props.editorCommands, 'jumpToLine'), () => {
   const data = props.editorCommands.data
-  if (typeof data !== 'object' || data === undefined || !('filePath' in data)) {
+  if (typeof data !== 'object' || data === undefined || !('lineNumber' in data)) {
     return // The toggled command carried no jump payload
   }
 
@@ -699,6 +711,42 @@ watch(toRef(props.editorCommands, 'executeCommand'), () => {
   }
   currentEditor.runCommand(data)
   currentEditor.focus()
+})
+
+/**
+ * S8/I6: the annotations panel's Reattach only ever names an annotation
+ * (component-contracts.ts) — the replacement range is whatever the owner
+ * has just selected in THIS, the last focused pane for the document. There
+ * is no arming step and no background guess: an empty selection means the
+ * owner has not picked a location yet, so this refuses with a toast that
+ * says exactly that, rather than silently doing nothing or fabricating a
+ * point range.
+ */
+watch(toRef(props.editorCommands, 'beginAnnotationReattach'), () => {
+  if (props.activeFile?.path !== props.file.path || currentEditor === null) {
+    return
+  }
+  if (documentTreeStore.lastLeafId !== props.leafId) {
+    // Mirrors executeCommand/replaceSelection above: an unfocused pane
+    // showing the same file is not where the owner's selection lives.
+    return
+  }
+  const data = props.editorCommands.data
+  if (typeof data !== 'object' || data === undefined || !('annotationId' in data) || data.filePath !== props.file.path) {
+    return
+  }
+  const selection = resolveReattachSelection(currentEditor.instance)
+  if (!selection.ok) {
+    showToast(trans('Select the new location for this annotation, then click Reattach again.'), 'error')
+    return
+  }
+  collaborationStore.reattachAnnotation(props.file.path, data.annotationId, selection.from, selection.to)
+    .then(result => {
+      if ('ok' in result && !result.ok) {
+        showToast(result.message, 'error')
+      }
+    })
+    .catch(err => console.error('[MainEditor] Could not reattach the annotation', err))
 })
 
 watch(toRef(props.editorCommands, 'replaceSelection'), () => {
@@ -766,6 +814,29 @@ watch(tags, (newValue) => {
   currentEditor?.setCompletionDatabase('tags', newValue)
 })
 
+// The store is the only thing that moves review state in this pane: a
+// session appearing starts (or re-syncs) the review-diff widgets, and a
+// session disappearing clears them. `immediate` covers the pane that mounts
+// onto a document another pane already cached the session for, where the
+// store never changes again to re-fire this watcher on its own.
+watch(() => collaborationSession.value?.review, (nextReview, previousReview) => {
+  if (nextReview !== undefined) {
+    applyReviewDiffSession(nextReview)
+  } else if (previousReview !== undefined) {
+    currentEditor?.clearReviewDiffSession(previousReview.id)
+  }
+}, { immediate: true })
+
+const EMPTY_ANNOTATION_SET: AnnotationSet = { generation: 0, items: [] }
+
+// Annotations are never absent on a session (unlike review), so this just
+// forwards the current set — the editor's own field only distinguishes and
+// re-renders locators, never mutates them. `immediate` covers the pane that
+// mounts onto a document another pane already cached the session for.
+watch(() => collaborationSession.value?.annotations, (annotations) => {
+  currentEditor?.setAnnotations(annotations ?? EMPTY_ANNOTATION_SET)
+}, { immediate: true, deep: true })
+
 // METHODS
 /**
  * Returns a MarkdownEditor for the provided path.
@@ -800,58 +871,6 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   editor.on('docUpdate', () => {
     if (currentEditor === editor) {
       windowStateStore.activeDocumentInfo = currentEditor.documentInfo
-    }
-  })
-
-  // The pane's one path to a review decision. Nothing here mutates review
-  // state: the provider owns it, and its broadcast is what redraws the
-  // widgets. Every call binds the decision to the generation the widgets were
-  // drawn from and to the exact bytes the reviewer is looking at, so a
-  // decision formed against a stale pane is refused instead of landing on a
-  // chunk that moved.
-  editor.setReviewActionClient({
-    decide: async input => {
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents:decide-review-chunk', {
-        reviewId: input.reviewId,
-        chunkId: input.chunkId,
-        decision: input.decision,
-        expectedReviewGeneration: input.expectedReviewGeneration,
-        expectedWorkingSha256: await syncedWorkingSha256(editor)
-      }))
-    },
-    commentChunk: async input => {
-      // Annotation, not adjudication — but the chunk id is content-addressed
-      // over the working text, so it fences exactly like a decision.
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents:comment-review-chunk', {
-        reviewId: input.reviewId,
-        chunkId: input.chunkId,
-        text: input.text,
-        expectedReviewGeneration: input.expectedReviewGeneration,
-        expectedWorkingSha256: await syncedWorkingSha256(editor)
-      }))
-    },
-    acceptAll: async input => {
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents:accept-all-review-chunks', {
-        reviewId: input.reviewId,
-        expectedReviewGeneration: input.expectedReviewGeneration,
-        expectedWorkingSha256: await syncedWorkingSha256(editor)
-      }))
-    },
-    clear: async input => {
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents:clear-review', {
-        reviewId: input.reviewId,
-        expectedReviewGeneration: input.expectedReviewGeneration,
-        expectedWorkingSha256: await syncedWorkingSha256(editor)
-      }))
-    },
-    comment: async input => {
-      // A comment adjudicates nothing and moves no text, so it fences on the
-      // review generation alone and needs no sync.
-      throwOnReviewRefusal(await ipcRenderer.invoke('documents:add-review-comment', {
-        reviewId: input.reviewId,
-        text: input.text,
-        expectedReviewGeneration: input.expectedReviewGeneration
-      }))
     }
   })
 
@@ -1002,11 +1021,15 @@ async function loadDocument (): Promise<void> {
   currentEditor.projectInfo = updateProjectInfo()
   await updateReferenceEntries()
 
+  // A review that arrived (via the store watcher above) before this editor
+  // was ready is buffered here; apply it now that it is. Otherwise, pull
+  // this pane's collaboration session: a no-op if another pane already
+  // cached it, a single IPC read if this is the first pane to ask.
   if (pendingReviewDiffSession !== null) {
     applyReviewDiffSession(pendingReviewDiffSession)
-  } else {
-    fetchActiveReviewDiffSession()
   }
+  collaborationStore.ensureSession(props.file.path)
+    .catch(err => console.error('Could not fetch the collaboration session', err))
 }
 
 function jtl (lineNumber: number): void {

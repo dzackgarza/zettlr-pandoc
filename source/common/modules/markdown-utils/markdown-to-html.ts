@@ -26,7 +26,7 @@ import type { CitationNode, ASTNode, GenericNode, FootnoteRef } from './markdown
 import { type MarkdownParserConfig } from '../markdown-editor/parser/markdown-parser'
 import _ from 'underscore'
 import { mathJaxToHTML } from '@common/util/mathtex-to-html'
-import { mathDisplayForOpen } from '@common/util/math-delimiters'
+import { mathDisplayForOpen, mathFromCodeNode } from '@common/util/math-delimiters'
 
 /**
  * Represents an HTML tag. This is a purposefully shallow representation
@@ -321,9 +321,11 @@ export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, in
       return `${node.whitespaceBefore}<pre><code${attr}>${_.escape(node.source)}</code></pre>`
     }
   } else if (node.type === 'InlineCode') {
-    const mathDisplay = mathDisplayForOpen(node.info)
-    if (mathDisplay !== null) {
-      return node.whitespaceBefore + mathJaxToHTML(node.source, mathDisplay ? 'display' : 'inline')
+    // Delimited math and math environments both arrive as InlineCode; only the
+    // environment needs its marks put back, which mathFromCodeNode owns.
+    const math = mathFromCodeNode(node.info, node.source)
+    if (math !== null) {
+      return node.whitespaceBefore + mathJaxToHTML(math.equation, math.display ? 'display' : 'inline')
     } else {
       const attr = renderNodeAttributes(node)
       return `${node.whitespaceBefore}<code${attr}>${_.escape(node.source)}</code>`
