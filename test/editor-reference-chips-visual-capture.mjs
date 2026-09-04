@@ -1,10 +1,5 @@
-'use strict'
+import { openScene } from './visual/scene.mjs'
 
-const { app, BrowserWindow } = require('electron')
-const fs = require('fs/promises')
-const path = require('path')
-
-const outputDirectory = process.argv[process.argv.length - 1]
 const scenes = [
   { name: 'chips-occurrences-light', scene: 'occurrences', dark: false, width: 1200, height: 800 },
   { name: 'chips-occurrences-dark', scene: 'occurrences', dark: true, width: 1200, height: 800 },
@@ -14,13 +9,13 @@ const scenes = [
   // raw while resolved keys — including the one resolving into ProjectB with
   // projectRoots fed — render chips.
   { name: 'chips-states-light', scene: 'states', dark: false, width: 1200, height: 800 },
-  { name: 'chips-states-dark', scene: 'states', dark: true, width: 1200, height: 800 },
+  { name: 'chips-states-dark', scene: 'states', dark: true, width: 1200, height: 800 }
 ]
 
-async function capture (window, scene) {
-  const background = scene.dark ? '#2b2b2c' : '#ffffff'
-  const foreground = scene.dark ? '#e5e7eb' : '#222222'
-  const page = `<!doctype html><html><head><meta charset="utf-8"><style>
+async function capture (view, spec) {
+  const background = spec.dark ? '#2b2b2c' : '#ffffff'
+  const foreground = spec.dark ? '#e5e7eb' : '#222222'
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     html, body { margin: 0; min-height: 100%; background: ${background}; color: ${foreground}; }
     body { padding: 28px; box-sizing: border-box; }
     #editor { max-width: 920px; margin: 0 auto; }
@@ -29,17 +24,15 @@ async function capture (window, scene) {
     .cm-content { overflow-wrap: anywhere; }
     /* Minimal stand-in for the app stylesheet's code-block framing, so hidden
        fence lines read as a code region instead of blank lines. */
-    .code { background: ${scene.dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'}; font-family: monospace; }
-  </style></head><body data-scene="${scene.scene}" data-dark="${scene.dark}">
+    .code { background: ${spec.dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'}; font-family: monospace; }
+  </style></head><body data-scene="${spec.scene}" data-dark="${spec.dark}">
     <main id="editor"></main><script src="./reference-chips-visual-bundle.js"></script>
   </body></html>`
-  const pagePath = path.join(outputDirectory, `${scene.name}.html`)
-  await fs.writeFile(pagePath, page)
-  window.setSize(scene.width, scene.height)
-  await window.loadFile(pagePath)
-  await window.webContents.executeJavaScript('window.captureReady')
-  await new Promise(resolve => setTimeout(resolve, 150))
-  const diagnostics = await window.webContents.executeJavaScript(`(() => {
+  await view.setSize(spec.width, spec.height)
+  await view.open(`${spec.name}.html`, html)
+  await view.page.evaluate(() => window.captureReady)
+
+  const diagnostics = await view.page.evaluate(() => {
     const content = document.querySelector('.cm-content')
     return {
       contentClientWidth: content?.clientWidth,
@@ -51,54 +44,42 @@ async function capture (window, scene) {
       rawMixed: document.body.textContent.includes('[@thm:torelli; @Ols04, Lem. 7.1]'),
       chipKeys: Array.from(document.querySelectorAll('.reference-chip')).map(chip => chip.getAttribute('data-reference-key')),
       rawDuplicateVisible: document.body.textContent.includes('@thm:torelli'),
-      rawMissingVisible: document.body.textContent.includes('@fig:missing'),
+      rawMissingVisible: document.body.textContent.includes('@fig:missing')
     }
-  })()`)
-  console.log(scene.name, diagnostics)
+  })
+  console.log(spec.name, diagnostics)
   if (diagnostics.contentScrollWidth > diagnostics.contentClientWidth + 1) {
-    throw new Error(`${scene.name} has horizontal editor overflow`)
+    throw new Error(`${spec.name} has horizontal editor overflow`)
   }
-  if (scene.scene === 'occurrences' && diagnostics.chips === 0) {
-    throw new Error(`${scene.name} rendered no reference chips`)
+  if (spec.scene === 'occurrences' && diagnostics.chips === 0) {
+    throw new Error(`${spec.name} rendered no reference chips`)
   }
-  if (scene.scene === 'occurrences' && !diagnostics.rawMixed) {
-    throw new Error(`${scene.name} did not keep the mixed cluster raw`)
+  if (spec.scene === 'occurrences' && !diagnostics.rawMixed) {
+    throw new Error(`${spec.name} did not keep the mixed cluster raw`)
   }
-  if (scene.scene === 'definitions' && (diagnostics.countBadges === 0 || diagnostics.positionedGroups === 0)) {
-    throw new Error(`${scene.name} rendered no positioned definition badges`)
+  if (spec.scene === 'definitions' && (diagnostics.countBadges === 0 || diagnostics.positionedGroups === 0)) {
+    throw new Error(`${spec.name} rendered no positioned definition badges`)
   }
-  if (scene.scene === 'states') {
+  if (spec.scene === 'states') {
     // Resolved keys render chips — including the ProjectB-resolved key —
     // while the duplicate and missing keys stay raw (no chip, authored
     // token visible).
     if (!diagnostics.chipKeys.includes('eq:intersection-form') ||
         !diagnostics.chipKeys.includes('lem:halphen-degeneration')) {
-      throw new Error(`${scene.name} did not render the resolved chips: ${JSON.stringify(diagnostics.chipKeys)}`)
+      throw new Error(`${spec.name} did not render the resolved chips: ${JSON.stringify(diagnostics.chipKeys)}`)
     }
     if (diagnostics.chipKeys.includes('thm:torelli')) {
-      throw new Error(`${scene.name} rendered a chip for the duplicate key`)
+      throw new Error(`${spec.name} rendered a chip for the duplicate key`)
     }
     if (!diagnostics.rawDuplicateVisible || !diagnostics.rawMissingVisible) {
-      throw new Error(`${scene.name} does not show the raw duplicate/missing tokens`)
+      throw new Error(`${spec.name} does not show the raw duplicate/missing tokens`)
     }
   }
-  const image = await window.webContents.capturePage()
-  await fs.writeFile(path.join(outputDirectory, `${scene.name}.png`), image.toPNG())
+  await view.capture(spec.name)
 }
 
-app.whenReady().then(async () => {
-  const window = new BrowserWindow({
-    width: 1200,
-    height: 900,
-    show: false,
-    webPreferences: { offscreen: true },
-  })
-  for (const scene of scenes) {
-    await capture(window, scene)
-  }
-  window.destroy()
-  app.quit()
-}).catch(error => {
-  console.error(error)
-  app.exit(1)
-})
+const view = await openScene({ width: 1200, height: 900 })
+for (const spec of scenes) {
+  await capture(view, spec)
+}
+await view.close()

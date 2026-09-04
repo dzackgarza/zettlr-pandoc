@@ -81,15 +81,8 @@ describe('Widget renderers under the visual-indent plugin (issue #15)', function
     ])
     await execFileAsync('xvfb-run', [
       '-a',
-      path.join(root, 'node_modules/.bin/electron'),
-      '--ozone-platform=x11',
-      '--disable-gpu',
-      // A fresh package-manager install leaves electron's chrome-sandbox without its
-      // root-owned SUID bits, which aborts Chromium under xvfb. The probe
-      // renders local test content only, so run unsandboxed rather than
-      // requiring sudo provisioning for the test suite.
-      '--no-sandbox',
-      path.join(root, 'test/editor-widget-indent-visual-capture.cjs'),
+      'node',
+      path.join(root, 'test/editor-widget-indent-visual-capture.mjs'),
       outputDirectory,
     ], { maxBuffer: 8 * 1024 * 1024 })
     for (const scene of SCENES) {

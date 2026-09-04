@@ -7,7 +7,7 @@
  * are fed through their production effects, and startCompletion() opens the
  * real tooltip DOM — nothing is mocked or re-implemented.
  *
- * The capture driver (reference-completion-visual-capture.cjs) uses the
+ * The capture driver (reference-completion-visual-capture.mjs) uses the
  * exposed completionProbe* helpers to select specific options (for the
  * label info panel with its quick-help link and for the disabled
  * another-Project entry) and to prove the disabled entry's inert apply.

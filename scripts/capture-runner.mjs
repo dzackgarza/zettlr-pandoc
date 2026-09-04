@@ -8,107 +8,96 @@ import process from "node:process";
 const root = path.resolve(import.meta.dirname, "..");
 const nodeModules = path.join(root, "node_modules");
 const esbuild = path.join(nodeModules, ".bin", "esbuild");
-const electron = path.join(nodeModules, ".bin", "electron");
 
 const captures = {
   "pandoc-divs": {
     entry: "test/editor-pandoc-div-visual-entry.ts",
     bundle: "pandoc-div-visual-bundle.js",
-    driver: "test/editor-pandoc-div-visual-capture.cjs",
+    driver: "test/editor-pandoc-div-visual-capture.mjs",
   },
   "widget-indent": {
     entry: "test/editor-widget-indent-visual-entry.ts",
     bundle: "widget-indent-visual-bundle.js",
-    driver: "test/editor-widget-indent-visual-capture.cjs",
+    driver: "test/editor-widget-indent-visual-capture.mjs",
     loader: ".svg=dataurl",
   },
   tikz: {
     build: "test/visual-build.cjs",
     entry: "test/editor-tikz-visual-entry.ts",
     bundle: "tikz-visual-bundle.js",
-    driver: "test/editor-tikz-visual-capture.cjs",
+    driver: "test/editor-tikz-visual-capture.mjs",
   },
   "pandoc-help": {
     build: "test/visual-build.cjs",
     entry: "test/pandoc-quick-help-visual-entry.ts",
     bundle: "pandoc-quick-help-bundle.js",
-    driver: "test/pandoc-quick-help-visual-capture.cjs",
+    driver: "test/pandoc-quick-help-visual-capture.mjs",
   },
   "reference-search": {
     build: "test/visual-build.cjs",
     entry: "test/reference-search-overlay-entry.ts",
     bundle: "reference-search-overlay-bundle.js",
-    driver: "test/reference-search-overlay-probe.cjs",
-    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+    driver: "test/reference-search-overlay-probe.mjs",
   },
   "reference-chips": {
     entry: "test/editor-reference-chips-visual-entry.ts",
     bundle: "reference-chips-visual-bundle.js",
-    driver: "test/editor-reference-chips-visual-capture.cjs",
+    driver: "test/editor-reference-chips-visual-capture.mjs",
   },
   "reference-completion": {
     entry: "test/reference-completion-visual-entry.ts",
     bundle: "reference-completion-visual-bundle.js",
-    driver: "test/reference-completion-visual-capture.cjs",
-    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+    driver: "test/reference-completion-visual-capture.mjs",
   },
   "reference-hover": {
     entry: "test/reference-hover-visual-entry.ts",
     bundle: "reference-hover-visual-bundle.js",
-    driver: "test/reference-hover-visual-capture.cjs",
+    driver: "test/reference-hover-visual-capture.mjs",
   },
   "reference-navigation": {
     entry: "test/reference-navigation-entry.ts",
     bundle: "reference-navigation-bundle.js",
-    driver: "test/reference-navigation-probe.cjs",
+    driver: "test/reference-navigation-probe.mjs",
     esbuildArgs: ["--define:process.platform='\"linux\"'"],
-    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
   },
   "navigation-controls": {
     build: "test/visual-build.cjs",
     entry: "test/reference-navigation-controls-entry.ts",
     bundle: "reference-navigation-controls-bundle.js",
-    driver: "test/reference-navigation-controls-capture.cjs",
-    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+    driver: "test/reference-navigation-controls-capture.mjs",
   },
   "rename-preview": {
     build: "test/visual-build.cjs",
     entry: "test/reference-rename-preview-entry.ts",
     bundle: "reference-rename-preview-bundle.js",
-    driver: "test/reference-rename-preview-probe.cjs",
-    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+    driver: "test/reference-rename-preview-probe.mjs",
   },
   "selection-composer": {
     build: "test/visual-build.cjs",
     entry: "test/annotation-composer-visual-entry.ts",
     bundle: "annotation-composer-visual-bundle.js",
-    driver: "test/annotation-composer-visual-capture.cjs",
-    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+    driver: "test/annotation-composer-visual-capture.mjs",
   },
   "review-diff": {
     entry: "test/editor-review-diff-visual-entry.ts",
     bundle: "review-diff-visual-bundle.js",
-    driver: "test/editor-review-diff-visual-capture.cjs",
-    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+    driver: "test/editor-review-diff-visual-capture.mjs",
   },
   "editor-annotations": {
     entry: "test/editor-annotations-visual-entry.ts",
     bundle: "editor-annotations-visual-bundle.js",
-    driver: "test/editor-annotations-visual-capture.cjs",
-    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+    driver: "test/editor-annotations-visual-capture.mjs",
   },
   "annotations-panel": {
     build: "test/visual-build.cjs",
     entry: "test/annotations-sidebar-visual-entry.ts",
     bundle: "annotations-sidebar-visual-bundle.js",
-    driver: "test/annotations-sidebar-visual-capture.cjs",
-    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+    driver: "test/annotations-sidebar-visual-capture.mjs",
   },
   "readme-demos": {
     entry: "test/readme-demo-entry.ts",
     bundle: "readme-demo-bundle.js",
-    driver: "test/readme-demo-capture.cjs",
-    electronArgs: ["--ozone-platform=x11", "--disable-gpu"],
+    driver: "test/readme-demo-capture.mjs",
   },
 };
 
@@ -152,11 +141,7 @@ if (capture.build !== undefined) {
   run(esbuild, args);
 }
 
-run("xvfb-run", [
-  "-a",
-  electron,
-  ...(capture.electronArgs ?? []),
-  "--no-sandbox",
-  path.join(root, capture.driver),
-  output,
-]);
+// Playwright launches Electron from inside the driver, so the driver itself
+// is a plain node process — bun cannot complete Playwright's CDP attach to
+// Electron. xvfb still supplies the display Electron needs on a headless box.
+run("xvfb-run", ["-a", "node", path.join(root, capture.driver), output]);

@@ -135,15 +135,8 @@ describe('Pandoc math export headers', function () {
     await runPandoc(defaultsFile, outputFile)
     const { stderr } = await execFileAsync('xvfb-run', [
       '-a',
-      path.join(process.cwd(), 'node_modules/.bin/electron'),
-      '--ozone-platform=x11',
-      '--disable-gpu',
-      // A fresh package-manager install leaves electron's chrome-sandbox without its
-      // root-owned SUID bits, which aborts Chromium under xvfb. The probe
-      // renders local test content only, so run unsandboxed rather than
-      // requiring sudo provisioning for the test suite.
-      '--no-sandbox',
-      path.join(process.cwd(), 'test/pandoc-math-html-probe.cjs'),
+      'node',
+      path.join(process.cwd(), 'test/pandoc-math-html-probe.mjs'),
       outputFile,
       screenshot,
       renderedDocument,

@@ -1,7 +1,7 @@
 /**
  * Mounts the production Mod-P ReferenceSearchOverlay Vue component with a
  * real workspace snapshot for the Chromium input probe
- * (reference-search-overlay-probe.cjs).
+ * (reference-search-overlay-probe.mjs).
  *
  * The probe delivers the raw fixture documents; this entry runs the REAL
  * extractor over them, mounts the overlay with the resulting workspace

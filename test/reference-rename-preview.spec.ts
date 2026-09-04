@@ -80,11 +80,8 @@ describe('Rename preview dialog', function () {
     ], { maxBuffer: 8 * 1024 * 1024 })
     const { stdout } = await execFileAsync('xvfb-run', [
       '-a',
-      path.join(root, 'node_modules/.bin/electron'),
-      '--ozone-platform=x11',
-      '--disable-gpu',
-      '--no-sandbox',
-      path.join(root, 'test/reference-rename-preview-probe.cjs'),
+      'node',
+      path.join(root, 'test/reference-rename-preview-probe.mjs'),
       outputDirectory,
     ], { maxBuffer: 8 * 1024 * 1024 })
     const jsonLine = stdout.trim().split('\n').at(-1)

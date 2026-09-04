@@ -91,14 +91,8 @@ describe('Create-reference-label dialog and key-edit prompt', function () {
     ], { maxBuffer: 8 * 1024 * 1024 })
     const { stdout } = await execFileAsync('xvfb-run', [
       '-a',
-      path.join(root, 'node_modules/.bin/electron'),
-      '--ozone-platform=x11',
-      '--disable-gpu',
-      // Same sandbox posture as the reference-search-overlay probe: a fresh
-      // A fresh package-manager install leaves chrome-sandbox without SUID bits; the probe
-      // renders local test content only.
-      '--no-sandbox',
-      path.join(root, 'test/reference-create-label-probe.cjs'),
+      'node',
+      path.join(root, 'test/reference-create-label-probe.mjs'),
       outputDirectory,
     ], { maxBuffer: 8 * 1024 * 1024 })
     const jsonLine = stdout

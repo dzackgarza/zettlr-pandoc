@@ -1,5 +1,3 @@
-'use strict'
-
 // Captures the REAL ButtonControl-based Back/Forward navigation controls
 // (issue #1 Phase 5; ledger C4) in both enabled and disabled states, light
 // and dark. The page installs the window.ipc recorder seam BEFORE the
@@ -7,24 +5,21 @@
 // import/mount time), exactly as the reference-navigation probe does; it
 // records outgoing requests only and simulates nothing back.
 
-const { app, BrowserWindow } = require('electron')
-const fs = require('fs/promises')
-const path = require('path')
+import { openScene } from './visual/scene.mjs'
 
-const outputDirectory = process.argv[process.argv.length - 1]
 const scenes = [
   { name: 'navigation-controls-enabled-light', scene: 'enabled', dark: false, width: 480, height: 120 },
   { name: 'navigation-controls-enabled-dark', scene: 'enabled', dark: true, width: 480, height: 120 },
   { name: 'navigation-controls-disabled-light', scene: 'disabled', dark: false, width: 480, height: 120 },
-  { name: 'navigation-controls-disabled-dark', scene: 'disabled', dark: true, width: 480, height: 120 },
+  { name: 'navigation-controls-disabled-dark', scene: 'disabled', dark: true, width: 480, height: 120 }
 ]
 
-async function capture (window, scene) {
-  const background = scene.dark ? '#1d2024' : '#e9eaec'
-  const foreground = scene.dark ? '#e5e7eb' : '#222222'
-  const page = `<!doctype html><html><head><meta charset="utf-8"><style>
+async function capture (view, spec) {
+  const background = spec.dark ? '#1d2024' : '#e9eaec'
+  const foreground = spec.dark ? '#e5e7eb' : '#222222'
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     html, body, #app { margin: 0; width: 100%; min-height: 100%; background: ${background}; color: ${foreground}; }
-  </style></head><body class="${scene.dark ? 'dark' : ''}" data-scene="${scene.scene}">
+  </style></head><body class="${spec.dark ? 'dark' : ''}" data-scene="${spec.scene}">
     <main id="app"></main><script>
     window.__ipcInvocations = []
     window.ipc = {
@@ -38,14 +33,11 @@ async function capture (window, scene) {
     }
     </script><script src="./reference-navigation-controls-bundle.js"></script>
   </body></html>`
-  const pagePath = path.join(outputDirectory, `${scene.name}.html`)
-  await fs.writeFile(pagePath, page)
-  window.setSize(scene.width, scene.height)
-  await window.loadFile(pagePath)
-  await window.webContents.executeJavaScript('window.captureReady')
-  await new Promise(resolve => setTimeout(resolve, 150))
+  await view.setSize(spec.width, spec.height)
+  await view.open(`${spec.name}.html`, html)
+  await view.page.evaluate(() => window.captureReady)
 
-  const diagnostics = await window.webContents.executeJavaScript(`(() => {
+  const diagnostics = await view.page.evaluate(() => {
     const back = document.querySelector('#toolbar-previous-file')
     const forward = document.querySelector('#toolbar-next-file')
     const iconRendered = icon => icon !== null && icon.shadowRoot !== null && icon.shadowRoot.querySelector('svg') !== null
@@ -62,48 +54,36 @@ async function capture (window, scene) {
       backArrowLeft: back === null ? null : back.querySelector('cds-icon[shape="arrow"][direction="left"]') !== null,
       forwardArrowRight: forward === null ? null : forward.querySelector('cds-icon[shape="arrow"][direction="right"]') !== null,
       backIconRendered: back === null ? false : iconRendered(back.querySelector('cds-icon')),
-      forwardIconRendered: forward === null ? false : iconRendered(forward.querySelector('cds-icon')),
+      forwardIconRendered: forward === null ? false : iconRendered(forward.querySelector('cds-icon'))
     }
-  })()`)
-  console.log(scene.name, JSON.stringify(diagnostics))
+  })
+  console.log(spec.name, JSON.stringify(diagnostics))
 
   if (!diagnostics.hasToolbar || !diagnostics.backPresent || !diagnostics.forwardPresent) {
-    throw new Error(`${scene.name} did not mount the toolbar navigation controls`)
+    throw new Error(`${spec.name} did not mount the toolbar navigation controls`)
   }
   if (diagnostics.backTitle !== 'Navigate back' || diagnostics.forwardTitle !== 'Navigate forward') {
-    throw new Error(`${scene.name} carries the wrong control titles`)
+    throw new Error(`${spec.name} carries the wrong control titles`)
   }
   if (!diagnostics.backArrowLeft || !diagnostics.forwardArrowRight ||
       !diagnostics.backIconRendered || !diagnostics.forwardIconRendered) {
-    throw new Error(`${scene.name} did not render the directional arrow icons`)
+    throw new Error(`${spec.name} did not render the directional arrow icons`)
   }
-  const expectDisabled = scene.scene === 'disabled'
+  const expectDisabled = spec.scene === 'disabled'
   if (diagnostics.backDisabled !== expectDisabled || diagnostics.forwardDisabled !== expectDisabled) {
-    throw new Error(`${scene.name} has the wrong disabled state: ${JSON.stringify(diagnostics)}`)
+    throw new Error(`${spec.name} has the wrong disabled state: ${JSON.stringify(diagnostics)}`)
   }
   // The disabled presentation must be visually distinct (ButtonControl's
   // :disabled rule dims to opacity 0.4).
   if (expectDisabled && (Number(diagnostics.backOpacity) >= 1 || Number(diagnostics.forwardOpacity) >= 1)) {
-    throw new Error(`${scene.name}'s disabled controls are not visually dimmed`)
+    throw new Error(`${spec.name}'s disabled controls are not visually dimmed`)
   }
 
-  const image = await window.webContents.capturePage()
-  await fs.writeFile(path.join(outputDirectory, `${scene.name}.png`), image.toPNG())
+  await view.capture(spec.name)
 }
 
-app.whenReady().then(async () => {
-  const window = new BrowserWindow({
-    width: 480,
-    height: 120,
-    show: false,
-    webPreferences: { offscreen: true },
-  })
-  for (const scene of scenes) {
-    await capture(window, scene)
-  }
-  window.destroy()
-  app.quit()
-}).catch(error => {
-  console.error(error)
-  app.exit(1)
-})
+const view = await openScene({ width: 480, height: 120, args: ['--ozone-platform=x11', '--disable-gpu'] })
+for (const spec of scenes) {
+  await capture(view, spec)
+}
+await view.close()

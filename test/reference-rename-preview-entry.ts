@@ -1,6 +1,6 @@
 /**
  * Mounts the production rename-preview dialog for the Chromium input probe
- * (reference-rename-preview-probe.cjs). Issue #1, review A4 red.
+ * (reference-rename-preview-probe.mjs). Issue #1, review A4 red.
  *
  * The probe delivers the raw fixture documents; this entry runs the REAL
  * extractor over them, previews the rename with the REAL
