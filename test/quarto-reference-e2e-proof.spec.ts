@@ -54,8 +54,12 @@ function polyfillJsdomForCodeMirror (): void {
 }
 
 describe('Quarto theorem cross-reference E2E and linter proof', function () {
-  const DEF_PATH = '/home/dzack/research/docs/framework/Higher-Categories-and-Universes.md'
-  const OCC_PATH = '/home/dzack/research/docs/framework/Categorical-Foundations.md'
+  // Repo-owned fixtures (never the user's private research documents): a
+  // classless Quarto ::: {#def-core} div whose title comes from its child
+  // heading, and a separate document that cites @def-core.
+  const FIXTURE_ROOT = path.resolve('test', 'fixtures', 'quarto-reference-e2e')
+  const DEF_PATH = path.join(FIXTURE_ROOT, 'Definitions.md')
+  const OCC_PATH = path.join(FIXTURE_ROOT, 'Consumers.md')
 
   let defText: string
   let occText: string
@@ -83,7 +87,7 @@ describe('Quarto theorem cross-reference E2E and linter proof', function () {
       snapshot: activeSnap,
       workspaceOccurrences: workspace.flatMap(s => s.occurrences),
       resolutions: resolveWorkspace(workspace),
-      projectRoots: [{ rootPath: '/home/dzack/research/docs', files: workspace.map(s => s.documentPath) }]
+      projectRoots: [{ rootPath: FIXTURE_ROOT, files: workspace.map(s => s.documentPath) }]
     }
 
     const state = EditorState.create({
