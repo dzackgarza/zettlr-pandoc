@@ -947,6 +947,15 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 409, "REVIEW_INVALIDATED", result.message);
       } else if (result.code === "IDEMPOTENCY_CONFLICT" || result.code === "REVIEW_GENERATION_MISMATCH") {
         this.sendError(res, 409, result.code, result.message);
+      } else if (result.code === "ANNOTATION_NOT_FOUND") {
+        // A claim's addressesAnnotationIds named an id this document does
+        // not have. The linkage check runs before the sidecar write, so the
+        // whole submission — this claim's patch included — committed
+        // nothing (I2, and the plan's "commits with the annotation change
+        // or not at all").
+        this.sendError(res, 404, result.code, result.message);
+      } else if (result.code === "ANNOTATION_RESOLVED" || result.code === "ANNOTATION_ORPHANED") {
+        this.sendError(res, 409, result.code, result.message);
       } else if (result.code === "PERSISTENCE_FAILED") {
         this.sendError(res, 500, "PERSISTENCE_FAILED", result.message);
       } else {
