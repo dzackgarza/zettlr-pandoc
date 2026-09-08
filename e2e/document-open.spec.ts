@@ -18,6 +18,11 @@ import {
 } from './support/electron-app'
 
 const MARKER = 'ZETTLR_E2E_VISIBLE_DOCUMENT_MARKER_4E8C8D8A'
+const REPRESENTATION_TABLE = `::: definition
+| Kernel of $q'$ | Induced representation |
+| --- | --- |
+| $M$ | $\\operatorname{Ind}_H^G M$ where $H=\\ker(\\varphi_H)$, $M$ is an $R[G]$-module (over the group ring), and $G/H$ is a quotient group |
+:::`
 const ARTIFACT_DIRECTORY = path.join(
   tmpdir(),
   'zettlr-document-open-e2e-latest'
@@ -105,6 +110,7 @@ describe('opening a Markdown document', function () {
       // so the fixture document carries both.
       documentContents:
         `# Opened document\n\n${MARKER}\n\n` +
+        `${REPRESENTATION_TABLE}\n\n` +
         'Standard terminology: see @sec:terminology.\n\n' +
         '# Terminology, notation, and standard background {#sec:terminology}\n'
     })
@@ -208,6 +214,21 @@ describe('opening a Markdown document', function () {
       `The renderer reported unexpected errors or dialogs:\n${rendererEvents.join('\n')}`
     )
     screenshots.set('visible-document.png', await page.screenshot())
+  })
+
+  it('renders a pipe table inside a Pandoc div in the active document', async function () {
+    assert.ok(browser, 'The application must be running')
+    const page = await findEditorPage(browser, this.timeout())
+    const table = page.locator('.cm-table-editor-widget-wrapper table')
+
+    assert.equal(await table.count(), 1, 'The editor must render the pipe table as a table widget.')
+    assert.equal(await table.locator('tr').count(), 2, 'The rendered table must keep its header and data rows.')
+    assert.equal(await table.locator('th, td').count(), 4, 'The rendered table must keep both columns.')
+    assert.match(await table.innerText(), /Induced representation/)
+    assert.match(await table.innerText(), /quotient group/)
+    assert.equal(await table.locator('mjx-container').count(), 7, 'The rendered cells must typeset each math expression.')
+
+    screenshots.set('rendered-pipe-table.png', await page.screenshot())
   })
 
   it('renders reference UI and opens a badge citing location on first load', async function () {
