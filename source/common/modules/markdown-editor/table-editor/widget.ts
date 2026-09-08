@@ -22,7 +22,7 @@ import type { TableRow, Table, TableCell } from '../../markdown-utils/markdown-a
 import { parseTableNode } from '../../markdown-utils/markdown-ast/parse-table-node'
 import { nodeToHTML } from '../../markdown-utils/markdown-to-html'
 import { createSubviewForCell, hiddenSpanField } from './subview'
-import { getCoordinatesForRange } from './commands/util'
+import { getCoordinatesForRange, getTableNodes } from './commands/util'
 import { generateColumnControls, generateEmptyTableWidgetElement, generateRowControls, tableTD, tableTH, tableTR } from './widget-dom'
 import { displayTableContextMenu } from './context-menu'
 import { WIDGET_LINE_STYLE_RESET_CLASS } from '../renderers/base-renderer'
@@ -261,9 +261,7 @@ export class TableWidget extends WidgetType {
     // the markdown text outside of the loop
     const markdown = state.sliceDoc()
 
-    const newDecos: Array<Range<Decoration>> = tree
-      // Get all Table nodes in the document
-      .topNode.getChildren('Table')
+    const newDecos: Array<Range<Decoration>> = getTableNodes(tree)
       .map(node => {
         return { node, ast: parseTableNode(node, markdown) }
       })
