@@ -421,6 +421,36 @@ export interface FixtureOptions {
   config?: Record<string, unknown>
 }
 
+export interface WorkspaceFixtureOptions {
+  /** Directory copied verbatim to become the single open workspace root. */
+  workspaceSource: string
+  /** Path of the document opened in the active leaf, relative to the root. */
+  activeDocument: string
+  /** Extra config.json keys merged over the defaults. */
+  config?: Record<string, unknown>
+}
+
+/**
+ * A fixture whose workspace root is a copy of an existing directory — the
+ * shape a Quarto project needs, since the app offers the Book surface only
+ * when a workspace ROOT is the project.
+ */
+export async function createWorkspaceFixture (
+  prefix: string,
+  options: WorkspaceFixtureOptions
+): Promise<Fixture> {
+  const root = await mkdtemp(path.join(tmpdir(), prefix))
+  const configDirectory = path.join(root, 'config')
+  const workspaceDirectory = path.join(root, 'workspace')
+  const documentPath = path.join(workspaceDirectory, options.activeDocument)
+
+  await mkdir(configDirectory)
+  await cp(options.workspaceSource, workspaceDirectory, { recursive: true })
+  await writeFixtureState(configDirectory, workspaceDirectory, documentPath, options.config)
+
+  return { root, configDirectory, documentPath }
+}
+
 export async function createFixture (
   prefix: string,
   options: FixtureOptions
@@ -433,7 +463,18 @@ export async function createFixture (
   await mkdir(configDirectory)
   await mkdir(workspaceDirectory)
   await writeFile(documentPath, options.documentContents, 'utf8')
+  await writeFixtureState(configDirectory, workspaceDirectory, documentPath, options.config)
 
+  return { root, configDirectory, documentPath }
+}
+
+/** Writes the throwaway config.json and documents.yaml both fixture shapes share. */
+async function writeFixtureState (
+  configDirectory: string,
+  workspaceDirectory: string,
+  documentPath: string,
+  config: Record<string, unknown> | undefined
+): Promise<void> {
   const packageMetadata: unknown = JSON.parse(
     await readFile(path.join(REPO_ROOT, 'package.json'), 'utf8')
   )
@@ -459,7 +500,7 @@ export async function createFixture (
         // A spec that needs the API asks for it and gets a kernel-assigned
         // port; every other fixture leaves the port alone.
         agentApi: { enabled: false, port: 0 },
-        ...options.config
+        ...config
       },
       null,
       2
@@ -480,8 +521,6 @@ export async function createFixture (
     stringify(documents),
     'utf8'
   )
-
-  return { root, configDirectory, documentPath }
 }
 
 export interface LaunchOptions {
