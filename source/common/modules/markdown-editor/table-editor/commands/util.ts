@@ -16,7 +16,7 @@
 import { syntaxTree } from '@codemirror/language'
 import type { SelectionRange } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
-import type { SyntaxNode } from '@lezer/common'
+import type { SyntaxNode, Tree } from '@lezer/common'
 import type { Table } from 'source/common/modules/markdown-utils/markdown-ast'
 import { parseTableNode } from 'source/common/modules/markdown-utils/markdown-ast/parse-table-node'
 
@@ -245,6 +245,18 @@ export function getCoordinatesForRange (range: SelectionRange, table: Table): { 
   return col !== undefined && row !== undefined ? { col, row } : undefined
 }
 
+export function getTableNodes (tree: Tree): SyntaxNode[] {
+  const nodes: SyntaxNode[] = []
+  tree.iterate({
+    enter (node) {
+      if (node.name === 'Table') {
+        nodes.push(node.node)
+      }
+    }
+  })
+  return nodes
+}
+
 /**
  * Helper function that makes implementing the table commands simpler by
  * centrally collecting the required logic. Will call `callback` for every
@@ -274,8 +286,7 @@ export function mapSelectionsWithTables<T> (
   target: EditorView,
   callback: (ctx: SelectionTableContext) => T|undefined
 ): T[] {
-  // TODO: Is not recursive! Need to iter!
-  const tableNodes = syntaxTree(target.state).topNode.getChildren('Table')
+  const tableNodes = getTableNodes(syntaxTree(target.state))
 
   // First, collect all tables and their contained selections, since there may
   // be multiple selections in each table. This ensures that each table will
