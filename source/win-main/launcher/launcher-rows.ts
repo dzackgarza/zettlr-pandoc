@@ -9,8 +9,8 @@
  *
  * Description:     The pure half of the command launcher's list: how the
  *                  serialised application menu becomes rows, how a query
- *                  ranks them, and the three dynamic groups whose rows come
- *                  from renderer stores. No framework, no IPC.
+ *                  ranks them, and the four dynamic groups whose rows come
+ *                  from renderer stores and providers. No framework, no IPC.
  *
  * END HEADER
  */
@@ -19,11 +19,12 @@
 // util/reference-search.ts and the webpack alias that serves the ES build).
 import { Fzf } from 'fzf'
 import type { SerializedMenuItem, SerializedSubmenu } from '@dts/common/serialized-menu'
+import type { ValidPandocProfile } from '@providers/assets'
 
 /** A group's address from the root: one key per nesting level. */
 export type GroupPath = readonly string[]
 
-export type DynamicGroupId = 'go-to-file' | 'go-to-heading' | 'search-references'
+export type DynamicGroupId = 'go-to-file' | 'go-to-heading' | 'search-references' | 'export'
 
 export interface MenuLeafRow {
   kind: 'menu-leaf'
@@ -66,7 +67,27 @@ export interface HeadingRow {
   label: string
 }
 
-export type LauncherRow = MenuLeafRow | MenuGroupRow | DynamicGroupRow | FileRow | HeadingRow
+/** One export profile the assets provider can run on the active document. */
+export interface ExportProfileRow {
+  kind: 'export-profile'
+  profile: ValidPandocProfile
+  label: string
+}
+
+/** One custom export command from the export settings. */
+export interface ExportCommandRow {
+  kind: 'export-command'
+  displayName: string
+  command: string
+  label: string
+}
+
+export type LauncherRow = MenuLeafRow | MenuGroupRow | DynamicGroupRow | FileRow | HeadingRow | ExportProfileRow | ExportCommandRow
+
+/** What the launcher asks the window to export the active document with. */
+export type ExportRequest =
+  | { kind: 'profile', profile: ValidPandocProfile }
+  | { kind: 'command', displayName: string, command: string }
 
 /** What the parser had to leave out of the rows. */
 export interface MenuRowsReport {
@@ -95,6 +116,10 @@ export function rowKey (row: LauncherRow): string {
       return `file:${row.path}`
     case 'heading':
       return `heading:${row.line}`
+    case 'export-profile':
+      return `export-profile:${row.profile.name}`
+    case 'export-command':
+      return `export-command:${row.command}`
   }
 }
 

@@ -254,7 +254,6 @@ export interface ConfigOptions {
   }
   display: {
     theme: MarkdownTheme
-    hideToolbarInDistractionFree: boolean
     markdownFileExtensions: boolean
     previewModeShowSyntaxWhenCursorIsAdjacent: boolean
     imageWidth: number
@@ -313,21 +312,6 @@ export interface ConfigOptions {
   shortcuts: {
     editor: Record<ConfigurableEditorShortcuts, string>
     ui: Record<MenuShortcutName, string>
-  }
-  displayToolbarButtons: {
-    showOpenPreferencesButton: boolean
-    showNewFileButton: boolean
-    showPreviousFileButton: boolean
-    showNextFileButton: boolean
-    showPandocDivSpanButton: boolean
-    showMarkdownCommentButton: boolean
-    showMarkdownLinkButton: boolean
-    showMarkdownImageButton: boolean
-    showMarkdownMakeTaskListButton: boolean
-    showInsertTableButton: boolean
-    showInsertFootnoteButton: boolean
-    showDocumentInfoText: boolean
-    showPomodoroButton: boolean
   }
 }
 
@@ -550,7 +534,6 @@ export function getConfigTemplate (): ConfigOptions {
     },
     display: {
       theme: 'berlin', // The theme, can be berlin|frankfurt|bielefeld|karl-marx-stadt|bordeaux
-      hideToolbarInDistractionFree: false,
       markdownFileExtensions: false,
       previewModeShowSyntaxWhenCursorIsAdjacent: true,
       imageWidth: 100, // Maximum preview image width
@@ -621,21 +604,6 @@ export function getConfigTemplate (): ConfigOptions {
       zoomBehavior: 'gui', // Used to determine what gets zoomed: The GUI or the editor
     },
     checkForBeta: false, // Should the user be notified of beta releases?
-    displayToolbarButtons: {
-      showOpenPreferencesButton: true,
-      showNewFileButton: true,
-      showPreviousFileButton: true,
-      showNextFileButton: true,
-      showPandocDivSpanButton: true,
-      showMarkdownCommentButton: true,
-      showMarkdownLinkButton: true,
-      showMarkdownImageButton: true,
-      showMarkdownMakeTaskListButton: true,
-      showInsertTableButton: true,
-      showInsertFootnoteButton: true,
-      showDocumentInfoText: true,
-      showPomodoroButton: true,
-    },
     shortcuts: {
       ui: {
         'next-tab': '',

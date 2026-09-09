@@ -240,15 +240,6 @@ capture-reference-hover output: sync-dependencies
 capture-reference-navigation output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-navigation "{{output}}"
 
-# Capture the REAL toolbar Back/Forward navigation controls (issue #1
-# Phase 5; ledger C4) in enabled and disabled states: bundles the entry with
-# the production renderer webpack config (real WindowToolbar + ButtonControl
-# .vue components and the Clarity icon loader) and screenshots them in
-# isolated offscreen Electron. This never starts Forge, a dev server,
-# xdg-open, or the system browser.
-capture-navigation-controls output: sync-dependencies
-    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" navigation-controls "{{output}}"
-
 # Capture the rename-preview dialog scenes (issue #1, review A4: the
 # contract's "rename preview" capture) in isolated offscreen Electron:
 # bundles the probe entry with the production renderer webpack config,

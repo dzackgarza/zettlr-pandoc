@@ -231,11 +231,6 @@ export function getEditorFields (config: ConfigOptions): PreferencesFieldset[] {
           type: 'checkbox',
           label: trans('Mute non-focused lines in distraction-free mode'),
           model: 'muteLines'
-        },
-        {
-          type: 'checkbox',
-          label: trans('Hide toolbar in distraction-free mode'),
-          model: 'display.hideToolbarInDistractionFree'
         }
       ]
     },

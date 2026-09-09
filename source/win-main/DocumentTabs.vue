@@ -95,6 +95,8 @@
         @dragleave="handleExternalDragleave"
         @dragend="handleExternalDragleave"
       />
+      <!-- The window's header row ends with the pane toggles. -->
+      <PaneToggles v-if="isHeaderRow" />
     </div>
   </div>
 </template>
@@ -116,7 +118,7 @@
 
 import { displayTabbarContext } from './tabs-context'
 import tippy from 'tippy.js'
-import { nextTick, computed, ref, watch, onMounted, onBeforeUnmount, onUpdated } from 'vue'
+import { nextTick, computed, inject, ref, watch, onMounted, onBeforeUnmount, onUpdated } from 'vue'
 import { useDocumentTreeStore } from 'source/pinia'
 import type { LeafNodeJSON, OpenDocument } from '@dts/common/documents'
 import { pathBasename, pathDirname } from '@common/util/renderer-path-polyfill'
@@ -128,6 +130,8 @@ import { trans } from 'source/common/i18n-renderer'
 import showPopupMenu from 'source/common/modules/window-register/application-menu-helper'
 import { closeFile } from './file-manager/util/item-composable'
 import getDocumentTitle from './util/get-document-title'
+import PaneToggles from './PaneToggles.vue'
+import { HEADER_LEAF_ID } from './header-leaf'
 
 const ipcRenderer = window.ipc
 
@@ -135,6 +139,10 @@ const props = defineProps<{
   leafId: string
   windowId: string
 }>()
+
+// The window names the leaf whose tab row is the header row.
+const headerLeafId = inject(HEADER_LEAF_ID)
+const isHeaderRow = computed(() => headerLeafId?.value === props.leafId)
 
 const showScrollers = ref<boolean>(false)
 const resizeObserver = new ResizeObserver(() => {

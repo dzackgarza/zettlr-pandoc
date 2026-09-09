@@ -21,6 +21,7 @@ import { strict as assert } from 'assert'
 import { readFileSync } from 'fs'
 import path from 'path'
 import { serializedMenuSchema, type SerializedMenuItem } from 'source/types/common/serialized-menu'
+
 import { allMenuLeafRows } from 'source/win-main/launcher/launcher-rows'
 
 const FIXTURE = path.join('test', 'fixtures', 'serialized-menu.linux.json')
@@ -36,8 +37,8 @@ const TOOLBAR_COMMAND_MENU_ITEMS: Record<string, string> = {
   'show-tag-cloud': 'menu.tags',
   'open-preferences': 'menu.preferences',
   'new-file': 'menu.new_file',
-  'previous-file': 'menu.navigate_back',
-  'next-file': 'menu.navigate_forward',
+  'previous-file': 'menu.previous_file',
+  'next-file': 'menu.next_file',
   export: 'menu.export',
   pandocDivOrSpan: 'menu.insert_pandoc_div',
   markdownComment: 'menu.insert_comment',
@@ -76,12 +77,4 @@ describe('the toolbar commands in the application menu', function () {
       )
     })
   }
-
-  it('lists Back and Forward as View menu items the launcher can run', function () {
-    const view = menu.find(item => item.type === 'submenu' && item.id === 'view-menu')
-    assert.ok(view !== undefined && view.type === 'submenu', 'the View menu is present')
-    const ids = view.submenu.map(item => item.type === 'submenu' || item.type === 'normal' ? item.id : undefined)
-    assert.ok(ids.includes('menu.navigate_back'), 'Back is a View menu item')
-    assert.ok(ids.includes('menu.navigate_forward'), 'Forward is a View menu item')
-  })
 })

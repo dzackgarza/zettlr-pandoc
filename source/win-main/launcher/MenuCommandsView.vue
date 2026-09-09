@@ -39,6 +39,7 @@
           v-bind:disabled="isDisabled(row)"
           v-bind:checked="row.kind === 'menu-leaf' ? row.checked : undefined"
           v-bind:data-row-kind="row.kind"
+          v-bind:data-export-profile="row.kind === 'export-profile' ? row.profile.name : undefined"
           v-on:run="emit('run', row)"
         >
           <template v-if="row.kind === 'heading'">

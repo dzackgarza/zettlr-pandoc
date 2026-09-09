@@ -55,8 +55,8 @@
  *
  * Description:     The Ctrl+P command launcher: a modal dialog over the
  *                  editor whose submenu tree IS the serialised application
- *                  menu, plus three dynamic groups (Go to file, Go to
- *                  heading, Search references). Labels, shortcuts and
+ *                  menu, plus four dynamic groups (Go to file, Go to
+ *                  heading, Search references, Export as). Labels, shortcuts and
  *                  enablement come from the serialised items; a menu leaf
  *                  executes through the menu provider's click-menu-item, the
  *                  dynamic rows through their typed providers. reka-ui's
@@ -72,10 +72,13 @@ import { menuProviderMessageSchema, type SerializedMenuItem } from '@dts/common/
 import type { ProjectRootSpec, ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
-import { useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
+import { useConfigStore, useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { invokeReferenceProviderRecoverably } from '../util/recoverable-reference-errors'
 import getDocumentTitle from '../util/get-document-title'
 import { relativePath } from '@common/util/renderer-path-polyfill'
+import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
+import { parseReaderWriter } from 'source/common/pandoc-util/parse-reader-writer'
+import type { PandocProfileMetadata, ValidPandocProfile } from '@providers/assets'
 import type { ReferenceJumpIntent } from '../component-contracts'
 import MenuCommandsView from './MenuCommandsView.vue'
 import ReferenceSearchView from './ReferenceSearchView.vue'
@@ -84,7 +87,11 @@ import {
   breadcrumbOf,
   menuGroupRows,
   rankRows,
+  type DynamicGroupId,
   type DynamicGroupRow,
+  type ExportCommandRow,
+  type ExportProfileRow,
+  type ExportRequest,
   type FileRow,
   type HeadingRow,
   type LauncherRow
@@ -107,8 +114,10 @@ const emit = defineEmits<{
   (e: 'jump-to-line', line: number): void
   (e: 'jump', intent: ReferenceJumpIntent): void
   (e: 'open-help'): void
+  (e: 'export', request: ExportRequest): void
 }>()
 
+const configStore = useConfigStore()
 const documentTreeStore = useDocumentTreeStore()
 const windowStateStore = useWindowStateStore()
 const workspaceStore = useWorkspaceStore()
@@ -134,8 +143,73 @@ onBeforeMount(() => {
 const DYNAMIC_GROUPS: readonly DynamicGroupRow[] = [
   { kind: 'dynamic-group', id: 'go-to-file', label: trans('Go to file') },
   { kind: 'dynamic-group', id: 'go-to-heading', label: trans('Go to heading') },
-  { kind: 'dynamic-group', id: 'search-references', label: trans('Search references') }
+  { kind: 'dynamic-group', id: 'search-references', label: trans('Search references') },
+  { kind: 'dynamic-group', id: 'export', label: trans('Export as…') }
 ]
+
+// The export view's data: the profiles the assets provider can run, fetched
+// when the view opens; the custom commands come from the config.
+const exportProfiles = ref<ValidPandocProfile[]>([])
+
+/** Loads the export profiles Zettlr can run on its own documents. */
+async function loadExportProfiles (): Promise<boolean> {
+  const listed: PandocProfileMetadata[] = await ipcRenderer.invoke('assets-provider', { command: 'list-export-profiles' })
+  exportProfiles.value = listed
+    .filter((profile): profile is ValidPandocProfile => !profile.isInvalid)
+    .filter(profile => SUPPORTED_READERS.includes(parseReaderWriter(profile.reader).name))
+  return true
+}
+
+/** The profile's name without its extension, and the writer it runs. */
+function exportProfileLabel (profile: ValidPandocProfile): string {
+  return `${profile.name.substring(0, profile.name.lastIndexOf('.'))} (${profile.writer})`
+}
+
+/** The last profile exported for the active document, else the last used anywhere. */
+const rememberedExportProfile = computed<string>(() => {
+  const activePath = documentTreeStore.lastLeafActiveFile?.path
+  const entry = configStore.config.export.selectedProfiles.find(item => item.filePath === activePath)
+  return entry === undefined ? configStore.config.export.lastUsedProfile : entry.profile
+})
+
+/** The export rows, the remembered profile first so Enter re-exports. */
+const exportRows = computed<LauncherRow[]>(() => {
+  const commandLabel = trans('command')
+  const profileRows: ExportProfileRow[] = exportProfiles.value.map(profile => ({
+    kind: 'export-profile',
+    profile,
+    label: exportProfileLabel(profile)
+  }))
+  const commandRows: ExportCommandRow[] = configStore.config.export.customCommands.map(command => ({
+    kind: 'export-command',
+    displayName: command.displayName,
+    command: command.command,
+    label: `${command.displayName} (${commandLabel})`
+  }))
+  const rows: LauncherRow[] = [ ...profileRows, ...commandRows ]
+  const remembered = rememberedExportProfile.value
+  const first = rows.findIndex(row => (row.kind === 'export-profile' ? row.profile.name : row.kind === 'export-command' ? row.command : '') === remembered)
+  if (first <= 0) {
+    return rows
+  }
+  return [ rows[first], ...rows.slice(0, first), ...rows.slice(first + 1) ]
+})
+
+/** How many per-document profile choices the config keeps. */
+const rememberedProfilesLimit = 50
+
+/** Remembers the profile chosen for the active document, for the next export. */
+function rememberExportProfile (profile: string): void {
+  const filePath = documentTreeStore.lastLeafActiveFile?.path
+  if (filePath === undefined) {
+    return
+  }
+  const previous = configStore.config.export.selectedProfiles
+    .filter(item => item.filePath !== filePath)
+    .slice(-(rememberedProfilesLimit - 1))
+  configStore.setConfigValue('export.selectedProfiles', [ ...previous, { filePath, profile } ])
+  configStore.setConfigValue('export.lastUsedProfile', profile)
+}
 
 /** Every workspace document as a row: its title, and its directory relative to the root that holds it. */
 const fileRows = computed<FileRow[]>(() => {
@@ -162,6 +236,13 @@ const headingRows = computed<HeadingRow[]>(() => {
   return toc.map(entry => ({ kind: 'heading', line: entry.line, level: entry.level, label: entry.text }))
 })
 
+/** Each dynamic group's rows, by the group that lists them. */
+const dynamicGroupRows = {
+  'go-to-file': fileRows,
+  'go-to-heading': headingRows,
+  export: exportRows
+} as const
+
 /** The rows of the current view before the query ranks them. */
 function viewRows (view: LauncherView, query: string): LauncherRow[] {
   switch (view.kind) {
@@ -173,10 +254,23 @@ function viewRows (view: LauncherView, query: string): LauncherRow[] {
     case 'menu-group':
       return menuGroupRows(menu.value, view.path).rows
     case 'dynamic-group':
-      return view.id === 'go-to-file' ? fileRows.value : headingRows.value
+      return dynamicGroupRows[view.id].value
     case 'references':
       return []
   }
+}
+
+/** The data a dynamic group fetches before it opens; the others read stores. */
+const dynamicGroupLoaders: Partial<Record<DynamicGroupId, () => Promise<boolean>>> = {
+  'search-references': loadReferences,
+  export: loadExportProfiles
+}
+
+/** The view a dynamic group row drills into. */
+function dynamicGroupView (id: DynamicGroupId): LauncherView {
+  return id === 'search-references'
+    ? { kind: 'references', request: null }
+    : { kind: 'dynamic-group', id }
 }
 
 const rows = computed<LauncherRow[]>(() => {
@@ -239,10 +333,16 @@ async function loadReferences (): Promise<boolean> {
   return true
 }
 
-/** Opens the launcher on a view: the root, or the references search for a relayed request. */
+/** Opens the launcher on a view: the root, a dynamic group, or the references search for a relayed request. */
 async function open (view: LauncherView): Promise<void> {
   if (view.kind === 'references' && !(await loadReferences())) {
     return
+  }
+  if (view.kind === 'dynamic-group') {
+    const load = dynamicGroupLoaders[view.id]
+    if (load !== undefined && !(await load())) {
+      return
+    }
   }
   state.value = openLauncherAt(view)
 }
@@ -271,15 +371,14 @@ async function run (row: LauncherRow): Promise<void> {
     case 'menu-group':
       state.value = drillInto(state.value, { kind: 'menu-group', path: row.path })
       return
-    case 'dynamic-group':
-      if (row.id === 'search-references') {
-        if (await loadReferences()) {
-          state.value = drillInto(state.value, { kind: 'references', request: null })
-        }
+    case 'dynamic-group': {
+      const load = dynamicGroupLoaders[row.id]
+      if (load !== undefined && !(await load())) {
         return
       }
-      state.value = drillInto(state.value, { kind: 'dynamic-group', id: row.id })
+      state.value = drillInto(state.value, dynamicGroupView(row.id))
       return
+    }
     case 'menu-leaf':
       close()
       ipcRenderer.send('menu-provider', { command: 'click-menu-item', payload: row.id })
@@ -291,6 +390,15 @@ async function run (row: LauncherRow): Promise<void> {
     case 'heading':
       close()
       emit('jump-to-line', row.line)
+      return
+    case 'export-profile':
+      rememberExportProfile(row.profile.name)
+      close()
+      emit('export', { kind: 'profile', profile: row.profile })
+      return
+    case 'export-command':
+      close()
+      emit('export', { kind: 'command', displayName: row.displayName, command: row.command })
   }
 }
 

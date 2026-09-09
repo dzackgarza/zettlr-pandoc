@@ -3,12 +3,7 @@
     :title="windowTitle"
     :titlebar="shouldShowTitlebar"
     :menubar="shouldShowMenubar"
-    :show-toolbar="shouldShowToolbar"
-    :toolbar-labels="false"
-    :toolbar-controls="toolbarControls"
     :disable-vibrancy="!hasVibrancy"
-    @toolbar-toggle="handleToggle($event)"
-    @toolbar-click="handleClick($event)"
   >
     <SplitView
       ref="fileManagerSplitComponent"
@@ -74,42 +69,22 @@
         </SplitView>
       </template>
     </SplitView>
+    <template #statusbar>
+      <MainStatusbar
+        :pomodoro-ratio="pomodoro.phase.elapsed / pomodoro.durations[pomodoro.phase.type]"
+        :pomodoro-colour="pomodoro.colour[pomodoro.phase.type]"
+        :update-available="isUpdateAvailable"
+        @pomodoro="togglePomodoroPopover()"
+        @tasks="toggleTasksPopover()"
+        @update="openUpdater()"
+      />
+    </template>
   </WindowChrome>
 
   <!-- Full-screen lightbox for rendered TikZ figures (issue #14) -->
   <TikzLightbox />
 
   <!-- Popover area: these will be teleported to the body element anyhow -->
-  <PopoverExport
-    v-if="showExportPopover && exportButton !== null && activeFile !== undefined"
-    :target="exportButton"
-    :file-path="activeFile.path"
-    @close="showExportPopover = false"
-  />
-  <PopoverStats
-    v-if="showStatsPopover && statsButton !== null"
-    :target="statsButton"
-    @close="showStatsPopover = false"
-  />
-  <PopoverTags
-    v-if="showTagsPopover && tagsButton !== null"
-    :target="tagsButton"
-    @close="showTagsPopover = false"
-    @search-tag="startGlobalSearch($event)"
-  />
-  <PopoverTable
-    v-if="showTablePopover && tableButton !== null"
-    :target="tableButton"
-    @close="showTablePopover = false"
-    @insert-table="insertTable($event)"
-  />
-  <PopoverDocInfo
-    v-if="showDocInfoPopover && docInfoButton !== null && windowStateStore.activeDocumentInfo != null"
-    :target="docInfoButton"
-    :doc-info="windowStateStore.activeDocumentInfo"
-    :should-count-chars="shouldCountChars"
-    @close="showDocInfoPopover = false"
-  />
   <PopoverPomodoro
     v-if="showPomodoroPopover && pomodoroButton !== null"
     :target="pomodoroButton"
@@ -125,12 +100,6 @@
     :target="tasksButton"
     @close="showTasksPopover = false"
   />
-  <PopoverPandoc
-    v-if="showPandocPopover && pandocButton !== null"
-    :target="pandocButton"
-    @close="showPandocPopover = false"
-    @insert-pandoc="insertPandoc($event)"
-  />
   <PandocQuickHelp
     v-if="showPandocQuickHelp"
     @close="showPandocQuickHelp = false"
@@ -141,6 +110,7 @@
     @jump-to-line="genericJtl($event)"
     @jump="handleReferenceJump($event)"
     @open-help="showPandocQuickHelp = true"
+    @export="runExport($event)"
   />
   <CreateReferenceLabelDialog
     v-if="createLabelPrompt !== undefined"
@@ -174,14 +144,12 @@ import EditorPane from './EditorPane.vue'
 import EditorBranch from './EditorBranch.vue'
 import SplitView from '../common/vue/window/SplitView.vue'
 import TikzLightbox from './TikzLightbox.vue'
-import PopoverExport from './PopoverExport.vue'
-import PopoverStats from './PopoverStats.vue'
-import PopoverTags from './PopoverTags.vue'
 import PopoverPomodoro from './PopoverPomodoro.vue'
-import PopoverTable from './PopoverTable.vue'
-import PopoverDocInfo from './PopoverDocInfo.vue'
-import PopoverPandoc from './PopoverPandoc.vue'
 import PandocQuickHelp from './PandocQuickHelp.vue'
+import MainStatusbar from './MainStatusbar.vue'
+import { HEADER_LEAF_ID, headerLeafId } from './header-leaf'
+import type { ExportRequest } from './launcher/launcher-rows'
+import type { CustomExportIPCAPI, ExportIPCAPI } from 'source/app/service-providers/commands/export'
 import CommandLauncher from './launcher/CommandLauncher.vue'
 import type { LauncherView } from './launcher/launcher-state'
 import type { RevealTarget } from './sidebar/sidebar-modules'
@@ -206,6 +174,7 @@ import {
   nextTick,
   ref,
   computed,
+  provide,
   watch,
   onMounted,
   onBeforeMount
@@ -218,15 +187,12 @@ import chimeFile from './assets/chime.mp3'
 import { DocumentType, type LeafNodeJSON } from '@dts/common/documents'
 import { buildPipeMarkdownTable } from '@common/util/build-pipe-markdown-table'
 import { type UpdateState } from '@providers/updates'
-import { type ToolbarControl } from '@common/vue/window/WindowToolbar.vue'
 import getDocumentTitle from './util/get-document-title'
-import { useConfigStore, useDocumentTreeStore, useLRTStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
-import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
+import { useConfigStore, useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { type AnyDescriptor } from 'source/types/common/fsal'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from '@dts/common/documents'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
-import { TaskStatus } from 'source/pinia/lrt-store'
 import PopoverLRT from './PopoverLRT.vue'
 import {
   insertTablePayloadSchema,
@@ -241,7 +207,6 @@ const configStore = useConfigStore()
 const documentTreeStore = useDocumentTreeStore()
 const windowStateStore = useWindowStateStore()
 const workspaceStore = useWorkspaceStore()
-const LRTStore = useLRTStore()
 
 const SOUND_EFFECTS = [
   {
@@ -275,24 +240,26 @@ onBeforeMount(() => {
   editorSidebarSplitComponentInitialSize.value = configStore.config.ui.editorSidebarSplitSize
 })
 
-// Popover targets
-const exportButton = ref<HTMLElement|null>(null)
-const showExportPopover = ref<boolean>(false)
-const statsButton = ref<HTMLElement|null>(null)
-const showStatsPopover = ref<boolean>(false)
-const tagsButton = ref<HTMLElement|null>(null)
-const showTagsPopover = ref<boolean>(false)
-const tableButton = ref<HTMLElement|null>(null)
-const showTablePopover = ref<boolean>(false)
-const docInfoButton = ref<HTMLElement|null>(null)
-const showDocInfoPopover = ref<boolean>(false)
+// Popover targets: the status bar items, looked up when their popover opens.
 const pomodoroButton = ref<HTMLElement|null>(null)
 const showPomodoroPopover = ref<boolean>(false)
 const tasksButton = ref<HTMLElement|null>(null)
 const showTasksPopover = ref(false)
-const pandocButton = ref<HTMLElement|null>(null)
-const showPandocPopover = ref<boolean>(false)
 const showPandocQuickHelp = ref<boolean>(false)
+
+function togglePomodoroPopover (): void {
+  pomodoroButton.value = document.querySelector('#statusbar-pomodoro')
+  showPomodoroPopover.value = !showPomodoroPopover.value
+}
+
+function toggleTasksPopover (): void {
+  tasksButton.value = document.querySelector('#toolbar-long-running-tasks')
+  showTasksPopover.value = !showTasksPopover.value
+}
+
+async function openUpdater (): Promise<void> {
+  await ipcRenderer.invoke('application', { command: 'open-update-window' })
+}
 
 /** The surface CommandLauncher.vue exposes to its template ref. */
 interface CommandLauncherHandle {
@@ -313,6 +280,35 @@ const commandLauncher = ref<CommandLauncherHandle|null>(null)
 async function openReferenceSearch (request: ReferenceSearchRequest = null): Promise<void> {
   const view: LauncherView = request === null ? { kind: 'root' } : { kind: 'references', request }
   await commandLauncher.value?.open(view)
+}
+
+/** Opens the launcher on the export profiles: the Export… menu item's path. */
+async function openExport (): Promise<void> {
+  await commandLauncher.value?.open({ kind: 'dynamic-group', id: 'export' })
+}
+
+/** Exports the active document with the profile or custom command chosen in the launcher. */
+async function runExport (request: ExportRequest): Promise<void> {
+  const file = activeFile.value
+  if (file === undefined) {
+    return
+  }
+  if (request.kind === 'command') {
+    await ipcRenderer.invoke('application', {
+      command: 'custom-export',
+      payload: { displayName: request.displayName, file: file.path } satisfies CustomExportIPCAPI
+    })
+    return
+  }
+  await ipcRenderer.invoke('application', {
+    command: 'export',
+    payload: {
+      // Spread into a plain object: the reactive proxy cannot cross the IPC boundary.
+      profile: { ...request.profile },
+      exportTo: configStore.config.export.dir,
+      file: file.path
+    } satisfies ExportIPCAPI
+  })
 }
 
 /**
@@ -461,7 +457,6 @@ const sidebarsBeforeDistractionfree = ref<{ fileManager: boolean, sidebar: boole
 
 const sidebarVisible = computed<boolean>(() => configStore.config.window.sidebarVisible)
 const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
-const shouldCountChars = computed<boolean>(() => configStore.config.editor.countChars)
 const windowTitle = computed<string>(() => {
   if (activeFile.value === undefined) {
     return 'Zettlr'
@@ -505,236 +500,17 @@ const windowTitle = computed<string>(() => {
 
 */
 
-// The titlebar shall be shown on the main window in only one single instance
-const shouldShowTitlebar = computed<boolean>(() => process.platform === 'darwin' && configStore.config.display.hideToolbarInDistractionFree && distractionFree.value)
+// With no toolbar row to drag the window by, macOS keeps its titlebar.
+const shouldShowTitlebar = computed<boolean>(() => process.platform === 'darwin')
+
+// The document tab row of the top-right pane is the window's header row.
+provide(HEADER_LEAF_ID, computed(() => headerLeafId(paneConfiguration.value)))
 // The menubar is independent of other values; always shown on Windows, and on Linux only if native Appearance is off.
 const shouldShowMenubar = computed<boolean>(() => process.platform === 'win32' || (process.platform !== 'darwin' && !configStore.config.window.nativeAppearance))
 
-// Finally, the toolbar. That one is a bit more iffy. It is always shown, EXCEPT
-// Hide Toolbar is True and DistractionFree is True
-const shouldShowToolbar = computed<boolean>(() => !distractionFree.value || !configStore.config.display.hideToolbarInDistractionFree)
 
-const parsedDocumentInfo = computed<string[]>(() => {
-  const info = windowStateStore.activeDocumentInfo
-  if (info == null) {
-    return []
-  }
 
-  const lines: string[] = []
 
-  if (info.selections.length > 0) {
-    // We have selections to display.
-    let length = 0
-    info.selections.forEach(sel => {
-      length += shouldCountChars.value ? sel.chars : sel.words
-    })
-
-    lines.push(trans('%s selected', localiseNumber(length)))
-    if (info.selections.length === 1) {
-      const { head, anchor } = info.selections[0]
-      lines.push(`${anchor.line}:${anchor.ch} – ${head.line}:${head.ch}`)
-    } else {
-      // Multiple selections --> indicate
-      lines.push(trans('%s selections', info.selections.length))
-    }
-  } else {
-    // No selection.
-    lines.push(shouldCountChars.value
-      ? trans('%s characters', localiseNumber(info.chars))
-      : trans('%s words', localiseNumber(info.words)))
-    lines.push(`${info.cursor.line}:${info.cursor.ch}`)
-  }
-
-  return lines
-})
-
-// Long-Running-Task setup
-const hasTasks = computed(() => LRTStore.tasks.length > 0)
-const taskSuccess = computed(() => LRTStore.tasks.filter(t => t.status === TaskStatus.finished).length)
-const taskAborted = computed(() => LRTStore.tasks.filter(t => t.status === TaskStatus.aborted).length)
-const taskError = computed(() => LRTStore.tasks.filter(t => t.status === TaskStatus.error).length)
-const taskOngoing = computed(() => LRTStore.tasks.filter(t => t.status === TaskStatus.ongoing).length)
-
-const toolbarControls = computed<ToolbarControl[]>(() => {
-  return [
-    {
-      type: 'toggle',
-      id: 'toggle-navigation-sidebar',
-      title: trans('Toggle Sidebar'),
-      icon: 'hard-disk',
-      initialState: fileManagerVisible.value
-    },
-    {
-      type: 'button',
-      id: 'root-open-workspaces',
-      title: trans('Open workspace…'),
-      icon: 'folder-open'
-    },
-    {
-      type: 'button',
-      id: 'show-stats',
-      title: trans('View writing statistics'),
-      icon: 'line-chart'
-    },
-    {
-      type: 'button',
-      id: 'show-tag-cloud',
-      title: trans('View Tag Cloud'),
-      icon: 'tag',
-      badge: undefined // this.hasTagSuggestions
-    },
-    {
-      type: 'button',
-      id: 'open-preferences',
-      title: trans('Open settings'),
-      icon: 'cog',
-      visible: getToolbarButtonDisplay('showOpenPreferencesButton')
-    },
-    {
-      type: 'button',
-      id: 'new-file',
-      title: trans('New file…'),
-      icon: 'plus',
-      visible: getToolbarButtonDisplay('showNewFileButton')
-    },
-    // Compact Back/Forward navigation controls (issue #1 Phase 5): enabled
-    // exactly when the focused pane's session history has an entry in that
-    // direction.
-    {
-      type: 'button',
-      id: 'previous-file',
-      title: trans('Navigate back'),
-      icon: 'arrow',
-      direction: 'left',
-      disabled: !canGoBack.value,
-      visible: getToolbarButtonDisplay('showPreviousFileButton')
-    },
-    {
-      type: 'button',
-      id: 'next-file',
-      title: trans('Navigate forward'),
-      icon: 'arrow',
-      direction: 'right',
-      disabled: !canGoForward.value,
-      visible: getToolbarButtonDisplay('showNextFileButton')
-    },
-    {
-      type: 'spacer',
-      size: '3x'
-    },
-    {
-      type: 'button',
-      class: 'share',
-      id: 'export',
-      title: trans('Export current file'),
-      icon: 'export'
-    },
-    {
-      type: 'spacer',
-      id: 'spacer-two',
-      size: '1x'
-    },
-    {
-      type: 'button',
-      id: 'pandocDivOrSpan',
-      title: trans('Insert Pandoc Div or Span'),
-      icon: 'drag-handle',
-      visible: getToolbarButtonDisplay('showPandocDivSpanButton')
-    },
-    {
-      type: 'button',
-      id: 'markdownComment',
-      title: trans('Insert comment'),
-      icon: 'code',
-      visible: getToolbarButtonDisplay('showMarkdownCommentButton')
-    },
-    {
-      type: 'button',
-      id: 'markdownLink',
-      title: trans('Insert link'),
-      icon: 'link',
-      visible: getToolbarButtonDisplay('showMarkdownLinkButton')
-    },
-    {
-      type: 'button',
-      id: 'markdownImage',
-      title: trans('Insert image'),
-      icon: 'image',
-      visible: getToolbarButtonDisplay('showMarkdownImageButton')
-    },
-    {
-      type: 'button',
-      id: 'markdownMakeTaskList',
-      title: trans('Insert task list'),
-      icon: 'checkbox-list',
-      visible: getToolbarButtonDisplay('showMarkdownMakeTaskListButton')
-    },
-    {
-      type: 'button',
-      id: 'insert-table',
-      title: trans('Insert table'),
-      icon: 'table',
-      visible: getToolbarButtonDisplay('showInsertTableButton')
-    },
-    {
-      type: 'button',
-      id: 'insertFootnote',
-      title: trans('Insert footnote'),
-      icon: 'footnote',
-      visible: getToolbarButtonDisplay('showInsertFootnoteButton')
-    },
-    {
-      type: 'spacer',
-      size: '3x'
-    },
-    {
-      type: 'text',
-      align: 'center',
-      id: 'document-info',
-      content: parsedDocumentInfo.value,
-      visible: getToolbarButtonDisplay('showDocumentInfoText')
-    },
-    {
-      type: 'spacer',
-      size: '1x'
-    },
-    {
-      type: 'ring',
-      id: 'pomodoro',
-      title: trans('Pomodoro timer'),
-      // Good morning, we are verbose here
-      progressPercent: pomodoro.value.phase.elapsed / pomodoro.value.durations[pomodoro.value.phase.type] * 100,
-      colour: pomodoro.value.colour[pomodoro.value.phase.type],
-      visible: getToolbarButtonDisplay('showPomodoroButton')
-    },
-    {
-      type: 'iris-indicator',
-      id: 'long-running-tasks',
-      title: trans('Show tasks'),
-      tasksInProgress: taskOngoing.value,
-      tasksSuccess: taskSuccess.value,
-      tasksFailed: taskError.value,
-      tasksAborted: taskAborted.value,
-      visible: hasTasks.value
-    },
-    {
-      type: 'toggle',
-      id: 'toggle-sidebar',
-      title: trans('Toggle Sidebar'),
-      icon: 'view-columns',
-      initialState: sidebarVisible.value
-    },
-    {
-      type: 'button',
-      id: 'open-updater',
-      title: trans('Update available'),
-      showLabel: true,
-      buttonText: trans('Update available'),
-      icon: 'download',
-      visible: isUpdateAvailable.value
-    }
-  ] satisfies ToolbarControl[]
-})
 
 /** The surface SplitView.vue exposes to its template refs. */
 interface SplitViewHandle {
@@ -847,15 +623,6 @@ watch(distractionFree, (newValue) => {
 })
 
 onMounted(() => {
-  exportButton.value = document.querySelector('#toolbar-export')
-  statsButton.value = document.querySelector('#toolbar-show-stats')
-  tagsButton.value = document.querySelector('#toolbar-show-tag-cloud')
-  tableButton.value = document.querySelector('#toolbar-insert-table')
-  docInfoButton.value = document.querySelector('#toolbar-document-info')
-  pomodoroButton.value = document.querySelector('#toolbar-pomodoro')
-  tasksButton.value = document.querySelector('#toolbar-long-running-tasks')
-  pandocButton.value = document.querySelector('#toolbar-pandocDivOrSpan')
-
   // Saves that main initiated — the close-and-save prompts — have no renderer
   // promise to carry their result, so the provider broadcasts refusals here.
   // Without this the prompt closes and the window stays open with no reason
@@ -901,7 +668,7 @@ onMounted(() => {
     // The file manager focuses its own filter on the next tick; the sidebar
     // and the Project module only have to be visible by then.
     'filter-files': () => navigationSidebar.value?.reveal({ module: 'project', focus: 'none' }),
-    export: () => { showExportPopover.value = true },
+    export: () => openExport(),
     'pandoc-quick-help': () => { showPandocQuickHelp.value = true },
     print: () => {
       if (activeFile.value !== undefined) {
@@ -1073,63 +840,6 @@ async function startGlobalSearch (terms: string): Promise<void> {
   await navigationSidebar.value?.startSearch(terms)
 }
 
-function handleClick (clickedID?: string): void {
-  if (clickedID === 'root-open-workspaces') {
-    ipcRenderer.invoke('application', { command: 'root-open-workspaces' })
-      .catch(e => console.error(e))
-  } else if (clickedID === 'open-preferences') {
-    ipcRenderer.invoke('application', { command: 'open-preferences' })
-      .catch(e => console.error(e))
-  } else if (clickedID === 'new-file') {
-    ipcRenderer.invoke('application', { command: 'file-new', payload: { type: DocumentType.Markdown } })
-      .catch(e => console.error(e))
-  } else if (clickedID === 'previous-file') {
-    if (!canGoBack.value) {
-      return // The control renders disabled; never navigate past the boundary
-    }
-    navigateHistory('navigate-back')
-  } else if (clickedID === 'next-file') {
-    if (!canGoForward.value) {
-      return // The control renders disabled; never navigate past the boundary
-    }
-    navigateHistory('navigate-forward')
-  } else if (clickedID === 'export') {
-    showExportPopover.value = !showExportPopover.value
-  } else if (clickedID === 'show-stats') {
-    // The user wants to display the stats
-    showStatsPopover.value = !showStatsPopover.value
-  } else if (clickedID === 'show-tag-cloud') {
-    showTagsPopover.value = !showTagsPopover.value
-    // TODO startGlobalSearch('#' + data.searchForTag)
-    // editorCommands.value.data = data.suggestions
-    // editorCommands.value.addKeywords = !editorCommands.value.addKeywords
-  } else if (clickedID === 'pomodoro') {
-    showPomodoroPopover.value = !showPomodoroPopover.value
-  } else if (clickedID === 'insert-table') {
-    // Display the insertion popover
-    showTablePopover.value = !showTablePopover.value
-  } else if (clickedID === 'long-running-tasks') {
-    // The tasks button is only mounted conditionally
-    tasksButton.value = document.querySelector('#toolbar-long-running-tasks')
-    showTasksPopover.value = !showTasksPopover.value
-  } else if (clickedID === 'document-info') {
-    showDocInfoPopover.value = !showDocInfoPopover.value
-  } else if (clickedID === 'pandocDivOrSpan') {
-    showPandocPopover.value = !showPandocPopover.value
-  } else if (clickedID !== undefined && clickedID.startsWith('markdown') && clickedID.length > 8) {
-    // The user clicked a command button, so we just have to run that.
-    editorCommands.value.data = clickedID
-    editorCommands.value.executeCommand = !editorCommands.value.executeCommand
-  } else if (clickedID === 'insertFootnote') {
-    editorCommands.value.data = clickedID
-    editorCommands.value.executeCommand = !editorCommands.value.executeCommand
-  } else if (clickedID === 'open-updater') {
-    ipcRenderer.invoke('application', {
-      command: 'open-update-window'
-    })
-      .catch(err => console.error(err))
-  }
-}
 
 function setPomodoroConfig (config: PomodoroConfig): void {
   // Update the durations as necessary
@@ -1157,14 +867,6 @@ function setPomodoroConfig (config: PomodoroConfig): void {
   }
 }
 
-function handleToggle (controlState: { id?: string, state?: string | boolean }): void {
-  const { id, state } = controlState
-  if (id === 'toggle-sidebar') {
-    configStore.setConfigValue('window.sidebarVisible', state)
-  } else if (id === 'toggle-navigation-sidebar') {
-    configStore.setConfigValue('window.fileManagerVisible', state === true)
-  }
-}
 
 function startPomodoro (): void {
   pomodoro.value.soundEffect.pause()
@@ -1218,9 +920,6 @@ function stopPomodoro (): void {
   }
 }
 
-function getToolbarButtonDisplay (configName: keyof ConfigOptions['displayToolbarButtons']): boolean {
-  return configStore.config.displayToolbarButtons[configName]
-}
 </script>
 
 <style lang="css" scoped>

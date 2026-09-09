@@ -21,7 +21,7 @@ import type { GroupPath } from './launcher-rows'
 export type LauncherView =
   | { kind: 'root' }
   | { kind: 'menu-group', path: GroupPath }
-  | { kind: 'dynamic-group', id: 'go-to-file' | 'go-to-heading' }
+  | { kind: 'dynamic-group', id: 'go-to-file' | 'go-to-heading' | 'export' }
   | { kind: 'references', request: ReferenceSearchRequest }
 
 export type LauncherState =

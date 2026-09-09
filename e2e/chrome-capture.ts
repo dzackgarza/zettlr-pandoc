@@ -172,6 +172,22 @@ const SCENES: Scene[] = [
     }
   },
   {
+    // Both panes hidden through the tab row's toggles: the editor alone.
+    name: 'panes-hidden',
+    arrange: async page => {
+      await page.locator('.document-tablist-wrapper [data-pane-toggle="navigation-sidebar"]').click()
+      await page.locator('#navigation-sidebar').waitFor({ state: 'detached', timeout: 10_000 })
+      await page.locator('.document-tablist-wrapper [data-pane-toggle="annotation-panel"]').click()
+      await page.locator('#annotations-panel').waitFor({ state: 'detached', timeout: 10_000 })
+    },
+    restore: async page => {
+      await page.locator('.document-tablist-wrapper [data-pane-toggle="navigation-sidebar"]').click()
+      await page.locator('#navigation-sidebar [data-module="project"]').waitFor({ timeout: 10_000 })
+      await page.locator('.document-tablist-wrapper [data-pane-toggle="annotation-panel"]').click()
+      await page.locator('#annotations-panel').waitFor({ state: 'attached', timeout: 10_000 })
+    }
+  },
+  {
     // The Project module collapsed to its header alone.
     name: 'project-collapsed',
     arrange: async page => {

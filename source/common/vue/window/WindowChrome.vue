@@ -44,6 +44,8 @@
       <!-- The actual window contents will be mounted here -->
       <slot></slot>
     </div>
+    <!-- A window may bring its own status bar instead of the control-list one. -->
+    <slot name="statusbar"></slot>
     <WindowStatusbar
       v-if="props.showStatusbar"
       v-bind:controls="props.statusbarControls ?? []"

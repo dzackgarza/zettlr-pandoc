@@ -78,7 +78,6 @@ export function statisticsItem (commands: MenuCommands): MenuItemConstructorOpti
     click: () => { commands.run('open-stats-window', undefined) }
   }
 }
-
 const TABLE_SIZES = [ 2, 3, 4 ] as const
 
 /** The Insert menu: links, images, tables, footnotes, comments, Pandoc blocks, task lists. */
