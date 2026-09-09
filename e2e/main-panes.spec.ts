@@ -177,6 +177,8 @@ describe('the main window panes', function () {
     await activePage.locator(PANE('navigation-sidebar')).waitFor({ state: 'detached', timeout: 10_000 })
     assert.equal(await activePage.locator(HANDLE('navigation-sidebar')).count(), 0, 'the hidden pane leaves no handle behind')
     await waitUntil(async () => Math.abs(await paneWidth(activePage, 'editor') - (editorBefore + sidebar)) <= 3, 'the editor to take the sidebar\'s width')
+    const persisted = (await readUiConfig(activePage)).navigationSidebarWidth
+    assert.ok(typeof persisted === 'number' && Math.abs(persisted - sidebar) <= 8, `hiding the pane leaves its persisted width alone: ${String(persisted)} for ${sidebar}`)
     screenshots.set('sidebar-hidden.png', await activePage.screenshot())
     await activePage.locator(TOGGLE('navigation-sidebar')).click()
     await activePage.locator(PANE('navigation-sidebar')).waitFor({ state: 'attached', timeout: 10_000 })

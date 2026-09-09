@@ -295,8 +295,10 @@ export interface ConfigOptions {
     recentGlobalSearches: string[]
   }
   ui: {
-    fileManagerSplitSize: [number, number]
-    editorSidebarSplitSize: [number, number]
+    /** The navigation sidebar's width in pixels, as last dragged. */
+    navigationSidebarWidth: number
+    /** The annotation review panel's width in pixels, as last dragged. */
+    annotationPanelWidth: number
     /** The left-sidebar modules the user collapsed; the rest are expanded. */
     sidebarCollapsedModules: SidebarModuleId[]
   }
@@ -357,8 +359,8 @@ export function getConfigTemplate (): ConfigOptions {
       recentGlobalSearches: [],
     },
     ui: {
-      fileManagerSplitSize: [ 20, 80 ],
-      editorSidebarSplitSize: [80, 20],
+      navigationSidebarWidth: 280,
+      annotationPanelWidth: 320,
       // The reference modules open on demand; the navigation modules start open.
       sidebarCollapsedModules: [ 'references', 'relatedFiles', 'otherFiles' ],
     },

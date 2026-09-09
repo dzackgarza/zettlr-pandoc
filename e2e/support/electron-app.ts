@@ -160,6 +160,11 @@ export async function findEditorPage (
       for (const page of context.pages()) {
         try {
           if ((await page.locator('.cm-content').count()) > 0) {
+            // xvfb opens the window at its 640 px screen, where the three
+            // panes' minimums leave the editor no room; a working-size
+            // window is what every spec assumes, and a spec that wants
+            // another size sets it after this returns.
+            await page.setViewportSize({ width: 1400, height: 900 })
             return page
           }
         } catch (error) {
@@ -558,8 +563,10 @@ export async function launchElectron (
     process.env.DISPLAY === undefined &&
     process.env.WAYLAND_DISPLAY === undefined
   const executable = needsVirtualDisplay ? 'xvfb-run' : forgeExecutable
+  // xvfb-run's default screen is 640x480; a new window sizes itself from
+  // the screen, and the three panes' minimums need more than that.
   const args = needsVirtualDisplay
-    ? ['--auto-servernum', forgeExecutable, ...forgeArguments]
+    ? ['--auto-servernum', '--server-args=-screen 0 1920x1080x24', forgeExecutable, ...forgeArguments]
     : forgeArguments
 
   // Forge's dev server and logger need separate ports. Choose fresh loopback

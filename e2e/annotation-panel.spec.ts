@@ -149,7 +149,7 @@ describe('the annotation review panel pane', function () {
     const pane = await panel.evaluate(element => {
       const parent = element.parentElement
       return {
-        isSplitView: parent !== null && parent.classList.contains('view'),
+        isSplitView: parent !== null && parent.getAttribute('data-pane') === 'annotation-panel',
         siblingCount: parent === null ? -1 : parent.children.length
       }
     })

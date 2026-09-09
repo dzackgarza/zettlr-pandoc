@@ -5,16 +5,21 @@
     :menubar="shouldShowMenubar"
     :disable-vibrancy="!hasVibrancy"
   >
-    <SplitView
-      ref="fileManagerSplitComponent"
-      :initial-size-percent="fileManagerSplitComponentInitialSize"
-      :minimum-size-percent="[ 10, 50 ]"
-      :reset-size-percent="[ 20, 80 ]"
-      :split="'horizontal'"
-      @views-resized="fileManagerSplitComponentResized($event)"
+    <!-- The three panes under one splitter (D8): sidebar, editor, panel. -->
+    <SplitterGroup
+      direction="horizontal"
+      class="main-panes"
     >
-      <template #view1>
-        <!-- The navigation sidebar in the left side of the split view -->
+      <SplitterPanel
+        v-if="fileManagerVisible"
+        class="main-pane"
+        data-pane="navigation-sidebar"
+        size-unit="px"
+        :order="0"
+        :min-size="NAVIGATION_SIDEBAR_MINIMUM"
+        :default-size="mountWidths.navigationSidebar"
+        @resize="draggedWidths.navigationSidebar = $event"
+      >
         <NavigationSidebar
           ref="navigationSidebar"
           :window-id="windowId"
@@ -23,53 +28,65 @@
           @jump-to-active-line="genericJtl($event)"
           @move-section="moveSection($event)"
         />
-      </template>
-      <template #view2>
-        <!-- Another split view in the right side -->
-        <SplitView
-          ref="editorSidebarSplitComponent"
-          :initial-size-percent="editorSidebarSplitComponentInitialSize"
-          :minimum-size-percent="[ 50, 10 ]"
-          :reset-size-percent="[ 80, 20 ]"
-          :split="'horizontal'"
-          @views-resized="editorSidebarSplitComponentResized($event)"
-        >
-          <template #view1>
-            <!-- First side: Editor -->
-            <EditorPane
-              v-if="paneConfiguration?.type === 'leaf'"
-              :node="paneConfiguration"
-              :leaf-id="paneConfiguration.id"
-              :editor-commands="editorCommands"
-              :window-id="windowId"
-              @global-search="startGlobalSearch($event)"
-              @reference-search="openReferenceSearch($event)"
-              @create-reference-label="openCreateReferenceLabel($event)"
-              @open-pandoc-quick-help="showPandocQuickHelp = true"
-            />
-            <EditorBranch
-              v-else-if="paneConfiguration !== undefined"
-              :node="paneConfiguration"
-              :window-id="windowId"
-              :editor-commands="editorCommands"
-              :is-last="true"
-              @global-search="startGlobalSearch($event)"
-              @reference-search="openReferenceSearch($event)"
-              @create-reference-label="openCreateReferenceLabel($event)"
-              @open-pandoc-quick-help="showPandocQuickHelp = true"
-            />
-          </template>
-          <template #view2>
-            <!-- Second side: the annotation review panel -->
-            <AnnotationsTab
-              @jump-to-line="genericJtl($event)"
-              @begin-reattach="beginAnnotationReattach($event)"
-              @close="configStore.setConfigValue('window.sidebarVisible', false)"
-            />
-          </template>
-        </SplitView>
-      </template>
-    </SplitView>
+      </SplitterPanel>
+      <SplitterResizeHandle
+        v-if="fileManagerVisible"
+        class="main-pane-handle"
+        data-pane-handle="navigation-sidebar"
+        @dragging="onPaneDragging('navigationSidebar', $event)"
+      />
+      <SplitterPanel
+        class="main-pane"
+        data-pane="editor"
+        :order="1"
+        :min-size="EDITOR_MINIMUM_PERCENT"
+      >
+        <EditorPane
+          v-if="paneConfiguration?.type === 'leaf'"
+          :node="paneConfiguration"
+          :leaf-id="paneConfiguration.id"
+          :editor-commands="editorCommands"
+          :window-id="windowId"
+          @global-search="startGlobalSearch($event)"
+          @reference-search="openReferenceSearch($event)"
+          @create-reference-label="openCreateReferenceLabel($event)"
+          @open-pandoc-quick-help="showPandocQuickHelp = true"
+        />
+        <EditorBranch
+          v-else-if="paneConfiguration !== undefined"
+          :node="paneConfiguration"
+          :window-id="windowId"
+          :editor-commands="editorCommands"
+          :is-last="true"
+          @global-search="startGlobalSearch($event)"
+          @reference-search="openReferenceSearch($event)"
+          @create-reference-label="openCreateReferenceLabel($event)"
+          @open-pandoc-quick-help="showPandocQuickHelp = true"
+        />
+      </SplitterPanel>
+      <SplitterResizeHandle
+        v-if="sidebarVisible"
+        class="main-pane-handle"
+        data-pane-handle="annotation-panel"
+        @dragging="onPaneDragging('annotationPanel', $event)"
+      />
+      <SplitterPanel
+        v-if="sidebarVisible"
+        class="main-pane"
+        data-pane="annotation-panel"
+        size-unit="px"
+        :order="2"
+        :min-size="ANNOTATION_PANEL_MINIMUM"
+        :default-size="mountWidths.annotationPanel"
+        @resize="draggedWidths.annotationPanel = $event"
+      >
+        <AnnotationsTab
+          @jump-to-line="genericJtl($event)"
+          @begin-reattach="beginAnnotationReattach($event)"
+          @close="configStore.setConfigValue('window.sidebarVisible', false)"
+        />
+      </SplitterPanel>
+    </SplitterGroup>
     <template #statusbar>
       <MainStatusbar
         :pomodoro-ratio="pomodoro.phase.elapsed / pomodoro.durations[pomodoro.phase.type]"
@@ -147,7 +164,7 @@ import NavigationSidebar from './sidebar/NavigationSidebar.vue'
 import AnnotationsTab from './sidebar/AnnotationsTab.vue'
 import EditorPane from './EditorPane.vue'
 import EditorBranch from './EditorBranch.vue'
-import SplitView from '../common/vue/window/SplitView.vue'
+import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import TikzLightbox from './TikzLightbox.vue'
 import PopoverPomodoro from './PopoverPomodoro.vue'
 import PandocQuickHelp from './PandocQuickHelp.vue'
@@ -182,7 +199,7 @@ import {
   provide,
   watch,
   onMounted,
-  onBeforeMount
+  reactive
 } from 'vue'
 
 // Import the sound effects for the pomodoro timer
@@ -238,13 +255,44 @@ const fileManagerVisible = computed<boolean>(() => configStore.config.window.fil
 const isUpdateAvailable = ref(false)
 const hasVibrancy = computed(() => configStore.config.window.vibrancy && process.platform === 'darwin')
 
-// Ensure the app remembers the previous sidebar sizes
-const fileManagerSplitComponentInitialSize = ref<[number, number]>([ 20, 80 ])
-const editorSidebarSplitComponentInitialSize = ref<[number, number]>([ 80, 20 ])
-onBeforeMount(() => {
-  fileManagerSplitComponentInitialSize.value = configStore.config.ui.fileManagerSplitSize
-  editorSidebarSplitComponentInitialSize.value = configStore.config.ui.editorSidebarSplitSize
+// The panes' widths. The sidebar and the panel are pixel panels with a
+// minimum each; the editor takes the rest, down to a fifth of the window,
+// below which a shrinking window squeezes the pixel panes too. A pane
+// mounts at the width it was last dragged to, in this session or in the
+// config, and a drag's end persists it — a window that squeezes the panes
+// does not overwrite the width the user chose.
+const NAVIGATION_SIDEBAR_MINIMUM = 200
+const ANNOTATION_PANEL_MINIMUM = 240
+const EDITOR_MINIMUM_PERCENT = 20
+
+type DraggablePane = 'navigationSidebar' | 'annotationPanel'
+const PANE_WIDTH_KEY: Record<DraggablePane, 'ui.navigationSidebarWidth' | 'ui.annotationPanelWidth'> = {
+  navigationSidebar: 'ui.navigationSidebarWidth',
+  annotationPanel: 'ui.annotationPanelWidth'
+}
+/** The width each pane mounts at; moves only when a drag ends. */
+const mountWidths = reactive<Record<DraggablePane, number>>({
+  navigationSidebar: configStore.config.ui.navigationSidebarWidth,
+  annotationPanel: configStore.config.ui.annotationPanelWidth
 })
+/** The width each pane has right now, as the splitter reports it. */
+const draggedWidths = reactive<Record<DraggablePane, number>>({ ...mountWidths })
+/** Which handles are mid-drag: only a drag that happened persists a width. */
+const paneDragActive = reactive<Record<DraggablePane, boolean>>({ navigationSidebar: false, annotationPanel: false })
+
+function onPaneDragging (pane: DraggablePane, dragging: boolean): void {
+  if (dragging) {
+    paneDragActive[pane] = true
+    return
+  }
+  if (!paneDragActive[pane]) {
+    return
+  }
+  paneDragActive[pane] = false
+  const width = Math.round(draggedWidths[pane])
+  mountWidths[pane] = width
+  configStore.setConfigValue(PANE_WIDTH_KEY[pane], width)
+}
 
 // Popover targets: the status bar items, looked up when their popover opens.
 const pomodoroButton = ref<HTMLElement|null>(null)
@@ -531,20 +579,12 @@ const shouldShowMenubar = computed<boolean>(() => process.platform === 'win32' |
 
 
 
-/** The surface SplitView.vue exposes to its template refs. */
-interface SplitViewHandle {
-  hideView: (viewNumber: 1|2) => void
-  unhide: () => void
-}
-
 /** The surface NavigationSidebar.vue exposes to its template ref. */
 interface NavigationSidebarHandle {
   reveal: (target: RevealTarget) => Promise<void>
   startSearch: (terms: string) => Promise<void>
 }
 
-const editorSidebarSplitComponent = ref<SplitViewHandle|null>(null)
-const fileManagerSplitComponent = ref<SplitViewHandle|null>(null)
 const navigationSidebar = ref<NavigationSidebarHandle|null>(null)
 const paneConfiguration = computed(() => documentTreeStore.paneStructure)
 const lastLeafId = computed(() => documentTreeStore.lastLeafId)
@@ -597,31 +637,11 @@ watch(lastLeafId, refreshNavigationState)
 ipcRenderer.on('documents-update', () => { refreshNavigationState() })
 refreshNavigationState()
 
-watch(sidebarVisible, (newValue) => {
-  if (newValue) {
-    if (distractionFree.value) {
-      if (windowStateStore.distractionFreeMode !== undefined) {
-        windowStateStore.distractionFreeMode = undefined
-      }
-    }
-
-    editorSidebarSplitComponent.value?.unhide()
-  } else {
-    editorSidebarSplitComponent.value?.hideView(2)
-  }
-})
-
-watch(fileManagerVisible, (newValue) => {
-  if (newValue) {
-    if (distractionFree.value) {
-      if (windowStateStore.distractionFreeMode !== undefined) {
-        windowStateStore.distractionFreeMode = undefined
-      }
-    }
-
-    fileManagerSplitComponent.value?.unhide()
-  } else {
-    fileManagerSplitComponent.value?.hideView(1)
+// Showing a pane ends distraction-free mode; the panes themselves mount
+// and unmount with their config values.
+watch([ sidebarVisible, fileManagerVisible ], ([ panel, sidebar ]) => {
+  if ((panel || sidebar) && windowStateStore.distractionFreeMode !== undefined) {
+    windowStateStore.distractionFreeMode = undefined
   }
 })
 
@@ -717,17 +737,6 @@ onMounted(() => {
     shortcutHandlers[shortcut]?.()
   })
 
-  // Initially, we need to hide the sidebar, since the view will be visible
-  // by default.
-  if (!sidebarVisible.value) {
-    editorSidebarSplitComponent.value?.hideView(2)
-  }
-
-  // Similarly, if the file manager is set to hidden, do that, too.
-  if (!fileManagerVisible.value) {
-    fileManagerSplitComponent.value?.hideView(1)
-  }
-
   // Check if there is an update available.
   ipcRenderer.invoke('update-provider', { command: 'update-status' })
     .then(state => {
@@ -742,14 +751,6 @@ onMounted(() => {
     }
   })
 })
-
-function fileManagerSplitComponentResized (sizes: [number, number]): void {
-  configStore.setConfigValue('ui.fileManagerSplitSize', sizes)
-}
-
-function editorSidebarSplitComponentResized (sizes: [number, number]): void {
-  configStore.setConfigValue('ui.editorSidebarSplitSize', sizes)
-}
 
 function insertTable (spec: { rows: number, cols: number }): void {
   // Generate a simple table based on the info, and insert it.
@@ -940,5 +941,39 @@ function stopPomodoro (): void {
 
 </script>
 
-<style lang="css" scoped>
+<style lang="less">
+body {
+  .main-panes {
+    display: flex;
+    height: 100%;
+  }
+
+  .main-pane {
+    min-width: 0;
+    overflow: auto;
+  }
+
+  // A hairline with a wider hit area; the accent while hovered or dragged.
+  .main-pane-handle {
+    position: relative;
+    flex: 0 0 auto;
+    width: 1px;
+    background-color: var(--chrome-border);
+    cursor: col-resize;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -4px;
+      right: -4px;
+    }
+
+    &[data-resize-handle-state="hover"],
+    &[data-resize-handle-state="drag"] {
+      background-color: var(--chrome-row-accent);
+    }
+  }
+}
 </style>

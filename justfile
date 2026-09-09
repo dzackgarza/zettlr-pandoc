@@ -307,7 +307,7 @@ capture-annotations output="/tmp/zettlr-pandoc-annotations-captures": sync-depen
 # Runs under xvfb; never starts a dev server or the system browser.
 capture-chrome output="/tmp/zettlr-pandoc-chrome-captures" launch_timeout_ms="180000": sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    xvfb-run -a node --import tsx "{{justfile_directory()}}/e2e/chrome-capture.ts" "{{output}}" "{{launch_timeout_ms}}"
+    xvfb-run -a --server-args="-screen 0 1920x1080x24" node --import tsx "{{justfile_directory()}}/e2e/chrome-capture.ts" "{{output}}" "{{launch_timeout_ms}}"
 
 # Run a real export headlessly (no GUI), via the app's own makeExport with the
 # exact profile list the GUI sees (userData/defaults + custom profiles). Proves
