@@ -11,6 +11,7 @@
 // before the Pinia stores below (imported transitively through
 // AnnotationsTab) read window.ipc at their own module top level.
 import './document-collaboration-ipc-double'
+import { documentCollaborationIpcDouble } from './document-collaboration-ipc-double'
 import { recordedRequests, setAnnotationsSceneSession } from './annotations-sidebar-visual-ipc-stub'
 import { createApp, h, nextTick } from 'vue'
 import { createPinia } from 'pinia'
@@ -81,6 +82,22 @@ declare global {
      * received so far — the boundary S8/I6 wires: only the id crosses it.
      */
     annotationsSceneClickReattach: () => Promise<string[]>
+    /**
+     * Clicks the header's close control and reports how many times the
+     * panel's parent (App.vue's role, which hides the pane) has been asked
+     * to close so far.
+     */
+    annotationsSceneClickClose: () => Promise<number>
+    /**
+     * Types a reply into the detail's composer and presses Mod-Enter,
+     * reporting the request the store raised because of it — the owner's
+     * message reaches the provider, and nothing lands in the thread until
+     * the broadcast does.
+     */
+    annotationsSceneComposeReply: (text: string) => Promise<{ channel: string, message: unknown } | undefined>
+    /** Types a draft into the composer and presses Escape, reporting what
+     *  the field holds afterwards. */
+    annotationsSceneComposeEscape: (text: string) => Promise<string>
     /** Click the nth Accept control the panel renders, and report the
      *  request that reached the preload bridge because of it. */
     annotationsSceneAcceptChunk: (index: number) => Promise<{ channel: string, message: unknown } | undefined>
@@ -111,6 +128,18 @@ declare global {
       reviewCommentPresent: boolean
       /** Suggestion chunk ids currently marked linked (S7 "Show proposal"). */
       linkedProposalChunkIds: string[]
+      /** Heading elements inside the panel: the header is a body-size row. */
+      headingCount: number
+      /** The panel toggle's shortcut, as the header's chip renders it. */
+      shortcutChip: string
+      /** The composer is mounted with the detail, not behind a Reply click. */
+      composerPresent: boolean
+      /** Resolve renders in exactly one place. */
+      resolveCount: number
+      /** The proposal card's one affordance. */
+      showProposalLabel: string
+      /** Every thread message's relative time, in thread order. */
+      messageTimes: string[]
     }
   }
 }
@@ -193,9 +222,11 @@ async function mount (): Promise<void> {
   // Wrapped in a plain render-function parent (App.vue's actual role) so
   // this harness observes what the panel emits upward.
   const beginReattachEvents: string[] = []
+  let closeEvents = 0
   const app = createApp({
     render: () => h(AnnotationsTab, {
-      onBeginReattach: (annotationId: string) => { beginReattachEvents.push(annotationId) }
+      onBeginReattach: (annotationId: string) => { beginReattachEvents.push(annotationId) },
+      onClose: () => { closeEvents += 1 }
     })
   })
   const pinia = createPinia()
@@ -212,6 +243,25 @@ async function mount (): Promise<void> {
     throw new Error('Visual capture host is missing')
   }
   app.mount(host)
+
+  // The application menu, as the menu provider broadcasts it to a window
+  // that asked for it: the header reads the panel toggle's shortcut chip
+  // from this one item rather than from a copy of its own.
+  documentCollaborationIpcDouble.emit('menu-provider', {
+    command: 'application-menu',
+    payload: [{
+      type: 'submenu',
+      label: 'View',
+      enabled: true,
+      submenu: [{
+        type: 'normal',
+        id: 'menu.toggle_annotation_panel',
+        label: 'Toggle Annotation Panel',
+        enabled: true,
+        accelerator: 'Ctrl+Shift+0'
+      }]
+    }]
+  })
 
   await collaborationStore.ensureSession(SCENE_DOCUMENT_PATH)
   await nextTick()
@@ -299,10 +349,40 @@ async function mount (): Promise<void> {
   }
 
   /** Types into a real field the way a reviewer does, through v-model. */
-  function typeInto (input: HTMLInputElement, text: string): void {
+  function typeInto (input: HTMLInputElement | HTMLTextAreaElement, text: string): void {
     input.focus()
     input.value = text
     input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  const composerField = (): HTMLTextAreaElement => {
+    const field = host.querySelector<HTMLTextAreaElement>('.annotation-composer textarea')
+    if (field === null) {
+      throw new Error('the detail renders no composer')
+    }
+    return field
+  }
+
+  window.annotationsSceneClickClose = async () => {
+    host.querySelector<HTMLButtonElement>('.annotation-header-close')?.click()
+    await nextTick()
+    return closeEvents
+  }
+  window.annotationsSceneComposeReply = async (text) => {
+    const field = composerField()
+    typeInto(field, text)
+    await nextTick()
+    return await requestRaisedBy(() => {
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true }))
+    })
+  }
+  window.annotationsSceneComposeEscape = async (text) => {
+    const field = composerField()
+    typeInto(field, text)
+    await nextTick()
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await nextTick()
+    return field.value
   }
 
   window.annotationsSceneAcceptChunk = async (index) => {
@@ -380,6 +460,12 @@ async function mount (): Promise<void> {
     reviewCommentPresent: host.querySelector('.suggestion-review-comment-submit') !== null,
     linkedProposalChunkIds: [...host.querySelectorAll('.suggestion-chunk.suggestion-chunk-linked')]
       .map(el => el.getAttribute('data-chunk-id') ?? ''),
+    headingCount: host.querySelectorAll('h1, h2, h3').length,
+    shortcutChip: host.querySelector('.annotation-header-shortcut')?.textContent?.trim() ?? '',
+    composerPresent: host.querySelector('.annotation-composer textarea') !== null,
+    resolveCount: host.querySelectorAll('.annotation-inspector-resolve').length,
+    showProposalLabel: host.querySelector('.annotation-action-show-proposal')?.textContent?.trim() ?? '',
+    messageTimes: [...host.querySelectorAll('.annotation-message-time')].map(el => el.textContent?.trim() ?? ''),
   })
 
   await document.fonts.ready

@@ -26,11 +26,18 @@ const WIDE = { width: 440, height: 760 }
 const NARROW = { width: 320, height: 760 }
 const DARK_COMPLETE = { width: 900, height: 760 }
 
+// The fixture's messages are minutes after its BASE_TIME
+// (annotations-sidebar-scene-fixture.ts); the page's clock starts two
+// minutes after it, so the thread's first message reads "2 min. ago" and
+// its reply "Just now".
+const SCENE_NOW = Date.parse('2026-05-20T10:02:00.000Z')
+
 const scene = await openScene({
   ...WIDE,
   args: ['--ozone-platform=x11', '--disable-gpu']
 })
 const { page } = scene
+await page.clock.install({ time: SCENE_NOW })
 
 async function openSceneDocument (dark) {
   const background = dark ? '#1e1e1e' : '#ffffff'
@@ -71,7 +78,40 @@ let diag = await diagnostics()
 if (!diag.inspectorPresent || diag.inspectorMode !== 'detail' || diag.listCardCount !== 2 || diag.openCount !== 2) {
   throw new Error(`03-selected-thread-light: unexpected diagnostics ${JSON.stringify(diag)}`)
 }
+// M8: a body-size header row carrying the toggle's shortcut, the composer
+// mounted with the detail, one Resolve, and relative times against the
+// page's clock.
+if (diag.headingCount !== 0) {
+  throw new Error(`03-selected-thread-light: the panel renders ${diag.headingCount} heading element(s); the header is a body-size row`)
+}
+if (diag.shortcutChip === '') {
+  throw new Error('03-selected-thread-light: the header carries no shortcut chip for the panel toggle')
+}
+if (!diag.composerPresent) {
+  throw new Error('03-selected-thread-light: the composer must be mounted with the detail, not behind a Reply click')
+}
+if (diag.resolveCount !== 1) {
+  throw new Error(`03-selected-thread-light: Resolve must render exactly once, got ${diag.resolveCount}`)
+}
+assert.deepStrictEqual(diag.messageTimes, ['2 min. ago', 'Just now'], '03-selected-thread-light: relative times against the page clock')
 await scene.capture('03-selected-thread-light')
+
+// The clock moves two minutes: every relative time moves with it, with no
+// reload and no store change.
+await page.clock.runFor(2 * 60_000)
+diag = await diagnostics()
+assert.deepStrictEqual(diag.messageTimes, ['4 min. ago', '2 min. ago'], 'relative times must follow the clock')
+
+// Mod-Enter in the composer sends the trimmed draft to the provider as the
+// owner's message on the selected annotation; Escape discards a draft.
+const reply = await page.evaluate(() => window.annotationsSceneComposeReply('  Please cite the erratum.  '))
+assert.equal(reply?.channel, 'documents:add-annotation-message', 'the composer must raise the owner message request')
+assert.equal(reply.message.annotationId, SCENE_THREAD_ID)
+assert.equal(reply.message.text, 'Please cite the erratum.')
+assert.equal(await page.evaluate(() => window.annotationsSceneComposeEscape('a draft to discard')), '', 'Escape must clear the composer')
+
+// The header's close hands the panel's parent the intent to hide the pane.
+assert.equal(await page.evaluate(() => window.annotationsSceneClickClose()), 1, 'close must reach the parent once')
 
 // Scene 05: a different card selected, one whose thread carries a pending
 // linked proposal — ProposalActionCard and the "Show proposal" action.
@@ -79,6 +119,9 @@ await select(SCENE_PROPOSAL_ID)
 diag = await diagnostics()
 if (!diag.inspectorPresent || diag.inspectorMode !== 'detail') {
   throw new Error(`05-linked-proposal-pending: unexpected diagnostics ${JSON.stringify(diag)}`)
+}
+if (diag.showProposalLabel !== 'Show diff') {
+  throw new Error(`05-linked-proposal-pending: the proposal card's affordance reads ${JSON.stringify(diag.showProposalLabel)}`)
 }
 await scene.capture('05-linked-proposal-pending')
 
