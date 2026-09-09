@@ -5,7 +5,7 @@
 // convergence milestones (PLAN-main-window-chrome-convergence, M0): each later
 // milestone edits the scene list, never the launch.
 //
-// Usage: node --import tsx e2e/chrome-capture.ts <output-directory>
+// Usage: node --import tsx e2e/chrome-capture.ts <output-directory> <launch-timeout-ms>
 
 import { strict as assert } from 'node:assert'
 import { mkdir, rm } from 'node:fs/promises'
@@ -23,12 +23,17 @@ import {
   shutdown
 } from './support/electron-app'
 
-const output = process.argv[2]
-if (output === undefined) {
-  throw new Error('Usage: chrome-capture.ts <output-directory>')
+const [ output, launchTimeoutArgument ] = process.argv.slice(2)
+if (output === undefined || launchTimeoutArgument === undefined) {
+  throw new Error('Usage: chrome-capture.ts <output-directory> <launch-timeout-ms>')
 }
+// How long the app may take to boot and show its editor; the recipe passes it.
+const launchTimeoutMs = Number.parseInt(launchTimeoutArgument, 10)
+assert.ok(
+  Number.isInteger(launchTimeoutMs) && launchTimeoutMs > 0,
+  `The launch timeout must be a positive number of milliseconds, got ${launchTimeoutArgument}`
+)
 
-const LAUNCH_TIMEOUT_MS = 180_000
 const HEIGHT = 950
 const WIDTHS = [ 1500, 1100 ] as const
 const THEMES = [ 'light', 'dark' ] as const
@@ -117,12 +122,12 @@ async function main (): Promise<void> {
 
   const rendererEvents: string[] = []
   const screenshots = new Map<string, Buffer>()
-  const app = await attach(fixture.configDirectory, rendererEvents, LAUNCH_TIMEOUT_MS)
+  const app = await attach(fixture.configDirectory, rendererEvents, launchTimeoutMs)
 
   try {
-    const page = await findEditorPage(app.browser, LAUNCH_TIMEOUT_MS)
+    const page = await findEditorPage(app.browser, launchTimeoutMs)
     await hideDevServerOverlay(page)
-    await page.locator('.cm-content').waitFor({ state: 'visible', timeout: LAUNCH_TIMEOUT_MS })
+    await page.locator('.cm-content').waitFor({ state: 'visible', timeout: launchTimeoutMs })
     // The workspace root is the book, so the file manager offers its Book view.
     await page.locator('#file-manager .system-tab', { hasText: 'Book' }).waitFor({ timeout: 60_000 })
 
