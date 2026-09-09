@@ -314,9 +314,9 @@ capture-annotations output="/tmp/zettlr-pandoc-annotations-captures": sync-depen
 # sidebar and the annotation panel visible, in light and dark at 1500 and
 # 1100 px wide. The proof surface for the chrome convergence milestones.
 # Runs under xvfb; never starts a dev server or the system browser.
-capture-chrome output="/tmp/zettlr-pandoc-chrome-captures": sync-dependencies
+capture-chrome output="/tmp/zettlr-pandoc-chrome-captures" launch_timeout_ms="180000": sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    xvfb-run -a node --import tsx "{{justfile_directory()}}/e2e/chrome-capture.ts" "{{output}}"
+    xvfb-run -a node --import tsx "{{justfile_directory()}}/e2e/chrome-capture.ts" "{{output}}" "{{launch_timeout_ms}}"
 
 # Run a real export headlessly (no GUI), via the app's own makeExport with the
 # exact profile list the GUI sees (userData/defaults + custom profiles). Proves
