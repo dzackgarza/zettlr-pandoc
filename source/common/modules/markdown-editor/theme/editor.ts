@@ -93,6 +93,7 @@ export interface ThemeVars {
   '--zettlr-editor-pandoc-div-task': string
   '--zettlr-editor-pandoc-div-warning': string
   '--zettlr-editor-pandoc-div-proof': string
+  '--zettlr-editor-pandoc-div-float': string
   /** CSS `<color>` values for the review-diff attention layer */
   '--zettlr-editor-review-region-bg': string
   '--zettlr-editor-review-insert-mark-bg': string
@@ -180,6 +181,7 @@ const pandocDivLight = {
   task: '#4f4b9e',
   warning: '#9c2b63',
   proof: '#566170',
+  float: '#566170',
 }
 
 const pandocDivDark = {
@@ -190,6 +192,7 @@ const pandocDivDark = {
   task: '#a9a3ef',
   warning: '#f48fb8',
   proof: '#c3cad4',
+  float: '#c3cad4',
 }
 
 // Attention layer: saturated review-diff marks that must dominate visually.
@@ -280,6 +283,7 @@ export const defaultVarsLight: ThemeVars = {
   '--zettlr-editor-pandoc-div-task': pandocDivLight.task,
   '--zettlr-editor-pandoc-div-warning': pandocDivLight.warning,
   '--zettlr-editor-pandoc-div-proof': pandocDivLight.proof,
+  '--zettlr-editor-pandoc-div-float': pandocDivLight.float,
   '--zettlr-editor-review-region-bg': reviewLight.regionBg,
   '--zettlr-editor-review-insert-mark-bg': reviewLight.insertMarkBg,
   '--zettlr-editor-review-delete-bg': reviewLight.deleteBg,
@@ -333,6 +337,7 @@ export const defaultVarsDark: ThemeVars = {
   '--zettlr-editor-pandoc-div-task': pandocDivDark.task,
   '--zettlr-editor-pandoc-div-warning': pandocDivDark.warning,
   '--zettlr-editor-pandoc-div-proof': pandocDivDark.proof,
+  '--zettlr-editor-pandoc-div-float': pandocDivDark.float,
   '--zettlr-editor-review-region-bg': reviewDark.regionBg,
   '--zettlr-editor-review-insert-mark-bg': reviewDark.insertMarkBg,
   '--zettlr-editor-review-delete-bg': reviewDark.deleteBg,

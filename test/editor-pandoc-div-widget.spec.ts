@@ -290,6 +290,14 @@ outside`
       [ '#def-core', 'definition', 'Definition' ],
       [ '#exm-first', 'explanation', 'Example' ],
       [ '#exr-warmup', 'task', 'Exercise' ],
+      // The float families: a div is how Quarto writes a figure holding
+      // subfigures, a cross-referenced table, or a listing.
+      [ '#fig-elephant', 'float', 'Figure' ],
+      [ '#tbl-lattices', 'float', 'Table' ],
+      [ '#lst-parser', 'float', 'Listing' ],
+      // Equations and sections carry their label on the display math and the
+      // heading, never on a div, so a div spelled this way stays generic.
+      [ '#eq-euler', 'generic', 'Div' ],
       [ '#sec-intro', 'generic', 'Div' ],
     ] as const
     const doc = `${docs.map(([ attrs ], index) => `::: {${attrs}}\nBlock ${index}.\n:::`).join('\n\n')}\n\noutside`

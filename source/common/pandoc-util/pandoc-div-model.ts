@@ -21,7 +21,7 @@ import { parsePandocAttributes } from './parse-pandoc-attributes'
 import { referenceFamilyDisplayName, referenceFamilyOf } from '@dts/common/references'
 import { THEOREM_FAMILY_METADATA, type TheoremFamilyPrefix } from '@common/util/pandoc-quick-reference'
 
-export type PandocDivFamily = 'result'|'definition'|'explanation'|'task'|'warning'|'proof'|'generic'
+export type PandocDivFamily = 'result'|'definition'|'explanation'|'task'|'warning'|'proof'|'float'|'generic'
 
 export interface PandocDivModel {
   from: number
@@ -74,6 +74,19 @@ const FAMILY_BY_THEOREM_PREFIX: Record<TheoremFamilyPrefix, PandocDivFamily> = {
 }
 
 /**
+ * The float families a fenced div can carry. A div is how Quarto writes a
+ * figure holding subfigures, a cross-referenced table, or a listing. The
+ * remaining crossref families are absent deliberately: an equation carries its
+ * label on the display math and a section carries it on the heading, so a div
+ * spelled that way is not an authored construct and stays generic.
+ */
+const FAMILY_BY_FLOAT_PREFIX: Record<string, PandocDivFamily> = {
+  fig: 'float',
+  tbl: 'float',
+  lst: 'float',
+}
+
+/**
  * Styled div classes outside the referenceable registry: synonyms and the
  * proof-like classes, which pandoc-crossref never numbers or labels.
  */
@@ -111,15 +124,15 @@ export function classifyDiv (classes: string[], id: string = ''): { family: Pand
     }
   }
 
-  // Quarto states the theorem kind through the crossref prefix of the label
-  // instead of a class: `::: {#def-core}` is the same definition that the
-  // pandoc-crossref form spells `::: {.definition}`.
+  // Quarto states the kind through the crossref prefix of the label instead of
+  // a class: `::: {#def-core}` is the same definition that the pandoc-crossref
+  // form spells `::: {.definition}`, and `::: {#fig-x}` is a figure.
   const labelFamily = referenceFamilyOf(id)
-  if (labelFamily !== undefined && labelFamily in FAMILY_BY_THEOREM_PREFIX) {
-    return {
-      family: FAMILY_BY_THEOREM_PREFIX[labelFamily as TheoremFamilyPrefix],
-      label: referenceFamilyDisplayName(labelFamily),
-    }
+  const family = labelFamily === undefined
+    ? undefined
+    : FAMILY_BY_THEOREM_PREFIX[labelFamily as TheoremFamilyPrefix] ?? FAMILY_BY_FLOAT_PREFIX[labelFamily]
+  if (labelFamily !== undefined && family !== undefined) {
+    return { family, label: referenceFamilyDisplayName(labelFamily) }
   }
 
   return {
