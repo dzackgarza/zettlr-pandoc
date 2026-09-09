@@ -140,16 +140,12 @@
     v-if="showPandocQuickHelp"
     @close="showPandocQuickHelp = false"
   />
-  <ReferenceSearchOverlay
-    v-if="showReferenceSearch"
-    :definitions="referenceSearchDefinitions"
-    :occurrences="referenceSearchOccurrences"
-    :initial-request="referenceSearchRequest"
-    :project-roots="referenceSearchProjectRoots"
-    :active-document-path="referenceSearchActiveDocumentPath"
-    @close="showReferenceSearch = false"
+  <CommandLauncher
+    ref="commandLauncher"
+    @open-file="openWorkspaceFile($event)"
+    @jump-to-line="genericJtl($event)"
     @jump="handleReferenceJump($event)"
-    @open-help="openQuickHelpFromOverlay()"
+    @open-help="showPandocQuickHelp = true"
   />
   <CreateReferenceLabelDialog
     v-if="createLabelPrompt !== undefined"
@@ -192,7 +188,8 @@ import PopoverTable from './PopoverTable.vue'
 import PopoverDocInfo from './PopoverDocInfo.vue'
 import PopoverPandoc from './PopoverPandoc.vue'
 import PandocQuickHelp from './PandocQuickHelp.vue'
-import ReferenceSearchOverlay from './ReferenceSearchOverlay.vue'
+import CommandLauncher from './launcher/CommandLauncher.vue'
+import type { LauncherView } from './launcher/launcher-state'
 import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
 import type {
   ConfirmReferenceLabelOutcome,
@@ -231,7 +228,6 @@ import getDocumentTitle from './util/get-document-title'
 import { useConfigStore, useDocumentTreeStore, useLRTStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
 import { type AnyDescriptor } from 'source/types/common/fsal'
-import type { ProjectRootSpec, ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from '@dts/common/documents'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
@@ -304,77 +300,38 @@ const pandocButton = ref<HTMLElement|null>(null)
 const showPandocPopover = ref<boolean>(false)
 const showPandocQuickHelp = ref<boolean>(false)
 
-// Mod-P workspace reference search (issue #1 Phase 3b) and the badge-keyed
-// reverse lookup (issue #1 Phase 8): the relayed request decides which mode
-// the overlay opens in, and the merged occurrence list feeds the
-// citing-locations rows.
-const showReferenceSearch = ref<boolean>(false)
-const referenceSearchDefinitions = ref<ReferenceDefinition[]>([])
-const referenceSearchOccurrences = ref<ReferenceOccurrence[]>([])
-const referenceSearchRequest = ref<ReferenceSearchRequest>(null)
-// The US-16 ranking context (review A3): every visible Project root plus the
-// document the search was invoked from, captured at open time.
-const referenceSearchProjectRoots = ref<ProjectRootSpec[]>([])
-const referenceSearchActiveDocumentPath = ref<string|undefined>(undefined)
-
-/**
- * Every Project root visible in the workspace, projected to the pure
- * ProjectRootSpec shape the ranking consumes (the same projection
- * MainEditor.vue feeds the completion status computation).
- */
-function collectProjectRoots (): ProjectRootSpec[] {
-  const roots: ProjectRootSpec[] = []
-  for (const descriptor of workspaceStore.descriptorMap.values()) {
-    if (descriptor.type === 'directory' && descriptor.settings.project !== null) {
-      roots.push({
-        rootPath: descriptor.path,
-        files: [...descriptor.settings.project.files]
-      })
-    }
-  }
-  return roots
+/** The surface CommandLauncher.vue exposes to its template ref. */
+interface CommandLauncherHandle {
+  open: (view: LauncherView) => Promise<void>
+  close: () => void
 }
 
-/**
- * The Mod-P overlay's help affordance (review A2, US-06): swap the search
- * overlay for the searchable Pandoc quick help.
- */
-function openQuickHelpFromOverlay (): void {
-  showReferenceSearch.value = false
-  showPandocQuickHelp.value = true
-}
+const commandLauncher = ref<CommandLauncherHandle|null>(null)
 
 /**
- * Fetches the merged workspace state from the reference provider and mounts
- * the reference search overlay over it: the plain Mod-P definition search
- * (request null) or the keyed citing-locations reverse lookup ({ key }).
- * A failed fetch surfaces through the recoverable-error boundary (issue #1
- * Phase 8) and the overlay simply does not open.
+ * Opens the command launcher for a reference search request: the plain
+ * Mod-P request (null) opens the launcher root, where the workspace
+ * reference search is one command; the badge-keyed reverse lookup
+ * ({ key }, issue #1 Phase 8) opens the references view on that key.
  *
  * @param   {ReferenceSearchRequest}  request  The relayed request payload
  */
-function openReferenceSearch (request: ReferenceSearchRequest = null): void {
-  invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
-    async (channel, message) => await ipcRenderer.invoke(channel, message),
-    { command: 'get-snapshot' },
-    trans('Loading workspace references')
-  )
-    .then(outcome => {
-      if (outcome.status === 'failed') {
-        return // The boundary surfaced the closable toast; nothing to open.
-      }
-      referenceSearchDefinitions.value = outcome.value.snapshots.flatMap(snapshot => snapshot.definitions)
-      // ONE owner for the citing-locations fact (issues #53, #46): both
-      // modes read the provider's freshly fetched merged snapshot, whose
-      // live overlays the document authority feeds on load and edit. The
-      // keyed request names only the key; the overlay filters these rows.
-      referenceSearchOccurrences.value = outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
-      referenceSearchRequest.value = request
-      referenceSearchProjectRoots.value = collectProjectRoots()
-      referenceSearchActiveDocumentPath.value = documentTreeStore.lastLeafActiveFile?.path
-      showReferenceSearch.value = true
-    })
-    .catch(err => console.error('Could not open the reference search overlay', err))
+async function openReferenceSearch (request: ReferenceSearchRequest = null): Promise<void> {
+  const view: LauncherView = request === null ? { kind: 'root' } : { kind: 'references', request }
+  await commandLauncher.value?.open(view)
+}
+
+/**
+ * Opens a workspace document chosen in the launcher's Go to file group in
+ * the last focused pane.
+ *
+ * @param   {string}  path  The document's path
+ */
+async function openWorkspaceFile (path: string): Promise<void> {
+  await ipcRenderer.invoke('documents-provider', {
+    command: 'open-file',
+    payload: { path, windowId, leafId: lastLeafId.value, newTab: false }
+  })
 }
 
 // Create-reference-label dialog (issue #1 Phase 6): the relayed request
@@ -468,7 +425,6 @@ function handleCreateReferenceLabel (intent: CreateReferenceLabelIntent): void {
  * @param   {ReferenceJumpIntent}  intent  The chosen jump intent
  */
 function handleReferenceJump (intent: ReferenceJumpIntent): void {
-  showReferenceSearch.value = false
   ipcRenderer.invoke('documents-provider', {
     command: 'open-file',
     payload: {
@@ -996,7 +952,8 @@ onMounted(() => {
     'navigate-back': () => { navigateHistory('navigate-back') },
     'navigate-forward': () => { navigateHistory('navigate-forward') },
     'insert-pandoc-div': () => { insertPandoc({ type: 'div', attributes: '' }) },
-    'insert-pandoc-span': () => { insertPandoc({ type: 'span', attributes: '' }) }
+    'insert-pandoc-span': () => { insertPandoc({ type: 'span', attributes: '' }) },
+    'open-command-launcher': () => openReferenceSearch(null)
   }
 
   ipcRenderer.on('shortcut', (event, shortcut: unknown, payload: unknown) => {

@@ -57,14 +57,16 @@ const slots = useSlots()
 </script>
 
 <style lang="less">
-.chrome-section-header {
+// `body … button.…` outweighs the platform button rules in generic.css
+// (body.linux.dark button), which would paint the trigger and the actions.
+body .chrome-section-header {
   display: flex;
   align-items: center;
   min-height: var(--chrome-section-height);
   padding: 0 var(--chrome-inset) 0 6px;
   box-sizing: border-box;
 
-  .chrome-section-trigger {
+  button.chrome-section-trigger {
     display: flex;
     flex: 1 1 auto;
     align-items: center;
@@ -99,7 +101,7 @@ const slots = useSlots()
   }
 
   // cds-icon's own direction="right" is a 90° host rotation; "down" is 180°.
-  .chrome-section-trigger[data-state="open"] .chrome-section-chevron {
+  button.chrome-section-trigger[data-state="open"] .chrome-section-chevron {
     transform: rotate(180deg);
   }
 

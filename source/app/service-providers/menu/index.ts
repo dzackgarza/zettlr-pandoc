@@ -137,8 +137,10 @@ export default class MenuProvider extends ProviderContract {
         }
 
         // And now trigger a click! We need to pass the menuItem and the
-        // focusedWindow as well.
-        const focusedWindow = BrowserWindow.getFocusedWindow()
+        // focusedWindow as well. The request came from a window, so when no
+        // window holds the OS focus (a headless run, a click while another
+        // app is frontmost) the sender is the window the item acts on.
+        const focusedWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.fromWebContents(event.sender)
         if (typeof menuItem.role === 'string') {
           if (focusedWindow === null) {
             this._logger.error(`[Menu Provider] Could not trigger custom click on menuItem ${itemID} with role ${menuItem.role}: No focused Window to trigger on.`)

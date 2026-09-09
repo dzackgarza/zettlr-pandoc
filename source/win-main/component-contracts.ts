@@ -10,7 +10,7 @@
  * Description:     Type contracts shared between main-window components.
  *                  These previously lived inside the SFC modules that
  *                  motivated them (App.vue, MainEditor.vue,
- *                  ReferenceSearchOverlay.vue), but plain tsc — which powers
+ *                  the launcher's ReferenceSearchView.vue), but plain tsc — which powers
  *                  type-aware linting — cannot resolve types exported from
  *                  .vue modules (it reads the raw SFC text, template
  *                  included, as TypeScript), while vue-tsc virtualizes SFCs

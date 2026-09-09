@@ -25,11 +25,12 @@ import { defaultKeybindings, type EditorShortcutName } from 'source/common/modul
 import type { EditorCommandName, InsertTablePayload, ShortcutName } from '@dts/common/shortcut-names'
 import type { MenuCommands } from './menu-dependencies'
 
-type FocusedWindow = BrowserWindow | BaseWindow | undefined
+/** Electron types the focused window as possibly undefined; at runtime the provider also passes null. */
+type FocusedWindow = BrowserWindow | BaseWindow | undefined | null
 
 /** Sends a window the typed shortcut name (and, for a table, its size). */
 export function sendShortcut (window: FocusedWindow, name: ShortcutName, payload?: InsertTablePayload): void {
-  if (window === undefined || !('webContents' in window)) {
+  if (window === undefined || window === null || !('webContents' in window)) {
     return
   }
   if (payload === undefined) {

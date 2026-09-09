@@ -21,9 +21,45 @@
     background-color: var(--chrome-row-hover-bg);
   }
 
-  &.chrome-row-active {
+  // The active row: the selected tree item, or the highlighted launcher row
+  // (reka-ui marks it with data-highlighted).
+  &.chrome-row-active,
+  &[data-highlighted] {
     background-color: var(--chrome-row-active-bg);
     box-shadow: inset 3px 0 0 var(--chrome-row-accent);
+  }
+
+  &[data-disabled] {
+    color: var(--chrome-text-muted);
+    cursor: default;
+  }
+
+  // The row's parts: a label that ellipsises, a muted breadcrumb or detail
+  // before it, and trailing content (a shortcut chip, a count) at the end.
+  .chrome-row-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chrome-row-detail {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-right: 8px;
+    overflow: hidden;
+    color: var(--chrome-text-muted);
+    font-size: var(--chrome-section-font-size);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chrome-row-trailing {
+    flex: 0 0 auto;
+    margin-left: 12px;
+    color: var(--chrome-text-muted);
+    font-size: var(--chrome-section-font-size);
   }
 }
 
@@ -46,7 +82,9 @@
     border-color: var(--chrome-row-accent);
   }
 
-  .chrome-filter-input {
+  // `body … input.…` outweighs the platform input rules in generic.css
+  // (body.linux.dark input), which would paint the field grey.
+  body & input.chrome-filter-input {
     flex: 1 1 auto;
     min-width: 0;
     height: 100%;

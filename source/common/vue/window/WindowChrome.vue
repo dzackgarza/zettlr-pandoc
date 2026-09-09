@@ -274,6 +274,9 @@ function handleDoubleClick (origin: 'titlebar'|'toolbar'): void {
   --chrome-row-accent: var(--system-accent-color, rgb(35, 122, 255));
   --chrome-input-bg: rgba(255, 255, 255, 0.85);
   --chrome-input-border: rgba(0, 0, 0, 0.15);
+  --chrome-surface: rgb(255, 255, 255);
+  --chrome-overlay: rgba(14, 18, 24, 0.38);
+  --chrome-elevation: 0 20px 60px rgba(0, 0, 0, 0.32);
   --chrome-font-size: 13px;
   --chrome-section-font-size: 11px;
   --chrome-section-height: 28px;
@@ -290,6 +293,9 @@ body.dark {
   --chrome-row-active-bg: rgba(255, 255, 255, 0.1);
   --chrome-input-bg: rgba(255, 255, 255, 0.06);
   --chrome-input-border: rgba(255, 255, 255, 0.18);
+  --chrome-surface: rgb(45, 49, 54);
+  --chrome-overlay: rgba(0, 0, 0, 0.5);
+  --chrome-elevation: 0 20px 60px rgba(0, 0, 0, 0.6);
 }
 
 body {

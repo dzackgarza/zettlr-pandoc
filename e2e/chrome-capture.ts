@@ -76,6 +76,27 @@ async function proveSectionHeaderKeyboard (page: Page): Promise<void> {
   assert.ok(focusLeftHeader, 'Tab must move the focus off the section header')
 }
 
+const LAUNCHER = '[data-command-launcher]'
+const LAUNCHER_INPUT = `${LAUNCHER} [data-command-launcher-input]`
+
+/** Opens the launcher through its View menu item, the path the accelerator takes. */
+async function openLauncher (page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.ipc.send('menu-provider', { command: 'click-menu-item', payload: 'menu.command_launcher' })
+  })
+  await page.locator(LAUNCHER_INPUT).waitFor({ state: 'visible', timeout: 10_000 })
+}
+
+async function closeLauncher (page: Page): Promise<void> {
+  await page.keyboard.press('Escape')
+  await page.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
+}
+
+async function typeAndWaitForHighlight (page: Page, query: string, label: string): Promise<void> {
+  await page.locator(LAUNCHER_INPUT).fill(query)
+  await page.locator(`${LAUNCHER} [data-launcher-row][data-highlighted]`, { hasText: label }).waitFor({ timeout: 10_000 })
+}
+
 /** Flips the app's own dark-mode setting and waits for the body class. */
 async function setDarkMode (page: Page, dark: boolean): Promise<void> {
   await page.evaluate(value => {
@@ -144,6 +165,36 @@ const SCENES: Scene[] = [
       await page.locator(PROJECT_HEADER).click()
       await waitForModuleState(page, 'open')
     }
+  },
+  {
+    // The command launcher at its root: the menu groups and the dynamic groups.
+    name: 'launcher-root',
+    arrange: async page => { await openLauncher(page) },
+    restore: closeLauncher
+  },
+  {
+    // The launcher inside the Insert submenu, a query narrowing its rows.
+    name: 'launcher-insert',
+    arrange: async page => {
+      await openLauncher(page)
+      await typeAndWaitForHighlight(page, 'insert', 'Insert')
+      await page.keyboard.press('Enter')
+      await typeAndWaitForHighlight(page, 'foot', 'Footnote')
+    },
+    restore: closeLauncher
+  },
+  {
+    // The launcher in its references view, ranking the workspace definitions.
+    name: 'launcher-references',
+    arrange: async page => {
+      await openLauncher(page)
+      await typeAndWaitForHighlight(page, 'references', 'Search references')
+      await page.keyboard.press('Enter')
+      await page.locator(`${LAUNCHER} [data-search-mode="definitions"]`).waitFor({ timeout: 10_000 })
+      await page.locator(LAUNCHER_INPUT).fill('sec')
+      await page.locator(`${LAUNCHER} [data-launcher-row][data-highlighted][data-reference-key]`).waitFor({ timeout: 10_000 })
+    },
+    restore: closeLauncher
   }
 ]
 

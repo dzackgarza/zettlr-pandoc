@@ -151,6 +151,17 @@ async function placeCursor (page: Page, offset: number): Promise<void> {
   }, offset)
 }
 
+/**
+ * Puts the focus outside the editor, in the sidebar's filter input. The
+ * workspace root is a Quarto book, and any workspace update resets the file
+ * manager to its Book view (where the filter does not exist), so the Files
+ * view is selected first every time.
+ */
+async function focusOutsideEditor (page: Page): Promise<void> {
+  await page.locator('#file-manager .system-tab', { hasText: 'Files' }).click({ timeout: 30_000 })
+  await page.locator(FILTER_INPUT).focus({ timeout: 30_000 })
+}
+
 async function typeAndWaitForHighlight (page: Page, query: string, label: string): Promise<void> {
   await page.locator(LAUNCHER_INPUT).fill(query)
   await page.locator(HIGHLIGHTED_ROW, { hasText: label }).waitFor({ timeout: 10_000 })
@@ -193,11 +204,7 @@ describe('the Ctrl+P command launcher', function () {
     page = await findEditorPage(browser, this.timeout())
     await hideDevServerOverlay(page)
     await page.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
-    // The workspace root is a Quarto book, so the file manager opens on its
-    // Book view; the filter input, the focus target outside the editor, lives
-    // in the Files view.
-    await page.locator('#file-manager .system-tab', { hasText: 'Files' }).click({ timeout: 60_000 })
-    await page.locator(FILTER_INPUT).waitFor({ state: 'visible', timeout: 60_000 })
+    await page.locator('#file-manager .system-tab', { hasText: 'Files' }).waitFor({ timeout: 60_000 })
   })
 
   after(async function () {
@@ -219,7 +226,7 @@ describe('the Ctrl+P command launcher', function () {
     assert.ok(item !== undefined, 'the View menu must carry the command launcher item')
     assert.equal(item.accelerator, 'Ctrl+P', 'the launcher item must own Ctrl+P')
 
-    await activePage.locator(FILTER_INPUT).focus()
+    await focusOutsideEditor(activePage)
     await openLauncherFromMenu(activePage)
     assert.equal(await activePage.locator(LAUNCHER).count(), 1, 'exactly one launcher opens')
     screenshots.set('launcher-root.png', await activePage.screenshot())
@@ -232,7 +239,7 @@ describe('the Ctrl+P command launcher', function () {
 
   it('toggles the sidebar off and on through a typed command', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
-    await activePage.locator(FILTER_INPUT).focus()
+    await focusOutsideEditor(activePage)
     await openLauncherFromMenu(activePage)
     await typeAndWaitForHighlight(activePage, 'sidebar', 'Toggle Sidebar')
     await activePage.keyboard.press('Enter')
@@ -267,6 +274,13 @@ describe('the Ctrl+P command launcher', function () {
     await waitUntil(async () => (await readEditorDocument(activePage)).slice(cursor, cursor + 4) === '[^1]', 'the footnote marker at the cursor')
     const after = await readEditorDocument(activePage)
     assert.equal(after.slice(0, cursor), before.slice(0, cursor), 'the text before the cursor is untouched')
+
+    // Save the edited fixture document so the app can shut down without a
+    // native "unsaved changes" prompt the harness cannot answer.
+    const indexPath = path.join(requireInitialized(fixtureRoot, 'fixture'), 'workspace', 'index.md')
+    await activePage.evaluate(async pathInPage => await window.ipc.invoke('documents:save-file', { path: pathInPage }), indexPath)
+    const saved = await readFile(indexPath, 'utf8')
+    assert.equal(saved.slice(cursor, cursor + 4), '[^1]', 'the saved document carries the footnote marker')
   })
 
   it('jumps to a definition in another document through the Search references command', async function () {
@@ -274,7 +288,7 @@ describe('the Ctrl+P command launcher', function () {
     const formsPath = path.join(requireInitialized(fixtureRoot, 'fixture'), 'workspace', 'foundations', 'forms.md')
     const formsText = await readFile(formsPath, 'utf8')
 
-    await activePage.locator(FILTER_INPUT).focus()
+    await focusOutsideEditor(activePage)
     await openLauncherFromMenu(activePage)
     await typeAndWaitForHighlight(activePage, 'references', 'Search references')
     await activePage.keyboard.press('Enter')

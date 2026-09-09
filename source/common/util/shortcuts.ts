@@ -39,6 +39,32 @@ export interface ExplodedShortcut {
 }
 
 /**
+ * Takes an Electron accelerator (`CmdOrCtrl+Shift+K`) apart into the
+ * modifiers and key ShortcutDisplay.vue renders. `CmdOrCtrl` is the key it
+ * resolves to on this platform: Cmd on macOS, Ctrl elsewhere.
+ *
+ * @param   {string}            accelerator  The accelerator
+ *
+ * @return  {ExplodedShortcut}               The exploded shortcut
+ */
+export function explodeAccelerator (accelerator: string): ExplodedShortcut {
+  const parts = accelerator.split('+')
+  const key = parts[parts.length - 1].toLowerCase()
+  const modifiers = parts.slice(0, -1).map(part => part.toLowerCase())
+  const commandOrControl = modifiers.includes('cmdorctrl') || modifiers.includes('commandorcontrol')
+  const command = modifiers.includes('cmd') || modifiers.includes('command') || modifiers.includes('super') || modifiers.includes('meta')
+  const control = modifiers.includes('ctrl') || modifiers.includes('control')
+  const isMac = process.platform === 'darwin'
+  return {
+    altKey: modifiers.includes('alt') || modifiers.includes('option'),
+    shiftKey: modifiers.includes('shift'),
+    modKey: command || (isMac && commandOrControl),
+    ctrlKey: control || (!isMac && commandOrControl),
+    key
+  }
+}
+
+/**
  * Takes a CodeMirror-style shortcut (`Mod-Shift-t`) apart into its modifiers
  * and its key.
  *

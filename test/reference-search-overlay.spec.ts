@@ -7,7 +7,7 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Drives the real ReferenceSearchOverlay Vue component in
+ * Description:     Drives the real ReferenceSearchView Vue component in
  *                  Chromium (webpack renderer bundle, xvfb Electron, real
  *                  keyboard input) against a workspace snapshot extracted
  *                  from the reference-workspace fixture. Locks the Mod-P
@@ -114,7 +114,7 @@ describe('Mod-P reference search overlay', function () {
     }
   })
 
-  it('mounts the ReferenceSearchOverlay component from source/win-main', function () {
+  it('mounts the ReferenceSearchView component from source/win-main/launcher', function () {
     assert.equal(
       result.componentFailure,
       null,
