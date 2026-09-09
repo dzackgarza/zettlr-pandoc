@@ -44,6 +44,11 @@
  *                    (which defines no target) receives an INFO diagnostic
  *                    at the authored id token explaining that proofs are
  *                    unreferenceable.
+ *                  - CROSSREF-LABELED DIV: a fenced div whose label carries a
+ *                    crossref family (`::: {#fig-elephant}`) receives an ERROR
+ *                    at the authored id token. Only the theorem families have
+ *                    a semantic presentation; such a div otherwise renders as
+ *                    a generic div while claiming a typed label.
  *                  - MIXED CLUSTER ADVISORY: a citation cluster mixing
  *                    bibliography keys and supported-family reference keys
  *                    stays raw in the editor and receives a WARNING spanning
@@ -59,9 +64,9 @@ import { type EditorView } from '@codemirror/view'
 import { markdownToAST } from '@common/modules/markdown-utils'
 import type { ASTNode } from '@common/modules/markdown-utils/markdown-ast'
 import { locateAttribute } from '@common/pandoc-util/extract-references'
-import { SEMANTIC_DIV_CLASSES } from '@common/pandoc-util/pandoc-div-model'
+import { classifyDiv, SEMANTIC_DIV_CLASSES } from '@common/pandoc-util/pandoc-div-model'
 import { THEOREM_FAMILY_METADATA, REFERENCEABLE_DIV_CLASSES } from '@common/util/pandoc-quick-reference'
-import { referenceFamilyOf, referenceKeyParts, type ReferenceFamily } from '@dts/common/references'
+import { CROSSREF_FAMILIES, referenceFamilyDisplayName, referenceFamilyOf, referenceKeyParts, type ReferenceFamily } from '@dts/common/references'
 import { workspaceReferencesField, type EditorWorkspaceReferences } from '../plugins/workspace-references-field'
 
 /**
@@ -170,6 +175,25 @@ function collectASTDiagnostics (markdown: string, diagnostics: Diagnostic[]): vo
           to: located.range.to,
           severity: 'info',
           message: `The id "#${located.key}" on a proof div defines no reference target: proofs stay unnumbered and unreferenceable.`,
+          source: 'reference-lint'
+        })
+      }
+
+      // A crossref-family label on a fenced div (Quarto's figure, table, and
+      // section wrappers) names a construction the editor has no presentation
+      // for: it falls through to the generic div style while claiming a typed
+      // label. Only the theorem families carry a semantic presentation.
+      const family = referenceFamilyOf(located.key)
+      if (family !== undefined &&
+          classifyDiv(classes, located.key).family === 'generic' &&
+          (CROSSREF_FAMILIES as readonly string[]).includes(family)) {
+        const parts = referenceKeyParts(located.key)
+        const example = `#def${parts?.separator ?? '-'}${parts?.remainder ?? located.key}`
+        diagnostics.push({
+          from: located.range.from,
+          to: located.range.to,
+          severity: 'error',
+          message: `The id "#${located.key}" labels this fenced div as a ${referenceFamilyDisplayName(family).toLowerCase()}, which the editor does not present. Fenced divs carry the theorem families, e.g. "${example}".`,
           source: 'reference-lint'
         })
       }

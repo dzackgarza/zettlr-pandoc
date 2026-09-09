@@ -247,6 +247,30 @@ describe('Reference diagnostics (issue #1 Phase 4)', function () {
     assertNoActions(diagnostics)
   })
 
+  it('reports a crossref-labeled fenced div as an error: only theorem families present semantically', async function () {
+    const doc = '::: {#fig-elephant}\nAn elephant.\n:::\n'
+    const snapshot = extractReferences('crafted-crossref-div.md', doc)
+    const view = createEditor(doc, snapshot, [snapshot])
+    const diagnostics = await referenceLintSource(view)
+
+    const idToken = '#fig-elephant'
+    const from = doc.indexOf(idToken)
+    const unsupported = diagnostics.find(diagnostic => diagnostic.from === from)
+    assert.ok(unsupported !== undefined, 'the crossref-labeled div must receive a diagnostic at its authored token')
+    assert.strictEqual(unsupported.severity, 'error')
+    assert.strictEqual(unsupported.to, from + idToken.length)
+    assertNoActions(diagnostics)
+  })
+
+  it('reports no such error for a classless theorem-family div, which does present semantically', async function () {
+    const doc = '::: {#def-core}\nA category.\n:::\n'
+    const snapshot = extractReferences('crafted-theorem-div.md', doc)
+    const view = createEditor(doc, snapshot, [snapshot])
+    const diagnostics = await referenceLintSource(view)
+
+    assert.deepStrictEqual(diagnostics.filter(diagnostic => diagnostic.severity === 'error'), [])
+  })
+
   it('reports a mixed bibliography/reference cluster as an advisory spanning the authored cluster', async function () {
     const doc = 'Combine [@thm:torelli; @Ols04, Lem. 7.1] for the argument.'
     const snapshot = extractReferences('crafted-mixed.md', doc)
