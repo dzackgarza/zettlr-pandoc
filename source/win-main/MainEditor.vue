@@ -1465,16 +1465,10 @@ function maybeHighlightSearchResults (): void {
     return
   }
 
-  // Construct CodeMirror.Ranges from the results
-  const rangesToHighlight = []
-  // NOTE: We have to filter out "whole-file" results
-  for (const res of result.result.filter((res): res is FileContentSearchResult => res.type === 'content' && res.line > -1)) {
-    const startIdx = currentEditor.instance.state.doc.line(res.line + 1).from
-    for (const range of res.ranges) {
-      const { from, to } = range
-      rangesToHighlight.push(EditorSelection.range(startIdx + from, startIdx + to))
-    }
-  }
+  // The provider reports every match as offsets into the whole document.
+  const rangesToHighlight = result.result
+    .filter((res): res is FileContentSearchResult => res.type === 'content')
+    .flatMap(res => res.documentRanges.map(range => EditorSelection.range(range.from, range.to)))
   currentEditor.highlightRanges(rangesToHighlight)
 }
 

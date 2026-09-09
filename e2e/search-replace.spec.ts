@@ -38,9 +38,10 @@ import {
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), 'zettlr-search-replace-e2e-latest')
 
 const SEARCH_VIEW = '#navigation-sidebar[data-view="search"] #global-search-pane'
-const QUERY_INPUT = `${SEARCH_VIEW} input[name="query-input"]`
+const QUERY_INPUT = `${SEARCH_VIEW} input >> nth=0`
 const REPLACE_INPUT = `${SEARCH_VIEW} input[name="replace-input"]`
-const ACTION = (name: 'replace-all' | 'replace-file' | 'replace-match' | 'undo-replace'): string => `${SEARCH_VIEW} [data-search-action="${name}"]`
+const ACTION = (name: 'replace-all' | 'replace-file' | 'replace-match' | 'undo-replace'): string => `[data-search-action="${name}"]`
+const PANE_ACTION = (name: 'replace-all' | 'undo-replace'): string => `${SEARCH_VIEW} ${ACTION(name)}`
 const RESULT = `${SEARCH_VIEW} .single-search-result`
 
 const TERM = 'subgroupoid'
@@ -82,6 +83,7 @@ describe('search and replace across the workspace', function () {
   const screenshots = new Map<string, Buffer>()
 
   const closedFile = (): string => path.join(requireInitialized(fixtureRoot, 'fixture root'), 'workspace', 'computation', 'sage.md')
+  const openFile = (): string => path.join(requireInitialized(fixtureRoot, 'fixture root'), 'workspace', 'foundations', 'categories.md')
 
   before(async function () {
     // categories.md (open, the active document) and sage.md (closed) both
@@ -119,33 +121,35 @@ describe('search and replace across the workspace', function () {
     assertCleanExit(getOutput())
   })
 
-  it('replaces every match: the open document in its editor, the closed file on disk, and the results refresh', async function () {
+  it('replaces every match: the open document in its editor and on disk, the closed file on disk, and the results refresh', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
     assert.match(await editorText(activePage), /subgroupoid/, 'the open document carries the term before the replace')
     await runSearch(activePage, TERM)
-    assert.deepEqual((await resultFiles(activePage)).sort(), [ 'Core', 'Sage' ], 'both files match')
+    assert.deepEqual((await resultFiles(activePage)).sort(), [ 'Sage', 'categories' ], 'both files match')
     await activePage.locator(REPLACE_INPUT).fill(REPLACEMENT)
     screenshots.set('before-replace-all.png', await activePage.screenshot())
-    await activePage.locator(ACTION('replace-all')).click()
+    await activePage.locator(PANE_ACTION('replace-all')).click()
     await waitUntil(async () => /subcategory/.test(await editorText(activePage)) && !/subgroupoid/.test(await editorText(activePage)), 'the open document to change in its editor')
     await waitUntil(async () => {
       const text = await readFile(closedFile(), 'utf-8')
       return text.includes(REPLACEMENT) && !text.includes(TERM)
     }, 'the closed file to change on disk')
+    await waitUntil(async () => (await readFile(openFile(), 'utf-8')).includes(REPLACEMENT), 'the open document to be saved with the replacement')
     await waitUntil(async () => (await activePage.locator(RESULT).count()) === 0, 'the results to refresh with no match left')
     screenshots.set('after-replace-all.png', await activePage.screenshot())
   })
 
   it('undoes the last replace in both places from the Search view', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
-    await activePage.locator(ACTION('undo-replace')).click()
+    await activePage.locator(PANE_ACTION('undo-replace')).click()
     await waitUntil(async () => /subgroupoid/.test(await editorText(activePage)) && !/subcategory/.test(await editorText(activePage)), 'the open document to come back')
     await waitUntil(async () => {
       const text = await readFile(closedFile(), 'utf-8')
       return text.includes(TERM) && !text.includes(REPLACEMENT)
     }, 'the closed file to come back on disk')
+    await waitUntil(async () => (await readFile(openFile(), 'utf-8')).includes(TERM), 'the open document to be saved with the term back')
     await runSearch(activePage, TERM)
-    assert.deepEqual((await resultFiles(activePage)).sort(), [ 'Core', 'Sage' ], 'both files match again')
+    assert.deepEqual((await resultFiles(activePage)).sort(), [ 'Sage', 'categories' ], 'both files match again')
   })
 
   it('replaces one file\'s matches from its header and leaves the other file alone', async function () {
@@ -158,8 +162,8 @@ describe('search and replace across the workspace', function () {
       return (text.match(/subcategory/g) ?? []).length === 2 && !text.includes(TERM)
     }, 'both matches of sage.md to change on disk')
     assert.match(await editorText(activePage), /subgroupoid/, 'the open document is untouched')
-    await waitUntil(async () => (await resultFiles(activePage)).join() === 'Core', 'the results to refresh to the one file left')
-    await activePage.locator(ACTION('undo-replace')).click()
+    await waitUntil(async () => (await resultFiles(activePage)).join() === 'categories', 'the results to refresh to the one file left')
+    await activePage.locator(PANE_ACTION('undo-replace')).click()
     await waitUntil(async () => (await readFile(closedFile(), 'utf-8')).includes(TERM), 'sage.md to come back')
     await runSearch(activePage, TERM)
   })
@@ -173,7 +177,7 @@ describe('search and replace across the workspace', function () {
       const text = await readFile(closedFile(), 'utf-8')
       return (text.match(/subcategory/g) ?? []).length === 1 && (text.match(/subgroupoid/g) ?? []).length === 1
     }, 'exactly one of sage.md\'s matches to change')
-    await waitUntil(async () => (await resultFiles(activePage)).sort().join() === 'Core,Sage', 'the results to refresh with the remaining match')
+    await waitUntil(async () => (await resultFiles(activePage)).sort().join() === 'Sage,categories', 'the results to refresh with the remaining match')
     screenshots.set('after-replace-match.png', await activePage.screenshot())
   })
 })

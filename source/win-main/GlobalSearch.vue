@@ -11,6 +11,19 @@
       @keydown.enter="startSearch()"
     />
 
+    <!-- The replacement for every match a replace control addresses. -->
+    <div class="replace-row">
+      <input
+        v-model="replacement"
+        type="text"
+        name="replace-input"
+        class="replace-input"
+        :placeholder="replacePlaceholder"
+        :aria-label="replaceLabel"
+        @keydown.enter="replaceAll()"
+      >
+    </div>
+
     <CheckboxControl
       v-model="caseInsensitive"
       :label="caseInsensitiveLabel"
@@ -40,6 +53,24 @@
         :inline="true"
         :disabled="!searchIsRunning"
         @click="cancelSearch()"
+      />
+    </p>
+    <!-- ... and the actions on the results: replace them all, undo the last replace. -->
+    <p>
+      <ButtonControl
+        :label="replaceAllLabel"
+        :inline="true"
+        :disabled="searchIsRunning || replaceableResults.length === 0"
+        data-search-action="replace-all"
+        @click="replaceAll()"
+      />
+      <ButtonControl
+        v-if="undoAvailable"
+        :label="undoReplaceLabel"
+        :inline="true"
+        :disabled="searchIsRunning"
+        data-search-action="undo-replace"
+        @click="undoReplace()"
       />
     </p>
     <!--
@@ -135,6 +166,18 @@
                 :direction="(item.hideResultSet) ? 'left' : 'down'"
               />
               <span class="filepath">{{ item.file.relativeDirectoryPath }}</span>
+              <button
+                v-if="item.replaceable"
+                type="button"
+                class="result-replace"
+                data-search-action="replace-file"
+                :title="replaceFileLabel"
+                :aria-label="replaceFileLabel"
+                @mousedown.stop
+                @click.stop.prevent="replaceFile(item)"
+              >
+                <cds-icon shape="switch" role="presentation" />
+              </button>
             </div>
 
             <div
@@ -159,6 +202,18 @@
                     v-html="markText(singleRes)"
                   />
                   <!-- eslint-enable vue/no-v-html -->
+                  <button
+                    v-if="item.replaceable && singleRes.type === 'content'"
+                    type="button"
+                    class="result-replace"
+                    data-search-action="replace-match"
+                    :title="replaceMatchLabel"
+                    :aria-label="replaceMatchLabel"
+                    @mousedown.stop
+                    @click.stop.prevent="replaceLine(item, singleRes)"
+                  >
+                    <cds-icon shape="switch" role="presentation" />
+                  </button>
                 </div>
               </template>
             </div>
@@ -168,7 +223,10 @@
     </template>
     <template v-else-if="!searchIsRunning && hadNoResult">
       <hr>
-      <p style="text-align: center; display: block;">
+      <p
+        class="search-no-results"
+        style="text-align: center; display: block;"
+      >
         {{ noResultsMessage }}
       </p>
     </template>
@@ -199,7 +257,7 @@ import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import { useConfigStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { pathBasename, pathDirname, relativePath } from 'source/common/util/renderer-path-polyfill'
-import type { SearchProviderBroadcast, SearchProviderIPCAPI, SearchResult, FileContentSearchResult } from 'source/app/service-providers/search'
+import type { SearchProviderBroadcast, SearchProviderIPCAPI, SearchResult, FileContentSearchResult, ReplaceTarget } from 'source/app/service-providers/search'
 import type { SearchResultWrapper } from 'source/pinia/window-state-store'
 import CheckboxControl from 'source/common/vue/form/elements/CheckboxControl.vue'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
@@ -220,6 +278,12 @@ const cancelButtonLabel = trans('Cancel')
 const clearButtonLabel = trans('Clear search')
 const toggleButtonLabel = trans('Toggle results')
 const noResultsMessage = trans('No results for your search.')
+const replaceLabel = trans('Replace with')
+const replacePlaceholder = trans('Replace…')
+const replaceAllLabel = trans('Replace all')
+const undoReplaceLabel = trans('Undo replace')
+const replaceFileLabel = trans('Replace every match in this file')
+const replaceMatchLabel = trans('Replace the matches on this line')
 
 // Again: We have a side effect that trans() cannot be executed during import
 // stage. It needs to be executed after the window registration ran for now. It
@@ -266,6 +330,10 @@ const filter = ref<string>('')
 const restrictToDir = ref<string>('')
 // Whether this search should be case insensitive
 const caseInsensitive = ref<boolean>(true)
+// What a replace control puts in place of each match it addresses
+const replacement = ref<string>('')
+// Whether the provider holds the inverse of a replace this pane applied
+const undoAvailable = ref(false)
 // Search result progress
 const searchProgress = ref(0)
 // Whether the last search had no result
@@ -386,7 +454,7 @@ const stopListeningForSearchResults = ipcRenderer.on('search-provider', (event, 
       startSearch()
     }
   } else if (message.type === 'search-result') {
-    processSearchResult(message.progress, message.file, message.result)
+    processSearchResult(message.progress, message.file, message.result, message.sourceHash)
       .catch(err => console.error(err))
   }
 })
@@ -475,6 +543,78 @@ function reportSearchFailure (operationLabel: string, err: unknown): void {
   searchError.value = trans('%s failed: %s', operationLabel, detail)
 }
 
+/** The results a replace may address: the Markdown documents among them. */
+const replaceableResults = computed(() => windowStateStore.searchResults.filter(item => item.replaceable))
+
+/**
+ * One document's replace target: the matches of the given result lines (every
+ * content line of the document when none are named), fenced on the hash the
+ * search reported for it.
+ */
+function replaceTarget (item: SearchResultWrapper, lines?: FileContentSearchResult[]): ReplaceTarget {
+  const contentLines = lines ?? item.result.filter((entry): entry is FileContentSearchResult => entry.type === 'content')
+  return {
+    documentPath: item.file.path,
+    sourceHash: item.sourceHash,
+    // Plain objects: the store's reactive proxies cannot cross the IPC boundary.
+    ranges: contentLines.flatMap(line => line.documentRanges.map(({ from, to }) => ({ from, to })))
+  }
+}
+
+/**
+ * Sends one replace to the provider. An applied replace leaves the results
+ * stale by definition, so the same search runs again; a refused one names the
+ * document that changed since the search, and nothing was replaced.
+ */
+function runReplace (targets: ReplaceTarget[]): void {
+  if (targets.length === 0) {
+    return
+  }
+  searchError.value = undefined
+  ipcRenderer.invoke('search-provider', {
+    command: 'replace-in-files',
+    payload: { targets, replacement: replacement.value }
+  } satisfies SearchProviderIPCAPI)
+    .then(outcome => {
+      if (outcome.status === 'conflict') {
+        searchError.value = trans('%s changed since the search; nothing was replaced. Search again.', pathBasename(outcome.documentPath))
+        return
+      }
+      undoAvailable.value = true
+      startSearch()
+    })
+    .catch(err => reportSearchFailure(replaceAllLabel, err))
+}
+
+function replaceAll (): void {
+  runReplace(replaceableResults.value.map(item => replaceTarget(item)))
+}
+
+function replaceFile (item: SearchResultWrapper): void {
+  runReplace([ replaceTarget(item) ])
+}
+
+function replaceLine (item: SearchResultWrapper, line: FileContentSearchResult): void {
+  runReplace([ replaceTarget(item, [ line ]) ])
+}
+
+/** Applies the provider's one-shot inverse of the last replace, then searches again. */
+function undoReplace (): void {
+  searchError.value = undefined
+  ipcRenderer.invoke('search-provider', { command: 'undo-last-replace', payload: undefined } satisfies SearchProviderIPCAPI)
+    .then(outcome => {
+      if (outcome.status === 'conflict') {
+        searchError.value = trans('%s changed since the replace; nothing was undone.', pathBasename(outcome.documentPath))
+        return
+      }
+      undoAvailable.value = false
+      if (outcome.status === 'applied') {
+        startSearch()
+      }
+    })
+    .catch(err => reportSearchFailure(undoReplaceLabel, err))
+}
+
 /**
  * Processes a new search result from main
  *
@@ -482,7 +622,7 @@ function reportSearchFailure (operationLabel: string, err: unknown): void {
  * @param  {string}                  absPath   The filepath that had been searched
  * @param  {SearchResult|undefined}  result    The search result, if the file contains a result
  */
-async function processSearchResult (progress: number, absPath: string, result: SearchResult|undefined): Promise<void> {
+async function processSearchResult (progress: number, absPath: string, result: SearchResult|undefined, sourceHash: string): Promise<void> {
   searchProgress.value = progress
 
   if (result === undefined) {
@@ -506,7 +646,9 @@ async function processSearchResult (progress: number, absPath: string, result: S
     },
     result,
     hideResultSet: toggleState.value,
-    weight: result.reduce((acc, cur) => acc + cur.weight, 0)
+    weight: result.reduce((acc, cur) => acc + cur.weight, 0),
+    sourceHash,
+    replaceable: descriptor?.type === 'file'
   }
   windowStateStore.addSearchResult(newResult)
 }
@@ -645,6 +787,15 @@ body div#global-search-pane {
     color: rgb(200, 80, 100);
   }
 
+  .replace-row {
+    margin: 4px 0;
+
+    input.replace-input {
+      width: 100%;
+      box-sizing: border-box;
+    }
+  }
+
   .form-control {
     input {
       margin-top: 5px;
@@ -660,12 +811,36 @@ body div#global-search-pane {
       margin-bottom: 5px;
     }
 
+    button.result-replace {
+      grid-area: replace;
+      width: 20px;
+      height: 20px;
+      margin: 0;
+      padding: 0;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      opacity: 0.6;
+
+      &:hover {
+        opacity: 1;
+        background-color: var(--chrome-row-hover-bg);
+      }
+
+      cds-icon {
+        width: 14px;
+        height: 14px;
+      }
+    }
+
     div.result-header {
       white-space: nowrap;
       display: grid;
       width: 100%;
-      grid-template-areas: "relevancy filename collapse" "path path path";
-      grid-template-columns: 20px auto 20px;
+      grid-template-areas: "relevancy filename collapse replace" "path path path path";
+      grid-template-columns: 20px auto 20px 20px;
       grid-template-rows: 1fr 1fr;
 
       .relevancy-icon { grid-area: relevancy; }
@@ -696,8 +871,8 @@ body div#global-search-pane {
       font-size: 12px;
       display: grid;
       gap: 4px;
-      grid-template-areas: "line-number excerpt";
-      grid-template-columns: 25px auto;
+      grid-template-areas: "line-number excerpt replace";
+      grid-template-columns: 25px auto 20px;
 
       .line-number {
         grid-area: line-number;

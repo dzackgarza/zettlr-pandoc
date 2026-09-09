@@ -60,6 +60,11 @@ export interface FileContentSearchResult {
    * character to which something matched. Can be used for highlighting.
    */
   ranges: Array<{ from: number, to: number }>
+  /**
+   * The same matches as offsets into the whole document: what a replace
+   * addresses.
+   */
+  documentRanges: Array<{ from: number, to: number }>
 }
 
 /**
@@ -274,7 +279,7 @@ export function searchFileBoolean (descriptor: MDFileDescriptor|CodeFileDescript
         .map(({ ranges, line }) => {
           const { relativeRanges, excerpt } = getTextSurrounding(ranges, fileContent)
           return {
-            type: 'content', line, ranges: relativeRanges, weight: 1,
+            type: 'content', line, ranges: relativeRanges, documentRanges: ranges, weight: 1,
             excerpt
           } satisfies FileContentSearchResult
         })

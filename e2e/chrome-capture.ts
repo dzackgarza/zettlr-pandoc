@@ -165,13 +165,20 @@ const SCENES: Scene[] = [
     }
   },
   {
-    // The Search view from its icon.
+    // The Search view from its icon, a search run and a replacement typed:
+    // the results with their replace controls.
     name: 'search-view',
     arrange: async page => {
       await page.locator(ACTIVITY('search')).click()
       await page.locator('#navigation-sidebar[data-view="search"] #global-search-pane').waitFor({ timeout: 10_000 })
+      const query = page.locator('#navigation-sidebar[data-view="search"] #global-search-pane input').first()
+      await query.fill('subgroupoid')
+      await query.press('Enter')
+      await page.locator('#navigation-sidebar[data-view="search"] .single-search-result').first().waitFor({ timeout: 20_000 })
+      await page.locator('#navigation-sidebar[data-view="search"] input[name="replace-input"]').fill('subcategory')
     },
     restore: async page => {
+      await page.locator('#navigation-sidebar[data-view="search"] input[name="replace-input"]').fill('')
       await page.locator(ACTIVITY('explorer')).click()
       await page.locator('#navigation-sidebar[data-view="explorer"]').waitFor({ timeout: 10_000 })
     }

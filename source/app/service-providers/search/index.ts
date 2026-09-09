@@ -21,9 +21,31 @@ import { compileBooleanQuery, searchFileBoolean, type SearchResult, type SearchQ
 import type FSAL from '../fsal'
 import broadcastIPCMessage from 'source/common/util/broadcast-ipc-message'
 import type ConfigProvider from '../config'
+import type DocumentManager from '../documents'
 import path from 'path'
+import { hashDocumentSource } from '@common/pandoc-util/extract-references'
+import type { WorkspaceTextEdit } from '@dts/common/references'
+import { runWorkspaceEditTransaction } from '../references/workspace-edit-transaction'
+import { planDocumentReplace } from './util/replace-plan'
 
 export { SearchResult, FileContentSearchResult } from './util/boolean-search'
+
+/**
+ * One document's matches to replace: the spans as the search reported them
+ * and the hash of the text they were found in, which the replace is fenced
+ * on — a document that changed since the search is refused, not guessed at.
+ */
+export interface ReplaceTarget {
+  documentPath: string
+  sourceHash: string
+  ranges: Array<{ from: number, to: number }>
+}
+
+export type ReplaceOutcome =
+  | { status: 'applied', documentsChanged: string[], matchesReplaced: number }
+  | { status: 'conflict', documentPath: string }
+
+export type UndoReplaceOutcome = ReplaceOutcome | { status: 'nothing-to-undo' }
 
 export type SearchProviderIPCContract = {
   'start-full-text-search': {
@@ -33,6 +55,14 @@ export type SearchProviderIPCContract = {
   'cancel-search': {
     request: { payload?: undefined }
     response: undefined
+  }
+  'replace-in-files': {
+    request: { payload: { targets: ReplaceTarget[], replacement: string } }
+    response: ReplaceOutcome
+  }
+  'undo-last-replace': {
+    request: { payload?: undefined }
+    response: UndoReplaceOutcome
   }
 }
 
@@ -45,7 +75,7 @@ export type SearchProviderIPCAPI = IPCMessage<SearchProviderIPCContract>
  */
 export type SearchProviderBroadcast =
   | { type: 'search-end' }
-  | { type: 'search-result', file: string, result: SearchResult|undefined, progress: number }
+  | { type: 'search-result', file: string, result: SearchResult|undefined, sourceHash: string, progress: number }
 
 export class SearchProvider implements ProviderContract {
   /**
@@ -68,11 +98,25 @@ export class SearchProvider implements ProviderContract {
    * @var {SearchQueryBoolean|undefined}
    */
   private currentQuery: SearchQueryBoolean|undefined
+  /**
+   * The inverse of the last applied replace, fenced on the texts it
+   * produced; consumed by one undo.
+   */
+  private pendingUndo: { edits: WorkspaceTextEdit[], expectedSourceHashes: Record<string, string> }|undefined
 
-  constructor (private readonly _logger: LogProvider, private readonly _fsal: FSAL, private readonly _config: ConfigProvider) {
+  constructor (
+    private readonly _logger: LogProvider,
+    private readonly _fsal: FSAL,
+    private readonly _config: ConfigProvider,
+    /** The document authority: open Markdown buffers are searched and replaced through it. */
+    private readonly _documents: DocumentManager,
+    /** Where the workspace-edit transaction keeps its journal. */
+    private readonly _journalDirectory: string
+  ) {
     this.currentQuery = undefined
     this.fileSearchQueue = []
     this.sumFilesToSearch = 0
+    this.pendingUndo = undefined
 
     ipcMain.handle('search-provider', async (event, message: SearchProviderIPCAPI) => {
       const { command, payload } = message
@@ -88,8 +132,96 @@ export class SearchProvider implements ProviderContract {
         this.currentQuery = undefined
         this.fileSearchQueue = []
         this.sumFilesToSearch = 0
+      } else if (command === 'replace-in-files') {
+        return await this.replaceInFiles(payload.targets, payload.replacement)
+      } else if (command === 'undo-last-replace') {
+        return await this.undoLastReplace()
       }
     })
+  }
+
+  /**
+   * The text a search sees and a replace changes: the authority's buffer for
+   * an open Markdown document, the file on disk otherwise.
+   */
+  private async readSource (absPath: string): Promise<string> {
+    const buffer = this._documents.readMarkdownBufferContent(absPath)
+    if (buffer !== undefined) {
+      return buffer
+    }
+    return await this._fsal.loadAnySupportedFile(absPath)
+  }
+
+  /**
+   * Replaces the given spans through the journaled workspace-edit
+   * transaction: every document is re-read and hash-checked before anything
+   * changes, open buffers change through the authority, closed files on disk,
+   * and the inverse is kept for one undo. Only Markdown documents are
+   * replaced in: an open code document is outside the authority's contract.
+   */
+  private async replaceInFiles (targets: ReplaceTarget[], replacement: string): Promise<ReplaceOutcome> {
+    const edits: WorkspaceTextEdit[] = []
+    const inverse: WorkspaceTextEdit[] = []
+    const expectedSourceHashes: Record<string, string> = {}
+    for (const target of targets) {
+      const descriptor = await this._fsal.getDescriptorForAnySupportedFile(target.documentPath)
+      if (descriptor.type !== 'file') {
+        throw new Error(`[Search Provider] Replace addresses ${target.documentPath}, which is not a Markdown document`)
+      }
+      const source = await this.readSource(target.documentPath)
+      if (hashDocumentSource(source) !== target.sourceHash) {
+        return { status: 'conflict', documentPath: target.documentPath }
+      }
+      const plan = planDocumentReplace(target.documentPath, source, target.ranges, replacement)
+      edits.push(...plan.edits)
+      inverse.push(...plan.inverse)
+      expectedSourceHashes[target.documentPath] = target.sourceHash
+    }
+
+    const result = await runWorkspaceEditTransaction(this._documents, this._journalDirectory, { edits, expectedSourceHashes })
+    if (result.status === 'conflict') {
+      return { status: 'conflict', documentPath: result.documentPath }
+    }
+    await this.saveUpdatedBuffers(result.openBuffersUpdated)
+    this.pendingUndo = { edits: inverse, expectedSourceHashes: result.resultingHashes }
+    return {
+      status: 'applied',
+      documentsChanged: [ ...result.openBuffersUpdated, ...result.closedFilesWritten ],
+      matchesReplaced: edits.length
+    }
+  }
+
+  /** Applies the last replace's inverse through the same transaction, once. */
+  private async undoLastReplace (): Promise<UndoReplaceOutcome> {
+    const pending = this.pendingUndo
+    if (pending === undefined) {
+      return { status: 'nothing-to-undo' }
+    }
+    const result = await runWorkspaceEditTransaction(this._documents, this._journalDirectory, pending)
+    if (result.status === 'conflict') {
+      return { status: 'conflict', documentPath: result.documentPath }
+    }
+    await this.saveUpdatedBuffers(result.openBuffersUpdated)
+    this.pendingUndo = undefined
+    return {
+      status: 'applied',
+      documentsChanged: [ ...result.openBuffersUpdated, ...result.closedFilesWritten ],
+      matchesReplaced: pending.edits.length
+    }
+  }
+
+  /**
+   * A replace ends on disk for every document it touched: closed files are
+   * written by the transaction, open buffers are saved here (VS Code's
+   * Replace All saves the edited files the same way).
+   */
+  private async saveUpdatedBuffers (documentPaths: string[]): Promise<void> {
+    for (const documentPath of documentPaths) {
+      const saved = await this._documents.saveFile(documentPath)
+      if (!saved.ok) {
+        throw new Error(`[Search Provider] Could not save ${documentPath} after the replace: ${saved.refusal?.message ?? 'no refusal reason'}`)
+      }
+    }
   }
 
   async boot () {}
@@ -155,14 +287,14 @@ export class SearchProvider implements ProviderContract {
     }
 
     this.searchFileBoolean(nextFile, this.currentQuery)
-      .then(rawResult => {
+      .then(({ result: rawResult, sourceHash }) => {
         // Save some resources both in the IPC and the renderer by not
         // reporting empty results. We do so by setting the result as undefined.
         const result = rawResult.length > 0 ? rawResult : undefined
         const total = this.sumFilesToSearch
         const remaining = this.fileSearchQueue.length
         const progress = (total - remaining) / total
-        broadcastIPCMessage('search-provider', { type: 'search-result', file: nextFile, result, progress })
+        broadcastIPCMessage('search-provider', { type: 'search-result', file: nextFile, result, sourceHash, progress })
       })
       .catch(err => {
         this._logger.error(`[Search Provider] Could not search file ${nextFile}: ${err}`, err)
@@ -181,15 +313,15 @@ export class SearchProvider implements ProviderContract {
    *
    * @return  {SearchResult}                 The search result
    */
-  private async searchFileBoolean (absPath: string, query: SearchQueryBoolean): Promise<SearchResult> {
+  private async searchFileBoolean (absPath: string, query: SearchQueryBoolean): Promise<{ result: SearchResult, sourceHash: string }> {
     const descriptor = await this._fsal.getDescriptorForAnySupportedFile(absPath)
     if (descriptor.type === 'other') {
-      return []
+      return { result: [], sourceHash: '' }
     }
 
     this._logger.verbose(`[Search Provider] Searching file ${path.basename(absPath)}...`)
 
-    const fileContent = await this._fsal.loadAnySupportedFile(absPath)
-    return searchFileBoolean(descriptor, fileContent, query)
+    const fileContent = await this.readSource(absPath)
+    return { result: searchFileBoolean(descriptor, fileContent, query), sourceHash: hashDocumentSource(fileContent) }
   }
 }

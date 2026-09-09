@@ -45,6 +45,10 @@ export interface SearchResultWrapper {
   result: SearchResult
   hideResultSet: boolean
   weight: number
+  /** The hash of the text the matches were found in; a replace is fenced on it. */
+  sourceHash: string
+  /** Whether a replace may address this file: only Markdown documents. */
+  replaceable: boolean
 }
 
 async function updateSnippets (snippets: Ref<Array<{ name: string, content: string }>>): Promise<void> {
