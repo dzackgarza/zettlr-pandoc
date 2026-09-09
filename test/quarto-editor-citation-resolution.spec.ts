@@ -6,17 +6,20 @@
  * CVM-Role:        TESTING
  * License:         GNU GPL v3
  *
- * Description:     Proves that documents in nested Quarto project chapters
- *                  resolve their project-inherited bibliographies both when the
- *                  workspace descriptor map is populated and when resolving
- *                  during initial boot before the recursive workspace walk
- *                  completes. Also proves the CodeMirror citation widget
- *                  upgrades from unresolved (.error) to resolved when the
- *                  inherited bibliographies arrive.
+ * Description:     Drives the real CiteprocProvider against real .bib fixtures
+ *                  and real CodeMirror EditorViews to prove:
+ *                  1. When resolving a nested chapter before the workspace walk
+ *                     completes, an empty descriptor map defaults to CITEPROC_MAIN_DB.
+ *                  2. Real CiteprocProvider cannot resolve @Stacks under CITEPROC_MAIN_DB,
+ *                     rendering .citeproc-citation.error in the live editor DOM.
+ *                  3. When Quarto project bibliographies are resolved and applied,
+ *                     CiteprocProvider returns the formatted citation from web.bib,
+ *                     and the live widget updates cleanly without .error.
  *
  * END HEADER
  */
 
+import './headless-electron-harness.cjs'
 import { strict as assert } from 'assert'
 import path from 'path'
 import { EditorState } from '@codemirror/state'
@@ -34,8 +37,12 @@ import {
   resolveProjectForDescriptorSync
 } from 'source/common/util/get-bibliography-for-descriptor'
 import { parse as parseDirectory } from 'source/app/service-providers/fsal/fsal-directory'
+import CiteprocProvider, { type CiteprocConfig, type CiteprocErrorDisplay } from 'source/app/service-providers/citeproc'
+import LogProvider from 'source/app/service-providers/log'
 import { CITEPROC_MAIN_DB, type CitationDatabase } from 'source/types/common/citeproc'
 import type { AnyDescriptor, MDFileDescriptor } from 'source/types/common/fsal'
+
+const CHICAGO_STYLE = path.resolve('static', 'csl-styles', 'chicago-author-date.csl')
 
 function polyfillJsdomForCodeMirror (): void {
   const global = globalThis as any
@@ -77,6 +84,7 @@ function polyfillJsdomForCodeMirror (): void {
 describe('Quarto editor citation resolution and startup race', function () {
   const ROOT = path.resolve('test', 'fixtures', 'quarto-book')
   const views: EditorView[] = []
+  let citeproc: CiteprocProvider
   const originalCitationCallback = (globalThis as any).window?.getCitationCallback
 
   const chapterDescriptor: MDFileDescriptor = {
@@ -105,11 +113,35 @@ describe('Quarto editor citation resolution and startup race', function () {
     id: 'test-id'
   }
 
-  before(function () {
+  before(async function () {
     polyfillJsdomForCodeMirror()
+
+    const log = new LogProvider()
+    const config: CiteprocConfig = {
+      on: () => {},
+      get: () => ({ appLang: 'en-US', export: { cslLibrary: '', cslStyle: CHICAGO_STYLE } })
+    }
+    const windows: CiteprocErrorDisplay = { showErrorMessage: () => {} }
+
+    citeproc = new CiteprocProvider(log, config, windows)
+    await citeproc.boot()
+    await citeproc.synchronizeDatabases([
+      path.join(ROOT, 'references.bib'),
+      path.join(ROOT, 'web.bib')
+    ])
+
+    // Wire the real CiteprocProvider into window.getCitationCallback
+    ;(globalThis as any).window.getCitationCallback = (database: CitationDatabase) => {
+      return (citations: any[], composite: boolean) => {
+        return citeproc.getCitation(database, citations, composite)
+      }
+    }
   })
 
-  after(function () {
+  after(async function () {
+    if (citeproc) {
+      await citeproc.shutdown()
+    }
     if ((globalThis as any).window) {
       ;(globalThis as any).window.getCitationCallback = originalCitationCallback
     }
@@ -196,26 +228,12 @@ describe('Quarto editor citation resolution and startup race', function () {
     ])
   })
 
-  it('proves citation widget fails under CITEPROC_MAIN_DB but resolves under project bibliographies', function () {
+  it('proves citation widget fails under CITEPROC_MAIN_DB but resolves under project bibliographies with real CiteprocProvider', function () {
     const expectedQuartoBibs = [
       path.join(ROOT, 'references.bib'),
       path.join(ROOT, 'web.bib'),
       CITEPROC_MAIN_DB
     ]
-
-    // Mock citeproc: '@Stacks' is only present in the Quarto bibliographies, NOT in CITEPROC_MAIN_DB
-    ;(globalThis as any).window.getCitationCallback = (database: CitationDatabase) => {
-      const isQuarto = Array.isArray(database) &&
-        database.includes(path.join(ROOT, 'web.bib'))
-
-      return (citations: any[]) => {
-        const item = citations[0]
-        if (item.id === 'Stacks') {
-          return isQuarto ? 'The Stacks Project' : undefined
-        }
-        return undefined
-      }
-    }
 
     // Mount editor with fallback CITEPROC_MAIN_DB (boot race condition)
     const view = createEditor('See [@Stacks] for details.', CITEPROC_MAIN_DB)
@@ -244,6 +262,6 @@ describe('Quarto editor citation resolution and startup race', function () {
       !updatedCitation?.classList.contains('error'),
       'citation @Stacks must NOT have .error class once Quarto bibliographies are applied'
     )
-    assert.strictEqual(updatedCitation?.textContent, 'The Stacks Project')
+    assert.strictEqual(updatedCitation?.textContent, '(“The Stacks Project,” n.d.)')
   })
 })
