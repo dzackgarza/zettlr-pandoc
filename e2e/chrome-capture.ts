@@ -47,12 +47,13 @@ interface Scene {
   restore?: (page: Page) => Promise<void>
 }
 
-const PROJECT_MODULE = '#navigation-sidebar [data-module="project"]'
-const PROJECT_HEADER = `${PROJECT_MODULE} .chrome-section-trigger`
-const LAST_HEADER = '#navigation-sidebar [data-module="otherFiles"] .chrome-section-trigger'
+const FILES_SECTION = '#navigation-sidebar [data-section="files"]'
+const FILES_HEADER = `${FILES_SECTION} .chrome-section-trigger`
+const LAST_HEADER = '#navigation-sidebar [data-section="book"] .chrome-section-trigger'
+const ACTIVITY = (view: string): string => `#activity-bar [data-activity="${view}"]`
 
-async function waitForModuleState (page: Page, state: 'open' | 'closed'): Promise<void> {
-  await page.locator(`${PROJECT_MODULE}[data-state="${state}"]`).waitFor({ timeout: 10_000 })
+async function waitForFilesState (page: Page, state: 'open' | 'closed'): Promise<void> {
+  await page.locator(`${FILES_SECTION}[data-state="${state}"]`).waitFor({ timeout: 10_000 })
 }
 
 /**
@@ -61,13 +62,13 @@ async function waitForModuleState (page: Page, state: 'open' | 'closed'): Promis
  * move the focus to the last and the first header, Escape changes nothing.
  */
 async function proveSectionHeaderKeyboard (page: Page): Promise<void> {
-  const header = page.locator(PROJECT_HEADER)
+  const header = page.locator(FILES_HEADER)
   const lastHeader = page.locator(LAST_HEADER)
   await header.focus()
   await page.keyboard.press('Space')
-  await waitForModuleState(page, 'closed')
+  await waitForFilesState(page, 'closed')
   await page.keyboard.press('Enter')
-  await waitForModuleState(page, 'open')
+  await waitForFilesState(page, 'open')
   await page.keyboard.press('End')
   const endFocusedLast = await lastHeader.evaluate(element => element === document.activeElement)
   assert.ok(endFocusedLast, 'End must move the focus to the last section header')
@@ -75,7 +76,7 @@ async function proveSectionHeaderKeyboard (page: Page): Promise<void> {
   const homeFocusedFirst = await header.evaluate(element => element === document.activeElement)
   assert.ok(homeFocusedFirst, 'Home must move the focus to the first section header')
   await page.keyboard.press('Escape')
-  await waitForModuleState(page, 'open')
+  await waitForFilesState(page, 'open')
   await page.keyboard.press('Tab')
   const focusLeftHeader = await header.evaluate(element => element !== document.activeElement)
   assert.ok(focusLeftHeader, 'Tab must move the focus off the section header')
@@ -129,46 +130,66 @@ async function setFileManagerMode (page: Page, mode: 'thin' | 'combined' | 'expa
   }, mode)
 }
 
-const MODULE_HEADER = (id: string): string => `#navigation-sidebar [data-module="${id}"] .chrome-section-trigger`
+const SECTION_HEADER = (id: string): string => `#navigation-sidebar [data-section="${id}"] .chrome-section-trigger`
 
-async function setModuleState (page: Page, id: string, state: 'open' | 'closed'): Promise<void> {
-  await page.locator(MODULE_HEADER(id)).click()
-  await page.locator(`#navigation-sidebar [data-module="${id}"][data-state="${state}"]`).waitFor({ timeout: 10_000 })
+async function setSectionState (page: Page, id: string, state: 'open' | 'closed'): Promise<void> {
+  await page.locator(SECTION_HEADER(id)).click()
+  await page.locator(`#navigation-sidebar [data-section="${id}"][data-state="${state}"]`).waitFor({ timeout: 10_000 })
 }
 
 const SCENES: Scene[] = [
   {
-    // The seven modules on the left (the reference modules collapsed, their
-    // default), the annotation review panel on the right.
-    name: 'modules-and-panel',
+    // The activity bar with the Explorer pressed: the tree, Outline and
+    // Book collapsed below it (their default), the annotation review panel
+    // on the right.
+    name: 'explorer',
     arrange: async page => {
-      await page.locator('#navigation-sidebar [data-module="book"] .quarto-book-outline button.chapter').first().waitFor({ timeout: 10_000 })
-      await page.locator('#navigation-sidebar [data-module="outline"] .toc-entry-container').first().waitFor({ timeout: 10_000 })
-      await page.locator('#navigation-sidebar [data-module="otherFiles"][data-state="closed"]').waitFor({ timeout: 10_000 })
+      await page.locator(`${ACTIVITY('explorer')}[aria-pressed="true"]`).waitFor({ timeout: 10_000 })
+      await page.locator('#navigation-sidebar [data-section="outline"][data-state="closed"]').waitFor({ timeout: 10_000 })
+      await page.locator('#navigation-sidebar [data-section="book"][data-state="closed"]').waitFor({ timeout: 10_000 })
       await page.locator('#annotations-panel').waitFor({ state: 'visible', timeout: 10_000 })
     }
   },
   {
-    // The reference modules open and Project, Search and Book collapsed, so
-    // the reference modules take the room.
-    name: 'reference-modules',
+    // The Explorer with Outline and Book expanded under the tree.
+    name: 'explorer-sections',
     arrange: async page => {
-      for (const id of [ 'project', 'search', 'book' ]) {
-        await setModuleState(page, id, 'closed')
-      }
-      for (const id of [ 'references', 'relatedFiles', 'otherFiles' ]) {
-        await setModuleState(page, id, 'open')
-      }
-      await page.locator('#navigation-sidebar [data-module="references"] #references-list').waitFor({ timeout: 10_000 })
-      await page.locator('#navigation-sidebar [data-module="otherFiles"] .other-files-panel').waitFor({ timeout: 10_000 })
+      await setSectionState(page, 'outline', 'open')
+      await setSectionState(page, 'book', 'open')
+      await page.locator('#navigation-sidebar [data-section="book"] .quarto-book-outline button.chapter').first().waitFor({ timeout: 10_000 })
+      await page.locator('#navigation-sidebar [data-section="outline"] .toc-entry-container').first().waitFor({ timeout: 10_000 })
     },
     restore: async page => {
-      for (const id of [ 'references', 'relatedFiles', 'otherFiles' ]) {
-        await setModuleState(page, id, 'closed')
-      }
-      for (const id of [ 'project', 'search', 'book' ]) {
-        await setModuleState(page, id, 'open')
-      }
+      await setSectionState(page, 'outline', 'closed')
+      await setSectionState(page, 'book', 'closed')
+    }
+  },
+  {
+    // The Search view from its icon.
+    name: 'search-view',
+    arrange: async page => {
+      await page.locator(ACTIVITY('search')).click()
+      await page.locator('#navigation-sidebar[data-view="search"] #global-search-pane').waitFor({ timeout: 10_000 })
+    },
+    restore: async page => {
+      await page.locator(ACTIVITY('explorer')).click()
+      await page.locator('#navigation-sidebar[data-view="explorer"]').waitFor({ timeout: 10_000 })
+    }
+  },
+  {
+    // The References view from its icon: the active file's citations, with
+    // its related files expanded below them.
+    name: 'references-view',
+    arrange: async page => {
+      await page.locator(ACTIVITY('references')).click()
+      await page.locator('#navigation-sidebar[data-view="references"]').waitFor({ timeout: 10_000 })
+      await setSectionState(page, 'relatedFiles', 'open')
+      await page.locator('#navigation-sidebar [data-section="citations"] #references-list').waitFor({ timeout: 10_000 })
+    },
+    restore: async page => {
+      await setSectionState(page, 'relatedFiles', 'closed')
+      await page.locator(ACTIVITY('explorer')).click()
+      await page.locator('#navigation-sidebar[data-view="explorer"]').waitFor({ timeout: 10_000 })
     }
   },
   {
@@ -243,25 +264,25 @@ const SCENES: Scene[] = [
     },
     restore: async page => {
       await page.locator('.document-tablist-wrapper [data-pane-toggle="navigation-sidebar"]').click()
-      await page.locator('#navigation-sidebar [data-module="project"]').waitFor({ timeout: 10_000 })
+      await page.locator('#navigation-sidebar [data-section="files"]').waitFor({ timeout: 10_000 })
       await page.locator('.document-tablist-wrapper [data-pane-toggle="annotation-panel"]').click()
       await page.locator('#annotations-panel').waitFor({ state: 'attached', timeout: 10_000 })
     }
   },
   {
-    // The Project module collapsed to its header alone.
-    name: 'project-collapsed',
+    // The Files section collapsed to its header alone.
+    name: 'files-collapsed',
     arrange: async page => {
-      await page.locator(PROJECT_HEADER).click()
-      await waitForModuleState(page, 'closed')
+      await page.locator(FILES_HEADER).click()
+      await waitForFilesState(page, 'closed')
     },
     restore: async page => {
-      await page.locator(PROJECT_HEADER).click()
-      await waitForModuleState(page, 'open')
+      await page.locator(FILES_HEADER).click()
+      await waitForFilesState(page, 'open')
     }
   },
   {
-    // The Project module in thin mode, a directory clicked so its file list slid in.
+    // The Files section in thin mode, a directory clicked so its file list slid in.
     name: 'project-thin',
     arrange: async page => {
       await setFileManagerMode(page, 'thin')
@@ -287,7 +308,7 @@ const SCENES: Scene[] = [
     }
   },
   {
-    // The Project module in expanded mode: the tree and the file list side by side.
+    // The Files section in expanded mode: the tree and the file list side by side.
     name: 'project-expanded',
     arrange: async page => {
       await setFileManagerMode(page, 'expanded')
@@ -355,8 +376,8 @@ async function main (): Promise<void> {
     await hideDevServerOverlay(page)
     await page.locator('.cm-content').waitFor({ state: 'visible', timeout: launchTimeoutMs })
     // The workspace root is the book, so the sidebar offers its Book module.
-    await page.locator('#navigation-sidebar [data-module="book"]').waitFor({ timeout: 60_000 })
-    await waitForModuleState(page, 'open')
+    await page.locator('#navigation-sidebar [data-section="book"]').waitFor({ timeout: 60_000 })
+    await waitForFilesState(page, 'open')
     await proveSectionHeaderKeyboard(page)
 
     for (const theme of THEMES) {

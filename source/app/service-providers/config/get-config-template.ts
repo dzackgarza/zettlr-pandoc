@@ -18,19 +18,18 @@ import { v4 as uuid4 } from 'uuid'
 import getLanguageFile from '@common/util/get-language-file'
 import type { EditorShortcutName } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
 import { type MenuShortcutName } from '../menu/shortcuts'
-import type { SidebarModuleId } from '@dts/common/sidebar-modules'
+import type { SidebarSectionId, SidebarViewId } from '@dts/common/sidebar-views'
 
 export type MarkdownTheme = 'berlin'|'frankfurt'|'bielefeld'|'karl-marx-stadt'|'bordeaux'
 
 // This is a handy interface to add groups of file types to the settings in
-// order to allow users to display them in filemanager and/or sidebar, and open
+// order to allow users to display them in the file tree, and open them
 // internally or externally.
 // NOTE: The generics are meant so that you can restrict certain groupings.
-// E.g., FileTypeSettings<true, false, 'zettlr'> enforces these values for the
-// three properties.
-interface FileTypeSettings<F = boolean, S = boolean, O = 'zettlr'|'system'> {
+// E.g., FileTypeSettings<true, 'zettlr'> enforces these values for the two
+// properties.
+interface FileTypeSettings<F = boolean, O = 'zettlr'|'system'> {
   showInFilemanager: F
-  showInSidebar: S
   openWith: O
 }
 
@@ -271,16 +270,16 @@ export interface ConfigOptions {
   files: {
     // Built-in files cannot be shown in the sidebar, will always be shown in
     // the file manager, and will always be opened with Zettlr.
-    builtin: FileTypeSettings<true, false, 'zettlr'>
+    builtin: FileTypeSettings<true, 'zettlr'>
     // Images and PDFs can be entirely hidden or shown everywhere, and opened
     // with the system default, or in Zettlr
     images: FileTypeSettings
     pdf: FileTypeSettings
     // These file types can be shown anywhere, but are not open-able by Zettlr.
-    msoffice: FileTypeSettings<boolean, boolean, 'system'>
-    openOffice: FileTypeSettings<boolean, boolean, 'system'>
-    dataFiles: FileTypeSettings<boolean, boolean, 'system'>
-    dotFiles: FileTypeSettings<boolean, boolean>
+    msoffice: FileTypeSettings<boolean, 'system'>
+    openOffice: FileTypeSettings<boolean, 'system'>
+    dataFiles: FileTypeSettings<boolean, 'system'>
+    dotFiles: FileTypeSettings
   }
   watchdog: {
     activatePolling: boolean
@@ -298,8 +297,10 @@ export interface ConfigOptions {
     navigationSidebarWidth: number
     /** The annotation review panel's width in pixels, as last dragged. */
     annotationPanelWidth: number
-    /** The left-sidebar modules the user collapsed; the rest are expanded. */
-    sidebarCollapsedModules: SidebarModuleId[]
+    /** The view the sidebar's drawer shows: one per activity-bar icon. */
+    sidebarView: SidebarViewId
+    /** The sidebar sections the user collapsed; the rest are expanded. */
+    sidebarCollapsedSections: SidebarSectionId[]
   }
   system: {
     deleteOnFail: boolean
@@ -360,8 +361,9 @@ export function getConfigTemplate (): ConfigOptions {
     ui: {
       navigationSidebarWidth: 280,
       annotationPanelWidth: 320,
-      // The reference modules open on demand; the navigation modules start open.
-      sidebarCollapsedModules: [ 'references', 'relatedFiles', 'otherFiles' ],
+      sidebarView: 'explorer',
+      // Outline, Book and Related files open on demand under their view's body.
+      sidebarCollapsedSections: [ 'outline', 'book', 'relatedFiles' ],
     },
     // Visible attachment filetypes
     attachmentExtensions: [],
@@ -551,37 +553,30 @@ export function getConfigTemplate (): ConfigOptions {
     files: {
       builtin: {
         showInFilemanager: true,
-        showInSidebar: false,
         openWith: 'zettlr',
       },
       images: {
-        showInFilemanager: false,
-        showInSidebar: true,
+        showInFilemanager: true,
         openWith: 'system',
       },
       pdf: {
-        showInFilemanager: false,
-        showInSidebar: true,
+        showInFilemanager: true,
         openWith: 'system',
       },
       msoffice: {
-        showInFilemanager: false,
-        showInSidebar: true,
+        showInFilemanager: true,
         openWith: 'system',
       },
       openOffice: {
-        showInFilemanager: false,
-        showInSidebar: true,
+        showInFilemanager: true,
         openWith: 'system',
       },
       dataFiles: {
-        showInFilemanager: false,
-        showInSidebar: true,
+        showInFilemanager: true,
         openWith: 'system',
       },
       dotFiles: {
         showInFilemanager: false,
-        showInSidebar: false,
         openWith: 'system',
       },
     },

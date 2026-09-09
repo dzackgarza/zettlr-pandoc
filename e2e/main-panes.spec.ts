@@ -107,7 +107,7 @@ describe('the main window panes', function () {
     const editorPage = await findEditorPage(browser, this.timeout())
     await hideDevServerOverlay(editorPage)
     await editorPage.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
-    await editorPage.locator('#navigation-sidebar [data-module="project"]').waitFor({ timeout: 60_000 })
+    await editorPage.locator('#navigation-sidebar [data-section="files"]').waitFor({ timeout: 60_000 })
     await editorPage.setViewportSize({ width, height })
     await editorPage.waitForFunction(expected => window.innerWidth === expected, width, { timeout: 10_000 })
     return editorPage

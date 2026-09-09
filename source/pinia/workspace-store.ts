@@ -13,15 +13,10 @@
  * END HEADER
  */
 
-import { defineStore, storeToRefs } from 'pinia'
+import { defineStore } from 'pinia'
 import { type Ref, ref, watch, computed } from 'vue'
 import { useConfigStore } from './config'
-import type { OtherFileDescriptor, AnyDescriptor } from 'source/types/common/fsal'
-import { useDocumentTreeStore } from '.'
-import { isAbsolutePath, pathDirname, resolvePath } from 'source/common/util/renderer-path-polyfill'
-import { trans } from 'source/common/i18n-renderer'
-import { hasImageExt, hasDataExt, hasMSOfficeExt, hasOpenOfficeExt, hasPDFExt, hasExt } from 'source/common/util/file-extention-checks'
-import { isDotFile } from 'source/common/util/ignore-path'
+import type { AnyDescriptor } from 'source/types/common/fsal'
 import type { FSALEventPayload } from 'source/app/service-providers/fsal'
 
 const ipcRenderer = window.ipc
@@ -54,19 +49,6 @@ async function getDescriptorFor (absPath: string|string[]): Promise<AnyDescripto
   })
 }
 
-/**
- * Reads in a single directory from main and returns their descriptors.
- *
- * @param   {string}                    absPath  The path to read in
- *
- * @return  {Promise<AnyDescriptor>[]}           The descriptors.
- *
- * @throws if the path is not a directory
- */
-async function readDirectory (absPath: string): Promise<AnyDescriptor[]> {
-  return await ipcRenderer.invoke('fsal', { command: 'read-directory', payload: absPath })
-}
-
 // In order to avoid frequent updates of the workspaceMap on initial load, we
 // retrieve the bulk immediately on load, and then only patch where necessary.
 async function retrieveInitialUpdate (rootPaths: string[], workspaceMap: Ref<Map<string, string[]>>, descriptorMap: Ref<Map<string, AnyDescriptor>>) {
@@ -93,8 +75,6 @@ async function retrieveInitialUpdate (rootPaths: string[], workspaceMap: Ref<Map
 export const useWorkspaceStore = defineStore('workspace', () => {
   // Dependent stores and watched variables
   const configStore = useConfigStore()
-  const documentTreeStore = useDocumentTreeStore()
-  const { lastLeafActiveFile } = storeToRefs(documentTreeStore)
 
   // SECTION 1: WORKSPACES AND FILE DESCRIPTORS
   const openFiles = configStore.config.app.openFiles
@@ -217,70 +197,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       .map(rootPath => value.get(rootPath)!)
   }, { deep: true })
 
-  // SECTION 2: ATTACHMENTS/OTHER FILES
-  const otherFiles = ref<Array<{ path: string, files: OtherFileDescriptor[] }>>([])
-
-  // Update whenever the lastLeafActiveFile changes
-  watch(lastLeafActiveFile, async () => {
-    const activeFile = documentTreeStore.lastLeafActiveFile
-    if (activeFile === undefined) {
-      otherFiles.value = []
-      return
-    }
-
-    const descriptor = descriptorMap.value.get(pathDirname(activeFile.path))
-    if (descriptor === undefined || descriptor.type !== 'directory') {
-      otherFiles.value = []
-      return
-    }
-
-    const { files, attachmentExtensions, editor } = configStore.config
-
-    const assetsDir = editor.defaultSaveImagePath.trim()
-    const showImages = files.images.showInSidebar
-    const showDataFiles = files.dataFiles.showInSidebar
-    const showOfficeFiles = files.msoffice.showInSidebar
-    const showOpenOffice = files.openOffice.showInSidebar
-    const showPDF = files.pdf.showInSidebar
-    const showDotFiles = files.dotFiles.showInSidebar
-
-    // Quick helper function that tests whether the provided attachment should be
-    // shown in the sidebar. This essentially tests the file's extension and
-    // returns true if it shuld shown in the sidebar.
-    const shouldShowAttachment = (filePath: string): boolean => {
-      // We have to check for hidden files first so they are not
-      // included if they end in one of the accepted extensions
-      return (showDotFiles || !isDotFile(filePath)) &&
-        (hasExt(filePath, attachmentExtensions) ||
-        (showImages && hasImageExt(filePath)) ||
-        (showDataFiles && hasDataExt(filePath)) ||
-        (showOfficeFiles && hasMSOfficeExt(filePath)) ||
-        (showOpenOffice && hasOpenOfficeExt(filePath)) ||
-        (showPDF && hasPDFExt(filePath)))
-    }
-
-    const children = await readDirectory(descriptor.path)
-    const dirAttachments = children
-      .filter((child): child is OtherFileDescriptor => child.type === 'other')
-      .filter(attachment => shouldShowAttachment(attachment.path))
-
-    const att = [{ path: trans('Current folder'), files: dirAttachments }]
-
-    const assetsDescriptor = isAbsolutePath(assetsDir)
-      ? descriptorMap.value.get(assetsDir)
-      : descriptorMap.value.get(resolvePath(descriptor.path, assetsDir))
-
-    if (assetsDescriptor !== undefined) {
-      const assetsFiles = await readDirectory(assetsDescriptor.path)
-      const files = assetsFiles
-        .filter((child): child is OtherFileDescriptor => child.type === 'other')
-        .filter(attachment => shouldShowAttachment(attachment.path))
-
-      att.push({ path: assetsDir, files })
-    }
-
-    otherFiles.value = att
-  })
-
-  return { workspaceMap, pathList, descriptorMap, rootDescriptors, otherFiles }
+  return { workspaceMap, pathList, descriptorMap, rootDescriptors }
 })

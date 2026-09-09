@@ -8,8 +8,7 @@
  * License:         GNU GPL v3
  *
  * Description:     Drives the assembled app on a Quarto book workspace and
- *                  asserts that References, Related files and Other files
- *                  are modules of the left sidebar after Outline, that the
+ *                  asserts  *                  are modules of the left sidebar after Outline, that the
  *                  References module lists the active document's citations,
  *                  that the right pane holds the annotation review panel
  *                  and nothing else, and that hiding the panel through its
@@ -40,7 +39,7 @@ import {
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), 'zettlr-annotation-panel-e2e-latest')
 
 const SIDEBAR = '#navigation-sidebar'
-const MODULE = (id: string): string => `${SIDEBAR} [data-module="${id}"]`
+const SECTION = (id: string): string => `${SIDEBAR} [data-section="${id}"]`
 const PANEL = '#annotations-panel'
 
 async function readPanelVisible (page: Page): Promise<boolean> {
@@ -92,7 +91,7 @@ describe('the annotation review panel pane', function () {
     const editorPage = await findEditorPage(browser, this.timeout())
     await hideDevServerOverlay(editorPage)
     await editorPage.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
-    await editorPage.locator(MODULE('project')).waitFor({ timeout: 60_000 })
+    await editorPage.locator(SECTION('files')).waitFor({ timeout: 60_000 })
     // A working-size window: the modules share the pane's height, and the
     // tree rows this spec clicks need room below the Project module's filter.
     await editorPage.setViewportSize({ width: 1500, height: 950 })
@@ -123,23 +122,22 @@ describe('the annotation review panel pane', function () {
     assertCleanExit(getOutput())
   })
 
-  it('stacks References, Related files and Other files after Outline, and References lists the active document\'s citations', async function () {
+  it('lists the active document\'s citations in the References view', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
-    const ids = await activePage.locator(`${SIDEBAR} [data-module]`).evaluateAll(elements => elements.map(element => element.getAttribute('data-module')))
-    assert.deepEqual(ids, [ 'project', 'search', 'book', 'outline', 'references', 'relatedFiles', 'otherFiles' ], 'the seven modules stack in the plan order')
-
-    // The reference modules start collapsed; References opens from its header.
-    await activePage.locator(`${MODULE('references')}[data-state="closed"]`).waitFor({ timeout: 10_000 })
-    await activePage.locator(`${MODULE('references')} .chrome-section-trigger`).click()
-    await activePage.locator(`${MODULE('references')}[data-state="open"]`).waitFor({ timeout: 10_000 })
-
-    // index.md cites Mac98 from references.bib; opening it fills the References module.
-    await activePage.locator(`${MODULE('project')} .tree-item.file[data-path$="/index.md"]`).click()
-    const entries = activePage.locator(`${MODULE('references')} #references-list .csl-entry`)
-    await waitUntil(async () => (await entries.count()) === 1, 'the one citation of index.md in the References module')
+    // index.md cites Mac98 from references.bib; opening it fills the
+    // References view's Citations section.
+    await activePage.locator(`${SIDEBAR} [data-section="files"] .tree-item.file[data-path$="/index.md"]`).click()
+    await activePage.locator('#activity-bar [data-activity="references"]').click()
+    await activePage.locator(`${SIDEBAR}[data-view="references"]`).waitFor({ timeout: 10_000 })
+    const sections = await activePage.locator(`${SIDEBAR} [data-section]`).evaluateAll(elements => elements.map(element => element.getAttribute('data-section')))
+    assert.deepEqual(sections, [ 'citations', 'relatedFiles' ], 'the References view stacks citations over related files')
+    const entries = activePage.locator(`${SIDEBAR} [data-section="citations"] #references-list .csl-entry`)
+    await waitUntil(async () => (await entries.count()) === 1, 'the one citation of index.md in the Citations section')
     assert.match(await entries.first().innerText(), /Mac Lane/)
-    assert.equal(await activePage.locator(`${SIDEBAR} h1, ${SIDEBAR} h2`).count(), 0, 'no module body carries its own title')
-    screenshots.set('reference-modules.png', await activePage.screenshot())
+    assert.equal(await activePage.locator(`${SIDEBAR} h1, ${SIDEBAR} h2`).count(), 0, 'no section body carries its own title')
+    screenshots.set('references-view.png', await activePage.screenshot())
+    await activePage.locator('#activity-bar [data-activity="explorer"]').click()
+    await activePage.locator(`${SIDEBAR}[data-view="explorer"]`).waitFor({ timeout: 10_000 })
   })
 
   it('holds the annotation review panel alone in the right pane, with no tab strip', async function () {

@@ -5,7 +5,10 @@
     :menubar="shouldShowMenubar"
     :disable-vibrancy="!hasVibrancy"
   >
-    <!-- The three panes under one splitter (D8): sidebar, editor, panel. -->
+    <div class="main-body">
+    <!-- The activity bar, then the three panes under one splitter (D8): the
+         sidebar's drawer, the editor, the annotation panel. -->
+    <ActivityBar />
     <SplitterGroup
       direction="horizontal"
       class="main-panes"
@@ -87,6 +90,7 @@
         />
       </SplitterPanel>
     </SplitterGroup>
+    </div>
     <template #statusbar>
       <MainStatusbar
         :pomodoro-ratio="pomodoro.phase.elapsed / pomodoro.durations[pomodoro.phase.type]"
@@ -161,6 +165,7 @@
 
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
 import NavigationSidebar from './sidebar/NavigationSidebar.vue'
+import ActivityBar from './sidebar/ActivityBar.vue'
 import AnnotationsTab from './sidebar/AnnotationsTab.vue'
 import EditorPane from './EditorPane.vue'
 import EditorBranch from './EditorBranch.vue'
@@ -174,7 +179,7 @@ import type { ExportRequest } from './launcher/launcher-rows'
 import type { CustomExportIPCAPI, ExportIPCAPI } from 'source/app/service-providers/commands/export'
 import CommandLauncher from './launcher/CommandLauncher.vue'
 import type { LauncherView } from './launcher/launcher-state'
-import type { RevealTarget } from './sidebar/sidebar-modules'
+import type { RevealTarget } from './sidebar/sidebar-views'
 import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
 import type {
   ConfirmReferenceLabelOutcome,
@@ -700,13 +705,13 @@ onMounted(() => {
         })
         .catch(err => console.error(err))
     },
-    'global-search': () => navigationSidebar.value?.reveal({ module: 'search', focus: 'search-query' }),
+    'global-search': () => navigationSidebar.value?.reveal({ view: 'search', focus: 'search-query' }),
     'toggle-navigation-sidebar': () => {
       configStore.setConfigValue('window.fileManagerVisible', !fileManagerVisible.value)
     },
-    // The file manager focuses its own filter on the next tick; the sidebar
-    // and the Project module only have to be visible by then.
-    'filter-files': () => navigationSidebar.value?.reveal({ module: 'project', focus: 'none' }),
+    // The file manager focuses its own filter on the next tick; the drawer
+    // and the Files section only have to be visible by then.
+    'filter-files': () => navigationSidebar.value?.reveal({ view: 'explorer', section: 'files', focus: 'none' }),
     export: () => openExport(),
     'pandoc-quick-help': () => { showPandocQuickHelp.value = true },
     print: () => {
@@ -943,8 +948,15 @@ function stopPomodoro (): void {
 
 <style lang="less">
 body {
+  .main-body {
+    display: flex;
+    height: 100%;
+  }
+
   .main-panes {
     display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
     height: 100%;
   }
 
