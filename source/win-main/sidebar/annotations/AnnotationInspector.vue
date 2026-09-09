@@ -181,6 +181,10 @@ body {
 
     .annotation-inspector-eyebrow {
       flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   }
 

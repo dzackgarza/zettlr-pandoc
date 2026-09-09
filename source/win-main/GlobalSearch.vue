@@ -1,6 +1,5 @@
 <template>
   <div id="global-search-pane">
-    <h4>{{ searchTitle }}</h4>
     <!-- First: Two text controls for search terms and to restrict the search -->
     <AutocompleteText
       ref="queryInputElement"
@@ -74,7 +73,10 @@
         </p>
       </template>
       <hr>
-      <p style="padding: 5px 0; text-align: center; display: block;">
+      <p
+        ref="resultsMessageElement"
+        style="padding: 5px 0; text-align: center; display: block;"
+      >
         {{ resultsMessage }}
       </p>
       <hr>
@@ -193,7 +195,7 @@ import ButtonControl from '@common/vue/form/elements/ButtonControl.vue'
 import ProgressControl from '@common/vue/form/elements/ProgressControl.vue'
 import AutocompleteText from '@common/vue/form/elements/AutocompleteText.vue'
 import { trans } from '@common/i18n-renderer'
-import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import { useConfigStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { pathBasename, pathDirname, relativePath } from 'source/common/util/renderer-path-polyfill'
@@ -206,7 +208,6 @@ import getDocumentTitle from './util/get-document-title'
 
 const ipcRenderer = window.ipc
 
-const searchTitle = trans('Search across all files')
 const queryInputLabel = trans('Enter your search terms below')
 const queryInputPlaceholder = trans('Find…')
 const filterPlaceholder = trans('Filter…')
@@ -269,6 +270,8 @@ const caseInsensitive = ref<boolean>(true)
 const searchProgress = ref(0)
 // Whether the last search had no result
 const hadNoResult = ref(false)
+/** The results message, the first element of the results below the form. */
+const resultsMessageElement = ref<HTMLParagraphElement | null>(null)
 // The failure of the last search-provider dispatch, shown in the pane
 const searchError = ref<string|undefined>(undefined)
 // A global trigger for the result set trigger. This will determine what
@@ -374,6 +377,11 @@ const stopListeningForSearchResults = ipcRenderer.on('search-provider', (event, 
     searchProgress.value = 0
     const restartSearch = shouldStartNewSearch.value
     shouldStartNewSearch.value = false
+    if (!restartSearch) {
+      // The module's body scrolls; the results render below the form and
+      // would otherwise sit under its fold at the module's usual height.
+      nextTick().then(() => { resultsMessageElement.value?.scrollIntoView({ block: 'start' }) }).catch(err => reportSearchFailure(searchButtonLabel, err))
+    }
     if (restartSearch) {
       startSearch()
     }

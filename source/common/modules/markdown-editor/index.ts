@@ -696,7 +696,10 @@ export default class MarkdownEditor extends EventEmitter {
   }
 
   /**
-   * Small function that jumps to a specific line in the editor.
+   * Jumps to a specific line: the cursor lands at its start and the line is
+   * scrolled to the centre. Nothing is selected — a jump from the outline,
+   * a book chapter or a search hit is a place to start typing, and a
+   * selection there would be replaced by the first keystroke.
    *
    * @param  {number} line The line to pull into view
    */
@@ -704,7 +707,7 @@ export default class MarkdownEditor extends EventEmitter {
     if (line > 0 && line <= this._instance.state.doc.lines) {
       const lineDesc = this._instance.state.doc.line(line)
       this._instance.dispatch({
-        selection: { anchor: lineDesc.from, head: lineDesc.to },
+        selection: { anchor: lineDesc.from },
         effects: EditorView.scrollIntoView(lineDesc.from, { y: 'center' }),
       })
     }

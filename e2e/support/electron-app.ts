@@ -543,7 +543,12 @@ export async function launchElectron (
     '--',
     `--data-dir=${configDirectory}`,
     '--remote-debugging-port=0',
-    '--disable-hardware-acceleration'
+    '--disable-hardware-acceleration',
+    // Under xvfb DISPLAY names the virtual server, but Chromium prefers a
+    // Wayland compositor whenever WAYLAND_DISPLAY is set, and then the
+    // window opens on the developer's desktop. X11 is where the harness
+    // looks, the same switch the capture scenes pass.
+    '--ozone-platform=x11'
   ]
   if (options.files !== undefined) {
     forgeArguments.push(...options.files)

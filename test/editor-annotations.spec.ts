@@ -114,7 +114,7 @@ describe('Editor text-annotation locators', function () {
   /** The gutter row for a given 1-based source line, or null if it carries no marker. */
   function markerOnLine (view: EditorView, line: number): HTMLElement | null {
     for (const marker of view.dom.querySelectorAll<HTMLElement>('.cm-textAnnotation-gutterMarker')) {
-      if (marker.querySelector('.cm-textAnnotation-gutterMarker-number')?.textContent === String(line)) {
+      if (marker.getAttribute('data-line') === String(line)) {
         return marker
       }
     }
