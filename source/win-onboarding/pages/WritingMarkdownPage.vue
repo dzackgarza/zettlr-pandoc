@@ -54,7 +54,6 @@ const autosaveLabel = trans('Activate Autosave')
 const renderingMode = ref(window.config.get('display.renderingMode') as 'preview'|'raw')
 const showWhitespace = ref(Boolean(window.config.get('editor.showWhitespace')))
 const autosave = ref(window.config.get('editor.autoSave') as 'off'|'immediately'|'delayed')
-const showFormattingToolbar = ref(Boolean(window.config.get('editor.showFormattingToolbar')))
 
 watch(renderingMode, () => {
   window.config.set('display.renderingMode', renderingMode.value)
@@ -66,10 +65,6 @@ watch(showWhitespace, () => {
 
 watch(autosave, () => {
   window.config.set('editor.autoSave', autosave.value)
-})
-
-watch(showFormattingToolbar, () => {
-  window.config.set('editor.showFormattingToolbar', showFormattingToolbar.value)
 })
 </script>
 

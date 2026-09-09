@@ -345,11 +345,6 @@ export function getEditorFields (config: ConfigOptions): PreferencesFieldset[] {
       fields: [
         {
           type: 'checkbox',
-          label: trans('Show formatting toolbar when text is selected'),
-          model: 'editor.showFormattingToolbar'
-        },
-        {
-          type: 'checkbox',
           label: trans('Show line numbers for Markdown files'),
           model: 'editor.showMarkdownLineNumbers'
         },

@@ -43,7 +43,7 @@ import { mdLint } from './linters/md-lint'
 import { countField, countPlugin } from './plugins/statistics-fields'
 import { tocField } from './plugins/toc-field'
 import { typewriter } from './plugins/typewriter'
-import { formattingToolbar, footnoteHover, filePreview, urlHover } from './tooltips'
+import { footnoteHover, filePreview, urlHover } from './tooltips'
 import { type EditorConfiguration, configField } from './util/configuration'
 import { highlightRanges } from './plugins/highlight-ranges'
 import { markdownFolding } from './code-folding/markdown'
@@ -352,7 +352,6 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     markdownFolding, // Should be before footnoteGutter
     autocomplete,
     readabilityMode,
-    formattingToolbar,
     footnoteHover,
     footnoteGutter, // Should be after markdownFolding
     textAnnotationsExtension(), // Locator gutter markers + span highlights (M5)

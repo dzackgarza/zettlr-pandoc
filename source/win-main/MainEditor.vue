@@ -568,7 +568,6 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
     // The editor only needs to know if it should use languageTool
     lintLanguageTool: editor.lint.languageTool.active,
     distractionFree: props.distractionFree.valueOf(),
-    showFormattingToolbar: editor.showFormattingToolbar,
     darkMode,
     darkModeEditor,
     theme: display.theme,
