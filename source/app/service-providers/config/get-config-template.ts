@@ -294,7 +294,6 @@ export interface ConfigOptions {
     vibrancy: boolean
     sidebarVisible: boolean
     fileManagerVisible: boolean
-    currentSidebarTab: 'references'|'relatedFiles'|'attachments'|'annotations'
     recentGlobalSearches: string[]
   }
   ui: {
@@ -372,13 +371,13 @@ export function getConfigTemplate (): ConfigOptions {
       // Store a few GUI related settings here as well
       fileManagerVisible: true,
       sidebarVisible: false,
-      currentSidebarTab: 'references',
       recentGlobalSearches: [],
     },
     ui: {
       fileManagerSplitSize: [ 20, 80 ],
       editorSidebarSplitSize: [80, 20],
-      sidebarCollapsedModules: [],
+      // The reference modules open on demand; the navigation modules start open.
+      sidebarCollapsedModules: [ 'references', 'relatedFiles', 'otherFiles' ],
     },
     // Visible attachment filetypes
     attachmentExtensions: [],

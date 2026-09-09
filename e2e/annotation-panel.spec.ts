@@ -93,6 +93,9 @@ describe('the annotation review panel pane', function () {
     await hideDevServerOverlay(editorPage)
     await editorPage.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
     await editorPage.locator(MODULE('project')).waitFor({ timeout: 60_000 })
+    // A working-size window: the modules share the pane's height, and the
+    // tree rows this spec clicks need room below the Project module's filter.
+    await editorPage.setViewportSize({ width: 1500, height: 950 })
     return editorPage
   }
 
@@ -124,6 +127,11 @@ describe('the annotation review panel pane', function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
     const ids = await activePage.locator(`${SIDEBAR} [data-module]`).evaluateAll(elements => elements.map(element => element.getAttribute('data-module')))
     assert.deepEqual(ids, [ 'project', 'search', 'book', 'outline', 'references', 'relatedFiles', 'otherFiles' ], 'the seven modules stack in the plan order')
+
+    // The reference modules start collapsed; References opens from its header.
+    await activePage.locator(`${MODULE('references')}[data-state="closed"]`).waitFor({ timeout: 10_000 })
+    await activePage.locator(`${MODULE('references')} .chrome-section-trigger`).click()
+    await activePage.locator(`${MODULE('references')}[data-state="open"]`).waitFor({ timeout: 10_000 })
 
     // index.md cites Mac98 from references.bib; opening it fills the References module.
     await activePage.locator(`${MODULE('project')} .tree-item.file[data-path$="/index.md"]`).click()

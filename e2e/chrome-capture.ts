@@ -1,7 +1,8 @@
 // Captures the real main-window chrome through the assembled-app harness: the
 // Forge app launched against a throwaway config whose one workspace root is
-// the Quarto book fixture, attached over CDP, and screenshotted in light and
-// dark at two window widths. The scenes are the proof surface for the chrome
+// the Quarto book fixture, with the sidebar and the annotation review panel
+// visible, attached over CDP, and screenshotted in light and dark at two
+// window widths. The scenes are the proof surface for the chrome
 // convergence milestones (PLAN-main-window-chrome-convergence, M0): each later
 // milestone edits the scene list, never the launch.
 //
@@ -48,7 +49,7 @@ interface Scene {
 
 const PROJECT_MODULE = '#navigation-sidebar [data-module="project"]'
 const PROJECT_HEADER = `${PROJECT_MODULE} .chrome-section-trigger`
-const OUTLINE_HEADER = '#navigation-sidebar [data-module="outline"] .chrome-section-trigger'
+const LAST_HEADER = '#navigation-sidebar [data-module="otherFiles"] .chrome-section-trigger'
 
 async function waitForModuleState (page: Page, state: 'open' | 'closed'): Promise<void> {
   await page.locator(`${PROJECT_MODULE}[data-state="${state}"]`).waitFor({ timeout: 10_000 })
@@ -61,7 +62,7 @@ async function waitForModuleState (page: Page, state: 'open' | 'closed'): Promis
  */
 async function proveSectionHeaderKeyboard (page: Page): Promise<void> {
   const header = page.locator(PROJECT_HEADER)
-  const lastHeader = page.locator(OUTLINE_HEADER)
+  const lastHeader = page.locator(LAST_HEADER)
   await header.focus()
   await page.keyboard.press('Space')
   await waitForModuleState(page, 'closed')
@@ -128,33 +129,46 @@ async function setFileManagerMode (page: Page, mode: 'thin' | 'combined' | 'expa
   }, mode)
 }
 
-/** Selects a right-sidebar tab through its config value and waits for the strip to agree. */
-async function setSidebarTab (page: Page, tab: 'references' | 'annotations', target: string): Promise<void> {
-  await page.evaluate(value => {
-    window.ipc.sendSync('config-provider', {
-      command: 'set-config-single',
-      payload: { key: 'window.currentSidebarTab', val: value }
-    })
-  }, tab)
-  await page.locator(`#sidebar .system-tab[aria-controls="${target}"][aria-selected="true"]`).waitFor({ timeout: 10_000 })
+const MODULE_HEADER = (id: string): string => `#navigation-sidebar [data-module="${id}"] .chrome-section-trigger`
+
+async function setModuleState (page: Page, id: string, state: 'open' | 'closed'): Promise<void> {
+  await page.locator(MODULE_HEADER(id)).click()
+  await page.locator(`#navigation-sidebar [data-module="${id}"][data-state="${state}"]`).waitFor({ timeout: 10_000 })
 }
 
 const SCENES: Scene[] = [
   {
-    // The four modules on the left, the references tab on the right.
-    name: 'modules-and-references',
+    // The seven modules on the left (the reference modules collapsed, their
+    // default), the annotation review panel on the right.
+    name: 'modules-and-panel',
     arrange: async page => {
-      await setSidebarTab(page, 'references', 'sidebar-bibliography')
       await page.locator('#navigation-sidebar [data-module="book"] .quarto-book-outline button.chapter').first().waitFor({ timeout: 10_000 })
       await page.locator('#navigation-sidebar [data-module="outline"] .toc-entry-container').first().waitFor({ timeout: 10_000 })
+      await page.locator('#navigation-sidebar [data-module="otherFiles"][data-state="closed"]').waitFor({ timeout: 10_000 })
+      await page.locator('#annotations-panel').waitFor({ state: 'visible', timeout: 10_000 })
     }
   },
   {
-    // The four modules on the left, the annotation review panel on the right.
-    name: 'modules-and-annotations',
+    // The reference modules open and Project, Search and Book collapsed, so
+    // the reference modules take the room.
+    name: 'reference-modules',
     arrange: async page => {
-      await setSidebarTab(page, 'annotations', 'annotations-panel')
-      await page.locator('#annotations-panel').waitFor({ state: 'visible', timeout: 10_000 })
+      for (const id of [ 'project', 'search', 'book' ]) {
+        await setModuleState(page, id, 'closed')
+      }
+      for (const id of [ 'references', 'relatedFiles', 'otherFiles' ]) {
+        await setModuleState(page, id, 'open')
+      }
+      await page.locator('#navigation-sidebar [data-module="references"] #references-list').waitFor({ timeout: 10_000 })
+      await page.locator('#navigation-sidebar [data-module="otherFiles"] .other-files-panel').waitFor({ timeout: 10_000 })
+    },
+    restore: async page => {
+      for (const id of [ 'references', 'relatedFiles', 'otherFiles' ]) {
+        await setModuleState(page, id, 'closed')
+      }
+      for (const id of [ 'project', 'search', 'book' ]) {
+        await setModuleState(page, id, 'open')
+      }
     }
   },
   {
@@ -245,8 +259,7 @@ async function main (): Promise<void> {
       darkMode: false,
       window: {
         fileManagerVisible: true,
-        sidebarVisible: true,
-        currentSidebarTab: 'references'
+        sidebarVisible: true
       }
     }
   })

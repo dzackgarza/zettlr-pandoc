@@ -259,7 +259,7 @@ describe('review-diff closure contract composite lifecycle', function () {
         agentApi: { enabled: true, port: 0 },
         // Every review control lives in the sidebar's annotations panel (M9),
         // so the fixture opens the sidebar on that tab.
-        window: { sidebarVisible: true, currentSidebarTab: 'annotations' }
+        window: { sidebarVisible: true }
       }
     })
     fixtureRoot = fixture.root

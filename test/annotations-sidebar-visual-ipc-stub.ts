@@ -28,35 +28,13 @@ export interface RecordedRequest {
   message: unknown
 }
 
-/**
- * The MainSidebar mount (for the tab-badge boundary proof) constructs
- * useConfigStore, which reads its config SYNCHRONOUSLY via sendSync at
- * construction. getConfigTemplate() (source/app/service-providers/config)
- * cannot be called from a renderer bundle — it imports `electron`'s
- * main-process-only `app`/`nativeTheme` — so this is the minimal slice of
- * ConfigOptions the mounted sidebar tree actually reads, not a stand-in for
- * the whole template.
- */
-interface SceneConfig {
-  window: { currentSidebarTab: string }
-  app: { openFiles: string[], openWorkspaces: string[] }
-}
-
 let sceneSession: DocumentCollaborationSession | undefined
 const recorded: RecordedRequest[] = []
 
-const sceneConfig: SceneConfig = {
-  window: { currentSidebarTab: 'annotations' },
-  app: { openFiles: [], openWorkspaces: [] },
-}
-
-// RelatedFilesTab.vue and OtherFilesTab.vue (both mounted, v-show, inside
-// MainSidebar) throw outright without a window_id search param — the
-// capture page carries one (see annotations-sidebar-visual-capture.mjs's
-// page() query), which makes documentTreeStore request this leaf on
-// construction. One pane, holding the scene document, is enough for the
-// mounted tree to settle without that pane's own contents ever appearing on
-// screen (only AnnotationsTab and the TabBar badge are captured).
+// The capture page carries a window_id search param (see
+// annotations-sidebar-visual-capture.mjs's page() query), which makes
+// documentTreeStore request this leaf on construction. One pane, holding the
+// scene document, is enough for the mounted panel to settle.
 const sceneLeaf: LeafNodeJSON = {
   type: 'leaf',
   id: 'scene-leaf',
@@ -79,13 +57,6 @@ documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       // the way it does in the app.
       return message.command.startsWith('documents:') ? { ok: true } : undefined
   }
-})
-
-documentCollaborationIpcDouble.setSendSyncResponder((channel, message) => {
-  if (channel === 'config-provider' && message?.command === 'get-config') {
-    return sceneConfig
-  }
-  return undefined
 })
 
 export function setAnnotationsSceneSession (session: DocumentCollaborationSession): void {

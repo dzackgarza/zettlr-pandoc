@@ -26,7 +26,6 @@ import {
 } from '@common/modules/markdown-editor/plugins/text-annotations'
 import loadIcons from 'source/common/modules/window-register/load-icons'
 import AnnotationsTab from 'source/win-main/sidebar/AnnotationsTab.vue'
-import MainSidebar from 'source/win-main/sidebar/MainSidebar.vue'
 import { useDocumentCollaborationStore, useDocumentTreeStore } from 'source/pinia'
 import type { AnnotationSet, TextAnnotation } from '@dts/common/annotation-domain'
 import {
@@ -77,21 +76,11 @@ declare global {
      */
     annotationsSceneClickShowProposal: () => Promise<string[]>
     /**
-     * Clicks "Reattach" on the selected card inside the OFF-SCREEN, REAL
-     * MainSidebar.vue mount (not the standalone panel) and reports every
-     * annotation id MainSidebar's own begin-reattach listener has received
-     * so far — the exact boundary this milestone wires (AnnotationsTab's
-     * emit used to die at MainSidebar, which forwarded only jump-to-line).
+     * Clicks "Reattach" on the selected card and reports every annotation
+     * id the panel's begin-reattach listener (App.vue's role here) has
+     * received so far — the boundary S8/I6 wires: only the id crosses it.
      */
-    annotationsSceneClickReattachInSidebar: () => Promise<string[]>
-    /**
-     * The rendered text of the annotations tab's TabBar badge, from a REAL
-     * mounted MainSidebar.vue sharing the same Pinia session as the panel
-     * above — the boundary proof that MainSidebar's own wiring (not just
-     * openAnnotationCount() in isolation) puts the open-only count on
-     * screen. Null if MainSidebar renders no badge at all.
-     */
-    annotationsSceneMainSidebarBadge: () => string | null
+    annotationsSceneClickReattach: () => Promise<string[]>
     /** Click the nth Accept control the panel renders, and report the
      *  request that reached the preload bridge because of it. */
     annotationsSceneAcceptChunk: (index: number) => Promise<{ channel: string, message: unknown } | undefined>
@@ -201,10 +190,14 @@ const EDITOR_STATES_SET: AnnotationSet = {
 async function mount (): Promise<void> {
   await loadIcons()
 
-  const app = createApp(AnnotationsTab)
-  // One shared Pinia instance for both apps below: MainSidebar's own tab
-  // badge must read the SAME collaboration session and active file the
-  // panel does, not a second independent copy.
+  // Wrapped in a plain render-function parent (App.vue's actual role) so
+  // this harness observes what the panel emits upward.
+  const beginReattachEvents: string[] = []
+  const app = createApp({
+    render: () => h(AnnotationsTab, {
+      onBeginReattach: (annotationId: string) => { beginReattachEvents.push(annotationId) }
+    })
+  })
   const pinia = createPinia()
 
   app.use(pinia)
@@ -222,31 +215,6 @@ async function mount (): Promise<void> {
 
   await collaborationStore.ensureSession(SCENE_DOCUMENT_PATH)
   await nextTick()
-
-  // A second, off-screen mount of the real MainSidebar.vue — the S10
-  // boundary proof needs the REAL tab-badge wiring rendered, not just the
-  // pure counting function it reads from. Wrapped in a plain render-function
-  // parent (App.vue's actual role) so this harness can observe what
-  // MainSidebar itself emits upward, the same way App.vue does — the M10
-  // boundary proof needs the REAL forwarding wired, not just the emit
-  // AnnotationsTab raises into MainSidebar's absence of a listener.
-  const sidebarHost = document.createElement('div')
-  sidebarHost.style.position = 'absolute'
-  sidebarHost.style.left = '-9999px'
-  document.body.appendChild(sidebarHost)
-  const beginReattachEvents: string[] = []
-  const sidebarApp = createApp({
-    render: () => h(MainSidebar, {
-      onBeginReattach: (annotationId: string) => { beginReattachEvents.push(annotationId) }
-    })
-  })
-  sidebarApp.use(pinia)
-  sidebarApp.mount(sidebarHost)
-  await nextTick()
-
-  window.annotationsSceneMainSidebarBadge = () => {
-    return sidebarHost.querySelector('.system-tab[data-target="annotations-panel"] .system-tab-badge')?.textContent ?? null
-  }
 
   // The composite editor for scene 12 (12-dark-mode-complete): a bare
   // EditorView, always built with the dark theme (this scene has no light
@@ -367,8 +335,8 @@ async function mount (): Promise<void> {
     return [...host.querySelectorAll('.suggestion-chunk.suggestion-chunk-linked')]
       .map(el => el.getAttribute('data-chunk-id') ?? '')
   }
-  window.annotationsSceneClickReattachInSidebar = async () => {
-    sidebarHost.querySelector<HTMLButtonElement>('.annotation-action-reattach')?.click()
+  window.annotationsSceneClickReattach = async () => {
+    host.querySelector<HTMLButtonElement>('.annotation-action-reattach')?.click()
     await nextTick()
     return [...beginReattachEvents]
   }
@@ -394,10 +362,8 @@ async function mount (): Promise<void> {
     const after = noteFieldAt(index)
     return { value: after.value, focused: document.activeElement === after }
   }
-  // Scoped to `host` (the standalone panel mount), not `document`: the
-  // off-screen MainSidebar mount above renders its OWN nested AnnotationsTab
-  // instance (same shared session), and an unscoped query would count both
-  // mounts' cards, chunks and controls.
+  // Scoped to `host` (the panel mount), not `document`: the composite editor
+  // for scene 12 lives beside it in the same page.
   window.annotationsSceneDiagnostics = () => ({
     openCount: sceneSession.annotations.items.filter(a => a.state === 'open').length,
     listCardCount: host.querySelectorAll('.annotation-list-item').length,

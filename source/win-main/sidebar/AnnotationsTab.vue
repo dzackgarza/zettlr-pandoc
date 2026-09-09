@@ -1,7 +1,6 @@
 <template>
   <div
     id="annotations-panel"
-    role="tabpanel"
     class="annotations-tab"
     v-bind:data-inspector-mode="collaborationStore.inspectorMode"
   >
@@ -57,8 +56,8 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     The panel's root: a right-sidebar tab holding the compact
- *                  list above the detail inspector (S1/S3), fed exclusively
+ * Description:     The panel's root, alone in the main window's right pane:
+ *                  the compact list above the detail inspector (S1/S3), fed exclusively
  *                  from useDocumentCollaborationStore — never a second read
  *                  of the sidecar (plan section 6). Container queries on this
  *                  root switch between the wide arrangement (list and
@@ -91,7 +90,7 @@ const emit = defineEmits<{
   (e: 'jump-to-line', line: number): void
   // S8/I6: only the annotation id crosses this boundary — the replacement
   // range comes from a fresh editor selection, which this panel does not
-  // own (see MainSidebar.vue -> App.vue -> MainEditor.vue).
+  // own (see App.vue -> MainEditor.vue).
   (e: 'begin-reattach', annotationId: string): void
 }>()
 
@@ -221,6 +220,10 @@ body {
     container-name: annotations-panel;
     display: flex;
     flex-direction: column;
+    height: 100%;
+    padding: 10px;
+    box-sizing: border-box;
+    overflow-y: auto;
   }
 }
 

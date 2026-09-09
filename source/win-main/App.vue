@@ -65,8 +65,8 @@
             />
           </template>
           <template #view2>
-            <!-- Second side: Sidebar -->
-            <MainSidebar
+            <!-- Second side: the annotation review panel -->
+            <AnnotationsTab
               @jump-to-line="genericJtl($event)"
               @begin-reattach="beginAnnotationReattach($event)"
             />
@@ -169,7 +169,7 @@
 
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
 import NavigationSidebar from './sidebar/NavigationSidebar.vue'
-import MainSidebar from './sidebar/MainSidebar.vue'
+import AnnotationsTab from './sidebar/AnnotationsTab.vue'
 import EditorPane from './EditorPane.vue'
 import EditorBranch from './EditorBranch.vue'
 import SplitView from '../common/vue/window/SplitView.vue'

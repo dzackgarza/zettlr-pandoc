@@ -23,7 +23,7 @@
           <span class="chrome-row-label">{{ item.title }}</span>
         </button>
         <section v-else-if="item.kind === 'part'" class="book-part">
-          <h4 class="book-part-title">{{ item.title }}</h4>
+          <h4 class="chrome-group-label">{{ item.title }}</h4>
           <button
             v-for="chapter in item.chapters"
             v-bind:key="chapter.path"
@@ -148,17 +148,6 @@ body .quarto-book-outline {
   .book-part {
     display: flex;
     flex-direction: column;
-  }
-
-  // A part reads like a section label inside the module.
-  .book-part-title {
-    margin: 8px 0 2px;
-    padding: 0 var(--chrome-inset);
-    color: var(--chrome-text-muted);
-    font-size: var(--chrome-section-font-size);
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
   }
 
   button.chapter {

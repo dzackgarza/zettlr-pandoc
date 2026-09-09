@@ -15,7 +15,7 @@
  * END HEADER
  */
 
-export const SIDEBAR_MODULE_IDS = [ 'project', 'search', 'book', 'outline' ] as const
+export const SIDEBAR_MODULE_IDS = [ 'project', 'search', 'book', 'outline', 'references', 'relatedFiles', 'otherFiles' ] as const
 
 export type SidebarModuleId = typeof SIDEBAR_MODULE_IDS[number]
 

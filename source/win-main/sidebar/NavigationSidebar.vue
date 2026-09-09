@@ -21,11 +21,9 @@
           v-on:dragging="dragging = $event"
         ></SplitterResizeHandle>
         <SplitterPanel
-          v-bind:ref="(panel: unknown) => registerPanel(module.id, panel)"
           class="navigation-sidebar-panel"
+          v-bind="panelConstraints(isExpanded(module.id))"
           v-bind:collapsible="true"
-          v-bind:collapsed-size="collapsedPercent"
-          v-bind:min-size="minimumPercent"
           v-bind:order="index"
           v-bind:data-module-panel="module.id"
           v-on:collapse="onPanelDragged(module.id, true)"
@@ -59,6 +57,9 @@
               v-on:jump-to-line="emit('jump-to-active-line', $event)"
               v-on:move-section="emit('move-section', $event)"
             ></ToCTab>
+            <ReferencesTab v-else-if="module.id === 'references'"></ReferencesTab>
+            <RelatedFilesTab v-else-if="module.id === 'relatedFiles'"></RelatedFilesTab>
+            <OtherFilesTab v-else-if="module.id === 'otherFiles'"></OtherFilesTab>
           </SidebarModule>
         </SplitterPanel>
       </template>
@@ -77,22 +78,34 @@
  * License:         GNU GPL v3
  *
  * Description:     The main window's left sidebar: one accordion of stacked
- *                  modules, each hosted by SidebarModule.vue, whose expanded
+ *                  modules (Project, Search, Book, Outline, References,
+ *                  Related files, Other files), each hosted by
+ *                  SidebarModule.vue, whose expanded
  *                  bodies share the pane's height through a vertical splitter
  *                  and whose collapsed ones take their header alone. The
  *                  collapsed set is config state (ui.sidebarCollapsedModules),
  *                  so it survives a restart; the accordion owns the toggle and
  *                  keyboard behavior, the splitter owns the dragging.
  *
+ *                  A collapsed module is a pixel-sized panel fixed at the
+ *                  header height; an expanded one is a percent-sized panel.
+ *                  Toggling a module changes its panel's constraints, and the
+ *                  splitter lays the group out again from those defaults:
+ *                  collapsed panels at their header, expanded ones sharing
+ *                  the rest equally. No module height is persisted.
+ *
  * END HEADER
  */
 
 import { AccordionRoot, SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import FileManager from '../file-manager/FileManager.vue'
 import GlobalSearch from '../GlobalSearch.vue'
 import QuartoBookOutline from '../file-manager/QuartoBookOutline.vue'
 import ToCTab from './ToCTab.vue'
+import ReferencesTab from './ReferencesTab.vue'
+import RelatedFilesTab from './RelatedFilesTab.vue'
+import OtherFilesTab from './OtherFilesTab.vue'
 import SidebarModule from './SidebarModule.vue'
 import {
   SIDEBAR_MODULES,
@@ -126,25 +139,9 @@ interface GlobalSearchHandle {
   focusQueryInput: () => void
   startSearch: (overrideQuery?: string) => void
 }
-interface SplitterPanelHandle {
-  collapse: () => void
-  expand: () => void
-}
 
 const root = ref<AccordionRootHandle | null>(null)
 const globalSearch = ref<GlobalSearchHandle | null>(null)
-const panels = new Map<SidebarModuleId, SplitterPanelHandle>()
-
-function registerPanel (id: SidebarModuleId, panel: unknown): void {
-  if (panel === null || panel === undefined) {
-    panels.delete(id)
-    return
-  }
-  if (typeof panel !== 'object' || !('collapse' in panel) || !('expand' in panel)) {
-    throw new Error(`The splitter panel of the ${id} module exposes no collapse and expand`)
-  }
-  panels.set(id, panel as SplitterPanelHandle)
-}
 
 const activeFilePath = computed(() => documentTreeStore.lastLeafActiveFile?.path)
 
@@ -209,19 +206,29 @@ function onPanelDragged (id: SidebarModuleId, collapsed: boolean): void {
   setCollapsed(id, collapsed)
 }
 
-// The splitter sizes panels in percent of the pane, so the one-header height
-// a collapsed module takes is measured once per pane resize.
-const paneHeight = ref(1)
+/** The one-header height a collapsed module takes, from the chrome tokens. */
 const headerHeight = ref(28)
-const observer = new ResizeObserver(entries => {
-  for (const entry of entries) {
-    paneHeight.value = Math.max(entry.contentRect.height, 1)
-  }
-})
 
-const collapsedPercent = computed(() => headerHeight.value / paneHeight.value * 100)
-/** An expanded module keeps at least its header and three rows. */
-const minimumPercent = computed(() => (headerHeight.value + 90) / paneHeight.value * 100)
+/** An expanded module keeps at least this share of the pane. */
+const EXPANDED_MINIMUM_PERCENT = 8
+
+interface PanelConstraints {
+  sizeUnit: 'px' | '%'
+  collapsedSize: number
+  minSize: number
+  defaultSize: number | undefined
+}
+
+/**
+ * The splitter constraints of a module's panel: fixed at the header height
+ * while collapsed, an equal share of the remaining pane while expanded.
+ */
+function panelConstraints (expanded: boolean): PanelConstraints {
+  if (expanded) {
+    return { sizeUnit: '%', collapsedSize: 0, minSize: EXPANDED_MINIMUM_PERCENT, defaultSize: undefined }
+  }
+  return { sizeUnit: 'px', collapsedSize: headerHeight.value, minSize: headerHeight.value, defaultSize: headerHeight.value }
+}
 
 onMounted(() => {
   const element = root.value?.$el
@@ -232,29 +239,7 @@ onMounted(() => {
   if (Number.isFinite(declared) && declared > 0) {
     headerHeight.value = declared
   }
-  observer.observe(element)
-  paneHeight.value = Math.max(element.getBoundingClientRect().height, 1)
 })
-
-onBeforeUnmount(() => {
-  observer.disconnect()
-})
-
-// The accordion is the source of truth; the splitter panels follow it.
-watch([ expanded, visibleModules ], async () => {
-  await nextTick()
-  for (const module of visibleModules.value) {
-    const panel = panels.get(module.id)
-    if (panel === undefined) {
-      continue
-    }
-    if (isExpanded(module.id)) {
-      panel.expand()
-    } else {
-      panel.collapse()
-    }
-  }
-}, { immediate: true })
 
 /** Makes the sidebar visible, expands a module, and puts the focus where asked. */
 async function reveal (target: RevealTarget): Promise<void> {

@@ -50,9 +50,8 @@ async function openSceneDocument (dark) {
     </div>
     <script src="./annotations-sidebar-visual-bundle.js"></script>
   </body></html>`
-  // documentTreeStore (constructed by the MainSidebar mount, for the tab
-  // badge boundary proof) reads window_id from the page URL; without one,
-  // RelatedFilesTab.vue/OtherFilesTab.vue throw outright on construction.
+  // documentTreeStore (constructed by the panel) reads window_id from the
+  // page URL to request its leaf.
   await scene.open('annotations-sidebar-scene.html', html, { window_id: 'scene-window' })
   await page.evaluate(() => window.captureReady)
 }
@@ -99,9 +98,8 @@ await scene.capture('10-resolved-annotations-view')
 await setShowResolved(false)
 await select(SCENE_THREAD_ID)
 await scene.setSize(NARROW.width, NARROW.height)
-// Scoped to #app: the off-screen MainSidebar mount (badge proof, below)
-// renders its own nested .annotation-list too. The list must still be in
-// the DOM and hidden — a list that never mounted would prove nothing.
+// The list must still be in the DOM and hidden — a list that never mounted
+// would prove nothing.
 await page.waitForFunction(() => {
   const list = document.querySelector('#app .annotation-list')
   return list !== null && getComputedStyle(list).display === 'none'
@@ -294,34 +292,20 @@ if (JSON.stringify(linkedChunkIds) !== JSON.stringify([SCENE_CHUNK_GOAL_ID])) {
 }
 
 // M10 (S8/I6): Reattach only ever emits an intent (an annotation id) —
-// clicking it on the REAL, separately mounted MainSidebar.vue must
-// forward that exact id. This is the boundary the milestone wires:
-// AnnotationsTab's begin-reattach used to die at MainSidebar, which
-// forwarded only jump-to-line.
+// clicking it must hand the panel's parent (App.vue's role) that exact id.
 await setReview(false)
 await page.evaluate(() => window.annotationsSceneSetOrphanScenario(true))
 await select(SCENE_ORPHANED_ID)
-const reattachAnnotationIds = await page.evaluate(() => window.annotationsSceneClickReattachInSidebar())
+const reattachAnnotationIds = await page.evaluate(() => window.annotationsSceneClickReattach())
 if (JSON.stringify(reattachAnnotationIds) !== JSON.stringify([SCENE_ORPHANED_ID])) {
-  throw new Error(`begin-reattach: expected MainSidebar to forward ${SCENE_ORPHANED_ID}, got ${JSON.stringify(reattachAnnotationIds)}`)
+  throw new Error(`begin-reattach: expected the panel to emit ${SCENE_ORPHANED_ID}, got ${JSON.stringify(reattachAnnotationIds)}`)
 }
 
 console.error('annotations-sidebar-visual-capture: show-proposal and begin-reattach wiring verified')
 
-// Restore the base fixture session before the S10 badge read below: the
-// orphan scenario just above adds a third OPEN annotation, which would
-// otherwise change the badge's expected count out from under that proof.
-await page.evaluate(() => window.annotationsSceneSetOrphanScenario(false))
-await select(null)
-
-// The S10 boundary proof (issue: helper-level openAnnotationCount() proof
-// does not prove the rendered badge): read the annotations tab's TabBar
-// badge out of a REAL, separately-mounted MainSidebar.vue sharing the
-// same Pinia session as the panel above. Printed as the LAST stdout line
-// so annotations-sidebar.spec.ts can parse it — every other line above
-// goes to stderr for exactly this reason.
+// Printed as the LAST stdout line so annotations-sidebar.spec.ts can parse
+// it — every other line above goes to stderr for exactly this reason.
 console.log(JSON.stringify({
-  mainSidebarAnnotationsBadge: await page.evaluate(() => window.annotationsSceneMainSidebarBadge()),
   showProposalLinkedChunkIds: linkedChunkIds,
   beginReattachAnnotationIds: reattachAnnotationIds
 }))

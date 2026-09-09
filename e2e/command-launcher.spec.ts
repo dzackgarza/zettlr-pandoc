@@ -187,7 +187,7 @@ describe('the Ctrl+P command launcher', function () {
       activeDocument: 'index.md',
       config: {
         darkMode: false,
-        window: { fileManagerVisible: true, sidebarVisible: true, currentSidebarTab: 'toc' }
+        window: { fileManagerVisible: true, sidebarVisible: true }
       }
     })
     fixtureRoot = fixture.root

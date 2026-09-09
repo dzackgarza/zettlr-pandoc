@@ -27,7 +27,10 @@ export const SIDEBAR_MODULES: readonly SidebarModuleDefinition[] = [
   { id: 'project', label: () => trans('Project') },
   { id: 'search', label: () => trans('Search') },
   { id: 'book', label: () => trans('Book') },
-  { id: 'outline', label: () => trans('Outline') }
+  { id: 'outline', label: () => trans('Outline') },
+  { id: 'references', label: () => trans('References') },
+  { id: 'relatedFiles', label: () => trans('Related files') },
+  { id: 'otherFiles', label: () => trans('Other files') }
 ]
 
 /** Where the focus lands when a module is revealed. */

@@ -4,6 +4,21 @@
 // (light on :root, dark on body.dark). The section header is the third
 // primitive; it is a component (SectionHeader.vue) because it owns behavior.
 
+// A group label inside a module body (a book part, an attachment folder): the
+// section label's type, on a plain element rather than a heading.
+.chrome-group-label {
+  margin: 8px 0 2px;
+  padding: 0 var(--chrome-inset);
+  color: var(--chrome-text-muted);
+  font-size: var(--chrome-section-font-size);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 // A selectable list row: full-width tint for hover and for the active row, a
 // left accent bar on the active row, and the text colour unchanged. Never a
 // pill behind the label alone.

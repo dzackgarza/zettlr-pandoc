@@ -14,8 +14,7 @@
  *                  "Search all files" reveals the Search module with its
  *                  query focused and a search yields results, a collapsed
  *                  module stays collapsed across a restart, and the old
- *                  Files/Book strip and the right sidebar's outline tab are
- *                  gone.
+ *                  Files/Book strip is gone.
  *
  * END HEADER
  */
@@ -119,7 +118,7 @@ describe('the left sidebar modules', function () {
       activeDocument: path.join('foundations', 'forms.md'),
       config: {
         darkMode: false,
-        window: { fileManagerVisible: true, sidebarVisible: true, currentSidebarTab: 'references' }
+        window: { fileManagerVisible: true, sidebarVisible: true }
       }
     })
     fixtureRoot = fixture.root
@@ -137,12 +136,11 @@ describe('the left sidebar modules', function () {
     assertCleanExit(getOutput())
   })
 
-  it('stacks Project, Search, Book and Outline as modules and carries no tab strip', async function () {
+  it('stacks Project, Search, Book and Outline as the first modules and carries no tab strip', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
     const ids = await activePage.locator(`${SIDEBAR} [data-module]`).evaluateAll(elements => elements.map(element => element.getAttribute('data-module')))
-    assert.deepEqual(ids, [ 'project', 'search', 'book', 'outline' ], 'the modules stack in the plan order')
+    assert.deepEqual(ids.slice(0, 4), [ 'project', 'search', 'book', 'outline' ], 'the navigation modules stack first, in the plan order')
     assert.equal(await activePage.locator(`${SIDEBAR} .system-tablist`).count(), 0, 'the Files/Book strip is gone')
-    assert.equal(await activePage.locator('#sidebar .system-tab[aria-controls="sidebar-toc"]').count(), 0, 'the right sidebar carries no outline tab')
     screenshots.set('sidebar-modules.png', await activePage.screenshot())
   })
 
@@ -199,7 +197,7 @@ describe('the left sidebar modules', function () {
     await relaunched.locator(`${MODULE('book')}[data-state="closed"]`).waitFor({ timeout: 60_000 })
     assert.equal(await relaunched.locator(`${MODULE('project')}[data-state="open"]`).count(), 1, 'Project stays expanded')
     assert.equal(await relaunched.locator(`${MODULE('outline')}[data-state="open"]`).count(), 1, 'Outline stays expanded')
-    assert.deepEqual(await readCollapsedModules(relaunched), [ 'book' ])
+    assert.deepEqual(await readCollapsedModules(relaunched), [ 'book', 'references', 'relatedFiles', 'otherFiles' ], 'book joins the reference modules, collapsed by default, in module order')
     screenshots.set('sidebar-book-collapsed-after-restart.png', await relaunched.screenshot())
   })
 })

@@ -1,18 +1,10 @@
 <template>
-  <div role="tabpanel">
-    <!-- Other files contents -->
-    <h1>
-      {{ otherFilesLabel }}
-      <cds-icon
-        id="open-dir-external"
-        :title="openDirLabel"
-        shape="folder"
-        class="is-solid"
-      />
-    </h1>
-
+  <div class="other-files-panel">
     <!-- Render all attachments -->
-    <p v-if="attachments.length === 0">
+    <p
+      v-if="attachments.length === 0"
+      class="other-files-empty"
+    >
       {{ noAttachmentsMessage }}
     </p>
     <template
@@ -20,12 +12,12 @@
       v-else
       :key="fIdx"
     >
-      <h2
-        class="other-files-panel-folder-name"
+      <div
+        class="chrome-group-label"
         :title="folder.path"
       >
         {{ folder.path }}
-      </h2>
+      </div>
 
       <template v-if="folder.files.length > 0">
         <a
@@ -53,7 +45,10 @@
           <span class="attachment-name">{{ attachment.name }}</span>
         </a>
       </template>
-      <span v-else>
+      <span
+        v-else
+        class="other-files-empty"
+      >
         {{ noAttachmentsMessage }}
       </span>
     </template>
@@ -84,8 +79,6 @@ const windowId: string = windowIdParam
 const configStore = useConfigStore()
 const workspaceStore = useWorkspaceStore()
 
-const otherFilesLabel = trans('Other files')
-const openDirLabel = trans('Open directory')
 const noAttachmentsMessage = trans('No other files')
 
 const attachments = computed(() => workspaceStore.otherFiles)
@@ -152,12 +145,17 @@ function getPreviewImageData (attachmentPath: string): string {
 </script>
 
 <style lang="less">
-h2.other-files-panel-folder-name {
-  font-size: 80%;
-  margin: 10px 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.other-files-panel {
+  height: 100%;
+  overflow-y: auto;
+  font-size: var(--chrome-font-size);
+}
+
+.other-files-empty {
+  display: block;
+  margin: 4px 0;
+  padding: 0 var(--chrome-inset);
+  color: var(--chrome-text-muted);
 }
 
 a.attachment {
@@ -166,7 +164,7 @@ a.attachment {
   gap: 4px;
   grid-template-columns: 48px auto;
 
-  padding: 4px;
+  padding: 4px var(--chrome-inset);
   text-decoration: none;
   color: inherit;
   // Some filenames are too long for the sidebar. However, unlike with the
