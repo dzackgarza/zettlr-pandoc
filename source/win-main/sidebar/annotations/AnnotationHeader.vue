@@ -217,6 +217,22 @@ body {
     }
   }
 
+  // Outranks ShortcutDisplay's own scoped rule, which wraps its key caps.
+  .annotations-tab .annotation-header-title-row .annotation-header-shortcut {
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+  }
+}
+
+// A narrow pane has no room for the shortcut chip beside the title; the
+// count and close stay.
+@container annotations-panel (max-width: 320px) {
+  body .annotations-tab .annotation-header-shortcut {
+    display: none;
+  }
+}
+
+body {
   .annotation-view-row {
     display: flex;
     align-items: center;
