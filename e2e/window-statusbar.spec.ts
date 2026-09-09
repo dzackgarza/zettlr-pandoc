@@ -88,9 +88,10 @@ async function splitAndOpen (page: Page, documentPath: string): Promise<string> 
     const leavesOf: string[][] = []
     for (let pass = 0; pass < 2; pass++) {
       if (pass === 1) {
+        // 'horizontal' is the document manager's side-by-side direction.
         await window.ipc.invoke('documents-provider', {
           command: 'split-leaf',
-          payload: { originWindow: windowId, originLeaf: leavesOf[0][0], direction: 'vertical', insertion: 'after' }
+          payload: { originWindow: windowId, originLeaf: leavesOf[0][0], direction: 'horizontal', insertion: 'after' }
         })
       }
       const tree: unknown = await window.ipc.invoke('documents-provider', { command: 'retrieve-tab-config', payload: { windowId } })
@@ -202,6 +203,9 @@ describe('the window status bar', function () {
     }, 'the word count of index.md in the focused pane')
     assert.equal(await activePage.locator(STATUSBAR).count(), 1, 'still exactly one status bar')
     assert.equal(await activePage.locator('.cm-statusbar').count(), 0, 'no pane brings its own status panel')
+    // The header row is the top-right pane's: the new pane sits to the right.
+    const toggleRows = await activePage.locator('.editor-pane').evaluateAll(panes => panes.map(pane => pane.querySelector('[data-pane-toggle]') !== null))
+    assert.deepEqual(toggleRows, [ false, true ], 'only the right pane\'s tab row carries the pane toggles')
     screenshots.set('statusbar-two-panes.png', await activePage.screenshot())
 
     const firstPane = activePage.locator('.editor-pane', { hasNot: activePage.locator(`[role="tab"][data-path="${indexPath}"]`) }).first()
@@ -214,14 +218,16 @@ describe('the window status bar', function () {
 
   it('shows a running export in the task indicator and opens the task list from it', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
+    const activeDocument = await activePage.locator('.editor-pane [role="tab"].active').first().getAttribute('data-path')
+    assert.ok(activeDocument !== null, 'an active document tab')
     await clickMenuItem(activePage, 'menu.export')
     await activePage.locator(`${LAUNCHER} [data-launcher-row][data-highlighted][data-export-profile]`).waitFor({ timeout: 10_000 })
     await activePage.keyboard.press('Enter')
     await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
-    const indicator = activePage.locator(`${STATUSBAR} #toolbar-long-running-tasks`)
+    const indicator = activePage.locator(ITEM('tasks'))
     await indicator.waitFor({ timeout: 30_000 })
     await indicator.click()
-    const task = activePage.locator('#lrt-wrapper .title', { hasText: 'forms.md' })
+    const task = activePage.locator('#lrt-wrapper .title', { hasText: path.basename(activeDocument) })
     await task.waitFor({ timeout: 10_000 })
     screenshots.set('statusbar-export-task.png', await activePage.screenshot())
     await activePage.keyboard.press('Escape')

@@ -110,7 +110,11 @@ import { editorMetadataFacet } from './plugins/editor-metadata'
 import { formatDocumentEffect } from './plugins/format-document-effect'
 import { highlightRangesEffect } from './plugins/highlight-ranges'
 import { openPandocQuickHelpEffect } from './plugins/pandoc-quick-help-effect'
-import { type ProjectInfo, projectInfoUpdateEffect } from './plugins/project-info-field'
+import { type ProjectInfo, projectInfoField, projectInfoUpdateEffect } from './plugins/project-info-field'
+import { languageToolState, updateLTState } from './linters/language-tool'
+import { forceLinting } from '@codemirror/lint'
+import { countDiagnostics, toggleLintPanel, type DiagnosticCounts } from './statusbar/diagnostics'
+import { toggleReadability } from './renderers/readability'
 import { openReferenceSearchEffect } from './plugins/reference-search-effect'
 import {
   type PullUpdateCallback,
@@ -162,16 +166,34 @@ export interface UserReadablePosition {
   ch: number
 }
 
+/** What the LanguageTool linter is doing, for the window's status bar. */
+export type LanguageToolStatus =
+  | { state: 'off' }
+  | { state: 'running' }
+  | { state: 'error', message: string }
+  | { state: 'idle', language: string, overrideLanguage: string, supportedLanguages: string[] }
+
+/**
+ * Everything the window's status bar shows about the active editor, derived
+ * once here from the editor state on every document update.
+ */
 export interface DocumentInfo {
   words: number
   chars: number
   cursor: UserReadablePosition
+  /** The cursor's offset in the document */
+  offset: number
   selections: Array<{
     anchor: UserReadablePosition
     head: UserReadablePosition
     words: number
     chars: number
   }>
+  readabilityMode: boolean
+  diagnostics: DiagnosticCounts
+  languageTool: LanguageToolStatus
+  /** The project the document belongs to, if any */
+  project: ProjectInfo | undefined
 }
 
 export type FetchDoc = (
@@ -249,7 +271,9 @@ const EDITOR_COMMANDS: Record<EditorCommandName, (view: EditorView) => boolean> 
   markdownHeading6: applyH6,
   markdownBlockquote: applyBlockquote,
   markdownBulletList: applyBulletList,
-  markdownOrderedList: applyOrderedList
+  markdownOrderedList: applyOrderedList,
+  toggleReadabilityMode: toggleReadability,
+  toggleLintPanel
 }
 
 export default class MarkdownEditor extends EventEmitter {
@@ -1112,10 +1136,16 @@ export default class MarkdownEditor extends EventEmitter {
     ) => MarkdownDocument | ASTNode
     const documentAst = ast(this._instance.state.sliceDoc(), syntaxTree(this._instance.state))
     const locale: string = window.config.get('appLang')
+    const project = this._instance.state.field(projectInfoField, false)
     return {
       words: this.wordCount ?? 0,
       chars: this.charCount ?? 0,
       cursor: { line: line.number, ch: mainOffset - line.from + 1 }, // Chars are still zero-based
+      offset: mainOffset,
+      readabilityMode: this.readabilityMode,
+      diagnostics: countDiagnostics(this._instance.state),
+      languageTool: this.languageToolStatus,
+      project: project === null || project === undefined ? undefined : project,
       selections: this._instance.state.selection.ranges
       // Remove cursor-only positions
         .filter((sel) => !sel.empty)
@@ -1194,6 +1224,38 @@ export default class MarkdownEditor extends EventEmitter {
   set readabilityMode (shouldBeReadability: boolean) {
     this.config.readabilityMode = shouldBeReadability
     this._instance.dispatch({ effects: configUpdateEffect.of(this.config) })
+  }
+
+  /** What the LanguageTool linter is doing right now, from its state field. */
+  get languageToolStatus (): LanguageToolStatus {
+    const state = this._instance.state
+    const ltState = state.field(languageToolState, false)
+    if (!state.field(configField).lintLanguageTool || ltState === undefined) {
+      return { state: 'off' }
+    }
+    if (ltState.running) {
+      return { state: 'running' }
+    }
+    if (ltState.lastError !== undefined) {
+      return { state: 'error', message: ltState.lastError }
+    }
+    return {
+      state: 'idle',
+      language: ltState.overrideLanguage === 'auto' ? ltState.lastDetectedLanguage : ltState.overrideLanguage,
+      overrideLanguage: ltState.overrideLanguage,
+      supportedLanguages: ltState.supportedLanguages
+    }
+  }
+
+  /**
+   * Overrides the language LanguageTool checks the document in ('auto' to
+   * detect it) and lints again.
+   *
+   * @param   {string}  language  A language code, or 'auto'
+   */
+  setLanguageToolLanguage (language: string): void {
+    this._instance.dispatch({ effects: updateLTState.of({ overrideLanguage: language }) })
+    forceLinting(this._instance)
   }
 
   /**

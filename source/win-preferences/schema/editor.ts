@@ -209,19 +209,6 @@ export function getEditorFields (config: ConfigOptions): PreferencesFieldset[] {
       ]
     },
     {
-      title: trans('Status bar'),
-      infoString: trans('The status bar is a section for various quick controls and shows information about the current document. It is shown for both Markdown and code editors.'),
-      group: PreferencesGroups.Editor,
-      help: undefined, // TODO
-      fields: [
-        {
-          type: 'checkbox',
-          label: trans('Show status bar'),
-          model: 'editor.showStatusbar'
-        }
-      ]
-    },
-    {
       title: trans('Distraction-free mode'),
       infoString: trans('Customize the appearance of the editor when the distraction-free mode is active.'),
       group: PreferencesGroups.Editor,

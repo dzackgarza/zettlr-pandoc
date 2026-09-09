@@ -77,6 +77,10 @@
         @pomodoro="togglePomodoroPopover()"
         @tasks="toggleTasksPopover()"
         @update="openUpdater()"
+        @toggle-readability="runEditorCommand('toggleReadabilityMode')"
+        @toggle-lint-panel="runEditorCommand('toggleLintPanel')"
+        @set-language-tool-language="setLanguageToolLanguage($event)"
+        @open-file="openWorkspaceFile($event)"
       />
     </template>
   </WindowChrome>
@@ -198,6 +202,7 @@ import {
   insertTablePayloadSchema,
   isEditorCommandName,
   isShortcutName,
+  type EditorCommandName,
   type ShortcutName
 } from '@dts/common/shortcut-names'
 
@@ -253,8 +258,20 @@ function togglePomodoroPopover (): void {
 }
 
 function toggleTasksPopover (): void {
-  tasksButton.value = document.querySelector('#toolbar-long-running-tasks')
+  tasksButton.value = document.querySelector('#main-statusbar [data-statusbar-item="tasks"]')
   showTasksPopover.value = !showTasksPopover.value
+}
+
+/** Runs a named editor command in the last focused pane. */
+function runEditorCommand (name: EditorCommandName): void {
+  editorCommands.value.data = name
+  editorCommands.value.executeCommand = !editorCommands.value.executeCommand
+}
+
+/** Overrides the language LanguageTool checks the focused pane's document in. */
+function setLanguageToolLanguage (language: string): void {
+  editorCommands.value.data = language
+  editorCommands.value.setLanguageToolLanguage = !editorCommands.value.setLanguageToolLanguage
 }
 
 async function openUpdater (): Promise<void> {
@@ -447,6 +464,7 @@ const editorCommands = ref<EditorCommands>({
   insertPandoc: false,
   executeCommand: false,
   beginAnnotationReattach: false,
+  setLanguageToolLanguage: false,
   data: undefined
 })
 
@@ -692,8 +710,7 @@ onMounted(() => {
       return
     }
     if (isEditorCommandName(shortcut)) {
-      editorCommands.value.data = shortcut
-      editorCommands.value.executeCommand = !editorCommands.value.executeCommand
+      runEditorCommand(shortcut)
       return
     }
     shortcutHandlers[shortcut]?.()

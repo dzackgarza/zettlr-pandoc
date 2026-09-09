@@ -172,6 +172,67 @@ const SCENES: Scene[] = [
     }
   },
   {
+    // Two editor panes side by side, the second one focused: one status bar
+    // follows the focused pane.
+    name: 'two-panes',
+    arrange: async page => {
+      // Splits, then opens the book's index in the new pane through the
+      // provider, so the pane holds a document to focus.
+      await page.evaluate(async () => {
+        const windowId = new URLSearchParams(location.search).get('window_id')
+        if (windowId === null) {
+          throw new Error('The main window carries no window_id')
+        }
+        const activePath = document.querySelector('.editor-pane [role="tab"].active')?.getAttribute('data-path')
+        if (activePath === null || activePath === undefined) {
+          throw new Error('The capture expects an active document tab')
+        }
+        const indexPath = [ ...activePath.split('/').slice(0, -2), 'index.md' ].join('/')
+        const tree: unknown = await window.ipc.invoke('documents-provider', { command: 'retrieve-tab-config', payload: { windowId } })
+        const leaf = tree as { type: string, id: string }
+        if (leaf.type !== 'leaf') {
+          throw new Error('The capture expects a single pane before the split')
+        }
+        // 'horizontal' is the document manager's side-by-side direction.
+        await window.ipc.invoke('documents-provider', {
+          command: 'split-leaf',
+          payload: { originWindow: windowId, originLeaf: leaf.id, direction: 'horizontal', insertion: 'after' }
+        })
+        const split: unknown = await window.ipc.invoke('documents-provider', { command: 'retrieve-tab-config', payload: { windowId } })
+        const branch = split as { type: string, nodes: Array<{ type: string, id: string }> }
+        const created = branch.nodes.find(node => node.type === 'leaf' && node.id !== leaf.id)
+        if (branch.type !== 'branch' || created === undefined) {
+          throw new Error('The split produced no new pane')
+        }
+        await window.ipc.invoke('documents-provider', {
+          command: 'open-file',
+          payload: { windowId, leafId: created.id, path: indexPath, newTab: true }
+        })
+      })
+      const secondPane = page.locator('.editor-pane').nth(1)
+      await secondPane.locator('.cm-content').waitFor({ state: 'visible', timeout: 10_000 })
+      await secondPane.locator('.cm-content').click()
+      await page.locator('#main-statusbar [data-statusbar-item="words"]', { hasText: /^(?!1 words)/ }).waitFor({ timeout: 10_000 })
+    },
+    restore: async page => {
+      await page.evaluate(async () => {
+        const windowId = new URLSearchParams(location.search).get('window_id')
+        if (windowId === null) {
+          throw new Error('The main window carries no window_id')
+        }
+        const tree: unknown = await window.ipc.invoke('documents-provider', { command: 'retrieve-tab-config', payload: { windowId } })
+        const branch = tree as { type: string, nodes: Array<{ type: string, id: string }> }
+        const second = branch.nodes[1]
+        if (branch.type !== 'branch' || second === undefined) {
+          throw new Error('The capture expects two panes to restore from')
+        }
+        await window.ipc.invoke('documents-provider', { command: 'close-leaf', payload: { windowId, leafId: second.id } })
+      })
+      await page.locator('.editor-pane').nth(1).waitFor({ state: 'detached', timeout: 10_000 })
+      await page.locator('.editor-pane .cm-content').click()
+    }
+  },
+  {
     // Both panes hidden through the tab row's toggles: the editor alone.
     name: 'panes-hidden',
     arrange: async page => {
@@ -204,7 +265,12 @@ const SCENES: Scene[] = [
     name: 'project-thin',
     arrange: async page => {
       await setFileManagerMode(page, 'thin')
-      await page.locator(FILE_LIST).waitFor({ state: 'hidden', timeout: 10_000 })
+      // Thin mode displays the list (combined mode does not) but keeps it slid
+      // out until a directory is chosen; wait for that state before choosing.
+      await page.waitForFunction(() => {
+        const list = document.querySelector('#file-manager #file-list')
+        return list !== null && list.classList.contains('hidden') && getComputedStyle(list).display !== 'none'
+      }, undefined, { timeout: 10_000 })
       await page.locator('#file-manager .tree-item.directory[data-path$="/foundations"]').click()
       await page.locator(`${FILE_LIST}:not(.hidden)`).waitFor({ state: 'visible', timeout: 10_000 })
       // The list slides in over the tree; photograph it once it has arrived.

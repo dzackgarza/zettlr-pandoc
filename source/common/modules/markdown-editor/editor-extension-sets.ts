@@ -53,7 +53,6 @@ import { backgroundLayers } from './plugins/code-background'
 import { emacs } from '@replit/codemirror-emacs'
 import { distractionFree } from './plugins/distraction-free'
 import { languageTool } from './linters/language-tool'
-import { statusbar } from './statusbar'
 import { renderers } from './renderers'
 import { mdPasteDropHandlers } from './plugins/md-paste-drop-handlers'
 import { footnoteBackground } from './plugins/footnote-background'
@@ -207,8 +206,6 @@ function getCoreExtensions (options: CoreExtensionOptions): Extension[] {
     // Allow configuration of the trigger character
     autocompleteTriggerCharacter.from(configField, val => val.snippetAutocompleteTriggerCharacter),
 
-    // Add the statusbar
-    statusbar,
 
     // Add the configuration and preset it with whatever is in the cached
     // config.

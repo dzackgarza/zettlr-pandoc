@@ -568,7 +568,6 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
     // The editor only needs to know if it should use languageTool
     lintLanguageTool: editor.lint.languageTool.active,
     distractionFree: props.distractionFree.valueOf(),
-    showStatusbar: editor.showStatusbar,
     showFormattingToolbar: editor.showFormattingToolbar,
     darkMode,
     darkModeEditor,
@@ -766,6 +765,21 @@ watch(toRef(props.editorCommands, 'replaceSelection'), () => {
     return // The toggled command carried no text payload
   }
   currentEditor?.replaceSelection(data)
+})
+
+// The status bar's LanguageTool language choice, for the last focused pane.
+watch(toRef(props.editorCommands, 'setLanguageToolLanguage'), () => {
+  if (props.activeFile?.path !== props.file.path || currentEditor === null) {
+    return
+  }
+  if (documentTreeStore.lastLeafId !== props.leafId) {
+    return
+  }
+  const data = props.editorCommands.data
+  if (typeof data !== 'string') {
+    return // The toggle carried no language code
+  }
+  currentEditor.setLanguageToolLanguage(data)
 })
 
 watch(toRef(props.editorCommands, 'insertPandoc'), () => {

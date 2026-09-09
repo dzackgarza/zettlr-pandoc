@@ -78,6 +78,8 @@ export interface EditorCommands {
    *  the replacement range is whatever the owner has selected in the last
    *  focused editor pane for that same document when this toggles. */
   beginAnnotationReattach: boolean
+  /** The status bar's LanguageTool language choice; data carries the language code. */
+  setLanguageToolLanguage: boolean
   data: EditorCommandData
 }
 

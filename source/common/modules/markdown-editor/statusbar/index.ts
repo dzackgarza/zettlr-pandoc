@@ -7,21 +7,18 @@
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     This component displays a statusbar panel for the editor
+ * Description:     The status panel of the code editors (the assets and
+ *                  defaults windows): cursor, counts, input mode and
+ *                  diagnostics. The main window renders its own status bar
+ *                  from the editor's published document info.
  *
  * END HEADER
  */
 
 import { showPanel, EditorView, type Panel } from '@codemirror/view'
 import { StateEffect, StateField, type EditorState } from '@codemirror/state'
-import { configUpdateEffect } from '../util/configuration'
-import { magicQuotesStatus } from './magic-quotes'
-import { readabilityStatus } from '../renderers/readability'
 import { cursorStatus, wordcountStatus, charcountStatus, inputModeStatus } from './info-fields'
-import { languageToolStatus } from './language-tool'
 import { diagnosticsStatus } from './diagnostics'
-import { statusbarProjectInfo } from '../plugins/project-info-field'
-import { renderingModeToggle } from '../renderers'
 
 /**
  * The interface each item on the statusbar must conform to.
@@ -49,9 +46,7 @@ export interface StatusbarItem {
 }
 
 /**
- * Use this effect to programmatically show or hide the statusbar. NOTE: Do not
- * use this for the main editor, as this one gets updated based on the
- * configuration instead!!
+ * Use this effect to show or hide the statusbar.
  */
 export const showStatusbarEffect = StateEffect.define<boolean>()
 
@@ -72,15 +67,10 @@ function createStatusbar (_view: EditorView): Panel {
       const elements: StatusbarItem[] = []
       // NOTE: Order here determines the order in the statusbar
       const items = [
-        statusbarProjectInfo,
-        magicQuotesStatus,
-        renderingModeToggle,
-        readabilityStatus,
         cursorStatus,
         wordcountStatus,
         charcountStatus,
         inputModeStatus,
-        languageToolStatus,
         diagnosticsStatus
       ]
 
@@ -118,11 +108,7 @@ const statusbarState = StateField.define<boolean>({
   update (value, transaction) {
     // Determine if we have to switch our toggle
     for (const effect of transaction.effects) {
-      if (effect.is(configUpdateEffect)) {
-        if (typeof effect.value.showStatusbar === 'boolean') {
-          value = effect.value.showStatusbar
-        }
-      } else if (effect.is(showStatusbarEffect)) {
+      if (effect.is(showStatusbarEffect)) {
         value = effect.value
       }
     }

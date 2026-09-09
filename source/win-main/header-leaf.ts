@@ -19,8 +19,10 @@ import type { InjectionKey, Ref } from 'vue'
 import type { BranchNodeJSON, LeafNodeJSON } from '@dts/common/documents'
 
 /**
- * The leaf at the top right of a pane tree: in a side-by-side branch the
- * last pane, in a stacked branch the first.
+ * The leaf at the top right of a pane tree: in a side-by-side branch (the
+ * document manager's 'horizontal' direction, panes sharing the width) the
+ * last pane, in a stacked branch ('vertical', panes sharing the height) the
+ * first.
  */
 export function headerLeafId (node: BranchNodeJSON | LeafNodeJSON | undefined): string | undefined {
   if (node === undefined) {
@@ -29,7 +31,7 @@ export function headerLeafId (node: BranchNodeJSON | LeafNodeJSON | undefined): 
   if (node.type === 'leaf') {
     return node.id
   }
-  const child = node.direction === 'vertical' ? node.nodes[node.nodes.length - 1] : node.nodes[0]
+  const child = node.direction === 'horizontal' ? node.nodes[node.nodes.length - 1] : node.nodes[0]
   return headerLeafId(child)
 }
 

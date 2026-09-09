@@ -38,7 +38,9 @@ export const EDITOR_COMMAND_NAMES = [
   'markdownHeading6',
   'markdownBlockquote',
   'markdownBulletList',
-  'markdownOrderedList'
+  'markdownOrderedList',
+  'toggleReadabilityMode',
+  'toggleLintPanel'
 ] as const
 
 export type EditorCommandName = typeof EDITOR_COMMAND_NAMES[number]

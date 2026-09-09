@@ -32,9 +32,6 @@ import { renderPandoc } from './render-pandoc-div-span'
 import { renderPandocAttributes } from './render-pandoc-attributes'
 import { configField, configUpdateEffect, type EditorConfiguration } from '../util/configuration'
 import type { EditorView } from '@codemirror/view'
-import { hasMarkdownExt } from 'source/common/util/file-extention-checks'
-import { trans } from 'source/common/i18n-renderer'
-import type { StatusbarItem } from '../statusbar'
 import { renderHorizontalRules } from './render-hr'
 import { renderBlockquotes } from './render-blockquotes'
 
@@ -132,29 +129,3 @@ export function renderers (config: EditorConfiguration): Extension {
   return [ modeSwitcher, renderCompartment.of(configureRenderers(config)) ]
 }
 
-/**
- * Provides a statusbar field that allows the user to control the rendering mode
- * right from the statusbar.
- *
- * @param   {EditorState}    state  The EditorState
- * @param   {EditorView}     view   The EditorView
- *
- * @return  {StatusbarItem}         Returns the element
- */
-export function renderingModeToggle (state: EditorState, _view: EditorView): StatusbarItem|null {
-  const config = state.field(configField, false)
-  if (config === undefined || !hasMarkdownExt(config.metadata.path)) {
-    return null
-  }
-
-  return {
-    content: trans(
-      'Rendering: %s',
-      config.renderingMode === 'preview' ? trans('Preview') : trans('Raw')
-    ),
-    title: trans('Enable or disable the preview mode for Markdown files by clicking'),
-    onClick () {
-      window.config.set('display.renderingMode', config.renderingMode === 'preview' ? 'raw' : 'preview')
-    }
-  }
-}

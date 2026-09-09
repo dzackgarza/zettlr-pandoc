@@ -18,6 +18,40 @@ import { trans } from '@common/i18n-renderer'
 import { type StatusbarItem } from '.'
 import { openLintPanel, closeLintPanel, forEachDiagnostic } from '@codemirror/lint'
 
+/** How many diagnostics of each severity a state carries. */
+export interface DiagnosticCounts {
+  info: number
+  warning: number
+  error: number
+}
+
+/** Counts the diagnostics of a state by severity. */
+export function countDiagnostics (state: EditorState): DiagnosticCounts {
+  const counts: DiagnosticCounts = { info: 0, warning: 0, error: 0 }
+  forEachDiagnostic(state, (diagnostic, _from, _to) => {
+    if (diagnostic.severity === 'info') {
+      counts.info++
+    } else if (diagnostic.severity === 'warning') {
+      counts.warning++
+    } else {
+      counts.error++
+    }
+  })
+  return counts
+}
+
+/**
+ * Opens the lint panel, or closes it when it is open. The close is tried
+ * first because closeLintPanel() reports false on an already closed panel
+ * while openLintPanel() only ever reports true.
+ */
+export function toggleLintPanel (view: EditorView): boolean {
+  if (!closeLintPanel(view)) {
+    openLintPanel(view)
+  }
+  return true
+}
+
 /**
  * Displays a count of all diagnostics
  *
@@ -27,29 +61,14 @@ import { openLintPanel, closeLintPanel, forEachDiagnostic } from '@codemirror/li
  * @return  {StatusbarItem}         Returns the element
  */
 export function diagnosticsStatus (state: EditorState, view: EditorView): StatusbarItem|null {
-  let info = 0
-  let warn = 0
-  let error = 0
-  forEachDiagnostic(state, (dia, _from, _to) => {
-    if (dia.severity === 'info') {
-      info++
-    } else if (dia.severity === 'warning') {
-      warn++
-    } else {
-      error++
-    }
-  })
+  const { info, warning, error } = countDiagnostics(state)
 
   return {
-    content: `<cds-icon shape="help-info"></cds-icon> ${info} <cds-icon shape="warning-standard"></cds-icon> ${warn} <cds-icon shape="times-circle"></cds-icon> ${error}`,
+    content: `<cds-icon shape="help-info"></cds-icon> ${info} <cds-icon shape="warning-standard"></cds-icon> ${warning} <cds-icon shape="times-circle"></cds-icon> ${error}`,
     allowHtml: true,
     title: trans('Toggle diagnostics panel'),
-    onClick (event) {
-      // We try to close the panel first because closeLintPanel() returns false
-      // if the panel is already closed but openLintPanel() only returns true.
-      if (!closeLintPanel(view)) {
-        openLintPanel(view)
-      }
+    onClick (_event) {
+      toggleLintPanel(view)
     }
   }
 }
