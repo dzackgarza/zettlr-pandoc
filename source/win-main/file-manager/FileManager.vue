@@ -41,16 +41,22 @@
     </div>
 
     <!-- Filter field -->
-    <div v-if="currentView === 'files'" class="file-manager-filter">
+    <div v-if="currentView === 'files'" class="chrome-filter file-manager-filter">
       <input
         ref="quickFilter"
         v-model="filterQuery"
-        class="file-manager-filter-input"
+        class="chrome-filter-input file-manager-filter-input"
         type="search"
         v-bind:placeholder="filterPlaceholder"
         v-on:focus="($event.target as HTMLInputElement).select()"
         v-on:blur="handleQuickFilterBlur"
       />
+      <ShortcutDisplay
+        v-if="filterShortcut !== undefined"
+        class="chrome-filter-hint"
+        v-bind:shortcut="filterShortcut"
+        display="muted"
+      ></ShortcutDisplay>
     </div>
 
     <div id="component-container">
@@ -109,7 +115,10 @@ import FileTree from './FileTree.vue'
 import FileList from './FileList.vue'
 import QuartoBookOutline from './QuartoBookOutline.vue'
 import TabBar, { type TabbarControl } from '@common/vue/TabBar.vue'
+import ShortcutDisplay from '@common/vue/ShortcutDisplay.vue'
 import { trans } from '@common/i18n-renderer'
+import { explodeShortcut } from '@common/util/shortcuts'
+import { getCustomShortcut } from '@providers/menu/shortcuts'
 import { nextTick, ref, computed, watch, onMounted } from 'vue'
 import { useConfigStore, useDocumentTreeStore } from 'source/pinia'
 import { useWorkspaceStore } from 'source/pinia/workspace-store'
@@ -165,7 +174,13 @@ watch(quartoProject, project => {
 
 const selectedDirectory = computed(() => configStore.config.openDirectory)
 
-const filterPlaceholder = trans('Filter…')
+const filterPlaceholder = trans('Search files')
+// The filter's shortcut hint reads the same binding the menu's Filter files
+// item carries: the user's custom shortcut, or the default when none is set.
+const filterShortcut = computed(() => {
+  const shortcut = getCustomShortcut('filter-files', configStore.config.shortcuts.ui)
+  return shortcut === undefined ? undefined : explodeShortcut(shortcut)
+})
 const fileManagerMode = computed(() => configStore.config.fileManagerMode)
 const isThin = computed<boolean>(() => fileManagerMode.value === 'thin')
 const isCombined = computed<boolean>(() => fileManagerMode.value === 'combined')
@@ -418,29 +433,31 @@ body #file-manager {
   width: 100%;
   height: 100%;
   position: relative; // Necessary so that the arrow button isn't misplaced
+  // The tab strip, the filter and the component container stack; the
+  // container takes whatever height the two rows above it leave.
+  display: flex;
+  flex-direction: column;
   // Use tabular numbers so that people who use date-based file naming schemes
   // can faster parse the filenames
   font-variant-numeric: tabular-nums;
 
   #component-container {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-x: hidden;
     // NOTE: Due to everything being relative, the component container is file-tree + file-list high
     overflow-y: hidden;
     position: relative;
     width: 100%;
-    height: calc(100% - 37px); // 100% minus the filter
   }
 
   > .system-tablist {
+    flex: 0 0 auto;
     height: 30px;
   }
 
-  &.has-view-tabs #component-container {
-    height: calc(100% - 67px);
-  }
-
-  &.book-view #component-container {
-    height: calc(100% - 30px);
+  .file-manager-filter {
+    flex: 0 0 auto;
   }
 
   &.expanded {
@@ -468,22 +485,6 @@ body #file-manager {
 
     &.hidden { left:-60px; }
   }
-
-  .file-manager-filter {
-    padding: 5px;
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    left: 0;
-    right: 0;
-    height: 37px;
-
-    .file-manager-filter-input {
-      border: 1px solid transparent;
-      padding: 5px;
-      width: 100%;
-    }
-  }
 }
 
 body.dark #file-manager {
@@ -496,54 +497,11 @@ body.dark #file-manager {
 body.darwin {
   #file-manager {
     border-top: 1px solid #d5d5d5;
-
-    #component-container { height: calc(100% - 30px); }
-
-    .file-manager-filter {
-      background-color: transparent;
-      height: 30px;
-      padding: 4px;
-
-      .file-manager-filter-input {
-        background-color: rgb(255, 255, 255, 0.6);
-        width: 100%;
-        font-size: 11px;
-        height: calc(30px - 9px);
-      }
-    }
   }
 
   &.dark {
     #file-manager {
       border-top-color: #505050;
-
-      .file-manager-filter .file-manager-filter-input {
-        background-color: rgb(100, 100, 100, 0.6);
-
-        &::placeholder { color: rgb(150, 150, 150); }
-      }
-    }
-  }
-}
-
-body.win32 {
-  #file-manager {
-    #component-container {
-      height: calc(100% - 34px);
-    }
-
-    .file-manager-filter {
-      padding: 0;
-      border-bottom: 2px solid rgb(230, 230, 230);
-      height: 32px; // The border should be *below* the 30px mark
-
-      .file-manager-filter-input { height: 30px; }
-    }
-  }
-
-  &.dark #file-manager {
-    .file-manager-filter {
-      border-bottom-color: rgb(40, 40, 50);
     }
   }
 }

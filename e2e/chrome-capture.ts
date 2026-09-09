@@ -37,6 +37,38 @@ const THEMES = [ 'light', 'dark' ] as const
 interface Scene {
   name: string
   arrange: (page: Page) => Promise<void>
+  /** Undoes what `arrange` did when a later scene must not inherit it. */
+  restore?: (page: Page) => Promise<void>
+}
+
+const PROJECT_MODULE = '#navigation-sidebar [data-module="project"]'
+const PROJECT_HEADER = `${PROJECT_MODULE} .chrome-section-trigger`
+
+async function waitForModuleState (page: Page, state: 'open' | 'closed'): Promise<void> {
+  await page.locator(`${PROJECT_MODULE}[data-state="${state}"]`).waitFor({ timeout: 10_000 })
+}
+
+/**
+ * The section header's keyboard contract, driven through the real window
+ * with no owned key handler behind it: Space and Enter toggle, Home and End
+ * keep focus on a header, Escape changes nothing.
+ */
+async function proveSectionHeaderKeyboard (page: Page): Promise<void> {
+  const header = page.locator(PROJECT_HEADER)
+  await header.focus()
+  await page.keyboard.press('Space')
+  await waitForModuleState(page, 'closed')
+  await page.keyboard.press('Enter')
+  await waitForModuleState(page, 'open')
+  await page.keyboard.press('Home')
+  await page.keyboard.press('End')
+  const focusedIsHeader = await header.evaluate(element => element === document.activeElement)
+  assert.ok(focusedIsHeader, 'Home and End must keep the focus on a section header')
+  await page.keyboard.press('Escape')
+  await waitForModuleState(page, 'open')
+  await page.keyboard.press('Tab')
+  const focusLeftHeader = await header.evaluate(element => element !== document.activeElement)
+  assert.ok(focusLeftHeader, 'Tab must move the focus off the section header')
 }
 
 /** Flips the app's own dark-mode setting and waits for the body class. */
@@ -95,6 +127,18 @@ const SCENES: Scene[] = [
       await page.locator('#annotations-panel').waitFor({ state: 'visible', timeout: 10_000 })
       await setFileManagerView(page, 'Files')
     }
+  },
+  {
+    // The Project module collapsed to its header alone.
+    name: 'project-collapsed',
+    arrange: async page => {
+      await page.locator(PROJECT_HEADER).click()
+      await waitForModuleState(page, 'closed')
+    },
+    restore: async page => {
+      await page.locator(PROJECT_HEADER).click()
+      await waitForModuleState(page, 'open')
+    }
   }
 ]
 
@@ -125,6 +169,8 @@ async function main (): Promise<void> {
     await page.locator('.cm-content').waitFor({ state: 'visible', timeout: LAUNCH_TIMEOUT_MS })
     // The workspace root is the book, so the file manager offers its Book view.
     await page.locator('#file-manager .system-tab', { hasText: 'Book' }).waitFor({ timeout: 60_000 })
+    await waitForModuleState(page, 'open')
+    await proveSectionHeaderKeyboard(page)
 
     for (const theme of THEMES) {
       await setDarkMode(page, theme === 'dark')
@@ -137,6 +183,7 @@ async function main (): Promise<void> {
           const image = await page.screenshot()
           screenshots.set(filename, image)
           console.error(`chrome-capture: ${filename}`)
+          await scene.restore?.(page)
         }
       }
     }

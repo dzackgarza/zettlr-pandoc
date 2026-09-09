@@ -19,10 +19,9 @@
       @views-resized="fileManagerSplitComponentResized($event)"
     >
       <template #view1>
-        <!-- File manager in the left side of the split view -->
-        <FileManager
+        <!-- The navigation sidebar in the left side of the split view -->
+        <NavigationSidebar
           v-show="mainSplitViewVisibleComponent === 'fileManager'"
-          ref="file-manager"
           :window-id="windowId"
           @jump-to-line="jtl($event.filePath, $event.line, false)"
         />
@@ -178,7 +177,7 @@
  */
 
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
-import FileManager from './file-manager/FileManager.vue'
+import NavigationSidebar from './sidebar/NavigationSidebar.vue'
 import MainSidebar from './sidebar/MainSidebar.vue'
 import EditorPane from './EditorPane.vue'
 import EditorBranch from './EditorBranch.vue'

@@ -18,6 +18,7 @@ import { v4 as uuid4 } from 'uuid'
 import getLanguageFile from '@common/util/get-language-file'
 import type { EditorShortcutName } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
 import { type MenuShortcutName } from '../menu/shortcuts'
+import type { SidebarModuleId } from '@dts/common/sidebar-modules'
 
 export type MarkdownTheme = 'berlin'|'frankfurt'|'bielefeld'|'karl-marx-stadt'|'bordeaux'
 
@@ -299,6 +300,8 @@ export interface ConfigOptions {
   ui: {
     fileManagerSplitSize: [number, number]
     editorSidebarSplitSize: [number, number]
+    /** The left-sidebar modules the user collapsed; the rest are expanded. */
+    sidebarCollapsedModules: SidebarModuleId[]
   }
   system: {
     deleteOnFail: boolean
@@ -375,6 +378,7 @@ export function getConfigTemplate (): ConfigOptions {
     ui: {
       fileManagerSplitSize: [ 20, 80 ],
       editorSidebarSplitSize: [80, 20],
+      sidebarCollapsedModules: [],
     },
     // Visible attachment filetypes
     attachmentExtensions: [],

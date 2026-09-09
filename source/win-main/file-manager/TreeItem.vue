@@ -3,6 +3,8 @@
     <div
       v-bind:class="{
         'tree-item': true,
+        'chrome-row': true,
+        'chrome-row-active': isSelected,
         'collapsed': collapsed && item.type === 'directory',
         [item.type]: true,
         [item.type === 'directory' ? item.settings.color ?? '' : '']: true,
@@ -14,7 +16,7 @@
       v-bind:data-id="item.type === 'file' ? item.id : ''"
       v-bind:data-path="item.path"
       v-bind:style="{
-        'padding-left': `${depth * 15 + 10}px`
+        'padding-left': `calc(${depth} * var(--chrome-indent) + var(--chrome-inset))`
       }"
       v-on:click.stop="sel"
       v-on:auxclick.stop="sel"
@@ -748,8 +750,6 @@ body {
 
     .tree-item {
       white-space: nowrap;
-      display: flex;
-      margin: 8px 0px;
 
       // If a directory is open, ensure the containing folder remains sticked to
       // the top as the user scrolls through its (possibly long) contents.
@@ -815,14 +815,9 @@ body {
         color: rgb(220, 45, 45);
       }
 
-      &.selected .display-text {
-        background-color: var(--system-accent-color, --c-primary);
-        color: var(--system-accent-color-contrast, --c-primary-contrast);
-      }
-
-      &.active .display-text {
-        background-color: rgb(68, 68, 68);
-        color: rgb(255, 255, 255);
+      // The keyboard-navigation cursor: the row reads as hovered.
+      &.active {
+        background-color: var(--chrome-row-hover-bg);
       }
     }
   }
@@ -831,11 +826,6 @@ body {
     .tree-item {
       &.project {
         color: rgb(240, 98, 98);
-      }
-
-      &.active .display-text {
-        background-color: rgb(68, 68, 68);
-        color: rgb(255, 255, 255);
       }
     }
   }
@@ -864,10 +854,6 @@ body.darwin {
         outline-color: var(--system-accent-color, --c-primary);
         outline-style: solid;
       }
-    }
-
-    &.selected .display-text {
-      background-image: linear-gradient(#00000000, #00000022);
     }
   }
 

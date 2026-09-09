@@ -27,6 +27,41 @@ export interface DefaultShortcut {
 }
 
 /**
+ * A CodeMirror-style shortcut taken apart into its modifiers and its key, the
+ * shape ShortcutDisplay.vue renders.
+ */
+export interface ExplodedShortcut {
+  altKey: boolean
+  shiftKey: boolean
+  modKey: boolean
+  ctrlKey: boolean
+  key: string
+}
+
+/**
+ * Takes a CodeMirror-style shortcut (`Mod-Shift-t`) apart into its modifiers
+ * and its key.
+ *
+ * @param   {string}            shortcut  The shortcut
+ *
+ * @return  {ExplodedShortcut}            The exploded shortcut
+ */
+export function explodeShortcut (shortcut: string): ExplodedShortcut {
+  const keys = shortcut.toLowerCase().split(/-/)
+  const altKey = keys.includes('alt') || keys.includes('option')
+  const shiftKey = keys.includes('shift')
+  const modKey = keys.includes('mod') || process.platform === 'darwin' && keys.includes('cmd') || process.platform !== 'darwin' && keys.includes('mod')
+  const ctrlKey = keys.includes('ctrl')
+  return {
+    altKey,
+    shiftKey,
+    modKey,
+    ctrlKey,
+    key: keys[keys.length - 1]
+  }
+}
+
+/**
  * Returns the assigned default keyboard shortcut for the provided action. NOTE
  * that these default keybindings can be custom per platform. The function
  * checks the platform for that.

@@ -1,0 +1,73 @@
+// The main window's chrome primitives: one list-row treatment and one filter
+// input treatment, defined once here and applied by class. The tokens they
+// read are declared in WindowChrome.vue beside the rest of the palette
+// (light on :root, dark on body.dark). The section header is the third
+// primitive; it is a component (SectionHeader.vue) because it owns behavior.
+
+// A selectable list row: full-width tint for hover and for the active row, a
+// left accent bar on the active row, and the text colour unchanged. Never a
+// pill behind the label alone.
+.chrome-row {
+  display: flex;
+  align-items: center;
+  min-height: var(--chrome-row-height);
+  padding: 0 var(--chrome-inset);
+  box-sizing: border-box;
+  font-size: var(--chrome-font-size);
+  border-radius: 0;
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--chrome-row-hover-bg);
+  }
+
+  &.chrome-row-active {
+    background-color: var(--chrome-row-active-bg);
+    box-shadow: inset 3px 0 0 var(--chrome-row-accent);
+  }
+}
+
+// The sidebar's filter input: rounded, bordered, a placeholder, and a
+// right-aligned shortcut hint inside the same box.
+.chrome-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px var(--chrome-inset);
+  padding: 0 8px;
+  height: 30px;
+  box-sizing: border-box;
+  border: 1px solid var(--chrome-input-border);
+  border-radius: 6px;
+  background-color: var(--chrome-input-bg);
+  color: var(--chrome-text);
+
+  &:focus-within {
+    border-color: var(--chrome-row-accent);
+  }
+
+  .chrome-filter-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: var(--chrome-font-size);
+    outline: none;
+
+    &::placeholder {
+      color: var(--chrome-text-muted);
+    }
+  }
+
+  .chrome-filter-hint {
+    flex: 0 0 auto;
+    color: var(--chrome-text-muted);
+    font-size: var(--chrome-section-font-size);
+  }
+}
