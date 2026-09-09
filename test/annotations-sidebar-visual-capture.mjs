@@ -27,10 +27,10 @@ const NARROW = { width: 320, height: 760 }
 const DARK_COMPLETE = { width: 900, height: 760 }
 
 // The fixture's messages are minutes after its BASE_TIME
-// (annotations-sidebar-scene-fixture.ts); the page's clock starts two
-// minutes after it, so the thread's first message reads "2 min. ago" and
-// its reply "Just now".
-const SCENE_NOW = Date.parse('2026-05-20T10:02:00.000Z')
+// (annotations-sidebar-scene-fixture.ts), the latest thirty minutes after
+// it; the page's clock starts one minute past that, so every message is in
+// the past and the thread's first message reads "31 min. ago".
+const SCENE_NOW = Date.parse('2026-05-20T10:31:00.000Z')
 
 const scene = await openScene({
   ...WIDE,
@@ -93,14 +93,14 @@ if (!diag.composerPresent) {
 if (diag.resolveCount !== 1) {
   throw new Error(`03-selected-thread-light: Resolve must render exactly once, got ${diag.resolveCount}`)
 }
-assert.deepStrictEqual(diag.messageTimes, ['2 min. ago', 'Just now'], '03-selected-thread-light: relative times against the page clock')
+assert.deepStrictEqual(diag.messageTimes, ['31 min. ago', '29 min. ago'], '03-selected-thread-light: relative times against the page clock')
 await scene.capture('03-selected-thread-light')
 
 // The clock moves two minutes: every relative time moves with it, with no
 // reload and no store change.
 await page.clock.runFor(2 * 60_000)
 diag = await diagnostics()
-assert.deepStrictEqual(diag.messageTimes, ['4 min. ago', '2 min. ago'], 'relative times must follow the clock')
+assert.deepStrictEqual(diag.messageTimes, ['33 min. ago', '31 min. ago'], 'relative times must follow the clock')
 
 // Mod-Enter in the composer sends the trimmed draft to the provider as the
 // owner's message on the selected annotation; Escape discards a draft.

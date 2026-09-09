@@ -64,6 +64,7 @@
             <AnnotationsTab
               @jump-to-line="genericJtl($event)"
               @begin-reattach="beginAnnotationReattach($event)"
+              @close="configStore.setConfigValue('window.sidebarVisible', false)"
             />
           </template>
         </SplitView>

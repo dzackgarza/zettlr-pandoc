@@ -81,6 +81,7 @@ const captures = {
     entry: "test/editor-annotations-visual-entry.ts",
     bundle: "editor-annotations-visual-bundle.js",
     driver: "test/editor-annotations-visual-capture.mjs",
+    loader: ".svg=dataurl",
   },
   "annotations-panel": {
     build: "test/visual-build.cjs",

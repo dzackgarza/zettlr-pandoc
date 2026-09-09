@@ -2,9 +2,11 @@ import { EditorState } from '@codemirror/state'
 import { EditorView, lineNumbers } from '@codemirror/view'
 import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
 import {
+  setActiveAnnotationEffect,
   setAnnotationSessionEffect,
   textAnnotationsExtension
 } from 'source/common/modules/markdown-editor/plugins/text-annotations'
+import loadIcons from 'source/common/modules/window-register/load-icons'
 import type { AnnotationSet, TextAnnotation } from 'source/types/common/annotation-domain'
 
 declare global {
@@ -101,6 +103,8 @@ function sceneAnnotations (scene: string): AnnotationSet {
 }
 
 async function mount (): Promise<void> {
+  // The gutter chip's glyph is a registered Clarity icon, as in the app.
+  await loadIcons()
   const dark = document.body.dataset.dark === 'true'
   const scene = document.body.dataset.scene ?? ''
   const host = document.querySelector<HTMLElement>('#editor')
@@ -121,7 +125,13 @@ async function mount (): Promise<void> {
       ]
     })
   })
-  view.dispatch({ effects: setAnnotationSessionEffect.of(sceneAnnotations(scene)) })
+  const annotations = sceneAnnotations(scene)
+  view.dispatch({ effects: setAnnotationSessionEffect.of(annotations) })
+  if (scene === '02-multiple-open-annotations') {
+    // One of the open annotations is the one whose card is open in the
+    // panel: its target carries the block tint and the stronger chip.
+    view.dispatch({ effects: setActiveAnnotationEffect.of(annotations.items[0].annotationId) })
+  }
   view.focus()
 
   window.annotationsVisualDiagnostics = () => {

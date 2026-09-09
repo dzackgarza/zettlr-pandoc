@@ -1,0 +1,190 @@
+// The annotation review panel's tokens and primitives, defined once here and
+// read by every panel component. The tokens are the collaboration set of
+// Design-AI-Annotations-UI.md §11 plus the panel's type scale; light values
+// on :root, dark values on body.dark. No component states a colour of its own.
+
+:root {
+  --annotation-text: rgb(36, 39, 43);
+  --annotation-text-muted: rgb(110, 116, 124);
+  --annotation-border: rgba(0, 0, 0, 0.12);
+  --annotation-surface: rgb(255, 255, 255);
+  --annotation-surface-muted: rgba(0, 0, 0, 0.03);
+  --annotation-active-surface: rgba(35, 122, 255, 0.08);
+  --annotation-accent: var(--system-accent-color, rgb(35, 122, 255));
+  --annotation-accent-muted: rgba(35, 122, 255, 0.35);
+  --annotation-accent-contrast: rgb(255, 255, 255);
+  --annotation-warning: rgb(176, 108, 0);
+  --annotation-resolved: rgb(40, 140, 90);
+  --proposal-pending: rgb(176, 108, 0);
+  --annotation-agent: rgb(112, 76, 214);
+  --annotation-font-size: 13px;
+  --annotation-small-font-size: 11px;
+  --annotation-radius: 8px;
+  --annotation-gap: 8px;
+}
+
+body.dark {
+  --annotation-text: rgb(230, 230, 230);
+  --annotation-text-muted: rgb(160, 166, 174);
+  --annotation-border: rgba(255, 255, 255, 0.14);
+  --annotation-surface: rgb(38, 41, 46);
+  --annotation-surface-muted: rgba(255, 255, 255, 0.04);
+  --annotation-active-surface: rgba(90, 160, 255, 0.14);
+  --annotation-accent-muted: rgba(90, 160, 255, 0.4);
+  --annotation-accent-contrast: rgb(255, 255, 255);
+  --annotation-warning: rgb(240, 169, 60);
+  --annotation-resolved: rgb(96, 200, 140);
+  --proposal-pending: rgb(240, 169, 60);
+  --annotation-agent: rgb(170, 140, 255);
+}
+
+// A flat bordered card: one hairline, no shadow, no tint.
+.annotation-card {
+  box-sizing: border-box;
+  border: 1px solid var(--annotation-border);
+  border-radius: var(--annotation-radius);
+  background-color: var(--annotation-surface);
+  padding: var(--annotation-gap);
+  color: var(--annotation-text);
+  font-size: var(--annotation-font-size);
+}
+
+// A row inside a card: label left, detail right.
+.annotation-card-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.annotation-card-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+}
+
+// Small muted text: locators, times, notes.
+.annotation-muted {
+  color: var(--annotation-text-muted);
+  font-size: var(--annotation-small-font-size);
+}
+
+// A chip: a count, a context, a shortcut.
+.annotation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--annotation-border);
+  border-radius: 999px;
+  color: var(--annotation-text-muted);
+  font-size: var(--annotation-small-font-size);
+  white-space: nowrap;
+}
+
+// The lifecycle pill: the state a card is in, always spelled out.
+.annotation-lifecycle-pill {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border: 1px solid var(--annotation-border);
+  border-radius: 999px;
+  font-size: var(--annotation-small-font-size);
+  color: var(--annotation-text-muted);
+
+  &.open {
+    border-color: var(--annotation-accent-muted);
+    color: var(--annotation-accent);
+  }
+
+  &.resolved {
+    border-color: var(--annotation-resolved);
+    color: var(--annotation-resolved);
+  }
+}
+
+// A line locator: the muted "Line 12" that jumps when it can.
+button.annotation-line-locator {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--annotation-text-muted);
+  font: inherit;
+  font-size: var(--annotation-small-font-size);
+  cursor: pointer;
+  text-decoration: underline dotted;
+
+  &:hover {
+    color: var(--annotation-text);
+  }
+}
+
+// Buttons: secondary by default, one primary per surface.
+button.annotation-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--annotation-border);
+  border-radius: 6px;
+  background-color: var(--annotation-surface);
+  color: var(--annotation-text);
+  font: inherit;
+  font-size: var(--annotation-small-font-size);
+  line-height: 1.2;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background-color: var(--annotation-surface-muted);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  &.annotation-button-primary {
+    border-color: transparent;
+    background-color: var(--annotation-accent);
+    color: var(--annotation-accent-contrast);
+
+    &:hover:not(:disabled) {
+      background-color: var(--annotation-accent);
+      opacity: 0.9;
+    }
+  }
+
+  cds-icon {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+// An icon-only control in a header row.
+button.annotation-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--annotation-text-muted);
+  cursor: pointer;
+
+  &:hover,
+  &.active {
+    background-color: var(--annotation-surface-muted);
+    color: var(--annotation-text);
+  }
+
+  cds-icon {
+    width: 14px;
+    height: 14px;
+  }
+}

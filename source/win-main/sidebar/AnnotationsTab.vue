@@ -7,13 +7,17 @@
     <AnnotationHeader
       v-bind:open-count="openCount"
       v-bind:query="filterQuery"
+      v-bind:view="collaborationStore.showResolved ? 'resolved' : 'open'"
       v-on:update:query="filterQuery = $event"
+      v-on:set-view="collaborationStore.toggleShowResolved($event === 'resolved')"
+      v-on:close="emit('close')"
     ></AnnotationHeader>
 
     <AnnotationList
       v-bind:cards="filteredCards"
       v-bind:show-resolved="collaborationStore.showResolved"
       v-bind:selected-id="collaborationStore.selectedAnnotationId"
+      v-bind:now="now"
       v-on:select="collaborationStore.selectAnnotation($event)"
       v-on:jump-to-line="emit('jump-to-line', $event)"
       v-on:toggle-resolved="collaborationStore.toggleShowResolved()"
@@ -22,6 +26,8 @@
     <AnnotationInspector
       v-if="selectedCard !== undefined"
       v-bind:card="selectedCard"
+      v-bind:now="now"
+      v-bind:document-name="documentName"
       v-on:close="collaborationStore.selectAnnotation(null)"
       v-on:back="collaborationStore.selectAnnotation(null)"
       v-on:jump-to-line="emit('jump-to-line', $event)"
@@ -71,17 +77,22 @@
  *                  its own (I4); this root is the only place a review
  *                  decision is raised from.
  *
+ *                  One minute clock, owned here, feeds every relative time
+ *                  the list cards and the thread show.
+ *
  * END HEADER
  */
 
 import { computed, ref, watch } from 'vue'
 import { trans } from '@common/i18n-renderer'
 import showToast from '@common/util/show-toast'
+import { pathBasename } from '@common/util/renderer-path-polyfill'
 import AnnotationHeader from './annotations/AnnotationHeader.vue'
 import AnnotationList from './annotations/AnnotationList.vue'
 import AnnotationInspector from './annotations/AnnotationInspector.vue'
 import SuggestionInspector from './annotations/SuggestionInspector.vue'
 import { buildAnnotationCards, filterCards, openAnnotationCount, suggestionIdsForPacketIds, type AnnotationCardView } from './annotations/annotation-panel-model'
+import { useMinuteClock } from './annotations/use-minute-clock'
 import { useDocumentCollaborationStore, useDocumentTreeStore } from 'source/pinia'
 import type { TextAnnotation } from '@dts/common/annotation-domain'
 import type { ReviewFailure } from 'source/app/service-providers/documents/document-collaboration-application-service'
@@ -92,13 +103,17 @@ const emit = defineEmits<{
   // range comes from a fresh editor selection, which this panel does not
   // own (see App.vue -> MainEditor.vue).
   (e: 'begin-reattach', annotationId: string): void
+  /** The header's close: the parent hides the pane. */
+  (e: 'close'): void
 }>()
 
 const collaborationStore = useDocumentCollaborationStore()
 const documentTreeStore = useDocumentTreeStore()
 
 const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
+const documentName = computed(() => activeFile.value === undefined ? undefined : pathBasename(activeFile.value.path))
 const filterQuery = ref('')
+const now = useMinuteClock()
 
 const session = computed(() => activeFile.value === undefined ? undefined : collaborationStore.getSession(activeFile.value.path))
 const annotations = computed(() => session.value?.annotations.items ?? [])
@@ -214,6 +229,8 @@ function onReviewComment (text: string): void {
 </script>
 
 <style lang="less">
+@import './annotations/annotation-panel.less';
+
 body {
   .annotations-tab {
     container-type: inline-size;
@@ -224,6 +241,8 @@ body {
     padding: 10px;
     box-sizing: border-box;
     overflow-y: auto;
+    color: var(--annotation-text);
+    font-size: var(--annotation-font-size);
   }
 }
 

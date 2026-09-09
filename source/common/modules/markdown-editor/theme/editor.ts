@@ -109,6 +109,7 @@ export interface ThemeVars {
   '--zettlr-editor-annotation-marker-resolved-fg': string
   '--zettlr-editor-annotation-marker-orphaned-fg': string
   '--zettlr-editor-annotation-draft-border': string
+  '--zettlr-editor-annotation-line-active-bg': string
   /** CSS `opacity` value */
   '--zettlr-editor-opacity': string|number
   /** CSS `text-decoration` value */
@@ -226,6 +227,7 @@ const annotationLight = {
   markerResolvedFg: 'var(--zettlr-editor-scroller-color)',
   markerOrphanedFg: '#9a5b00',
   draftBorder: '#8a6600',
+  lineActiveBg: 'rgba(191, 143, 0, 0.10)',
 }
 
 const annotationDark = {
@@ -239,6 +241,7 @@ const annotationDark = {
   markerResolvedFg: 'var(--zettlr-editor-scroller-color)',
   markerOrphanedFg: '#f0a93c',
   draftBorder: '#e6b333',
+  lineActiveBg: 'rgba(230, 179, 51, 0.12)',
 }
 
 const opacity = 0.65
@@ -294,6 +297,7 @@ export const defaultVarsLight: ThemeVars = {
   '--zettlr-editor-annotation-marker-resolved-fg': annotationLight.markerResolvedFg,
   '--zettlr-editor-annotation-marker-orphaned-fg': annotationLight.markerOrphanedFg,
   '--zettlr-editor-annotation-draft-border': annotationLight.draftBorder,
+  '--zettlr-editor-annotation-line-active-bg': annotationLight.lineActiveBg,
   '--zettlr-editor-opacity': opacity,
   '--zettlr-editor-line-decoration': linkDecoration,
 }
@@ -347,6 +351,7 @@ export const defaultVarsDark: ThemeVars = {
   '--zettlr-editor-annotation-marker-resolved-fg': annotationDark.markerResolvedFg,
   '--zettlr-editor-annotation-marker-orphaned-fg': annotationDark.markerOrphanedFg,
   '--zettlr-editor-annotation-draft-border': annotationDark.draftBorder,
+  '--zettlr-editor-annotation-line-active-bg': annotationDark.lineActiveBg,
   '--zettlr-editor-opacity': opacity,
   '--zettlr-editor-line-decoration': linkDecoration,
 }

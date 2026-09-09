@@ -114,23 +114,37 @@ class AnnotationGutterMarker extends GutterMarker {
     number.textContent = this.lineNumberLabel
     wrapper.appendChild(number)
 
+    // The chip: a comment glyph and the ordinal the card carries (S4). The
+    // glyph is a registered Clarity icon, so the chip's text is the ordinal
+    // alone.
     const badge = document.createElement('span')
     badge.className = 'cm-textAnnotation-gutterMarker-badge'
+    const glyph = document.createElement('cds-icon')
+    glyph.className = 'cm-textAnnotation-gutterMarker-glyph'
+    glyph.setAttribute('shape', 'chat-bubble')
+    glyph.setAttribute('role', 'presentation')
+    badge.appendChild(glyph)
+    const ordinal = document.createElement('span')
+    ordinal.className = 'cm-textAnnotation-gutterMarker-ordinal'
     if (this.kind === 'overlapping') {
-      badge.textContent = String(this.count)
+      ordinal.textContent = String(this.count)
       badge.title = `${this.count} annotations`
     } else if (this.kind === 'orphaned') {
-      badge.textContent = String(this.ordinals[0])
+      ordinal.textContent = String(this.ordinals[0])
       badge.title = `Annotation ${this.ordinals[0]} — target lost, needs reattaching`
     } else {
-      badge.textContent = String(this.ordinals[0])
+      ordinal.textContent = String(this.ordinals[0])
       badge.title = `Annotation ${this.ordinals[0]}`
     }
+    badge.appendChild(ordinal)
     wrapper.appendChild(badge)
 
     return wrapper
   }
 }
+
+/** The block tint of the active target's lines, with its left accent bar. */
+const activeLineDecoration = Decoration.line({ class: 'cm-textAnnotation-activeLine' })
 
 const markClass = (active: boolean, resolved: boolean): string => [
   'cm-textAnnotation-mark',
@@ -172,14 +186,25 @@ function buildFieldValue (base: TextAnnotationsState, doc: EditorState['doc']): 
       const from = Math.min(anchor.from, doc.length)
       const to = Math.min(anchor.to, doc.length)
       lineNumber = doc.lineAt(from).number
+      const active = annotation.annotationId === base.activeAnnotationId
       if (from < to) {
         markRanges.push(
-          Decoration.mark({ class: markClass(annotation.annotationId === base.activeAnnotationId, annotation.state === 'resolved') })
+          Decoration.mark({ class: markClass(active, annotation.state === 'resolved') })
             .range(from, to)
         )
       }
+      if (active) {
+        // The active target's block tint: every line its range touches.
+        const lastLine = doc.lineAt(Math.max(from, to - 1)).number
+        for (let line = lineNumber; line <= lastLine; line++) {
+          markRanges.push(activeLineDecoration.range(doc.line(line).from))
+        }
+      }
     } else if (anchor.state === 'point') {
       lineNumber = doc.lineAt(Math.min(anchor.at, doc.length)).number
+      if (annotation.annotationId === base.activeAnnotationId) {
+        markRanges.push(activeLineDecoration.range(doc.line(lineNumber).from))
+      }
     } else {
       // Orphaned: no position survived. Line 1 is the one deterministic
       // location every document has to hang the locator on.
@@ -304,31 +329,43 @@ const textAnnotationsTheme = EditorView.baseTheme({
   '.cm-textAnnotation-draft': {
     borderBottom: '2px dotted var(--zettlr-editor-annotation-draft-border)'
   },
+  '.cm-textAnnotation-activeLine': {
+    backgroundColor: 'var(--zettlr-editor-annotation-line-active-bg)',
+    boxShadow: 'inset 3px 0 0 var(--zettlr-editor-annotation-marker-active-bg)'
+  },
   '.cm-textAnnotation-gutterMarker': {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: '3px',
+    gap: '4px',
     paddingRight: '2px'
   },
   '.cm-textAnnotation-gutterMarker-number': {
     opacity: '0.7'
   },
+  // The chip: a rounded square carrying the comment glyph and the ordinal.
   '.cm-textAnnotation-gutterMarker-badge': {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: '1.15em',
-    height: '1.15em',
-    borderRadius: '50%',
-    fontSize: '0.75em',
+    gap: '2px',
+    height: '1.3em',
+    borderRadius: '4px',
+    fontSize: '0.72em',
+    fontWeight: '600',
     lineHeight: '1',
-    padding: '0 2px',
+    padding: '0 4px',
     boxSizing: 'content-box',
     backgroundColor: 'var(--zettlr-editor-annotation-marker-bg)',
     color: 'var(--zettlr-editor-annotation-marker-fg)'
   },
+  '.cm-textAnnotation-gutterMarker-glyph': {
+    width: '1em',
+    height: '1em',
+    color: 'inherit'
+  },
   '.cm-textAnnotation-gutterMarker-active .cm-textAnnotation-gutterMarker-badge': {
+    backgroundColor: 'var(--zettlr-editor-annotation-marker-active-bg)',
     outline: '2px solid var(--zettlr-editor-annotation-marker-active-bg)',
     outlineOffset: '1px'
   },
