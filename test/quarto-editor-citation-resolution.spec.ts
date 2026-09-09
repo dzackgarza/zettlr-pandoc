@@ -92,25 +92,27 @@ describe('Quarto editor citation resolution and startup race', function () {
     name: 'categories.md',
     dir: path.join(ROOT, 'foundations'),
     type: 'file',
-    extension: '.md',
-    parent: null,
-    hash: 'test-hash',
+    ext: '.md',
     modtime: 1000,
     creationtime: 1000,
     size: 100,
     tags: [],
-    citations: [],
-    targets: [],
     links: [],
-    headings: [],
     citekeys: ['Stacks'],
-    yamlTitle: null,
+    yamlTitle: undefined,
     firstHeading: null,
     frontmatter: null,
+    bom: '',
+    linefeed: '\n',
     wordCount: 10,
     charCount: 50,
-    readtime: 1,
-    id: 'test-id'
+    id: 'test-id',
+    references: {
+      documentPath: path.join(ROOT, 'foundations', 'categories.md'),
+      sourceHash: 'test-hash',
+      definitions: [],
+      occurrences: []
+    }
   }
 
   before(async function () {
