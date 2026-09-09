@@ -149,13 +149,13 @@ async function teardown (fixture: RunningFixture): Promise<void> {
   assertCleanExit(fixture.getOutput())
 }
 
-/** Opens the global search pane the way a user does: the toolbar toggle. */
+/** Opens the global search pane the way a user does: the Search all files menu item. */
 async function openSearchPane (page: Page, timeoutMs: number): Promise<void> {
   const queryInput = page.locator(QUERY_INPUT)
   if (!(await queryInput.isVisible())) {
-    await page
-      .locator('#toolbar-toggle-file-manager button[title="Search across all files"]')
-      .click()
+    await page.evaluate(() => {
+      window.ipc.send('menu-provider', { command: 'click-menu-item', payload: 'menu.find_dir' })
+    })
     await queryInput.waitFor({ state: 'visible', timeout: timeoutMs })
   }
 }
@@ -304,14 +304,13 @@ describe('global-search and project-properties failure recovery', function () {
     assert.ok(running.browser, 'The application must be running')
     const mainPage = await findEditorPage(running.browser, this.timeout())
 
-    // The preceding search test leaves the shared split view on Global Search.
-    // Select File Manager through its real toolbar control before opening the
-    // workspace context menu.
-    const fileManagerButton = mainPage.locator(
-      '#toolbar-toggle-file-manager button[title="Toggle File Manager"]'
-    )
+    // The Project module hosts the file manager; it may be collapsed or the
+    // sidebar hidden after the preceding tests, so reveal it through the
+    // Filter files menu item before opening the workspace context menu.
     if (!(await mainPage.locator('#file-manager').isVisible())) {
-      await fileManagerButton.click()
+      await mainPage.evaluate(() => {
+        window.ipc.send('menu-provider', { command: 'click-menu-item', payload: 'menu.filter_files' })
+      })
       await mainPage.locator('#file-manager').waitFor({
         state: 'visible',
         timeout: 10_000

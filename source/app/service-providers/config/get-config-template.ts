@@ -294,7 +294,7 @@ export interface ConfigOptions {
     vibrancy: boolean
     sidebarVisible: boolean
     fileManagerVisible: boolean
-    currentSidebarTab: 'toc'|'references'|'relatedFiles'|'attachments'|'annotations'
+    currentSidebarTab: 'references'|'relatedFiles'|'attachments'|'annotations'
     recentGlobalSearches: string[]
   }
   ui: {
@@ -372,7 +372,7 @@ export function getConfigTemplate (): ConfigOptions {
       // Store a few GUI related settings here as well
       fileManagerVisible: true,
       sidebarVisible: false,
-      currentSidebarTab: 'toc',
+      currentSidebarTab: 'references',
       recentGlobalSearches: [],
     },
     ui: {

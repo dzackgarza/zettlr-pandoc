@@ -21,16 +21,12 @@
       <template #view1>
         <!-- The navigation sidebar in the left side of the split view -->
         <NavigationSidebar
-          v-show="mainSplitViewVisibleComponent === 'fileManager'"
+          ref="navigationSidebar"
           :window-id="windowId"
           @jump-to-line="jtl($event.filePath, $event.line, false)"
-        />
-        <!-- ... or the global search, if selected -->
-        <GlobalSearch
-          v-show="mainSplitViewVisibleComponent === 'globalSearch'"
-          ref="globalSearchComponent"
-          :window-id="windowId"
           @jtl="(filePath, lineNumber, newTab) => jtl(filePath, lineNumber, newTab)"
+          @jump-to-active-line="genericJtl($event)"
+          @move-section="moveSection($event)"
         />
       </template>
       <template #view2>
@@ -71,7 +67,6 @@
           <template #view2>
             <!-- Second side: Sidebar -->
             <MainSidebar
-              @move-section="moveSection($event)"
               @jump-to-line="genericJtl($event)"
               @begin-reattach="beginAnnotationReattach($event)"
             />
@@ -178,7 +173,6 @@ import MainSidebar from './sidebar/MainSidebar.vue'
 import EditorPane from './EditorPane.vue'
 import EditorBranch from './EditorBranch.vue'
 import SplitView from '../common/vue/window/SplitView.vue'
-import GlobalSearch from './GlobalSearch.vue'
 import TikzLightbox from './TikzLightbox.vue'
 import PopoverExport from './PopoverExport.vue'
 import PopoverStats from './PopoverStats.vue'
@@ -190,6 +184,7 @@ import PopoverPandoc from './PopoverPandoc.vue'
 import PandocQuickHelp from './PandocQuickHelp.vue'
 import CommandLauncher from './launcher/CommandLauncher.vue'
 import type { LauncherView } from './launcher/launcher-state'
+import type { RevealTarget } from './sidebar/sidebar-modules'
 import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
 import type {
   ConfirmReferenceLabelOutcome,
@@ -269,7 +264,6 @@ const searchParams = new URLSearchParams(window.location.search)
 const windowId = searchParams.get('window_id')!
 
 const fileManagerVisible = computed<boolean>(() => configStore.config.window.fileManagerVisible)
-const mainSplitViewVisibleComponent = ref<'fileManager'|'globalSearch'>('fileManager')
 const isUpdateAvailable = ref(false)
 const hasVibrancy = computed(() => configStore.config.window.vibrancy && process.platform === 'darwin')
 
@@ -564,19 +558,11 @@ const taskOngoing = computed(() => LRTStore.tasks.filter(t => t.status === TaskS
 const toolbarControls = computed<ToolbarControl[]>(() => {
   return [
     {
-      type: 'three-way-toggle',
-      id: 'toggle-file-manager',
-      stateOne: {
-        id: 'fileManager',
-        title: trans('Toggle File Manager'),
-        icon: 'hard-disk'
-      },
-      stateTwo: {
-        id: 'globalSearch',
-        title: trans('Search across all files'),
-        icon: 'search'
-      },
-      initialState: (fileManagerVisible.value) ? mainSplitViewVisibleComponent.value : undefined
+      type: 'toggle',
+      id: 'toggle-navigation-sidebar',
+      title: trans('Toggle Sidebar'),
+      icon: 'hard-disk',
+      initialState: fileManagerVisible.value
     },
     {
       type: 'button',
@@ -756,15 +742,15 @@ interface SplitViewHandle {
   unhide: () => void
 }
 
-/** The surface GlobalSearch.vue exposes to its template refs. */
-interface GlobalSearchHandle {
-  focusQueryInput: () => void
-  startSearch: (overrideQuery?: string) => void
+/** The surface NavigationSidebar.vue exposes to its template ref. */
+interface NavigationSidebarHandle {
+  reveal: (target: RevealTarget) => Promise<void>
+  startSearch: (terms: string) => Promise<void>
 }
 
 const editorSidebarSplitComponent = ref<SplitViewHandle|null>(null)
 const fileManagerSplitComponent = ref<SplitViewHandle|null>(null)
-const globalSearchComponent = ref<GlobalSearchHandle|null>(null)
+const navigationSidebar = ref<NavigationSidebarHandle|null>(null)
 const paneConfiguration = computed(() => documentTreeStore.paneStructure)
 const lastLeafId = computed(() => documentTreeStore.lastLeafId)
 const distractionFree = computed<boolean>(() => windowStateStore.distractionFreeMode !== undefined)
@@ -844,15 +830,6 @@ watch(fileManagerVisible, (newValue) => {
   }
 })
 
-watch(mainSplitViewVisibleComponent, (newValue) => {
-  if (newValue === 'globalSearch') {
-    // The global search just became visible, so focus the query input
-    nextTick().then(() => {
-      globalSearchComponent.value?.focusQueryInput()
-    }).catch(e => console.error(e))
-  }
-})
-
 watch(distractionFree, (newValue) => {
   if (newValue) {
     // Enter distraction free mode
@@ -917,30 +894,13 @@ onMounted(() => {
         })
         .catch(err => console.error(err))
     },
-    'global-search': () => {
-      configStore.setConfigValue('window.fileManagerVisible', true)
-      mainSplitViewVisibleComponent.value = 'globalSearch'
-      // Focus input
-      nextTick()
-        .then(() => { globalSearchComponent.value?.focusQueryInput() })
-        .catch(err => console.error(err))
-    },
+    'global-search': () => navigationSidebar.value?.reveal({ module: 'search', focus: 'search-query' }),
     'toggle-navigation-sidebar': () => {
-      if (fileManagerVisible.value && mainSplitViewVisibleComponent.value === 'fileManager') {
-        configStore.setConfigValue('window.fileManagerVisible', false)
-      } else if (!fileManagerVisible.value) {
-        configStore.setConfigValue('window.fileManagerVisible', true)
-        mainSplitViewVisibleComponent.value = 'fileManager'
-      } else if (mainSplitViewVisibleComponent.value === 'globalSearch') {
-        mainSplitViewVisibleComponent.value = 'fileManager'
-      }
+      configStore.setConfigValue('window.fileManagerVisible', !fileManagerVisible.value)
     },
-    'filter-files': () => {
-      // We need to immediately make the file manager visible, which will
-      // -- in the next tick -- focus its filter input.
-      configStore.setConfigValue('window.fileManagerVisible', true)
-      mainSplitViewVisibleComponent.value = 'fileManager'
-    },
+    // The file manager focuses its own filter on the next tick; the sidebar
+    // and the Project module only have to be visible by then.
+    'filter-files': () => navigationSidebar.value?.reveal({ module: 'project', focus: 'none' }),
     export: () => { showExportPopover.value = true },
     'pandoc-quick-help': () => { showPandocQuickHelp.value = true },
     print: () => {
@@ -1109,14 +1069,8 @@ function moveSection (data: { from: number, to: number }): void {
   editorCommands.value.moveSection = !editorCommands.value.moveSection
 }
 
-function startGlobalSearch (terms: string): void {
-  mainSplitViewVisibleComponent.value = 'globalSearch'
-  configStore.setConfigValue('window.fileManagerVisible', true)
-  nextTick()
-    .then(() => {
-      globalSearchComponent.value?.startSearch(terms)
-    })
-    .catch(err => console.error(err))
+async function startGlobalSearch (terms: string): Promise<void> {
+  await navigationSidebar.value?.startSearch(terms)
 }
 
 function handleClick (clickedID?: string): void {
@@ -1207,15 +1161,8 @@ function handleToggle (controlState: { id?: string, state?: string | boolean }):
   const { id, state } = controlState
   if (id === 'toggle-sidebar') {
     configStore.setConfigValue('window.sidebarVisible', state)
-  } else if (id === 'toggle-file-manager') {
-    // Since this is a three-way-toggle, we have to inspect the state.
-    configStore.setConfigValue('window.fileManagerVisible', state !== undefined)
-    if (typeof state === 'string' && (state === 'fileManager' || state === 'globalSearch')) {
-      // Set the shown component to the correct one
-      mainSplitViewVisibleComponent.value = state
-    } else {
-      console.warn(`Could not toggle main split component; expected state to be 'fileManager' or 'globalSearch', received ${state}`)
-    }
+  } else if (id === 'toggle-navigation-sidebar') {
+    configStore.setConfigValue('window.fileManagerVisible', state === true)
   }
 }
 

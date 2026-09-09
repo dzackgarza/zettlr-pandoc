@@ -5,9 +5,7 @@
     role="region"
     aria-label="File Manager"
     v-bind:class="{
-      expanded: isExpanded,
-      'has-view-tabs': quartoProject !== undefined,
-      'book-view': currentView === 'book'
+      expanded: isExpanded
     }"
     v-on:keydown="maybeNavigate"
     v-on:mouseenter="maybeShowArrowButton"
@@ -18,12 +16,6 @@
     v-on:dragstart="lockDirectoryTree"
     v-on:dragend="unlockDirectoryTree"
   >
-    <TabBar
-      v-if="quartoProject !== undefined"
-      v-bind:tabs="navigationTabs"
-      v-bind:current-tab="currentView"
-      v-on:tab="currentView = $event as 'files'|'book'"
-    ></TabBar>
     <!-- Display the arrow button in case we have a non-combined view -->
     <div
       id="arrow-button"
@@ -41,7 +33,7 @@
     </div>
 
     <!-- Filter field -->
-    <div v-if="currentView === 'files'" class="chrome-filter file-manager-filter">
+    <div class="chrome-filter file-manager-filter">
       <input
         ref="quickFilter"
         v-model="filterQuery"
@@ -60,16 +52,8 @@
     </div>
 
     <div id="component-container">
-      <QuartoBookOutline
-        v-if="currentView === 'book' && quartoProject !== undefined"
-        v-bind:root-path="quartoProject.path"
-        v-bind:navigation="quartoProject.navigation"
-        v-bind:active-item="activeFilePath"
-        v-on:jump="emit('jump-to-line', $event)"
-      ></QuartoBookOutline>
       <!-- Render a the file-tree -->
       <FileTree
-        v-show="currentView === 'files'"
         ref="fileTreeComponent"
         v-bind:is-visible="fileTreeVisible"
         v-bind:filter-query="filterQuery"
@@ -86,7 +70,7 @@
         idea what is happening, please come forward.
       -->
       <FileList
-        v-show="currentView === 'files' && !isCombined"
+        v-show="!isCombined"
         ref="fileListComponent"
         v-bind:is-visible="isFileListVisible"
         v-bind:filter-query="filterQuery"
@@ -113,14 +97,12 @@
  */
 import FileTree from './FileTree.vue'
 import FileList from './FileList.vue'
-import QuartoBookOutline from './QuartoBookOutline.vue'
-import TabBar, { type TabbarControl } from '@common/vue/TabBar.vue'
 import ShortcutDisplay from '@common/vue/ShortcutDisplay.vue'
 import { trans } from '@common/i18n-renderer'
 import { explodeShortcut } from '@common/util/shortcuts'
 import { getCustomShortcut } from '@providers/menu/shortcuts'
 import { nextTick, ref, computed, watch, onMounted } from 'vue'
-import { useConfigStore, useDocumentTreeStore } from 'source/pinia'
+import { useConfigStore } from 'source/pinia'
 import { useWorkspaceStore } from 'source/pinia/workspace-store'
 
 const ipcRenderer = window.ipc
@@ -143,34 +125,6 @@ const fileListComponent = ref<typeof FileList|null>(null)
 
 const workspaceStore = useWorkspaceStore()
 const configStore = useConfigStore()
-const documentTreeStore = useDocumentTreeStore()
-const currentView = ref<'files'|'book'>('files')
-const navigationTabs: TabbarControl[] = [
-  { id: 'files', target: 'file-tree', label: trans('Files') },
-  { id: 'book', target: 'quarto-book-navigation', label: trans('Book') }
-]
-const activeFilePath = computed(() => {
-  const activeLeaf = documentTreeStore.paneData.find(leaf => leaf.id === documentTreeStore.lastLeafId)
-  return documentTreeStore.lastLeafActiveFile?.path ?? activeLeaf?.activeFile?.path
-})
-const quartoProject = computed(() => {
-  const projects = workspaceStore.rootDescriptors
-    .filter(root => root.type === 'directory' && root.settings.project?.manifest.kind === 'quarto')
-    .map(root => {
-      if (root.type !== 'directory' || root.settings.project?.manifest.kind !== 'quarto') {
-        throw new Error('Invalid Quarto project descriptor')
-      }
-      return {
-        path: root.path,
-        navigation: root.settings.project.manifest.navigation
-      }
-    })
-  return projects.find(project => activeFilePath.value?.startsWith(project.path) === true) ?? projects[0]
-})
-
-watch(quartoProject, project => {
-  currentView.value = project === undefined ? 'files' : 'book'
-})
 
 const selectedDirectory = computed(() => configStore.config.openDirectory)
 
@@ -449,11 +403,6 @@ body #file-manager {
     overflow-y: hidden;
     position: relative;
     width: 100%;
-  }
-
-  > .system-tablist {
-    flex: 0 0 auto;
-    height: 30px;
   }
 
   .file-manager-filter {

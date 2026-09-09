@@ -151,14 +151,8 @@ async function placeCursor (page: Page, offset: number): Promise<void> {
   }, offset)
 }
 
-/**
- * Puts the focus outside the editor, in the sidebar's filter input. The
- * workspace root is a Quarto book, and any workspace update resets the file
- * manager to its Book view (where the filter does not exist), so the Files
- * view is selected first every time.
- */
+/** Puts the focus outside the editor, in the sidebar's filter input. */
 async function focusOutsideEditor (page: Page): Promise<void> {
-  await page.locator('#file-manager .system-tab', { hasText: 'Files' }).click({ timeout: 30_000 })
   await page.locator(FILTER_INPUT).focus({ timeout: 30_000 })
 }
 
@@ -204,7 +198,7 @@ describe('the Ctrl+P command launcher', function () {
     page = await findEditorPage(browser, this.timeout())
     await hideDevServerOverlay(page)
     await page.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
-    await page.locator('#file-manager .system-tab', { hasText: 'Files' }).waitFor({ timeout: 60_000 })
+    await page.locator(FILTER_INPUT).waitFor({ state: 'visible', timeout: 60_000 })
   })
 
   after(async function () {

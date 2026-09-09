@@ -8,11 +8,6 @@
 
     <!-- Now the tab containers -->
     <div id="sidebar-tab-container">
-      <ToCTab
-        v-show="currentTab === 'toc'"
-        v-on:move-section="emit('move-section', $event)"
-        v-on:jump-to-line="emit('jump-to-line', $event)"
-      ></ToCTab>
       <ReferencesTab v-show="currentTab === 'references'"></ReferencesTab>
       <RelatedFilesTab v-show="currentTab === 'relatedFiles'"></RelatedFilesTab>
       <OtherFilesTab v-show="currentTab === 'attachments'"></OtherFilesTab>
@@ -44,7 +39,6 @@ import { trans } from '@common/i18n-renderer'
 import TabBar from '@common/vue/TabBar.vue'
 import type { TabbarControl } from '@dts/common/tabbar'
 import { computed } from 'vue'
-import ToCTab from './ToCTab.vue'
 import ReferencesTab from './ReferencesTab.vue'
 import RelatedFilesTab from './RelatedFilesTab.vue'
 import OtherFilesTab from './OtherFilesTab.vue'
@@ -57,7 +51,6 @@ const collaborationStore = useDocumentCollaborationStore()
 const documentTreeStore = useDocumentTreeStore()
 
 const emit = defineEmits<{
-  (e: 'move-section', data: { from: number, to: number }): void
   (e: 'jump-to-line', line: number): void
   // S8/I6: the panel emits only an annotation id — the replacement range
   // comes from a fresh editor selection, which lives outside this sidebar.
@@ -78,12 +71,6 @@ const activeAnnotationCount = computed(() => {
 })
 
 const tabs = computed<TabbarControl[]>(() => [
-  {
-    icon: 'indent',
-    id: 'toc',
-    target: 'sidebar-toc',
-    label: trans('Table of contents')
-  },
   {
     icon: 'book',
     id: 'references',
@@ -152,32 +139,6 @@ body {
     h1 {
       font-size: 16px;
       margin: 10px 0;
-    }
-
-    // Table of Contents entries
-    div.toc-entry-container {
-      // Clever calculation based on the data-level property
-      // margin-left: calc(attr(data-level) * 10px);
-      display: flex;
-      margin-bottom: 10px;
-
-      div.toc-level {
-        flex-shrink: 1;
-        padding: 0px 5px;
-        font-weight: bold;
-        color: var(--system-accent-color, --c-primary);
-      }
-
-      div.toc-entry {
-        flex-grow: 3;
-        cursor: pointer;
-        &:hover { text-decoration: underline; }
-      }
-
-      div.toc-entry-active {
-        font-weight: bold;
-        color: var(--system-accent-color);
-      }
     }
 
     div.related-files-container {

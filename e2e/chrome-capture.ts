@@ -48,6 +48,7 @@ interface Scene {
 
 const PROJECT_MODULE = '#navigation-sidebar [data-module="project"]'
 const PROJECT_HEADER = `${PROJECT_MODULE} .chrome-section-trigger`
+const OUTLINE_HEADER = '#navigation-sidebar [data-module="outline"] .chrome-section-trigger'
 
 async function waitForModuleState (page: Page, state: 'open' | 'closed'): Promise<void> {
   await page.locator(`${PROJECT_MODULE}[data-state="${state}"]`).waitFor({ timeout: 10_000 })
@@ -55,20 +56,23 @@ async function waitForModuleState (page: Page, state: 'open' | 'closed'): Promis
 
 /**
  * The section header's keyboard contract, driven through the real window
- * with no owned key handler behind it: Space and Enter toggle, Home and End
- * keep focus on a header, Escape changes nothing.
+ * with no owned key handler behind it: Space and Enter toggle, End and Home
+ * move the focus to the last and the first header, Escape changes nothing.
  */
 async function proveSectionHeaderKeyboard (page: Page): Promise<void> {
   const header = page.locator(PROJECT_HEADER)
+  const lastHeader = page.locator(OUTLINE_HEADER)
   await header.focus()
   await page.keyboard.press('Space')
   await waitForModuleState(page, 'closed')
   await page.keyboard.press('Enter')
   await waitForModuleState(page, 'open')
-  await page.keyboard.press('Home')
   await page.keyboard.press('End')
-  const focusedIsHeader = await header.evaluate(element => element === document.activeElement)
-  assert.ok(focusedIsHeader, 'Home and End must keep the focus on a section header')
+  const endFocusedLast = await lastHeader.evaluate(element => element === document.activeElement)
+  assert.ok(endFocusedLast, 'End must move the focus to the last section header')
+  await page.keyboard.press('Home')
+  const homeFocusedFirst = await header.evaluate(element => element === document.activeElement)
+  assert.ok(homeFocusedFirst, 'Home must move the focus to the first section header')
   await page.keyboard.press('Escape')
   await waitForModuleState(page, 'open')
   await page.keyboard.press('Tab')
@@ -112,8 +116,20 @@ async function setDarkMode (page: Page, dark: boolean): Promise<void> {
   )
 }
 
+const FILE_LIST = '#file-manager #file-list'
+
+/** Switches the Project module's tree mode through its config value. */
+async function setFileManagerMode (page: Page, mode: 'thin' | 'combined' | 'expanded'): Promise<void> {
+  await page.evaluate(value => {
+    window.ipc.sendSync('config-provider', {
+      command: 'set-config-single',
+      payload: { key: 'fileManagerMode', val: value }
+    })
+  }, mode)
+}
+
 /** Selects a right-sidebar tab through its config value and waits for the strip to agree. */
-async function setSidebarTab (page: Page, tab: 'toc' | 'annotations', target: string): Promise<void> {
+async function setSidebarTab (page: Page, tab: 'references' | 'annotations', target: string): Promise<void> {
   await page.evaluate(value => {
     window.ipc.sendSync('config-provider', {
       command: 'set-config-single',
@@ -123,35 +139,22 @@ async function setSidebarTab (page: Page, tab: 'toc' | 'annotations', target: st
   await page.locator(`#sidebar .system-tab[aria-controls="${target}"][aria-selected="true"]`).waitFor({ timeout: 10_000 })
 }
 
-/** Switches the file manager between its Files and Book views by its tab strip. */
-async function setFileManagerView (page: Page, view: 'Files' | 'Book'): Promise<void> {
-  const tab = page.locator('#file-manager .system-tab', { hasText: view })
-  await tab.click()
-  await page.locator('#file-manager .system-tab.active', { hasText: view }).waitFor({ timeout: 10_000 })
-  const marker = view === 'Book' ? '.quarto-book-outline' : '#file-tree'
-  await page.locator(`#file-manager ${marker}`).waitFor({ state: 'visible', timeout: 10_000 })
-}
-
-// Every config write (the sidebar tab, the theme) re-derives the file manager's
-// Quarto project and resets its view to Book, so the view is chosen last and
-// checked right before the shot.
 const SCENES: Scene[] = [
   {
-    // The Quarto book navigation on the left, the document outline on the right.
-    name: 'book-and-outline',
+    // The four modules on the left, the references tab on the right.
+    name: 'modules-and-references',
     arrange: async page => {
-      await setSidebarTab(page, 'toc', 'sidebar-toc')
-      await page.locator('#sidebar .toc-entry-container').first().waitFor({ timeout: 10_000 })
-      await setFileManagerView(page, 'Book')
+      await setSidebarTab(page, 'references', 'sidebar-bibliography')
+      await page.locator('#navigation-sidebar [data-module="book"] .quarto-book-outline button.chapter').first().waitFor({ timeout: 10_000 })
+      await page.locator('#navigation-sidebar [data-module="outline"] .toc-entry-container').first().waitFor({ timeout: 10_000 })
     }
   },
   {
-    // The workspace tree on the left, the annotation review panel on the right.
-    name: 'tree-and-annotations',
+    // The four modules on the left, the annotation review panel on the right.
+    name: 'modules-and-annotations',
     arrange: async page => {
       await setSidebarTab(page, 'annotations', 'annotations-panel')
       await page.locator('#annotations-panel').waitFor({ state: 'visible', timeout: 10_000 })
-      await setFileManagerView(page, 'Files')
     }
   },
   {
@@ -164,6 +167,39 @@ const SCENES: Scene[] = [
     restore: async page => {
       await page.locator(PROJECT_HEADER).click()
       await waitForModuleState(page, 'open')
+    }
+  },
+  {
+    // The Project module in thin mode, a directory clicked so its file list slid in.
+    name: 'project-thin',
+    arrange: async page => {
+      await setFileManagerMode(page, 'thin')
+      await page.locator(FILE_LIST).waitFor({ state: 'hidden', timeout: 10_000 })
+      await page.locator('#file-manager .tree-item.directory[data-path$="/foundations"]').click()
+      await page.locator(`${FILE_LIST}:not(.hidden)`).waitFor({ state: 'visible', timeout: 10_000 })
+      // The list slides in over the tree; photograph it once it has arrived.
+      await page.waitForFunction(() => {
+        const manager = document.querySelector('#file-manager')
+        const list = document.querySelector('#file-list')
+        return manager !== null && list !== null &&
+          list.getBoundingClientRect().left === manager.getBoundingClientRect().left
+      }, undefined, { timeout: 10_000 })
+    },
+    restore: async page => {
+      await setFileManagerMode(page, 'combined')
+      await page.locator(FILE_LIST).waitFor({ state: 'hidden', timeout: 10_000 })
+    }
+  },
+  {
+    // The Project module in expanded mode: the tree and the file list side by side.
+    name: 'project-expanded',
+    arrange: async page => {
+      await setFileManagerMode(page, 'expanded')
+      await page.locator('#file-manager.expanded #file-list:not(.hidden)').waitFor({ state: 'visible', timeout: 10_000 })
+    },
+    restore: async page => {
+      await setFileManagerMode(page, 'combined')
+      await page.locator(FILE_LIST).waitFor({ state: 'hidden', timeout: 10_000 })
     }
   },
   {
@@ -210,7 +246,7 @@ async function main (): Promise<void> {
       window: {
         fileManagerVisible: true,
         sidebarVisible: true,
-        currentSidebarTab: 'toc'
+        currentSidebarTab: 'references'
       }
     }
   })
@@ -223,8 +259,8 @@ async function main (): Promise<void> {
     const page = await findEditorPage(app.browser, launchTimeoutMs)
     await hideDevServerOverlay(page)
     await page.locator('.cm-content').waitFor({ state: 'visible', timeout: launchTimeoutMs })
-    // The workspace root is the book, so the file manager offers its Book view.
-    await page.locator('#file-manager .system-tab', { hasText: 'Book' }).waitFor({ timeout: 60_000 })
+    // The workspace root is the book, so the sidebar offers its Book module.
+    await page.locator('#navigation-sidebar [data-module="book"]').waitFor({ timeout: 60_000 })
     await waitForModuleState(page, 'open')
     await proveSectionHeaderKeyboard(page)
 
