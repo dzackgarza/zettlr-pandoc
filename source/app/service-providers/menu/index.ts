@@ -33,44 +33,7 @@ import type LogProvider from '../log'
 import type ConfigProvider from '@providers/config'
 import type DocumentManager from '@providers/documents'
 import type WindowProvider from '@providers/windows'
-
-// Types from the global.d.ts of the window-register module
-interface CheckboxRadioItem {
-  id: string
-  label: string
-  accelerator?: string
-  role?: string
-  type: 'checkbox'|'radio'
-  enabled: boolean
-  checked: boolean
-}
-
-interface SeparatorItem {
-  type: 'separator'
-}
-
-interface SubmenuItem {
-  id: string
-  label: string
-  type: 'submenu'
-  role?: string
-  enabled: boolean
-  submenu: Array<CheckboxRadioItem|SeparatorItem|SubmenuItem|NormalItem>
-}
-
-interface NormalItem {
-  id: string
-  label: string
-  accelerator?: string
-  role?: string
-  type: 'normal'
-  enabled: boolean
-}
-
-type AnyMenuItem = CheckboxRadioItem | SeparatorItem | SubmenuItem | NormalItem
-
-// Any menu item w/o separators
-// type InteractiveMenuItem = CheckboxRadioItem | SubmenuItem | NormalItem
+import type { SerializedMenuItem, SerializedSubmenu } from '@dts/common/serialized-menu'
 
 const BLUEPRINTS = {
   // Currently we ship two different sets of menu items -- one for macOS, and
@@ -144,11 +107,17 @@ export default class MenuProvider extends ProviderContract {
           return
         }
 
+        const serialized = this._makeItemSerializable(menuItem)
+        if (serialized.type !== 'submenu') {
+          this._logger.error(`[Menu Provider] Could not send app menu ${itemID}: The item is not a submenu.`)
+          return
+        }
+
         event.reply('menu-provider', {
           command: 'application-submenu',
           payload: {
             id: itemID,
-            submenu: (this._makeItemSerializable(menuItem) as SubmenuItem).submenu
+            submenu: serialized.submenu
           }
         })
       } else if (command === 'click-menu-item') {
@@ -312,35 +281,54 @@ export default class MenuProvider extends ProviderContract {
   }
 
   /**
-   * Turns a MenuItem into a serializable metadata object for sending through IPC
+   * Turns a MenuItem into the serialised shape the renderers parse
+   * (source/types/common/serialized-menu.ts): ids and accelerators are
+   * present only when the template set them; separators carry nothing.
    *
    * @param   {MenuItem}  menuItem  The menu item to serialize
    *
-   * @return  {any}            The serialized item
+   * @return  {SerializedMenuItem}  The serialized item
    */
-  _makeItemSerializable (menuItem: Electron.MenuItem): AnyMenuItem {
-    let serializableItem: any = {
-      label: menuItem.label,
-      id: menuItem.id,
-      type: menuItem.type,
-      accelerator: menuItem.accelerator,
-      enabled: menuItem.enabled
+  _makeItemSerializable (menuItem: Electron.MenuItem): SerializedMenuItem {
+    if (menuItem.type === 'separator') {
+      return { type: 'separator' }
     }
 
-    // Also indicate checked-status
-    if ([ 'checkbox', 'radio' ].includes(menuItem.type)) {
-      serializableItem.checked = menuItem.checked
-    }
+    const id = menuItem.id === undefined || menuItem.id === '' ? undefined : menuItem.id
+    const accelerator = typeof menuItem.accelerator === 'string' && menuItem.accelerator !== ''
+      ? menuItem.accelerator
+      : undefined
 
-    if (menuItem.submenu != null) {
-      serializableItem.submenu = []
+    if (menuItem.type === 'submenu') {
       // menuItem.submenu is a Menu instance containing items in this property
-      for (let subItem of menuItem.submenu.items) {
-        serializableItem.submenu.push(this._makeItemSerializable(subItem))
+      const submenu: SerializedSubmenu = {
+        type: 'submenu',
+        id,
+        label: menuItem.label,
+        enabled: menuItem.enabled,
+        submenu: menuItem.submenu === undefined
+          ? []
+          : menuItem.submenu.items.map(subItem => this._makeItemSerializable(subItem))
+      }
+      return submenu
+    }
+
+    if (menuItem.type === 'checkbox' || menuItem.type === 'radio') {
+      return {
+        type: menuItem.type,
+        id,
+        label: menuItem.label,
+        enabled: menuItem.enabled,
+        accelerator,
+        checked: menuItem.checked
       }
     }
 
-    return serializableItem
+    if (menuItem.type === 'normal') {
+      return { type: 'normal', id, label: menuItem.label, enabled: menuItem.enabled, accelerator }
+    }
+
+    throw new Error(`[Menu Provider] Cannot serialise a menu item of type ${menuItem.type}`)
   }
 
   /**
@@ -376,9 +364,9 @@ export default class MenuProvider extends ProviderContract {
    * Gets the application menu in a serializable state which can be sent through
    * IPC calls or saved as JSON.
    *
-   * @return  {AnyMenuItem[]}  The serialized items
+   * @return  {SerializedMenuItem[]}  The serialized items
    */
-  get serializableApplicationMenu (): AnyMenuItem[] {
+  get serializableApplicationMenu (): SerializedMenuItem[] {
     const appMenu = Menu.getApplicationMenu()
     if (appMenu === null) {
       return []

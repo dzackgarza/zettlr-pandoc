@@ -110,6 +110,7 @@ import {
 } from '@common/pandoc-util/compute-reference-edits'
 import type { WorkspaceReferenceEdit } from '@dts/common/references'
 import type { CustomEditorShortcut } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
+import { isEditorCommandName } from '@dts/common/shortcut-names'
 import getDocumentTitle from './util/get-document-title'
 
 const ipcRenderer = window.ipc
@@ -706,8 +707,8 @@ watch(toRef(props.editorCommands, 'executeCommand'), () => {
   }
 
   const data = props.editorCommands.data
-  if (typeof data !== 'string') {
-    return // The toggled command carried no command identifier
+  if (typeof data !== 'string' || !isEditorCommandName(data)) {
+    return // The toggled command carried no editor command name
   }
   currentEditor.runCommand(data)
   currentEditor.focus()

@@ -70,13 +70,27 @@ import {
 } from './commands/format-document'
 // Custom commands
 import {
+  applyBlockquote,
+  applyBold,
+  applyBulletList,
+  applyCode,
   applyComment,
+  applyH1,
+  applyH2,
+  applyH3,
+  applyH4,
+  applyH5,
+  applyH6,
+  applyItalic,
+  applyOrderedList,
   applyPandocDivOrSpan,
+  applyStrikethrough,
   applyTaskList,
   insertImage,
   insertLink,
 } from './commands/markdown'
 import { moveSection } from './commands/move-section'
+import type { EditorCommandName } from '@dts/common/shortcut-names'
 // Main configuration
 import {
   type CoreExtensionOptions,
@@ -210,6 +224,32 @@ export interface EditorViewPersistentState {
    * A decoration set containing currently folded ranges.
    */
   foldedRanges: DecorationSet
+}
+
+/**
+ * The editor commands by their typed name: one table, consumed by
+ * runCommand, keyed by the same names the Insert and Format menus send.
+ */
+const EDITOR_COMMANDS: Record<EditorCommandName, (view: EditorView) => boolean> = {
+  markdownComment: applyComment,
+  markdownLink: insertLink,
+  markdownImage: insertImage,
+  insertFootnote: addNewFootnote,
+  markdownMakeTaskList: applyTaskList,
+  createReferenceLabel,
+  markdownBold: applyBold,
+  markdownItalic: applyItalic,
+  markdownCode: applyCode,
+  markdownStrikethrough: applyStrikethrough,
+  markdownHeading1: applyH1,
+  markdownHeading2: applyH2,
+  markdownHeading3: applyH3,
+  markdownHeading4: applyH4,
+  markdownHeading5: applyH5,
+  markdownHeading6: applyH6,
+  markdownBlockquote: applyBlockquote,
+  markdownBulletList: applyBulletList,
+  markdownOrderedList: applyOrderedList
 }
 
 export default class MarkdownEditor extends EventEmitter {
@@ -803,33 +843,14 @@ export default class MarkdownEditor extends EventEmitter {
   }
 
   /**
-   * Runs a command on the underlying CodeMirror instance
+   * Runs a named command on the underlying CodeMirror instance. The names are
+   * the editor half of the typed shortcut names: the Insert and Format menus
+   * send them, and so does the launcher through those menu items.
    *
-   * @param   {String}  cmd  The command to run
+   * @param   {EditorCommandName}  cmd  The command to run
    */
-  runCommand (cmd: string): void {
-    switch (cmd) {
-      case 'markdownComment':
-        applyComment(this._instance)
-        break
-      case 'markdownLink':
-        insertLink(this._instance)
-        break
-      case 'markdownImage':
-        insertImage(this._instance)
-        break
-      case 'insertFootnote':
-        addNewFootnote(this._instance)
-        break
-      case 'markdownMakeTaskList':
-        applyTaskList(this._instance)
-        break
-      case 'createReferenceLabel':
-        createReferenceLabel(this._instance)
-        break
-      default:
-        console.warn('Unimplemented command:', cmd)
-    }
+  runCommand (cmd: EditorCommandName): void {
+    EDITOR_COMMANDS[cmd](this._instance)
   }
 
   /**

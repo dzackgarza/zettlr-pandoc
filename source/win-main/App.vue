@@ -237,6 +237,12 @@ import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from '@dts/common/doc
 import { pathBasename } from '@common/util/renderer-path-polyfill'
 import { TaskStatus } from 'source/pinia/lrt-store'
 import PopoverLRT from './PopoverLRT.vue'
+import {
+  insertTablePayloadSchema,
+  isEditorCommandName,
+  isShortcutName,
+  type ShortcutName
+} from '@dts/common/shortcut-names'
 
 const ipcRenderer = window.ipc
 
@@ -929,13 +935,21 @@ onMounted(() => {
     showToast(message, 'error', 12000)
   })
 
-  ipcRenderer.on('shortcut', (event, shortcut) => {
-    if (shortcut === 'toggle-sidebar') {
+  // The window-level shortcuts this component owns, by their typed name. The
+  // main process sends the same names from the application menu; names other
+  // components own (save-file, search, …) have no entry here.
+  const shortcutHandlers: Partial<Record<ShortcutName, () => void>> = {
+    'toggle-annotation-panel': () => {
       configStore.setConfigValue('window.sidebarVisible', !sidebarVisible.value)
-    } else if (shortcut === 'insert-id') {
+    },
+    'insert-id': () => {
       editorCommands.value.data = generateId(configStore.config.zkn.idGen)
       editorCommands.value.replaceSelection = !editorCommands.value.replaceSelection
-    } else if (shortcut === 'copy-current-id' && documentTreeStore.lastLeafActiveFile !== undefined) {
+    },
+    'copy-current-id': () => {
+      if (documentTreeStore.lastLeafActiveFile === undefined) {
+        return
+      }
       ipcRenderer.invoke('fsal', {
         command: 'get-descriptor',
         payload: documentTreeStore.lastLeafActiveFile.path
@@ -946,14 +960,16 @@ onMounted(() => {
           }
         })
         .catch(err => console.error(err))
-    } else if (shortcut === 'global-search') {
+    },
+    'global-search': () => {
       configStore.setConfigValue('window.fileManagerVisible', true)
       mainSplitViewVisibleComponent.value = 'globalSearch'
       // Focus input
       nextTick()
         .then(() => { globalSearchComponent.value?.focusQueryInput() })
         .catch(err => console.error(err))
-    } else if (shortcut === 'toggle-file-manager') {
+    },
+    'toggle-navigation-sidebar': () => {
       if (fileManagerVisible.value && mainSplitViewVisibleComponent.value === 'fileManager') {
         configStore.setConfigValue('window.fileManagerVisible', false)
       } else if (!fileManagerVisible.value) {
@@ -962,25 +978,41 @@ onMounted(() => {
       } else if (mainSplitViewVisibleComponent.value === 'globalSearch') {
         mainSplitViewVisibleComponent.value = 'fileManager'
       }
-    } else if (shortcut === 'filter-files') {
+    },
+    'filter-files': () => {
       // We need to immediately make the file manager visible, which will
       // -- in the next tick -- focus its filter input.
       configStore.setConfigValue('window.fileManagerVisible', true)
       mainSplitViewVisibleComponent.value = 'fileManager'
-    } else if (shortcut === 'export') {
-      showExportPopover.value = true
-    } else if (shortcut === 'pandoc-quick-help') {
-      showPandocQuickHelp.value = true
-    } else if (shortcut === 'print') {
+    },
+    export: () => { showExportPopover.value = true },
+    'pandoc-quick-help': () => { showPandocQuickHelp.value = true },
+    print: () => {
       if (activeFile.value !== undefined) {
         ipcRenderer.invoke('application', { command: 'print', payload: activeFile.value.path })
           .catch(err => console.error(err))
       }
-    } else if (shortcut === 'navigate-back') {
-      navigateHistory('navigate-back')
-    } else if (shortcut === 'navigate-forward') {
-      navigateHistory('navigate-forward')
+    },
+    'navigate-back': () => { navigateHistory('navigate-back') },
+    'navigate-forward': () => { navigateHistory('navigate-forward') },
+    'insert-pandoc-div': () => { insertPandoc({ type: 'div', attributes: '' }) },
+    'insert-pandoc-span': () => { insertPandoc({ type: 'span', attributes: '' }) }
+  }
+
+  ipcRenderer.on('shortcut', (event, shortcut: unknown, payload: unknown) => {
+    if (typeof shortcut !== 'string' || !isShortcutName(shortcut)) {
+      throw new Error(`The main process sent an unknown shortcut: ${String(shortcut)}`)
     }
+    if (shortcut === 'insert-table') {
+      insertTable(insertTablePayloadSchema.parse(payload))
+      return
+    }
+    if (isEditorCommandName(shortcut)) {
+      editorCommands.value.data = shortcut
+      editorCommands.value.executeCommand = !editorCommands.value.executeCommand
+      return
+    }
+    shortcutHandlers[shortcut]?.()
   })
 
   // Initially, we need to hide the sidebar, since the view will be visible
