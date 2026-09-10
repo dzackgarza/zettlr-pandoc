@@ -17,39 +17,11 @@
 import { defineStore } from 'pinia'
 import type { DocumentInfo } from 'source/common/modules/markdown-editor'
 import type { ToCEntry } from 'source/common/modules/markdown-editor/plugins/toc-field'
-import { computed, ref, type Ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import { type WritingTarget } from '@providers/targets'
-import type { SearchResult } from 'source/app/service-providers/search'
+import type { FileSearchResult } from 'source/app/service-providers/search'
 
 const ipcRenderer = window.ipc
-
-/**
- * This interface describes a specific descriptor for use during file searches
- */
-export interface FileSearchDescriptor {
-  path: string
-  relativeDirectoryPath: string
-  filename: string
-  displayName: string
-}
-
-/**
- * This interface describes a wrapper that combines search results with
- * metadata on the file the results describe. This store holds the search
- * results, so it owns the wrapper contract; GlobalSearch.vue produces and
- * renders it.
- */
-export interface SearchResultWrapper {
-  key: string
-  file: FileSearchDescriptor
-  result: SearchResult
-  hideResultSet: boolean
-  weight: number
-  /** The hash of the text the matches were found in; a replace is fenced on it. */
-  sourceHash: string
-  /** Whether a replace may address this file: only Markdown documents. */
-  replaceable: boolean
-}
 
 async function updateSnippets (snippets: Ref<Array<{ name: string, content: string }>>): Promise<void> {
   // Now we have to pair two types of calls to the assets provider to get all
@@ -82,17 +54,16 @@ export const useWindowStateStore = defineStore('window-state', () => {
   const writingTargets = ref<WritingTarget[]>([])
 
   /**
-   * SEARCH RESULTS FUNCTIONALITY
+   * The workspace search's results, one entry per file that matched, in the
+   * order the provider read them. The Search view fills this and draws from
+   * it; the editor reads it to highlight the matches in the document it
+   * shows.
    */
-  const searchResults = ref<SearchResultWrapper[]>([])
-  const maxSearchResultWeight = computed(() => {
-    const allWeights = searchResults.value.map(r => r.weight)
-    return Math.max(...allWeights)
-  })
+  const searchResults = ref<FileSearchResult[]>([])
 
-  function addSearchResult (result: SearchResultWrapper) {
+  function addSearchResult (result: FileSearchResult): void {
     searchResults.value.push(result)
-    searchResults.value.sort((a, b) => b.weight - a.weight)
+    searchResults.value.sort((a, b) => a.documentPath.localeCompare(b.documentPath))
   }
 
   // Snippets
@@ -130,7 +101,6 @@ export const useWindowStateStore = defineStore('window-state', () => {
     tableOfContents,
     searchResults,
     addSearchResult,
-    maxSearchResultWeight,
     snippets,
     writingTargets,
     isFullscreen

@@ -22,6 +22,7 @@ import {
   matchDocument,
   type SearchQuery
 } from '../source/app/service-providers/search/util/search-query'
+import { compilePathFilter } from '../source/app/service-providers/search/util/search-globs'
 
 function query (overrides: Partial<SearchQuery> = {}): SearchQuery {
   return { text: 'lattice', matchCase: false, wholeWord: false, regex: false, include: '', exclude: '', ...overrides }
@@ -33,7 +34,8 @@ function ready (overrides: Partial<SearchQuery> = {}): { pattern: RegExp, includ
   if (compiled.status !== 'ready') {
     throw new Error('unreachable')
   }
-  return compiled
+  const { include, exclude } = query(overrides)
+  return { pattern: compiled.pattern, includesPath: compilePathFilter(include, exclude) }
 }
 
 describe('the workspace search query', function () {

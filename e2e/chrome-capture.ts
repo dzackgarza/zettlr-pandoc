@@ -183,15 +183,19 @@ const SCENES: Scene[] = [
     name: 'search-view',
     arrange: async page => {
       await page.locator(ACTIVITY('search')).click()
-      await page.locator('#navigation-sidebar[data-view="search"] #global-search-pane').waitFor({ timeout: 10_000 })
-      const query = page.locator('#navigation-sidebar[data-view="search"] #global-search-pane input').first()
+      await page.locator('#navigation-sidebar[data-view="search"] #search-view').waitFor({ timeout: 10_000 })
+      const query = page.locator('#navigation-sidebar[data-view="search"] input[name="search-input"]')
       await query.fill('subgroupoid')
       await query.press('Enter')
-      await page.locator('#navigation-sidebar[data-view="search"] .single-search-result').first().waitFor({ timeout: 20_000 })
+      await page.locator('#navigation-sidebar[data-view="search"] .file-match').first().waitFor({ timeout: 20_000 })
+      // The replace field lives behind the widget's chevron, as it does in
+      // the reference implementation.
+      await page.locator('#navigation-sidebar[data-view="search"] [data-search-action="toggle-replace"]').click()
       await page.locator('#navigation-sidebar[data-view="search"] input[name="replace-input"]').fill('subcategory')
+      await page.locator('#navigation-sidebar[data-view="search"] .match-replace').first().waitFor({ timeout: 10_000 })
     },
     restore: async page => {
-      await page.locator('#navigation-sidebar[data-view="search"] input[name="replace-input"]').fill('')
+      await page.locator('#navigation-sidebar[data-view="search"] [data-search-action="toggle-replace"]').click()
       await page.locator(ACTIVITY('explorer')).click()
       await page.locator('#navigation-sidebar[data-view="explorer"]').waitFor({ timeout: 10_000 })
     }

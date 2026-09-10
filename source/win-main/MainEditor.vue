@@ -77,7 +77,6 @@ import type {
   ProjectInfo,
   ProjectInfoNavigationItem
 } from 'source/common/modules/markdown-editor/plugins/project-info-field'
-import type { FileContentSearchResult } from 'source/app/service-providers/search'
 import type { DocumentLocation, ProjectRootSpec, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
 import type { AnnotationSet } from '@dts/common/annotation-domain'
@@ -1478,17 +1477,14 @@ function maybeHighlightSearchResults (): void {
     return
   }
 
-  const result = globalSearchResults.value.find(r => r.file.path === props.file.path)
+  const result = globalSearchResults.value.find(r => r.documentPath === props.file.path)
   if (result === undefined) {
     currentEditor.highlightRanges([])
     return
   }
 
   // The provider reports every match as offsets into the whole document.
-  const rangesToHighlight = result.result
-    .filter((res): res is FileContentSearchResult => res.type === 'content')
-    .flatMap(res => res.documentRanges.map(range => EditorSelection.range(range.from, range.to)))
-  currentEditor.highlightRanges(rangesToHighlight)
+  currentEditor.highlightRanges(result.matches.map(match => EditorSelection.range(match.range.from, match.range.to)))
 }
 
 </script>

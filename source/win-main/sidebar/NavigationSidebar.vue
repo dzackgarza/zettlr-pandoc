@@ -35,11 +35,11 @@
       v-else-if="view.id === 'search'"
       class="sidebar-search-view"
     >
-      <GlobalSearch
+      <SearchView
         ref="globalSearch"
         v-bind:window-id="props.windowId"
         v-on:jtl="(filePath: string, lineNumber: number, newTab: boolean) => emit('jtl', filePath, lineNumber, newTab)"
-      ></GlobalSearch>
+      ></SearchView>
     </div>
     <ViewContainer
       v-else
@@ -81,7 +81,7 @@
 
 import { computed, nextTick, ref } from 'vue'
 import FileManager from '../file-manager/FileManager.vue'
-import GlobalSearch from '../GlobalSearch.vue'
+import SearchView from './SearchView.vue'
 import QuartoBookOutline from '../file-manager/QuartoBookOutline.vue'
 import ToCTab from './ToCTab.vue'
 import ReferencesTab from './ReferencesTab.vue'
@@ -164,14 +164,26 @@ async function reveal (target: RevealTarget): Promise<void> {
     container?.setCollapsed(target.section, false)
   }
   if (target.focus === 'search-query') {
-    globalSearch.value?.focusQueryInput()
+    await searchView().then(view => view?.focusQueryInput())
   }
+}
+
+/**
+ * The Search view, once it is in the document. Revealing it is a config
+ * write, and the view it swaps in mounts over the renders that follow, so
+ * the handle is not there the moment the write returns.
+ */
+async function searchView (): Promise<GlobalSearchHandle|null> {
+  for (let attempt = 0; attempt < 5 && globalSearch.value === null; attempt++) {
+    await nextTick()
+  }
+  return globalSearch.value
 }
 
 /** Reveals the Search view and runs a search for the given terms. */
 async function startSearch (terms: string): Promise<void> {
   await reveal({ view: 'search', focus: 'none' })
-  globalSearch.value?.startSearch(terms)
+  await searchView().then(view => view?.startSearch(terms))
 }
 
 defineExpose({ reveal, startSearch })

@@ -43,9 +43,15 @@ const QUERY = `${VIEW} input[name="search-input"]`
 const REPLACEMENT = `${VIEW} input[name="replace-input"]`
 const MESSAGE = `${VIEW} .search-message`
 const FILE_ROW = `${VIEW} .file-match`
-const MATCH_ROW = `${VIEW} .line-match`
+const MATCH_ROW = '.line-match'
 const ACTION = (name: string): string => `[data-search-action="${name}"]`
 const TOGGLE = (name: string): string => `${VIEW} [data-search-toggle="${name}"]`
+
+/** A row's own actions appear when the pointer is on it, as they do in the reference. */
+async function clickRowAction (row: Locator, action: string): Promise<void> {
+  await row.hover()
+  await row.locator(ACTION(action)).click()
+}
 
 const TERM = 'subgroupoid'
 const REPLACES_WITH = 'subcategory'
@@ -72,7 +78,7 @@ async function search (page: Page, text: string, expected: RegExp): Promise<void
 }
 
 function fileRow (page: Page, name: string): Locator {
-  return page.locator(`${FILE_ROW}[data-path$="/${name}"]`)
+  return page.locator(`${VIEW} .file-match-group[data-path$="/${name}"]`)
 }
 
 describe('the Search view', function () {
@@ -203,7 +209,7 @@ describe('the Search view', function () {
   it('replaces one file\'s matches from its row, and one match from its own', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
     await activePage.locator(REPLACEMENT).fill(REPLACES_WITH)
-    await fileRow(activePage, 'sage.md').locator(ACTION('replace-file')).click()
+    await clickRowAction(fileRow(activePage, 'sage.md').locator('.file-match'), 'replace-file')
     await waitUntil(async () => {
       const text = await readFile(closedFile(), 'utf-8')
       return (text.match(/subcategory/g) ?? []).length === 2 && !text.includes(TERM)
@@ -215,7 +221,7 @@ describe('the Search view', function () {
     await search(activePage, TERM, /3 results in 2 files/)
 
     await activePage.locator(REPLACEMENT).fill(REPLACES_WITH)
-    await fileRow(activePage, 'sage.md').locator(MATCH_ROW).first().locator(ACTION('replace-match')).click()
+    await clickRowAction(fileRow(activePage, 'sage.md').locator(MATCH_ROW).first(), 'replace-match')
     await waitUntil(async () => {
       const text = await readFile(closedFile(), 'utf-8')
       return (text.match(/subcategory/g) ?? []).length === 1 && (text.match(/subgroupoid/g) ?? []).length === 1
@@ -229,7 +235,7 @@ describe('the Search view', function () {
     await activePage.locator(`${VIEW} ${ACTION('undo-replace')}`).click()
     await search(activePage, TERM, /3 results in 2 files/)
 
-    await fileRow(activePage, 'sage.md').locator(ACTION('dismiss-file')).click()
+    await clickRowAction(fileRow(activePage, 'sage.md').locator('.file-match'), 'dismiss-file')
     await waitUntil(async () => (await fileRow(activePage, 'sage.md').count()) === 0, 'the dismissed file to leave the results')
     assert.equal(await activePage.locator(FILE_ROW).count(), 1, 'the other file stays')
 

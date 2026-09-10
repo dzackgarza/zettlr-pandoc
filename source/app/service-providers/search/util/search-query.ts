@@ -24,8 +24,6 @@
  * END HEADER
  */
 
-import picomatch from 'picomatch'
-
 /** What the user typed into the search widget. */
 export interface SearchQuery {
   text: string
@@ -52,7 +50,7 @@ export interface SearchMatch {
  * regular expression is reported so the widget can say so.
  */
 export type CompiledQuery =
-  | { status: 'ready', pattern: RegExp, includesPath: (relativePath: string) => boolean }
+  | { status: 'ready', pattern: RegExp }
   | { status: 'empty' }
   | { status: 'invalid-regex', message: string }
 
@@ -63,19 +61,6 @@ const PREVIEW_TOTAL = 250
 
 function escapeRegExp (text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/**
- * One glob the way a search field means it: `*.md` matches at any depth,
- * `src/*.md` only where it says. Several patterns are separated by commas.
- */
-function compileGlobs (patterns: string): ((relativePath: string) => boolean) | undefined {
-  const globs = patterns.split(',').map(glob => glob.trim()).filter(glob => glob !== '')
-  if (globs.length === 0) {
-    return undefined
-  }
-  const matchers = globs.map(glob => picomatch(glob.includes('/') ? glob : `**/${glob}`, { dot: true }))
-  return relativePath => matchers.some(matches => matches(relativePath))
 }
 
 export function compileQuery (query: SearchQuery): CompiledQuery {
@@ -92,18 +77,7 @@ export function compileQuery (query: SearchQuery): CompiledQuery {
     return { status: 'invalid-regex', message: err instanceof Error ? err.message : String(err) }
   }
 
-  const included = compileGlobs(query.include)
-  const excluded = compileGlobs(query.exclude)
-  return {
-    status: 'ready',
-    pattern,
-    includesPath: relativePath => {
-      if (included !== undefined && !included(relativePath)) {
-        return false
-      }
-      return excluded === undefined || !excluded(relativePath)
-    }
-  }
+  return { status: 'ready', pattern }
 }
 
 /**
