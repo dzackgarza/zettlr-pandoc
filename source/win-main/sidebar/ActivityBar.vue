@@ -1,26 +1,28 @@
 <template>
   <TooltipProvider v-bind:delay-duration="400">
     <ToggleGroupRoot
-      id="activity-bar"
+      v-bind:id="props.barId"
+      class="activity-bar"
+      v-bind:data-activity-bar="props.side"
       type="single"
       orientation="vertical"
-      v-bind:model-value="pressed"
-      v-bind:aria-label="barLabel"
+      v-bind:model-value="props.pressed"
+      v-bind:aria-label="props.label"
       v-on:update:model-value="onPress"
     >
       <TooltipRoot
-        v-for="view in SIDEBAR_VIEWS"
-        v-bind:key="view.id"
+        v-for="item in props.items"
+        v-bind:key="item.id"
       >
         <TooltipTrigger as-child>
           <ToggleGroupItem
             class="activity-bar-item"
-            v-bind:value="view.id"
-            v-bind:aria-label="view.label()"
-            v-bind:data-activity="view.id"
+            v-bind:value="item.id"
+            v-bind:aria-label="item.label()"
+            v-bind:data-activity="item.id"
           >
             <cds-icon
-              v-bind:shape="view.icon"
+              v-bind:shape="item.icon"
               role="presentation"
             ></cds-icon>
           </ToggleGroupItem>
@@ -28,10 +30,10 @@
         <TooltipPortal>
           <TooltipContent
             class="activity-bar-tooltip"
-            side="right"
+            v-bind:side="props.side === 'left' ? 'right' : 'left'"
             v-bind:side-offset="6"
           >
-            {{ view.label() }}
+            {{ item.label() }}
           </TooltipContent>
         </TooltipPortal>
       </TooltipRoot>
@@ -49,18 +51,22 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     The thin column of icons at the window's left edge (D9):
- *                  one per sidebar view, with a tooltip. Pressing an icon
- *                  opens the drawer on that view or swaps the view; pressing
- *                  the pressed icon closes the drawer. The pressed state is
- *                  derived from config — the drawer's visibility and the
- *                  shown view — never held here; reka-ui's toggle group owns
- *                  the roving focus and the deselect-on-second-press gesture.
+ * Description:     A thin column of icons at one edge of the window (D9):
+ *                  one per view the pane on that edge can show, with a
+ *                  tooltip. Pressing an icon opens the pane on that view or
+ *                  swaps the view; pressing the pressed icon closes the
+ *                  pane. Both of the window's panes are shown and hidden
+ *                  this way — the sidebar's drawer from the left edge, the
+ *                  annotation panel from the right.
+ *
+ *                  Nothing is held here: the pressed icon is given, and a
+ *                  press is reported. The window decides what either means,
+ *                  and reka-ui's toggle group owns the roving focus and the
+ *                  deselect-on-second-press gesture.
  *
  * END HEADER
  */
 
-import { computed } from 'vue'
 import {
   ToggleGroupItem,
   ToggleGroupRoot,
@@ -71,30 +77,30 @@ import {
   TooltipTrigger,
   type AcceptableValue
 } from 'reka-ui'
-import { trans } from '@common/i18n-renderer'
-import { isSidebarViewId } from '@dts/common/sidebar-views'
-import { useConfigStore } from 'source/pinia'
-import { SIDEBAR_VIEWS } from './sidebar-views'
+import type { ActivityBarItem } from './sidebar-views'
 
-const configStore = useConfigStore()
-const barLabel = trans('Sidebar views')
+const props = defineProps<{
+  /** This bar's element id: a window carries one per edge. */
+  barId: string
+  /** The edge it sits on, which decides its border and its tooltips' side. */
+  side: 'left' | 'right'
+  items: readonly ActivityBarItem[]
+  /** The pressed item's id, or '' while the pane is closed. */
+  pressed: string
+  label: string
+}>()
 
-/** The pressed icon: the shown view while the drawer is open, none while closed. */
-const pressed = computed<string>(() => configStore.config.window.fileManagerVisible ? configStore.config.ui.sidebarView : '')
+/** Reports the pressed item, or '' when the pressed one was pressed again. */
+const emit = defineEmits<(e: 'press', id: string) => void>()
 
 function onPress (value: AcceptableValue): void {
-  if (typeof value === 'string' && isSidebarViewId(value)) {
-    configStore.setConfigValue('ui.sidebarView', value)
-    configStore.setConfigValue('window.fileManagerVisible', true)
-    return
-  }
-  configStore.setConfigValue('window.fileManagerVisible', false)
+  emit('press', typeof value === 'string' ? value : '')
 }
 </script>
 
 <style lang="less">
 body {
-  #activity-bar {
+  .activity-bar {
     display: flex;
     flex-direction: column;
     flex: 0 0 auto;
@@ -103,11 +109,13 @@ body {
     padding-top: 4px;
     box-sizing: border-box;
     background-color: var(--chrome-surface);
-    border-right: 1px solid var(--chrome-border);
+
+    &[data-activity-bar="left"] { border-right: 1px solid var(--chrome-border); }
+    &[data-activity-bar="right"] { border-left: 1px solid var(--chrome-border); }
   }
 
   // Outranks the platform button rules, which box every button.
-  #activity-bar button.activity-bar-item {
+  .activity-bar button.activity-bar-item {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -116,7 +124,6 @@ body {
     margin: 0;
     padding: 0;
     border: none;
-    border-left: 2px solid transparent;
     border-radius: 0;
     box-shadow: none;
     background: transparent;
@@ -132,14 +139,28 @@ body {
       color: var(--chrome-text);
     }
 
+    &:focus-visible {
+      outline: 1px solid var(--chrome-row-accent);
+      outline-offset: -1px;
+    }
+  }
+
+  // The accent marks the pressed icon on the edge the bar sits at.
+  .activity-bar[data-activity-bar="left"] button.activity-bar-item {
+    border-left: 2px solid transparent;
+
     &[aria-pressed="true"] {
       color: var(--chrome-text);
       border-left-color: var(--chrome-row-accent);
     }
+  }
 
-    &:focus-visible {
-      outline: 1px solid var(--chrome-row-accent);
-      outline-offset: -1px;
+  .activity-bar[data-activity-bar="right"] button.activity-bar-item {
+    border-right: 2px solid transparent;
+
+    &[aria-pressed="true"] {
+      color: var(--chrome-text);
+      border-right-color: var(--chrome-row-accent);
     }
   }
 

@@ -19,12 +19,17 @@
 import { trans } from '@common/i18n-renderer'
 import { SIDEBAR_SECTION_IDS, type SidebarSectionId, type SidebarViewId } from '@dts/common/sidebar-views'
 
-export interface SidebarViewDefinition {
-  id: SidebarViewId
+/** One icon on an activity bar: what it shows and how it reads. */
+export interface ActivityBarItem {
+  id: string
   /** The tooltip and accessible name; a function because translations load at runtime. */
   label: () => string
-  /** The Clarity icon shape on the activity bar. */
+  /** The Clarity icon shape. */
   icon: string
+}
+
+export interface SidebarViewDefinition extends ActivityBarItem {
+  id: SidebarViewId
   /** The collapsible sections the view stacks, top to bottom. */
   sections: readonly SidebarSectionId[]
 }
@@ -38,6 +43,17 @@ export const SIDEBAR_VIEWS: readonly SidebarViewDefinition[] = [
   { id: 'explorer', label: () => trans('Explorer'), icon: 'file-group', sections: [ 'files', 'outline', 'book' ] },
   { id: 'search', label: () => trans('Search'), icon: 'search', sections: [] },
   { id: 'references', label: () => trans('References'), icon: 'library', sections: [ 'citations', 'relatedFiles' ] }
+]
+
+/**
+ * The right edge's bar. The annotation review panel is the one view that
+ * pane shows, so its bar carries one icon; the pane is open exactly while
+ * that icon is pressed.
+ */
+export const PANEL_VIEW_ID = 'annotations'
+
+export const PANEL_VIEWS: readonly ActivityBarItem[] = [
+  { id: PANEL_VIEW_ID, label: () => trans('Annotations'), icon: 'chat-bubble' }
 ]
 
 export const SIDEBAR_SECTIONS: readonly SidebarSectionDefinition[] = [

@@ -8,7 +8,14 @@
     <div class="main-body">
     <!-- The activity bar, then the three panes under one splitter (D8): the
          sidebar's drawer, the editor, the annotation panel. -->
-    <ActivityBar />
+    <ActivityBar
+      bar-id="activity-bar"
+      side="left"
+      :items="SIDEBAR_VIEWS"
+      :pressed="fileManagerVisible ? configStore.config.ui.sidebarView : ''"
+      :label="trans('Sidebar views')"
+      @press="pressSidebarView($event)"
+    />
     <SplitterGroup
       direction="horizontal"
       class="main-panes"
@@ -97,6 +104,14 @@
         />
       </SplitterPanel>
     </SplitterGroup>
+    <ActivityBar
+      bar-id="panel-activity-bar"
+      side="right"
+      :items="PANEL_VIEWS"
+      :pressed="sidebarVisible ? PANEL_VIEW_ID : ''"
+      :label="trans('Panel views')"
+      @press="configStore.setConfigValue('window.sidebarVisible', $event === PANEL_VIEW_ID)"
+    />
     </div>
     <template #statusbar>
       <MainStatusbar
@@ -181,12 +196,12 @@ import TikzLightbox from './TikzLightbox.vue'
 import PopoverPomodoro from './PopoverPomodoro.vue'
 import PandocQuickHelp from './PandocQuickHelp.vue'
 import MainStatusbar from './MainStatusbar.vue'
-import { HEADER_LEAF_ID, headerLeafId } from './header-leaf'
 import type { ExportRequest } from './launcher/launcher-rows'
 import type { CustomExportIPCAPI, ExportIPCAPI } from 'source/app/service-providers/commands/export'
 import CommandLauncher from './launcher/CommandLauncher.vue'
 import type { LauncherView } from './launcher/launcher-state'
-import type { RevealTarget } from './sidebar/sidebar-views'
+import { PANEL_VIEW_ID, PANEL_VIEWS, SIDEBAR_VIEWS, type RevealTarget } from './sidebar/sidebar-views'
+import { isSidebarViewId } from '@dts/common/sidebar-views'
 import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
 import type {
   ConfirmReferenceLabelOutcome,
@@ -208,7 +223,6 @@ import {
   nextTick,
   ref,
   computed,
-  provide,
   watch,
   onMounted,
   reactive
@@ -656,8 +670,6 @@ const windowTitle = computed<string>(() => {
 // With no toolbar row to drag the window by, macOS keeps its titlebar.
 const shouldShowTitlebar = computed<boolean>(() => process.platform === 'darwin')
 
-// The document tab row of the top-right pane is the window's header row.
-provide(HEADER_LEAF_ID, computed(() => headerLeafId(paneConfiguration.value)))
 // The menubar is independent of other values; always shown on Windows, and on Linux only if native Appearance is off.
 const shouldShowMenubar = computed<boolean>(() => process.platform === 'win32' || (process.platform !== 'darwin' && !configStore.config.window.nativeAppearance))
 
@@ -927,6 +939,19 @@ function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
  *
  * @param   {string}  annotationId  The orphaned annotation to reattach
  */
+/**
+ * An icon on the left activity bar: it opens the drawer on that view, or
+ * closes the drawer when the view it already shows is pressed again.
+ */
+function pressSidebarView (id: string): void {
+  if (isSidebarViewId(id)) {
+    configStore.setConfigValue('ui.sidebarView', id)
+    configStore.setConfigValue('window.fileManagerVisible', true)
+    return
+  }
+  configStore.setConfigValue('window.fileManagerVisible', false)
+}
+
 /**
  * A gutter chip was clicked in an editor. The chip is the editor's half of
  * an annotation and the panel holds the other half, so the gesture selects
