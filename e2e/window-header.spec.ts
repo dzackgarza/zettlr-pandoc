@@ -43,7 +43,7 @@ import {
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), 'zettlr-window-header-e2e-latest')
 
 const TAB_ROW = '.document-tablist-wrapper'
-const TOGGLE = (pane: 'navigation-sidebar' | 'annotation-panel'): string => `${TAB_ROW} [data-pane-toggle="${pane}"]`
+const PANEL_BAR = '#panel-activity-bar'
 const LAUNCHER = '[data-command-launcher]'
 
 interface ListedProfile {
@@ -142,26 +142,33 @@ describe('the window header', function () {
     screenshots.set('window-header.png', await activePage.screenshot())
   })
 
-  it('carries the sidebar and annotation panel toggles at the right end of the document tab row, each toggling its pane', async function () {
+  it('holds tabs and nothing else in the document tab row: no scroller arrows, no pane toggles', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
-    const toggles = await activePage.locator(`${TAB_ROW} [data-pane-toggle]`).evaluateAll(elements => elements.map(element => element.getAttribute('data-pane-toggle')))
-    assert.deepEqual(toggles, [ 'navigation-sidebar', 'annotation-panel' ], 'the tab row carries the two toggles once, in order')
-    const tabRight = await activePage.locator(`${TAB_ROW} [role="tab"]`).last().evaluate(element => element.getBoundingClientRect().right)
-    const toggleLeft = await activePage.locator(TOGGLE('navigation-sidebar')).evaluate(element => element.getBoundingClientRect().left)
-    assert.ok(toggleLeft > tabRight, 'the toggles sit to the right of the last tab')
+    assert.equal(await activePage.locator(`${TAB_ROW} .scroller`).count(), 0, 'the tab row carries no scroller arrows')
+    assert.equal(await activePage.locator('[data-pane-toggle]').count(), 0, 'no pane toggle rides the tab row')
+    // What makes the arrows unnecessary: a strip too narrow for its tabs
+    // scrolls, so every tab is reachable without a control of its own.
+    const overflow = await activePage.locator(`${TAB_ROW} [role="tablist"]`).evaluate(element => getComputedStyle(element).overflowX)
+    assert.ok([ 'auto', 'scroll' ].includes(overflow), `the tab strip scrolls: overflow-x is ${overflow}`)
+  })
 
-    await activePage.locator(TOGGLE('navigation-sidebar')).click()
-    await activePage.locator('#navigation-sidebar').waitFor({ state: 'hidden', timeout: 10_000 })
-    await waitUntil(async () => readSection(await readWindowConfig(activePage), 'window').fileManagerVisible === false, 'the sidebar visibility to persist as hidden')
-    await activePage.locator(TOGGLE('navigation-sidebar')).click()
-    await activePage.locator('#navigation-sidebar').waitFor({ state: 'visible', timeout: 10_000 })
-    await waitUntil(async () => readSection(await readWindowConfig(activePage), 'window').fileManagerVisible === true, 'the sidebar visibility to persist as shown')
+  it('toggles the annotation panel from its own activity bar at the window\'s right edge', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    const icon = activePage.locator(`${PANEL_BAR} [data-activity="annotations"]`)
+    await icon.waitFor({ state: 'visible', timeout: 10_000 })
+    assert.equal(await icon.getAttribute('aria-pressed'), 'true', 'the icon reads pressed while the panel is open')
 
-    await activePage.locator(TOGGLE('annotation-panel')).click()
+    const barLeft = await activePage.locator(PANEL_BAR).evaluate(element => element.getBoundingClientRect().left)
+    const panelRight = await activePage.locator('#annotations-panel').evaluate(element => element.getBoundingClientRect().right)
+    assert.ok(barLeft >= panelRight - 1, 'the bar sits outside the panel, at the window\'s edge')
+
+    await icon.click()
     await activePage.locator('#annotations-panel').waitFor({ state: 'hidden', timeout: 10_000 })
     await waitUntil(async () => readSection(await readWindowConfig(activePage), 'window').sidebarVisible === false, 'the panel visibility to persist as hidden')
+    assert.equal(await icon.getAttribute('aria-pressed'), 'false', 'the icon reads unpressed while the panel is away')
     screenshots.set('window-header-panel-hidden.png', await activePage.screenshot())
-    await activePage.locator(TOGGLE('annotation-panel')).click()
+
+    await icon.click()
     await activePage.locator('#annotations-panel').waitFor({ state: 'visible', timeout: 10_000 })
     await waitUntil(async () => readSection(await readWindowConfig(activePage), 'window').sidebarVisible === true, 'the panel visibility to persist as shown')
   })

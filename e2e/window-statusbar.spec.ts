@@ -203,9 +203,6 @@ describe('the window status bar', function () {
     }, 'the word count of index.md in the focused pane')
     assert.equal(await activePage.locator(STATUSBAR).count(), 1, 'still exactly one status bar')
     assert.equal(await activePage.locator('.cm-statusbar').count(), 0, 'no pane brings its own status panel')
-    // The header row is the top-right pane's: the new pane sits to the right.
-    const toggleRows = await activePage.locator('.editor-pane').evaluateAll(panes => panes.map(pane => pane.querySelector('[data-pane-toggle]') !== null))
-    assert.deepEqual(toggleRows, [ false, true ], 'only the right pane\'s tab row carries the pane toggles')
     screenshots.set('statusbar-two-panes.png', await activePage.screenshot())
 
     const firstPane = activePage.locator('.editor-pane', { hasNot: activePage.locator(`[role="tab"][data-path="${indexPath}"]`) }).first()

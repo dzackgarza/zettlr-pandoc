@@ -42,7 +42,10 @@ const ARTIFACT_DIRECTORY = path.join(tmpdir(), 'zettlr-main-panes-e2e-latest')
 
 const PANE = (name: 'navigation-sidebar' | 'editor' | 'annotation-panel'): string => `[data-pane="${name}"]`
 const HANDLE = (name: 'navigation-sidebar' | 'annotation-panel'): string => `[data-pane-handle="${name}"]`
-const TOGGLE = (name: 'navigation-sidebar' | 'annotation-panel'): string => `.document-tablist-wrapper [data-pane-toggle="${name}"]`
+/** A pane is shown and hidden from the activity bar on its own side. */
+const TOGGLE = (name: 'navigation-sidebar' | 'annotation-panel'): string => name === 'navigation-sidebar'
+  ? '#activity-bar [data-activity="explorer"]'
+  : '#panel-activity-bar [data-activity="annotations"]'
 
 const ANNOTATION_PANEL_MINIMUM = 240
 

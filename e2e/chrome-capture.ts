@@ -51,6 +51,7 @@ const FILES_SECTION = '#navigation-sidebar [data-section="files"]'
 const FILES_HEADER = `${FILES_SECTION} .chrome-section-trigger`
 const LAST_HEADER = '#navigation-sidebar [data-section="book"] .chrome-section-trigger'
 const ACTIVITY = (view: string): string => `#activity-bar [data-activity="${view}"]`
+const PANEL_ACTIVITY = '#panel-activity-bar [data-activity="annotations"]'
 
 /**
  * A pane slides shut, and its content stops being visible as soon as the
@@ -281,16 +282,16 @@ const SCENES: Scene[] = [
     // Both panes hidden through the tab row's toggles: the editor alone.
     name: 'panes-hidden',
     arrange: async page => {
-      await page.locator('.document-tablist-wrapper [data-pane-toggle="navigation-sidebar"]').click()
+      await page.locator(ACTIVITY('explorer')).click()
       await waitForPaneWidth(page, 'navigation-sidebar', 'zero')
-      await page.locator('.document-tablist-wrapper [data-pane-toggle="annotation-panel"]').click()
+      await page.locator(PANEL_ACTIVITY).click()
       await waitForPaneWidth(page, 'annotation-panel', 'zero')
     },
     restore: async page => {
-      await page.locator('.document-tablist-wrapper [data-pane-toggle="navigation-sidebar"]').click()
+      await page.locator(ACTIVITY('explorer')).click()
       await page.locator('#navigation-sidebar [data-section="files"]').waitFor({ timeout: 10_000 })
       await waitForPaneWidth(page, 'navigation-sidebar', 'some')
-      await page.locator('.document-tablist-wrapper [data-pane-toggle="annotation-panel"]').click()
+      await page.locator(PANEL_ACTIVITY).click()
       await page.locator('#annotations-panel').waitFor({ state: 'visible', timeout: 10_000 })
       await waitForPaneWidth(page, 'annotation-panel', 'some')
     }
