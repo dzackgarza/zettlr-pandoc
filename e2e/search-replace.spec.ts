@@ -7,11 +7,12 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Replacing the matches of a workspace search (M10, D10):
- *                  all of them, one file's, or one match — an open document
- *                  changes in its editor, a closed one on disk, the results
- *                  refresh, and the last replace can be undone from the
- *                  Search view.
+ * Description:     The Search view on VS Code's search view (M11, D11): a
+ *                  query that searches as it is typed, its three matching
+ *                  options, the globs that scope it, result rows that read
+ *                  as one line each and show what a replacement would do,
+ *                  and replacing all of them, one file's, or one match —
+ *                  with the row a dismissal removed left alone.
  *
  * END HEADER
  */
@@ -21,7 +22,7 @@ import { type ChildProcess } from 'node:child_process'
 import { readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { type Browser, type Page } from 'playwright'
+import { type Browser, type Locator, type Page } from 'playwright'
 import {
   assertCleanExit,
   attach,
@@ -37,15 +38,17 @@ import {
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), 'zettlr-search-replace-e2e-latest')
 
-const SEARCH_VIEW = '#navigation-sidebar[data-view="search"] #global-search-pane'
-const QUERY_INPUT = `${SEARCH_VIEW} input >> nth=0`
-const REPLACE_INPUT = `${SEARCH_VIEW} input[name="replace-input"]`
-const ACTION = (name: 'replace-all' | 'replace-file' | 'replace-match' | 'undo-replace'): string => `[data-search-action="${name}"]`
-const PANE_ACTION = (name: 'replace-all' | 'undo-replace'): string => `${SEARCH_VIEW} ${ACTION(name)}`
-const RESULT = `${SEARCH_VIEW} .single-search-result`
+const VIEW = '#navigation-sidebar[data-view="search"] #search-view'
+const QUERY = `${VIEW} input[name="search-input"]`
+const REPLACEMENT = `${VIEW} input[name="replace-input"]`
+const MESSAGE = `${VIEW} .search-message`
+const FILE_ROW = `${VIEW} .file-match`
+const MATCH_ROW = `${VIEW} .line-match`
+const ACTION = (name: string): string => `[data-search-action="${name}"]`
+const TOGGLE = (name: string): string => `${VIEW} [data-search-toggle="${name}"]`
 
 const TERM = 'subgroupoid'
-const REPLACEMENT = 'subcategory'
+const REPLACES_WITH = 'subcategory'
 
 async function waitUntil (probe: () => Promise<boolean>, what: string, timeoutMs = 20_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
@@ -53,7 +56,7 @@ async function waitUntil (probe: () => Promise<boolean>, what: string, timeoutMs
     if (await probe()) {
       return
     }
-    await delay(150)
+    await delay(120)
   }
   throw new Error(`Timed out waiting for ${what}`)
 }
@@ -62,17 +65,17 @@ async function editorText (page: Page): Promise<string> {
   return await page.locator('.cm-content').innerText()
 }
 
-async function runSearch (page: Page, query: string): Promise<void> {
-  await page.locator(QUERY_INPUT).fill(query)
-  await page.locator(QUERY_INPUT).press('Enter')
-  await waitUntil(async () => (await page.locator(`${SEARCH_VIEW} .search-result-container, ${SEARCH_VIEW} .search-no-results`).count()) > 0, 'the search to finish')
+/** Types a query and waits for the view to say what it found. */
+async function search (page: Page, text: string, expected: RegExp): Promise<void> {
+  await page.locator(QUERY).fill(text)
+  await waitUntil(async () => expected.test(await page.locator(MESSAGE).innerText()), `the view to report ${String(expected)}`)
 }
 
-async function resultFiles (page: Page): Promise<string[]> {
-  return await page.locator(`${RESULT} .result-header .filename`).allTextContents()
+function fileRow (page: Page, name: string): Locator {
+  return page.locator(`${FILE_ROW}[data-path$="/${name}"]`)
 }
 
-describe('search and replace across the workspace', function () {
+describe('the Search view', function () {
   let appProcess: ChildProcess | undefined
   let browser: Browser | undefined
   let fixtureRoot: string | undefined
@@ -86,8 +89,8 @@ describe('search and replace across the workspace', function () {
   const openFile = (): string => path.join(requireInitialized(fixtureRoot, 'fixture root'), 'workspace', 'foundations', 'categories.md')
 
   before(async function () {
-    // categories.md (open, the active document) and sage.md (closed) both
-    // carry the term; sage.md carries it twice.
+    // categories.md is the open document and carries the term once;
+    // sage.md is closed and carries it twice.
     const fixture = await createWorkspaceFixture('zettlr-search-replace-e2e-', {
       workspaceSource: path.join(REPO_ROOT, 'test', 'fixtures', 'quarto-book'),
       activeDocument: path.join('foundations', 'categories.md'),
@@ -106,7 +109,7 @@ describe('search and replace across the workspace', function () {
     const editorPage = await findEditorPage(browser, this.timeout())
     await hideDevServerOverlay(editorPage)
     await editorPage.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
-    await editorPage.locator(SEARCH_VIEW).waitFor({ timeout: 60_000 })
+    await editorPage.locator(VIEW).waitFor({ timeout: 60_000 })
     await editorPage.setViewportSize({ width: 1500, height: 950 })
     page = editorPage
   })
@@ -121,63 +124,120 @@ describe('search and replace across the workspace', function () {
     assertCleanExit(getOutput())
   })
 
-  it('replaces every match: the open document in its editor and on disk, the closed file on disk, and the results refresh', async function () {
+  it('searches as the query is typed and reads out what it found, one line per match', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
-    assert.match(await editorText(activePage), /subgroupoid/, 'the open document carries the term before the replace')
-    await runSearch(activePage, TERM)
-    assert.deepEqual((await resultFiles(activePage)).sort(), [ 'Sage', 'categories' ], 'both files match')
-    await activePage.locator(REPLACE_INPUT).fill(REPLACEMENT)
-    screenshots.set('before-replace-all.png', await activePage.screenshot())
-    await activePage.locator(PANE_ACTION('replace-all')).click()
+    await search(activePage, TERM, /3 results in 2 files/)
+    assert.deepEqual(
+      (await activePage.locator(`${FILE_ROW} .file-match-name`).allTextContents()).sort(),
+      [ 'categories.md', 'sage.md' ],
+      'one row per file, named by its file'
+    )
+    assert.equal(await fileRow(activePage, 'sage.md').locator('.file-match-count').innerText(), '2', 'the badge counts that file\'s matches')
+
+    const firstSageMatch = fileRow(activePage, 'sage.md').locator(MATCH_ROW).first()
+    assert.equal(await firstSageMatch.locator('.match-before').innerText(), 'Compute the maximal ')
+    assert.equal(await firstSageMatch.locator('.match-inside').innerText(), TERM)
+    assert.equal(await firstSageMatch.locator('.match-after').innerText(), ' with Sage.')
+    screenshots.set('results.png', await activePage.screenshot())
+  })
+
+  it('shows what the replacement would do before anything is replaced', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    await activePage.locator(ACTION('toggle-replace')).click()
+    await activePage.locator(REPLACEMENT).fill(REPLACES_WITH)
+    const firstSageMatch = fileRow(activePage, 'sage.md').locator(MATCH_ROW).first()
+    await waitUntil(async () => (await firstSageMatch.locator('.match-replace').count()) === 1, 'the row to show the replacement')
+    assert.equal(await firstSageMatch.locator('.match-replace').innerText(), REPLACES_WITH)
+    assert.match(await editorText(activePage), /subgroupoid/, 'the document is untouched while it is only a preview')
+    screenshots.set('replace-preview.png', await activePage.screenshot())
+  })
+
+  it('narrows the search with the matching options and the file globs', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    await search(activePage, 'core', /3 results in 2 files/)
+    await activePage.locator(TOGGLE('match-case')).click()
+    await search(activePage, 'Core', /1 result in 1 file/)
+    await activePage.locator(TOGGLE('match-case')).click()
+
+    await search(activePage, 'group', /3 results in 2 files/)
+    await activePage.locator(TOGGLE('whole-word')).click()
+    await waitUntil(async () => /No results found/.test(await activePage.locator(MESSAGE).innerText()), 'no whole-word match for a word inside another')
+    await activePage.locator(TOGGLE('whole-word')).click()
+
+    await activePage.locator(TOGGLE('regex')).click()
+    await search(activePage, 'sub\\w+oid', /3 results in 2 files/)
+    await activePage.locator(TOGGLE('regex')).click()
+
+    await activePage.locator(ACTION('toggle-details')).click()
+    await activePage.locator(`${VIEW} input[name="files-to-exclude"]`).fill('computation/**')
+    await search(activePage, TERM, /1 result in 1 file/)
+    await activePage.locator(`${VIEW} input[name="files-to-exclude"]`).fill('')
+    await search(activePage, TERM, /3 results in 2 files/)
+    screenshots.set('search-details.png', await activePage.screenshot())
+  })
+
+  it('replaces every match once the owner confirms: the open document in its editor and on disk, the closed file on disk', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    await activePage.locator(REPLACEMENT).fill(REPLACES_WITH)
+    await activePage.locator(`${VIEW} ${ACTION('replace-all')}`).click()
+    const confirm = activePage.locator(`[data-search-confirm="replace-all"]`)
+    await confirm.waitFor({ state: 'visible', timeout: 10_000 })
+    assert.match(await activePage.locator('[data-search-confirm-message]').innerText(), /3 occurrences across 2 files/, 'the confirmation counts what it is about to change')
+    await confirm.click()
+
     await waitUntil(async () => /subcategory/.test(await editorText(activePage)) && !/subgroupoid/.test(await editorText(activePage)), 'the open document to change in its editor')
-    await waitUntil(async () => {
-      const text = await readFile(closedFile(), 'utf-8')
-      return text.includes(REPLACEMENT) && !text.includes(TERM)
-    }, 'the closed file to change on disk')
-    await waitUntil(async () => (await readFile(openFile(), 'utf-8')).includes(REPLACEMENT), 'the open document to be saved with the replacement')
-    await waitUntil(async () => (await activePage.locator(RESULT).count()) === 0, 'the results to refresh with no match left')
+    await waitUntil(async () => (await readFile(closedFile(), 'utf-8')).includes(REPLACES_WITH), 'the closed file to change on disk')
+    await waitUntil(async () => (await readFile(openFile(), 'utf-8')).includes(REPLACES_WITH), 'the open document to be saved')
+    await waitUntil(async () => /No results found/.test(await activePage.locator(MESSAGE).innerText()), 'the results to refresh with nothing left')
     screenshots.set('after-replace-all.png', await activePage.screenshot())
   })
 
-  it('undoes the last replace in both places from the Search view', async function () {
+  it('undoes the last replace from the view', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
-    await activePage.locator(PANE_ACTION('undo-replace')).click()
+    await activePage.locator(`${VIEW} ${ACTION('undo-replace')}`).click()
     await waitUntil(async () => /subgroupoid/.test(await editorText(activePage)) && !/subcategory/.test(await editorText(activePage)), 'the open document to come back')
-    await waitUntil(async () => {
-      const text = await readFile(closedFile(), 'utf-8')
-      return text.includes(TERM) && !text.includes(REPLACEMENT)
-    }, 'the closed file to come back on disk')
-    await waitUntil(async () => (await readFile(openFile(), 'utf-8')).includes(TERM), 'the open document to be saved with the term back')
-    await runSearch(activePage, TERM)
-    assert.deepEqual((await resultFiles(activePage)).sort(), [ 'Sage', 'categories' ], 'both files match again')
+    await waitUntil(async () => (await readFile(closedFile(), 'utf-8')).includes(TERM), 'the closed file to come back')
+    await search(activePage, TERM, /3 results in 2 files/)
   })
 
-  it('replaces one file\'s matches from its header and leaves the other file alone', async function () {
+  it('replaces one file\'s matches from its row, and one match from its own', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
-    await activePage.locator(REPLACE_INPUT).fill(REPLACEMENT)
-    const sageResult = activePage.locator(RESULT).filter({ hasText: 'Sage' })
-    await sageResult.locator(ACTION('replace-file')).click()
+    await activePage.locator(REPLACEMENT).fill(REPLACES_WITH)
+    await fileRow(activePage, 'sage.md').locator(ACTION('replace-file')).click()
     await waitUntil(async () => {
       const text = await readFile(closedFile(), 'utf-8')
       return (text.match(/subcategory/g) ?? []).length === 2 && !text.includes(TERM)
-    }, 'both matches of sage.md to change on disk')
-    assert.match(await editorText(activePage), /subgroupoid/, 'the open document is untouched')
-    await waitUntil(async () => (await resultFiles(activePage)).join() === 'categories', 'the results to refresh to the one file left')
-    await activePage.locator(PANE_ACTION('undo-replace')).click()
-    await waitUntil(async () => (await readFile(closedFile(), 'utf-8')).includes(TERM), 'sage.md to come back')
-    await runSearch(activePage, TERM)
-  })
+    }, 'both matches of the closed file to change')
+    assert.match(await editorText(activePage), /subgroupoid/, 'the other file is untouched')
+    await search(activePage, TERM, /1 result in 1 file/)
 
-  it('replaces a single match from its line and leaves the file\'s other match', async function () {
-    const activePage = requireInitialized(page, 'The editor page must be initialized')
-    await activePage.locator(REPLACE_INPUT).fill(REPLACEMENT)
-    const sageResult = activePage.locator(RESULT).filter({ hasText: 'Sage' })
-    await sageResult.locator(ACTION('replace-match')).first().click()
+    await activePage.locator(`${VIEW} ${ACTION('undo-replace')}`).click()
+    await search(activePage, TERM, /3 results in 2 files/)
+
+    await activePage.locator(REPLACEMENT).fill(REPLACES_WITH)
+    await fileRow(activePage, 'sage.md').locator(MATCH_ROW).first().locator(ACTION('replace-match')).click()
     await waitUntil(async () => {
       const text = await readFile(closedFile(), 'utf-8')
       return (text.match(/subcategory/g) ?? []).length === 1 && (text.match(/subgroupoid/g) ?? []).length === 1
-    }, 'exactly one of sage.md\'s matches to change')
-    await waitUntil(async () => (await resultFiles(activePage)).sort().join() === 'Sage,categories', 'the results to refresh with the remaining match')
+    }, 'exactly one match of the closed file to change')
+    await search(activePage, TERM, /2 results in 2 files/)
     screenshots.set('after-replace-match.png', await activePage.screenshot())
+  })
+
+  it('leaves a dismissed row out of the replace', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    await activePage.locator(`${VIEW} ${ACTION('undo-replace')}`).click()
+    await search(activePage, TERM, /3 results in 2 files/)
+
+    await fileRow(activePage, 'sage.md').locator(ACTION('dismiss-file')).click()
+    await waitUntil(async () => (await fileRow(activePage, 'sage.md').count()) === 0, 'the dismissed file to leave the results')
+    assert.equal(await activePage.locator(FILE_ROW).count(), 1, 'the other file stays')
+
+    await activePage.locator(REPLACEMENT).fill(REPLACES_WITH)
+    await activePage.locator(`${VIEW} ${ACTION('replace-all')}`).click()
+    await activePage.locator(`[data-search-confirm="replace-all"]`).click()
+    await waitUntil(async () => /subcategory/.test(await editorText(activePage)), 'the file that stayed to be replaced')
+    assert.equal((await readFile(closedFile(), 'utf-8')).includes(TERM), true, 'the dismissed file is untouched')
+    screenshots.set('after-dismiss.png', await activePage.screenshot())
   })
 })
