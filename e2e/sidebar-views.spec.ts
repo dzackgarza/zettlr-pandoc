@@ -185,7 +185,7 @@ describe('the sidebar views', function () {
     assert.ok(Array.isArray(collapsed) && collapsed.includes('book') && !collapsed.includes('outline'), `the collapsed set came back: ${JSON.stringify(collapsed)}`)
 
     await relaunched.locator(ICON('search')).click()
-    await relaunched.locator(DRAWER).waitFor({ state: 'detached', timeout: 10_000 })
+    await relaunched.locator(DRAWER).waitFor({ state: 'hidden', timeout: 10_000 })
     assert.deepEqual(await pressedIcons(relaunched), [], 'no icon is pressed while the drawer is closed')
     await waitUntil(async () => section(await readConfig(relaunched), 'window').fileManagerVisible === false, 'the drawer state to persist')
     screenshots.set('drawer-closed.png', await relaunched.screenshot())

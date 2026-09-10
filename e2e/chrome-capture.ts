@@ -265,15 +265,15 @@ const SCENES: Scene[] = [
     name: 'panes-hidden',
     arrange: async page => {
       await page.locator('.document-tablist-wrapper [data-pane-toggle="navigation-sidebar"]').click()
-      await page.locator('#navigation-sidebar').waitFor({ state: 'detached', timeout: 10_000 })
+      await page.locator('#navigation-sidebar').waitFor({ state: 'hidden', timeout: 10_000 })
       await page.locator('.document-tablist-wrapper [data-pane-toggle="annotation-panel"]').click()
-      await page.locator('#annotations-panel').waitFor({ state: 'detached', timeout: 10_000 })
+      await page.locator('#annotations-panel').waitFor({ state: 'hidden', timeout: 10_000 })
     },
     restore: async page => {
       await page.locator('.document-tablist-wrapper [data-pane-toggle="navigation-sidebar"]').click()
       await page.locator('#navigation-sidebar [data-section="files"]').waitFor({ timeout: 10_000 })
       await page.locator('.document-tablist-wrapper [data-pane-toggle="annotation-panel"]').click()
-      await page.locator('#annotations-panel').waitFor({ state: 'attached', timeout: 10_000 })
+      await page.locator('#annotations-panel').waitFor({ state: 'visible', timeout: 10_000 })
     }
   },
   {

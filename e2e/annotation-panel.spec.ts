@@ -159,18 +159,54 @@ describe('the annotation review panel pane', function () {
   it('hides the panel through its View menu item and keeps it hidden across a restart', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
     await clickMenuItem(activePage, 'menu.toggle_annotation_panel')
-    await activePage.locator(PANEL).waitFor({ state: 'detached', timeout: 10_000 })
+    await activePage.locator(PANEL).waitFor({ state: 'hidden', timeout: 10_000 })
     await waitUntil(async () => !(await readPanelVisible(activePage)), 'the panel visibility to persist as hidden')
 
     await shutdown(browser, appProcess)
     page = await launch.call(this)
     const relaunched = requireInitialized(page, 'The editor page must be initialized')
-    assert.equal(await relaunched.locator(PANEL).count(), 0, 'the panel stays hidden after the restart')
+    assert.equal(await relaunched.locator(PANEL).isVisible(), false, 'the panel stays hidden after the restart')
     assert.equal(await readPanelVisible(relaunched), false)
 
     await clickMenuItem(relaunched, 'menu.toggle_annotation_panel')
-    await relaunched.locator(PANEL).waitFor({ state: 'attached', timeout: 10_000 })
+    await relaunched.locator(PANEL).waitFor({ state: 'visible', timeout: 10_000 })
     await waitUntil(async () => await readPanelVisible(relaunched), 'the panel visibility to persist as shown')
     screenshots.set('panel-after-restart.png', await relaunched.screenshot())
+  })
+
+  it('opens the panel on the annotation from its gutter chip', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    // index.md reads `# Lattice Notes`: the annotation targets "Lattice".
+    // Opening it from the tree makes it the active, loaded document.
+    await activePage.locator(`${SIDEBAR} [data-section="files"] .tree-item.file[data-path$="/index.md"]`).click()
+    await waitUntil(async () => /Lattice/.test(await activePage.locator('.cm-content').innerText()), 'index.md to be the active document')
+    await clickMenuItem(activePage, 'menu.toggle_annotation_panel')
+    await activePage.locator(PANEL).waitFor({ state: 'hidden', timeout: 10_000 })
+
+    const documentPath = path.join(requireInitialized(fixtureRoot, 'fixture root'), 'workspace', 'index.md')
+    const created = await activePage.evaluate(async pathInPage => await window.ipc.invoke('documents:create-annotation', {
+      path: pathInPage, from: 2, to: 9, instruction: 'Say which lattices these are', expectedAnnotationGeneration: 0
+    }), documentPath)
+    assert.ok(typeof created === 'object' && created !== null && 'annotationId' in created, `the annotation was created: ${JSON.stringify(created)}`)
+
+    const chip = activePage.locator('.cm-textAnnotation-gutterMarker')
+    await chip.waitFor({ state: 'visible', timeout: 10_000 })
+    await chip.click()
+    await activePage.locator(PANEL).waitFor({ state: 'visible', timeout: 10_000 })
+    await waitUntil(async () => await readPanelVisible(activePage), 'the panel visibility to persist as shown')
+    const detail = activePage.locator(`${PANEL} [data-annotation-detail]`)
+    await detail.waitFor({ state: 'visible', timeout: 10_000 })
+    assert.match(await detail.innerText(), /Say which lattices these are/, 'the chip\'s annotation is the one opened')
+    await waitUntil(async () => (await activePage.locator('.cm-textAnnotation-gutterMarker-active').count()) === 1, 'the chip to show as active')
+    screenshots.set('panel-from-chip.png', await activePage.screenshot())
+  })
+
+  it('deletes the selected annotation from the panel', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    await activePage.locator(`${PANEL} [data-annotation-detail] [data-annotation-action="delete"]`).click()
+    await waitUntil(async () => (await activePage.locator('.cm-textAnnotation-gutterMarker').count()) === 0, 'the chip to leave the editor')
+    await waitUntil(async () => (await activePage.locator(`${PANEL} .annotation-list-item`).count()) === 0, 'the card to leave the list')
+    assert.equal(await activePage.locator(`${PANEL} [data-annotation-detail]`).count(), 0, 'the detail closes with its annotation')
+    screenshots.set('panel-after-delete.png', await activePage.screenshot())
   })
 })

@@ -52,6 +52,11 @@ async function paneWidth (page: Page, name: 'navigation-sidebar' | 'editor' | 'a
   return box.width
 }
 
+/** The pane's laid-out width, zero included: what the eye sees while it animates. */
+async function measuredWidth (page: Page, name: 'navigation-sidebar' | 'editor' | 'annotation-panel'): Promise<number> {
+  return await page.evaluate(selector => document.querySelector(selector)?.getBoundingClientRect().width ?? 0, PANE(name))
+}
+
 async function readUiConfig (page: Page): Promise<Record<string, unknown>> {
   return await page.evaluate(() => {
     const config: unknown = window.ipc.sendSync('config-provider', { command: 'get-config' })
@@ -169,19 +174,32 @@ describe('the main window panes', function () {
     await activePage.waitForFunction(() => window.innerWidth === 1200, undefined, { timeout: 10_000 })
   })
 
-  it('takes a hidden pane\'s handle with it and hands its width to the editor', async function () {
+  it('slides a hidden pane shut, hides its handle, and hands its width to the editor', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
     const sidebar = await paneWidth(activePage, 'navigation-sidebar')
     const editorBefore = await paneWidth(activePage, 'editor')
     await activePage.locator(TOGGLE('navigation-sidebar')).click()
-    await activePage.locator(PANE('navigation-sidebar')).waitFor({ state: 'detached', timeout: 10_000 })
-    assert.equal(await activePage.locator(HANDLE('navigation-sidebar')).count(), 0, 'the hidden pane leaves no handle behind')
+    // The pane animates shut: sampled while it closes, its width passes
+    // through values strictly between the open width and zero.
+    const samples: number[] = []
+    const deadline = Date.now() + 2_000
+    while (Date.now() < deadline) {
+      const width = await measuredWidth(activePage, 'navigation-sidebar')
+      samples.push(width)
+      if (width === 0) {
+        break
+      }
+    }
+    assert.ok(samples.some(width => width > 0 && width < sidebar - 1), `the pane shrinks through intermediate widths: ${samples.join(', ')}`)
+    await activePage.locator(PANE('navigation-sidebar')).waitFor({ state: 'hidden', timeout: 10_000 })
+    await activePage.locator(HANDLE('navigation-sidebar')).waitFor({ state: 'hidden', timeout: 10_000 })
     await waitUntil(async () => Math.abs(await paneWidth(activePage, 'editor') - (editorBefore + sidebar)) <= 3, 'the editor to take the sidebar\'s width')
     const persisted = (await readUiConfig(activePage)).navigationSidebarWidth
     assert.ok(typeof persisted === 'number' && Math.abs(persisted - sidebar) <= 8, `hiding the pane leaves its persisted width alone: ${String(persisted)} for ${sidebar}`)
     screenshots.set('sidebar-hidden.png', await activePage.screenshot())
     await activePage.locator(TOGGLE('navigation-sidebar')).click()
-    await activePage.locator(PANE('navigation-sidebar')).waitFor({ state: 'attached', timeout: 10_000 })
+    await activePage.locator(PANE('navigation-sidebar')).waitFor({ state: 'visible', timeout: 10_000 })
     await waitUntil(async () => Math.abs(await paneWidth(activePage, 'navigation-sidebar') - sidebar) <= 8, 'the sidebar to come back at its width')
+    await activePage.locator(HANDLE('navigation-sidebar')).waitFor({ state: 'visible', timeout: 10_000 })
   })
 })

@@ -237,7 +237,7 @@ describe('the Ctrl+P command launcher', function () {
     await openLauncherFromMenu(activePage)
     await typeAndWaitForHighlight(activePage, 'sidebar', 'Toggle Sidebar')
     await activePage.keyboard.press('Enter')
-    await activePage.locator(NAVIGATION_SIDEBAR).waitFor({ state: 'detached', timeout: 10_000 })
+    await activePage.locator(NAVIGATION_SIDEBAR).waitFor({ state: 'hidden', timeout: 10_000 })
     await waitUntil(async () => !(await readConfig(activePage)).fileManagerVisible, 'window.fileManagerVisible to become false')
 
     await openLauncherFromMenu(activePage)
