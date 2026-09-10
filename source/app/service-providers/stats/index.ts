@@ -69,7 +69,7 @@ export default class StatsProvider extends ProviderContract {
    */
   async shutdown (): Promise<void> {
     this._logger.verbose('Stats provider shutting down ...')
-    this.container.shutdown()
+    await this.container.shutdown()
   }
 
   /**

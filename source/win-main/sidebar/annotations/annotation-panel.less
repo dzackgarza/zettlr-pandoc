@@ -14,6 +14,7 @@
   --annotation-accent-muted: rgba(35, 122, 255, 0.35);
   --annotation-accent-contrast: rgb(255, 255, 255);
   --annotation-warning: rgb(176, 108, 0);
+  --annotation-danger: rgb(196, 60, 60);
   --annotation-resolved: rgb(40, 140, 90);
   --proposal-pending: rgb(176, 108, 0);
   --annotation-agent: rgb(112, 76, 214);
@@ -33,6 +34,7 @@ body.dark {
   --annotation-accent-muted: rgba(90, 160, 255, 0.4);
   --annotation-accent-contrast: rgb(255, 255, 255);
   --annotation-warning: rgb(240, 169, 60);
+  --annotation-danger: rgb(236, 110, 110);
   --annotation-resolved: rgb(96, 200, 140);
   --proposal-pending: rgb(240, 169, 60);
   --annotation-agent: rgb(170, 140, 255);
@@ -121,6 +123,10 @@ button.annotation-line-locator {
 
 // Buttons: secondary by default, one primary per surface.
 button.annotation-button {
+  // Outside the panel — the confirmation dialog is a portal on `body` —
+  // nothing else has taken the native control painting away, and a native
+  // button keeps its own background whatever the author asks for.
+  appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -152,6 +158,18 @@ button.annotation-button {
 
     &:hover:not(:disabled) {
       background-color: var(--annotation-accent);
+      opacity: 0.9;
+    }
+  }
+
+  // The action that destroys something, and only where it is confirmed.
+  &.annotation-button-danger {
+    border-color: transparent;
+    background-color: var(--annotation-danger);
+    color: var(--annotation-accent-contrast);
+
+    &:hover:not(:disabled) {
+      background-color: var(--annotation-danger);
       opacity: 0.9;
     }
   }

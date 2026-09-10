@@ -11,10 +11,12 @@
  *                  highlight over the target span and an ordinal marker on
  *                  the target's first line. Nothing else — no message text,
  *                  no thread, no button, no proposal state (invariant I4).
- *                  Everything the owner reads or clicks lives in the
- *                  annotations panel; this field only distinguishes the
- *                  seven editor states plan section 3 requires and reports
- *                  no interaction of its own. Selection, drafting, and the
+ *                  Everything the owner reads, replies to or decides lives
+ *                  in the annotations panel; this field distinguishes the
+ *                  seven editor states plan section 3 requires and owns one
+ *                  gesture: a click on a chip reports which annotation it
+ *                  carries (`annotationChipClickedEffect`) and changes
+ *                  nothing itself. Selection, drafting, and the
  *                  resolved-visibility toggle are driven by effects a host
  *                  (the panel, the creation composer) dispatches.
  *
@@ -53,6 +55,12 @@ export const clearAnnotationDraftEffect = StateEffect.define<null>()
 /** Toggles whether resolved annotations render at all ("View resolved (N)"). */
 export const showResolvedAnnotationsEffect = StateEffect.define<boolean>()
 
+/**
+ * Reported when the owner clicks a gutter chip: the annotation that chip
+ * carries. The field acts on nothing — the host opens the panel on it.
+ */
+export const annotationChipClickedEffect = StateEffect.define<string>()
+
 export interface TextAnnotationsState {
   annotations: TextAnnotation[]
   activeAnnotationId: string | null
@@ -63,6 +71,13 @@ export interface TextAnnotationsState {
 interface TextAnnotationsFieldValue extends TextAnnotationsState {
   decorations: DecorationSet
   gutterMarkers: RangeSet<GutterMarker>
+  /**
+   * The annotation each chip stands for, by the start of the line it sits
+   * on: what a click on that gutter row resolves to. A chip carrying
+   * several annotations answers with the one whose ordinal is lowest, the
+   * first of the group the panel lists.
+   */
+  annotationIdByLine: Map<number, string>
 }
 
 type MarkerKind = 'range' | 'point' | 'orphaned' | 'overlapping'
@@ -211,6 +226,7 @@ function buildFieldValue (base: TextAnnotationsState, doc: EditorState['doc']): 
   }
 
   const gutterRanges: Array<ReturnType<GutterMarker['range']>> = []
+  const annotationIdByLine = new Map<number, string>()
   for (const [lineNumber, group] of groupsByLine) {
     const pos = doc.line(lineNumber).from
     const active = group.some(a => a.annotationId === base.activeAnnotationId)
@@ -222,9 +238,11 @@ function buildFieldValue (base: TextAnnotationsState, doc: EditorState['doc']): 
         : group[0].anchor.state === 'orphaned'
           ? 'orphaned'
           : 'range'
-    const ordinals = group
-      .map(a => ordinalByAnnotationId.get(a.annotationId) ?? 0)
-      .sort((a, b) => a - b)
+    const byOrdinal = [...group].sort(
+      (a, b) => (ordinalByAnnotationId.get(a.annotationId) ?? 0) - (ordinalByAnnotationId.get(b.annotationId) ?? 0)
+    )
+    const ordinals = byOrdinal.map(a => ordinalByAnnotationId.get(a.annotationId) ?? 0)
+    annotationIdByLine.set(pos, byOrdinal[0].annotationId)
     gutterRanges.push(
       new AnnotationGutterMarker(String(lineNumber), kind, group.length, ordinals, active, resolved).range(pos)
     )
@@ -237,7 +255,8 @@ function buildFieldValue (base: TextAnnotationsState, doc: EditorState['doc']): 
   return {
     ...base,
     decorations: Decoration.set(markRanges, true),
-    gutterMarkers: RangeSet.of(gutterRanges, true)
+    gutterMarkers: RangeSet.of(gutterRanges, true),
+    annotationIdByLine
   }
 }
 
@@ -296,10 +315,24 @@ const textAnnotationsField = StateField.define<TextAnnotationsFieldValue>({
   ]
 })
 
-/** The annotation chips' own gutter, present with or without line numbers. */
+/**
+ * The annotation chips' own gutter, present with or without line numbers.
+ * A click on a chip reports its annotation and consumes the event, so the
+ * gesture never also moves the cursor into the line behind it.
+ */
 const textAnnotationsGutter = gutter({
   class: 'cm-textAnnotation-gutter',
-  markers: view => view.state.field(textAnnotationsField).gutterMarkers
+  markers: view => view.state.field(textAnnotationsField).gutterMarkers,
+  domEventHandlers: {
+    mousedown (view, line) {
+      const annotationId = view.state.field(textAnnotationsField).annotationIdByLine.get(line.from)
+      if (annotationId === undefined) {
+        return false
+      }
+      view.dispatch({ effects: annotationChipClickedEffect.of(annotationId) })
+      return true
+    }
+  }
 })
 
 /** The field's current annotation-locator state, or `null` if not installed. */
@@ -344,6 +377,7 @@ const textAnnotationsTheme = EditorView.baseTheme({
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
+    cursor: 'pointer',
     gap: '2px',
     height: '1.3em',
     borderRadius: '4px',

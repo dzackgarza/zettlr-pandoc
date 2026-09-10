@@ -35,6 +35,7 @@
       v-on:show-proposal="onShowProposal(selectedCard.annotation)"
       v-on:begin-reattach="emit('begin-reattach', selectedCard.annotation.annotationId)"
       v-on:resolve-toggle="onResolveToggle"
+      v-on:delete="onDelete"
     ></AnnotationInspector>
 
     <SuggestionInspector
@@ -179,6 +180,29 @@ function onResolveToggle (): void {
     ? collaborationStore.resolveAnnotation(path, annotation.annotationId)
     : collaborationStore.reopenAnnotation(path, annotation.annotationId)
   call.catch(err => console.error('[AnnotationsTab] Could not change the annotation resolution', err))
+}
+
+/**
+ * The owner deleted the selected annotation. The card leaves the list and
+ * the chip leaves the editor through the provider's broadcast, the way
+ * every other annotation mutation lands; the selection is dropped here,
+ * because the annotation the inspector was showing is gone.
+ */
+function onDelete (): void {
+  const path = activeFile.value?.path
+  const annotation = selectedCard.value?.annotation
+  if (path === undefined || annotation === undefined) {
+    return
+  }
+  collaborationStore.deleteAnnotation(path, annotation.annotationId)
+    .then(result => {
+      if ('ok' in result && !result.ok) {
+        showToast(trans(result.message), 'error')
+        return
+      }
+      collaborationStore.selectAnnotation(null)
+    })
+    .catch(err => console.error('[AnnotationsTab] Could not delete the annotation', err))
 }
 
 // M9: the panel's review adjudication path. Every control the editor's chunk

@@ -201,9 +201,21 @@ describe('the annotation review panel pane', function () {
     screenshots.set('panel-from-chip.png', await activePage.screenshot())
   })
 
-  it('deletes the selected annotation from the panel', async function () {
+  it('deletes the selected annotation from the panel, once the owner confirms', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
+    // Deleting takes the thread with it and nothing brings it back, so the
+    // first click only asks; backing out leaves the annotation alone.
     await activePage.locator(`${PANEL} [data-annotation-detail] [data-annotation-action="delete"]`).click()
+    const confirm = activePage.locator('[data-annotation-confirm="delete"]')
+    await confirm.waitFor({ state: 'visible', timeout: 10_000 })
+    screenshots.set('delete-confirmation.png', await activePage.screenshot())
+    await activePage.keyboard.press('Escape')
+    await confirm.waitFor({ state: 'detached', timeout: 10_000 })
+    assert.equal(await activePage.locator('.cm-textAnnotation-gutterMarker').count(), 1, 'backing out of the confirmation keeps the annotation')
+
+    await activePage.locator(`${PANEL} [data-annotation-detail] [data-annotation-action="delete"]`).click()
+    await confirm.waitFor({ state: 'visible', timeout: 10_000 })
+    await confirm.click()
     await waitUntil(async () => (await activePage.locator('.cm-textAnnotation-gutterMarker').count()) === 0, 'the chip to leave the editor')
     await waitUntil(async () => (await activePage.locator(`${PANEL} .annotation-list-item`).count()) === 0, 'the card to leave the list')
     assert.equal(await activePage.locator(`${PANEL} [data-annotation-detail]`).count(), 0, 'the detail closes with its annotation')

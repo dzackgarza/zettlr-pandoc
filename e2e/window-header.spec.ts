@@ -151,18 +151,18 @@ describe('the window header', function () {
     assert.ok(toggleLeft > tabRight, 'the toggles sit to the right of the last tab')
 
     await activePage.locator(TOGGLE('navigation-sidebar')).click()
-    await activePage.locator('#navigation-sidebar').waitFor({ state: 'detached', timeout: 10_000 })
+    await activePage.locator('#navigation-sidebar').waitFor({ state: 'hidden', timeout: 10_000 })
     await waitUntil(async () => readSection(await readWindowConfig(activePage), 'window').fileManagerVisible === false, 'the sidebar visibility to persist as hidden')
     await activePage.locator(TOGGLE('navigation-sidebar')).click()
-    await activePage.locator('#navigation-sidebar').waitFor({ state: 'attached', timeout: 10_000 })
+    await activePage.locator('#navigation-sidebar').waitFor({ state: 'visible', timeout: 10_000 })
     await waitUntil(async () => readSection(await readWindowConfig(activePage), 'window').fileManagerVisible === true, 'the sidebar visibility to persist as shown')
 
     await activePage.locator(TOGGLE('annotation-panel')).click()
-    await activePage.locator('#annotations-panel').waitFor({ state: 'detached', timeout: 10_000 })
+    await activePage.locator('#annotations-panel').waitFor({ state: 'hidden', timeout: 10_000 })
     await waitUntil(async () => readSection(await readWindowConfig(activePage), 'window').sidebarVisible === false, 'the panel visibility to persist as hidden')
     screenshots.set('window-header-panel-hidden.png', await activePage.screenshot())
     await activePage.locator(TOGGLE('annotation-panel')).click()
-    await activePage.locator('#annotations-panel').waitFor({ state: 'attached', timeout: 10_000 })
+    await activePage.locator('#annotations-panel').waitFor({ state: 'visible', timeout: 10_000 })
     await waitUntil(async () => readSection(await readWindowConfig(activePage), 'window').sidebarVisible === true, 'the panel visibility to persist as shown')
   })
 

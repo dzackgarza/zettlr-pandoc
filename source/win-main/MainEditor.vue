@@ -158,6 +158,7 @@ const emit = defineEmits<{
   (e: 'referenceSearch', request: ReferenceSearchRequest): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
   (e: 'openPandocQuickHelp'): void
+  (e: 'openAnnotation', annotationId: string): void
 }>()
 
 const windowStateStore = useWindowStateStore()
@@ -847,8 +848,19 @@ const EMPTY_ANNOTATION_SET: AnnotationSet = { generation: 0, items: [] }
 // forwards the current set — the editor's own field only distinguishes and
 // re-renders locators, never mutates them. `immediate` covers the pane that
 // mounts onto a document another pane already cached the session for.
-watch(() => collaborationSession.value?.annotations, (annotations) => {
+// The set, the selected card and the resolved-visibility switch are all the
+// panel's state; the editor renders from them and mutates none of them. They
+// travel together because a document swap builds a fresh editor state:
+// pushing the set alone would leave the new state with no selection and the
+// resolved switch back at its default.
+watch([
+  () => collaborationSession.value?.annotations,
+  () => collaborationStore.selectedAnnotationId,
+  () => collaborationStore.showResolved
+], ([ annotations, selectedAnnotationId, showResolved ]) => {
   currentEditor?.setAnnotations(annotations ?? EMPTY_ANNOTATION_SET)
+  currentEditor?.setActiveAnnotation(selectedAnnotationId)
+  currentEditor?.setShowResolvedAnnotations(showResolved)
 }, { immediate: true, deep: true })
 
 // METHODS
@@ -932,6 +944,13 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   // App.vue.
   editor.on('reference-search', (request: ReferenceSearchRequest) => {
     emit('referenceSearch', request)
+  })
+
+  // A gutter chip was clicked. Opening the annotations panel is the
+  // window's business, so relay the annotation up to App.vue, which owns
+  // both directions of the panel's visibility.
+  editor.on('annotation-selected', (annotationId: string) => {
+    emit('openAnnotation', annotationId)
   })
 
   // An in-editor help link (the completion info panel, issue #1 review A2)

@@ -123,6 +123,7 @@ import {
 } from './plugins/remote-doc'
 import { reviewChunksExtension } from './plugins/review-chunks'
 import {
+  annotationChipClickedEffect,
   clearAnnotationDraftEffect,
   setActiveAnnotationEffect,
   setAnnotationDraftEffect,
@@ -456,6 +457,13 @@ export default class MarkdownEditor extends EventEmitter {
             // Phase 8 badge-keyed reverse lookup).
             if (effect.is(openReferenceSearchEffect)) {
               this.emit('reference-search', effect.value)
+            }
+
+            // A gutter chip was clicked: the shell opens the annotations
+            // panel on that annotation. The editor never opens a pane or
+            // selects on its own — it reports which chip was hit.
+            if (effect.is(annotationChipClickedEffect)) {
+              this.emit('annotation-selected', effect.value)
             }
 
             // Create-reference-label request (issue #1 Phase 6): surface

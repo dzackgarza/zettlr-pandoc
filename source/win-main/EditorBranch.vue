@@ -25,6 +25,7 @@
         @reference-search="emit('referenceSearch', $event)"
         @create-reference-label="emit('createReferenceLabel', $event)"
         @open-pandoc-quick-help="emit('openPandocQuickHelp')"
+        @open-annotation="emit('openAnnotation', $event)"
       />
       <EditorPane
         v-else
@@ -42,6 +43,7 @@
         @reference-search="emit('referenceSearch', $event)"
         @create-reference-label="emit('createReferenceLabel', $event)"
         @open-pandoc-quick-help="emit('openPandocQuickHelp')"
+        @open-annotation="emit('openAnnotation', $event)"
       />
       <!-- Here comes the resizing (for every but the last child) -->
       <div
@@ -77,6 +79,7 @@ const emit = defineEmits<{
   (e: 'referenceSearch', request: ReferenceSearchRequest): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
   (e: 'openPandocQuickHelp'): void
+  (e: 'openAnnotation', annotationId: string): void
 }>()
 
 const sizes = ref<number[]>(props.node.sizes.map(s => s))

@@ -12,15 +12,18 @@
     <SplitterGroup
       direction="horizontal"
       class="main-panes"
+      :class="{ animating: panesAnimating }"
     >
       <SplitterPanel
-        v-if="fileManagerVisible"
+        ref="navigationSidebarPanel"
         class="main-pane"
         data-pane="navigation-sidebar"
         size-unit="px"
         :order="0"
+        :collapsible="true"
+        :collapsed-size="0"
         :min-size="NAVIGATION_SIDEBAR_MINIMUM"
-        :default-size="mountWidths.navigationSidebar"
+        :default-size="mountSizes.navigationSidebar"
         @resize="draggedWidths.navigationSidebar = $event"
       >
         <NavigationSidebar
@@ -33,8 +36,8 @@
         />
       </SplitterPanel>
       <SplitterResizeHandle
-        v-if="fileManagerVisible"
         class="main-pane-handle"
+        :class="{ collapsed: !fileManagerVisible }"
         data-pane-handle="navigation-sidebar"
         @dragging="onPaneDragging('navigationSidebar', $event)"
       />
@@ -54,6 +57,7 @@
           @reference-search="openReferenceSearch($event)"
           @create-reference-label="openCreateReferenceLabel($event)"
           @open-pandoc-quick-help="showPandocQuickHelp = true"
+          @open-annotation="openAnnotation($event)"
         />
         <EditorBranch
           v-else-if="paneConfiguration !== undefined"
@@ -65,22 +69,25 @@
           @reference-search="openReferenceSearch($event)"
           @create-reference-label="openCreateReferenceLabel($event)"
           @open-pandoc-quick-help="showPandocQuickHelp = true"
+          @open-annotation="openAnnotation($event)"
         />
       </SplitterPanel>
       <SplitterResizeHandle
-        v-if="sidebarVisible"
         class="main-pane-handle"
+        :class="{ collapsed: !sidebarVisible }"
         data-pane-handle="annotation-panel"
         @dragging="onPaneDragging('annotationPanel', $event)"
       />
       <SplitterPanel
-        v-if="sidebarVisible"
+        ref="annotationPanelPanel"
         class="main-pane"
         data-pane="annotation-panel"
         size-unit="px"
         :order="2"
+        :collapsible="true"
+        :collapsed-size="0"
         :min-size="ANNOTATION_PANEL_MINIMUM"
-        :default-size="mountWidths.annotationPanel"
+        :default-size="mountSizes.annotationPanel"
         @resize="draggedWidths.annotationPanel = $event"
       >
         <AnnotationsTab
@@ -215,7 +222,7 @@ import { DocumentType, type LeafNodeJSON } from '@dts/common/documents'
 import { buildPipeMarkdownTable } from '@common/util/build-pipe-markdown-table'
 import { type UpdateState } from '@providers/updates'
 import getDocumentTitle from './util/get-document-title'
-import { useConfigStore, useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
+import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { type AnyDescriptor } from 'source/types/common/fsal'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from '@dts/common/documents'
@@ -233,6 +240,7 @@ const ipcRenderer = window.ipc
 
 const configStore = useConfigStore()
 const documentTreeStore = useDocumentTreeStore()
+const collaborationStore = useDocumentCollaborationStore()
 const windowStateStore = useWindowStateStore()
 const workspaceStore = useWorkspaceStore()
 
@@ -295,6 +303,13 @@ function onPaneDragging (pane: DraggablePane, dragging: boolean): void {
   }
   paneDragActive[pane] = false
   const width = Math.round(draggedWidths[pane])
+  // A handle dragged past its pane's minimum collapses the pane, which is
+  // how a pane is hidden by dragging. The width it comes back at is the one
+  // it had before that, so this does not persist the zero.
+  if (width < PANE_MINIMUM[pane]) {
+    configStore.setConfigValue(PANE_VISIBLE_KEY[pane], false)
+    return
+  }
   mountWidths[pane] = width
   configStore.setConfigValue(PANE_WIDTH_KEY[pane], width)
 }
@@ -528,6 +543,72 @@ const sidebarsBeforeDistractionfree = ref<{ fileManager: boolean, sidebar: boole
 })
 
 const sidebarVisible = computed<boolean>(() => configStore.config.window.sidebarVisible)
+
+// Showing and hiding a pane. The panes stay mounted and collapse to nothing
+// through the splitter's own collapse, so the width slides instead of
+// jumping and a pane comes back holding what it held. The transition is
+// armed only around a toggle: a window resize relays the panes too, and a
+// pane that eased after the window edge would lag behind the pointer.
+const PANE_ANIMATION_MS = 180
+const PANE_VISIBLE_KEY: Record<DraggablePane, 'window.fileManagerVisible' | 'window.sidebarVisible'> = {
+  navigationSidebar: 'window.fileManagerVisible',
+  annotationPanel: 'window.sidebarVisible'
+}
+const PANE_MINIMUM: Record<DraggablePane, number> = {
+  navigationSidebar: NAVIGATION_SIDEBAR_MINIMUM,
+  annotationPanel: ANNOTATION_PANEL_MINIMUM
+}
+const navigationSidebarPanel = ref<InstanceType<typeof SplitterPanel>|null>(null)
+const annotationPanelPanel = ref<InstanceType<typeof SplitterPanel>|null>(null)
+const panesAnimating = ref(false)
+let paneAnimationTimer: ReturnType<typeof setTimeout>|undefined
+
+/**
+ * The width each pane mounts at, zero for a pane the window opens with
+ * hidden: a pane that starts collapsed is laid out collapsed, rather than
+ * collapsed by hand once the group exists. Read once, so the splitter's
+ * constraints never change under it.
+ */
+const mountSizes: Record<DraggablePane, number> = {
+  navigationSidebar: fileManagerVisible.value ? mountWidths.navigationSidebar : 0,
+  annotationPanel: sidebarVisible.value ? mountWidths.annotationPanel : 0
+}
+
+function panelFor (pane: DraggablePane): InstanceType<typeof SplitterPanel>|null {
+  return pane === 'navigationSidebar' ? navigationSidebarPanel.value : annotationPanelPanel.value
+}
+
+/**
+ * Slides a pane open or shut. A pane comes back at the width it was left
+ * at, which is named here rather than left to the splitter: a pane the
+ * window opened with hidden was never collapsed, so the splitter remembers
+ * no width for it and would hand it its bare minimum.
+ */
+function applyPaneVisibility (pane: DraggablePane, visible: boolean): void {
+  const panel = panelFor(pane)
+  if (panel === null) {
+    return
+  }
+  panesAnimating.value = true
+  clearTimeout(paneAnimationTimer)
+  paneAnimationTimer = setTimeout(() => { panesAnimating.value = false }, PANE_ANIMATION_MS)
+  if (visible) {
+    panel.expand()
+    panel.resize(mountWidths[pane])
+  } else {
+    panel.collapse()
+  }
+}
+
+watch([ fileManagerVisible, sidebarVisible ], ([ sidebar, panel ], [ wasSidebar, wasPanel ]) => {
+  if (sidebar !== wasSidebar) {
+    applyPaneVisibility('navigationSidebar', sidebar)
+  }
+  if (panel !== wasPanel) {
+    applyPaneVisibility('annotationPanel', panel)
+  }
+})
+
 const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
 const windowTitle = computed<string>(() => {
   if (activeFile.value === undefined) {
@@ -846,6 +927,18 @@ function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
  *
  * @param   {string}  annotationId  The orphaned annotation to reattach
  */
+/**
+ * A gutter chip was clicked in an editor. The chip is the editor's half of
+ * an annotation and the panel holds the other half, so the gesture selects
+ * the annotation and brings the panel out if it was away.
+ */
+function openAnnotation (annotationId: string): void {
+  collaborationStore.selectAnnotation(annotationId)
+  if (!sidebarVisible.value) {
+    configStore.setConfigValue('window.sidebarVisible', true)
+  }
+}
+
 function beginAnnotationReattach (annotationId: string): void {
   const doc = documentTreeStore.lastLeafActiveFile
   if (doc === undefined) {
@@ -963,6 +1056,21 @@ body {
   .main-pane {
     min-width: 0;
     overflow: auto;
+
+    // A collapsed pane holds no width for its content, but padding does not
+    // shrink, so the content keeps a sliver of a box and stays focusable and
+    // measurable. The delay keeps it on screen while the pane slides shut.
+    &[data-state="collapsed"] {
+      visibility: hidden;
+      transition: visibility 0s linear 180ms;
+    }
+  }
+
+  // A pane slides open and shut. `flex-grow` is what the splitter writes, so
+  // it is what eases; the panes beside it take up the room as it goes.
+  .main-panes.animating {
+    .main-pane { transition: flex-grow 180ms ease; }
+    .main-pane-handle { transition: width 180ms ease; }
   }
 
   // A hairline with a wider hit area; the accent while hovered or dragged.
@@ -985,6 +1093,13 @@ body {
     &[data-resize-handle-state="hover"],
     &[data-resize-handle-state="drag"] {
       background-color: var(--chrome-row-accent);
+    }
+
+    // The handle of a collapsed pane has nothing to resize.
+    &.collapsed {
+      width: 0;
+      visibility: hidden;
+      pointer-events: none;
     }
   }
 }

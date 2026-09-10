@@ -52,6 +52,19 @@ const FILES_HEADER = `${FILES_SECTION} .chrome-section-trigger`
 const LAST_HEADER = '#navigation-sidebar [data-section="book"] .chrome-section-trigger'
 const ACTIVITY = (view: string): string => `#activity-bar [data-activity="${view}"]`
 
+/**
+ * A pane slides shut, and its content stops being visible as soon as the
+ * pane has no width for it — before the slide has finished. Captures wait
+ * for the pane itself to reach the width it is heading for, or the shot
+ * catches it halfway.
+ */
+async function waitForPaneWidth (page: Page, pane: 'navigation-sidebar' | 'annotation-panel', width: 'zero' | 'some'): Promise<void> {
+  await page.waitForFunction(([ selector, expected ]) => {
+    const measured = document.querySelector(selector)?.getBoundingClientRect().width ?? 0
+    return expected === 'zero' ? measured === 0 : measured > 0
+  }, [ `[data-pane="${pane}"]`, width ] as const, { timeout: 10_000 })
+}
+
 async function waitForFilesState (page: Page, state: 'open' | 'closed'): Promise<void> {
   await page.locator(`${FILES_SECTION}[data-state="${state}"]`).waitFor({ timeout: 10_000 })
 }
@@ -265,15 +278,17 @@ const SCENES: Scene[] = [
     name: 'panes-hidden',
     arrange: async page => {
       await page.locator('.document-tablist-wrapper [data-pane-toggle="navigation-sidebar"]').click()
-      await page.locator('#navigation-sidebar').waitFor({ state: 'hidden', timeout: 10_000 })
+      await waitForPaneWidth(page, 'navigation-sidebar', 'zero')
       await page.locator('.document-tablist-wrapper [data-pane-toggle="annotation-panel"]').click()
-      await page.locator('#annotations-panel').waitFor({ state: 'hidden', timeout: 10_000 })
+      await waitForPaneWidth(page, 'annotation-panel', 'zero')
     },
     restore: async page => {
       await page.locator('.document-tablist-wrapper [data-pane-toggle="navigation-sidebar"]').click()
       await page.locator('#navigation-sidebar [data-section="files"]').waitFor({ timeout: 10_000 })
+      await waitForPaneWidth(page, 'navigation-sidebar', 'some')
       await page.locator('.document-tablist-wrapper [data-pane-toggle="annotation-panel"]').click()
       await page.locator('#annotations-panel').waitFor({ state: 'visible', timeout: 10_000 })
+      await waitForPaneWidth(page, 'annotation-panel', 'some')
     }
   },
   {

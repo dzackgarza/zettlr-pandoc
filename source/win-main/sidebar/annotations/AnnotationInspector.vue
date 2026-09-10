@@ -72,9 +72,21 @@
 
     <div class="annotation-inspector-actions">
       <button
+        type="button"
+        class="annotation-button annotation-action-delete"
+        data-annotation-action="delete"
+        v-on:click="confirmingDelete = true"
+      >
+        <cds-icon
+          shape="trash"
+          role="presentation"
+        ></cds-icon> {{ trans('Delete') }}
+      </button>
+      <button
         v-if="actionRow.canReattach"
         type="button"
         class="annotation-button annotation-action-reattach"
+        data-annotation-action="reattach"
         v-on:click="emit('begin-reattach')"
       >
         <cds-icon
@@ -85,6 +97,7 @@
       <button
         type="button"
         class="annotation-button annotation-button-primary annotation-inspector-resolve"
+        data-annotation-action="resolve"
         v-on:click="emit('resolve-toggle')"
       >
         <cds-icon
@@ -93,6 +106,31 @@
         ></cds-icon> {{ resolveLabel }}
       </button>
     </div>
+
+    <!--
+      Resolving keeps the thread; deleting takes the annotation, its thread
+      and its proposals away for good, and nothing in the panel brings them
+      back. So it asks.
+    -->
+    <AlertDialogRoot v-model:open="confirmingDelete">
+      <AlertDialogPortal>
+        <AlertDialogOverlay class="annotation-dialog-backdrop"></AlertDialogOverlay>
+        <AlertDialogContent class="annotation-dialog">
+          <AlertDialogTitle class="annotation-dialog-title">{{ trans('Delete this annotation?') }}</AlertDialogTitle>
+          <AlertDialogDescription class="annotation-dialog-body">
+            {{ trans('Its thread and any proposed changes go with it. This cannot be undone.') }}
+          </AlertDialogDescription>
+          <div class="annotation-dialog-actions">
+            <AlertDialogCancel class="annotation-button">{{ trans('Cancel') }}</AlertDialogCancel>
+            <AlertDialogAction
+              class="annotation-button annotation-button-danger"
+              data-annotation-confirm="delete"
+              v-on:click="emit('delete')"
+            >{{ trans('Delete') }}</AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialogPortal>
+    </AlertDialogRoot>
   </div>
 </template>
 
@@ -111,8 +149,11 @@
  *                  selected text card, the thread, the linked proposal card
  *                  (if any, with its one "Show diff" affordance), the
  *                  always-visible composer and the bottom action row (S8:
- *                  Reattach when the anchor is orphaned, and the one
- *                  primary Resolve). Reattach only emits an intent:
+ *                  Delete, Reattach when the anchor is orphaned, and the one
+ *                  primary Resolve). Delete asks first, because it takes the
+ *                  thread with it and nothing here brings it back, while
+ *                  Resolve keeps everything and can be reopened. Reattach
+ *                  only emits an intent:
  *                  recovering an anchor needs a fresh editor selection,
  *                  which this panel does not own, so it never calls
  *                  reattachAnnotation itself (I6 — a visible action, never
@@ -123,11 +164,21 @@
  */
 
 import { trans } from '@common/i18n-renderer'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { DateTime } from 'luxon'
 import AnnotationThread from './AnnotationThread.vue'
 import AnnotationComposer from './AnnotationComposer.vue'
 import ProposalActionCard from './ProposalActionCard.vue'
+import {
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogOverlay,
+  AlertDialogPortal,
+  AlertDialogRoot,
+  AlertDialogTitle
+} from 'reka-ui'
 import { deriveActionRow, type AnnotationCardView } from './annotation-panel-model'
 
 const props = defineProps<{
@@ -145,7 +196,11 @@ const emit = defineEmits<{
   (e: 'show-proposal'): void
   (e: 'begin-reattach'): void
   (e: 'resolve-toggle'): void
+  (e: 'delete'): void
 }>()
+
+/** Whether the delete confirmation is up. */
+const confirmingDelete = ref(false)
 
 const actionRow = computed(() => deriveActionRow(props.card.annotation))
 const lifecycleLabel = computed(() => props.card.annotation.state === 'resolved' ? trans('Resolved') : trans('Open'))
@@ -214,6 +269,54 @@ body {
   }
 
   .annotation-inspector-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  // Destructive, so it sits away from the primary action, not beside it.
+  .annotation-action-delete {
+    margin-right: auto;
+    color: var(--annotation-danger);
+  }
+
+  .annotation-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.35);
+  }
+
+  .annotation-dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    gap: var(--annotation-gap);
+    width: 320px;
+    max-width: calc(100vw - 32px);
+    padding: 16px;
+    border: 1px solid var(--annotation-border);
+    border-radius: var(--annotation-radius);
+    background-color: var(--annotation-surface);
+    color: var(--annotation-text);
+    font-size: var(--annotation-font-size);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  }
+
+  .annotation-dialog-title {
+    margin: 0;
+    font-size: var(--annotation-font-size);
+    font-weight: 600;
+  }
+
+  .annotation-dialog-body {
+    margin: 0;
+    color: var(--annotation-text-muted);
+  }
+
+  .annotation-dialog-actions {
     display: flex;
     justify-content: flex-end;
     gap: 6px;
