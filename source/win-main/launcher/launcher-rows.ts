@@ -157,7 +157,7 @@ function itemsToRows (
         `The application menu carries an executable item the launcher cannot address: ${item.label} ` +
         `under ${[ ...path ].join(' › ')}. click-menu-item needs the id, so the item would be listed and ` +
         'do nothing, or be left out of the list without saying so. Give it an id where the menu is built ' +
-        '(source/app/service-providers/menu/menu.linux.ts and its platform siblings).'
+        '(source/app/service-providers/menu/menu.win32.ts on Linux and Windows, menu.darwin.ts on macOS).'
       )
     }
     rows.push({
