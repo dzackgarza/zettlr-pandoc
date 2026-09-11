@@ -259,16 +259,19 @@ describe('opening a Markdown document', function () {
     assert.equal(await countBadge.innerText(), '1 reference')
     await countBadge.click()
 
-    const overlay = page.locator(
-      '.reference-search-overlay[data-search-mode="citing-locations"]'
+    // M3 moved the reference search out of its own overlay and into the
+    // command launcher as one of its views; the mode attribute, the query's
+    // label and the occurrence rows are the ones the overlay carried.
+    const referenceSearch = page.locator(
+      '.reference-search-view[data-search-mode="citing-locations"]'
     )
-    await overlay.waitFor({ state: 'visible', timeout: 20_000 })
+    await referenceSearch.waitFor({ state: 'visible', timeout: 20_000 })
     assert.equal(
-      await overlay.locator('input[aria-label="Definition search query"]').inputValue(),
+      await referenceSearch.locator('input[aria-label="Definition search query"]').inputValue(),
       'sec:terminology',
-      'The badge key must survive the editor-to-overlay relay.'
+      'The badge key must survive the editor-to-launcher relay.'
     )
-    const locations = overlay.locator('[data-occurrence-path]')
+    const locations = referenceSearch.locator('[data-occurrence-path]')
     assert.equal(
       await locations.count(),
       1,
@@ -287,7 +290,7 @@ describe('opening a Markdown document', function () {
       await page.screenshot()
     )
     await locations.first().click()
-    await overlay.waitFor({ state: 'hidden', timeout: 20_000 })
+    await referenceSearch.waitFor({ state: 'hidden', timeout: 20_000 })
     const selectedSource = await page.locator('.cm-content').evaluate(content => {
       const tile = (
         content as HTMLElement & {

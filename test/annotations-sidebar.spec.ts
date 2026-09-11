@@ -36,11 +36,9 @@
  *                  commits, and the five fenced review mutations the
  *                  SuggestionInspector raises.
  *
- *                  The third half proves the tab badge is the OPEN count, on
- *                  screen, from a REAL mounted MainSidebar.vue — not just
- *                  from openAnnotationCount() in isolation, which cannot
- *                  catch MainSidebar.vue's own wiring passing the wrong
- *                  number or no number at all.
+ *                  The third half proves, in a real mount of the panel,
+ *                  that "Show proposal" focuses the linked chunk (S7) and
+ *                  that "Reattach" emits the annotation id upward (S8/I6).
  *
  * END HEADER
  */
@@ -566,34 +564,21 @@ describe("useDocumentCollaborationStore review surface", function () {
   });
 });
 
-describe("MainSidebar annotations tab badge, and the two M10 emit boundaries (S7/S8/I6)", function () {
-  // Counting open-only (openAnnotationCount) is proved as a pure function
-  // above. That does not prove the badge on screen shows it: the wiring
-  // that reads the store and hands TabBar.vue a number lives in
-  // MainSidebar.vue's own script, where a mistake (passing the total
-  // instead, or omitting the prop) would leave that pure-function test
-  // green while the tab itself lied.
+describe("the two M10 emit boundaries (S7/S8/I6) in a real panel mount", function () {
+  // vue-tsc/tsx cannot import a .vue SFC directly, so this cannot mount the
+  // panel in-process the way the store tests above exercise the Pinia store
+  // directly. It instead follows this repository's established pattern for
+  // proving real Vue rendering from a plain mocha spec
+  // (test/reference-search-overlay.spec.ts): build the real webpack renderer
+  // bundle, mount AnnotationsTab.vue under a render-function parent (App.vue's
+  // role) in isolated offscreen Electron, and read what the panel emitted out
+  // of that mount — the same bundle and driver `just capture-annotations-panel`
+  // uses, with one JSON line appended as the proof this spec asserts on.
   //
-  // vue-tsc/tsx cannot import a .vue SFC directly (confirmed: attempting it
-  // here throws "Unexpected token '<'" on MainSidebar.vue's <template>), so
-  // this cannot mount MainSidebar in-process the way the store tests above
-  // exercise the Pinia store directly. It instead follows this repository's
-  // established pattern for proving real Vue rendering from a plain mocha
-  // spec (test/reference-search-overlay.spec.ts): build the real webpack
-  // renderer bundle, mount BOTH AnnotationsTab.vue (for the seven capture
-  // scenes) and a real, separately mounted MainSidebar.vue sharing the same
-  // Pinia session in isolated offscreen Electron, and read the rendered
-  // badge text (and, below, MainSidebar's own emitted begin-reattach
-  // payload) out of that mount — the same bundle and driver
-  // `just capture-annotations-panel` uses, with one JSON line appended as
-  // the proof this spec asserts on.
-  //
-  // The SAME run also proves the two emits M10 wires (PART C): AnnotationsTab
-  // used to emit 'show-proposal' and 'begin-reattach' into a MainSidebar
-  // that forwarded only 'jump-to-line', so both died at that boundary.
   // suggestionIdsForPacketIds above proves the pure resolution; this proves
-  // it is actually WIRED to a click, on a real button, in a real mount.
-  it("renders the badge, and proves show-proposal (S7) and begin-reattach (S8/I6) reach their real handlers", async function () {
+  // it is actually WIRED to a click, on a real button, in a real mount, and
+  // that Reattach crosses the panel's boundary as an annotation id alone.
+  it("proves show-proposal (S7) and begin-reattach (S8/I6) reach their real handlers", async function () {
     this.timeout(240000);
     const outputDirectory = mkdtempSync(join(tmpdir(), "zettlr-annotations-badge-"));
     const root = process.cwd();
@@ -620,20 +605,9 @@ describe("MainSidebar annotations tab badge, and the two M10 emit boundaries (S7
     const jsonLine = stdout.trim().split("\n").at(-1);
     assert.ok(jsonLine !== undefined, "the capture driver must print the probe result");
     const result = JSON.parse(jsonLine as string) as {
-      mainSidebarAnnotationsBadge: string | null;
       showProposalLinkedChunkIds: string[];
       beginReattachAnnotationIds: string[];
     };
-
-    // The fixture session (annotations-sidebar-scene-fixture.ts) carries
-    // exactly 2 open and 1 resolved annotation — 3 total, so a badge
-    // reading "3" would mean MainSidebar passed the total, and no badge at
-    // all would mean the prop was never wired.
-    assert.equal(
-      result.mainSidebarAnnotationsBadge,
-      "2",
-      `the rendered badge must read the OPEN count (2), not the total (3) or nothing: got ${JSON.stringify(result.mainSidebarAnnotationsBadge)}`,
-    );
 
     // S7: clicking "Show proposal" on SCENE_ANNOTATION_PROPOSAL_ID's card
     // must land on the ONE outstanding chunk its linked packet actually
@@ -644,13 +618,13 @@ describe("MainSidebar annotations tab badge, and the two M10 emit boundaries (S7
       `Show proposal must focus exactly the linked chunk: got ${JSON.stringify(result.showProposalLinkedChunkIds)}`,
     );
 
-    // S8/I6: clicking "Reattach" must reach the REAL MainSidebar.vue's own
-    // begin-reattach listener, carrying the exact annotation id — the
-    // boundary this milestone wires (MainSidebar used to forward nothing).
+    // S8/I6: clicking "Reattach" must reach the panel's parent's
+    // begin-reattach listener carrying the exact annotation id and nothing
+    // else.
     assert.deepEqual(
       result.beginReattachAnnotationIds,
       [SCENE_ANNOTATION_ORPHANED_ID],
-      `MainSidebar must forward the orphaned annotation's Reattach intent: got ${JSON.stringify(result.beginReattachAnnotationIds)}`,
+      `the panel must emit the orphaned annotation's Reattach intent: got ${JSON.stringify(result.beginReattachAnnotationIds)}`,
     );
   });
 

@@ -1,20 +1,23 @@
 <template>
   <div
     id="annotations-panel"
-    role="tabpanel"
     class="annotations-tab"
     v-bind:data-inspector-mode="collaborationStore.inspectorMode"
   >
     <AnnotationHeader
       v-bind:open-count="openCount"
       v-bind:query="filterQuery"
+      v-bind:view="collaborationStore.showResolved ? 'resolved' : 'open'"
       v-on:update:query="filterQuery = $event"
+      v-on:set-view="collaborationStore.toggleShowResolved($event === 'resolved')"
+      v-on:close="emit('close')"
     ></AnnotationHeader>
 
     <AnnotationList
       v-bind:cards="filteredCards"
       v-bind:show-resolved="collaborationStore.showResolved"
       v-bind:selected-id="collaborationStore.selectedAnnotationId"
+      v-bind:now="now"
       v-on:select="collaborationStore.selectAnnotation($event)"
       v-on:jump-to-line="emit('jump-to-line', $event)"
       v-on:toggle-resolved="collaborationStore.toggleShowResolved()"
@@ -23,6 +26,8 @@
     <AnnotationInspector
       v-if="selectedCard !== undefined"
       v-bind:card="selectedCard"
+      v-bind:now="now"
+      v-bind:document-name="documentName"
       v-on:close="collaborationStore.selectAnnotation(null)"
       v-on:back="collaborationStore.selectAnnotation(null)"
       v-on:jump-to-line="emit('jump-to-line', $event)"
@@ -30,6 +35,7 @@
       v-on:show-proposal="onShowProposal(selectedCard.annotation)"
       v-on:begin-reattach="emit('begin-reattach', selectedCard.annotation.annotationId)"
       v-on:resolve-toggle="onResolveToggle"
+      v-on:delete="onDelete"
     ></AnnotationInspector>
 
     <SuggestionInspector
@@ -57,8 +63,8 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     The panel's root: a right-sidebar tab holding the compact
- *                  list above the detail inspector (S1/S3), fed exclusively
+ * Description:     The panel's root, alone in the main window's right pane:
+ *                  the compact list above the detail inspector (S1/S3), fed exclusively
  *                  from useDocumentCollaborationStore — never a second read
  *                  of the sidecar (plan section 6). Container queries on this
  *                  root switch between the wide arrangement (list and
@@ -72,17 +78,22 @@
  *                  its own (I4); this root is the only place a review
  *                  decision is raised from.
  *
+ *                  One minute clock, owned here, feeds every relative time
+ *                  the list cards and the thread show.
+ *
  * END HEADER
  */
 
 import { computed, ref, watch } from 'vue'
 import { trans } from '@common/i18n-renderer'
 import showToast from '@common/util/show-toast'
+import { pathBasename } from '@common/util/renderer-path-polyfill'
 import AnnotationHeader from './annotations/AnnotationHeader.vue'
 import AnnotationList from './annotations/AnnotationList.vue'
 import AnnotationInspector from './annotations/AnnotationInspector.vue'
 import SuggestionInspector from './annotations/SuggestionInspector.vue'
 import { buildAnnotationCards, filterCards, openAnnotationCount, suggestionIdsForPacketIds, type AnnotationCardView } from './annotations/annotation-panel-model'
+import { useMinuteClock } from './annotations/use-minute-clock'
 import { useDocumentCollaborationStore, useDocumentTreeStore } from 'source/pinia'
 import type { TextAnnotation } from '@dts/common/annotation-domain'
 import type { ReviewFailure } from 'source/app/service-providers/documents/document-collaboration-application-service'
@@ -91,15 +102,19 @@ const emit = defineEmits<{
   (e: 'jump-to-line', line: number): void
   // S8/I6: only the annotation id crosses this boundary — the replacement
   // range comes from a fresh editor selection, which this panel does not
-  // own (see MainSidebar.vue -> App.vue -> MainEditor.vue).
+  // own (see App.vue -> MainEditor.vue).
   (e: 'begin-reattach', annotationId: string): void
+  /** The header's close: the parent hides the pane. */
+  (e: 'close'): void
 }>()
 
 const collaborationStore = useDocumentCollaborationStore()
 const documentTreeStore = useDocumentTreeStore()
 
 const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
+const documentName = computed(() => activeFile.value === undefined ? undefined : pathBasename(activeFile.value.path))
 const filterQuery = ref('')
+const now = useMinuteClock()
 
 const session = computed(() => activeFile.value === undefined ? undefined : collaborationStore.getSession(activeFile.value.path))
 const annotations = computed(() => session.value?.annotations.items ?? [])
@@ -167,6 +182,29 @@ function onResolveToggle (): void {
   call.catch(err => console.error('[AnnotationsTab] Could not change the annotation resolution', err))
 }
 
+/**
+ * The owner deleted the selected annotation. The card leaves the list and
+ * the chip leaves the editor through the provider's broadcast, the way
+ * every other annotation mutation lands; the selection is dropped here,
+ * because the annotation the inspector was showing is gone.
+ */
+function onDelete (): void {
+  const path = activeFile.value?.path
+  const annotation = selectedCard.value?.annotation
+  if (path === undefined || annotation === undefined) {
+    return
+  }
+  collaborationStore.deleteAnnotation(path, annotation.annotationId)
+    .then(result => {
+      if ('ok' in result && !result.ok) {
+        showToast(trans(result.message), 'error')
+        return
+      }
+      collaborationStore.selectAnnotation(null)
+    })
+    .catch(err => console.error('[AnnotationsTab] Could not delete the annotation', err))
+}
+
 // M9: the panel's review adjudication path. Every control the editor's chunk
 // widgets and status bar used to carry lands here, and nothing about the
 // round trip is local: the store sends the fenced request, the provider
@@ -215,12 +253,20 @@ function onReviewComment (text: string): void {
 </script>
 
 <style lang="less">
+@import './annotations/annotation-panel.less';
+
 body {
   .annotations-tab {
     container-type: inline-size;
     container-name: annotations-panel;
     display: flex;
     flex-direction: column;
+    height: 100%;
+    padding: 10px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    color: var(--annotation-text);
+    font-size: var(--annotation-font-size);
   }
 }
 

@@ -1,6 +1,5 @@
 <template>
-  <div role="tabpanel">
-    <h1>{{ relatedFilesLabel }}</h1>
+  <div class="related-files-panel">
     <div class="related-files-container">
       <div v-if="relatedFiles.length === 0">
         {{ noRelatedFilesMessage }}
@@ -93,7 +92,6 @@ if (windowId === null) {
 
 const relatedFiles = ref<RelatedFile[]>([])
 
-const relatedFilesLabel = trans('Related files')
 const noRelatedFilesMessage = trans('No related files')
 const bidirectionalLinkLabel = trans('This relation is based on a bidirectional link.')
 const outboundLinkLabel = trans('This relation is based on an outbound link.')
@@ -270,3 +268,47 @@ function getTagsLabel (tagList: string[]): string {
   return trans('This relation is based on %s shared tags: %s', tagList.length, tagList.join(', '))
 }
 </script>
+
+<style lang="less">
+.related-files-panel {
+  height: 100%;
+  overflow-y: auto;
+  padding: 0 var(--chrome-inset);
+  box-sizing: border-box;
+  font-size: var(--chrome-font-size);
+
+  div.related-files-container div.related-file {
+    // The margin and the height together equal the RecycleScroller's fixed
+    // item size of 43.
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    padding: 5px;
+    height: 35px;
+    overflow: hidden;
+    border-radius: 4px;
+    cursor: pointer;
+
+    &:hover { background-color: var(--chrome-row-hover-bg); }
+
+    span.filename {
+      font-size: var(--chrome-section-font-size);
+      flex-grow: 8;
+      // At most two lines, with an ellipsis for cut-off lines.
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    span.icons {
+      display: inline-block;
+      border-radius: 4px;
+      padding: 2px;
+      flex-grow: 2;
+      flex-shrink: 0;
+      text-align: right;
+    }
+  }
+}
+</style>

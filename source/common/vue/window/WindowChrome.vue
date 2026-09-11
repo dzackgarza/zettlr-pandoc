@@ -44,6 +44,8 @@
       <!-- The actual window contents will be mounted here -->
       <slot></slot>
     </div>
+    <!-- A window may bring its own status bar instead of the control-list one. -->
+    <slot name="statusbar"></slot>
     <WindowStatusbar
       v-if="props.showStatusbar"
       v-bind:controls="props.statusbarControls ?? []"
@@ -77,6 +79,8 @@ import WindowStatusbar, { type StatusbarControl } from './WindowStatusbar.vue'
 
 // Import the correct styles (the platform styles are namespaced)
 import './assets/generic.css'
+// The main window's chrome primitives (list row, filter input), defined once.
+import '../chrome/chrome.less'
 import { ref, computed, watch, toRef, onBeforeMount } from 'vue'
 import { useConfigStore, useWindowStateStore } from 'source/pinia'
 
@@ -260,6 +264,40 @@ function handleDoubleClick (origin: 'titlebar'|'toolbar'): void {
   --accent-orange: rgb(246, 130, 28);
   --accent-yellow: rgb(229, 180, 31);
   --accent-green: rgb(98, 186, 70);
+
+  // The main window's chrome tokens (section headers, list rows, the filter
+  // input). Light values here, dark values on body.dark below; every chrome
+  // primitive reads these and none states a colour of its own.
+  --chrome-text: rgb(36, 39, 43);
+  --chrome-text-muted: rgb(110, 116, 124);
+  --chrome-border: rgba(0, 0, 0, 0.1);
+  --chrome-row-hover-bg: rgba(0, 0, 0, 0.05);
+  --chrome-row-active-bg: rgba(0, 0, 0, 0.08);
+  --chrome-row-accent: var(--system-accent-color, rgb(35, 122, 255));
+  --chrome-input-bg: rgba(255, 255, 255, 0.85);
+  --chrome-input-border: rgba(0, 0, 0, 0.15);
+  --chrome-surface: rgb(255, 255, 255);
+  --chrome-overlay: rgba(14, 18, 24, 0.38);
+  --chrome-elevation: 0 20px 60px rgba(0, 0, 0, 0.32);
+  --chrome-font-size: 13px;
+  --chrome-section-font-size: 11px;
+  --chrome-section-height: 28px;
+  --chrome-row-height: 30px;
+  --chrome-indent: 22px;
+  --chrome-inset: 12px;
+}
+
+body.dark {
+  --chrome-text: rgb(230, 230, 230);
+  --chrome-text-muted: rgb(160, 166, 174);
+  --chrome-border: rgba(255, 255, 255, 0.12);
+  --chrome-row-hover-bg: rgba(255, 255, 255, 0.06);
+  --chrome-row-active-bg: rgba(255, 255, 255, 0.1);
+  --chrome-input-bg: rgba(255, 255, 255, 0.06);
+  --chrome-input-border: rgba(255, 255, 255, 0.18);
+  --chrome-surface: rgb(45, 49, 54);
+  --chrome-overlay: rgba(0, 0, 0, 0.5);
+  --chrome-elevation: 0 20px 60px rgba(0, 0, 0, 0.6);
 }
 
 body {

@@ -18,18 +18,18 @@ import { v4 as uuid4 } from 'uuid'
 import getLanguageFile from '@common/util/get-language-file'
 import type { EditorShortcutName } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
 import { type MenuShortcutName } from '../menu/shortcuts'
+import type { SidebarSectionId, SidebarViewId } from '@dts/common/sidebar-views'
 
 export type MarkdownTheme = 'berlin'|'frankfurt'|'bielefeld'|'karl-marx-stadt'|'bordeaux'
 
 // This is a handy interface to add groups of file types to the settings in
-// order to allow users to display them in filemanager and/or sidebar, and open
+// order to allow users to display them in the file tree, and open them
 // internally or externally.
 // NOTE: The generics are meant so that you can restrict certain groupings.
-// E.g., FileTypeSettings<true, false, 'zettlr'> enforces these values for the
-// three properties.
-interface FileTypeSettings<F = boolean, S = boolean, O = 'zettlr'|'system'> {
+// E.g., FileTypeSettings<true, 'zettlr'> enforces these values for the two
+// properties.
+interface FileTypeSettings<F = boolean, O = 'zettlr'|'system'> {
   showInFilemanager: F
-  showInSidebar: S
   openWith: O
 }
 
@@ -206,8 +206,6 @@ export interface ConfigOptions {
     citeStyle: 'in-text'|'in-text-suffix'|'regular'
     autoCloseBrackets: boolean
     showLinkPreviews: boolean
-    showStatusbar: boolean
-    showFormattingToolbar: boolean
     showWhitespace: boolean
     showMarkdownLineNumbers: boolean
     defaultSaveImagePath: string
@@ -253,7 +251,6 @@ export interface ConfigOptions {
   }
   display: {
     theme: MarkdownTheme
-    hideToolbarInDistractionFree: boolean
     markdownFileExtensions: boolean
     previewModeShowSyntaxWhenCursorIsAdjacent: boolean
     imageWidth: number
@@ -273,16 +270,16 @@ export interface ConfigOptions {
   files: {
     // Built-in files cannot be shown in the sidebar, will always be shown in
     // the file manager, and will always be opened with Zettlr.
-    builtin: FileTypeSettings<true, false, 'zettlr'>
+    builtin: FileTypeSettings<true, 'zettlr'>
     // Images and PDFs can be entirely hidden or shown everywhere, and opened
     // with the system default, or in Zettlr
     images: FileTypeSettings
     pdf: FileTypeSettings
     // These file types can be shown anywhere, but are not open-able by Zettlr.
-    msoffice: FileTypeSettings<boolean, boolean, 'system'>
-    openOffice: FileTypeSettings<boolean, boolean, 'system'>
-    dataFiles: FileTypeSettings<boolean, boolean, 'system'>
-    dotFiles: FileTypeSettings<boolean, boolean>
+    msoffice: FileTypeSettings<boolean, 'system'>
+    openOffice: FileTypeSettings<boolean, 'system'>
+    dataFiles: FileTypeSettings<boolean, 'system'>
+    dotFiles: FileTypeSettings
   }
   watchdog: {
     activatePolling: boolean
@@ -293,12 +290,17 @@ export interface ConfigOptions {
     vibrancy: boolean
     sidebarVisible: boolean
     fileManagerVisible: boolean
-    currentSidebarTab: 'toc'|'references'|'relatedFiles'|'attachments'|'annotations'
     recentGlobalSearches: string[]
   }
   ui: {
-    fileManagerSplitSize: [number, number]
-    editorSidebarSplitSize: [number, number]
+    /** The navigation sidebar's width in pixels, as last dragged. */
+    navigationSidebarWidth: number
+    /** The annotation review panel's width in pixels, as last dragged. */
+    annotationPanelWidth: number
+    /** The view the sidebar's drawer shows: one per activity-bar icon. */
+    sidebarView: SidebarViewId
+    /** The sidebar sections the user collapsed; the rest are expanded. */
+    sidebarCollapsedSections: SidebarSectionId[]
   }
   system: {
     deleteOnFail: boolean
@@ -311,21 +313,6 @@ export interface ConfigOptions {
   shortcuts: {
     editor: Record<ConfigurableEditorShortcuts, string>
     ui: Record<MenuShortcutName, string>
-  }
-  displayToolbarButtons: {
-    showOpenPreferencesButton: boolean
-    showNewFileButton: boolean
-    showPreviousFileButton: boolean
-    showNextFileButton: boolean
-    showPandocDivSpanButton: boolean
-    showMarkdownCommentButton: boolean
-    showMarkdownLinkButton: boolean
-    showMarkdownImageButton: boolean
-    showMarkdownMakeTaskListButton: boolean
-    showInsertTableButton: boolean
-    showInsertFootnoteButton: boolean
-    showDocumentInfoText: boolean
-    showPomodoroButton: boolean
   }
 }
 
@@ -369,12 +356,14 @@ export function getConfigTemplate (): ConfigOptions {
       // Store a few GUI related settings here as well
       fileManagerVisible: true,
       sidebarVisible: false,
-      currentSidebarTab: 'toc',
       recentGlobalSearches: [],
     },
     ui: {
-      fileManagerSplitSize: [ 20, 80 ],
-      editorSidebarSplitSize: [80, 20],
+      navigationSidebarWidth: 280,
+      annotationPanelWidth: 320,
+      sidebarView: 'explorer',
+      // Outline, Book and Related files open on demand under their view's body.
+      sidebarCollapsedSections: [ 'outline', 'book', 'relatedFiles' ],
     },
     // Visible attachment filetypes
     attachmentExtensions: [],
@@ -454,8 +443,6 @@ export function getConfigTemplate (): ConfigOptions {
       italicFormatting: '_', // Can be * or _
       highlightFormatting: '==', // Can be 'span' or ==
       readabilityAlgorithm: 'dale-chall', // The algorithm to use with readability mode.
-      showStatusbar: true,
-      showFormattingToolbar: true,
       lint: {
         markdown: true, // Should Markdown be linted?
         languageTool: {
@@ -547,7 +534,6 @@ export function getConfigTemplate (): ConfigOptions {
     },
     display: {
       theme: 'berlin', // The theme, can be berlin|frankfurt|bielefeld|karl-marx-stadt|bordeaux
-      hideToolbarInDistractionFree: false,
       markdownFileExtensions: false,
       previewModeShowSyntaxWhenCursorIsAdjacent: true,
       imageWidth: 100, // Maximum preview image width
@@ -567,37 +553,30 @@ export function getConfigTemplate (): ConfigOptions {
     files: {
       builtin: {
         showInFilemanager: true,
-        showInSidebar: false,
         openWith: 'zettlr',
       },
       images: {
-        showInFilemanager: false,
-        showInSidebar: true,
+        showInFilemanager: true,
         openWith: 'system',
       },
       pdf: {
-        showInFilemanager: false,
-        showInSidebar: true,
+        showInFilemanager: true,
         openWith: 'system',
       },
       msoffice: {
-        showInFilemanager: false,
-        showInSidebar: true,
+        showInFilemanager: true,
         openWith: 'system',
       },
       openOffice: {
-        showInFilemanager: false,
-        showInSidebar: true,
+        showInFilemanager: true,
         openWith: 'system',
       },
       dataFiles: {
-        showInFilemanager: false,
-        showInSidebar: true,
+        showInFilemanager: true,
         openWith: 'system',
       },
       dotFiles: {
         showInFilemanager: false,
-        showInSidebar: false,
         openWith: 'system',
       },
     },
@@ -618,21 +597,6 @@ export function getConfigTemplate (): ConfigOptions {
       zoomBehavior: 'gui', // Used to determine what gets zoomed: The GUI or the editor
     },
     checkForBeta: false, // Should the user be notified of beta releases?
-    displayToolbarButtons: {
-      showOpenPreferencesButton: true,
-      showNewFileButton: true,
-      showPreviousFileButton: true,
-      showNextFileButton: true,
-      showPandocDivSpanButton: true,
-      showMarkdownCommentButton: true,
-      showMarkdownLinkButton: true,
-      showMarkdownImageButton: true,
-      showMarkdownMakeTaskListButton: true,
-      showInsertTableButton: true,
-      showInsertFootnoteButton: true,
-      showDocumentInfoText: true,
-      showPomodoroButton: true,
-    },
     shortcuts: {
       ui: {
         'next-tab': '',

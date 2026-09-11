@@ -163,7 +163,7 @@ export default class ConfigProvider extends ProviderContract {
    */
   async shutdown (): Promise<void> {
     this._logger.verbose('Config provider shutting down ...')
-    this._container.shutdown()
+    await this._container.shutdown()
   }
 
   /**

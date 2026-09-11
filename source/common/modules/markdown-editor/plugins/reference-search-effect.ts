@@ -12,7 +12,7 @@
  *                  here; the MarkdownEditor update listener re-emits it as a
  *                  'reference-search' event, which MainEditor.vue relays up
  *                  the component tree until App.vue mounts the
- *                  ReferenceSearchOverlay.
+ *                  command launcher's ReferenceSearchView.
  *
  * END HEADER
  */

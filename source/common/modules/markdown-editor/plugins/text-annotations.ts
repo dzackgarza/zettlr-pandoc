@@ -11,21 +11,20 @@
  *                  highlight over the target span and an ordinal marker on
  *                  the target's first line. Nothing else — no message text,
  *                  no thread, no button, no proposal state (invariant I4).
- *                  Everything the owner reads or clicks lives in the
- *                  annotations panel; this field only distinguishes the
- *                  seven editor states plan section 3 requires and reports
- *                  no interaction of its own. Selection, drafting, and the
+ *                  Everything the owner reads, replies to or decides lives
+ *                  in the annotations panel; this field distinguishes the
+ *                  seven editor states plan section 3 requires and owns one
+ *                  gesture: a click on a chip reports which annotation it
+ *                  carries (`annotationChipClickedEffect`) and changes
+ *                  nothing itself. Selection, drafting, and the
  *                  resolved-visibility toggle are driven by effects a host
  *                  (the panel, the creation composer) dispatches.
  *
- *                  The ordinal marker rides the built-in line-number gutter
- *                  via CodeMirror's `lineNumberMarkers` facet (Decision Log:
- *                  "markers ride the left line-number gutter, per mockup
- *                  3"). That facet's own line-number rendering is suppressed
- *                  for a line once any marker on it defines `toDOM`, so this
- *                  marker renders the line's digits itself alongside the
- *                  ordinal badge — an annotated line must not lose its
- *                  number.
+ *                  The ordinal chip sits in a gutter of its own
+ *                  (`cm-textAnnotation-gutter`), so it is there whether or
+ *                  not the line-number gutter is switched on — the Markdown
+ *                  editor shows no line numbers by default, and a marker
+ *                  riding that gutter was invisible in the app.
  *
  *                  An orphaned anchor carries no document position (its
  *                  target already drifted out from under it), so it has
@@ -37,7 +36,7 @@
  */
 
 import { RangeSet, StateEffect, StateField, type EditorState, type Extension } from '@codemirror/state'
-import { Decoration, type DecorationSet, EditorView, GutterMarker, lineNumberMarkers } from '@codemirror/view'
+import { Decoration, type DecorationSet, EditorView, gutter, GutterMarker } from '@codemirror/view'
 import { mapAnnotationThroughChanges } from '@common/util/annotation-anchors'
 import type { AnnotationSet, TextAnnotation } from '@dts/common/annotation-domain'
 
@@ -56,6 +55,12 @@ export const clearAnnotationDraftEffect = StateEffect.define<null>()
 /** Toggles whether resolved annotations render at all ("View resolved (N)"). */
 export const showResolvedAnnotationsEffect = StateEffect.define<boolean>()
 
+/**
+ * Reported when the owner clicks a gutter chip: the annotation that chip
+ * carries. The field acts on nothing — the host opens the panel on it.
+ */
+export const annotationChipClickedEffect = StateEffect.define<string>()
+
 export interface TextAnnotationsState {
   annotations: TextAnnotation[]
   activeAnnotationId: string | null
@@ -66,6 +71,13 @@ export interface TextAnnotationsState {
 interface TextAnnotationsFieldValue extends TextAnnotationsState {
   decorations: DecorationSet
   gutterMarkers: RangeSet<GutterMarker>
+  /**
+   * The annotation each chip stands for, by the start of the line it sits
+   * on: what a click on that gutter row resolves to. A chip carrying
+   * several annotations answers with the one whose ordinal is lowest, the
+   * first of the group the panel lists.
+   */
+  annotationIdByLine: Map<number, string>
 }
 
 type MarkerKind = 'range' | 'point' | 'orphaned' | 'overlapping'
@@ -106,31 +118,39 @@ class AnnotationGutterMarker extends GutterMarker {
       this.resolved ? 'cm-textAnnotation-gutterMarker-resolved' : ''
     ].filter(part => part !== '').join(' ')
 
-    // The line-number gutter drops its own digits once a marker with a
-    // toDOM occupies the line (see the module header), so this marker
-    // re-renders them itself.
-    const number = document.createElement('span')
-    number.className = 'cm-textAnnotation-gutterMarker-number'
-    number.textContent = this.lineNumberLabel
-    wrapper.appendChild(number)
+    wrapper.dataset.line = this.lineNumberLabel
 
+    // The chip: a comment glyph and the ordinal the card carries (S4). The
+    // glyph is a registered Clarity icon, so the chip's text is the ordinal
+    // alone.
     const badge = document.createElement('span')
     badge.className = 'cm-textAnnotation-gutterMarker-badge'
+    const glyph = document.createElement('cds-icon')
+    glyph.className = 'cm-textAnnotation-gutterMarker-glyph'
+    glyph.setAttribute('shape', 'chat-bubble')
+    glyph.setAttribute('role', 'presentation')
+    badge.appendChild(glyph)
+    const ordinal = document.createElement('span')
+    ordinal.className = 'cm-textAnnotation-gutterMarker-ordinal'
     if (this.kind === 'overlapping') {
-      badge.textContent = String(this.count)
+      ordinal.textContent = String(this.count)
       badge.title = `${this.count} annotations`
     } else if (this.kind === 'orphaned') {
-      badge.textContent = String(this.ordinals[0])
+      ordinal.textContent = String(this.ordinals[0])
       badge.title = `Annotation ${this.ordinals[0]} — target lost, needs reattaching`
     } else {
-      badge.textContent = String(this.ordinals[0])
+      ordinal.textContent = String(this.ordinals[0])
       badge.title = `Annotation ${this.ordinals[0]}`
     }
+    badge.appendChild(ordinal)
     wrapper.appendChild(badge)
 
     return wrapper
   }
 }
+
+/** The block tint of the active target's lines, with its left accent bar. */
+const activeLineDecoration = Decoration.line({ class: 'cm-textAnnotation-activeLine' })
 
 const markClass = (active: boolean, resolved: boolean): string => [
   'cm-textAnnotation-mark',
@@ -149,8 +169,21 @@ const markClass = (active: boolean, resolved: boolean): string => [
 function buildFieldValue (base: TextAnnotationsState, doc: EditorState['doc']): TextAnnotationsFieldValue {
   const visible = base.annotations.filter(a => a.state === 'open' || base.showResolved)
 
-  const ordinalByAnnotationId = new Map<string, number>()
-  visible.forEach((annotation, index) => ordinalByAnnotationId.set(annotation.annotationId, index + 1))
+  /**
+   * An annotation's number as the panel counts it: its place in the visible
+   * list, one-based. Every annotation a marker groups came out of that list.
+   */
+  const ordinalOf = (annotation: TextAnnotation): number => {
+    const index = visible.indexOf(annotation)
+    if (index === -1) {
+      throw new Error(
+        `A grouped annotation is not in the list it was grouped from: ${annotation.annotationId}. ` +
+        'The groups are built from `visible` in this function; a member that is not in it means the ' +
+        'grouping copied an annotation instead of carrying the element.'
+      )
+    }
+    return index + 1
+  }
 
   const markRanges: Array<ReturnType<Decoration['range']>> = []
   const groupsByLine = new Map<number, TextAnnotation[]>()
@@ -172,14 +205,25 @@ function buildFieldValue (base: TextAnnotationsState, doc: EditorState['doc']): 
       const from = Math.min(anchor.from, doc.length)
       const to = Math.min(anchor.to, doc.length)
       lineNumber = doc.lineAt(from).number
+      const active = annotation.annotationId === base.activeAnnotationId
       if (from < to) {
         markRanges.push(
-          Decoration.mark({ class: markClass(annotation.annotationId === base.activeAnnotationId, annotation.state === 'resolved') })
+          Decoration.mark({ class: markClass(active, annotation.state === 'resolved') })
             .range(from, to)
         )
       }
+      if (active) {
+        // The active target's block tint: every line its range touches.
+        const lastLine = doc.lineAt(Math.max(from, to - 1)).number
+        for (let line = lineNumber; line <= lastLine; line++) {
+          markRanges.push(activeLineDecoration.range(doc.line(line).from))
+        }
+      }
     } else if (anchor.state === 'point') {
       lineNumber = doc.lineAt(Math.min(anchor.at, doc.length)).number
+      if (annotation.annotationId === base.activeAnnotationId) {
+        markRanges.push(activeLineDecoration.range(doc.line(lineNumber).from))
+      }
     } else {
       // Orphaned: no position survived. Line 1 is the one deterministic
       // location every document has to hang the locator on.
@@ -195,6 +239,7 @@ function buildFieldValue (base: TextAnnotationsState, doc: EditorState['doc']): 
   }
 
   const gutterRanges: Array<ReturnType<GutterMarker['range']>> = []
+  const annotationIdByLine = new Map<number, string>()
   for (const [lineNumber, group] of groupsByLine) {
     const pos = doc.line(lineNumber).from
     const active = group.some(a => a.annotationId === base.activeAnnotationId)
@@ -206,9 +251,9 @@ function buildFieldValue (base: TextAnnotationsState, doc: EditorState['doc']): 
         : group[0].anchor.state === 'orphaned'
           ? 'orphaned'
           : 'range'
-    const ordinals = group
-      .map(a => ordinalByAnnotationId.get(a.annotationId) ?? 0)
-      .sort((a, b) => a - b)
+    const byOrdinal = [...group].sort((a, b) => ordinalOf(a) - ordinalOf(b))
+    const ordinals = byOrdinal.map(ordinalOf)
+    annotationIdByLine.set(pos, byOrdinal[0].annotationId)
     gutterRanges.push(
       new AnnotationGutterMarker(String(lineNumber), kind, group.length, ordinals, active, resolved).range(pos)
     )
@@ -221,7 +266,8 @@ function buildFieldValue (base: TextAnnotationsState, doc: EditorState['doc']): 
   return {
     ...base,
     decorations: Decoration.set(markRanges, true),
-    gutterMarkers: RangeSet.of(gutterRanges, true)
+    gutterMarkers: RangeSet.of(gutterRanges, true),
+    annotationIdByLine
   }
 }
 
@@ -276,18 +322,37 @@ const textAnnotationsField = StateField.define<TextAnnotationsFieldValue>({
     return next === value ? value : buildFieldValue(next, tr.state.doc)
   },
   provide: field => [
-    EditorView.decorations.from(field, value => value.decorations),
-    lineNumberMarkers.from(field, value => value.gutterMarkers)
+    EditorView.decorations.from(field, value => value.decorations)
   ]
 })
 
-/** The field's current annotation-locator state, or `null` if not installed. */
-export function getTextAnnotationsState (state: EditorState): TextAnnotationsState | null {
-  return state.field(textAnnotationsField, false) ?? null
+/**
+ * The annotation chips' own gutter, present with or without line numbers.
+ * A click on a chip reports its annotation and consumes the event, so the
+ * gesture never also moves the cursor into the line behind it.
+ */
+const textAnnotationsGutter = gutter({
+  class: 'cm-textAnnotation-gutter',
+  markers: view => view.state.field(textAnnotationsField).gutterMarkers,
+  domEventHandlers: {
+    mousedown (view, line) {
+      const annotationId = view.state.field(textAnnotationsField).annotationIdByLine.get(line.from)
+      if (annotationId === undefined) {
+        return false
+      }
+      view.dispatch({ effects: annotationChipClickedEffect.of(annotationId) })
+      return true
+    }
+  }
+})
+
+/** The field's current annotation-locator state, or undefined if not installed. */
+export function getTextAnnotationsState (state: EditorState): TextAnnotationsState | undefined {
+  return state.field(textAnnotationsField, false)
 }
 
 export function textAnnotationsExtension (): Extension {
-  return [ textAnnotationsField, textAnnotationsTheme ]
+  return [ textAnnotationsField, textAnnotationsGutter, textAnnotationsTheme ]
 }
 
 const textAnnotationsTheme = EditorView.baseTheme({
@@ -304,31 +369,44 @@ const textAnnotationsTheme = EditorView.baseTheme({
   '.cm-textAnnotation-draft': {
     borderBottom: '2px dotted var(--zettlr-editor-annotation-draft-border)'
   },
-  '.cm-textAnnotation-gutterMarker': {
+  '.cm-textAnnotation-activeLine': {
+    backgroundColor: 'var(--zettlr-editor-annotation-line-active-bg)',
+    boxShadow: 'inset 3px 0 0 var(--zettlr-editor-annotation-marker-active-bg)'
+  },
+  '.cm-textAnnotation-gutter .cm-gutterElement': {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: '3px',
-    paddingRight: '2px'
+    justifyContent: 'center',
+    padding: '0 3px'
   },
-  '.cm-textAnnotation-gutterMarker-number': {
-    opacity: '0.7'
+  '.cm-textAnnotation-gutterMarker': {
+    display: 'flex',
+    alignItems: 'center'
   },
+  // The chip: a rounded square carrying the comment glyph and the ordinal.
   '.cm-textAnnotation-gutterMarker-badge': {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: '1.15em',
-    height: '1.15em',
-    borderRadius: '50%',
-    fontSize: '0.75em',
+    cursor: 'pointer',
+    gap: '2px',
+    height: '1.3em',
+    borderRadius: '4px',
+    fontSize: '0.72em',
+    fontWeight: '600',
     lineHeight: '1',
-    padding: '0 2px',
+    padding: '0 4px',
     boxSizing: 'content-box',
     backgroundColor: 'var(--zettlr-editor-annotation-marker-bg)',
     color: 'var(--zettlr-editor-annotation-marker-fg)'
   },
+  '.cm-textAnnotation-gutterMarker-glyph': {
+    width: '1em',
+    height: '1em',
+    color: 'inherit'
+  },
   '.cm-textAnnotation-gutterMarker-active .cm-textAnnotation-gutterMarker-badge': {
+    backgroundColor: 'var(--zettlr-editor-annotation-marker-active-bg)',
     outline: '2px solid var(--zettlr-editor-annotation-marker-active-bg)',
     outlineOffset: '1px'
   },

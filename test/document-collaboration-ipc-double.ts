@@ -49,9 +49,8 @@ let invokeResponder: (message: InvokeMessage) => Promise<unknown> = async () => 
 // window.ipc.sendSync at store construction) run at construction time of
 // any component tree that transitively depends on the config store — not
 // only documents-provider ones. Defaulting to undefined is correct for a
-// suite that never mounts such a tree; a suite that does (e.g. mounting
-// MainSidebar.vue to prove the annotations tab's rendered badge) installs
-// its own responder instead of adding config-specific knowledge here.
+// suite that never mounts such a tree; a suite that does installs its own
+// responder instead of adding config-specific knowledge here.
 let sendSyncResponder: (channel: string, message: InvokeMessage | undefined) => unknown = () => undefined
 
 export const documentCollaborationIpcDouble = {

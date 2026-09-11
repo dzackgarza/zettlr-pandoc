@@ -1,5 +1,5 @@
 /**
- * Mounts the production Mod-P ReferenceSearchOverlay Vue component with a
+ * Mounts the production ReferenceSearchView (the launcher's reference search) with a
  * real workspace snapshot for the Chromium input probe
  * (reference-search-overlay-probe.mjs).
  *
@@ -14,7 +14,7 @@
  * Component contract exercised here (locked red by
  * test/reference-search-overlay.spec.ts):
  *
- * - default export of source/win-main/ReferenceSearchOverlay.vue
+ * - default export of source/win-main/launcher/ReferenceSearchView.vue
  * - props: { definitions: ReferenceDefinition[] } — the full workspace
  *   definition list; the component ranks them with
  *   searchWorkspaceDefinitions() as the user types
@@ -96,7 +96,7 @@ declare global {
 
 // Resolved through a context (not a static import) so the bundle builds and
 // reports structured absence while the component does not exist yet.
-const overlayContext = require.context('../source/win-main/', false, /ReferenceSearchOverlay\.vue$/)
+const overlayContext = require.context('../source/win-main/launcher/', false, /ReferenceSearchView\.vue$/)
 
 const recordedJumpIntents: JumpIntent[] = []
 /** Every 'open-help' emission of the overlay (review A2, US-06). */
@@ -111,11 +111,11 @@ window.referenceSearchProbeMount = async (documents: ProbeDocument[], context?: 
     ? null
     : { key: target.key, documentPath: target.documentPath, range: target.range }
 
-  const overlayKey = overlayContext.keys().find(key => key.includes('ReferenceSearchOverlay'))
+  const overlayKey = overlayContext.keys().find(key => key.includes('ReferenceSearchView'))
   if (overlayKey === undefined) {
     return {
       componentAvailable: false,
-      componentFailure: 'source/win-main/ReferenceSearchOverlay.vue does not exist yet (issue #1 Phase 3b red)',
+      componentFailure: 'source/win-main/launcher/ReferenceSearchView.vue does not exist (issue #1 Phase 3b red)',
       expectedIntent
     }
   }
@@ -124,7 +124,7 @@ window.referenceSearchProbeMount = async (documents: ProbeDocument[], context?: 
   if (overlayModule.default === undefined) {
     return {
       componentAvailable: false,
-      componentFailure: 'ReferenceSearchOverlay.vue exists but has no default component export',
+      componentFailure: 'ReferenceSearchView.vue exists but has no default component export',
       expectedIntent
     }
   }
@@ -153,11 +153,11 @@ window.referenceSearchProbeMount = async (documents: ProbeDocument[], context?: 
 }
 
 window.referenceSearchProbeState = () => {
-  const input = document.querySelector<HTMLInputElement>('.reference-search-overlay input')
+  const input = document.querySelector<HTMLInputElement>('.reference-search-view input')
   const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-reference-key]'))
   return {
     query: input?.value ?? null,
-    helpAffordancePresent: document.querySelector('.reference-search-overlay [data-open-help]') !== null,
+    helpAffordancePresent: document.querySelector('.reference-search-view [data-open-help]') !== null,
     rows: rows.map(row => ({
       key: row.getAttribute('data-reference-key'),
       documentPath: row.getAttribute('data-reference-path'),
@@ -172,7 +172,7 @@ window.referenceSearchProbeJumpIntents = () => recordedJumpIntents
 window.referenceSearchProbeOpenHelpCount = () => recordedOpenHelpCount
 
 window.referenceSearchProbeOverlayPresent = () => {
-  return document.querySelector('.reference-search-overlay') !== null
+  return document.querySelector('.reference-search-view') !== null
 }
 
 /**
@@ -220,11 +220,11 @@ window.referenceSearchProbeMountKeyed = async (documents: ProbeDocument[], key: 
       clusterRaw: occurrence.clusterRaw
     }))
 
-  const overlayKey = overlayContext.keys().find(contextKey => contextKey.includes('ReferenceSearchOverlay'))
+  const overlayKey = overlayContext.keys().find(contextKey => contextKey.includes('ReferenceSearchView'))
   if (overlayKey === undefined) {
     return {
       componentAvailable: false,
-      componentFailure: 'source/win-main/ReferenceSearchOverlay.vue does not exist yet (issue #1 Phase 3b red)',
+      componentFailure: 'source/win-main/launcher/ReferenceSearchView.vue does not exist (issue #1 Phase 3b red)',
       expectedCitingLocations
     }
   }
@@ -233,7 +233,7 @@ window.referenceSearchProbeMountKeyed = async (documents: ProbeDocument[], key: 
   if (overlayModule.default === undefined) {
     return {
       componentAvailable: false,
-      componentFailure: 'ReferenceSearchOverlay.vue exists but has no default component export',
+      componentFailure: 'ReferenceSearchView.vue exists but has no default component export',
       expectedCitingLocations
     }
   }
@@ -259,8 +259,8 @@ window.referenceSearchProbeMountKeyed = async (documents: ProbeDocument[], key: 
 }
 
 window.referenceSearchProbeKeyedState = () => {
-  const overlay = document.querySelector<HTMLElement>('.reference-search-overlay')
-  const input = document.querySelector<HTMLInputElement>('.reference-search-overlay input')
+  const overlay = document.querySelector<HTMLElement>('.reference-search-view')
+  const input = document.querySelector<HTMLInputElement>('.reference-search-view input')
   const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-occurrence-path]'))
   return {
     query: input?.value ?? null,

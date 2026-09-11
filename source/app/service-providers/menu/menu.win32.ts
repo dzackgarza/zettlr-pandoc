@@ -30,6 +30,7 @@ import type {
 } from './menu-dependencies'
 import { getCustomShortcut, type MenuShortcutName } from './shortcuts'
 import { cmShortcutToElectron } from 'source/common/util/shortcuts'
+import { commandLauncherItem, formatMenu, insertMenu, sendShortcut, statisticsItem } from './menu-editing'
 
 export default function getMenu (
   logger: MenuLogger,
@@ -440,11 +441,19 @@ export default function getMenu (
         }
       ]
     },
+    // INSERT AND FORMAT MENUS (shared with macOS)
+    insertMenu(),
+    formatMenu(),
     // VIEW MENU
     {
       id: 'view-menu',
       label: trans('View'),
       submenu: [
+        commandLauncherItem('Ctrl+P'),
+        statisticsItem(commands),
+        {
+          type: 'separator'
+        },
         {
           id: 'menu.toggle_theme',
           label: trans('Dark mode'),
@@ -485,19 +494,19 @@ export default function getMenu (
           type: 'separator'
         },
         {
-          id: 'menu.toggle_filemanager',
-          label: trans('Toggle File Manager'),
+          id: 'menu.toggle_navigation_sidebar',
+          label: trans('Toggle Sidebar'),
           accelerator: 'Ctrl+!',
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'toggle-file-manager')
+            sendShortcut(focusedWindow, 'toggle-navigation-sidebar')
           }
         },
         {
-          id: 'menu.toggle_sidebar',
-          label: trans('Toggle Sidebar'),
+          id: 'menu.toggle_annotation_panel',
+          label: trans('Toggle Annotation Panel'),
           accelerator: 'Ctrl+Shift+0',
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'toggle-sidebar')
+            sendShortcut(focusedWindow, 'toggle-annotation-panel')
           }
         },
         {
@@ -723,7 +732,10 @@ export default function getMenu (
 
   // Finally, before returning, make sure to remove the debug menu if applicable
   if (config.get('debug') === false) {
-    menu.splice(3, 1)
+    const debugMenuIndex = menu.findIndex(item => item.id === 'debug-menu')
+    if (debugMenuIndex >= 0) {
+      menu.splice(debugMenuIndex, 1)
+    }
   }
 
   return menu

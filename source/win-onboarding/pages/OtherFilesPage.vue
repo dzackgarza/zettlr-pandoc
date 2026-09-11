@@ -20,7 +20,7 @@ import { computed } from 'vue'
 const configStore = useConfigStore()
 
 const pageHeading = trans('Images and PDFs in Zettlr')
-const previewInfo = trans('Zettlr can preview images and PDF files directly in Zettlr. This allows you to reference plots or literature directly while writing. If you do not activate this, images and PDF files will only be shown in the sidebar and open with your computer\'s default viewer.')
+const previewInfo = trans('Zettlr can preview images and PDF files directly in Zettlr. This allows you to reference plots or literature directly while writing. If you do not activate this, images and PDF files open with your computer\'s default viewer.')
 const activateLabel = trans('Activate Image and PDF Previews in Zettlr')
 
 const hasActivatedPreviws = computed(() => {
@@ -30,11 +30,11 @@ const hasActivatedPreviws = computed(() => {
 
 function togglePreviews () {
   if (hasActivatedPreviws.value) {
-    configStore.setConfigValue('files.images', { showInFilemanager: false, showInSidebar: true, openWith: 'system' })
-    configStore.setConfigValue('files.pdf', { showInFilemanager: false, showInSidebar: true, openWith: 'system' })
+    configStore.setConfigValue('files.images', { showInFilemanager: false, openWith: 'system' })
+    configStore.setConfigValue('files.pdf', { showInFilemanager: false, openWith: 'system' })
   } else {
-    configStore.setConfigValue('files.images', { showInFilemanager: true, showInSidebar: false, openWith: 'zettlr' })
-    configStore.setConfigValue('files.pdf', { showInFilemanager: true, showInSidebar: false, openWith: 'zettlr' })
+    configStore.setConfigValue('files.images', { showInFilemanager: true, openWith: 'zettlr' })
+    configStore.setConfigValue('files.pdf', { showInFilemanager: true, openWith: 'zettlr' })
   }
 }
 </script>

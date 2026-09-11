@@ -1,6 +1,9 @@
 <template>
   <div class="annotation-list">
-    <p v-if="open.length === 0" class="annotation-list-empty">
+    <p
+      v-if="open.length === 0"
+      class="annotation-list-empty annotation-muted"
+    >
       {{ trans('No open annotations in this document.') }}
     </p>
     <AnnotationListItem
@@ -8,6 +11,7 @@
       v-bind:key="card.annotation.annotationId"
       v-bind:card="card"
       v-bind:selected="card.annotation.annotationId === selectedId"
+      v-bind:now="now"
       v-on:select="emit('select', $event)"
       v-on:jump-to-line="emit('jump-to-line', $event)"
     ></AnnotationListItem>
@@ -18,7 +22,11 @@
       class="annotation-resolved-disclosure"
       v-on:click="emit('toggle-resolved')"
     >
-      <cds-icon v-bind:shape="showResolved ? 'angle-double' : 'angle'" role="presentation"></cds-icon>
+      <cds-icon
+        shape="angle"
+        v-bind:direction="showResolved ? 'down' : 'right'"
+        role="presentation"
+      ></cds-icon>
       {{ resolvedDisclosureLabel }}
     </button>
 
@@ -28,6 +36,7 @@
         v-bind:key="card.annotation.annotationId"
         v-bind:card="card"
         v-bind:selected="card.annotation.annotationId === selectedId"
+        v-bind:now="now"
         v-on:select="emit('select', $event)"
         v-on:jump-to-line="emit('jump-to-line', $event)"
       ></AnnotationListItem>
@@ -56,6 +65,7 @@
 
 import { trans } from '@common/i18n-renderer'
 import { computed } from 'vue'
+import type { DateTime } from 'luxon'
 import AnnotationListItem from './AnnotationListItem.vue'
 import { partitionByResolution, type AnnotationCardView } from './annotation-panel-model'
 
@@ -63,6 +73,7 @@ const props = defineProps<{
   cards: AnnotationCardView[]
   showResolved: boolean
   selectedId: string | null
+  now: DateTime
 }>()
 
 const emit = defineEmits<{
@@ -82,29 +93,37 @@ body {
   .annotation-list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--annotation-gap);
+    padding: var(--annotation-gap) 0;
   }
 
   .annotation-list-empty {
-    opacity: 0.6;
-    font-size: 12px;
-    padding: 8px;
+    margin: 0;
+    padding: 4px 0;
   }
 
-  .annotation-resolved-disclosure {
+  button.annotation-resolved-disclosure {
     display: flex;
     align-items: center;
     gap: 4px;
+    margin: 0;
+    padding: 4px 0;
     border: none;
     background: transparent;
-    padding: 6px 8px;
-    font-size: 12px;
-    opacity: 0.75;
+    color: var(--annotation-text-muted);
+    font: inherit;
+    font-size: var(--annotation-small-font-size);
     cursor: pointer;
     text-align: left;
 
-    &:hover { opacity: 1; }
-    clr-icon, cds-icon { width: 12px; height: 12px; }
+    &:hover {
+      color: var(--annotation-text);
+    }
+
+    cds-icon {
+      width: 12px;
+      height: 12px;
+    }
   }
 }
 </style>

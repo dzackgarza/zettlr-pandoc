@@ -209,19 +209,6 @@ export function getEditorFields (config: ConfigOptions): PreferencesFieldset[] {
       ]
     },
     {
-      title: trans('Status bar'),
-      infoString: trans('The status bar is a section for various quick controls and shows information about the current document. It is shown for both Markdown and code editors.'),
-      group: PreferencesGroups.Editor,
-      help: undefined, // TODO
-      fields: [
-        {
-          type: 'checkbox',
-          label: trans('Show status bar'),
-          model: 'editor.showStatusbar'
-        }
-      ]
-    },
-    {
       title: trans('Distraction-free mode'),
       infoString: trans('Customize the appearance of the editor when the distraction-free mode is active.'),
       group: PreferencesGroups.Editor,
@@ -231,11 +218,6 @@ export function getEditorFields (config: ConfigOptions): PreferencesFieldset[] {
           type: 'checkbox',
           label: trans('Mute non-focused lines in distraction-free mode'),
           model: 'muteLines'
-        },
-        {
-          type: 'checkbox',
-          label: trans('Hide toolbar in distraction-free mode'),
-          model: 'display.hideToolbarInDistractionFree'
         }
       ]
     },
@@ -361,11 +343,6 @@ export function getEditorFields (config: ConfigOptions): PreferencesFieldset[] {
       group: PreferencesGroups.Editor,
       help: undefined, // TODO
       fields: [
-        {
-          type: 'checkbox',
-          label: trans('Show formatting toolbar when text is selected'),
-          model: 'editor.showFormattingToolbar'
-        },
         {
           type: 'checkbox',
           label: trans('Show line numbers for Markdown files'),

@@ -1,6 +1,6 @@
 <template>
   <div
-    class="annotation-list-item"
+    class="annotation-card annotation-list-item"
     v-bind:class="{ selected: selected, resolved: card.annotation.state === 'resolved' }"
     role="button"
     tabindex="0"
@@ -8,26 +8,36 @@
     v-on:click="emit('select', card.annotation.annotationId)"
     v-on:keydown.enter="emit('select', card.annotation.annotationId)"
   >
-    <span class="annotation-ordinal" v-bind:data-ordinal="card.ordinal">{{ card.ordinal }}</span>
-    <div class="annotation-list-item-body">
-      <div class="annotation-list-item-title-row">
-        <span class="annotation-title">{{ card.title }}</span>
-        <span
-          class="annotation-lifecycle-pill"
-          v-bind:class="card.annotation.state"
-        >{{ lifecycleLabel }}</span>
-      </div>
-      <div class="annotation-meta">
-        <button
-          v-if="card.lineNumber !== undefined"
-          type="button"
-          class="annotation-line-locator"
-          v-on:click.stop="emit('jump-to-line', card.lineNumber)"
-        >{{ card.lineLocator }}</button>
-        <span v-else class="annotation-line-locator-orphaned">{{ card.lineLocator }}</span>
-        <span v-if="card.wordCount > 0"> · {{ wordCountLabel }}</span>
-      </div>
-      <p class="annotation-quoted-preview">“{{ card.quotedText }}”</p>
+    <div class="annotation-card-row">
+      <span
+        class="annotation-ordinal"
+        v-bind:data-ordinal="card.ordinal"
+      >{{ card.ordinal }}</span>
+      <button
+        v-if="card.lineNumber !== undefined"
+        type="button"
+        class="annotation-line-locator"
+        v-on:click.stop="emit('jump-to-line', card.lineNumber)"
+      >{{ card.lineLocator }}</button>
+      <span
+        v-else
+        class="annotation-line-locator-orphaned annotation-muted"
+      >{{ card.lineLocator }}</span>
+      <span class="annotation-card-spacer"></span>
+      <span
+        class="annotation-lifecycle-pill"
+        v-bind:class="card.annotation.state"
+      >{{ lifecycleLabel }}</span>
+    </div>
+    <p class="annotation-quoted-preview">“{{ card.quotedText }}”</p>
+    <p class="annotation-title">{{ card.instructionPreview }}</p>
+    <div class="annotation-card-row annotation-meta annotation-muted">
+      <span class="annotation-card-author">{{ authorLabel }}</span>
+      <span class="annotation-card-time">{{ relativeTime }}</span>
+      <span
+        v-if="card.wordCount > 0"
+        class="annotation-card-words"
+      >· {{ wordCountLabel }}</span>
     </div>
   </div>
 </template>
@@ -42,22 +52,25 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     One card of the compact list (S5): ordinal, title
- *                  (derived, never stored — I8), line locator, lifecycle
- *                  pill, and the quoted source. The instruction preview
- *                  lives in the detail inspector, not here — the list stays
- *                  compact per mockup 4.
+ * Description:     One flat bordered card of the compact list (S5): the
+ *                  ordinal the editor marker carries (S4), the line locator,
+ *                  the lifecycle pill, the quoted target, the instruction
+ *                  preview (derived from the first message every time, I8)
+ *                  and the author and relative time of that message.
  *
  * END HEADER
  */
 
-import { trans } from '@common/i18n-renderer'
 import { computed } from 'vue'
+import type { DateTime } from 'luxon'
+import { trans } from '@common/i18n-renderer'
 import type { AnnotationCardView } from './annotation-panel-model'
+import { formatRelative } from './annotation-presentation'
 
 const props = defineProps<{
   card: AnnotationCardView
   selected: boolean
+  now: DateTime
 }>()
 
 const emit = defineEmits<{
@@ -65,90 +78,76 @@ const emit = defineEmits<{
   (e: 'jump-to-line', line: number): void
 }>()
 
+const justNow = trans('Just now')
 const lifecycleLabel = computed(() => props.card.annotation.state === 'resolved' ? trans('Resolved') : trans('Open'))
 const wordCountLabel = computed(() => trans('%s words', String(props.card.wordCount)))
+const firstMessage = computed(() => props.card.annotation.messages[0])
+const authorLabel = computed(() => firstMessage.value.author === 'owner' ? trans('You') : trans('AI'))
+const relativeTime = computed(() => formatRelative(firstMessage.value.createdAt, props.now, justNow))
 </script>
 
 <style lang="less">
 body {
   .annotation-list-item {
     display: flex;
-    gap: 8px;
-    padding: 8px;
-    border-radius: 6px;
+    flex-direction: column;
+    gap: 4px;
     cursor: pointer;
-    align-items: flex-start;
 
-    &:hover { background-color: rgba(0, 0, 0, 0.05); }
-    &.selected { background-color: rgba(76, 141, 202, 0.12); outline: 1px solid var(--system-accent-color, #4c8dca); }
-    &.resolved { opacity: 0.75; }
+    &:hover {
+      background-color: var(--annotation-surface-muted);
+    }
+
+    &.selected {
+      border-color: var(--annotation-accent);
+      background-color: var(--annotation-active-surface);
+    }
+
+    &.resolved {
+      color: var(--annotation-text-muted);
+    }
 
     .annotation-ordinal {
       flex-shrink: 0;
-      width: 20px;
-      height: 20px;
-      line-height: 20px;
-      border-radius: 50%;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 4px;
+      box-sizing: border-box;
+      border-radius: 4px;
+      border: 1px solid var(--annotation-border);
+      line-height: 16px;
       text-align: center;
-      font-size: 11px;
-      font-weight: bold;
-      background-color: rgba(0, 0, 0, 0.08);
-      color: inherit;
+      font-size: var(--annotation-small-font-size);
+      font-weight: 600;
+      color: var(--annotation-text-muted);
     }
 
-    .annotation-list-item-body { flex-grow: 1; min-width: 0; }
-
-    .annotation-list-item-title-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 6px;
-
-      .annotation-title {
-        font-weight: 600;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-    }
-
-    .annotation-lifecycle-pill {
-      flex-shrink: 0;
-      font-size: 10px;
-      padding: 1px 7px;
-      border-radius: 999px;
-      background-color: rgba(0, 0, 0, 0.08);
-
-      &.resolved { background-color: rgba(60, 160, 90, 0.2); }
-      &.open { background-color: rgba(76, 141, 202, 0.2); }
-    }
-
-    .annotation-meta {
-      font-size: 11px;
-      opacity: 0.7;
-      margin: 2px 0;
-    }
-
-    .annotation-line-locator {
-      border: none;
-      background: transparent;
-      padding: 0;
-      font: inherit;
-      color: inherit;
-      cursor: pointer;
-      text-decoration: underline dotted;
+    .annotation-card-spacer {
+      flex: 1 1 auto;
     }
 
     .annotation-quoted-preview {
-      margin: 2px 0 0 0;
-      font-size: 12px;
-      font-style: italic;
+      margin: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--annotation-text-muted);
+    }
+
+    .annotation-title {
+      margin: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-  }
 
-  &.dark .annotation-list-item:hover { background-color: rgba(255, 255, 255, 0.08); }
+    .annotation-meta {
+      gap: 4px;
+    }
+
+    .annotation-card-author {
+      font-weight: 600;
+    }
+  }
 }
 </style>

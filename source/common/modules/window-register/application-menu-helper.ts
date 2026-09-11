@@ -331,8 +331,17 @@ export default function showPopupMenu (position: Point|Rect, items: AnyMenuItem[
   const clickCallback = (event?: MouseEvent): void => {
     appMenu.parentElement?.removeChild(appMenu)
     window.removeEventListener('mousedown', clickCallback)
+    window.removeEventListener('keydown', escapeCallback)
+  }
+  // Escape closes the menu the way a click outside does.
+  const escapeCallback = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      clickCallback()
+    }
   }
   window.addEventListener('mousedown', clickCallback)
+  window.addEventListener('keydown', escapeCallback)
 
   // Return a close-callback for the caller to programmatically close the menu
   return () => {

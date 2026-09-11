@@ -3,119 +3,136 @@
     :title="windowTitle"
     :titlebar="shouldShowTitlebar"
     :menubar="shouldShowMenubar"
-    :show-toolbar="shouldShowToolbar"
-    :toolbar-labels="false"
-    :toolbar-controls="toolbarControls"
     :disable-vibrancy="!hasVibrancy"
-    @toolbar-toggle="handleToggle($event)"
-    @toolbar-click="handleClick($event)"
   >
-    <SplitView
-      ref="fileManagerSplitComponent"
-      :initial-size-percent="fileManagerSplitComponentInitialSize"
-      :minimum-size-percent="[ 10, 50 ]"
-      :reset-size-percent="[ 20, 80 ]"
-      :split="'horizontal'"
-      @views-resized="fileManagerSplitComponentResized($event)"
+    <div class="main-body">
+    <!-- The activity bar, then the three panes under one splitter (D8): the
+         sidebar's drawer, the editor, the annotation panel. -->
+    <ActivityBar
+      bar-id="activity-bar"
+      side="left"
+      :items="SIDEBAR_VIEWS"
+      :pressed="fileManagerVisible ? configStore.config.ui.sidebarView : ''"
+      :label="trans('Sidebar views')"
+      @press="pressSidebarView($event)"
+    />
+    <SplitterGroup
+      direction="horizontal"
+      class="main-panes"
+      :class="{ animating: panesAnimating }"
     >
-      <template #view1>
-        <!-- File manager in the left side of the split view -->
-        <FileManager
-          v-show="mainSplitViewVisibleComponent === 'fileManager'"
-          ref="file-manager"
+      <SplitterPanel
+        ref="navigationSidebarPanel"
+        class="main-pane"
+        data-pane="navigation-sidebar"
+        size-unit="px"
+        :order="0"
+        :collapsible="true"
+        :collapsed-size="0"
+        :min-size="NAVIGATION_SIDEBAR_MINIMUM"
+        :default-size="mountSizes.navigationSidebar"
+        @resize="draggedWidths.navigationSidebar = $event"
+      >
+        <NavigationSidebar
+          ref="navigationSidebar"
           :window-id="windowId"
           @jump-to-line="jtl($event.filePath, $event.line, false)"
-        />
-        <!-- ... or the global search, if selected -->
-        <GlobalSearch
-          v-show="mainSplitViewVisibleComponent === 'globalSearch'"
-          ref="globalSearchComponent"
-          :window-id="windowId"
           @jtl="(filePath, lineNumber, newTab) => jtl(filePath, lineNumber, newTab)"
+          @jump-to-active-line="genericJtl($event)"
+          @move-section="moveSection($event)"
         />
-      </template>
-      <template #view2>
-        <!-- Another split view in the right side -->
-        <SplitView
-          ref="editorSidebarSplitComponent"
-          :initial-size-percent="editorSidebarSplitComponentInitialSize"
-          :minimum-size-percent="[ 50, 10 ]"
-          :reset-size-percent="[ 80, 20 ]"
-          :split="'horizontal'"
-          @views-resized="editorSidebarSplitComponentResized($event)"
-        >
-          <template #view1>
-            <!-- First side: Editor -->
-            <EditorPane
-              v-if="paneConfiguration?.type === 'leaf'"
-              :node="paneConfiguration"
-              :leaf-id="paneConfiguration.id"
-              :editor-commands="editorCommands"
-              :window-id="windowId"
-              @global-search="startGlobalSearch($event)"
-              @reference-search="openReferenceSearch($event)"
-              @create-reference-label="openCreateReferenceLabel($event)"
-              @open-pandoc-quick-help="showPandocQuickHelp = true"
-            />
-            <EditorBranch
-              v-else-if="paneConfiguration !== undefined"
-              :node="paneConfiguration"
-              :window-id="windowId"
-              :editor-commands="editorCommands"
-              :is-last="true"
-              @global-search="startGlobalSearch($event)"
-              @reference-search="openReferenceSearch($event)"
-              @create-reference-label="openCreateReferenceLabel($event)"
-              @open-pandoc-quick-help="showPandocQuickHelp = true"
-            />
-          </template>
-          <template #view2>
-            <!-- Second side: Sidebar -->
-            <MainSidebar
-              @move-section="moveSection($event)"
-              @jump-to-line="genericJtl($event)"
-              @begin-reattach="beginAnnotationReattach($event)"
-            />
-          </template>
-        </SplitView>
-      </template>
-    </SplitView>
+      </SplitterPanel>
+      <SplitterResizeHandle
+        class="main-pane-handle"
+        :class="{ collapsed: !fileManagerVisible }"
+        data-pane-handle="navigation-sidebar"
+        @dragging="onPaneDragging('navigationSidebar', $event)"
+      />
+      <SplitterPanel
+        class="main-pane"
+        data-pane="editor"
+        :order="1"
+        :min-size="EDITOR_MINIMUM_PERCENT"
+      >
+        <EditorPane
+          v-if="paneConfiguration?.type === 'leaf'"
+          :node="paneConfiguration"
+          :leaf-id="paneConfiguration.id"
+          :editor-commands="editorCommands"
+          :window-id="windowId"
+          @global-search="startGlobalSearch($event)"
+          @reference-search="openReferenceSearch($event)"
+          @create-reference-label="openCreateReferenceLabel($event)"
+          @open-pandoc-quick-help="showPandocQuickHelp = true"
+          @open-annotation="openAnnotation($event)"
+        />
+        <EditorBranch
+          v-else-if="paneConfiguration !== undefined"
+          :node="paneConfiguration"
+          :window-id="windowId"
+          :editor-commands="editorCommands"
+          :is-last="true"
+          @global-search="startGlobalSearch($event)"
+          @reference-search="openReferenceSearch($event)"
+          @create-reference-label="openCreateReferenceLabel($event)"
+          @open-pandoc-quick-help="showPandocQuickHelp = true"
+          @open-annotation="openAnnotation($event)"
+        />
+      </SplitterPanel>
+      <SplitterResizeHandle
+        class="main-pane-handle"
+        :class="{ collapsed: !sidebarVisible }"
+        data-pane-handle="annotation-panel"
+        @dragging="onPaneDragging('annotationPanel', $event)"
+      />
+      <SplitterPanel
+        ref="annotationPanelPanel"
+        class="main-pane"
+        data-pane="annotation-panel"
+        size-unit="px"
+        :order="2"
+        :collapsible="true"
+        :collapsed-size="0"
+        :min-size="ANNOTATION_PANEL_MINIMUM"
+        :default-size="mountSizes.annotationPanel"
+        @resize="draggedWidths.annotationPanel = $event"
+      >
+        <AnnotationsTab
+          @jump-to-line="genericJtl($event)"
+          @begin-reattach="beginAnnotationReattach($event)"
+          @close="configStore.setConfigValue('window.sidebarVisible', false)"
+        />
+      </SplitterPanel>
+    </SplitterGroup>
+    <ActivityBar
+      bar-id="panel-activity-bar"
+      side="right"
+      :items="PANEL_VIEWS"
+      :pressed="sidebarVisible ? PANEL_VIEW_ID : ''"
+      :label="trans('Panel views')"
+      @press="configStore.setConfigValue('window.sidebarVisible', $event === PANEL_VIEW_ID)"
+    />
+    </div>
+    <template #statusbar>
+      <MainStatusbar
+        :pomodoro-ratio="pomodoro.phase.elapsed / pomodoro.durations[pomodoro.phase.type]"
+        :pomodoro-colour="pomodoro.colour[pomodoro.phase.type]"
+        :update-available="isUpdateAvailable"
+        @pomodoro="togglePomodoroPopover()"
+        @tasks="toggleTasksPopover()"
+        @update="openUpdater()"
+        @toggle-readability="runEditorCommand('toggleReadabilityMode')"
+        @toggle-lint-panel="runEditorCommand('toggleLintPanel')"
+        @set-language-tool-language="setLanguageToolLanguage($event)"
+        @open-file="openWorkspaceFile($event)"
+      />
+    </template>
   </WindowChrome>
 
   <!-- Full-screen lightbox for rendered TikZ figures (issue #14) -->
   <TikzLightbox />
 
   <!-- Popover area: these will be teleported to the body element anyhow -->
-  <PopoverExport
-    v-if="showExportPopover && exportButton !== null && activeFile !== undefined"
-    :target="exportButton"
-    :file-path="activeFile.path"
-    @close="showExportPopover = false"
-  />
-  <PopoverStats
-    v-if="showStatsPopover && statsButton !== null"
-    :target="statsButton"
-    @close="showStatsPopover = false"
-  />
-  <PopoverTags
-    v-if="showTagsPopover && tagsButton !== null"
-    :target="tagsButton"
-    @close="showTagsPopover = false"
-    @search-tag="startGlobalSearch($event)"
-  />
-  <PopoverTable
-    v-if="showTablePopover && tableButton !== null"
-    :target="tableButton"
-    @close="showTablePopover = false"
-    @insert-table="insertTable($event)"
-  />
-  <PopoverDocInfo
-    v-if="showDocInfoPopover && docInfoButton !== null && windowStateStore.activeDocumentInfo != null"
-    :target="docInfoButton"
-    :doc-info="windowStateStore.activeDocumentInfo"
-    :should-count-chars="shouldCountChars"
-    @close="showDocInfoPopover = false"
-  />
   <PopoverPomodoro
     v-if="showPomodoroPopover && pomodoroButton !== null"
     :target="pomodoroButton"
@@ -131,26 +148,17 @@
     :target="tasksButton"
     @close="showTasksPopover = false"
   />
-  <PopoverPandoc
-    v-if="showPandocPopover && pandocButton !== null"
-    :target="pandocButton"
-    @close="showPandocPopover = false"
-    @insert-pandoc="insertPandoc($event)"
-  />
   <PandocQuickHelp
     v-if="showPandocQuickHelp"
     @close="showPandocQuickHelp = false"
   />
-  <ReferenceSearchOverlay
-    v-if="showReferenceSearch"
-    :definitions="referenceSearchDefinitions"
-    :occurrences="referenceSearchOccurrences"
-    :initial-request="referenceSearchRequest"
-    :project-roots="referenceSearchProjectRoots"
-    :active-document-path="referenceSearchActiveDocumentPath"
-    @close="showReferenceSearch = false"
+  <CommandLauncher
+    ref="commandLauncher"
+    @open-file="openWorkspaceFile($event)"
+    @jump-to-line="genericJtl($event)"
     @jump="handleReferenceJump($event)"
-    @open-help="openQuickHelpFromOverlay()"
+    @open-help="showPandocQuickHelp = true"
+    @export="runExport($event)"
   />
   <CreateReferenceLabelDialog
     v-if="createLabelPrompt !== undefined"
@@ -178,22 +186,22 @@
  */
 
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
-import FileManager from './file-manager/FileManager.vue'
-import MainSidebar from './sidebar/MainSidebar.vue'
+import NavigationSidebar from './sidebar/NavigationSidebar.vue'
+import ActivityBar from './sidebar/ActivityBar.vue'
+import AnnotationsTab from './sidebar/AnnotationsTab.vue'
 import EditorPane from './EditorPane.vue'
 import EditorBranch from './EditorBranch.vue'
-import SplitView from '../common/vue/window/SplitView.vue'
-import GlobalSearch from './GlobalSearch.vue'
+import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import TikzLightbox from './TikzLightbox.vue'
-import PopoverExport from './PopoverExport.vue'
-import PopoverStats from './PopoverStats.vue'
-import PopoverTags from './PopoverTags.vue'
 import PopoverPomodoro from './PopoverPomodoro.vue'
-import PopoverTable from './PopoverTable.vue'
-import PopoverDocInfo from './PopoverDocInfo.vue'
-import PopoverPandoc from './PopoverPandoc.vue'
 import PandocQuickHelp from './PandocQuickHelp.vue'
-import ReferenceSearchOverlay from './ReferenceSearchOverlay.vue'
+import MainStatusbar from './MainStatusbar.vue'
+import type { ExportRequest } from './launcher/launcher-rows'
+import type { CustomExportIPCAPI, ExportIPCAPI } from 'source/app/service-providers/commands/export'
+import CommandLauncher from './launcher/CommandLauncher.vue'
+import type { LauncherView } from './launcher/launcher-state'
+import { PANEL_VIEW_ID, PANEL_VIEWS, SIDEBAR_VIEWS, type RevealTarget } from './sidebar/sidebar-views'
+import { isSidebarViewId } from '@dts/common/sidebar-views'
 import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
 import type {
   ConfirmReferenceLabelOutcome,
@@ -217,7 +225,7 @@ import {
   computed,
   watch,
   onMounted,
-  onBeforeMount
+  reactive
 } from 'vue'
 
 // Import the sound effects for the pomodoro timer
@@ -227,25 +235,28 @@ import chimeFile from './assets/chime.mp3'
 import { DocumentType, type LeafNodeJSON } from '@dts/common/documents'
 import { buildPipeMarkdownTable } from '@common/util/build-pipe-markdown-table'
 import { type UpdateState } from '@providers/updates'
-import { type ToolbarControl } from '@common/vue/window/WindowToolbar.vue'
 import getDocumentTitle from './util/get-document-title'
-import { useConfigStore, useDocumentTreeStore, useLRTStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
-import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
+import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { type AnyDescriptor } from 'source/types/common/fsal'
-import type { ProjectRootSpec, ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from '@dts/common/documents'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
-import { TaskStatus } from 'source/pinia/lrt-store'
 import PopoverLRT from './PopoverLRT.vue'
+import {
+  insertTablePayloadSchema,
+  isEditorCommandName,
+  isShortcutName,
+  type EditorCommandName,
+  type ShortcutName
+} from '@dts/common/shortcut-names'
 
 const ipcRenderer = window.ipc
 
 const configStore = useConfigStore()
 const documentTreeStore = useDocumentTreeStore()
+const collaborationStore = useDocumentCollaborationStore()
 const windowStateStore = useWindowStateStore()
 const workspaceStore = useWorkspaceStore()
-const LRTStore = useLRTStore()
 
 const SOUND_EFFECTS = [
   {
@@ -268,108 +279,149 @@ const searchParams = new URLSearchParams(window.location.search)
 const windowId = searchParams.get('window_id')!
 
 const fileManagerVisible = computed<boolean>(() => configStore.config.window.fileManagerVisible)
-const mainSplitViewVisibleComponent = ref<'fileManager'|'globalSearch'>('fileManager')
 const isUpdateAvailable = ref(false)
 const hasVibrancy = computed(() => configStore.config.window.vibrancy && process.platform === 'darwin')
 
-// Ensure the app remembers the previous sidebar sizes
-const fileManagerSplitComponentInitialSize = ref<[number, number]>([ 20, 80 ])
-const editorSidebarSplitComponentInitialSize = ref<[number, number]>([ 80, 20 ])
-onBeforeMount(() => {
-  fileManagerSplitComponentInitialSize.value = configStore.config.ui.fileManagerSplitSize
-  editorSidebarSplitComponentInitialSize.value = configStore.config.ui.editorSidebarSplitSize
-})
+// The panes' widths. The sidebar and the panel are pixel panels with a
+// minimum each; the editor takes the rest, down to a fifth of the window,
+// below which a shrinking window squeezes the pixel panes too. A pane
+// mounts at the width it was last dragged to, in this session or in the
+// config, and a drag's end persists it — a window that squeezes the panes
+// does not overwrite the width the user chose.
+const NAVIGATION_SIDEBAR_MINIMUM = 200
+const ANNOTATION_PANEL_MINIMUM = 240
+const EDITOR_MINIMUM_PERCENT = 20
 
-// Popover targets
-const exportButton = ref<HTMLElement|null>(null)
-const showExportPopover = ref<boolean>(false)
-const statsButton = ref<HTMLElement|null>(null)
-const showStatsPopover = ref<boolean>(false)
-const tagsButton = ref<HTMLElement|null>(null)
-const showTagsPopover = ref<boolean>(false)
-const tableButton = ref<HTMLElement|null>(null)
-const showTablePopover = ref<boolean>(false)
-const docInfoButton = ref<HTMLElement|null>(null)
-const showDocInfoPopover = ref<boolean>(false)
+type DraggablePane = 'navigationSidebar' | 'annotationPanel'
+const PANE_WIDTH_KEY: Record<DraggablePane, 'ui.navigationSidebarWidth' | 'ui.annotationPanelWidth'> = {
+  navigationSidebar: 'ui.navigationSidebarWidth',
+  annotationPanel: 'ui.annotationPanelWidth'
+}
+/** The width each pane mounts at; moves only when a drag ends. */
+const mountWidths = reactive<Record<DraggablePane, number>>({
+  navigationSidebar: configStore.config.ui.navigationSidebarWidth,
+  annotationPanel: configStore.config.ui.annotationPanelWidth
+})
+/** The width each pane has right now, as the splitter reports it. */
+const draggedWidths = reactive<Record<DraggablePane, number>>({ ...mountWidths })
+/** Which handles are mid-drag: only a drag that happened persists a width. */
+const paneDragActive = reactive<Record<DraggablePane, boolean>>({ navigationSidebar: false, annotationPanel: false })
+
+function onPaneDragging (pane: DraggablePane, dragging: boolean): void {
+  if (dragging) {
+    paneDragActive[pane] = true
+    return
+  }
+  if (!paneDragActive[pane]) {
+    return
+  }
+  paneDragActive[pane] = false
+  const width = Math.round(draggedWidths[pane])
+  // A handle dragged past its pane's minimum collapses the pane, which is
+  // how a pane is hidden by dragging. The width it comes back at is the one
+  // it had before that, so this does not persist the zero.
+  if (width < PANE_MINIMUM[pane]) {
+    configStore.setConfigValue(PANE_VISIBLE_KEY[pane], false)
+    return
+  }
+  mountWidths[pane] = width
+  configStore.setConfigValue(PANE_WIDTH_KEY[pane], width)
+}
+
+// Popover targets: the status bar items, looked up when their popover opens.
 const pomodoroButton = ref<HTMLElement|null>(null)
 const showPomodoroPopover = ref<boolean>(false)
 const tasksButton = ref<HTMLElement|null>(null)
 const showTasksPopover = ref(false)
-const pandocButton = ref<HTMLElement|null>(null)
-const showPandocPopover = ref<boolean>(false)
 const showPandocQuickHelp = ref<boolean>(false)
 
-// Mod-P workspace reference search (issue #1 Phase 3b) and the badge-keyed
-// reverse lookup (issue #1 Phase 8): the relayed request decides which mode
-// the overlay opens in, and the merged occurrence list feeds the
-// citing-locations rows.
-const showReferenceSearch = ref<boolean>(false)
-const referenceSearchDefinitions = ref<ReferenceDefinition[]>([])
-const referenceSearchOccurrences = ref<ReferenceOccurrence[]>([])
-const referenceSearchRequest = ref<ReferenceSearchRequest>(null)
-// The US-16 ranking context (review A3): every visible Project root plus the
-// document the search was invoked from, captured at open time.
-const referenceSearchProjectRoots = ref<ProjectRootSpec[]>([])
-const referenceSearchActiveDocumentPath = ref<string|undefined>(undefined)
-
-/**
- * Every Project root visible in the workspace, projected to the pure
- * ProjectRootSpec shape the ranking consumes (the same projection
- * MainEditor.vue feeds the completion status computation).
- */
-function collectProjectRoots (): ProjectRootSpec[] {
-  const roots: ProjectRootSpec[] = []
-  for (const descriptor of workspaceStore.descriptorMap.values()) {
-    if (descriptor.type === 'directory' && descriptor.settings.project !== null) {
-      roots.push({
-        rootPath: descriptor.path,
-        files: [...descriptor.settings.project.files]
-      })
-    }
-  }
-  return roots
+function togglePomodoroPopover (): void {
+  pomodoroButton.value = document.querySelector('#statusbar-pomodoro')
+  showPomodoroPopover.value = !showPomodoroPopover.value
 }
 
-/**
- * The Mod-P overlay's help affordance (review A2, US-06): swap the search
- * overlay for the searchable Pandoc quick help.
- */
-function openQuickHelpFromOverlay (): void {
-  showReferenceSearch.value = false
-  showPandocQuickHelp.value = true
+function toggleTasksPopover (): void {
+  tasksButton.value = document.querySelector('#main-statusbar [data-statusbar-item="tasks"]')
+  showTasksPopover.value = !showTasksPopover.value
 }
 
+/** Runs a named editor command in the last focused pane. */
+function runEditorCommand (name: EditorCommandName): void {
+  editorCommands.value.data = name
+  editorCommands.value.executeCommand = !editorCommands.value.executeCommand
+}
+
+/** Overrides the language LanguageTool checks the focused pane's document in. */
+function setLanguageToolLanguage (language: string): void {
+  editorCommands.value.data = language
+  editorCommands.value.setLanguageToolLanguage = !editorCommands.value.setLanguageToolLanguage
+}
+
+async function openUpdater (): Promise<void> {
+  await ipcRenderer.invoke('application', { command: 'open-update-window' })
+}
+
+/** The surface CommandLauncher.vue exposes to its template ref. */
+interface CommandLauncherHandle {
+  open: (view: LauncherView) => Promise<void>
+  close: () => void
+}
+
+const commandLauncher = ref<CommandLauncherHandle|null>(null)
+
 /**
- * Fetches the merged workspace state from the reference provider and mounts
- * the reference search overlay over it: the plain Mod-P definition search
- * (request null) or the keyed citing-locations reverse lookup ({ key }).
- * A failed fetch surfaces through the recoverable-error boundary (issue #1
- * Phase 8) and the overlay simply does not open.
+ * Opens the command launcher for a reference search request: the plain
+ * Mod-P request (null) opens the launcher root, where the workspace
+ * reference search is one command; the badge-keyed reverse lookup
+ * ({ key }, issue #1 Phase 8) opens the references view on that key.
  *
  * @param   {ReferenceSearchRequest}  request  The relayed request payload
  */
-function openReferenceSearch (request: ReferenceSearchRequest = null): void {
-  invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
-    async (channel, message) => await ipcRenderer.invoke(channel, message),
-    { command: 'get-snapshot' },
-    trans('Loading workspace references')
-  )
-    .then(outcome => {
-      if (outcome.status === 'failed') {
-        return // The boundary surfaced the closable toast; nothing to open.
-      }
-      referenceSearchDefinitions.value = outcome.value.snapshots.flatMap(snapshot => snapshot.definitions)
-      // ONE owner for the citing-locations fact (issues #53, #46): both
-      // modes read the provider's freshly fetched merged snapshot, whose
-      // live overlays the document authority feeds on load and edit. The
-      // keyed request names only the key; the overlay filters these rows.
-      referenceSearchOccurrences.value = outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
-      referenceSearchRequest.value = request
-      referenceSearchProjectRoots.value = collectProjectRoots()
-      referenceSearchActiveDocumentPath.value = documentTreeStore.lastLeafActiveFile?.path
-      showReferenceSearch.value = true
+async function openReferenceSearch (request: ReferenceSearchRequest = null): Promise<void> {
+  const view: LauncherView = request === null ? { kind: 'root' } : { kind: 'references', request }
+  await commandLauncher.value?.open(view)
+}
+
+/** Opens the launcher on the export profiles: the Export… menu item's path. */
+async function openExport (): Promise<void> {
+  await commandLauncher.value?.open({ kind: 'dynamic-group', id: 'export' })
+}
+
+/** Exports the active document with the profile or custom command chosen in the launcher. */
+async function runExport (request: ExportRequest): Promise<void> {
+  const file = activeFile.value
+  if (file === undefined) {
+    return
+  }
+  if (request.kind === 'command') {
+    await ipcRenderer.invoke('application', {
+      command: 'custom-export',
+      payload: { displayName: request.displayName, file: file.path } satisfies CustomExportIPCAPI
     })
-    .catch(err => console.error('Could not open the reference search overlay', err))
+    return
+  }
+  await ipcRenderer.invoke('application', {
+    command: 'export',
+    payload: {
+      // Spread into a plain object: the reactive proxy cannot cross the IPC boundary.
+      profile: { ...request.profile },
+      exportTo: configStore.config.export.dir,
+      file: file.path
+    } satisfies ExportIPCAPI
+  })
+}
+
+/**
+ * Opens a workspace document chosen in the launcher's Go to file group in
+ * the last focused pane.
+ *
+ * @param   {string}  path  The document's path
+ */
+async function openWorkspaceFile (path: string): Promise<void> {
+  await ipcRenderer.invoke('documents-provider', {
+    command: 'open-file',
+    payload: { path, windowId, leafId: lastLeafId.value, newTab: false }
+  })
 }
 
 // Create-reference-label dialog (issue #1 Phase 6): the relayed request
@@ -463,7 +515,6 @@ function handleCreateReferenceLabel (intent: CreateReferenceLabelIntent): void {
  * @param   {ReferenceJumpIntent}  intent  The chosen jump intent
  */
 function handleReferenceJump (intent: ReferenceJumpIntent): void {
-  showReferenceSearch.value = false
   ipcRenderer.invoke('documents-provider', {
     command: 'open-file',
     payload: {
@@ -496,6 +547,7 @@ const editorCommands = ref<EditorCommands>({
   insertPandoc: false,
   executeCommand: false,
   beginAnnotationReattach: false,
+  setLanguageToolLanguage: false,
   data: undefined
 })
 
@@ -505,8 +557,73 @@ const sidebarsBeforeDistractionfree = ref<{ fileManager: boolean, sidebar: boole
 })
 
 const sidebarVisible = computed<boolean>(() => configStore.config.window.sidebarVisible)
+
+// Showing and hiding a pane. The panes stay mounted and collapse to nothing
+// through the splitter's own collapse, so the width slides instead of
+// jumping and a pane comes back holding what it held. The transition is
+// armed only around a toggle: a window resize relays the panes too, and a
+// pane that eased after the window edge would lag behind the pointer.
+const PANE_ANIMATION_MS = 180
+const PANE_VISIBLE_KEY: Record<DraggablePane, 'window.fileManagerVisible' | 'window.sidebarVisible'> = {
+  navigationSidebar: 'window.fileManagerVisible',
+  annotationPanel: 'window.sidebarVisible'
+}
+const PANE_MINIMUM: Record<DraggablePane, number> = {
+  navigationSidebar: NAVIGATION_SIDEBAR_MINIMUM,
+  annotationPanel: ANNOTATION_PANEL_MINIMUM
+}
+const navigationSidebarPanel = ref<InstanceType<typeof SplitterPanel>|null>(null)
+const annotationPanelPanel = ref<InstanceType<typeof SplitterPanel>|null>(null)
+const panesAnimating = ref(false)
+let paneAnimationTimer: ReturnType<typeof setTimeout>|undefined
+
+/**
+ * The width each pane mounts at, zero for a pane the window opens with
+ * hidden: a pane that starts collapsed is laid out collapsed, rather than
+ * collapsed by hand once the group exists. Read once, so the splitter's
+ * constraints never change under it.
+ */
+const mountSizes: Record<DraggablePane, number> = {
+  navigationSidebar: fileManagerVisible.value ? mountWidths.navigationSidebar : 0,
+  annotationPanel: sidebarVisible.value ? mountWidths.annotationPanel : 0
+}
+
+function panelFor (pane: DraggablePane): InstanceType<typeof SplitterPanel>|null {
+  return pane === 'navigationSidebar' ? navigationSidebarPanel.value : annotationPanelPanel.value
+}
+
+/**
+ * Slides a pane open or shut. A pane comes back at the width it was left
+ * at, which is named here rather than left to the splitter: a pane the
+ * window opened with hidden was never collapsed, so the splitter remembers
+ * no width for it and would hand it its bare minimum.
+ */
+function applyPaneVisibility (pane: DraggablePane, visible: boolean): void {
+  const panel = panelFor(pane)
+  if (panel === null) {
+    return
+  }
+  panesAnimating.value = true
+  clearTimeout(paneAnimationTimer)
+  paneAnimationTimer = setTimeout(() => { panesAnimating.value = false }, PANE_ANIMATION_MS)
+  if (visible) {
+    panel.expand()
+    panel.resize(mountWidths[pane])
+  } else {
+    panel.collapse()
+  }
+}
+
+watch([ fileManagerVisible, sidebarVisible ], ([ sidebar, panel ], [ wasSidebar, wasPanel ]) => {
+  if (sidebar !== wasSidebar) {
+    applyPaneVisibility('navigationSidebar', sidebar)
+  }
+  if (panel !== wasPanel) {
+    applyPaneVisibility('annotationPanel', panel)
+  }
+})
+
 const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
-const shouldCountChars = computed<boolean>(() => configStore.config.editor.countChars)
 const windowTitle = computed<string>(() => {
   if (activeFile.value === undefined) {
     return 'Zettlr'
@@ -550,260 +667,23 @@ const windowTitle = computed<string>(() => {
 
 */
 
-// The titlebar shall be shown on the main window in only one single instance
-const shouldShowTitlebar = computed<boolean>(() => process.platform === 'darwin' && configStore.config.display.hideToolbarInDistractionFree && distractionFree.value)
+// With no toolbar row to drag the window by, macOS keeps its titlebar.
+const shouldShowTitlebar = computed<boolean>(() => process.platform === 'darwin')
+
 // The menubar is independent of other values; always shown on Windows, and on Linux only if native Appearance is off.
 const shouldShowMenubar = computed<boolean>(() => process.platform === 'win32' || (process.platform !== 'darwin' && !configStore.config.window.nativeAppearance))
 
-// Finally, the toolbar. That one is a bit more iffy. It is always shown, EXCEPT
-// Hide Toolbar is True and DistractionFree is True
-const shouldShowToolbar = computed<boolean>(() => !distractionFree.value || !configStore.config.display.hideToolbarInDistractionFree)
 
-const parsedDocumentInfo = computed<string[]>(() => {
-  const info = windowStateStore.activeDocumentInfo
-  if (info == null) {
-    return []
-  }
 
-  const lines: string[] = []
 
-  if (info.selections.length > 0) {
-    // We have selections to display.
-    let length = 0
-    info.selections.forEach(sel => {
-      length += shouldCountChars.value ? sel.chars : sel.words
-    })
 
-    lines.push(trans('%s selected', localiseNumber(length)))
-    if (info.selections.length === 1) {
-      const { head, anchor } = info.selections[0]
-      lines.push(`${anchor.line}:${anchor.ch} – ${head.line}:${head.ch}`)
-    } else {
-      // Multiple selections --> indicate
-      lines.push(trans('%s selections', info.selections.length))
-    }
-  } else {
-    // No selection.
-    lines.push(shouldCountChars.value
-      ? trans('%s characters', localiseNumber(info.chars))
-      : trans('%s words', localiseNumber(info.words)))
-    lines.push(`${info.cursor.line}:${info.cursor.ch}`)
-  }
-
-  return lines
-})
-
-// Long-Running-Task setup
-const hasTasks = computed(() => LRTStore.tasks.length > 0)
-const taskSuccess = computed(() => LRTStore.tasks.filter(t => t.status === TaskStatus.finished).length)
-const taskAborted = computed(() => LRTStore.tasks.filter(t => t.status === TaskStatus.aborted).length)
-const taskError = computed(() => LRTStore.tasks.filter(t => t.status === TaskStatus.error).length)
-const taskOngoing = computed(() => LRTStore.tasks.filter(t => t.status === TaskStatus.ongoing).length)
-
-const toolbarControls = computed<ToolbarControl[]>(() => {
-  return [
-    {
-      type: 'three-way-toggle',
-      id: 'toggle-file-manager',
-      stateOne: {
-        id: 'fileManager',
-        title: trans('Toggle File Manager'),
-        icon: 'hard-disk'
-      },
-      stateTwo: {
-        id: 'globalSearch',
-        title: trans('Search across all files'),
-        icon: 'search'
-      },
-      initialState: (fileManagerVisible.value) ? mainSplitViewVisibleComponent.value : undefined
-    },
-    {
-      type: 'button',
-      id: 'root-open-workspaces',
-      title: trans('Open workspace…'),
-      icon: 'folder-open'
-    },
-    {
-      type: 'button',
-      id: 'show-stats',
-      title: trans('View writing statistics'),
-      icon: 'line-chart'
-    },
-    {
-      type: 'button',
-      id: 'show-tag-cloud',
-      title: trans('View Tag Cloud'),
-      icon: 'tag',
-      badge: undefined // this.hasTagSuggestions
-    },
-    {
-      type: 'button',
-      id: 'open-preferences',
-      title: trans('Open settings'),
-      icon: 'cog',
-      visible: getToolbarButtonDisplay('showOpenPreferencesButton')
-    },
-    {
-      type: 'button',
-      id: 'new-file',
-      title: trans('New file…'),
-      icon: 'plus',
-      visible: getToolbarButtonDisplay('showNewFileButton')
-    },
-    // Compact Back/Forward navigation controls (issue #1 Phase 5): enabled
-    // exactly when the focused pane's session history has an entry in that
-    // direction.
-    {
-      type: 'button',
-      id: 'previous-file',
-      title: trans('Navigate back'),
-      icon: 'arrow',
-      direction: 'left',
-      disabled: !canGoBack.value,
-      visible: getToolbarButtonDisplay('showPreviousFileButton')
-    },
-    {
-      type: 'button',
-      id: 'next-file',
-      title: trans('Navigate forward'),
-      icon: 'arrow',
-      direction: 'right',
-      disabled: !canGoForward.value,
-      visible: getToolbarButtonDisplay('showNextFileButton')
-    },
-    {
-      type: 'spacer',
-      size: '3x'
-    },
-    {
-      type: 'button',
-      class: 'share',
-      id: 'export',
-      title: trans('Export current file'),
-      icon: 'export'
-    },
-    {
-      type: 'spacer',
-      id: 'spacer-two',
-      size: '1x'
-    },
-    {
-      type: 'button',
-      id: 'pandocDivOrSpan',
-      title: trans('Insert Pandoc Div or Span'),
-      icon: 'drag-handle',
-      visible: getToolbarButtonDisplay('showPandocDivSpanButton')
-    },
-    {
-      type: 'button',
-      id: 'markdownComment',
-      title: trans('Insert comment'),
-      icon: 'code',
-      visible: getToolbarButtonDisplay('showMarkdownCommentButton')
-    },
-    {
-      type: 'button',
-      id: 'markdownLink',
-      title: trans('Insert link'),
-      icon: 'link',
-      visible: getToolbarButtonDisplay('showMarkdownLinkButton')
-    },
-    {
-      type: 'button',
-      id: 'markdownImage',
-      title: trans('Insert image'),
-      icon: 'image',
-      visible: getToolbarButtonDisplay('showMarkdownImageButton')
-    },
-    {
-      type: 'button',
-      id: 'markdownMakeTaskList',
-      title: trans('Insert task list'),
-      icon: 'checkbox-list',
-      visible: getToolbarButtonDisplay('showMarkdownMakeTaskListButton')
-    },
-    {
-      type: 'button',
-      id: 'insert-table',
-      title: trans('Insert table'),
-      icon: 'table',
-      visible: getToolbarButtonDisplay('showInsertTableButton')
-    },
-    {
-      type: 'button',
-      id: 'insertFootnote',
-      title: trans('Insert footnote'),
-      icon: 'footnote',
-      visible: getToolbarButtonDisplay('showInsertFootnoteButton')
-    },
-    {
-      type: 'spacer',
-      size: '3x'
-    },
-    {
-      type: 'text',
-      align: 'center',
-      id: 'document-info',
-      content: parsedDocumentInfo.value,
-      visible: getToolbarButtonDisplay('showDocumentInfoText')
-    },
-    {
-      type: 'spacer',
-      size: '1x'
-    },
-    {
-      type: 'ring',
-      id: 'pomodoro',
-      title: trans('Pomodoro timer'),
-      // Good morning, we are verbose here
-      progressPercent: pomodoro.value.phase.elapsed / pomodoro.value.durations[pomodoro.value.phase.type] * 100,
-      colour: pomodoro.value.colour[pomodoro.value.phase.type],
-      visible: getToolbarButtonDisplay('showPomodoroButton')
-    },
-    {
-      type: 'iris-indicator',
-      id: 'long-running-tasks',
-      title: trans('Show tasks'),
-      tasksInProgress: taskOngoing.value,
-      tasksSuccess: taskSuccess.value,
-      tasksFailed: taskError.value,
-      tasksAborted: taskAborted.value,
-      visible: hasTasks.value
-    },
-    {
-      type: 'toggle',
-      id: 'toggle-sidebar',
-      title: trans('Toggle Sidebar'),
-      icon: 'view-columns',
-      initialState: sidebarVisible.value
-    },
-    {
-      type: 'button',
-      id: 'open-updater',
-      title: trans('Update available'),
-      showLabel: true,
-      buttonText: trans('Update available'),
-      icon: 'download',
-      visible: isUpdateAvailable.value
-    }
-  ] satisfies ToolbarControl[]
-})
-
-/** The surface SplitView.vue exposes to its template refs. */
-interface SplitViewHandle {
-  hideView: (viewNumber: 1|2) => void
-  unhide: () => void
+/** The surface NavigationSidebar.vue exposes to its template ref. */
+interface NavigationSidebarHandle {
+  reveal: (target: RevealTarget) => Promise<void>
+  startSearch: (terms: string) => Promise<void>
 }
 
-/** The surface GlobalSearch.vue exposes to its template refs. */
-interface GlobalSearchHandle {
-  focusQueryInput: () => void
-  startSearch: (overrideQuery?: string) => void
-}
-
-const editorSidebarSplitComponent = ref<SplitViewHandle|null>(null)
-const fileManagerSplitComponent = ref<SplitViewHandle|null>(null)
-const globalSearchComponent = ref<GlobalSearchHandle|null>(null)
+const navigationSidebar = ref<NavigationSidebarHandle|null>(null)
 const paneConfiguration = computed(() => documentTreeStore.paneStructure)
 const lastLeafId = computed(() => documentTreeStore.lastLeafId)
 const distractionFree = computed<boolean>(() => windowStateStore.distractionFreeMode !== undefined)
@@ -855,40 +735,11 @@ watch(lastLeafId, refreshNavigationState)
 ipcRenderer.on('documents-update', () => { refreshNavigationState() })
 refreshNavigationState()
 
-watch(sidebarVisible, (newValue) => {
-  if (newValue) {
-    if (distractionFree.value) {
-      if (windowStateStore.distractionFreeMode !== undefined) {
-        windowStateStore.distractionFreeMode = undefined
-      }
-    }
-
-    editorSidebarSplitComponent.value?.unhide()
-  } else {
-    editorSidebarSplitComponent.value?.hideView(2)
-  }
-})
-
-watch(fileManagerVisible, (newValue) => {
-  if (newValue) {
-    if (distractionFree.value) {
-      if (windowStateStore.distractionFreeMode !== undefined) {
-        windowStateStore.distractionFreeMode = undefined
-      }
-    }
-
-    fileManagerSplitComponent.value?.unhide()
-  } else {
-    fileManagerSplitComponent.value?.hideView(1)
-  }
-})
-
-watch(mainSplitViewVisibleComponent, (newValue) => {
-  if (newValue === 'globalSearch') {
-    // The global search just became visible, so focus the query input
-    nextTick().then(() => {
-      globalSearchComponent.value?.focusQueryInput()
-    }).catch(e => console.error(e))
+// Showing a pane ends distraction-free mode; the panes themselves mount
+// and unmount with their config values.
+watch([ sidebarVisible, fileManagerVisible ], ([ panel, sidebar ]) => {
+  if ((panel || sidebar) && windowStateStore.distractionFreeMode !== undefined) {
+    windowStateStore.distractionFreeMode = undefined
   }
 })
 
@@ -909,15 +760,6 @@ watch(distractionFree, (newValue) => {
 })
 
 onMounted(() => {
-  exportButton.value = document.querySelector('#toolbar-export')
-  statsButton.value = document.querySelector('#toolbar-show-stats')
-  tagsButton.value = document.querySelector('#toolbar-show-tag-cloud')
-  tableButton.value = document.querySelector('#toolbar-insert-table')
-  docInfoButton.value = document.querySelector('#toolbar-document-info')
-  pomodoroButton.value = document.querySelector('#toolbar-pomodoro')
-  tasksButton.value = document.querySelector('#toolbar-long-running-tasks')
-  pandocButton.value = document.querySelector('#toolbar-pandocDivOrSpan')
-
   // Saves that main initiated — the close-and-save prompts — have no renderer
   // promise to carry their result, so the provider broadcasts refusals here.
   // Without this the prompt closes and the window stays open with no reason
@@ -930,13 +772,21 @@ onMounted(() => {
     showToast(message, 'error', 12000)
   })
 
-  ipcRenderer.on('shortcut', (event, shortcut) => {
-    if (shortcut === 'toggle-sidebar') {
+  // The window-level shortcuts this component owns, by their typed name. The
+  // main process sends the same names from the application menu; names other
+  // components own (save-file, search, …) have no entry here.
+  const shortcutHandlers: Partial<Record<ShortcutName, () => void>> = {
+    'toggle-annotation-panel': () => {
       configStore.setConfigValue('window.sidebarVisible', !sidebarVisible.value)
-    } else if (shortcut === 'insert-id') {
+    },
+    'insert-id': () => {
       editorCommands.value.data = generateId(configStore.config.zkn.idGen)
       editorCommands.value.replaceSelection = !editorCommands.value.replaceSelection
-    } else if (shortcut === 'copy-current-id' && documentTreeStore.lastLeafActiveFile !== undefined) {
+    },
+    'copy-current-id': () => {
+      if (documentTreeStore.lastLeafActiveFile === undefined) {
+        return
+      }
       ipcRenderer.invoke('fsal', {
         command: 'get-descriptor',
         payload: documentTreeStore.lastLeafActiveFile.path
@@ -947,53 +797,43 @@ onMounted(() => {
           }
         })
         .catch(err => console.error(err))
-    } else if (shortcut === 'global-search') {
-      configStore.setConfigValue('window.fileManagerVisible', true)
-      mainSplitViewVisibleComponent.value = 'globalSearch'
-      // Focus input
-      nextTick()
-        .then(() => { globalSearchComponent.value?.focusQueryInput() })
-        .catch(err => console.error(err))
-    } else if (shortcut === 'toggle-file-manager') {
-      if (fileManagerVisible.value && mainSplitViewVisibleComponent.value === 'fileManager') {
-        configStore.setConfigValue('window.fileManagerVisible', false)
-      } else if (!fileManagerVisible.value) {
-        configStore.setConfigValue('window.fileManagerVisible', true)
-        mainSplitViewVisibleComponent.value = 'fileManager'
-      } else if (mainSplitViewVisibleComponent.value === 'globalSearch') {
-        mainSplitViewVisibleComponent.value = 'fileManager'
-      }
-    } else if (shortcut === 'filter-files') {
-      // We need to immediately make the file manager visible, which will
-      // -- in the next tick -- focus its filter input.
-      configStore.setConfigValue('window.fileManagerVisible', true)
-      mainSplitViewVisibleComponent.value = 'fileManager'
-    } else if (shortcut === 'export') {
-      showExportPopover.value = true
-    } else if (shortcut === 'pandoc-quick-help') {
-      showPandocQuickHelp.value = true
-    } else if (shortcut === 'print') {
+    },
+    'global-search': () => navigationSidebar.value?.reveal({ view: 'search', focus: 'search-query' }),
+    'toggle-navigation-sidebar': () => {
+      configStore.setConfigValue('window.fileManagerVisible', !fileManagerVisible.value)
+    },
+    // The file manager focuses its own filter on the next tick; the drawer
+    // and the Files section only have to be visible by then.
+    'filter-files': () => navigationSidebar.value?.reveal({ view: 'explorer', section: 'files', focus: 'none' }),
+    export: () => openExport(),
+    'pandoc-quick-help': () => { showPandocQuickHelp.value = true },
+    print: () => {
       if (activeFile.value !== undefined) {
         ipcRenderer.invoke('application', { command: 'print', payload: activeFile.value.path })
           .catch(err => console.error(err))
       }
-    } else if (shortcut === 'navigate-back') {
-      navigateHistory('navigate-back')
-    } else if (shortcut === 'navigate-forward') {
-      navigateHistory('navigate-forward')
+    },
+    'navigate-back': () => { navigateHistory('navigate-back') },
+    'navigate-forward': () => { navigateHistory('navigate-forward') },
+    'insert-pandoc-div': () => { insertPandoc({ type: 'div', attributes: '' }) },
+    'insert-pandoc-span': () => { insertPandoc({ type: 'span', attributes: '' }) },
+    'open-command-launcher': () => openReferenceSearch(null)
+  }
+
+  ipcRenderer.on('shortcut', (event, shortcut: unknown, payload: unknown) => {
+    if (typeof shortcut !== 'string' || !isShortcutName(shortcut)) {
+      throw new Error(`The main process sent an unknown shortcut: ${String(shortcut)}`)
     }
+    if (shortcut === 'insert-table') {
+      insertTable(insertTablePayloadSchema.parse(payload))
+      return
+    }
+    if (isEditorCommandName(shortcut)) {
+      runEditorCommand(shortcut)
+      return
+    }
+    shortcutHandlers[shortcut]?.()
   })
-
-  // Initially, we need to hide the sidebar, since the view will be visible
-  // by default.
-  if (!sidebarVisible.value) {
-    editorSidebarSplitComponent.value?.hideView(2)
-  }
-
-  // Similarly, if the file manager is set to hidden, do that, too.
-  if (!fileManagerVisible.value) {
-    fileManagerSplitComponent.value?.hideView(1)
-  }
 
   // Check if there is an update available.
   ipcRenderer.invoke('update-provider', { command: 'update-status' })
@@ -1009,14 +849,6 @@ onMounted(() => {
     }
   })
 })
-
-function fileManagerSplitComponentResized (sizes: [number, number]): void {
-  configStore.setConfigValue('ui.fileManagerSplitSize', sizes)
-}
-
-function editorSidebarSplitComponentResized (sizes: [number, number]): void {
-  configStore.setConfigValue('ui.editorSidebarSplitSize', sizes)
-}
 
 function insertTable (spec: { rows: number, cols: number }): void {
   // Generate a simple table based on the info, and insert it.
@@ -1107,6 +939,31 @@ function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
  *
  * @param   {string}  annotationId  The orphaned annotation to reattach
  */
+/**
+ * An icon on the left activity bar: it opens the drawer on that view, or
+ * closes the drawer when the view it already shows is pressed again.
+ */
+function pressSidebarView (id: string): void {
+  if (isSidebarViewId(id)) {
+    configStore.setConfigValue('ui.sidebarView', id)
+    configStore.setConfigValue('window.fileManagerVisible', true)
+    return
+  }
+  configStore.setConfigValue('window.fileManagerVisible', false)
+}
+
+/**
+ * A gutter chip was clicked in an editor. The chip is the editor's half of
+ * an annotation and the panel holds the other half, so the gesture selects
+ * the annotation and brings the panel out if it was away.
+ */
+function openAnnotation (annotationId: string): void {
+  collaborationStore.selectAnnotation(annotationId)
+  if (!sidebarVisible.value) {
+    configStore.setConfigValue('window.sidebarVisible', true)
+  }
+}
+
 function beginAnnotationReattach (annotationId: string): void {
   const doc = documentTreeStore.lastLeafActiveFile
   if (doc === undefined) {
@@ -1121,73 +978,10 @@ function moveSection (data: { from: number, to: number }): void {
   editorCommands.value.moveSection = !editorCommands.value.moveSection
 }
 
-function startGlobalSearch (terms: string): void {
-  mainSplitViewVisibleComponent.value = 'globalSearch'
-  configStore.setConfigValue('window.fileManagerVisible', true)
-  nextTick()
-    .then(() => {
-      globalSearchComponent.value?.startSearch(terms)
-    })
-    .catch(err => console.error(err))
+async function startGlobalSearch (terms: string): Promise<void> {
+  await navigationSidebar.value?.startSearch(terms)
 }
 
-function handleClick (clickedID?: string): void {
-  if (clickedID === 'root-open-workspaces') {
-    ipcRenderer.invoke('application', { command: 'root-open-workspaces' })
-      .catch(e => console.error(e))
-  } else if (clickedID === 'open-preferences') {
-    ipcRenderer.invoke('application', { command: 'open-preferences' })
-      .catch(e => console.error(e))
-  } else if (clickedID === 'new-file') {
-    ipcRenderer.invoke('application', { command: 'file-new', payload: { type: DocumentType.Markdown } })
-      .catch(e => console.error(e))
-  } else if (clickedID === 'previous-file') {
-    if (!canGoBack.value) {
-      return // The control renders disabled; never navigate past the boundary
-    }
-    navigateHistory('navigate-back')
-  } else if (clickedID === 'next-file') {
-    if (!canGoForward.value) {
-      return // The control renders disabled; never navigate past the boundary
-    }
-    navigateHistory('navigate-forward')
-  } else if (clickedID === 'export') {
-    showExportPopover.value = !showExportPopover.value
-  } else if (clickedID === 'show-stats') {
-    // The user wants to display the stats
-    showStatsPopover.value = !showStatsPopover.value
-  } else if (clickedID === 'show-tag-cloud') {
-    showTagsPopover.value = !showTagsPopover.value
-    // TODO startGlobalSearch('#' + data.searchForTag)
-    // editorCommands.value.data = data.suggestions
-    // editorCommands.value.addKeywords = !editorCommands.value.addKeywords
-  } else if (clickedID === 'pomodoro') {
-    showPomodoroPopover.value = !showPomodoroPopover.value
-  } else if (clickedID === 'insert-table') {
-    // Display the insertion popover
-    showTablePopover.value = !showTablePopover.value
-  } else if (clickedID === 'long-running-tasks') {
-    // The tasks button is only mounted conditionally
-    tasksButton.value = document.querySelector('#toolbar-long-running-tasks')
-    showTasksPopover.value = !showTasksPopover.value
-  } else if (clickedID === 'document-info') {
-    showDocInfoPopover.value = !showDocInfoPopover.value
-  } else if (clickedID === 'pandocDivOrSpan') {
-    showPandocPopover.value = !showPandocPopover.value
-  } else if (clickedID !== undefined && clickedID.startsWith('markdown') && clickedID.length > 8) {
-    // The user clicked a command button, so we just have to run that.
-    editorCommands.value.data = clickedID
-    editorCommands.value.executeCommand = !editorCommands.value.executeCommand
-  } else if (clickedID === 'insertFootnote') {
-    editorCommands.value.data = clickedID
-    editorCommands.value.executeCommand = !editorCommands.value.executeCommand
-  } else if (clickedID === 'open-updater') {
-    ipcRenderer.invoke('application', {
-      command: 'open-update-window'
-    })
-      .catch(err => console.error(err))
-  }
-}
 
 function setPomodoroConfig (config: PomodoroConfig): void {
   // Update the durations as necessary
@@ -1215,21 +1009,6 @@ function setPomodoroConfig (config: PomodoroConfig): void {
   }
 }
 
-function handleToggle (controlState: { id?: string, state?: string | boolean }): void {
-  const { id, state } = controlState
-  if (id === 'toggle-sidebar') {
-    configStore.setConfigValue('window.sidebarVisible', state)
-  } else if (id === 'toggle-file-manager') {
-    // Since this is a three-way-toggle, we have to inspect the state.
-    configStore.setConfigValue('window.fileManagerVisible', state !== undefined)
-    if (typeof state === 'string' && (state === 'fileManager' || state === 'globalSearch')) {
-      // Set the shown component to the correct one
-      mainSplitViewVisibleComponent.value = state
-    } else {
-      console.warn(`Could not toggle main split component; expected state to be 'fileManager' or 'globalSearch', received ${state}`)
-    }
-  }
-}
 
 function startPomodoro (): void {
   pomodoro.value.soundEffect.pause()
@@ -1283,10 +1062,70 @@ function stopPomodoro (): void {
   }
 }
 
-function getToolbarButtonDisplay (configName: keyof ConfigOptions['displayToolbarButtons']): boolean {
-  return configStore.config.displayToolbarButtons[configName]
-}
 </script>
 
-<style lang="css" scoped>
+<style lang="less">
+body {
+  .main-body {
+    display: flex;
+    height: 100%;
+  }
+
+  .main-panes {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+  }
+
+  .main-pane {
+    min-width: 0;
+    overflow: auto;
+
+    // A collapsed pane holds no width for its content, but padding does not
+    // shrink, so the content keeps a sliver of a box and stays focusable and
+    // measurable. The delay keeps it on screen while the pane slides shut.
+    &[data-state="collapsed"] {
+      visibility: hidden;
+      transition: visibility 0s linear 180ms;
+    }
+  }
+
+  // A pane slides open and shut. `flex-grow` is what the splitter writes, so
+  // it is what eases; the panes beside it take up the room as it goes.
+  .main-panes.animating {
+    .main-pane { transition: flex-grow 180ms ease; }
+    .main-pane-handle { transition: width 180ms ease; }
+  }
+
+  // A hairline with a wider hit area; the accent while hovered or dragged.
+  .main-pane-handle {
+    position: relative;
+    flex: 0 0 auto;
+    width: 1px;
+    background-color: var(--chrome-border);
+    cursor: col-resize;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -4px;
+      right: -4px;
+    }
+
+    &[data-resize-handle-state="hover"],
+    &[data-resize-handle-state="drag"] {
+      background-color: var(--chrome-row-accent);
+    }
+
+    // The handle of a collapsed pane has nothing to resize.
+    &.collapsed {
+      width: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+  }
+}
 </style>

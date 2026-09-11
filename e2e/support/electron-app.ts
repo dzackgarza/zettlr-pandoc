@@ -160,6 +160,11 @@ export async function findEditorPage (
       for (const page of context.pages()) {
         try {
           if ((await page.locator('.cm-content').count()) > 0) {
+            // xvfb opens the window at its 640 px screen, where the three
+            // panes' minimums leave the editor no room; a working-size
+            // window is what every spec assumes, and a spec that wants
+            // another size sets it after this returns.
+            await page.setViewportSize({ width: 1400, height: 900 })
             return page
           }
         } catch (error) {
@@ -421,6 +426,36 @@ export interface FixtureOptions {
   config?: Record<string, unknown>
 }
 
+export interface WorkspaceFixtureOptions {
+  /** Directory copied verbatim to become the single open workspace root. */
+  workspaceSource: string
+  /** Path of the document opened in the active leaf, relative to the root. */
+  activeDocument: string
+  /** Extra config.json keys merged over the defaults. */
+  config?: Record<string, unknown>
+}
+
+/**
+ * A fixture whose workspace root is a copy of an existing directory — the
+ * shape a Quarto project needs, since the app offers the Book surface only
+ * when a workspace ROOT is the project.
+ */
+export async function createWorkspaceFixture (
+  prefix: string,
+  options: WorkspaceFixtureOptions
+): Promise<Fixture> {
+  const root = await mkdtemp(path.join(tmpdir(), prefix))
+  const configDirectory = path.join(root, 'config')
+  const workspaceDirectory = path.join(root, 'workspace')
+  const documentPath = path.join(workspaceDirectory, options.activeDocument)
+
+  await mkdir(configDirectory)
+  await cp(options.workspaceSource, workspaceDirectory, { recursive: true })
+  await writeFixtureState(configDirectory, workspaceDirectory, documentPath, options.config)
+
+  return { root, configDirectory, documentPath }
+}
+
 export async function createFixture (
   prefix: string,
   options: FixtureOptions
@@ -433,7 +468,18 @@ export async function createFixture (
   await mkdir(configDirectory)
   await mkdir(workspaceDirectory)
   await writeFile(documentPath, options.documentContents, 'utf8')
+  await writeFixtureState(configDirectory, workspaceDirectory, documentPath, options.config)
 
+  return { root, configDirectory, documentPath }
+}
+
+/** Writes the throwaway config.json and documents.yaml both fixture shapes share. */
+async function writeFixtureState (
+  configDirectory: string,
+  workspaceDirectory: string,
+  documentPath: string,
+  config: Record<string, unknown> | undefined
+): Promise<void> {
   const packageMetadata: unknown = JSON.parse(
     await readFile(path.join(REPO_ROOT, 'package.json'), 'utf8')
   )
@@ -459,7 +505,7 @@ export async function createFixture (
         // A spec that needs the API asks for it and gets a kernel-assigned
         // port; every other fixture leaves the port alone.
         agentApi: { enabled: false, port: 0 },
-        ...options.config
+        ...config
       },
       null,
       2
@@ -480,8 +526,6 @@ export async function createFixture (
     stringify(documents),
     'utf8'
   )
-
-  return { root, configDirectory, documentPath }
 }
 
 export interface LaunchOptions {
@@ -504,7 +548,12 @@ export async function launchElectron (
     '--',
     `--data-dir=${configDirectory}`,
     '--remote-debugging-port=0',
-    '--disable-hardware-acceleration'
+    '--disable-hardware-acceleration',
+    // Under xvfb DISPLAY names the virtual server, but Chromium prefers a
+    // Wayland compositor whenever WAYLAND_DISPLAY is set, and then the
+    // window opens on the developer's desktop. X11 is where the harness
+    // looks, the same switch the capture scenes pass.
+    '--ozone-platform=x11'
   ]
   if (options.files !== undefined) {
     forgeArguments.push(...options.files)
@@ -514,8 +563,10 @@ export async function launchElectron (
     process.env.DISPLAY === undefined &&
     process.env.WAYLAND_DISPLAY === undefined
   const executable = needsVirtualDisplay ? 'xvfb-run' : forgeExecutable
+  // xvfb-run's default screen is 640x480; a new window sizes itself from
+  // the screen, and the three panes' minimums need more than that.
   const args = needsVirtualDisplay
-    ? ['--auto-servernum', forgeExecutable, ...forgeArguments]
+    ? ['--auto-servernum', '--server-args=-screen 0 1920x1080x24', forgeExecutable, ...forgeArguments]
     : forgeArguments
 
   // Forge's dev server and logger need separate ports. Choose fresh loopback

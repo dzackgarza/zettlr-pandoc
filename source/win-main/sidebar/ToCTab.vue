@@ -1,35 +1,54 @@
 <template>
-  <div role="tabpanel">
-    <!-- Table of Contents -->
-    <h1>{{ titleOrTocLabel }}</h1>
-    <!-- Show the ToC entries -->
+  <div class="outline-entries">
     <div
       v-for="(entry, idx) of tableOfContents"
       v-bind:key="idx"
       v-bind:data-line="entry.line"
-      v-bind:class="'toc-entry-container toc-heading-' + entry.level"
+      v-bind:class="{
+        'chrome-row': true,
+        'toc-entry-container': true,
+        ['toc-heading-' + entry.level]: true,
+        'chrome-row-active': tocEntryIsActive(entry.line, idx)
+      }"
+      v-bind:style="{ 'padding-left': `calc(${entry.level - 1} * var(--chrome-indent) + var(--chrome-inset))` }"
       draggable="true"
       v-on:click="emit('jump-to-line', entry.line)"
       v-on:dragstart="startDragging"
       v-on:dragover="dragOver"
       v-on:drop="drop"
     >
-      <div class="toc-level">
+      <span class="chrome-row-detail toc-level">
         {{ entry.renderedLevel }}
-      </div>
-      <div
-        v-bind:class="{ 'toc-entry': true, 'toc-entry-active': tocEntryIsActive(entry.line, idx) }"
+      </span>
+      <span
+        v-bind:class="{ 'chrome-row-label': true, 'toc-entry': true, 'toc-entry-active': tocEntryIsActive(entry.line, idx) }"
         v-bind:data-line="entry.line"
       >
         <!-- eslint-disable-next-line vue/no-v-html NOTE we can only disable this error here since the entries are run through DOMPurify. -->
         <span v-html="tocEntryHTML[idx]"></span>
-      </div>
+      </span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { trans } from '@common/i18n-renderer'
+/**
+ * @ignore
+ * BEGIN HEADER
+ *
+ * Contains:        ToCTab
+ * CVM-Role:        View
+ * Maintainer:      Hendrik Erz
+ * License:         GNU GPL v3
+ *
+ * Description:     The Outline module's body: the active document's headings
+ *                  as numbered rows, one indent per heading level, with
+ *                  click-to-jump and drag-to-move-section. The module header
+ *                  carries the label; this body renders entries only.
+ *
+ * END HEADER
+ */
+
 import { ref, computed, watch, toRef, onMounted } from 'vue'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import { type AnyDescriptor } from '@dts/common/fsal'
@@ -46,6 +65,8 @@ const emit = defineEmits<{
   (e: 'jump-to-line', line: number): void
 }>()
 
+// The active document's descriptor feeds the citation library the heading
+// text is rendered with; nothing else of it is shown here.
 const activeFileDescriptor = ref<AnyDescriptor|null>(null)
 const library = ref<string>(CITEPROC_MAIN_DB)
 
@@ -54,30 +75,6 @@ const tocEntryHTML = ref<string[]>([])
 
 watch(toRef(tableOfContents), updateToCHTML)
 onMounted(updateToCHTML)
-
-/**
- * Returns either the title property for the active file or the generic ToC
- * label -- to be used within the ToC of the sidebar
- *
- * @return  {string}  The title for the ToC sidebar
- */
-const titleOrTocLabel = computed(() => {
-  if (
-    activeFileDescriptor.value === null ||
-    activeFileDescriptor.value.type !== 'file' ||
-    activeFileDescriptor.value.frontmatter == null
-  ) {
-    return trans('Table of contents')
-  }
-
-  const frontmatter = activeFileDescriptor.value.frontmatter
-
-  if ('title' in frontmatter && frontmatter.title.length > 0) {
-    return frontmatter.title
-  } else {
-    return trans('Table of contents')
-  }
-})
 
 const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
 
@@ -221,19 +218,23 @@ function findEndOfEntry (originalToLine: number): number|undefined {
 </script>
 
 <style lang="less">
-// Add a neat little effect to the table of content entries as you drag them
+.outline-entries {
+  height: 100%;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+// The numbered heading rows; a dragged entry marks its drop target below it.
 .toc-entry-container {
   border-bottom: 2px solid transparent;
 
-  &.toc-heading-1 { margin-left: 0px; }
-  &.toc-heading-2 { margin-left: 10px; }
-  &.toc-heading-3 { margin-left: 20px; }
-  &.toc-heading-4 { margin-left: 30px; }
-  &.toc-heading-5 { margin-left: 40px; }
-  &.toc-heading-6 { margin-left: 50px; }
+  .toc-level {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+  }
 
   &.toc-drop-effect {
-    border-bottom-color: rgb(40, 100, 255);
+    border-bottom-color: var(--chrome-row-accent);
   }
 }
 </style>

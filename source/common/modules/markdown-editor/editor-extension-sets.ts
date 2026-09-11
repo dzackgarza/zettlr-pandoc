@@ -43,7 +43,7 @@ import { mdLint } from './linters/md-lint'
 import { countField, countPlugin } from './plugins/statistics-fields'
 import { tocField } from './plugins/toc-field'
 import { typewriter } from './plugins/typewriter'
-import { formattingToolbar, footnoteHover, filePreview, urlHover } from './tooltips'
+import { footnoteHover, filePreview, urlHover } from './tooltips'
 import { type EditorConfiguration, configField } from './util/configuration'
 import { highlightRanges } from './plugins/highlight-ranges'
 import { markdownFolding } from './code-folding/markdown'
@@ -53,7 +53,6 @@ import { backgroundLayers } from './plugins/code-background'
 import { emacs } from '@replit/codemirror-emacs'
 import { distractionFree } from './plugins/distraction-free'
 import { languageTool } from './linters/language-tool'
-import { statusbar } from './statusbar'
 import { renderers } from './renderers'
 import { mdPasteDropHandlers } from './plugins/md-paste-drop-handlers'
 import { footnoteBackground } from './plugins/footnote-background'
@@ -207,8 +206,6 @@ function getCoreExtensions (options: CoreExtensionOptions): Extension[] {
     // Allow configuration of the trigger character
     autocompleteTriggerCharacter.from(configField, val => val.snippetAutocompleteTriggerCharacter),
 
-    // Add the statusbar
-    statusbar,
 
     // Add the configuration and preset it with whatever is in the cached
     // config.
@@ -355,7 +352,6 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     markdownFolding, // Should be before footnoteGutter
     autocomplete,
     readabilityMode,
-    formattingToolbar,
     footnoteHover,
     footnoteGutter, // Should be after markdownFolding
     textAnnotationsExtension(), // Locator gutter markers + span highlights (M5)

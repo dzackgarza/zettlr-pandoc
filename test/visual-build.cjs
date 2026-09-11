@@ -35,6 +35,13 @@ webpack({
     path: outputDirectory,
     filename: bundleFilename,
   },
+  plugins: [
+    ...(rendererConfig.plugins ?? []),
+    // The app's preload exposes `process` to the renderer; a scene page has
+    // no preload, so the platform reads (shortcut display) get the capture
+    // platform at build time — as the esbuild registrations define it.
+    new webpack.DefinePlugin({ 'process.platform': JSON.stringify('linux') }),
+  ],
 }, (error, stats) => {
   if (error !== null) {
     console.error(error)

@@ -119,7 +119,7 @@ if (mountReport.componentAvailable === true) {
   // BEFORE Enter: the entry mirrors App.vue's jump handling by closing
   // the overlay, so nothing would be left to click afterwards.
   openHelpCount = await page.evaluate(() => {
-    document.querySelector('.reference-search-overlay [data-open-help]')?.click()
+    document.querySelector('.reference-search-view [data-open-help]')?.click()
     return window.referenceSearchProbeOpenHelpCount()
   })
   await view.capture('reference-search-overlay-help-affordance')

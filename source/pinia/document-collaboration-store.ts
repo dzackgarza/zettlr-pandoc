@@ -147,7 +147,7 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
   /**
    * The fence an annotation mutation carries: which document, which
    * annotation, and the generation of the snapshot the panel rendered that
-   * annotation from. Every one of the four calls below names it, and two of
+   * annotation from. Every one of the five calls below names it, and two of
    * them add a field of their own. No call names an actor: the handlers
    * hardcode 'owner' and their input types declare no such field, so the
    * renderer cannot claim to be anyone else.
@@ -161,7 +161,7 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
   }
 
   /**
-   * Every one of these four calls is the whole of what an owner control in
+   * Every one of these five calls is the whole of what an owner control in
    * the panel is allowed to do: ask CollaborationApplicationService, over
    * IPC, for the mutation, and hand the caller its result. None of them
    * touches sessionsByDocumentPath — the resulting DocumentCollaborationSession
@@ -182,6 +182,11 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
 
   async function reopenAnnotation (documentPath: string, annotationId: string): Promise<TextAnnotation | AnnotationFailure> {
     return await ipcRenderer.invoke('documents:reopen-annotation', annotationFence(documentPath, annotationId))
+  }
+
+  /** Removes an annotation, its thread and its proposals. Resolving keeps them; this does not. */
+  async function deleteAnnotation (documentPath: string, annotationId: string): Promise<TextAnnotation | AnnotationFailure> {
+    return await ipcRenderer.invoke('documents:delete-annotation', annotationFence(documentPath, annotationId))
   }
 
   /** S8: reattachment is a visible owner action, never a background guess —
@@ -273,6 +278,7 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
     addAnnotationMessage,
     resolveAnnotation,
     reopenAnnotation,
+    deleteAnnotation,
     reattachAnnotation,
     decideReviewChunk,
     commentReviewChunk,

@@ -2,7 +2,7 @@
 // started it from.
 //
 // Starting a search puts the pane into its running presentation — progress bar
-// up, Search disabled, previous results cleared — and then dispatches over IPC.
+// up, previous results cleared — and then dispatches over IPC.
 // Only the search provider ends that state, by broadcasting 'search-end'. So a
 // dispatch that rejects ends nothing: the pane keeps showing a run that is not
 // happening, and a failure handler that writes to the developer console leaves
@@ -21,7 +21,7 @@ import { type ChildProcess } from 'node:child_process'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { type Browser, type Locator, type Page } from 'playwright'
+import { type Browser, type Page } from 'playwright'
 import {
   assertCleanExit,
   attach,
@@ -39,11 +39,11 @@ const ARTIFACT_DIRECTORY = path.join(
 )
 
 /** The pane, and the parts of it this spec reads. */
-const PANE = '#global-search-pane'
-const QUERY_INPUT = `${PANE} input#field-inputquery-input`
-const RUNNING_INDICATOR = `${PANE} progress`
-const ERROR_MESSAGE = `${PANE} p.search-error`
-const REPLACEMENT_RESULT = `${PANE} .single-search-result .filename`
+const PANE = '#search-view'
+const QUERY_INPUT = `${PANE} input[name="search-input"]`
+const RUNNING_INDICATOR = `${PANE} .search-progress`
+const ERROR_MESSAGE = `${PANE} p.search-message-error`
+const REPLACEMENT_RESULT = `${PANE} .file-match .file-match-name`
 
 const PROJECT_SETTINGS = {
   sorting: 'name-up',
@@ -60,11 +60,6 @@ const PROJECT_SETTINGS = {
 
 const SEARCH_CORPUS_FILES = 128
 const SEARCHABLE_PADDING = 'ordinary words '.repeat(120)
-
-/** The pane's Search button — 'Cancel' and 'Clear search' sit beside it. */
-function searchButton (page: Page): Locator {
-  return page.locator(PANE).getByRole('button', { name: 'Search', exact: true })
-}
 
 interface RunningFixture {
   appProcess: ChildProcess | undefined
@@ -149,13 +144,13 @@ async function teardown (fixture: RunningFixture): Promise<void> {
   assertCleanExit(fixture.getOutput())
 }
 
-/** Opens the global search pane the way a user does: the toolbar toggle. */
+/** Opens the global search pane the way a user does: the Search all files menu item. */
 async function openSearchPane (page: Page, timeoutMs: number): Promise<void> {
   const queryInput = page.locator(QUERY_INPUT)
   if (!(await queryInput.isVisible())) {
-    await page
-      .locator('#toolbar-toggle-file-manager button[title="Search across all files"]')
-      .click()
+    await page.evaluate(() => {
+      window.ipc.send('menu-provider', { command: 'click-menu-item', payload: 'menu.find_dir' })
+    })
     await queryInput.waitFor({ state: 'visible', timeout: timeoutMs })
   }
 }
@@ -278,7 +273,7 @@ describe('global-search and project-properties failure recovery', function () {
 
     const queryInput = page.locator(QUERY_INPUT)
     await queryInput.fill('notpresentinthecorpus')
-    await searchButton(page).click()
+    await page.locator(QUERY_INPUT).press('Enter')
     // Replace the query immediately after starting it. The running indicator
     // can appear and disappear between two CDP polls on a fast machine; the
     // user gesture under test is Enter while the dispatched search is active,
@@ -288,7 +283,7 @@ describe('global-search and project-properties failure recovery', function () {
     // The pane labels a result with the file's display name, and the default
     // fileNameDisplay ('title+heading') resolves that to the document's H1.
     await page.locator(REPLACEMENT_RESULT).filter({
-      hasText: 'Replacement'
+      hasText: 'replacement-hit.md'
     }).waitFor({ state: 'visible', timeout: 60_000 })
   })
 
@@ -304,14 +299,13 @@ describe('global-search and project-properties failure recovery', function () {
     assert.ok(running.browser, 'The application must be running')
     const mainPage = await findEditorPage(running.browser, this.timeout())
 
-    // The preceding search test leaves the shared split view on Global Search.
-    // Select File Manager through its real toolbar control before opening the
-    // workspace context menu.
-    const fileManagerButton = mainPage.locator(
-      '#toolbar-toggle-file-manager button[title="Toggle File Manager"]'
-    )
+    // The Project module hosts the file manager; it may be collapsed or the
+    // sidebar hidden after the preceding tests, so reveal it through the
+    // Filter files menu item before opening the workspace context menu.
     if (!(await mainPage.locator('#file-manager').isVisible())) {
-      await fileManagerButton.click()
+      await mainPage.evaluate(() => {
+        window.ipc.send('menu-provider', { command: 'click-menu-item', payload: 'menu.filter_files' })
+      })
       await mainPage.locator('#file-manager').waitFor({
         state: 'visible',
         timeout: 10_000
@@ -388,7 +382,7 @@ describe('global-search and project-properties failure recovery', function () {
     await rm(vanishingWorkspace, { recursive: true, force: true })
 
     await page.locator(QUERY_INPUT).fill('haystack')
-    await searchButton(page).click()
+    await page.locator(QUERY_INPUT).press('Enter')
 
     // The pane owns the running presentation, so the pane is where the failure
     // has to land. Waiting on it is the whole test: before this fix nothing
@@ -416,16 +410,13 @@ describe('global-search and project-properties failure recovery', function () {
       0,
       'The pane still shows a progress bar for a search that never started.'
     )
-    assert.equal(
-      await searchButton(page).isDisabled(),
-      false,
-      'The Search button stayed disabled, so the failed search cannot be retried.'
-    )
 
-    // Editing the query is the user saying "next attempt", so the report of the
-    // last one must go. Asserted here, after the message has been seen, so that
-    // its disappearance cannot be satisfied by never having appeared.
-    await page.locator(QUERY_INPUT).fill('needle')
+    // The report belongs to one attempt, not to the pane: clearing the search
+    // takes it away. Asserted here, after the message has been seen, so that
+    // its disappearance cannot be satisfied by never having appeared. (Editing
+    // the query starts the next search, which fails the same way while the
+    // workspace is still gone, and says so again.)
+    await page.locator(`${PANE} [data-search-action="clear"]`).click()
     await errorMessage.waitFor({ state: 'detached', timeout: 10_000 })
   })
 })

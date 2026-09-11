@@ -34,6 +34,9 @@ export interface AnnotationCardView {
   /** The same line as lineLocator, as a jump-to-line target — absent for an
    *  orphaned anchor, which has no position to jump to. */
   lineNumber: number | undefined
+  /** The last line a range target reaches; lineNumber itself for a point
+   *  target, absent for an orphaned anchor. */
+  endLineNumber: number | undefined
   wordCount: number
   quotedText: string
   instructionPreview: string
@@ -118,6 +121,7 @@ export function buildAnnotationCards (annotations: TextAnnotation[], workingText
       title: deriveCardTitle(firstMessage.text),
       lineLocator: lineNumber === undefined ? 'Orphaned' : `Ln ${lineNumber}`,
       lineNumber,
+      endLineNumber: annotation.anchor.state === 'range' ? lineOfPosition(annotation.anchor.to, workingText) : lineNumber,
       wordCount: wordCount(quotedText),
       quotedText,
       instructionPreview: truncatePreview(firstMessage.text),

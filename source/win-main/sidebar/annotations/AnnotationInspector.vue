@@ -1,83 +1,136 @@
 <template>
-  <div class="annotation-inspector" data-annotation-detail v-bind:data-annotation-id="card.annotation.annotationId">
+  <div
+    class="annotation-inspector"
+    data-annotation-detail
+    v-bind:data-annotation-id="card.annotation.annotationId"
+  >
     <div class="annotation-inspector-header">
       <button
         type="button"
-        class="annotation-inspector-back"
+        class="annotation-icon-button annotation-inspector-back"
         v-bind:title="trans('Back to the annotation list')"
         v-bind:aria-label="trans('Back to the annotation list')"
         v-on:click="emit('back')"
       >
-        <cds-icon shape="arrow" direction="left" role="presentation"></cds-icon>
+        <cds-icon
+          shape="arrow"
+          direction="left"
+          role="presentation"
+        ></cds-icon>
       </button>
-      <span class="annotation-inspector-eyebrow">{{ eyebrowLabel }}</span>
-      <span class="annotation-lifecycle-pill" v-bind:class="card.annotation.state">{{ lifecycleLabel }}</span>
+      <span class="annotation-inspector-eyebrow annotation-muted">{{ eyebrowLabel }}</span>
+      <span
+        class="annotation-lifecycle-pill"
+        v-bind:class="card.annotation.state"
+      >{{ lifecycleLabel }}</span>
       <button
         type="button"
-        class="annotation-inspector-close"
+        class="annotation-icon-button annotation-inspector-close"
         v-bind:title="trans('Close')"
         v-bind:aria-label="trans('Close')"
         v-on:click="emit('close')"
       >
-        <cds-icon shape="times" role="presentation"></cds-icon>
+        <cds-icon
+          shape="times"
+          role="presentation"
+        ></cds-icon>
       </button>
     </div>
 
-    <section class="annotation-inspector-source">
-      <h2>
-        {{ trans('Source') }}
+    <section class="annotation-card annotation-inspector-source">
+      <div class="annotation-card-row">
+        <span class="annotation-card-label">{{ trans('Selected text') }}</span>
         <button
           v-if="card.lineNumber !== undefined"
           type="button"
           class="annotation-line-locator"
           v-on:click="emit('jump-to-line', card.lineNumber)"
-        >{{ card.lineLocator }}</button>
-        <span v-else>{{ card.lineLocator }}</span>
-      </h2>
-      <blockquote>“{{ card.quotedText }}”</blockquote>
+        >{{ lineLabel }}</button>
+        <span
+          v-else
+          class="annotation-muted"
+        >{{ card.lineLocator }}</span>
+      </div>
+      <blockquote class="annotation-selected-quote">{{ card.quotedText }}</blockquote>
     </section>
 
-    <AnnotationThread v-bind:messages="card.annotation.messages"></AnnotationThread>
+    <AnnotationThread
+      v-bind:messages="card.annotation.messages"
+      v-bind:now="now"
+    ></AnnotationThread>
 
     <ProposalActionCard
       v-if="card.annotation.proposalActions.length > 0"
-      v-bind:pending-count="pendingProposalCount"
-      v-bind:total-count="card.annotation.proposalActions.length"
+      v-bind:actions="card.annotation.proposalActions"
+      v-on:show-proposal="emit('show-proposal')"
     ></ProposalActionCard>
 
     <AnnotationComposer
-      v-if="replyOpen"
-      v-on:submit="text => { emit('reply', text); replyOpen = false }"
+      v-bind:document-name="documentName"
+      v-on:submit="emit('reply', $event)"
     ></AnnotationComposer>
 
     <div class="annotation-inspector-actions">
-      <button type="button" class="annotation-action-reply" v-on:click="replyOpen = !replyOpen">
-        <cds-icon shape="undo" role="presentation"></cds-icon> {{ trans('Reply') }}
-      </button>
       <button
-        v-if="actionRow.canShowProposal"
         type="button"
-        class="annotation-action-show-proposal"
-        v-on:click="emit('show-proposal')"
+        class="annotation-button annotation-action-delete"
+        data-annotation-action="delete"
+        v-on:click="confirmingDelete = true"
       >
-        <cds-icon shape="eye" role="presentation"></cds-icon> {{ trans('Show proposal') }}
+        <cds-icon
+          shape="trash"
+          role="presentation"
+        ></cds-icon> {{ trans('Delete') }}
       </button>
       <button
         v-if="actionRow.canReattach"
         type="button"
-        class="annotation-action-reattach"
+        class="annotation-button annotation-action-reattach"
+        data-annotation-action="reattach"
         v-on:click="emit('begin-reattach')"
       >
-        <cds-icon shape="paperclip" role="presentation"></cds-icon> {{ trans('Reattach') }}
+        <cds-icon
+          shape="paperclip"
+          role="presentation"
+        ></cds-icon> {{ trans('Reattach') }}
       </button>
       <button
         type="button"
-        class="annotation-inspector-resolve"
+        class="annotation-button annotation-button-primary annotation-inspector-resolve"
+        data-annotation-action="resolve"
         v-on:click="emit('resolve-toggle')"
       >
-        <cds-icon shape="check" role="presentation"></cds-icon> {{ resolveLabel }}
+        <cds-icon
+          shape="check"
+          role="presentation"
+        ></cds-icon> {{ resolveLabel }}
       </button>
     </div>
+
+    <!--
+      Resolving keeps the thread; deleting takes the annotation, its thread
+      and its proposals away for good, and nothing in the panel brings them
+      back. So it asks.
+    -->
+    <AlertDialogRoot v-model:open="confirmingDelete">
+      <AlertDialogPortal>
+        <AlertDialogOverlay class="annotation-dialog-backdrop"></AlertDialogOverlay>
+        <AlertDialogContent class="annotation-dialog">
+          <AlertDialogTitle class="annotation-dialog-title">{{ trans('Delete this annotation?') }}</AlertDialogTitle>
+          <AlertDialogDescription class="annotation-dialog-body">
+            {{ trans('Its thread and any proposed changes go with it. This cannot be undone.') }}
+          </AlertDialogDescription>
+          <div class="annotation-dialog-actions">
+            <AlertDialogCancel class="annotation-button">{{ trans('Cancel') }}</AlertDialogCancel>
+            <AlertDialogAction
+              class="annotation-button annotation-button-danger"
+              data-annotation-confirm="delete"
+              v-on:click="emit('delete')"
+            >{{ trans('Delete') }}</AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialogPortal>
+    </AlertDialogRoot>
   </div>
 </template>
 
@@ -93,13 +146,18 @@
  *
  * Description:     The detail half of the panel (S3): everything the owner
  *                  reads or clicks about ONE annotation lives here — the
- *                  source excerpt, the thread, the linked proposal (if any),
- *                  and the terminal action row (S8: Reply, Show proposal,
- *                  Reattach, Resolve — nothing else). Reattach only emits an
- *                  intent: recovering an anchor needs a fresh editor
- *                  selection, which this panel does not own, so it never
- *                  calls reattachAnnotation itself (I6 — a visible action,
- *                  never a background guess, and never one this panel could
+ *                  selected text card, the thread, the linked proposal card
+ *                  (if any, with its one "Show diff" affordance), the
+ *                  always-visible composer and the bottom action row (S8:
+ *                  Delete, Reattach when the anchor is orphaned, and the one
+ *                  primary Resolve). Delete asks first, because it takes the
+ *                  thread with it and nothing here brings it back, while
+ *                  Resolve keeps everything and can be reopened. Reattach
+ *                  only emits an intent:
+ *                  recovering an anchor needs a fresh editor selection,
+ *                  which this panel does not own, so it never calls
+ *                  reattachAnnotation itself (I6 — a visible action, never
+ *                  a background guess, and never one this panel could
  *                  fabricate a range for).
  *
  * END HEADER
@@ -107,13 +165,27 @@
 
 import { trans } from '@common/i18n-renderer'
 import { computed, ref } from 'vue'
+import type { DateTime } from 'luxon'
 import AnnotationThread from './AnnotationThread.vue'
 import AnnotationComposer from './AnnotationComposer.vue'
 import ProposalActionCard from './ProposalActionCard.vue'
+import {
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogOverlay,
+  AlertDialogPortal,
+  AlertDialogRoot,
+  AlertDialogTitle
+} from 'reka-ui'
 import { deriveActionRow, type AnnotationCardView } from './annotation-panel-model'
 
 const props = defineProps<{
   card: AnnotationCardView
+  now: DateTime
+  /** The active document's name, for the composer's context chip. */
+  documentName?: string
 }>()
 
 const emit = defineEmits<{
@@ -124,14 +196,22 @@ const emit = defineEmits<{
   (e: 'show-proposal'): void
   (e: 'begin-reattach'): void
   (e: 'resolve-toggle'): void
+  (e: 'delete'): void
 }>()
 
-const replyOpen = ref(false)
+/** Whether the delete confirmation is up. */
+const confirmingDelete = ref(false)
 
 const actionRow = computed(() => deriveActionRow(props.card.annotation))
-const pendingProposalCount = computed(() => props.card.annotation.proposalActions.filter(a => a.terminalOutcome === undefined).length)
 const lifecycleLabel = computed(() => props.card.annotation.state === 'resolved' ? trans('Resolved') : trans('Open'))
 const eyebrowLabel = computed(() => trans('Annotation %s', String(props.card.ordinal)))
+const lineLabel = computed(() => {
+  const { lineNumber, endLineNumber } = props.card
+  if (lineNumber === undefined || endLineNumber === undefined || endLineNumber <= lineNumber) {
+    return trans('Line %s', String(lineNumber))
+  }
+  return trans('Lines %s–%s', String(lineNumber), String(endLineNumber))
+})
 const resolveLabel = computed(() => actionRow.value.resolveLabel === 'Reopen' ? trans('Reopen') : trans('Resolve'))
 </script>
 
@@ -140,9 +220,11 @@ body {
   .annotation-inspector {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 8px;
-    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    gap: var(--annotation-gap);
+    padding: var(--annotation-gap) 0;
+    border-top: 1px solid var(--annotation-border);
+    color: var(--annotation-text);
+    font-size: var(--annotation-font-size);
   }
 
   .annotation-inspector-header {
@@ -153,94 +235,91 @@ body {
     .annotation-inspector-back { display: none; }
 
     .annotation-inspector-eyebrow {
-      flex-grow: 1;
-      font-size: 11px;
-      font-weight: bold;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      opacity: 0.7;
-    }
-
-    button {
-      border: none;
-      background: transparent;
-      cursor: pointer;
-      padding: 2px;
-      clr-icon, cds-icon { width: 14px; height: 14px; }
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   }
 
   .annotation-inspector-source {
-    h2 {
-      font-size: 11px;
-      text-transform: uppercase;
-      opacity: 0.6;
-      margin: 6px 0 2px 0;
-      display: flex;
-      gap: 6px;
-      align-items: baseline;
-    }
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 
-    blockquote {
+    .annotation-selected-quote {
+      position: relative;
       margin: 0;
-      padding: 6px 8px;
-      border-left: 3px solid var(--system-accent-color, #4c8dca);
-      background-color: rgba(0, 0, 0, 0.04);
-      font-size: 12px;
-    }
-  }
+      padding: 6px 8px 6px 24px;
+      border: 1px solid var(--annotation-border);
+      border-radius: 6px;
+      background-color: var(--annotation-surface-muted);
 
-  .annotation-line-locator {
-    border: none;
-    background: transparent;
-    padding: 0;
-    font: inherit;
-    color: inherit;
-    cursor: pointer;
-    text-decoration: underline dotted;
+      &::before {
+        content: '“';
+        position: absolute;
+        left: 8px;
+        top: 2px;
+        font-size: 18px;
+        line-height: 1;
+        color: var(--annotation-text-muted);
+      }
+    }
   }
 
   .annotation-inspector-actions {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    border-top: 1px solid rgba(0, 0, 0, 0.08);
-    padding-top: 6px;
-    margin-top: 4px;
-
-    button {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 11px;
-      padding: 4px 8px;
-      border-radius: 4px;
-      border: 1px solid rgba(0, 0, 0, 0.12);
-      background: transparent;
-      cursor: pointer;
-
-      &:hover { background-color: rgba(0, 0, 0, 0.05); }
-      clr-icon, cds-icon { width: 12px; height: 12px; }
-    }
-
-    .annotation-inspector-resolve {
-      margin-left: auto;
-      background-color: var(--system-accent-color, #4c8dca);
-      color: white;
-      border-color: transparent;
-
-      &:hover { opacity: 0.9; }
-    }
+    justify-content: flex-end;
+    gap: 6px;
   }
 
-  &.dark {
-    .annotation-inspector { border-top-color: rgba(255, 255, 255, 0.15); }
-    .annotation-inspector-source blockquote { background-color: rgba(255, 255, 255, 0.08); }
-    .annotation-inspector-actions {
-      border-top-color: rgba(255, 255, 255, 0.12);
-      button { border-color: rgba(255, 255, 255, 0.18); }
-      button:hover { background-color: rgba(255, 255, 255, 0.08); }
-    }
+  // Destructive, so it sits away from the primary action, not beside it.
+  .annotation-action-delete {
+    margin-right: auto;
+    color: var(--annotation-danger);
+  }
+
+  .annotation-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.35);
+  }
+
+  .annotation-dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    gap: var(--annotation-gap);
+    width: 320px;
+    max-width: calc(100vw - 32px);
+    padding: 16px;
+    border: 1px solid var(--annotation-border);
+    border-radius: var(--annotation-radius);
+    background-color: var(--annotation-surface);
+    color: var(--annotation-text);
+    font-size: var(--annotation-font-size);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  }
+
+  .annotation-dialog-title {
+    margin: 0;
+    font-size: var(--annotation-font-size);
+    font-weight: 600;
+  }
+
+  .annotation-dialog-body {
+    margin: 0;
+    color: var(--annotation-text-muted);
+  }
+
+  .annotation-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
   }
 }
 </style>

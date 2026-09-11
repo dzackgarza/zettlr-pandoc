@@ -350,7 +350,7 @@ export default class WindowProvider extends ProviderContract {
    * Shuts down the window manager and performs final operations
    */
   async shutdown (): Promise<void> {
-    this._stateContainer.shutdown()
+    await this._stateContainer.shutdown()
   }
 
   /**
