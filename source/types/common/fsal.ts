@@ -29,11 +29,10 @@ export interface ProjectSettings {
    */
   profiles: string[]
   /**
-   * A sorted (!) list of the files that should be included in the export of
-   * this project, including the ordering in which they should be included.
-   * A Zettlr project names them relative to its directory; a project derived
-   * from a Quarto manifest names each file by its real path, since the
-   * manifest may sit elsewhere and reach them through symlinks.
+   * A sorted (!) list of project-relative paths to the files that should be
+   * included in the export of this project, including the ordering in which
+   * they should be included. A project derived from a Quarto manifest names
+   * each chapter this way too, whatever route the manifest reached it by.
    */
   files: string[]
   /**

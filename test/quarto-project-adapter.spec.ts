@@ -104,16 +104,31 @@ describe("Quarto project adapter", function () {
   it("projects the manifest through the real FSAL directory boundary", async function () {
     const descriptor = await parseDirectory(ROOT);
 
+    // The adapter resolves each chapter to the real file; the directory names
+    // it the way every reader of a project does, relative to the directory.
     assert.deepStrictEqual(descriptor.settings.project, {
       manifest: {
         kind: "quarto",
         path: path.resolve(ROOT, "_quarto.yml"),
         bibliographies: [path.resolve(ROOT, "references.bib"), path.resolve(ROOT, "web.bib")],
-        navigation: project.navigation,
+        navigation: [
+          { kind: "chapter", path: "index.md" },
+          {
+            kind: "part",
+            title: "Foundations",
+            chapters: ["foundations/categories.md", "foundations/forms.md"],
+          },
+          { kind: "part", title: "Computation", chapters: ["computation/sage.md"] },
+        ],
       },
       title: "Lattice Notes",
       profiles: [],
-      files: project.files,
+      files: [
+        "index.md",
+        "foundations/categories.md",
+        "foundations/forms.md",
+        "computation/sage.md",
+      ],
       cslStyle: "",
       templates: { tex: "", html: "" },
     });

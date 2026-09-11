@@ -110,29 +110,28 @@ describe('a workspace bound to a manifest that lives elsewhere in it', function 
   it('names every chapter by the file the assembly symlinks reach, not by the link beside the manifest', async function () {
     const directory = await parseDirectory(workspace)
     await bindQuartoManifest(directory, path.join(workspace, BINDING))
-    const prose = realpathSync(workspace)
 
     assert.deepEqual(quartoManifest(directory.settings.project).navigation, [
-      { kind: 'chapter', path: path.join(prose, 'index.md') },
+      { kind: 'chapter', path: 'index.md' },
       {
         kind: 'part',
         title: 'Category theory',
-        chapters: [ path.join(prose, 'category-theory', 'framework', 'Bilinear-and-Quadratic-Forms.md') ]
+        chapters: [ 'category-theory/framework/Bilinear-and-Quadratic-Forms.md' ]
       },
       {
         kind: 'part',
         title: 'Coble surfaces',
-        chapters: [ path.join(prose, 'coble', 'lattices-and-moduli', 'coble-lattice-table.md') ]
+        chapters: [ 'coble/lattices-and-moduli/coble-lattice-table.md' ]
       }
     ])
     assert.deepEqual(directory.settings.project?.files, [
-      path.join(prose, 'index.md'),
-      path.join(prose, 'category-theory', 'framework', 'Bilinear-and-Quadratic-Forms.md'),
-      path.join(prose, 'coble', 'lattices-and-moduli', 'coble-lattice-table.md')
+      'index.md',
+      'category-theory/framework/Bilinear-and-Quadratic-Forms.md',
+      'coble/lattices-and-moduli/coble-lattice-table.md'
     ])
     assert.deepEqual(
       quartoManifest(directory.settings.project).bibliographies,
-      [ path.join(prose, 'references.bib') ],
+      [ path.join(realpathSync(workspace), 'references.bib') ],
       'the bibliography the manifest inherits is the one file it names, reached through the assembly'
     )
   })

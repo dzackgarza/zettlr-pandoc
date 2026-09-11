@@ -66,6 +66,20 @@ function quartoManifestPath (dir: DirDescriptor): string {
 }
 
 /**
+ * A file as this directory's project names it: relative to the directory, with
+ * Unix separators, which is what every reader of ProjectSettings.files and of
+ * a navigation item resolves against the directory.
+ *
+ * @param   {string}  dirPath   The directory the project belongs to
+ * @param   {string}  filePath  The file's real path
+ *
+ * @return  {string}            The project-relative path
+ */
+function projectRelative (dirPath: string, filePath: string): string {
+  return path.relative(dirPath, filePath).split(path.sep).join('/')
+}
+
+/**
  * Derives this directory's Quarto project from its manifest. The manifest is
  * the only place a book's chapter order and bibliographies are written down,
  * so the project is rebuilt from it on every load: a project stored in
@@ -88,15 +102,22 @@ async function parseQuartoManifest (dir: DirDescriptor): Promise<void> {
   }
 
   const quarto = parseQuartoProject(path.dirname(manifestPath), await fs.readFile(manifestPath, 'utf8'))
+  // The manifest resolves its chapters to real files, which may lie anywhere
+  // under this directory. The project names each one the way every reader
+  // expects: relative to the directory it belongs to.
+  const root = resolveRealPath(dir.path)
+  const chapter = (filePath: string): string => projectRelative(root, filePath)
   dir.settings.project = {
     ...PROJECT_TEMPLATE,
     title: quarto.title,
-    files: quarto.files,
+    files: quarto.files.map(chapter),
     manifest: {
       kind: 'quarto',
       path: manifestPath,
       bibliographies: quarto.bibliographies,
-      navigation: quarto.navigation
+      navigation: quarto.navigation.map(item => item.kind === 'chapter'
+        ? { kind: 'chapter', path: chapter(item.path) }
+        : { kind: 'part', title: item.title, chapters: item.chapters.map(chapter) })
     }
   }
 }

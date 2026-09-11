@@ -70,16 +70,15 @@ export default class DirProjectExport extends ZettlrCommand {
     // a warning but export anyway.
     const availableFiles = await this._app.fsal.readDirectoryRecursively(dir.path)
 
-    // A Zettlr project names its files relative to the directory, and a
-    // project derived from a Quarto manifest names each file by its real
-    // path; resolving against the directory covers both. Then we ensure those
-    // paths exist in availableFiles.
+    // Since the config.files array already includes relative paths, we
+    // basically just have to make them absolute relative to the directory and
+    // ensure those paths exist in availableFiles.
     const existingFilesWithSorting = config.files
       // Since we default to always using Unix paths, to make the magic work on
       // Windows, we here have to map the relative paths in the project config
       // (back) to the Windows conventions by replacing / with \\.
       .map(file => process.platform === 'win32' ? pathToWin(file) : file)
-      .map(file => path.resolve(dir.path, file))
+      .map(file => path.join(dir.path, file))
       .filter(file => availableFiles.includes(file))
 
     if (existingFilesWithSorting.length === 0) {
@@ -218,7 +217,7 @@ async function exportUsingProfile (app: AppServiceContainer, dir: DirDescriptor,
     // Windows, we here have to map the relative paths in the project config
     // (back) to the Windows conventions by replacing / with \\.
     .map(file => process.platform === 'win32' ? pathToWin(file) : file)
-    .map(file => path.resolve(dir.path, file))
+    .map(file => path.join(dir.path, file))
     .filter(file => availableFiles.includes(file))
 
   const sourceFiles = existingFilesWithSorting.map(file => {
