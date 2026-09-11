@@ -2,6 +2,7 @@ import path from 'path'
 import YAML from 'yaml'
 import { z } from 'zod'
 import type { ProjectNavigationItem } from '@dts/common/fsal'
+import { resolveRealPath } from './real-path'
 
 const chapterPathSchema = z.string().min(1)
 
@@ -29,16 +30,30 @@ export interface QuartoProject {
 /**
  * Parses the Quarto book fields that Zettlr owns at the authoring boundary.
  * Quarto remains the manifest, render, and numbering authority.
+ *
+ * Every path the manifest names is relative to the manifest's own directory,
+ * which need not be the workspace the chapters live in: a book assembled from
+ * symlinks reaches its chapters through that directory. So each path comes
+ * back as the real file it names, which is the identity the rest of the
+ * application knows a chapter by.
+ *
+ * @param   {string}         manifestDirectory  The directory holding _quarto.yml
+ * @param   {string}         source             The manifest's contents
+ *
+ * @return  {QuartoProject}                     The book, in real paths
  */
-export function parseQuartoProject (rootPath: string, source: string): QuartoProject {
+export function parseQuartoProject (manifestDirectory: string, source: string): QuartoProject {
   const parsed: unknown = YAML.parse(source)
   const manifest = manifestSchema.parse(parsed)
+  const chapterFile = (relativePath: string): string => {
+    return resolveRealPath(path.resolve(manifestDirectory, relativePath))
+  }
   const navigation: ProjectNavigationItem[] = manifest.book.chapters.map(item => {
     if (typeof item === 'string') {
-      return { kind: 'chapter', path: item }
+      return { kind: 'chapter', path: chapterFile(item) }
     }
 
-    return { kind: 'part', title: item.part, chapters: item.chapters }
+    return { kind: 'part', title: item.part, chapters: item.chapters.map(chapterFile) }
   })
   const files = navigation.flatMap(item => item.kind === 'chapter' ? [ item.path ] : item.chapters)
   const bibliography = manifest.bibliography
@@ -49,7 +64,7 @@ export function parseQuartoProject (rootPath: string, source: string): QuartoPro
   return {
     title: manifest.book.title,
     files,
-    bibliographies: bibliographyPaths.map(filename => path.resolve(rootPath, filename)),
+    bibliographies: bibliographyPaths.map(chapterFile),
     navigation
   }
 }

@@ -31,7 +31,8 @@ export interface ProjectSettings {
   /**
    * A sorted (!) list of project-relative paths to the files that should be
    * included in the export of this project, including the ordering in which
-   * they should be included.
+   * they should be included. A project derived from a Quarto manifest names
+   * each chapter this way too, whatever route the manifest reached it by.
    */
   files: string[]
   /**
@@ -81,6 +82,13 @@ export interface DirectorySettings {
    * Holds an optional color for the directory.
    */
   color: string|null
+  /**
+   * Names the Quarto manifest that describes this directory when the manifest
+   * does not sit in the directory itself, relative to the directory. The
+   * binding is an input: the project it describes is derived from the manifest
+   * on every load, and never written back here.
+   */
+  quartoManifest: string|null
 }
 
 /**

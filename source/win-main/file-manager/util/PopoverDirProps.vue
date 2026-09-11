@@ -45,10 +45,16 @@
         ></SelectControl>
       </div>
       <hr>
-      <div>
+      <div id="dir-props-project">
         <!-- Project options -->
         <template v-if="isQuartoProject">
-          <span>{{ quartoProjectLabel }}</span>
+          <span>{{ quartoProjectLabel }}: {{ boundManifest ?? DIRECTORY_MANIFEST }}</span>
+          <ButtonControl
+            v-if="boundManifest !== null"
+            id="unbind-quarto-manifest"
+            v-bind:label="unbindManifestLabel"
+            v-on:click="unbindManifest"
+          ></ButtonControl>
         </template>
         <template v-else>
           <SwitchControl
@@ -60,6 +66,26 @@
             v-bind:label="projectPropertiesLabel"
             v-on:click="openProjectPreferences"
           ></ButtonControl>
+          <template v-else>
+            <!--
+              The manifest of a Quarto book need not sit in the directory it
+              describes: a book assembled from symlinks keeps its manifest
+              beside the machinery that renders it. Naming it here binds this
+              directory to that book.
+            -->
+            <TextControl
+              v-model="manifestBinding"
+              name="quarto-manifest"
+              v-bind:label="bindManifestLabel"
+              v-bind:placeholder="DIRECTORY_MANIFEST"
+              v-on:confirm="bindManifest"
+            ></TextControl>
+            <ButtonControl
+              id="select-quarto-manifest"
+              v-bind:label="selectManifestLabel"
+              v-on:click="selectManifest"
+            ></ButtonControl>
+          </template>
         </template>
       </div>
       <hr style="clear: both;">
@@ -120,11 +146,21 @@ import PopoverWrapper from '@common/vue/PopoverWrapper.vue'
 import SelectControl from '@common/vue/form/elements/SelectControl.vue'
 import SwitchControl from '@common/vue/form/elements/SwitchControl.vue'
 import ButtonControl from '@common/vue/form/elements/ButtonControl.vue'
+import TextControl from '@common/vue/form/elements/TextControl.vue'
+import showToast from '@common/util/show-toast'
 import { trans } from '@common/i18n-renderer'
 import type { AnyDescriptor, DirDescriptor, MDFileDescriptor } from '@dts/common/fsal'
 import { ref, computed, watch, toRef, onBeforeMount } from 'vue'
 import { useConfigStore } from 'source/pinia'
 import type { DirSettingsCommandAPI } from 'source/app/service-providers/commands/dir-settings'
+import type {
+  DirBindQuartoManifestAPI,
+  DirBindQuartoManifestOutcome
+} from 'source/app/service-providers/commands/dir-bind-quarto-manifest'
+import type { RequestFilesIPCAPI } from 'source/app/service-providers/windows'
+
+/** Where Quarto looks for a book's manifest when nothing says otherwise. */
+const DIRECTORY_MANIFEST = '_quarto.yml'
 
 // Currently defined directory colors
 const AVAILABLE_DIRECTORY_COLORS = [
@@ -152,7 +188,10 @@ const createdLabel = trans('Created')
 const filesLabel = trans('Files')
 const projectPropertiesLabel = trans('Project Settings…')
 const projectToggleLabel = trans('Enable Project')
-const quartoProjectLabel = trans('Quarto project settings: _quarto.yml')
+const quartoProjectLabel = trans('Quarto project settings')
+const bindManifestLabel = trans('Quarto manifest')
+const selectManifestLabel = trans('Select manifest…')
+const unbindManifestLabel = trans('Unbind')
 const sortByNameLabel = trans('Sort by name')
 const sortByTimeLabel = trans('Sort by time')
 const ascendingLabel = trans('ascending')
@@ -241,6 +280,8 @@ const sortingType = ref<'name'|'time'>('name')
 const sortingDirection = ref<'up'|'down'>('up')
 const isProject = ref<boolean>(props.directory.settings.project !== null)
 const isQuartoProject = computed(() => props.directory.settings.project?.manifest.kind === 'quarto')
+const boundManifest = computed(() => props.directory.settings.quartoManifest)
+const manifestBinding = ref<string>(props.directory.settings.quartoManifest ?? '')
 
 const creationTime = computed(() => {
   return formatDate(new Date(props.directory.creationtime), configStore.config.appLang, true)
@@ -273,6 +314,7 @@ watch(isProject, updateProject)
 watch(toRef(props, 'directory'), () => {
   setSorting()
   isProject.value = props.directory.settings.project !== null
+  manifestBinding.value = props.directory.settings.quartoManifest ?? ''
 })
 
 onBeforeMount(setSorting)
@@ -328,6 +370,78 @@ function updateSorting (): void {
     .catch(e => console.error(e))
 }
 
+/**
+ * Binds this directory to the manifest named in the field, so that the book it
+ * describes becomes this directory's project.
+ */
+function bindManifest (): void {
+  const manifest = manifestBinding.value.trim()
+  if (manifest === '') {
+    return
+  }
+
+  sendBinding(manifest)
+}
+
+/** Opens a picker on the manifest, and binds this directory to what it names. */
+function selectManifest (): void {
+  const payload: RequestFilesIPCAPI = {
+    filters: [{ name: trans('Quarto manifest'), extensions: [ 'yml', 'yaml' ] }],
+    multiSelection: false
+  }
+
+  ipcRenderer.invoke('request-files', payload)
+    .then((chosen: string[]) => {
+      if (chosen.length > 0 && chosen[0].trim() !== '') {
+        sendBinding(chosen[0])
+      }
+    })
+    .catch(e => console.error(e))
+}
+
+/** Removes the binding, and the project derived from the manifest it named. */
+function unbindManifest (): void {
+  manifestBinding.value = ''
+  sendBinding(null)
+}
+
+/**
+ * Asks the application to bind this directory to a manifest, or to unbind it,
+ * and reports a binding it would not make.
+ *
+ * @param  {string|null}  manifest  The manifest, or null to unbind
+ */
+function sendBinding (manifest: string|null): void {
+  ipcRenderer.invoke('application', {
+    command: 'dir-bind-quarto-manifest',
+    payload: { path: props.directory.path, manifest } satisfies DirBindQuartoManifestAPI
+  })
+    .then((outcome: DirBindQuartoManifestOutcome) => {
+      if (outcome.kind === 'rejected') {
+        showToast(describeBindingRejection(outcome.reason), 'error')
+      }
+    })
+    .catch(e => console.error(e))
+}
+
+/**
+ * Says why a directory was not bound to the manifest the user named.
+ *
+ * @param   {string}  reason  The reason the application gave
+ *
+ * @return  {string}          What the user needs to know
+ */
+function describeBindingRejection (reason: 'not-a-file'|'outside-directory'|'no-such-directory'): string {
+  switch (reason) {
+    case 'not-a-file':
+      return trans('No Quarto manifest at that path.')
+    case 'outside-directory':
+      return trans('A Quarto manifest must live inside the directory it describes, so that its chapters do too.')
+    case 'no-such-directory':
+      return trans('The directory %s is no longer open.', props.directory.name)
+  }
+}
+
 function updateProject (): void {
   const hasProject = props.directory.settings.project !== null
   if (isProject.value === hasProject) {
@@ -368,6 +482,9 @@ body {
     .switch-group {
       margin: 10px 0;
     }
+
+    // A binding is a path, and a path has nowhere to wrap.
+    #dir-props-project span { overflow-wrap: anywhere; }
 
     .form-control {
       padding: 5px 0;

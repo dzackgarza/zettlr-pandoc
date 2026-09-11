@@ -668,6 +668,28 @@ export default class FSAL extends ProviderContract {
   }
 
   /**
+   * Binds the directory to the Quarto manifest that describes it, and derives
+   * its project from that manifest.
+   *
+   * @param   {DirDescriptor}  src           The directory
+   * @param   {string}         manifestPath  The manifest the user chose
+   *
+   * @return  {Promise<FSALDir.QuartoManifestBinding>}  The binding, or why there is none
+   */
+  public async bindQuartoManifest (src: DirDescriptor, manifestPath: string): Promise<FSALDir.QuartoManifestBinding> {
+    return await FSALDir.bindQuartoManifest(src, manifestPath)
+  }
+
+  /**
+   * Removes the directory's binding to a Quarto manifest.
+   *
+   * @param   {DirDescriptor}  src  The directory
+   */
+  public async unbindQuartoManifest (src: DirDescriptor): Promise<void> {
+    await FSALDir.unbindQuartoManifest(src)
+  }
+
+  /**
    * Creates a new project in this dir
    *
    * @param   {DirDescriptor}             src           The directory

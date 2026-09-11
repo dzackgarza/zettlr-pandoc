@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import DirBindQuartoManifest from './dir-bind-quarto-manifest'
 import DirDelete from './dir-delete'
 import DirNewProject from './dir-new-project'
 import DirNew from './dir-new'
@@ -59,6 +60,7 @@ import WorkspaceSort from './ws-sort'
 import type { CustomExportIPCAPI, ExportIPCAPI } from './export'
 import type { ForceOpenAPI } from './force-open'
 import type { SaveImageFromClipboardAPI } from './save-image-from-clipboard'
+import type { DirBindQuartoManifestAPI, DirBindQuartoManifestOutcome } from './dir-bind-quarto-manifest'
 import type { DirSettingsCommandAPI } from './dir-settings'
 import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-render'
 import type { LanguageToolLinterRequest, LanguageToolLinterResponse } from './language-tool'
@@ -77,6 +79,7 @@ import type { FormatResult } from '@common/modules/markdown-editor/commands/form
 import type { LinkPreviewResult } from '@common/util/fetch-link-preview'
 
 export const commands = [
+  DirBindQuartoManifest,
   DirDelete,
   DirNewProject,
   DirNew,
@@ -142,6 +145,10 @@ export type ApplicationIPCContract = {
   'custom-export': {
     request: { payload: CustomExportIPCAPI }
     response: unknown
+  }
+  'dir-bind-quarto-manifest': {
+    request: { payload: DirBindQuartoManifestAPI }
+    response: DirBindQuartoManifestOutcome
   }
   'dir-delete': {
     request: { payload: { path: string } }

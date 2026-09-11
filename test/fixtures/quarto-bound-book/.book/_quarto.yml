@@ -1,0 +1,18 @@
+# This directory is the Quarto project root and holds nothing but build
+# machinery. The prose lives one level up; each part is symlinked in beside
+# this file, so `ls .book` is the book's table of contents at the directory
+# level.
+project:
+  type: book
+book:
+  title: Writing
+  chapters:
+    - index.md
+    - part: Category theory
+      chapters:
+        - Bilinear-and-Quadratic-Forms.md
+    - part: Coble surfaces
+      chapters:
+        - coble-lattice-table.md
+bibliography:
+  - references.bib
