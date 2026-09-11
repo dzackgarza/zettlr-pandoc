@@ -161,3 +161,34 @@ describe('command launcher: navigation state', function () {
     assert.deepEqual(popLevel(keyed), CLOSED_LAUNCHER)
   })
 })
+
+describe('command launcher: a menu the launcher cannot present in full', function () {
+  it('fails on a group path that names no submenu, rather than presenting the group as empty', function () {
+    const menu = loadMenu()
+    assert.throws(
+      () => menuGroupRows(menu, [ 'file-menu', 'label:No such group' ]),
+      Error,
+      'an unresolvable path is a defect in the navigation state, not a group with no items'
+    )
+  })
+
+  it('fails on an executable item the provider serialised without an id, rather than dropping it from the list', function () {
+    const menu = loadMenu()
+    const withUnaddressableLeaf: typeof menu = [
+      ...menu,
+      {
+        type: 'submenu',
+        id: 'test-menu',
+        label: 'Test',
+        enabled: true,
+        submenu: [{ type: 'normal', label: 'Unreachable', enabled: true }]
+      }
+    ]
+    assert.throws(
+      () => menuGroupRows(withUnaddressableLeaf, [ 'test-menu' ]),
+      Error,
+      'a leaf with no id can never be clicked, so the launcher must say so instead of listing one command fewer'
+    )
+    assert.throws(() => allMenuLeafRows(withUnaddressableLeaf), Error)
+  })
+})

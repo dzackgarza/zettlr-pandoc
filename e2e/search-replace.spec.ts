@@ -19,7 +19,7 @@
 
 import { strict as assert } from 'node:assert'
 import { type ChildProcess } from 'node:child_process'
-import { readFile, rm } from 'node:fs/promises'
+import { chmod, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { type Browser, type Locator, type Page } from 'playwright'
@@ -245,5 +245,38 @@ describe('the Search view', function () {
     await waitUntil(async () => /subcategory/.test(await editorText(activePage)), 'the file that stayed to be replaced')
     assert.equal((await readFile(closedFile(), 'utf-8')).includes(TERM), true, 'the dismissed file is untouched')
     screenshots.set('after-dismiss.png', await activePage.screenshot())
+  })
+
+  it('says why a regular expression the engine refused found nothing, instead of reading out an empty search', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    await activePage.locator(TOGGLE('regex')).click()
+    await activePage.locator(QUERY).fill('sub(')
+    await waitUntil(
+      async () => await activePage.locator(MESSAGE).evaluate(el => el.classList.contains('search-message-error')),
+      'the view to read the refused expression as an error'
+    )
+    const reported = await activePage.locator(MESSAGE).innerText()
+    assert.notEqual(reported.trim(), 'No results found.', 'an expression the engine refused is not a search that found nothing')
+    screenshots.set('search-invalid-regex.png', await activePage.screenshot())
+
+    await activePage.locator(TOGGLE('regex')).click()
+    await search(activePage, TERM, /3 results in 2 files/)
+  })
+
+  it('stops and names the file when it cannot read one, instead of counting a search that skipped it', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    await chmod(closedFile(), 0o000)
+    await assert.rejects(readFile(closedFile(), 'utf-8'), 'the fixture file must really be unreadable for this to prove anything')
+
+    await activePage.locator(QUERY).fill('')
+    await activePage.locator(QUERY).fill(TERM)
+    await waitUntil(
+      async () => await activePage.locator(MESSAGE).evaluate(el => el.classList.contains('search-message-error')),
+      'the view to report the file it could not read'
+    )
+    assert.match(await activePage.locator(MESSAGE).innerText(), /sage\.md/, 'the reason names the file the search could not read')
+    screenshots.set('search-unreadable-file.png', await activePage.screenshot())
+
+    await chmod(closedFile(), 0o644)
   })
 })
