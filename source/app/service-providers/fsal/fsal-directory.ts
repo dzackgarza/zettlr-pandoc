@@ -352,14 +352,14 @@ export type QuartoManifestBinding =
  */
 export async function bindQuartoManifest (dirObject: DirDescriptor, manifestPath: string): Promise<QuartoManifestBinding> {
   const manifest = resolveRealPath(path.resolve(dirObject.path, manifestPath))
-  const relative = path.relative(resolveRealPath(dirObject.path), manifest)
-
-  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
-    return { kind: 'rejected', reason: 'outside-directory' }
-  }
 
   if (!isFile(manifest)) {
     return { kind: 'rejected', reason: 'not-a-file' }
+  }
+
+  const relative = path.relative(resolveRealPath(dirObject.path), manifest)
+  if (relative.split(path.sep)[0] === '..' || path.isAbsolute(relative)) {
+    return { kind: 'rejected', reason: 'outside-directory' }
   }
 
   dirObject.settings.quartoManifest = relative
