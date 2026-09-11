@@ -212,7 +212,7 @@ describe('the Search view', function () {
     await clickRowAction(fileRow(activePage, 'sage.md').locator('.file-match'), 'replace-file')
     await waitUntil(async () => {
       const text = await readFile(closedFile(), 'utf-8')
-      return (text.match(/subcategory/g) ?? []).length === 2 && !text.includes(TERM)
+      return [...text.matchAll(/subcategory/g)].length === 2 && !text.includes(TERM)
     }, 'both matches of the closed file to change')
     assert.match(await editorText(activePage), /subgroupoid/, 'the other file is untouched')
     await search(activePage, TERM, /1 result in 1 file/)
@@ -224,7 +224,7 @@ describe('the Search view', function () {
     await clickRowAction(fileRow(activePage, 'sage.md').locator(MATCH_ROW).first(), 'replace-match')
     await waitUntil(async () => {
       const text = await readFile(closedFile(), 'utf-8')
-      return (text.match(/subcategory/g) ?? []).length === 1 && (text.match(/subgroupoid/g) ?? []).length === 1
+      return [...text.matchAll(/subcategory/g)].length === 1 && [...text.matchAll(/subgroupoid/g)].length === 1
     }, 'exactly one match of the closed file to change')
     await search(activePage, TERM, /2 results in 2 files/)
     screenshots.set('after-replace-match.png', await activePage.screenshot())

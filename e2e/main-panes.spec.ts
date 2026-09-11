@@ -57,7 +57,11 @@ async function paneWidth (page: Page, name: 'navigation-sidebar' | 'editor' | 'a
 
 /** The pane's laid-out width, zero included: what the eye sees while it animates. */
 async function measuredWidth (page: Page, name: 'navigation-sidebar' | 'editor' | 'annotation-panel'): Promise<number> {
-  return await page.evaluate(selector => document.querySelector(selector)?.getBoundingClientRect().width ?? 0, PANE(name))
+  return await page.evaluate(selector => {
+    const element = document.querySelector(selector)
+    // A hidden pane is not in the window at all, which is the zero the eye sees.
+    return element === null ? 0 : element.getBoundingClientRect().width
+  }, PANE(name))
 }
 
 async function readUiConfig (page: Page): Promise<Record<string, unknown>> {

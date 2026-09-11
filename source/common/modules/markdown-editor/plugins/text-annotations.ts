@@ -169,8 +169,21 @@ const markClass = (active: boolean, resolved: boolean): string => [
 function buildFieldValue (base: TextAnnotationsState, doc: EditorState['doc']): TextAnnotationsFieldValue {
   const visible = base.annotations.filter(a => a.state === 'open' || base.showResolved)
 
-  const ordinalByAnnotationId = new Map<string, number>()
-  visible.forEach((annotation, index) => ordinalByAnnotationId.set(annotation.annotationId, index + 1))
+  /**
+   * An annotation's number as the panel counts it: its place in the visible
+   * list, one-based. Every annotation a marker groups came out of that list.
+   */
+  const ordinalOf = (annotation: TextAnnotation): number => {
+    const index = visible.indexOf(annotation)
+    if (index === -1) {
+      throw new Error(
+        `A grouped annotation is not in the list it was grouped from: ${annotation.annotationId}. ` +
+        'The groups are built from `visible` in this function; a member that is not in it means the ' +
+        'grouping copied an annotation instead of carrying the element.'
+      )
+    }
+    return index + 1
+  }
 
   const markRanges: Array<ReturnType<Decoration['range']>> = []
   const groupsByLine = new Map<number, TextAnnotation[]>()
@@ -238,10 +251,8 @@ function buildFieldValue (base: TextAnnotationsState, doc: EditorState['doc']): 
         : group[0].anchor.state === 'orphaned'
           ? 'orphaned'
           : 'range'
-    const byOrdinal = [...group].sort(
-      (a, b) => (ordinalByAnnotationId.get(a.annotationId) ?? 0) - (ordinalByAnnotationId.get(b.annotationId) ?? 0)
-    )
-    const ordinals = byOrdinal.map(a => ordinalByAnnotationId.get(a.annotationId) ?? 0)
+    const byOrdinal = [...group].sort((a, b) => ordinalOf(a) - ordinalOf(b))
+    const ordinals = byOrdinal.map(ordinalOf)
     annotationIdByLine.set(pos, byOrdinal[0].annotationId)
     gutterRanges.push(
       new AnnotationGutterMarker(String(lineNumber), kind, group.length, ordinals, active, resolved).range(pos)
@@ -335,9 +346,9 @@ const textAnnotationsGutter = gutter({
   }
 })
 
-/** The field's current annotation-locator state, or `null` if not installed. */
-export function getTextAnnotationsState (state: EditorState): TextAnnotationsState | null {
-  return state.field(textAnnotationsField, false) ?? null
+/** The field's current annotation-locator state, or undefined if not installed. */
+export function getTextAnnotationsState (state: EditorState): TextAnnotationsState | undefined {
+  return state.field(textAnnotationsField, false)
 }
 
 export function textAnnotationsExtension (): Extension {

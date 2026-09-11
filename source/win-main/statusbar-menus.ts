@@ -132,10 +132,6 @@ export function magicQuotesPairFor (choice: string): QuotePair {
  */
 export function languageToolMenuItems (supportedLanguages: readonly string[], overrideLanguage: string, appLanguage: string): AnyMenuItem[] {
   const resolved = supportedLanguages.map(code => ({ code, displayName: resolveLangCode(code, 'name'), flag: flagOf(code) }))
-  const nameCounts = new Map<string, number>()
-  for (const entry of resolved) {
-    nameCounts.set(entry.displayName, (nameCounts.get(entry.displayName) ?? 0) + 1)
-  }
   const collator = new Intl.Collator([ appLanguage, 'en' ], { sensitivity: 'base', usage: 'sort' })
   resolved.sort((a, b) => collator.compare(a.displayName, b.displayName))
   const items: AnyMenuItem[] = [
@@ -143,7 +139,7 @@ export function languageToolMenuItems (supportedLanguages: readonly string[], ov
     { type: 'separator' }
   ]
   for (const entry of resolved) {
-    const duplicate = (nameCounts.get(entry.displayName) ?? 0) > 1
+    const duplicate = resolved.filter(other => other.displayName === entry.displayName).length > 1
     items.push({
       type: 'checkbox',
       id: entry.code,

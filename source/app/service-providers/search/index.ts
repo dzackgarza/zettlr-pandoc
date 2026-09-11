@@ -253,11 +253,14 @@ export class SearchProvider implements ProviderContract {
   private searchNextFile (): void {
     const search = this.currentSearch
     const nextFile = this.fileSearchQueue.shift()
-    if (search === undefined || nextFile === undefined) {
-      if (search !== undefined) {
-        this.currentSearch = undefined
-      }
-      broadcastIPCMessage('search-provider', { type: 'search-end', generation: search?.generation ?? this.searchGeneration } satisfies SearchProviderBroadcast)
+    if (search === undefined) {
+      // Nothing is running: the queue was cancelled between two files.
+      broadcastIPCMessage('search-provider', { type: 'search-end', generation: this.searchGeneration } satisfies SearchProviderBroadcast)
+      return
+    }
+    if (nextFile === undefined) {
+      this.currentSearch = undefined
+      broadcastIPCMessage('search-provider', { type: 'search-end', generation: search.generation } satisfies SearchProviderBroadcast)
       return
     }
 
@@ -400,7 +403,10 @@ export class SearchProvider implements ProviderContract {
     for (const documentPath of documentPaths) {
       const saved = await this._documents.saveFile(documentPath)
       if (!saved.ok) {
-        throw new Error(`[Search Provider] Could not save ${documentPath} after the replace: ${saved.refusal?.message ?? 'no refusal reason'}`)
+        const reason = saved.refusal === undefined
+          ? 'the documents provider refused the save and named no reason'
+          : saved.refusal.message
+        throw new Error(`[Search Provider] Could not save ${documentPath} after the replace: ${reason}`)
       }
     }
   }

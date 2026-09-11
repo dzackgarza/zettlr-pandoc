@@ -83,7 +83,13 @@ async function waitUntil (probe: () => Promise<boolean>, what: string, timeoutMs
 }
 
 async function pressedIcons (page: Page): Promise<string[]> {
-  return await page.locator(`${BAR} [data-activity][aria-pressed="true"]`).evaluateAll(elements => elements.map(element => element.getAttribute('data-activity') ?? ''))
+  return await page.locator(`${BAR} [data-activity][aria-pressed="true"]`).evaluateAll(elements => elements.map(element => {
+    const activity = element.getAttribute('data-activity')
+    if (activity === null) {
+      throw new Error('An icon matched by [data-activity] carries no data-activity attribute.')
+    }
+    return activity
+  }))
 }
 
 describe('the sidebar views', function () {

@@ -61,7 +61,9 @@ const PANEL_ACTIVITY = '#panel-activity-bar [data-activity="annotations"]'
  */
 async function waitForPaneWidth (page: Page, pane: 'navigation-sidebar' | 'annotation-panel', width: 'zero' | 'some'): Promise<void> {
   await page.waitForFunction(([ selector, expected ]) => {
-    const measured = document.querySelector(selector)?.getBoundingClientRect().width ?? 0
+    const element = document.querySelector(selector)
+    // A pane that has slid shut leaves the window: no element is no width.
+    const measured = element === null ? 0 : element.getBoundingClientRect().width
     return expected === 'zero' ? measured === 0 : measured > 0
   }, [ `[data-pane="${pane}"]`, width ] as const, { timeout: 10_000 })
 }
