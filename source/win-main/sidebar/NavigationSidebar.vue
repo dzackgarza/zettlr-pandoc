@@ -161,29 +161,47 @@ async function reveal (target: RevealTarget): Promise<void> {
   await nextTick()
   if (target.section !== undefined) {
     const container = target.view === 'explorer' ? explorerContainer.value : referencesContainer.value
-    container?.setCollapsed(target.section, false)
+    if (container === null) {
+      throw new Error(
+        `The ${target.view} view holds no section container after the drawer was revealed, so ` +
+        `its ${target.section} section cannot be expanded. The container comes from the ref on ` +
+        'ViewContainer in this template; a view that carries sections has to render one.'
+      )
+    }
+    container.setCollapsed(target.section, false)
   }
   if (target.focus === 'search-query') {
-    await searchView().then(view => view?.focusQueryInput())
+    (await searchView()).focusQueryInput()
   }
 }
 
 /**
  * The Search view, once it is in the document. Revealing it is a config
  * write, and the view it swaps in mounts over the renders that follow, so
- * the handle is not there the moment the write returns.
+ * the handle is not there the moment the write returns. A view that never
+ * arrives is not a search that found nothing: the gesture is dropped, and
+ * the person who asked for it is told nothing.
  */
-async function searchView (): Promise<GlobalSearchHandle|null> {
+async function searchView (): Promise<GlobalSearchHandle> {
   for (let attempt = 0; attempt < 5 && globalSearch.value === null; attempt++) {
     await nextTick()
   }
-  return globalSearch.value
+  const handle = globalSearch.value
+  if (handle === null) {
+    throw new Error(
+      'The Search view did not mount within five ticks of the drawer being revealed: ' +
+      `ui.sidebarView is ${configStore.config.ui.sidebarView} and window.fileManagerVisible is ` +
+      `${String(configStore.config.window.fileManagerVisible)}. The handle is the SearchView ref ` +
+      'in this component; fix what the reveal writes, or what this template renders for it.'
+    )
+  }
+  return handle
 }
 
 /** Reveals the Search view and runs a search for the given terms. */
 async function startSearch (terms: string): Promise<void> {
   await reveal({ view: 'search', focus: 'none' })
-  await searchView().then(view => view?.startSearch(terms))
+  await (await searchView()).startSearch(terms)
 }
 
 defineExpose({ reveal, startSearch })
