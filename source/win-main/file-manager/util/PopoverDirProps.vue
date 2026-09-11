@@ -396,7 +396,7 @@ function selectManifest (): void {
         sendBinding(chosen[0])
       }
     })
-    .catch(e => console.error(e))
+    .catch(err => surfaceBindingFailure(err))
 }
 
 /** Removes the binding, and the project derived from the manifest it named. */
@@ -421,7 +421,19 @@ function sendBinding (manifest: string|null): void {
         showToast(describeBindingRejection(outcome.reason), 'error')
       }
     })
-    .catch(e => console.error(e))
+    .catch(err => surfaceBindingFailure(err))
+}
+
+/**
+ * Reports a binding that never reached the application. The gesture's whole
+ * point is a visible outcome, so a failed call says so where the user is
+ * looking, not only in the console.
+ *
+ * @param  {unknown}  err  The error the call rejected with
+ */
+function surfaceBindingFailure (err: unknown): void {
+  console.error(err)
+  showToast(trans('Could not change the Quarto manifest: %s', err instanceof Error ? err.message : String(err)), 'error')
 }
 
 /**
