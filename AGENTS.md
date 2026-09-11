@@ -185,7 +185,34 @@ they must be threaded through **four** layers:
   `source/app/service-providers/assets/index.ts` = `listDefaults()` (userData/defaults)
   + `getCustomProfiles()`, with custom profiles overriding same-named defaults.
 
-### 4. Startup preflight
+### 4. Quarto books
+
+A directory is a Quarto project when a manifest describes it. Quarto stays the
+manifest, render and numbering authority; Zettlr reads the authoring fields.
+
+- **Where the manifest is.** `<dir>/_quarto.yml`, or the file the directory is bound
+  to. The binding is `DirectorySettings.quartoManifest`, a path relative to the
+  directory, set from the directory properties popover and persisted in
+  `.ztr-directory`. It exists because a book may keep its manifest in an assembly
+  directory beside the machinery that renders it — `~/research/writing/.book/` — with
+  the prose one level up.
+- **The project is derived, never stored.** `parseQuartoManifest`
+  (`fsal-directory.ts`) rebuilds it from the manifest on every load, and
+  `persistSettings` writes only the settings the user authored. `.ztr-directory` may
+  name where the manifest is; it must never carry a copy of the order, the chapters or
+  the bibliographies, which the manifest owns (#83). A project the user made
+  themselves (`manifest.kind === 'zettlr'`) is authored, and is left alone.
+- **A chapter's identity is its real path.** `parseQuartoProject`
+  (`source/app/util/quarto-project.ts`) resolves each path against the manifest's own
+  directory and then through `realpath`, so a symlinked chapter is the file it points
+  at and no file reaches the document model under two names. `ProjectSettings.files`
+  therefore holds real paths for a Quarto project and directory-relative paths for a
+  Zettlr one; resolve them, never join them.
+- **Consumers:** the Book module (`QuartoBookOutline.vue`, gated in
+  `NavigationSidebar.vue` by path containment), inherited bibliographies
+  (`get-bibliography-for-descriptor.ts`), and project export.
+
+### 5. Startup preflight
 
 - `source/app/util/preflight.ts`, called from `source/app/util/environment-check.ts`
   after `fixPath()`. Fails loud (native dialog + `app.exit(1)`) if `pandoc`, `just`,
