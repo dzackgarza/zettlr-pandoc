@@ -23,6 +23,7 @@ import { tmpdir } from 'os'
 import path from 'path'
 import {
   bindQuartoManifest,
+  changeSorting,
   parse as parseDirectory,
   unbindQuartoManifest
 } from 'source/app/service-providers/fsal/fsal-directory'
@@ -152,6 +153,32 @@ describe('a workspace bound to a manifest that lives elsewhere in it', function 
     )
     assert.equal(directory.settings.quartoManifest, null, 'a refused binding leaves the directory unbound')
     assert.equal(directory.settings.project, null)
+  })
+
+  it('leaves a project the user wrote themselves alone, manifest or no manifest', async function () {
+    const authored: ProjectSettings = {
+      manifest: { kind: 'zettlr' },
+      title: 'The project the user made',
+      profiles: [ 'PDF.yaml' ],
+      files: [ 'index.md' ],
+      cslStyle: '',
+      templates: { tex: '', html: '' }
+    }
+    await writeFile(path.join(workspace, '.book', '.ztr-directory'), JSON.stringify({
+      sorting: 'name-up', project: authored, icon: null, color: null, quartoManifest: null
+    }), 'utf8')
+
+    // The assembly directory carries the manifest, so deriving from it here is
+    // exactly what would overwrite the project the user made.
+    const directory = await parseDirectory(path.join(workspace, '.book'))
+
+    assert.deepEqual(directory.settings.project, authored)
+    await changeSorting(directory, 'time-down')
+    assert.deepEqual(
+      (await readDirectorySettings(path.join(workspace, '.book'))).project,
+      authored,
+      'and it survives the next write of the directory settings'
+    )
   })
 
   it('drops the project with the binding when the workspace is unbound', async function () {
