@@ -1,18 +1,11 @@
 <template>
-  <div
-    id="references-panel"
-    role="tabpanel"
-  >
-    <!-- References -->
-    <h1>
-      {{ referencesLabel }}
-      <small
-        v-if="bibliography !== undefined && bibliography[1].length > 0"
-        class="word-count"
-      >
-        {{ wordCountLabel }}
-      </small>
-    </h1>
+  <div id="references-panel">
+    <p
+      v-if="bibliography !== undefined && bibliography[1].length > 0"
+      class="references-word-count"
+    >
+      {{ wordCountLabel }}
+    </p>
     <!-- eslint-disable vue/no-v-html -- referenceHTML is sanitized by DOMPurify before insertion. -->
     <div
       id="references-list"
@@ -66,7 +59,6 @@ function getBibliographyForDescriptor (descriptor: MDFileDescriptor): CitationDa
 
 const bibliography = ref<[BibliographyOptions, string[]]|undefined>(undefined)
 
-const referencesLabel = trans('References')
 const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
 
 /**
@@ -174,17 +166,18 @@ async function updateBibliography (): Promise<void> {
 </script>
 
 <style lang="css">
-div#references-panel h1 {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  justify-content: space-between;
+div#references-panel {
+  height: 100%;
+  overflow-y: auto;
+  padding: 0 var(--chrome-inset);
+  box-sizing: border-box;
+  font-size: var(--chrome-font-size);
+}
 
-  small.word-count {
-    font-size: 70%;
-    font-style: italic;
-    text-align: right;
-  }
+div#references-panel .references-word-count {
+  margin: 4px 0;
+  color: var(--chrome-text-muted);
+  font-size: var(--chrome-section-font-size);
 }
 
 div#references-list div.csl-bib-body {

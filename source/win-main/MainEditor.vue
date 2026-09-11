@@ -77,7 +77,6 @@ import type {
   ProjectInfo,
   ProjectInfoNavigationItem
 } from 'source/common/modules/markdown-editor/plugins/project-info-field'
-import type { FileContentSearchResult } from 'source/app/service-providers/search'
 import type { DocumentLocation, ProjectRootSpec, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
 import type { AnnotationSet } from '@dts/common/annotation-domain'
@@ -110,6 +109,7 @@ import {
 } from '@common/pandoc-util/compute-reference-edits'
 import type { WorkspaceReferenceEdit } from '@dts/common/references'
 import type { CustomEditorShortcut } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
+import { isEditorCommandName } from '@dts/common/shortcut-names'
 import getDocumentTitle from './util/get-document-title'
 
 const ipcRenderer = window.ipc
@@ -157,6 +157,7 @@ const emit = defineEmits<{
   (e: 'referenceSearch', request: ReferenceSearchRequest): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
   (e: 'openPandocQuickHelp'): void
+  (e: 'openAnnotation', annotationId: string): void
 }>()
 
 const windowStateStore = useWindowStateStore()
@@ -567,8 +568,6 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
     // The editor only needs to know if it should use languageTool
     lintLanguageTool: editor.lint.languageTool.active,
     distractionFree: props.distractionFree.valueOf(),
-    showStatusbar: editor.showStatusbar,
-    showFormattingToolbar: editor.showFormattingToolbar,
     darkMode,
     darkModeEditor,
     theme: display.theme,
@@ -706,8 +705,8 @@ watch(toRef(props.editorCommands, 'executeCommand'), () => {
   }
 
   const data = props.editorCommands.data
-  if (typeof data !== 'string') {
-    return // The toggled command carried no command identifier
+  if (typeof data !== 'string' || !isEditorCommandName(data)) {
+    return // The toggled command carried no editor command name
   }
   currentEditor.runCommand(data)
   currentEditor.focus()
@@ -765,6 +764,21 @@ watch(toRef(props.editorCommands, 'replaceSelection'), () => {
     return // The toggled command carried no text payload
   }
   currentEditor?.replaceSelection(data)
+})
+
+// The status bar's LanguageTool language choice, for the last focused pane.
+watch(toRef(props.editorCommands, 'setLanguageToolLanguage'), () => {
+  if (props.activeFile?.path !== props.file.path || currentEditor === null) {
+    return
+  }
+  if (documentTreeStore.lastLeafId !== props.leafId) {
+    return
+  }
+  const data = props.editorCommands.data
+  if (typeof data !== 'string') {
+    return // The toggle carried no language code
+  }
+  currentEditor.setLanguageToolLanguage(data)
 })
 
 watch(toRef(props.editorCommands, 'insertPandoc'), () => {
@@ -833,8 +847,19 @@ const EMPTY_ANNOTATION_SET: AnnotationSet = { generation: 0, items: [] }
 // forwards the current set — the editor's own field only distinguishes and
 // re-renders locators, never mutates them. `immediate` covers the pane that
 // mounts onto a document another pane already cached the session for.
-watch(() => collaborationSession.value?.annotations, (annotations) => {
+// The set, the selected card and the resolved-visibility switch are all the
+// panel's state; the editor renders from them and mutates none of them. They
+// travel together because a document swap builds a fresh editor state:
+// pushing the set alone would leave the new state with no selection and the
+// resolved switch back at its default.
+watch([
+  () => collaborationSession.value?.annotations,
+  () => collaborationStore.selectedAnnotationId,
+  () => collaborationStore.showResolved
+], ([ annotations, selectedAnnotationId, showResolved ]) => {
   currentEditor?.setAnnotations(annotations ?? EMPTY_ANNOTATION_SET)
+  currentEditor?.setActiveAnnotation(selectedAnnotationId)
+  currentEditor?.setShowResolvedAnnotations(showResolved)
 }, { immediate: true, deep: true })
 
 // METHODS
@@ -918,6 +943,13 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   // App.vue.
   editor.on('reference-search', (request: ReferenceSearchRequest) => {
     emit('referenceSearch', request)
+  })
+
+  // A gutter chip was clicked. Opening the annotations panel is the
+  // window's business, so relay the annotation up to App.vue, which owns
+  // both directions of the panel's visibility.
+  editor.on('annotation-selected', (annotationId: string) => {
+    emit('openAnnotation', annotationId)
   })
 
   // An in-editor help link (the completion info panel, issue #1 review A2)
@@ -1445,23 +1477,14 @@ function maybeHighlightSearchResults (): void {
     return
   }
 
-  const result = globalSearchResults.value.find(r => r.file.path === props.file.path)
+  const result = globalSearchResults.value.find(r => r.documentPath === props.file.path)
   if (result === undefined) {
     currentEditor.highlightRanges([])
     return
   }
 
-  // Construct CodeMirror.Ranges from the results
-  const rangesToHighlight = []
-  // NOTE: We have to filter out "whole-file" results
-  for (const res of result.result.filter((res): res is FileContentSearchResult => res.type === 'content' && res.line > -1)) {
-    const startIdx = currentEditor.instance.state.doc.line(res.line + 1).from
-    for (const range of res.ranges) {
-      const { from, to } = range
-      rangesToHighlight.push(EditorSelection.range(startIdx + from, startIdx + to))
-    }
-  }
-  currentEditor.highlightRanges(rangesToHighlight)
+  // The provider reports every match as offsets into the whole document.
+  currentEditor.highlightRanges(result.matches.map(match => EditorSelection.range(match.range.from, match.range.to)))
 }
 
 </script>

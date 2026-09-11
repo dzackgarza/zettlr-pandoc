@@ -15,15 +15,8 @@
  */
 
 import { StateEffect, StateField, type EditorState } from '@codemirror/state'
-import type { StatusbarItem } from '../statusbar'
-import localiseNumber from 'source/common/util/localise-number'
-import { trans } from 'source/common/i18n-renderer'
-import type { EditorView } from '@codemirror/view'
-import { configField } from '../util/configuration'
-import showPopupMenu, { type AnyMenuItem } from '../../window-register/application-menu-helper'
-import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
+import type { AnyMenuItem } from '../../window-register/application-menu-helper'
 
-const ipcRenderer = window.ipc
 
 export interface ProjectInfo {
   name: string // Project name
@@ -37,7 +30,8 @@ export type ProjectInfoNavigationItem =
   | { kind: 'chapter', path: string, displayName: string }
   | { kind: 'part', title: string, chapters: Array<{ path: string, displayName: string }> }
 
-function navigationMenuItems (navigation: ProjectInfoNavigationItem[]): AnyMenuItem[] {
+/** The project's chapters as popup menu items, each carrying its document path as id. */
+export function navigationMenuItems (navigation: ProjectInfoNavigationItem[]): AnyMenuItem[] {
   return navigation.map(item => {
     if (item.kind === 'chapter') {
       return {
@@ -83,50 +77,3 @@ export const projectInfoField = StateField.define<ProjectInfo|null>({
   }
 })
 
-/**
- * Displays project info (if present in the EditorState) in the statusbar.
- *
- * @param   {EditorState}    state  The EditorState
- * @param   {EditorView}     _view  The EditorView
- *
- * @return  {StatusbarItem}         The field content
- */
-export function statusbarProjectInfo (state: EditorState, _view: EditorView): StatusbarItem|null {
-  const field = state.field(projectInfoField, false)
-  const conf = state.field(configField, false)
-
-  if (field == null) {
-    return null
-  }
-
-  const countLabel = conf?.countChars === true
-    ? trans('%s characters', localiseNumber(field.charCount))
-    : trans('%s words', localiseNumber(field.wordCount))
-
-  return {
-    // NOTE: Should be the same icon that we also use for projects in the file manager
-    content: `<cds-icon shape="blocks-group"></cds-icon> ${countLabel}`,
-    title: trans('This file is part of project "%s"', field.name),
-    allowHtml: true,
-    onClick (event) {
-      const items: AnyMenuItem[] = [
-        {
-          id: 'none',
-          label: field.name,
-          type: 'normal',
-          enabled: false
-        }
-      ]
-
-      items.push(...navigationMenuItems(field.navigation))
-
-      showPopupMenu({ x: event.clientX, y: event.clientY }, items, clickedID => {
-        ipcRenderer.invoke('documents-provider', {
-          command: 'open-file',
-          payload: { path: clickedID }
-        } as DocumentManagerIPCAPI)
-          .catch(e => console.error(e))
-      })
-    }
-  }
-}

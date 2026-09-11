@@ -55,6 +55,7 @@
             @reference-search="emit('referenceSearch', $event)"
             @create-reference-label="emit('createReferenceLabel', $event)"
             @open-pandoc-quick-help="emit('openPandocQuickHelp')"
+            @open-annotation="emit('openAnnotation', $event)"
           />
         </Teleport>
       </template>
@@ -180,6 +181,7 @@ const emit = defineEmits<{
   (e: 'referenceSearch', request: ReferenceSearchRequest): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
   (e: 'openPandocQuickHelp'): void
+  (e: 'openAnnotation', annotationId: string): void
 }>()
 
 // UNREFFED SCROLL MAP

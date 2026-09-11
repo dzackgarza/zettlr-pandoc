@@ -1,0 +1,126 @@
+// The main window's chrome primitives: one list-row treatment and one filter
+// input treatment, defined once here and applied by class. The tokens they
+// read are declared in WindowChrome.vue beside the rest of the palette
+// (light on :root, dark on body.dark). The section header is the third
+// primitive; it is a component (SectionHeader.vue) because it owns behavior.
+
+// A group label inside a module body (a book part, an attachment folder): the
+// section label's type, on a plain element rather than a heading.
+.chrome-group-label {
+  margin: 8px 0 2px;
+  padding: 0 var(--chrome-inset);
+  color: var(--chrome-text-muted);
+  font-size: var(--chrome-section-font-size);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// A selectable list row: full-width tint for hover and for the active row, a
+// left accent bar on the active row, and the text colour unchanged. Never a
+// pill behind the label alone.
+.chrome-row {
+  display: flex;
+  align-items: center;
+  min-height: var(--chrome-row-height);
+  padding: 0 var(--chrome-inset);
+  box-sizing: border-box;
+  font-size: var(--chrome-font-size);
+  border-radius: 0;
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--chrome-row-hover-bg);
+  }
+
+  // The active row: the selected tree item, or the highlighted launcher row
+  // (reka-ui marks it with data-highlighted).
+  &.chrome-row-active,
+  &[data-highlighted] {
+    background-color: var(--chrome-row-active-bg);
+    box-shadow: inset 3px 0 0 var(--chrome-row-accent);
+  }
+
+  &[data-disabled] {
+    color: var(--chrome-text-muted);
+    cursor: default;
+  }
+
+  // The row's parts: a label that ellipsises, a muted breadcrumb or detail
+  // before it, and trailing content (a shortcut chip, a count) at the end.
+  .chrome-row-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chrome-row-detail {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-right: 8px;
+    overflow: hidden;
+    color: var(--chrome-text-muted);
+    font-size: var(--chrome-section-font-size);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chrome-row-trailing {
+    flex: 0 0 auto;
+    margin-left: 12px;
+    color: var(--chrome-text-muted);
+    font-size: var(--chrome-section-font-size);
+  }
+}
+
+// The sidebar's filter input: rounded, bordered, a placeholder, and a
+// right-aligned shortcut hint inside the same box.
+.chrome-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px var(--chrome-inset);
+  padding: 0 8px;
+  height: 30px;
+  box-sizing: border-box;
+  border: 1px solid var(--chrome-input-border);
+  border-radius: 6px;
+  background-color: var(--chrome-input-bg);
+  color: var(--chrome-text);
+
+  &:focus-within {
+    border-color: var(--chrome-row-accent);
+  }
+
+  // `body … input.…` outweighs the platform input rules in generic.css
+  // (body.linux.dark input), which would paint the field grey.
+  body & input.chrome-filter-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: var(--chrome-font-size);
+    outline: none;
+
+    &::placeholder {
+      color: var(--chrome-text-muted);
+    }
+  }
+
+  .chrome-filter-hint {
+    flex: 0 0 auto;
+    color: var(--chrome-text-muted);
+    font-size: var(--chrome-section-font-size);
+  }
+}

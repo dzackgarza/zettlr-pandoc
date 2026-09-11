@@ -290,6 +290,22 @@ For stubs work, the evidence should be source-backed: the upstream surface exist
 
 Watch for code-level laundering: hard-coded consumer names, support for local research abstractions as if they were external API, fake stubs, broad Any/object escapes, line suppressions, diagnostic filtering, deletion of required data, broad type widening, and any move that makes checks pass by weakening the problem instead of solving it.
 
+## Before a PR Leaves Draft
+
+A PR is ready when its gates are green and its review feedback has converged. Finished milestones do not make it ready, and neither does a plan card, a PR body, or a green local test run. Every push to a PR branch runs `deterministic-diff`, `qc-doctor`, `app-boot`, `pr-description-checklist`, `thread-resolution` and `slop-review`, beside `Unit Tests / Lint` and `qc-ci / qc`. Two automated reviewers post threads on the diff: the slop review as `github-actions`, and the bridge-burning policy scanner as `github-advanced-security`. Their findings land on the branch's own new code and they are the review this repository gives a PR.
+
+Read both surfaces before `gh pr ready`:
+
+```bash
+gh pr checks <n>
+gh api graphql -f query='query { repository(owner:"dzackgarza", name:"zettlr-pandoc") {
+  pullRequest(number:<n>) { reviewThreads(first:100) { nodes { isResolved path } } } } }'
+```
+
+`thread-resolution` is red while any thread is unresolved, so a red `thread-resolution` says the triage loop has not been run. Triage every substantive thread through `pr-feedback-triage`: a disposition and its evidence on the thread itself, a commit behind any accepted finding, and no thread resolved on intent. Policy findings (`POLICY.FAIL_OPEN`, `POLICY.NO_ERROR_DISCARD`, `POLICY.RUNTIME_DEFAULT`, `POLICY.NO_HIDDEN_CONFIG`, `POLICY.NO_TYPE_ESCAPE`) are the global bridge-burning rules; they are not style notes and they are not waivable by a sentence in the PR body.
+
+The local commit hook exempts this fork from verification, and `e2e` specs that pass under the local xvfb harness still fail on the hosted runner. Neither a clean commit nor a green local run is evidence about the PR; the run over the branch head is.
+
 ## When Acting on Review Feedback
 
 A positive disposition requires a commit.

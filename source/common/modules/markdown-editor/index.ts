@@ -70,13 +70,27 @@ import {
 } from './commands/format-document'
 // Custom commands
 import {
+  applyBlockquote,
+  applyBold,
+  applyBulletList,
+  applyCode,
   applyComment,
+  applyH1,
+  applyH2,
+  applyH3,
+  applyH4,
+  applyH5,
+  applyH6,
+  applyItalic,
+  applyOrderedList,
   applyPandocDivOrSpan,
+  applyStrikethrough,
   applyTaskList,
   insertImage,
   insertLink,
 } from './commands/markdown'
 import { moveSection } from './commands/move-section'
+import type { EditorCommandName } from '@dts/common/shortcut-names'
 // Main configuration
 import {
   type CoreExtensionOptions,
@@ -96,7 +110,11 @@ import { editorMetadataFacet } from './plugins/editor-metadata'
 import { formatDocumentEffect } from './plugins/format-document-effect'
 import { highlightRangesEffect } from './plugins/highlight-ranges'
 import { openPandocQuickHelpEffect } from './plugins/pandoc-quick-help-effect'
-import { type ProjectInfo, projectInfoUpdateEffect } from './plugins/project-info-field'
+import { type ProjectInfo, projectInfoField, projectInfoUpdateEffect } from './plugins/project-info-field'
+import { languageToolState, updateLTState } from './linters/language-tool'
+import { forceLinting } from '@codemirror/lint'
+import { countDiagnostics, toggleLintPanel, type DiagnosticCounts } from './statusbar/diagnostics'
+import { toggleReadability } from './renderers/readability'
 import { openReferenceSearchEffect } from './plugins/reference-search-effect'
 import {
   type PullUpdateCallback,
@@ -105,6 +123,7 @@ import {
 } from './plugins/remote-doc'
 import { reviewChunksExtension } from './plugins/review-chunks'
 import {
+  annotationChipClickedEffect,
   clearAnnotationDraftEffect,
   setActiveAnnotationEffect,
   setAnnotationDraftEffect,
@@ -148,16 +167,34 @@ export interface UserReadablePosition {
   ch: number
 }
 
+/** What the LanguageTool linter is doing, for the window's status bar. */
+export type LanguageToolStatus =
+  | { state: 'off' }
+  | { state: 'running' }
+  | { state: 'error', message: string }
+  | { state: 'idle', language: string, overrideLanguage: string, supportedLanguages: string[] }
+
+/**
+ * Everything the window's status bar shows about the active editor, derived
+ * once here from the editor state on every document update.
+ */
 export interface DocumentInfo {
   words: number
   chars: number
   cursor: UserReadablePosition
+  /** The cursor's offset in the document */
+  offset: number
   selections: Array<{
     anchor: UserReadablePosition
     head: UserReadablePosition
     words: number
     chars: number
   }>
+  readabilityMode: boolean
+  diagnostics: DiagnosticCounts
+  languageTool: LanguageToolStatus
+  /** The project the document belongs to, if any */
+  project: ProjectInfo | undefined
 }
 
 export type FetchDoc = (
@@ -210,6 +247,34 @@ export interface EditorViewPersistentState {
    * A decoration set containing currently folded ranges.
    */
   foldedRanges: DecorationSet
+}
+
+/**
+ * The editor commands by their typed name: one table, consumed by
+ * runCommand, keyed by the same names the Insert and Format menus send.
+ */
+const EDITOR_COMMANDS: Record<EditorCommandName, (view: EditorView) => boolean> = {
+  markdownComment: applyComment,
+  markdownLink: insertLink,
+  markdownImage: insertImage,
+  insertFootnote: addNewFootnote,
+  markdownMakeTaskList: applyTaskList,
+  createReferenceLabel,
+  markdownBold: applyBold,
+  markdownItalic: applyItalic,
+  markdownCode: applyCode,
+  markdownStrikethrough: applyStrikethrough,
+  markdownHeading1: applyH1,
+  markdownHeading2: applyH2,
+  markdownHeading3: applyH3,
+  markdownHeading4: applyH4,
+  markdownHeading5: applyH5,
+  markdownHeading6: applyH6,
+  markdownBlockquote: applyBlockquote,
+  markdownBulletList: applyBulletList,
+  markdownOrderedList: applyOrderedList,
+  toggleReadabilityMode: toggleReadability,
+  toggleLintPanel
 }
 
 export default class MarkdownEditor extends EventEmitter {
@@ -392,6 +457,13 @@ export default class MarkdownEditor extends EventEmitter {
             // Phase 8 badge-keyed reverse lookup).
             if (effect.is(openReferenceSearchEffect)) {
               this.emit('reference-search', effect.value)
+            }
+
+            // A gutter chip was clicked: the shell opens the annotations
+            // panel on that annotation. The editor never opens a pane or
+            // selects on its own — it reports which chip was hit.
+            if (effect.is(annotationChipClickedEffect)) {
+              this.emit('annotation-selected', effect.value)
             }
 
             // Create-reference-label request (issue #1 Phase 6): surface
@@ -632,7 +704,10 @@ export default class MarkdownEditor extends EventEmitter {
   }
 
   /**
-   * Small function that jumps to a specific line in the editor.
+   * Jumps to a specific line: the cursor lands at its start and the line is
+   * scrolled to the centre. Nothing is selected — a jump from the outline,
+   * a book chapter or a search hit is a place to start typing, and a
+   * selection there would be replaced by the first keystroke.
    *
    * @param  {number} line The line to pull into view
    */
@@ -640,7 +715,7 @@ export default class MarkdownEditor extends EventEmitter {
     if (line > 0 && line <= this._instance.state.doc.lines) {
       const lineDesc = this._instance.state.doc.line(line)
       this._instance.dispatch({
-        selection: { anchor: lineDesc.from, head: lineDesc.to },
+        selection: { anchor: lineDesc.from },
         effects: EditorView.scrollIntoView(lineDesc.from, { y: 'center' }),
       })
     }
@@ -803,33 +878,14 @@ export default class MarkdownEditor extends EventEmitter {
   }
 
   /**
-   * Runs a command on the underlying CodeMirror instance
+   * Runs a named command on the underlying CodeMirror instance. The names are
+   * the editor half of the typed shortcut names: the Insert and Format menus
+   * send them, and so does the launcher through those menu items.
    *
-   * @param   {String}  cmd  The command to run
+   * @param   {EditorCommandName}  cmd  The command to run
    */
-  runCommand (cmd: string): void {
-    switch (cmd) {
-      case 'markdownComment':
-        applyComment(this._instance)
-        break
-      case 'markdownLink':
-        insertLink(this._instance)
-        break
-      case 'markdownImage':
-        insertImage(this._instance)
-        break
-      case 'insertFootnote':
-        addNewFootnote(this._instance)
-        break
-      case 'markdownMakeTaskList':
-        applyTaskList(this._instance)
-        break
-      case 'createReferenceLabel':
-        createReferenceLabel(this._instance)
-        break
-      default:
-        console.warn('Unimplemented command:', cmd)
-    }
+  runCommand (cmd: EditorCommandName): void {
+    EDITOR_COMMANDS[cmd](this._instance)
   }
 
   /**
@@ -1091,10 +1147,16 @@ export default class MarkdownEditor extends EventEmitter {
     ) => MarkdownDocument | ASTNode
     const documentAst = ast(this._instance.state.sliceDoc(), syntaxTree(this._instance.state))
     const locale: string = window.config.get('appLang')
+    const project = this._instance.state.field(projectInfoField, false)
     return {
       words: this.wordCount ?? 0,
       chars: this.charCount ?? 0,
       cursor: { line: line.number, ch: mainOffset - line.from + 1 }, // Chars are still zero-based
+      offset: mainOffset,
+      readabilityMode: this.readabilityMode,
+      diagnostics: countDiagnostics(this._instance.state),
+      languageTool: this.languageToolStatus,
+      project: project === null || project === undefined ? undefined : project,
       selections: this._instance.state.selection.ranges
       // Remove cursor-only positions
         .filter((sel) => !sel.empty)
@@ -1173,6 +1235,38 @@ export default class MarkdownEditor extends EventEmitter {
   set readabilityMode (shouldBeReadability: boolean) {
     this.config.readabilityMode = shouldBeReadability
     this._instance.dispatch({ effects: configUpdateEffect.of(this.config) })
+  }
+
+  /** What the LanguageTool linter is doing right now, from its state field. */
+  get languageToolStatus (): LanguageToolStatus {
+    const state = this._instance.state
+    const ltState = state.field(languageToolState, false)
+    if (!state.field(configField).lintLanguageTool || ltState === undefined) {
+      return { state: 'off' }
+    }
+    if (ltState.running) {
+      return { state: 'running' }
+    }
+    if (ltState.lastError !== undefined) {
+      return { state: 'error', message: ltState.lastError }
+    }
+    return {
+      state: 'idle',
+      language: ltState.overrideLanguage === 'auto' ? ltState.lastDetectedLanguage : ltState.overrideLanguage,
+      overrideLanguage: ltState.overrideLanguage,
+      supportedLanguages: ltState.supportedLanguages
+    }
+  }
+
+  /**
+   * Overrides the language LanguageTool checks the document in ('auto' to
+   * detect it) and lints again.
+   *
+   * @param   {string}  language  A language code, or 'auto'
+   */
+  setLanguageToolLanguage (language: string): void {
+    this._instance.dispatch({ effects: updateLTState.of({ overrideLanguage: language }) })
+    forceLinting(this._instance)
   }
 
   /**

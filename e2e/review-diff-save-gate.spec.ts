@@ -344,7 +344,7 @@ async function boot (fixture: RunningFixture, timeoutMs: number): Promise<void> 
       editor: { inputMode: 'vim' },
       // Every review control lives in the sidebar's annotations panel (M9),
       // so the fixture opens the sidebar on that tab.
-      window: { sidebarVisible: true, currentSidebarTab: 'annotations' }
+      window: { sidebarVisible: true }
     }
   })
   fixture.fixtureRoot = created.root

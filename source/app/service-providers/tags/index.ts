@@ -128,7 +128,7 @@ export default class TagProvider extends ProviderContract {
    */
   async shutdown (): Promise<void> {
     this._logger.verbose('Tag provider shutting down ...')
-    this.container.shutdown()
+    await this.container.shutdown()
   }
 
   /**

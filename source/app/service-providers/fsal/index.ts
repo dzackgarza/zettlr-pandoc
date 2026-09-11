@@ -142,7 +142,7 @@ export default class FSAL extends ProviderContract {
     await this.syncRoots()
 
     this._config.on('update', (which: string) => {
-      if (which === 'openPaths' || which === 'files.dotFiles.showInFilemanager' || which === 'files.dotFiles.showInSidebar') {
+      if (which === 'openPaths' || which === 'files.dotFiles.showInFilemanager') {
         this.syncRoots()
           .then(() => {
             // Always reindex all files after config updates later on.
@@ -924,7 +924,7 @@ export default class FSAL extends ProviderContract {
     }
 
     const { files } = this._config.get()
-    const ignoreDotFiles = !files.dotFiles.showInFilemanager && !files.dotFiles.showInSidebar
+    const ignoreDotFiles = !files.dotFiles.showInFilemanager
 
     try {
       const children = await fs.readdir(directoryPath, { withFileTypes: true })
@@ -958,7 +958,7 @@ export default class FSAL extends ProviderContract {
    */
   public async readDirectory (absPath: string): Promise<AnyDescriptor[]> {
     const { files } = this._config.get()
-    const ignoreDotFiles = !files.dotFiles.showInFilemanager && !files.dotFiles.showInSidebar
+    const ignoreDotFiles = !files.dotFiles.showInFilemanager
     return await readDirectoryFromDisk(
       absPath,
       ignoreDotFiles,

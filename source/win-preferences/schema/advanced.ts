@@ -135,11 +135,6 @@ export function getAdvancedFields (config: ConfigOptions): PreferencesFieldset[]
                 model: 'files.builtin.showInFilemanager'
               },
               {
-                type: 'checkbox',
-                disabled: true,
-                model: 'files.builtin.showInSidebar'
-              },
-              {
                 type: 'form-text',
                 display: 'plain',
                 contents: 'Zettlr'
@@ -155,10 +150,6 @@ export function getAdvancedFields (config: ConfigOptions): PreferencesFieldset[]
               {
                 type: 'checkbox',
                 model: 'files.images.showInFilemanager'
-              },
-              {
-                type: 'checkbox',
-                model: 'files.images.showInSidebar'
               },
               {
                 type: 'select',
@@ -181,10 +172,6 @@ export function getAdvancedFields (config: ConfigOptions): PreferencesFieldset[]
                 model: 'files.pdf.showInFilemanager'
               },
               {
-                type: 'checkbox',
-                model: 'files.pdf.showInSidebar'
-              },
-              {
                 type: 'select',
                 options: {
                   'zettlr': 'Zettlr',
@@ -205,10 +192,6 @@ export function getAdvancedFields (config: ConfigOptions): PreferencesFieldset[]
                 model: 'files.msoffice.showInFilemanager'
               },
               {
-                type: 'checkbox',
-                model: 'files.msoffice.showInSidebar'
-              },
-              {
                 type: 'form-text',
                 display: 'plain',
                 contents: trans('System default')
@@ -224,10 +207,6 @@ export function getAdvancedFields (config: ConfigOptions): PreferencesFieldset[]
               {
                 type: 'checkbox',
                 model: 'files.openOffice.showInFilemanager'
-              },
-              {
-                type: 'checkbox',
-                model: 'files.openOffice.showInSidebar'
               },
               {
                 type: 'form-text',
@@ -247,10 +226,6 @@ export function getAdvancedFields (config: ConfigOptions): PreferencesFieldset[]
                 model: 'files.dataFiles.showInFilemanager'
               },
               {
-                type: 'checkbox',
-                model: 'files.dataFiles.showInSidebar'
-              },
-              {
                 type: 'form-text',
                 display: 'plain',
                 contents: trans('System default')
@@ -265,10 +240,6 @@ export function getAdvancedFields (config: ConfigOptions): PreferencesFieldset[]
               {
                 type: 'checkbox',
                 model: 'files.dotFiles.showInFilemanager'
-              },
-              {
-                type: 'checkbox',
-                model: 'files.dotFiles.showInSidebar'
               },
               {
                 type: 'form-text',

@@ -24,14 +24,7 @@
 </template>
 
 <script setup lang="ts">
-
-interface ExplodedShortcut {
-  altKey: boolean
-  shiftKey: boolean
-  modKey: boolean,
-  ctrlKey: boolean,
-  key: string
-}
+import type { ExplodedShortcut } from '@common/util/shortcuts'
 
 // Proper key symbols based on platform
 const modKeySymbol = process.platform === 'darwin' ? '⌘' : '⊞'

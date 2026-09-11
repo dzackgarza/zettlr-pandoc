@@ -1,33 +1,5 @@
 <template>
-  <div
-    :class="{
-      'document-tablist-wrapper': true,
-      'scrollers-active': showScrollers
-    }"
-  >
-    <!-- Left scroller arrow -->
-    <div
-      v-if="showScrollers"
-      class="scroller left"
-      @click="scrollLeft()"
-    >
-      <cds-icon
-        shape="angle"
-        direction="left"
-      />
-    </div>
-    <!-- Right scroller arrow -->
-    <div
-      v-if="showScrollers"
-      class="scroller right"
-      @click="scrollRight()"
-    >
-      <cds-icon
-        shape="angle"
-        direction="right"
-      />
-    </div>
-
+  <div class="document-tablist-wrapper">
     <div
       ref="container"
       role="tablist"
@@ -116,7 +88,7 @@
 
 import { displayTabbarContext } from './tabs-context'
 import tippy from 'tippy.js'
-import { nextTick, computed, ref, watch, onMounted, onBeforeUnmount, onUpdated } from 'vue'
+import { nextTick, computed, ref, watch, onMounted } from 'vue'
 import { useDocumentTreeStore } from 'source/pinia'
 import type { LeafNodeJSON, OpenDocument } from '@dts/common/documents'
 import { pathBasename, pathDirname } from '@common/util/renderer-path-polyfill'
@@ -135,13 +107,6 @@ const props = defineProps<{
   leafId: string
   windowId: string
 }>()
-
-const showScrollers = ref<boolean>(false)
-const resizeObserver = new ResizeObserver(() => {
-  requestAnimationFrame(() => {
-    maybeActivateScrollers()
-  })
-})
 
 // Is there a document being dragged over this tabbar?
 const documentTabDragOver = ref<boolean>(false)
@@ -267,38 +232,7 @@ onMounted(() => {
       })
     }
   })
-
-  if (container.value !== null) {
-    resizeObserver.observe(container.value)
-  }
 })
-
-onBeforeUnmount(() => {
-  if (container.value !== null) {
-    resizeObserver.unobserve(container.value)
-  }
-})
-
-onUpdated(maybeActivateScrollers)
-
-function maybeActivateScrollers (): void {
-  if (container.value === null) {
-    return
-  }
-
-  // First, get the total available width for the container
-  const containerWidth = container.value.getBoundingClientRect().width
-  // Second, get the total width of all tabs
-  const tabWidth = Array.from(
-    container.value.querySelectorAll<HTMLDivElement>('[role="tab"]')
-  )
-    .map(elem => elem.getBoundingClientRect().width)
-    .reduce((width, acc) => width + acc, 0)
-
-  // If the total width of all tabs is larger, activate the scrollers, else
-  // disable them
-  showScrollers.value = tabWidth > containerWidth
-}
 
 function scrollActiveFileIntoView (): void {
   if (container.value === null) {
@@ -327,53 +261,6 @@ function scrollActiveFileIntoView (): void {
   }
 }
 
-function scrollLeft (): void {
-  if (container.value === null || container.value.scrollLeft === 0) {
-    return // Can't scroll further
-  }
-
-  // Get the first partially hidden file from the right. For that we first
-  // need a list of all tabs. NOTE that we have to convert the nodelist to
-  // an array manually. Also, we know every element will be a DIV.
-  const tabs = [...container.value.querySelectorAll('[role="tab"]')] as HTMLDivElement[]
-
-  // Test this from the back
-  tabs.reverse()
-
-  // Find the first tab whose left border is hidden behind the left edge of
-  // the container
-  for (const tab of tabs) {
-    const left = tab.offsetLeft
-    const leftEdge = container.value.scrollLeft
-
-    if (left < leftEdge) {
-      tab.scrollIntoView({ inline: 'start' })
-      break
-    }
-  }
-}
-
-function scrollRight (): void {
-  if (container.value === null) {
-    return
-  }
-
-  // Similar to scrollLeft, this does the same for the right hand side
-  const tabs = [...container.value.querySelectorAll('[role="tab"]')] as HTMLDivElement[]
-
-  // Find the first tab whose right border is hidden behind the right edge
-  // of the container
-  const rightEdge = container.value.scrollLeft + container.value.getBoundingClientRect().width
-  for (const tab of tabs) {
-    const right = tab.offsetLeft + tab.getBoundingClientRect().width
-
-    // NOTE: This is the width of the arrow buttons; TODO: Make dynamic!
-    if (right > rightEdge + 40) {
-      tab.scrollIntoView({ inline: 'end' })
-      break
-    }
-  }
-}
 
 function hasDuplicate (doc: OpenDocument): boolean {
   const focalTabname = getDocumentTitle(doc).toLowerCase()
@@ -724,7 +611,7 @@ function handleDragEnd (event: DragEvent): void {
   const newOrder: string[] = []
   for (let i = 0; i < container.value.children.length; i++) {
     if (container.value.children[i].getAttribute('role') !== 'tab') {
-      // There may be other children in the element, such as the scrollers
+      // The strip also holds the drop zone while a tab is dragged over it.
       continue
     }
     const fpath = container.value.children[i].getAttribute('data-path')
@@ -945,20 +832,6 @@ function handleExternalDragleave (_event: DragEvent): void {
 body div.document-tablist-wrapper {
   position: relative;
 
-  &.scrollers-active { padding: 0 20px; }
-
-  div.scroller {
-    position: absolute;
-    line-height: 30px;
-    width: 20px;
-    text-align: center;
-    background-color: inherit;
-
-    &:hover { background-color: rgb(200, 200, 210); }
-
-    &.left { left: 0px; }
-    &.right { right: 0px; }
-  }
 }
 
 body div.tab-container {
@@ -1083,16 +956,6 @@ body div.tab-container {
 
 body.darwin {
   div.document-tablist-wrapper {
-    div.scroller {
-      background-color: rgb(230, 230, 230);
-      color: rgb(83, 83, 83);
-      box-shadow: inset 0px 5px 4px -5px rgba(0, 0, 0, .4);
-
-      &:hover { background-color: rgb(214, 214, 214); }
-
-      &.left { border-right: 1px solid rgb(200, 200, 200); }
-      &.right { border-left: 1px solid rgb(200, 200, 200); }
-    }
   }
 
   div.tab-container {
@@ -1159,15 +1022,6 @@ body.darwin {
 
   &.dark {
     div.document-tablist-wrapper {
-      div.scroller {
-        background-color: rgb(22, 22, 22);
-        color: rgb(233, 233, 233);
-
-        &:hover { background-color: rgb(32, 34, 36); }
-
-        &.left { border-color: rgb(32, 34, 36); }
-        &.right { border-color: rgb(32, 34, 36); }
-      }
     }
 
     div.tab-container {
@@ -1194,10 +1048,6 @@ body.darwin {
 
 body.win32 {
   div.document-tablist-wrapper {
-    div.scroller {
-      &.left { border-right: 1px solid rgb(180, 180, 180); }
-      &.right { border-left: 1px solid rgb(180, 180, 180); }
-    }
   }
 
   div.tab-container {
@@ -1219,12 +1069,6 @@ body.win32 {
 
   &.dark {
     div.document-tablist-wrapper {
-      div.scroller {
-        &:hover { background-color: rgb(53, 53, 53); }
-
-        &.left { border-color: rgb(120, 120, 120); }
-        &.right { border-color: rgb(120, 120, 120) }
-      }
     }
 
     div.tab-container {
@@ -1245,14 +1089,6 @@ body.win32 {
 
 body.linux {
   div.document-tablist-wrapper {
-    div.scroller {
-      line-height: 29px;
-      background-color: rgb(235, 235, 235);
-      &:hover { background-color: rgb(200, 200, 200); }
-
-      &.left { border-right: 1px solid rgb(200, 200, 200); }
-      &.right { border-left: 1px solid rgb(200, 200, 200); }
-    }
   }
   div.tab-container {
 
@@ -1269,13 +1105,6 @@ body.linux {
 
   &.dark {
     div.document-tablist-wrapper {
-      div.scroller {
-        background-color: #5a5a5a;
-        &:hover { background-color: rgb(53, 53, 53); }
-
-        &.left { border-color: 1px solid rgb(120, 120, 120); }
-        &.right { border-color: 1px solid rgb(120, 120, 120); }
-      }
     }
 
     div.tab-container {

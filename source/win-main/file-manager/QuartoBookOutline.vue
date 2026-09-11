@@ -1,14 +1,11 @@
 <template>
   <section class="quarto-book-outline" aria-label="Book navigation">
-    <header>
-      <span>{{ bookLabel }}</span>
-      <span class="book-position">{{ currentPosition }}</span>
-    </header>
     <div class="book-controls">
       <button type="button" v-bind:disabled="previousPath === undefined" v-on:click.stop="openPath(previousPath)">
         <cds-icon shape="angle" direction="left"></cds-icon>
         {{ previousLabel }}
       </button>
+      <span class="book-position">{{ currentPosition }}</span>
       <button type="button" v-bind:disabled="nextPath === undefined" v-on:click.stop="openPath(nextPath)">
         {{ nextLabel }}
         <cds-icon shape="angle" direction="right"></cds-icon>
@@ -19,46 +16,24 @@
         <button
           v-if="item.kind === 'chapter'"
           type="button"
-          v-bind:class="{ chapter: true, active: item.path === activeItem }"
+          v-bind:class="{ 'chrome-row': true, chapter: true, active: item.path === activeItem, 'chrome-row-active': item.path === activeItem }"
           v-on:click.stop="openPath(item.path, 1)"
         >
-          <span class="chapter-number">{{ item.position }}</span>
-          <span>{{ item.title }}</span>
+          <span class="chrome-row-detail chapter-number">{{ item.position }}</span>
+          <span class="chrome-row-label">{{ item.title }}</span>
         </button>
-        <div v-if="item.kind === 'chapter' && item.path === activeItem" class="book-sections">
-          <button
-            v-for="section in sections[item.path]"
-            v-bind:key="`${item.path}:${section.line}`"
-            type="button"
-            v-bind:style="{ 'padding-left': `${Math.max(0, section.level - 2) * 12 + 34}px` }"
-            v-on:click.stop="openPath(item.path, section.line)"
-          >
-            {{ section.title }}
-          </button>
-        </div>
         <section v-else-if="item.kind === 'part'" class="book-part">
-          <h4>{{ item.title }}</h4>
-          <div v-for="chapter in item.chapters" v-bind:key="chapter.path" class="book-chapter">
-            <button
-              type="button"
-              v-bind:class="{ chapter: true, active: chapter.path === activeItem }"
-              v-on:click.stop="openPath(chapter.path, 1)"
-            >
-              <span class="chapter-number">{{ chapter.position }}</span>
-              <span>{{ chapter.title }}</span>
-            </button>
-            <div v-if="chapter.path === activeItem" class="book-sections">
-              <button
-                v-for="section in sections[chapter.path]"
-                v-bind:key="`${chapter.path}:${section.line}`"
-                type="button"
-                v-bind:style="{ 'padding-left': `${Math.max(0, section.level - 2) * 12 + 34}px` }"
-                v-on:click.stop="openPath(chapter.path, section.line)"
-              >
-                {{ section.title }}
-              </button>
-            </div>
-          </div>
+          <h4 class="chrome-group-label">{{ item.title }}</h4>
+          <button
+            v-for="chapter in item.chapters"
+            v-bind:key="chapter.path"
+            type="button"
+            v-bind:class="{ 'chrome-row': true, chapter: true, active: chapter.path === activeItem, 'chrome-row-active': chapter.path === activeItem }"
+            v-on:click.stop="openPath(chapter.path, 1)"
+          >
+            <span class="chrome-row-detail chapter-number">{{ chapter.position }}</span>
+            <span class="chrome-row-label">{{ chapter.title }}</span>
+          </button>
         </section>
       </template>
     </nav>
@@ -66,18 +41,30 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+/**
+ * @ignore
+ * BEGIN HEADER
+ *
+ * Contains:        QuartoBookOutline
+ * CVM-Role:        View
+ * Maintainer:      D. Zack Garza
+ * License:         GNU GPL v3
+ *
+ * Description:     The Book module's body: a Quarto book's parts and
+ *                  chapters in manifest order, with previous and next. The
+ *                  active document's headings are the Outline module's; no
+ *                  heading row appears here.
+ *
+ * END HEADER
+ */
+
+import { computed } from 'vue'
 import { trans } from '@common/i18n-renderer'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
 import type { ProjectNavigationItem } from '@dts/common/fsal'
 import { useWorkspaceStore } from 'source/pinia'
-import {
-  buildQuartoBookOutline,
-  extractQuartoBookSections,
-  type QuartoBookSection
-} from './quarto-book-outline'
+import { buildQuartoBookOutline } from './quarto-book-outline'
 
-const ipcRenderer = window.ipc
 const workspaceStore = useWorkspaceStore()
 const props = defineProps<{
   rootPath: string
@@ -86,7 +73,6 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<(event: 'jump', target: { filePath: string, line: number }) => void>()
 
-const bookLabel = trans('Book')
 const previousLabel = trans('Previous')
 const nextLabel = trans('Next')
 
@@ -97,18 +83,6 @@ const outline = computed(() => buildQuartoBookOutline(props.rootPath, props.navi
   }
   return pathBasename(filePath)
 }))
-const sections = ref<Record<string, QuartoBookSection[]>>({})
-
-watch(() => outline.value.orderedPaths, async paths => {
-  const loaded = await Promise.all(paths.map(async filePath => {
-    const source: string = await ipcRenderer.invoke('application', {
-      command: 'get-file-contents',
-      payload: filePath
-    })
-    return [ filePath, extractQuartoBookSections(source) ] as const
-  }))
-  sections.value = Object.fromEntries(loaded)
-}, { immediate: true })
 
 const activeIndex = computed(() => props.activeItem === undefined
   ? -1
@@ -132,90 +106,62 @@ function openPath (filePath: string|undefined, line = 1): void {
 </script>
 
 <style lang="less">
-.quarto-book-outline {
+body .quarto-book-outline {
   height: 100%;
-  padding: 10px;
   overflow-y: auto;
+  font-size: var(--chrome-font-size);
 
-  header,
   .book-controls {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-  }
-
-  header {
-    margin-bottom: 6px;
-    font-weight: 600;
-  }
-
-  .book-position,
-  .chapter-number {
-    opacity: 0.65;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .book-controls {
-    margin-bottom: 8px;
+    padding: 4px var(--chrome-inset);
 
     button {
       display: flex;
       align-items: center;
       gap: 3px;
+      padding: 2px 6px;
+      border: 1px solid var(--chrome-border);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--chrome-text);
+      font: inherit;
+      font-size: var(--chrome-section-font-size);
+      cursor: pointer;
+
+      &:disabled {
+        color: var(--chrome-text-muted);
+        cursor: default;
+      }
     }
   }
 
+  .book-position {
+    color: var(--chrome-text-muted);
+    font-size: var(--chrome-section-font-size);
+    font-variant-numeric: tabular-nums;
+  }
+
   nav,
-  .book-part,
-  .book-chapter,
-  .book-sections {
+  .book-part {
     display: flex;
     flex-direction: column;
   }
 
-  .book-part h4 {
-    margin: 9px 0 3px;
-    font-size: 0.85em;
-    opacity: 0.75;
-  }
-
-  .chapter {
-    display: grid;
-    grid-template-columns: 2em 1fr;
-    gap: 4px;
+  button.chapter {
     width: 100%;
-    padding: 4px;
-    border: 0;
+    border: none;
     background: transparent;
+    color: inherit;
+    font: inherit;
     text-align: left;
 
-    &:hover {
-      background-color: rgb(220, 220, 220);
-    }
-
-    &.active {
-      color: var(--system-accent-color);
-      font-weight: 600;
+    .chapter-number {
+      flex: 0 0 2em;
+      font-variant-numeric: tabular-nums;
     }
   }
-
-  .book-sections button {
-    border: 0;
-    background: transparent;
-    padding-top: 3px;
-    padding-bottom: 3px;
-    text-align: left;
-    opacity: 0.8;
-
-    &:hover {
-      color: var(--system-accent-color);
-      text-decoration: underline;
-    }
-  }
-}
-
-body.dark .quarto-book-outline .chapter:hover {
-  background-color: rgb(68, 68, 68);
 }
 </style>

@@ -1,40 +1,40 @@
 <template>
   <section class="suggestion-inspector" ref="root">
     <div class="suggestion-inspector-header">
-      <span class="suggestion-inspector-eyebrow">{{ trans('Proposal') }}</span>
-      <span class="suggestion-outstanding">{{ outstandingLabel }}</span>
-    </div>
-
-    <div class="suggestion-inspector-mass-actions">
-      <button
-        type="button"
-        class="suggestion-accept-all"
-        v-bind:disabled="busy"
-        v-on:click="emit('accept-all')"
-      >{{ trans('Accept all') }}</button>
-      <button
-        type="button"
-        class="suggestion-clear"
-        v-bind:disabled="busy"
-        v-on:click="emit('clear')"
-      >{{ trans('Reject remaining') }}</button>
+      <span class="suggestion-inspector-title">{{ trans('Proposed changes') }}</span>
+      <span class="annotation-chip suggestion-outstanding">{{ outstandingLabel }}</span>
+      <span class="suggestion-inspector-spacer"></span>
+      <div class="suggestion-inspector-mass-actions">
+        <button
+          type="button"
+          class="annotation-button suggestion-accept-all"
+          v-bind:disabled="busy"
+          v-on:click="emit('accept-all')"
+        >{{ trans('Accept all') }}</button>
+        <button
+          type="button"
+          class="annotation-button suggestion-clear"
+          v-bind:disabled="busy"
+          v-on:click="emit('clear')"
+        >{{ trans('Reject remaining') }}</button>
+      </div>
     </div>
 
     <ol class="suggestion-chunk-list">
       <li
         v-for="card in cards"
         v-bind:key="card.suggestionId"
-        class="suggestion-chunk"
+        class="annotation-card suggestion-chunk"
         v-bind:class="{ 'suggestion-chunk-linked': focusedChunkIds.includes(card.suggestionId) }"
         v-bind:data-chunk-id="card.suggestionId"
       >
-        <div class="suggestion-chunk-header">
+        <div class="annotation-card-row suggestion-chunk-header">
           <button
             type="button"
-            class="suggestion-line-locator"
+            class="annotation-line-locator suggestion-line-locator"
             v-on:click="emit('jump-to-line', card.lineNumber)"
           >{{ card.lineLocator }}</button>
-          <span class="suggestion-chunk-description">{{ card.description }}</span>
+          <span class="suggestion-chunk-description annotation-muted">{{ card.description }}</span>
         </div>
 
         <p v-if="card.removedText !== ''" class="suggestion-removed">
@@ -57,16 +57,28 @@
           >
           <button
             type="button"
-            class="suggestion-decision accept"
+            class="annotation-button suggestion-decision accept"
             v-bind:disabled="busy"
             v-on:click="emit('decide', card.suggestionId, 'accept')"
-          >{{ trans('Accept') }}</button>
+          >
+            <cds-icon
+              shape="check"
+              role="presentation"
+            ></cds-icon>
+            {{ trans('Accept') }}
+          </button>
           <button
             type="button"
-            class="suggestion-decision reject"
+            class="annotation-button suggestion-decision reject"
             v-bind:disabled="busy"
             v-on:click="emit('decide', card.suggestionId, 'reject')"
-          >{{ trans('Reject') }}</button>
+          >
+            <cds-icon
+              shape="times"
+              role="presentation"
+            ></cds-icon>
+            {{ trans('Reject') }}
+          </button>
         </div>
       </li>
     </ol>
@@ -82,7 +94,7 @@
       >
       <button
         type="button"
-        class="suggestion-review-comment-submit"
+        class="annotation-button suggestion-review-comment-submit"
         v-bind:disabled="busy || reviewComment.trim().length === 0"
         v-on:click="submitReviewComment"
       >{{ trans('Comment') }}</button>
@@ -220,47 +232,31 @@ body {
   .suggestion-inspector {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 8px;
-    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    gap: var(--annotation-gap);
+    padding: var(--annotation-gap) 0;
+    border-top: 1px solid var(--annotation-border);
+    color: var(--annotation-text);
+    font-size: var(--annotation-font-size);
   }
 
   .suggestion-inspector-header {
     display: flex;
-    align-items: baseline;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 6px;
 
-    .suggestion-inspector-eyebrow {
-      flex-grow: 1;
-      font-size: 11px;
-      font-weight: bold;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      opacity: 0.7;
+    .suggestion-inspector-title {
+      font-weight: 600;
     }
 
-    .suggestion-outstanding {
-      font-size: 11px;
-      opacity: 0.8;
+    .suggestion-inspector-spacer {
+      flex: 1 1 auto;
     }
   }
 
   .suggestion-inspector-mass-actions {
     display: flex;
     gap: 4px;
-
-    button {
-      font-size: 11px;
-      padding: 4px 8px;
-      border-radius: 4px;
-      border: 1px solid rgba(0, 0, 0, 0.12);
-      background: transparent;
-      color: inherit;
-      cursor: pointer;
-
-      &:hover:not(:disabled) { background-color: rgba(0, 0, 0, 0.05); }
-      &:disabled { opacity: 0.5; cursor: default; }
-    }
   }
 
   .suggestion-chunk-list {
@@ -269,36 +265,31 @@ body {
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--annotation-gap);
   }
 
-  // The review palette. The editor's own copy of it lives in its CodeMirror
+  // The diff palette. The editor's own copy of it lives in its CodeMirror
   // theme, which scopes to .cm-editor and never reaches this panel — so the
-  // two are stated separately. They cannot drift on the decision colors,
-  // because Accept and Reject exist in exactly one surface: this one.
+  // two are stated separately.
   @review-delete-bg: rgba(207, 34, 46, 0.30);
   @review-insert-bg: rgba(26, 178, 74, 0.45);
-  @review-accept-bg: #1f7a45;
-  @review-reject-bg: #b33a3a;
 
   .suggestion-chunk {
-    border-radius: 6px;
-    background-color: rgba(0, 0, 0, 0.04);
-    padding: 6px 8px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    outline: 2px solid transparent;
-    outline-offset: 2px;
-    transition: outline-color 0.2s ease;
+    gap: 6px;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
 
-    p { margin: 0; font-size: 12px; }
+    p {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
 
-    // S7: "Show proposal" landed here — the same accent the editor uses to
+    // S7: "Show diff" landed here — the same accent the editor uses to
     // link a marker to its card (S4), so the connection reads consistently.
     &.suggestion-chunk-linked {
-      outline-color: var(--system-accent-color, #4c8dca);
-      background-color: rgba(76, 141, 202, 0.12);
+      border-color: var(--annotation-accent);
+      background-color: var(--annotation-active-surface);
     }
 
     del {
@@ -313,35 +304,19 @@ body {
   }
 
   .suggestion-chunk-header {
-    display: flex;
-    gap: 6px;
     align-items: baseline;
 
     .suggestion-chunk-description {
-      font-size: 11px;
-      opacity: 0.75;
+      min-width: 0;
       font-style: italic;
     }
-  }
-
-  .suggestion-line-locator {
-    flex-shrink: 0;
-    border: none;
-    background: transparent;
-    padding: 0;
-    font: inherit;
-    font-size: 11px;
-    color: inherit;
-    cursor: pointer;
-    text-decoration: underline dotted;
   }
 
   // The review-level comment is a different scope from a chunk note, so it
   // reads below a rule rather than as one more field in the chunk list.
   .suggestion-review-comment {
-    border-top: 1px solid rgba(0, 0, 0, 0.08);
-    padding-top: 6px;
-    margin-top: 2px;
+    border-top: 1px solid var(--annotation-border);
+    padding-top: var(--annotation-gap);
   }
 
   .suggestion-chunk-actions,
@@ -355,55 +330,31 @@ body {
       min-width: 0;
       box-sizing: border-box;
       font: inherit;
-      font-size: 12px;
+      font-size: var(--annotation-small-font-size);
       padding: 4px 6px;
-      border-radius: 4px;
-      border: 1px solid rgba(0, 0, 0, 0.15);
+      border-radius: 6px;
+      border: 1px solid var(--annotation-border);
       background: transparent;
-      color: inherit;
+      color: var(--annotation-text);
+
+      &::placeholder {
+        color: var(--annotation-text-muted);
+      }
 
       &:disabled { opacity: 0.5; }
     }
 
-    button {
+    .annotation-button {
       flex-shrink: 0;
-      font-size: 11px;
-      padding: 4px 8px;
-      border-radius: 4px;
-      border: 1px solid transparent;
-      cursor: pointer;
-
-      &:disabled { opacity: 0.5; cursor: default; }
     }
 
     .suggestion-decision.accept {
-      background-color: @review-accept-bg;
-      color: white;
+      color: var(--annotation-resolved);
     }
 
     .suggestion-decision.reject {
-      background-color: @review-reject-bg;
-      color: white;
+      color: var(--annotation-warning);
     }
-
-    .suggestion-review-comment-submit {
-      border-color: rgba(0, 0, 0, 0.12);
-      background: transparent;
-      color: inherit;
-    }
-  }
-
-  &.dark {
-    .suggestion-inspector { border-top-color: rgba(255, 255, 255, 0.15); }
-    .suggestion-chunk { background-color: rgba(255, 255, 255, 0.07); }
-    .suggestion-inspector-mass-actions button {
-      border-color: rgba(255, 255, 255, 0.18);
-      &:hover:not(:disabled) { background-color: rgba(255, 255, 255, 0.08); }
-    }
-    .suggestion-chunk-actions input,
-    .suggestion-review-comment input { border-color: rgba(255, 255, 255, 0.2); }
-    .suggestion-review-comment { border-top-color: rgba(255, 255, 255, 0.12); }
-    .suggestion-review-comment-submit { border-color: rgba(255, 255, 255, 0.18); }
   }
 }
 </style>

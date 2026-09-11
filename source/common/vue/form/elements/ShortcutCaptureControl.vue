@@ -68,14 +68,7 @@ import { keyName, base } from 'w3c-keyname'
 import ShortcutDisplay from '../../ShortcutDisplay.vue'
 import ButtonControl from './ButtonControl.vue'
 import ZtrAdmonition from '../../ZtrAdmonition.vue'
-
-interface ExplodedShortcut {
-  altKey: boolean
-  shiftKey: boolean
-  modKey: boolean,
-  ctrlKey: boolean,
-  key: string
-}
+import { explodeShortcut, type ExplodedShortcut } from '@common/util/shortcuts'
 
 const model = defineModel<string>({ required: true })
 
@@ -181,21 +174,6 @@ function handleKeydown (event: KeyboardEvent): void {
     model.value = implodeShortcut(newShortcut.value)
     console.log('Finished shortcut:', implodeShortcut(newShortcut.value))
     stopRecording(event)
-  }
-}
-
-function explodeShortcut (shortcut: string): ExplodedShortcut {
-  const keys = shortcut.toLowerCase().split(/-/)
-  const altKey = keys.includes('alt') || keys.includes('option')
-  const shiftKey = keys.includes('shift')
-  const modKey = keys.includes('mod') || process.platform === 'darwin' && keys.includes('cmd') || process.platform !== 'darwin' && keys.includes('mod')
-  const ctrlKey = keys.includes('ctrl')
-  return {
-    altKey,
-    shiftKey,
-    modKey,
-    ctrlKey,
-    key: keys[keys.length - 1]
   }
 }
 

@@ -10,7 +10,7 @@
  * Description:     Type contracts shared between main-window components.
  *                  These previously lived inside the SFC modules that
  *                  motivated them (App.vue, MainEditor.vue,
- *                  ReferenceSearchOverlay.vue), but plain tsc — which powers
+ *                  the launcher's ReferenceSearchView.vue), but plain tsc — which powers
  *                  type-aware linting — cannot resolve types exported from
  *                  .vue modules (it reads the raw SFC text, template
  *                  included, as TypeScript), while vue-tsc virtualizes SFCs
@@ -78,6 +78,8 @@ export interface EditorCommands {
    *  the replacement range is whatever the owner has selected in the last
    *  focused editor pane for that same document when this toggles. */
   beginAnnotationReattach: boolean
+  /** The status bar's LanguageTool language choice; data carries the language code. */
+  setLanguageToolLanguage: boolean
   data: EditorCommandData
 }
 

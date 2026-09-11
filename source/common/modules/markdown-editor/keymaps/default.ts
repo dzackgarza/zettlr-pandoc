@@ -274,13 +274,13 @@ export function mainEditorKeybindings (customShortcutMap: CustomEditorShortcut[]
     { key: sc('autocomplete-invoke'), run: startCompletion },
     { key: sc('autocomplete-accept'), run: acceptCompletion },
 
-    { key: 'Mod-b', run: applyBold },
-    { key: 'Mod-i', run: applyItalic },
-    { key: 'Mod-t', run: applyTaskList },
+    { key: sc('md-bold'), run: applyBold },
+    { key: sc('md-italic'), run: applyItalic },
+    { key: sc('md-task-list'), run: applyTaskList },
     { key: sc('md-insert-link'), run: insertLink },
     { key: sc('md-highlight'), run: applyHighlight },
     { key: sc('md-insert-image'), run: insertImage },
-    { key: 'Mod-Shift-c', run: applyComment },
+    { key: sc('md-comment'), run: applyComment },
     { key: sc('md-insert-footnote'), run: addNewFootnote },
     // Format the whole document with flowmark (issue #26). Dispatches a pure
     // effect; the renderer runs the actual IPC format (electron stays out of

@@ -91,7 +91,7 @@ export default class TargetProvider extends ProviderContract {
 
   async shutdown (): Promise<void> {
     this._logger.verbose('Target provider shutting down ...')
-    this.container.shutdown()
+    await this.container.shutdown()
   }
 
   /**

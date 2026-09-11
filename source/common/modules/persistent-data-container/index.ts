@@ -15,6 +15,7 @@
  */
 
 import { promises as fs, constants as FSConstants } from 'fs'
+import writeFileAtomic from 'write-file-atomic'
 import { parse as parseYAML, stringify as stringifyYAML } from 'yaml'
 
 export default class PersistentDataContainer<T = any> {
@@ -122,7 +123,9 @@ export default class PersistentDataContainer<T = any> {
       clearTimeout(this._timeout)
     }
 
-    this._timeout = setTimeout(() => { this.flushToDisk() }, this._delay)
+    this._timeout = setTimeout(() => {
+      this.flushToDisk().catch(err => { console.error(`[PersistentDataContainer] Could not write ${this._filePath}`, err) })
+    }, this._delay)
   }
 
   /**
@@ -162,9 +165,13 @@ export default class PersistentDataContainer<T = any> {
   }
 
   /**
-   * Flushes the content to disk if it has been modified in the meantime
+   * Flushes the content to disk if it has been modified in the meantime.
+   * The write goes through a temporary file and a rename, so a process that
+   * dies mid-write leaves the previous contents rather than an empty file:
+   * an empty store reads as "never initialized", which for the configuration
+   * means the next launch is a first start with every setting lost.
    */
-  private flushToDisk (): void {
+  private async flushToDisk (): Promise<void> {
     if (this._data === undefined) {
       return // No need to flush the data
     }
@@ -174,9 +181,7 @@ export default class PersistentDataContainer<T = any> {
       this._timeout = undefined
     }
 
-    // TODO: Proper logging
-    fs.writeFile(this._filePath, this.stringify(), { encoding: 'utf-8' })
-      .catch(err => { console.error(err) })
+    await writeFileAtomic(this._filePath, this.stringify(), { encoding: 'utf-8' })
   }
 
   /**
@@ -194,13 +199,13 @@ export default class PersistentDataContainer<T = any> {
   }
 
   /**
-   * This shuts down the container. Can be used to speed up the shutdown of the
-   * node process since this will clear the timeout and immediately write the
-   * data to disk.
+   * Shuts the container down: a write still waiting out its delay happens
+   * now, and the caller can wait for it. The process is on its way out, so
+   * an unawaited write here is a write that may never land.
    */
-  public shutdown (): void {
+  public async shutdown (): Promise<void> {
     if (this._timeout !== undefined) {
-      this.flushToDisk() // One last flush to disk to prevent data loss
+      await this.flushToDisk()
     }
   }
 }

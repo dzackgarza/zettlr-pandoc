@@ -423,7 +423,7 @@ describe('a review decision waits for the document authority', function () {
         // Every review control lives in the sidebar's annotations panel (M9),
         // so the fixture opens the sidebar on that tab: the surface under
         // test has to be mounted before a review reaches it.
-        window: { sidebarVisible: true, currentSidebarTab: 'annotations' }
+        window: { sidebarVisible: true }
       }
     })
     fixtureRoot = fixture.root

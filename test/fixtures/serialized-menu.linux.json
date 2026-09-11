@@ -1,0 +1,746 @@
+[
+  {
+    "type": "submenu",
+    "id": "file-menu",
+    "label": "File",
+    "enabled": true,
+    "submenu": [
+      {
+        "type": "submenu",
+        "label": "New file…",
+        "enabled": true,
+        "submenu": [
+          {
+            "type": "normal",
+            "id": "menu.new_file",
+            "label": "Markdown",
+            "enabled": true,
+            "accelerator": "Ctrl+N"
+          },
+          {
+            "type": "normal",
+            "id": "menu.new_tex_file",
+            "label": "TeX",
+            "enabled": true
+          },
+          {
+            "type": "normal",
+            "id": "menu.new_yaml_file",
+            "label": "YAML",
+            "enabled": true
+          },
+          {
+            "type": "normal",
+            "id": "menu.new_json_file",
+            "label": "JSON",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "type": "normal",
+        "id": "menu.new_dir",
+        "label": "New directory…",
+        "enabled": true
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.open",
+        "label": "Open file…",
+        "enabled": true,
+        "accelerator": "Ctrl+O"
+      },
+      {
+        "type": "normal",
+        "id": "menu.open_workspace",
+        "label": "Open workspace…",
+        "enabled": true,
+        "accelerator": "Ctrl+Shift+O"
+      },
+      {
+        "type": "submenu",
+        "id": "menu.recent_docs",
+        "label": "Recent files",
+        "enabled": true,
+        "submenu": [
+          {
+            "type": "normal",
+            "id": "menu.clear_recent_docs",
+            "label": "Clear",
+            "enabled": false
+          }
+        ]
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.save",
+        "label": "Save",
+        "enabled": true,
+        "accelerator": "Ctrl+S"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.previous_file",
+        "label": "Previous file",
+        "enabled": true,
+        "accelerator": "Ctrl+["
+      },
+      {
+        "type": "normal",
+        "id": "menu.next_file",
+        "label": "Next file",
+        "enabled": true,
+        "accelerator": "Ctrl+]"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.import_files",
+        "label": "Import files…",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.export",
+        "label": "Export…",
+        "enabled": true,
+        "accelerator": "Ctrl+E"
+      },
+      {
+        "type": "normal",
+        "id": "menu.print",
+        "label": "Print…",
+        "enabled": true
+      },
+      {
+        "type": "submenu",
+        "id": "menu.preferences",
+        "label": "Preferences…",
+        "enabled": true,
+        "submenu": [
+          {
+            "type": "normal",
+            "id": "preferences-item",
+            "label": "Preferences…",
+            "enabled": true,
+            "accelerator": "Ctrl+,"
+          },
+          {
+            "type": "normal",
+            "id": "menu.assets_manager",
+            "label": "Assets Manager",
+            "enabled": true,
+            "accelerator": "Ctrl+Alt+,"
+          },
+          {
+            "type": "normal",
+            "id": "menu.tags",
+            "label": "Tags Manager",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.import_lang_file",
+        "label": "Import translation…",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.import_dict_file",
+        "label": "Import dictionary…",
+        "enabled": true
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.rename_file",
+        "label": "Rename file",
+        "enabled": true,
+        "accelerator": "Ctrl+R"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.delete_file",
+        "label": "Delete file",
+        "enabled": true
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu-quit",
+        "label": "Quit",
+        "enabled": true,
+        "accelerator": "Ctrl+Q"
+      }
+    ]
+  },
+  {
+    "type": "submenu",
+    "id": "edit-menu",
+    "label": "Edit",
+    "enabled": true,
+    "submenu": [
+      {
+        "type": "normal",
+        "id": "menu.undo",
+        "label": "Undo",
+        "enabled": true,
+        "accelerator": "Ctrl+Z"
+      },
+      {
+        "type": "normal",
+        "id": "menu.redo",
+        "label": "Redo",
+        "enabled": true,
+        "accelerator": "Ctrl+Shift+Z"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.cut",
+        "label": "Cut",
+        "enabled": true,
+        "accelerator": "Ctrl+X"
+      },
+      {
+        "type": "normal",
+        "id": "menu.copy",
+        "label": "Copy",
+        "enabled": true,
+        "accelerator": "Ctrl+C"
+      },
+      {
+        "type": "normal",
+        "id": "menu.copy_html",
+        "label": "Copy as HTML",
+        "enabled": true,
+        "accelerator": "Ctrl+Alt+C"
+      },
+      {
+        "type": "normal",
+        "id": "menu.paste",
+        "label": "Paste",
+        "enabled": true,
+        "accelerator": "Ctrl+V"
+      },
+      {
+        "type": "normal",
+        "id": "menu.paste_plain",
+        "label": "Paste without style",
+        "enabled": true,
+        "accelerator": "Ctrl+Shift+V"
+      },
+      {
+        "type": "normal",
+        "id": "menu.select_all",
+        "label": "Select all",
+        "enabled": true,
+        "accelerator": "Ctrl+A"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.find_file",
+        "label": "Find in current file",
+        "enabled": true,
+        "accelerator": "Ctrl+F"
+      },
+      {
+        "type": "normal",
+        "id": "menu.find_dir",
+        "label": "Search all files",
+        "enabled": true,
+        "accelerator": "Ctrl+Shift+F"
+      },
+      {
+        "type": "normal",
+        "id": "menu.filter_files",
+        "label": "Filter files",
+        "enabled": true,
+        "accelerator": "CmdOrCtrl+Shift+T"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.generate_id",
+        "label": "Generate new ID",
+        "enabled": true,
+        "accelerator": "Ctrl+L"
+      },
+      {
+        "type": "normal",
+        "id": "menu.copy_id",
+        "label": "Copy ID",
+        "enabled": true,
+        "accelerator": "Ctrl+Shift+L"
+      }
+    ]
+  },
+  {
+    "type": "submenu",
+    "id": "insert-menu",
+    "label": "Insert",
+    "enabled": true,
+    "submenu": [
+      {
+        "type": "normal",
+        "id": "menu.insert_link",
+        "label": "Link",
+        "enabled": true,
+        "accelerator": "CmdOrCtrl+K"
+      },
+      {
+        "type": "normal",
+        "id": "menu.insert_image",
+        "label": "Image",
+        "enabled": true,
+        "accelerator": "CmdOrCtrl+Alt+I"
+      },
+      {
+        "type": "submenu",
+        "id": "menu.insert_table",
+        "label": "Table",
+        "enabled": true,
+        "submenu": [
+          {
+            "type": "normal",
+            "id": "menu.insert_table_2x2",
+            "label": "2 rows × 2 columns",
+            "enabled": true
+          },
+          {
+            "type": "normal",
+            "id": "menu.insert_table_2x3",
+            "label": "2 rows × 3 columns",
+            "enabled": true
+          },
+          {
+            "type": "normal",
+            "id": "menu.insert_table_2x4",
+            "label": "2 rows × 4 columns",
+            "enabled": true
+          },
+          {
+            "type": "normal",
+            "id": "menu.insert_table_3x2",
+            "label": "3 rows × 2 columns",
+            "enabled": true
+          },
+          {
+            "type": "normal",
+            "id": "menu.insert_table_3x3",
+            "label": "3 rows × 3 columns",
+            "enabled": true
+          },
+          {
+            "type": "normal",
+            "id": "menu.insert_table_3x4",
+            "label": "3 rows × 4 columns",
+            "enabled": true
+          },
+          {
+            "type": "normal",
+            "id": "menu.insert_table_4x2",
+            "label": "4 rows × 2 columns",
+            "enabled": true
+          },
+          {
+            "type": "normal",
+            "id": "menu.insert_table_4x3",
+            "label": "4 rows × 3 columns",
+            "enabled": true
+          },
+          {
+            "type": "normal",
+            "id": "menu.insert_table_4x4",
+            "label": "4 rows × 4 columns",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "type": "normal",
+        "id": "menu.insert_footnote",
+        "label": "Footnote",
+        "enabled": true,
+        "accelerator": "CmdOrCtrl+Alt+F"
+      },
+      {
+        "type": "normal",
+        "id": "menu.insert_comment",
+        "label": "Comment",
+        "enabled": true,
+        "accelerator": "CmdOrCtrl+Shift+C"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.insert_pandoc_div",
+        "label": "Pandoc div",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.insert_pandoc_span",
+        "label": "Pandoc span",
+        "enabled": true
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.insert_task_list",
+        "label": "Task list",
+        "enabled": true,
+        "accelerator": "CmdOrCtrl+T"
+      }
+    ]
+  },
+  {
+    "type": "submenu",
+    "id": "format-menu",
+    "label": "Format",
+    "enabled": true,
+    "submenu": [
+      {
+        "type": "normal",
+        "id": "menu.format_heading_1",
+        "label": "Heading 1",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.format_heading_2",
+        "label": "Heading 2",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.format_heading_3",
+        "label": "Heading 3",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.format_heading_4",
+        "label": "Heading 4",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.format_heading_5",
+        "label": "Heading 5",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.format_heading_6",
+        "label": "Heading 6",
+        "enabled": true
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.format_bold",
+        "label": "Bold",
+        "enabled": true,
+        "accelerator": "CmdOrCtrl+B"
+      },
+      {
+        "type": "normal",
+        "id": "menu.format_italic",
+        "label": "Italic",
+        "enabled": true,
+        "accelerator": "CmdOrCtrl+I"
+      },
+      {
+        "type": "normal",
+        "id": "menu.format_code",
+        "label": "Code",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.format_strikethrough",
+        "label": "Strikethrough",
+        "enabled": true
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.format_bullet_list",
+        "label": "Bullet list",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.format_ordered_list",
+        "label": "Numbered list",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.format_blockquote",
+        "label": "Block quote",
+        "enabled": true
+      }
+    ]
+  },
+  {
+    "type": "submenu",
+    "id": "view-menu",
+    "label": "View",
+    "enabled": true,
+    "submenu": [
+      {
+        "type": "normal",
+        "id": "menu.command_launcher",
+        "label": "Command launcher…",
+        "enabled": true,
+        "accelerator": "Ctrl+P"
+      },
+      {
+        "type": "normal",
+        "id": "menu.statistics",
+        "label": "Writing statistics…",
+        "enabled": true
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "checkbox",
+        "id": "menu.toggle_theme",
+        "label": "Dark mode",
+        "enabled": true,
+        "accelerator": "Ctrl+Alt+L",
+        "checked": true
+      },
+      {
+        "type": "checkbox",
+        "id": "menu.toggle_file_meta",
+        "label": "Additional information",
+        "enabled": true,
+        "accelerator": "Ctrl+Alt+S",
+        "checked": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.toggle_distraction_free",
+        "label": "Distraction-free mode",
+        "enabled": true,
+        "accelerator": "Ctrl+J"
+      },
+      {
+        "type": "normal",
+        "id": "menu.toggle_typewriter_mode",
+        "label": "Typewriter mode",
+        "enabled": true,
+        "accelerator": "Ctrl+Alt+T"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.toggle_navigation_sidebar",
+        "label": "Toggle Sidebar",
+        "enabled": true,
+        "accelerator": "Ctrl+!"
+      },
+      {
+        "type": "normal",
+        "id": "menu.toggle_annotation_panel",
+        "label": "Toggle Annotation Panel",
+        "enabled": true,
+        "accelerator": "Ctrl+Shift+0"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.reset_zoom",
+        "label": "Reset zoom",
+        "enabled": true,
+        "accelerator": "Ctrl+0"
+      },
+      {
+        "type": "normal",
+        "id": "menu.zoom_in",
+        "label": "Zoom in",
+        "enabled": true,
+        "accelerator": "Ctrl+Plus"
+      },
+      {
+        "type": "normal",
+        "id": "menu.zoom_out",
+        "label": "Zoom out",
+        "enabled": true,
+        "accelerator": "Ctrl+-"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.toggle_fullscreen",
+        "label": "Toggle fullscreen",
+        "enabled": true,
+        "accelerator": "F11"
+      }
+    ]
+  },
+  {
+    "type": "submenu",
+    "id": "window-menu",
+    "label": "Window",
+    "enabled": true,
+    "submenu": [
+      {
+        "type": "normal",
+        "id": "menu.win_minimize",
+        "label": "Minimize",
+        "enabled": true,
+        "accelerator": "Ctrl+M"
+      },
+      {
+        "type": "normal",
+        "id": "menu.win_close",
+        "label": "Close",
+        "enabled": true,
+        "accelerator": "Ctrl+Shift+W"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.tab_close",
+        "label": "Close Tab",
+        "enabled": true,
+        "accelerator": "Ctrl+W"
+      },
+      {
+        "type": "normal",
+        "id": "menu.tab_previous",
+        "label": "Previous Tab",
+        "enabled": true,
+        "accelerator": "Ctrl+Shift+TAB"
+      },
+      {
+        "type": "normal",
+        "id": "menu.tab_next",
+        "label": "Next Tab",
+        "enabled": true,
+        "accelerator": "Ctrl+TAB"
+      },
+      {
+        "type": "normal",
+        "id": "menu.new_window",
+        "label": "New window",
+        "enabled": true,
+        "accelerator": "CmdOrCtrl+Shift+N"
+      }
+    ]
+  },
+  {
+    "type": "submenu",
+    "id": "help-menu",
+    "label": "Help",
+    "enabled": true,
+    "submenu": [
+      {
+        "type": "normal",
+        "id": "menu.about",
+        "label": "About Zettlr",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.update",
+        "label": "Check for updates",
+        "enabled": true
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.donate",
+        "label": "Support Zettlr ↗︎",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.learn_more",
+        "label": "Visit website ↗︎",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.docs",
+        "label": "Open user manual ↗︎",
+        "enabled": true,
+        "accelerator": "F1"
+      },
+      {
+        "type": "normal",
+        "id": "menu.pandoc_quick_reference",
+        "label": "Pandoc quick reference…",
+        "enabled": true
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.open_tutorial",
+        "label": "Open tutorial",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.clear_fsal_cache",
+        "label": "Clear FSAL cache…",
+        "enabled": true
+      }
+    ]
+  }
+]

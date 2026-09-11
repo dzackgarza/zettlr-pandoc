@@ -1,14 +1,25 @@
 <template>
   <div class="annotation-thread">
     <div
-      v-for="message in messages"
+      v-for="message in rows"
       v-bind:key="message.messageId"
       class="annotation-message"
       v-bind:class="message.author"
     >
       <div class="annotation-message-meta">
-        <span class="annotation-message-author">{{ authorLabel(message.author) }}</span>
-        <span class="annotation-message-time">{{ formatTimestamp(message.createdAt) }}</span>
+        <AvatarRoot
+          class="annotation-avatar"
+          v-bind:class="message.glyph"
+        >
+          <AvatarFallback class="annotation-avatar-fallback">
+            <cds-icon
+              v-bind:shape="message.glyph === 'sparkle' ? 'wand' : 'user'"
+              role="presentation"
+            ></cds-icon>
+          </AvatarFallback>
+        </AvatarRoot>
+        <span class="annotation-message-author">{{ message.authorLabel }}</span>
+        <span class="annotation-message-time annotation-muted">{{ message.relativeTime }}</span>
       </div>
       <p class="annotation-message-text">{{ message.text }}</p>
     </div>
@@ -28,29 +39,28 @@
  * Description:     The multi-turn conversation (S6): owner-first,
  *                  alternating. The owner's first message IS the
  *                  instruction — there is no separate title or instruction
- *                  field rendered here, only the thread.
+ *                  field rendered here, only the thread. Each message is an
+ *                  author row (avatar glyph, name, relative time against
+ *                  the panel's clock) over its body.
  *
  * END HEADER
  */
 
+import { computed } from 'vue'
+import { AvatarFallback, AvatarRoot } from 'reka-ui'
+import type { DateTime } from 'luxon'
 import { trans } from '@common/i18n-renderer'
 import type { AnnotationMessage } from '@dts/common/annotation-domain'
+import { threadMessageView } from './annotation-presentation'
 
-defineProps<{
+const props = defineProps<{
   messages: AnnotationMessage[]
+  now: DateTime
 }>()
 
-function authorLabel (author: AnnotationMessage['author']): string {
-  return author === 'owner' ? trans('You') : trans('AI')
-}
+const labels = { owner: trans('You'), agent: trans('AI'), justNow: trans('Just now') }
 
-function formatTimestamp (iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) {
-    return ''
-  }
-  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-}
+const rows = computed(() => props.messages.map(message => threadMessageView(message, props.now, labels)))
 </script>
 
 <style lang="less">
@@ -58,35 +68,57 @@ body {
   .annotation-thread {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    margin: 8px 0;
+    gap: var(--annotation-gap);
+    color: var(--annotation-text);
+    font-size: var(--annotation-font-size);
   }
 
   .annotation-message {
-    padding: 6px 8px;
-    border-radius: 6px;
-    background-color: rgba(0, 0, 0, 0.04);
-
-    &.agent { background-color: rgba(76, 141, 202, 0.08); }
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 
     .annotation-message-meta {
       display: flex;
-      justify-content: space-between;
-      font-size: 10px;
-      opacity: 0.65;
-      margin-bottom: 2px;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .annotation-message-author {
+      font-weight: 600;
     }
 
     .annotation-message-text {
-      margin: 0;
-      font-size: 12px;
+      margin: 0 0 0 26px;
       white-space: pre-wrap;
     }
   }
 
-  &.dark .annotation-message {
-    background-color: rgba(255, 255, 255, 0.06);
-    &.agent { background-color: rgba(76, 141, 202, 0.15); }
+  .annotation-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid var(--annotation-border);
+    color: var(--annotation-text-muted);
+
+    &.sparkle {
+      border-color: var(--annotation-agent);
+      color: var(--annotation-agent);
+    }
+
+    .annotation-avatar-fallback {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    cds-icon {
+      width: 12px;
+      height: 12px;
+    }
   }
 }
 </style>

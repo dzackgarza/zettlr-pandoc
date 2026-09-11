@@ -27,6 +27,67 @@ export interface DefaultShortcut {
 }
 
 /**
+ * A CodeMirror-style shortcut taken apart into its modifiers and its key, the
+ * shape ShortcutDisplay.vue renders.
+ */
+export interface ExplodedShortcut {
+  altKey: boolean
+  shiftKey: boolean
+  modKey: boolean
+  ctrlKey: boolean
+  key: string
+}
+
+/**
+ * Takes an Electron accelerator (`CmdOrCtrl+Shift+K`) apart into the
+ * modifiers and key ShortcutDisplay.vue renders. `CmdOrCtrl` is the key it
+ * resolves to on this platform: Cmd on macOS, Ctrl elsewhere.
+ *
+ * @param   {string}            accelerator  The accelerator
+ *
+ * @return  {ExplodedShortcut}               The exploded shortcut
+ */
+export function explodeAccelerator (accelerator: string): ExplodedShortcut {
+  const parts = accelerator.split('+')
+  const key = parts[parts.length - 1].toLowerCase()
+  const modifiers = parts.slice(0, -1).map(part => part.toLowerCase())
+  const commandOrControl = modifiers.includes('cmdorctrl') || modifiers.includes('commandorcontrol')
+  const command = modifiers.includes('cmd') || modifiers.includes('command') || modifiers.includes('super') || modifiers.includes('meta')
+  const control = modifiers.includes('ctrl') || modifiers.includes('control')
+  const isMac = process.platform === 'darwin'
+  return {
+    altKey: modifiers.includes('alt') || modifiers.includes('option'),
+    shiftKey: modifiers.includes('shift'),
+    modKey: command || (isMac && commandOrControl),
+    ctrlKey: control || (!isMac && commandOrControl),
+    key
+  }
+}
+
+/**
+ * Takes a CodeMirror-style shortcut (`Mod-Shift-t`) apart into its modifiers
+ * and its key.
+ *
+ * @param   {string}            shortcut  The shortcut
+ *
+ * @return  {ExplodedShortcut}            The exploded shortcut
+ */
+export function explodeShortcut (shortcut: string): ExplodedShortcut {
+  const keys = shortcut.toLowerCase().split(/-/)
+  const altKey = keys.includes('alt') || keys.includes('option')
+  const shiftKey = keys.includes('shift')
+  const modKey = keys.includes('mod') || process.platform === 'darwin' && keys.includes('cmd') || process.platform !== 'darwin' && keys.includes('mod')
+  const ctrlKey = keys.includes('ctrl')
+  return {
+    altKey,
+    shiftKey,
+    modKey,
+    ctrlKey,
+    key: keys[keys.length - 1]
+  }
+}
+
+/**
  * Returns the assigned default keyboard shortcut for the provided action. NOTE
  * that these default keybindings can be custom per platform. The function
  * checks the platform for that.

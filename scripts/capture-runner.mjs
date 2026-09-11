@@ -60,12 +60,6 @@ const captures = {
     driver: "test/reference-navigation-probe.mjs",
     esbuildArgs: ["--define:process.platform='\"linux\"'"],
   },
-  "navigation-controls": {
-    build: "test/visual-build.cjs",
-    entry: "test/reference-navigation-controls-entry.ts",
-    bundle: "reference-navigation-controls-bundle.js",
-    driver: "test/reference-navigation-controls-capture.mjs",
-  },
   "rename-preview": {
     build: "test/visual-build.cjs",
     entry: "test/reference-rename-preview-entry.ts",
@@ -87,6 +81,7 @@ const captures = {
     entry: "test/editor-annotations-visual-entry.ts",
     bundle: "editor-annotations-visual-bundle.js",
     driver: "test/editor-annotations-visual-capture.mjs",
+    loader: ".svg=dataurl",
   },
   "annotations-panel": {
     build: "test/visual-build.cjs",
