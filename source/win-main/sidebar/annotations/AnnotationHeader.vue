@@ -168,7 +168,7 @@ onBeforeMount(() => {
   stopListening = ipcRenderer.on('menu-provider', (_event, payload: unknown) => {
     const message = menuProviderMessageSchema.parse(payload)
     if (message.command === 'application-menu') {
-      accelerator.value = allMenuLeafRows(message.payload).rows.find(row => row.id === TOGGLE_ITEM_ID)?.accelerator
+      accelerator.value = allMenuLeafRows(message.payload).find(row => row.id === TOGGLE_ITEM_ID)?.accelerator
     }
   })
   ipcRenderer.send('menu-provider', { command: 'get-application-menu' })

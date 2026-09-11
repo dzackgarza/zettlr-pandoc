@@ -95,10 +95,21 @@ export type SearchProviderIPCAPI = IPCMessage<SearchProviderIPCContract>
  * while a search runs. The provider is the single owner of this type; the
  * Search view imports it to type its listener.
  */
+/**
+ * Why a search could not run, or could not finish the files it queued. The
+ * view reads these out where it would otherwise read out a result count, so
+ * a search that read fewer files than it queued never counts as a search
+ * that found nothing.
+ */
+export type SearchFailure =
+  | { kind: 'invalid-query', message: string }
+  | { kind: 'unreadable-file', documentPath: string, message: string }
+
 export type SearchProviderBroadcast =
   | { type: 'search-end', generation: number }
   | { type: 'search-result', generation: number, result: FileSearchResult, progress: number }
   | { type: 'search-progress', generation: number, progress: number }
+  | { type: 'search-failed', generation: number, failure: SearchFailure }
 
 export class SearchProvider implements ProviderContract {
   /** How many files this search will read, for the progress it reports. */
@@ -178,8 +189,9 @@ export class SearchProvider implements ProviderContract {
   }
 
   /**
-   * Starts a search. An empty or unparsable query searches nothing and says
-   * so by ending immediately, which is what an empty field means.
+   * Starts a search. An empty query searches nothing and says so by ending
+   * immediately, which is what an empty field means; an expression the
+   * engine refused is reported as the failure it is.
    *
    * @param   {SearchQuery}  query  The query the widget holds
    *
@@ -188,9 +200,18 @@ export class SearchProvider implements ProviderContract {
   private async startSearch (query: SearchQuery): Promise<number> {
     this.cancelSearch()
     const compiled = compileQuery(query)
-    if (compiled.status !== 'ready') {
+    if (compiled.status === 'empty') {
       this.searchGeneration++
       broadcastIPCMessage('search-provider', { type: 'search-end', generation: this.searchGeneration } satisfies SearchProviderBroadcast)
+      return 0
+    }
+    if (compiled.status === 'invalid-regex') {
+      this.searchGeneration++
+      broadcastIPCMessage('search-provider', {
+        type: 'search-failed',
+        generation: this.searchGeneration,
+        failure: { kind: 'invalid-query', message: compiled.message }
+      } satisfies SearchProviderBroadcast)
       return 0
     }
 
@@ -253,7 +274,20 @@ export class SearchProvider implements ProviderContract {
         }
       })
       .catch(err => {
+        if (this.currentSearch?.generation !== search.generation) {
+          return // A newer search started; this belongs to the old query.
+        }
+        // A file that was queued and then could not be read means the result
+        // list no longer describes the workspace. Stop, and say which file:
+        // carrying on would report a count over the files that happened to
+        // be readable.
         this._logger.error(`[Search Provider] Could not search file ${nextFile}: ${String(err)}`, err)
+        this.cancelSearch()
+        broadcastIPCMessage('search-provider', {
+          type: 'search-failed',
+          generation: search.generation,
+          failure: { kind: 'unreadable-file', documentPath: nextFile, message: String(err) }
+        } satisfies SearchProviderBroadcast)
       })
       .finally(() => {
         this.searchNextFile()

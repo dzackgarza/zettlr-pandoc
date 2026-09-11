@@ -247,12 +247,12 @@ const dynamicGroupRows = {
 function viewRows (view: LauncherView, query: string): LauncherRow[] {
   switch (view.kind) {
     case 'root': {
-      const groups = menuGroupRows(menu.value, []).rows
-      const leaves = query === '' ? [] : allMenuLeafRows(menu.value).rows
+      const groups = menuGroupRows(menu.value, [])
+      const leaves = query === '' ? [] : allMenuLeafRows(menu.value)
       return [ ...groups, ...DYNAMIC_GROUPS, ...leaves ]
     }
     case 'menu-group':
-      return menuGroupRows(menu.value, view.path).rows
+      return menuGroupRows(menu.value, view.path)
     case 'dynamic-group':
       return dynamicGroupRows[view.id].value
     case 'references':

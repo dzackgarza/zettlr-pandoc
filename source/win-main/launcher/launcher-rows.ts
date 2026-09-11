@@ -89,11 +89,6 @@ export type ExportRequest =
   | { kind: 'profile', profile: ValidPandocProfile }
   | { kind: 'command', displayName: string, command: string }
 
-/** What the parser had to leave out of the rows. */
-export interface MenuRowsReport {
-  /** Normal, checkbox or radio items with no id: nothing could execute them. */
-  droppedLeavesWithoutId: number
-}
 
 /**
  * A group's key in a path: its id, or a label-derived key when the template
@@ -140,8 +135,7 @@ export function resolveGroup (menu: readonly SerializedMenuItem[], path: GroupPa
 function itemsToRows (
   items: readonly SerializedMenuItem[],
   path: GroupPath,
-  breadcrumb: readonly string[],
-  report: MenuRowsReport
+  breadcrumb: readonly string[]
 ): Array<MenuLeafRow | MenuGroupRow> {
   const rows: Array<MenuLeafRow | MenuGroupRow> = []
   for (const item of items) {
@@ -159,8 +153,12 @@ function itemsToRows (
       continue
     }
     if (item.id === undefined) {
-      report.droppedLeavesWithoutId += 1
-      continue
+      throw new Error(
+        `The application menu carries an executable item the launcher cannot address: ${item.label} ` +
+        `under ${[ ...path ].join(' › ')}. click-menu-item needs the id, so the item would be listed and ` +
+        'do nothing, or be left out of the list without saying so. Give it an id where the menu is built ' +
+        '(source/app/service-providers/menu/menu.linux.ts and its platform siblings).'
+      )
     }
     rows.push({
       kind: 'menu-leaf',
@@ -182,16 +180,20 @@ function itemsToRows (
 export function menuGroupRows (
   menu: readonly SerializedMenuItem[],
   path: GroupPath
-): { rows: Array<MenuLeafRow | MenuGroupRow>, report: MenuRowsReport } {
-  const report: MenuRowsReport = { droppedLeavesWithoutId: 0 }
+): Array<MenuLeafRow | MenuGroupRow> {
   if (path.length === 0) {
-    return { rows: itemsToRows(menu, [], [], report), report }
+    return itemsToRows(menu, [], [])
   }
   const group = resolveGroup(menu, path)
   if (group === undefined) {
-    return { rows: [], report }
+    throw new Error(
+      `The launcher is showing a menu group that the menu does not carry: ${[ ...path ].join(' › ')}. ` +
+      `The menu's top level is ${menu.map(item => item.type === 'submenu' ? groupKey(item) : item.type).join(', ')}. ` +
+      'A view holds a path taken from a row of this same menu, so this is a defect in the navigation state ' +
+      '(source/win-main/launcher/launcher-state.ts), not a group with nothing in it.'
+    )
   }
-  return { rows: itemsToRows(group.submenu, path, breadcrumbOf(menu, path), report), report }
+  return itemsToRows(group.submenu, path, breadcrumbOf(menu, path))
 }
 
 /** The labels along a group path, root first. */
@@ -210,23 +212,27 @@ export function breadcrumbOf (menu: readonly SerializedMenuItem[], path: GroupPa
 }
 
 /** Every leaf of the menu with its breadcrumb, in menu order. */
-export function allMenuLeafRows (menu: readonly SerializedMenuItem[]): { rows: MenuLeafRow[], report: MenuRowsReport } {
-  const report: MenuRowsReport = { droppedLeavesWithoutId: 0 }
+export function allMenuLeafRows (menu: readonly SerializedMenuItem[]): MenuLeafRow[] {
   const rows: MenuLeafRow[] = []
   const walk = (items: readonly SerializedMenuItem[], path: GroupPath, breadcrumb: readonly string[]): void => {
-    for (const row of itemsToRows(items, path, breadcrumb, report)) {
+    for (const row of itemsToRows(items, path, breadcrumb)) {
       if (row.kind === 'menu-leaf') {
         rows.push(row)
         continue
       }
       const group = resolveGroup(menu, row.path)
-      if (group !== undefined) {
-        walk(group.submenu, row.path, [ ...breadcrumb, group.label ])
+      if (group === undefined) {
+        throw new Error(
+          `A submenu row of this menu does not resolve back to its submenu: ${[ ...row.path ].join(' › ')}. ` +
+          'The row was built from the menu being walked, so the group key (groupKey in this file) does not ' +
+          'address it uniquely; fix the key rather than leaving that submenu out of the flattened list.'
+        )
       }
+      walk(group.submenu, row.path, [ ...breadcrumb, group.label ])
     }
   }
   walk(menu, [], [])
-  return { rows, report }
+  return rows
 }
 
 /**

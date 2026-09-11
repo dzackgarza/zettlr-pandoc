@@ -81,8 +81,7 @@ describe('command launcher: serialised menu boundary', function () {
 describe('command launcher: rows', function () {
   it('lists a group as its groups and leaves in menu order, separators dropped', function () {
     const menu = loadMenu()
-    const { rows, report } = menuGroupRows(menu, [ 'file-menu' ])
-    assert.equal(report.droppedLeavesWithoutId, 0, 'every File leaf carries an id')
+    const rows = menuGroupRows(menu, [ 'file-menu' ])
     assert.equal(rows[0].kind, 'menu-group')
     assert.deepEqual(rows[0].kind === 'menu-group' ? rows[0].path : [], [ 'file-menu', 'label:New file…' ], 'the id-less New file… submenu is addressed by its label')
     const open = rows.find(row => row.kind === 'menu-leaf' && row.id === 'menu.open')
@@ -107,9 +106,8 @@ describe('command launcher: rows', function () {
   it('flattens every executable leaf once, with its breadcrumb', function () {
     const menu = loadMenu()
     const raw: unknown = JSON.parse(readFileSync(FIXTURE, 'utf-8'))
-    const { rows, report } = allMenuLeafRows(menu)
+    const rows = allMenuLeafRows(menu)
     assert.equal(rows.length, countRawLeaves(raw), 'one row per executable item of the raw payload')
-    assert.equal(report.droppedLeavesWithoutId, 0)
     const darkMode = rows.find(row => row.id === 'menu.toggle_theme')
     assert.ok(darkMode !== undefined)
     assert.deepEqual(darkMode.breadcrumb, [ 'View' ])
@@ -121,7 +119,7 @@ describe('command launcher: rows', function () {
 
   it('ranks leaves by fzf score over the label and keeps menu order on the empty query', function () {
     const menu = loadMenu()
-    const { rows } = allMenuLeafRows(menu)
+    const rows = allMenuLeafRows(menu)
     assert.deepEqual(rankRows(rows, '').map(rowKey), rows.map(rowKey))
     const zoom = rankRows(rows, 'zoom').map(row => row.label)
     assert.deepEqual(new Set(zoom), new Set([ 'Reset zoom', 'Zoom in', 'Zoom out' ]))

@@ -234,9 +234,10 @@ const citingLocations = computed<ReferenceOccurrence[]>(() => {
 
 // A new query re-ranks the rows, so the selection restarts at the top match.
 watch([ matches, citingLocations ], () => {
-  nextTick()
-    .then(() => { combobox.value?.highlightFirstItem() })
-    .catch(err => console.error('[ReferenceSearchView] Could not highlight the first row', err))
+  // No catch: the combobox is mounted with the rows, so a rejection here is
+  // a defect in this view rather than a condition to carry on from, and the
+  // window's recoverable-error boundary is where it belongs.
+  void nextTick().then(() => { combobox.value?.highlightFirstItem() })
 }, { immediate: true })
 
 /**

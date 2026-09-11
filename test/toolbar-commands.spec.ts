@@ -66,7 +66,7 @@ function submenuIds (items: readonly SerializedMenuItem[]): string[] {
 
 describe('the toolbar commands in the application menu', function () {
   const menu = serializedMenuSchema.parse(JSON.parse(readFileSync(FIXTURE, 'utf-8')))
-  const leafIds = new Set(allMenuLeafRows(menu).rows.map(row => row.id))
+  const leafIds = new Set(allMenuLeafRows(menu).map(row => row.id))
   const groupIds = new Set(submenuIds(menu))
 
   for (const [ command, menuItemId ] of Object.entries(TOOLBAR_COMMAND_MENU_ITEMS)) {

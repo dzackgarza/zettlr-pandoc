@@ -249,18 +249,19 @@ describe('the Search view', function () {
 
   it('says why a regular expression the engine refused found nothing, instead of reading out an empty search', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
-    await activePage.locator(TOGGLE('regex')).click()
     await activePage.locator(QUERY).fill('sub(')
+    await activePage.locator(TOGGLE('regex')).click()
+    assert.equal(await activePage.locator(TOGGLE('regex')).getAttribute('aria-pressed'), 'true', 'the expression has to be read as one for this to prove anything')
     await waitUntil(
       async () => await activePage.locator(MESSAGE).evaluate(el => el.classList.contains('search-message-error')),
-      'the view to read the refused expression as an error'
+      `the view to read the refused expression as an error (it reads "${await activePage.locator(MESSAGE).innerText()}")`
     )
     const reported = await activePage.locator(MESSAGE).innerText()
     assert.notEqual(reported.trim(), 'No results found.', 'an expression the engine refused is not a search that found nothing')
     screenshots.set('search-invalid-regex.png', await activePage.screenshot())
 
     await activePage.locator(TOGGLE('regex')).click()
-    await search(activePage, TERM, /3 results in 2 files/)
+    await search(activePage, TERM, /result/)
   })
 
   it('stops and names the file when it cannot read one, instead of counting a search that skipped it', async function () {

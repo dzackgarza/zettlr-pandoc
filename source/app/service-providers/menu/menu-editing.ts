@@ -28,10 +28,20 @@ import type { MenuCommands } from './menu-dependencies'
 /** Electron types the focused window as possibly undefined; at runtime the provider also passes null. */
 type FocusedWindow = BrowserWindow | BaseWindow | undefined | null
 
-/** Sends a window the typed shortcut name (and, for a table, its size). */
+/**
+ * Sends a window the typed shortcut name (and, for a table, its size).
+ *
+ * The window comes from the item's click, where Electron passes the window
+ * that held the focus. The item was picked, so one has to receive it.
+ */
 export function sendShortcut (window: FocusedWindow, name: ShortcutName, payload?: InsertTablePayload): void {
   if (window === undefined || window === null || !('webContents' in window)) {
-    return
+    throw new Error(
+      `The menu item for the ${name} shortcut has no window to send it to: Electron passed ${String(window)}. ` +
+      'A menu item acts on the focused window, and the menu provider resolves the sender of click-menu-item ' +
+      'when the OS reports no focused window (source/app/service-providers/menu/index.ts). ' +
+      'Fix that resolution; the item cannot be carried out with no window.'
+    )
   }
   if (payload === undefined) {
     window.webContents.send('shortcut', name)

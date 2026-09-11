@@ -357,6 +357,7 @@ import { compileQuery, expandReplacement } from 'source/app/service-providers/se
 import type {
   FileSearchResult,
   ReplaceTarget,
+  SearchFailure,
   SearchMatch,
   SearchProviderBroadcast,
   SearchProviderIPCAPI,
@@ -561,16 +562,31 @@ const stopListening = ipcRenderer.on('search-provider', (event, message: SearchP
     seenGeneration = message.generation
     windowStateStore.searchResults = []
   }
-  if (message.type === 'search-result') {
-    progress.value = message.progress
-    windowStateStore.addSearchResult(message.result)
-  } else if (message.type === 'search-progress') {
-    progress.value = message.progress
-  } else {
-    searching.value = false
-    progress.value = 1
+  switch (message.type) {
+    case 'search-result':
+      progress.value = message.progress
+      windowStateStore.addSearchResult(message.result)
+      return
+    case 'search-progress':
+      progress.value = message.progress
+      return
+    case 'search-failed':
+      searching.value = false
+      progress.value = 1
+      searchError.value = failureMessage(message.failure)
+      return
+    case 'search-end':
+      searching.value = false
+      progress.value = 1
   }
 })
+
+/** What the view reads out in place of a count it cannot honestly give. */
+function failureMessage (failure: SearchFailure): string {
+  return failure.kind === 'invalid-query'
+    ? trans('Not a regular expression: %s', failure.message)
+    : trans('%s could not be read; the search stopped.', pathBasename(failure.documentPath))
+}
 
 /** One file's replace target, or one match's. */
 function targetFor (file: FileSearchResult, matches: SearchMatch[]): ReplaceTarget {
