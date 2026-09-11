@@ -17,23 +17,26 @@ describe("Quarto project adapter", function () {
 
   it("projects the authored book structure into ordered navigation", function () {
     assert.deepStrictEqual(project.navigation, [
-      { kind: "chapter", path: "index.md" },
+      { kind: "chapter", path: path.join(ROOT, "index.md") },
       {
         kind: "part",
         title: "Foundations",
-        chapters: ["foundations/categories.md", "foundations/forms.md"],
+        chapters: [
+          path.join(ROOT, "foundations", "categories.md"),
+          path.join(ROOT, "foundations", "forms.md"),
+        ],
       },
       {
         kind: "part",
         title: "Computation",
-        chapters: ["computation/sage.md"],
+        chapters: [path.join(ROOT, "computation", "sage.md")],
       },
     ]);
     assert.deepStrictEqual(project.files, [
-      "index.md",
-      "foundations/categories.md",
-      "foundations/forms.md",
-      "computation/sage.md",
+      path.join(ROOT, "index.md"),
+      path.join(ROOT, "foundations", "categories.md"),
+      path.join(ROOT, "foundations", "forms.md"),
+      path.join(ROOT, "computation", "sage.md"),
     ]);
   });
 

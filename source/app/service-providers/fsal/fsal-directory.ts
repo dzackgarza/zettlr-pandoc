@@ -21,6 +21,7 @@ import safeAssign from '@common/util/safe-assign'
 import type { DirDescriptor, SortMethod, ProjectSettings, DirectorySettings } from '@dts/common/fsal'
 import { getFilesystemMetadata } from './util/get-fs-metadata'
 import { parseQuartoProject } from 'source/app/util/quarto-project'
+import { resolveRealPath } from 'source/app/util/real-path'
 
 /**
  * Determines what will be written to file (.ztr-directory)
@@ -29,7 +30,8 @@ const SETTINGS_TEMPLATE: DirectorySettings = {
   sorting: 'name-up',
   project: null, // Default: no project
   icon: null, // Default: no icon
-  color: null // Default: no color
+  color: null, // Default: no color
+  quartoManifest: null // Default: a manifest, if any, sits in the directory
 }
 
 /**
@@ -48,17 +50,44 @@ const PROJECT_TEMPLATE: ProjectSettings = {
   }
 }
 
+/**
+ * The manifest this directory is described by: the one it is bound to, or the
+ * one in the directory itself.
+ *
+ * @param   {DirDescriptor}  dir  The directory
+ *
+ * @return  {string}              The manifest's real path
+ */
+function quartoManifestPath (dir: DirDescriptor): string {
+  const manifest = dir.settings.quartoManifest
+  return resolveRealPath(manifest === null
+    ? path.join(dir.path, '_quarto.yml')
+    : path.resolve(dir.path, manifest))
+}
+
+/**
+ * Derives this directory's Quarto project from its manifest. The manifest is
+ * the only place a book's chapter order and bibliographies are written down,
+ * so the project is rebuilt from it on every load: a project stored in
+ * .ztr-directory never stands in for the manifest it came from.
+ *
+ * A project the user wrote themselves is not derived from anything, and is
+ * left alone.
+ *
+ * @param   {DirDescriptor}  dir  The directory
+ */
 async function parseQuartoManifest (dir: DirDescriptor): Promise<void> {
-  if (dir.settings.project !== null) {
+  if (dir.settings.project !== null && dir.settings.project.manifest.kind !== 'quarto') {
     return
   }
 
-  const manifestPath = path.join(dir.path, '_quarto.yml')
+  dir.settings.project = null
+  const manifestPath = quartoManifestPath(dir)
   if (!isFile(manifestPath)) {
     return
   }
 
-  const quarto = parseQuartoProject(dir.path, await fs.readFile(manifestPath, 'utf8'))
+  const quarto = parseQuartoProject(path.dirname(manifestPath), await fs.readFile(manifestPath, 'utf8'))
   dir.settings.project = {
     ...PROJECT_TEMPLATE,
     title: quarto.title,
@@ -73,6 +102,22 @@ async function parseQuartoManifest (dir: DirDescriptor): Promise<void> {
 }
 
 /**
+ * The settings the user gave this directory. A Quarto project is derived from
+ * its manifest rather than authored here, and the binding that names the
+ * manifest is what the user actually said, so only the binding is the
+ * directory's own.
+ *
+ * @param   {DirDescriptor}      dir  The directory
+ *
+ * @return  {DirectorySettings}       The settings to compare and to write
+ */
+function authoredSettings (dir: DirDescriptor): DirectorySettings {
+  return dir.settings.project?.manifest.kind === 'quarto'
+    ? { ...dir.settings, project: null }
+    : dir.settings
+}
+
+/**
  * This function checks if a directory has the default settings. This can be
  * useful to determine, if, e.g., the corresponding dotfile will be removed
  * after removing its project settings.
@@ -82,7 +127,7 @@ async function parseQuartoManifest (dir: DirDescriptor): Promise<void> {
  * @return  {boolean}             Returns true if the settings are the same as default.
  */
 export function hasDefaultSettings (dir: DirDescriptor): boolean {
-  return JSON.stringify(dir.settings) === JSON.stringify(SETTINGS_TEMPLATE)
+  return JSON.stringify(authoredSettings(dir)) === JSON.stringify(SETTINGS_TEMPLATE)
 }
 
 /**
@@ -92,17 +137,20 @@ export function hasDefaultSettings (dir: DirDescriptor): boolean {
  */
 async function persistSettings (dir: DirDescriptor): Promise<void> {
   const settingsFile = path.join(dir.path, '.ztr-directory')
-  if (hasDefaultSettings(dir) && isFile(settingsFile)) {
+  if (hasDefaultSettings(dir)) {
     // Only persist the settings if they are not default. If they are default,
     // remove a possible .ztr-directory-file
-    try {
-      await fs.unlink(settingsFile)
-    } catch (err: any) {
-      err.message = `Error removing default .ztr-directory: ${err.message as string}`
-      throw err
+    if (isFile(settingsFile)) {
+      try {
+        await fs.unlink(settingsFile)
+      } catch (err: any) {
+        err.message = `Error removing default .ztr-directory: ${err.message as string}`
+        throw err
+      }
     }
+    return
   }
-  await fs.writeFile(settingsFile, JSON.stringify(dir.settings))
+  await fs.writeFile(settingsFile, JSON.stringify(authoredSettings(dir)))
 }
 
 /**
@@ -282,4 +330,52 @@ export async function updateProjectProperties (dirObject: DirDescriptor, propert
 export async function removeProject (dirObject: DirDescriptor): Promise<void> {
   dirObject.settings.project = null
   await persistSettings(dirObject)
+}
+
+/**
+ * What became of a binding the user asked for.
+ */
+export type QuartoManifestBinding =
+  | { kind: 'bound', manifest: string }
+  | { kind: 'rejected', reason: 'not-a-file'|'outside-directory' }
+
+/**
+ * Binds a directory to the Quarto manifest that describes it, and derives the
+ * project from it. The manifest must be a file inside the directory: its
+ * chapters are resolved from where it sits, so a manifest outside the
+ * directory would describe a book whose chapters are outside the workspace.
+ *
+ * @param   {DirDescriptor}  dirObject     The directory descriptor
+ * @param   {string}         manifestPath  The manifest the user chose
+ *
+ * @return  {Promise<QuartoManifestBinding>}  The binding, or why there is none
+ */
+export async function bindQuartoManifest (dirObject: DirDescriptor, manifestPath: string): Promise<QuartoManifestBinding> {
+  const manifest = resolveRealPath(path.resolve(dirObject.path, manifestPath))
+  const relative = path.relative(resolveRealPath(dirObject.path), manifest)
+
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
+    return { kind: 'rejected', reason: 'outside-directory' }
+  }
+
+  if (!isFile(manifest)) {
+    return { kind: 'rejected', reason: 'not-a-file' }
+  }
+
+  dirObject.settings.quartoManifest = relative
+  await persistSettings(dirObject)
+  await parseQuartoManifest(dirObject)
+  return { kind: 'bound', manifest: relative }
+}
+
+/**
+ * Removes the binding, and with it the project that was derived from the
+ * manifest it named.
+ *
+ * @param   {DirDescriptor}  dirObject  The directory descriptor
+ */
+export async function unbindQuartoManifest (dirObject: DirDescriptor): Promise<void> {
+  dirObject.settings.quartoManifest = null
+  await persistSettings(dirObject)
+  await parseQuartoManifest(dirObject)
 }
