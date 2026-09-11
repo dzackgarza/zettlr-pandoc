@@ -450,7 +450,10 @@ export async function createWorkspaceFixture (
   const documentPath = path.join(workspaceDirectory, options.activeDocument)
 
   await mkdir(configDirectory)
-  await cp(options.workspaceSource, workspaceDirectory, { recursive: true })
+  // A fixture may assemble a book out of symlinks. Copying them verbatim keeps
+  // the relative links pointing inside the copy; resolving them would aim the
+  // workspace back at the repository's own fixture directory.
+  await cp(options.workspaceSource, workspaceDirectory, { recursive: true, verbatimSymlinks: true })
   await writeFixtureState(configDirectory, workspaceDirectory, documentPath, options.config)
 
   return { root, configDirectory, documentPath }
