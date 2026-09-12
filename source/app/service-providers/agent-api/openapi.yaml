@@ -344,6 +344,7 @@ components:
             - INVALID_PARAMS
             - PERSISTENCE_FAILED
             - INTERNAL_ERROR
+            - BASELINE_MISMATCH
         message:
           type: string
         documentId:
@@ -1255,6 +1256,121 @@ components:
           $ref: '#/components/schemas/AnnotationMessage'
         annotationGeneration:
           type: integer
+    ReviewSubmissionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - document
+        - clientRequestId
+      properties:
+        document:
+          type: object
+          additionalProperties: false
+          required:
+            - uri
+          properties:
+            uri:
+              type: string
+              pattern: ^(file://|/)
+              description: Absolute file path or file URI within a configured workspace.
+        baseline:
+          type: object
+          additionalProperties: false
+          required:
+            - sha256
+          properties:
+            sha256:
+              type: string
+              pattern: ^[0-9a-f]{64}$
+              description: SHA-256 of the expected working text. A stale baseline is refused
+                as BASELINE_MISMATCH.
+        clientRequestId:
+          type: string
+          minLength: 1
+          description: Client-chosen unique request key. Reuse after mutation is refused;
+            use a new key for rebased claims.
+        claims:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ProposalClaim"
+          description: "Ordered claim sequence applied against the ONE baseline,
+            sequentially and atomically: claim k applies with zero fuzz to the text
+            claim k-1 produced, all-or-nothing, and each claim becomes its own
+            packet. Send one entry per logical decision — that gives the reviewer
+            separately decidable packets."
+        patch:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          minLength: 1
+        focus:
+          type: boolean
+          default: true
+      oneOf:
+        - type: object
+          required:
+            - claims
+          properties:
+            claims:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/ProposalClaim"
+              description: "Ordered claim sequence applied against the ONE baseline,
+                sequentially and atomically: claim k applies with zero fuzz to the
+                text claim k-1 produced, all-or-nothing, and each claim becomes its
+                own packet. Send one entry per logical decision — that gives the
+                reviewer separately decidable packets."
+        - type: object
+          required:
+            - patch
+            - description
+          properties:
+            patch:
+              type: string
+              minLength: 1
+            description:
+              type: string
+              minLength: 1
+    ReviewSubmissionResponse:
+      type: object
+      required:
+        - packetId
+        - packetIds
+        - reviewId
+        - documentId
+        - documentRevision
+        - reviewGeneration
+        - unresolvedChunks
+        - state
+        - focused
+      properties:
+        packetId:
+          type: string
+          description: The newest packet of this submission (the retractable one) — the
+            last element of packetIds.
+        packetIds:
+          type: array
+          items:
+            type: string
+          description: One packet per claim, in claim order; a single-patch submission has
+            exactly one.
+        reviewId:
+          type: string
+        documentId:
+          type: string
+        documentRevision:
+          $ref: "#/components/schemas/DocumentRevision"
+        reviewGeneration:
+          type: integer
+        unresolvedChunks:
+          type: integer
+        state:
+          $ref: "#/components/schemas/ReviewState"
+        focused:
+          type: boolean
 paths:
   /openapi.yaml:
     get:
@@ -2064,3 +2180,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/review-submissions:
+    post:
+      operationId: submitReview
+      summary: Submit a review by file path
+      description: Resolve a workspace file, validate an optional baseline, submit
+        ordered claims or a patch atomically, and focus unless disabled. A retry
+        after mutation is refused; reread and rebase before a new submission.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewSubmissionRequest"
+      responses:
+        "200":
+          description: Proposal applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewSubmissionResponse"
+        "400":
+          description: "Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the
+            document drifted from the text you built against: re-read the working
+            content and rebuild the patch against it — a blind retry fails
+            identically."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "404":
+          description: The document does not exist or is outside the configured workspace
+            scope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
+          description: Review generation conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "412":
+          description: Stale revision (ETag mismatch)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "500":
+          description: The proposal could not be persisted or the server could not
+            complete the submission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"

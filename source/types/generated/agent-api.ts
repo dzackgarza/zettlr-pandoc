@@ -519,6 +519,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/review-submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a review by file path
+         * @description Resolve a workspace file, validate an optional baseline, submit ordered claims or a patch atomically, and focus unless disabled. A retry after mutation is refused; reread and rebase before a new submission.
+         */
+        post: operations["submitReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -615,7 +635,7 @@ export interface components {
         };
         AgentError: {
             /** @enum {string} */
-            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR";
+            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "BASELINE_MISMATCH";
             message: string;
             documentId?: string;
             expected?: components["schemas"]["DocumentRevision"];
@@ -945,6 +965,43 @@ export interface components {
             documentId: string;
             message: components["schemas"]["AnnotationMessage"];
             annotationGeneration: number;
+        };
+        ReviewSubmissionRequest: {
+            document: {
+                /** @description Absolute file path or file URI within a configured workspace. */
+                uri: string;
+            };
+            baseline?: {
+                /** @description SHA-256 of the expected working text. A stale baseline is refused as BASELINE_MISMATCH. */
+                sha256: string;
+            };
+            /** @description Client-chosen unique request key. Reuse after mutation is refused; use a new key for rebased claims. */
+            clientRequestId: string;
+            /** @description Ordered claim sequence applied against the ONE baseline, sequentially and atomically: claim k applies with zero fuzz to the text claim k-1 produced, all-or-nothing, and each claim becomes its own packet. Send one entry per logical decision — that gives the reviewer separately decidable packets. */
+            claims?: components["schemas"]["ProposalClaim"][];
+            patch?: string;
+            description?: string;
+            /** @default true */
+            focus: boolean;
+        } & ({
+            /** @description Ordered claim sequence applied against the ONE baseline, sequentially and atomically: claim k applies with zero fuzz to the text claim k-1 produced, all-or-nothing, and each claim becomes its own packet. Send one entry per logical decision — that gives the reviewer separately decidable packets. */
+            claims: components["schemas"]["ProposalClaim"][];
+        } | {
+            patch: string;
+            description: string;
+        });
+        ReviewSubmissionResponse: {
+            /** @description The newest packet of this submission (the retractable one) — the last element of packetIds. */
+            packetId: string;
+            /** @description One packet per claim, in claim order; a single-patch submission has exactly one. */
+            packetIds: string[];
+            reviewId: string;
+            documentId: string;
+            documentRevision: components["schemas"]["DocumentRevision"];
+            reviewGeneration: number;
+            unresolvedChunks: number;
+            state: components["schemas"]["ReviewState"];
+            focused: boolean;
         };
     };
     responses: never;
@@ -1827,6 +1884,75 @@ export interface operations {
             };
             /** @description Workspace not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    submitReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewSubmissionRequest"];
+            };
+        };
+        responses: {
+            /** @description Proposal applied */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewSubmissionResponse"];
+                };
+            };
+            /** @description Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the document drifted from the text you built against: re-read the working content and rebuild the patch against it — a blind retry fails identically. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description The document does not exist or is outside the configured workspace scope. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Review generation conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Stale revision (ETag mismatch) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description The proposal could not be persisted or the server could not complete the submission. */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
