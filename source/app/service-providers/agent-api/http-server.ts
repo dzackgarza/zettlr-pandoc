@@ -965,7 +965,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    const claims = request.claims ?? [{ patch: request.patch!, description: request.description! }];
+    const claims = request.claims !== undefined
+      ? request.claims
+      : [{ patch: request.patch!, description: request.description! }];
     await this.handleSubmitProposal(res, documentId, {
       baselineSha256: request.baseline?.sha256 ?? baseline.revision.sha256,
       expectedReviewGeneration: baseline.reviewGeneration,
