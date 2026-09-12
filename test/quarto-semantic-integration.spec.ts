@@ -7,6 +7,10 @@ import { extractReferences } from 'source/common/pandoc-util/extract-references'
 import { tocField } from 'source/common/modules/markdown-editor/plugins/toc-field'
 
 describe('Quarto semantic authoring', function () {
+  it('preserves Unicode identifiers and rejects invalid identifier tokens', function () {
+    const source = '::: {#thm-étale}\nAn étale map is locally an isomorphism.\n:::\n\n::: {#thm-a/b}\nAn invalid identifier.\n:::'
+    assert.deepEqual(extractReferences('/workspace/maps.qmd', source).definitions.map(d => d.key), ['thm-étale'])
+  })
   it('preserves theorem aliases and complete identifiers in the editor and reference index', function () {
     const source = '::: {.prp #prp-linear.map:extension}\nA linear map extends to a basis.\n:::\n\nSee @prp-linear.map:extension.'
     const state = EditorState.create({ doc: source, extensions: [markdownParser()] })
