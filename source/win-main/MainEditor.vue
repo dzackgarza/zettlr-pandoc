@@ -262,7 +262,7 @@ function applyReviewDiffSession (session: ReviewDiffSession): void {
 }
 
 // EVENT LISTENERS
-ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
+const stopCiteprocUpdates = ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
   const descriptor = activeFileDescriptor.value
 
   if (descriptor === undefined || descriptor.type !== 'file') {
@@ -295,13 +295,13 @@ ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
 // updateReferenceEntries() itself routes provider failures through the
 // recoverable-error boundary (closable toast, typed outcome); this catch
 // only guards against unexpected renderer-side faults.
-ipcRenderer.on('references', _event => {
+const stopReferenceUpdates = ipcRenderer.on('references', _event => {
   updateReferenceEntries().catch(e => {
     console.error('Could not update workspace reference entries', e)
   })
 })
 
-ipcRenderer.on('shortcut', (event, command) => {
+const stopShortcuts = ipcRenderer.on('shortcut', (event, command) => {
   if (currentEditor?.hasFocusWithin() !== true) {
     return // None of our business
   }
@@ -375,7 +375,7 @@ ipcRenderer.on('shortcut', (event, command) => {
   }
 })
 
-ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: DocumentsUpdateContext }) => {
+const stopDocumentUpdates = ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: DocumentsUpdateContext }) => {
   const { event, context } = payload
   if (
     event === DP_EVENTS.ACTIVE_FILE && context.leafId === props.leafId &&
@@ -447,12 +447,12 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
   // `collaborationSession` watcher below, not through this raw event.
 })
 
-ipcRenderer.on('reload-editors', _e => {
+const stopReloads = ipcRenderer.on('reload-editors', _e => {
   currentEditor?.reload().catch(reportDocumentLoadError)
 })
 
 // Update the file database whenever links have been updated
-ipcRenderer.on('links', _e => {
+const stopLinkUpdates = ipcRenderer.on('links', _e => {
   updateFileDatabase().catch(err => console.error('Could not update file database', err))
 })
 
@@ -466,6 +466,10 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  for (const stop of [stopCiteprocUpdates, stopReferenceUpdates, stopShortcuts, stopDocumentUpdates, stopReloads, stopLinkUpdates]) {
+    stop()
+  }
+  latestReferenceRequestId++
   mainEditorWrapper.value?.removeEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer)
   if (currentEditor !== null) {
     props.persistentStateMap.set(props.file.path, currentEditor.persistentState)
@@ -1170,7 +1174,10 @@ function collectProjectRoots (): ProjectRootSpec[] {
   return roots
 }
 
+let latestReferenceRequestId = 0
+
 async function updateReferenceEntries (): Promise<void> {
+  const requestId = ++latestReferenceRequestId
   // Routed through the recoverable-error boundary (issue #1 Phase 8): a
   // failed fetch surfaces one closable toast and the editor keeps its last
   // known reference state — never a fabricated fallback, never an
@@ -1180,7 +1187,7 @@ async function updateReferenceEntries (): Promise<void> {
     { command: 'get-snapshot' },
     trans('Loading workspace references')
   )
-  if (outcome.status === 'failed') {
+  if (outcome.status === 'failed' || requestId !== latestReferenceRequestId) {
     return
   }
   const state = outcome.value
