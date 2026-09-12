@@ -322,7 +322,7 @@ const pandocDivSpanPlugin = ViewPlugin.fromClass(class {
 // wrapper and the open-fence wrapper. Kept as one generated map so the family
 // list cannot drift between element types.
 const SEMANTIC_FAMILY_ACCENTS = Object.fromEntries(
-  [ 'result', 'definition', 'explanation', 'task', 'warning', 'proof' ].map(family => [
+  [ 'result', 'definition', 'explanation', 'task', 'warning', 'proof', 'float' ].map(family => [
     `pandoc-div-wrapper.pandoc-div--${family}, pandoc-div-open-wrapper.pandoc-div--${family}`,
     { '--pandoc-div-accent': `var(--zettlr-editor-pandoc-div-${family})` },
   ])
@@ -359,6 +359,12 @@ export const renderPandoc = [
     ...SEMANTIC_FAMILY_ACCENTS,
     'pandoc-div-wrapper.pandoc-div--proof': {
       borderLeftStyle: 'dotted',
+    },
+    // A float holds content rather than prose, so it reads as a container:
+    // the same neutral tone as a generic div, with a dashed edge and its own
+    // badge (Figure, Table, Listing) to tell the two apart.
+    'pandoc-div-wrapper.pandoc-div--float': {
+      borderLeftStyle: 'dashed',
     },
     // The visual-indent line decorations are reverted through the
     // VISUAL_INDENT_EXEMPT_CLASS contract owned by the visual-indent plugin.

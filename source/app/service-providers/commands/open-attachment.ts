@@ -20,7 +20,7 @@ import ZettlrCommand from './zettlr-command'
 import { trans } from '@common/i18n-main'
 import ky from 'ky'
 import { shell } from 'electron'
-import { getBibliographyForDescriptor as getBibliography } from '@common/util/get-bibliography-for-descriptor'
+import { getBibliographyForDescriptor as getBibliography, resolveProjectForDescriptor } from '@common/util/get-bibliography-for-descriptor'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import type { CitationDatabase } from '@dts/common/citeproc'
 import path from 'path'
@@ -70,22 +70,11 @@ export default class OpenAttachment extends ZettlrCommand {
     if (descriptor === undefined || descriptor.type !== 'file') {
       return false
     }
-    let project: ProjectSettings|null = null
-    let directoryPath = descriptor.dir
-    while (true) {
-      const directory = await this._app.fsal.getAnyDirectoryDescriptor(directoryPath)
-      if (directory === undefined) {
-        break
-      }
-      if (directory.settings.project !== null) {
-        project = directory.settings.project
-        break
-      }
-      if (directory.dir === directory.path) {
-        break
-      }
-      directoryPath = directory.dir
-    }
+    const project = await resolveProjectForDescriptor(
+      descriptor,
+      new Map(),
+      async dirPath => await this._app.fsal.getAnyDirectoryDescriptor(dirPath)
+    )
     const library = getBibliographyForDescriptor(descriptor, project)
 
     let appearsToHaveNoAttachments = false

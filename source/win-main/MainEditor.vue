@@ -61,8 +61,8 @@ import { DP_EVENTS, type OpenDocument } from '@dts/common/documents'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import type { CitationDatabase } from '@dts/common/citeproc'
 import { type EditorConfigOptions } from '@common/modules/markdown-editor/util/configuration'
-import type { CodeFileDescriptor, DirDescriptor, MDFileDescriptor, ProjectSettings } from '@dts/common/fsal'
-import { getBibliographyForDescriptor as getBibliography } from '@common/util/get-bibliography-for-descriptor'
+import type { AnyDescriptor, CodeFileDescriptor, DirDescriptor, MDFileDescriptor } from '@dts/common/fsal'
+import { getBibliographyForDescriptor as getBibliography, resolveProjectForDescriptor } from '@common/util/get-bibliography-for-descriptor'
 import { EditorSelection } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import AnnotationCreateDialog from './AnnotationCreateDialog.vue'
@@ -123,19 +123,18 @@ const ipcRenderer = window.ipc
 // the library is always absolute. We have to do it this ridiculously since the
 // function is called in both main and renderer processes, and we still have the
 // issue that path-browserify is entirely unusable.
-function projectForDescriptor (descriptor: MDFileDescriptor): ProjectSettings|null {
-  let directory = workspaceStore.descriptorMap.get(descriptor.dir)
-  while (directory?.type === 'directory') {
-    if (directory.settings.project !== null) {
-      return directory.settings.project
-    }
-    directory = workspaceStore.descriptorMap.get(directory.dir)
-  }
-  return null
+async function fsalDirectoryLookup (dirPath: string): Promise<AnyDescriptor|undefined> {
+  const descriptor = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: dirPath })
+  return Array.isArray(descriptor) ? undefined : descriptor
 }
 
-function getBibliographyForDescriptor (descriptor: MDFileDescriptor): CitationDatabase {
-  const library = getBibliography(descriptor, projectForDescriptor(descriptor))
+async function getBibliographyForDescriptor (descriptor: MDFileDescriptor): Promise<CitationDatabase> {
+  // The workspace descriptor map is still empty while the workspace walk runs,
+  // so fall back to the FSAL for any parent directory it does not know yet.
+  // Without that fallback, files in a Quarto project opened at boot resolve to
+  // the main database and their citations do not render.
+  const project = await resolveProjectForDescriptor(descriptor, workspaceStore.descriptorMap, fsalDirectoryLookup)
+  const library = getBibliography(descriptor, project)
   const resolveLibrary = (filename: string): string => filename !== CITEPROC_MAIN_DB && !isAbsolutePath(filename)
     ? resolvePath(descriptor.dir, filename)
     : filename
@@ -270,9 +269,9 @@ ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
     return // Nothing to do
   }
 
-  const library = getBibliographyForDescriptor(descriptor)
-  updateCitationKeys(library)
-    .then(() => {
+  getBibliographyForDescriptor(descriptor)
+    .then(async library => {
+      await updateCitationKeys(library)
       if (activeFileDescriptor.value?.path !== descriptor.path) {
         return
       }
@@ -421,13 +420,13 @@ ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: Doc
     // The file has been saved to disk. This means we should probably update the
     // descriptor to know of, e.g., library changes.
     ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: props.file.path })
-      .then(descriptor => {
+      .then(async descriptor => {
         if (descriptor === undefined || Array.isArray(descriptor) || (descriptor.type !== 'file' && descriptor.type !== 'code')) {
           throw new Error(`Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`)
         }
 
         activeFileDescriptor.value = descriptor
-        const library = descriptor.type === 'file' ? getBibliographyForDescriptor(descriptor) : undefined
+        const library = descriptor.type === 'file' ? await getBibliographyForDescriptor(descriptor) : undefined
         if (library !== undefined) {
           updateCitationKeys(library).catch(e => console.error('Could not update citation keys', e))
         }
@@ -1035,7 +1034,7 @@ async function loadDocument (): Promise<void> {
 
   activeFileDescriptor.value = descriptor
 
-  const library = descriptor.type === 'file' ? getBibliographyForDescriptor(descriptor) : undefined
+  const library = descriptor.type === 'file' ? await getBibliographyForDescriptor(descriptor) : undefined
   if (library !== undefined) {
     updateCitationKeys(library).catch(e => console.error('Could not update citation keys', e))
   }
