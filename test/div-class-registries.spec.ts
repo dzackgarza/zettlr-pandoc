@@ -21,7 +21,7 @@
 
 import { strict as assert } from 'assert'
 import { classifyDiv } from 'source/common/pandoc-util/pandoc-div-model'
-import { REFERENCEABLE_DIV_CLASSES, THEOREM_FAMILY_METADATA } from 'source/common/util/pandoc-quick-reference'
+import { REFERENCEABLE_DIV_CLASSES, THEOREM_CLASS_TO_PREFIX } from 'source/common/util/pandoc-quick-reference'
 
 describe('Div-class registry relation (issue #5, B23)', function () {
   it('no referenceable div class belongs to the proof family', function () {
@@ -47,7 +47,7 @@ describe('Div-class registry relation (issue #5, B23)', function () {
 })
 
 function labelPrefixOf (divClass: string): string {
-  const metadata = THEOREM_FAMILY_METADATA.find(entry => entry.divClass === divClass)
-  assert.ok(metadata !== undefined, `${divClass} has no theorem-family metadata`)
-  return metadata.prefix
+  const prefix = THEOREM_CLASS_TO_PREFIX[divClass]
+  assert.ok(prefix !== undefined, `${divClass} has no theorem-family prefix`)
+  return prefix
 }

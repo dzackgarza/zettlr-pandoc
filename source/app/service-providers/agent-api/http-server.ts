@@ -37,6 +37,7 @@ import type {
   ReviewMutationPrecondition,
   SearchDocumentRequest,
   SubmitProposalRequest,
+  ReviewSubmissionRequest,
 } from "@dts/common/agent-api";
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
 import type DocumentManager from "@providers/documents";
@@ -52,6 +53,7 @@ import OpenAPIBackend, {
   type Document as OpenApiDefinition,
 } from "openapi-backend";
 import path from "path";
+import { fileURLToPath } from "url";
 import { parseDocument, type Document } from "yaml";
 import {
   classifyReviewState,
@@ -98,6 +100,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   DOCUMENT_NOT_FOUND: 404,
   DOCUMENT_CLOSED: 409,
   REVISION_MISMATCH: 409,
+  BASELINE_MISMATCH: 412,
   REVIEW_GENERATION_MISMATCH: 409,
   REVIEW_NOT_FOUND: 404,
   REVIEW_INVALIDATED: 409,
@@ -607,6 +610,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => this.handleSubmitProposal(res, c.request.params.documentId, c.request.requestBody),
+      submitReview: (
+        c: OperationContext<"submitReview", ReviewSubmissionRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleReviewSubmission(res, c.request.requestBody),
 
       listAnnotations: (c: OperationContext<"listAnnotations">, _req, res: http.ServerResponse) =>
         this.handleListAnnotations(res, c.request.query.state),
@@ -939,10 +947,40 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, result);
   }
 
+  private async handleReviewSubmission(
+    res: http.ServerResponse,
+    request: ReviewSubmissionRequest,
+  ): Promise<void> {
+    const requestedPath = request.document.uri.startsWith("file://")
+      ? fileURLToPath(request.document.uri)
+      : request.document.uri;
+    if (!(await this._queries.isOpenable(requestedPath))) {
+      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document is outside configured workspace scope");
+      return;
+    }
+    const filePath = await fs.promises.realpath(requestedPath);
+    const documentId = this._documents.ensureDocumentId(filePath);
+    const baseline = await this._queries.readDocumentContent(documentId, "working", 1, Number.MAX_SAFE_INTEGER);
+    if (baseline === undefined || baseline === "OUTSIDE_WORKSPACE") {
+      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
+      return;
+    }
+    const claims = request.claims !== undefined
+      ? request.claims
+      : [{ patch: request.patch!, description: request.description! }];
+    await this.handleSubmitProposal(res, documentId, {
+      baselineSha256: request.baseline?.sha256 ?? baseline.revision.sha256,
+      expectedReviewGeneration: baseline.reviewGeneration,
+      claims,
+      clientRequestId: request.clientRequestId,
+    }, request.focus !== false);
+  }
+
   private async handleSubmitProposal(
     res: http.ServerResponse,
     documentId: string,
     proposal: SubmitProposalRequest,
+    focus?: boolean,
   ): Promise<void> {
     // No request headers are read here. Concurrency rides in the body, because
     // an OpenAPI consumer that generates calls from the published document
@@ -990,7 +1028,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         if (current !== undefined) {
           res.setHeader("ETag", `"sha256:${sha256Text(current.document.toString())}"`);
         }
-        this.sendError(res, 412, "REVISION_MISMATCH", result.message);
+        this.sendError(res, 412, focus === undefined ? "REVISION_MISMATCH" : "BASELINE_MISMATCH", result.message);
       } else {
         // Every other refusal, including ANNOTATION_NOT_FOUND — a claim's
         // addressesAnnotationIds named an id this document does not have.
@@ -1019,6 +1057,13 @@ export default class AgentHTTPProvider extends ProviderContract {
       );
     }
     res.setHeader("ETag", `"sha256:${sha256Text(applied.document.toString())}"`);
+    if (focus === true) {
+      const view = this._documents.getFocusedView();
+      const opened = await this._documents.openFile(view?.windowId, view?.leafId, filePath, true);
+      if (!opened) {
+        throw new Error(`Review ${result.reviewId} committed, but document ${documentId} could not be focused`);
+      }
+    }
     this.sendJson(res, 200, {
       packetId: result.packetId,
       packetIds: result.packetIds,
@@ -1028,6 +1073,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       reviewGeneration: result.reviewGeneration,
       unresolvedChunks: result.unresolvedChunks,
       state: result.state,
+      ...(focus === undefined ? {} : { focused: focus }),
     });
   }
 

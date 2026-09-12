@@ -6,8 +6,10 @@ import {
   PANDOC_CROSS_REFERENCE_EXAMPLES,
   PANDOC_CROSSREF_PREFIXES,
   THEOREM_FAMILY_METADATA,
+  QUARTO_FAMILY_ALIASES,
   type TheoremFamilyPrefix
 } from '../../common/util/pandoc-quick-reference'
+import type { Citation } from '../../common/modules/markdown-editor/parser/citation-parser'
 
 /**
  * The explicit pandoc-crossref label families supported at launch.
@@ -40,14 +42,6 @@ export type ReferenceFamily = CrossrefFamily | TheoremFamily
 
 export const REFERENCE_FAMILIES: readonly ReferenceFamily[] = [ ...CROSSREF_FAMILIES, ...THEOREM_FAMILIES ]
 
-const QUARTO_FAMILY_ALIASES = [
-  { prefix: 'prp', family: 'prop' },
-  { prefix: 'cnj', family: 'conj' },
-  { prefix: 'exm', family: 'ex' },
-  { prefix: 'rem', family: 'rmk' },
-  { prefix: 'wrn', family: 'warn' }
-] as const satisfies ReadonlyArray<{ prefix: string, family: ReferenceFamily }>
-
 function supportedFamily (prefix: string): ReferenceFamily|undefined {
   for (const family of REFERENCE_FAMILIES) {
     if (family === prefix) {
@@ -74,17 +68,8 @@ function supportedFamily (prefix: string): ReferenceFamily|undefined {
  * @return  {ReferenceFamily|undefined}  The family, if supported
  */
 export function referenceFamilyOf (key: string): ReferenceFamily|undefined {
-  const colon = key.indexOf(':')
-  if (colon > 0 && colon < key.length - 1) {
-    return supportedFamily(key.slice(0, colon))
-  }
-
-  const hyphen = key.indexOf('-')
-  if (hyphen > 0 && hyphen < key.length - 1) {
-    return supportedFamily(key.slice(0, hyphen))
-  }
-
-  return undefined
+  const parts = referenceKeyParts(key)
+  return parts === undefined ? undefined : supportedFamily(parts.prefix)
 }
 
 export interface ReferenceKeyParts {
@@ -338,6 +323,9 @@ export interface DocumentReferenceSnapshot {
   sourceHash: string
   definitions: ReferenceDefinition[]
   occurrences: ReferenceOccurrence[]
+  /** Undefined while the authority's asynchronous Pandoc extraction is pending. */
+  citations?: Citation[]
+  citationError?: string
 }
 
 /**

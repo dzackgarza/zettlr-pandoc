@@ -446,6 +446,98 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     rmSync(scratch, { recursive: true, force: true });
   });
 
+  it("review-submission applies a closed-file patch without changing focus and refuses a stale baseline", async function () {
+    const filePath = path.join(scratch, "submission.md");
+    const before = "A bilinear form is symmetric.\n";
+    const after = "A bilinear form is symmetric and nondegenerate.\n";
+    writeFileSync(filePath, before);
+    const priorPath = path.join(scratch, "prior.md");
+    await openFile(priorPath, "Previously selected document.\n");
+    const windowId = provider.windowKeys()[0];
+    await provider.openFile(windowId, provider.leafIds(windowId)[0], priorPath);
+    const focused = provider.getFocusedView();
+    const request = {
+      document: { uri: filePath },
+      baseline: { sha256: sha256Text(before) },
+      patch: createPatch(filePath, before, after),
+      description: "State the nondegeneracy hypothesis.",
+      clientRequestId: "closed-submission",
+      focus: false,
+    };
+    const inapplicable = await httpRequest("POST", "/v1/review-submissions", {
+      body: JSON.stringify({ ...request, patch: createPatch(filePath, "An unrelated baseline.\n", after), clientRequestId: "inapplicable" }),
+    });
+    assert.equal(inapplicable.status, 400);
+    assert.equal(JSON.parse(inapplicable.body).error.code, "PATCH_NOT_APPLICABLE");
+    const response = await httpRequest("POST", "/v1/review-submissions", { body: JSON.stringify(request) });
+    assert.equal(response.status, 200, response.body);
+    const result = JSON.parse(response.body);
+    const content = await httpRequest("GET", `/v1/documents/${result.documentId}/content`);
+    assert.equal(JSON.parse(content.body).content, after);
+    assert.equal(result.focused, false);
+    assert.deepEqual(provider.getFocusedView(), focused);
+    const stale = await httpRequest("POST", "/v1/review-submissions", {
+      body: JSON.stringify({ ...request, clientRequestId: "stale-submission" }),
+    });
+    assert.equal(stale.status, 412);
+    assert.equal(JSON.parse(stale.body).error.code, "BASELINE_MISMATCH");
+    const replay = await httpRequest("POST", "/v1/review-submissions", {
+      body: JSON.stringify({ ...request, baseline: undefined }),
+    });
+    assert.equal(replay.status, 409);
+    assert.equal(JSON.parse(replay.body).error.code, "IDEMPOTENCY_CONFLICT");
+  });
+
+  it("review-submission applies ordered claims and rejects paths outside the workspace", async function () {
+    const filePath = path.join(scratch, "claims.md");
+    const before = "Let V be a vector space.\n";
+    const middle = "Let V be a finite-dimensional vector space.\n";
+    const after = "Let V be a finite-dimensional vector space over F.\n";
+    writeFileSync(filePath, before);
+    const documentId = await openFile(filePath, before);
+    const windowId = provider.windowKeys()[0];
+    await provider.openFile(windowId, provider.leafIds(windowId)[0], filePath);
+    const annotation = await provider.createAnnotation(documentId, "owner", 9, 23, "Specify the hypotheses.", 0);
+    assert.ok("annotationId" in annotation);
+    const priorPath = path.join(scratch, "previous-selection.md");
+    await openFile(priorPath, "Another open document.\n");
+    await provider.openFile(windowId, provider.leafIds(windowId)[0], priorPath);
+    const claims = [
+      { description: "Specify finite dimension.", patch: createPatch(filePath, before, middle), addressesAnnotationIds: [annotation.annotationId] },
+      { description: "Specify the field.", patch: createPatch(filePath, middle, after) },
+    ];
+    const outside = await httpRequest("POST", "/v1/review-submissions", {
+      body: JSON.stringify({ document: { uri: __filename }, claims, clientRequestId: "outside" }),
+    });
+    assert.equal(outside.status, 404);
+    const invalid = await httpRequest("POST", "/v1/review-submissions", {
+      body: JSON.stringify({
+        document: { uri: filePath },
+        claims: [claims[0], { ...claims[1], addressesAnnotationIds: ["missing-annotation"] }],
+        clientRequestId: "invalid-claims",
+      }),
+    });
+    assert.equal(invalid.status, 404);
+    assert.equal(JSON.parse(invalid.body).error.code, "ANNOTATION_NOT_FOUND");
+    const unchanged = await httpRequest("GET", `/v1/documents/${documentId}/content`);
+    assert.equal(JSON.parse(unchanged.body).content, before);
+    const unlinked = await httpRequest("GET", `/v1/annotations/${annotation.annotationId}`);
+    assert.deepEqual(JSON.parse(unlinked.body).proposalActions, []);
+    const response = await httpRequest("POST", "/v1/review-submissions", {
+      body: JSON.stringify({ document: { uri: filePath }, claims, clientRequestId: "claims-submission" }),
+    });
+    assert.equal(response.status, 200, response.body);
+    const result = JSON.parse(response.body);
+    assert.equal(result.focused, true);
+    assert.equal(provider.getFocusedView()?.documentId, documentId);
+    const content = await httpRequest("GET", `/v1/documents/${result.documentId}/content`);
+    assert.equal(JSON.parse(content.body).content, after);
+    const packets = await httpRequest("GET", `/v1/reviews/${result.reviewId}/packets`);
+    assert.deepEqual(JSON.parse(packets.body).packets.map((packet: { description: string }) => packet.description), claims.map(claim => claim.description));
+    const linked = await httpRequest("GET", `/v1/annotations/${annotation.annotationId}`);
+    assert.equal(JSON.parse(linked.body).proposalActions[0].packetId, result.packetIds[0]);
+  });
+
   it("fails enabled startup when the configured port is taken", async function () {
     // An enabled API without its configured listener is a broken application
     // state. Startup must report the bind failure instead of claiming success.

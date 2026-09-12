@@ -18,6 +18,7 @@ import { type Ref, ref, watch, computed } from 'vue'
 import { useConfigStore } from './config'
 import type { AnyDescriptor } from 'source/types/common/fsal'
 import type { FSALEventPayload } from 'source/app/service-providers/fsal'
+import { isInsideRoot } from '@common/util/renderer-path-polyfill'
 
 const ipcRenderer = window.ipc
 
@@ -95,23 +96,24 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       // Now we can set up the watchers. (We need to do this afterwards to not cause a hiccup)
       // Finally, listen to FSAL events and keep the descriptor map updated.
       ipcRenderer.on('fsal-event', (_, payload: FSALEventPayload) => {
-        // @ts-expect-error asdasd
-        console.log(`[WorkspaceStore] Received event ${payload.event}:${payload.path ?? payload.descriptor.path}`)
+        const eventPath = 'path' in payload ? payload.path : payload.descriptor.path
+        console.log(`[WorkspaceStore] Received event ${payload.event}:${eventPath}`)
         if (payload.event === 'unlink' || payload.event === 'unlinkDir') {
-          const root = [...workspaceMap.value.keys()].find(p => payload.path.startsWith(p))
-          if (root !== undefined) {
-            const arr = workspaceMap.value.get(root)!
-            arr.splice(arr.indexOf(payload.path), 1)
-            workspaceMap.value.set(root, arr)
+          for (const [root, paths] of workspaceMap.value) {
+            if (payload.path !== root && !isInsideRoot(payload.path, root)) {
+              continue
+            }
+            workspaceMap.value.set(root, paths.filter(path => path !== payload.path))
           }
 
           descriptorMap.value.delete(payload.path)
         } else if (payload.event === 'change' || payload.event === 'add' || payload.event === 'addDir') {
-          const root = [...workspaceMap.value.keys()].find(p => payload.descriptor.path.startsWith(p))
-          if (root !== undefined && payload.event !== 'change') {
-            const arr = workspaceMap.value.get(root)!
-            arr.push(payload.descriptor.path)
-            workspaceMap.value.set(root, arr)
+          for (const [root, paths] of workspaceMap.value) {
+            const path = payload.descriptor.path
+            if (payload.event === 'change' || (path !== root && !isInsideRoot(path, root)) || paths.includes(path)) {
+              continue
+            }
+            workspaceMap.value.set(root, [...paths, path])
           }
 
           descriptorMap.value.set(payload.descriptor.path, payload.descriptor)

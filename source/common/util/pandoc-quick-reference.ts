@@ -100,7 +100,7 @@ export function filterHelpEntries<T> (
 }
 
 export function isSupportedPandocCrossref (id: string): boolean {
-  return PANDOC_CROSSREF_PREFIXES.some(prefix => id.startsWith(`${prefix}:`))
+  return PANDOC_CROSSREF_PREFIXES.some(prefix => id.startsWith(`${prefix}:`) || id.startsWith(`${prefix}-`))
 }
 
 /**
@@ -139,8 +139,24 @@ export const THEOREM_FAMILY_METADATA = [
 
 export type TheoremFamilyPrefix = typeof THEOREM_FAMILY_METADATA[number]['prefix']
 
+export const QUARTO_FAMILY_ALIASES = [
+  { prefix: 'prp', family: 'prop' },
+  { prefix: 'cnj', family: 'conj' },
+  { prefix: 'exm', family: 'ex' },
+  { prefix: 'rem', family: 'rmk' },
+  { prefix: 'wrn', family: 'warn' }
+] as const satisfies ReadonlyArray<{ prefix: string, family: TheoremFamilyPrefix }>
+
+export const THEOREM_CLASS_TO_PREFIX: Readonly<Record<string, TheoremFamilyPrefix>> = Object.fromEntries([
+  ...THEOREM_FAMILY_METADATA.flatMap(metadata => [
+    [metadata.divClass, metadata.prefix],
+    [metadata.prefix, metadata.prefix]
+  ]),
+  ...QUARTO_FAMILY_ALIASES.map(alias => [alias.prefix, alias.family])
+])
+
 export const REFERENCEABLE_DIV_CLASSES: readonly string[] =
-  THEOREM_FAMILY_METADATA.map(metadata => metadata.divClass)
+  Object.keys(THEOREM_CLASS_TO_PREFIX)
 
 /**
  * Returns the fenced-div class owned by a supported theorem family.

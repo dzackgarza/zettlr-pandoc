@@ -29,6 +29,7 @@
 import { strict as assert } from 'assert'
 import { readFileSync } from 'fs'
 import path from 'path'
+import CSL from 'citeproc'
 import { forceParsing } from '@codemirror/language'
 import { EditorState, type Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
@@ -44,6 +45,13 @@ import { configField } from 'source/common/modules/markdown-editor/util/configur
 import { extractReferences } from 'source/common/pandoc-util/extract-references'
 import { resolveWorkspace } from 'source/common/pandoc-util/resolve-references'
 import { type DocumentReferenceSnapshot } from 'source/types/common/references'
+import { extractPandocCitations } from 'source/app/service-providers/references/pandoc-citations'
+
+const BIBLIOGRAPHY = new Map<string, CSLItem>([
+  ['Ols04', { id: 'Ols04', type: 'article-journal', author: [{ family: 'Olsson' }], issued: { 'date-parts': [[2004]] } }],
+  ['BHPV04', { id: 'BHPV04', type: 'book', author: [{ family: 'Barth' }], issued: { 'date-parts': [[2004]] } }],
+  ['Kod63', { id: 'Kod63', type: 'article-journal', author: [{ family: 'Kodaira' }], issued: { 'date-parts': [[1963]] } }]
+])
 
 function polyfillJsdomForCodeMirror (): void {
   const w = globalThis as any
@@ -130,14 +138,18 @@ describe('Reference chips (issue #1 Phase 4)', function () {
   })
 
   beforeEach(function () {
-    // The deterministic bibliography rendering stub of the citation canary
-    // (test/editor-citation-locator-prefix.spec.ts): parity assertions
-    // compare the DOM this callback produces under both extension sets.
-    window.getCitationCallback = () => citations => citations.map(item => {
-      return [ item.id, item.locator, item.suffix?.trimStart() ]
-        .filter(part => part !== undefined)
-        .join(' ')
-    }).join('; ')
+    const engine = new CSL.Engine({
+      retrieveItem: id => {
+        const item = BIBLIOGRAPHY.get(id)
+        if (item === undefined) throw new Error(`Missing bibliography fixture ${id}`)
+        return item
+      },
+      retrieveLocale: () => readFileSync('static/csl-locales/locales-en-US.xml', 'utf8')
+    }, readFileSync('static/csl-styles/chicago-author-date.csl', 'utf8'), 'en-US', true)
+    window.getCitationCallback = () => (citationItems, composite) => {
+      const citation = { citationItems, properties: { noteIndex: 0, mode: composite ? 'composite' : undefined } }
+      return engine.previewCitationCluster(citation, [], [], 'html')
+    }
   })
 
   after(function () {
@@ -289,9 +301,13 @@ describe('Reference chips (issue #1 Phase 4)', function () {
     ]
 
     for (const doc of bibliographyDocs) {
-      it(`produces byte-identical citation DOM for ${JSON.stringify(doc)}`, function () {
+      it(`produces byte-identical citation DOM for ${JSON.stringify(doc)}`, async function () {
         const currentView = createEditor(CURRENT_SET(), doc)
-        const combinedView = createEditor(NEW_SET(), doc, payloadFor(doc, FULL_FILES))
+        const payload = payloadFor(doc, FULL_FILES)
+        const combinedView = createEditor(NEW_SET(), doc, payload)
+        assert.equal(combinedView.contentDOM.textContent, doc)
+        payload.snapshot.citations = await extractPandocCitations(doc)
+        combinedView.dispatch({ effects: workspaceReferencesUpdate.of(payload) })
 
         const currentWidgets = [ ...currentView.dom.querySelectorAll<HTMLElement>('.citeproc-citation') ]
         const combinedWidgets = [ ...combinedView.dom.querySelectorAll<HTMLElement>('.citeproc-citation') ]

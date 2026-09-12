@@ -13,7 +13,8 @@
  */
 
 import { renderBlockWidgets } from './base-renderer'
-import { type SyntaxNodeRef, type SyntaxNode } from '@lezer/common'
+import { type SyntaxNodeRef } from '@lezer/common'
+import { syntaxTree } from '@codemirror/language'
 import { WidgetType, type EditorView } from '@codemirror/view'
 import { type EditorState } from '@codemirror/state'
 import clickAndSelect from './click-and-select'
@@ -22,24 +23,37 @@ import { citationMenu } from '../context-menu/citation-menu'
 import { configField, type EditorConfiguration } from '../util/configuration'
 import { type Citation, NODES, nodeToCiteItem } from '../parser/citation-parser'
 import { isSupportedPandocCrossref } from '@common/util/pandoc-quick-reference'
-import { referenceFamilyOf, referenceKeyParts } from '@dts/common/references'
+import { referenceFamilyOf } from '@dts/common/references'
 import { workspaceReferencesField } from '../plugins/workspace-references-field'
+import { hashDocumentSource } from '@common/pandoc-util/extract-references'
+
+const sourceHashes = new WeakMap<EditorState, string>()
 
 class CitationWidget extends WidgetType {
   constructor (
     readonly citation: Citation,
     readonly rawCitation: string,
-    readonly node: SyntaxNode,
-    readonly metadata: EditorConfiguration['metadata']
+    readonly metadata: EditorConfiguration['metadata'],
+    readonly error?: string
   ) {
     super()
   }
 
   eq (other: CitationWidget): boolean {
-    return other.metadata === this.metadata && JSON.stringify(other.citation) === JSON.stringify(this.citation)
+    return other.metadata === this.metadata && other.rawCitation === this.rawCitation &&
+      other.error === this.error && other.citation.composite === this.citation.composite &&
+      JSON.stringify(other.citation.items) === JSON.stringify(this.citation.items)
   }
 
   toDOM (view: EditorView): HTMLElement {
+    if (this.error !== undefined) {
+      const elem = document.createElement('span')
+      elem.classList.add('citeproc-citation', 'error')
+      elem.textContent = this.rawCitation
+      elem.title = this.error
+      elem.addEventListener('click', clickAndSelect(view))
+      return elem
+    }
     const { items } = this.citation
     // PREDICATE SPLIT (review B5, deliberate): createWidget's takeover gate
     // uses referenceFamilyOf — a key counts as a workspace reference only
@@ -98,7 +112,9 @@ class CitationWidget extends WidgetType {
 
     elem.addEventListener('contextmenu', (event) => {
       const coords = { x: event.clientX, y: event.clientY }
-      citationMenu(view, coords, this.node)
+      let node = syntaxTree(view.state).resolveInner(view.posAtDOM(elem), 1)
+      while (node.type.name !== NODES.CITATION && node.parent !== null) node = node.parent
+      if (node.type.name === NODES.CITATION) citationMenu(view, coords, node)
     })
 
     return elem
@@ -114,31 +130,26 @@ function shouldHandleNode (node: SyntaxNodeRef): boolean {
 }
 
 function createWidget (state: EditorState, node: SyntaxNodeRef): CitationWidget|undefined {
-  try {
-    const citation = nodeToCiteItem(node.node, state.sliceDoc())
-    // Takeover design (issue #1 Phase 4): in a state carrying
-    // workspaceReferencesField (every production Markdown editor), a cluster
-    // containing a supported reference-family key is not a bibliography
-    // citation. All-supported clusters belong to render-reference-chips;
-    // mixed clusters are handled by NEITHER renderer (they stay raw and
-    // reference-lint owns the advisory). Pure bibliography clusters keep
-    // this widget byte-identical. The gate predicate is referenceFamilyOf
-    // (family + non-empty slug — the resolvable keys); see the deliberate
-    // predicate split documented in CitationWidget.toDOM (review B5).
-    const hasWorkspaceReferences = state.field(workspaceReferencesField, false) !== undefined
-    if (hasWorkspaceReferences && citation.items.some(item => referenceFamilyOf(item.id) !== undefined)) {
-      return undefined
+  const workspace = state.field(workspaceReferencesField, false)
+  let citation = nodeToCiteItem(node.node, state.sliceDoc())
+  if (workspace !== undefined) {
+    // Workspace references belong to reference chips; mixed clusters remain authored text.
+    if (citation.items.some(item => referenceFamilyOf(item.id) !== undefined)) return undefined
+    if (workspace === null) return undefined
+    let sourceHash = sourceHashes.get(state)
+    if (sourceHash === undefined) {
+      sourceHash = hashDocumentSource(state.sliceDoc())
+      sourceHashes.set(state, sourceHash)
     }
-    return new CitationWidget(
-      citation,
-      state.sliceDoc(node.from, node.to),
-      node.node,
-      state.field(configField).metadata
-    )
-  } catch (err) {
-    // nodeToCiteItem throws if it is unhappy
-    return undefined
+    if (workspace.snapshot.sourceHash !== sourceHash) return undefined
+    if (workspace.snapshot.citationError !== undefined) {
+      return new CitationWidget(citation, citation.source, state.field(configField).metadata, workspace.snapshot.citationError)
+    }
+    const extracted = workspace.snapshot.citations?.find(candidate => candidate.from === node.from && candidate.to === node.to)
+    if (extracted === undefined) return undefined
+    citation = extracted
   }
+  return new CitationWidget(citation, state.sliceDoc(node.from, node.to), state.field(configField).metadata)
 }
 
 export const renderCitations = renderBlockWidgets(shouldHandleNode, createWidget)

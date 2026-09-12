@@ -19,7 +19,7 @@ import {
   type CompletionSource,
   type CompletionResult,
   autocompletion,
-  type CompletionContext
+  CompletionContext
 } from '@codemirror/autocomplete'
 import { type StateField } from '@codemirror/state'
 import { codeBlocks } from './code-blocks'
@@ -103,9 +103,10 @@ export function createAutocompleteSource (providers: AutocompletePlugin[]): Comp
         from: startpos,
         options: initialOptions,
         filter: false,
-        update: (current, from, to, ctx) => {
-          const query = ctx.state.doc.sliceString(from, to).toLowerCase()
-          current.options = plugin!.entries(ctx, query)
+        update: (current, from, to, updateContext) => {
+          const query = updateContext.state.doc.sliceString(from, to).toLowerCase()
+          const context = new CompletionContext(updateContext.state, updateContext.pos, updateContext.explicit, ctx.view)
+          current.options = plugin!.entries(context, query)
           return current
         }
       }

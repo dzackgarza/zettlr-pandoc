@@ -46,6 +46,7 @@ export type ProposalClaim = Schemas["ProposalClaim"];
  * refused on every attempt.
  */
 export type SubmitProposalRequest = Schemas["SubmitProposalRequest"];
+export type ReviewSubmissionRequest = Schemas["ReviewSubmissionRequest"];
 export type SubmitProposalResponse = Schemas["SubmitProposalResponse"];
 export type ProposalPacket = Schemas["ProposalPacket"];
 export type OutstandingChunk = Schemas["OutstandingChunk"];

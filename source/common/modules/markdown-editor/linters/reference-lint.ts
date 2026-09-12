@@ -60,17 +60,9 @@ import { markdownToAST } from '@common/modules/markdown-utils'
 import type { ASTNode } from '@common/modules/markdown-utils/markdown-ast'
 import { locateAttribute } from '@common/pandoc-util/extract-references'
 import { SEMANTIC_DIV_CLASSES } from '@common/pandoc-util/pandoc-div-model'
-import { THEOREM_FAMILY_METADATA, REFERENCEABLE_DIV_CLASSES } from '@common/util/pandoc-quick-reference'
+import { THEOREM_CLASS_TO_PREFIX as CLASS_TO_PREFIX, REFERENCEABLE_DIV_CLASSES } from '@common/util/pandoc-quick-reference'
 import { referenceFamilyOf, referenceKeyParts, type ReferenceFamily } from '@dts/common/references'
 import { workspaceReferencesField, type EditorWorkspaceReferences } from '../plugins/workspace-references-field'
-
-/**
- * The label prefix of each referenceable div class, inverted from the fixed
- * theorem-family registry ('lemma' -> 'lem').
- */
-const CLASS_TO_PREFIX: Record<string, string> = Object.fromEntries(
-  THEOREM_FAMILY_METADATA.map(metadata => [ metadata.divClass, metadata.prefix ])
-)
 
 /**
  * The comparable remainder tokens of a key ('lem:kodaira:embedding' ->

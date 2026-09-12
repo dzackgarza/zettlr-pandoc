@@ -36,10 +36,9 @@
  *                    debounced per document through the injected scheduler;
  *                    when a debounce fires, the provider reads the CURRENT
  *                    buffer text through the injected authority seam and
- *                    runs the shared extractor over it in main. Ordering is
- *                    the authority's own call order — monotonic across
- *                    windows by construction, so no generation counters
- *                    exist anywhere.
+ *                    runs reference extraction in main. Pandoc enriches the
+ *                    snapshot asynchronously; request identity and source hash
+ *                    fence publication against edits and document closure.
  *
  *                    The rename protocol (previewRename/commitRename/
  *                    undoRename) is NOT part of this channel (review B7):
@@ -77,7 +76,8 @@ import ProviderContract, { type IPCMessage } from '../provider-contract'
 import type LogProvider from '@providers/log'
 import type { FSALEventPayload } from '../fsal'
 import type { WorkspaceReferenceEdit, WorkspaceTextEdit } from '@dts/common/references'
-import { extractReferences } from '@common/pandoc-util/extract-references'
+import { extractReferences, hashDocumentSource } from '@common/pandoc-util/extract-references'
+import { extractPandocCitations } from './pandoc-citations'
 import {
   previewReferenceRename,
   type CommitRenameOutcome,
@@ -177,6 +177,8 @@ export default class ReferenceProvider extends ProviderContract {
   private _pendingUndo: PendingUndo|undefined
   /** Pending debounced extractions by documentPath */
   private readonly _pendingReports: Map<string, AuthorityReportTask>
+  private readonly _citationRequests = new Map<string, symbol>()
+  private readonly _citationSources = new Map<string, string>()
 
   /**
    * Applies FSAL state transitions to the index: 'add'/'change' events
@@ -243,14 +245,32 @@ export default class ReferenceProvider extends ProviderContract {
       if (content === undefined) {
         // The buffer closed between the change and the debounce firing:
         // the overlay follows the authority's open set.
-        if (this._index.dropLiveBuffer(filePath)) {
-          broadcastIpcMessage('references')
-        }
+        this.dropAuthorityBuffer(filePath)
         return
       }
 
-      this._index.reportLiveBuffer(extractReferences(filePath, content))
+      const snapshot = extractReferences(filePath, content)
+      if (this._citationSources.get(filePath) === snapshot.sourceHash) return
+      this._citationSources.set(filePath, snapshot.sourceHash)
+      const request = Symbol(filePath)
+      this._citationRequests.set(filePath, request)
+      this._index.reportLiveBuffer(snapshot)
       broadcastIpcMessage('references')
+      const isCurrent = (): boolean => {
+        const current = this._authority.readMarkdownBufferContent(filePath)
+        return this._citationRequests.get(filePath) === request && current !== undefined &&
+          hashDocumentSource(current) === snapshot.sourceHash
+      }
+      void extractPandocCitations(content).then(citations => {
+        if (!isCurrent()) return
+        this._index.reportLiveBuffer({ ...snapshot, citations })
+        broadcastIpcMessage('references')
+      }, (error: Error) => {
+        this._logger.error('[Reference Provider] Pandoc citation extraction failed', error)
+        if (!isCurrent()) return
+        this._index.reportLiveBuffer({ ...snapshot, citationError: error.message })
+        broadcastIpcMessage('references')
+      })
     }, immediate ? 0 : this._authorityReportDebounceMs))
   }
 
@@ -262,6 +282,8 @@ export default class ReferenceProvider extends ProviderContract {
    * @param   {string}  filePath  The closed document's path
    */
   public dropAuthorityBuffer (filePath: string): void {
+    this._citationRequests.delete(filePath)
+    this._citationSources.delete(filePath)
     this._pendingReports.get(filePath)?.cancel()
     this._pendingReports.delete(filePath)
     if (this._index.dropLiveBuffer(filePath)) {
@@ -426,6 +448,8 @@ export default class ReferenceProvider extends ProviderContract {
    * cancelling every pending debounced report.
    */
   public async shutdown (): Promise<void> {
+    this._citationRequests.clear()
+    this._citationSources.clear()
     this._fsal.off('fsal-event', this._onFsalEvent)
     for (const task of this._pendingReports.values()) {
       task.cancel()
@@ -434,4 +458,3 @@ export default class ReferenceProvider extends ProviderContract {
     this._logger.verbose('Reference provider shutting down ...')
   }
 }
-
