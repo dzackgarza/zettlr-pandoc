@@ -115,7 +115,7 @@ export function humanizeClassName (className: string): string {
     .replace(/\b\w/g, char => char.toUpperCase())
 }
 
-export function classifyDiv (classes: string[], id: string = ''): { family: PandocDivFamily, label: string } {
+export function classifyDiv (classes: string[], id?: string): { family: PandocDivFamily, label: string } {
   for (const authoredClass of classes) {
     const normalizedClass = authoredClass.toLowerCase()
     const family = SEMANTIC_DIV_CLASSES[normalizedClass]
@@ -127,7 +127,7 @@ export function classifyDiv (classes: string[], id: string = ''): { family: Pand
   // Quarto states the kind through the crossref prefix of the label instead of
   // a class: `::: {#def-core}` is the same definition that the pandoc-crossref
   // form spells `::: {.definition}`, and `::: {#fig-x}` is a figure.
-  const labelFamily = referenceFamilyOf(id)
+  const labelFamily = id === undefined ? undefined : referenceFamilyOf(id)
   const family = labelFamily === undefined
     ? undefined
     : FAMILY_BY_THEOREM_PREFIX[labelFamily as TheoremFamilyPrefix] ?? FAMILY_BY_FLOAT_PREFIX[labelFamily]
@@ -172,7 +172,7 @@ export function divModelFromNode (doc: DivSourceDocument, node: SyntaxNode): Pan
     classes.push(...attributes.classes)
   }
 
-  const classification = classifyDiv(classes, attributes.id ?? '')
+  const classification = classifyDiv(classes, attributes.id)
   let depth = 0
   for (let parent = node.parent; parent !== null; parent = parent.parent) {
     if (parent.name === 'PandocDiv') {
