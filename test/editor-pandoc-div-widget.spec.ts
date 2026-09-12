@@ -281,6 +281,36 @@ outside`
     })
   })
 
+  it('classifies Quarto classless theorem divs by their label prefix', function () {
+    // Quarto states the theorem kind through the crossref prefix of the id,
+    // not through a class: `::: {#def-core}` is the same definition the
+    // pandoc-crossref form spells `::: {.definition}`.
+    const docs = [
+      [ '#thm-main', 'result', 'Theorem' ],
+      [ '#def-core', 'definition', 'Definition' ],
+      [ '#exm-first', 'explanation', 'Example' ],
+      [ '#exr-warmup', 'task', 'Exercise' ],
+      // The float families: a div is how Quarto writes a figure holding
+      // subfigures, a cross-referenced table, or a listing.
+      [ '#fig-elephant', 'float', 'Figure' ],
+      [ '#tbl-lattices', 'float', 'Table' ],
+      [ '#lst-parser', 'float', 'Listing' ],
+      // Equations and sections carry their label on the display math and the
+      // heading, never on a div, so a div spelled this way stays generic.
+      [ '#eq-euler', 'generic', 'Div' ],
+      [ '#sec-intro', 'generic', 'Div' ],
+    ] as const
+    const doc = `${docs.map(([ attrs ], index) => `::: {${attrs}}\nBlock ${index}.\n:::`).join('\n\n')}\n\noutside`
+    const view = createEditor(doc)
+    const panels = [ ...view.dom.querySelectorAll('pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]') ]
+
+    assert.equal(panels.length, docs.length)
+    panels.forEach((panel, index) => {
+      assert.equal(panel.getAttribute('data-pandoc-div-family'), docs[index][1])
+      assert.equal(panel.getAttribute('data-pandoc-div-label'), docs[index][2])
+    })
+  })
+
   it('activates the deepest div independently for every selection range', function () {
     const doc = '::: theorem\nOuter.\n\n::: proof\nInner.\n:::\n\nTail.\n:::\n\noutside'
     const view = createEditor(doc)

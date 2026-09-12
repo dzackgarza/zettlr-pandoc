@@ -173,6 +173,7 @@ function collectASTDiagnostics (markdown: string, diagnostics: Diagnostic[]): vo
           source: 'reference-lint'
         })
       }
+
     } else if (node.type === 'Citation') {
       const items = node.parsedCitation.items
       const supported = items.filter(item => referenceFamilyOf(item.id) !== undefined).length

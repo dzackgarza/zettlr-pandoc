@@ -18,8 +18,10 @@
 
 import type { SyntaxNode } from '@lezer/common'
 import { parsePandocAttributes } from './parse-pandoc-attributes'
+import { referenceFamilyDisplayName, referenceFamilyOf } from '@dts/common/references'
+import { THEOREM_FAMILY_METADATA, type TheoremFamilyPrefix } from '@common/util/pandoc-quick-reference'
 
-export type PandocDivFamily = 'result'|'definition'|'explanation'|'task'|'warning'|'proof'|'generic'
+export type PandocDivFamily = 'result'|'definition'|'explanation'|'task'|'warning'|'proof'|'float'|'generic'
 
 export interface PandocDivModel {
   from: number
@@ -48,25 +50,50 @@ export interface DivSourceDocument {
   sliceString: (from: number, to: number) => string
 }
 
-export const SEMANTIC_DIV_CLASSES: Record<string, PandocDivFamily> = {
-  theorem: 'result',
-  lemma: 'result',
-  proposition: 'result',
-  corollary: 'result',
-  conjecture: 'result',
-  claim: 'result',
-  definition: 'definition',
+/**
+ * The presentation family of every referenceable theorem family. Keying the
+ * record by TheoremFamilyPrefix makes a family added to the registry a compile
+ * error here rather than a div that silently renders as generic.
+ */
+const FAMILY_BY_THEOREM_PREFIX: Record<TheoremFamilyPrefix, PandocDivFamily> = {
+  thm: 'result',
+  lem: 'result',
+  prop: 'result',
+  cor: 'result',
+  conj: 'result',
+  clm: 'result',
+  def: 'definition',
+  ass: 'definition',
+  rmk: 'explanation',
+  ex: 'explanation',
+  obs: 'explanation',
+  qst: 'task',
+  prob: 'task',
+  exr: 'task',
+  warn: 'warning',
+}
+
+/**
+ * The float families a fenced div can carry. A div is how Quarto writes a
+ * figure holding subfigures, a cross-referenced table, or a listing. The
+ * remaining crossref families are absent deliberately: an equation carries its
+ * label on the display math and a section carries it on the heading, so a div
+ * spelled that way is not an authored construct and stays generic.
+ */
+const FAMILY_BY_FLOAT_PREFIX: Record<string, PandocDivFamily> = {
+  fig: 'float',
+  tbl: 'float',
+  lst: 'float',
+}
+
+/**
+ * Styled div classes outside the referenceable registry: synonyms and the
+ * proof-like classes, which pandoc-crossref never numbers or labels.
+ */
+const UNREFERENCEABLE_DIV_CLASSES: Record<string, PandocDivFamily> = {
   construction: 'definition',
   notation: 'definition',
-  assumption: 'definition',
-  example: 'explanation',
-  remark: 'explanation',
-  observation: 'explanation',
   fact: 'explanation',
-  exercise: 'task',
-  problem: 'task',
-  question: 'task',
-  warning: 'warning',
   caution: 'warning',
   danger: 'warning',
   error: 'warning',
@@ -75,19 +102,37 @@ export const SEMANTIC_DIV_CLASSES: Record<string, PandocDivFamily> = {
   solution: 'proof',
 }
 
+export const SEMANTIC_DIV_CLASSES: Record<string, PandocDivFamily> = {
+  ...Object.fromEntries(THEOREM_FAMILY_METADATA.map(metadata => {
+    return [ metadata.divClass, FAMILY_BY_THEOREM_PREFIX[metadata.prefix] ]
+  })),
+  ...UNREFERENCEABLE_DIV_CLASSES,
+}
+
 export function humanizeClassName (className: string): string {
   return className
     .replace(/[._-]+/g, ' ')
     .replace(/\b\w/g, char => char.toUpperCase())
 }
 
-export function classifyDiv (classes: string[]): { family: PandocDivFamily, label: string } {
+export function classifyDiv (classes: string[], id: string = ''): { family: PandocDivFamily, label: string } {
   for (const authoredClass of classes) {
     const normalizedClass = authoredClass.toLowerCase()
     const family = SEMANTIC_DIV_CLASSES[normalizedClass]
     if (family !== undefined) {
       return { family, label: humanizeClassName(normalizedClass) }
     }
+  }
+
+  // Quarto states the kind through the crossref prefix of the label instead of
+  // a class: `::: {#def-core}` is the same definition that the pandoc-crossref
+  // form spells `::: {.definition}`, and `::: {#fig-x}` is a figure.
+  const labelFamily = referenceFamilyOf(id)
+  const family = labelFamily === undefined
+    ? undefined
+    : FAMILY_BY_THEOREM_PREFIX[labelFamily as TheoremFamilyPrefix] ?? FAMILY_BY_FLOAT_PREFIX[labelFamily]
+  if (labelFamily !== undefined && family !== undefined) {
+    return { family, label: referenceFamilyDisplayName(labelFamily) }
   }
 
   return {
@@ -127,7 +172,7 @@ export function divModelFromNode (doc: DivSourceDocument, node: SyntaxNode): Pan
     classes.push(...attributes.classes)
   }
 
-  const classification = classifyDiv(classes)
+  const classification = classifyDiv(classes, attributes.id ?? '')
   let depth = 0
   for (let parent = node.parent; parent !== null; parent = parent.parent) {
     if (parent.name === 'PandocDiv') {

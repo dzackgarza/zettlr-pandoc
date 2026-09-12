@@ -44,6 +44,22 @@ Do not silently replace local compactness by compactness.
 Apply the finite-subcover argument.
 :::
 
+::: {#fig-elephants}
+![A young elephant](elephant-a.png){#fig-elephant-a}
+
+![An older elephant](elephant-b.png){#fig-elephant-b}
+
+Two elephants.
+:::
+
+::: {#tbl-lattices}
+| Lattice | Discriminant |
+|---------|--------------|
+| $E_8$   | 1            |
+
+Unimodular lattices.
+:::
+
 ::: {.custom-result}
 Project-specific metadata remains visibly generic.
 :::

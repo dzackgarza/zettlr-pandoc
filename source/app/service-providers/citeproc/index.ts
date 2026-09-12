@@ -512,16 +512,21 @@ export default class CiteprocProvider extends ProviderContract {
       lang = 'en-US'
     }
 
-    try {
-      const localePath = path.join(__dirname, `./assets/csl-locales/locales-${lang}.xml`)
-      this._logger.info(`[Citeproc Provider] Loading CSL locale file at ${localePath} ...`)
-      // NOTE that this System function must be synchronous, so we cannot use
-      // the asynchronous promises API here.
-      return readFileSync(localePath, { encoding: 'utf8' })
-    } catch {
-      // File not found -> Let the engine fall back to a default.
-      return false
+    const candidatePaths = [
+      path.join(__dirname, `./assets/csl-locales/locales-${lang}.xml`),
+      path.resolve(process.cwd(), `static/csl-locales/locales-${lang}.xml`)
+    ]
+    for (const localePath of candidatePaths) {
+      try {
+        const content = readFileSync(localePath, { encoding: 'utf8' })
+        this._logger.info(`[Citeproc Provider] Loading CSL locale file at ${localePath} ...`)
+        return content
+      } catch {
+        // Try next candidate path
+      }
     }
+    // File not found -> Let the engine fall back to a default.
+    return false
   }
 
   /**
