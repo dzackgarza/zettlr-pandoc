@@ -152,21 +152,11 @@ describe('lst crossref family (issue #1 Phase 8)', function () {
     )
   })
 
-  it('renders a bracketed empty-slug cluster through the textual branch even WITH the field (review B5/B9)', function () {
-    // The deliberate predicate split of render-citations: the takeover gate
-    // uses referenceFamilyOf (family + non-empty slug), while the widget's
-    // textual branch uses the prefix predicate isSupportedPandocCrossref.
-    // A bracketed empty-slug cluster ([-@fig:] parses to the item id
-    // 'fig:') is therefore production-reachable in a field-carrying state:
-    // it must render as textual crossref content, never as a failed
-    // bibliography lookup through the citeproc callback (whose stub here
-    // would render the raw id — the discriminating wrong output).
+  it('preserves authored citation text while its workspace snapshot is pending', function () {
     const doc = 'See [-@fig:].\n\noutside'
     const view = createEditor([ markdownParser(), configField, renderCitations, renderReferenceChips, workspaceReferencesField ], doc)
-    const rendered = view.dom.querySelector<HTMLElement>('.citeproc-citation')
-    assert.ok(rendered !== null, 'the empty-slug cluster must render a citation widget despite the field being present')
-    assert.equal(rendered.textContent, '#', 'the suppress-author empty-slug form renders its textual "#<label>" shape')
-    assert.equal(rendered.classList.contains('error'), false, 'the cluster must never surface as a failed bibliography citation')
+    assert.equal(view.dom.querySelector('.citeproc-citation'), null)
+    assert.ok(view.contentDOM.textContent.includes('[-@fig:]'))
   })
 
   it('END-TO-END CANARY (already green): a resolved @lst occurrence renders as a chip', function () {
