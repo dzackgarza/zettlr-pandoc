@@ -26,6 +26,17 @@ function sep (path: string): '\\'|'/' {
   return isWin32Path(path) ? '\\' : '/'
 }
 
+/** Whether a path lies strictly inside a directory, at a path-segment boundary. */
+export function isInsideRoot (documentPath: string, rootPath: string): boolean {
+  if (!documentPath.startsWith(rootPath) || documentPath === rootPath) {
+    return false
+  }
+  const boundary = rootPath.endsWith('/') || rootPath.endsWith('\\')
+    ? rootPath.slice(-1)
+    : documentPath.charAt(rootPath.length)
+  return boundary === '/' || boundary === '\\'
+}
+
 /**
  * Utility function that checks if a path is likely a win32-path
  *

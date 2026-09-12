@@ -20,7 +20,7 @@ declare global {
 
 const overview = `# Semantic fenced divs
 
-::: theorem
+::: {.prp #prp-compact.interval:maximum}
 Every compact interval has a maximum.
 :::
 

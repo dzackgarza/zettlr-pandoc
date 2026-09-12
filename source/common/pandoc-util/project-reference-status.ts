@@ -78,6 +78,7 @@
  */
 
 import type { ProjectSettings } from '../../types/common/fsal'
+import { isInsideRoot } from '../util/renderer-path-polyfill'
 import type {
   AppendAndContinuePlan,
   ProjectReferenceStatus,
@@ -95,24 +96,6 @@ export type CompletionInsertionAffordance =
   | { kind: 'disabled-another-project' }
   | { kind: 'insert-with-append', plan: AppendAndContinuePlan }
   | { kind: 'insert-with-export-warning' }
-
-/**
- * True iff `documentPath` lies strictly inside `rootPath`, path-segment-safe:
- * /w/ProjectA never contains /w/ProjectAB/x.md. Renderer-safe (no Node path
- * module): the character following the root prefix must be a separator.
- *
- * @param   {string}   documentPath  The document's absolute path
- * @param   {string}   rootPath      The Project root's absolute path
- *
- * @return  {boolean}                Whether the root contains the document
- */
-function isInsideRoot (documentPath: string, rootPath: string): boolean {
-  if (!documentPath.startsWith(rootPath)) {
-    return false
-  }
-  const next = documentPath.charAt(rootPath.length)
-  return next === '/' || next === '\\'
-}
 
 /**
  * The project-relative Unix-separator path of an in-root document.
