@@ -11,6 +11,8 @@ import { markdownToAST } from '../modules/markdown-utils'
 import type { ASTNode, FencedCode, Heading, PandocDiv } from '../modules/markdown-utils/markdown-ast'
 import { parsePandocAttributes, type ParsedPandocAttributes } from './parse-pandoc-attributes'
 import { isReferenceableDivClass } from '../util/pandoc-quick-reference'
+import { SEMANTIC_DIV_CLASSES } from './pandoc-div-model'
+import { sha256Text } from '../util/sha256'
 import {
   CROSSREF_FAMILIES,
   THEOREM_FAMILIES,
@@ -23,20 +25,14 @@ import {
 
 /**
  * Computes the deterministic content hash used to key reference snapshots
- * and to gate workspace edits. FNV-1a (32 bit) over UTF-16 code units:
- * dependency-free and identical in main and renderer processes.
+ * and to gate workspace edits, identical in main and renderer processes.
  *
  * @param   {string}  markdown  The full markdown source
  *
- * @return  {string}            The hash, e.g. 'fnv1a-811c9dc5'
+ * @return  {string}            The SHA-256 content hash.
  */
 export function hashDocumentSource (markdown: string): string {
-  let hash = 0x811c9dc5
-  for (let i = 0; i < markdown.length; i++) {
-    hash ^= markdown.charCodeAt(i)
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return 'fnv1a-' + (hash >>> 0).toString(16).padStart(8, '0')
+  return 'sha256-' + sha256Text(markdown)
 }
 
 /**
@@ -44,7 +40,7 @@ export function hashDocumentSource (markdown: string): string {
  * with the full (colon-preserving) id token recovered from the authored text.
  */
 export interface LocatedAttribute {
-  /** The full authored id (parsePandocAttributes truncates ids at colons) */
+  /** The full authored id. */
   key: string
   /** The exact range of the id token including its `#` sigil */
   range: SourceRange
@@ -53,10 +49,7 @@ export interface LocatedAttribute {
 }
 
 /**
- * Parses an authored attribute block and recovers the full id token. The
- * shared attribute parser stops ids at the first colon, so the token is
- * re-anchored on the parser's own id match and extended over the authored
- * characters up to whitespace or the closing brace.
+ * Parses an authored attribute block and locates the full id token.
  *
  * This is the single id-token locator (review B6): reference-lint imports it
  * instead of keeping a parallel copy. It fails LOUD on an inconsistent
@@ -80,13 +73,10 @@ export function locateAttribute (attrText: string, offset: number): LocatedAttri
     throw new Error(`Inconsistent attribute block: id "${attributes.id}" not found in "${attrText}"`)
   }
 
-  let idEnd = idStart + 1 + attributes.id.length
-  while (idEnd < attrText.length && !' \t\n}'.includes(attrText[idEnd])) {
-    idEnd++
-  }
+  const idEnd = idStart + 1 + attributes.id.length
 
   return {
-    key: attrText.slice(idStart + 1, idEnd),
+    key: attributes.id,
     range: { from: offset + idStart, to: offset + idEnd },
     attributes
   }
@@ -300,7 +290,7 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
     const classes = located.attributes.classes ?? []
     const isProofLike = classes.some(divClass => {
       const lower = divClass.toLowerCase()
-      return lower === 'proof' || lower === 'sketch' || lower === 'solution'
+      return SEMANTIC_DIV_CLASSES[lower] === 'proof'
     })
     if (isProofLike) {
       return

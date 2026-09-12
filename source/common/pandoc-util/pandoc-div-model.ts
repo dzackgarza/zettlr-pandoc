@@ -19,7 +19,7 @@
 import type { SyntaxNode } from '@lezer/common'
 import { parsePandocAttributes } from './parse-pandoc-attributes'
 import { referenceFamilyDisplayName, referenceFamilyOf } from '@dts/common/references'
-import { THEOREM_FAMILY_METADATA, type TheoremFamilyPrefix } from '@common/util/pandoc-quick-reference'
+import { THEOREM_CLASS_TO_PREFIX, type TheoremFamilyPrefix } from '@common/util/pandoc-quick-reference'
 
 export type PandocDivFamily = 'result'|'definition'|'explanation'|'task'|'warning'|'proof'|'float'|'generic'
 
@@ -100,22 +100,38 @@ const UNREFERENCEABLE_DIV_CLASSES: Record<string, PandocDivFamily> = {
   proof: 'proof',
   sketch: 'proof',
   solution: 'proof',
+  prf: 'proof',
+  sol: 'proof',
+  axiom: 'definition',
+  hyp: 'definition',
+  hypothesis: 'definition',
+  cau: 'warning',
 }
 
 export const SEMANTIC_DIV_CLASSES: Record<string, PandocDivFamily> = {
-  ...Object.fromEntries(THEOREM_FAMILY_METADATA.map(metadata => {
-    return [ metadata.divClass, FAMILY_BY_THEOREM_PREFIX[metadata.prefix] ]
+  ...Object.fromEntries(Object.entries(THEOREM_CLASS_TO_PREFIX).map(([divClass, prefix]) => {
+    return [ divClass, FAMILY_BY_THEOREM_PREFIX[prefix] ]
   })),
   ...UNREFERENCEABLE_DIV_CLASSES,
 }
 
 export function humanizeClassName (className: string): string {
+  const prefix = THEOREM_CLASS_TO_PREFIX[className.toLowerCase()]
+  if (prefix !== undefined) {
+    return referenceFamilyDisplayName(prefix)
+  }
+  const expanded: Record<string, string> = { prf: 'proof', sol: 'solution', hyp: 'hypothesis', cau: 'caution' }
+  className = expanded[className.toLowerCase()] ?? className
   return className
     .replace(/[._-]+/g, ' ')
     .replace(/\b\w/g, char => char.toUpperCase())
 }
 
 export function classifyDiv (classes: string[], id?: string): { family: PandocDivFamily, label: string } {
+  const proofClass = classes.find(name => SEMANTIC_DIV_CLASSES[name.toLowerCase()] === 'proof')
+  if (proofClass !== undefined) {
+    return { family: 'proof', label: humanizeClassName(proofClass) }
+  }
   for (const authoredClass of classes) {
     const normalizedClass = authoredClass.toLowerCase()
     const family = SEMANTIC_DIV_CLASSES[normalizedClass]

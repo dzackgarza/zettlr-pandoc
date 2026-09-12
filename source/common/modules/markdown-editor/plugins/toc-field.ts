@@ -15,6 +15,7 @@
 
 import { StateField, type EditorState } from '@codemirror/state'
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
+import { parsePandocAttributes } from '@common/pandoc-util/parse-pandoc-attributes'
 
 /**
  * Takes a heading (the full line) and transforms it into an ID. This function
@@ -31,10 +32,9 @@ function headingToID (headingString: string): string {
   // then we should use that one.
   const pandocAttrs = /\{(.+)\}$/.exec(headingString)
   if (pandocAttrs !== null) {
-    const attrs = pandocAttrs[1].split(' ').map(x => x.trim()).filter(x => x !== '')
-    const id = attrs.find(x => x.startsWith('#'))
+    const { id } = parsePandocAttributes(pandocAttrs[0])
     if (id !== undefined) {
-      return id.substring(1)
+      return id
     }
   }
 
