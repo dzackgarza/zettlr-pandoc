@@ -566,7 +566,7 @@ export async function renderTikz (request: TikzRenderRequest, config: TikzRender
   // and a ```tikz fence as CodeBlock tikz — exactly the two surfaces the
   // filter handles.
   const markdown = request.kind === 'raw'
-    ? `${request.source}\n`
+    ? `${request.source.trim()}\n`
     : request.language === 'tikzcd'
       ? `\\begin{tikzcd}\n${request.source}\n\\end{tikzcd}\n`
       : `\`\`\`tikz\n${request.source}\n\`\`\`\n`

@@ -409,4 +409,54 @@ describe('TikZ editor widgets (issue #14)', function () {
     const proseView = createEditor(2)
     assert.strictEqual(activeTikzBlock(proseView.state), null, 'ordinary prose does not open a TikZ live preview')
   })
+
+  it('renders a standalone \\input with a .tikz or .tikzcd extension as a raw figure widget', async function () {
+    respond = { ok: true, html: `<div style="text-align:center;"><span class="tikzpic">${SVG_OK}</span></div>`, svg: SVG_OK, svgPath: '/cache/sterk.svg', texFontSizePt: 10 }
+    const inputDoc = 'Prose before.\n\n\\input{tikz/sterk-cusp-diagram.tikz}\n\n\\input{figures/comm-square.tikzcd}\n\n\\input{chapters/intro.tex}\n\nProse after.\n'
+    const state = EditorState.create({
+      doc: inputDoc,
+      selection: { anchor: 0 },
+      extensions: [
+        markdownParser(),
+        configField,
+        renderTikzFigures,
+      ],
+    })
+    const view = new EditorView({ state, parent: document.body })
+    assert.ok(forceParsing(view, inputDoc.length, 5000), 'the syntax tree must be fully parsed before asserting')
+    views.push(view)
+
+    await waitFor(() => invocations.length === 2, 'both .tikz and .tikzcd inputs to issue render requests')
+
+    assert.strictEqual(invocations.length, 2, 'only the .tikz and .tikzcd inputs trigger requests, ignoring .tex')
+    const tikzInv = invocations.find(inv => inv.payload.source.includes('sterk-cusp-diagram.tikz'))
+    assert.ok(tikzInv !== undefined)
+    assert.strictEqual(tikzInv.payload.kind, 'raw')
+    assert.strictEqual(tikzInv.payload.language, 'tikz')
+    assert.strictEqual(tikzInv.payload.source, '\\input{tikz/sterk-cusp-diagram.tikz}')
+
+    const tikzcdInv = invocations.find(inv => inv.payload.source.includes('comm-square.tikzcd'))
+    assert.ok(tikzcdInv !== undefined)
+    assert.strictEqual(tikzcdInv.payload.kind, 'raw')
+    assert.strictEqual(tikzcdInv.payload.language, 'tikzcd')
+    assert.strictEqual(tikzcdInv.payload.source, '\\input{figures/comm-square.tikzcd}')
+
+    const tikzBlock = activeTikzBlock(EditorState.create({
+      doc: inputDoc,
+      selection: { anchor: inputDoc.indexOf('sterk-cusp-diagram') },
+      extensions: [ markdownParser(), configField ],
+    }))
+    assert.deepStrictEqual(
+      tikzBlock === null ? null : { kind: tikzBlock.kind, language: tikzBlock.language, source: tikzBlock.source },
+      { kind: 'raw', language: 'tikz', source: '\\input{tikz/sterk-cusp-diagram.tikz}' }
+    )
+
+    const nonTikzBlock = activeTikzBlock(EditorState.create({
+      doc: inputDoc,
+      selection: { anchor: inputDoc.indexOf('chapters/intro.tex') },
+      extensions: [ markdownParser(), configField ],
+    }))
+    assert.strictEqual(nonTikzBlock, null, 'ordinary .tex \\input is not treated as a TikZ block')
+  })
 })
+

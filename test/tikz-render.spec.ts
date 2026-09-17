@@ -485,7 +485,30 @@ describe('TikZ render service (issue #14)', function () {
     }
   })
 
+  it('renders a standalone \\input with a .tikz extension', async function () {
+    this.timeout(180000)
+    const workDir = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-input-'))
+    const stamp = randomBytes(4).toString('hex')
+    await writeFile(path.join(workDir, 'diagram.tikz'), `\\begin{tikzpicture}\n\\draw (0,0) -- (1,1) node[midway] {${stamp}};\n\\end{tikzpicture}\n`)
+    const docPath = path.join(workDir, 'test.md')
+    try {
+      const res = await renderTikz(
+        { source: '\\input{diagram.tikz}', kind: 'raw', language: 'tikz', docPath },
+        { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
+      )
+      if (!toolchainPresent) {
+        assert.ok(!res.ok && res.kind === 'missing-tools')
+        return
+      }
+      assert.ok(res.ok, `standalone \\input{.tikz} renders, got ${JSON.stringify(res).slice(0, 400)}`)
+      assert.ok(res.svg.includes('<svg'), 'result contains SVG markup')
+    } finally {
+      await rm(workDir, { recursive: true, force: true })
+    }
+  })
+
   it('keeps identical source in different document roots in distinct filter-cache entries', async function () {
+
     this.timeout(180000)
     const firstDir = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-cache-root-'))
     const secondDir = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-cache-root-'))

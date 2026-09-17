@@ -352,11 +352,13 @@ if FORMAT:match 'latex' or FORMAT:match 'pdf' or FORMAT:match 'markdown' then
   function RawBlock(el)
     local is_tikzcd = starts_with('\\begin{tikzcd}', el.text)
     local is_tikzpic = starts_with('\\begin{tikzpicture}', el.text)
-    if not is_tikzcd and not is_tikzpic then
+    local is_tikz = el.text:match("\\input%s-{%s*(.-%.tikz)%s*}") or el.text:match("\\input%s-{%s*(.-%.tikzcd)%s*}")
+    if not is_tikzcd and not is_tikzpic and not is_tikz then
       return el
     end
 
-    log("RawBlock: processing " .. (is_tikzcd and "tikzcd" or "tikzpicture") .. " block, length=" .. #el.text)
+    local is_cd = is_tikzcd or (is_tikz and is_tikz:match("%.tikzcd$") ~= nil)
+    log("RawBlock: processing " .. (is_cd and "tikzcd" or "tikzpicture") .. " block, length=" .. #el.text)
     local _, pdf_path = compile_tikz(el.text)
     if not pdf_path then
       log("RawBlock: compilation FAILED for block")
@@ -364,7 +366,21 @@ if FORMAT:match 'latex' or FORMAT:match 'pdf' or FORMAT:match 'markdown' then
     end
     log("RawBlock: compiled to " .. pdf_path)
 
-    el.text = make_latex_output(pdf_path, is_tikzcd)
+    el.text = make_latex_output(pdf_path, is_cd)
+    return el
+  end
+
+  function Para(el)
+    if #el.content == 1 and el.content[1].t == 'RawInline' then
+      local inline = el.content[1]
+      if inline.format == 'tex' or inline.format == 'latex' then
+        local raw = pandoc.RawBlock(inline.format, inline.text)
+        local processed = RawBlock(raw)
+        if processed ~= raw then
+          return processed
+        end
+      end
+    end
     return el
   end
 
@@ -385,7 +401,8 @@ if FORMAT:match 'html' then
     local is_tikzcd = starts_with('\\begin{tikzcd}', el.text)
     local is_tikzpic = starts_with('\\begin{tikzpicture}', el.text)
     local is_pdftex = el.text:match("\\input%s-{(.-%.pdf_tex)}")
-    if not is_tikzcd and not is_tikzpic and not is_pdftex then
+    local is_tikz = el.text:match("\\input%s-{%s*(.-%.tikz)%s*}") or el.text:match("\\input%s-{%s*(.-%.tikzcd)%s*}")
+    if not is_tikzcd and not is_tikzpic and not is_pdftex and not is_tikz then
       return el
     end
 
@@ -408,11 +425,27 @@ if FORMAT:match 'html' then
     local css_class = "tikzcd"
     if is_pdftex then
       css_class = "pdftex"
+    elseif is_tikz then
+      css_class = is_tikz:match("%.tikzcd$") and "tikzcd" or "tikzpic"
     elseif not is_tikzcd then
       css_class = "tikzpic"
     end
 
     return make_html_output(svg_path, css_class)
+  end
+
+  function Para(el)
+    if #el.content == 1 and el.content[1].t == 'RawInline' then
+      local inline = el.content[1]
+      if inline.format == 'tex' or inline.format == 'latex' then
+        local raw = pandoc.RawBlock(inline.format, inline.text)
+        local processed = RawBlock(raw)
+        if processed ~= raw then
+          return processed
+        end
+      end
+    end
+    return el
   end
 
   function CodeBlock(el)

@@ -32,6 +32,18 @@ export function rawTikzEnvironment (paragraphText: string): string|null {
   return environment !== null && FIGURE_ENVIRONMENTS.has(environment) ? environment : null
 }
 
+/** Matches a standalone \input{...} referencing a .tikz or .tikzcd file. */
+export const INPUT_TIKZ_RE = /^\s*\\input\s*\{\s*([^}]+?\.(?:tikz|tikzcd))\s*\}\s*$/
+
+/**
+ * Returns the target file path if the paragraph is a standalone \input command
+ * referencing a .tikz or .tikzcd file, or null otherwise.
+ */
+export function rawTikzInput (paragraphText: string): string|null {
+  const match = INPUT_TIKZ_RE.exec(paragraphText)
+  return match !== null ? match[1] : null
+}
+
 export interface TikzSourceBlock {
   /** The complete Markdown syntax-node range, including fences when present. */
   from: number
@@ -69,18 +81,32 @@ export function tikzBlockForNode (state: EditorState, node: SyntaxNodeRef): Tikz
   if (node.type.name === 'Paragraph') {
     const source = state.sliceDoc(node.from, node.to)
     const environment = rawTikzEnvironment(source)
-    if (environment === null) {
-      return undefined
+    if (environment !== null) {
+      return {
+        from: node.from,
+        to: node.to,
+        sourceFrom: node.from,
+        sourceTo: node.to,
+        source,
+        kind: 'raw',
+        language: environment === 'tikzcd' ? 'tikzcd' : 'tikz'
+      }
     }
-    return {
-      from: node.from,
-      to: node.to,
-      sourceFrom: node.from,
-      sourceTo: node.to,
-      source,
-      kind: 'raw',
-      language: environment === 'tikzcd' ? 'tikzcd' : 'tikz'
+
+    const inputPath = rawTikzInput(source)
+    if (inputPath !== null) {
+      return {
+        from: node.from,
+        to: node.to,
+        sourceFrom: node.from,
+        sourceTo: node.to,
+        source,
+        kind: 'raw',
+        language: inputPath.endsWith('.tikzcd') ? 'tikzcd' : 'tikz'
+      }
     }
+
+    return undefined
   }
 
   if (node.type.name !== 'FencedCode') {
