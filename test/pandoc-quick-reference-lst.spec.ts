@@ -172,7 +172,11 @@ describe('lst crossref family (issue #1 Phase 8)', function () {
     const payload: EditorWorkspaceReferences = {
       snapshot,
       workspaceOccurrences: workspace.flatMap(s => s.occurrences),
-      resolutions: resolveWorkspace(workspace)
+      resolutions: resolveWorkspace(workspace),
+      projectRoots: [{
+        rootPath: path.dirname(COBLE_PATH),
+        files: [ path.basename(COBLE_PATH) ]
+      }]
     }
 
     const view = createEditor(
@@ -187,9 +191,9 @@ describe('lst crossref family (issue #1 Phase 8)', function () {
     assert.equal(chips[0].dataset.referenceFamily, 'lst')
     assert.equal(
       chips[0].textContent,
-      'Listing — Sage session',
-      'the chip must show the family display name and the authored caption title'
+      'Listing 1.1.1',
+      'the chip must show the family display name and the deterministic editor-local number'
     )
-    assert.ok(!/\d/.test(chips[0].textContent ?? ''), 'the chip must never display a computed number')
+    assert.ok(!chips[0].textContent?.includes('Sage session'), 'the caption belongs in hover/detail surfaces rather than the inline chip')
   })
 })

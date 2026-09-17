@@ -129,8 +129,9 @@ const REFERENCE_FAMILY_DISPLAYS = [
 /**
  * The display name of a reference family ('thm' -> 'Theorem', 'fig' ->
  * 'Figure'): the single authority every reference view labels its rows from.
- * Display names never carry a computed number: numbering is owned exclusively
- * by export tools and templates.
+ * The name itself carries no number. Renderer surfaces may append a
+ * deterministic Zettlr-local number; export tools and templates independently
+ * own the number appearing in exported documents.
  *
  * @param   {ReferenceFamily}  family  The reference family
  *
