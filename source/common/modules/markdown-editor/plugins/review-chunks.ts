@@ -93,6 +93,28 @@ export function getReviewChunks (state: EditorState): ReviewSuggestionView[]|nul
   return value === undefined ? null : value.suggestions
 }
 
+/**
+ * Suggestions whose working-side anchors or deletion seam intersect a source
+ * range. Renderers that replace source wholesale (notably the table widget)
+ * use this to surface review state that ordinary mark decorations would hide.
+ */
+export function reviewSuggestionsInRange (
+  state: EditorState,
+  from: number,
+  to: number
+): ReviewSuggestionView[] {
+  const suggestions = getReviewChunks(state)
+  if (suggestions === null) {
+    return []
+  }
+  return suggestions.filter(suggestion => {
+    if (suggestion.seam >= from && suggestion.seam <= to) {
+      return true
+    }
+    return suggestion.anchors.some(anchor => anchor.from < to && anchor.to > from)
+  })
+}
+
 /** The anchor position of a suggestion, or document end. */
 function suggestionAnchor (state: EditorState, suggestion: ReviewSuggestionView): number {
   const position = Math.min(suggestion.anchors[0]?.from ?? suggestion.seam, state.doc.length)

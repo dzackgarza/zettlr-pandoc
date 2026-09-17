@@ -31,6 +31,26 @@ import { CITEPROC_MAIN_DB } from 'source/types/common/citeproc'
 import { configField } from '../util/configuration'
 import { interceptAnchorClicks } from './util/anchor-callbacks'
 import openMarkdownLink from '../util/open-markdown-link'
+import { reviewSuggestionsInRange } from '../plugins/review-chunks'
+
+function updateTableReviewIndicator (wrapper: HTMLElement, view: EditorView, from: number, to: number): void {
+  const count = reviewSuggestionsInRange(view.state, from, to).length
+  wrapper.classList.toggle('cm-table-review-changed', count > 0)
+  wrapper.dataset.reviewSuggestionCount = String(count)
+
+  let indicator = wrapper.querySelector<HTMLElement>(':scope > .cm-table-review-indicator')
+  if (count === 0) {
+    indicator?.remove()
+    return
+  }
+  if (indicator === null) {
+    indicator = document.createElement('span')
+    indicator.className = 'cm-table-review-indicator'
+    indicator.setAttribute('role', 'note')
+    wrapper.prepend(indicator)
+  }
+  indicator.textContent = count === 1 ? '1 proposed table change' : `${count} proposed table changes`
+}
 
 /**
  * This holds the last measured height of each rendered table to provide
@@ -127,6 +147,7 @@ export class TableWidget extends WidgetType {
       }
 
       updateTable(table, tableAST, view)
+      updateTableReviewIndicator(wrapper, view, this.node.from, this.node.to)
 
       const cacheKey = this.cacheKey
       view.requestMeasure({
@@ -162,6 +183,7 @@ export class TableWidget extends WidgetType {
     if (tableAST.type === 'Table') {
       const prevHeight = TABLE_HEIGHT_CACHE.get(this.cacheKey) ?? 0
       updateTable(table, tableAST, view)
+      updateTableReviewIndicator(dom, view, this.node.from, this.node.to)
       // Instruct the editor to remeasure its height; see
       // https://discuss.codemirror.net/t/5604
       const height = table.getBoundingClientRect().height

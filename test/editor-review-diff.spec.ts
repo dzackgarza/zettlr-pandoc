@@ -29,6 +29,7 @@ import { EditorView } from '@codemirror/view'
 import type { ReviewSuggestionView } from '@dts/common/review-diff'
 import {
   getReviewChunks,
+  reviewSuggestionsInRange,
   reviewChunksExtension,
   selectNextReviewChunk,
   selectPreviousReviewChunk
@@ -416,6 +417,60 @@ describe('Editor review-chunk view', function () {
       false,
       'clearing the review without an edit re-renders the link'
     )
+  })
+
+  it('identifies unresolved suggestions inside a source range replaced by a renderer such as a table', function () {
+    const table = [
+      '| Name | Value |',
+      '|------|-------|',
+      '| alpha | corrected |',
+      '| beta | fixed |',
+      ''
+    ].join('\n')
+    const corrected = table.indexOf('corrected')
+    const fixed = table.indexOf('fixed')
+    const suggestions: ReviewSuggestionView[] = [
+      {
+        suggestionId: 'table-corrected',
+        removedText: 'old',
+        anchors: [{ from: corrected, to: corrected + 'corrected'.length }],
+        seam: corrected,
+        description: 'Correct the alpha value.'
+      },
+      {
+        suggestionId: 'table-fixed',
+        removedText: 'wrong',
+        anchors: [{ from: fixed, to: fixed + 'fixed'.length }],
+        seam: fixed,
+        description: 'Correct the beta value.'
+      }
+    ]
+    const view = createReviewView(table, suggestions)
+    assert.deepEqual(
+      reviewSuggestionsInRange(view.state, 0, table.length).map(suggestion => suggestion.suggestionId),
+      [ 'table-corrected', 'table-fixed' ]
+    )
+  })
+
+  it('does not report review suggestions outside a renderer-replaced source range', function () {
+    const table = [
+      'Changed prose before the table.',
+      '',
+      '| Name | Value |',
+      '|------|-------|',
+      '| alpha | stable |',
+      ''
+    ].join('\n')
+    const prose = table.indexOf('Changed prose')
+    const view = createReviewView(table, [{
+      suggestionId: 'prose-only',
+      removedText: 'Old prose',
+      anchors: [{ from: prose, to: prose + 'Changed prose'.length }],
+      seam: prose,
+      description: 'Change prose only.'
+    }])
+    const tableStart = table.indexOf('| Name | Value |')
+    assert.deepEqual(reviewSuggestionsInRange(view.state, tableStart, table.length), [])
   })
 
   it('navigates between chunks with next and previous, wrapping at both ends', function () {

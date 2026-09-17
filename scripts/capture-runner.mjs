@@ -78,6 +78,7 @@ const captures = {
     entry: "test/editor-review-diff-visual-entry.ts",
     bundle: "review-diff-visual-bundle.js",
     driver: "test/editor-review-diff-visual-capture.mjs",
+    loader: ".svg=dataurl",
   },
   "editor-annotations": {
     entry: "test/editor-annotations-visual-entry.ts",

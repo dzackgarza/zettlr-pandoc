@@ -18,7 +18,16 @@ async function capture (view, spec) {
     .cm-scroller { padding: 18px 18px 48px; overflow-x: hidden; }
     .cm-content { overflow-wrap: anywhere; }
   </style></head><body class="${spec.dark ? 'dark' : ''}" data-dark="${spec.dark}">
-    <main id="editor"></main><script src="./review-diff-visual-bundle.js"></script>
+    <main id="editor"></main>
+    <script>
+      // The table editor's subviews import the normal renderer extension set,
+      // whose dictionary/config hooks expect the preload seams available in a
+      // real Zettlr window.
+      window.ipc = { on: () => () => {}, invoke: async () => undefined, send: () => {}, sendSync: () => undefined }
+      window.config = { get: () => undefined, set: () => {} }
+      window.getCitationCallback = () => citations => citations.map(citation => citation.id).join('; ')
+    </script>
+    <script src="./review-diff-visual-bundle.js"></script>
   </body></html>`
   await view.setSize(spec.width, spec.height)
   await view.open(`${spec.name}.html`, html)
@@ -30,8 +39,11 @@ async function capture (view, spec) {
   // editor — a struck-through deletion and a highlighted insertion each —
   // and nothing in the editor can adjudicate them (I4). Adjudication is the
   // annotations panel's, captured by annotations-sidebar-visual-capture.
-  if (diagnostics.chunks !== 2 || diagnostics.deletions !== 2 || diagnostics.insertions !== 2) {
-    throw new Error(`${spec.name} did not render two located chunks: ${JSON.stringify(diagnostics)}`)
+  if (diagnostics.chunks !== 3 || diagnostics.deletions !== 2 || diagnostics.insertions !== 2) {
+    throw new Error(`${spec.name} did not render the two inline chunks plus the table-owned chunk: ${JSON.stringify(diagnostics)}`)
+  }
+  if (diagnostics.tableReviewIndicators !== 1 || diagnostics.tableReviewSuggestionCount !== '1') {
+    throw new Error(`${spec.name} did not surface the review chunk hidden by the rendered table: ${JSON.stringify(diagnostics)}`)
   }
   if (diagnostics.buttons !== 0 || diagnostics.inputs !== 0 || diagnostics.panels !== 0) {
     throw new Error(`${spec.name} renders an adjudication control inside the editor: ${JSON.stringify(diagnostics)}`)

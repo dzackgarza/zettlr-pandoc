@@ -76,11 +76,31 @@ export const renderTables = [
   // A theme for the various elements
   EditorView.baseTheme({
     'div.cm-table-editor-widget-wrapper': {
+      position: 'relative',
       maxWidth: 'fit-content',
       // Ensure the add buttons never disappear
       padding: '21px 10.5px 10.5px 21px',
       margin: '0 2px 0 6px', // Taken from .cm-line so that tables align
       overflow: 'auto'
+    },
+    'div.cm-table-editor-widget-wrapper.cm-table-review-changed': {
+      backgroundColor: 'var(--zettlr-editor-review-region-bg)',
+      boxShadow: 'inset 3px 0 0 var(--zettlr-editor-review-region-accent)'
+    },
+    'div.cm-table-editor-widget-wrapper > .cm-table-review-indicator': {
+      position: 'absolute',
+      top: '2px',
+      left: '24px',
+      zIndex: '2',
+      padding: '1px 6px',
+      border: '1px solid var(--zettlr-editor-review-region-accent)',
+      borderRadius: '999px',
+      backgroundColor: 'var(--zettlr-editor-scroller-bg)',
+      color: 'var(--zettlr-editor-scroller-color)',
+      fontSize: '0.72em',
+      fontWeight: '600',
+      lineHeight: '1.35',
+      pointerEvents: 'none'
     },
     'div.cm-table-editor-widget-wrapper table': {
       // BUG: Somehow the `drawSelection` extension does not properly override
