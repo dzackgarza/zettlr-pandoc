@@ -66,6 +66,7 @@ import { reportError } from '@common/util/error-reporting'
 import MarkdownEditor, { type EditorViewPersistentState } from '@common/modules/markdown-editor'
 
 import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, toRef, onUpdated } from 'vue'
+import _ from 'underscore'
 import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
 import { hasMarkdownExt } from '@common/util/file-extention-checks'
 import { DP_EVENTS, type OpenDocument } from '@dts/common/documents'
@@ -848,8 +849,10 @@ watch(useH1, () => { updateFileDatabase().catch(err => reportError('Could not up
 watch(useTitle, () => { updateFileDatabase().catch(err => reportError('Could not update file database', err)) })
 watch(fsalFiles, () => { updateFileDatabase().catch(err => reportError('Could not update file database', err)) })
 
-watch(editorConfiguration, (newValue) => {
-  currentEditor?.setOptions(newValue)
+watch(editorConfiguration, (newValue, oldValue) => {
+  if (!_.isEqual(newValue, oldValue)) {
+    currentEditor?.setOptions(newValue)
+  }
 })
 
 watch(globalSearchResults, () => {

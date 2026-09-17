@@ -93,7 +93,7 @@ import AnnotationHeader from './annotations/AnnotationHeader.vue'
 import AnnotationList from './annotations/AnnotationList.vue'
 import AnnotationInspector from './annotations/AnnotationInspector.vue'
 import SuggestionInspector from './annotations/SuggestionInspector.vue'
-import { buildAnnotationCards, filterCards, openAnnotationCount, suggestionIdsForPacketIds, type AnnotationCardView } from './annotations/annotation-panel-model'
+import { filterCards, openAnnotationCount, suggestionIdsForPacketIds, type AnnotationCardView } from './annotations/annotation-panel-model'
 import { useMinuteClock } from './annotations/use-minute-clock'
 import { useDocumentCollaborationStore, useDocumentTreeStore } from 'source/pinia'
 import type { TextAnnotation } from '@dts/common/annotation-domain'
@@ -124,7 +124,10 @@ const annotations = computed(() => session.value?.annotations.items ?? [])
 const review = computed(() => session.value?.review)
 const openCount = computed(() => openAnnotationCount(annotations.value))
 
-const cards = computed(() => buildAnnotationCards(annotations.value, session.value?.workingText ?? ''))
+const cards = computed(() => {
+  const path = activeFile.value?.path
+  return path === undefined ? [] : collaborationStore.getCards(path)
+})
 const filteredCards = computed(() => filterCards(cards.value, filterQuery.value))
 const selectedCard = computed<AnnotationCardView | undefined>(() => {
   const id = collaborationStore.selectedAnnotationId

@@ -42,10 +42,11 @@
 
 import { reportError } from '@common/util/error-reporting'
 import { defineStore } from 'pinia'
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { DP_EVENTS } from '@dts/common/documents'
 import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import type { AnnotationMessage, TextAnnotation } from '@dts/common/annotation-domain'
+import { buildAnnotationCards, type AnnotationCardView } from 'source/win-main/sidebar/annotations/annotation-panel-model'
 import type { AnnotationLifecycleIpcInput, DocumentsUpdateContext } from 'source/app/service-providers/documents'
 import type { AnnotationFailure, ReviewFailure, ReviewMutationPrecondition } from 'source/app/service-providers/documents/document-collaboration-application-service'
 import type {
@@ -65,9 +66,14 @@ export type AnnotationInspectorMode = 'list' | 'detail'
 
 export const useDocumentCollaborationStore = defineStore('document-collaboration', () => {
   const sessionsByDocumentPath = reactive<Record<string, DocumentCollaborationSession>>({})
+  const cardsByDocumentPath = reactive<Record<string, AnnotationCardView[]>>({})
   const selectedAnnotationId = ref<string | null>(null)
   const inspectorMode = ref<AnnotationInspectorMode>('list')
   const showResolved = ref(false)
+
+  function updateCardsForSession (documentPath: string, session: DocumentCollaborationSession): void {
+    cardsByDocumentPath[documentPath] = buildAnnotationCards(session.annotations.items, session.workingText)
+  }
 
   // Fetches in flight, keyed by path. Two panes mounting on the same
   // document in the same tick must not turn into two IPC reads: the second
@@ -87,12 +93,27 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
       // real out-of-order arrival is ever observed.
       if (context.collaborationSession !== undefined) {
         sessionsByDocumentPath[context.filePath] = context.collaborationSession
+        updateCardsForSession(context.filePath, context.collaborationSession)
       }
     } else if (event === DP_EVENTS.CLOSE_FILE && context.filePath !== undefined) {
       delete sessionsByDocumentPath[context.filePath]
+      delete cardsByDocumentPath[context.filePath]
       pendingFetches.delete(context.filePath)
     }
   })
+
+  // Precompute cards in the background whenever sessionsByDocumentPath updates
+  watch(
+    sessionsByDocumentPath,
+    (sessions) => {
+      for (const [path, session] of Object.entries(sessions)) {
+        if (session !== undefined) {
+          updateCardsForSession(path, session)
+        }
+      }
+    },
+    { deep: true }
+  )
 
   /**
    * Hydrate the cache for one document path. The first caller for a path —
@@ -117,6 +138,7 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
       .then((session: DocumentCollaborationSession | undefined) => {
         if (session !== undefined) {
           sessionsByDocumentPath[documentPath] = session
+          updateCardsForSession(documentPath, session)
         }
       })
       .catch((err: unknown) => {
@@ -131,6 +153,20 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
 
   function getSession (documentPath: string): DocumentCollaborationSession | undefined {
     return sessionsByDocumentPath[documentPath]
+  }
+
+  function getCards (documentPath: string): AnnotationCardView[] {
+    const cached = cardsByDocumentPath[documentPath]
+    if (cached !== undefined) {
+      return cached
+    }
+    const session = sessionsByDocumentPath[documentPath]
+    if (session !== undefined) {
+      const computedCards = buildAnnotationCards(session.annotations.items, session.workingText)
+      cardsByDocumentPath[documentPath] = computedCards
+      return computedCards
+    }
+    return []
   }
 
   /** Select an annotation in the panel, or clear the selection (null). The
@@ -269,11 +305,13 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
 
   return {
     sessionsByDocumentPath,
+    cardsByDocumentPath,
     selectedAnnotationId,
     inspectorMode,
     showResolved,
     ensureSession,
     getSession,
+    getCards,
     selectAnnotation,
     toggleShowResolved,
     addAnnotationMessage,

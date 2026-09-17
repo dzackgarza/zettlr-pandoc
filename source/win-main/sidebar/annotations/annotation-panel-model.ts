@@ -77,10 +77,44 @@ function anchorPosition (anchor: AnnotationAnchor): number | undefined {
   return undefined
 }
 
+export interface LineIndex {
+  lineOfPosition: (position: number) => number
+}
+
+/**
+ * Builds a single-pass line offset index for fast O(log N) line lookups.
+ * Eliminates repeated multi-megabyte string splits during card derivation.
+ */
+export function createLineIndex (workingText: string): LineIndex {
+  const newlineOffsets: number[] = [0]
+  let idx = 0
+  while ((idx = workingText.indexOf('\n', idx)) !== -1) {
+    newlineOffsets.push(idx + 1)
+    idx += 1
+  }
+  const textLength = workingText.length
+
+  return {
+    lineOfPosition (position: number): number {
+      const clamped = Math.min(Math.max(position, 0), textLength)
+      let low = 0
+      let high = newlineOffsets.length - 1
+      while (low <= high) {
+        const mid = (low + high) >> 1
+        if (newlineOffsets[mid] <= clamped) {
+          low = mid + 1
+        } else {
+          high = mid - 1
+        }
+      }
+      return low
+    }
+  }
+}
+
 /** The 1-based source line a document offset falls on, clamped into the text. */
 function lineOfPosition (position: number, workingText: string): number {
-  const doc = Text.of(workingText.length === 0 ? [''] : workingText.split('\n'))
-  return doc.lineAt(Math.min(Math.max(position, 0), doc.length)).number
+  return createLineIndex(workingText).lineOfPosition(position)
 }
 
 /** The 1-based source line an anchor's position falls on, or undefined for
@@ -103,6 +137,7 @@ function wordCount (text: string): number {
  * marker carried while it was open.
  */
 export function buildAnnotationCards (annotations: TextAnnotation[], workingText: string): AnnotationCardView[] {
+  const lineIndex = createLineIndex(workingText)
   const sorted = [...annotations].sort((a, b) => {
     const posA = anchorPosition(a.anchor) ?? Number.POSITIVE_INFINITY
     const posB = anchorPosition(b.anchor) ?? Number.POSITIVE_INFINITY
@@ -114,14 +149,15 @@ export function buildAnnotationCards (annotations: TextAnnotation[], workingText
   return sorted.map((annotation, index) => {
     const firstMessage = annotation.messages[0]
     const quotedText = annotation.anchor.quotedText
-    const lineNumber = lineNumberFor(annotation.anchor, workingText)
+    const pos = anchorPosition(annotation.anchor)
+    const lineNumber = pos === undefined ? undefined : lineIndex.lineOfPosition(pos)
     return {
       annotation,
       ordinal: index + 1,
       title: deriveCardTitle(firstMessage.text),
       lineLocator: lineNumber === undefined ? 'Orphaned' : `Ln ${lineNumber}`,
       lineNumber,
-      endLineNumber: annotation.anchor.state === 'range' ? lineOfPosition(annotation.anchor.to, workingText) : lineNumber,
+      endLineNumber: annotation.anchor.state === 'range' ? lineIndex.lineOfPosition(annotation.anchor.to) : lineNumber,
       wordCount: wordCount(quotedText),
       quotedText,
       instructionPreview: truncatePreview(firstMessage.text),

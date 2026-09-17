@@ -60,6 +60,7 @@ import {
   buildAnnotationCards,
   buildSuggestionCards,
   chunkNoteCommit,
+  createLineIndex,
   deriveActionRow,
   deriveCardTitle,
   filterCards,
@@ -219,6 +220,18 @@ describe("annotation-panel-model", function () {
     assert.equal(realCards[0].lineLocator, "Ln 2");
     assert.equal(openAnnotationCount(realAnnotations.items), 0, "the annotation is resolved, so the open count must be zero");
   });
+
+  it("builds a fast line index that maps positions to 1-based line numbers via binary search", function () {
+    const text = "First line.\nSecond line.\nThird line.\n";
+    const index = createLineIndex(text);
+    assert.equal(index.lineOfPosition(0), 1);
+    assert.equal(index.lineOfPosition(5), 1);
+    assert.equal(index.lineOfPosition(11), 1);
+    assert.equal(index.lineOfPosition(12), 2);
+    assert.equal(index.lineOfPosition(24), 2);
+    assert.equal(index.lineOfPosition(25), 3);
+    assert.equal(index.lineOfPosition(999), 4);
+  });
 });
 
 describe("useDocumentCollaborationStore panel surface", function () {
@@ -227,6 +240,32 @@ describe("useDocumentCollaborationStore panel surface", function () {
   beforeEach(function () {
     setActivePinia(createPinia());
     documentCollaborationIpcDouble.reset();
+  });
+
+  it("precomputes cards in the background upon ensureSession and getCards reads them directly", async function () {
+    documentCollaborationIpcDouble.setInvokeResponder(async () => session);
+    const store = useDocumentCollaborationStore();
+    await store.ensureSession(session.documentPath);
+
+    const cards = store.getCards(session.documentPath);
+    assert.equal(cards.length, session.annotations.items.length);
+    assert.equal(cards[0].ordinal, 1);
+    assert.ok(cards[0].lineLocator.startsWith("Ln ") || cards[0].lineLocator === "Orphaned");
+  });
+
+  it("precomputes cards in the background upon document-collaboration broadcast", function () {
+    const store = useDocumentCollaborationStore();
+    documentCollaborationIpcDouble.emit("documents-update", {
+      event: "document-collaboration",
+      context: {
+        filePath: session.documentPath,
+        collaborationSession: session,
+      },
+    });
+
+    const cards = store.getCards(session.documentPath);
+    assert.equal(cards.length, session.annotations.items.length);
+    assert.equal(store.cardsByDocumentPath[session.documentPath]?.length, session.annotations.items.length);
   });
 
   it("selectAnnotation switches the inspector mode, and clearing the selection returns to the list", function () {
