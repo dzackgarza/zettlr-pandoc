@@ -66,11 +66,26 @@ export function showLineNumbers (show: boolean = true): Extension[] {
     lineNumbersExtension,
     modeSwitcher,
     EditorView.baseTheme({
+      // Keep the line-number column from consuming the editor on pathological
+      // documents or after another gutter causes CodeMirror to remeasure the
+      // gutter strip. Six character cells still show line numbers through
+      // 999999 in full; anything larger is clipped rather than widening the
+      // prose column indefinitely.
+      '.cm-lineNumbers': {
+        minWidth: '3ch',
+        maxWidth: '6ch',
+        overflow: 'hidden'
+      },
       // Ensure the line numbers are vertically aligned due to the wrapping
       '.cm-lineNumbers .cm-gutterElement': {
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'end'
+        justifyContent: 'end',
+        boxSizing: 'border-box',
+        width: '100%',
+        minWidth: '0',
+        overflow: 'hidden',
+        fontVariantNumeric: 'tabular-nums'
       }
     })
   ]
