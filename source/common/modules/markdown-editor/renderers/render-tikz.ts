@@ -7,10 +7,10 @@
  * License:         GNU GPL v3
  *
  * Description:     Renders TikZ figures inline (issue #14): raw
- *                  \begin{tikzcd}/\begin{tikzpicture} blocks and ```tikz
+ *                  \begin{tikzcd}/\begin{tikzpicture} blocks and ```tikz/```tikzcd
  *                  code fences become async figure widgets. Compilation
  *                  happens in the main process (pdflatex + pdf2svg behind
- *                  the vendored pandoc filter's content-addressed cache),
+ *                  the shared Pandoc filter's content-addressed cache),
  *                  so rendering never blocks typing; a cache hit lands
  *                  immediately. A figure that fails to compile shows the
  *                  filter's LaTeX bang-error diagnostic mapped to the tikz
@@ -18,8 +18,10 @@
  *                  missing tools; a toolchain check that failed for a reason
  *                  other than absence names the tool and the errno instead of
  *                  telling the user to install it; a render killed by a signal
- *                  names the signal. Clicking a rendered figure requests the
- *                  full-screen lightbox with the servable SVG file.
+ *                  names the signal. Clicking a rendered figure follows the
+ *                  editor's ordinary edit-first semantics and reveals its
+ *                  source; a separate corner control opens the full-screen
+ *                  lightbox with the servable SVG file.
  *
  * END HEADER
  */
@@ -29,39 +31,18 @@ import { type SyntaxNode, type SyntaxNodeRef } from '@lezer/common'
 import { WidgetType, EditorView } from '@codemirror/view'
 import { type EditorState } from '@codemirror/state'
 import { configField } from '../util/configuration'
-import { wholeEnvironment } from '@common/util/math-delimiters'
 import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-render'
+import { tikzBlockForNode } from '../tikz-block'
+import type { TikzSourceBlock } from '../tikz-block'
+import { reportError } from '@common/util/error-reporting'
+import { tikzWidthEm } from '../tikz-display-size'
 
 /**
- * The environments this renderer draws as a figure. latex-environment-lint.ts
- * reads the same set to decide whether a folded environment costs the author a
- * missing picture or only a paragraph boundary.
- */
-export const FIGURE_ENVIRONMENTS: ReadonlySet<string> = new Set([ 'tikzcd', 'tikzpicture' ])
-
-/**
- * The environment a paragraph renders as a raw figure, or null when it does
- * not render as one.
- *
- * A raw block is only a figure when it is the WHOLE paragraph. Markdown folds
- * a line written directly under prose into that prose's paragraph, and the
- * result reads as one paragraph that merely contains the environment — so
- * there is no block for this renderer to replace.
- *
- * The "is this text one whole environment" half lives in math-delimiters.ts,
- * which latex-environment-lint.ts also reads; this narrows the answer to the
- * environments drawn here. Both sides therefore answer from one predicate and
- * one set, and cannot disagree about what renders.
- */
-export function rawTikzEnvironment (paragraphText: string): string|null {
-  const environment = wholeEnvironment(paragraphText)
-  return environment !== null && FIGURE_ENVIRONMENTS.has(environment) ? environment : null
-}
-
-/**
- * One in-flight/settled render per figure source. The main process holds the
- * durable content-addressed cache; this memo only prevents a redraw from
- * re-crossing the IPC boundary for a figure already rendered this session.
+ * One in-flight render per figure source. Settled requests are removed: the
+ * main process/filter own the durable content-addressed cache, and keeping a
+ * second settled cache here would make the live preview's explicit Force
+ * rerender invisible when the caret later leaves the block and this inline
+ * widget returns.
  */
 let renderMemo = new Map<string, Promise<TikzRenderResult>>()
 
@@ -71,7 +52,10 @@ export function __resetTikzRenderMemoForTests (): void {
 }
 
 function requestRender (request: TikzRenderRequest): Promise<TikzRenderResult> {
-  const key = `${request.kind}\0${request.source}`
+  // docPath is semantically part of the render: relative \input{…} resolves
+  // from it. Two panes with byte-identical source but different document
+  // roots therefore must never share even an in-flight request.
+  const key = `${request.kind}\0${request.language}\0${request.docPath}\0${request.source}`
   const memoized = renderMemo.get(key)
   if (memoized !== undefined) {
     return memoized
@@ -81,6 +65,15 @@ function requestRender (request: TikzRenderRequest): Promise<TikzRenderResult> {
     payload: request,
   })
   renderMemo.set(key, pending)
+  const clear = (): void => {
+    if (renderMemo.get(key) === pending) {
+      renderMemo.delete(key)
+    }
+  }
+  // Both handlers return void, so this cleanup chain resolves even when the
+  // IPC promise rejects; using .finally() here would create a second rejected
+  // promise with nobody to observe it.
+  void pending.then(clear, clear)
   return pending
 }
 
@@ -122,16 +115,53 @@ function figureNodes (html: string): Node[] {
   return nodes
 }
 
-function populate (elem: HTMLElement, result: TikzRenderResult): void {
-  if (result.ok) {
-    const figure = figureNodes(result.html)
-    elem.classList.remove('tikz-pending')
-    elem.replaceChildren(...figure)
-    elem.dataset.tikzSvgPath = result.svgPath
+function normalizeSvgTypography (frame: HTMLElement, svgMarkup: string, texFontSizePt: number): void {
+  const svg = frame.querySelector('svg')
+  if (!(svg instanceof SVGSVGElement)) {
+    return
+  }
+  const widthEm = tikzWidthEm(svgMarkup, texFontSizePt)
+  if (widthEm === null) {
     return
   }
 
-  elem.classList.remove('tikz-pending')
+  // pdf2svg records the TeX page box in points. Express that width in editor
+  // ems instead of CSS points: a 10pt TeX label then lands at one editor em,
+  // matching body-math scale while preserving every relative distance chosen
+  // by TikZ. This is uniform typography normalization, never density-based
+  // enlargement; max-width below still shrinks genuinely oversized diagrams.
+  frame.style.width = `${widthEm}em`
+  svg.style.width = '100%'
+}
+
+function populate (
+  elem: HTMLElement,
+  result: TikzRenderResult,
+  editTitle: string
+): void {
+  if (result.ok) {
+    const figure = figureNodes(result.html)
+    const frame = document.createElement('div')
+    frame.classList.add('tikz-rendered-frame')
+    frame.append(...figure)
+    normalizeSvgTypography(frame, result.svg, result.texFontSizePt)
+
+    // Editing is the only inline action. Fullscreen belongs to the unified
+    // RHS preview pane so rendered widgets do not expose a second preview path.
+
+    elem.classList.remove('tikz-pending')
+    elem.classList.add('tikz-rendered')
+    elem.title = editTitle
+    elem.replaceChildren(frame)
+    elem.dataset.tikzSvgPath = result.svgPath
+    elem.dataset.tikzTexFontSizePt = String(result.texFontSizePt)
+    return
+  }
+
+  elem.classList.remove('tikz-pending', 'tikz-rendered')
+  elem.removeAttribute('title')
+  delete elem.dataset.tikzSvgPath
+  delete elem.dataset.tikzTexFontSizePt
   const box = document.createElement('div')
   box.classList.add('tikz-error')
   const title = document.createElement('strong')
@@ -197,62 +227,68 @@ function populate (elem: HTMLElement, result: TikzRenderResult): void {
 }
 
 class TikzWidget extends WidgetType {
-  constructor (readonly source: string, readonly kind: 'raw'|'fence', readonly node: SyntaxNode) {
+  constructor (readonly block: TikzSourceBlock) {
     super()
   }
 
   eq (other: TikzWidget): boolean {
-    return other.source === this.source && other.kind === this.kind
+    // Widget event handlers close over the authored source range. A change in
+    // any preceding block can shift an otherwise byte-identical figure, so
+    // range movement is semantically observable and must rebuild the widget.
+    return other.block.source === this.block.source &&
+      other.block.kind === this.block.kind &&
+      other.block.language === this.block.language &&
+      other.block.from === this.block.from &&
+      other.block.to === this.block.to &&
+      other.block.sourceFrom === this.block.sourceFrom &&
+      other.block.sourceTo === this.block.sourceTo
   }
 
   toDOM (view: EditorView): HTMLElement {
     const elem = document.createElement('div')
     elem.classList.add('tikz-figure', 'tikz-pending')
+    elem.dataset.tikzLanguage = this.block.language
+    elem.dataset.tikzKind = this.block.kind
     elem.textContent = 'Rendering TikZ figure…'
+
 
     // The configuration carries the buffer's path, using the empty string for
     // a buffer that has none — the same value the request field is declared
     // against. This renderer is only ever installed alongside configField, so
     // its absence is a wiring defect and reads as one.
     const docPath = view.state.field(configField).metadata.path
-    requestRender({ source: this.source, kind: this.kind, docPath })
+    const editTitle = 'Click to edit TikZ source'
+    requestRender({
+      source: this.block.source,
+      kind: this.block.kind,
+      language: this.block.language,
+      docPath
+    })
       .then(
-        result => { populate(elem, result) },
+        result => { populate(elem, result, editTitle) },
         // Only the IPC round-trip is handled here. A failure to reach the main
         // process is a render failure the user must see; a failure raised by
         // populate is a broken service/widget contract and must not be dressed
         // up as one of the render service's outcomes.
         (err: unknown) => {
-          populate(elem, { ok: false, kind: 'pandoc-error', log: err instanceof Error ? err.message : String(err) })
+          reportError('TikZ inline render IPC failed', err)
+          populate(
+            elem,
+            { ok: false, kind: 'pandoc-error', log: err instanceof Error ? err.message : String(err) },
+            editTitle
+          )
         }
       )
 
-    elem.addEventListener('click', () => {
-      const svgPath = elem.dataset.tikzSvgPath
-      if (svgPath === undefined) {
-        // A figure that is still pending, or that failed, has no servable SVG
-        // and therefore nothing to open. This is a real state of the widget,
-        // not a missing value.
-        return
-      }
-
-      // An event is only accepted by the document it is dispatched on if it
-      // was built by that document's own realm, so the constructor comes from
-      // the clicked element's window. A widget element that is handling a
-      // click is in a rendered document, so that window exists; if it does
-      // not, the widget is somewhere it was never mounted and the request has
-      // no host to reach.
-      const ownerWindow = elem.ownerDocument.defaultView
-      if (ownerWindow === null) {
-        throw new Error(
-          'render-tikz: a rendered TikZ figure was clicked while its element sat in a document with ' +
-          `no window (svgPath=${svgPath}, isConnected=${String(elem.isConnected)}). The lightbox ` +
-          'request is constructed through the element\'s own window because a CustomEvent built in a ' +
-          'different realm is rejected by the document it is dispatched on; a windowless document ' +
-          'offers neither that realm nor a TikzLightbox listening for the request.'
-        )
-      }
-      elem.ownerDocument.dispatchEvent(new ownerWindow.CustomEvent('zettlr-tikz-lightbox', { detail: { svgPath } }))
+    // Every rendered TikZ figure now has one edit-first activation path:
+    // select its authored source and let the unified RHS preview choose the
+    // appropriate renderer. tikzcd defaults to Quiver there; ordinary TikZ is
+    // locked to the vanilla renderer.
+    elem.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      view.focus()
+      view.dispatch({ selection: { anchor: this.block.from, head: this.block.to } })
     })
     return elem
   }
@@ -262,7 +298,7 @@ class TikzWidget extends WidgetType {
   }
 
   ignoreEvent (_event: Event): boolean {
-    return true // The widget owns its events (click opens the lightbox).
+    return true // The widget owns edit activation and its explicit expand control.
   }
 }
 
@@ -271,29 +307,8 @@ function shouldHandleNode (node: SyntaxNodeRef): boolean {
 }
 
 function createWidget (state: EditorState, node: SyntaxNodeRef): TikzWidget|undefined {
-  if (node.type.name === 'Paragraph') {
-    const text = state.sliceDoc(node.from, node.to)
-    if (rawTikzEnvironment(text) === null) {
-      return undefined
-    }
-    return new TikzWidget(text, 'raw', node.node)
-  }
-
-  // FencedCode: only ```tikz / ```{.tikz …} fences are figures.
-  const info = node.node.getChild('CodeInfo')
-  if (info === null) {
-    return undefined
-  }
-  const infoText = state.sliceDoc(info.from, info.to).trim()
-  const isTikz = infoText === 'tikz' || /^\{[^}]*\.tikz[\s}]/.test(infoText)
-  if (!isTikz) {
-    return undefined
-  }
-  const body = node.node.getChild('CodeText')
-  if (body === null) {
-    return undefined
-  }
-  return new TikzWidget(state.sliceDoc(body.from, body.to), 'fence', node.node)
+  const block = tikzBlockForNode(state, node)
+  return block === undefined ? undefined : new TikzWidget(block)
 }
 
 export const renderTikzFigures = [
@@ -302,17 +317,51 @@ export const renderTikzFigures = [
     '.tikz-figure': {
       display: 'block',
       textAlign: 'center',
-      padding: '0.4em 0',
-      cursor: 'zoom-in',
+      padding: '0.8em 0 0.4em',
+      cursor: 'default',
     },
-    '.tikz-figure svg': {
-      width: 'min(90%, 52rem)',
+    '.tikz-figure.tikz-rendered': {
+      // Rendered Pandoc divs use a low-opacity semantic surface plus an
+      // accent edge. TikZ is not a semantic container, so keep the same visual
+      // vocabulary at much lower contrast: just enough to show the complete
+      // click-to-edit target without turning every diagram into a card.
+      boxSizing: 'border-box',
+      margin: '0.35em 0',
+      // Keep the original figure measure exactly: the delineation must not
+      // steal horizontal space from a wide diagram. An inset stroke is visual
+      // only, unlike a border plus horizontal padding.
+      padding: '0.8em 0 0.4em',
+      borderRadius: '0.35em',
+      boxShadow: 'inset 0 0 0 1px color-mix(in srgb, currentColor 13%, transparent)',
+      backgroundColor: 'color-mix(in srgb, currentColor 1.8%, transparent)',
+      cursor: 'text',
+      transition: 'box-shadow 100ms ease, background-color 100ms ease',
+    },
+    '.tikz-figure.tikz-rendered:hover': {
+      boxShadow: 'inset 0 0 0 1px color-mix(in srgb, currentColor 24%, transparent)',
+      backgroundColor: 'color-mix(in srgb, currentColor 3.2%, transparent)',
+    },
+    '.tikz-rendered-frame': {
+      position: 'relative',
+      display: 'inline-block',
+      // TeX already chose a physical box for the diagram. Match textbook and
+      // reference-site behaviour by preserving that natural box; only shrink
+      // when it would overflow the editor measure. Never enlarge a diagram to
+      // fill a semantic width bucket.
+      maxWidth: 'min(96%, 68rem)',
+      verticalAlign: 'top',
+    },
+    '.tikz-rendered-frame svg': {
+      display: 'block',
       maxWidth: '100%',
+      width: 'auto',
       height: 'auto',
+      margin: '0 auto',
+      maxHeight: '34rem',
     },
     // pdflatex output is black-on-transparent; invert it for dark themes
     // (the TikZ analog of mermaid's dark-theme reinitialization).
-    '&dark .tikz-figure svg': {
+    '&dark .tikz-rendered-frame svg': {
       filter: 'invert(0.85) hue-rotate(180deg)',
     },
     '.tikz-pending': {

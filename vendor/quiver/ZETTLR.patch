@@ -1,0 +1,630 @@
+diff --git a/src/ui.mjs b/src/ui.mjs
+index 1c7718a..fe2fa02 100644
+--- a/src/ui.mjs
++++ b/src/ui.mjs
+@@ -63,7 +63,7 @@ Object.assign(CONSTANTS, {
+ });
+ 
+ /// Various states for the UI (e.g. whether cells are being rearranged, or connected, etc.).
+-class UIMode {
++export class UIMode {
+     constructor() {
+         // Used for the CSS class associated with the mode. `null` means no class.
+         this.name = null;
+@@ -648,7 +648,7 @@ UIMode.Embedded = class extends UIMode {
+ }
+ 
+ /// The object responsible for controlling all aspects of the user interface.
+-class UI {
++export class UI {
+     constructor(element) {
+         // The quiver identified with the UI.
+         this.quiver = new Quiver();
+@@ -897,7 +897,7 @@ class UI {
+ 
+         // Set up the keyboard shortcuts pane.
+         // For now, we simply keep this in sync with the various keyboard shortcuts manually.
+-        panes.push(new DOM.Div({ id: "keyboard-shortcuts-pane", class: "pane hidden" })
++        const keyboard_shortcuts_pane = new DOM.Div({ id: "keyboard-shortcuts-pane", class: "pane hidden" })
+             .add(
+                 new DOM.Element("h1")
+                     .add("Keyboard shortcuts")
+@@ -921,11 +921,13 @@ class UI {
+                 ["Dismiss errors, and panels;\nCancel modification or movement;\n"
+                     + "Hide focus point;\nDeselect, and dequeue cells", (td) =>
+                         Shortcuts.element(td, [{ key: "Escape" }])],
+-                ["Import from LaTeX", (td) => Shortcuts.element(td, [{ key: "I", modifier: true }])],
+-                [
+-                    "Export to LaTeX or Typst",
+-                    (td) => Shortcuts.element(td, [{ key: "E", modifier: true }])
+-                ]
++                ...(window.__ZETTLR_QUIVER_HOST__ === true ? [] : [
++                    ["Import from LaTeX", (td) => Shortcuts.element(td, [{ key: "I", modifier: true }])],
++                    [
++                        "Export to LaTeX or Typst",
++                        (td) => Shortcuts.element(td, [{ key: "E", modifier: true }])
++                    ]
++                ])
+             ]))
+             .add(new DOM.Element("h2").add("Navigation"))
+             .add(new DOM.Table([
+@@ -1001,9 +1003,11 @@ class UI {
+             ]))
+             .add(new DOM.Element("h2").add("Toolbar"))
+             .add(new DOM.Table([
+-                ["Save diagram in URL", (td) => Shortcuts.element(td, [
+-                    { key: "S", modifier: true }
+-                ])],
++                ...(window.__ZETTLR_QUIVER_HOST__ === true ? [] : [[
++                    "Save diagram in URL", (td) => Shortcuts.element(td, [
++                        { key: "S", modifier: true }
++                    ])
++                ]]),
+                 ["Undo", (td) => Shortcuts.element(td, [{ key: "Z", modifier: true }])],
+                 ["Redo", (td) => Shortcuts.element(td, [
+                     { key: "Z", modifier: true, shift: true }
+@@ -1025,15 +1029,18 @@ class UI {
+                 ["Toggle hints", (td) => Shortcuts.element(td, [{
+                     key: "H", modifier: true, shift: true
+                 }])]
+-            ]))
+-            .add(new DOM.Element("h2").add("Export"))
++            ]));
++        if (window.__ZETTLR_QUIVER_HOST__ !== true) {
++            keyboard_shortcuts_pane.add(new DOM.Element("h2").add("Export"))
+             .add(new DOM.Table([
+                 ["Toggle diagram centring", (td) => Shortcuts.element(td, [{ key: "C" }])],
+                 ["Toggle ampersand replacement", (td) => Shortcuts.element(td, [{ key: "A" }])],
+                 ["Toggle cramped spacing", (td) => Shortcuts.element(td, [{ key: "R" }])],
+                 ["Toggle standalone", (td) => Shortcuts.element(td, [{ key: "S" }])],
+                 ["Toggle fixed size", (td) => Shortcuts.element(td, [{ key: "F" }])],
+-            ])));
++            ]));
++        }
++        panes.push(keyboard_shortcuts_pane);
+ 
+         // Set up the "About" pane.
+         panes.push(new DOM.Div({ id: "about-pane", class: "pane hidden" })
+@@ -3290,8 +3297,10 @@ class UI {
+             document.body.style.visibility = "hidden";
+             delay(() => document.body.style.visibility = "visible");
+         }
+-        this.toolbar.element.query_selector('.action[data-name="dark-theme"] .name')
+-            .replace((this.theme === CONSTANTS.THEMES.DARK ? "Light" : "Dark") + " theme");
++        const theme_action = this.toolbar.element.query_selector('.action[data-name="dark-theme"] .name');
++        if (theme_action !== null) {
++            theme_action.replace((this.theme === CONSTANTS.THEMES.DARK ? "Light" : "Dark") + " theme");
++        }
+     }
+ 
+     /// Get an `ArrowStyle` from the `options` associated to an edge.
+@@ -3468,7 +3477,7 @@ class UI {
+     load_macros(definitions) {
+         // Here, we ignore `{` and `}` around the command name, but later we check that
+         // the brackets at least match.
+-        const newcommand = /^\\((?:re)?newcommand|DeclareMathOperator)(\*?)\{?\\([a-zA-Z]+)\}?(?:\[(\d)\])?\{(.*)\}$/;
++        const newcommand = /^\\((?:(?:re)?newcommand)|providecommand|DeclareMathOperator)(\*?)\{?\\([a-zA-Z]+)\}?(?:\[(\d)\])?\{(.*)\}$/;
+         // It's not clear exactly what the rules for colour names is, so we accept a sensible
+         // subset. We don't accept `cmyk` for now. We don't validate values in the regex.
+         const definecolor = /^\\definecolor\{([a-zA-Z0-9\-]+)\}\{(rgb|RGB|gray|HTML)\}\{((?:\d+(?:\.\d+)?)(?:,(?:\d+(?:\.\d+)?))*|[a-fA-F\d]{6})\}$/;
+@@ -3486,7 +3495,7 @@ class UI {
+             let match = line.match(newcommand);
+             // Check we either have ``{\commandname}` or `\commandname`, but not mismatched
+             // brackets.
+-            if (match !== null && /^\\((re)?newcommand|DeclareMathOperator)\*?(\{\\[a-zA-Z]+\}|\\[a-zA-Z]+[^\}])/.test(line)) {
++            if (match !== null && /^\\((?:(?:re)?newcommand)|providecommand|DeclareMathOperator)\*?(\{\\[a-zA-Z]+\}|\\[a-zA-Z]+[^\}])/.test(line)) {
+                 const [, kind, star, command, arity = 0, definition] = match;
+                 if (kind === "DeclareMathOperator" && typeof match[4] !== "undefined") {
+                     console.warn(`Operators defined with \`\\DeclareMathOperator\` may take no arguments.`);
+@@ -3549,15 +3558,30 @@ class UI {
+             // We should have hit a `continue` by now, unless we couldn't parse the line.
+             console.warn(`Ignoring unrecognised definition: \`${line}\``);
+         }
++        this.apply_macro_definitions(macros, colours);
++    }
++
++    /// Install already-parsed macro definitions supplied by a trusted host.
++    /// Zettlr uses this instead of round-tripping its typed MathJax macro map
++    /// through Quiver's deliberately narrow, line-oriented TeX parser.
++    load_host_macros(definitions) {
++        const macros = new Map();
++        for (const [command, definition] of Object.entries(definitions)) {
++            if (/^\\[A-Za-z@]+$/.test(command) && typeof definition === "string") {
++                macros.set(command, { definition, arity: 0 });
++            }
++        }
++        this.apply_macro_definitions(macros, new Map());
++    }
++
++    /// Commit one parsed macro/colour set and rerender every existing label.
++    apply_macro_definitions(macros, colours) {
+         this.macros = macros;
+         this.colours = colours;
+ 
+-        // Rerender all the existing labels with the new macro definitions.
+         for (const cell of this.quiver.all_cells()) {
+             this.panel.render_maths(this, cell);
+         }
+-
+-        // Update the LaTeX colour palette group.
+         this.colour_picker.update_latex_colours(this);
+     }
+ 
+@@ -3659,6 +3683,15 @@ class UI {
+ 
+     /// Save the current diagram if it is not currently saved.
+     autosave_diagram() {
++        // Zettlr's vendored host owns persistence in the Markdown document.
++        // History.add/undo/redo all funnel through this method, so this is the
++        // single mutation boundary for telling the parent that the diagram has
++        // changed. Selection, hover, pan and other purely-presentational DOM
++        // updates never reach this hook.
++        if (window.__ZETTLR_QUIVER_HOST__ === true) {
++            window.dispatchEvent(new CustomEvent("zettlr-quiver-change"));
++        }
++
+         if (this.start_new_history) {
+             this.start_new_history = false;
+             this.save_diagram();
+@@ -6978,13 +7011,17 @@ class Toolbar {
+ 
+         // Add all of the toolbar buttons.
+ 
+-        // "Saving" updates the URL to reflect the current diagram.
+-        add_action(
+-            "Save",
+-            "save",
+-            [{ key: "S", modifier: true, context: Shortcuts.SHORTCUT_PRIORITY.Always }],
+-            () => ui.save_diagram(),
+-        );
++        // "Saving" updates the URL to reflect the current diagram. Zettlr's
++        // vendored host persists the diagram in the Markdown document instead,
++        // so it must not register this web-only action or its shortcut at all.
++        if (window.__ZETTLR_QUIVER_HOST__ !== true) {
++            add_action(
++                "Save",
++                "save",
++                [{ key: "S", modifier: true, context: Shortcuts.SHORTCUT_PRIORITY.Always }],
++                () => ui.save_diagram(),
++            );
++        }
+ 
+         add_action(
+             "Undo",
+@@ -7315,49 +7352,51 @@ class Toolbar {
+             settings,
+         );
+ 
+-        const update_autosave_action = () => {
+-            const autosave = ui.settings.get("quiver.autosave");
+-            const element = this.element.query_selector('.action[data-name="autosave-on"]');
+-            let name = element.query_selector(".name").clear();
+-            if (autosave) {
+-                name = new DOM.Element("s").add_to(name);
+-            }
+-            name.add("Autosave");
+-            element.query_selector(".symbol img").set_attributes({
+-                src: `icons/autosave-${autosave ? "off" : "on"}.svg`,
+-            });
+-        };
+-
+-        add_action(
+-            "",
+-            "autosave-on",
+-            [],
+-            function () {
+-                const autosave = !ui.settings.get("quiver.autosave")
+-                ui.settings.set("quiver.autosave", autosave);
++        if (window.__ZETTLR_QUIVER_HOST__ !== true) {
++            const update_autosave_action = () => {
++                const autosave = ui.settings.get("quiver.autosave");
++                const element = this.element.query_selector('.action[data-name="autosave-on"]');
++                let name = element.query_selector(".name").clear();
+                 if (autosave) {
+-                    // If the diagram has not been saved manually, then we save the diagram: in
+-                    // essence, switching autosave on acts like a manual save.
+-                    ui.save_diagram(false);
+-                    ui.start_new_history = true;
++                    name = new DOM.Element("s").add_to(name);
+                 }
+-                update_autosave_action();
+-            },
+-            settings,
+-        );
+-        update_autosave_action();
++                name.add("Autosave");
++                element.query_selector(".symbol img").set_attributes({
++                    src: `icons/autosave-${autosave ? "off" : "on"}.svg`,
++                });
++            };
+ 
+-        add_action(
+-            "Dark theme",
+-            "dark-theme",
+-            [],
+-            function () {
+-                ui.switch_theme(ui.theme === CONSTANTS.THEMES.LIGHT
+-                    ? CONSTANTS.THEMES.DARK : CONSTANTS.THEMES.LIGHT);
+-                ui.settings.set("quiver.theme", ui.theme);
+-            },
+-            settings,
+-        );
++            add_action(
++                "",
++                "autosave-on",
++                [],
++                function () {
++                    const autosave = !ui.settings.get("quiver.autosave")
++                    ui.settings.set("quiver.autosave", autosave);
++                    if (autosave) {
++                        // If the diagram has not been saved manually, then we save the diagram: in
++                        // essence, switching autosave on acts like a manual save.
++                        ui.save_diagram(false);
++                        ui.start_new_history = true;
++                    }
++                    update_autosave_action();
++                },
++                settings,
++            );
++            update_autosave_action();
++
++            add_action(
++                "Dark theme",
++                "dark-theme",
++                [],
++                function () {
++                    ui.switch_theme(ui.theme === CONSTANTS.THEMES.LIGHT
++                        ? CONSTANTS.THEMES.DARK : CONSTANTS.THEMES.LIGHT);
++                    ui.settings.set("quiver.theme", ui.theme);
++                },
++                settings,
++            );
++        }
+         ui.switch_theme(ui.theme);
+ 
+         add_action(
+@@ -7378,20 +7417,22 @@ class Toolbar {
+             },
+         );
+ 
+-        add_action(
+-            "About",
+-            "about",
+-            [],
+-            () => {
+-                const hidden = ui.element.query_selector("#about-pane").class_list
+-                    .contains("hidden");
+-                ui.element.query_selector_all(".pane").forEach((pane) => {
+-                    pane.class_list.add("hidden");
+-                });
+-                ui.element.query_selector("#about-pane").class_list.toggle("hidden", !hidden);
+-                ui.element.query_selector(".version").class_list.toggle("hidden", !hidden);
+-            },
+-        );
++        if (window.__ZETTLR_QUIVER_HOST__ !== true) {
++            add_action(
++                "About",
++                "about",
++                [],
++                () => {
++                    const hidden = ui.element.query_selector("#about-pane").class_list
++                        .contains("hidden");
++                    ui.element.query_selector_all(".pane").forEach((pane) => {
++                        pane.class_list.add("hidden");
++                    });
++                    ui.element.query_selector("#about-pane").class_list.toggle("hidden", !hidden);
++                    ui.element.query_selector(".version").class_list.toggle("hidden", !hidden);
++                },
++            );
++        }
+ 
+         // Disable those buttons that need to be disabled.
+         this.update(ui);
+@@ -8521,6 +8562,16 @@ export class Edge extends Cell {
+ let KaTeX = null;
+ let Typst = null;
+ 
++/// Load the vendored KaTeX distribution. The normal web application calls
++/// this during its DOMContentLoaded bootstrap; the Zettlr host calls it
++/// explicitly because it supplies its own bootstrap/bridge instead.
++export function load_katex() {
++    if (KaTeX === null) {
++        KaTeX = import("./KaTeX/katex.mjs").then((module) => module.default);
++    }
++    return KaTeX;
++}
++
+ class PromiseQueue {
+     constructor() {
+         // Start with a resolved promise.
+@@ -8585,6 +8636,12 @@ const load_typst = (ui) => {
+ 
+ // We want until the (minimal) DOM content has loaded, so we have access to `document.body`.
+ document.addEventListener("DOMContentLoaded", () => {
++    // Zettlr embeds the vendored fork through zettlr-host.mjs, which creates
++    // the UI itself and wires parent-window synchronization. Do not also run
++    // the public website's URL/service-worker-oriented bootstrap in that mode.
++    if (window.__ZETTLR_QUIVER_HOST__ === true) {
++        return;
++    }
+     // We don't want the browser being too clever and trying to restore the scroll position, as that
+     // won't play nicely with the auto-centring.
+     if ("scrollRestoration" in window.history) {
+@@ -8720,12 +8777,12 @@ document.addEventListener("DOMContentLoaded", () => {
+     };
+ 
+     // Immediately load the KaTeX library as an ES6 module (regardless of the current renderer).
+-    KaTeX = import("/KaTeX/katex.mjs").then((module) => {
++    KaTeX = load_katex().then((katex) => {
+         // KaTeX is fast enough to be worth waiting for, but not
+         // immediately available. In this case, we delay loading
+         // the quiver until the library has loaded.
+         load_quiver_from_query_string();
+-        return module.default;
++        return katex;
+     }).catch(() => {
+         // Handle KaTeX not loading (somewhat) gracefully.
+         UI.display_error("KaTeX failed to load.");
+diff --git a/src/zettlr-host.css b/src/zettlr-host.css
+new file mode 100644
+index 0000000..4b06695
+--- /dev/null
++++ b/src/zettlr-host.css
+@@ -0,0 +1,63 @@
++html,
++body.zettlr-quiver-host {
++    width: 100%;
++    height: 100%;
++    margin: 0;
++    overflow: hidden;
++}
++
++body.zettlr-quiver-host.ui {
++    position: relative;
++    width: 100%;
++    height: 100%;
++}
++
++/* Zettlr owns persistence, source editing, macros and mode switching. Keep
++ * Quiver's actual diagram editor, inspector, toolbar, touch gestures and
++ * shortcuts, but remove the website-oriented import/export/share surface. */
++body.zettlr-quiver-host .panel.global,
++body.zettlr-quiver-host .port,
++body.zettlr-quiver-host #welcome-pane,
++body.zettlr-quiver-host .version,
++body.zettlr-quiver-host > a > .logo,
++body.zettlr-quiver-host .pane:not(#keyboard-shortcuts-pane) {
++    display: none !important;
++}
++
++/* The upstream toolbar is a fixed 672px strip. In the RHS editor pane that
++ * pushes legitimate editor actions beyond the iframe viewport. Host mode wraps
++ * the same native actions instead of hiding/scaling them; fullscreen restores
++ * Quiver's ordinary single-row toolbar geometry. */
++body.zettlr-quiver-host .toolbar {
++    left: 8px;
++    right: 8px;
++    top: 8px;
++    width: auto;
++    height: auto;
++    min-height: 60px;
++    transform: none;
++    display: flex;
++    flex-wrap: wrap;
++    justify-content: center;
++}
++
++body.zettlr-quiver-host.zettlr-fullscreen .toolbar {
++    left: 50%;
++    right: auto;
++    top: 16px;
++    width: auto;
++    height: 60px;
++    min-height: 0;
++    transform: translateX(-50%);
++    display: block;
++}
++
++/* Upstream positions help immediately below its one-row toolbar. Host mode can
++ * have multiple rows, so centre the shortcuts pane independently. */
++body.zettlr-quiver-host #keyboard-shortcuts-pane {
++    left: 50%;
++    top: 50%;
++    transform: translate(-50%, -50%);
++    width: min(72%, 48rem);
++    max-height: 72%;
++}
+diff --git a/src/zettlr-host.html b/src/zettlr-host.html
+new file mode 100644
+index 0000000..3780c0b
+--- /dev/null
++++ b/src/zettlr-host.html
+@@ -0,0 +1,14 @@
++<!doctype html>
++<html>
++<head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
++    <title>Quiver editor</title>
++    <link rel="stylesheet" type="text/css" href="main.css">
++    <link rel="stylesheet" type="text/css" href="KaTeX/katex.css">
++    <link rel="stylesheet" type="text/css" href="zettlr-host.css">
++</head>
++<body class="zettlr-quiver-host">
++    <script type="module" src="zettlr-host.mjs"></script>
++</body>
++</html>
+diff --git a/src/zettlr-host.mjs b/src/zettlr-host.mjs
+new file mode 100644
+index 0000000..000b82e
+--- /dev/null
++++ b/src/zettlr-host.mjs
+@@ -0,0 +1,168 @@
++// Zettlr host bridge for the vendored Quiver fork. This file deliberately
++// contains no diagram-editing implementation: Quiver owns that. It only maps
++// parent-window messages to Quiver's public import/export/macro/theme surfaces.
++
++window.__ZETTLR_QUIVER_HOST__ = true;
++
++const [{ DOM }, { UI, load_katex }] = await Promise.all([
++    import("./dom.mjs"),
++    import("./ui.mjs"),
++]);
++
++await load_katex();
++
++const body = new DOM.Element(document.body);
++const ui = new UI(body);
++ui.initialise();
++
++// This fork is an editor embedded in a Markdown authoring environment, not
++// Quiver's web publication surface. Force the output settings needed to keep
++// the source as one raw tikzcd environment owned by the document.
++ui.settings.set("quiver.renderer", "katex");
++ui.settings.set("quiver.autosave", false);
++ui.settings.set("export.centre_diagram", false);
++ui.settings.set("export.standalone", false);
++
++let session_id = null;
++let suppress_change = false;
++let emit_timer = null;
++let fullscreen = false;
++
++function post(message) {
++    window.parent.postMessage({ ...message, sessionId: session_id }, "*");
++}
++
++function diagnostic_text(message) {
++    if (!Array.isArray(message)) {
++        return String(message ?? "");
++    }
++    return message.map((part) => {
++        if (typeof part === "string") {
++            return part;
++        }
++        return part?.element?.textContent ?? String(part ?? "");
++    }).join("");
++}
++
++function serialise_diagnostics(diagnostics) {
++    return diagnostics.map((diagnostic) => ({
++        severity: diagnostic.constructor?.name?.includes("Warning") ? "warning" : "error",
++        message: diagnostic_text(diagnostic.message),
++        from: diagnostic.range?.start ?? 0,
++        to: (diagnostic.range?.start ?? 0) + (diagnostic.range?.length ?? 0),
++    }));
++}
++
++function strip_quiver_link(source) {
++    // Quiver intentionally embeds a round-trip URL as the first comment of a
++    // normal export. Zettlr persists the actual diagram state in the document,
++    // so that web-share URL is redundant and would churn on every edit. In the
++    // vendored iframe Quiver quite correctly uses its *current* URL as the
++    // round-trip base (dev-server http://…/zettlr-host.html or packaged
++    // file://…/zettlr-host.html), not q.uiver.app. Identify the generated line
++    // by its encoded `q=` fragment rather than by a hosted-domain assumption.
++    return source.replace(/^%\s+[^\n]*#[^\n]*q=[^\n]*\n/u, "");
++}
++
++function export_source() {
++    const { data } = ui.quiver.export(
++        "tikz-cd",
++        ui.settings,
++        ui.options(),
++        ui.definitions(),
++    );
++    return strip_quiver_link(data).trim();
++}
++
++function load_source(source, macros, theme) {
++    suppress_change = true;
++    try {
++        ui.reset();
++        ui.settings.set("quiver.renderer", "katex");
++        ui.settings.set("quiver.autosave", false);
++        ui.settings.set("export.centre_diagram", false);
++        ui.settings.set("export.standalone", false);
++        const host_macros = macros !== null && typeof macros === "object" ? macros : {};
++        ui.macro_text = null;
++        ui.load_host_macros(host_macros);
++        if (theme === "dark" || theme === "light") {
++            ui.switch_theme(theme);
++        }
++        const { diagnostics } = ui.quiver.import(ui, "tikz-cd", source, ui.settings);
++        post({
++            type: "zettlr-quiver:loaded",
++            diagnostics: serialise_diagnostics(diagnostics),
++        });
++    } catch (error) {
++        post({
++            type: "zettlr-quiver:error",
++            message: error instanceof Error ? error.message : String(error),
++        });
++    } finally {
++        suppress_change = false;
++    }
++}
++
++window.addEventListener("zettlr-quiver-change", () => {
++    if (suppress_change) {
++        return;
++    }
++    if (emit_timer !== null) {
++        clearTimeout(emit_timer);
++    }
++    // Label edits are deliberately collapsed by Quiver's History. A tiny
++    // debounce mirrors that semantic boundary and avoids rewriting the
++    // Markdown document on every internal render step.
++    emit_timer = setTimeout(() => {
++        emit_timer = null;
++        try {
++            post({ type: "zettlr-quiver:change", source: export_source() });
++        } catch (error) {
++            post({
++                type: "zettlr-quiver:error",
++                message: error instanceof Error ? error.message : String(error),
++            });
++        }
++    }, 40);
++});
++
++window.addEventListener("message", (event) => {
++    if (event.source !== window.parent || event.data === null || typeof event.data !== "object") {
++        return;
++    }
++    const message = event.data;
++    if (message.type === "zettlr-quiver:load") {
++        session_id = message.sessionId;
++        load_source(String(message.source ?? ""), message.macros ?? {}, message.theme);
++    } else if (message.type === "zettlr-quiver:theme") {
++        if (message.theme === "dark" || message.theme === "light") {
++            ui.switch_theme(message.theme);
++        }
++    } else if (message.type === "zettlr-quiver:source") {
++        load_source(String(message.source ?? ""), message.macros ?? {}, ui.theme);
++    } else if (message.type === "zettlr-quiver:display") {
++        fullscreen = message.fullscreen === true;
++        document.body.classList.toggle("zettlr-fullscreen", fullscreen);
++    }
++});
++
++// Escape must work while focus is inside the iframe; keyboard events do not
++// bubble across frame boundaries.
++window.addEventListener("keydown", (event) => {
++    if (event.key === "Escape" && fullscreen) {
++        event.preventDefault();
++        event.stopImmediatePropagation();
++        post({ type: "zettlr-quiver:close-request" });
++        return;
++    }
++
++    // The parent owns file persistence, while Quiver's web build binds these
++    // chords to import/export/share. Do not let those web-only actions open
++    // hidden panes inside the embedded editor.
++    if ((event.ctrlKey || event.metaKey) && ["e", "i"].includes(event.key.toLowerCase())) {
++        event.preventDefault();
++        event.stopImmediatePropagation();
++    }
++}, true);
++
++post({ type: "zettlr-quiver:ready" });

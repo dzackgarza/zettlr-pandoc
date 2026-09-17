@@ -539,6 +539,103 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/citations/databases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List loaded citation databases
+         * @description Returns metadata for every bibliography database currently loaded by the application. The main library and any file-local databases are included.
+         */
+        get: operations["listCitationDatabases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/citations/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all citation items from a database
+         * @description Returns every CSL item from the requested database. Defaults to the main library when no database parameter is supplied.
+         */
+        get: operations["listCitationItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/citations/items/{citeKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Look up a single citation item by key */
+        get: operations["getCitationItem"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/citations/render": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render a formatted inline citation
+         * @description Passes the supplied cite items through the CSL engine and returns the formatted citation string.
+         */
+        post: operations["renderCitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/citations/bibliography": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render a formatted bibliography
+         * @description Renders a bibliography for the given cite keys through the CSL engine.
+         */
+        post: operations["renderBibliography"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -635,7 +732,7 @@ export interface components {
         };
         AgentError: {
             /** @enum {string} */
-            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "BASELINE_MISMATCH";
+            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "CITATION_DATABASE_NOT_LOADED" | "CITATION_NOT_FOUND" | "BASELINE_MISMATCH";
             message: string;
             documentId?: string;
             expected?: components["schemas"]["DocumentRevision"];
@@ -1002,6 +1099,59 @@ export interface components {
             unresolvedChunks: number;
             state: components["schemas"]["ReviewState"];
             focused: boolean;
+        };
+        CitationDatabaseSummary: {
+            path: string;
+            /** @enum {string} */
+            type: "csl" | "bibtex" | "biblatex";
+        };
+        CitationItem: {
+            id: string;
+            type: string;
+        } & {
+            [key: string]: unknown;
+        };
+        CiteItemInput: {
+            /** @description The citation key. */
+            id: string;
+            locator?: string;
+            label?: string;
+            prefix?: string;
+            suffix?: string;
+        };
+        RenderCitationRequest: {
+            /**
+             * @description Database identifier. Use "main" for the globally configured library.
+             * @default main
+             */
+            database: string;
+            citations: components["schemas"]["CiteItemInput"][];
+            /** @default false */
+            composite: boolean;
+        };
+        RenderBibliographyRequest: {
+            /** @default main */
+            database: string;
+            citekeys: string[];
+        };
+        CitationDatabasesResponse: {
+            databases: components["schemas"]["CitationDatabaseSummary"][];
+        };
+        CitationItemsResponse: {
+            items: components["schemas"]["CitationItem"][];
+            count: number;
+        };
+        RenderCitationResponse: {
+            /** @description The formatted citation string, or null when the engine could not render the requested items. */
+            rendered: string | null;
+        };
+        RenderBibliographyResponse: {
+            /** @description CSL bibliography formatting options. */
+            options?: {
+                [key: string]: unknown;
+            };
+            /** @description Each entry is an HTML string for one bibliography item. */
+            entries: string[];
         };
     };
     responses: never;
@@ -1953,6 +2103,157 @@ export interface operations {
             };
             /** @description The proposal could not be persisted or the server could not complete the submission. */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    listCitationDatabases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The loaded databases. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CitationDatabasesResponse"];
+                };
+            };
+        };
+    };
+    listCitationItems: {
+        parameters: {
+            query?: {
+                /** @description Database path or "main" for the globally configured library. */
+                database?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Citation items. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CitationItemsResponse"];
+                };
+            };
+            /** @description The requested database is not loaded. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    getCitationItem: {
+        parameters: {
+            query?: {
+                database?: string;
+            };
+            header?: never;
+            path: {
+                citeKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The citation item. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CitationItem"];
+                };
+            };
+            /** @description The cite key was not found in the requested database. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    renderCitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenderCitationRequest"];
+            };
+        };
+        responses: {
+            /** @description The rendered citation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenderCitationResponse"];
+                };
+            };
+            /** @description The requested database is not loaded. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    renderBibliography: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenderBibliographyRequest"];
+            };
+        };
+        responses: {
+            /** @description The rendered bibliography entries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenderBibliographyResponse"];
+                };
+            };
+            /** @description The requested database is not loaded. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

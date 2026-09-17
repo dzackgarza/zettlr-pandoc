@@ -38,7 +38,7 @@ import { type Diagnostic } from '@codemirror/lint'
 import { linter } from '@codemirror/lint'
 import { syntaxTree } from '@codemirror/language'
 import { EditorView } from '@codemirror/view'
-import { FIGURE_ENVIRONMENTS } from '../renderers/render-tikz'
+import { FIGURE_ENVIRONMENTS } from '../tikz-block'
 import { wholeEnvironment } from '@common/util/math-delimiters'
 
 /** An environment opening a line. Anchored per line, so prose that merely

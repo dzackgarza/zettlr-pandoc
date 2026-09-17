@@ -23,6 +23,7 @@ const RULES = {
   newFileNamePattern: 'required|string|default:%id.md',
   appLang: 'required|string|min:5|max:7|default:en_US',
   fileManagerMode: 'required|string|in:thin,expanded,combined|default:thin',
+  'fileManager.expandedDirectories': 'optional|array',
   muteLines: 'required|boolean|default:false',
   'export.dir': 'required|string|in:temp,cwd|default:temp',
   'export.stripTags': 'required|boolean|default:false',

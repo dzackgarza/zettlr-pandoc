@@ -32,6 +32,7 @@ import createUpdateWindow from './create-update-window'
 import createLogWindow from './create-log-window'
 import createStatsWindow from './create-stats-window'
 import createPreferencesWindow from './create-preferences-window'
+import type { PreferenceNavigationTarget } from '@dts/common/preferences'
 import createAboutWindow from './create-about-window'
 import createTagManagerWindow from './create-tag-manager-window'
 import createAssetsWindow from './create-assets-window'
@@ -774,7 +775,12 @@ export default class WindowProvider extends ProviderContract {
   /**
    * Shows the preferences window
    */
-  showPreferences (): void {
+  showPreferences (target?: PreferenceNavigationTarget): void {
+    const navigate = (): void => {
+      if (target !== undefined && this._preferences !== null && !this._preferences.isDestroyed()) {
+        this._preferences.webContents.send('preferences-navigate', target)
+      }
+    }
     if (this._preferences === null) {
       const { workArea } = screen.getPrimaryDisplay()
       const conf = this._retrieveWindowPosition('preferences', {
@@ -783,7 +789,7 @@ export default class WindowProvider extends ProviderContract {
         x: (workArea.width - 700) / 2,
         y: (workArea.height - 800) / 2
       })
-      this._preferences = createPreferencesWindow(this._logger, this._config, conf)
+      this._preferences = createPreferencesWindow(this._logger, this._config, conf, target)
       this._hookWindowResize(this._preferences, 'preferences')
 
       // Dereference the window as soon as it is closed
@@ -792,6 +798,11 @@ export default class WindowProvider extends ProviderContract {
       })
     } else {
       this._makeVisible(this._preferences)
+      if (this._preferences.webContents.isLoading()) {
+        this._preferences.webContents.once('did-finish-load', navigate)
+      } else {
+        navigate()
+      }
     }
   }
 

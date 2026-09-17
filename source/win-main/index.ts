@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import windowRegister from '@common/modules/window-register'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
@@ -25,7 +26,7 @@ windowRegister()
   .then(() => {
     afterRegister()
   })
-  .catch(e => console.error(e))
+  .catch(e => reportError(e))
 
 function afterRegister (): void {
   const pinia = createPinia()
@@ -63,7 +64,7 @@ function afterRegister (): void {
     }
 
     ipcRenderer.invoke('application', { command: 'roots-add', payload: filesToOpen.filter(x => x !== undefined) })
-      .catch(e => console.error(e))
+      .catch(e => reportError(e))
     return false
   }, false)
 }

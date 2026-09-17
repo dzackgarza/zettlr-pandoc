@@ -1,540 +1,328 @@
 /**
- * @ignore
- * BEGIN HEADER
+ * Portable VS Code snippets hosted by CodeMirror's native snippet runtime.
  *
- * Contains:        Snippets Autocomplete
- * CVM-Role:        Autocomplete Plugin
- * Maintainer:      Hendrik Erz
- * License:         GNU GPL v3
- *
- * Description:     This plugin manages snippets.
- *
- * END HEADER
+ * The persisted syntax is VS Code/TextMate. Monaco's parser owns that syntax;
+ * this module only adapts the subset CodeMirror can execute into its native
+ * snippet template grammar. Active fields, mirroring, Tab/Shift-Tab/Escape,
+ * indentation, and snippet lifetime are all owned by @codemirror/autocomplete.
  */
-
-// It is very nice that Codemirror offers snippets out of the box, but
-// unfortunately the syntax is incompatible with Textmate, so for backwards
-// compatibility we'll have to reimplement it here. This is largely the code
-// responsible for snippets in the old implementation, but now disentangled from
-// the other autocompletes thanks to the new plugin structure of Codemirror 6.
-
-import { type Completion } from '@codemirror/autocomplete'
+import { reportError } from '@common/util/error-reporting'
+import { snippet as codeMirrorSnippet, type Completion } from '@codemirror/autocomplete'
+import { StateEffect, StateField, type EditorState } from '@codemirror/state'
+import picomatch from 'picomatch'
 import {
-  StateEffect,
-  StateField,
-  EditorSelection,
-  Facet,
-  MapMode,
-  type SelectionRange,
-  type EditorState,
-  type Range,
-} from '@codemirror/state'
-import { type Command, Decoration, EditorView, WidgetType } from '@codemirror/view'
-import { type AutocompletePlugin } from '.'
-import { DateTime } from 'luxon'
-import { v4 as uuid } from 'uuid'
-import generateId from '@common/util/generate-id'
-import { configField } from '../util/configuration'
-import { gemoji } from 'gemoji'
+  Choice,
+  Marker,
+  Placeholder,
+  SnippetParser,
+  Text,
+  Variable,
+  type VariableResolver,
+} from 'monaco-editor-core/esm/vs/editor/contrib/snippet/browser/snippetParser.js'
+import type { UserSnippet } from '@dts/common/snippets'
 import { pathBasename, pathDirname, pathExtname } from '@common/util/renderer-path-polyfill'
+import { configField } from '../util/configuration'
+import { isMathPosition } from '../util/is-math-position'
+import { tikzBlockAt } from '../tikz-block'
+import type { AutocompletePlugin } from '.'
+import {
+  completionInfoPanel,
+  type CompletionSourceName,
+  type PresentedCompletion,
+} from './completion-presentation'
 
-/**
- * This utility function inserts an emoji
- */
-const applyEmoji = function (view: EditorView, completion: Completion, from: number, to: number): void {
-  view.dispatch({
-    changes: [{ from: from - 1, to, insert: completion.label }],
-    selection: { anchor: from - 1 + completion.label.length }
-  })
-}
+const STANDARD_VARIABLE_NAMES = new Set([
+  'CURRENT_YEAR', 'CURRENT_YEAR_SHORT', 'CURRENT_MONTH', 'CURRENT_DATE',
+  'CURRENT_HOUR', 'CURRENT_MINUTE', 'CURRENT_SECOND', 'CURRENT_MILLISECOND',
+  'CURRENT_DAY_NAME', 'CURRENT_DAY_NAME_SHORT', 'CURRENT_MONTH_NAME',
+  'CURRENT_MONTH_NAME_SHORT', 'CURRENT_SECONDS_UNIX', 'CURRENT_MILLISECONDS_UNIX',
+  'CURRENT_TIMEZONE_OFFSET', 'CURRENT_TIMEZONE_NAME', 'SELECTION', 'CLIPBOARD',
+  'TM_SELECTED_TEXT', 'TM_CURRENT_LINE', 'TM_CURRENT_WORD', 'TM_LINE_INDEX',
+  'TM_LINE_NUMBER', 'TM_FILENAME', 'TM_FILENAME_BASE', 'TM_DIRECTORY',
+  'TM_DIRECTORY_BASE', 'TM_FILEPATH', 'CURSOR_INDEX', 'CURSOR_NUMBER',
+  'RELATIVE_FILEPATH', 'BLOCK_COMMENT_START', 'BLOCK_COMMENT_END', 'LINE_COMMENT',
+  'WORKSPACE_NAME', 'WORKSPACE_FOLDER', 'RANDOM', 'RANDOM_HEX', 'UUID'
+])
 
-const emojis: Completion[] = gemoji.map(g => {
-  return {
-    label: g.emoji,
-    detail: g.names.join(', '),
-    section: g.category,
-    info: g.tags.join(', '),
-    apply: applyEmoji
-  }
-})
+export const snippetsUpdate = StateEffect.define<UserSnippet[]>()
 
-// Define a class to highlight active tabstops
-const tabstopDeco = Decoration.mark({ class: 'tabstop' })
-
-// This widget is used to mark simple tabstops with no default text (so that
-// they're visible and users can see where the cursor will end up next).
-class SnippetWidget extends WidgetType {
-  constructor (readonly content: string, readonly range: SelectionRange) {
-    super()
-  }
-
-  eq (other: SnippetWidget): boolean {
-    return other.content === this.content && other.range.eq(this.range)
-  }
-
-  toDOM (_view: EditorView): HTMLElement {
-    const elem = document.createElement('span')
-    elem.classList.add('tabstop')
-    elem.innerText = this.content
-    return elem
-  }
-
-  ignoreEvent (event: Event): boolean {
-    return true // By default ignore all events
-  }
-}
-
-/**
- * This utility function inserts a snippet
- */
-function applySnippet (view: EditorView, completion: Completion, from: number, to: number): void {
-  template2snippet(view.state, completion.info as string, from - 1)
-    .then(([ textToInsert, selections ]) => {
-      // We can immediately take the first rangeset and set it as a selection, whilst
-      // committing the rest into our StateField as an effect
-      const firstSelection = selections.shift()
-      view.dispatch({
-        changes: [{ from: from - 1, to, insert: textToInsert }],
-        selection: firstSelection,
-        effects: snippetTabsEffect.of(selections)
-      })
-    })
-    .catch(err => console.error(err))
-}
-
-/**
- * Helper function to calculate the cursor association
- * based on whether any ranges are directly before `pos`
- */
-function getAssociation (selections: EditorSelection[], pos: number|undefined): -1|1 {
-  const isAdjacent = selections
-    .some(sel => sel.ranges.some(r => r.to === pos))
-
-  return isAdjacent ? -1 : 1
-}
-
-/**
- * Used internally to add ranges for the snippets to the state
- */
-const snippetTabsEffect = StateEffect.define<EditorSelection[]>()
-
-/**
- * This effect is used to indicate to the library that it should remove the
- * first active range (so that the widget decorator can immediately remove the
- * widget for the next selection range).
- */
-const shiftNextTabEffect = StateEffect.define()
-
-/**
- * Use this effect to provide the editor state with a set of new snippets to autocomplete
- */
-export const snippetsUpdate = StateEffect.define<Array<{ name: string, content: string }>>()
-
-interface SnippetStateField {
-  availableSnippets: Completion[]
-  activeSelections: EditorSelection[]
-  association: number
-}
-
-export const snippetsUpdateField = StateField.define<SnippetStateField>({
-  create (_state) {
-    return {
-      availableSnippets: [],
-      activeSelections: [],
-      association: 1,
-    }
-  },
-  update (val, transaction) {
+export const snippetsUpdateField = StateField.define<UserSnippet[]>({
+  create: () => [],
+  update (value, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(snippetsUpdate)) {
-        let availableSnippets = effect.value.map(entry => {
-          return {
-            label: entry.name,
-            info: entry.content,
-            apply: applySnippet
-          }
-        })
-
-        return { ...val, availableSnippets }
-      } else if (effect.is(snippetTabsEffect)) {
-        let activeSelections = effect.value
-
-        // Calculate the association when the effects come in
-        // because we need access to the current tab stop
-        // range, which is the `transaction.selection` value.
-        let association = getAssociation(val.activeSelections, transaction.selection?.main.from)
-
-        return { ...val, activeSelections, association }
-      } else if (effect.is(shiftNextTabEffect)) {
-        // NOTE: We cannot shift the range in the nextTab() command, as this
-        // change is not transparent to the library (hence it would render a
-        // widget also for the currently selected range, as it would only pick
-        // up the fact that this range doesn't exist anymore after the user
-        // starts typing, which re-evaluates the length of the activeRanges
-        // array.)
-        let activeSelections = val.activeSelections
-        activeSelections.shift()
-
-        let association = getAssociation(val.activeSelections, transaction.selection?.main.from)
-
-        return { ...val, activeSelections, association }
+        return effect.value
       }
     }
-
-    if (!transaction.docChanged || val.activeSelections.length === 0) {
-      return { ...val }
-    }
-
-    // This monstrosity ensures that our ranges stay in sync while the user types
-    let activeSelections = val.activeSelections
-      .filter(selection => {
-        return selection.ranges
-          .some(r => transaction.changes.mapPos(r.from, 1, r.empty ? MapMode.TrackAfter : MapMode.TrackDel) !== null)
-      })
-      .map(selection => {
-        // Unforturnately, `selection.map` only applies the provided `assoc`
-        // value to empty ranges, so we have to reimplement the logic here
-        // for the association to apply correctly.
-        return EditorSelection.create(selection.ranges.map(range => {
-          const from = transaction.changes.mapPos(range.from, 1)
-          // The reason to change the association for the `range.to` position is
-          // so that the selection range of the tabstop expands when text is added
-          // to the end of the range. We do not need to do this for empty tabstops,
-          // as they should remain empty.
-          const to = transaction.changes.mapPos(range.to, range.empty ? 1 : val.association)
-
-          return EditorSelection.range(from, to)
-        }))
-      })
-
-    return { ...val, activeSelections }
-  },
-  // Turns any active ranges into decorations to highlight them
-  provide: field => {
-    return EditorView.decorations.from(field, (fieldValue) => {
-      if (fieldValue.activeSelections.length === 0) {
-        return Decoration.none
-      }
-
-      const decorations: Range<Decoration>[] = []
-      let position = 0
-      for (const selection of fieldValue.activeSelections) {
-        position++
-        for (const range of selection.ranges) {
-          if (range.empty) {
-            const widget = new SnippetWidget(`$${position}`, range)
-            decorations.push(Decoration.widget({ widget, side: position }).range(range.from))
-          } else {
-            decorations.push(tabstopDeco.range(range.from, range.to))
-          }
-        }
-      }
-
-      // NOTE: Our activeRanges are not guaranteed to be sorted from beginning
-      // to end of the document (since the user may also jump back and forth) in
-      // their snippet. Since the library expects them to be sorted, we pass in
-      // `true` as a second parameter so that the library sorts these ranges for
-      // us.
-      return Decoration.set(decorations, true)
-    })
+    return value
   }
 })
 
-/**
- * Parses placeholders like $1, ${1:Default}, and ${1:foo ${2:bar}}. Supports arbitrary nesting.
- */
-function parsePlaceholders (template: string, offset = 0): { text: string, ranges: { position: number, ranges: SelectionRange[] }[] } {
-  const ranges: { position: number, ranges: SelectionRange[] }[] = []
-  // Matches $[0-9] as well as ${[0-9]:default string}
-  const tabStopRE = /(?<!\\)\$(\d+)|(?<!\\)\$\{(\d+):/
-
-  let parsedText = ''
-  let i = 0
-
-  while (i < template.length) {
-    const match = tabStopRE.exec(template.slice(i))
-    if (!match) {
-      // No matches, so add the remainder of the text
-      parsedText += template.slice(i)
-      break
-    }
-
-    const position = parseInt(match[1] ?? match[2], 10)
-    parsedText += template.slice(i, i + match.index)
-    i += match.index + match[0].length
-
-    // Matches $[0-9]
-    if (match[1]) {
-      const from = offset + parsedText.length
-      ranges.push({ position, ranges: [EditorSelection.range(from, from)] })
-      continue
-    }
-
-    // Matches ${[0-9]:default string}
-    let braceDepth = 1
-    let startInner = i
-
-    // Track nested placeholders to find the
-    // top-level matching brace.
-    while (i < template.length && braceDepth > 0) {
-      if (template[i] === '{') {
-        braceDepth++
-      } else if (template[i] === '}') {
-        braceDepth--
-      }
-      i++
-    }
-
-    // Return as regular text when there are unbalanced braces (malformed placeholders)
-    if (braceDepth > 0) {
-      parsedText += template.slice(startInner - match[0].length, template.length)
-      break
-    }
-
-    // Drop the last '}' and recurse on the inner text.
-    const { text: innerText, ranges: innerRanges } = parsePlaceholders(template.slice(startInner, i - 1), offset + parsedText.length)
-
-    const from = offset + parsedText.length
-    parsedText += innerText
-    const to = offset + parsedText.length
-
-    ranges.push({ position, ranges: [EditorSelection.range(from, to)] })
-    ranges.push(...innerRanges)
-  }
-
-  return { text: parsedText, ranges }
+function currentWord (state: EditorState): string {
+  const range = state.wordAt(state.selection.main.head)
+  return range === null ? '' : state.sliceDoc(range.from, range.to)
 }
 
-/**
- * Takes a template string and returns a two-element array containing (a) the
- * template text with all variables and tabstops replaced so that it can be
- * inserted into a document, and (b) a two-dimensional list of ranges in the
- * correct order for tabbing through them.
- *
- * @param   {string}  template              The template string
- * @param   {number}  rangeOffset           The global offset at which the
- *                                          template will be inserted
- *
- * @return  {[string, EditorSelection[]]}  The final text as well as tabstop
- *                                          ranges (if any)
- */
-export async function template2snippet (state: EditorState, template: string, rangeOffset: number): Promise<[string, EditorSelection[]]> {
-  let replacedText = await replaceSnippetVariables(state, template)
+/** Editor-specific variables not supplied by Microsoft's context-free resolvers. */
+class EditorVariableResolver implements VariableResolver {
+  constructor (private readonly state: EditorState) {}
 
-  const { text, ranges } = parsePlaceholders(replacedText, rangeOffset)
+  resolve (variable: Variable): string | undefined {
+    const now = new Date()
+    const selection = this.state.selection.main
+    const line = this.state.doc.lineAt(selection.head)
+    const filePath = this.state.field(configField).metadata.path
+    const filename = pathBasename(filePath)
+    const ext = pathExtname(filename)
 
-  if (ranges.length === 0) {
-    return [ text, [] ] // Already done!
-  }
-
-  // Combine multiple ranges with the same position together
-  const combinedRanges = ranges.reduce<Array<{ position: number, ranges: SelectionRange[] }>>((acc, value) => {
-    const { position, ranges } = value
-    const existingRange = acc.find(v => v.position === position)
-    if (existingRange !== undefined) {
-      existingRange.ranges = existingRange.ranges.concat(ranges)
-    } else {
-      acc.push(value)
+    switch (variable.name) {
+      case 'SELECTION':
+      case 'TM_SELECTED_TEXT': return this.state.sliceDoc(selection.from, selection.to) || undefined
+      case 'TM_CURRENT_LINE': return line.text
+      case 'TM_CURRENT_WORD': return currentWord(this.state) || undefined
+      case 'TM_LINE_INDEX': return String(line.number - 1)
+      case 'TM_LINE_NUMBER': return String(line.number)
+      case 'CURSOR_INDEX': return '0'
+      case 'CURSOR_NUMBER': return '1'
+      case 'TM_FILENAME': return filename
+      case 'TM_FILENAME_BASE': return pathBasename(filename, ext)
+      case 'TM_DIRECTORY': return pathDirname(filePath)
+      case 'TM_DIRECTORY_BASE': return pathBasename(pathDirname(filePath))
+      case 'TM_FILEPATH': return filePath
+      case 'LINE_COMMENT': return pathExtname(filePath).toLowerCase() === '.tex' ? '%' : undefined
+      case 'BLOCK_COMMENT_START': return pathExtname(filePath).toLowerCase() === '.md' ? '<!--' : undefined
+      case 'BLOCK_COMMENT_END': return pathExtname(filePath).toLowerCase() === '.md' ? '-->' : undefined
+      case 'CURRENT_YEAR': return String(now.getFullYear())
+      case 'CURRENT_YEAR_SHORT': return String(now.getFullYear()).slice(-2)
+      case 'CURRENT_MONTH': return String(now.getMonth() + 1).padStart(2, '0')
+      case 'CURRENT_DATE': return String(now.getDate()).padStart(2, '0')
+      case 'CURRENT_HOUR': return String(now.getHours()).padStart(2, '0')
+      case 'CURRENT_MINUTE': return String(now.getMinutes()).padStart(2, '0')
+      case 'CURRENT_SECOND': return String(now.getSeconds()).padStart(2, '0')
+      case 'CURRENT_MILLISECOND': return String(now.getMilliseconds()).padStart(3, '0')
+      case 'CURRENT_SECONDS_UNIX': return String(Math.floor(now.getTime() / 1000))
+      case 'CURRENT_MILLISECONDS_UNIX': return String(now.getTime())
+      case 'CURRENT_TIMEZONE_NAME': return Intl.DateTimeFormat().resolvedOptions().timeZone
+      case 'RANDOM': return String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')
+      case 'RANDOM_HEX': return Math.floor(Math.random() * 0x1000000).toString(16).padStart(6, '0')
+      case 'UUID': return globalThis.crypto?.randomUUID?.()
+      default: return undefined
     }
-
-    return acc
-  }, [])
-
-  // Sort the ranges ascending, except the zero, which needs at the bottom
-  combinedRanges.sort((a, b) => {
-    if (a.position === 0) {
-      return 1 // Bring to back
-    } else if (b.position === 0) {
-      return -1
-    } else {
-      return a.position - b.position
-    }
-  })
-
-  // Check that there's a zero in there. If not, add one to the back.
-  if (combinedRanges[combinedRanges.length - 1].position !== 0) {
-    combinedRanges.push({ position: 0, ranges: [EditorSelection.cursor(rangeOffset + text.length)] })
   }
-
-  // For the rest of the script, it's irrelevant which position the tabs had,
-  // since it expects the array to be sorted anyways, so we can omit that info now.
-  const slections = combinedRanges.map(v => EditorSelection.create(v.ranges))
-
-  return [ text, slections ]
 }
 
-/**
-   * A utility function that replaces snippet variables with their correct values
-   * dynamically.
-   *
-   * @param   {string}             text  The text to modify
-   *
-   * @return  {string}                   The text with all variables replaced accordingly.
-   */
-async function replaceSnippetVariables (state: EditorState, text: string): Promise<string> {
-  // First, prepare our replacement table
-  const now = DateTime.now()
-  const month = now.month
-  const day = now.day
-  const hour = now.hour
-  const minute = now.minute
-  const second = now.second
-  const clipboard = await navigator.clipboard.readText()
+function escapeCodeMirrorText (value: string): string {
+  // CodeMirror removes these escapes while parsing its snippet template. This
+  // keeps arbitrary TeX/Markdown braces literal rather than field syntax.
+  return value.replace(/[{}]/g, '\\$&')
+}
 
-  const config = state.field(configField)
-  const absPath = config.metadata.path
+function containsPlaceholder (marker: Marker): boolean {
+  return marker.children.some(child => child instanceof Placeholder || containsPlaceholder(child))
+}
 
-  const REPLACEMENTS = {
-    CURRENT_YEAR: now.year,
-    CURRENT_YEAR_SHORT: now.year.toString().substring(2),
-    CURRENT_MONTH: (month < 10) ? '0' + month.toString() : month,
-    CURRENT_MONTH_NAME: now.monthLong,
-    CURRENT_MONTH_NAME_SHORT: now.monthShort,
-    CURRENT_DATE: (day < 10) ? '0' + day.toString() : day,
-    CURRENT_HOUR: (hour < 10) ? '0' + hour.toString() : hour,
-    CURRENT_MINUTE: (minute < 10) ? '0' + minute.toString() : minute,
-    CURRENT_SECOND: (second < 10) ? '0' + second.toString() : second,
-    CURRENT_SECONDS_UNIX: now.toSeconds(),
-    UUID: uuid(),
-    CLIPBOARD: (clipboard !== '') ? clipboard : undefined,
-    ZKN_ID: generateId(String(window.config.get('zkn.idGen'))),
-    CURRENT_ID: config.metadata.id,
-    FILENAME: pathBasename(absPath, pathExtname(absPath)),
-    DIRECTORY: pathDirname(absPath),
-    EXTENSION: pathExtname(absPath)
+function renderMarker (marker: Marker, synthetic: { next: number }): string {
+  if (marker instanceof Text) {
+    return escapeCodeMirrorText(marker.value)
   }
 
-  // Second: Replace those variables, and return the text. NOTE we're adding a
-  // negative lookbehind -- (?<!\\) -- to make sure we're not including escaped ones.
-  return text.replace(/(?<!\\)\$([A-Z_]+)|(?<!\\)\$\{([A-Z_]+):(.+?)\}/g, (match, p1, p2, p3) => {
-    if (p1 !== undefined) {
-      // We have a single variable, so only replace if it's a supported one
-      if (REPLACEMENTS[p1 as keyof typeof REPLACEMENTS] !== undefined) {
-        return REPLACEMENTS[p1 as keyof typeof REPLACEMENTS]
-      } else {
-        return match
-      }
-    } else {
-      // We have a variable with placeholder, so replace it potentially with the default
-      if (REPLACEMENTS[p2 as keyof typeof REPLACEMENTS] !== undefined) {
-        return REPLACEMENTS[p2 as keyof typeof REPLACEMENTS]
-      } else {
-        return p3
-      }
+  if (marker instanceof Placeholder) {
+    if (marker.transform !== undefined) {
+      throw new Error('placeholder transforms require a richer snippet runtime than CodeMirror provides')
     }
+    if (marker.choice instanceof Choice) {
+      throw new Error('choice placeholders require a richer snippet runtime than CodeMirror provides')
+    }
+    if (containsPlaceholder(marker)) {
+      throw new Error('nested placeholders require a richer snippet runtime than CodeMirror provides')
+    }
+    if (marker.children.length === 0) {
+      return `\${${marker.index}}`
+    }
+    const body = marker.children.map(child => renderMarker(child, synthetic)).join('')
+    return `\${${marker.index}:${body}}`
+  }
+
+  if (marker instanceof Variable) {
+    // Microsoft leaves genuinely unknown variables unresolved. VS Code treats
+    // those as editable placeholders, whereas a known-but-unset variable is
+    // its authored default or empty text.
+    if (STANDARD_VARIABLE_NAMES.has(marker.name)) {
+      return marker.children.map(child => renderMarker(child, synthetic)).join('')
+    }
+    const fallback = marker.children.length > 0
+      ? marker.children.map(child => renderMarker(child, synthetic)).join('')
+      : escapeCodeMirrorText(marker.name)
+    return `\${${synthetic.next++}:${fallback}}`
+  }
+
+  return marker.children.map(child => renderMarker(child, synthetic)).join('')
+}
+
+/** Parse VS Code syntax with Microsoft's parser and adapt it to CodeMirror. */
+export function codeMirrorTemplateForSnippet (state: EditorState, body: string): string {
+  const parsed = new SnippetParser().parse(body, true, true)
+  parsed.resolveVariables(new EditorVariableResolver(state))
+  const maxField = parsed.placeholders.reduce((max, placeholder) => Math.max(max, placeholder.index), 0)
+  const synthetic = { next: maxField + 1 }
+  return parsed.children.map(child => renderMarker(child, synthetic)).join('')
+}
+
+function baseLanguageScope (state: EditorState): string {
+  const ext = pathExtname(state.field(configField).metadata.path).toLowerCase()
+  return ext === '.tex' || ext === '.latex' ? 'latex' : 'markdown'
+}
+
+export function snippetScopesAt (state: EditorState, pos: number): Set<string> {
+  const base = baseLanguageScope(state)
+  const scopes = new Set<string>([base])
+  const tikz = base === 'markdown' ? tikzBlockAt(state, pos) : null
+  if (base === 'markdown' && (isMathPosition(state, pos) || tikz !== null)) {
+    scopes.add('latex')
+    scopes.add('tex')
+  }
+  if (tikz !== null) {
+    scopes.add('tikz')
+    if (tikz.language === 'tikzcd') {
+      scopes.add('tikzcd')
+    }
+  }
+  return scopes
+}
+
+function filePatternMatches (pattern: string, filePath: string): boolean {
+  const normalized = filePath.replaceAll('\\', '/')
+  const target = pattern.includes('/') ? normalized : pathBasename(normalized)
+  return picomatch.isMatch(target, pattern, { dot: true })
+}
+
+function applicableSnippets (state: EditorState, pos: number): UserSnippet[] {
+  const scopes = snippetScopesAt(state, pos)
+  const filePath = state.field(configField).metadata.path
+  return (state.field(snippetsUpdateField, false) ?? []).filter(userSnippet => {
+    const scopeMatches = userSnippet.scopes.length === 0 || userSnippet.scopes.some(scope => scopes.has(scope))
+    const pathIncluded = userSnippet.include.length === 0 || userSnippet.include.some(pattern => filePatternMatches(pattern, filePath))
+    const pathExcluded = userSnippet.exclude.some(pattern => filePatternMatches(pattern, filePath))
+    return scopeMatches && pathIncluded && !pathExcluded
   })
 }
 
-/**
- * This facet allows the user to dynamically define which character triggers the
- * autocompletion.
- */
-export const autocompleteTriggerCharacter: Facet<string, string> = Facet.define({
-  combine (val) { return val.length > 0 ? val[0] : ':' }
-})
+export interface SnippetPresentation {
+  source: CompletionSourceName
+  detail: string
+  notation: string
+}
 
+/**
+ * Describe the syntax a snippet will actually insert, independently of the
+ * fact that it happens to be stored in a VS Code snippet file. This is what a
+ * writer needs to distinguish e.g. `lem` -> Pandoc fenced div from a LaTeX
+ * lemma environment before accepting the completion.
+ */
+export function snippetPresentationFor (userSnippet: UserSnippet): SnippetPresentation {
+  const body = userSnippet.body
+  const description = userSnippet.description?.trim() || userSnippet.name
+
+  const pandocDiv = /(?:^|\n)\s*:::\s*\{([^}\n]*)\}/u.exec(body)
+  if (pandocDiv !== null) {
+    const divClass = /(?:^|\s)\.([\w:-]+)/u.exec(pandocDiv[1])?.[1]
+    const notation = divClass === undefined ? 'Pandoc fenced div' : `Pandoc fenced div .${divClass}`
+    return { source: 'Pandoc', detail: `${description} · ${notation.replace('Pandoc ', '')}`, notation }
+  }
+
+  if (/(?:^|\n)\s*\[\^[^\]]+\]/u.test(body)) {
+    return { source: 'Pandoc', detail: `${description} · footnote`, notation: 'Pandoc footnote' }
+  }
+
+  const tikzCd = /\\begin\{tikzcd\}/u.exec(body)
+  if (tikzCd !== null) {
+    return { source: 'tikzcd', detail: `${description} · tikzcd environment`, notation: 'LaTeX tikzcd environment' }
+  }
+
+  const tikz = /\\begin\{tikzpicture\}/u.exec(body)
+  if (tikz !== null) {
+    return { source: 'TikZ', detail: `${description} · tikzpicture environment`, notation: 'LaTeX TikZ environment' }
+  }
+
+  const latexEnvironment = /\\begin\{([^}\n]+)\}/u.exec(body)
+  if (latexEnvironment !== null) {
+    const environment = latexEnvironment[1]
+    return {
+      source: 'LaTeX',
+      detail: `${description} · \\begin{${environment}}`,
+      notation: `LaTeX ${environment} environment`
+    }
+  }
+
+  if (
+    /\\(?:\[|\(|[A-Za-z@]+)/u.test(body) ||
+    /\$\$\{\d/u.test(body) ||
+    /\$\$[^\n$]+\$\$/u.test(body)
+  ) {
+    return { source: 'LaTeX', detail: `${description} · LaTeX`, notation: 'LaTeX' }
+  }
+
+  if (
+    /(?:^|\n)\s*(?:```|~~~)/u.test(body) ||
+    /(?:^|\n)\s*\|[^\n]*\|/u.test(body) ||
+    /(?:^|\n)\s*\+[-=+]+\+/u.test(body)
+  ) {
+    return { source: 'Markdown', detail: `${description} · Markdown`, notation: 'Markdown' }
+  }
+
+  if (userSnippet.scopes.some(scope => scope === 'latex' || scope === 'tex')) {
+    return { source: 'LaTeX', detail: `${description} · LaTeX`, notation: 'LaTeX' }
+  }
+
+  return { source: 'Snippet', detail: description, notation: 'snippet' }
+}
+
+function completionFor (userSnippet: UserSnippet, prefix: string): Completion {
+  const presentation = snippetPresentationFor(userSnippet)
+  const completion: PresentedCompletion = {
+    label: prefix,
+    detail: presentation.detail,
+    info: () => completionInfoPanel({
+      title: userSnippet.name,
+      source: presentation.source,
+      description: userSnippet.description,
+      syntax: presentation.notation,
+      insertion: userSnippet.body,
+      notes: userSnippet.scopes.length === 0
+        ? undefined
+        : [`Scope: ${userSnippet.scopes.join(', ')}`]
+    }),
+    type: 'text',
+    zettlrSource: presentation.source,
+    apply (view, picked, from, to) {
+      try {
+        const template = codeMirrorTemplateForSnippet(view.state, userSnippet.body)
+        codeMirrorSnippet(template)(view, picked, from, to)
+      } catch (error) {
+        reportError(`[Snippets] Could not expand ${userSnippet.name} from ${userSnippet.sourceFile}`, error)
+      }
+    }
+  }
+  return completion
+}
+
+/**
+ * Ordinary snippets are an always-on completion source. CodeMirror owns fuzzy
+ * matching/ranking; this source only declares the replacement range and items.
+ */
 export const snippets: AutocompletePlugin = {
+  source: 'Snippet',
   applies (ctx) {
-    const trigger = ctx.state.facet(autocompleteTriggerCharacter)
-    // A valid snippet applies whenever the user typed a colon
-    if (ctx.state.doc.sliceString(ctx.pos - 1, ctx.pos) !== trigger) {
-      return false // Only applies after the user typed an #
+    const match = ctx.matchBefore(/[^\s]+$/)
+    if (match === null) {
+      return ctx.explicit ? ctx.pos : false
     }
-
-    const lineObject = ctx.state.doc.lineAt(ctx.pos)
-
-    if (ctx.pos - lineObject.from === 1) {
-      return ctx.pos // Start of Line, so perfectly fine
-    }
-
-    const charBefore = ctx.state.doc.sliceString(ctx.pos - 2, ctx.pos - 1)
-    if (charBefore === ' ') {
-      return ctx.pos // Valid char in front of the colon (so that `something:`
-      // won't trigger)
-    }
-
-    return false
+    return match.from
   },
-  entries (ctx, query) {
-    query = query.toLowerCase()
-    // NOTE: We need to create a new array, otherwise we're going to have an
-    // emoji party after ten characters typed
-    const entries = [...ctx.state.field(snippetsUpdateField).availableSnippets]
-    if (ctx.state.field(configField).autocompleteSuggestEmojis) {
-      entries.push(...emojis)
-    }
-
-    return entries.filter(entry => {
-      if (entry.section === undefined) { // Snippets don't have a section
-        return entry.label.toLowerCase().includes(query)
-      }
-
-      const inDetail = entry.detail?.toLowerCase().includes(query) ?? false
-
-      if (typeof entry.info === 'string') {
-        // Allow to search the tags as well that are part of the info
-        return entry.info.toLowerCase().includes(query) || inDetail
-      } else {
-        return inDetail
-      }
-    })
+  entries (ctx, _query) {
+    return applicableSnippets(ctx.state, ctx.pos).flatMap(userSnippet =>
+      userSnippet.prefixes.map(prefix => completionFor(userSnippet, prefix))
+    )
   },
   fields: [snippetsUpdateField]
-}
-
-export function nextSnippet (target: EditorView): boolean {
-  // Progresses to the next tabstop if there's one available
-  const field = target.state.field(snippetsUpdateField, false)
-  if (field === undefined) {
-    return false
-  }
-
-  const { activeSelections } = field
-  if (activeSelections.length === 0) {
-    return false
-  }
-
-  target.dispatch({
-    selection: activeSelections[0],
-    effects: [
-      shiftNextTabEffect.of(null),
-      EditorView.scrollIntoView(activeSelections[0].main.from, { y: 'center' })
-    ]
-  })
-  return true
-}
-
-export const abortSnippet: Command = (target: EditorView): boolean => {
-  // Removes all tabstops, if there are any
-  const field = target.state.field(snippetsUpdateField, false)
-  if (field === undefined) {
-    return false
-  }
-
-  if (field.activeSelections.length > 0) {
-    target.dispatch({ effects: snippetTabsEffect.of([]) })
-    return true
-  }
-
-  return false
-}
-
-// Like `abortSnippet` above, but this also removes the placeholder content
-// of any pending tabstop.
-export const abortSnippetRemoveContent: Command = (target: EditorView): boolean => {
-  const field = target.state.field(snippetsUpdateField, false)
-  if (field === undefined) {
-    return false
-  }
-
-  if (field.activeSelections.length > 0) {
-    target.dispatch({
-      // Cuts all of the pending placeholder insertions
-      changes: field.activeSelections.flatMap(sel => sel.ranges.map(r => ({ from: r.from, to: r.to }))),
-      effects: snippetTabsEffect.of([])
-    })
-    return true
-  }
-
-  return false
 }

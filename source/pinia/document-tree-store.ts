@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { defineStore } from 'pinia'
 import { DP_EVENTS, type BranchNodeJSON, type LeafNodeJSON, type OpenDocument } from 'source/types/common/documents'
 import { ref, type Ref } from 'vue'
@@ -187,12 +188,12 @@ export const useDocumentTreeStore = defineStore('document-tree', () => {
   if (windowId !== null) {
     ipcRenderer.invoke('documents-provider', { command: 'retrieve-tab-config', payload: { windowId } })
       .then((treedata: LeafNodeJSON|BranchNodeJSON) => recoverState(paneStructure, paneData, lastLeafId, treedata))
-      .catch(err => console.error(err))
+      .catch(err => reportError(err))
   }
 
   ipcRenderer.invoke('documents-provider', { command: 'get-file-modification-status' })
     .then((modifiedFiles: string[]) => { modifiedDocuments.value = modifiedFiles })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 
   // ... and we listen to subsequent changes.
   ipcRenderer.on('documents-update', (evt, payload: { event: DP_EVENTS, context: DocumentsUpdateContext }) => {
@@ -201,7 +202,7 @@ export const useDocumentTreeStore = defineStore('document-tree', () => {
     if (event === DP_EVENTS.CHANGE_FILE_STATUS && context.status === 'modification') {
       ipcRenderer.invoke('documents-provider', { command: 'get-file-modification-status' })
         .then((modifiedFiles: string[]) => { modifiedDocuments.value = modifiedFiles })
-        .catch(err => console.error(err))
+        .catch(err => reportError(err))
     } else {
       // We only tend to events that pertain this window
       if (context.windowId !== windowId) {
@@ -253,7 +254,7 @@ export const useDocumentTreeStore = defineStore('document-tree', () => {
             }
           }
         })
-        .catch(err => console.error(err))
+        .catch(err => reportError(err))
     }
   })
 
@@ -271,7 +272,7 @@ export const useDocumentTreeStore = defineStore('document-tree', () => {
         command: 'file-delete',
         payload: { path: lastLeafActiveFile.value.path }
       })
-        .catch(err => console.error(err))
+        .catch(err => reportError(err))
     }
   })
 

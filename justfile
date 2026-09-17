@@ -171,8 +171,11 @@ capture-widget-indent output: sync-dependencies
 
 # Capture the TikZ editor scenes (issue #14) in isolated offscreen Electron:
 # inline figures rendered by the REAL toolchain (pandoc + pdflatex + pdf2svg
-# through the vendored filter), the in-place compile diagnostic, and the
-# click-to-zoom lightbox reusing ImageViewer. Requires pdflatex and pdf2svg.
+# through the shared Pandoc filter), the in-place compile diagnostic, explicit
+# lightbox affordance, and textbook-scale corpus. The same run loads the live
+# Stacks tags 01JO/07JW/067L, verifies their recorded xymatrix source, and emits
+# original/local/side-by-side screenshots plus normalized measurements. Requires
+# pdflatex, pdf2svg, and network access to stacks.math.columbia.edu.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
 capture-tikz output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" tikz "{{output}}"

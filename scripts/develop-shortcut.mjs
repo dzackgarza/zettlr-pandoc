@@ -18,20 +18,21 @@
  */
 import fs from 'fs'
 import path from 'path'
+import { error } from './console-colour.mjs'
 
 // argv: [ node binary, this file, install/uninstall ]
 if (process.argv.length < 3 || ![ 'install', 'uninstall' ].includes(process.argv[2])) {
-  console.error('Usage: develop-shortcut [install|uninstall]')
+  error('Usage: develop-shortcut [install|uninstall]')
   process.exit(1)
 }
 
 if (process.platform !== 'linux') {
-  console.error('Installing a desktop shortcut for develop builds is currently only supported on Linux.')
+  error('Installing a desktop shortcut for develop builds is currently only supported on Linux.')
   process.exit(1)
 }
 
 if (process.env.HOME === undefined) {
-  console.error('Could not install desktop shortcut: HOME environment variable unset.')
+  error('Could not install desktop shortcut: HOME environment variable unset.')
   process.exit(1)
 }
 
@@ -49,7 +50,7 @@ if (process.argv[2] === 'install') {
   // Install the develop shortcut
   console.log(`Installing desktop shortcut to ${desktopFilePath}...`)
   if (fs.existsSync(desktopFilePath)) {
-    console.error('Could not install desktop shortcut: Already exists. Please run the uninstaller first.')
+    error('Could not install desktop shortcut: Already exists. Please run the uninstaller first.')
     process.exit(1)
   }
 
@@ -69,9 +70,9 @@ if (process.argv[2] === 'install') {
     console.warn('NOTE: Remember to build the application before launching!')
   } catch (err) {
     if (err.code === 'EACCESS') {
-      console.error('Could not install desktop shortcut: No permission.')
+      error('Could not install desktop shortcut: No permission.')
     } else {
-      console.error(`Could not install desktop shortcut: ${err.message}`)
+      error(`Could not install desktop shortcut: ${err.message}`)
     }
     process.exit(1)
   }
@@ -85,6 +86,6 @@ if (process.argv[2] === 'install') {
     console.warn('Could not uninstall desktop shortcut: Not found.')
   }
 } else {
-  console.error(`Unrecognized command: ${process.argv[1]}`)
+  error(`Unrecognized command: ${process.argv[1]}`)
   process.exit(1)
 }

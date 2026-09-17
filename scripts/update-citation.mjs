@@ -2,6 +2,7 @@ import got from 'got'
 import YAML from 'yaml'
 import { promises as fs } from 'fs'
 import path from 'path'
+import { error } from './console-colour.mjs'
 
 const __dirname = process.platform === 'win32'
   ? path.dirname(decodeURI(import.meta.url.substring(8))) // file:///C:/...
@@ -54,8 +55,8 @@ async function updateCitation () {
 }
 
 updateCitation().catch(err => {
-  console.error('Could not update Citations!')
-  console.error(err)
+  error('Could not update Citations!')
+  error(err instanceof Error ? err.stack ?? err.message : String(err))
   // Exit with a non-zero exit code so that the CI knows something went wrong
   process.exit(1)
 })

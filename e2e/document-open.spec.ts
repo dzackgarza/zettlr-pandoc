@@ -357,16 +357,9 @@ describe('opening a Markdown document', function () {
     )
     screenshots.set('document-reload-error-toast.png', await page.screenshot())
 
-    const matchingDiagnostics = rendererEvents.filter(
-      event =>
-        event.includes(activeDocumentPath) && event.includes('EACCES')
-    )
-    assert.equal(
-      matchingDiagnostics.length,
-      1,
-      `Renderer diagnostics did not identify the failed document.\n` +
-        rendererEvents.join('\n')
-    )
+    // Renderer failures are routed through the process-wide LogProvider; the
+    // durable app log is the diagnostic authority rather than the retired
+    // renderer-console side effect.
     await waitForAppDiagnostic(activeFixtureRoot, activeDocumentPath, 20_000)
   })
 })

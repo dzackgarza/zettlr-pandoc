@@ -43,6 +43,8 @@ import {
   type SourceRange,
 } from '@dts/common/references'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
+import type { UserSnippet } from '@dts/common/snippets'
+import type { QuickTexCatalogue } from '@dts/common/quicktex'
 import type { AnnotationSet } from '@dts/common/annotation-domain'
 
 import { type TagRecord } from '@providers/tags'
@@ -62,6 +64,7 @@ import {
   snippetsUpdate,
   tagsUpdate,
 } from './autocomplete'
+import { EMPTY_QUICKTEX, quickTexUpdate } from './quicktex'
 import { addNewFootnote } from './commands/footnotes'
 import {
   type FormatResult,
@@ -116,6 +119,7 @@ import { forceLinting } from '@codemirror/lint'
 import { countDiagnostics, toggleLintPanel, type DiagnosticCounts } from './statusbar/diagnostics'
 import { toggleReadability } from './renderers/readability'
 import { openReferenceSearchEffect } from './plugins/reference-search-effect'
+import { openFileSearchEffect } from './plugins/file-search-effect'
 import {
   type PullUpdateCallback,
   type PushUpdateCallback,
@@ -317,7 +321,8 @@ export default class MarkdownEditor extends EventEmitter {
   private readonly databaseCache: {
     tags: TagRecord[]
     citations: Array<{ citekey: string; displayText: string }>
-    snippets: Array<{ name: string; content: string }>
+    snippets: UserSnippet[]
+    quickTex: QuickTexCatalogue
     files: Array<{ filename: string; displayName: string; id: string }>
     references: ReferenceCompletionEntry[]
   }
@@ -380,6 +385,7 @@ export default class MarkdownEditor extends EventEmitter {
       tags: [],
       citations: [],
       snippets: [],
+      quickTex: EMPTY_QUICKTEX,
       files: [],
       references: [],
     }
@@ -387,13 +393,17 @@ export default class MarkdownEditor extends EventEmitter {
     this.reviewDiffCompartment = new Compartment()
     this.activeReviewDiffSession = null
 
-    // Same goes for the config
-    this.config = getDefaultConfig()
+    // Same goes for the config. Construction must start from the caller's
+    // actual configuration, not from the defaults followed by an asynchronous
+    // correction: the extension set (in particular the light/dark theme
+    // compartment) is built during loadDocument(). Calling setOptions() here
+    // would also be invalid because _instance does not exist yet.
+    const initialConfig = getDefaultConfig()
     // TODO: This is bad style imho
-    this.config.metadata.path = representedDocument
-    if (configOverride !== undefined) {
-      this.setOptions(configOverride)
-    }
+    initialConfig.metadata.path = representedDocument
+    this.config = configOverride === undefined
+      ? initialConfig
+      : safeAssign(configOverride, initialConfig)
 
     // Create the editor ...
     this._instance = new EditorView({
@@ -457,6 +467,10 @@ export default class MarkdownEditor extends EventEmitter {
             // Phase 8 badge-keyed reverse lookup).
             if (effect.is(openReferenceSearchEffect)) {
               this.emit('reference-search', effect.value)
+            }
+
+            if (effect.is(openFileSearchEffect)) {
+              this.emit('file-search')
             }
 
             // A gutter chip was clicked: the shell opens the annotations
@@ -623,6 +637,9 @@ export default class MarkdownEditor extends EventEmitter {
     })
     this._instance.dispatch({
       effects: snippetsUpdate.of(this.databaseCache.snippets),
+    })
+    this._instance.dispatch({
+      effects: quickTexUpdate.of(this.databaseCache.quickTex),
     })
     this._instance.dispatch({
       effects: filesUpdate.of(this.databaseCache.files),
@@ -958,7 +975,7 @@ export default class MarkdownEditor extends EventEmitter {
     type: 'citations',
     database: Array<{ citekey: string; displayText: string }>,
   ): void
-  setCompletionDatabase(type: 'snippets', database: Array<{ name: string; content: string }>): void
+  setCompletionDatabase(type: 'snippets', database: UserSnippet[]): void
   setCompletionDatabase(
     type: 'files',
     database: Array<{ filename: string; displayName: string; id: string }>,
@@ -983,7 +1000,7 @@ export default class MarkdownEditor extends EventEmitter {
         })
         break
       case 'snippets':
-        this.databaseCache.snippets = database as Array<{ name: string; content: string }>
+        this.databaseCache.snippets = database as UserSnippet[]
         this._instance.dispatch({
           effects: snippetsUpdate.of(this.databaseCache.snippets),
         })
@@ -1005,6 +1022,11 @@ export default class MarkdownEditor extends EventEmitter {
         })
         break
     }
+  }
+
+  setQuickTexCatalogue (catalogue: QuickTexCatalogue): void {
+    this.databaseCache.quickTex = catalogue
+    this._instance.dispatch({ effects: quickTexUpdate.of(catalogue) })
   }
 
   /**

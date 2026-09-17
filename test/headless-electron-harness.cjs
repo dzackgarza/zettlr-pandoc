@@ -106,7 +106,11 @@ Module._load = function (request, ...rest) {
       dialog: { showErrorBox () {} },
       shell: { openPath: async () => '' },
       nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
-      Notification: class { show () {} },
+      Notification: class {
+        static isSupported () { return true }
+        show () {}
+        on () {}
+      },
       BrowserWindow: HeadlessBrowserWindow,
       MenuItem: HeadlessMenuItem
     }

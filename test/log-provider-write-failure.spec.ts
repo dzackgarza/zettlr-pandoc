@@ -24,7 +24,7 @@
 
 // The harness must load before any provider module: LogProvider imports
 // 'electron' at module scope.
-import './headless-electron-harness.cjs'
+import { ipcMainHandlers } from './headless-electron-harness.cjs'
 import { strict as assert } from 'assert'
 import { app } from 'electron'
 import { mkdir, readFile, rm } from 'fs/promises'
@@ -112,5 +112,24 @@ describe('LogProvider (failing file writes)', function () {
       written.includes('entry logged after the logfile became writable again'),
       `The provider remained disabled after the failed append. Logfile:\n${written}`
     )
+  })
+
+  it('persists a renderer-reported error through the typed log-provider IPC boundary', async function () {
+    const handler = ipcMainHandlers.get('log-provider')
+    assert.ok(handler !== undefined, 'constructing LogProvider must register its IPC handler')
+
+    const recorded = await handler({}, {
+      command: 'record-error',
+      payload: {
+        message: 'Opening QuickTeX definitions failed',
+        details: 'kitty: executable not found'
+      }
+    })
+    assert.equal(recorded, true)
+
+    await provider.shutdown()
+    const written = await readFile(logfile, 'utf8')
+    assert.match(written, /Opening QuickTeX definitions failed/)
+    assert.match(written, /kitty: executable not found/)
   })
 })

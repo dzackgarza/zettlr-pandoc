@@ -14,6 +14,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { syntaxTree } from '@codemirror/language'
 import { linter, type Diagnostic } from '@codemirror/lint'
 import { type EditorState } from '@codemirror/state'
@@ -87,7 +88,7 @@ export const yamlFrontmatterLint = linter(async view => {
     }
     return diagnostics
   } catch (err: any) {
-    console.error('Could not lint YAML: Linter threw an error', err)
+    reportError('Could not lint YAML: Linter threw an error', err)
   }
 
   return diagnostics

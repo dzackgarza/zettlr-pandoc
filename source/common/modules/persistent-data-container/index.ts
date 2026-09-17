@@ -14,6 +14,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { promises as fs, constants as FSConstants } from 'fs'
 import writeFileAtomic from 'write-file-atomic'
 import { parse as parseYAML, stringify as stringifyYAML } from 'yaml'
@@ -124,7 +125,7 @@ export default class PersistentDataContainer<T = any> {
     }
 
     this._timeout = setTimeout(() => {
-      this.flushToDisk().catch(err => { console.error(`[PersistentDataContainer] Could not write ${this._filePath}`, err) })
+      this.flushToDisk().catch(err => { reportError(`[PersistentDataContainer] Could not write ${this._filePath}`, err) })
     }, this._delay)
   }
 

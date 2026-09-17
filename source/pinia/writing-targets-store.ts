@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { defineStore } from 'pinia'
 import type { WritingTarget } from 'source/app/service-providers/targets'
 import { ref } from 'vue'
@@ -28,7 +29,7 @@ export const useWritingTargetsStore = defineStore('writing-targets', () => {
         .then((t: WritingTarget[]) => {
           targets.value = t
         })
-        .catch(err => console.error(err))
+        .catch(err => reportError(err))
     }
   })
 
@@ -36,7 +37,7 @@ export const useWritingTargetsStore = defineStore('writing-targets', () => {
     .then((t: WritingTarget[]) => {
       targets.value = t
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 
   return { targets }
 })

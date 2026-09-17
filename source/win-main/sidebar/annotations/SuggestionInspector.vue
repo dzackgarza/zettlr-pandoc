@@ -130,6 +130,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import { computed, nextTick, ref, watch } from 'vue'
 import { buildSuggestionCards, chunkNoteCommit, type SuggestionCardView } from './annotation-panel-model'
@@ -176,7 +177,7 @@ watch(() => props.focusedChunkIds, ids => {
         ?.querySelector(`.suggestion-chunk[data-chunk-id="${CSS.escape(target)}"]`)
         ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     })
-    .catch(err => console.error('[SuggestionInspector] Could not scroll to the linked proposal', err))
+    .catch(err => reportError('[SuggestionInspector] Could not scroll to the linked proposal', err))
 })
 
 const outstandingLabel = computed(() => trans('%s outstanding', String(props.review.suggestions.length)))

@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
@@ -34,4 +35,4 @@ windowRegister()
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     createApp(App).use(pinia).mount('#app')
   })
-  .catch(e => console.error(e))
+  .catch(e => reportError(e))

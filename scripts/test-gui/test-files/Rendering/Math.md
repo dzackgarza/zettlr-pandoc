@@ -6,10 +6,10 @@ $x^2+y*(3+2)=z^2$
 
 ## Configured Macros
 
-These render only if a MathJax macro file is present in the app config
-directory — `~/.config/Zettlr-Pandoc/mathjax-macros.json` on Linux — using the
-standard `tex.macros` format. Add macros by placing or symlinking such a file
-there; without one, the app defines no custom macros.
+These render from the canonical generated MathJax projection at
+`~/.pandoc/templates/css/mathjax-macros.json`. Add or modify macros only in
+`~/.pandoc/styles/macros/`, then run the central macro generator; Zettlr does not
+own an independent macro file or fallback copy.
 
 Inline: $\RR$, $\qty{x + y}$, and $\optpair{a}{b}$.
 

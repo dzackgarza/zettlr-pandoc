@@ -50,7 +50,7 @@ import type { MenuProviderIPCContract } from 'source/app/service-providers/menu/
 import type { AppearanceProviderIPCContract } from 'source/app/service-providers/appearance/ipc-contract'
 import type { LogProviderIPCContract } from 'source/app/service-providers/log/ipc-contract'
 import type { I18nIPCResponse } from 'source/common/i18n-main'
-import type { MathJaxMacrosIPCResponse } from 'source/app/lifecycle'
+import type { MathJaxMacrosIPCResponse, QuiverMacrosIPCResponse, TikzCompletionIPCResponse } from 'source/app/lifecycle'
 
 /**
  * Every multiplexer channel, mapped to its owner-exported contract.
@@ -94,6 +94,8 @@ export interface IpcFixedChannelContracts {
 export interface IpcBareChannelContracts {
   'i18n': I18nIPCResponse
   'mathjax-macros': MathJaxMacrosIPCResponse
+  'tikz-completion-commands': TikzCompletionIPCResponse
+  'quiver-macros': QuiverMacrosIPCResponse
   'request-dir': RequestDirIPCResponse
   'paste-image-retrieve-data': PasteImageRetrieveDataIPCResponse
 }

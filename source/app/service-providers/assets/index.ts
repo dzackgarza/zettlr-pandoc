@@ -17,13 +17,19 @@ import path from 'path'
 import { app, ipcMain, shell } from 'electron'
 import { promises as fs } from 'fs'
 import YAML from 'yaml'
+import { FSWatcher } from 'chokidar'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
 import ProviderContract, { type IPCMessage } from '../provider-contract'
 import type LogProvider from '../log'
+import type ConfigProvider from '../config'
 import { getCustomProfiles } from '@providers/commands/exporter'
 import { getAppServiceContainer, isAppServiceContainerReady } from '../../app-service-container'
 import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import { parseReaderWriter } from '@common/pandoc-util/parse-reader-writer'
+import { isSnippetFileName, parseVSCodeSnippetFile } from '@common/modules/snippets/vscode-snippet-file'
+import type { SnippetCatalogue, SnippetFileDiagnostic, UserSnippet } from '@dts/common/snippets'
+import type { QuickTexCatalogue } from '@dts/common/quicktex'
+import { loadQuickTex } from '../../util/load-quicktex'
 
 function isRecord (value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -155,21 +161,13 @@ export type AssetsProviderIPCContract = {
     request: { payload: { filename: string } }
     response: boolean
   }
-  'get-snippet': {
-    request: { payload: { name: string } }
-    response: string
+  'get-snippets-source': {
+    request: { payload?: undefined }
+    response: { filePath: string, contents: string }
   }
-  'remove-snippet': {
-    request: { payload: { name: string } }
-    response: boolean
-  }
-  'rename-snippet': {
-    request: { payload: { name: string, newName: string } }
-    response: boolean
-  }
-  'set-snippet': {
-    request: { payload: { name: string, contents: string } }
-    response: boolean
+  'set-snippets-source': {
+    request: { payload: { contents: string } }
+    response: { ok: true } | { ok: false, error: string }
   }
   'list-defaults': {
     request: { payload?: undefined }
@@ -189,7 +187,7 @@ export type AssetsProviderIPCContract = {
     request: { payload?: undefined }
     response: string
   }
-  'open-snippets-directory': {
+  'open-snippets-file': {
     request: { payload?: undefined }
     response: string
   }
@@ -199,7 +197,11 @@ export type AssetsProviderIPCContract = {
   }
   'list-snippets': {
     request: { payload?: undefined }
-    response: string[]
+    response: SnippetCatalogue
+  }
+  'get-quicktex': {
+    request: { payload?: undefined }
+    response: QuickTexCatalogue
   }
 }
 
@@ -213,11 +215,22 @@ export default class AssetsProvider extends ProviderContract {
    */
   private readonly _defaultsPath: string
   /**
-   * Holds the path where snippets can be found.
+   * Holds the configured snippets source file.
    *
    * @var {string}
    */
-  private readonly _snippetsPath: string
+  private readonly _defaultSnippetsFile: string
+  private _snippetsFile: string
+  private _quickTexFile: string
+  private _quickTexCatalogue: QuickTexCatalogue = {
+    prose: {},
+    math: {},
+    excludeChars: ['{', '(', '['],
+    sourceFile: '',
+    diagnostics: []
+  }
+  /** Watches the configured snippet and QuickTeX files so external edits update open editors. */
+  private readonly _snippetsWatcher: FSWatcher
   /**
    * Holds the path where Lua filters can be found.
    *
@@ -243,14 +256,67 @@ export default class AssetsProvider extends ProviderContract {
    */
   private readonly _protectedFilters: string[]
 
-  constructor (private readonly _logger: LogProvider) {
+  constructor (
+    private readonly _logger: LogProvider,
+    private readonly _config: ConfigProvider
+  ) {
     super()
 
     this._defaultsPath = path.join(app.getPath('userData'), '/defaults')
-    this._snippetsPath = path.join(app.getPath('userData'), '/snippets')
+    this._defaultSnippetsFile = path.join(app.getPath('home'), '.pandoc', 'snippets', 'snippets.code-snippets')
+    this._snippetsFile = ''
+    this._quickTexFile = ''
     this._filterPath = path.join(app.getPath('userData'), '/lua-filter')
     this._protectedDefaults = []
     this._protectedFilters = []
+    this._snippetsWatcher = new FSWatcher({
+      persistent: true,
+      ignoreInitial: true,
+      awaitWriteFinish: {
+        stabilityThreshold: 200,
+        pollInterval: 50
+      }
+    })
+
+    this._snippetsWatcher.on('all', (_eventName, affectedPath) => {
+      const resolved = path.resolve(affectedPath)
+      if (this._snippetsFile !== '' && resolved === this._snippetsFile) {
+        broadcastIpcMessage('assets-provider', 'snippets-updated')
+      }
+      if (this._quickTexFile !== '' && resolved === this._quickTexFile) {
+        void this.configureQuickTexFile().catch(error => {
+          this._logger.error(
+            `[Assets Provider] Could not reload QuickTeX after ${this._quickTexFile} changed: ${error instanceof Error ? error.message : String(error)}`,
+            error
+          )
+        })
+      }
+    })
+
+    this._config.on('update', (option?: string) => {
+      if (
+        option !== undefined && option !== 'editor.snippetsFile' &&
+        option !== 'editor.quickTexFile' && option !== 'editor.quickTexPluginDirectory'
+      ) {
+        return
+      }
+      if (option === undefined || option === 'editor.snippetsFile') {
+        void this.configureSnippetsFile().catch(error => {
+          this._logger.error(
+            `[Assets Provider] Could not switch snippets file: ${error instanceof Error ? error.message : String(error)}`,
+            error
+          )
+        })
+      }
+      if (option === undefined || option === 'editor.quickTexFile' || option === 'editor.quickTexPluginDirectory') {
+        void this.configureQuickTexFile().catch(error => {
+          this._logger.error(
+            `[Assets Provider] Could not switch QuickTeX file: ${error instanceof Error ? error.message : String(error)}`,
+            error
+          )
+        })
+      }
+    })
 
     ipcMain.handle('assets-provider', async (event, message: AssetsProviderIPCAPI) => {
       const { command, payload } = message
@@ -299,19 +365,17 @@ export default class AssetsProvider extends ProviderContract {
       } else if (command === 'open-defaults-directory') {
         this._logger.info(`[AssetsProvider] Opening path ${this._defaultsPath}`)
         return await shell.openPath(this._defaultsPath)
-      } else if (command === 'get-snippet') {
-        return await this.getSnippet(payload.name)
-      } else if (command === 'set-snippet') {
-        return await this.setSnippet(payload.name, payload.contents)
-      } else if (command === 'remove-snippet') {
-        return await this.removeSnippet(payload.name)
+      } else if (command === 'get-snippets-source') {
+        return await this.getSnippetsSource()
+      } else if (command === 'set-snippets-source') {
+        return await this.setSnippetsSource(payload.contents)
       } else if (command === 'list-snippets') {
         return await this.listSnippets()
-      } else if (command === 'rename-snippet') {
-        return await this.renameSnippet(payload.name, payload.newName)
-      } else if (command === 'open-snippets-directory') {
-        this._logger.info(`[AssetsProvider] Opening path ${this._snippetsPath}`)
-        return await shell.openPath(this._snippetsPath)
+      } else if (command === 'get-quicktex') {
+        return this._quickTexCatalogue
+      } else if (command === 'open-snippets-file') {
+        this._logger.info(`[AssetsProvider] Opening path ${this._snippetsFile}`)
+        return await shell.openPath(this._snippetsFile)
       }
     })
   }
@@ -355,6 +419,9 @@ export default class AssetsProvider extends ProviderContract {
         await fs.copyFile(path.join(__dirname, './assets/lua-filter', file), absolutePath)
       }
     }
+
+    await this.configureSnippetsFile()
+    await this.configureQuickTexFile()
   }
 
   /**
@@ -364,6 +431,70 @@ export default class AssetsProvider extends ProviderContract {
    */
   async shutdown (): Promise<void> {
     this._logger.verbose('Assets provider shutting down ...')
+    await this._snippetsWatcher.close()
+  }
+
+  private configuredSnippetsFile (): string {
+    const configured = String(this._config.get('editor.snippetsFile') ?? '').trim()
+    const filePath = configured === '' ? this._defaultSnippetsFile : path.resolve(configured)
+    if (!isSnippetFileName(path.basename(filePath))) {
+      throw new Error(`Snippets source must be a .code-snippets file: ${filePath}`)
+    }
+    return filePath
+  }
+
+  private async configureSnippetsFile (): Promise<void> {
+    const nextFile = this.configuredSnippetsFile()
+    await fs.mkdir(path.dirname(nextFile), { recursive: true })
+    try {
+      await fs.access(nextFile)
+    } catch {
+      await fs.writeFile(nextFile, '{}\n', { encoding: 'utf-8' })
+    }
+    if (this._snippetsFile !== '' && nextFile !== this._snippetsFile) {
+      await this._snippetsWatcher.unwatch(this._snippetsFile)
+    }
+    this._snippetsFile = nextFile
+    this._snippetsWatcher.add(this._snippetsFile)
+    broadcastIpcMessage('assets-provider', 'snippets-updated')
+  }
+
+  private configuredQuickTexFile (): string {
+    const configured = String(this._config.get('editor.quickTexFile') ?? '').trim()
+    return configured === '' ? '' : path.resolve(configured)
+  }
+
+  private async configureQuickTexFile (): Promise<void> {
+    const nextFile = this.configuredQuickTexFile()
+    const pluginDirectory = String(this._config.get('editor.quickTexPluginDirectory') ?? '').trim()
+    const resolvedPluginDirectory = pluginDirectory === '' ? '' : path.resolve(pluginDirectory)
+    if (this._quickTexFile !== '' && nextFile !== this._quickTexFile) {
+      await this._snippetsWatcher.unwatch(this._quickTexFile)
+    }
+    this._quickTexFile = nextFile
+    try {
+      if (this._quickTexFile !== '') {
+        await fs.access(this._quickTexFile)
+        this._snippetsWatcher.add(this._quickTexFile)
+      }
+      this._quickTexCatalogue = this._quickTexFile === '' || resolvedPluginDirectory === ''
+        ? { prose: {}, math: {}, excludeChars: ['{', '(', '['], sourceFile: '', diagnostics: [] }
+        : await loadQuickTex(this._quickTexFile, resolvedPluginDirectory)
+      broadcastIpcMessage('assets-provider', 'quicktex-updated')
+    } catch (error) {
+      this._quickTexCatalogue = {
+        prose: {},
+        math: {},
+        excludeChars: ['{', '(', '['],
+        sourceFile: this._quickTexFile,
+        diagnostics: [error instanceof Error ? error.message : String(error)]
+      }
+      broadcastIpcMessage('assets-provider', 'quicktex-updated')
+      this._logger.error(
+        `[Assets Provider] QuickTeX is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        error
+      )
+    }
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -789,119 +920,42 @@ export default class AssetsProvider extends ProviderContract {
   /// /////////////////////////////  SNIPPETS  /////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  /**
-   * Retrieves a snippet with the given name. Throws an error if the file does not exist.
-   *
-   * @param   {string}           name  The snippet file name (sans extension)
-   *
-   * @return  {Promise<string>}        The file contents
-   */
-  async getSnippet (name: string): Promise<string> {
-    if (!name.toLowerCase().endsWith('.tpl.md')) {
-      name += '.tpl.md'
+  /** Read the configured portable VS Code snippet source verbatim. */
+  async getSnippetsSource (): Promise<{ filePath: string, contents: string }> {
+    return {
+      filePath: this._snippetsFile,
+      contents: await fs.readFile(this._snippetsFile, { encoding: 'utf-8' })
     }
-
-    const filePath = path.join(this._snippetsPath, name)
-    return await fs.readFile(filePath, { encoding: 'utf-8' })
   }
 
-  /**
-   * Sets a snippet file with the given content. Overwrites existing files. Can
-   * be used to create new snippet files.
-   *
-   * @param   {string}            name     The snippet file name (sans extension)
-   * @param   {string}            content  The new contents of the file
-   *
-   * @return  {Promise<boolean>}           Returns false if there was an error
-   */
-  async setSnippet (name: string, content: string): Promise<boolean> {
-    name = name.trim()
-    if (name === '') {
-      throw new Error('Cannot set snippet: Name was empty.')
-    }
-
-    if (!name.toLowerCase().endsWith('.tpl.md')) {
-      name += '.tpl.md'
+  /** Validate and write the configured portable VS Code snippet source. */
+  async setSnippetsSource (contents: string): Promise<{ ok: true } | { ok: false, error: string }> {
+    const parsed = parseVSCodeSnippetFile(path.basename(this._snippetsFile), contents)
+    if (parsed.diagnostics.length > 0) {
+      return { ok: false, error: parsed.diagnostics.map(diagnostic => diagnostic.message).join('\n') }
     }
 
     try {
-      const filePath = path.join(this._snippetsPath, name)
-      await fs.writeFile(filePath, content)
-      broadcastIpcMessage('assets-provider', 'snippets-updated')
-      return true
+      await fs.writeFile(this._snippetsFile, contents)
+      return { ok: true }
     } catch (err: unknown) {
-      this._logger.error(`[Assets Provider] Could not save snippets file: ${err instanceof Error ? err.message : 'unknown error'}`, err)
-      return false
+      const message = err instanceof Error ? err.message : String(err)
+      this._logger.error(`[Assets Provider] Could not save snippet file: ${message}`, err)
+      return { ok: false, error: message }
     }
   }
 
-  /**
-   * Removes a snippet from disk
-   *
-   * @param   {string}            name  The snippet file name (sans extension)
-   *
-   * @return  {Promise<boolean>}        Returns false if there was an error
-   */
-  async removeSnippet (name: string): Promise<boolean> {
-    try {
-      if (!name.toLowerCase().endsWith('.tpl.md')) {
-        name += '.tpl.md'
-      }
-      const filePath = path.join(this._snippetsPath, name)
-      await fs.unlink(filePath)
-      broadcastIpcMessage('assets-provider', 'snippets-updated')
-      return true
-    } catch (err: unknown) {
-      this._logger.error(`[Assets Provider] Could not remove snippets file: ${err instanceof Error ? err.message : 'unknown error'}`, err)
-      return false
+  /** Parse the configured `.code-snippets` file into the editor catalogue. */
+  async listSnippets (): Promise<SnippetCatalogue> {
+    const sourceFile = path.basename(this._snippetsFile)
+    const contents = await fs.readFile(this._snippetsFile, { encoding: 'utf-8' })
+    const parsed = parseVSCodeSnippetFile(sourceFile, contents)
+    const snippets: UserSnippet[] = parsed.snippets
+    const diagnostics: SnippetFileDiagnostic[] = parsed.diagnostics
+    for (const diagnostic of diagnostics) {
+      this._logger.error(`[Assets Provider] Invalid snippet file ${diagnostic.sourceFile}: ${diagnostic.message}`)
     }
+    return { snippets, diagnostics }
   }
 
-  /**
-   * Renames a snippet
-   *
-   * @param   {string}            name     The old name
-   * @param   {string}            newName  The new snippet name
-   *
-   * @return  {Promise<boolean>}           Returns false if there was an error.
-   */
-  async renameSnippet (name: string, newName: string): Promise<boolean> {
-    name = name.trim()
-    newName = newName.trim()
-
-    if (name === '' || newName === '') {
-      throw new Error('Cannot rename snippet: Name was empty.')
-    }
-
-    if (!name.endsWith('.tpl.md')) {
-      name += '.tpl.md'
-    }
-
-    if (!newName.endsWith('.tpl.md')) {
-      newName += '.tpl.md'
-    }
-
-    try {
-
-      const oldPath = path.join(this._snippetsPath, name)
-      const newPath = path.join(this._snippetsPath, newName)
-      await fs.rename(oldPath, newPath)
-      broadcastIpcMessage('assets-provider', 'snippets-updated')
-      return true
-    } catch (err: unknown) {
-      this._logger.error(`[Assets Provider] Could not rename snippets file: ${err instanceof Error ? err.message : 'unknown error'}`, err)
-      return false
-    }
-  }
-
-  /**
-   * Lists all snippets that are stored on this computer.
-   *
-   * @return  {Promise<string[]>}  The promise resolves with a list of existing snippets.
-   */
-  async listSnippets (): Promise<string[]> {
-    const files = await fs.readdir(this._snippetsPath)
-    const snippetFiles = files.filter(file => /\.tpl\.md$/.test(file))
-    return snippetFiles.map(file => file.replace(/\.tpl\.md$/, ''))
-  }
 }

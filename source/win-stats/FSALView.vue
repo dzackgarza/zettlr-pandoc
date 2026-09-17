@@ -184,6 +184,7 @@
 </template>
 
 <script setup lang="ts">
+import { reportError } from '@common/util/error-reporting'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
 import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
 import { computed } from 'vue'
@@ -232,7 +233,7 @@ function openFile (absPath: string) {
   ipcRenderer.invoke('documents-provider', {
     command: 'open-file',
     payload: { path: absPath, newTab: true }
-  } as DocumentManagerIPCAPI).catch(err => console.error(err))
+  } as DocumentManagerIPCAPI).catch(err => reportError(err))
 }
 </script>
 

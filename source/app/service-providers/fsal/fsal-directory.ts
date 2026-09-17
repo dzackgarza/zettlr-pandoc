@@ -28,6 +28,12 @@ import { resolveRealPath } from 'source/app/util/real-path'
  */
 const SETTINGS_TEMPLATE: DirectorySettings = {
   sorting: 'name-up',
+  explorer: {
+    displayName: 'inherit',
+    sortMetadataKey: 'zettlr-order_',
+    foldersFirst: null,
+    projectFilter: 'all'
+  },
   project: null, // Default: no project
   icon: null, // Default: no icon
   color: null, // Default: no color
@@ -120,6 +126,19 @@ async function parseQuartoManifest (dir: DirDescriptor): Promise<void> {
         : { kind: 'part', title: item.title, chapters: item.chapters.map(chapter) })
     }
   }
+}
+
+/** Re-derives a Quarto Project after its authoritative manifest changed. */
+export async function refreshQuartoProject (dir: DirDescriptor): Promise<void> {
+  if (dir.settings.project?.manifest.kind !== 'quarto' && dir.settings.quartoManifest === null) {
+    throw new Error(`[FSAL Dir] Cannot refresh Quarto project for ${dir.path}: no Quarto project is bound`)
+  }
+  // A derived Quarto project is explicitly disposable; clear it so the parser
+  // cannot mistake it for a user-authored Zettlr project.
+  if (dir.settings.project?.manifest.kind === 'quarto') {
+    dir.settings.project = null
+  }
+  await parseQuartoManifest(dir)
 }
 
 /**

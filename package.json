@@ -94,6 +94,7 @@
     "@replit/codemirror-lang-nix": "^6.0.1",
     "@replit/codemirror-vim": "^6.4.0",
     "@sinclair/typebox": "^0.34",
+    "@tikz-editor/lang-tikz": "0.5.1",
     "adm-zip": "^0.6.0",
     "ajv": "^8.20.0",
     "archiver": "^8.0.0",
@@ -115,11 +116,13 @@
     "gemoji": "^8.1.0",
     "gettext-parser": "^9.1.1",
     "got": "^11.8.6",
+    "jsonc-parser": "^3.3.1",
     "ky": "^2.0.2",
     "lang-criticmarkup": "^0.3.0",
     "luxon": "^3.7.2",
     "md5": "^2.3.0",
     "mermaid": "^11.16.1",
+    "monaco-editor-core": "0.56.0",
     "nodehun": "^3.0.2",
     "openapi-backend": "^5.20.0",
     "picomatch": "^4.0.7",
@@ -158,10 +161,12 @@
     "rimraf": "^6.1.3",
     "sanitize-filename": "^1.6.4",
     "semver": "^7.8.5",
+    "shell-quote": "^1.10.0",
     "tippy.js": "^6.3.7",
     "underscore": "^1.13.8",
     "unified": "^11.0.5",
     "uuid": "^14.0.1",
+    "viewerjs": "1.14.0",
     "vue": "^3.5.41",
     "vue-virtual-scroller": "^3.0.5",
     "w3c-keyname": "^2.2.8",
@@ -228,5 +233,9 @@
     "electron-winstaller",
     "esbuild",
     "nodehun"
-  ]
+  ],
+  "patchedDependencies": {
+    "@tikz-editor/lang-tikz@0.5.1": "patches/@tikz-editor%2Flang-tikz@0.5.1.patch",
+    "@tikz-editor/lezer-tikz@0.5.1": "patches/@tikz-editor%2Flezer-tikz@0.5.1.patch"
+  }
 }

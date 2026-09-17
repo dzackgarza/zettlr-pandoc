@@ -84,6 +84,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { computed, ref, watch } from 'vue'
 import { trans } from '@common/i18n-renderer'
 import showToast from '@common/util/show-toast'
@@ -132,7 +133,7 @@ const selectedCard = computed<AnnotationCardView | undefined>(() => {
 
 watch(activeFile, file => {
   if (file !== undefined) {
-    collaborationStore.ensureSession(file.path).catch(err => console.error('[AnnotationsTab] Could not load the collaboration session', err))
+    collaborationStore.ensureSession(file.path).catch(err => reportError('[AnnotationsTab] Could not load the collaboration session', err))
   }
 }, { immediate: true })
 
@@ -143,7 +144,7 @@ function onReply (text: string): void {
     return
   }
   collaborationStore.addAnnotationMessage(path, annotationId, text)
-    .catch(err => console.error('[AnnotationsTab] Could not send the reply', err))
+    .catch(err => reportError('[AnnotationsTab] Could not send the reply', err))
 }
 
 /**
@@ -179,7 +180,7 @@ function onResolveToggle (): void {
   const call = annotation.state === 'open'
     ? collaborationStore.resolveAnnotation(path, annotation.annotationId)
     : collaborationStore.reopenAnnotation(path, annotation.annotationId)
-  call.catch(err => console.error('[AnnotationsTab] Could not change the annotation resolution', err))
+  call.catch(err => reportError('[AnnotationsTab] Could not change the annotation resolution', err))
 }
 
 /**
@@ -202,7 +203,7 @@ function onDelete (): void {
       }
       collaborationStore.selectAnnotation(null)
     })
-    .catch(err => console.error('[AnnotationsTab] Could not delete the annotation', err))
+    .catch(err => reportError('[AnnotationsTab] Could not delete the annotation', err))
 }
 
 // M9: the panel's review adjudication path. Every control the editor's chunk
@@ -227,7 +228,7 @@ function runReviewAction (
         showToast(trans(result.message), 'error')
       }
     })
-    .catch(err => console.error('[AnnotationsTab] Could not send the review mutation', err))
+    .catch(err => reportError('[AnnotationsTab] Could not send the review mutation', err))
     .finally(() => { reviewBusy.value = false })
 }
 

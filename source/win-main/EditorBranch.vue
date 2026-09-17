@@ -23,6 +23,7 @@
         :is-last="index === node.nodes.length - 1 || node.nodes.length === 1"
         @global-search="emit('globalSearch', $event)"
         @reference-search="emit('referenceSearch', $event)"
+        @file-search="emit('fileSearch')"
         @create-reference-label="emit('createReferenceLabel', $event)"
         @open-pandoc-quick-help="emit('openPandocQuickHelp')"
         @open-annotation="emit('openAnnotation', $event)"
@@ -41,6 +42,7 @@
         :available-height="(node.direction === 'vertical') ? sizes[index] : 100"
         @global-search="emit('globalSearch', $event)"
         @reference-search="emit('referenceSearch', $event)"
+        @file-search="emit('fileSearch')"
         @create-reference-label="emit('createReferenceLabel', $event)"
         @open-pandoc-quick-help="emit('openPandocQuickHelp')"
         @open-annotation="emit('openAnnotation', $event)"
@@ -56,6 +58,7 @@
 </template>
 
 <script setup lang="ts">
+import { reportError } from '@common/util/error-reporting'
 import EditorPane from './EditorPane.vue'
 import { type BranchNodeJSON } from '@dts/common/documents'
 import { ref, computed, watch, toRef } from 'vue'
@@ -77,6 +80,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'globalSearch', query: string): void
   (e: 'referenceSearch', request: ReferenceSearchRequest): void
+  (e: 'fileSearch'): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
   (e: 'openPandocQuickHelp'): void
   (e: 'openAnnotation', annotationId: string): void
@@ -189,7 +193,7 @@ function onEndResizing (_event: MouseEvent): void {
       sizes: sizes.value.map(s => s) // Again, deproxy
     }
   } as DocumentManagerIPCAPI)
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 </script>
 

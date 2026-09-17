@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { app, shell } from 'electron'
 import type LogProvider from '../service-providers/log'
 
@@ -33,11 +34,11 @@ function maybeOpenExternal (url: string): void {
     const realPath = leadingSlash ? unencoded.substring(1) : unencoded
     // We need to remove the protocol to ensure shell.openPath works.
     shell.openPath(realPath).catch(err => {
-      console.error(`[Window Manager] Could not open path ${realPath}: ${err.message}.`)
+      reportError(`[Window Manager] Could not open path ${realPath}: ${err.message}.`)
     })
   } else {
     shell.openExternal(url).catch(err => {
-      console.error(`[Window Manager] Could not open URL ${url}: ${err.message}.`)
+      reportError(`[Window Manager] Could not open URL ${url}: ${err.message}.`)
     })
   }
 }

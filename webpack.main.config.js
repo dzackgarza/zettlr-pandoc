@@ -31,10 +31,6 @@ module.exports = {
         { from: "static/csl-styles", to: "assets/csl-styles" },
         { from: "static/defaults", to: "assets/defaults" },
         {
-          from: "static/mathjax-macros.json",
-          to: "assets/mathjax-macros.json",
-        },
-        {
           from: "node_modules/@mathjax/src/bundle/tex-chtml.js",
           to: "assets/defaults/mathjax-tex-chtml.js",
         },
@@ -57,7 +53,6 @@ module.exports = {
         { from: "static/lua-filter", to: "assets/lua-filter" },
         // The vendored TikZ pipeline (issue #14): filter, per-figure
         // template, and the styles tree the template \usepackage's.
-        { from: "static/tikz", to: "assets/tikz" },
         { from: "resources/icons/icon.ico", to: "assets/icons" },
         { from: "resources/icons/png", to: "assets/icons/png" },
         {

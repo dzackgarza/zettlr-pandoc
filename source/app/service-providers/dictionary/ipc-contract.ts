@@ -46,4 +46,16 @@ export type DictionaryProviderIPCContract = {
     request: { payload?: undefined }
     response: undefined
   }
+  'get-prose-completions': {
+    request: { payload?: undefined }
+    response: string[]
+  }
+  'add-prose-completion': {
+    request: { payload: { entry: string } }
+    response: { added: boolean, filePath: string }
+  }
+  'open-prose-completion-file': {
+    request: { payload?: undefined }
+    response: string
+  }
 }

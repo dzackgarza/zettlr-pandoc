@@ -2,15 +2,15 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        User MathJax macro loader
+ * Contains:        Canonical MathJax macro loader
  * CVM-Role:        Utility
  * Maintainer:      Zettlr Contributors
  * License:         GNU GPL v3
  *
- * Description:     Loads the user's MathJax macro file from the app config
- *                  directory. The file uses the standard MathJax tex.macros
- *                  JSON shape, so any such export (e.g. a Pandoc macro export)
- *                  can be dropped in or symlinked to integrate a macro set.
+ * Description:     Loads the generated MathJax projection owned by the central
+ *                  ~/.pandoc macro system. Production consumers must resolve
+ *                  that projection from ~/.pandoc; the generic file loader is
+ *                  retained only for explicit tests/fixtures.
  *
  * END HEADER
  */
@@ -22,34 +22,32 @@ import { parseMathJaxMacros, type MathJaxMacro } from '@common/util/mathjax-conf
 
 export const MATHJAX_MACROS_FILENAME = 'mathjax-macros.json'
 
-/**
- * Resolves the macro file inside the given config directory (the app's
- * userData directory, which is XDG-compliant on Linux).
- */
-export function mathJaxMacrosPath (configDirectory: string): string {
-  return path.join(configDirectory, MATHJAX_MACROS_FILENAME)
+/** Resolve the generated MathJax projection owned by ~/.pandoc. */
+export function canonicalMathJaxMacrosPath (homeDirectory: string): string {
+  return path.join(homeDirectory, '.pandoc', 'templates', 'css', MATHJAX_MACROS_FILENAME)
 }
 
 /**
- * Seeds the config directory with the shipped default macro file so a fresh
- * install has a set of standard macros working out of the box, editable in
- * place. Only writes if the user has no macro file yet, so it never clobbers
- * user edits or a symlinked macro set.
+ * Load the central generated projection. Missing central configuration is a
+ * configuration error: production must never fall back to a bundled/app-local
+ * macro copy, because that creates a second semantic authority.
  */
-export async function seedDefaultMacros (configDirectory: string, defaultMacrosPath: string): Promise<void> {
-  const target = mathJaxMacrosPath(configDirectory)
-  if (isFile(target)) {
-    return
+export async function loadCanonicalMathJaxMacros (homeDirectory: string): Promise<Record<string, MathJaxMacro>> {
+  const filePath = canonicalMathJaxMacrosPath(homeDirectory)
+  if (!isFile(filePath)) {
+    throw new Error(
+      `MathJax macros require the central generated projection ${filePath}; ` +
+      'run ~/.pandoc/bin/generate-mathjax-config.py from the canonical macro tree.'
+    )
   }
-
-  await fs.copyFile(defaultMacrosPath, target)
+  return await loadMathJaxMacros(filePath)
 }
 
 /**
- * Reads and validates the user's MathJax macro file. An absent file means the
- * user has no custom macros and yields an empty map; a present but malformed
- * file throws so the failure is visible rather than silently rendering without
- * the macros.
+ * Reads and validates one explicit MathJax macro projection. Production uses
+ * this only through `loadCanonicalMathJaxMacros`; accepting an arbitrary path
+ * here is useful for isolated fixtures and projection tests. An absent explicit
+ * fixture yields an empty map, while malformed content fails loudly.
  */
 export async function loadMathJaxMacros (filePath: string): Promise<Record<string, MathJaxMacro>> {
   if (!isFile(filePath)) {

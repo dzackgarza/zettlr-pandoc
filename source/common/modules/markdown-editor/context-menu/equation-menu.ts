@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { type EditorView } from '@codemirror/view'
 import { trans } from '@common/i18n-renderer'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
@@ -29,7 +30,7 @@ export function equationMenu (view: EditorView, equation: string, coords: { x: n
       label: trans('Copy equation code'),
       type: 'normal',
       action () {
-        navigator.clipboard.writeText(equation).catch(err => console.error(err))
+        navigator.clipboard.writeText(equation).catch(err => reportError(err))
       }
     }
   ]

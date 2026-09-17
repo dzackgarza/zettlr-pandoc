@@ -93,6 +93,7 @@ import { gridTableParser, pipeTableParser } from './pandoc-table-parser'
 import { type ZknLinkParserConfig, zknLinkParser } from './zkn-link-parser'
 import { pandocAttributesParser } from './pandoc-attributes-parser'
 import { highlightParser } from './highlight-parser'
+import { inlineTikzEnvironmentParser, tikzCdLanguage, tikzLanguage } from './tikz-parser'
 import { zknTagParser } from './zkn-tag-parser'
 import { pandocDivComposite, pandocDivParser, pandocSpanParser } from './pandoc-div-span-parser'
 
@@ -123,6 +124,8 @@ const codeLanguages: Array<{ mode: Language|LanguageDescription|null, selectors:
   { mode: xml().language, selectors: ['xml'] },
   { mode: yaml().language, selectors: [ 'yaml', 'yml' ] },
   { mode: hcl().language, selectors: [ 'hcl', 'terraform' ] },
+  { mode: tikzLanguage, selectors: [ 'tikz' ] },
+  { mode: tikzCdLanguage, selectors: [ 'tikzcd' ] },
   {
     // Hear me out: There may be no mermaid syntax highlighting, BUT we need it
     // to be inside a 'FencedCode' Syntax node so that our renderer can pick it
@@ -242,6 +245,7 @@ export default function markdownParser (config?: MarkdownParserConfig): Language
         inlineMathParser,
         inlineBracketMathParser,
         inlineMathEnvironmentParser,
+        inlineTikzEnvironmentParser,
         footnoteParser,
         citationParser,
         zknLinkParser(config?.zknLinkParserConfig),
@@ -299,6 +303,10 @@ export default function markdownParser (config?: MarkdownParserConfig): Language
         { name: 'PandocDivMark', style: customTags.PandocDivMark },
         { name: 'PandocSpan', style: { 'PandocSpan/...': customTags.PandocSpan } },
         { name: 'PandocSpanMark', style: customTags.PandocSpanMark },
+        // Raw TikZ/TikZ-cd environments carry a nested language tree but are
+        // deliberately not InlineCode: using InlineCode would give an active
+        // figure the generic code background and code-mark semantics.
+        { name: 'TikzRaw' },
       ]
     }
   })

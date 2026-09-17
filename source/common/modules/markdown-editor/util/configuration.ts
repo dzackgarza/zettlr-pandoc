@@ -32,7 +32,6 @@ export interface AutocorrectOptions {
 
 export interface EditorConfiguration {
   autocompleteSuggestEmojis: boolean
-  snippetAutocompleteTriggerCharacter: ':'
   autocompleteWithEnter: boolean
   autocompleteWithTab: boolean
   autocorrect: AutocorrectOptions
@@ -100,7 +99,6 @@ export function getDefaultConfig (): EditorConfiguration {
       replacements: []
     },
     autocompleteSuggestEmojis: false,
-    snippetAutocompleteTriggerCharacter: ':',
     autocompleteWithEnter: false,
     autocompleteWithTab: true,
     autoCloseBrackets: true,

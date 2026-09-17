@@ -6,9 +6,9 @@
  * CVM-Role:        TESTING
  * License:         GNU GPL v3
  *
- * Description:     Locks the main-process TikZ render contract: the vendored
- *                  tikzcd.lua filter runs through real pandoc against the
- *                  app-owned asset tree (never ~/.pandoc), producing inline
+ * Description:     Locks the main-process TikZ render contract: tikzcd.lua
+ *                  runs through real pandoc against an explicitly supplied
+ *                  data tree and standalone template, producing inline
  *                  SVG with namespaced ids and a lightbox-servable SVG file;
  *                  a failing figure surfaces the filter's mapped bang-error
  *                  diagnostic; a machine without pdflatex/pdf2svg gets a
@@ -34,17 +34,23 @@
 import { strict as assert } from 'assert'
 import { spawnSync } from 'child_process'
 import { randomBytes } from 'crypto'
-import { existsSync, readdirSync, readFileSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
 import {
+  latexBaseFontSizePt,
   renderTikz,
   resolveTikzDataDir,
+  resolveTikzTemplatePath,
+  tikzTemplateDependencyHash,
+  tikzTemplateCompletions,
+  tikzTemplateCommands,
   type TikzRenderResult
 } from 'source/app/util/tikz-render'
 
 const TIKZ_ASSET_DIR = path.join(process.cwd(), 'static/tikz')
+const TIKZ_TEMPLATE = path.join(TIKZ_ASSET_DIR, 'templates/standalone-tikz.tex')
 
 /**
  * The document location of a buffer that has never been written to disk. The
@@ -56,6 +62,68 @@ const NO_DOC_PATH = ''
 
 const TIKZCD_OK = '\\begin{tikzcd}\nA \\arrow[r] & B\n\\end{tikzcd}'
 const TIKZCD_BROKEN = '\\begin{tikzcd}\nA \\arrow[r] & B \\thisMacroDoesNotExist\n\\end{tikzcd}'
+
+describe('TikZ TeX typography metadata', function () {
+  it('reads the documentclass point size and defaults ordinary standalone documents to 10pt', function () {
+    assert.strictEqual(latexBaseFontSizePt('\\documentclass{standalone}\n'), 10)
+    assert.strictEqual(latexBaseFontSizePt('\\documentclass[tikz,border=2pt,11pt]{standalone}\n'), 11)
+    assert.strictEqual(latexBaseFontSizePt('\\documentclass[12pt]{article}\n'), 12)
+  })
+
+  it('indexes macros from the owned template and its local package/input graph', async function () {
+    const root = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-macros-'))
+    try {
+      const templates = path.join(root, 'templates')
+      const styles = path.join(root, 'styles')
+      await mkdir(path.join(styles, 'macros'), { recursive: true })
+      await mkdir(templates, { recursive: true })
+      const template = path.join(templates, 'standalone-tikz.tex')
+      await writeFile(template, '\\documentclass{standalone}\n\\usepackage{owned}\n\\begin{document}\n<>\n\\end{document}\n')
+      await writeFile(
+        path.join(styles, 'owned.sty'),
+        '\\newcommand{\\TemplateOnly}[1]{#1}\n\\input{macros/more}\n\\usepackage{graphicx}\n'
+      )
+      const nestedMacros = path.join(styles, 'macros', 'more.tex')
+      await writeFile(
+        nestedMacros,
+        '\\providecommand\\NestedMacro{nested}\n\\def\\DefinedMacro#1{#1}\n'
+      )
+
+      const commands = tikzTemplateCommands(template)
+      assert.ok(commands.includes('\\TemplateOnly'))
+      assert.ok(commands.includes('\\NestedMacro'))
+      assert.ok(commands.includes('\\DefinedMacro'))
+      assert.ok(!commands.includes('\\includegraphics'), 'system-package commands belong to the standard LaTeX catalogue, not local template scanning')
+
+      const completions = tikzTemplateCompletions(template)
+      assert.deepEqual(
+        completions.find(entry => entry.label === '\\TemplateOnly'),
+        {
+          label: '\\TemplateOnly',
+          argumentCount: 1,
+          declaration: '\\newcommand{\\TemplateOnly}[1]{#1}',
+          sourceFile: path.join(styles, 'owned.sty')
+        }
+      )
+      assert.equal(completions.find(entry => entry.label === '\\DefinedMacro')?.argumentCount, 1)
+
+      const before = tikzTemplateDependencyHash(template)
+      await writeFile(
+        nestedMacros,
+        '\\providecommand\\NestedMacro{changed-definition}\n\\def\\DefinedMacro#1{#1}\n'
+      )
+      const after = tikzTemplateDependencyHash(template)
+      assert.notStrictEqual(after, before, 'editing a transitive macro file changes the render-context fingerprint')
+      assert.strictEqual(
+        tikzTemplateDependencyHash(template),
+        after,
+        'the dependency fingerprint is deterministic for an unchanged graph'
+      )
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
 
 function toolPresent (tool: string): boolean {
   return spawnSync('which', [ tool ]).status === 0
@@ -101,8 +169,8 @@ describe('TikZ render service (issue #14)', function () {
     const emptyBin = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-nobin-'))
     try {
       const result = await renderTikz(
-        { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
-        { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: { ...process.env, PATH: emptyBin } }
+        { source: TIKZCD_OK, kind: 'raw', language: 'tikzcd', docPath: NO_DOC_PATH },
+        { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: { ...process.env, PATH: emptyBin } }
       )
       assert.strictEqual(result.ok, false)
       assert.ok(!result.ok && result.kind === 'missing-tools', `expected missing-tools, got ${JSON.stringify(result).slice(0, 200)}`)
@@ -125,8 +193,8 @@ describe('TikZ render service (issue #14)', function () {
     try {
       await writeFile(path.join(binDir, 'pandoc'), '#!/bin/sh\nexit 0\n', { mode: 0o644 })
       const result = await renderTikz(
-        { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
-        { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: { ...process.env, PATH: binDir } }
+        { source: TIKZCD_OK, kind: 'raw', language: 'tikzcd', docPath: NO_DOC_PATH },
+        { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: { ...process.env, PATH: binDir } }
       )
       assert.ok(!result.ok, 'a render whose toolchain could not be checked did not produce a figure')
       assert.strictEqual(
@@ -146,8 +214,8 @@ describe('TikZ render service (issue #14)', function () {
   it('renders a tikzcd snippet to namespaced inline SVG plus a lightbox file, or reports the toolchain', async function () {
     this.timeout(120000)
     const result: TikzRenderResult = await renderTikz(
-      { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
+      { source: TIKZCD_OK, kind: 'raw', language: 'tikzcd', docPath: NO_DOC_PATH },
+      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
     )
 
     if (!toolchainPresent) {
@@ -169,25 +237,189 @@ describe('TikZ render service (issue #14)', function () {
     }
   })
 
+  it('renders a fenced tikzcd body through the owned template rather than treating it as a standalone TeX document', async function () {
+    this.timeout(120000)
+    const body = `A \\arrow[r, "f-${randomBytes(4).toString('hex')}"] & B`
+    const result = await renderTikz(
+      { source: body, kind: 'fence', language: 'tikzcd', docPath: NO_DOC_PATH },
+      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
+    )
+
+    if (!toolchainPresent) {
+      assert.ok(!result.ok && result.kind === 'missing-tools')
+      return
+    }
+
+    assert.ok(result.ok, `fenced tikzcd must compile as a template-owned snippet: ${JSON.stringify(result).slice(0, 400)}`)
+    if (result.ok) {
+      assert.match(result.svg, /<svg/)
+      assert.strictEqual(result.texFontSizePt, latexBaseFontSizePt(readFileSync(TIKZ_TEMPLATE, 'utf8')))
+    }
+  })
+
   it('serves a repeat render from the content-addressed cache', async function () {
     this.timeout(120000)
-    const first = await renderTikz({ source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH }, { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env })
+    const first = await renderTikz({ source: TIKZCD_OK, kind: 'raw', language: 'tikzcd', docPath: NO_DOC_PATH }, { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env })
     if (!toolchainPresent) {
       assert.ok(!first.ok && first.kind === 'missing-tools')
       return
     }
     const started = Date.now()
-    const second = await renderTikz({ source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH }, { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env })
+    const second = await renderTikz({ source: TIKZCD_OK, kind: 'raw', language: 'tikzcd', docPath: NO_DOC_PATH }, { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env })
     const elapsed = Date.now() - started
     assert.ok(second.ok, 'the repeat render succeeds')
     assert.ok(elapsed < 5000, `a cache hit must not re-run pdflatex (took ${elapsed}ms)`)
   })
 
+  it('invalidates identical figure source when a transitive template macro definition changes', async function () {
+    this.timeout(180000)
+    const root = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-context-'))
+    try {
+      const templates = path.join(root, 'templates')
+      const styles = path.join(root, 'styles')
+      await mkdir(templates, { recursive: true })
+      await mkdir(styles, { recursive: true })
+      const template = path.join(templates, 'standalone-tikz.tex')
+      const packagePath = path.join(styles, 'owned.sty')
+      await writeFile(
+        template,
+        '\\documentclass[tikz,border=2pt]{standalone}\n\\usepackage{owned}\n\\begin{document}\n<>\n\\end{document}\n'
+      )
+      await writeFile(packagePath, '\\ProvidesPackage{owned}\n\\newcommand{\\CacheMacro}{A}\n')
+
+      const source = `\\begin{tikzpicture}\n% ${randomBytes(8).toString('hex')}\n\\node {\\CacheMacro};\n\\end{tikzpicture}`
+      const request = { source, kind: 'raw' as const, language: 'tikz' as const, docPath: NO_DOC_PATH }
+      const beforeFiles = new Set(readdirSync(cacheDir).filter(name => /^dzgtikz-.*\.svg$/.test(name)))
+      const first = await renderTikz(
+        request,
+        { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: template, cacheDir, env: process.env }
+      )
+      if (!toolchainPresent) {
+        assert.ok(!first.ok && first.kind === 'missing-tools')
+        return
+      }
+      assert.ok(first.ok, `initial macro-backed render must succeed: ${JSON.stringify(first).slice(0, 400)}`)
+      const firstContext = tikzTemplateDependencyHash(template)
+
+      await writeFile(packagePath, '\\ProvidesPackage{owned}\n\\newcommand{\\CacheMacro}{BBBB}\n')
+      const secondContext = tikzTemplateDependencyHash(template)
+      assert.notStrictEqual(secondContext, firstContext, 'the package edit changes the app-side render context')
+
+      const second = await renderTikz(
+        request,
+        { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: template, cacheDir, env: process.env }
+      )
+      assert.ok(second.ok, `same source must recompile under the changed macro graph: ${JSON.stringify(second).slice(0, 400)}`)
+      if (first.ok && second.ok) {
+        assert.notStrictEqual(second.svg, first.svg, 'the changed macro definition reaches pdflatex output')
+        assert.notStrictEqual(second.svgPath, first.svgPath, 'Viewer.js receives a changed artifact path for changed output')
+      }
+
+      const generated = readdirSync(cacheDir)
+        .filter(name => /^dzgtikz-.*\.svg$/.test(name) && !beforeFiles.has(name))
+      assert.strictEqual(
+        generated.length,
+        2,
+        'the unchanged figure source occupies a new persistent cache entry after the macro dependency changes'
+      )
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('force-render bypasses the filter cache and rewrites the generated SVG', async function () {
+    this.timeout(180000)
+    const source = uncachedTikzcd('A \\arrow[r, "force"] & B')
+    const before = new Set(readdirSync(cacheDir).filter(name => /^dzgtikz-.*\.svg$/.test(name)))
+    const first = await renderTikz(
+      { source, kind: 'raw', language: 'tikzcd', docPath: NO_DOC_PATH },
+      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
+    )
+    if (!toolchainPresent) {
+      assert.ok(!first.ok && first.kind === 'missing-tools')
+      return
+    }
+    assert.ok(first.ok, `initial render must succeed, got ${JSON.stringify(first).slice(0, 400)}`)
+
+    const generated = readdirSync(cacheDir)
+      .filter(name => /^dzgtikz-.*\.svg$/.test(name) && !before.has(name))
+    assert.strictEqual(generated.length, 1, 'this uncached source produces exactly one new filter-cache SVG')
+    const cachedSvg = path.join(cacheDir, generated[0])
+    const initialMtime = statSync(cachedSvg).mtimeMs
+
+    await new Promise(resolve => setTimeout(resolve, 25))
+    const cached = await renderTikz(
+      { source, kind: 'raw', language: 'tikzcd', docPath: NO_DOC_PATH },
+      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
+    )
+    assert.ok(cached.ok, 'ordinary repeat render succeeds from cache')
+    assert.strictEqual(statSync(cachedSvg).mtimeMs, initialMtime, 'ordinary repeat render leaves the filter cache file untouched')
+
+    await new Promise(resolve => setTimeout(resolve, 25))
+    const forced = await renderTikz(
+      { source, kind: 'raw', language: 'tikzcd', docPath: NO_DOC_PATH, cachePolicy: 'refresh' },
+      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
+    )
+    assert.ok(forced.ok, 'forced rerender succeeds')
+    assert.ok(
+      statSync(cachedSvg).mtimeMs > initialMtime,
+      'forced rerender rewrites the filter-cache SVG instead of serving the previous artifact'
+    )
+  })
+
+  it('keeps the last-good cached SVG when a forced refresh fails during conversion', async function () {
+    this.timeout(180000)
+    const source = uncachedTikzcd('A \\arrow[r, "preserve"] & B')
+    const before = new Set(readdirSync(cacheDir).filter(name => /^dzgtikz-.*\.svg$/.test(name)))
+    const first = await renderTikz(
+      { source, kind: 'raw', language: 'tikzcd', docPath: NO_DOC_PATH },
+      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
+    )
+    if (!toolchainPresent) {
+      assert.ok(!first.ok && first.kind === 'missing-tools')
+      return
+    }
+    assert.ok(first.ok, `initial render must succeed, got ${JSON.stringify(first).slice(0, 400)}`)
+
+    const generated = readdirSync(cacheDir)
+      .filter(name => /^dzgtikz-.*\.svg$/.test(name) && !before.has(name))
+    assert.strictEqual(generated.length, 1, 'this uncached source produces exactly one new filter-cache SVG')
+    const cachedSvg = path.join(cacheDir, generated[0])
+    const goodBytes = readFileSync(cachedSvg)
+
+    // The render service probes every tool with --version before invoking
+    // pandoc. This shim therefore looks available to the probe but fails when
+    // the filter asks it to convert a PDF, reproducing the precise post-TeX
+    // failure that used to overwrite/truncate svg_path in place.
+    const failingBin = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-bad-pdf2svg-'))
+    try {
+      const shim = path.join(failingBin, 'pdf2svg')
+      await writeFile(shim, '#!/bin/sh\nif [ "$1" = "--version" ]; then exit 0; fi\nexit 1\n', { mode: 0o755 })
+      const failed = await renderTikz(
+        { source, kind: 'raw', language: 'tikzcd', docPath: NO_DOC_PATH, cachePolicy: 'refresh' },
+        {
+          tikzAssetDir: TIKZ_ASSET_DIR,
+          templatePath: TIKZ_TEMPLATE,
+          cacheDir,
+          env: { ...process.env, PATH: `${failingBin}:${process.env.PATH ?? ''}` }
+        }
+      )
+      assert.ok(!failed.ok, 'a forced refresh whose converter fails cannot report success')
+      assert.deepStrictEqual(
+        readFileSync(cachedSvg),
+        goodBytes,
+        'the converter failure leaves the previous cache/lightbox SVG byte-identical'
+      )
+    } finally {
+      await rm(failingBin, { recursive: true, force: true })
+    }
+  })
+
   it('maps a figure-compile failure back to the tikz source line', async function () {
     this.timeout(120000)
     const result = await renderTikz(
-      { source: TIKZCD_BROKEN, kind: 'raw', docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
+      { source: TIKZCD_BROKEN, kind: 'raw', language: 'tikzcd', docPath: NO_DOC_PATH },
+      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
     )
     if (!toolchainPresent) {
       assert.ok(!result.ok && result.kind === 'missing-tools')
@@ -221,12 +453,12 @@ describe('TikZ render service (issue #14)', function () {
     const source = uncachedTikzcd('\\input{figbody.tikz}')
 
     const fromFirst = await renderTikz(
-      { source, kind: 'raw', docPath: path.join(firstDir, 'figures.md') },
-      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
+      { source, kind: 'raw', language: 'tikzcd', docPath: path.join(firstDir, 'figures.md') },
+      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
     )
     const fromSecond = await renderTikz(
-      { source, kind: 'raw', docPath: path.join(secondDir, 'notes.md') },
-      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
+      { source, kind: 'raw', language: 'tikzcd', docPath: path.join(secondDir, 'notes.md') },
+      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
     )
     await rm(firstDir, { recursive: true, force: true })
     await rm(secondDir, { recursive: true, force: true })
@@ -253,12 +485,46 @@ describe('TikZ render service (issue #14)', function () {
     }
   })
 
+  it('keeps identical source in different document roots in distinct filter-cache entries', async function () {
+    this.timeout(180000)
+    const firstDir = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-cache-root-'))
+    const secondDir = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-cache-root-'))
+    const source = uncachedTikzcd('A \\arrow[r, "same-source"] & B')
+    const before = new Set(readdirSync(cacheDir).filter(name => /^dzgtikz-.*\.svg$/.test(name)))
+    try {
+      const first = await renderTikz(
+        { source, kind: 'raw', language: 'tikzcd', docPath: path.join(firstDir, 'notes.md') },
+        { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
+      )
+      const second = await renderTikz(
+        { source, kind: 'raw', language: 'tikzcd', docPath: path.join(secondDir, 'notes.md') },
+        { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
+      )
+      if (!toolchainPresent) {
+        assert.ok(!first.ok && first.kind === 'missing-tools')
+        assert.ok(!second.ok && second.kind === 'missing-tools')
+        return
+      }
+      assert.ok(first.ok && second.ok, 'both document-root renders succeed')
+      const generated = readdirSync(cacheDir)
+        .filter(name => /^dzgtikz-.*\.svg$/.test(name) && !before.has(name))
+      assert.strictEqual(
+        generated.length,
+        2,
+        'docPath contributes to the filter cache because unresolved relative TeX assets resolve from that root'
+      )
+    } finally {
+      await rm(firstDir, { recursive: true, force: true })
+      await rm(secondDir, { recursive: true, force: true })
+    }
+  })
+
   it('reports a render killed by a signal as its own outcome naming the signal, not as a pandoc diagnostic', async function () {
     this.timeout(240000)
     if (!toolchainPresent) {
       const result = await renderTikz(
-        { source: TIKZCD_OK, kind: 'raw', docPath: NO_DOC_PATH },
-        { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
+        { source: TIKZCD_OK, kind: 'raw', language: 'tikzcd', docPath: NO_DOC_PATH },
+        { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
       )
       assert.ok(!result.ok && result.kind === 'missing-tools', 'without the toolchain the typed missing-tools result is required')
       return
@@ -269,8 +535,8 @@ describe('TikZ render service (issue #14)', function () {
     // A real render of an uncached figure: pandoc runs the filter, which runs
     // pdflatex, so the process is alive long enough to be signalled.
     const pending = renderTikz(
-      { source: uncachedTikzcd('A \\arrow[r] & B'), kind: 'raw', docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, cacheDir, env: process.env }
+      { source: uncachedTikzcd('A \\arrow[r] & B'), kind: 'raw', language: 'tikzcd', docPath: NO_DOC_PATH },
+      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
     )
 
     let signalled = 0
@@ -309,15 +575,13 @@ describe('TikZ render service (issue #14)', function () {
   it('uses an explicitly configured TikZ data directory', async function () {
     const configuredDir = path.join(cacheDir, 'configured-pandoc')
     await mkdir(path.join(configuredDir, 'filters'), { recursive: true })
-    await mkdir(path.join(configuredDir, 'templates'), { recursive: true })
-    await writeFile(path.join(configuredDir, 'filters/tikzcd.lua'), '-- configured filter\n')
+    await writeFile(path.join(configuredDir, 'filters/tikzcd.lua'), '-- ZETTLR_TIKZ_RENDER_PROTOCOL=3\n-- configured filter\n')
     await writeFile(path.join(configuredDir, 'filters/utilities.lua'), '-- configured utilities\n')
-    await writeFile(path.join(configuredDir, 'templates/standalone-tikz.tex'), '% configured template\n')
 
     assert.strictEqual(
-      resolveTikzDataDir(configuredDir, path.join(cacheDir, 'home'), TIKZ_ASSET_DIR),
+      resolveTikzDataDir(configuredDir, path.join(cacheDir, 'home')),
       configuredDir,
-      'an explicit user setting is the render dependency'
+      'an explicit filter tree needs no duplicate standalone template'
     )
   })
 
@@ -326,22 +590,40 @@ describe('TikZ render service (issue #14)', function () {
     const userPandocDir = path.join(homeDir, '.pandoc')
     await mkdir(path.join(userPandocDir, 'filters'), { recursive: true })
     await mkdir(path.join(userPandocDir, 'templates'), { recursive: true })
-    await writeFile(path.join(userPandocDir, 'filters/tikzcd.lua'), '-- live user filter\n')
+    await writeFile(path.join(userPandocDir, 'filters/tikzcd.lua'), '-- ZETTLR_TIKZ_RENDER_PROTOCOL=3\n-- live user filter\n')
     await writeFile(path.join(userPandocDir, 'filters/utilities.lua'), '-- live user utilities\n')
     await writeFile(path.join(userPandocDir, 'templates/standalone-tikz.tex'), '% live user template\n')
 
     assert.strictEqual(
-      resolveTikzDataDir('', homeDir, TIKZ_ASSET_DIR),
+      resolveTikzDataDir('', homeDir),
       userPandocDir,
       'the maintained user checkout wins without copying it into the application'
     )
   })
 
-  it('uses the shipped pinned assets when the user has no TikZ data tree', function () {
-    assert.strictEqual(
-      resolveTikzDataDir('', path.join(cacheDir, 'home-without-pandoc'), TIKZ_ASSET_DIR),
-      TIKZ_ASSET_DIR,
-      'a user without pandoc-config receives the tracked generic fallback'
+  it('requires the user-owned ~/.pandoc standalone template for live preview', async function () {
+    const homeDir = await mkdtemp(path.join(tmpdir(), 'zettlr-tikz-template-home-'))
+    try {
+      assert.throws(
+        () => resolveTikzTemplatePath(homeDir),
+        /\.pandoc.*standalone-tikz\.tex/,
+        'the preview does not silently substitute a bundled preamble when the owned template is absent'
+      )
+
+      const template = path.join(homeDir, '.pandoc', 'templates', 'standalone-tikz.tex')
+      await mkdir(path.dirname(template), { recursive: true })
+      await writeFile(template, '% owned template\n<>\n')
+      assert.strictEqual(resolveTikzTemplatePath(homeDir), template)
+    } finally {
+      await rm(homeDir, { recursive: true, force: true })
+    }
+  })
+
+  it('fails loudly instead of substituting a bundled TikZ filter when the shared data tree is absent', function () {
+    assert.throws(
+      () => resolveTikzDataDir('', path.join(cacheDir, 'home-without-pandoc')),
+      /shared Pandoc data tree.*filters\/tikzcd\.lua/,
+      'missing shared Pandoc machinery is a startup/configuration defect, not a cue to fork filter behavior'
     )
   })
 })

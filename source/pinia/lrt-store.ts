@@ -1,3 +1,4 @@
+import { reportError } from '@common/util/error-reporting'
 import { defineStore } from 'pinia'
 import type { LRTIPCAsyncMessage, LRTIPCSyncMessage } from 'source/app/service-providers/long-running-tasks'
 import type { LRT_JSON } from 'source/app/service-providers/long-running-tasks/task'
@@ -38,7 +39,7 @@ export const useLRTStore = defineStore('lrt', () => {
   // Initial update
   fetchTasks()
     .then(t => { tasks.value = t })
-    .catch(err => console.error('Could not fetch long running tasks', err))
+    .catch(err => reportError('Could not fetch long running tasks', err))
 
   // Hook event listeners
   ipcRenderer.on('lrt-provider', (event, args: LRTIPCSyncMessage) => {
@@ -94,7 +95,7 @@ export const useLRTStore = defineStore('lrt', () => {
     }
 
     ipcRenderer.invoke('lrt-provider', { command: 'delete-task', payload: { id: task.id } } as LRTIPCAsyncMessage)
-      .catch(err => console.error('Could not delete task', err))
+      .catch(err => reportError('Could not delete task', err))
   }
 
   return { tasks, abortTask, deleteTask }

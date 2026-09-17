@@ -13,6 +13,7 @@
  */
 
 import { app, nativeTheme } from 'electron'
+import path from 'path'
 import * as bcp47 from 'bcp-47'
 import { v4 as uuid4 } from 'uuid'
 import getLanguageFile from '@common/util/get-language-file'
@@ -124,6 +125,8 @@ export interface ConfigOptions {
     twoStepCollapseWorkspaces: boolean
     // If this is true, the config will never attempt to auto-sort workspaces.
     sortWorkspacesManually: boolean
+    /** Expanded directory rows in the Explorer, persisted across restarts. */
+    expandedDirectories: string[]
   }
 
   newFileNamePattern: string
@@ -197,9 +200,18 @@ export interface ConfigOptions {
   }
   editor: {
     autocompleteSuggestEmojis: boolean
-    snippetAutocompleteTriggerCharacter: ':'
     autocompleteWithEnter: boolean
     autocompleteWithTab: boolean
+    /** Portable VS Code `.code-snippets` source file. */
+    snippetsFile: string
+    /** Portable prose-completion additions file; new entries are appended here. */
+    proseCompletionFile: string
+    /** Additional portable prose-completion catalogues, read-only to Zettlr. */
+    proseCompletionExtraFiles: string[]
+    /** Optional QuickTeX Vimscript configuration file. */
+    quickTexFile: string
+    /** QuickTeX plugin root whose runtime files Neovim should execute. */
+    quickTexPluginDirectory: string
     autoSave: 'off'|'immediately'|'delayed'
     // Run flowmark over the document on every save (issue #26). Off by default.
     formatOnSave: boolean
@@ -386,6 +398,7 @@ export function getConfigTemplate (): ConfigOptions {
     fileManager: {
       twoStepCollapseWorkspaces: false,
       sortWorkspacesManually: false, // By default, let Zettlr sort workspaces
+      expandedDirectories: [],
     },
     newFileNamePattern: '%id.md',
     newFileDontPrompt: false, // If true immediately creates files
@@ -423,9 +436,13 @@ export function getConfigTemplate (): ConfigOptions {
       autoSave: 'off',
       formatOnSave: false, // Run flowmark on save (issue #26)
       autocompleteSuggestEmojis: true,
-      snippetAutocompleteTriggerCharacter: ':',
       autocompleteWithEnter: false,
       autocompleteWithTab: true,
+      snippetsFile: path.join(app.getPath('home'), '.pandoc', 'snippets', 'snippets.code-snippets'),
+      proseCompletionFile: path.join(app.getPath('home'), '.pandoc', 'completions', 'prose.txt'),
+      proseCompletionExtraFiles: [],
+      quickTexFile: '',
+      quickTexPluginDirectory: '',
       autoCloseBrackets: true,
       showLinkPreviews: true, // Whether to fetch link previews in the editor
       showWhitespace: false,

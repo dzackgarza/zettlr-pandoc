@@ -177,6 +177,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
 import ListControl from '@common/vue/form/elements/ListControl.vue'
@@ -371,7 +372,7 @@ ipcRenderer.invoke('assets-provider', { command: 'list-export-profiles' })
   .then((defaults: PandocProfileMetadata[]) => {
     profiles.value = defaults
   })
-  .catch(err => console.error(err))
+  .catch(err => reportError(err))
 
 // On startup, fetch the properties immediately
 onMounted(fetchProperties)
@@ -421,7 +422,7 @@ function updateProperties (): void {
         payload: { properties: deproxiedSettings, path: dirPath }
       })
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
     .finally(() => {
       updateLock.value = false
     })

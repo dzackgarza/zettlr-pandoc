@@ -14,6 +14,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { linter, type Diagnostic } from '@codemirror/lint'
 import YAML from 'yaml'
 
@@ -45,7 +46,7 @@ export const yamlLint = linter(async view => {
     }
     return diagnostics
   } catch (err: any) {
-    console.error('Could not lint YAML: Linter threw an error', err)
+    reportError('Could not lint YAML: Linter threw an error', err)
   }
 
   return diagnostics

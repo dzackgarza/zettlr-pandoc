@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { linter, type Diagnostic, type Action } from '@codemirror/lint'
 import { extractTextnodes, markdownToAST } from '@common/modules/markdown-utils'
 import { configField } from '../util/configuration'
@@ -39,7 +40,7 @@ function refreshUserDictionary (): void {
     for (const word of dictionary) {
       userDictionary.add(word)
     }
-  }).catch(console.error)
+  }).catch(reportError)
 }
 
 // watch the dictionary-provider to update the user dictionary
@@ -288,7 +289,7 @@ const ltLinter = linter(async view => {
         ipcRenderer.invoke('application', {
           command: 'add-language-tool-ignore-rule',
           payload
-        }).catch(err => console.error(err))
+        }).catch(err => reportError(err))
 
         const disabledRules = [...view.state.field(languageToolState).disabledRules]
         disabledRules.push(match.rule.id)

@@ -41,29 +41,69 @@ Each changed chunk is adjudicated in the editor: accept it, annotate it with a c
 
 ## MathJax macros
 
-On first run the app writes a default set of standard macros to a single file in its configuration directory, which you can edit directly:
+This fork does **not** own an independent macro file. The canonical macro language lives in `~/.pandoc/styles/macros/`, alongside the TeX styles and templates that consume it. MathJax reads the generated projection at `~/.pandoc/templates/css/mathjax-macros.json`; TikZ compilation reads the same source macros through the central `dzg-tikz` template graph.
 
-- **Linux:** `~/.config/Zettlr-Pandoc/mathjax-macros.json`
+To add or change a macro, edit the canonical source under `~/.pandoc/styles/macros/` and run the central `generate-math-macros` recipe (or `~/.pandoc/bin/generate-mathjax-config.py`). The generated JSON/JS/HTML files are derivatives and must not be edited or overridden in the Zettlr profile. The desktop launcher regenerates those central projections before launching.
 
-- **macOS:** `~/Library/Application Support/Zettlr-Pandoc/mathjax-macros.json`
+The generated JSON uses the standard MathJax [`tex.macros`](https://docs.mathjax.org/en/latest/input/tex/macros.html) shape: a JSON object mapping each macro name to its definition — a replacement string or `[replacement, argCount]`. Zettlr consumes that projection read-only; malformed or missing central configuration is reported rather than silently replaced by bundled defaults.
 
-- **Windows:** `%APPDATA%\Zettlr-Pandoc\mathjax-macros.json`
+For example, the semantic fibre-product macro is centrally defined as `\fiberprod{X}{S}{Y}` and projects to a three-argument MathJax macro rendering the complete object `X \times_S Y`.
 
-Edit that file and restart the app to change your macros — they are loaded once at startup.
-The app never overwrites your edits (it only writes the defaults when no file exists yet), so to reset you can delete the file and restart.
+## Portable snippets
 
-The file uses the standard MathJax [`tex.macros`](https://docs.mathjax.org/en/latest/input/tex/macros.html) shape: a JSON object mapping each macro name to its definition — a replacement string, or `[replacement, argCount]`, or `[replacement, argCount, optionalDefault]`:
+Snippets use the standard VS Code `.code-snippets` JSONC format and TextMate/VS
+Code snippet-body syntax. There is no Zettlr-specific snippet file format.
+The default source is `~/.pandoc/snippets/snippets.code-snippets`.
+**Preferences → Snippets → Snippets file** can point at any `.code-snippets`
+file, so the source can live in a dotfiles repository or be shared directly
+with another editor. It can be edited in **Open snippets editor** or with any
+external editor; external changes are watched and reloaded.
 
-```json
+For example:
+
+```jsonc
 {
-  "RR": "\\mathbb{R}",
-  "abs": ["\\left\\lvert {#1} \\right\\rvert", 1],
-  "poly": ["{#1}[{#2}]", 2, "x"]
+  "Theorem": {
+    "scope": "markdown",
+    "prefix": "thm",
+    "body": [
+      "::: {.theorem}",
+      "${1:Statement}",
+      ":::",
+      "$0"
+    ]
+  },
+  "Alpha": {
+    "scope": "latex",
+    "prefix": "ga",
+    "body": "\\alpha"
+  }
 }
 ```
 
-Any MathJax-compatible macro export uses this same shape, so a macro set you already maintain (for example a Pandoc macro export) can replace the file unchanged — copy or symlink it into place.
-If the file is malformed, the app reports the error rather than silently ignoring it.
+Snippets participate in the ordinary always-on completion menu alongside words
+from the current buffer and Zettlr's context-specific completion sources.
+CodeMirror owns fuzzy matching/ranking, active snippet fields, indentation, and
+**Tab / Shift-Tab / Escape** navigation. In Markdown, a parsed math zone also
+exposes the standard `latex`/`tex` language scopes, so a normal `scope: "latex"`
+snippet is available in mathematical source without proprietary snippet fields.
+
+## QuickTeX
+
+QuickTeX is separate from snippets. **Preferences → Snippets → QuickTeX
+configuration** points directly at a QuickTeX Vimscript configuration file, and
+**QuickTeX plugin directory** points at the QuickTeX installation. Neovim sources
+and evaluates the real Vimscript configuration whenever it is loaded or changed;
+Zettlr does not parse QuickTeX Vimscript or translate it into `.code-snippets`.
+The editor's synchronous Space command follows QuickTeX's `ExpandWord()` contract:
+on a hit it inserts the evaluated dictionary value verbatim (including any
+configured trailing space), while a miss immediately falls through to ordinary
+Space insertion.
+
+QuickTeX owns exact-prefix **Space** expansion. Every Space checks the preceding
+QuickTeX keyword in the active prose/math namespace first. An exact match expands
+immediately and consumes the Space; a miss falls through to ordinary Space
+handling. QuickTeX definitions are not injected into the autocomplete menu.
 
 ## Building and running
 

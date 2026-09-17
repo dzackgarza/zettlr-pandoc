@@ -105,6 +105,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import SplitView from '@common/vue/window/SplitView.vue'
 import SelectableList, { type SelectableListItem } from '@common/vue/form/elements/SelectableList.vue'
 import ButtonControl from '@common/vue/form/elements/ButtonControl.vue'
@@ -186,7 +187,7 @@ function updateAvailableFilters (selectAfterUpdate?: string): void {
       }
       loadState()
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 function getProtectedFilters (): void {
@@ -194,7 +195,7 @@ function getProtectedFilters (): void {
     .then(files => {
       protectedFilters.value = files
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 function loadState (): void {
@@ -226,7 +227,7 @@ function loadState (): void {
       savingStatus.value = ''
       currentFilterText.value = availableFilters.value[currentItem.value]
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 function saveFilter (): void {
@@ -246,7 +247,7 @@ function saveFilter (): void {
     })
     .catch(err => {
       savingStatus.value = trans('Could not save changes')
-      console.error(err)
+      reportError(err)
     })
 }
 
@@ -267,7 +268,7 @@ function addFilter (newName?: string): void {
     }
   })
     .then(() => { updateAvailableFilters(newName) })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 function removeFilter (idx: number): void {
@@ -281,7 +282,7 @@ function removeFilter (idx: number): void {
     payload: { filename: availableFilters.value[idx] }
   })
     .then(() => { updateAvailableFilters() })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 function renameFilter (): void {
@@ -300,7 +301,7 @@ function renameFilter (): void {
     }
   })
     .then(() => { updateAvailableFilters(newVal) })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 /**
@@ -334,7 +335,7 @@ function ensureUniqueName (candidate: string): string {
 function openFilterDirectory (): void {
   ipcRenderer.invoke('assets-provider', {
     command: 'open-filter-directory'
-  }).catch(err => console.error(err))
+  }).catch(err => reportError(err))
 }
 </script>
 

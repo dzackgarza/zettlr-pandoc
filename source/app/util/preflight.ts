@@ -22,6 +22,7 @@ import os from 'os'
 // The FOLLOW-SYMLINKS variant (not @common/util/is-file, which lstats): a
 // symlinked ~/.pandoc/justfile is perfectly usable and must pass preflight.
 import resolvesToFile from '@common/util/resolves-to-file'
+import { TIKZ_RENDER_PROTOCOL, tikzRenderProtocolVersion } from './tikz-render'
 
 export interface CommandRequirement { command: string, purpose: string }
 export interface PathRequirement { target: string, purpose: string }
@@ -44,10 +45,23 @@ export const REQUIRED_COMMANDS: CommandRequirement[] = [
  * Files that must exist on disk for core functionality.
  */
 export function requiredPaths (): PathRequirement[] {
+  const pandocDir = path.join(os.homedir(), '.pandoc')
   return [
     {
-      target: path.join(os.homedir(), '.pandoc', 'justfile'),
+      target: path.join(pandocDir, 'justfile'),
       purpose: 'the authoritative compile-pandoc PDF export recipe'
+    },
+    {
+      target: path.join(pandocDir, 'filters', 'tikzcd.lua'),
+      purpose: 'the authoritative shared TikZ renderer used by the live editor preview'
+    },
+    {
+      target: path.join(pandocDir, 'filters', 'utilities.lua'),
+      purpose: 'the shared Lua helper loaded by the TikZ renderer'
+    },
+    {
+      target: path.join(pandocDir, 'templates', 'standalone-tikz.tex'),
+      purpose: 'the authoritative TikZ preview template and macro-injection boundary'
     }
   ]
 }
@@ -222,6 +236,26 @@ export async function crossrefCompatibilityFailure (
 }
 
 /**
+ * The live TikZ preview relies on behavior in the shared ~/.pandoc filter
+ * (cache refresh, cache isolation, safe replacement). Presence alone is not
+ * enough: a stale checkout would accept the render command but silently violate
+ * those semantics. The protocol marker makes that drift a startup error.
+ */
+export async function tikzFilterCompatibilityFailure (): Promise<string|null> {
+  const pandocDir = path.join(os.homedir(), '.pandoc')
+  const filterPath = path.join(pandocDir, 'filters', 'tikzcd.lua')
+  if (!resolvesToFile(filterPath)) {
+    return null // requiredPaths() owns the missing-file diagnostic.
+  }
+  const actual = tikzRenderProtocolVersion(pandocDir)
+  if (actual === TIKZ_RENDER_PROTOCOL) {
+    return null
+  }
+  return `${filterPath} — TikZ render protocol ${actual === undefined ? 'unknown' : actual}; ` +
+    `this Zettlr-Pandoc build requires protocol ${TIKZ_RENDER_PROTOCOL}. Update the shared pandoc-config checkout.`
+}
+
+/**
  * Runs the preflight. If anything is missing, reports it through `showError`,
  * calls `exit(1)`, and resolves false. Otherwise resolves true. The failure
  * side effects are injected so the whole path is testable without Electron.
@@ -233,19 +267,25 @@ export async function crossrefCompatibilityFailure (
  * @param   exit            Terminates the process with the given code.
  * @param   commands        The required external commands.
  * @param   paths           The required on-disk files.
- * @param   crossrefFailure The compatibility gate (injected for testability).
+ * @param   crossrefFailure The pandoc-crossref compatibility gate.
+ * @param   tikzFailure     The shared TikZ-filter protocol gate.
  */
 export async function preflight (
   showError: (title: string, message: string) => void,
   exit: (code: number) => void,
   commands: CommandRequirement[] = REQUIRED_COMMANDS,
   paths: PathRequirement[] = requiredPaths(),
-  crossrefFailure: () => Promise<string|null> = crossrefCompatibilityFailure
+  crossrefFailure: () => Promise<string|null> = crossrefCompatibilityFailure,
+  tikzFailure: () => Promise<string|null> = tikzFilterCompatibilityFailure
 ): Promise<boolean> {
   const missing = await findMissingRequirements(commands, paths)
   const incompatibility = await crossrefFailure()
   if (incompatibility !== null) {
     missing.push(incompatibility)
+  }
+  const tikzIncompatibility = await tikzFailure()
+  if (tikzIncompatibility !== null) {
+    missing.push(tikzIncompatibility)
   }
   if (missing.length === 0) {
     return true

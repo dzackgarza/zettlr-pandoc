@@ -689,6 +689,11 @@ export default class FSAL extends ProviderContract {
     await FSALDir.unbindQuartoManifest(src)
   }
 
+  /** Re-derives a directory's ProjectSettings from its Quarto manifest. */
+  public async refreshQuartoProject (src: DirDescriptor): Promise<void> {
+    await FSALDir.refreshQuartoProject(src)
+  }
+
   /**
    * Creates a new project in this dir
    *

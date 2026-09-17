@@ -14,6 +14,7 @@
 
 import { Notification, nativeImage } from 'electron'
 import path from 'path'
+import { spawnSync } from 'child_process'
 
 /**
  * The default icon: The Zettlr logo
@@ -37,6 +38,18 @@ export function showNativeNotification (
   callback?: () => void
 ): boolean {
   if (!Notification.isSupported()) {
+    // Electron's Linux notification support depends on the desktop session.
+    // `notify-send` is the standard freedesktop/libnotify client and gives us
+    // the same dismissible notification surface without owning another UI.
+    if (process.platform === 'linux') {
+      const result = spawnSync('notify-send', [
+        '--app-name=Zettlr-Pandoc',
+        '--urgency=normal',
+        title ?? 'Zettlr-Pandoc',
+        message
+      ], { stdio: 'ignore' })
+      return result.error === undefined && result.status === 0
+    }
     return false
   }
 

@@ -38,8 +38,11 @@ import type {
   SearchDocumentRequest,
   SubmitProposalRequest,
   ReviewSubmissionRequest,
+  RenderCitationRequest,
+  RenderBibliographyRequest,
 } from "@dts/common/agent-api";
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
+import type CiteprocProvider from "@providers/citeproc";
 import type DocumentManager from "@providers/documents";
 import type { AnnotationFailure, ReviewFailure } from "@providers/documents/document-collaboration-application-service";
 import type LogProvider from "@providers/log";
@@ -124,6 +127,8 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   METHOD_NOT_FOUND: 404,
   INVALID_PARAMS: 400,
   PERSISTENCE_FAILED: 500,
+  CITATION_DATABASE_NOT_LOADED: 404,
+  CITATION_NOT_FOUND: 404,
   INTERNAL_ERROR: 500,
 };
 
@@ -222,6 +227,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     private readonly _log: LogProvider,
     private readonly _documents: DocumentManager,
     private readonly _app: AgentApiHost,
+    private readonly _citeproc?: CiteprocProvider,
     /**
      * Injectable so the request-body lifecycle tests can exercise the
      * deadline without stalling for tens of real seconds. Production callers
@@ -672,6 +678,33 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => this.handleRetractProposal(res, c.request.params.packetId, c.request.requestBody),
+
+      /**
+       * The document decided the request was malformed. Its Ajv errors name
+       * the offending field, which is more than the hand-written decoders
+       * could say about a body they refused wholesale.
+       */
+      listCitationDatabases: (_c, _req, res) => this.handleListCitationDatabases(res),
+      listCitationItems: (
+        c: OperationContext<"listCitationItems">,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleListCitationItems(res, c.request.query.database),
+      getCitationItem: (
+        c: OperationContext<"getCitationItem">,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleGetCitationItem(res, c.request.params.citeKey, c.request.query.database),
+      renderCitation: (
+        c: OperationContext<"renderCitation", RenderCitationRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleRenderCitation(res, c.request.requestBody),
+      renderBibliography: (
+        c: OperationContext<"renderBibliography", RenderBibliographyRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleRenderBibliography(res, c.request.requestBody),
 
       /**
        * The document decided the request was malformed. Its Ajv errors name
@@ -1437,6 +1470,123 @@ export default class AgentHTTPProvider extends ProviderContract {
         reviewId: result.reviewId,
         ...AgentHTTPProvider.conflictDetail(result),
       });
+    }
+  }
+
+  // ==========================================================================
+  // Citation handlers
+  // ==========================================================================
+
+  private handleListCitationDatabases(res: http.ServerResponse): void {
+    if (this._citeproc === undefined) {
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citation provider is not available");
+      return;
+    }
+    this.sendJson(res, 200, { databases: this._citeproc.listDatabases() });
+  }
+
+  private handleListCitationItems(
+    res: http.ServerResponse,
+    database: string | undefined,
+  ): void {
+    if (this._citeproc === undefined) {
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citation provider is not available");
+      return;
+    }
+    const db = database ?? "main";
+    try {
+      const items = this._citeproc.getItems(db);
+      this.sendJson(res, 200, { items, count: items.length });
+    } catch (err) {
+      this.sendError(
+        res,
+        404,
+        "CITATION_DATABASE_NOT_LOADED",
+        err instanceof Error ? err.message : `Database not loaded: ${db}`,
+      );
+    }
+  }
+
+  private handleGetCitationItem(
+    res: http.ServerResponse,
+    citeKey: string,
+    database: string | undefined,
+  ): void {
+    if (this._citeproc === undefined) {
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citation provider is not available");
+      return;
+    }
+    const db = database ?? "main";
+    try {
+      const item = this._citeproc.getItem(db, citeKey);
+      if (item === undefined) {
+        this.sendError(res, 404, "CITATION_NOT_FOUND", `Citation key not found: ${citeKey}`);
+        return;
+      }
+      this.sendJson(res, 200, item as AgentApiResponseBody);
+    } catch (err) {
+      this.sendError(
+        res,
+        404,
+        "CITATION_DATABASE_NOT_LOADED",
+        err instanceof Error ? err.message : `Database not loaded: ${db}`,
+      );
+    }
+  }
+
+  private handleRenderCitation(
+    res: http.ServerResponse,
+    body: RenderCitationRequest,
+  ): void {
+    if (this._citeproc === undefined) {
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citation provider is not available");
+      return;
+    }
+    const db = body.database ?? "main";
+    try {
+      const citeItems: CiteItem[] = body.citations.map((c) => ({
+        id: c.id,
+        locator: c.locator,
+        label: c.label,
+        prefix: c.prefix,
+        suffix: c.suffix,
+      }));
+      const rendered = this._citeproc.getCitation(db, citeItems, body.composite ?? false);
+      this.sendJson(res, 200, { rendered: rendered ?? null });
+    } catch (err) {
+      this.sendError(
+        res,
+        404,
+        "CITATION_DATABASE_NOT_LOADED",
+        err instanceof Error ? err.message : `Database not loaded: ${db}`,
+      );
+    }
+  }
+
+  private handleRenderBibliography(
+    res: http.ServerResponse,
+    body: RenderBibliographyRequest,
+  ): void {
+    if (this._citeproc === undefined) {
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citation provider is not available");
+      return;
+    }
+    const db = body.database ?? "main";
+    try {
+      const result = this._citeproc.makeBibliography(db, body.citekeys);
+      if (result === undefined) {
+        this.sendJson(res, 200, { entries: [] });
+        return;
+      }
+      const [options, entries] = result;
+      this.sendJson(res, 200, { options, entries });
+    } catch (err) {
+      this.sendError(
+        res,
+        404,
+        "CITATION_DATABASE_NOT_LOADED",
+        err instanceof Error ? err.message : `Database not loaded: ${db}`,
+      );
     }
   }
 

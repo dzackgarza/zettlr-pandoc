@@ -13,6 +13,7 @@
  *
  * END HEADER
  */
+import { reportError } from '@common/util/error-reporting'
 import { syntaxTree } from '@codemirror/language'
 import { type EditorView, hoverTooltip, type Tooltip } from '@codemirror/view'
 import { NODES, nodeToCiteItem } from '../parser/citation-parser'
@@ -97,7 +98,7 @@ function citationTooltip (view: EditorView, pos: number, side: 1 | -1): Tooltip|
           })
         })
         .catch(err => {
-          console.error(err)
+          reportError(err)
           content.textContent = trans('Could not fetch bibliography for citation.')
         })
 

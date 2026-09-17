@@ -46,6 +46,7 @@
 </template>
 
 <script setup lang="ts">
+import { reportError } from '@common/util/error-reporting'
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import * as d3 from 'd3'
 import Checkbox from '@common/vue/form/elements/CheckboxControl.vue'
@@ -253,11 +254,11 @@ onMounted(() => {
   }
 
   // // Finally, retrieve the graph
-  buildGraph().catch(err => console.error(err))
+  buildGraph().catch(err => reportError(err))
 
   // Listen to any changes
   ipcRenderer.on('links', () => {
-    buildGraph().catch(err => console.error(err))
+    buildGraph().catch(err => reportError(err))
   })
 })
 
@@ -434,7 +435,7 @@ function startSimulation (): void {
                 path: vertex.id,
                 newTab: (event.altKey === true) ? true : undefined
               }
-            } as DocumentManagerIPCAPI).catch(err => console.error(err))
+            } as DocumentManagerIPCAPI).catch(err => reportError(err))
           })
           .attr('data-tippy-content', (vertex) => {
             let cnt = ''

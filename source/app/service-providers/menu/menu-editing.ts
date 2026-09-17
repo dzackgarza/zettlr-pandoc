@@ -9,7 +9,7 @@
  *
  * Description:     The application-menu items both platform templates share
  *                  for editing: the command launcher, the writing statistics,
- *                  and the Insert and Format menus. Each item is the one
+ *                  desktop file actions, and the Insert and Format menus. Each item is the one
  *                  definition of its command: the launcher's rows, labels,
  *                  shortcut chips and enablement come from these items over
  *                  the menu-provider IPC, and each click sends the window
@@ -23,7 +23,7 @@ import { trans } from '@common/i18n-main'
 import { cmShortcutToElectron, getDefaultKeybinding } from 'source/common/util/shortcuts'
 import { defaultKeybindings, type EditorShortcutName } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
 import type { EditorCommandName, InsertTablePayload, ShortcutName } from '@dts/common/shortcut-names'
-import type { MenuCommands } from './menu-dependencies'
+import type { MenuCommands, MenuConfig } from './menu-dependencies'
 
 /** Electron types the focused window as possibly undefined; at runtime the provider also passes null. */
 type FocusedWindow = BrowserWindow | BaseWindow | undefined | null
@@ -80,6 +80,16 @@ export function commandLauncherItem (accelerator: string): MenuItemConstructorOp
   }
 }
 
+/** View → Go to file…: opens the launcher's existing workspace-file view directly. */
+export function fileLauncherItem (accelerator: string): MenuItemConstructorOptions {
+  return {
+    id: 'menu.file_launcher',
+    label: trans('Go to file…'),
+    accelerator,
+    click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'open-file-launcher') }
+  }
+}
+
 /** View → Writing statistics…: the statistics window. */
 export function statisticsItem (commands: MenuCommands): MenuItemConstructorOptions {
   return {
@@ -88,6 +98,55 @@ export function statisticsItem (commands: MenuCommands): MenuItemConstructorOpti
     click: () => { commands.run('open-stats-window', undefined) }
   }
 }
+
+/** File-menu desktop actions. Their target is resolved by the focused renderer. */
+export function desktopFileItems (): MenuItemConstructorOptions[] {
+  return [
+    {
+      id: 'menu.open_terminal_here',
+      label: trans('Open terminal here'),
+      click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'open-terminal-here') }
+    },
+    {
+      id: 'menu.open_file_externally',
+      label: trans('Open file in external editor'),
+      click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'open-file-externally') }
+    },
+    {
+      id: 'menu.open_file_browser_here',
+      label: trans('Open file browser here'),
+      click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'open-file-browser-here') }
+    }
+  ]
+}
+
+/** Edit-menu leaves for the two user-owned authoring source files. */
+export function authoringSourceItems (
+  config: MenuConfig
+): MenuItemConstructorOptions[] {
+  const sources = [
+    {
+      id: 'menu.edit_snippets',
+      label: trans('Edit snippets'),
+      filePath: config.get().editor.snippetsFile ?? '',
+      shortcut: 'edit-snippets' as const
+    },
+    {
+      id: 'menu.edit_quicktex',
+      label: trans('Edit QuickTeX definitions'),
+      filePath: config.get().editor.quickTexFile ?? '',
+      shortcut: 'edit-quicktex' as const
+    }
+  ] as const
+
+  return sources.map(({ id, label, filePath, shortcut }) => ({
+    id,
+    label,
+    enabled: filePath.trim() !== '',
+    click: (_item, focusedWindow) => { sendShortcut(focusedWindow, shortcut) }
+  }))
+}
+
 const TABLE_SIZES = [ 2, 3, 4 ] as const
 
 /** The Insert menu: links, images, tables, footnotes, comments, Pandoc blocks, task lists. */

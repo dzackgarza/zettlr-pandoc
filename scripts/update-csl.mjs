@@ -92,7 +92,7 @@ getCSLLocales().then(() => {
   success('Successfully updated the locales.')
 }).catch((err) => {
   error('Could not update CSL files: An error occurred.')
-  console.error(err)
+  error(err instanceof Error ? err.stack ?? err.message : String(err))
   // We have to exit the process with an
   // error signal for correct behaviour on CI
   process.exit(1)

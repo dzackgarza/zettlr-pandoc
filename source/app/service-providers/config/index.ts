@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import path from 'path'
 import EventEmitter from 'events'
 import { ValidationRule, VALIDATE_RULES, VALIDATE_PROPERTIES } from './config-validation'
@@ -612,7 +613,7 @@ export default class ConfigProvider extends ProviderContract {
           app.quit()
         }
       })
-      .catch(err => console.error(err))
+      .catch(err => reportError(err))
   }
 
   /**

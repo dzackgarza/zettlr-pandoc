@@ -15,7 +15,7 @@
 import type { OpenDocument } from '@dts/common/documents'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
 import { useConfigStore, useWorkspaceStore } from 'source/pinia'
-import type { AnyDescriptor } from 'source/types/common/fsal'
+import type { AnyDescriptor, FileNameDisplay } from 'source/types/common/fsal'
 
 /**
  * Returns an appropriate display title for the provided doc. Doc can be an
@@ -35,7 +35,8 @@ import type { AnyDescriptor } from 'source/types/common/fsal'
  * @return  {string}                                  The display title
  */
 export default function getDocumentTitle (
-  doc: OpenDocument|AnyDescriptor|string
+  doc: OpenDocument|AnyDescriptor|string,
+  displayOverride?: FileNameDisplay
 ): string {
   const configStore = useConfigStore()
   const workspaceStore = useWorkspaceStore()
@@ -49,8 +50,9 @@ export default function getDocumentTitle (
     return typeof doc === 'string' ? pathBasename(doc) : pathBasename(doc.path)
   }
 
-  const useTitle = config.fileNameDisplay.includes('title')
-  const useH1 = config.fileNameDisplay.includes('heading')
+  const fileNameDisplay = displayOverride ?? config.fileNameDisplay
+  const useTitle = fileNameDisplay.includes('title')
+  const useH1 = fileNameDisplay.includes('heading')
   const displayMdExtensions = config.display.markdownFileExtensions
 
   if (descriptor.type !== 'file') {

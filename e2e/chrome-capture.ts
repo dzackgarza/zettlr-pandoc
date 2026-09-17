@@ -419,7 +419,7 @@ async function main (): Promise<void> {
           const filename = `${scene.name}-${theme}-${width}.png`
           const image = await page.screenshot()
           screenshots.set(filename, image)
-          console.error(`chrome-capture: ${filename}`)
+          process.stderr.write(`chrome-capture: ${filename}\n`)
           await scene.restore?.(page)
         }
       }
@@ -436,6 +436,6 @@ async function main (): Promise<void> {
 }
 
 main().catch(error => {
-  console.error(error)
+  process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`)
   process.exitCode = 1
 })

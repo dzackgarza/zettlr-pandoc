@@ -1114,6 +1114,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             }),
           },
         },
+        undefined,
         DEADLINE_MS,
       );
       await lifecycle.boot();

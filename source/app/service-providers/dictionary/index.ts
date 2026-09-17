@@ -23,6 +23,7 @@ import Nodehun from 'nodehun/build/Release/Nodehun.node'
 // import { Nodehun } from 'nodehun'
 import path from 'path'
 import { promises as fs } from 'fs'
+import { FSWatcher } from 'chokidar'
 
 import { ipcMain, app, shell } from 'electron'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
@@ -31,6 +32,12 @@ import enumDictFiles, { type DictFileMetadata } from '@common/util/enum-dict-fil
 import ProviderContract from '../provider-contract'
 import type LogProvider from '../log'
 import type ConfigProvider from '@providers/config'
+import {
+  appendPortableProseCompletion,
+  parsePortableProseCompletions,
+  proseWordsFromHunspellDic,
+  normalizeProseCompletionEntry,
+} from '../../util/prose-completion-files'
 
 /**
  * This class loads and unloads dictionaries according to the configuration set
@@ -48,6 +55,13 @@ export default class DictionaryProvider extends ProviderContract {
   private _cachedAutocorrect: string[]
   private _reloadWanted: boolean
   private _reloadLock: boolean
+  /** Base words obtained from the currently selected Hunspell dictionaries. */
+  private readonly _hunspellCompletionWords = new Map<string, string[]>()
+  /** Portable prose-completion files, with the first path being writable. */
+  private _proseCompletionFile = ''
+  private _proseCompletionExtraFiles: string[] = []
+  private readonly _portableCompletionEntries = new Map<string, string[]>()
+  private readonly _proseCompletionWatcher: FSWatcher
 
   constructor (private readonly _logger: LogProvider, private readonly _config: ConfigProvider) {
     super()
@@ -67,6 +81,27 @@ export default class DictionaryProvider extends ProviderContract {
     // If this flag is set, this indicates that a reload is wanted
     this._reloadWanted = false
     this._reloadLock = false // True during reload
+
+    this._proseCompletionWatcher = new FSWatcher({
+      persistent: true,
+      ignoreInitial: true,
+      awaitWriteFinish: {
+        stabilityThreshold: 200,
+        pollInterval: 50
+      }
+    })
+    this._proseCompletionWatcher.on('all', (_event, affectedPath) => {
+      const resolved = path.resolve(affectedPath)
+      if (!this.proseCompletionPaths().includes(resolved)) {
+        return
+      }
+      void this.reloadPortableProseCompletions().catch(error => {
+        this._logger.error(
+          `[Dictionary Provider] Could not reload prose completions after ${resolved} changed: ${error instanceof Error ? error.message : String(error)}`,
+          error
+        )
+      })
+    })
 
     // Flags for writing the file
     this._fileLock = false
@@ -91,11 +126,17 @@ export default class DictionaryProvider extends ProviderContract {
         return terms.map(t => this.add(t))
       } else if (command === 'open-dictionary-folder') {
         shell.showItemInFolder(path.join(app.getPath('userData'), '/dict'))
+      } else if (command === 'get-prose-completions') {
+        return this.getProseCompletions()
+      } else if (command === 'add-prose-completion') {
+        return this.addProseCompletion(message.payload.entry)
+      } else if (command === 'open-prose-completion-file') {
+        return shell.openPath(this._proseCompletionFile)
       }
     })
 
     // Reload as soon as the config has been updated
-    this._config.on('update', (_opt: string) => {
+    this._config.on('update', (opt: string) => {
       // Reload the dictionaries (if applicable) ...
       this.synchronizeHunspellDictionaries()
         .catch(err => {
@@ -103,6 +144,18 @@ export default class DictionaryProvider extends ProviderContract {
         })
       // ... and add cache the autocorrect replacements so they are not seen as "wrong"
       this._cacheAutoCorrectValues()
+      if (
+        opt === undefined ||
+        opt === 'editor.proseCompletionFile' ||
+        opt === 'editor.proseCompletionExtraFiles'
+      ) {
+        void this.configureProseCompletionFiles().catch(error => {
+          this._logger.error(
+            `[Dictionary Provider] Could not switch prose completion files: ${error instanceof Error ? error.message : String(error)}`,
+            error
+          )
+        })
+      }
     })
   }
 
@@ -110,6 +163,7 @@ export default class DictionaryProvider extends ProviderContract {
     this._logger.verbose('Dictionary provider booting up ...')
     await this.synchronizeHunspellDictionaries()
     await this.loadUserDictionary()
+    await this.configureProseCompletionFiles()
     this._cacheAutoCorrectValues()
   }
 
@@ -118,7 +172,119 @@ export default class DictionaryProvider extends ProviderContract {
    */
   async shutdown (): Promise<void> {
     this._logger.verbose('Dictionary provider shutting down ...')
+    await this._proseCompletionWatcher.close()
     await this.persistUserDictionary()
+  }
+
+  private configuredProseCompletionFile (): string {
+    const configured = String(this._config.get('editor.proseCompletionFile') ?? '').trim()
+    return configured === ''
+      ? path.join(app.getPath('home'), '.pandoc', 'completions', 'prose.txt')
+      : path.resolve(configured)
+  }
+
+  private configuredProseCompletionExtraFiles (): string[] {
+    const configured = this._config.get('editor.proseCompletionExtraFiles')
+    if (!Array.isArray(configured)) {
+      return []
+    }
+    return configured
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map(entry => entry.trim())
+      .filter(entry => entry !== '')
+      .map(entry => path.resolve(entry))
+  }
+
+  private proseCompletionPaths (): string[] {
+    return [...new Set([
+      this._proseCompletionFile,
+      ...this._proseCompletionExtraFiles,
+    ].filter(filePath => filePath !== ''))]
+  }
+
+  private async configureProseCompletionFiles (): Promise<void> {
+    const previous = this.proseCompletionPaths()
+    const primary = this.configuredProseCompletionFile()
+    const extras = this.configuredProseCompletionExtraFiles().filter(filePath => filePath !== primary)
+
+    await fs.mkdir(path.dirname(primary), { recursive: true })
+    try {
+      await fs.access(primary)
+    } catch {
+      await fs.writeFile(
+        primary,
+        '# Zettlr prose completions: one word or phrase per line.\n',
+        { encoding: 'utf-8' }
+      )
+    }
+
+    for (const oldPath of previous) {
+      if (oldPath !== '' && ![primary, ...extras].includes(oldPath)) {
+        await this._proseCompletionWatcher.unwatch(oldPath)
+      }
+    }
+    this._proseCompletionFile = primary
+    this._proseCompletionExtraFiles = extras
+    this._proseCompletionWatcher.add(this.proseCompletionPaths())
+    await this.reloadPortableProseCompletions()
+  }
+
+  private async reloadPortableProseCompletions (): Promise<void> {
+    const entries = new Map<string, string[]>()
+    for (const filePath of this.proseCompletionPaths()) {
+      try {
+        entries.set(filePath, parsePortableProseCompletions(await fs.readFile(filePath, 'utf8')))
+      } catch (error) {
+        // The primary file is created by configureProseCompletionFiles. Extra
+        // files are user-owned and may temporarily disappear while being
+        // synced/renamed; keep other sources live and report the exact source.
+        if (filePath === this._proseCompletionFile) {
+          throw error
+        }
+        this._logger.error(
+          `[Dictionary Provider] Could not read prose completion catalogue ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+          error
+        )
+      }
+    }
+    this._portableCompletionEntries.clear()
+    for (const [filePath, fileEntries] of entries) {
+      this._portableCompletionEntries.set(filePath, fileEntries)
+    }
+    broadcastIpcMessage('dictionary-provider', { command: 'prose-completions-updated' })
+  }
+
+  /** Merged read-only language vocabulary plus portable user catalogues. */
+  getProseCompletions (): string[] {
+    const result = new Set<string>()
+    // Portable entries lead so authored phrases/terminology win stable ordering
+    // ahead of the much larger language dictionaries.
+    for (const entries of this._portableCompletionEntries.values()) {
+      for (const entry of entries) result.add(entry)
+    }
+    for (const entries of this._hunspellCompletionWords.values()) {
+      for (const entry of entries) result.add(entry)
+    }
+    return [...result]
+  }
+
+  /** Append one word or phrase to the portable primary completion file. */
+  async addProseCompletion (rawEntry: string): Promise<{ added: boolean, filePath: string }> {
+    const entry = normalizeProseCompletionEntry(rawEntry)
+    if (entry === '') {
+      return { added: false, filePath: this._proseCompletionFile }
+    }
+
+    const currentEntries = this._portableCompletionEntries.get(this._proseCompletionFile) ?? []
+    if (currentEntries.includes(entry)) {
+      return { added: false, filePath: this._proseCompletionFile }
+    }
+
+    const added = await appendPortableProseCompletion(this._proseCompletionFile, entry)
+    if (!added) return { added: false, filePath: this._proseCompletionFile }
+    this._portableCompletionEntries.set(this._proseCompletionFile, [...currentEntries, entry])
+    broadcastIpcMessage('dictionary-provider', { command: 'prose-completions-updated' })
+    return { added, filePath: this._proseCompletionFile }
   }
 
   /**
@@ -216,6 +382,7 @@ export default class DictionaryProvider extends ProviderContract {
         let index = this._loadedDicts.indexOf(dict)
         this._loadedDicts.splice(index, 1) // Remove both from the loadedDicts...
         this.hunspell.splice(index, 1) // ... and the typos themselves
+        this._hunspellCompletionWords.delete(dict)
         changeWanted = true
       }
     }
@@ -247,6 +414,7 @@ export default class DictionaryProvider extends ProviderContract {
 
       this._loadedDicts.push(dict)
       this.hunspell.push(new Nodehun(aff, dic))
+      this._hunspellCompletionWords.set(dict, proseWordsFromHunspellDic(dic.toString('utf8')))
     } // END for
 
     if (changeWanted) {

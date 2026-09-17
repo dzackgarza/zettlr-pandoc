@@ -79,6 +79,27 @@
       },
       {
         "type": "normal",
+        "id": "menu.open_terminal_here",
+        "label": "Open terminal here",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.open_file_externally",
+        "label": "Open file in external editor",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.open_file_browser_here",
+        "label": "Open file browser here",
+        "enabled": true
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
         "id": "menu.save",
         "label": "Save",
         "enabled": true,
@@ -285,6 +306,21 @@
         "label": "Filter files",
         "enabled": true,
         "accelerator": "CmdOrCtrl+Shift+T"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.edit_snippets",
+        "label": "Edit snippets",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.edit_quicktex",
+        "label": "Edit QuickTeX definitions",
+        "enabled": false
       },
       {
         "type": "separator"
@@ -534,6 +570,13 @@
         "label": "Command launcher…",
         "enabled": true,
         "accelerator": "Ctrl+P"
+      },
+      {
+        "type": "normal",
+        "id": "menu.file_launcher",
+        "label": "Go to file…",
+        "enabled": true,
+        "accelerator": "Ctrl+Shift+P"
       },
       {
         "type": "normal",

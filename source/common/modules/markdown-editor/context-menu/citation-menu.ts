@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { type EditorView } from '@codemirror/view'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import { configField } from '../util/configuration'
@@ -64,7 +65,7 @@ export function citationMenu (view: EditorView, coords: { x: number, y: number }
           command: 'open-attachment',
           payload: { citekey: key, filePath }
         })
-          .catch((err: unknown) => console.error(err))
+          .catch((err: unknown) => reportError(err))
       }
     })
   }

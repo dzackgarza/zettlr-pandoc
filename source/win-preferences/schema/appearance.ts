@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import { type PreferencesFieldset } from './types'
 import { PreferencesGroups } from './_preferences-groups'
@@ -140,7 +141,7 @@ export function getAppearanceFields (config: ConfigOptions): PreferencesFieldset
                 hash: 'tab-custom-css-control'
               }
             })
-              .catch(err => console.error(err))
+              .catch(err => reportError(err))
           }
         }
       ]

@@ -1552,7 +1552,13 @@ current contents from the editor somewhere else, and restart the application.`,
    * should keep those available. Resolves once the citeproc provider finishes
    * synchronizing.
    */
-  private async synchronizeDatabases (): Promise<void> {
+  /**
+   * Recompute every bibliography reachable from the currently loaded roots and
+   * synchronize Citeproc with that union. Root-management commands call this
+   * after changing the configured roots so already-open editors receive the
+   * same database update they would after opening another document.
+   */
+  public async synchronizeDatabases (): Promise<void> {
     const libraries: string[] = []
 
     for (const doc of this.documents) {

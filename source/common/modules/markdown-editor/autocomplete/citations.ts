@@ -125,6 +125,7 @@ const apply = function (view: EditorView, completion: Completion, from: number, 
 }
 
 export const citations: AutocompletePlugin = {
+  source: 'Cite',
   applies (ctx) {
     // A valid citekey position is: Beginning of the line (citekey without square
     // brackets), after a square bracket open (regular citation without prefix),

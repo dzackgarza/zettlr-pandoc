@@ -13,6 +13,8 @@
  * another-Project entry) and to prove the disabled entry's inert apply.
  */
 
+import './provision-renderer-window-seams'
+
 import {
   acceptCompletion,
   currentCompletions,
@@ -26,6 +28,8 @@ import markdownParser from 'source/common/modules/markdown-editor/parser/markdow
 import { autocomplete, citekeyUpdate, referencesUpdate } from 'source/common/modules/markdown-editor/autocomplete'
 import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
 import { configField } from 'source/common/modules/markdown-editor/util/configuration'
+import 'source/common/modules/markdown-editor/editor.css'
+import loadIcons from 'source/common/modules/window-register/load-icons'
 import { extractReferences } from 'source/common/pandoc-util/extract-references'
 import { annotateCompletionEntries } from 'source/common/pandoc-util/project-reference-status'
 import type { ProjectRootSpec, ReferenceCompletionEntry } from '@dts/common/references'
@@ -120,11 +124,14 @@ function workspaceEntries (): ReferenceCompletionEntry[] {
 let view: EditorView
 
 async function mount (): Promise<void> {
+  await loadIcons()
   const dark = document.body.dataset.dark === 'true'
+  const query = new URLSearchParams(window.location.search).get('query') ?? ''
+  const documentText = citing + query
 
   const state = EditorState.create({
-    doc: citing,
-    selection: { anchor: citing.length },
+    doc: documentText,
+    selection: { anchor: documentText.length },
     extensions: [
       markdownParser(),
       configField,

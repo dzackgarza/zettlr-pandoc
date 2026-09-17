@@ -40,6 +40,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { defineStore } from 'pinia'
 import { reactive, ref } from 'vue'
 import { DP_EVENTS } from '@dts/common/documents'
@@ -119,7 +120,7 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
         }
       })
       .catch((err: unknown) => {
-        console.error(`[documentCollaborationStore] Could not fetch the collaboration session for ${documentPath}`, err)
+        reportError(`[documentCollaborationStore] Could not fetch the collaboration session for ${documentPath}`, err)
       })
       .finally(() => {
         pendingFetches.delete(documentPath)

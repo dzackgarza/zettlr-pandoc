@@ -63,13 +63,47 @@ export interface FSMetaInfo {
   creationtime: number
 }
 
-export type SortMethod = 'name-up'|'name-down'|'time-up'|'time-down'
+/** How Markdown documents are labelled in Explorer surfaces. */
+export type FileNameDisplay = 'filename'|'title'|'heading'|'title+heading'
+
+/**
+ * A directory's persisted Explorer ordering. `name-*` and `time-*` are the
+ * legacy methods: they continue to mean "the configured display name" and
+ * "the configured fileMetaTime" respectively. The explicit methods decouple
+ * the visible label from the ordering relation.
+ */
+export type SortMethod =
+  | 'name-up'|'name-down'
+  | 'time-up'|'time-down'
+  | 'filename-up'|'filename-down'
+  | 'title-up'|'title-down'
+  | 'heading-up'|'heading-down'
+  | 'modtime-up'|'modtime-down'
+  | 'creationtime-up'|'creationtime-down'
+  | 'frontmatter-up'|'frontmatter-down'
+  | 'book-up'|'book-down'
+
+export type ProjectFileFilter = 'all'|'included'|'omitted'
+
+/** Directory-local Explorer controls that do not belong to the project model. */
+export interface DirectoryExplorerSettings {
+  /** `inherit` means the global fileNameDisplay preference. */
+  displayName: 'inherit'|FileNameDisplay
+  /** Metadata key used by frontmatter-* sorting. */
+  sortMetadataKey: string
+  /** `null` means the global sortFoldersFirst preference. */
+  foldersFirst: boolean|null
+  /** Optional project-membership view over files in this directory. */
+  projectFilter: ProjectFileFilter
+}
 
 export interface DirectorySettings {
   /**
    * Describes the sorting that should be applied to the directory
    */
   sorting: SortMethod
+  /** Authoring/browser presentation local to this directory. */
+  explorer: DirectoryExplorerSettings
   /**
    * Can hold an optional custom icon for the directory
    */

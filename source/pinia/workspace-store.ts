@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { defineStore } from 'pinia'
 import { type Ref, ref, watch, computed } from 'vue'
 import { useConfigStore } from './config'
@@ -90,7 +91,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const isLoading = ref(true)
 
   retrieveInitialUpdate(openPaths.value, workspaceMap, descriptorMap)
-    .catch(err => console.error('[Workspace Store] Could not retrieve initial set of loaded paths', err))
+    .catch(err => reportError('[Workspace Store] Could not retrieve initial set of loaded paths', err))
     .finally(() => {
       isLoading.value = false
       // Now we can set up the watchers. (We need to do this afterwards to not cause a hiccup)
@@ -150,7 +151,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         const response = await readPathRecursively(rootPath)
         workspaceMap.value.set(rootPath, response)
       } catch (err) {
-        console.error(`[Workspace Store] Could not retrieve path: "${rootPath}"`, err)
+        reportError(`[Workspace Store] Could not retrieve path: "${rootPath}"`, err)
       }
     }
 
@@ -183,7 +184,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     // First, start loading new descriptors
     getDescriptorFor(descriptorsToFetch)
       .then(descriptors => descriptors.map(d => descriptorMap.value.set(d.path, d)))
-      .catch(err => console.error('Could not fetch new descriptors from main!', err))
+      .catch(err => reportError('Could not fetch new descriptors from main!', err))
 
     // Second, check which of the descriptors are no longer loaded
     for (const existingDescriptor of descriptorMap.value.keys()) {

@@ -1,3 +1,4 @@
+-- ZETTLR_TIKZ_RENDER_PROTOCOL=3
 local system = require 'pandoc.system'
 -- App-owned fallback fork of pandoc-config's TikZ filter. PANDOC_DIR is
 -- resolved by the main process from tikz.dataDir, a complete ~/.pandoc tree,
@@ -25,9 +26,10 @@ local figures_dir = os.getenv("FIGURES_DIR") or (pandoc_dir .. "/figures")
 local svg_dir = os.getenv("SVG_DIR")
 
 -- Per-figure preamble template: the standalone LaTeX document each figure body
--- is wrapped in. It belongs to the selected data tree and defaults to the
--- template under PANDOC_DIR, overridable via
--- FIGURE_TEMPLATE_FILE. Read LAZILY at compile time (not at filter load) so the
+-- is wrapped in. Standalone filter use defaults to the template under
+-- PANDOC_DIR, but the app always supplies FIGURE_TEMPLATE_FILE explicitly from
+-- ~/.pandoc so the filter tree and the user's macro/preamble owner stay
+-- independent. Read LAZILY at compile time (not at filter load) so the
 -- doctor's empty-stdin invocation probe, which loads the filter but compiles no
 -- figure, needs no render-context env. Returns (compiled_template,
 -- raw_template_string): the raw string is folded into the figure cache key so
@@ -110,15 +112,22 @@ local function run_pdflatex_and_convert(tex_source, tmp_prefix, hash, doc_dir, f
   local svg_path = svg_dir .. "/dzgtikz-" .. hash .. ".svg"
   local pdf_path = svg_dir .. "/dzgtikz-" .. hash .. ".pdf"
 
+  local force_rebuild = os.getenv("TIKZ_FORCE_REBUILD") == "1"
+
   local sf = io.open(svg_path, "r")
   if sf then sf:close() end
   local pf = io.open(pdf_path, "r")
   if pf then pf:close() end
-  if sf and pf then
+  if sf and pf and not force_rebuild then
     return svg_path, pdf_path
   end
 
   os.execute("mkdir -p " .. svg_dir)
+  -- A force refresh skips the cache hit but deliberately leaves the previous
+  -- SVG in place until the replacement SVG has been converted successfully.
+  -- In particular pdf2svg must never write directly over svg_path: a failed
+  -- conversion may truncate its destination, which would destroy the
+  -- lightbox/cache file for the last-good image the editor is still showing.
 
   local tmp = "/tmp/" .. tmp_prefix .. "-" .. hash
   os.execute("mkdir -p " .. tmp)
@@ -129,7 +138,8 @@ local function run_pdflatex_and_convert(tex_source, tmp_prefix, hash, doc_dir, f
   f:close()
 
   local inputs_env = ""
-  local styles_dir = pandoc_dir .. "/styles//"
+  local styles_dir = os.getenv("FIGURE_STYLES_DIR") or (pandoc_dir .. "/styles")
+  styles_dir = styles_dir:gsub("/+$", "") .. "//"
   if doc_dir and doc_dir ~= "" then
     inputs_env = "TEXINPUTS=" .. doc_dir .. ":" .. styles_dir .. ":: "
   else
@@ -153,8 +163,26 @@ local function run_pdflatex_and_convert(tex_source, tmp_prefix, hash, doc_dir, f
   end
 
   local tmp_pdf = tmp .. "/tikz.pdf"
+  local tmp_svg = tmp .. "/tikz.svg"
+  -- The PDF is already a successful pdflatex product and remains useful to
+  -- LaTeX-output callers even when SVG conversion later fails.
   os.execute("cp " .. tmp_pdf .. " " .. pdf_path)
-  local ok2 = os.execute("pdf2svg " .. tmp_pdf .. " " .. svg_path .. " >/dev/null 2>&1")
+  local ok2 = os.execute("pdf2svg " .. tmp_pdf .. " " .. tmp_svg .. " >/dev/null 2>&1")
+  if ok2 then
+    -- Stage in the cache directory, then rename over the old SVG. `cp` may fail
+    -- part-way (disk full, permissions); that must leave the old svg_path
+    -- untouched. The final rename is within one directory/filesystem.
+    local staged_svg = svg_path .. ".new"
+    local staged = os.execute("cp " .. tmp_svg .. " " .. staged_svg)
+    if staged then
+      ok2 = os.rename(staged_svg, svg_path)
+    else
+      ok2 = false
+    end
+    if not ok2 then
+      os.remove(staged_svg)
+    end
+  end
   os.execute("rm -rf " .. tmp)
 
   if not ok2 then
@@ -223,13 +251,18 @@ local function compile_tikz(source)
   -- The selected per-figure template wraps this figure body. Read it lazily so
   -- changes in the configured Pandoc data tree take effect without rebuilding.
   local tikz_doc_template, template_str = figure_template()
+  local render_context_hash = os.getenv("TIKZ_RENDER_CONTEXT_HASH") or ""
 
   -- The cache key (hash) folds in the TEMPLATE content as well as the figure body:
   -- the same body compiled against a different per-figure template is a different
   -- figure, so
   -- hashing only the body would return a stale cached SVG when the template
   -- changes.
-  local hash = pandoc.sha1(resolved_source .. "\0" .. template_str)
+  -- doc_dir is part of the render input even after resolving \input: TeX can
+  -- still load relative assets directly (notably \includegraphics). Two
+  -- documents with byte-identical TikZ source but different local assets must
+  -- therefore never share a cache entry.
+  local hash = pandoc.sha1(resolved_source .. "\0" .. template_str .. "\0" .. render_context_hash .. "\0" .. doc_dir)
 
   -- Substitute the figure source at the QTikz `<>` marker. The `<>` is plain text
   -- to pandoc's template engine (not a $...$ variable), so it survives the render
@@ -267,7 +300,8 @@ local function compile_tikz_document(source)
   end
 
   local resolved_source = resolve_inputs(source, doc_dir)
-  local hash = pandoc.sha1(resolved_source)
+  local render_context_hash = os.getenv("TIKZ_RENDER_CONTEXT_HASH") or ""
+  local hash = pandoc.sha1(resolved_source .. "\0" .. render_context_hash .. "\0" .. doc_dir)
   -- A full-document tikz code block IS its own `.tex`: no template preamble is
   -- prepended, so a pdflatex `l.NN` cite is already the figure-body line.
   return run_pdflatex_and_convert(resolved_source, "tikzfull", hash, doc_dir, resolved_source, 0)

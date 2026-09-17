@@ -37,6 +37,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import { ref, computed, watch, toRef } from 'vue'
 import TextControl from './TextControl.vue'
@@ -94,7 +95,7 @@ function requestFile (): void {
       // button, because each button has a designated text field.
       textValue.value = result[0]
     })
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 }
 
 function requestDir (): void {
@@ -107,7 +108,7 @@ function requestDir (): void {
 
       textValue.value = result[0]
     })
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 }
 </script>
 

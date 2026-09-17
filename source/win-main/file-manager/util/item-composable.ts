@@ -14,6 +14,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { displayFileContext } from './file-item-context'
 import { displayDirContext } from './dir-item-context'
 import { useConfigStore, useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
@@ -43,13 +44,13 @@ export function closeFile (path: string): void {
     command: 'close-file-everywhere',
     payload: { path }
   } as DocumentManagerIPCAPI)
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 
   ipcRenderer.invoke('application', {
     command: 'root-close',
     payload: path
   })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 /**
@@ -78,16 +79,16 @@ export function closeWorkspace (path: string): void {
           command: 'close-file-everywhere',
           payload: { path: file }
         })
-          .catch(e => console.error(e))
+          .catch(e => reportError(e))
       }
     })
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 
   ipcRenderer.invoke('application', {
     command: 'root-close',
     payload: path
   })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 export function useItemComposable (
@@ -122,7 +123,7 @@ export function useItemComposable (
       const lastDot = nameEditingInput.value.value.lastIndexOf('.')
       nameEditingInput.value.setSelectionRange(0, lastDot)
     })
-      .catch(err => console.error(err))
+      .catch(err => reportError(err))
   })
 
   /**
@@ -150,6 +151,11 @@ export function useItemComposable (
     const alt = event.altKey
     const type = obj.value.type
 
+    // This item is the user's current filesystem context even if opening it
+    // subsequently moves document state elsewhere. The command launcher uses
+    // the volatile window state to implement "… here" desktop actions.
+    windowStateStore.desktopFocusPath = obj.value.path
+
     if (middleClick) {
       event.preventDefault() // Otherwise, on Windows we'd have a middle-click-scroll
     }
@@ -172,7 +178,7 @@ export function useItemComposable (
             windowStateStore.uncollapsedDirectories.push(obj.value.dir)
           }
         })
-        .catch(e => console.error(e))
+        .catch(e => reportError(e))
     } else if (type === 'other') {
       const { files } = configStore.config
       // Determine if we can open the file in Zettlr
@@ -192,7 +198,7 @@ export function useItemComposable (
               windowStateStore.uncollapsedDirectories.push(obj.value.dir)
             }
           })
-          .catch(e => console.error(e))
+          .catch(e => reportError(e))
       } else {
         // Open the file externally (again, NOTE, this only works because main
         // intercepts every navigation attempt).
@@ -233,7 +239,7 @@ export function useItemComposable (
             command: 'dir-delete',
             payload: { path: obj.value.path }
           })
-            .catch(err => console.error(err))
+            .catch(err => reportError(err))
         } else if (clickedID === 'menu.close_workspace') {
           closeWorkspace(obj.value.path)
         } else if (clickedID === 'menu.project_build') {
@@ -242,7 +248,7 @@ export function useItemComposable (
             command: 'dir-project-export',
             payload: obj.value.path
           })
-            .catch(err => console.error(err))
+            .catch(err => reportError(err))
         } else if (clickedID === 'menu.properties') {
           showPopover.value = true
         }
@@ -259,7 +265,7 @@ export function useItemComposable (
               newTab: true
             }
           } as DocumentManagerIPCAPI)
-            .catch(e => console.error(e))
+            .catch(e => reportError(e))
         } else if (clickedID === 'menu.rename_file') {
           nameEditing.value = true
         } else if (clickedID === 'menu.duplicate_file') {
@@ -271,13 +277,13 @@ export function useItemComposable (
               leafId: documentTreeStore.lastLeafId
             }
           })
-            .catch(err => console.error(err))
+            .catch(err => reportError(err))
         } else if (clickedID === 'menu.delete_file') {
           ipcRenderer.invoke('application', {
             command: 'file-delete',
             payload: { path: obj.value.path }
           })
-            .catch(err => console.error(err))
+            .catch(err => reportError(err))
         } else if (clickedID === 'properties') {
           showPopover.value = true
         } else if (clickedID === 'menu.close_file') {
@@ -335,7 +341,7 @@ export function useItemComposable (
         name: newName
       }
     })
-      .catch(e => console.error(e))
+      .catch(e => reportError(e))
       .finally(() => { nameEditing.value = false })
   }
 

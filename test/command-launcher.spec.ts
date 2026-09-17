@@ -115,9 +115,23 @@ describe('command launcher: rows', function () {
     const newTex = rows.find(row => row.id === 'menu.new_tex_file')
     assert.ok(newTex !== undefined)
     assert.deepEqual(newTex.breadcrumb, [ 'File', 'New file…' ])
+    const fileLauncher = rows.find(row => row.id === 'menu.file_launcher')
+    assert.ok(fileLauncher !== undefined)
+    assert.equal(fileLauncher.accelerator, 'Ctrl+Shift+P')
+    assert.deepEqual(fileLauncher.breadcrumb, [ 'View' ])
+    for (const id of [ 'menu.open_terminal_here', 'menu.open_file_externally', 'menu.open_file_browser_here' ]) {
+      const desktopAction = rows.find(row => row.id === id)
+      assert.ok(desktopAction !== undefined, `${id} must be searchable from Ctrl+P`)
+      assert.deepEqual(desktopAction.breadcrumb, [ 'File' ])
+    }
+    for (const id of [ 'menu.edit_snippets', 'menu.edit_quicktex' ]) {
+      const authoringSource = rows.find(row => row.id === id)
+      assert.ok(authoringSource !== undefined, `${id} must be searchable from Ctrl+P`)
+      assert.deepEqual(authoringSource.breadcrumb, [ 'Edit' ])
+    }
   })
 
-  it('ranks leaves by fzf score over the label and keeps menu order on the empty query', function () {
+  it('ranks leaves over their menu breadcrumb plus label and keeps menu order on the empty query', function () {
     const menu = loadMenu()
     const rows = allMenuLeafRows(menu)
     assert.deepEqual(rankRows(rows, '').map(rowKey), rows.map(rowKey))
@@ -125,7 +139,23 @@ describe('command launcher: rows', function () {
     assert.deepEqual(new Set(zoom), new Set([ 'Reset zoom', 'Zoom in', 'Zoom out' ]))
     const darkMode = rankRows(rows, 'darkmo')[0]
     assert.ok(darkMode !== undefined && darkMode.kind === 'menu-leaf' && darkMode.id === 'menu.toggle_theme', 'a scattered fuzzy query still finds Dark mode')
+    const quickTex = rankRows(rows, 'quicktex')[0]
+    assert.ok(quickTex !== undefined && quickTex.kind === 'menu-leaf' && quickTex.id === 'menu.edit_quicktex', 'QuickTeX definitions are directly searchable')
+    const footnote = rankRows(rows, 'insert footnote')[0]
+    assert.ok(footnote !== undefined && footnote.kind === 'menu-leaf' && footnote.id === 'menu.insert_footnote', 'the Insert breadcrumb participates in search')
+    const rename = rankRows(rows, 'file rename')[0]
+    assert.ok(rename !== undefined && rename.kind === 'menu-leaf' && rename.id === 'menu.rename_file', 'the File breadcrumb participates in search')
     assert.equal(rankRows(rows, 'qzxv').length, 0, 'a query nothing matches yields no rows')
+  })
+
+  it('finds a file by its actual filename even when its display title is unrelated', function () {
+    const file = {
+      kind: 'file' as const,
+      path: '/workspace/index.md',
+      label: 'Lattice Notes',
+      breadcrumb: []
+    }
+    assert.deepEqual(rankRows([file], 'index'), [file])
   })
 })
 

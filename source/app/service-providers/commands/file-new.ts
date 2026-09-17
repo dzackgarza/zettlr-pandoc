@@ -33,7 +33,7 @@ export default class FileNew extends ZettlrCommand {
    * @param  {Object} arg   An object containing information about the file to create.
    * @return {void}         This function does not return anything.
    */
-  async run (evt: string, arg: { leafId?: string, windowId?: string, name?: string, path?: string, type?: DocumentType }): Promise<void> {
+  async run (evt: string, arg: { leafId?: string, windowId?: string, name?: string, path?: string, type?: DocumentType }): Promise<string|undefined> {
     // A few notes on how this command works with respect to its input. As you
     // can see, all parameters are optional and all which are missing will be
     // inferred from context (otherwise the command will fail). The type
@@ -170,6 +170,7 @@ export default class FileNew extends ZettlrCommand {
       if ((await this._app.fsal.getAnyDirectoryDescriptor(path.dirname(absPath))) === undefined) {
         this._app.config.addPath(absPath)
       }
+      return absPath
     } catch (err: unknown) {
       if (err instanceof Error) {
         this._app.log.error(`Could not create file: ${err.message}`)
@@ -187,5 +188,6 @@ export default class FileNew extends ZettlrCommand {
         })
       }
     }
+    return undefined
   }
 }

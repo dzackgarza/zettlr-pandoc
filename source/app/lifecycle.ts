@@ -26,7 +26,9 @@ import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
 import { AppServiceContainer, getAppServiceContainer, isAppServiceContainerReady, setAppServiceContainer } from './app-service-container'
 import { app, ipcMain } from 'electron'
 import { attachAppNavigationHandlers } from './util/attach-app-navigation-handlers'
-import { loadMathJaxMacros, mathJaxMacrosPath, seedDefaultMacros } from './util/load-mathjax-macros'
+import { loadCanonicalMathJaxMacros } from './util/load-mathjax-macros'
+import { resolveTikzTemplatePath, tikzTemplateCompletions, type TikzCompletionIPCResponse } from './util/tikz-render'
+import { projectQuiverMacros, type QuiverMacrosIPCResponse } from './util/quiver-macros'
 
 /**
  * What the bare 'mathjax-macros' invoke channel answers with — the loader's
@@ -34,7 +36,9 @@ import { loadMathJaxMacros, mathJaxMacrosPath, seedDefaultMacros } from './util/
  * composed into the renderer's invoke type in
  * source/types/renderer/ipc-bridge.ts.
  */
-export type MathJaxMacrosIPCResponse = Awaited<ReturnType<typeof loadMathJaxMacros>>
+export type MathJaxMacrosIPCResponse = Awaited<ReturnType<typeof loadCanonicalMathJaxMacros>>
+export type { TikzCompletionIPCResponse }
+export type { QuiverMacrosIPCResponse }
 
 // Statistics: Record the uptime of the application
 let upTimestamp: number
@@ -78,15 +82,18 @@ export async function bootApplication (): Promise<AppServiceContainer> {
   // browser windows with external URLs
   attachAppNavigationHandlers(log)
 
-  // Seed the config directory with the default macro set and register the IPC
-  // handler that serves macros to sandboxed renderer windows -- both BEFORE the
-  // service container boots, because booting the ConfigProvider opens the
-  // onboarding window on a fresh install, and that window's renderer invokes
-  // this handler during its own startup. Registering after boot() would lose
-  // that race.
-  await seedDefaultMacros(app.getPath('userData'), path.join(__dirname, 'assets/mathjax-macros.json'))
+  // Register the central macro projection BEFORE the service container boots:
+  // onboarding/renderers may request it during startup. ~/.pandoc is the only
+  // semantic authority; there is deliberately no app-local seed or fallback.
   ipcMain.handle('mathjax-macros', async () => {
-    return await loadMathJaxMacros(mathJaxMacrosPath(app.getPath('userData')))
+    return await loadCanonicalMathJaxMacros(app.getPath('home'))
+  })
+  ipcMain.handle('tikz-completion-commands', (): TikzCompletionIPCResponse => {
+    return tikzTemplateCompletions(resolveTikzTemplatePath(app.getPath('home')))
+  })
+  ipcMain.handle('quiver-macros', async (): Promise<QuiverMacrosIPCResponse> => {
+    const macros = await loadCanonicalMathJaxMacros(app.getPath('home'))
+    return projectQuiverMacros(macros, resolveTikzTemplatePath(app.getPath('home')))
   })
 
   // Now boot up the service container

@@ -26,6 +26,7 @@ const captures = {
     entry: "test/editor-tikz-visual-entry.ts",
     bundle: "tikz-visual-bundle.js",
     driver: "test/editor-tikz-visual-capture.mjs",
+    nodeArgs: ["--import", "tsx"],
   },
   "pandoc-help": {
     build: "test/visual-build.cjs",
@@ -48,6 +49,7 @@ const captures = {
     entry: "test/reference-completion-visual-entry.ts",
     bundle: "reference-completion-visual-bundle.js",
     driver: "test/reference-completion-visual-capture.mjs",
+    loader: ".svg=dataurl",
   },
   "reference-hover": {
     entry: "test/reference-hover-visual-entry.ts",
@@ -139,4 +141,10 @@ if (capture.build !== undefined) {
 // Playwright launches Electron from inside the driver, so the driver itself
 // is a plain node process — bun cannot complete Playwright's CDP attach to
 // Electron. xvfb still supplies the display Electron needs on a headless box.
-run("xvfb-run", ["-a", "node", path.join(root, capture.driver), output]);
+run("xvfb-run", [
+  "-a",
+  "node",
+  ...(capture.nodeArgs ?? []),
+  path.join(root, capture.driver),
+  output,
+]);

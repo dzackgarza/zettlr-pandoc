@@ -51,7 +51,7 @@ async function lintPOfiles () {
       success('Parse successful!')
     } catch (err) {
       error(`Could not parse file: ${err.message}`)
-      console.error(err)
+      error(err instanceof Error ? err.stack ?? err.message : String(err))
       failedFiles++
     }
   }
@@ -64,4 +64,4 @@ async function lintPOfiles () {
   }
 }
 
-lintPOfiles().catch(err => console.error(err))
+lintPOfiles().catch(err => { error(err instanceof Error ? err.stack ?? err.message : String(err)) })

@@ -19,10 +19,14 @@ import path from 'path'
 import os from 'os'
 import YAML from 'yaml'
 
+function stderr (message: string): void {
+  process.stderr.write(`${message}\n`)
+}
+
 async function main (): Promise<void> {
   const [ profileName, sourceFile, targetDir = '/tmp/zp-harness-out' ] = process.argv.slice(2)
   if (profileName === undefined || sourceFile === undefined) {
-    console.error('usage: export-run <ProfileName.yaml> <source.md> [targetDir]')
+    stderr('usage: export-run <ProfileName.yaml> <source.md> [targetDir]')
     process.exit(2)
   }
 
@@ -48,7 +52,7 @@ async function main (): Promise<void> {
 
   const profile = allProfiles.find(p => p.name === profileName)
   if (profile === undefined) {
-    console.error(`\nprofile ${profileName} not found in the list above`)
+    stderr(`\nprofile ${profileName} not found in the list above`)
     process.exit(2)
   }
   console.log(`\n=== makeExport: ${profile.name} (writer=${profile.writer}) ===`)
@@ -72,4 +76,4 @@ async function main (): Promise<void> {
   console.log('STDERR TAIL:', out.stderr.slice(-2).join(' | '))
 }
 
-main().catch(e => { console.error('HARNESS ERROR:', e instanceof Error ? e.message : e); process.exit(1) })
+main().catch(e => { stderr(`HARNESS ERROR: ${e instanceof Error ? e.message : String(e)}`); process.exit(1) })

@@ -14,6 +14,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { syntaxTree } from '@codemirror/language'
 import { EditorView } from '@codemirror/view'
 import { trans } from '@common/i18n-renderer'
@@ -84,7 +85,7 @@ export const defaultContextMenu = EditorView.domEventHandlers({
     }
 
     const node = tree.resolveInner(pos)
-    defaultMenu(view, node, coords, extraItems).catch(err => console.error(err))
+    defaultMenu(view, node, coords, extraItems).catch(err => reportError(err))
     return true
   }
 })

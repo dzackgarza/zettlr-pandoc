@@ -201,25 +201,21 @@ function toastMessages (page: Page): Promise<string[]> {
     .allInnerTexts()
 }
 
-/**
- * Waits for a renderer console error matching `pattern`. The renderer logs the
- * rejected authority push there and nowhere else, so this is how the spec
- * knows the push was attempted and refused rather than merely slow.
- */
-async function waitForRendererError (
-  events: string[],
+/** Waits for the process-wide LogProvider to record the rejected renderer operation. */
+async function waitForProcessError (
+  output: () => string,
   pattern: RegExp,
   timeoutMs: number
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    if (events.some(event => pattern.test(event))) {
+    if (pattern.test(output())) {
       return
     }
     await delay(100)
   }
   throw new Error(
-    `No renderer error matched ${String(pattern)} within ${timeoutMs}ms:\n${events.join('\n')}`
+    `No application error matched ${String(pattern)} within ${timeoutMs}ms:\n${output()}`
   )
 }
 
@@ -253,6 +249,7 @@ describe('a review that cannot be persisted', function () {
   let api: AgentClient | undefined
   let page: Page | undefined
   let reviewId: string | undefined
+  let getOutput: () => string = () => ''
   const rendererEvents: string[] = []
 
   before(async function () {
@@ -272,6 +269,7 @@ describe('a review that cannot be persisted', function () {
     const running = await attach(fixture.configDirectory, rendererEvents, this.timeout())
     appProcess = running.appProcess
     browser = running.browser
+    getOutput = running.getOutput
     api = agentClient(await readAgentApiPort(fixture.configDirectory, 60_000))
     page = await findEditorPage(running.browser, this.timeout())
     await page.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
@@ -496,7 +494,7 @@ describe('a review that cannot be persisted', function () {
     await activePage.keyboard.type('refused-edit')
     // The push is refused in main and logged here; waiting for that is what
     // makes the assertions below about an attempt rather than about timing.
-    await waitForRendererError(rendererEvents, /Pushing updates failed/, 30_000)
+    await waitForProcessError(getOutput, /Pushing updates failed/, 30_000)
 
     assert.equal(
       await workingText(activeApi),

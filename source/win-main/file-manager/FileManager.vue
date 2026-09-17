@@ -15,6 +15,7 @@
     v-on:wheel="handleWheel"
     v-on:dragstart="lockDirectoryTree"
     v-on:dragend="unlockDirectoryTree"
+    v-on:focusin="rememberFileManagerFocus"
   >
     <!-- Display the arrow button in case we have a non-combined view -->
     <div
@@ -95,6 +96,7 @@
  *
  * END HEADER
  */
+import { reportError } from '@common/util/error-reporting'
 import FileTree from './FileTree.vue'
 import FileList from './FileList.vue'
 import ShortcutDisplay from '@common/vue/ShortcutDisplay.vue'
@@ -102,7 +104,7 @@ import { trans } from '@common/i18n-renderer'
 import { explodeShortcut } from '@common/util/shortcuts'
 import { getCustomShortcut } from '@providers/menu/shortcuts'
 import { nextTick, ref, computed, watch, onMounted } from 'vue'
-import { useConfigStore } from 'source/pinia'
+import { useConfigStore, useWindowStateStore } from 'source/pinia'
 import { useWorkspaceStore } from 'source/pinia/workspace-store'
 
 const ipcRenderer = window.ipc
@@ -125,8 +127,21 @@ const fileListComponent = ref<typeof FileList|null>(null)
 
 const workspaceStore = useWorkspaceStore()
 const configStore = useConfigStore()
+const windowStateStore = useWindowStateStore()
 
 const selectedDirectory = computed(() => configStore.config.openDirectory)
+
+/** Remembers the directory context when the Explorer itself takes focus. */
+function rememberFileManagerFocus (): void {
+  if (selectedDirectory.value !== null) {
+    windowStateStore.desktopFocusPath = selectedDirectory.value
+    return
+  }
+  const directoryRoots = workspaceStore.rootDescriptors.filter(root => root.type === 'directory')
+  if (directoryRoots.length === 1) {
+    windowStateStore.desktopFocusPath = directoryRoots[0].path
+  }
+}
 
 const filterPlaceholder = trans('Search files')
 // The filter's shortcut hint reads the same binding the menu's Filter files
@@ -190,7 +205,7 @@ onMounted(() => {
       // cases we need to wait for the app to display the file manager.
       nextTick()
         .then(() => { quickFilter.value?.focus() })
-        .catch(err => console.error(err))
+        .catch(err => reportError(err))
     }
   })
 })

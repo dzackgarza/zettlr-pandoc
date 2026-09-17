@@ -39,6 +39,7 @@ import LanguageTool from './language-tool'
 import OpenAttachment from './open-attachment'
 import OpenAuxWindow from './open-aux-window'
 import Print from './print'
+import QuartoBookEditCommand, { type QuartoBookEditRequest } from './quarto-book-edit'
 import RequestMove from './request-move'
 import RootClose from './root-close'
 import RootOpen from './root-open'
@@ -49,7 +50,7 @@ import UpdateUserDictionary from './update-user-dictionary'
 import ProviderContract, { type IPCMessage } from '@providers/provider-contract'
 import { type AppServiceContainer } from 'source/app/app-service-container'
 import type ZettlrCommand from './zettlr-command'
-import { clipboard, ipcMain, nativeImage } from 'electron'
+import { clipboard, ipcMain, nativeImage, shell } from 'electron'
 import enumLangFiles from '@common/util/enum-lang-files'
 import enumDictFiles from '@common/util/enum-dict-files'
 import RenameTag from './rename-tag'
@@ -77,6 +78,11 @@ import type {
 } from '@common/pandoc-util/compute-reference-edits'
 import type { FormatResult } from '@common/modules/markdown-editor/commands/format-document'
 import type { LinkPreviewResult } from '@common/util/fetch-link-preview'
+import type { JustRepositoryCommands, RunJustRecipeRequest } from '@dts/common/justfile-commands'
+import { discoverJustfileCommands } from 'source/app/util/justfile-commands'
+import { justRecipeCommand, launchKitty } from 'source/app/util/kitty-launch'
+import path from 'node:path'
+import type { PreferenceNavigationTarget } from '@dts/common/preferences'
 
 export const commands = [
   DirBindQuartoManifest,
@@ -105,6 +111,7 @@ export const commands = [
   OpenAttachment,
   OpenAuxWindow,
   Print,
+  QuartoBookEditCommand,
   RenameReference,
   RenameTag,
   FormatDocument,
@@ -200,7 +207,7 @@ export type ApplicationIPCContract = {
   }
   'file-new': {
     request: { payload: { path?: string, name?: string, type?: DocumentType } }
-    response: unknown
+    response: string|undefined
   }
   'file-rename': {
     request: { payload: { path: string, name: string } }
@@ -237,13 +244,27 @@ export type ApplicationIPCContract = {
     request: { payload: { citekey: string, filePath: string } }
     response: unknown
   }
+  // Answered inline by run(): Electron delegates the path to the desktop's
+  // configured MIME handler and returns an empty string on success.
+  'open-desktop-path': {
+    request: { payload: string }
+    response: string
+  }
+  'edit-text-file': {
+    request: { payload: string }
+    response: string
+  }
+  'list-justfile-commands': {
+    request: { payload: string[] }
+    response: JustRepositoryCommands[]
+  }
   'open-aux-window': {
     request: { payload: { window: ProgrammaticallyOpenableWindows, hash?: string } }
     response: unknown
   }
   // Answered inline by run(): shows the window, then returns true.
   'open-preferences': {
-    request: { payload?: undefined }
+    request: { payload?: PreferenceNavigationTarget }
     response: boolean
   }
   // Answered inline by run(): shows the window and falls through without
@@ -256,6 +277,16 @@ export type ApplicationIPCContract = {
   'open-stats-window': {
     request: { payload?: undefined }
     response: boolean
+  }
+  // Answered inline by run(): launches the laptop's configured terminal
+  // program for this integration and reports an empty string on success.
+  'open-terminal-here': {
+    request: { payload: string }
+    response: string
+  }
+  'run-just-recipe': {
+    request: { payload: RunJustRecipeRequest }
+    response: string
   }
   // Answered inline by run(): shows the window and falls through without
   // returning, so invoke() resolves to undefined.
@@ -270,6 +301,10 @@ export type ApplicationIPCContract = {
   'print': {
     request: { payload?: string }
     response: unknown
+  }
+  'quarto-book-edit': {
+    request: { payload: QuartoBookEditRequest }
+    response: ProjectSettings
   }
   'rename-tag': {
     request: { payload: { oldName: string, newName: string } }
@@ -390,8 +425,31 @@ export default class CommandProvider extends ProviderContract {
       // Some renderer's editor has requested a file
       return await this._app.fsal.loadAnySupportedFile(payload)
     } else if (command === 'open-preferences') {
-      this._app.windows.showPreferences()
+      this._app.windows.showPreferences(payload as PreferenceNavigationTarget | undefined)
       return true
+    } else if (command === 'open-desktop-path' && typeof payload === 'string') {
+      return await shell.openPath(payload)
+    } else if (command === 'edit-text-file' && typeof payload === 'string') {
+      return await launchKitty(path.dirname(payload), [ 'nvim', payload ])
+    } else if (command === 'list-justfile-commands' && Array.isArray(payload) && payload.every(root => typeof root === 'string')) {
+      return await discoverJustfileCommands(
+        payload,
+        undefined,
+        message => { this._app.log.warning(`[Justfile commands] ${message}`) }
+      )
+    } else if (command === 'open-terminal-here' && typeof payload === 'string') {
+      return await launchKitty(payload)
+    } else if (
+      command === 'run-just-recipe' &&
+      typeof payload === 'object' && payload !== null &&
+      'repoRoot' in payload && typeof payload.repoRoot === 'string' &&
+      'recipe' in payload && typeof payload.recipe === 'string' &&
+      'args' in payload && Array.isArray(payload.args) && payload.args.every(arg => typeof arg === 'string')
+    ) {
+      return await launchKitty(
+        payload.repoRoot,
+        justRecipeCommand(payload.repoRoot, payload.recipe, payload.args)
+      )
     } else if (command === 'open-stats-window') {
       this._app.windows.showStatsWindow()
       return true

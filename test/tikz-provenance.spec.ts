@@ -2,14 +2,14 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        TikZ provenance pin proof
+ * Contains:        TikZ shared-config authority proof
  * CVM-Role:        TESTING
  * License:         GNU GPL v3
  *
- * Description:     Locks the CI pandoc-config checkout to the same upstream
- *                  commit named by the bundled TikZ fallback provenance, so CI
- *                  provisioning and the app-owned fallback cannot drift apart
- *                  silently.
+ * Description:     Locks CI provisioning to the shared pandoc-config source of
+ *                  truth instead of a per-project commit pin. The app has no
+ *                  production TikZ-filter fallback, so CI must exercise the
+ *                  same floating shared configuration users run.
  *
  * END HEADER
  */
@@ -18,30 +18,15 @@ import { strict as assert } from 'assert'
 import { readFileSync } from 'fs'
 import path from 'path'
 
-function extractSingleQuotedReadonly (source: string, name: string): string {
-  const match = source.match(new RegExp(`^readonly ${name}='([^']+)'$`, 'm'))
-  assert.ok(match, `missing readonly ${name} pin`)
-  return match[1]
-}
-
-function extractTomlString (source: string, name: string): string {
-  const match = source.match(new RegExp(`^${name} = "([^"]+)"$`, 'm'))
-  assert.ok(match, `missing TOML ${name} pin`)
-  return match[1]
-}
-
-describe('TikZ fallback provenance', function () {
-  it('keeps CI pandoc-config provisioning pinned to the bundled fallback source commit', function () {
+describe('TikZ shared Pandoc-config authority', function () {
+  it('provisions current pandoc-config in CI without a per-project commit pin', function () {
     const setupScript = readFileSync(path.join(process.cwd(), 'scripts/setup-ci-toolchain.sh'), 'utf8')
-    const provenance = readFileSync(path.join(process.cwd(), 'static/tikz/PROVENANCE.toml'), 'utf8')
-
-    const ciPandocConfigCommit = extractSingleQuotedReadonly(setupScript, 'pandoc_config_commit')
-    const bundledFallbackCommit = extractTomlString(provenance, 'source_commit')
-
-    assert.strictEqual(
-      ciPandocConfigCommit,
-      bundledFallbackCommit,
-      'scripts/setup-ci-toolchain.sh and static/tikz/PROVENANCE.toml must name the same pandoc-config commit'
+    assert.match(
+      setupScript,
+      /git clone --depth 1 https:\/\/github\.com\/dzackgarza\/pandoc-config\.git "\$\{pandoc_config_dir\}"/,
+      'CI must fetch the shared pandoc-config source directly'
     )
+    assert.doesNotMatch(setupScript, /pandoc_config_commit|checkout --detach/,
+      'CI must not recreate a stale project-specific filter pin')
   })
 })

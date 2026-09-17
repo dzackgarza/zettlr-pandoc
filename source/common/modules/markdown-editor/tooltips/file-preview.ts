@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { syntaxTree } from '@codemirror/language'
 import { hoverTooltip, EditorView, type Tooltip } from '@codemirror/view'
 import { trans } from '@common/i18n-renderer'
@@ -116,7 +117,7 @@ function getPreviewElement (metadata: FindFileAndReturnMetadataResult, linkConte
       // ... and then apply it to the content element.
       content.innerHTML = html
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 
   const meta = document.createElement('div')
   meta.classList.add('metadata')
@@ -135,7 +136,7 @@ function getPreviewElement (metadata: FindFileAndReturnMetadataResult, linkConte
         newTab: undefined // let open-file command decide based on preferences
       } as ForceOpenAPI
     })
-      .catch(err => console.error(err))
+      .catch(err => reportError(err))
   }
 
   const openButton = document.createElement('button')
@@ -156,7 +157,7 @@ function getPreviewElement (metadata: FindFileAndReturnMetadataResult, linkConte
           newTab: true
         }
       })
-        .catch(err => console.error(err))
+        .catch(err => reportError(err))
     }
 
     const openButtonNT = document.createElement('button')

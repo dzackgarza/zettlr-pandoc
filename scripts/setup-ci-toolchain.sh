@@ -5,7 +5,6 @@ readonly pandoc_version='3.9.0.2'
 readonly pandoc_sha256='ce4ac48f48aa7eadc1f5dbdf3449a1739f188ecb8c5421c5adc070fe7479e567'
 readonly crossref_release='0.3.24a'
 readonly crossref_sha256='afaa8867ab8d908b7e5ad1b96f62eedea6a5d3e89ee14e152cd72e67f535a728'
-readonly pandoc_config_commit='1871f489b6ca915e70174925ec67fc8b2818206b'
 readonly pandoc_config_dir="${HOME}/.pandoc"
 
 if [[ "$(uname -m)" != 'x86_64' ]]; then
@@ -43,8 +42,7 @@ curl --fail --location --silent --show-error \
 printf '%s  %s\n' "${crossref_sha256}" "${crossref_archive}" | sha256sum --check
 sudo tar --extract --xz --file "${crossref_archive}" --directory /usr/local/bin pandoc-crossref
 
-git clone --no-checkout https://github.com/dzackgarza/pandoc-config.git "${pandoc_config_dir}"
-git -C "${pandoc_config_dir}" checkout --detach "${pandoc_config_commit}"
+git clone --depth 1 https://github.com/dzackgarza/pandoc-config.git "${pandoc_config_dir}"
 
 actual_pandoc_version="$(pandoc --version | head -1 | cut -d ' ' -f2)"
 readonly actual_pandoc_version

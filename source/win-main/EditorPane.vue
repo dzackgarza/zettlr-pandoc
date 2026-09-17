@@ -53,6 +53,7 @@
             :persistent-state-map="persistentStateMap"
             @global-search="emit('globalSearch', $event)"
             @reference-search="emit('referenceSearch', $event)"
+            @file-search="emit('fileSearch')"
             @create-reference-label="emit('createReferenceLabel', $event)"
             @open-pandoc-quick-help="emit('openPandocQuickHelp')"
             @open-annotation="emit('openAnnotation', $event)"
@@ -148,6 +149,7 @@
 </template>
 
 <script setup lang="ts">
+import { reportError } from '@common/util/error-reporting'
 import { type LeafNodeJSON, type OpenDocument } from '@dts/common/documents'
 import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
@@ -179,6 +181,7 @@ type DragTargetAreas = 'editor'|'top'|'left'|'right'|'bottom'
 const emit = defineEmits<{
   (e: 'globalSearch', query: string): void
   (e: 'referenceSearch', request: ReferenceSearchRequest): void
+  (e: 'fileSearch'): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
   (e: 'openPandocQuickHelp'): void
   (e: 'openAnnotation', annotationId: string): void
@@ -260,7 +263,7 @@ function handleDrop (event: DragEvent, where: 'editor'|'top'|'left'|'right'|'bot
           path: filePath.join(DELIM)
         }
       } as DocumentManagerIPCAPI)
-        .catch(err => console.error(err))
+        .catch(err => reportError(err))
     } else {
       const dir = ([ 'left', 'right' ].includes(where)) ? 'horizontal' : 'vertical'
       const ins = ([ 'top', 'left' ].includes(where)) ? 'before' : 'after'
@@ -276,7 +279,7 @@ function handleDrop (event: DragEvent, where: 'editor'|'top'|'left'|'right'|'bot
           fromLeaf: originLeaf
         }
       } as DocumentManagerIPCAPI)
-        .catch(err => console.error(err))
+        .catch(err => reportError(err))
     }
   }
 }

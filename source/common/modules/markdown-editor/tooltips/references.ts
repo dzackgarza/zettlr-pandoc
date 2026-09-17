@@ -46,6 +46,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { hoverTooltip, EditorView, type Tooltip } from '@codemirror/view'
 import { md2html } from '@common/modules/markdown-utils/markdown-to-html'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
@@ -213,7 +214,7 @@ function getPreviewElement (
     .then(html => {
       excerpt.innerHTML = html
     })
-    .catch(err => console.error('Could not render the reference excerpt', err))
+    .catch(err => reportError('Could not render the reference excerpt', err))
 
   const expand = document.createElement('button')
   expand.classList.add('reference-hover-expand')

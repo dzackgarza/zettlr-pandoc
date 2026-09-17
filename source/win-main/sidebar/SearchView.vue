@@ -339,6 +339,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { trans } from '@common/i18n-renderer'
 import { useWindowStateStore } from 'source/pinia'
@@ -665,7 +666,7 @@ function reportFailure (operation: 'search'|'replace', err: unknown): void {
   searchError.value = operation === 'search'
     ? trans('Search failed: %s', reason)
     : trans('Replace failed: %s', reason)
-  console.error('[SearchView] The search provider could not be reached', err)
+  reportError('[SearchView] The search provider could not be reached', err)
 }
 
 /**
@@ -675,7 +676,7 @@ function reportFailure (operation: 'search'|'replace', err: unknown): void {
 function focusQueryInput (): void {
   nextTick()
     .then(() => { queryInput.value?.focus() })
-    .catch(err => { console.error('[SearchView] Could not focus the query', err) })
+    .catch(err => { reportError('[SearchView] Could not focus the query', err) })
 }
 
 /** The launcher's "Search all files" arrives here with its terms. */

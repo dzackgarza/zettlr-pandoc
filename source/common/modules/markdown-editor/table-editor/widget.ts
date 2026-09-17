@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
 import type { EditorState, Range } from '@codemirror/state'
 import type { Rect, DecorationSet } from '@codemirror/view'
@@ -140,7 +141,7 @@ export class TableWidget extends WidgetType {
 
       return wrapper
     } catch (err: unknown) {
-      console.error(err)
+      reportError(err)
       const error = document.createElement('div')
       error.classList.add('error')
       error.textContent = `Could not render table: ${err instanceof Error ? err.message : 'Unknown error'}`

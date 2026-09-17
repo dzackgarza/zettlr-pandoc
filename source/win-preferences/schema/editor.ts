@@ -315,22 +315,11 @@ export function getEditorFields (config: ConfigOptions): PreferencesFieldset[] {
       ]
     },
     {
-      title: trans('Snippet Autocompletion'),
+      title: trans('Snippets'),
       group: PreferencesGroups.Editor,
       help: undefined, // TODO
-      infoString: trans('Control the snippet autocompletion functionality'),
+      infoString: trans('Snippets participate in the normal ranked autocomplete menu. QuickTeX expansion is configured separately under Snippets and owns exact-prefix Space expansion.'),
       fields: [
-        {
-          type: 'select',
-          inline: true,
-          label: trans('Autocomplete trigger character:'),
-          model: 'editor.snippetAutocompleteTriggerCharacter',
-          options: {
-            ':': ':',
-            '/': '/',
-            '%': '%',
-          }
-        },
         {
           type: 'checkbox',
           label: trans('Suggest emojis during autocompletion'),

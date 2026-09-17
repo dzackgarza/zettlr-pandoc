@@ -15,11 +15,12 @@
  *                  a reason other than absence names the tool and the errno
  *                  rather than telling the user to install it; a render killed
  *                  by a signal names the signal; the request carries the
- *                  configured document
- *                  path; a success whose markup carries no figure is refused
- *                  rather than mounted; clicking a rendered figure requests
- *                  the lightbox with the servable SVG path; and the cursor
- *                  entering the block reveals raw source. The spec drives a
+ *                  configured document path; a success whose markup carries no
+ *                  figure is refused rather than mounted; clicking rendered
+ *                  any rendered TikZ/tikzcd click reveals its source so the
+ *                  unified RHS preview owns renderer selection, while a separate expand control
+ *                  requests the lightbox; and the cursor entering the block
+ *                  reveals raw source. The spec drives a
  *                  real EditorView with the production renderer and a
  *                  recorded IPC seam — no fabricated widget states.
  *
@@ -34,6 +35,7 @@ import markdownParser from 'source/common/modules/markdown-editor/parser/markdow
 import { renderTikzFigures, __resetTikzRenderMemoForTests } from 'source/common/modules/markdown-editor/renderers/render-tikz'
 import { configField, getDefaultConfig, type EditorConfiguration } from 'source/common/modules/markdown-editor/util/configuration'
 import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-render'
+import { activeTikzBlock } from 'source/common/modules/markdown-editor/tikz-block'
 
 function polyfillJsdomForCodeMirror (): void {
   const w = globalThis as any
@@ -138,7 +140,7 @@ describe('TikZ editor widgets (issue #14)', function () {
   }
 
   it('renders the raw block and the tikz fence as figure widgets over the IPC seam', async function () {
-    respond = { ok: true, html: `<div style="text-align:center;"><span class="tikzcd">${SVG_OK}</span></div>`, svgPath: '/cache/lightbox-abc.svg' }
+    respond = { ok: true, html: `<div style="text-align:center;"><span class="tikzcd">${SVG_OK}</span></div>`, svg: SVG_OK, svgPath: '/cache/lightbox-abc.svg', texFontSizePt: 10 }
     const view = createEditor()
     await waitFor(() => view.dom.querySelectorAll('.tikz-figure svg').length === 2, 'both figures to upgrade to SVG')
 
@@ -150,12 +152,20 @@ describe('TikZ editor widgets (issue #14)', function () {
     const fence = invocations.find(record => record.payload.kind === 'fence')
     assert.strictEqual(fence?.payload.source, FENCE_BODY, 'the fence body is sent without its fences')
     assert.ok(!(view.dom.textContent ?? '').includes('\\begin{tikzcd}'), 'the raw source is replaced by the widget')
+    const figures = [...view.dom.querySelectorAll<HTMLElement>('.tikz-figure')]
+    for (const figure of figures) {
+      assert.ok(figure.classList.contains('tikz-rendered'), 'a successful figure exposes the complete click-to-edit surface')
+    }
+    assert.deepStrictEqual(
+      figures.map(figure => figure.title),
+      [ 'Click to edit TikZ source', 'Click to edit TikZ source' ]
+    )
   })
 
   it('carries the document path from the editor configuration into every render request', async function () {
     // \input resolution depends on where the document lives, so the request
     // must report the configuration's path rather than any value of its own.
-    respond = { ok: true, html: FIGURE_HTML, svgPath: '/cache/x.svg' }
+    respond = { ok: true, html: FIGURE_HTML, svg: SVG_OK, svgPath: '/cache/x.svg', texFontSizePt: 10 }
     const config = getDefaultConfig()
     config.metadata.path = '/home/author/notes/coble-lattices.md'
     const view = createEditor(0, config)
@@ -169,10 +179,34 @@ describe('TikZ editor widgets (issue #14)', function () {
     )
   })
 
+  it('does not deduplicate identical in-flight source across different document roots', async function () {
+    let release!: (result: TikzRenderResult) => void
+    const pending = new Promise<TikzRenderResult>(resolve => { release = resolve })
+    ;(window as any).ipc.invoke = async (_channel: string, message: { command: string, payload: TikzRenderRequest }) => {
+      invocations.push({ command: message.command, payload: message.payload })
+      return await pending
+    }
+
+    const firstConfig = getDefaultConfig()
+    firstConfig.metadata.path = '/one/notes/diagram.md'
+    const secondConfig = getDefaultConfig()
+    secondConfig.metadata.path = '/two/notes/diagram.md'
+    createEditor(0, firstConfig)
+    createEditor(0, secondConfig)
+
+    await waitFor(() => invocations.length === 4, 'both figures in both document roots to issue their own requests')
+    assert.deepStrictEqual(
+      invocations.map(record => record.payload.docPath).sort(),
+      [ firstConfig.metadata.path, firstConfig.metadata.path, secondConfig.metadata.path, secondConfig.metadata.path ].sort()
+    )
+    release({ ok: true, html: FIGURE_HTML, svg: SVG_OK, svgPath: '/cache/x.svg', texFontSizePt: 10 })
+    await waitFor(() => document.querySelectorAll('.tikz-figure svg').length === 4, 'all four figures to settle')
+  })
+
   it('mounts the figure without pandoc paragraph wrapper the HTML writer adds', async function () {
     // The wrapper is why the widget extracts at all: mounting it leaves an
     // empty paragraph whose margins displace the figure.
-    respond = { ok: true, html: FIGURE_HTML, svgPath: '/cache/x.svg' }
+    respond = { ok: true, html: FIGURE_HTML, svg: SVG_OK, svgPath: '/cache/x.svg', texFontSizePt: 10 }
     const view = createEditor()
     await waitFor(() => view.dom.querySelectorAll('.tikz-figure svg').length === 2, 'both figures to upgrade to SVG')
 
@@ -182,13 +216,44 @@ describe('TikZ editor widgets (issue #14)', function () {
     }
   })
 
+  it('preserves the TeX/pdf2svg natural box instead of promoting diagrams to semantic width buckets', async function () {
+    const compactSvg = '<svg width="72.842pt" height="59.074pt" viewBox="0 0 72.842 59.074"><use href="#g"/></svg>'
+    const denseSvg = `<svg width="227.619pt" height="135.986pt" viewBox="0 0 227.619 135.986">${'<use href="#g"/>'.repeat(150)}</svg>`
+    respond = request => request.kind === 'raw'
+      ? { ok: true, html: `<div>${compactSvg}</div>`, svg: compactSvg, svgPath: '/cache/compact.svg', texFontSizePt: 10 }
+      : { ok: true, html: `<div>${denseSvg}</div>`, svg: denseSvg, svgPath: '/cache/dense.svg', texFontSizePt: 10 }
+    const view = createEditor()
+    await waitFor(() => view.dom.querySelectorAll('.tikz-figure svg').length === 2, 'both naturally sized figures')
+
+    const figures = Array.from(view.dom.querySelectorAll<HTMLElement>('.tikz-figure'))
+    assert.deepStrictEqual(
+      figures.map(figure => figure.querySelector('svg')?.getAttribute('width')).sort(),
+      [ '227.619pt', '72.842pt' ].sort(),
+      'the renderer keeps the physical widths emitted by TeX/pdf2svg'
+    )
+    const normalizedWidths = figures
+      .map(figure => Number.parseFloat(figure.querySelector<HTMLElement>('.tikz-rendered-frame')?.style.width ?? 'NaN'))
+      .sort((a, b) => a - b)
+    assert.ok(Math.abs(normalizedWidths[0] - 8.01262) < 0.001)
+    assert.ok(Math.abs(normalizedWidths[1] - 25.03809) < 0.001)
+    assert.ok(figures.every(figure => figure.dataset.tikzTexFontSizePt === '10'))
+    assert.ok(
+      figures.every(figure => !Array.from(figure.classList).some(className => className.startsWith('tikz-size-'))),
+      'no content-density class is allowed to enlarge the natural figure box'
+    )
+    assert.ok(
+      figures.every(figure => figure.querySelector('.tikz-expand-button') === null),
+      'inline figures expose no competing fullscreen affordance; expansion belongs to the RHS preview'
+    )
+  })
+
   it('refuses a success whose markup carries no figure instead of mounting it', async function () {
     // The service only reports success after confirming its pandoc output
     // carries an <svg>; markup without one means the two sides disagree about
     // what a successful render is. Mounting it anyway is what reintroduced the
     // paragraph defect this extraction exists to prevent.
     const bogus = '<p>the filter emitted no figure for this block</p>'
-    respond = { ok: true, html: bogus, svgPath: '/cache/x.svg' }
+    respond = { ok: true, html: bogus, svg: SVG_OK, svgPath: '/cache/x.svg', texFontSizePt: 10 }
     const view = createEditor()
     await waitFor(() => invocations.length === 2, 'both figures to have been requested')
     await new Promise(resolve => setTimeout(resolve, 50))
@@ -212,7 +277,7 @@ describe('TikZ editor widgets (issue #14)', function () {
   it('surfaces a mapped compile failure in place, never silence', async function () {
     respond = (request) => request.kind === 'raw'
       ? { ok: false, kind: 'compile-error', errors: [{ line: 2, message: 'Undefined control sequence.', sourceLine: 'A \\arrow[r] & B \\nope' }], log: '' }
-      : { ok: true, html: `<div><span>${SVG_OK}</span></div>`, svgPath: '/cache/x.svg' }
+      : { ok: true, html: `<div><span>${SVG_OK}</span></div>`, svg: SVG_OK, svgPath: '/cache/x.svg', texFontSizePt: 10 }
     const view = createEditor()
     await waitFor(() => view.dom.querySelector('.tikz-error') !== null, 'the compile error box')
 
@@ -221,6 +286,9 @@ describe('TikZ editor widgets (issue #14)', function () {
     assert.ok(text.includes('Undefined control sequence.'), 'the LaTeX message is shown')
     assert.ok(text.includes('2'), 'the mapped figure-body line is shown')
     assert.ok(text.includes('A \\arrow[r] & B \\nope'), 'the verbatim source line is shown')
+    const failedFigure = box?.closest<HTMLElement>('.tikz-figure')
+    assert.ok(failedFigure !== null && failedFigure !== undefined)
+    assert.ok(!failedFigure.classList.contains('tikz-rendered'), 'compile diagnostics do not inherit the successful edit-target surface')
   })
 
   it('names the missing tools when the toolchain is absent', async function () {
@@ -248,44 +316,97 @@ describe('TikZ editor widgets (issue #14)', function () {
     )
   })
 
-  it('requests the lightbox with the servable SVG path on click, built in the clicked document\'s own realm', async function () {
-    respond = { ok: true, html: `<div><span>${SVG_OK}</span></div>`, svgPath: '/cache/lightbox-abc.svg' }
+  it('uses edit-first source activation for both tikzcd and ordinary TikZ', async function () {
+    respond = { ok: true, html: `<div><span>${SVG_OK}</span></div>`, svg: SVG_OK, svgPath: '/cache/edit-first.svg', texFontSizePt: 10 }
     const view = createEditor()
     await waitFor(() => view.dom.querySelectorAll('.tikz-figure svg').length === 2, 'figures to upgrade')
 
-    const editorWindow = view.dom.ownerDocument.defaultView
-    if (editorWindow === null) {
-      assert.fail('the widget is driven in a rendered document, which is what gives it a window')
-    }
-
-    const requests: Array<CustomEvent<{ svgPath: string }>> = []
-    const listener = (event: Event): void => {
-      requests.push(event as CustomEvent<{ svgPath: string }>)
-    }
-    document.addEventListener('zettlr-tikz-lightbox', listener)
-    try {
-      view.dom.querySelector<HTMLElement>('.tikz-figure')?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
-      assert.deepStrictEqual(
-        requests.map(request => request.detail.svgPath),
-        [ '/cache/lightbox-abc.svg' ],
-        'one lightbox request carrying the SVG path'
-      )
-      // A document only accepts an event constructed by its own realm, so the
-      // realm of the delivered request is what decides whether a click can
-      // reach the lightbox at all: an event built from any other CustomEvent
-      // constructor is refused by this document and no request arrives.
-      assert.ok(
-        requests[0] instanceof editorWindow.CustomEvent,
-        'the request the document delivered was constructed by that document\'s own window'
-      )
-    } finally {
-      document.removeEventListener('zettlr-tikz-lightbox', listener)
-    }
+    const figures = view.dom.querySelectorAll<HTMLElement>('.tikz-figure svg')
+    figures[0]?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    const rawFrom = DOC.indexOf(RAW_BLOCK)
+    assert.ok(
+      view.state.selection.ranges.some(range => range.from <= rawFrom && range.to >= rawFrom + RAW_BLOCK.length),
+      'tikzcd selects its authored source range so the RHS preview owns TikZ/Quiver mode selection'
+    )
+    figures[1]?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    const fenceFrom = DOC.indexOf('```tikz')
+    const fenceTo = DOC.indexOf('```', fenceFrom + '```tikz'.length) + 3
+    assert.ok(
+      view.state.selection.ranges.some(range => range.from <= fenceFrom && range.to >= fenceTo),
+      'ordinary TikZ selects its authored source range through the same activation path'
+    )
+    assert.ok((view.dom.textContent ?? '').includes(FENCE_BODY), 'ordinary TikZ selection reveals its source for editing')
   })
 
   it('reveals raw source while the selection is inside the block', function () {
-    respond = { ok: true, html: `<div><span>${SVG_OK}</span></div>`, svgPath: '/cache/x.svg' }
+    respond = { ok: true, html: `<div><span>${SVG_OK}</span></div>`, svg: SVG_OK, svgPath: '/cache/x.svg', texFontSizePt: 10 }
     const view = createEditor(DOC.indexOf('tikzcd}') + 2)
     assert.ok((view.dom.textContent ?? '').includes('\\begin{tikzcd}'), 'the raw source shows for editing')
+  })
+
+  it('derives the live-preview source from the same raw/fence recognition as the inline renderer', function () {
+    respond = { ok: true, html: `<div><span>${SVG_OK}</span></div>`, svg: SVG_OK, svgPath: '/cache/x.svg', texFontSizePt: 10 }
+
+    const rawView = createEditor(DOC.indexOf('arrow[r]') + 3)
+    const raw = activeTikzBlock(rawView.state)
+    assert.deepStrictEqual(
+      raw === null ? null : { kind: raw.kind, language: raw.language, source: raw.source },
+      { kind: 'raw', language: 'tikzcd', source: RAW_BLOCK },
+      'nested Markdown syntax inside a raw TikZ paragraph still resolves to the whole figure source'
+    )
+
+    const selectedRawState = EditorState.create({
+      doc: DOC,
+      selection: {
+        anchor: DOC.indexOf(RAW_BLOCK),
+        head: DOC.indexOf(RAW_BLOCK) + RAW_BLOCK.length
+      },
+      extensions: [ markdownParser(), configField ]
+    })
+    assert.strictEqual(
+      activeTikzBlock(selectedRawState)?.source,
+      RAW_BLOCK,
+      'selecting the whole rendered source range still counts as editing that TikZ block for the sidecar'
+    )
+
+    const standaloneFenceView = createEditor(DOC.indexOf(FENCE_BODY) + 5)
+    assert.strictEqual(
+      activeTikzBlock(standaloneFenceView.state),
+      null,
+      'a fenced full LaTeX document keeps its own preamble and is not misrepresented as an owned-template live preview'
+    )
+
+    const snippet = '\\begin{tikzpicture}\n\\draw (0,0) -- (1,1);\n\\end{tikzpicture}'
+    const snippetDoc = `before\n\n\`\`\`tikz\n${snippet}\n\`\`\`\nafter\n`
+    const snippetState = EditorState.create({
+      doc: snippetDoc,
+      selection: { anchor: snippetDoc.indexOf('draw') + 2 },
+      extensions: [ markdownParser(), configField ]
+    })
+    const fence = activeTikzBlock(snippetState)
+    assert.deepStrictEqual(
+      fence === null ? null : { kind: fence.kind, language: fence.language, source: fence.source },
+      { kind: 'fence', language: 'tikz', source: snippet },
+      'a snippet fence resolves to the body without its Markdown fences and remains template-owned'
+    )
+
+    const tikzCdBody = 'A \\arrow[r, "f"] & B'
+    const tikzCdDoc = `before\n\n\`\`\`tikzcd\n${tikzCdBody}\n\`\`\`\nafter\n`
+    const tikzCdState = EditorState.create({
+      doc: tikzCdDoc,
+      selection: { anchor: tikzCdDoc.indexOf('arrow') + 2 },
+      extensions: [ markdownParser(), configField ]
+    })
+    const tikzCdFence = activeTikzBlock(tikzCdState)
+    assert.deepStrictEqual(
+      tikzCdFence === null
+        ? null
+        : { kind: tikzCdFence.kind, language: tikzCdFence.language, source: tikzCdFence.source },
+      { kind: 'fence', language: 'tikzcd', source: tikzCdBody },
+      'a tikzcd fence is a first-class template-owned figure rather than only a highlighted code block'
+    )
+
+    const proseView = createEditor(2)
+    assert.strictEqual(activeTikzBlock(proseView.state), null, 'ordinary prose does not open a TikZ live preview')
   })
 })

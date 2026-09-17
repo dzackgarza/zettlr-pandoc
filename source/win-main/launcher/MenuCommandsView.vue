@@ -39,7 +39,10 @@
           v-bind:disabled="isDisabled(row)"
           v-bind:checked="row.kind === 'menu-leaf' ? row.checked : undefined"
           v-bind:data-row-kind="row.kind"
+          v-bind:data-file-path="row.kind === 'file' ? row.path : undefined"
           v-bind:data-export-profile="row.kind === 'export-profile' ? row.profile.name : undefined"
+          v-bind:data-just-recipe="row.kind === 'just-recipe' ? row.name : undefined"
+          v-bind:data-preference-model="row.kind === 'preference' ? row.model : undefined"
           v-on:run="emit('run', row)"
         >
           <template v-if="row.kind === 'heading'">
@@ -73,6 +76,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxRoot, ComboboxViewport } from 'reka-ui'
 import { nextTick, ref, watch } from 'vue'
 import { trans } from '@common/i18n-renderer'
@@ -113,7 +117,7 @@ function isDisabled (row: LauncherRowModel): boolean {
  * whole path.
  */
 function rowBreadcrumb (row: LauncherRowModel): readonly string[] {
-  if (row.kind === 'file') {
+  if (row.kind === 'file' || row.kind === 'just-recipe' || row.kind === 'preference') {
     return row.breadcrumb
   }
   if (row.kind === 'menu-leaf' || row.kind === 'menu-group') {
@@ -127,7 +131,7 @@ function rowBreadcrumb (row: LauncherRowModel): readonly string[] {
 watch(() => props.rows, () => {
   nextTick()
     .then(() => { combobox.value?.highlightFirstItem() })
-    .catch(err => console.error('[MenuCommandsView] Could not highlight the first row', err))
+    .catch(err => reportError('[MenuCommandsView] Could not highlight the first row', err))
 }, { immediate: true })
 
 function onBackspace (): void {

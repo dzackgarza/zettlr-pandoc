@@ -2,7 +2,7 @@
 
 import chalk from 'chalk'
 
-export function error (message) { console.error(chalk.bold.red(message)) }
+export function error (message) { process.stderr.write(`${chalk.bold.red(message)}\n`) }
 export function warn (message) { console.warn(chalk.yellow(message)) }
 export function info (message) { console.log(chalk.blueBright(message)) }
 export function verbose (message) { console.log(chalk.grey(message)) }

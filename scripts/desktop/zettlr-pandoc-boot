@@ -148,20 +148,16 @@ mkdir -p "$HOME/.cache"
 printf '=== %s starting zettlr-pandoc from %s ===\n' "$(date)" "$repo" >"$log"
 
 macro_generator="$HOME/.pandoc/bin/generate-mathjax-config.py"
-macro_config="$HOME/.config/Zettlr-Pandoc/mathjax-macros.json"
-macro_tmp="$HOME/.cache/zettlr-pandoc-macrogen"
+macro_config="$HOME/.pandoc/templates/css/mathjax-macros.json"
 
 if [[ ! -f "$macro_generator" ]]; then
   fail "MathJax macro generator is unavailable: $macro_generator"
 fi
 
-mkdir -p "$macro_tmp"
-if ! timeout 15 python3 "$macro_generator" \
-  --out-dir "$macro_tmp" \
-  --json "$macro_config" >>"$log" 2>&1; then
+if ! timeout 15 python3 "$macro_generator" >>"$log" 2>&1; then
   fail "MathJax macro refresh failed."
 fi
-printf '[boot] %s refreshed MathJax macros -> %s\n' "$(date +%T)" "$macro_config" >>"$log"
+printf '[boot] %s regenerated canonical MathJax projections -> %s\n' "$(date +%T)" "$macro_config" >>"$log"
 
 # Honest launches without repeat cost: the packaged build in out/ carries a
 # stamp of the source fingerprint it was built from. A matching fingerprint

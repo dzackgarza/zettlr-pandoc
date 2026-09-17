@@ -161,6 +161,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import Checkbox from './CheckboxControl.vue'
 import TextControl from './TextControl.vue'
 import NumberControl from './NumberControl.vue'
@@ -564,7 +565,7 @@ function handleAddition (): void {
   const newValues = valuesToAdd.value
 
   if (newValues.some(x => x === undefined)) {
-    console.error('Cannot add new record: Some value was undefined.', newValues)
+    reportError('Cannot add new record: Some value was undefined.', newValues)
     return
   }
 
@@ -578,7 +579,7 @@ function handleAddition (): void {
     emit('update:modelValue', newValue)
   } else if (record !== undefined && objectKeys.value !== undefined) {
     if (objectKeys.value.length !== newValues.length) {
-      console.error('Cannot add new record: Didn\'t receive the right amount of values to add.')
+      reportError('Cannot add new record: Didn\'t receive the right amount of values to add.')
       return
     }
 

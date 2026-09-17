@@ -70,7 +70,8 @@ import {
 import { highlightWhitespace } from './plugins/highlight-whitespace'
 import { showLineNumbers } from './plugins/line-numbers'
 import { tagClasses } from './plugins/tag-classes'
-import { autocompleteTriggerCharacter } from './autocomplete/snippets'
+import { snippetsUpdateField } from './autocomplete/snippets'
+import { quickTexField } from './quicktex'
 import { vimPlugin } from './plugins/vim-mode'
 import { projectInfoField } from './plugins/project-info-field'
 import { headingGutter } from './renderers/render-headings'
@@ -203,13 +204,14 @@ function getCoreExtensions (options: CoreExtensionOptions): Extension[] {
     EditorView.lineWrapping, // Enable line wrapping,
     autoCloseBracketsConfig,
 
-    // Allow configuration of the trigger character
-    autocompleteTriggerCharacter.from(configField, val => val.snippetAutocompleteTriggerCharacter),
-
-
     // Add the configuration and preset it with whatever is in the cached
     // config.
     configField.init(_state => JSON.parse(JSON.stringify(options.initialConfig))),
+    // The portable snippet catalogue is available in every editor type. The
+    // Markdown autocomplete UI consumes it, while exact-prefix Tab/Space
+    // expansion also works in LaTeX editors through the core keymap.
+    snippetsUpdateField,
+    quickTexField,
 
     // The updateListener is a custom extension we're using in order to be
     // able to emit events from this main class based on change events.

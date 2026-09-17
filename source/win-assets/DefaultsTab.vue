@@ -101,6 +101,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import SplitView from '@common/vue/window/SplitView.vue'
 import SelectableList, { type SelectableListItem } from '@common/vue/form/elements/SelectableList.vue'
 import TextControl from '@common/vue/form/elements/TextControl.vue'
@@ -191,11 +192,11 @@ watch(toRef(props, 'which'), function () {
   // Reset to the beginning of the list. The watcher right below will pick
   // that change up and re-load the defaults.
   currentItem.value = -1
-  loadDefaultsForState().catch(e => console.error(e))
+  loadDefaultsForState().catch(e => reportError(e))
 })
 
 watch(currentItem, () => {
-  loadDefaultsForState().catch(e => console.error(e))
+  loadDefaultsForState().catch(e => reportError(e))
 })
 
 watch(editorContents, () => {
@@ -208,9 +209,9 @@ watch(editorContents, () => {
 
 retrieveDefaultsFiles()
   .then(() => {
-    loadDefaultsForState().catch(e => console.error(e))
+    loadDefaultsForState().catch(e => reportError(e))
   })
-  .catch(e => console.error(e))
+  .catch(e => reportError(e))
 
 const offCallback = ipcRenderer.on('shortcut', (event, shortcut) => {
   if (shortcut === 'save-file') {
@@ -283,7 +284,7 @@ function saveDefaultsFile (): void {
     })
     .catch(err => {
       savingStatus.value = trans('Could not save changes')
-      console.error(err)
+      reportError(err)
     })
 }
 
@@ -313,7 +314,7 @@ function newDefaultsFile (newName?: string): void {
       currentItem.value = idx
       console.log({ newName, idx })
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 function renameFile (): void {
@@ -333,7 +334,7 @@ function renameFile (): void {
     .then(async () => {
       await retrieveDefaultsFiles() // Always make sure to pull in any changes
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 function removeFile (idx: number): void {
@@ -350,13 +351,13 @@ function removeFile (idx: number): void {
     .then(async () => {
       await retrieveDefaultsFiles() // Always make sure to pull in any changes
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 function openDefaultsDirectory (): void {
   ipcRenderer.invoke('assets-provider', {
     command: 'open-defaults-directory'
-  }).catch(err => console.error(err))
+  }).catch(err => reportError(err))
 }
 </script>
 

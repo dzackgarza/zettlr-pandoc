@@ -92,6 +92,7 @@ const apply = (filename: string, fileId: string, displayName: string) => functio
 }
 
 export const files: AutocompletePlugin = {
+  source: 'File',
   applies (ctx) {
     // File autocompletion triggers as soon as we detect the start of a link
     const { text, from } = ctx.state.doc.lineAt(ctx.pos)

@@ -344,6 +344,8 @@ components:
             - INVALID_PARAMS
             - PERSISTENCE_FAILED
             - INTERNAL_ERROR
+            - CITATION_DATABASE_NOT_LOADED
+            - CITATION_NOT_FOUND
             - BASELINE_MISMATCH
         message:
           type: string
@@ -1371,6 +1373,132 @@ components:
           $ref: "#/components/schemas/ReviewState"
         focused:
           type: boolean
+    CitationDatabaseSummary:
+      type: object
+      required:
+        - path
+        - type
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+        type:
+          type: string
+          enum:
+            - csl
+            - bibtex
+            - biblatex
+    CitationItem:
+      type: object
+      required:
+        - id
+        - type
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+      additionalProperties: true
+    CiteItemInput:
+      type: object
+      required:
+        - id
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          description: The citation key.
+        locator:
+          type: string
+        label:
+          type: string
+        prefix:
+          type: string
+        suffix:
+          type: string
+    RenderCitationRequest:
+      type: object
+      required:
+        - citations
+      additionalProperties: false
+      properties:
+        database:
+          type: string
+          default: main
+          description: >-
+            Database identifier. Use "main" for the globally configured
+            library.
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/CiteItemInput'
+        composite:
+          type: boolean
+          default: false
+    RenderBibliographyRequest:
+      type: object
+      required:
+        - citekeys
+      additionalProperties: false
+      properties:
+        database:
+          type: string
+          default: main
+        citekeys:
+          type: array
+          items:
+            type: string
+    CitationDatabasesResponse:
+      type: object
+      required:
+        - databases
+      additionalProperties: false
+      properties:
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/CitationDatabaseSummary'
+    CitationItemsResponse:
+      type: object
+      required:
+        - items
+        - count
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CitationItem'
+        count:
+          type: integer
+    RenderCitationResponse:
+      type: object
+      required:
+        - rendered
+      additionalProperties: false
+      properties:
+        rendered:
+          type:
+            - string
+            - 'null'
+          description: >-
+            The formatted citation string, or null when the engine could not
+            render the requested items.
+    RenderBibliographyResponse:
+      type: object
+      required:
+        - entries
+      additionalProperties: false
+      properties:
+        options:
+          type: object
+          additionalProperties: true
+          description: CSL bibliography formatting options.
+        entries:
+          type: array
+          items:
+            type: string
+          description: Each entry is an HTML string for one bibliography item.
 paths:
   /openapi.yaml:
     get:
@@ -2235,3 +2363,127 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+  /v1/citations/databases:
+    get:
+      operationId: listCitationDatabases
+      summary: List loaded citation databases
+      description: >-
+        Returns metadata for every bibliography database currently loaded by
+        the application. The main library and any file-local databases are
+        included.
+      responses:
+        '200':
+          description: The loaded databases.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CitationDatabasesResponse'
+  /v1/citations/items:
+    get:
+      operationId: listCitationItems
+      summary: List all citation items from a database
+      description: >-
+        Returns every CSL item from the requested database. Defaults to
+        the main library when no database parameter is supplied.
+      parameters:
+        - name: database
+          in: query
+          required: false
+          schema:
+            type: string
+            default: main
+          description: >-
+            Database path or "main" for the globally configured library.
+      responses:
+        '200':
+          description: Citation items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CitationItemsResponse'
+        '404':
+          description: The requested database is not loaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/citations/items/{citeKey}:
+    get:
+      operationId: getCitationItem
+      summary: Look up a single citation item by key
+      parameters:
+        - name: citeKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: database
+          in: query
+          required: false
+          schema:
+            type: string
+            default: main
+      responses:
+        '200':
+          description: The citation item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CitationItem'
+        '404':
+          description: The cite key was not found in the requested database.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/citations/render:
+    post:
+      operationId: renderCitation
+      summary: Render a formatted inline citation
+      description: >-
+        Passes the supplied cite items through the CSL engine and returns
+        the formatted citation string.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenderCitationRequest'
+      responses:
+        '200':
+          description: The rendered citation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderCitationResponse'
+        '404':
+          description: The requested database is not loaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/citations/bibliography:
+    post:
+      operationId: renderBibliography
+      summary: Render a formatted bibliography
+      description: >-
+        Renders a bibliography for the given cite keys through the CSL engine.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenderBibliographyRequest'
+      responses:
+        '200':
+          description: The rendered bibliography entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderBibliographyResponse'
+        '404':
+          description: The requested database is not loaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'

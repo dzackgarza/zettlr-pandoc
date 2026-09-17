@@ -8,9 +8,9 @@
  * License:         GNU GPL v3
  *
  * Description:     Defines the TeX packages the renderer always enables and
- *                  validates user-supplied MathJax macro definitions. The
- *                  macros themselves are not defined here: they are loaded from
- *                  the user's macro file (see load-mathjax-macros).
+ *                  validates MathJax macro definitions. The macros themselves
+ *                  are not defined here: production loads the generated central
+ *                  ~/.pandoc projection (see load-mathjax-macros).
  *
  * END HEADER
  */

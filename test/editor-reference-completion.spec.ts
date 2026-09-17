@@ -14,16 +14,10 @@
  *                  been pushed.
  *
  *                  The differential drives two real headless EditorViews over
- *                  the same documents: one through the pre-Phase-3 first-match
- *                  dispatch ([codeBlocks, citations, files, headings, tags,
- *                  snippets]) and one through the combined dispatch with
- *                  atSymbols in the citations slot. Both run through the REAL
- *                  production dispatcher — createAutocompleteSource() from
- *                  autocomplete/index.ts, the exact source production
- *                  installs via override — parameterized only by the provider
- *                  order (issue #5, C9: no in-test replica of the loop). The
- *                  shared forbidden-token gate therefore runs on both sides
- *                  identically.
+ *                  the same documents: one through the citation provider and
+ *                  one through atSymbols. Both are wrapped by the same
+ *                  autocompleteSourceFor() adapter production installs as an
+ *                  independent CodeMirror completion source.
  *
  * END HEADER
  */
@@ -36,7 +30,7 @@ import { forceParsing } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
-import { AUTOCOMPLETE_PROVIDERS, autocomplete, createAutocompleteSource, type AutocompletePlugin } from 'source/common/modules/markdown-editor/autocomplete'
+import { AUTOCOMPLETE_PROVIDERS, autocomplete, autocompleteSourceFor, type AutocompletePlugin } from 'source/common/modules/markdown-editor/autocomplete'
 import { citations, citekeyUpdate } from 'source/common/modules/markdown-editor/autocomplete/citations'
 import { atSymbols, referencesUpdate } from 'source/common/modules/markdown-editor/autocomplete/at-symbols'
 import { codeBlocks } from 'source/common/modules/markdown-editor/autocomplete/code-blocks'
@@ -178,16 +172,13 @@ describe('Combined @-symbol completion surface (issue #1 Phase 3)', function () 
   }
 
   /**
-   * Runs the REAL production dispatcher (createAutocompleteSource — the same
-   * source production installs via autocompletion's override) over the given
-   * provider order and returns the completion surface at the view's cursor,
-   * or null when no provider applies (issue #5, C9: the first-match loop is
-   * invoked, never replicated in-test).
+   * Runs the citation/combined provider through the production source adapter.
    */
   function completionSurface (providers: AutocompletePlugin[], view: EditorView): CompletionSurface | null {
     const pos = view.state.selection.main.head
     const ctx = new CompletionContext(view.state, pos, false)
-    const result = createAutocompleteSource(providers)(ctx)
+    const provider = providers.includes(atSymbols) ? atSymbols : citations
+    const result = autocompleteSourceFor(provider)(ctx)
     if (result === null) {
       return null
     }

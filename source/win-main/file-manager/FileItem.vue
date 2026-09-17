@@ -17,6 +17,7 @@
         directory: item.type === 'directory'
       }"
       v-bind:data-id="item.type === 'file' ? item.id : ''"
+      v-bind:data-path="item.path"
       v-bind:data-filename="getFilename"
       v-bind:draggable="isDraggable"
       v-on:click.stop="requestSelection"
@@ -45,6 +46,13 @@
         >
         <span v-else>
           {{ basename }}
+        </span>
+        <span
+          v-if="projectMembership !== undefined"
+          v-bind:class="['project-membership', projectMembership.status]"
+          v-bind:title="projectMembershipTitle"
+        >
+          {{ projectMembershipLabel }}
         </span>
         <div class="date">
           {{ getDate }}
@@ -152,6 +160,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import formatDate from '@common/util/format-date'
 import localiseNumber from '@common/util/localise-number'
@@ -161,11 +170,12 @@ import PopoverFileProps from './util/PopoverFileProps.vue'
 
 import { ref, computed, toRef, watch, onMounted } from 'vue'
 import { type AnyDescriptor, type MDFileDescriptor } from '@dts/common/fsal'
-import { useConfigStore, useTagsStore, useWindowStateStore } from 'source/pinia'
+import { useConfigStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { useItemComposable } from './util/item-composable'
 import type { FSALEventPayload, FSALEventPayloadChange } from 'source/app/service-providers/fsal'
 import { relativePath } from 'source/common/util/renderer-path-polyfill'
 import getDocumentTitle from '../util/get-document-title'
+import { effectiveExplorerDisplayForDirectory, projectMembershipForPath } from '@common/util/explorer-ordering'
 
 const props = defineProps<{
   activeFile: AnyDescriptor|undefined
@@ -185,6 +195,7 @@ const ipcRenderer = window.ipc
 const configStore = useConfigStore()
 const tagStore = useTagsStore()
 const windowStateStore = useWindowStateStore()
+const workspaceStore = useWorkspaceStore()
 
 const shouldCountChars = computed(() => configStore.config.editor.countChars)
 const writingTargets = computed(() => windowStateStore.writingTargets)
@@ -228,7 +239,7 @@ onMounted(async () => {
     // Now we can be sure that the event pertains to a direct child of this item
     // and we need to handle it. We'll make it easy and simply re-fetch the list
     // of children.
-    fetchChildren().catch(err => console.error(`[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`, err))
+    fetchChildren().catch(err => reportError(`[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`, err))
   })
 
   if (props.item.type === 'directory') {
@@ -252,7 +263,40 @@ const {
 // We have to explicitly transform ALL properties to computed ones for
 // the reactivity in conjunction with the recycle-scroller.
 const basename = computed(() => {
-  return getDocumentTitle(props.item)
+  if (props.item.type === 'directory') {
+    return getDocumentTitle(props.item)
+  }
+  const owner = workspaceStore.descriptorMap.get(props.item.dir)
+  const display = owner?.type === 'directory'
+    ? effectiveExplorerDisplayForDirectory(owner, workspaceStore.rootDescriptors, configStore.config.fileNameDisplay)
+    : configStore.config.fileNameDisplay
+  return getDocumentTitle(props.item, display)
+})
+
+const projectMembership = computed(() => props.item.type === 'directory'
+  ? undefined
+  : projectMembershipForPath(props.item.path, workspaceStore.rootDescriptors))
+
+const projectMembershipLabel = computed(() => {
+  const membership = projectMembership.value
+  if (membership === undefined) return ''
+  if (membership.status === 'omitted') return membership.manifestKind === 'quarto' ? 'not in book' : 'not in project'
+  return membership.manifestKind === 'quarto'
+    ? `book ${membership.position ?? ''}`.trim()
+    : `project ${membership.position ?? ''}`.trim()
+})
+
+const projectMembershipTitle = computed(() => {
+  const membership = projectMembership.value
+  if (membership === undefined) return ''
+  if (membership.status === 'omitted') {
+    return membership.manifestKind === 'quarto'
+      ? trans('This document is not included in the Quarto book')
+      : trans('This document is not included in the Project')
+  }
+  return membership.manifestKind === 'quarto'
+    ? trans('Book chapter %s', String(membership.position ?? ''))
+    : trans('Project file %s', String(membership.position ?? ''))
 })
 
 const getFilename = computed(() => props.item.name)
@@ -470,6 +514,20 @@ body {
         span {
           overflow: hidden;
           text-overflow: ellipsis;
+        }
+
+        .project-membership {
+          flex-shrink: 0;
+          padding: 0 4px;
+          border: 1px solid rgb(160, 160, 160);
+          border-radius: 3px;
+          color: rgb(130, 130, 130);
+          font-size: 10px;
+          line-height: 14px;
+
+          &.omitted {
+            border-style: dashed;
+          }
         }
 
         // These inputs should be more or less "invisible"

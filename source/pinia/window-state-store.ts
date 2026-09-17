@@ -14,44 +14,61 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { defineStore } from 'pinia'
 import type { DocumentInfo } from 'source/common/modules/markdown-editor'
 import type { ToCEntry } from 'source/common/modules/markdown-editor/plugins/toc-field'
-import { ref, type Ref } from 'vue'
+import { ref, type Ref, watch } from 'vue'
 import { type WritingTarget } from '@providers/targets'
 import type { FileSearchResult } from 'source/app/service-providers/search'
+import type { SnippetCatalogue, SnippetFileDiagnostic, UserSnippet } from '@dts/common/snippets'
+import type { QuickTexCatalogue } from '@dts/common/quicktex'
+import { useConfigStore } from './config'
 
 const ipcRenderer = window.ipc
 
-async function updateSnippets (snippets: Ref<Array<{ name: string, content: string }>>): Promise<void> {
-  // Now we have to pair two types of calls to the assets provider to get all
-  // snippets: First a call to list all snippets, and then one `get` call to
-  // retrieve its file contents.
-  const snippetNames = await ipcRenderer.invoke('assets-provider', {
+async function updateSnippets (
+  snippets: Ref<UserSnippet[]>,
+  diagnostics: Ref<SnippetFileDiagnostic[]>
+): Promise<void> {
+  const catalogue: SnippetCatalogue = await ipcRenderer.invoke('assets-provider', {
     command: 'list-snippets'
   })
+  snippets.value = catalogue.snippets
+  diagnostics.value = catalogue.diagnostics
+}
 
-  const newSnippets: Array<{ name: string, content: string }> = []
-  for (const snippet of snippetNames) {
-    const content = await ipcRenderer.invoke('assets-provider', {
-      command: 'get-snippet',
-      payload: { name: snippet }
-    })
-
-    newSnippets.push({ name: snippet, content })
-  }
-
-  snippets.value = newSnippets
+async function updateQuickTex (quickTex: Ref<QuickTexCatalogue>): Promise<void> {
+  quickTex.value = await ipcRenderer.invoke('assets-provider', { command: 'get-quicktex' })
 }
 
 export const useWindowStateStore = defineStore('window-state', () => {
+  const configStore = useConfigStore()
   const isFullscreen = ref(false)
-  const uncollapsedDirectories = ref<string[]>([])
+  const uncollapsedDirectories = ref<string[]>([
+    ...configStore.config.fileManager.expandedDirectories
+  ])
   const distractionFreeMode = ref<undefined|string>(undefined)
   const activeDocumentInfo = ref<undefined|DocumentInfo>(undefined)
+  // The file-manager/editor path that most recently held the user's working
+  // focus. Modal UI such as the command launcher may temporarily take DOM
+  // focus without changing what "here" means for desktop actions.
+  const desktopFocusPath = ref<string|undefined>(undefined)
   const tableOfContents = ref<ToCEntry[]|undefined>(undefined)
-  const snippets = ref<Array<{ name: string, content: string }>>([])
+  const snippets = ref<UserSnippet[]>([])
+  const snippetDiagnostics = ref<SnippetFileDiagnostic[]>([])
+  const quickTex = ref<QuickTexCatalogue>({
+    prose: {}, math: {}, excludeChars: ['{', '(', '['], sourceFile: '', diagnostics: []
+  })
   const writingTargets = ref<WritingTarget[]>([])
+
+  // Expanded Explorer rows are view state, but unlike transient search text
+  // they are part of how the user arranged the workspace and should survive a
+  // relaunch. Persist the exact absolute paths the tree already uses as its
+  // identity; stale paths are harmless and naturally disappear from the view.
+  watch(uncollapsedDirectories, paths => {
+    configStore.setConfigValue('fileManager.expandedDirectories', [ ...paths ])
+  }, { deep: true })
 
   /**
    * The workspace search's results, one entry per file that matched, in the
@@ -69,24 +86,27 @@ export const useWindowStateStore = defineStore('window-state', () => {
   // Snippets
   ipcRenderer.on('assets-provider', (event, what: string) => {
     if (what === 'snippets-updated') {
-      updateSnippets(snippets).catch(e => console.error(e))
+      updateSnippets(snippets, snippetDiagnostics).catch(e => reportError(e))
+    } else if (what === 'quicktex-updated') {
+      updateQuickTex(quickTex).catch(e => reportError(e))
     }
   })
 
-  updateSnippets(snippets).catch(e => console.error(e))
+  updateSnippets(snippets, snippetDiagnostics).catch(e => reportError(e))
+  updateQuickTex(quickTex).catch(e => reportError(e))
 
   // Writing targets
   ipcRenderer.on('targets-provider', (event, what: string) => {
     if (what === 'writing-targets-updated') {
       ipcRenderer.invoke('targets-provider', { command: 'get-targets' })
         .then((targets: WritingTarget[]) => { writingTargets.value = targets })
-        .catch(e => console.error(e))
+        .catch(e => reportError(e))
     }
   })
 
   ipcRenderer.invoke('targets-provider', { command: 'get-targets' })
     .then((targets: WritingTarget[]) => { writingTargets.value = targets })
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
   
   ipcRenderer.on('window-controls', (event, { command, payload }) => {
     if (command === 'fullscreen' && typeof payload === 'boolean') {
@@ -98,10 +118,13 @@ export const useWindowStateStore = defineStore('window-state', () => {
     uncollapsedDirectories,
     distractionFreeMode,
     activeDocumentInfo,
+    desktopFocusPath,
     tableOfContents,
     searchResults,
     addSearchResult,
     snippets,
+    snippetDiagnostics,
+    quickTex,
     writingTargets,
     isFullscreen
   }

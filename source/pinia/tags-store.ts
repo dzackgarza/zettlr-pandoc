@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { defineStore } from 'pinia'
 import type { ColoredTag, TagRecord } from 'source/app/service-providers/tags'
 import { ref } from 'vue'
@@ -35,13 +36,13 @@ export const useTagsStore = defineStore('tags', () => {
     .then((t: ColoredTag[]) => {
       coloredTags.value = t
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 
   ipcRenderer.invoke('tag-provider', { command: 'get-all-tags' })
     .then((t: TagRecord[]) => {
       tags.value = t
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 
   return { coloredTags, tags }
 })

@@ -91,6 +91,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
 import ButtonControl from '@common/vue/form/elements/ButtonControl.vue'
 import ProgressControl from '@common/vue/form/elements/ProgressControl.vue'
@@ -177,7 +178,7 @@ const getETA = computed(() => {
 // retrieve any updates to the state.
 ipcRenderer.invoke('update-provider', { command: 'update-status' })
   .then(newUpdateState => { updateState.value = newUpdateState })
-  .catch(e => console.error(e))
+  .catch(e => reportError(e))
 
 // Whenever the update state changes in the provider, we must update it here
 const offCallback = ipcRenderer.on('update-provider', (event, command, newUpdateState) => {
@@ -185,7 +186,7 @@ const offCallback = ipcRenderer.on('update-provider', (event, command, newUpdate
     if (newUpdateState !== undefined) {
       updateState.value = newUpdateState
     } else {
-      console.error('ERROR: Expected an update state, received undefined!')
+      reportError('ERROR: Expected an update state, received undefined!')
     }
   }
 })
@@ -197,7 +198,7 @@ function requestDownload (url: string): void {
     command: 'request-app-update',
     payload: url
   })
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 }
 
 function startUpdate (): void {
@@ -206,13 +207,13 @@ function startUpdate (): void {
   ipcRenderer.invoke('update-provider', { command: 'begin-update' })
     .catch(e => {
       disableStartButton.value = false
-      console.error(e)
+      reportError(e)
     })
 }
 
 function checkForUpdate (): void {
   ipcRenderer.invoke('update-provider', { command: 'check-for-update' })
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 }
 
 function openReleasesPage (): void {

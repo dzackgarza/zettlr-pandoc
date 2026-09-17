@@ -17,6 +17,13 @@ const plugins = [
     }, {
       from: 'node_modules/@mathjax/mathjax-mhchem-font-extension/chtml/woff2',
       to: 'mathjax'
+    }, {
+      // Quiver is a forked, vendored dependency. Keep its complete editor DOM,
+      // CSS, icons and local KaTeX distribution isolated under the main
+      // renderer rather than rebundling/reimplementing that interface in Vue.
+      from: 'vendor/quiver/src',
+      to: 'main_window/quiver',
+      globOptions: { ignore: ['**/tests/**'] }
     }]
   }),
 

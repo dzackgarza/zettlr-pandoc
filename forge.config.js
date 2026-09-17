@@ -11,6 +11,7 @@ const forgeRendererPort = process.env.ZETTLR_FORGE_RENDERER_PORT === undefined
 const forgeLoggerPort = process.env.ZETTLR_FORGE_LOGGER_PORT === undefined
   ? 9001
   : Number.parseInt(process.env.ZETTLR_FORGE_LOGGER_PORT, 10)
+const electronZipDir = process.env.ZETTLR_ELECTRON_ZIP_DIR
 
 /**
  * This function runs the get-pandoc script in order to download the requested
@@ -201,6 +202,14 @@ module.exports = {
     force: false // NOTE: By now covered by the global flag on packaging.
   },
   packagerConfig: {
+    // Local desktop packaging is driven by scripts/verify-build.py. That
+    // verifier reconstructs the Electron release ZIP once from the exact
+    // already-installed node_modules/electron runtime and points Packager at
+    // it here. Electron Packager's documented electronZipDir option bypasses
+    // @electron/get completely, so an ordinary source edit never turns an app
+    // launch into a several-hundred-megabyte network download. CI/release
+    // callers that do not set the variable keep Forge's normal download path.
+    ...(electronZipDir === undefined || electronZipDir === '' ? {} : { electronZipDir }),
     appBundleId: 'com.dzackgarza.zettlr-pandoc',
     // This info.plist file contains file association for the app on macOS.
     extendInfo: './scripts/assets/info.plist',

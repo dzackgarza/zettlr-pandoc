@@ -194,19 +194,19 @@ async function waitForProjectState (
   )
 }
 
-async function waitForRendererEvent (
-  events: string[],
+async function waitForProcessOutput (
+  getOutput: () => string,
   fragment: string,
   timeoutMs: number
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    if (events.some(event => event.includes(fragment))) {
+    if (getOutput().includes(fragment)) {
       return
     }
     await delay(100)
   }
-  assert.fail(`Renderer never reported ${JSON.stringify(fragment)}`)
+  assert.fail(`Application log never reported ${JSON.stringify(fragment)}`)
 }
 
 async function waitForProjectTitle (
@@ -344,8 +344,11 @@ describe('global-search and project-properties failure recovery', function () {
       await rm(projectSettingsFile)
       await waitForProjectState(mainPage, workspace, false)
       await titleInput.fill('First edit cannot persist')
-      await waitForRendererEvent(
-        running.rendererEvents,
+      // Renderer errors are now routed through the process-wide LogProvider
+      // boundary rather than written to the renderer console. Observe the
+      // durable application log transport, not the retired console side effect.
+      await waitForProcessOutput(
+        running.getOutput,
         'Project was null',
         30_000
       )

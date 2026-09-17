@@ -17,6 +17,7 @@
 </template>
 
 <script setup lang="ts">
+import { reportError } from '@common/util/error-reporting'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { IrisIndicator, type BuiltInColor, type Vec4 } from './iris-indicator-utils/iris-indicator'
 import ButtonControl, { type ToolbarButtonControl } from './window/toolbar-controls/ButtonControl.vue'
@@ -90,7 +91,7 @@ onMounted(() => {
   try {
     indicator = setupIrisIndicator(indicatorCanvas.value)
   } catch (err: unknown) {
-    console.error('Could not instantiate WebGL indicator. Falling back to regular.')
+    reportError('Could not instantiate WebGL indicator. Falling back to regular.')
     hasWebGLIndicator.value = false
   }
 })

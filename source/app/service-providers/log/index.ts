@@ -18,6 +18,7 @@ import { app, ipcMain } from 'electron'
 // @ts-expect-error Somehow TypeScript is very unhappy about this import.
 import chalk from 'chalk'
 import ProviderContract from '../provider-contract'
+import { stderrError } from '@common/util/error-reporting'
 
 /**
  * How many logfiles should the app keep at most?
@@ -56,7 +57,7 @@ export interface LogMessage {
 }
 
 const debugConsole = {
-  error: function (message: string) { console.error(chalk.bold.red(message)) },
+  error: function (message: string) { stderrError(chalk.bold.red(message)) },
   warn: function (message: string) { console.warn(chalk.yellow(message)) },
   info: function (message: string) { console.log(chalk.blueBright(message)) },
   verbose: function (message: string) { console.log(chalk.grey(message)) }
@@ -89,7 +90,11 @@ export default class LogProvider extends ProviderContract {
     this._activeWrite = null // The write in flight, so callers can wait for it
 
     // Ensure message handling
-    ipcMain.handle('log-provider', (event, payload: { command: string, nextIndex?: number|string }) => {
+    ipcMain.handle('log-provider', (event, payload: {
+      command: string
+      nextIndex?: number|string
+      payload?: { message?: unknown, details?: unknown }
+    }) => {
       const { command } = payload
 
       if (command === 'retrieve-log-chunk') {
@@ -99,6 +104,15 @@ export default class LogProvider extends ProviderContract {
         }
 
         return this._log.slice(nextIndex)
+      } else if (
+        command === 'record-error' &&
+        typeof payload.payload?.message === 'string'
+      ) {
+        this.error(
+          payload.payload.message,
+          typeof payload.payload.details === 'string' ? payload.payload.details : undefined
+        )
+        return true
       }
     })
   }
@@ -166,7 +180,7 @@ export default class LogProvider extends ProviderContract {
         case LogLevel.error:
           debugConsole.error(output)
           // In case of an error, spit out anything that comes in
-          console.error(msg.details)
+          stderrError(msg.details)
           break
         case LogLevel.info:
           debugConsole.info(output)
@@ -202,7 +216,7 @@ export default class LogProvider extends ProviderContract {
   private _reportWriteFailure (err: unknown): void {
     const message = '[Log Provider] Could not write to the logfile. ' +
       'The affected entries remain pending for the next explicit append.'
-    console.error(chalk.bold.red(message), err)
+    stderrError(chalk.bold.red(message), err)
     this._log.push({
       level: LogLevel.error,
       message,

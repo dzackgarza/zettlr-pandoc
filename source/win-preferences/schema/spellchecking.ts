@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import { mapLangCodeToName, resolveLangCode } from '@common/util/map-lang-code'
 import { type PreferencesFieldset } from './types'
@@ -55,7 +56,7 @@ export function getSpellcheckingFields (config: ConfigOptions): PreferencesField
           onClick: () => {
             ipcRenderer.invoke('dictionary-provider', {
               command: 'open-dictionary-folder'
-            }).catch(err => console.error(err))
+            }).catch(err => reportError(err))
           }
         },
       ]
@@ -74,6 +75,40 @@ export function getSpellcheckingFields (config: ConfigOptions): PreferencesField
           searchable: true,
           searchLabel: trans('Search for entries …'),
           striped: true
+        }
+      ]
+    },
+    {
+      title: trans('Prose completion dictionaries'),
+      infoString: trans('Autocomplete can use the selected Hunspell dictionaries plus portable UTF-8 completion files. Put one word or phrase on each line. New entries added from the editor are written to the primary file.'),
+      group: PreferencesGroups.Spellchecking,
+      fields: [
+        {
+          type: 'file',
+          label: trans('Primary completion file'),
+          model: 'editor.proseCompletionFile',
+          placeholder: trans('Path to a portable prose completion file'),
+          filter: [{ extensions: ['txt', 'dic'], name: trans('Text dictionaries') }]
+        },
+        {
+          type: 'list',
+          valueType: 'simpleArray',
+          model: 'editor.proseCompletionExtraFiles',
+          label: trans('Additional completion files'),
+          columnLabels: [trans('File path')],
+          deletable: true,
+          searchable: true,
+          searchLabel: trans('Filter files …'),
+          striped: true
+        },
+        {
+          type: 'button',
+          label: trans('Open primary completion file'),
+          onClick: () => {
+            ipcRenderer.invoke('dictionary-provider', {
+              command: 'open-prose-completion-file'
+            }).catch(err => reportError(err))
+          }
         }
       ]
     },

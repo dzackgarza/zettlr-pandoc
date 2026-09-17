@@ -45,7 +45,7 @@ type Send = unknown[]
 
 class TestMenuConfig implements MenuConfig {
   get (): {
-    editor: { fontSize: number }
+    editor: { fontSize: number, snippetsFile: string, quickTexFile: string }
     shortcuts: { ui: ConfigOptions['shortcuts']['ui'] }
   }
 
@@ -55,7 +55,11 @@ class TestMenuConfig implements MenuConfig {
   ): unknown {
     if (key === undefined) {
       return {
-        editor: { fontSize: 14 },
+        editor: {
+          fontSize: 14,
+          snippetsFile: '/tmp/snippets.code-snippets',
+          quickTexFile: '/tmp/quicktex_dict.vim'
+        },
         // No custom UI shortcuts: the menu falls back to its own defaults.
         shortcuts: { ui: { 'next-tab': '', 'previous-tab': '', 'filter-files': '' } }
       }
@@ -89,10 +93,10 @@ function findItem (
 
 function clickMenuItem (getMenu: MenuBuilder, id: string): {
   sent: Send[]
-  commandCalls: string[]
+  commandCalls: Array<[string, unknown]>
   loggedErrors: string[]
 } {
-  const commandCalls: string[] = []
+  const commandCalls: Array<[string, unknown]> = []
   const loggedErrors: string[] = []
   const logger: MenuLogger = {
     error: (message) => { loggedErrors.push(message) }
@@ -103,8 +107,8 @@ function clickMenuItem (getMenu: MenuBuilder, id: string): {
     clear: () => {}
   }
   const commands: MenuCommands = {
-    run: async (command) => {
-      commandCalls.push(command)
+    run: async (command, payload) => {
+      commandCalls.push([command, payload])
       return undefined
     }
   }
@@ -168,6 +172,27 @@ describe('File ▸ Previous/Next file menu navigation', function () {
         commandCalls: [],
         loggedErrors: []
       })
+    })
+  }
+})
+
+describe('Edit ▸ authoring source files', function () {
+  const platforms: Array<[string, MenuBuilder]> = [
+    ['win32/linux', getWin32Menu],
+    ['darwin', getDarwinMenu]
+  ]
+
+  for (const [platform, getMenu] of platforms) {
+    it(`${platform}: Edit snippets opens the configured snippets file`, function () {
+      const result = clickMenuItem(getMenu, 'menu.edit_snippets')
+      assert.deepEqual(result.sent, [['shortcut', 'edit-snippets']])
+      assert.deepEqual(result.commandCalls, [])
+    })
+
+    it(`${platform}: Edit QuickTeX definitions opens the configured Vimscript`, function () {
+      const result = clickMenuItem(getMenu, 'menu.edit_quicktex')
+      assert.deepEqual(result.sent, [['shortcut', 'edit-quicktex']])
+      assert.deepEqual(result.commandCalls, [])
     })
   }
 })

@@ -28,7 +28,7 @@ import type {
 } from './menu-dependencies'
 import { cmShortcutToElectron } from 'source/common/util/shortcuts'
 import { type MenuShortcutName, getCustomShortcut } from './shortcuts'
-import { commandLauncherItem, formatMenu, insertMenu, sendShortcut, statisticsItem } from './menu-editing'
+import { authoringSourceItems, commandLauncherItem, desktopFileItems, fileLauncherItem, formatMenu, insertMenu, sendShortcut, statisticsItem } from './menu-editing'
 
 export default function getMenu (
   logger: MenuLogger,
@@ -211,6 +211,10 @@ export default function getMenu (
             role: 'clearRecentDocuments'
           }]
         },
+        {
+          type: 'separator'
+        },
+        ...desktopFileItems(),
         {
           type: 'separator'
         },
@@ -419,6 +423,10 @@ export default function getMenu (
         {
           type: 'separator'
         },
+        ...authoringSourceItems(config),
+        {
+          type: 'separator'
+        },
         {
           id: 'menu.generate_id',
           label: trans('Generate new ID'),
@@ -465,6 +473,7 @@ export default function getMenu (
       label: trans('View'),
       submenu: [
         commandLauncherItem('Cmd+P'),
+        fileLauncherItem('Cmd+Shift+P'),
         statisticsItem(commands),
         {
           type: 'separator'

@@ -269,6 +269,36 @@ export default class CiteprocProvider extends ProviderContract {
     return false
   }
 
+  /**
+   * Metadata for every loaded bibliography database. Does not expose items;
+   * call {@link getItems} for that.
+   */
+  public listDatabases (): Array<{ path: string; type: DatabaseRecord['type'] }> {
+    return Array.from(this.databases.values()).map(db => ({
+      path: db.path,
+      type: db.type,
+    }))
+  }
+
+  /**
+   * All CSL items from the requested database(s), merged with earlier
+   * databases taking precedence on duplicate keys — the same semantics as
+   * the renderer's IPC `get-items` call.
+   */
+  public getItems (database: CitationDatabase): CSLItem[] {
+    this.selectDatabase(database)
+    return Object.values(this._items)
+  }
+
+  /**
+   * A single CSL item by cite key, or undefined when the key does not exist
+   * in the requested database(s).
+   */
+  public getItem (database: CitationDatabase, citeKey: string): CSLItem | undefined {
+    this.selectDatabase(database)
+    return this._items[citeKey]
+  }
+
   public async boot (): Promise<void> {
     this._logger.verbose('Citeproc provider booting up ...')
     this.mainLibrary = this._config.get().export.cslLibrary

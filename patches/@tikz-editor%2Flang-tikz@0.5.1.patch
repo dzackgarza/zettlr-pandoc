@@ -1,0 +1,26 @@
+diff --git a/dist/index.js b/dist/index.js
+index 4a3bbea3a2b9f18f43664a7487c96e39d5717cdb..a0ceb06a1bbfac0274918e11ace9846bf41cd772 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1,5 +1,5 @@
+-import { LRLanguage, LanguageSupport, foldNodeProp, foldInside, foldService, syntaxTree } from "@codemirror/language";
+-import { styleTags, tags as t } from "@lezer/highlight";
++import { LRLanguage, LanguageSupport, foldNodeProp, foldInside, foldService, syntaxTree } from "../../../@codemirror/language/dist/index.cjs";
++import { styleTags, tags as t } from "../../../@lezer/highlight/dist/index.cjs";
+ import { parser } from "@tikz-editor/lezer-tikz";
+ const tikzHighlighting = styleTags({
+     Comment: t.lineComment,
+diff --git a/package.json b/package.json
+index ed17b308ed651b566b8bb7a26199cc9acff82659..a11c5c28f468971ab4978e123cb5e3536b9abdb4 100644
+--- a/package.json
++++ b/package.json
+@@ -9,7 +9,8 @@
+   "exports": {
+     ".": {
+       "types": "./dist/index.d.ts",
+-      "import": "./dist/index.js"
++      "import": "./dist/index.js",
++      "require": "./dist/index.js"
+     }
+   },
+   "files": [

@@ -27,6 +27,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import showPopupMenu, { type AnyMenuItem, type SubmenuItem } from '@common/modules/window-register/application-menu-helper'
 import { ref, onBeforeMount } from 'vue'
 
@@ -91,12 +92,12 @@ function maybeExchangeSubmenu (menuID: string, targetElement: HTMLElement): void
  */
 function showSubmenu (items: AnyMenuItem[], attachTo: string): void {
   if (targetElement.value === null) {
-    return console.error('Cannot show application menu: Target item has not been found.')
+    return reportError('Cannot show application menu: Target item has not been found.')
   }
 
   const rect = targetElement.value.getBoundingClientRect()
   if (rect === undefined) {
-    return console.error('Cannot show application menu: Target has not been found!')
+    return reportError('Cannot show application menu: Target has not been found!')
   }
 
   // Reset the application menu if shown

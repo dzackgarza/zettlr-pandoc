@@ -31,6 +31,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import ky from 'ky'
 import { ref } from 'vue'
 
@@ -48,9 +49,9 @@ ky('https://zettlr.com/api/sponsors')
       .then(res => {
         sponsors.value = res
       })
-      .catch(err => console.error(err))
+      .catch(err => reportError(err))
   })
-  .catch(e => console.error(e))
+  .catch(e => reportError(e))
 </script>
 
 <style lang="less">

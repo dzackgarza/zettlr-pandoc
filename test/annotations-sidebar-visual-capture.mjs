@@ -320,7 +320,7 @@ await scene.capture('12-dark-mode-complete')
 await scene.setSize(WIDE.width, WIDE.height)
 await page.evaluate(() => { document.querySelector('#editor-complete').style.display = 'none' })
 
-console.error('annotations-sidebar-visual-capture: all ten scenes captured and structurally verified')
+process.stderr.write('annotations-sidebar-visual-capture: all ten scenes captured and structurally verified\n')
 
 // M10 (S7): "Show proposal" must find and mark the SPECIFIC outstanding
 // chunk this annotation's linked proposal produced — the panel was
@@ -344,7 +344,7 @@ if (JSON.stringify(reattachAnnotationIds) !== JSON.stringify([SCENE_ORPHANED_ID]
   throw new Error(`begin-reattach: expected the panel to emit ${SCENE_ORPHANED_ID}, got ${JSON.stringify(reattachAnnotationIds)}`)
 }
 
-console.error('annotations-sidebar-visual-capture: show-proposal and begin-reattach wiring verified')
+process.stderr.write('annotations-sidebar-visual-capture: show-proposal and begin-reattach wiring verified\n')
 
 // Printed as the LAST stdout line so annotations-sidebar.spec.ts can parse
 // it — every other line above goes to stderr for exactly this reason.

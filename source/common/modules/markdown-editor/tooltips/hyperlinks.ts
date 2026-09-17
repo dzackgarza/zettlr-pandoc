@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { hoverTooltip, type EditorView, type Tooltip } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import { configField } from '../util/configuration'
@@ -134,7 +135,7 @@ export function urlTooltip (view: EditorView, pos: number, side: 1 | -1): Toolti
           dom.appendChild(link)
         })
         .catch(err => {
-          console.error(`Could not generate link preview for URL ${validURI}`, err)
+          reportError(`Could not generate link preview for URL ${validURI}`, err)
         })
       return { dom }
     }

@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import { type PreferencesFieldset } from './types'
 import { PreferencesGroups } from './_preferences-groups'
@@ -36,7 +37,7 @@ export function getImportExportFields (): PreferencesFieldset[] {
                 hash: 'tab-import-control'
               }
             })
-              .catch(err => console.error(err))
+              .catch(err => reportError(err))
           }
         },
         {
@@ -50,7 +51,7 @@ export function getImportExportFields (): PreferencesFieldset[] {
                 hash: 'tab-export-control'
               }
             })
-              .catch(err => console.error(err))
+              .catch(err => reportError(err))
           }
         }
       ] // TODO: Add two buttons "Open import profiles editor" and "Open export profiles editor"

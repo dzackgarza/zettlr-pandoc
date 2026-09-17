@@ -1,0 +1,13 @@
+schema = 1
+upstream_repository = "https://github.com/varkor/quiver"
+upstream_commit = "2f289ecbae9b7e5a473e04b924750c538ed5c4cf"
+license = "MIT"
+license_file = "LICENSE"
+patch_file = "ZETTLR.patch"
+katex_version = "0.18.1"
+katex_license_file = "KATEX-LICENSE.txt"
+mode = "vendored-fork"
+
+[maintenance]
+refresh = "node scripts/update-quiver-vendor.mjs"
+note = "Refreshing reconstructs upstream at the pinned commit, applies ZETTLR.patch, and installs the pinned KaTeX distribution. Rebase the patch explicitly when changing upstream_commit."

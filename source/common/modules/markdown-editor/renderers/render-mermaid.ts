@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { renderBlockWidgets } from './base-renderer'
 import { type SyntaxNode, type SyntaxNodeRef } from '@lezer/common'
 import { WidgetType, type EditorView } from '@codemirror/view'
@@ -45,7 +46,7 @@ mermaid.initialize(DEFAULT_MERMAID_OPTIONS)
 function onError (err: unknown, container: HTMLElement) {
   container.classList.add('error')
   if (err instanceof Error) {
-    console.error(err)
+    reportError(err)
     container.innerText = `${trans('Could not render Graph:')}\n\n${err.message}`
   } else {
     container.innerText = trans('Could not render Graph.')
