@@ -50,6 +50,7 @@ import ProviderContract from "@providers/provider-contract";
 import crypto from "crypto";
 import { app } from "electron";
 import fs from "fs";
+import { get as levenshteinDistance } from "fast-levenshtein";
 import http from "http";
 import OpenAPIBackend, {
   type Context,
@@ -83,6 +84,53 @@ const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
  * serves no one.
  */
 const REQUEST_BODY_DEADLINE_MS = 30_000;
+
+/**
+ * Descriptions are per-claim review justifications, not batch labels. A high
+ * threshold catches copy/paste variants while leaving room for genuinely
+ * related edits to share some vocabulary. Whitespace and case are ignored so
+ * superficial formatting changes cannot evade the check.
+ */
+const CLAIM_DESCRIPTION_SIMILARITY_THRESHOLD = 0.94;
+
+interface ClaimDescriptionCollision {
+  firstIndex: number;
+  secondIndex: number;
+  similarity: number;
+}
+
+function normalizeClaimDescription(description: string): string {
+  return description.normalize("NFKC").toLocaleLowerCase("en-US").replace(/\s+/gu, "");
+}
+
+function findClaimDescriptionCollision(
+  claims: readonly { description: string }[],
+): ClaimDescriptionCollision | undefined {
+  const normalized = claims.map((claim) => normalizeClaimDescription(claim.description));
+  for (let firstIndex = 0; firstIndex < normalized.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < normalized.length; secondIndex += 1) {
+      const first = normalized[firstIndex];
+      const second = normalized[secondIndex];
+      const maxLength = Math.max(first.length, second.length);
+      const minLength = Math.min(first.length, second.length);
+
+      if (maxLength === 0) {
+        return { firstIndex, secondIndex, similarity: 1 };
+      }
+      // Levenshtein similarity cannot exceed minLength / maxLength, so skip
+      // pairs that cannot possibly cross the rejection threshold.
+      if (minLength / maxLength < CLAIM_DESCRIPTION_SIMILARITY_THRESHOLD) {
+        continue;
+      }
+
+      const similarity = 1 - (levenshteinDistance(first, second) / maxLength);
+      if (similarity >= CLAIM_DESCRIPTION_SIMILARITY_THRESHOLD) {
+        return { firstIndex, secondIndex, similarity };
+      }
+    }
+  }
+  return undefined;
+}
 
 /**
  * The HTTP status an AgentErrorCode earns when a route has no code-specific
@@ -129,6 +177,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   PERSISTENCE_FAILED: 500,
   CITATION_DATABASE_NOT_LOADED: 404,
   CITATION_NOT_FOUND: 404,
+  DUPLICATE_CLAIM_DESCRIPTION: 400,
   INTERNAL_ERROR: 500,
 };
 
@@ -1015,6 +1064,30 @@ export default class AgentHTTPProvider extends ProviderContract {
     proposal: SubmitProposalRequest,
     focus?: boolean,
   ): Promise<void> {
+    const descriptionCollision = findClaimDescriptionCollision(proposal.claims);
+    if (descriptionCollision !== undefined) {
+      const { firstIndex, secondIndex, similarity } = descriptionCollision;
+      const similarityPercent = Math.round(similarity * 100);
+      this.sendError(
+        res,
+        STATUS_BY_CODE.DUPLICATE_CLAIM_DESCRIPTION,
+        "DUPLICATE_CLAIM_DESCRIPTION",
+        `claims[${firstIndex}] and claims[${secondIndex}] have ${similarityPercent}% similar descriptions ` +
+          `(rejection threshold: ${Math.round(CLAIM_DESCRIPTION_SIMILARITY_THRESHOLD * 100)}%). ` +
+          "A claim description is the per-edit diagnosis and justification shown to the reviewer, not a batch label. " +
+          "Repeating the same reason across multiple edits hides whether each edit was independently analyzed and " +
+          "forces the reviewer to reconstruct the rationale from the diff. Rewrite each conflicting description so it " +
+          "uniquely states: (1) the specific defect at that edit's location/context, (2) what this claim changes there, " +
+          "and (3) why that particular change fixes the defect. Shared background may repeat, but the edit-specific " +
+          "diagnosis, change, and justification must be distinct.",
+        {
+          conflictingClaimIndices: [firstIndex, secondIndex],
+          descriptionSimilarity: similarity,
+        },
+      );
+      return;
+    }
+
     // No request headers are read here. Concurrency rides in the body, because
     // an OpenAPI consumer that generates calls from the published document
     // drops header parameters and could never satisfy a header requirement.

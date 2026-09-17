@@ -538,6 +538,80 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(JSON.parse(linked.body).proposalActions[0].packetId, result.packetIds[0]);
   });
 
+  it("rejects duplicate and near-duplicate claim descriptions with per-edit remediation guidance", async function () {
+    const filePath = path.join(scratch, "duplicate-descriptions.md");
+    const before = "Let V be a vector space.\nAssume the form is symmetric.\n";
+    const middle = "Let V be a finite-dimensional vector space.\nAssume the form is symmetric.\n";
+    const after = "Let V be a finite-dimensional vector space.\nAssume the form is symmetric and nondegenerate.\n";
+    writeFileSync(filePath, before);
+    const documentId = await openFile(filePath, before);
+
+    const exact = await httpRequest("POST", "/v1/review-submissions", {
+      body: JSON.stringify({
+        document: { uri: filePath },
+        claims: [
+          {
+            description: "Add the missing hypothesis to this statement.",
+            patch: createPatch(filePath, before, middle),
+          },
+          {
+            description: "  add   the missing hypothesis to THIS statement.  ",
+            patch: createPatch(filePath, middle, after),
+          },
+        ],
+        clientRequestId: "duplicate-description-exact",
+        focus: false,
+      }),
+    });
+    assert.equal(exact.status, 400, exact.body);
+    const exactError = JSON.parse(exact.body).error;
+    assertMatchesSchema(exactError, "AgentError");
+    assert.equal(exactError.code, "DUPLICATE_CLAIM_DESCRIPTION");
+    assert.deepEqual(exactError.conflictingClaimIndices, [0, 1]);
+    assert.equal(exactError.descriptionSimilarity, 1);
+    assert.match(exactError.message, /100% similar descriptions/);
+    assert.match(exactError.message, /per-edit diagnosis and justification/);
+    assert.match(exactError.message, /specific defect at that edit's location\/context/);
+    assert.match(exactError.message, /what this claim changes there/);
+    assert.match(exactError.message, /why that particular change fixes the defect/);
+
+    const unchangedAfterExact = await httpRequest("GET", `/v1/documents/${documentId}/content`);
+    assert.equal(JSON.parse(unchangedAfterExact.body).content, before);
+
+    const fuzzyDescriptions = [
+      "Correct this theorem statement by adding the missing hypothesis at this location.",
+      "Correct this theorem statement by adding a missing hypothesis at this location.",
+    ];
+    const fuzzy = await httpRequest("POST", `/v1/documents/${documentId}/proposals`, {
+      body: JSON.stringify({
+        baselineSha256: sha256Text(before),
+        expectedReviewGeneration: 0,
+        claims: [
+          {
+            description: fuzzyDescriptions[0],
+            patch: createPatch(filePath, before, middle),
+          },
+          {
+            description: fuzzyDescriptions[1],
+            patch: createPatch(filePath, middle, after),
+          },
+        ],
+        clientRequestId: "duplicate-description-fuzzy",
+      }),
+    });
+    assert.equal(fuzzy.status, 400, fuzzy.body);
+    const fuzzyError = JSON.parse(fuzzy.body).error;
+    assertMatchesSchema(fuzzyError, "AgentError");
+    assert.equal(fuzzyError.code, "DUPLICATE_CLAIM_DESCRIPTION");
+    assert.deepEqual(fuzzyError.conflictingClaimIndices, [0, 1]);
+    assert.ok(fuzzyError.descriptionSimilarity >= 0.94);
+    assert.ok(fuzzyError.descriptionSimilarity < 1);
+    assert.match(fuzzyError.message, /rejection threshold: 94%/);
+
+    const unchangedAfterFuzzy = await httpRequest("GET", `/v1/documents/${documentId}/content`);
+    assert.equal(JSON.parse(unchangedAfterFuzzy.body).content, before);
+  });
+
   it("fails enabled startup when the configured port is taken", async function () {
     // An enabled API without its configured listener is a broken application
     // state. Startup must report the bind failure instead of claiming success.

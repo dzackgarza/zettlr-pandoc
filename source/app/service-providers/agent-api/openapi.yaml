@@ -210,7 +210,15 @@ components:
           description: >-
             Self-contained prose shown to the reviewer at the chunks this
             claim produced: what is wrong, what the patch changes, and why —
-            enough to adjudicate without re-deriving the diagnosis.
+            enough to adjudicate without re-deriving the diagnosis. Each
+            claim in a batch must carry a distinct, non-redundant description
+            naming the edit-specific defect/location or context, what this
+            claim changes there, and why that particular change fixes it.
+            Duplicate or near-duplicate descriptions across claims are
+            rejected as DUPLICATE_CLAIM_DESCRIPTION. Comparison applies NFKC
+            normalization, case-folding, and whitespace removal, then uses
+            normalized Levenshtein similarity; 0.94 or greater is rejected
+            and an exact match reports 1.0.
         patch:
           type: string
           minLength: 1
@@ -271,7 +279,10 @@ components:
             sequentially and atomically: claim k applies with zero fuzz to
             the text claim k-1 produced, all-or-nothing, and each claim
             becomes its own packet. Send one entry per logical decision —
-            that gives the reviewer separately decidable packets.
+            that gives the reviewer separately decidable packets. Descriptions
+            are per-edit review justifications, not a reusable batch reason;
+            each must identify that claim's specific defect/context, change,
+            and justification.
     SubmitProposalResponse:
       type: object
       required:
@@ -346,6 +357,7 @@ components:
             - INTERNAL_ERROR
             - CITATION_DATABASE_NOT_LOADED
             - CITATION_NOT_FOUND
+            - DUPLICATE_CLAIM_DESCRIPTION
             - BASELINE_MISMATCH
         message:
           type: string
@@ -362,6 +374,23 @@ components:
           description: >-
             REVIEW_GENERATION_MISMATCH: the generation the review is actually
             at, so the caller can re-read from exactly there.
+        conflictingClaimIndices:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: integer
+            minimum: 0
+          description: >-
+            DUPLICATE_CLAIM_DESCRIPTION: zero-based indices of the first pair
+            of claims whose normalized descriptions are too similar.
+        descriptionSimilarity:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: >-
+            DUPLICATE_CLAIM_DESCRIPTION: normalized Levenshtein similarity of
+            the conflicting pair, where an exact match is 1.0.
     AgentErrorResponse:
       type: object
       required:
@@ -1300,7 +1329,9 @@ components:
             sequentially and atomically: claim k applies with zero fuzz to the text
             claim k-1 produced, all-or-nothing, and each claim becomes its own
             packet. Send one entry per logical decision — that gives the reviewer
-            separately decidable packets."
+            separately decidable packets. Descriptions are per-edit review
+            justifications, not a reusable batch reason; each must identify that
+            claim's specific defect/context, change, and justification."
         patch:
           type: string
           minLength: 1
@@ -1324,7 +1355,9 @@ components:
                 sequentially and atomically: claim k applies with zero fuzz to the
                 text claim k-1 produced, all-or-nothing, and each claim becomes its
                 own packet. Send one entry per logical decision — that gives the
-                reviewer separately decidable packets."
+                reviewer separately decidable packets. Descriptions are per-edit
+                review justifications, not a reusable batch reason; each must identify
+                that claim's specific defect/context, change, and justification."
         - type: object
           required:
             - patch
@@ -1801,7 +1834,9 @@ paths:
             Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the
             document drifted from the text you built against: re-read the
             working content and rebuild the patch against it — a blind retry
-            fails identically.
+            fails identically. DUPLICATE_CLAIM_DESCRIPTION means two claim
+            descriptions are too similar; rewrite each as a distinct per-edit
+            diagnosis, change summary, and justification.
           content:
             application/json:
               schema:
@@ -2333,7 +2368,9 @@ paths:
           description: "Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the
             document drifted from the text you built against: re-read the working
             content and rebuild the patch against it — a blind retry fails
-            identically."
+            identically. DUPLICATE_CLAIM_DESCRIPTION means two claim descriptions
+            are too similar; rewrite each as a distinct per-edit diagnosis, change
+            summary, and justification."
           content:
             application/json:
               schema:

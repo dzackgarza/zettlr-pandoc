@@ -701,7 +701,7 @@ export interface components {
         };
         /** @description One logical decision — the smallest change a reviewer can accept or reject on its own. Do not bundle unrelated edits into one claim. */
         ProposalClaim: {
-            /** @description Self-contained prose shown to the reviewer at the chunks this claim produced: what is wrong, what the patch changes, and why — enough to adjudicate without re-deriving the diagnosis. */
+            /** @description Self-contained prose shown to the reviewer at the chunks this claim produced: what is wrong, what the patch changes, and why — enough to adjudicate without re-deriving the diagnosis. Each claim in a batch must carry a distinct, non-redundant description naming the edit-specific defect/location or context, what this claim changes there, and why that particular change fixes it. Duplicate or near-duplicate descriptions across claims are rejected as DUPLICATE_CLAIM_DESCRIPTION. Comparison applies NFKC normalization, case-folding, and whitespace removal, then uses normalized Levenshtein similarity; 0.94 or greater is rejected and an exact match reports 1.0. */
             description: string;
             /** @description Unified diff implementing exactly this claim. Name the target in the ---/+++ headers as the literal `document` or as the document's absolute path (a git-style a/ or b/ prefix is allowed); any other filename, a create/delete/rename/binary/mode patch, or a diff that leaves the text unchanged is PATCH_INVALID. */
             patch: string;
@@ -715,7 +715,7 @@ export interface components {
             expectedReviewGeneration: number;
             /** @description Client-chosen unique string. Replaying it returns the original packet rather than applying the patch twice; reusing it for a different request is refused as IDEMPOTENCY_CONFLICT. */
             clientRequestId: string;
-            /** @description Ordered claim sequence applied against the ONE baseline, sequentially and atomically: claim k applies with zero fuzz to the text claim k-1 produced, all-or-nothing, and each claim becomes its own packet. Send one entry per logical decision — that gives the reviewer separately decidable packets. */
+            /** @description Ordered claim sequence applied against the ONE baseline, sequentially and atomically: claim k applies with zero fuzz to the text claim k-1 produced, all-or-nothing, and each claim becomes its own packet. Send one entry per logical decision — that gives the reviewer separately decidable packets. Descriptions are per-edit review justifications, not a reusable batch reason; each must identify that claim's specific defect/context, change, and justification. */
             claims: components["schemas"]["ProposalClaim"][];
         };
         SubmitProposalResponse: {
@@ -732,7 +732,7 @@ export interface components {
         };
         AgentError: {
             /** @enum {string} */
-            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "CITATION_DATABASE_NOT_LOADED" | "CITATION_NOT_FOUND" | "BASELINE_MISMATCH";
+            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "CITATION_DATABASE_NOT_LOADED" | "CITATION_NOT_FOUND" | "DUPLICATE_CLAIM_DESCRIPTION" | "BASELINE_MISMATCH";
             message: string;
             documentId?: string;
             expected?: components["schemas"]["DocumentRevision"];
@@ -740,6 +740,10 @@ export interface components {
             reviewId?: string;
             /** @description REVIEW_GENERATION_MISMATCH: the generation the review is actually at, so the caller can re-read from exactly there. */
             reviewGeneration?: number;
+            /** @description DUPLICATE_CLAIM_DESCRIPTION: zero-based indices of the first pair of claims whose normalized descriptions are too similar. */
+            conflictingClaimIndices?: number[];
+            /** @description DUPLICATE_CLAIM_DESCRIPTION: normalized Levenshtein similarity of the conflicting pair, where an exact match is 1.0. */
+            descriptionSimilarity?: number;
         };
         AgentErrorResponse: {
             error: components["schemas"]["AgentError"];
@@ -1074,14 +1078,14 @@ export interface components {
             };
             /** @description Client-chosen unique request key. Reuse after mutation is refused; use a new key for rebased claims. */
             clientRequestId: string;
-            /** @description Ordered claim sequence applied against the ONE baseline, sequentially and atomically: claim k applies with zero fuzz to the text claim k-1 produced, all-or-nothing, and each claim becomes its own packet. Send one entry per logical decision — that gives the reviewer separately decidable packets. */
+            /** @description Ordered claim sequence applied against the ONE baseline, sequentially and atomically: claim k applies with zero fuzz to the text claim k-1 produced, all-or-nothing, and each claim becomes its own packet. Send one entry per logical decision — that gives the reviewer separately decidable packets. Descriptions are per-edit review justifications, not a reusable batch reason; each must identify that claim's specific defect/context, change, and justification. */
             claims?: components["schemas"]["ProposalClaim"][];
             patch?: string;
             description?: string;
             /** @default true */
             focus: boolean;
         } & ({
-            /** @description Ordered claim sequence applied against the ONE baseline, sequentially and atomically: claim k applies with zero fuzz to the text claim k-1 produced, all-or-nothing, and each claim becomes its own packet. Send one entry per logical decision — that gives the reviewer separately decidable packets. */
+            /** @description Ordered claim sequence applied against the ONE baseline, sequentially and atomically: claim k applies with zero fuzz to the text claim k-1 produced, all-or-nothing, and each claim becomes its own packet. Send one entry per logical decision — that gives the reviewer separately decidable packets. Descriptions are per-edit review justifications, not a reusable batch reason; each must identify that claim's specific defect/context, change, and justification. */
             claims: components["schemas"]["ProposalClaim"][];
         } | {
             patch: string;
@@ -1481,7 +1485,7 @@ export interface operations {
                     "application/json": components["schemas"]["SubmitProposalResponse"];
                 };
             };
-            /** @description Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the document drifted from the text you built against: re-read the working content and rebuild the patch against it — a blind retry fails identically. */
+            /** @description Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the document drifted from the text you built against: re-read the working content and rebuild the patch against it — a blind retry fails identically. DUPLICATE_CLAIM_DESCRIPTION means two claim descriptions are too similar; rewrite each as a distinct per-edit diagnosis, change summary, and justification. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2065,7 +2069,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReviewSubmissionResponse"];
                 };
             };
-            /** @description Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the document drifted from the text you built against: re-read the working content and rebuild the patch against it — a blind retry fails identically. */
+            /** @description Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the document drifted from the text you built against: re-read the working content and rebuild the patch against it — a blind retry fails identically. DUPLICATE_CLAIM_DESCRIPTION means two claim descriptions are too similar; rewrite each as a distinct per-edit diagnosis, change summary, and justification. */
             400: {
                 headers: {
                     [name: string]: unknown;
