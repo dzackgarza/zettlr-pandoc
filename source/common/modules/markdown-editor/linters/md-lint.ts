@@ -19,6 +19,7 @@ import { type Point, type Position } from 'unist'
 import remarkFrontmatter from 'remark-frontmatter'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
+import remarkLatexMath from './remark-latex-math'
 import { configField } from '../util/configuration'
 
 // Rules we use
@@ -100,6 +101,7 @@ export const mdLint = linter(async view => {
     ])
     .use(remarkGfm)
     .use(remarkMath)
+    .use(remarkLatexMath)
     .use(remarkLint)
     // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-blockquote-indentation#
     .use(remarkLintBlockquoteIndentation, 2)
