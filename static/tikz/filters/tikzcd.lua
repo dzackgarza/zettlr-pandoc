@@ -140,10 +140,12 @@ local function run_pdflatex_and_convert(tex_source, tmp_prefix, hash, doc_dir, f
   local inputs_env = ""
   local styles_dir = os.getenv("FIGURE_STYLES_DIR") or (pandoc_dir .. "/styles")
   styles_dir = styles_dir:gsub("/+$", "") .. "//"
+  local figures_dir = os.getenv("FIGURES_SOURCE_DIR") or (pandoc_dir .. "/figures")
+  local figures_inputs = figures_dir:gsub("/+$", "") .. "//"
   if doc_dir and doc_dir ~= "" then
-    inputs_env = "TEXINPUTS=" .. doc_dir .. ":" .. styles_dir .. ":: "
+    inputs_env = 'TEXINPUTS="' .. doc_dir .. ':' .. styles_dir .. ':' .. figures_inputs .. '::" '
   else
-    inputs_env = "TEXINPUTS=" .. styles_dir .. ":: "
+    inputs_env = 'TEXINPUTS="' .. styles_dir .. ':' .. figures_inputs .. '::" '
   end
 
   -- Discard pdflatex's stdout+stderr: a pandoc filter's stdout is its output
@@ -192,48 +194,96 @@ local function run_pdflatex_and_convert(tex_source, tmp_prefix, hash, doc_dir, f
   return svg_path, pdf_path
 end
 
+local function try_open_file(candidate)
+  local f = io.open(candidate, "r")
+  if f then
+    f:close()
+    return candidate
+  end
+  return nil
+end
+
+local function check_path_and_extensions(base_path)
+  local p = try_open_file(base_path)
+  if p then return p end
+  if not base_path:match("%.%a+$") then
+    p = try_open_file(base_path .. ".tikz")
+    if p then return p end
+    p = try_open_file(base_path .. ".tikzcd")
+    if p then return p end
+    p = try_open_file(base_path .. ".tex")
+    if p then return p end
+  end
+  return nil
+end
+
+local function find_input_file(filename, base_dir, figures_dir)
+  -- 1. Absolute path
+  if filename:sub(1,1) == "/" or filename:match("^%a+:") then
+    return check_path_and_extensions(filename)
+  end
+
+  -- 2. Document-relative
+  if base_dir and base_dir ~= "" then
+    local p = check_path_and_extensions(base_dir .. "/" .. filename)
+    if p then return p end
+  end
+
+  -- 3. Figures directory direct match
+  if figures_dir and figures_dir ~= "" then
+    local p = check_path_and_extensions(figures_dir .. "/" .. filename)
+    if p then return p end
+
+    p = check_path_and_extensions(figures_dir .. "/tikz/" .. filename)
+    if p then return p end
+
+    p = check_path_and_extensions(figures_dir .. "/tikzcd/" .. filename)
+    if p then return p end
+
+    -- 4. Search subdirectories of figures_dir
+    local sub_filename = filename:gsub("^tikz/", ""):gsub("^tikzcd/", "")
+    for _, parent_name in ipairs({"tikz", "tikzcd", ""}) do
+      local search_root = parent_name ~= "" and (figures_dir .. "/" .. parent_name) or figures_dir
+      local ok, entries = pcall(pandoc.system.list_directory, search_root)
+      if ok and entries then
+        for _, entry in ipairs(entries) do
+          local candidate = search_root .. "/" .. entry .. "/" .. sub_filename
+          p = check_path_and_extensions(candidate)
+          if p then return p end
+        end
+      end
+    end
+  end
+
+  return nil
+end
+
 local function resolve_inputs(text, base_dir, depth)
   if not depth then depth = 1 end
   if depth > 10 then
-    log("resolve_inputs: max depth exceeded, potential circular input")
-    return text
+    io.stderr:write("[tikzcd-figure-error] 1|Max input depth exceeded (potential circular input)|" .. text:sub(1, 80) .. "\n")
+    error("tikzcd.lua: max depth exceeded, potential circular input")
   end
 
-  local count
-  repeat
-    count = 0
-    text = text:gsub("\\input%s-{(.-)}", function(filename)
-      count = count + 1
-      local full_path = filename
-      local is_absolute = filename:sub(1,1) == "/" or filename:match("^%a+:")
-      if not is_absolute then
-        full_path = base_dir .. "/" .. filename
-      end
+  local figures_dir = os.getenv("FIGURES_SOURCE_DIR") or (pandoc_dir .. "/figures")
 
-      local file = io.open(full_path, "r")
-      if not file then
-        -- If it doesn't end with .tikz or .tex, try appending extensions
-        if not filename:match("%.%a+$") then
-          file = io.open(full_path .. ".tikz", "r")
-          if not file then
-            file = io.open(full_path .. ".tex", "r")
-          end
-        end
-      end
+  return text:gsub("\\input%s-{(.-)}", function(filename)
+    local full_path = find_input_file(filename, base_dir, figures_dir)
+    if not full_path then
+      io.stderr:write("[tikzcd-figure-error] 1|Input file not found: " .. filename .. "|\\input{" .. filename .. "}\n")
+      error("tikzcd.lua: input file not found: '" .. filename .. "'")
+    end
 
-      if file then
-        local content = file:read("*a")
-        file:close()
-        -- Recursively resolve inputs inside the loaded content
-        return resolve_inputs(content, base_dir, depth + 1)
-      else
-        log("resolve_inputs: WARNING: could not open input file " .. filename)
-        return "\\input{" .. filename .. "}"
-      end
-    end)
-  until count == 0
+    local file = io.open(full_path, "r")
+    if not file then
+      io.stderr:write("[tikzcd-figure-error] 1|Cannot open input file: " .. full_path .. "|\\input{" .. filename .. "}\n")
+      error("tikzcd.lua: could not open input file: '" .. full_path .. "'")
+    end
 
-  return text
+    local content = file:read("*a")
+    file:close()
+    return resolve_inputs(content, base_dir, depth + 1)
+  end)
 end
 
 -- Compile a tikz snippet (e.g. \begin{tikzcd}...) by wrapping it in the

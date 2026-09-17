@@ -581,6 +581,7 @@ export async function renderTikz (request: TikzRenderRequest, config: TikzRender
     // even when the filter itself comes from an explicitly configured or
     // bundled data directory.
     FIGURE_STYLES_DIR: path.join(path.dirname(path.dirname(config.templatePath)), 'styles'),
+    FIGURES_SOURCE_DIR: env.FIGURES_SOURCE_DIR ?? path.join(path.dirname(path.dirname(config.templatePath)), 'figures'),
     SVG_DIR: config.cacheDir,
     FIGURES_DIR: config.cacheDir,
     PANDOC_DOC_PATH: request.docPath,
@@ -592,10 +593,23 @@ export async function renderTikz (request: TikzRenderRequest, config: TikzRender
     const proc = spawn('pandoc', [ '-f', 'markdown', '-t', 'html', '--lua-filter', filterPath ], { env: renderEnv })
     let out = ''
     let err = ''
+    const timeoutMs = 30000
+    const timer = setTimeout(() => {
+      proc.kill('SIGTERM')
+      setTimeout(() => {
+        if (!proc.killed) {
+          proc.kill('SIGKILL')
+        }
+      }, 2000).unref()
+    }, timeoutMs)
     proc.stdout.on('data', chunk => { out += String(chunk) })
     proc.stderr.on('data', chunk => { err += String(chunk) })
-    proc.once('error', reject)
+    proc.once('error', (spawnError: Error) => {
+      clearTimeout(timer)
+      reject(spawnError)
+    })
     proc.once('close', (exitCode, signal) => {
+      clearTimeout(timer)
       if (signal !== null) {
         resolve({ ended: 'signal', signal, stdout: out, stderr: err })
         return

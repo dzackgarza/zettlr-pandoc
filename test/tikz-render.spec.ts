@@ -507,6 +507,55 @@ describe('TikZ render service (issue #14)', function () {
     }
   })
 
+  it('fails loud and immediately when a referenced \\input file is missing', async function () {
+    this.timeout(10000)
+    const result = await renderTikz(
+      { source: '\\input{nonexistent-missing-file.tikz}', kind: 'raw', language: 'tikz', docPath: NO_DOC_PATH },
+      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env }
+    )
+    if (!toolchainPresent) {
+      assert.ok(!result.ok && result.kind === 'missing-tools')
+      return
+    }
+    assert.strictEqual(result.ok, false, 'missing input file must fail')
+    if (!result.ok) {
+      assert.strictEqual(result.kind, 'compile-error', `expected compile-error, got ${JSON.stringify(result)}`)
+      if (result.kind === 'compile-error') {
+        assert.ok(result.errors.length > 0, 'surfaces the missing input file diagnostic')
+        assert.ok(result.errors[0].message.includes('Input file not found'), `message cites missing file: ${result.errors[0].message}`)
+        assert.strictEqual(result.errors[0].line, 1)
+      }
+    }
+  })
+
+  it('resolves a standalone \\input against the central figures directory', async function () {
+    this.timeout(180000)
+    const centralFiguresDir = await mkdtemp(path.join(tmpdir(), 'zettlr-central-figures-'))
+    const stamp = randomBytes(4).toString('hex')
+    const subDir = path.join(centralFiguresDir, 'tikz', 'subfolder')
+    await mkdir(subDir, { recursive: true })
+    await writeFile(path.join(subDir, 'shared-diagram.tikz'), `\\begin{tikzpicture}\n\\draw (0,0) -- (2,2) node[midway] {${stamp}};\n\\end{tikzpicture}\n`)
+    try {
+      const res = await renderTikz(
+        { source: '\\input{tikz/shared-diagram.tikz}', kind: 'raw', language: 'tikz', docPath: NO_DOC_PATH },
+        {
+          tikzAssetDir: TIKZ_ASSET_DIR,
+          templatePath: TIKZ_TEMPLATE,
+          cacheDir,
+          env: { ...process.env, FIGURES_SOURCE_DIR: centralFiguresDir }
+        }
+      )
+      if (!toolchainPresent) {
+        assert.ok(!res.ok && res.kind === 'missing-tools')
+        return
+      }
+      assert.ok(res.ok, `central figures \\input renders, got ${JSON.stringify(res).slice(0, 400)}`)
+      assert.ok(res.svg.includes('<svg'), 'result contains SVG markup')
+    } finally {
+      await rm(centralFiguresDir, { recursive: true, force: true })
+    }
+  })
+
   it('keeps identical source in different document roots in distinct filter-cache entries', async function () {
 
     this.timeout(180000)
