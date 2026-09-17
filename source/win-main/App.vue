@@ -20,6 +20,10 @@
       direction="horizontal"
       class="main-panes"
       :class="{ animating: panesAnimating }"
+      :style="{
+        '--annotation-panel-width': mountWidths.annotationPanel + 'px',
+        '--navigation-sidebar-width': mountWidths.navigationSidebar + 'px'
+      }"
     >
       <SplitterPanel
         ref="navigationSidebarPanel"
@@ -1248,9 +1252,42 @@ body {
 
   // A pane slides open and shut. `flex-grow` is what the splitter writes, so
   // it is what eases; the panes beside it take up the room as it goes.
+  // During animation, the inner sidebar containers are held at target width and clipped
+  // by the collapsing outer pane so cards are not repeatedly reflowed across frames.
   .main-panes.animating {
-    .main-pane { transition: flex-grow 180ms ease; }
+    .main-pane {
+      transition: flex-grow 180ms ease;
+      overflow: hidden !important;
+    }
     .main-pane-handle { transition: width 180ms ease; }
+
+    [data-pane="annotation-panel"] {
+      position: relative;
+
+      > .annotations-tab {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: var(--annotation-panel-width, 320px);
+        min-width: var(--annotation-panel-width, 320px);
+        pointer-events: none;
+      }
+    }
+
+    [data-pane="navigation-sidebar"] {
+      position: relative;
+
+      > #navigation-sidebar {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: var(--navigation-sidebar-width, 240px);
+        min-width: var(--navigation-sidebar-width, 240px);
+        pointer-events: none;
+      }
+    }
   }
 
   // A hairline with a wider hit area; the accent while hovered or dragged.

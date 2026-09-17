@@ -88,6 +88,11 @@ test-reference-ui: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/reference-provider-shell.spec.ts" "test/reference-search-overlay.spec.ts" "test/reference-navigation.spec.ts" "test/reference-create-label.spec.ts" "test/reference-rename-preview.spec.ts" "test/reference-error-surface.spec.ts"
 
+# Run the annotations panel animation performance and layout isolation spec.
+test-annotations-animation: sync-dependencies
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/annotations-panel-animation.spec.ts"
+
 # Cross-repository proof: ordered Project inputs through the companion
 # pandoc-config compile-pandoc-project recipe (issue #1). Hard-bails when the
 # companion checkout is missing; run explicitly, not part of the commit gate

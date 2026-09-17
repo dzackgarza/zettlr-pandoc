@@ -89,6 +89,8 @@ const relativeTime = computed(() => formatRelative(firstMessage.value.createdAt,
 <style lang="less">
 body {
   .annotation-list-item {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 80px;
     display: flex;
     flex-direction: column;
     gap: 4px;
