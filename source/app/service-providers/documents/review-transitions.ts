@@ -449,13 +449,27 @@ export function validateAndParsePatch(
   if (patchText.includes("GIT binary patch")) {
     throw new Error("review-diff does not support binary patches");
   }
-  const patches = parsePatch(patchText);
+  let patches: StructuredPatch[];
+  try {
+    patches = parsePatch(patchText);
+  } catch (err) {
+    throw new Error(
+      `Unified diff syntax error: ${err instanceof Error ? err.message : String(err)}. ` +
+      `Check hunk header line counts (@@ -old,count +new,count @@) and ensure all context lines begin with a space.`,
+    );
+  }
+  if (patches.length === 0) {
+    throw new Error(
+      "review-diff could not parse patch: no file diff found. " +
+      "Ensure the patch begins with '--- document\n+++ document' and contains valid @@ hunk headers.",
+    );
+  }
   if (patches.length !== 1) {
-    throw new Error("review-diff requires exactly one file patch");
+    throw new Error(`review-diff requires exactly one file patch, but found ${patches.length}`);
   }
   const patch = patches[0];
   if (patch.hunks.length === 0) {
-    throw new Error("review-diff patch does not change the target document");
+    throw new Error("review-diff patch does not change the target document (no hunks found)");
   }
   if (patch.isBinary === true) {
     throw new Error("review-diff does not support binary patches");
@@ -483,7 +497,8 @@ export function validateAndParsePatch(
     !isAcceptableHeader(patch.newFileName, documentPath)
   ) {
     throw new Error(
-      "review-diff patch headers do not match the target document",
+      `review-diff patch headers ('--- ${patch.oldFileName ?? "missing"}', '+++ ${patch.newFileName ?? "missing"}') ` +
+      `do not match the target document. Use '--- document\n+++ document' or the target path '${documentPath}'.`,
     );
   }
   return patch;
@@ -533,6 +548,112 @@ interface AppliedClaimStep {
 }
 
 /**
+ * Explain why applyPatch failed with zero fuzz on the target document.
+ * Identifies the failing hunk, line number, and mismatch type (e.g.
+ * indentation, trailing whitespace, or drifted line numbers).
+ */
+export function diagnoseHunkFailure(
+  text: string,
+  patch: StructuredPatch,
+): string {
+  const doc = text.replace(/\r\n/g, "\n");
+  const docLines = doc.split("\n");
+  const currentLines = [...docLines];
+  let lineOffset = 0;
+
+  for (let hIdx = 0; hIdx < patch.hunks.length; hIdx++) {
+    const hunk = patch.hunks[hIdx];
+    const hunkNum = hIdx + 1;
+    const expectedStartLine = hunk.oldStart + lineOffset;
+    const targetIdx = expectedStartLine - 1;
+
+    const requiredDocLines: { content: string; op: "-" | " "; hunkLineIndex: number }[] = [];
+    const replacementLines: string[] = [];
+
+    for (let lIdx = 0; lIdx < hunk.lines.length; lIdx++) {
+      const rawLine = hunk.lines[lIdx];
+      if (rawLine.startsWith("\\")) {
+        continue;
+      }
+      const op = rawLine.length > 0 ? rawLine[0] : " ";
+      const content = rawLine.length > 0 ? rawLine.slice(1) : "";
+      if (op === "-" || op === " ") {
+        requiredDocLines.push({ content, op: op as "-" | " ", hunkLineIndex: lIdx + 1 });
+      }
+      if (op === "+" || op === " ") {
+        replacementLines.push(content);
+      }
+    }
+
+    if (requiredDocLines.length === 0) {
+      if (targetIdx < 0 || targetIdx > currentLines.length) {
+        return `Hunk ${hunkNum} targets insertion at line ${hunk.oldStart}, but document has ${currentLines.length} lines.`;
+      }
+      currentLines.splice(targetIdx, 0, ...replacementLines);
+      lineOffset += hunk.newLines;
+      continue;
+    }
+
+    if (targetIdx < 0 || targetIdx >= currentLines.length) {
+      return `Hunk ${hunkNum} targets line ${hunk.oldStart} (expected at line ${expectedStartLine}), but document has ${currentLines.length} lines.`;
+    }
+
+    let mismatchIndex = -1;
+    for (let rIdx = 0; rIdx < requiredDocLines.length; rIdx++) {
+      const curDocIdx = targetIdx + rIdx;
+      if (curDocIdx >= currentLines.length) {
+        return `Hunk ${hunkNum} expects ${requiredDocLines.length} lines starting at line ${expectedStartLine}, but document ends at line ${currentLines.length}.`;
+      }
+      if (currentLines[curDocIdx] !== requiredDocLines[rIdx].content) {
+        mismatchIndex = rIdx;
+        break;
+      }
+    }
+
+    if (mismatchIndex !== -1) {
+      const failingLineNum = targetIdx + mismatchIndex + 1;
+      const expected = requiredDocLines[mismatchIndex].content;
+      const actual = currentLines[targetIdx + mismatchIndex];
+      const opName = requiredDocLines[mismatchIndex].op === "-" ? "deletion" : "context";
+
+      let reason = "";
+      if (actual.trimEnd() === expected.trimEnd()) {
+        reason = `trailing whitespace mismatch (document line has ${actual.length} chars, patch expected ${expected.length} chars)`;
+      } else if (actual.trimStart() === expected.trimStart()) {
+        reason = `indentation mismatch (document line has ${actual.length - actual.trimStart().length} leading spaces, patch expected ${expected.length - expected.trimStart().length})`;
+      } else if (actual.replace(/\s+/g, " ").trim() === expected.replace(/\s+/g, " ").trim()) {
+        reason = "internal whitespace differences";
+      } else {
+        reason = `content mismatch (expected: ${JSON.stringify(expected)}, found: ${JSON.stringify(actual)})`;
+      }
+
+      let hint = `Hunk ${hunkNum} ${opName} line failed at document line ${failingLineNum}: ${reason}.`;
+
+      const firstExpected = requiredDocLines[0].content;
+      const foundElsewhere: number[] = [];
+      for (let i = 0; i < currentLines.length; i++) {
+        if (currentLines[i] === firstExpected) {
+          foundElsewhere.push(i + 1);
+        }
+      }
+      const movedElsewhere = foundElsewhere.filter((line) => line !== expectedStartLine);
+      if (movedElsewhere.length > 0) {
+        hint += ` Matching context was found at line(s) ${movedElsewhere.join(", ")} instead of line ${expectedStartLine}; re-read document content and update hunk line numbers.`;
+      } else {
+        hint += ` Re-read document content to ensure context lines match the current text exactly.`;
+      }
+
+      return hint;
+    }
+
+    currentLines.splice(targetIdx, requiredDocLines.length, ...replacementLines);
+    lineOffset += hunk.newLines - hunk.oldLines;
+  }
+
+  return "Context lines do not match document text with zero fuzz. Ensure all context lines match current document text exactly.";
+}
+
+/**
  * Validate and apply an ordered claim sequence against startText.
  * All-or-nothing: the first claim that fails invalidates the whole sequence.
  * Claim k applies with zero fuzz to the text claim k-1 produced and must
@@ -565,12 +686,14 @@ export function applyClaimSequence(
       fuzzFactor: 0,
     });
     if (applied === false) {
+      const detail = diagnoseHunkFailure(text, patch);
       return {
         ok: false,
         code: "PATCH_NOT_APPLICABLE",
         message:
           `${label} does not apply with zero fuzz to ` +
-          (i === 0 ? "the current working text." : `the text claim ${i} produced.`),
+          (i === 0 ? "the current working text." : `the text claim ${i} produced.`) +
+          ` ${detail}`,
       };
     }
     const textAfter = normalizeText(applied);

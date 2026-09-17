@@ -1492,6 +1492,7 @@ components:
       properties:
         options:
           type: object
+          properties: {}
           additionalProperties: true
           description: CSL bibliography formatting options.
         entries:

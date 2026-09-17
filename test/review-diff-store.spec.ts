@@ -120,6 +120,61 @@ describe("pure review transitions", function () {
       requestFingerprint: sha256Text("refused"),
     });
     assertTransitionError(result, "PATCH_NOT_APPLICABLE");
+    assert.match((result as ReviewTransitionError).message, /Hunk 1/);
+  });
+
+  it("provides targeted hunk failure diagnostics for whitespace and indentation mismatches", function () {
+    const baseline = "- item 1\n  - item 2\n  - item 3\n";
+    const indentedPatch =
+      "--- document\n+++ document\n@@ -1,3 +1,3 @@\n - item 1\n    - item 2\n - item 3\n";
+    const result = prepareProposalSubmission({
+      review: undefined,
+      documentId: DOCUMENT_ID,
+      documentPath: DOCUMENT_PATH,
+      workingText: baseline,
+      diskSha256: sha256Text(baseline),
+      claims: [{ patch: indentedPatch, description: "indent mismatch" }],
+      clientRequestId: "test-indent",
+      requestFingerprint: sha256Text("test-indent"),
+    });
+    assertTransitionError(result, "PATCH_NOT_APPLICABLE");
+    const msg = (result as ReviewTransitionError).message;
+    assert.match(msg, /indentation mismatch/);
+    assert.match(msg, /document line 2/);
+  });
+
+  it("provides targeted patch invalid diagnostics for bad headers and diff syntax errors", function () {
+    const baseline = "alpha\nbeta\n";
+    const badHeader =
+      "--- a/wrong.md\n+++ b/wrong.md\n@@ -1,2 +1,2 @@\n alpha\n-beta\n+BETA\n";
+    const resultHeader = prepareProposalSubmission({
+      review: undefined,
+      documentId: DOCUMENT_ID,
+      documentPath: DOCUMENT_PATH,
+      workingText: baseline,
+      diskSha256: sha256Text(baseline),
+      claims: [{ patch: badHeader, description: "bad header" }],
+      clientRequestId: "test-header",
+      requestFingerprint: sha256Text("test-header"),
+    });
+    assertTransitionError(resultHeader, "PATCH_INVALID");
+    assert.match((resultHeader as ReviewTransitionError).message, /headers/);
+    assert.match((resultHeader as ReviewTransitionError).message, /wrong\.md/);
+
+    const badSyntax =
+      "--- document\n+++ document\n@@ -1,5 +1,5 @@\n alpha\n-beta\n+BETA\n";
+    const resultSyntax = prepareProposalSubmission({
+      review: undefined,
+      documentId: DOCUMENT_ID,
+      documentPath: DOCUMENT_PATH,
+      workingText: baseline,
+      diskSha256: sha256Text(baseline),
+      claims: [{ patch: badSyntax, description: "bad syntax" }],
+      clientRequestId: "test-syntax",
+      requestFingerprint: sha256Text("test-syntax"),
+    });
+    assertTransitionError(resultSyntax, "PATCH_INVALID");
+    assert.match((resultSyntax as ReviewTransitionError).message, /syntax error/i);
   });
 
   it("decides chunks, carries comments, and clears unresolved state", function () {
