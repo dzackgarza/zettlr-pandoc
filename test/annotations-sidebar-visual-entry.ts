@@ -27,6 +27,8 @@ import {
 } from '@common/modules/markdown-editor/plugins/text-annotations'
 import loadIcons from 'source/common/modules/window-register/load-icons'
 import AnnotationsTab from 'source/win-main/sidebar/AnnotationsTab.vue'
+import ActivityBar from 'source/win-main/sidebar/ActivityBar.vue'
+import { PANEL_VIEW_ID, PANEL_VIEWS } from 'source/win-main/sidebar/sidebar-views'
 import { useDocumentCollaborationStore, useDocumentTreeStore } from 'source/pinia'
 import type { AnnotationSet, TextAnnotation } from '@dts/common/annotation-domain'
 import {
@@ -141,6 +143,11 @@ declare global {
       /** Every thread message's relative time, in thread order. */
       messageTimes: string[]
     }
+    annotationsSceneActivityBadgeDiagnostics: () => {
+      text: string
+      ariaLabel: string|null
+      unresolvedCount: string|undefined
+    }
   }
 }
 
@@ -233,10 +240,42 @@ async function mount (): Promise<void> {
 
   app.use(pinia)
 
+  // Mount the production activity-bar component offscreen so the panel's
+  // structural screenshots remain unchanged while this same real-SFC harness
+  // proves the unresolved-work indicator. App.vue's count derivation is
+  // independently covered by the pure model spec.
+  const activityHost = document.createElement('div')
+  activityHost.style.position = 'fixed'
+  activityHost.style.left = '-10000px'
+  activityHost.style.top = '0'
+  document.body.appendChild(activityHost)
+  const activityApp = createApp({
+    render: () => h(ActivityBar, {
+      barId: 'scene-panel-activity-bar',
+      side: 'right',
+      items: PANEL_VIEWS,
+      pressed: '',
+      label: 'Panel views',
+      badges: { [PANEL_VIEW_ID]: 4 },
+      onPress: () => {}
+    })
+  })
+  activityApp.mount(activityHost)
+
   const documentTreeStore = useDocumentTreeStore()
   documentTreeStore.lastLeafActiveFile = { path: SCENE_DOCUMENT_PATH, pinned: false }
 
   const collaborationStore = useDocumentCollaborationStore()
+
+  window.annotationsSceneActivityBadgeDiagnostics = () => {
+    const button = activityHost.querySelector<HTMLElement>(`[data-activity="${PANEL_VIEW_ID}"]`)
+    const badge = activityHost.querySelector<HTMLElement>('.activity-bar-unresolved-badge')
+    return {
+      text: badge?.textContent?.trim() ?? '',
+      ariaLabel: button?.getAttribute('aria-label') ?? null,
+      unresolvedCount: button?.dataset.unresolvedCount
+    }
+  }
 
   const host = document.querySelector<HTMLElement>('#app')
   if (host === null) {

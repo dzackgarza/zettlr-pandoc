@@ -69,6 +69,7 @@ import {
   partitionByResolution,
   suggestionIdsForPacketIds,
   truncatePreview,
+  unresolvedCollaborationCount,
 } from "source/win-main/sidebar/annotations/annotation-panel-model";
 import {
   buildSceneReview,
@@ -119,6 +120,22 @@ describe("annotation-panel-model", function () {
     assert.equal(byId.get(SCENE_ANNOTATION_THREAD_ID), 1);
     assert.equal(byId.get(SCENE_ANNOTATION_PROPOSAL_ID), 2);
     assert.equal(byId.get(SCENE_ANNOTATION_RESOLVED_ID), 3);
+  });
+
+  it("counts every unresolved annotation and review suggestion for the activity-bar indicator", function () {
+    const annotationOnly = buildSceneSession();
+    assert.equal(
+      unresolvedCollaborationCount(annotationOnly),
+      2,
+      "the resolved annotation is not unresolved work",
+    );
+
+    const withReview = buildSceneSessionWithReview();
+    assert.equal(
+      unresolvedCollaborationCount(withReview),
+      4,
+      "two open annotations plus two outstanding review suggestions are four owner decisions",
+    );
   });
 
   it("reports the source line a target still occupies, and reports orphaned targets as having none", function () {

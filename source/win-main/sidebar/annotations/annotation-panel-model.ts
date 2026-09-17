@@ -19,6 +19,7 @@
 
 import { Text } from '@codemirror/state'
 import type { AnnotationAnchor, TextAnnotation } from '@dts/common/annotation-domain'
+import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
 
 export interface AnnotationCardView {
@@ -177,6 +178,16 @@ export function partitionByResolution (cards: AnnotationCardView[]): { open: Ann
 /** S10: the header count and the tab badge both count OPEN annotations only. */
 export function openAnnotationCount (annotations: TextAnnotation[]): number {
   return annotations.filter(annotation => annotation.state === 'open').length
+}
+
+/**
+ * Everything on the collaboration panel for which the active document still
+ * asks for an owner decision: open annotations plus outstanding review
+ * suggestions. This is also the activity-bar badge count.
+ */
+export function unresolvedCollaborationCount (session: DocumentCollaborationSession): number {
+  return openAnnotationCount(session.annotations.items) +
+    (session.review === undefined ? 0 : session.review.suggestions.length)
 }
 
 export function filterCards (cards: AnnotationCardView[], query: string): AnnotationCardView[] {

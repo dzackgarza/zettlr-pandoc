@@ -71,6 +71,17 @@ const acceptChunk = async index => await page.evaluate(index => window.annotatio
 
 await openSceneDocument(false)
 
+const activityBadge = await page.evaluate(() => window.annotationsSceneActivityBadgeDiagnostics())
+assert.deepStrictEqual(
+  activityBadge,
+  {
+    text: '4',
+    ariaLabel: 'Annotations, 4 unresolved',
+    unresolvedCount: '4'
+  },
+  'the right activity-bar icon must visibly and accessibly report unresolved collaboration work'
+)
+
 // Scene 03: the compact list above the detail inspector, a card's thread
 // selected — the wide (list + detail) arrangement mockup 4 shows.
 await select(SCENE_THREAD_ID)

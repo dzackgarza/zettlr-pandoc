@@ -116,6 +116,7 @@
       side="right"
       :items="PANEL_VIEWS"
       :pressed="sidebarVisible ? PANEL_VIEW_ID : ''"
+      :badges="panelActivityBadges"
       :label="trans('Panel views')"
       @press="configStore.setConfigValue('window.sidebarVisible', $event === PANEL_VIEW_ID)"
     />
@@ -207,6 +208,7 @@ import type { CustomExportIPCAPI, ExportIPCAPI } from 'source/app/service-provid
 import CommandLauncher from './launcher/CommandLauncher.vue'
 import type { LauncherView } from './launcher/launcher-state'
 import { PANEL_VIEW_ID, PANEL_VIEWS, SIDEBAR_VIEWS, type RevealTarget } from './sidebar/sidebar-views'
+import { unresolvedCollaborationCount } from './sidebar/annotations/annotation-panel-model'
 import { isSidebarViewId } from '@dts/common/sidebar-views'
 import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
 import type {
@@ -678,6 +680,29 @@ onUnmounted(() => {
 })
 
 const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
+
+/**
+ * The right-edge collaboration icon is also the document's unresolved-work
+ * indicator. Open annotations and outstanding review suggestions are the two
+ * independently decidable things the panel can still ask the owner to act on;
+ * resolved annotations and already-decided suggestions are absent from this
+ * count by construction.
+ */
+const panelUnresolvedCount = computed(() => {
+  const file = activeFile.value
+  if (file === undefined) {
+    return 0
+  }
+  const session = collaborationStore.sessionsByDocumentPath[file.path]
+  if (session === undefined) {
+    return 0
+  }
+  return unresolvedCollaborationCount(session)
+})
+
+const panelActivityBadges = computed<Record<string, number>>(() => ({
+  [PANEL_VIEW_ID]: panelUnresolvedCount.value
+}))
 
 /** The editor pane became the user's filesystem context. */
 function rememberEditorDesktopFocus (): void {
