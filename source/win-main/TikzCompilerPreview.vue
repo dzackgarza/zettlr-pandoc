@@ -1,25 +1,25 @@
 <template>
   <div class="tikz-compiler-preview">
     <div
-      class="tikz-compiler-preview-canvas"
+      class="tikz-compiler-preview-canvas tikz-live-preview-canvas"
       :class="{ stale: state.stale || state.failure !== null }"
     >
       <TikzFigureViewer
         v-if="state.lastGood !== null"
         ref="figureViewer"
-        class="tikz-compiler-preview-figure"
+        class="tikz-compiler-preview-figure tikz-live-preview-figure"
         :svg-path="state.lastGood.result.svgPath"
         :show-fullscreen-button="false"
       />
       <div
         v-else-if="state.pending"
-        class="tikz-compiler-preview-placeholder"
+        class="tikz-compiler-preview-placeholder tikz-live-preview-placeholder"
       >
         Rendering TikZ…
       </div>
       <div
         v-else
-        class="tikz-compiler-preview-placeholder"
+        class="tikz-compiler-preview-placeholder tikz-live-preview-placeholder"
       >
         No successful render yet.
       </div>
@@ -27,7 +27,7 @@
 
     <div
       v-if="state.failure !== null"
-      class="tikz-compiler-preview-error"
+      class="tikz-compiler-preview-error tikz-live-preview-error"
       role="status"
     >
       <div class="tikz-compiler-preview-error-summary">
@@ -255,4 +255,3 @@ onBeforeUnmount(() => {
   background: rgba(192, 57, 43, 0.08);
 }
 </style>
-

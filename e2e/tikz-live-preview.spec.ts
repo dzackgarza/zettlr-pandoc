@@ -32,8 +32,13 @@ const DOCUMENT = String.raw`# TikZ live integration
 A \arrow[r, "f"] & B
 \end{tikzcd}
 
-\begin{tikzpicture}
-\draw (0,0) -- (1,1);
+\begin{tikzpicture}[
+  box/.style={rectangle, draw, minimum width=2.5cm, minimum height=0.8cm},
+  dot/.style={circle, draw, minimum size=0.8cm}
+]
+\node[dot] (eta) at (0,0) {$\eta$};
+\node[box] (A1) at (4,1) {$A_1$};
+\draw[->] (eta.east) -- (A1.west);
 \end{tikzpicture}
 `
 
@@ -91,8 +96,10 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     await preview.waitFor({ state: 'visible', timeout: 20_000 })
     const tikzMode = preview.getByRole('button', { name: 'TikZ', exact: true })
     const quiverMode = preview.getByRole('button', { name: 'Quiver', exact: true })
+    const visualMode = preview.getByRole('button', { name: 'Visual', exact: true })
     assert.strictEqual(await quiverMode.getAttribute('aria-pressed'), 'true', 'tikzcd defaults the unified RHS preview to Quiver')
     assert.strictEqual(await tikzMode.getAttribute('aria-pressed'), 'false')
+    assert.strictEqual(await visualMode.isDisabled(), true, 'ordinary visual TikZ editing is never offered for tikzcd')
     const quiverFrame = page.frameLocator('.tikz-quiver-frame')
     await quiverFrame.locator('.vertex').first().waitFor({ state: 'visible', timeout: 20_000 })
     assert.ok(await quiverFrame.locator('.vertex').count() >= 2, 'the RHS Quiver preview imports the authored tikzcd diagram')
@@ -495,8 +502,9 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     assert.strictEqual(await preview.locator('.tikz-live-preview-error').count(), 0, 'Quiver-authored semantic macro compiles through the central TeX template')
     assert.ok((await page.locator('.cm-content').innerText()).includes('\\begin{tikzcd}'), 'mode switching never replaces the ordinary source editor')
 
-    // Ordinary tikzpicture uses the identical RHS shell, but Quiver is disabled
-    // and the default/only renderer is TikZ.
+    // Ordinary tikzpicture uses the identical RHS shell. It still defaults to
+    // the compiler-backed preview, while Quiver is unavailable and the visual
+    // source editor is available as a third registered provider.
     await page.evaluate(`(() => {
       const view = document.querySelector('.cm-content')?.cmTile?.root?.view
       if (!view) throw new Error('CodeMirror view disappeared')
@@ -511,10 +519,79 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     await page.waitForFunction(() => document.querySelector('.tikz-live-preview')?.getAttribute('data-tikz-language') === 'tikz', undefined, { timeout: 20_000 })
     const ordinaryTikz = preview.getByRole('button', { name: 'TikZ', exact: true })
     const ordinaryQuiver = preview.getByRole('button', { name: 'Quiver', exact: true })
+    const ordinaryVisual = preview.getByRole('button', { name: 'Visual', exact: true })
     assert.strictEqual(await ordinaryTikz.getAttribute('aria-pressed'), 'true', 'tikzpicture defaults to TikZ preview')
     assert.strictEqual(await ordinaryQuiver.isDisabled(), true, 'Quiver toggle is disabled for non-tikzcd source')
+    assert.strictEqual(await ordinaryVisual.isEnabled(), true, 'the visual editor is enabled for an authored tikzpicture')
+
+    await ordinaryVisual.click()
+    const visualCanvas = preview.locator('.tikz-visual-viewport')
+    await visualCanvas.waitFor({ state: 'visible', timeout: 20_000 })
+    assert.strictEqual(await preview.locator('.tikz-visual-node').count(), 2, 'the visual provider projects both authored nodes')
+    assert.strictEqual(await preview.locator('.tikz-visual-arrow').count(), 1, 'the visual provider projects the named-node arrow')
+    assert.strictEqual(await preview.locator('.tikz-quiver-frame').count(), 0, 'the ordinary TikZ visual provider is not a Quiver iframe')
+    assert.match(
+      await preview.locator('.tikz-live-preview-status').innerText(),
+      /Visual edits synced/,
+      'the provider reports source synchronization through the shared shell'
+    )
+
+    // Edit a real node through the canvas inspector and require the same
+    // CodeMirror buffer to become the source of truth immediately.
+    await preview.locator('.tikz-visual-node[title^="eta ·"]').dblclick()
+    const labelEditor = preview.locator('.tikz-visual-inspector input')
+    await labelEditor.waitFor({ state: 'visible', timeout: 10_000 })
+    await labelEditor.fill('$\\theta$')
+    await labelEditor.press('Enter')
+    await page.waitForFunction(() => {
+      const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view
+      return view?.state.doc.toString().includes('\\node[dot] (eta) at (0,0) {$\\theta$};') === true
+    }, undefined, { timeout: 20_000 })
+    assert.strictEqual(
+      await preview.locator('.tikz-visual-node[title^="eta ·"]').count(),
+      1,
+      'the edited canvas stays on the same source-backed node'
+    )
+
+    // The creation tools produce source, rather than maintaining a parallel
+    // canvas-only model. Add a rectangle using the existing box style, then
+    // connect it from A1 and require both statements in CodeMirror.
+    await preview.locator('button[title="Add rectangle node"]').click()
+    await preview.locator('.tikz-visual-name-input').fill('B2')
+    await preview.locator('.tikz-visual-label-field input').fill('$B_2$')
+    const canvasBox = await visualCanvas.boundingBox()
+    assert.ok(canvasBox !== null && canvasBox.width > 160 && canvasBox.height > 160, 'visual canvas must expose room for placement')
+    await visualCanvas.click({ position: { x: 55, y: 55 } })
+    await page.waitForFunction(() => {
+      const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view
+      return /\\node\[box\] \(B2\) at \([^)]+\) \{\$B_2\$\};/u.test(view?.state.doc.toString() ?? '')
+    }, undefined, { timeout: 20_000 })
+    await preview.locator('.tikz-visual-node[title^="B2 ·"]').waitFor({ state: 'visible', timeout: 10_000 })
+
+    await preview.locator('button[title="Connect two nodes with a directed arrow"]').click()
+    await preview.locator('.tikz-visual-node[title^="A1 ·"]').click()
+    await preview.locator('.tikz-visual-node[title^="B2 ·"]').click()
+    await page.waitForFunction(() => {
+      const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view
+      return (view?.state.doc.toString() ?? '')
+        .split('\n')
+        .some((line: string) => line.startsWith('\\draw[->] (A1.') && line.includes('(B2.'))
+    }, undefined, { timeout: 20_000 })
+    assert.strictEqual(await preview.locator('.tikz-visual-arrow').count(), 2, 'the created arrow immediately joins the visual source graph')
+
+    // Wheel zoom changes the infinite grid itself rather than opening a second
+    // image/lightbox surface.
+    const gridBefore = await visualCanvas.evaluate(element => getComputedStyle(element).getPropertyValue('--tikz-grid-major'))
+    await visualCanvas.hover()
+    await page.mouse.wheel(0, -240)
+    await page.waitForTimeout(80)
+    const gridAfter = await visualCanvas.evaluate(element => getComputedStyle(element).getPropertyValue('--tikz-grid-major'))
+    assert.notStrictEqual(gridAfter, gridBefore, 'wheel zoom changes the visual canvas/grid transform')
+    assert.strictEqual(await page.locator('.zettlr-tikz-viewerjs.viewer-fixed').count(), 0, 'visual editing has no Viewer.js modal path')
+
     await preview.locator('.tikz-live-preview-expand').click()
     await page.waitForFunction(() => document.querySelector('.tikz-live-preview')?.classList.contains('fullscreen') === true)
+    assert.strictEqual(await preview.locator('.tikz-visual-viewport').count(), 1, 'fullscreen promotion preserves the visual provider instance')
     await page.keyboard.press('Escape')
     await page.waitForFunction(() => document.querySelector('.tikz-live-preview')?.classList.contains('fullscreen') !== true)
 
