@@ -142,11 +142,11 @@ describe('Annotations panel animation performance and layout isolation', functio
     )
   })
 
-  it('applies content-visibility: auto to annotation list items', function () {
+  it('applies content-visibility: auto to workspace annotation rows', function () {
     assert.equal(
       report.hasContentVisibility,
       true,
-      'annotation-list-item elements must have content-visibility: auto'
+      'annotation workspace rows must have content-visibility: auto'
     )
   })
 })

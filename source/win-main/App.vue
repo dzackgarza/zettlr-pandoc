@@ -105,8 +105,8 @@
         @resize="draggedWidths.annotationPanel = $event"
       >
         <AnnotationsTab
-          @jump-to-line="genericJtl($event)"
-          @begin-reattach="beginAnnotationReattach($event)"
+          v-bind:workspace-paths="workspaceCollaborationPaths"
+          @navigate="navigateToWorkspaceCollaboration($event)"
           @close="configStore.setConfigValue('window.sidebarVisible', false)"
         />
       </SplitterPanel>
@@ -208,7 +208,6 @@ import type { CustomExportIPCAPI, ExportIPCAPI } from 'source/app/service-provid
 import CommandLauncher from './launcher/CommandLauncher.vue'
 import type { LauncherView } from './launcher/launcher-state'
 import { PANEL_VIEW_ID, PANEL_VIEWS, SIDEBAR_VIEWS, type RevealTarget } from './sidebar/sidebar-views'
-import { unresolvedCollaborationCount } from './sidebar/annotations/annotation-panel-model'
 import { isSidebarViewId } from '@dts/common/sidebar-views'
 import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
 import type {
@@ -216,6 +215,7 @@ import type {
   CreateReferenceLabelIntent
 } from '@common/modules/markdown-editor/plugins/create-reference-label'
 import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
+import type { SourceRange } from '@dts/common/references'
 import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
 import type {
   CreateReferenceLabelDialogPrompt,
@@ -681,27 +681,13 @@ onUnmounted(() => {
 
 const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
 
-/**
- * The right-edge collaboration icon is also the document's unresolved-work
- * indicator. Open annotations and outstanding review suggestions are the two
- * independently decidable things the panel can still ask the owner to act on;
- * resolved annotations and already-decided suggestions are absent from this
- * count by construction.
- */
-const panelUnresolvedCount = computed(() => {
-  const file = activeFile.value
-  if (file === undefined) {
-    return 0
-  }
-  const session = collaborationStore.sessionsByDocumentPath[file.path]
-  if (session === undefined) {
-    return 0
-  }
-  return unresolvedCollaborationCount(session)
-})
+const workspaceCollaborationPaths = computed(() => workspaceStore.pathList.filter(path =>
+  workspaceStore.descriptorMap.get(path)?.type === 'file'
+))
 
+/** The right-edge collaboration badge is workspace-wide, like the panel. */
 const panelActivityBadges = computed<Record<string, number>>(() => ({
-  [PANEL_VIEW_ID]: panelUnresolvedCount.value
+  [PANEL_VIEW_ID]: collaborationStore.workspaceUnresolvedCount
 }))
 
 /** The editor pane became the user's filesystem context. */
@@ -1049,6 +1035,20 @@ function insertPandoc (spec: { type: string, attributes: string }): void {
   editorCommands.value.insertPandoc = !editorCommands.value.insertPandoc
 }
 
+function navigateToWorkspaceCollaboration (target: { documentPath: string, range?: SourceRange }): void {
+  ipcRenderer.invoke('documents-provider', {
+    command: 'open-file',
+    payload: {
+      path: target.documentPath,
+      windowId,
+      leafId: lastLeafId.value,
+      newTab: false,
+      targetRange: target.range
+    }
+  })
+    .catch(err => reportError('[Annotations] Could not navigate to collaboration target', err))
+}
+
 function genericJtl (lineNumber: number): void {
   // This function is called from the sidebar where we already know the file
   // is open (because its editor component has provided the table of
@@ -1137,9 +1137,8 @@ function pressSidebarView (id: string): void {
 }
 
 /**
- * A gutter chip was clicked in an editor. The chip is the editor's half of
- * an annotation and the panel holds the other half, so the gesture selects
- * the annotation and brings the panel out if it was away.
+ * A gutter chip was clicked in an editor. Keep that annotation's locator
+ * active in the document and expose the workspace-wide collaboration panel.
  */
 function openAnnotation (annotationId: string): void {
   collaborationStore.selectAnnotation(annotationId)

@@ -228,11 +228,12 @@ async function mount (): Promise<void> {
 
   // Wrapped in a plain render-function parent (App.vue's actual role) so
   // this harness observes what the panel emits upward.
-  const beginReattachEvents: string[] = []
+  const navigationEvents: Array<{ documentPath: string, range?: { from: number, to: number } }> = []
   let closeEvents = 0
   const app = createApp({
     render: () => h(AnnotationsTab, {
-      onBeginReattach: (annotationId: string) => { beginReattachEvents.push(annotationId) },
+      workspacePaths: [SCENE_DOCUMENT_PATH],
+      onNavigate: (target: { documentPath: string, range?: { from: number, to: number } }) => { navigationEvents.push(target) },
       onClose: () => { closeEvents += 1 }
     })
   })
@@ -457,7 +458,7 @@ async function mount (): Promise<void> {
   window.annotationsSceneClickReattach = async () => {
     host.querySelector<HTMLButtonElement>('.annotation-action-reattach')?.click()
     await nextTick()
-    return [...beginReattachEvents]
+    return navigationEvents.map(event => event.documentPath)
   }
   window.annotationsSceneTypeThroughEcho = async (index, text) => {
     const input = noteFieldAt(index)

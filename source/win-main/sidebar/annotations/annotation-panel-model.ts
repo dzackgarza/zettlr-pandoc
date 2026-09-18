@@ -21,6 +21,7 @@ import { Text } from '@codemirror/state'
 import type { AnnotationAnchor, TextAnnotation } from '@dts/common/annotation-domain'
 import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
+import type { SourceRange } from '@dts/common/references'
 
 export interface AnnotationCardView {
   annotation: TextAnnotation
@@ -233,6 +234,34 @@ export function suggestionIdsForPacketIds (review: ReviewDiffSession, packetIds:
     .map(suggestion => suggestion.suggestionId)
 }
 
+export interface SuggestionNavigatorView {
+  suggestionId: string
+  description: string
+  lineLocator: string
+  lineNumber: number
+  range: SourceRange
+}
+
+/**
+ * Workspace-sidebar projection of outstanding review work. This deliberately
+ * contains no before/after text: the editor is the one place review diffs are
+ * rendered, and sidebar rows only identify and navigate to that source range.
+ */
+export function buildSuggestionNavigatorRows (review: ReviewDiffSession): SuggestionNavigatorView[] {
+  const lineIndex = createLineIndex(review.workingText)
+  return review.suggestions.map(suggestion => {
+    const firstAnchor = suggestion.anchors[0] ?? { from: suggestion.seam, to: suggestion.seam }
+    const lineNumber = lineIndex.lineOfPosition(firstAnchor.from)
+    return {
+      suggestionId: suggestion.suggestionId,
+      description: suggestion.description,
+      lineLocator: `Ln ${lineNumber}`,
+      lineNumber,
+      range: { from: firstAnchor.from, to: firstAnchor.to }
+    }
+  })
+}
+
 /**
  * One outstanding suggestion as the SuggestionInspector shows it (M9). The
  * editor renders the same chunk as a locator — a struck-through deletion and
@@ -251,6 +280,8 @@ export interface SuggestionCardView {
   lineLocator: string
   /** The line the chunk starts on, as a jump-to-line target. */
   lineNumber: number
+  /** Exact source range the workspace panel opens in the editor. */
+  range: SourceRange
   /** What the chunk takes out of the working text; '' for a pure insertion. */
   removedText: string
   /** What it puts in, read out of the working text the anchors index; ''
@@ -269,13 +300,15 @@ export interface SuggestionCardView {
  */
 export function buildSuggestionCards (review: ReviewDiffSession): SuggestionCardView[] {
   return review.suggestions.map(suggestion => {
-    const position = suggestion.anchors[0]?.from ?? suggestion.seam
+    const firstAnchor = suggestion.anchors[0] ?? { from: suggestion.seam, to: suggestion.seam }
+    const position = firstAnchor.from
     return {
       suggestionId: suggestion.suggestionId,
       packetId: suggestion.packetId,
       description: suggestion.description,
       lineLocator: `Ln ${lineOfPosition(position, review.workingText)}`,
       lineNumber: lineOfPosition(position, review.workingText),
+      range: { from: firstAnchor.from, to: firstAnchor.to },
       removedText: suggestion.removedText,
       insertedText: suggestion.anchors
         .map(span => review.workingText.slice(span.from, span.to))

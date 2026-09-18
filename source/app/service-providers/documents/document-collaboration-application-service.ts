@@ -967,6 +967,15 @@ export class CollaborationApplicationService {
     return this.sidecars.read(documentPath);
   }
 
+  /**
+   * Validated persisted collaboration state, for workspace-level projections.
+   * One directory enumeration is intentionally cheaper than probing a
+   * possible sidecar for every file in a large workspace.
+   */
+  public listCollaborationSidecars(): Promise<CollaborationSidecarData[]> {
+    return this.sidecars.list();
+  }
+
   private lockFor(documentId: string): Mutex {
     const existing = this.locks.get(documentId);
     if (existing !== undefined) {
@@ -1523,6 +1532,89 @@ export class CollaborationApplicationService {
           ? { ok: false, code: plan.code, message: plan.message }
           : plan;
       });
+    });
+  }
+
+  /**
+   * Accept every outstanding chunk for a workspace document, whether its
+   * review is currently attached to an editor buffer or detached in a
+   * collaboration sidecar. Detached acceptance never opens a renderer pane
+   * and never installs a temporary document in the authority.
+   */
+  public async acceptAllWorkspaceChunks(input: {
+    documentId: string;
+    documentPath: string;
+    reviewId: string;
+    precondition: ReviewMutationPrecondition;
+  }): Promise<AcceptAllChunksResponse | ReviewFailure> {
+    const active = this.reviews.findReviewByReviewId(input.reviewId);
+    if (active !== undefined) {
+      if (active.documentId !== input.documentId || active.documentPath !== input.documentPath) {
+        return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+      }
+      return await this.acceptAllChunks(input.reviewId, input.precondition);
+    }
+
+    return await this.withDocumentLock(input.documentId, async () => {
+      const sidecar = await this.sidecars.read(input.documentPath);
+      if (sidecar?.review === null || sidecar === undefined || sidecar.review.reviewId !== input.reviewId) {
+        return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+      }
+
+      const review = reviewFromSidecar(input.documentId, sidecar);
+      const context: MutationContext = {
+        documentId: input.documentId,
+        documentPath: input.documentPath,
+        review,
+        workingText: sidecar.workingText,
+      };
+      if (review.invalidated) {
+        return { ok: false, code: "REVIEW_INVALIDATED", message: "The review was invalidated by external disk drift." };
+      }
+
+      let diskText: string;
+      try {
+        diskText = await this.deps.authority.readDiskText(input.documentPath);
+      } catch {
+        return {
+          ok: false,
+          code: "REVIEW_INVALIDATED",
+          message: "The reviewed document could not be read from disk.",
+        };
+      }
+      if (sha256Text(normalizeText(diskText)) !== review.diskFenceSha256) {
+        return {
+          ok: false,
+          code: "REVIEW_INVALIDATED",
+          message: "The document changed on disk after this review opened.",
+        };
+      }
+
+      const stale = this.checkPrecondition(context, input.precondition);
+      if (stale !== undefined) {
+        return stale;
+      }
+      const plan = prepareAcceptAll({ review, workingText: sidecar.workingText });
+      if (isTransitionError(plan)) {
+        return { ok: false, code: plan.code, message: plan.message };
+      }
+
+      try {
+        await this.sidecars.write(collaborationSidecar({
+          documentPath: sidecar.documentPath,
+          workingText: plan.nextWorkingText,
+          diskFenceSha256: sidecar.diskFenceSha256,
+          review: plan.nextReview,
+          annotations: sidecar.annotations,
+          pendingSave: sidecar.pendingSave,
+        }));
+      } catch (error) {
+        return persistenceFailure("the workspace review acceptance", error);
+      }
+      for (const draft of plan.events) {
+        this.deps.emit(draft.event, draft.payload);
+      }
+      return plan.response;
     });
   }
 

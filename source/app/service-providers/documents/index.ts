@@ -82,6 +82,7 @@ import { DocumentTree, type DTLeaf } from './document-tree'
 import {
   type ReviewStatus,
   collaborationSessionFor,
+  reviewFromSidecar,
 } from './review-diff-store'
 import {
   CollaborationApplicationService,
@@ -376,6 +377,10 @@ export type DocumentManagerIPCContract = {
     request: { payload: { path: string } }
     response: DocumentCollaborationSession | undefined
   }
+  'get-workspace-collaboration-sessions': {
+    request: { payload: { paths: string[] } }
+    response: DocumentCollaborationSession[]
+  }
   'move-file': {
     request: {
       payload: {
@@ -453,6 +458,10 @@ export type ReviewChunkCommentInput = {
 
 /** Accepting every remaining chunk, under the same fence one decision uses. */
 export type ReviewAcceptAllInput = { reviewId: string } & ReviewMutationPrecondition
+export type WorkspaceReviewAcceptAllInput = {
+  path: string
+  reviewId: string
+} & ReviewMutationPrecondition
 
 /** Discarding a review, under the same fence one decision uses. */
 export type ReviewClearInput = { reviewId: string } & ReviewMutationPrecondition
@@ -521,6 +530,9 @@ export type DocumentIpcHandlers = {
   ) => ChunkCommentResponse | ReviewFailure
   'documents:accept-all-review-chunks': (
     input: ReviewAcceptAllInput,
+  ) => AcceptAllChunksResponse | ReviewFailure
+  'documents:accept-all-workspace-review-chunks': (
+    input: WorkspaceReviewAcceptAllInput,
   ) => AcceptAllChunksResponse | ReviewFailure
   'documents:clear-review': (input: ReviewClearInput) => ClearReviewResponse | ReviewFailure
   'documents:add-review-comment': (
@@ -772,6 +784,15 @@ export default class DocumentManager
       const { reviewId, ...precondition } = input
       return await this.acceptAllReviewChunks(reviewId, precondition)
     })
+    operations.handle('documents:accept-all-workspace-review-chunks', async (_event, input) => {
+      const { path, reviewId, ...precondition } = input
+      return await this._reviewApplication.acceptAllWorkspaceChunks({
+        documentId: this.ensureDocumentId(path),
+        documentPath: path,
+        reviewId,
+        precondition,
+      })
+    })
     operations.handle('documents:clear-review', async (_event, input) => {
       const { reviewId, ...precondition } = input
       return await this.clearReview(reviewId, precondition)
@@ -876,6 +897,9 @@ export default class DocumentManager
         case 'get-collaboration-session': {
           const docId = this.getDocumentId(payload.path)
           return docId === undefined ? undefined : this._collaborationSessionFor(docId, payload.path)
+        }
+        case 'get-workspace-collaboration-sessions': {
+          return await this._workspaceCollaborationSessions(payload.paths)
         }
         case 'move-file': {
           const {
@@ -3707,6 +3731,53 @@ current contents from the editor somewhere else, and restart the application.`,
       review: this._reviewApplication.getReview(documentId),
       annotations: this._reviewApplication.getAnnotations(documentId),
     })
+  }
+
+  /**
+   * Workspace-wide collaboration projection for the annotations panel.
+   *
+   * Open documents use the same live session every editor pane receives.
+   * Closed documents are projected from their validated collaboration
+   * sidecars into that exact same renderer shape. The renderer never reads
+   * sidecars directly and never has to know whether a document is open.
+   */
+  private async _workspaceCollaborationSessions(
+    paths: readonly string[],
+  ): Promise<DocumentCollaborationSession[]> {
+    const wanted = new Set(paths)
+    const sessions: DocumentCollaborationSession[] = []
+    const livePaths = new Set<string>()
+
+    // Read live authority state first. No document id is allocated merely
+    // because a workspace contains a file with no collaboration state.
+    for (const filePath of wanted) {
+      const documentId = this.getDocumentId(filePath)
+      if (documentId === undefined) {
+        continue
+      }
+      const live = this._collaborationSessionFor(documentId, filePath)
+      if (live !== undefined) {
+        sessions.push(live)
+        livePaths.add(filePath)
+      }
+    }
+
+    // Enumerate the small set of sidecars once, then intersect it with the
+    // workspace. This avoids one failed filesystem lookup per ordinary file.
+    for (const sidecar of await this._reviewApplication.listCollaborationSidecars()) {
+      if (!wanted.has(sidecar.documentPath) || livePaths.has(sidecar.documentPath)) {
+        continue
+      }
+      const documentId = this.ensureDocumentId(sidecar.documentPath)
+      sessions.push(collaborationSessionFor({
+        documentId,
+        documentPath: sidecar.documentPath,
+        workingText: sidecar.workingText,
+        review: sidecar.review === null ? undefined : reviewFromSidecar(documentId, sidecar),
+        annotations: sidecar.annotations,
+      }))
+    }
+    return sessions
   }
 
   /**

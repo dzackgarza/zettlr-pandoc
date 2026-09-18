@@ -18,15 +18,14 @@
  *                  DP_EVENTS.DOCUMENT_COLLABORATION broadcast this store is
  *                  the sole listener for.
  *
- *                  The panel-only fields below (selectedAnnotationId,
- *                  inspectorMode, showResolved) and the mutation actions
- *                  were left for the annotations panel to add: nothing here
- *                  is read by more than one pane, so nothing here needed to
- *                  exist before the panel did. The mutation actions never
- *                  write sessionsByDocumentPath themselves — every owner
- *                  action goes over IPC to CollaborationApplicationService
- *                  and reaches this cache only through the broadcast
- *                  handler above, the same as any other mutation.
+ *                  The workspace panel also asks this store for one merged
+ *                  projection spanning loaded workspace paths, including
+ *                  detached sidecars supplied by DocumentManager. Editor
+ *                  locator state (selectedAnnotationId/showResolved) remains
+ *                  here because MainEditor renders it; it is not sidebar
+ *                  drilldown state. Mutation actions never write cached
+ *                  sessions directly — provider state returns through the
+ *                  collaboration broadcast or an explicit workspace refresh.
  *
  *                  Both halves of the session are mutated from here, and
  *                  both go over the provider's typed operation channels:
@@ -42,11 +41,11 @@
 
 import { reportError } from '@common/util/error-reporting'
 import { defineStore } from 'pinia'
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { DP_EVENTS } from '@dts/common/documents'
 import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import type { AnnotationMessage, TextAnnotation } from '@dts/common/annotation-domain'
-import { buildAnnotationCards, type AnnotationCardView } from 'source/win-main/sidebar/annotations/annotation-panel-model'
+import { buildAnnotationCards, unresolvedCollaborationCount, type AnnotationCardView } from 'source/win-main/sidebar/annotations/annotation-panel-model'
 import type { AnnotationLifecycleIpcInput, DocumentsUpdateContext } from 'source/app/service-providers/documents'
 import type { AnnotationFailure, ReviewFailure, ReviewMutationPrecondition } from 'source/app/service-providers/documents/document-collaboration-application-service'
 import type {
@@ -59,17 +58,21 @@ import type {
 
 const ipcRenderer = window.ipc
 
-/** The annotations panel's two arrangements: both the list and the detail
- *  inspector at once (the wide layout), or one at a time behind a
- *  back-button drilldown (the narrow layout, S structural gate 11). */
-export type AnnotationInspectorMode = 'list' | 'detail'
-
 export const useDocumentCollaborationStore = defineStore('document-collaboration', () => {
   const sessionsByDocumentPath = reactive<Record<string, DocumentCollaborationSession>>({})
   const cardsByDocumentPath = reactive<Record<string, AnnotationCardView[]>>({})
   const selectedAnnotationId = ref<string | null>(null)
-  const inspectorMode = ref<AnnotationInspectorMode>('list')
   const showResolved = ref(false)
+  const workspaceDocumentPaths = ref<string[]>([])
+  const workspacePathSet = new Set<string>()
+  let workspaceRefreshGeneration = 0
+
+  const workspaceSessions = computed(() => workspaceDocumentPaths.value
+    .map(path => sessionsByDocumentPath[path])
+    .filter((session): session is DocumentCollaborationSession => session !== undefined))
+
+  const workspaceUnresolvedCount = computed(() => workspaceSessions.value
+    .reduce((total, session) => total + unresolvedCollaborationCount(session), 0))
 
   function updateCardsForSession (documentPath: string, session: DocumentCollaborationSession): void {
     cardsByDocumentPath[documentPath] = buildAnnotationCards(session.annotations.items, session.workingText)
@@ -96,8 +99,13 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
         updateCardsForSession(context.filePath, context.collaborationSession)
       }
     } else if (event === DP_EVENTS.CLOSE_FILE && context.filePath !== undefined) {
-      delete sessionsByDocumentPath[context.filePath]
-      delete cardsByDocumentPath[context.filePath]
+      // Workspace panel state outlives editor panes. A closed workspace
+      // document keeps its last authoritative snapshot until the next
+      // workspace refresh projects its persisted sidecar.
+      if (!workspacePathSet.has(context.filePath)) {
+        delete sessionsByDocumentPath[context.filePath]
+        delete cardsByDocumentPath[context.filePath]
+      }
       pendingFetches.delete(context.filePath)
     }
   })
@@ -151,6 +159,40 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
     return await fetch
   }
 
+  /**
+   * Replace the panel's workspace projection with the provider's merged live
+   * + detached collaboration sessions for these file paths.
+   */
+  async function refreshWorkspaceSessions (paths: readonly string[]): Promise<void> {
+    const refreshGeneration = ++workspaceRefreshGeneration
+    const uniquePaths = [...new Set(paths)]
+    workspaceDocumentPaths.value = uniquePaths
+    workspacePathSet.clear()
+    for (const path of uniquePaths) {
+      workspacePathSet.add(path)
+    }
+
+    const sessions = await ipcRenderer.invoke('documents-provider', {
+      command: 'get-workspace-collaboration-sessions',
+      payload: { paths: uniquePaths }
+    }) as DocumentCollaborationSession[]
+    if (refreshGeneration !== workspaceRefreshGeneration) {
+      return
+    }
+    const returned = new Set(sessions.map(session => session.documentPath))
+
+    for (const path of uniquePaths) {
+      if (!returned.has(path)) {
+        delete sessionsByDocumentPath[path]
+        delete cardsByDocumentPath[path]
+      }
+    }
+    for (const session of sessions) {
+      sessionsByDocumentPath[session.documentPath] = session
+      updateCardsForSession(session.documentPath, session)
+    }
+  }
+
   function getSession (documentPath: string): DocumentCollaborationSession | undefined {
     return sessionsByDocumentPath[documentPath]
   }
@@ -169,12 +211,9 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
     return []
   }
 
-  /** Select an annotation in the panel, or clear the selection (null). The
-   *  narrow-width layout reads inspectorMode to decide which of its two
-   *  panes to show, so selecting one drills into the detail. */
+  /** Mark one annotation active in editor locator rendering, or clear it. */
   function selectAnnotation (annotationId: string | null): void {
     selectedAnnotationId.value = annotationId
-    inspectorMode.value = annotationId === null ? 'list' : 'detail'
   }
 
   function toggleShowResolved (value?: boolean): void {
@@ -260,7 +299,9 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
   }
 
   /**
-   * The five review adjudication calls the SuggestionInspector makes (M9).
+   * Review adjudication calls retained on the shared renderer store. The
+   * workspace panel uses the bulk-accept variants; other callers can still
+   * address an individual chunk without introducing a second state owner.
    * Like the annotation mutations above, none of them writes
    * sessionsByDocumentPath: the resulting session reaches this cache only
    * through the DP_EVENTS.DOCUMENT_COLLABORATION broadcast the mutation
@@ -288,6 +329,33 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
     return await ipcRenderer.invoke('documents:accept-all-review-chunks', reviewFence(documentPath))
   }
 
+  async function acceptAllWorkspaceReviewChunks (documentPath: string): Promise<AcceptAllChunksResponse | ReviewFailure> {
+    const result = await ipcRenderer.invoke('documents:accept-all-workspace-review-chunks', {
+      path: documentPath,
+      ...reviewFence(documentPath)
+    }) as AcceptAllChunksResponse | ReviewFailure
+    if (result.ok) {
+      await refreshWorkspaceSessions(workspaceDocumentPaths.value)
+    }
+    return result
+  }
+
+  async function acceptAllWorkspaceReviews (): Promise<Array<{ path: string, result: AcceptAllChunksResponse | ReviewFailure }>> {
+    const targets = workspaceSessions.value
+      .filter(session => (session.review?.suggestions.length ?? 0) > 0)
+      .map(session => session.documentPath)
+    const results: Array<{ path: string, result: AcceptAllChunksResponse | ReviewFailure }> = []
+    for (const path of targets) {
+      const result = await ipcRenderer.invoke('documents:accept-all-workspace-review-chunks', {
+        path,
+        ...reviewFence(path)
+      }) as AcceptAllChunksResponse | ReviewFailure
+      results.push({ path, result })
+    }
+    await refreshWorkspaceSessions(workspaceDocumentPaths.value)
+    return results
+  }
+
   async function clearReview (documentPath: string): Promise<ClearReviewResponse | ReviewFailure> {
     return await ipcRenderer.invoke('documents:clear-review', reviewFence(documentPath))
   }
@@ -306,10 +374,13 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
   return {
     sessionsByDocumentPath,
     cardsByDocumentPath,
+    workspaceDocumentPaths,
+    workspaceSessions,
+    workspaceUnresolvedCount,
     selectedAnnotationId,
-    inspectorMode,
     showResolved,
     ensureSession,
+    refreshWorkspaceSessions,
     getSession,
     getCards,
     selectAnnotation,
@@ -322,6 +393,8 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
     decideReviewChunk,
     commentReviewChunk,
     acceptAllReviewChunks,
+    acceptAllWorkspaceReviewChunks,
+    acceptAllWorkspaceReviews,
     clearReview,
     addReviewComment
   }

@@ -47,6 +47,8 @@ documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
   switch (message.command) {
     case 'get-collaboration-session':
       return sceneSession
+    case 'get-workspace-collaboration-sessions':
+      return sceneSession === undefined ? [] : [sceneSession]
     case 'get-file-modification-status':
       return []
     case 'retrieve-tab-config':

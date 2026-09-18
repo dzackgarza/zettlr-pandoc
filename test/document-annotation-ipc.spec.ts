@@ -42,6 +42,7 @@ import DocumentManager from 'source/app/service-providers/documents'
 import LogProvider from 'source/app/service-providers/log'
 import type { AnnotationFailure } from 'source/app/service-providers/documents/document-collaboration-application-service'
 import type { TextAnnotation, AnnotationMessage } from '@dts/common/annotation-domain'
+import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import type { CodeFileDescriptor } from '@dts/common/fsal'
 import type { AppServiceContainer } from 'source/app/app-service-container'
 
@@ -220,6 +221,35 @@ describe('Document annotation IPC (M6, WU-14)', function () {
     assert.ok(session !== undefined)
     assert.equal(session.annotations.generation, 1, 'a refused duplicate must not advance the annotation fence')
     assert.equal(session.annotations.items.length, 1, 'a refused duplicate must not enter annotation state')
+  })
+
+  it('lists a closed workspace document from its persisted collaboration sidecar', async function () {
+    const content = 'A closed workspace target remains reviewable.\n'
+    const filePath = await openFile('closed-workspace.md', content)
+    const from = content.indexOf('workspace target')
+    const to = from + 'workspace target'.length
+
+    const created = await invoke<TextAnnotation | AnnotationFailure>('documents:create-annotation', {
+      path: filePath,
+      from,
+      to,
+      instruction: 'Explain why this target matters.',
+      expectedAnnotationGeneration: 0
+    })
+    assert.ok(!isFailure(created), 'fixture annotation must be created before detaching')
+
+    await provider.closeFileEverywhere(filePath)
+
+    const sessions = await invoke<DocumentCollaborationSession[]>('documents-provider', {
+      command: 'get-workspace-collaboration-sessions',
+      payload: { paths: [filePath] }
+    })
+
+    assert.equal(sessions.length, 1)
+    assert.equal(sessions[0].documentPath, filePath)
+    assert.equal(sessions[0].annotations.items.length, 1)
+    assert.equal(sessions[0].annotations.items[0].annotationId, (created as TextAnnotation).annotationId)
+    assert.equal(sessions[0].review, undefined)
   })
 
   it('refuses documents:create-annotation for a path with no open document', async function () {

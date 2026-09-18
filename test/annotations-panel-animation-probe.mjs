@@ -38,7 +38,7 @@ const optimizedOpen = await page.evaluate(() => window.measureToggleAnimation('o
 
 // 3. Inspect CSS rule for content-visibility
 const hasContentVisibility = await page.evaluate(() => {
-  const item = document.querySelector('.annotation-list-item')
+  const item = document.querySelector('.annotation-workspace-row')
   if (!item) return false
   const style = window.getComputedStyle(item)
   return style.contentVisibility === 'auto'

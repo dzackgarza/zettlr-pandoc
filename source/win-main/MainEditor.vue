@@ -891,9 +891,9 @@ const EMPTY_ANNOTATION_SET: AnnotationSet = { generation: 0, items: [] }
 // forwards the current set — the editor's own field only distinguishes and
 // re-renders locators, never mutates them. `immediate` covers the pane that
 // mounts onto a document another pane already cached the session for.
-// The set, the selected card and the resolved-visibility switch are all the
-// panel's state; the editor renders from them and mutates none of them. They
-// travel together because a document swap builds a fresh editor state:
+// The set plus editor locator selection/resolved visibility travel together;
+// the workspace sidebar does not own a duplicate detail view. A document swap
+// builds a fresh editor state, so
 // pushing the set alone would leave the new state with no selection and the
 // resolved switch back at its default.
 watch([

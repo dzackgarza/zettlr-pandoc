@@ -7,45 +7,24 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Two halves.
+ * Description:     Proves the workspace collaboration panel model and store.
+ *                  The panel aggregates every workspace document carrying
+ *                  open annotations or outstanding review suggestions, groups
+ *                  rows by document, and treats each row as navigation into
+ *                  the editor rather than reproducing annotation detail or a
+ *                  review diff in the sidebar. Review suggestions expose
+ *                  Accept all at document and workspace scope.
  *
- *                  The first half is the panel's pure view model
- *                  (annotation-panel-model.ts): title derivation (I8), the
- *                  ordinal sequence shared by open and resolved cards (S4),
- *                  the open/resolved partition (S9), the open-only count
- *                  (S10), and the terminal action row (S8). One case runs
- *                  the model against a REAL CollaborationApplicationService's
- *                  output rather than fixture literals, so it cannot pass
- *                  on a model that merely echoes a hand-built TextAnnotation
- *                  shape.
- *
- *                  The second half is the renderer store's panel-only
- *                  surface (selection, the resolved toggle, and the four
- *                  owner mutation calls), exercised against the real
- *                  preload-bridge double (document-collaboration-ipc-double.ts,
- *                  the same one M4's own spec uses). It proves the calls are
- *                  well-formed IPC requests — command name, generation
- *                  fence, payload shape — and that none of them mutates
- *                  sessionsByDocumentPath itself: the cache only ever moves
- *                  through the DP_EVENTS.DOCUMENT_COLLABORATION broadcast.
- *
- *                  Both halves also cover REVIEW adjudication, which M9
- *                  moved out of the editor's chunk widgets and into this
- *                  panel (S3, invariant I4): what a suggestion card derives
- *                  from the session's review half, what a chunk note
- *                  commits, and the five fenced review mutations the
- *                  SuggestionInspector raises.
- *
- *                  The third half proves, in a real mount of the panel,
- *                  that "Show proposal" focuses the linked chunk (S7) and
- *                  that "Reattach" emits the annotation id upward (S8/I6).
+ *                  Legacy per-document annotation/editor state is still
+ *                  exercised where the editor consumes it; workspace tests
+ *                  prove the new multi-document snapshot and bulk-action
+ *                  fences over the same provider IPC boundary.
  *
  * END HEADER
  */
 
 import { strict as assert } from "assert";
-import { execFile } from "child_process";
-import { mkdtempSync } from "fs";
+import { mkdtempSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 // Must be the first local import: it installs window.ipc as a side effect,
@@ -87,9 +66,6 @@ import {
   SCENE_REVIEW_ID,
   SCENE_WORKING_SHA256,
 } from "./annotations-sidebar-scene-fixture";
-import { promisify } from "util";
-
-const execFileAsync = promisify(execFile);
 
 describe("annotation-panel-model", function () {
   const session = buildSceneSession();
@@ -285,15 +261,13 @@ describe("useDocumentCollaborationStore panel surface", function () {
     assert.equal(store.cardsByDocumentPath[session.documentPath]?.length, session.annotations.items.length);
   });
 
-  it("selectAnnotation switches the inspector mode, and clearing the selection returns to the list", function () {
+  it("selectAnnotation controls the editor locator selection without creating sidebar drilldown state", function () {
     const store = useDocumentCollaborationStore();
-    assert.equal(store.inspectorMode, "list");
     store.selectAnnotation(SCENE_ANNOTATION_THREAD_ID);
     assert.equal(store.selectedAnnotationId, SCENE_ANNOTATION_THREAD_ID);
-    assert.equal(store.inspectorMode, "detail");
     store.selectAnnotation(null);
     assert.equal(store.selectedAnnotationId, null);
-    assert.equal(store.inspectorMode, "list");
+    assert.equal("inspectorMode" in store, false);
   });
 
   it("toggleShowResolved flips the disclosure, and accepts an explicit value", function () {
@@ -618,78 +592,109 @@ describe("useDocumentCollaborationStore review surface", function () {
       "a mutation with no review to name never reaches the provider",
     );
   });
-});
 
-describe("the two M10 emit boundaries (S7/S8/I6) in a real panel mount", function () {
-  // vue-tsc/tsx cannot import a .vue SFC directly, so this cannot mount the
-  // panel in-process the way the store tests above exercise the Pinia store
-  // directly. It instead follows this repository's established pattern for
-  // proving real Vue rendering from a plain mocha spec
-  // (test/reference-search-overlay.spec.ts): build the real webpack renderer
-  // bundle, mount AnnotationsTab.vue under a render-function parent (App.vue's
-  // role) in isolated offscreen Electron, and read what the panel emitted out
-  // of that mount — the same bundle and driver `just capture-annotations-panel`
-  // uses, with one JSON line appended as the proof this spec asserts on.
-  //
-  // suggestionIdsForPacketIds above proves the pure resolution; this proves
-  // it is actually WIRED to a click, on a real button, in a real mount, and
-  // that Reattach crosses the panel's boundary as an annotation id alone.
-  it("proves show-proposal (S7) and begin-reattach (S8/I6) reach their real handlers", async function () {
-    this.timeout(240000);
-    const outputDirectory = mkdtempSync(join(tmpdir(), "zettlr-annotations-badge-"));
-    const root = process.cwd();
-    await execFileAsync(
-      "node",
-      [
-        join(root, "test/visual-build.cjs"),
-        join(root, "test/annotations-sidebar-visual-entry.ts"),
-        "annotations-sidebar-visual-bundle.js",
-        outputDirectory,
-      ],
-      { maxBuffer: 16 * 1024 * 1024 },
-    );
-    const { stdout } = await execFileAsync(
-      "xvfb-run",
-      [
-        "-a",
-        "node",
-        join(root, "test/annotations-sidebar-visual-capture.mjs"),
-        outputDirectory,
-      ],
-      { maxBuffer: 16 * 1024 * 1024 },
-    );
-    const jsonLine = stdout.trim().split("\n").at(-1);
-    assert.ok(jsonLine !== undefined, "the capture driver must print the probe result");
-    const result = JSON.parse(jsonLine as string) as {
-      showProposalLinkedChunkIds: string[];
-      beginReattachAnnotationIds: string[];
+  it("hydrates collaboration state for multiple workspace documents at once", async function () {
+    const second = {
+      ...session,
+      documentId: "doc-second",
+      documentPath: "/tmp/second-workspace-note.md",
+      workingSha256: "c".repeat(64),
+      review: {
+        ...session.review!,
+        id: "review-second",
+        documentPath: "/tmp/second-workspace-note.md",
+        reviewGeneration: 9,
+      },
     };
-
-    // S7: clicking "Show proposal" on SCENE_ANNOTATION_PROPOSAL_ID's card
-    // must land on the ONE outstanding chunk its linked packet actually
-    // produced (SCENE_CHUNK_GOAL_ID) — not every chunk, and not none.
-    assert.deepEqual(
-      result.showProposalLinkedChunkIds,
-      [SCENE_CHUNK_GOAL_ID],
-      `Show proposal must focus exactly the linked chunk: got ${JSON.stringify(result.showProposalLinkedChunkIds)}`,
+    documentCollaborationIpcDouble.setInvokeResponder(async (message) =>
+      message.command === "get-workspace-collaboration-sessions" ? [session, second] : undefined
     );
+    const store = useDocumentCollaborationStore();
 
-    // S8/I6: clicking "Reattach" must reach the panel's parent's
-    // begin-reattach listener carrying the exact annotation id and nothing
-    // else.
-    assert.deepEqual(
-      result.beginReattachAnnotationIds,
-      [SCENE_ANNOTATION_ORPHANED_ID],
-      `the panel must emit the orphaned annotation's Reattach intent: got ${JSON.stringify(result.beginReattachAnnotationIds)}`,
+    await store.refreshWorkspaceSessions([session.documentPath, second.documentPath]);
+
+    assert.deepEqual(store.workspaceSessions.map(item => item.documentPath).sort(),
+      [session.documentPath, second.documentPath].sort());
+    assert.equal(
+      store.workspaceUnresolvedCount,
+      unresolvedCollaborationCount(session) + unresolvedCollaborationCount(second),
     );
   });
 
+  it("accepts all outstanding review chunks for one workspace document through the workspace channel", async function () {
+    const seen: Array<{ command: string, payload: unknown }> = [];
+    documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+      seen.push({ command: message.command, payload: message.payload });
+      if (message.command === "get-workspace-collaboration-sessions") {
+        return [session];
+      }
+      if (message.command === "documents:accept-all-workspace-review-chunks") {
+        return { ok: true, acceptedChunks: 2 };
+      }
+      return undefined;
+    });
+    const store = useDocumentCollaborationStore();
+    await store.refreshWorkspaceSessions([session.documentPath]);
+
+    await store.acceptAllWorkspaceReviewChunks(session.documentPath);
+
+    const request = seen.find(item => item.command === "documents:accept-all-workspace-review-chunks");
+    assert.deepEqual(request?.payload, { path: session.documentPath, ...fence });
+    assert.equal(documentCollaborationIpcDouble.invokeCallCount("get-workspace-collaboration-sessions"), 2);
+  });
+
+  it("global Accept all sends one fenced workspace acceptance per reviewed document", async function () {
+    const secondPath = "/tmp/second-workspace-note.md";
+    const second = {
+      ...session,
+      documentId: "doc-second",
+      documentPath: secondPath,
+      workingSha256: "d".repeat(64),
+      review: { ...session.review!, id: "review-second", documentPath: secondPath, reviewGeneration: 9 },
+    };
+    const accepted: string[] = [];
+    documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+      if (message.command === "get-workspace-collaboration-sessions") {
+        return [session, second];
+      }
+      if (message.command === "documents:accept-all-workspace-review-chunks") {
+        accepted.push((message.payload as { path: string }).path);
+        return { ok: true, acceptedChunks: 2 };
+      }
+      return undefined;
+    });
+    const store = useDocumentCollaborationStore();
+    await store.refreshWorkspaceSessions([session.documentPath, secondPath]);
+
+    const results = await store.acceptAllWorkspaceReviews();
+
+    assert.deepEqual(accepted.sort(), [session.documentPath, secondPath].sort());
+    assert.equal(results.length, 2);
+  });
+});
+
+describe("workspace annotations panel structure", function () {
+  it("groups by document, exposes both Accept-all scopes, navigates rows, and renders no sidebar diff", function () {
+    const panel = readFileSync("source/win-main/sidebar/AnnotationsTab.vue", "utf8");
+    const header = readFileSync("source/win-main/sidebar/annotations/AnnotationHeader.vue", "utf8");
+    const app = readFileSync("source/win-main/App.vue", "utf8");
+
+    assert.match(panel, /annotation-document-group/);
+    assert.match(panel, /annotation-document-accept-all/);
+    assert.match(header, /annotation-global-accept-all/);
+    assert.match(panel, /emit\('navigate'/);
+    assert.doesNotMatch(panel, /SuggestionInspector|AnnotationInspector/);
+    assert.doesNotMatch(panel, /suggestion-removed|suggestion-inserted/);
+    assert.match(app, /workspaceUnresolvedCount/);
+    assert.match(app, /targetRange: target\.range/);
+  });
+});
+
+describe("workspace annotation fixtures", function () {
   it("buildSceneSessionWithOrphan carries a fourth, orphaned, OPEN annotation alongside the base three", function () {
-    // Guards the fixture itself: if this stops being true the Electron
-    // proof above would silently stop exercising Reattach at all.
-    const session = buildSceneSessionWithOrphan();
-    assert.equal(session.annotations.items.length, 4);
-    const orphaned = session.annotations.items.find(a => a.annotationId === SCENE_ANNOTATION_ORPHANED_ID);
+    const fixture = buildSceneSessionWithOrphan();
+    assert.equal(fixture.annotations.items.length, 4);
+    const orphaned = fixture.annotations.items.find(a => a.annotationId === SCENE_ANNOTATION_ORPHANED_ID);
     assert.ok(orphaned !== undefined);
     assert.equal(orphaned.anchor.state, "orphaned");
     assert.equal(orphaned.state, "open");

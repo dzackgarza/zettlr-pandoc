@@ -3,7 +3,7 @@
  * Mounts SplitterGroup with an editor and AnnotationsTab loaded with 100 annotations.
  */
 
-import './document-collaboration-ipc-double'
+import { documentCollaborationIpcDouble } from './document-collaboration-ipc-double'
 import { createApp, h, nextTick, ref, reactive } from 'vue'
 import { createPinia } from 'pinia'
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
@@ -139,7 +139,7 @@ window.benchmarkReady = (async () => {
   documentTreeStore.lastLeafActiveFile = { path: BENCHMARK_PATH, pinned: false }
 
   const collaborationStore = useDocumentCollaborationStore(pinia)
-  collaborationStore.sessionsByDocumentPath[BENCHMARK_PATH] = {
+  const benchmarkSession = {
     documentId: 'benchmark-doc',
     documentPath: BENCHMARK_PATH,
     workingText: fullText,
@@ -150,6 +150,10 @@ window.benchmarkReady = (async () => {
     },
     review: undefined
   }
+  collaborationStore.sessionsByDocumentPath[BENCHMARK_PATH] = benchmarkSession
+  documentCollaborationIpcDouble.setInvokeResponder(async message =>
+    message.command === 'get-workspace-collaboration-sessions' ? [benchmarkSession] : undefined
+  )
 
   const sidebarVisible = ref(true)
   const panesAnimating = ref(false)
@@ -225,7 +229,7 @@ window.benchmarkReady = (async () => {
                   minSize: 240,
                   defaultSize: mountWidths.annotationPanel
                 },
-                () => [h(AnnotationsTab)]
+                () => [h(AnnotationsTab, { workspacePaths: [BENCHMARK_PATH] })]
               )
             ]
           )
@@ -264,7 +268,7 @@ window.benchmarkReady = (async () => {
             width: 100% !important;
             min-width: 0 !important;
           }
-          .annotation-list-item {
+          .annotation-workspace-row {
             content-visibility: visible !important;
           }
         `
@@ -278,7 +282,7 @@ window.benchmarkReady = (async () => {
   window.measureStepLayouts = (steps: number[]): StepLayoutResult => {
     const panel = document.querySelector<HTMLElement>('[data-pane="annotation-panel"]')
     const tab = document.querySelector<HTMLElement>('.annotations-tab')
-    const list = document.querySelector<HTMLElement>('.annotation-list')
+    const list = document.querySelector<HTMLElement>('.annotation-document-items')
     const mainPanes = document.querySelector<HTMLElement>('.main-panes')
     if (!panel || !tab || !list || !mainPanes) {
       throw new Error('Elements missing for step layout benchmark')
