@@ -136,7 +136,7 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): IFrameWidget|un
 }
 
 export const renderIframes = [
-  renderBlockWidgets(shouldHandleNode, createWidget),
+  renderBlockWidgets([ 'HTMLBlock' ], shouldHandleNode, createWidget),
   EditorView.baseTheme({
     '.iframe-wrapper': {
       backgroundColor: 'rgb(240, 240, 240)',

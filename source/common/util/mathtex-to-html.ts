@@ -57,6 +57,34 @@ let mainRenderer: MainDocument|undefined
 let browserChtml: CHTML<HTMLElement, Text, Document>|undefined
 let mainChtml: CHTML<LiteElement, LiteText, LiteDocument>|undefined
 let browserAdaptorInstance: ReturnType<typeof browserAdaptor>|undefined
+
+type MathJaxDisplay = 'inline'|'display'
+
+const BROWSER_RENDER_CACHE_LIMIT = 256
+const browserRenderCache = new Map<string, HTMLElement>()
+
+function browserRenderCacheKey (equation: string, display: MathJaxDisplay): string {
+  return `${display}\0${equation}`
+}
+
+function cacheBrowserNode (key: string, node: HTMLElement): void {
+  browserRenderCache.delete(key)
+  browserRenderCache.set(key, node.cloneNode(true) as HTMLElement)
+  if (browserRenderCache.size > BROWSER_RENDER_CACHE_LIMIT) {
+    const oldest = browserRenderCache.keys().next().value
+    if (oldest !== undefined) {
+      browserRenderCache.delete(oldest)
+    }
+  }
+}
+
+export function __resetMathJaxRenderCacheForTests (): void {
+  browserRenderCache.clear()
+}
+
+export function __mathJaxRenderCacheSizeForTests (): number {
+  return browserRenderCache.size
+}
 let mainAdaptorInstance: ReturnType<typeof liteAdaptor>|undefined
 
 mathjax.asyncLoad = () => Promise.resolve()
@@ -190,8 +218,6 @@ export function initializeMathJax (macros: Record<string, MathJaxMacro>): Promis
   return initializing
 }
 
-type MathJaxDisplay = 'inline'|'display'
-
 function isMmlNode (node: LiteNode|HTMLElement|MmlNode): node is MmlNode {
   return 'isToken' in node
 }
@@ -201,11 +227,20 @@ function mathJaxToBrowserNode (equation: string, display: MathJaxDisplay): HTMLE
     throw new Error('Browser MathJax renderer is unavailable')
   }
 
+  const key = browserRenderCacheKey(equation, display)
+  const cached = browserRenderCache.get(key)
+  if (cached !== undefined) {
+    browserRenderCache.delete(key)
+    browserRenderCache.set(key, cached)
+    return cached.cloneNode(true) as HTMLElement
+  }
+
   const node = browserRenderer.convert(equation, { display: display === 'display' })
   if (isMmlNode(node)) {
     throw new Error('MathJax did not produce HTML')
   }
   browserRenderer.updateDocument()
+  cacheBrowserNode(key, node)
   return node
 }
 

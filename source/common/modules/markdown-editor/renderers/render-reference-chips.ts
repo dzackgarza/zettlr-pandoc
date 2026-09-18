@@ -239,6 +239,6 @@ const chipTheme = EditorView.baseTheme({
 })
 
 export const renderReferenceChips = [
-  renderBlockWidgets(shouldHandleNode, createWidget),
+  renderBlockWidgets([ NODES.CITATION ], shouldHandleNode, createWidget),
   chipTheme
 ]

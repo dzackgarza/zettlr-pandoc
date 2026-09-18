@@ -108,7 +108,7 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): MathWidget|unde
 }
 
 export const renderMath = [
-  renderBlockWidgets(shouldHandleNode, createWidget),
+  renderBlockWidgets([ 'InlineCode', 'FencedCode' ], shouldHandleNode, createWidget),
   EditorView.baseTheme({
     // MathJax CommonHTML overrides
     'mjx-container': {

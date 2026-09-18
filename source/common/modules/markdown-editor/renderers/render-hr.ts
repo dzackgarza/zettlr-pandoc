@@ -54,5 +54,5 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): RuleWidget|unde
 }
 
 export const renderHorizontalRules = [
-  renderBlockWidgets(shouldHandleNode, createWidget)
+  renderBlockWidgets([ 'HorizontalRule' ], shouldHandleNode, createWidget)
 ]

@@ -845,7 +845,7 @@ body div.tab-container {
 
   .dropzone {
     position: absolute;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease;
     background-color: rgba(21, 61, 107, 0.5);
     top: 0;
     left: 0;

@@ -26,8 +26,75 @@ import { isSupportedPandocCrossref } from '@common/util/pandoc-quick-reference'
 import { referenceFamilyOf } from '@dts/common/references'
 import { workspaceReferencesField } from '../plugins/workspace-references-field'
 import { hashDocumentSource } from '@common/pandoc-util/extract-references'
+import { reportError } from '@common/util/error-reporting'
+import type { CitationDatabase } from '@dts/common/citeproc'
 
 const sourceHashes = new WeakMap<EditorState, string>()
+
+const CITATION_RENDER_CACHE_LIMIT = 256
+const citationRenderCache = new Map<string, Promise<string|undefined>>()
+let stopCitationCacheListener: (() => void)|undefined
+
+function citationCacheKey (library: CitationDatabase, citation: Citation): string {
+  return JSON.stringify([ library, citation.composite, citation.items ])
+}
+
+function ensureCitationCacheInvalidation (): void {
+  if (stopCitationCacheListener !== undefined || window.ipc === undefined) {
+    return
+  }
+  stopCitationCacheListener = window.ipc.on('citeproc-database-updated', () => { citationRenderCache.clear() })
+}
+
+function requestRenderedCitation (library: CitationDatabase, citation: Citation): Promise<string|undefined> {
+  ensureCitationCacheInvalidation()
+  const key = citationCacheKey(library, citation)
+  const cached = citationRenderCache.get(key)
+  if (cached !== undefined) {
+    citationRenderCache.delete(key)
+    citationRenderCache.set(key, cached)
+    return cached
+  }
+
+  const pending = window.ipc.invoke('citeproc-provider', {
+    command: 'get-citation',
+    payload: {
+      database: library,
+      citations: citation.items,
+      composite: citation.composite
+    }
+  })
+  citationRenderCache.set(key, pending)
+  if (citationRenderCache.size > CITATION_RENDER_CACHE_LIMIT) {
+    const oldest = citationRenderCache.keys().next().value
+    if (oldest !== undefined) {
+      citationRenderCache.delete(oldest)
+    }
+  }
+  void pending.catch(() => {
+    if (citationRenderCache.get(key) === pending) {
+      citationRenderCache.delete(key)
+    }
+  })
+  return pending
+}
+
+export function __resetCitationRenderMemoForTests (): void {
+  citationRenderCache.clear()
+  stopCitationCacheListener?.()
+  stopCitationCacheListener = undefined
+}
+
+function applyRenderedCitation (elem: HTMLElement, rawCitation: string, renderedCitation: string|undefined): void {
+  elem.classList.remove('citeproc-pending')
+  if (renderedCitation !== undefined) {
+    elem.classList.remove('error')
+    elem.innerHTML = renderedCitation
+  } else {
+    elem.textContent = rawCitation
+    elem.classList.add('error')
+  }
+}
 
 class CitationWidget extends WidgetType {
   constructor (
@@ -97,16 +164,29 @@ class CitationWidget extends WidgetType {
 
     const config = view.state.field(configField).metadata.library
     const library = config === '' ? CITEPROC_MAIN_DB : config
-    const callback = window.getCitationCallback(library)
-    const renderedCitation = callback(this.citation.items, this.citation.composite)
 
     const elem = document.createElement('span')
     elem.classList.add('citeproc-citation')
-    if (renderedCitation !== undefined) {
-      elem.innerHTML = renderedCitation
+    elem.textContent = this.rawCitation
+
+    // Production renderers always carry the async preload IPC bridge. A few
+    // isolated headless renderer tests intentionally provide only the legacy
+    // synchronous citation seam; keep that test-only boundary deterministic.
+    if (window.ipc === undefined) {
+      applyRenderedCitation(
+        elem,
+        this.rawCitation,
+        window.getCitationCallback(library)(this.citation.items, this.citation.composite)
+      )
     } else {
-      elem.innerText = this.rawCitation
-      elem.classList.add('error')
+      elem.classList.add('citeproc-pending')
+      void requestRenderedCitation(library, this.citation).then(
+        rendered => { applyRenderedCitation(elem, this.rawCitation, rendered) },
+        (err: unknown) => {
+          reportError('Citation preview IPC failed', err)
+          applyRenderedCitation(elem, this.rawCitation, undefined)
+        }
+      )
     }
     elem.addEventListener('click', clickAndSelect(view))
 
@@ -152,4 +232,4 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): CitationWidget|
   return new CitationWidget(citation, state.sliceDoc(node.from, node.to), state.field(configField).metadata)
 }
 
-export const renderCitations = renderBlockWidgets(shouldHandleNode, createWidget)
+export const renderCitations = renderBlockWidgets([ NODES.CITATION ], shouldHandleNode, createWidget)

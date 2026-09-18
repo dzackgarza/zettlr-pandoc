@@ -54,7 +54,7 @@
             :depth="0"
             :active-item="activeTreeItem?.[0]"
             :filter-results="filterResults"
-            :has-duplicate-name="getFiles.filter(i => i.name === item.name).length > 1"
+            :has-duplicate-name="(fileNameCounts.get(item.name) ?? 0) > 1"
             :window-id="props.windowId"
             @toggle-file-list="emit('toggle-file-list')"
           />
@@ -99,7 +99,7 @@
             :filter-results="filterResults"
             :depth="0"
             :active-item="activeTreeItem?.[0]"
-            :has-duplicate-name="getDirectories.filter(i => i.name === item.name).length > 1"
+            :has-duplicate-name="(directoryNameCounts.get(item.name) ?? 0) > 1"
             :window-id="props.windowId"
             @toggle-file-list="emit('toggle-file-list')"
           />
@@ -355,6 +355,17 @@ const getDirectories = computed(() => {
     return filterResults.value.some(res => res.startsWith(root.path))
   })
 })
+
+function nameCounts (descriptors: AnyDescriptor[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const descriptor of descriptors) {
+    counts.set(descriptor.name, (counts.get(descriptor.name) ?? 0) + 1)
+  }
+  return counts
+}
+
+const fileNameCounts = computed(() => nameCounts(getFiles.value))
+const directoryNameCounts = computed(() => nameCounts(getDirectories.value))
 
 const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, string]>>(() => {
   // First, get all descriptors.

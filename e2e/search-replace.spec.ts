@@ -43,7 +43,6 @@ const QUERY = `${VIEW} input[name="search-input"]`
 const REPLACEMENT = `${VIEW} input[name="replace-input"]`
 const MESSAGE = `${VIEW} .search-message`
 const FILE_ROW = `${VIEW} .file-match`
-const MATCH_ROW = '.line-match'
 const ACTION = (name: string): string => `[data-search-action="${name}"]`
 const TOGGLE = (name: string): string => `${VIEW} [data-search-toggle="${name}"]`
 
@@ -78,7 +77,11 @@ async function search (page: Page, text: string, expected: RegExp): Promise<void
 }
 
 function fileRow (page: Page, name: string): Locator {
-  return page.locator(`${VIEW} .file-match-group[data-path$="/${name}"]`)
+  return page.locator(`${VIEW} .file-match[data-path$="/${name}"]`)
+}
+
+function matchRows (page: Page, name: string): Locator {
+  return page.locator(`${VIEW} .line-match[data-path$="/${name}"]`)
 }
 
 describe('the Search view', function () {
@@ -140,7 +143,7 @@ describe('the Search view', function () {
     )
     assert.equal(await fileRow(activePage, 'sage.md').locator('.file-match-count').innerText(), '2', 'the badge counts that file\'s matches')
 
-    const firstSageMatch = fileRow(activePage, 'sage.md').locator(MATCH_ROW).first()
+    const firstSageMatch = matchRows(activePage, 'sage.md').first()
     assert.equal(await firstSageMatch.locator('.match-before').innerText(), 'Compute the maximal ')
     assert.equal(await firstSageMatch.locator('.match-inside').innerText(), TERM)
     assert.equal(await firstSageMatch.locator('.match-after').innerText(), ' with Sage.')
@@ -151,7 +154,7 @@ describe('the Search view', function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
     await activePage.locator(ACTION('toggle-replace')).click()
     await activePage.locator(REPLACEMENT).fill(REPLACES_WITH)
-    const firstSageMatch = fileRow(activePage, 'sage.md').locator(MATCH_ROW).first()
+    const firstSageMatch = matchRows(activePage, 'sage.md').first()
     await waitUntil(async () => (await firstSageMatch.locator('.match-replace').count()) === 1, 'the row to show the replacement')
     assert.equal(await firstSageMatch.locator('.match-replace').innerText(), REPLACES_WITH)
     assert.match(await editorText(activePage), /subgroupoid/, 'the document is untouched while it is only a preview')
@@ -209,7 +212,7 @@ describe('the Search view', function () {
   it('replaces one file\'s matches from its row, and one match from its own', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
     await activePage.locator(REPLACEMENT).fill(REPLACES_WITH)
-    await clickRowAction(fileRow(activePage, 'sage.md').locator('.file-match'), 'replace-file')
+    await clickRowAction(fileRow(activePage, 'sage.md'), 'replace-file')
     await waitUntil(async () => {
       const text = await readFile(closedFile(), 'utf-8')
       return [...text.matchAll(/subcategory/g)].length === 2 && !text.includes(TERM)
@@ -221,7 +224,7 @@ describe('the Search view', function () {
     await search(activePage, TERM, /3 results in 2 files/)
 
     await activePage.locator(REPLACEMENT).fill(REPLACES_WITH)
-    await clickRowAction(fileRow(activePage, 'sage.md').locator(MATCH_ROW).first(), 'replace-match')
+    await clickRowAction(matchRows(activePage, 'sage.md').first(), 'replace-match')
     await waitUntil(async () => {
       const text = await readFile(closedFile(), 'utf-8')
       return [...text.matchAll(/subcategory/g)].length === 1 && [...text.matchAll(/subgroupoid/g)].length === 1
@@ -235,9 +238,9 @@ describe('the Search view', function () {
     await activePage.locator(`${VIEW} ${ACTION('undo-replace')}`).click()
     await search(activePage, TERM, /3 results in 2 files/)
 
-    await clickRowAction(fileRow(activePage, 'sage.md').locator('.file-match'), 'dismiss-file')
+    await clickRowAction(fileRow(activePage, 'sage.md'), 'dismiss-file')
     await waitUntil(async () => (await fileRow(activePage, 'sage.md').count()) === 0, 'the dismissed file to leave the results')
-    assert.equal(await activePage.locator(FILE_ROW).count(), 1, 'the other file stays')
+    assert.equal(await activePage.locator(`${FILE_ROW}:visible`).count(), 1, 'the other file stays')
 
     await activePage.locator(REPLACEMENT).fill(REPLACES_WITH)
     await activePage.locator(`${VIEW} ${ACTION('replace-all')}`).click()

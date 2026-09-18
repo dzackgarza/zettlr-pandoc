@@ -24,9 +24,19 @@ import {
 } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import { type SyntaxNodeRef } from '@lezer/common'
-import { StateField, type Range, type EditorState, type Extension } from '@codemirror/state'
+import { Facet, StateField, type Range, type EditorState, type Extension } from '@codemirror/state'
 import { rangeInPreviewSuppression, reviewSuppressionChanged } from '../util/range-in-preview-suppression'
 import { configField } from '../util/configuration'
+
+interface RendererSpec {
+  nodeTypes: ReadonlySet<string>
+  shouldHandleNode: (node: SyntaxNodeRef) => boolean
+  createWidget: (state: EditorState, node: SyntaxNodeRef) => WidgetType|undefined
+}
+
+const blockRendererFacet = Facet.define<RendererSpec, readonly RendererSpec[]>({
+  combine: values => values
+})
 
 /**
  * The visual-indent plugin hangs list markers outside the text block by
@@ -146,54 +156,52 @@ class LineStyleResetWidget extends WidgetType {
 function renderWidgets (
   state: EditorState,
   visibleRanges: ReadonlyArray<{ from: number, to: number }>,
-  shouldHandleNode: (node: SyntaxNodeRef) => boolean,
-  createWidget: (state: EditorState, node: SyntaxNodeRef) => WidgetType|undefined
+  specs: readonly RendererSpec[]
 ): DecorationSet {
   const widgets: Range<Decoration>[] = []
 
   if (visibleRanges.length === 0) {
-    // visibleRanges is empty, hence we should (re)process the whole document
     visibleRanges = [{ from: 0, to: state.doc.length }]
   }
 
   const includeAdjacent = state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true
+  const specsByNodeType = new Map<string, RendererSpec[]>()
+  for (const spec of specs) {
+    for (const nodeType of spec.nodeTypes) {
+      const candidates = specsByNodeType.get(nodeType) ?? []
+      candidates.push(spec)
+      specsByNodeType.set(nodeType, candidates)
+    }
+  }
 
   for (const { from, to } of visibleRanges) {
     syntaxTree(state).iterate({
       from,
       to,
       enter: (node) => {
-        // Determine the number of overlapping selections. If these are non-
-        // null, we must not render this widget
+        const candidates = specsByNodeType.get(node.type.name)
+        if (candidates === undefined) {
+          return
+        }
         if (rangeInPreviewSuppression(state, node.from, node.to, includeAdjacent)) {
           return
         }
 
-        // Then, let the caller decide if they want to handle this node
-        if (!shouldHandleNode(node)) {
-          return
+        for (const spec of candidates) {
+          if (!spec.shouldHandleNode(node)) {
+            continue
+          }
+          const renderedWidget = spec.createWidget(state, node)
+          if (renderedWidget === undefined) {
+            continue
+          }
+          const widget = Decoration.replace({
+            widget: new LineStyleResetWidget(renderedWidget),
+            inclusive: false
+          })
+          widgets.push(widget.range(node.from, node.to))
+          break
         }
-
-        // Lastly, create a widget and add it to the array
-        const renderedWidget = createWidget(state, node)
-        if (renderedWidget === undefined) {
-          return // This can happen if an additional condition was false
-        }
-        // NOTE: We are not setting the property `block` to true if this
-        // function is being called from within a block renderer, since
-        // Codemirror figures this out by looking at whether there are newlines
-        // in the range the widget replaces. This allows block renderers to
-        // *also* create inline widgets if necessary. This is helpful especially
-        // for the Math renderer, since it handles both inline and block
-        // equations and this makes it easier. The only reason we should always
-        // use inline renderers wherever possible is since block renderers
-        // impose a larger performance penalty.
-        const widget = Decoration.replace({
-          widget: new LineStyleResetWidget(renderedWidget),
-          inclusive: false
-        })
-
-        widgets.push(widget.range(node.from, node.to))
       }
     })
   }
@@ -220,19 +228,25 @@ function renderWidgets (
  *                                          widget line-style reset theme
  */
 export function renderInlineWidgets (
+  nodeTypes: readonly string[],
   shouldHandleNode: (node: SyntaxNodeRef) => boolean,
   createWidget: (state: EditorState, node: SyntaxNodeRef) => WidgetType|undefined
 ): Extension {
+  const spec: RendererSpec = {
+    nodeTypes: new Set(nodeTypes),
+    shouldHandleNode,
+    createWidget
+  }
   const plugin = ViewPlugin.fromClass(class {
     decorations: DecorationSet
 
     constructor (view: EditorView) {
-      this.decorations = renderWidgets(view.state, view.visibleRanges, shouldHandleNode, createWidget)
+      this.decorations = renderWidgets(view.state, view.visibleRanges, [ spec ])
     }
 
     update (update: ViewUpdate): void {
       if (update.docChanged || update.viewportChanged || update.selectionSet || reviewSuppressionChanged(update)) {
-        this.decorations = renderWidgets(update.view.state, update.view.visibleRanges, shouldHandleNode, createWidget)
+        this.decorations = renderWidgets(update.view.state, update.view.visibleRanges, [ spec ])
       }
     }
   }, {
@@ -261,18 +275,28 @@ export function renderInlineWidgets (
  * @return  {Extension}                     The decoration StateField plus the
  *                                          shared widget line-style reset theme
  */
+const sharedBlockRendererField = StateField.define<DecorationSet>({
+  create (state: EditorState) {
+    return renderWidgets(state, [], state.facet(blockRendererFacet))
+  },
+  update (_oldDecoSet, transaction) {
+    return renderWidgets(transaction.state, [], transaction.state.facet(blockRendererFacet))
+  },
+  provide: field => EditorView.decorations.from(field)
+})
+
 export function renderBlockWidgets (
+  nodeTypes: readonly string[],
   shouldHandleNode: (node: SyntaxNodeRef) => boolean,
   createWidget: (state: EditorState, node: SyntaxNodeRef) => WidgetType|undefined
 ): Extension {
-  const pluginField = StateField.define<DecorationSet>({
-    create (state: EditorState) {
-      return renderWidgets(state, [], shouldHandleNode, createWidget)
-    },
-    update (oldDecoSet, transactions) {
-      return renderWidgets(transactions.state, [], shouldHandleNode, createWidget)
-    },
-    provide: f => EditorView.decorations.from(f)
-  })
-  return [ pluginField, widgetLineStyleResetTheme ]
+  return [
+    blockRendererFacet.of({
+      nodeTypes: new Set(nodeTypes),
+      shouldHandleNode,
+      createWidget
+    }),
+    sharedBlockRendererField,
+    widgetLineStyleResetTheme
+  ]
 }

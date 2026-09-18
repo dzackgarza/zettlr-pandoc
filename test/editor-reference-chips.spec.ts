@@ -33,7 +33,7 @@ import { forceParsing } from '@codemirror/language'
 import { EditorState, type Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
-import { renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
+import { __resetCitationRenderMemoForTests, renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
 import { renderReferenceChips } from 'source/common/modules/markdown-editor/renderers/render-reference-chips'
 import {
   workspaceReferencesField,
@@ -45,6 +45,7 @@ import { extractReferences } from 'source/common/pandoc-util/extract-references'
 import { resolveWorkspace } from 'source/common/pandoc-util/resolve-references'
 import { type DocumentReferenceSnapshot } from 'source/types/common/references'
 import { extractPandocCitations } from 'source/app/service-providers/references/pandoc-citations'
+import { installCitationIpcFromCallback, settleCitationWidgets } from './citation-widget-test-helper'
 
 const BIBLIOGRAPHY = new Map<string, CSLItem>([
   ['Ols04', { id: 'Ols04', type: 'article-journal', author: [{ family: 'Olsson' }], issued: { 'date-parts': [[2004]] } }],
@@ -135,12 +136,15 @@ const NEW_SET: () => Extension[] = () => [ markdownParser(), configField, render
 describe('Reference chips (issue #1 Phase 4)', function () {
   const views: EditorView[] = []
   const originalCitationCallback = window.getCitationCallback
+  let restoreCitationIpc: (() => void)|undefined
 
   before(function () {
     polyfillJsdomForCodeMirror()
+    restoreCitationIpc = installCitationIpcFromCallback()
   })
 
   beforeEach(function () {
+    __resetCitationRenderMemoForTests()
     const engine = new CSL.Engine({
       retrieveItem: id => {
         const item = BIBLIOGRAPHY.get(id)
@@ -156,6 +160,7 @@ describe('Reference chips (issue #1 Phase 4)', function () {
   })
 
   after(function () {
+    restoreCitationIpc?.()
     window.getCitationCallback = originalCitationCallback
   })
 
@@ -309,6 +314,7 @@ describe('Reference chips (issue #1 Phase 4)', function () {
         assert.equal(combinedView.contentDOM.textContent, doc)
         payload.snapshot.citations = await extractPandocCitations(doc)
         combinedView.dispatch({ effects: workspaceReferencesUpdate.of(payload) })
+        await Promise.all([ settleCitationWidgets(currentView.dom), settleCitationWidgets(combinedView.dom) ])
 
         const currentWidgets = [ ...currentView.dom.querySelectorAll<HTMLElement>('.citeproc-citation') ]
         const combinedWidgets = [ ...combinedView.dom.querySelectorAll<HTMLElement>('.citeproc-citation') ]

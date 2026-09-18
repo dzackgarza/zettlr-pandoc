@@ -433,17 +433,18 @@ defineExpose({ navigate, stopNavigate })
 
 body {
   #file-list {
-    transition: left 0.3s ease;
+    transition: transform 0.3s ease;
     position: relative;
     width: 100%;
     top: -100%;
     left: 0%;
+    transform: translateX(0);
     height: 100%;
     overflow-x: hidden;
     overflow-y: auto;
     outline: none;
 
-    &.hidden { left: 100%; }
+    &.hidden { transform: translateX(100%); }
 
     .empty-file-list, .empty-directory {
       display: block;

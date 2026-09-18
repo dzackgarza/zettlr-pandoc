@@ -356,7 +356,7 @@ body {
       div.dropzone {
         position: absolute;
         background-color: rgba(0, 0, 0, 0);
-        transition: all 0.3s ease;
+        transition: background-color 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease;
         // Display the direction caret centered ...
         display: flex;
         align-items: center;

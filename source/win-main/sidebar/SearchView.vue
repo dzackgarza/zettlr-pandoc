@@ -182,108 +182,97 @@
       v-bind:class="{ 'search-message-error': searchError !== undefined }"
     >{{ message }}</p>
 
-    <div class="search-results">
+    <RecycleScroller
+      v-slot="{ item: row }"
+      class="search-results"
+      key-field="key"
+      v-bind:items="visibleRows"
+      v-bind:item-size="SEARCH_RESULT_ROW_HEIGHT"
+    >
       <div
-        v-for="file of visibleFiles"
-        v-bind:key="file.documentPath"
-        class="file-match-group"
-        v-bind:data-path="file.documentPath"
+        v-if="row.kind === 'file'"
+        class="file-match"
+        v-bind:data-path="row.file.documentPath"
+        v-on:click="toggleCollapsed(row.file.documentPath)"
       >
-        <div
-          class="file-match"
-          v-on:click="toggleCollapsed(file.documentPath)"
-        >
-          <cds-icon
-            class="file-match-chevron"
-            shape="angle"
-            v-bind:direction="collapsed.has(file.documentPath) ? 'right' : 'down'"
-            role="presentation"
-          ></cds-icon>
-          <span class="file-match-name">{{ fileName(file.documentPath) }}</span>
-          <span class="file-match-path">{{ fileDirectory(file.documentPath) }}</span>
-          <span class="row-actions">
-            <button
-              v-if="replaceShown && file.replaceable"
-              type="button"
-              class="search-icon-button"
-              data-search-action="replace-file"
-              v-bind:title="trans('Replace All')"
-              v-bind:aria-label="trans('Replace All')"
-              v-on:click.stop="replaceFile(file)"
-            >
-              <cds-icon
-                shape="switch"
-                role="presentation"
-              ></cds-icon>
-            </button>
-            <button
-              type="button"
-              class="search-icon-button"
-              data-search-action="dismiss-file"
-              v-bind:title="trans('Dismiss')"
-              v-bind:aria-label="trans('Dismiss')"
-              v-on:click.stop="dismissFile(file.documentPath)"
-            >
-              <cds-icon
-                shape="times"
-                role="presentation"
-              ></cds-icon>
-            </button>
-          </span>
-          <span class="file-match-count">{{ file.matches.length }}</span>
-        </div>
-        <div
-          v-for="match of (collapsed.has(file.documentPath) ? [] : file.matches)"
-          v-bind:key="`${file.documentPath}:${match.range.from}`"
-          class="line-match"
-          v-bind:data-line="match.line"
-          v-on:click="emit('jtl', file.documentPath, match.line, false)"
-        >
-          <span class="line-match-number">{{ match.line }}</span>
-          <span class="line-match-preview">
-            <span class="match-before">{{ match.preview.before }}</span>
-            <span
-              class="match-inside"
-              v-bind:class="{ replaced: showsReplacement }"
-            >{{ match.preview.inside }}</span>
-            <span
-              v-if="showsReplacement"
-              class="match-replace"
-            >{{ replacementFor(match) }}</span>
-            <span class="match-after">{{ match.preview.after }}</span>
-          </span>
-          <span class="row-actions">
-            <button
-              v-if="replaceShown && file.replaceable"
-              type="button"
-              class="search-icon-button"
-              data-search-action="replace-match"
-              v-bind:title="trans('Replace')"
-              v-bind:aria-label="trans('Replace')"
-              v-on:click.stop="replaceMatch(file, match)"
-            >
-              <cds-icon
-                shape="switch"
-                role="presentation"
-              ></cds-icon>
-            </button>
-            <button
-              type="button"
-              class="search-icon-button"
-              data-search-action="dismiss-match"
-              v-bind:title="trans('Dismiss')"
-              v-bind:aria-label="trans('Dismiss')"
-              v-on:click.stop="dismissMatch(file.documentPath, match)"
-            >
-              <cds-icon
-                shape="times"
-                role="presentation"
-              ></cds-icon>
-            </button>
-          </span>
-        </div>
+        <cds-icon
+          class="file-match-chevron"
+          shape="angle"
+          v-bind:direction="collapsed.has(row.file.documentPath) ? 'right' : 'down'"
+          role="presentation"
+        ></cds-icon>
+        <span class="file-match-name">{{ fileName(row.file.documentPath) }}</span>
+        <span class="file-match-path">{{ fileDirectory(row.file.documentPath) }}</span>
+        <span class="row-actions">
+          <button
+            v-if="replaceShown && row.file.replaceable"
+            type="button"
+            class="search-icon-button"
+            data-search-action="replace-file"
+            v-bind:title="trans('Replace All')"
+            v-bind:aria-label="trans('Replace All')"
+            v-on:click.stop="replaceFile(row.file)"
+          >
+            <cds-icon shape="switch" role="presentation"></cds-icon>
+          </button>
+          <button
+            type="button"
+            class="search-icon-button"
+            data-search-action="dismiss-file"
+            v-bind:title="trans('Dismiss')"
+            v-bind:aria-label="trans('Dismiss')"
+            v-on:click.stop="dismissFile(row.file.documentPath)"
+          >
+            <cds-icon shape="times" role="presentation"></cds-icon>
+          </button>
+        </span>
+        <span class="file-match-count">{{ row.file.matches.length }}</span>
       </div>
-    </div>
+      <div
+        v-else
+        class="line-match"
+        v-bind:data-path="row.file.documentPath"
+        v-bind:data-line="row.match.line"
+        v-on:click="emit('jtl', row.file.documentPath, row.match.line, false)"
+      >
+        <span class="line-match-number">{{ row.match.line }}</span>
+        <span class="line-match-preview">
+          <span class="match-before">{{ row.match.preview.before }}</span>
+          <span
+            class="match-inside"
+            v-bind:class="{ replaced: showsReplacement }"
+          >{{ row.match.preview.inside }}</span>
+          <span
+            v-if="showsReplacement"
+            class="match-replace"
+          >{{ replacementFor(row.match) }}</span>
+          <span class="match-after">{{ row.match.preview.after }}</span>
+        </span>
+        <span class="row-actions">
+          <button
+            v-if="replaceShown && row.file.replaceable"
+            type="button"
+            class="search-icon-button"
+            data-search-action="replace-match"
+            v-bind:title="trans('Replace')"
+            v-bind:aria-label="trans('Replace')"
+            v-on:click.stop="replaceMatch(row.file, row.match)"
+          >
+            <cds-icon shape="switch" role="presentation"></cds-icon>
+          </button>
+          <button
+            type="button"
+            class="search-icon-button"
+            data-search-action="dismiss-match"
+            v-bind:title="trans('Dismiss')"
+            v-bind:aria-label="trans('Dismiss')"
+            v-on:click.stop="dismissMatch(row.file.documentPath, row.match)"
+          >
+            <cds-icon shape="times" role="presentation"></cds-icon>
+          </button>
+        </span>
+      </div>
+    </RecycleScroller>
 
     <AlertDialogRoot v-model:open="confirmingReplaceAll">
       <AlertDialogPortal>
@@ -341,6 +330,7 @@
 
 import { reportError } from '@common/util/error-reporting'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { RecycleScroller } from 'vue-virtual-scroller'
 import { trans } from '@common/i18n-renderer'
 import { useWindowStateStore } from 'source/pinia'
 import {
@@ -369,6 +359,7 @@ const ipcRenderer = window.ipc
 
 /** How long the query rests before the search runs, as VS Code debounces it. */
 const SEARCH_DEBOUNCE_MS = 200
+const SEARCH_RESULT_ROW_HEIGHT = 22
 
 const MATCH_OPTIONS = [
   { id: 'match-case', field: 'matchCase', glyph: 'Aa', label: 'Match Case' },
@@ -407,6 +398,29 @@ const visibleFiles = computed<FileSearchResult[]>(() => {
     .filter(file => !dismissedFiles.has(file.documentPath))
     .map(file => ({ ...file, matches: file.matches.filter(match => !dismissedMatches.has(matchKey(file.documentPath, match))) }))
     .filter(file => file.matches.length > 0)
+})
+
+type SearchResultRow =
+  | { kind: 'file', key: string, file: FileSearchResult }
+  | { kind: 'match', key: string, file: FileSearchResult, match: SearchMatch }
+
+const visibleRows = computed<SearchResultRow[]>(() => {
+  const rows: SearchResultRow[] = []
+  for (const file of visibleFiles.value) {
+    rows.push({ kind: 'file', key: `file:${file.documentPath}`, file })
+    if (collapsed.has(file.documentPath)) {
+      continue
+    }
+    for (const match of file.matches) {
+      rows.push({
+        kind: 'match',
+        key: `match:${file.documentPath}:${match.range.from}`,
+        file,
+        match
+      })
+    }
+  }
+  return rows
 })
 
 const matchCount = computed(() => visibleFiles.value.reduce((sum, file) => sum + file.matches.length, 0))
@@ -504,7 +518,7 @@ function runSearch (): void {
   // A search from Enter or an action is this gesture's search: the one the
   // typing was about to start is not also wanted.
   clearTimeout(debounce)
-  windowStateStore.searchResults = []
+  windowStateStore.clearSearchResults()
   dismissedFiles.clear()
   dismissedMatches.clear()
   collapsed.clear()
@@ -561,7 +575,7 @@ const stopListening = ipcRenderer.on('search-provider', (event, message: SearchP
   }
   if (message.generation > seenGeneration) {
     seenGeneration = message.generation
-    windowStateStore.searchResults = []
+    windowStateStore.clearSearchResults()
   }
   switch (message.type) {
     case 'search-result':
@@ -572,11 +586,13 @@ const stopListening = ipcRenderer.on('search-provider', (event, message: SearchP
       progress.value = message.progress
       return
     case 'search-failed':
+      windowStateStore.flushSearchResults()
       searching.value = false
       progress.value = 1
       searchError.value = failureMessage(message.failure)
       return
     case 'search-end':
+      windowStateStore.flushSearchResults()
       searching.value = false
       progress.value = 1
   }
@@ -692,6 +708,7 @@ defineExpose({ focusQueryInput, startSearch })
 </script>
 
 <style lang="less">
+@import '~vue-virtual-scroller/dist/vue-virtual-scroller.css';
 body div#search-view {
   display: flex;
   flex-direction: column;

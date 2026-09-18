@@ -400,5 +400,5 @@ export const renderImages = [
       }
     }
   }),
-  renderInlineWidgets(shouldHandleNode, createWidget)
+  renderInlineWidgets([ 'Image' ], shouldHandleNode, createWidget)
 ]

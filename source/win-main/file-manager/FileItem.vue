@@ -168,7 +168,7 @@ import formatSize from '@common/util/format-size'
 import PopoverDirProps from './util/PopoverDirProps.vue'
 import PopoverFileProps from './util/PopoverFileProps.vue'
 
-import { ref, computed, toRef, watch, onMounted } from 'vue'
+import { ref, computed, toRef, watch, onMounted, onUnmounted } from 'vue'
 import { type AnyDescriptor, type MDFileDescriptor } from '@dts/common/fsal'
 import { useConfigStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { useItemComposable } from './util/item-composable'
@@ -209,8 +209,10 @@ async function fetchChildren (): Promise<void> {
   children.value = await ipcRenderer.invoke('fsal', { command: 'read-directory', payload: props.item.path })
 }
 
+let stopFsalListener: (() => void)|undefined
+
 onMounted(async () => {
-  ipcRenderer.on('fsal-event', (_, payload: FSALEventPayload) => {
+  stopFsalListener = ipcRenderer.on('fsal-event', (_, payload: FSALEventPayload) => {
     const affectedPath = payload.event === 'unlink' || payload.event === 'unlinkDir'
       ? payload.path
       : (payload as FSALEventPayloadChange).descriptor.path
@@ -245,6 +247,10 @@ onMounted(async () => {
   if (props.item.type === 'directory') {
     await fetchChildren()
   }
+})
+
+onUnmounted(() => {
+  stopFsalListener?.()
 })
 
 const {

@@ -15,7 +15,7 @@
 
 import { reportError } from '@common/util/error-reporting'
 import { defineStore } from 'pinia'
-import { type Ref, ref, watch, computed } from 'vue'
+import { type Ref, ref, watch, computed, shallowRef, triggerRef } from 'vue'
 import { useConfigStore } from './config'
 import type { AnyDescriptor } from 'source/types/common/fsal'
 import type { FSALEventPayload } from 'source/app/service-providers/fsal'
@@ -71,7 +71,7 @@ async function retrieveInitialUpdate (rootPaths: string[], workspaceMap: Ref<Map
 
   // Now we can set the stuff immediately
   workspaceMap.value = new Map(entries)
-  descriptorMap.value = new Map(descriptors.map(d => ([ d.path, d ])))
+  descriptorMap.value = new Map(descriptors.map(descriptor => [ descriptor.path, descriptor ]))
 }
 
 export const useWorkspaceStore = defineStore('workspace', () => {
@@ -85,12 +85,64 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   const workspaceMap = ref<Map<string, string[]>>(new Map())
   const pathList = computed(() => ([...workspaceMap.value.values()].flat()))
-  const descriptorMap = ref<Map<string, AnyDescriptor>>(new Map())
-  const rootDescriptors = ref<AnyDescriptor[]>([])
+  // The collection is reactive, but descriptor values are immutable snapshots
+  // replaced wholesale on FSAL events. Avoid recursively proxying every nested
+  // descriptor in large workspaces.
+  const descriptorMap = shallowRef(new Map<string, AnyDescriptor>())
+  const rootDescriptors = shallowRef<AnyDescriptor[]>([])
 
   const isLoading = ref(true)
 
+  function refreshRootDescriptors (): void {
+    rootDescriptors.value = openPaths.value
+      .filter(rootPath => descriptorMap.value.has(rootPath))
+      .map(rootPath => descriptorMap.value.get(rootPath))
+      .filter(root => root !== undefined)
+  }
+
+  function setDescriptors (descriptors: readonly AnyDescriptor[]): void {
+    if (descriptors.length === 0) {
+      return
+    }
+    let rootsChanged = false
+    for (const descriptor of descriptors) {
+      descriptorMap.value.set(descriptor.path, descriptor)
+      rootsChanged ||= openPaths.value.includes(descriptor.path)
+    }
+    triggerRef(descriptorMap)
+    if (rootsChanged) {
+      refreshRootDescriptors()
+    }
+  }
+
+  function setDescriptor (descriptor: AnyDescriptor): void {
+    setDescriptors([ descriptor ])
+  }
+
+  function deleteDescriptors (paths: readonly string[]): void {
+    if (paths.length === 0) {
+      return
+    }
+    let rootsChanged = false
+    let changed = false
+    for (const path of paths) {
+      changed ||= descriptorMap.value.delete(path)
+      rootsChanged ||= openPaths.value.includes(path)
+    }
+    if (changed) {
+      triggerRef(descriptorMap)
+    }
+    if (rootsChanged) {
+      refreshRootDescriptors()
+    }
+  }
+
+  function deleteDescriptor (path: string): void {
+    deleteDescriptors([ path ])
+  }
+
   retrieveInitialUpdate(openPaths.value, workspaceMap, descriptorMap)
+    .then(() => { refreshRootDescriptors() })
     .catch(err => reportError('[Workspace Store] Could not retrieve initial set of loaded paths', err))
     .finally(() => {
       isLoading.value = false
@@ -107,7 +159,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             workspaceMap.value.set(root, paths.filter(path => path !== payload.path))
           }
 
-          descriptorMap.value.delete(payload.path)
+          deleteDescriptor(payload.path)
         } else if (payload.event === 'change' || payload.event === 'add' || payload.event === 'addDir') {
           for (const [root, paths] of workspaceMap.value) {
             const path = payload.descriptor.path
@@ -117,7 +169,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             workspaceMap.value.set(root, [...paths, path])
           }
 
-          descriptorMap.value.set(payload.descriptor.path, payload.descriptor)
+          setDescriptor(payload.descriptor)
         }
       })
     })
@@ -132,10 +184,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   watch(openPaths, async (value) => {
     // Whenever openPaths changes, also update the rootDescriptors to reflect a
     // potentially changed sorting.
-    rootDescriptors.value = openPaths.value
-      .filter(rootPath => descriptorMap.value.has(rootPath))
-      .map(rootPath => descriptorMap.value.get(rootPath))
-      .filter(root => root !== undefined)
+    refreshRootDescriptors()
 
     // Retrieve all new paths to load.
     const pathsToLoad: string[] = []
@@ -183,22 +232,19 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     // First, start loading new descriptors
     getDescriptorFor(descriptorsToFetch)
-      .then(descriptors => descriptors.map(d => descriptorMap.value.set(d.path, d)))
+      .then(descriptors => { setDescriptors(descriptors) })
       .catch(err => reportError('Could not fetch new descriptors from main!', err))
 
-    // Second, check which of the descriptors are no longer loaded
+    // Second, drop descriptors no longer loaded in one reactive publication.
+    const descriptorsToDelete: string[] = []
     for (const existingDescriptor of descriptorMap.value.keys()) {
       if (!flatMap.has(existingDescriptor)) {
-        descriptorMap.value.delete(existingDescriptor)
+        descriptorsToDelete.push(existingDescriptor)
       }
     }
+    deleteDescriptors(descriptorsToDelete)
   }, { deep: true })
 
-  watch(descriptorMap, value => {
-    rootDescriptors.value = openPaths.value
-      .filter(rootPath => value.has(rootPath))
-      .map(rootPath => value.get(rootPath)!)
-  }, { deep: true })
 
   return { workspaceMap, pathList, descriptorMap, rootDescriptors }
 })

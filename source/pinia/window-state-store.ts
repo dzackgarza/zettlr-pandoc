@@ -18,12 +18,13 @@ import { reportError } from '@common/util/error-reporting'
 import { defineStore } from 'pinia'
 import type { DocumentInfo } from 'source/common/modules/markdown-editor'
 import type { ToCEntry } from 'source/common/modules/markdown-editor/plugins/toc-field'
-import { ref, type Ref, watch } from 'vue'
+import { ref, shallowRef, type Ref, watch } from 'vue'
 import { type WritingTarget } from '@providers/targets'
 import type { FileSearchResult } from 'source/app/service-providers/search'
 import type { SnippetCatalogue, SnippetFileDiagnostic, UserSnippet } from '@dts/common/snippets'
 import type { QuickTexCatalogue } from '@dts/common/quicktex'
 import { useConfigStore } from './config'
+import { mergeSortedByDocumentPath } from '@common/util/merge-sorted-by-document-path'
 
 const ipcRenderer = window.ipc
 
@@ -76,11 +77,43 @@ export const useWindowStateStore = defineStore('window-state', () => {
    * it; the editor reads it to highlight the matches in the document it
    * shows.
    */
-  const searchResults = ref<FileSearchResult[]>([])
+  const searchResults = shallowRef<FileSearchResult[]>([])
+  let pendingSearchResults: FileSearchResult[] = []
+  let searchPublishFrame: number|undefined
+
+  function mergeSearchResults (incoming: FileSearchResult[]): void {
+    searchResults.value = mergeSortedByDocumentPath(searchResults.value, incoming)
+  }
+
+  function flushSearchResults (): void {
+    if (searchPublishFrame !== undefined) {
+      cancelAnimationFrame(searchPublishFrame)
+      searchPublishFrame = undefined
+    }
+    const incoming = pendingSearchResults
+    pendingSearchResults = []
+    mergeSearchResults(incoming)
+  }
 
   function addSearchResult (result: FileSearchResult): void {
-    searchResults.value.push(result)
-    searchResults.value.sort((a, b) => a.documentPath.localeCompare(b.documentPath))
+    pendingSearchResults.push(result)
+    if (searchPublishFrame === undefined) {
+      searchPublishFrame = requestAnimationFrame(() => {
+        searchPublishFrame = undefined
+        const incoming = pendingSearchResults
+        pendingSearchResults = []
+        mergeSearchResults(incoming)
+      })
+    }
+  }
+
+  function clearSearchResults (): void {
+    if (searchPublishFrame !== undefined) {
+      cancelAnimationFrame(searchPublishFrame)
+      searchPublishFrame = undefined
+    }
+    pendingSearchResults = []
+    searchResults.value = []
   }
 
   // Snippets
@@ -122,6 +155,8 @@ export const useWindowStateStore = defineStore('window-state', () => {
     tableOfContents,
     searchResults,
     addSearchResult,
+    flushSearchResults,
+    clearSearchResults,
     snippets,
     snippetDiagnostics,
     quickTex,

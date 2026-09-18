@@ -103,7 +103,7 @@ import ShortcutDisplay from '@common/vue/ShortcutDisplay.vue'
 import { trans } from '@common/i18n-renderer'
 import { explodeShortcut } from '@common/util/shortcuts'
 import { getCustomShortcut } from '@providers/menu/shortcuts'
-import { nextTick, ref, computed, watch, onMounted } from 'vue'
+import { nextTick, ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useConfigStore, useWindowStateStore } from 'source/pinia'
 import { useWorkspaceStore } from 'source/pinia/workspace-store'
 
@@ -197,8 +197,10 @@ watch(fileManagerMode, () => {
   }
 })
 
+let stopShortcutListener: (() => void)|undefined
+
 onMounted(() => {
-  ipcRenderer.on('shortcut', (event, message) => {
+  stopShortcutListener = ipcRenderer.on('shortcut', (event, message) => {
     if (message === 'filter-files') {
       // Focus the filter on the next tick. Why? Because it might be that
       // the file manager is hidden, or the global search is visible. In both
@@ -208,6 +210,10 @@ onMounted(() => {
         .catch(err => reportError(err))
     }
   })
+})
+
+onUnmounted(() => {
+  stopShortcutListener?.()
 })
 
 /**
@@ -426,7 +432,7 @@ body #file-manager {
 
   &.expanded {
     #file-tree, #file-list { width: 50%; }
-    #file-list, #file-list.hidden { left: 50%; }
+    #file-list, #file-list.hidden { left: 50%; transform: none; }
     #file-tree, #file-tree.hidden { left: 0%; }
   }
 
@@ -445,9 +451,9 @@ body #file-manager {
     left: 10px;
     width: 30px;
     height: 30px;
-    transition: 0.4s left ease;
+    transition: transform 0.4s ease;
 
-    &.hidden { left:-60px; }
+    &.hidden { transform: translateX(-70px); }
   }
 }
 

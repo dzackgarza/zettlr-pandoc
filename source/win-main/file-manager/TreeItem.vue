@@ -195,7 +195,7 @@ import PopoverDirProps from './util/PopoverDirProps.vue'
 import PopoverFileProps from './util/PopoverFileProps.vue'
 
 import RingProgress from '@common/vue/window/toolbar-controls/RingProgress.vue'
-import { nextTick, ref, computed, watch, onMounted, toRef } from 'vue'
+import { nextTick, ref, computed, watch, onMounted, onUnmounted, toRef } from 'vue'
 import type { AnyDescriptor } from '@dts/common/fsal'
 import { useConfigStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { pathBasename, relativePath } from '@common/util/renderer-path-polyfill'
@@ -523,9 +523,12 @@ watch(showDotFiles, async function () {
   }
 })
 
+let stopShortcutListener: (() => void)|undefined
+let stopFsalListener: (() => void)|undefined
+
 onMounted(async () => {
   if (props.item.type === 'directory') {
-    ipcRenderer.on('shortcut', (_, message) => {
+    stopShortcutListener = ipcRenderer.on('shortcut', (_, message) => {
       if (message === 'new-dir') {
         operationType.value = 'createDir'
       }
@@ -534,7 +537,7 @@ onMounted(async () => {
     await fetchChildren()
   }
 
-  ipcRenderer.on('fsal-event', (_, payload: FSALEventPayload) => {
+  stopFsalListener = ipcRenderer.on('fsal-event', (_, payload: FSALEventPayload) => {
     const affectedPath = payload.event === 'unlink' || payload.event === 'unlinkDir'
       ? payload.path
       : (payload as FSALEventPayloadChange).descriptor.path
@@ -569,6 +572,14 @@ onMounted(async () => {
   // Initially scroll into view if this item is selected
   if (isSelected.value) {
     scrollIntoView()
+  }
+})
+
+onUnmounted(() => {
+  stopShortcutListener?.()
+  stopFsalListener?.()
+  if (uncollapseTimeout.value !== undefined) {
+    clearTimeout(uncollapseTimeout.value)
   }
 })
 
@@ -777,6 +788,8 @@ body {
 
     .tree-item {
       white-space: nowrap;
+      content-visibility: auto;
+      contain-intrinsic-size: auto var(--chrome-row-height);
 
       // If a directory is open, ensure the containing folder remains sticked to
       // the top as the user scrolls through its (possibly long) contents.

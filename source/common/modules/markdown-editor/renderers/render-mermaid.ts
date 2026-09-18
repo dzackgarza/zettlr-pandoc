@@ -148,4 +148,4 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): MermaidWidget|u
   return new MermaidWidget(graph, node.node, window.config.get('darkMode') as boolean)
 }
 
-export const renderMermaid = renderBlockWidgets(shouldHandleNode, createWidget)
+export const renderMermaid = renderBlockWidgets([ 'FencedCode' ], shouldHandleNode, createWidget)

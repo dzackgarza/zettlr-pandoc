@@ -312,7 +312,7 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): TikzWidget|unde
 }
 
 export const renderTikzFigures = [
-  renderBlockWidgets(shouldHandleNode, createWidget),
+  renderBlockWidgets([ 'Paragraph', 'FencedCode' ], shouldHandleNode, createWidget),
   EditorView.baseTheme({
     '.tikz-figure': {
       display: 'block',
