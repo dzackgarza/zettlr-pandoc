@@ -185,6 +185,7 @@ class CitationWidget extends WidgetType {
         (err: unknown) => {
           reportError('Citation preview IPC failed', err)
           applyRenderedCitation(elem, this.rawCitation, undefined)
+          elem.title = err instanceof Error ? err.message : String(err)
         }
       )
     }

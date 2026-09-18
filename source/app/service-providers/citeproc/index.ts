@@ -44,6 +44,7 @@ import type { CitationDatabase } from '@dts/common/citeproc'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
 import { showNativeNotification } from '@common/util/show-notification'
 import { loadDatabase } from './util/database-loader'
+import { parseCslStyleMetadata, supportsNarrativeComposite, type CslCitationFormat } from './util/style-metadata'
 
 export interface DatabaseRecord {
   path: string
@@ -71,11 +72,27 @@ export type CiteprocIPCContract = {
 
 // get-citation-sync rides ipcMain.on/sendSync, not invoke, so it is not part
 // of the invoke contract above.
+export type CiteprocSyncCitationResponse =
+  | { ok: true, value: string|undefined }
+  | { ok: false, error: string }
+
 export type CiteprocProviderIPCAPI = IPCMessage<CiteprocIPCContract>
   | { command: 'get-citation-sync', payload: { database: CitationDatabase, citations: CiteItem[], composite: boolean } }
 
 // The default style Zettlr ships with
 const DEFAULT_CHICAGO_STYLE = path.join(__dirname, './assets/csl-styles/chicago-author-date.csl')
+
+const CITEPROC_EMPTY_SENTINELS = [
+  '[NO_PRINTED_FORM]',
+  '[CSL STYLE ERROR: reference with no printed form.]',
+] as const
+
+export class CiteprocRenderInvariantError extends Error {
+  constructor (message: string) {
+    super(message)
+    this.name = 'CiteprocRenderInvariantError'
+  }
+}
 
 /**
  * This class enables to export citations from a CSL JSON file to HTML.
@@ -104,6 +121,12 @@ export default class CiteprocProvider extends ProviderContract {
    * @var {CSL.Engine}
    */
   private engine: CSL.Engine
+
+  /** The exact configured style driving the current engine. */
+  private stylePath = DEFAULT_CHICAGO_STYLE
+
+  /** CSL-declared citation format used to choose semantically valid modes. */
+  private citationFormat: CslCitationFormat|undefined
   /**
    * This array contains all available databases, including the main one.
    *
@@ -213,7 +236,13 @@ export default class CiteprocProvider extends ProviderContract {
       const { command, payload } = message
       if (command === 'get-citation-sync') {
         const { database, citations, composite } = payload
-        event.returnValue = this.getCitation(database, citations, composite)
+        try {
+          event.returnValue = { ok: true, value: this.getCitation(database, citations, composite) } satisfies CiteprocSyncCitationResponse
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          this._logger.error(`[Citeproc Provider] Synchronous citation rendering failed: ${message}`, error)
+          event.returnValue = { ok: false, error: message } satisfies CiteprocSyncCitationResponse
+        }
       }
     })
 
@@ -357,9 +386,10 @@ export default class CiteprocProvider extends ProviderContract {
     // is a misconfiguration the user must see, not something to paper over
     // with the bundled style.
     const configuredStyle = this._config.get().export.cslStyle
-    const stylePath = configuredStyle === '' ? DEFAULT_CHICAGO_STYLE : configuredStyle
-    this._logger.info(`[Citeproc Provider] Loading CSL style at ${stylePath} ...`)
-    const style = await fs.readFile(stylePath, 'utf-8')
+    this.stylePath = configuredStyle === '' ? DEFAULT_CHICAGO_STYLE : configuredStyle
+    this._logger.info(`[Citeproc Provider] Loading CSL style at ${this.stylePath} ...`)
+    const style = await fs.readFile(this.stylePath, 'utf-8')
+    this.citationFormat = parseCslStyleMetadata(style).citationFormat
 
     // The last parameter enforces usage of the language we provide
     this.engine = new CSL.Engine(this.sys, style, this._config.get().appLang, true)
@@ -367,6 +397,9 @@ export default class CiteprocProvider extends ProviderContract {
     // links and DOIs in a-tags so that the user can click them in the
     // bibliography. Remove if it becomes unstable and implement manually.
     this.engine.opt.development_extensions.wrap_url_and_doi = true
+    // Empty citeproc output is an invariant failure. Without this option,
+    // citeproc-js literally returns '[NO_PRINTED_FORM]' as if it were content.
+    this.engine.opt.development_extensions.throw_on_empty = true
   }
 
   /**
@@ -581,41 +614,64 @@ export default class CiteprocProvider extends ProviderContract {
       return undefined
     }
 
-    try {
-      // Make sure we have the correct database loaded
-      this.selectDatabase(database)
-      const citekeys = citations.map(c => c.id)
-      if (!this.ensureCitekeysExist(citekeys)) {
-        this._logger.verbose(`[CiteprocProvider] Cannot render citation with citekeys ${citekeys.join(', ')}: At least one key does not exist in database ${database}`)
-        return undefined
-      }
-
-      // A style whose <citation> declares a <sort> reads each cited item from
-      // the engine's registry while ordering the cluster, so the items have to
-      // be registered before the cluster is built.
-      this.engine.updateItems(citekeys)
-
-      if (!composite || citations.length > 1) {
-        return this.engine.makeCitationCluster(citations)
-      } else if (composite && citations.length === 1) {
-        // Mimic the composite mode
-        const citation = citations[0]
-        const suffix = citation.suffix
-        citation.suffix = undefined
-        citation['author-only'] = true
-        citation['suppress-author'] = false
-        const author = this.engine.makeCitationCluster([citation])
-        citation.suffix = suffix
-        citation['author-only'] = false
-        citation['suppress-author'] = true
-        const rest = this.engine.makeCitationCluster([citation])
-        return author + ' ' + rest
-      }
-    } catch (err: unknown) {
-      const msg = citations.map(elem => elem.id).join(', ')
-      this._logger.error(`[citeproc] makeCitationCluster: Could not create citation cluster ${msg}: ${err instanceof Error ? err.message : 'unknown error'}`, err)
+    // Make sure we have the correct database loaded. Missing citekeys are an
+    // ordinary unresolved-citation state; a citeproc render failure is not.
+    this.selectDatabase(database)
+    const citekeys = citations.map(c => c.id)
+    if (!this.ensureCitekeysExist(citekeys)) {
+      this._logger.verbose(`[CiteprocProvider] Cannot render citation with citekeys ${citekeys.join(', ')}: At least one key does not exist in database ${database}`)
       return undefined
     }
+
+    this.engine.updateItems(citekeys)
+    const useComposite = composite && citations.length === 1 && supportsNarrativeComposite(this.citationFormat)
+    const mode: EngineCitation['properties']['mode'] = useComposite ? 'composite' : undefined
+    const citation: EngineCitation = {
+      citationItems: citations.map(item => ({ ...item })),
+      properties: { noteIndex: 0, mode },
+    }
+
+    try {
+      const rendered = this.engine.previewCitationCluster(citation, [], [], 'html')
+      return this.assertPrintableCitation(rendered, citekeys, composite, mode)
+    } catch (error) {
+      const contextual = this.renderInvariantError('citation', citekeys, error)
+      this._logger.error(contextual.message, error)
+      throw contextual
+    }
+  }
+
+  private assertPrintableCitation (
+    rendered: string,
+    citekeys: string[],
+    requestedComposite: boolean,
+    mode: EngineCitation['properties']['mode']
+  ): string {
+    if (rendered.trim() === '' || CITEPROC_EMPTY_SENTINELS.some(sentinel => rendered.includes(sentinel))) {
+      throw this.renderInvariantError(
+        'citation',
+        citekeys,
+        new Error(`citeproc returned non-printable output ${JSON.stringify(rendered)} (requestedComposite=${requestedComposite}, mode=${mode ?? 'ordinary'})`)
+      )
+    }
+    return rendered
+  }
+
+  private renderInvariantError (kind: 'citation'|'bibliography', citekeys: string[], cause: unknown): CiteprocRenderInvariantError {
+    if (cause instanceof CiteprocRenderInvariantError) {
+      return cause
+    }
+    const itemContext = citekeys.map(key => {
+      const item = this._items[key]
+      if (item === undefined) return `${key} (missing)`
+      const title = typeof item.title === 'string' ? item.title.replace(/<[^>]+>/g, '').slice(0, 120) : '(untitled)'
+      return `${key} (${String(item.type)}): ${title}`
+    }).join('; ')
+    const causeText = cause instanceof Error ? cause.message : String(cause)
+    return new CiteprocRenderInvariantError(
+      `Citeproc ${kind} invariant failed for [${citekeys.join(', ')}] using style ${JSON.stringify(this.stylePath)} ` +
+      `(citation-format=${this.citationFormat ?? 'unspecified'}). ${causeText}. Items: ${itemContext}`
+    )
   }
 
   /**
@@ -636,14 +692,27 @@ export default class CiteprocProvider extends ProviderContract {
       return undefined
     }
 
+    this.selectDatabase(database)
+    const sanitizedCitekeys = this.filterNonExistingCitekeys(citekeys)
+    if (sanitizedCitekeys.length === 0) {
+      return undefined
+    }
+    this.engine.updateItems(sanitizedCitekeys)
     try {
-      this.selectDatabase(database)
-      const sanitizedCitekeys = this.filterNonExistingCitekeys(citekeys)
-      this.engine.updateItems(sanitizedCitekeys)
-      return this.engine.makeBibliography()
-    } catch (err: unknown) {
-      this._logger.error(`[citeproc] makeBibliography: Could not create bibliography: ${err instanceof Error ? err.message : 'unknown error'}`, err)
-      return undefined // Something went wrong (e.g. falsy items in the registry)
+      const bibliography = this.engine.makeBibliography()
+      if (bibliography === undefined || bibliography[1].length === 0) {
+        throw new Error('citeproc returned no bibliography entries')
+      }
+      for (const entry of bibliography[1]) {
+        if (entry.trim() === '' || CITEPROC_EMPTY_SENTINELS.some(sentinel => entry.includes(sentinel))) {
+          throw new Error(`citeproc returned non-printable bibliography entry ${JSON.stringify(entry)}`)
+        }
+      }
+      return bibliography
+    } catch (error) {
+      const contextual = this.renderInvariantError('bibliography', sanitizedCitekeys, error)
+      this._logger.error(contextual.message, error)
+      throw contextual
     }
   }
 

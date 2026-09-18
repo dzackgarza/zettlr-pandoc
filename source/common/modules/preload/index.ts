@@ -15,7 +15,7 @@
  */
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { CiteprocProviderIPCAPI } from 'source/app/service-providers/citeproc'
+import type { CiteprocProviderIPCAPI, CiteprocSyncCitationResponse } from 'source/app/service-providers/citeproc'
 import type { CitationDatabase } from '@dts/common/citeproc'
 
 // PREPARATION: Since we have multiple editor panes and all of them need to
@@ -72,10 +72,14 @@ contextBridge.exposeInMainWorld(
   'getCitationCallback',
   function (database: CitationDatabase): (citations: CiteItem[], composite: boolean) => string|undefined {
     return function (citations: CiteItem[], composite: boolean): string|undefined {
-      return ipcRenderer.sendSync('citeproc-provider', {
+      const response = ipcRenderer.sendSync('citeproc-provider', {
         command: 'get-citation-sync',
         payload: { database, citations, composite }
-      } as CiteprocProviderIPCAPI)
+      } as CiteprocProviderIPCAPI) as CiteprocSyncCitationResponse
+      if (!response.ok) {
+        throw new Error(response.error)
+      }
+      return response.value
     }
   }
 )

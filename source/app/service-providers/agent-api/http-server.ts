@@ -42,7 +42,7 @@ import type {
   RenderBibliographyRequest,
 } from "@dts/common/agent-api";
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
-import type CiteprocProvider from "@providers/citeproc";
+import CiteprocProvider, { CiteprocRenderInvariantError } from "@providers/citeproc";
 import type DocumentManager from "@providers/documents";
 import type { AnnotationFailure, ReviewFailure } from "@providers/documents/document-collaboration-application-service";
 import type LogProvider from "@providers/log";
@@ -1627,6 +1627,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       const rendered = this._citeproc.getCitation(db, citeItems, body.composite ?? false);
       this.sendJson(res, 200, { rendered: rendered ?? null });
     } catch (err) {
+      if (err instanceof CiteprocRenderInvariantError) {
+        this.sendError(res, 500, "INTERNAL_ERROR", err.message);
+        return;
+      }
       this.sendError(
         res,
         404,
@@ -1654,6 +1658,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       const [options, entries] = result;
       this.sendJson(res, 200, { options, entries });
     } catch (err) {
+      if (err instanceof CiteprocRenderInvariantError) {
+        this.sendError(res, 500, "INTERNAL_ERROR", err.message);
+        return;
+      }
       this.sendError(
         res,
         404,

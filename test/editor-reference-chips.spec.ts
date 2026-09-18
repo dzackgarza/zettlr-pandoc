@@ -154,7 +154,8 @@ describe('Reference chips (issue #1 Phase 4)', function () {
       retrieveLocale: () => readFileSync('static/csl-locales/locales-en-US.xml', 'utf8')
     }, readFileSync('static/csl-styles/chicago-author-date.csl', 'utf8'), 'en-US', true)
     window.getCitationCallback = () => (citationItems, composite) => {
-      const citation = { citationItems, properties: { noteIndex: 0, mode: composite ? 'composite' : undefined } }
+      const mode: EngineCitation['properties']['mode'] = composite ? 'composite' : undefined
+      const citation: EngineCitation = { citationItems, properties: { noteIndex: 0, mode } }
       return engine.previewCitationCluster(citation, [], [], 'html')
     }
   })
