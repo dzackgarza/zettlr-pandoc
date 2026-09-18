@@ -1,0 +1,17 @@
+schema = 1
+upstream_repository = "https://github.com/DominikPeters/tikz-editor.git"
+upstream_commit = "be197d85e278bf76c5fc052931b7902942e274e7"
+upstream_version = "0.5.2"
+license = "MIT"
+license_file = "LICENSE"
+mode = "vendored-fork-overlay"
+
+[runtime]
+mathjax_package = "mathjax"
+mathjax_version = "4.1.1"
+mathjax_font_package = "@mathjax/mathjax-newcm-font"
+mathjax_font_version = "4.1.1"
+
+[maintenance]
+refresh = "node scripts/update-tikz-editor-vendor.mjs"
+note = "Refreshing checks out the exact upstream commit, applies ZETTLR.patch, installs the Zettlr embed workspace, builds upstream parser/core/app code, copies the pinned local MathJax runtime assets, and replaces only vendor/tikz-editor/src. Change upstream_commit only as an explicit vendor rebase."

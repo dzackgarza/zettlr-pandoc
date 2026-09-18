@@ -22,7 +22,7 @@ import {
 } from '@common/modules/markdown-editor/tikz-preview-modes'
 import TikzCompilerPreview from './TikzCompilerPreview.vue'
 import TikzQuiverPreview from './TikzQuiverPreview.vue'
-import TikzVisualPreview from './TikzVisualPreview.vue'
+import TikzEditorPreview from './TikzEditorPreview.vue'
 
 export interface TikzPreviewProvider extends TikzPreviewModeDescriptor {
   component: Component
@@ -31,7 +31,7 @@ export interface TikzPreviewProvider extends TikzPreviewModeDescriptor {
 const COMPONENTS: Record<TikzPreviewModeId, Component> = {
   tikz: TikzCompilerPreview,
   quiver: TikzQuiverPreview,
-  visual: TikzVisualPreview
+  visual: TikzEditorPreview
 }
 
 export const TIKZ_PREVIEW_PROVIDERS: readonly TikzPreviewProvider[] =

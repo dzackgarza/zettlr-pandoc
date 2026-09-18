@@ -503,8 +503,8 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     assert.ok((await page.locator('.cm-content').innerText()).includes('\\begin{tikzcd}'), 'mode switching never replaces the ordinary source editor')
 
     // Ordinary tikzpicture uses the identical RHS shell. It still defaults to
-    // the compiler-backed preview, while Quiver is unavailable and the visual
-    // source editor is available as a third registered provider.
+    // the compiler-backed preview, while Quiver is unavailable and the pinned
+    // tikz-editor fork is available as a third registered provider.
     await page.evaluate(`(() => {
       const view = document.querySelector('.cm-content')?.cmTile?.root?.view
       if (!view) throw new Error('CodeMirror view disappeared')
@@ -525,76 +525,101 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     assert.strictEqual(await ordinaryVisual.isEnabled(), true, 'the visual editor is enabled for an authored tikzpicture')
 
     await ordinaryVisual.click()
-    const visualCanvas = preview.locator('.tikz-visual-viewport')
-    await visualCanvas.waitFor({ state: 'visible', timeout: 20_000 })
-    assert.strictEqual(await preview.locator('.tikz-visual-node').count(), 2, 'the visual provider projects both authored nodes')
-    assert.strictEqual(await preview.locator('.tikz-visual-arrow').count(), 1, 'the visual provider projects the named-node arrow')
-    assert.strictEqual(await preview.locator('.tikz-quiver-frame').count(), 0, 'the ordinary TikZ visual provider is not a Quiver iframe')
-    assert.match(
-      await preview.locator('.tikz-live-preview-status').innerText(),
-      /Visual edits synced/,
-      'the provider reports source synchronization through the shared shell'
+    const tikzEditorFrame = page.frameLocator('.tikz-editor-frame')
+    await tikzEditorFrame.locator('[data-canvas-viewport="true"]').waitFor({ state: 'visible', timeout: 30_000 })
+    const embeddedSource = tikzEditorFrame.locator('.cm-content').first()
+    await embeddedSource.waitFor({ state: 'visible', timeout: 20_000 })
+    assert.match(await embeddedSource.innerText(), /\\node\[dot\] \(eta\)/u, 'the embedded editor receives the authored source')
+    assert.strictEqual(await preview.locator('.tikz-quiver-frame').count(), 0, 'ordinary TikZ uses tikz-editor, not Quiver')
+    await page.waitForFunction(
+      () => document.querySelector('.tikz-live-preview-status')?.textContent?.includes('Synced') === true,
+      undefined,
+      { timeout: 20_000 }
     )
 
-    // Edit a real node through the canvas inspector and require the same
-    // CodeMirror buffer to become the source of truth immediately.
-    await preview.locator('.tikz-visual-node[title^="eta ·"]').dblclick()
-    const labelEditor = preview.locator('.tikz-visual-inspector input')
-    await labelEditor.waitFor({ state: 'visible', timeout: 10_000 })
-    await labelEditor.fill('$\\theta$')
-    await labelEditor.press('Enter')
-    await page.waitForFunction(() => {
+    // This is the ordinary mixed workflow: leave the visual editor, hand-edit
+    // source with structure the former bespoke canvas did not understand, and
+    // return to visual mode. The exact authored bytes must reach tikz-editor;
+    // Zettlr must not parse, canonicalize, or discard them.
+    const complexTikz = String.raw`\begin{scope}[shift={(1.5,0.5)}, rotate=17]
+  \foreach \x in {0,1,2} {
+    \draw (\x,0) .. controls +(0,0.5) and +(0,-0.5) .. (\x,1);
+  }
+\end{scope}
+`
+    await ordinaryTikz.click()
+    const complexEdit = await page.evaluate(`(() => {
+      const insert = ${JSON.stringify(complexTikz)}
+      const view = document.querySelector('.cm-content')?.cmTile?.root?.view
+      if (!view) return false
+      const source = view.state.doc.toString()
+      const at = source.lastIndexOf('\\\\end{tikzpicture}')
+      if (at < 0) return false
+      view.dispatch({ changes: { from: at, insert }, selection: { anchor: at + insert.length } })
+      view.focus()
+      return true
+    })()`)
+    assert.strictEqual(complexEdit, true, 'the complex hand-authored TikZ edit must land in CodeMirror')
+    await ordinaryVisual.click()
+    await embeddedSource.waitFor({ state: 'visible', timeout: 20_000 })
+    await page.waitForFunction(() => document.querySelector('.tikz-live-preview-status')?.textContent?.includes('Synced') === true, undefined, { timeout: 20_000 })
+    await expectSourceInEmbeddedEditor(tikzEditorFrame, '\\foreach \\x in {0,1,2}')
+    await expectSourceInEmbeddedEditor(tikzEditorFrame, '.. controls +(0,0.5) and +(0,-0.5) ..')
+
+    // Drive a real upstream visual-authoring gesture, not a test-only store
+    // mutation: use tikz-editor's Rectangle tool and drag on its canvas, exactly
+    // as upstream's own path-tools E2E does. The generated source must flow back
+    // into Zettlr without touching the complex hand-authored constructs.
+    const sourceBeforeCanvasDrag = await page.evaluate(() => {
       const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view
-      return view?.state.doc.toString().includes('\\node[dot] (eta) at (0,0) {$\\theta$};') === true
-    }, undefined, { timeout: 20_000 })
-    assert.strictEqual(
-      await preview.locator('.tikz-visual-node[title^="eta ·"]').count(),
-      1,
-      'the edited canvas stays on the same source-backed node'
-    )
-
-    // The creation tools produce source, rather than maintaining a parallel
-    // canvas-only model. Add a rectangle using the existing box style, then
-    // connect it from A1 and require both statements in CodeMirror.
-    await preview.locator('button[title="Add rectangle node"]').click()
-    await preview.locator('.tikz-visual-name-input').fill('B2')
-    await preview.locator('.tikz-visual-label-field input').fill('$B_2$')
-    const canvasBox = await visualCanvas.boundingBox()
-    assert.ok(canvasBox !== null && canvasBox.width > 160 && canvasBox.height > 160, 'visual canvas must expose room for placement')
-    await visualCanvas.click({ position: { x: 55, y: 55 } })
-    await page.waitForFunction(() => {
+      return view?.state.doc.toString() ?? ''
+    }) as string
+    const rectTool = tikzEditorFrame.locator('button[aria-label="Rect"]').first()
+    await rectTool.waitFor({ state: 'visible', timeout: 20_000 })
+    await rectTool.click()
+    const interactionLayer = tikzEditorFrame.locator('[data-canvas-viewport="true"] svg').last()
+    await interactionLayer.waitFor({ state: 'visible', timeout: 20_000 })
+    const layerBox = await interactionLayer.boundingBox()
+    assert.ok(layerBox !== null, 'tikz-editor must expose its canvas interaction layer')
+    const dragStartX = layerBox.x + Math.min(120, layerBox.width * 0.25)
+    const dragStartY = layerBox.y + Math.min(120, layerBox.height * 0.25)
+    await page.mouse.move(dragStartX, dragStartY)
+    await page.mouse.down()
+    await page.mouse.move(dragStartX + 120, dragStartY + 80, { steps: 8 })
+    await page.mouse.up()
+    await page.waitForFunction(previous => {
       const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view
-      return /\\node\[box\] \(B2\) at \([^)]+\) \{\$B_2\$\};/u.test(view?.state.doc.toString() ?? '')
-    }, undefined, { timeout: 20_000 })
-    await preview.locator('.tikz-visual-node[title^="B2 ·"]').waitFor({ state: 'visible', timeout: 10_000 })
+      const source = view?.state.doc.toString() ?? ''
+      return source !== previous &&
+        source.includes('\\foreach \\x in {0,1,2}') &&
+        source.includes('.. controls +(0,0.5) and +(0,-0.5) ..')
+    }, sourceBeforeCanvasDrag, { timeout: 20_000 })
 
-    await preview.locator('button[title="Connect two nodes with a directed arrow"]').click()
-    await preview.locator('.tikz-visual-node[title^="A1 ·"]').click()
-    await preview.locator('.tikz-visual-node[title^="B2 ·"]').click()
-    await page.waitForFunction(() => {
-      const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view
-      return (view?.state.doc.toString() ?? '')
-        .split('\n')
-        .some((line: string) => line.startsWith('\\draw[->] (A1.') && line.includes('(B2.'))
-    }, undefined, { timeout: 20_000 })
-    assert.strictEqual(await preview.locator('.tikz-visual-arrow').count(), 2, 'the created arrow immediately joins the visual source graph')
-
-    // Wheel zoom changes the infinite grid itself rather than opening a second
-    // image/lightbox surface.
-    const gridBefore = await visualCanvas.evaluate(element => getComputedStyle(element).getPropertyValue('--tikz-grid-major'))
-    await visualCanvas.hover()
-    await page.mouse.wheel(0, -240)
-    await page.waitForTimeout(80)
-    const gridAfter = await visualCanvas.evaluate(element => getComputedStyle(element).getPropertyValue('--tikz-grid-major'))
-    assert.notStrictEqual(gridAfter, gridBefore, 'wheel zoom changes the visual canvas/grid transform')
-    assert.strictEqual(await page.locator('.zettlr-tikz-viewerjs.viewer-fixed').count(), 0, 'visual editing has no Viewer.js modal path')
-
+    // Fullscreen promotion keeps the exact iframe/editor instance alive.
+    await page.evaluate(() => {
+      const frame = document.querySelector('.tikz-editor-frame')
+      if (!(frame instanceof HTMLIFrameElement)) throw new Error('tikz-editor iframe missing')
+      frame.dataset.e2eEditorIdentity = 'same-tikz-editor-instance'
+    })
     await preview.locator('.tikz-live-preview-expand').click()
     await page.waitForFunction(() => document.querySelector('.tikz-live-preview')?.classList.contains('fullscreen') === true)
-    assert.strictEqual(await preview.locator('.tikz-visual-viewport').count(), 1, 'fullscreen promotion preserves the visual provider instance')
+    assert.strictEqual(
+      await preview.locator('.tikz-editor-frame').getAttribute('data-e2e-editor-identity'),
+      'same-tikz-editor-instance',
+      'fullscreen promotion preserves the exact embedded editor instance'
+    )
     await page.keyboard.press('Escape')
     await page.waitForFunction(() => document.querySelector('.tikz-live-preview')?.classList.contains('fullscreen') !== true)
 
     assert.deepStrictEqual(rendererEvents, [], `the renderer emitted errors: ${JSON.stringify(rendererEvents)}`)
   })
 })
+
+async function expectSourceInEmbeddedEditor (frame: ReturnType<Page['frameLocator']>, needle: string): Promise<void> {
+  await frame.locator('.cm-content').first().waitFor({ state: 'visible', timeout: 20_000 })
+  await frame.locator('.cm-content').first().evaluate((element, expected) => {
+    if (!(element.textContent ?? '').includes(expected as string)) {
+      throw new Error(`embedded tikz-editor source does not contain ${String(expected)}`)
+    }
+  }, needle)
+}

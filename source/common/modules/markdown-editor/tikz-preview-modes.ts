@@ -9,8 +9,8 @@
  * Description:     Declares the preview/editor modes which may host one active
  *                  TikZ source block. Availability is source-semantic rather
  *                  than a view concern: tikzcd may use Quiver, while the
- *                  direct-manipulation canvas is deliberately restricted to
- *                  an authored tikzpicture environment. The renderer shell
+ *                  vendored tikz-editor is deliberately restricted to an
+ *                  authored tikzpicture environment. The renderer shell
  *                  consumes these descriptors instead of hard-coding mode
  *                  branches.
  *
@@ -55,8 +55,8 @@ export const TIKZ_PREVIEW_MODES: readonly TikzPreviewModeDescriptor[] = [
     refreshable: false,
     supports: supportsVisualEditor,
     unavailableTitle: target => target.language === 'tikzcd'
-      ? 'The visual canvas is for tikzpicture diagrams; tikzcd uses Quiver'
-      : 'The visual canvas requires an authored tikzpicture environment'
+      ? 'The visual editor is for tikzpicture diagrams; tikzcd uses Quiver'
+      : 'The visual editor requires an authored tikzpicture environment'
   }
 ]
 
@@ -71,4 +71,3 @@ export function resolvedTikzPreviewMode (
   const descriptor = TIKZ_PREVIEW_MODES.find(mode => mode.id === requested)
   return descriptor?.supports(target) === true ? requested : defaultTikzPreviewMode(target)
 }
-
