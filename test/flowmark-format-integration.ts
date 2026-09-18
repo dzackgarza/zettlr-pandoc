@@ -30,6 +30,9 @@
  */
 
 import { strict as assert } from 'assert'
+import { mkdtemp, rm } from 'fs/promises'
+import { tmpdir } from 'os'
+import path from 'path'
 import { formatMarkdownText } from 'source/app/util/flowmark-format'
 import { lintMarkdownText } from 'source/app/util/flowmark-lint'
 
@@ -82,6 +85,24 @@ describe('flowmark real-toolchain integration (issue #26)', function () {
         result.diagnostics.some(diagnostic => diagnostic.rule === 'format/canonical'),
         'real Markdown emphasis spelling must still be linted'
       )
+    }
+  })
+
+  it('passes the active document path so relative-link diagnostics use the editor location', async function () {
+    const dir = await mkdtemp(path.join(tmpdir(), 'zettlr-flowmark-lint-path-'))
+    try {
+      const result = await lintMarkdownText('[missing](does-not-exist.md)\n', {
+        sourcePath: path.join(dir, 'document.md')
+      })
+      assert.equal(result.ok, true)
+      if (result.ok) {
+        assert.ok(
+          result.diagnostics.some(diagnostic => diagnostic.rule === 'link/missing-local-target'),
+          'relative links must be resolved against the active document path, not the process cwd'
+        )
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
     }
   })
 })

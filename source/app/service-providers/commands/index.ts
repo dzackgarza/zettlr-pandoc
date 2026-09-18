@@ -78,7 +78,7 @@ import type {
   UndoRenameOutcome
 } from '@common/pandoc-util/compute-reference-edits'
 import type { FormatResult } from '@common/modules/markdown-editor/commands/format-document'
-import type { FlowmarkLintResult } from '@dts/common/flowmark-lint'
+import type { FlowmarkLintRequest, FlowmarkLintResult } from '@dts/common/flowmark-lint'
 import type { LinkPreviewResult } from '@common/util/fetch-link-preview'
 import type { JustRepositoryCommands, RunJustRecipeRequest } from '@dts/common/justfile-commands'
 import { discoverJustfileCommands } from 'source/app/util/justfile-commands'
@@ -229,7 +229,7 @@ export type ApplicationIPCContract = {
     response: FormatResult
   }
   'lint-markdown': {
-    request: { payload: string }
+    request: { payload: FlowmarkLintRequest }
     response: FlowmarkLintResult
   }
   // Answered inline by run(): enumDictFiles().map(elem => elem.tag).

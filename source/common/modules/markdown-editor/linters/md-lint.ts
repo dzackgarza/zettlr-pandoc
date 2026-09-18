@@ -21,6 +21,7 @@ import type {
   FlowmarkLintDiagnostic,
   FlowmarkLintResult
 } from '@dts/common/flowmark-lint'
+import { configField } from '../util/configuration'
 
 /** Convert a 1-based Flowmark line/column to a clamped CodeMirror offset. */
 function sourceOffset (doc: Text, line: number, column: number): number {
@@ -51,9 +52,13 @@ export function flowmarkDiagnosticToCodeMirror (
 }
 
 export const mdLint = linter(async view => {
+  const config = view.state.field(configField, false)
   const result: FlowmarkLintResult = await window.ipc.invoke('application', {
     command: 'lint-markdown',
-    payload: view.state.doc.toString()
+    payload: {
+      text: view.state.doc.toString(),
+      sourcePath: config?.metadata.path || undefined
+    }
   })
 
   if (!result.ok) {

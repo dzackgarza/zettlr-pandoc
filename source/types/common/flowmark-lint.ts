@@ -16,6 +16,12 @@ export interface FlowmarkLintDiagnostic {
   replacement?: string | null
 }
 
+export interface FlowmarkLintRequest {
+  text: string
+  /** Real document path, when known, for relative-link/fragment validation. */
+  sourcePath?: string
+}
+
 export type FlowmarkLintResult =
   | { ok: true, diagnostics: FlowmarkLintDiagnostic[] }
   | {

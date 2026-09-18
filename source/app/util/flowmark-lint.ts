@@ -33,6 +33,8 @@ export interface FlowmarkLintOptions {
   args?: string[]
   env?: NodeJS.ProcessEnv
   timeoutMs?: number
+  /** Real document path used by Flowmark to resolve relative links. */
+  sourcePath?: string
 }
 
 function severity (value: unknown): value is FlowmarkLintSeverity {
@@ -107,11 +109,17 @@ export async function lintMarkdownText (
   text: string,
   options: FlowmarkLintOptions = {}
 ): Promise<FlowmarkLintResult> {
+  const lintArgs = [ '--format', 'json', '--exit-zero' ]
+  if (options.sourcePath !== undefined && options.sourcePath !== '') {
+    lintArgs.push('--source-path', options.sourcePath)
+  }
+  lintArgs.push('-')
+
   const result = await runFlowmarkProcess({
     command: options.command,
     argv: options.args ?? vendoredFlowmarkArgs(
       'flowmark-lint',
-      [ '--format', 'json', '--exit-zero', '-' ]
+      lintArgs
     ),
     input: text,
     env: options.env,

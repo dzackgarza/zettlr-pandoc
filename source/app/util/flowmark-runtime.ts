@@ -59,7 +59,17 @@ export function vendoredFlowmarkArgs (
   args: string[],
   projectPath = vendoredFlowmarkProjectPath()
 ): string[] {
-  return [ '--from', projectPath, entrypoint, ...args ]
+  // A local `uvx --from <path>` environment is cached by package/version.
+  // Flowmark's source-archive fallback version is intentionally stable, so a
+  // newly pinned submodule could otherwise keep executing an older cached
+  // wheel. Refresh only Flowmark itself: unchanged source stays cache-fast,
+  // while a submodule SHA advance cannot be shadowed by stale package bytes.
+  return [
+    '--refresh-package', 'flowmark',
+    '--from', projectPath,
+    entrypoint,
+    ...args
+  ]
 }
 
 export interface FlowmarkProcessOptions {
