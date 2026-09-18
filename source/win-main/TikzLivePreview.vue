@@ -13,39 +13,33 @@
         aria-label="Preview renderer"
       >
         <button
+          v-for="provider in providers"
+          :key="provider.id"
           type="button"
-          :class="{ active: displayMode === 'tikz' }"
-          :aria-pressed="displayMode === 'tikz'"
-          @click="previewMode = 'tikz'"
+          :class="{ active: displayMode === provider.id }"
+          :aria-pressed="displayMode === provider.id"
+          :disabled="!provider.supports(props.target)"
+          :title="provider.supports(props.target) ? '' : provider.unavailableTitle(props.target)"
+          @click="selectProvider(provider.id)"
         >
-          TikZ
-        </button>
-        <button
-          type="button"
-          :class="{ active: displayMode === 'quiver' }"
-          :aria-pressed="displayMode === 'quiver'"
-          :disabled="!isTikzCd"
-          :title="isTikzCd ? 'Preview and edit with Quiver' : 'Quiver is available only for tikzcd diagrams'"
-          @click="previewMode = 'quiver'"
-        >
-          Quiver
+          {{ provider.label }}
         </button>
       </div>
 
       <span class="tikz-live-preview-status">{{ activeStatus }}</span>
       <LoadingSpinner
-        v-if="displayMode === 'tikz' && state.rendering"
+        v-if="activeBusy"
         class="tikz-live-preview-spinner"
         :spinner-size="14"
         aria-hidden="true"
       />
       <button
-        v-if="displayMode === 'tikz'"
+        v-if="activeProvider.refreshable"
         type="button"
         class="tikz-live-preview-action tikz-live-preview-refresh"
         title="Force TikZ rerender (ignore cache)"
         aria-label="Force TikZ rerender (ignore cache)"
-        @click="controller.forceRender()"
+        @click="forceRefresh"
       >
         <span aria-hidden="true">↻</span>
       </button>
@@ -61,56 +55,18 @@
     </header>
 
     <div class="tikz-live-preview-content">
-      <TikzQuiverPreview
-        v-if="displayMode === 'quiver' && isTikzCd"
-        class="tikz-live-preview-quiver"
+      <component
+        :is="activeProvider.component"
+        ref="previewHandle"
+        :key="`${activeProvider.id}\0${targetIdentity(props.target)}`"
+        class="tikz-live-preview-provider"
         :target="props.target"
         :editor-view="props.editorView"
         :fullscreen="fullscreen"
         @exit-fullscreen="fullscreen = false"
-        @status="quiverStatus = $event"
+        @status="activeStatus = $event"
+        @busy="activeBusy = $event"
       />
-
-      <template v-else>
-        <div
-          class="tikz-live-preview-canvas"
-          :class="{ stale: state.stale || state.failure !== null }"
-        >
-          <TikzFigureViewer
-            v-if="state.lastGood !== null"
-            ref="figureViewer"
-            class="tikz-live-preview-figure"
-            :svg-path="state.lastGood.result.svgPath"
-            :show-fullscreen-button="false"
-          />
-          <div
-            v-else-if="state.pending"
-            class="tikz-live-preview-placeholder"
-          >
-            Rendering TikZ…
-          </div>
-          <div
-            v-else
-            class="tikz-live-preview-placeholder"
-          >
-            No successful render yet.
-          </div>
-        </div>
-
-        <div
-          v-if="state.failure !== null"
-          class="tikz-live-preview-error"
-          role="status"
-        >
-          <div class="tikz-live-preview-error-summary">
-            {{ failureSummary }}
-          </div>
-          <details v-if="failureDetails !== ''">
-            <summary>Details</summary>
-            <pre>{{ failureDetails }}</pre>
-          </details>
-        </div>
-      </template>
     </div>
   </aside>
 </template>
@@ -120,79 +76,53 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Unified TikZ/Quiver preview sidecar
+ * Contains:        Provider-driven TikZ preview sidecar
  * CVM-Role:        View
  * License:         GNU GPL v3
  *
- * Description:     One RHS preview surface for TikZ authoring. Ordinary TikZ
- *                  uses the Viewer.js live render. tikzcd defaults to the
- *                  vendored Quiver editor and can switch to the same vanilla
- *                  TikZ renderer. The pane itself owns fullscreen promotion so
- *                  both preview modes share one toggle and one expansion path.
+ * Description:     One RHS surface for TikZ authoring whose preview/editor
+ *                  modes are registered providers. The shell owns only mode
+ *                  selection, status, refresh dispatch and fullscreen geometry;
+ *                  each provider owns its rendering and source synchronization.
  *
  * END HEADER
  */
 
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { EditorView } from '@codemirror/view'
-import { reportError } from '@common/util/error-reporting'
 import {
-  TikzLivePreviewController,
-  type TikzLivePreviewState,
-  type TikzLivePreviewTarget,
-  type TikzRenderFailure
+  type TikzLivePreviewTarget
 } from '@common/modules/markdown-editor/tikz-live-preview'
-import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-render'
+import {
+  defaultTikzPreviewMode,
+  resolvedTikzPreviewMode,
+  type TikzPreviewModeId
+} from '@common/modules/markdown-editor/tikz-preview-modes'
 import LoadingSpinner from 'source/common/vue/LoadingSpinner.vue'
-import TikzFigureViewer from './TikzFigureViewer.vue'
-import TikzQuiverPreview from './TikzQuiverPreview.vue'
+import {
+  TIKZ_PREVIEW_PROVIDERS,
+  type TikzPreviewProvider
+} from './tikz-preview-providers'
 
 const props = defineProps<{
   target: TikzLivePreviewTarget
   editorView: EditorView
 }>()
 
-type PreviewMode = 'tikz'|'quiver'
-interface FigureViewerHandle { fit: () => void }
-
-async function render (request: TikzRenderRequest): Promise<TikzRenderResult> {
-  try {
-    return await window.ipc.invoke('application', {
-      command: 'tikz-render',
-      payload: request
-    })
-  } catch (error) {
-    reportError('TikZ live preview IPC failed', error)
-    return {
-      ok: false,
-      kind: 'pandoc-error',
-      log: error instanceof Error ? error.message : String(error)
-    }
-  }
-}
-
-const EMPTY_STATE: TikzLivePreviewState = {
-  target: null,
-  lastGood: null,
-  failure: null,
-  pending: false,
-  rendering: false,
-  stale: false
-}
-
-const state = shallowRef<TikzLivePreviewState>(EMPTY_STATE)
 const fullscreen = ref(false)
-const previewMode = ref<PreviewMode>(props.target.language === 'tikzcd' ? 'quiver' : 'tikz')
-const quiverStatus = ref('Loading Quiver…')
-const figureViewer = ref<FigureViewerHandle|null>(null)
-const isTikzCd = computed(() => props.target.language === 'tikzcd')
-const displayMode = computed<PreviewMode>(() => isTikzCd.value ? previewMode.value : 'tikz')
-
-const controller = new TikzLivePreviewController(
-  render,
-  next => { state.value = next },
-  250
-)
+const requestedMode = ref<TikzPreviewModeId>(defaultTikzPreviewMode(props.target))
+const activeStatus = ref('')
+const activeBusy = ref(false)
+const previewHandle = ref<{ refresh?: () => void }|null>(null)
+const providers: readonly TikzPreviewProvider[] = TIKZ_PREVIEW_PROVIDERS
+const displayMode = computed(() => resolvedTikzPreviewMode(requestedMode.value, props.target))
+const activeProvider = computed(() => {
+  const provider = providers.find(candidate => candidate.id === displayMode.value)
+  if (provider === undefined) {
+    throw new Error(`No TikZ preview provider registered for mode ${displayMode.value}`)
+  }
+  return provider
+})
 
 function targetIdentity (target: TikzLivePreviewTarget): string {
   return `${target.docPath}\0${target.kind}\0${target.language}\0${target.from}`
@@ -201,25 +131,29 @@ function targetIdentity (target: TikzLivePreviewTarget): string {
 watch(
   () => targetIdentity(props.target),
   () => {
-    previewMode.value = props.target.language === 'tikzcd' ? 'quiver' : 'tikz'
+    requestedMode.value = defaultTikzPreviewMode(props.target)
     fullscreen.value = false
   }
 )
 
 watch(
-  [ () => props.target, displayMode ],
-  ([ target, mode ]) => {
-    if (mode === 'tikz') {
-      controller.setTarget(target)
-    }
-  },
-  { immediate: true }
+  displayMode,
+  () => {
+    activeStatus.value = ''
+    activeBusy.value = false
+  }
 )
 
-watch(fullscreen, async () => {
-  await nextTick()
-  figureViewer.value?.fit()
-})
+function selectProvider (mode: TikzPreviewModeId): void {
+  const provider = providers.find(candidate => candidate.id === mode)
+  if (provider?.supports(props.target) === true) {
+    requestedMode.value = mode
+  }
+}
+
+function forceRefresh (): void {
+  previewHandle.value?.refresh?.()
+}
 
 function onWindowKeydown (event: KeyboardEvent): void {
   if (fullscreen.value && event.key === 'Escape') {
@@ -235,59 +169,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onWindowKeydown, true)
-  controller.dispose()
-})
-
-const tikzStatusText = computed(() => {
-  if (state.value.failure !== null) {
-    return state.value.lastGood === null ? 'Render failed' : 'Last good render'
-  }
-  if (state.value.pending) {
-    return state.value.lastGood === null ? 'Rendering…' : 'Updating…'
-  }
-  return state.value.lastGood === null ? '' : 'Up to date'
-})
-
-const activeStatus = computed(() => displayMode.value === 'quiver' ? quiverStatus.value : tikzStatusText.value)
-
-function summarizeFailure (failure: TikzRenderFailure): string {
-  switch (failure.kind) {
-    case 'compile-error': {
-      const first = failure.errors[0]
-      return first === undefined
-        ? 'TikZ failed to compile.'
-        : `TikZ line ${first.line}: ${first.message}`
-    }
-    case 'missing-tools':
-      return `TikZ tools not found: ${failure.missing.join(', ')}`
-    case 'toolchain-probe-failed':
-      return `Could not check ${failure.tool}: ${failure.code}`
-    case 'pandoc-error':
-      return 'TikZ render failed.'
-    case 'render-terminated':
-      return `TikZ render was terminated by ${failure.signal}.`
-    default: {
-      const unhandled: never = failure
-      return String(unhandled)
-    }
-  }
-}
-
-const failureSummary = computed(() => state.value.failure === null ? '' : summarizeFailure(state.value.failure))
-
-const failureDetails = computed(() => {
-  const failure = state.value.failure
-  if (failure === null) return ''
-  if (failure.kind === 'compile-error') {
-    const mapped = failure.errors
-      .map(error => `line ${error.line}: ${error.message}\n${error.sourceLine}`)
-      .join('\n\n')
-    return mapped !== '' ? mapped : failure.log.split('\n').slice(-12).join('\n')
-  }
-  if (failure.kind === 'pandoc-error' || failure.kind === 'render-terminated') {
-    return failure.log.split('\n').slice(-12).join('\n')
-  }
-  return ''
 })
 </script>
 
@@ -388,50 +269,11 @@ const failureDetails = computed(() => {
   overflow: hidden;
 }
 
-.tikz-live-preview-quiver,
-.tikz-live-preview-canvas {
+.tikz-live-preview-provider {
   flex: 1 1 auto;
+  width: 100%;
   min-height: 0;
   overflow: hidden;
-}
-
-.tikz-live-preview-canvas.stale .tikz-live-preview-figure { opacity: 0.78; }
-
-.tikz-live-preview-figure {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  transition: opacity 100ms ease;
-}
-
-.tikz-live-preview-placeholder {
-  height: 100%;
-  display: grid;
-  place-items: center;
-  opacity: 0.55;
-  font-style: italic;
-  text-align: center;
-}
-
-.tikz-live-preview-error {
-  flex: 0 0 auto;
-  max-height: 32%;
-  overflow: auto;
-  border-top: 1px solid rgba(192, 57, 43, 0.38);
-  padding: 7px 10px;
-  color: #a93226;
-  background: rgba(192, 57, 43, 0.055);
-  font-size: 0.78rem;
-
-  details { margin-top: 4px; }
-  summary { cursor: pointer; opacity: 0.8; }
-  pre {
-    margin: 6px 0 0;
-    max-height: 10rem;
-    overflow: auto;
-    white-space: pre-wrap;
-    font-size: 0.75rem;
-  }
 }
 
 :global(body.dark .tikz-live-preview) {
@@ -443,8 +285,4 @@ const failureDetails = computed(() => {
   border-bottom-color: #444;
 }
 
-:global(body.dark .tikz-live-preview-error) {
-  color: #e67e73;
-  background: rgba(192, 57, 43, 0.08);
-}
 </style>
