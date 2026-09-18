@@ -30,7 +30,7 @@
       >{{ lifecycleLabel }}</span>
     </div>
     <p class="annotation-quoted-preview">“{{ card.quotedText }}”</p>
-    <p class="annotation-title">{{ card.instructionPreview }}</p>
+    <p class="annotation-title">{{ card.instructionText }}</p>
     <div class="annotation-card-row annotation-meta annotation-muted">
       <span class="annotation-card-author">{{ authorLabel }}</span>
       <span class="annotation-card-time">{{ relativeTime }}</span>
@@ -138,9 +138,8 @@ body {
 
     .annotation-title {
       margin: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
 
     .annotation-meta {

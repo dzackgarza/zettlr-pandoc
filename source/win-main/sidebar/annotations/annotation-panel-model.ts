@@ -41,7 +41,7 @@ export interface AnnotationCardView {
   endLineNumber: number | undefined
   wordCount: number
   quotedText: string
-  instructionPreview: string
+  instructionText: string
   hasPendingProposal: boolean
 }
 
@@ -64,10 +64,6 @@ export function deriveCardTitle (firstMessageText: string): string {
   return sentence.length > 72 ? `${sentence.slice(0, 69).trimEnd()}…` : sentence
 }
 
-export function truncatePreview (text: string, maxLength = 140): string {
-  const trimmed = text.trim()
-  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength - 1).trimEnd()}…` : trimmed
-}
 
 function anchorPosition (anchor: AnnotationAnchor): number | undefined {
   if (anchor.state === 'range') {
@@ -162,7 +158,7 @@ export function buildAnnotationCards (annotations: TextAnnotation[], workingText
       endLineNumber: annotation.anchor.state === 'range' ? lineIndex.lineOfPosition(annotation.anchor.to) : lineNumber,
       wordCount: wordCount(quotedText),
       quotedText,
-      instructionPreview: truncatePreview(firstMessage.text),
+      instructionText: firstMessage.text,
       hasPendingProposal: annotation.proposalActions.some(action => action.terminalOutcome === undefined)
     }
   })
@@ -199,7 +195,7 @@ export function filterCards (cards: AnnotationCardView[], query: string): Annota
   return cards.filter(card =>
     card.title.toLowerCase().includes(needle) ||
     card.quotedText.toLowerCase().includes(needle) ||
-    card.instructionPreview.toLowerCase().includes(needle)
+    card.instructionText.toLowerCase().includes(needle)
   )
 }
 

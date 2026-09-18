@@ -47,7 +47,6 @@ import {
   openAnnotationCount,
   partitionByResolution,
   suggestionIdsForPacketIds,
-  truncatePreview,
   unresolvedCollaborationCount,
 } from "source/win-main/sidebar/annotations/annotation-panel-model";
 import {
@@ -174,11 +173,15 @@ describe("annotation-panel-model", function () {
     assert.equal(filterCards(cards, "no such text anywhere").length, 0);
   });
 
-  it("truncates a long instruction preview instead of rendering it unbounded", function () {
-    const long = "word ".repeat(60);
-    const preview = truncatePreview(long, 40);
-    assert.ok(preview.length <= 40);
-    assert.ok(preview.endsWith("…"));
+  it("preserves the complete annotation reason instead of truncating it", function () {
+    const long = "word ".repeat(60).trim();
+    const annotation: TextAnnotation = {
+      ...annotations.items[0],
+      annotationId: "annotation-long-reason",
+      messages: [ { ...annotations.items[0].messages[0], messageId: "message-long-reason", text: long } ]
+    };
+    const [card] = buildAnnotationCards([annotation], workingText);
+    assert.equal(card.instructionText, long);
   });
 
   it("builds cards from a REAL CollaborationApplicationService's output, not just fixture literals", async function () {
@@ -685,6 +688,10 @@ describe("workspace annotations panel structure", function () {
     assert.match(panel, /emit\('navigate'/);
     assert.doesNotMatch(panel, /SuggestionInspector|AnnotationInspector/);
     assert.doesNotMatch(panel, /suggestion-removed|suggestion-inserted/);
+    const summaryStyle = panel.match(/\.annotation-workspace-summary\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+    assert.doesNotMatch(summaryStyle, /text-overflow:\s*ellipsis/);
+    assert.doesNotMatch(summaryStyle, /white-space:\s*nowrap/);
+    assert.match(summaryStyle, /white-space:\s*normal/);
     assert.match(app, /workspaceUnresolvedCount/);
     assert.match(app, /targetRange: target\.range/);
   });

@@ -57,7 +57,7 @@
           <span class="annotation-ordinal">{{ card.ordinal }}</span>
           <span class="annotation-line-locator">{{ card.lineLocator }}</span>
           <span class="annotation-workspace-kind">{{ trans('Annotation') }}</span>
-          <span class="annotation-workspace-summary">{{ card.instructionPreview }}</span>
+          <span class="annotation-workspace-summary">{{ card.instructionText }}</span>
         </button>
 
         <button
@@ -329,9 +329,8 @@ body {
 
   .annotation-workspace-summary {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .annotation-header-spacer {
