@@ -204,6 +204,26 @@ describe("pure annotation transitions", function () {
     );
   });
 
+  it("refuses distinct annotations with the same normalized creation reason", function () {
+    const annotations = oneAnnotation();
+    const secondFrom = BASELINE.indexOf("lazy dog");
+    const duplicate = rejected(
+      prepareAnnotationCreation({
+        annotations,
+        actor: "owner",
+        documentId: DOCUMENT_ID,
+        workingText: BASELINE,
+        from: secondFrom,
+        to: secondFrom + "lazy dog".length,
+        instruction: "  SAY   WHAT kind of fox this is.  ",
+        expectedAnnotationGeneration: 1,
+      }),
+    );
+
+    assert.equal(duplicate.code, "INVALID_PARAMS");
+    assert.match(duplicate.message, /same creation instruction/);
+  });
+
   it("refuses every lifecycle move an agent asks for, and leaves the set untouched (I3)", function () {
     const annotations = oneAnnotation();
     const annotationId = only(annotations).annotationId;

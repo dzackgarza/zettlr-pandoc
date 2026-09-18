@@ -20,11 +20,10 @@
  *                  save or an annotation mutation needs regardless of
  *                  whether a review is open.
  *
- *                  `annotations.items` reuses TextAnnotation from
- *                  annotation-domain.ts rather than redeclaring its shape:
- *                  Type.Unsafe pins the runtime schema to that exact type,
- *                  so the two cannot drift the way a hand-copied interface
- *                  would.
+ *                  `annotations` imports the canonical AnnotationSet schema
+ *                  from annotation-domain-validation.ts. Annotation shape and
+ *                  aggregate annotation invariants therefore have one owner;
+ *                  this file only embeds that schema in the larger sidecar.
  *
  *                  Every object refuses unknown fields, and only version 4
  *                  and version 5 are recognized: version 4 is deterministically
@@ -36,12 +35,7 @@
  */
 
 import { Type, type Static } from "@sinclair/typebox";
-import type {
-  AnnotationAnchor,
-  AnnotationMessage,
-  AnnotationProposalAction,
-  TextAnnotation,
-} from "@dts/common/annotation-domain";
+import { AnnotationSetSchema } from "./annotation-domain-validation";
 
 const Sha256 = Type.String({ pattern: "^[0-9a-f]{64}$" });
 
@@ -172,106 +166,6 @@ const PersistedReviewStateSchema = Type.Object(
 export type PersistedReviewState = Static<typeof PersistedReviewStateSchema>;
 
 // ============================================================================
-// Annotation state — TextAnnotation is annotation-domain.ts's, not redeclared
-// ============================================================================
-
-const AnnotationAnchorSchema = Type.Unsafe<AnnotationAnchor>(
-  Type.Union([
-    Type.Object(
-      {
-        state: Type.Literal("range"),
-        from: Type.Integer({ minimum: 0 }),
-        to: Type.Integer({ minimum: 0 }),
-        quotedText: Type.String(),
-      },
-      { additionalProperties: false },
-    ),
-    Type.Object(
-      {
-        state: Type.Literal("point"),
-        at: Type.Integer({ minimum: 0 }),
-        quotedText: Type.String(),
-        reason: Type.Literal("target-deleted"),
-      },
-      { additionalProperties: false },
-    ),
-    Type.Object(
-      {
-        state: Type.Literal("orphaned"),
-        quotedText: Type.String(),
-        reason: Type.Union([
-          Type.Literal("external-drift"),
-          Type.Literal("unmapped-document-change"),
-        ]),
-      },
-      { additionalProperties: false },
-    ),
-  ]),
-);
-
-const AnnotationMessageSchema = Type.Unsafe<AnnotationMessage>(
-  Type.Union([
-    Type.Object(
-      {
-        messageId: Type.String(),
-        author: Type.Literal("owner"),
-        text: Type.String(),
-        createdAt: Type.String(),
-      },
-      { additionalProperties: false },
-    ),
-    Type.Object(
-      {
-        messageId: Type.String(),
-        author: Type.Literal("agent"),
-        clientRequestId: Type.String(),
-        text: Type.String(),
-        createdAt: Type.String(),
-      },
-      { additionalProperties: false },
-    ),
-  ]),
-);
-
-const AnnotationProposalActionSchema = Type.Unsafe<AnnotationProposalAction>(
-  Type.Object(
-    {
-      actionId: Type.String(),
-      packetId: Type.String(),
-      reviewId: Type.String(),
-      linkedAt: Type.String(),
-      terminalOutcome: Type.Optional(
-        Type.Union([
-          Type.Literal("accepted"),
-          Type.Literal("rejected"),
-          Type.Literal("mixed"),
-          Type.Literal("withdrawn"),
-          Type.Literal("cleared"),
-        ]),
-      ),
-    },
-    { additionalProperties: false },
-  ),
-);
-
-const TextAnnotationSchema = Type.Unsafe<TextAnnotation>(
-  Type.Object(
-    {
-      annotationId: Type.String(),
-      documentId: Type.String(),
-      anchor: AnnotationAnchorSchema,
-      state: Type.Union([Type.Literal("open"), Type.Literal("resolved")]),
-      messages: Type.Array(AnnotationMessageSchema, { minItems: 1 }),
-      proposalActions: Type.Array(AnnotationProposalActionSchema),
-      createdAt: Type.String(),
-      updatedAt: Type.String(),
-      resolvedAt: Type.Optional(Type.String()),
-    },
-    { additionalProperties: false },
-  ),
-);
-
-// ============================================================================
 // Collaboration sidecar (version 5)
 // ============================================================================
 
@@ -282,13 +176,7 @@ export const CollaborationSidecarSchema = Type.Object(
     workingText: Type.String(),
     diskFenceSha256: Sha256,
     review: Type.Union([PersistedReviewStateSchema, Type.Null()]),
-    annotations: Type.Object(
-      {
-        generation: Type.Integer({ minimum: 0 }),
-        items: Type.Array(TextAnnotationSchema),
-      },
-      { additionalProperties: false },
-    ),
+    annotations: AnnotationSetSchema,
     /**
      * Present only between a save's document write and the fence update that
      * follows it. A process that exits in that window leaves this behind, and

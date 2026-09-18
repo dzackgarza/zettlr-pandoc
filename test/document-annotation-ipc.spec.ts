@@ -185,6 +185,43 @@ describe('Document annotation IPC (M6, WU-14)', function () {
     assert.equal(annotation.messages[0].text, 'Expand this with concrete examples.')
   })
 
+  it('refuses a second annotation with the same normalized creation reason', async function () {
+    const content = 'First target here. Second target here.\n'
+    const filePath = await openFile('duplicate-reason.md', content)
+    const firstFrom = content.indexOf('First target')
+    const firstTo = firstFrom + 'First target'.length
+    const secondFrom = content.indexOf('Second target')
+    const secondTo = secondFrom + 'Second target'.length
+
+    const first = await invoke<TextAnnotation | AnnotationFailure>('documents:create-annotation', {
+      path: filePath,
+      from: firstFrom,
+      to: firstTo,
+      instruction: 'Explain why this assumption is needed.',
+      expectedAnnotationGeneration: 0
+    })
+    assert.ok(!isFailure(first), 'the first annotation must be admitted')
+
+    const duplicate = await invoke<TextAnnotation | AnnotationFailure>('documents:create-annotation', {
+      path: filePath,
+      from: secondFrom,
+      to: secondTo,
+      instruction: '  explain   WHY this assumption is needed.  ',
+      expectedAnnotationGeneration: 1
+    })
+    assert.ok(isFailure(duplicate), 'a duplicate creation reason must be refused')
+    assert.equal(duplicate.code, 'INVALID_PARAMS')
+    assert.match(duplicate.message, /same creation instruction/)
+
+    const session = await invoke<{ annotations: { generation: number, items: TextAnnotation[] } } | undefined>(
+      'documents-provider',
+      { command: 'get-collaboration-session', payload: { path: filePath } }
+    )
+    assert.ok(session !== undefined)
+    assert.equal(session.annotations.generation, 1, 'a refused duplicate must not advance the annotation fence')
+    assert.equal(session.annotations.items.length, 1, 'a refused duplicate must not enter annotation state')
+  })
+
   it('refuses documents:create-annotation for a path with no open document', async function () {
     const result = await invoke<TextAnnotation | AnnotationFailure>('documents:create-annotation', {
       path: path.join(scratch, 'never-opened.md'),

@@ -73,6 +73,7 @@ import {
 import { sha256Text } from "@common/util/sha256";
 import { CollaborationSidecarStore } from "./collaboration-sidecar-store";
 import type { CollaborationSidecarData } from "./collaboration-sidecar-schema";
+import { AnnotationDomainValidationError } from "./annotation-domain-validation";
 import {
   emptyAnnotationSet,
   prepareAnnotationCreation,
@@ -307,6 +308,13 @@ interface AnnotationDocumentState {
 export type AnnotationFailure = { ok: false; code: AgentErrorCode; message: string };
 
 function persistenceFailure(action: string, error: unknown): ReviewFailure {
+  if (error instanceof AnnotationDomainValidationError) {
+    return {
+      ok: false,
+      code: "INVALID_PARAMS",
+      message: error.message,
+    };
+  }
   return {
     ok: false,
     code: "PERSISTENCE_FAILED",

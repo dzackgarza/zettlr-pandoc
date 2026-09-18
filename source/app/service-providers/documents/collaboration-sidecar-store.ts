@@ -28,8 +28,9 @@
  *                  This module only moves bytes. What a sidecar means — when
  *                  one is written, verified, restored, or deleted — is the
  *                  collaboration application service's business; what it
- *                  contains is collaboration-sidecar-schema.ts, one TypeBox
- *                  declaration compiled here into Ajv validators.
+ *                  contains is collaboration-sidecar-schema.ts plus the
+ *                  canonical annotation-domain validator it embeds. The
+ *                  store does not maintain a second set of annotation rules.
  *
  *                  Fail loudly: a sidecar that cannot be read, parsed, or
  *                  written throws with the file path named. Swallowing the
@@ -52,6 +53,7 @@ import {
   type PersistedReviewState,
   type ReviewSidecarV4Data,
 } from "./collaboration-sidecar-schema";
+import { assertValidAnnotationSet } from "./annotation-domain-validation";
 
 /**
  * The sidecar file for a document. Keyed by the hash of the canonical
@@ -269,22 +271,6 @@ function assertReviewSemantics(
   assertDisjointAnchors(review, target);
 }
 
-/** Every annotation id is unique, matching the identity discipline suggestions get. */
-function assertAnnotationIdentity(
-  annotations: CollaborationSidecarData["annotations"],
-  target: string,
-): void {
-  const annotationIds = new Set<string>();
-  for (const annotation of annotations.items) {
-    if (annotationIds.has(annotation.annotationId)) {
-      throw new Error(
-        `Collaboration sidecar ${target} has duplicate annotation id ${annotation.annotationId}`,
-      );
-    }
-    annotationIds.add(annotation.annotationId);
-  }
-}
-
 function assertCollaborationSidecarSemantics(
   sidecar: CollaborationSidecarData,
   target: string,
@@ -292,7 +278,7 @@ function assertCollaborationSidecarSemantics(
   if (sidecar.review !== null) {
     assertReviewSemantics(sidecar.review, sidecar.workingText.length, target);
   }
-  assertAnnotationIdentity(sidecar.annotations, target);
+  assertValidAnnotationSet(sidecar.annotations, `Collaboration sidecar ${target}`);
 }
 
 /**

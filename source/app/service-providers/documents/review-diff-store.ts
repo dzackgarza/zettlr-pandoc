@@ -37,6 +37,7 @@ import type {
   ReviewSuggestion,
 } from "@dts/common/review-domain";
 import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
+import { assertValidAnnotationSet } from "./annotation-domain-validation";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
 import { sha256Text } from "@common/util/sha256";
@@ -280,6 +281,7 @@ export function collaborationSidecar(input: {
   annotations: AnnotationSet;
   pendingSave?: CollaborationSidecarData["pendingSave"];
 }): CollaborationSidecarData {
+  assertValidAnnotationSet(input.annotations, `Collaboration state for ${input.documentPath}`);
   return {
     version: 5,
     documentPath: input.documentPath,
