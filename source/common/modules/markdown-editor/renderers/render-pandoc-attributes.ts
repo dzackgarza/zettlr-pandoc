@@ -61,9 +61,20 @@ function hideAttributeBlocks (view: EditorView): DecorationSet {
           return
         }
 
+        // A ViewPlugin may not provide replacement decorations spanning line
+        // breaks. Multiline attribute-like source is therefore never hidden
+        // here. Dedicated block renderers (for example fenced Pandoc divs)
+        // must own multiline presentation; otherwise the authored source stays
+        // visible rather than corrupting CodeMirror's height map.
+        const firstLine = view.state.doc.lineAt(node.from)
+        const lastLine = view.state.doc.lineAt(Math.max(node.from, node.to - 1))
+        if (firstLine.number !== lastLine.number) {
+          return
+        }
+
         // Reveal while the cursor is anywhere on the carrier line: hiding is
         // a line-rendering concern, and cursor-on-line is the editing state.
-        const line = view.state.doc.lineAt(node.from)
+        const line = firstLine
         if (rangeInPreviewSuppression(view.state, line.from, line.to, includeAdjacent)) {
           return
         }

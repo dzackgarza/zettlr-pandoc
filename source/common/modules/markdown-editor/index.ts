@@ -659,6 +659,13 @@ export default class MarkdownEditor extends EventEmitter {
       this._instance.contentDOM.classList.add('code')
     }
 
+    // A collaboration session can arrive while the authority fetch above is
+    // still pending. startReviewDiffSession() buffers it because the editor's
+    // placeholder document cannot yet equal session.workingText. Loading the
+    // authoritative state is itself the event that can satisfy that equality;
+    // do not wait for an unrelated later edit to retry activation.
+    this.activatePendingReviewDiffSession()
+
     this._instance.focus()
 
     this.emit('loaded')

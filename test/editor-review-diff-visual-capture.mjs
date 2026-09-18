@@ -52,6 +52,29 @@ async function capture (view, spec) {
     throw new Error(`${spec.name} has horizontal editor overflow`)
   }
 
+  if (spec.name === 'review-diff-wide-light') {
+    const regression = await view.page.evaluate(() => window.reviewRendererRegression())
+    for (const snapshot of regression) {
+      if (snapshot.cmLines === 0 || snapshot.visibleRanges.length === 0) {
+        throw new Error(`review renderer collapsed at ${snapshot.from}-${snapshot.to}: ${JSON.stringify(snapshot)}`)
+      }
+      if (snapshot.changed === 0 && snapshot.deleted === 0) {
+        throw new Error(`review marks disappeared at ${snapshot.from}-${snapshot.to}: ${JSON.stringify(snapshot)}`)
+      }
+    }
+    for (const snapshot of regression) {
+      const selectionVisible = snapshot.visibleRanges.some(range =>
+        snapshot.from >= range.from && snapshot.from <= range.to
+      )
+      if (!selectionVisible) {
+        throw new Error(`review navigation left the selected range outside CodeMirror's visible ranges: ${JSON.stringify(snapshot)}`)
+      }
+      if (!(snapshot.contentHeight > 0)) {
+        throw new Error(`review renderer produced an invalid content height: ${JSON.stringify(snapshot)}`)
+      }
+    }
+  }
+
   await view.capture(spec.name)
 }
 
