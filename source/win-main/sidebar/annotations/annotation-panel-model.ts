@@ -233,20 +233,25 @@ export function suggestionIdsForPacketIds (review: ReviewDiffSession, packetIds:
 export interface SuggestionNavigatorView {
   suggestionId: string
   description: string
+  contextText: string
   range: SourceRange
 }
 
 /**
  * Workspace-sidebar projection of outstanding review work. This deliberately
- * contains no before/after text: the editor is the one place review diffs are
- * rendered, and sidebar rows only identify and navigate to that source range.
+ * contains no before/after diff: the editor is the one place review diffs are
+ * rendered. Sidebar rows carry the review claim plus current authored source
+ * context, then navigate to that exact range.
  */
 export function buildSuggestionNavigatorRows (review: ReviewDiffSession): SuggestionNavigatorView[] {
+  const doc = Text.of(review.workingText.split('\n'))
   return review.suggestions.map(suggestion => {
     const firstAnchor = suggestion.anchors[0] ?? { from: suggestion.seam, to: suggestion.seam }
+    const line = doc.lineAt(Math.min(firstAnchor.from, doc.length))
     return {
       suggestionId: suggestion.suggestionId,
       description: suggestion.description,
+      contextText: doc.sliceString(line.from, line.to),
       range: { from: firstAnchor.from, to: firstAnchor.to }
     }
   })

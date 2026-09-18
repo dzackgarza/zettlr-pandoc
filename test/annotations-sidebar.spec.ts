@@ -38,6 +38,7 @@ import type { TextAnnotation, AnnotationMessage } from "@dts/common/annotation-d
 import {
   buildAnnotationCards,
   buildSuggestionCards,
+  buildSuggestionNavigatorRows,
   chunkNoteCommit,
   createLineIndex,
   deriveActionRow,
@@ -388,6 +389,20 @@ describe("useDocumentCollaborationStore panel surface", function () {
   });
 });
 
+describe("workspace suggestion navigator model", function () {
+  it("pairs each review claim with current authored source context, not line-number metadata", function () {
+    const review = buildSceneReview();
+    const rows = buildSuggestionNavigatorRows(review);
+    assert.equal(rows.length, review.suggestions.length);
+    assert.deepEqual(rows.map(row => row.description), review.suggestions.map(suggestion => suggestion.description));
+    for (const row of rows) {
+      assert.ok(row.contextText.length > 0, "workspace review rows carry useful source context");
+      assert.equal("lineLocator" in row, false);
+      assert.equal("lineNumber" in row, false);
+    }
+  });
+});
+
 describe("suggestion inspector model", function () {
   const review = buildSceneReview();
   const cards = buildSuggestionCards(review);
@@ -691,7 +706,10 @@ describe("workspace annotations panel structure", function () {
     assert.doesNotMatch(panel, /annotation-line-locator/);
     assert.doesNotMatch(panel, /annotation-workspace-kind/);
     assert.doesNotMatch(panel, /trans\('Change'\)|trans\('Annotation'\)/);
-    const summaryStyle = panel.match(/\.annotation-workspace-summary\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+    assert.match(panel, /annotation-workspace-context/);
+    assert.match(panel, /card\.quotedText/);
+    assert.match(panel, /suggestion\.contextText/);
+    const summaryStyle = panel.match(/\.annotation-workspace-summary,\s*\.annotation-workspace-context\s*\{([\s\S]*?)\}/)?.[1] ?? "";
     assert.doesNotMatch(summaryStyle, /text-overflow:\s*ellipsis/);
     assert.doesNotMatch(summaryStyle, /white-space:\s*nowrap/);
     assert.match(summaryStyle, /white-space:\s*normal/);

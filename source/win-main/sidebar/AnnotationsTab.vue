@@ -55,7 +55,13 @@
           v-on:click="navigateAnnotation(group.documentPath, card)"
         >
           <span class="annotation-ordinal">{{ card.ordinal }}</span>
-          <span class="annotation-workspace-summary">{{ card.instructionText }}</span>
+          <span class="annotation-workspace-copy">
+            <span class="annotation-workspace-summary">{{ card.instructionText }}</span>
+            <span
+              v-if="card.quotedText.length > 0"
+              class="annotation-workspace-context"
+            >“{{ card.quotedText }}”</span>
+          </span>
         </button>
 
         <button
@@ -67,7 +73,13 @@
           v-on:click="navigate(group.documentPath, suggestion.range)"
         >
           <cds-icon shape="wand" role="presentation"></cds-icon>
-          <span class="annotation-workspace-summary">{{ suggestion.description }}</span>
+          <span class="annotation-workspace-copy">
+            <span class="annotation-workspace-summary">{{ suggestion.description }}</span>
+            <span
+              v-if="suggestion.contextText.length > 0"
+              class="annotation-workspace-context"
+            >“{{ suggestion.contextText }}”</span>
+          </span>
         </button>
       </div>
     </section>
@@ -316,10 +328,23 @@ body {
     }
   }
 
-  .annotation-workspace-summary {
+  .annotation-workspace-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .annotation-workspace-summary,
+  .annotation-workspace-context {
     min-width: 0;
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+
+  .annotation-workspace-context {
+    color: var(--annotation-text-muted);
+    font-size: var(--annotation-small-font-size);
   }
 
   .annotation-header-spacer {
