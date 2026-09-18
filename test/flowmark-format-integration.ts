@@ -9,15 +9,13 @@
  *
  * Description:     Drives the production flowmark service with NO injected
  *                  runner, so it exercises the exact production command string
- *                  (`uvx --from git+…/flowmark.git flowmark --inplace --nobackup
- *                  --semantic --no-respect-gitignore <file>`) against the REAL
- *                  flowmark binary end-to-end and asserts flowmark's `--semantic`
- *                  reflow (sentence-per-line). This is the committed backing for
- *                  the PR claim that the real invocation is verified end-to-end.
+ *                  against the Flowmark source pinned in vendor/flowmark, rather
+ *                  than a network-selected revision. It proves both the formatter
+ *                  and the standalone linter through the same production runtime.
  *
- *                  This fetches flowmark from git via uvx (network), so it is NOT
- *                  a `*.spec.ts` file and is excluded from the default `just test`
- *                  commit gate. Run it explicitly with the dedicated recipe:
+ *                  A cold uv cache may install Flowmark's Python dependencies,
+ *                  so it is not a `*.spec.ts` file in the fastest default suite.
+ *                  Run it explicitly with the dedicated recipe:
  *                  `just test-flowmark-integration`. When flowmark cannot be
  *                  launched at all, formatMarkdownText returns a typed
  *                  `flowmark-absent`, and the `ok === true` assertion fails loudly
@@ -33,9 +31,10 @@
 
 import { strict as assert } from 'assert'
 import { formatMarkdownText } from 'source/app/util/flowmark-format'
+import { lintMarkdownText } from 'source/app/util/flowmark-lint'
 
 describe('flowmark real-toolchain integration (issue #26)', function () {
-  // uvx fetches flowmark from git on a cold cache; allow generously for it.
+  // A cold uv cache may need to install the pinned project's dependencies.
   this.timeout(180000)
 
   it('runs the production uvx flowmark command and applies the --semantic reflow', async function () {
@@ -57,6 +56,31 @@ describe('flowmark real-toolchain integration (issue #26)', function () {
         lines,
         [ 'The cat sat.', 'The dog ran.' ],
         'flowmark --semantic must place each sentence on its own line'
+      )
+    }
+  })
+
+  it('runs the pinned submodule linter and treats TeX math as math, not Markdown emphasis', async function () {
+    const result = await lintMarkdownText(
+      'The classes $x_i$, \\(y_j\\), and \\underline{z_k} are mathematical.\n'
+    )
+    assert.equal(result.ok, true, 'the vendored Flowmark linter must launch successfully')
+    if (result.ok) {
+      assert.deepEqual(
+        result.diagnostics,
+        [],
+        'underscores in parsed math/raw TeX must not become Markdown-emphasis findings'
+      )
+    }
+  })
+
+  it('reports genuine Markdown style through the same standalone linter', async function () {
+    const result = await lintMarkdownText('Use _emphasis_ in prose.\n')
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.ok(
+        result.diagnostics.some(diagnostic => diagnostic.rule === 'format/canonical'),
+        'real Markdown emphasis spelling must still be linted'
       )
     }
   })

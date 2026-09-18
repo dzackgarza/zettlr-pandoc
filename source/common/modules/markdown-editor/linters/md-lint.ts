@@ -4,161 +4,69 @@
  *
  * Contains:        Markdown Linter
  * CVM-Role:        Linter
- * Maintainer:      Hendrik Erz
+ * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     This linter utilizes the re:mark package to highlight style
- *                  issues with Markdown documents.
+ * Description:     Thin CodeMirror client of Flowmark's standalone,
+ *                  Pandoc-aware linter.  Markdown parsing and lint semantics
+ *                  live in the Flowmark submodule; this file only maps its
+ *                  source coordinates into CodeMirror diagnostics.
  *
  * END HEADER
  */
 
 import { linter, type Diagnostic } from '@codemirror/lint'
-import { remark } from 'remark'
-import { type Point, type Position } from 'unist'
-import remarkFrontmatter from 'remark-frontmatter'
-import remarkGfm from 'remark-gfm'
-import remarkMath from 'remark-math'
-import remarkLatexMath from './remark-latex-math'
-import { configField } from '../util/configuration'
+import type { Text } from '@codemirror/state'
+import type {
+  FlowmarkLintDiagnostic,
+  FlowmarkLintResult
+} from '@dts/common/flowmark-lint'
 
-// Rules we use
-import remarkLintBlockquoteIndentation from 'remark-lint-blockquote-indentation'
-import remarkLintCheckboxCharacterStyle from 'remark-lint-checkbox-character-style'
-import remarkLintCodeBlockStyle from 'remark-lint-code-block-style'
-import remarkLintEmphasisMarker from 'remark-lint-emphasis-marker'
-import remarkLintFencedCodeMarker from 'remark-lint-fenced-code-marker'
-import remarkLintHardBreakSpaces from 'remark-lint-hard-break-spaces'
-import remarkLintHeadingStyle from 'remark-lint-heading-style'
-import remarkLintLinkTitleStyle from 'remark-lint-link-title-style'
-import remarkLintListItemBulletIndent from 'remark-lint-list-item-bullet-indent'
-import remarkLintListItemIndent from 'remark-lint-list-item-indent'
-import remarkLintNoBlockquoteWithoutMarker from 'remark-lint-no-blockquote-without-marker'
-import remarkLintNoConsecutiveBlankLines from 'remark-lint-no-consecutive-blank-lines'
-import remarkLintNoDuplicateDefinitions from 'remark-lint-no-duplicate-definitions'
-import remarkLintNoHeadingContentIndent from 'remark-lint-no-heading-content-indent'
-import remarkLintNoShortcutReferenceImage from 'remark-lint-no-shortcut-reference-image'
-import remarkLintNoShortcutReferenceLink from 'remark-lint-no-shortcut-reference-link'
-import remarkLintNoUnusedDefinitions from 'remark-lint-no-unused-definitions'
-import remarkLintOrderedListMarkerStyle from 'remark-lint-ordered-list-marker-style'
-import remarkLintRuleStyle from 'remark-lint-rule-style'
-import remarkLintStrongMarker from 'remark-lint-strong-marker'
-import remarkLintTableCellPadding from 'remark-lint-table-cell-padding'
-import remarkLint from 'remark-lint'
-import { type Text } from '@codemirror/state'
+/** Convert a 1-based Flowmark line/column to a clamped CodeMirror offset. */
+function sourceOffset (doc: Text, line: number, column: number): number {
+  const lineNumber = Math.min(Math.max(Math.trunc(line), 1), doc.lines)
+  const sourceLine = doc.line(lineNumber)
+  return Math.min(
+    sourceLine.to,
+    sourceLine.from + Math.max(Math.trunc(column) - 1, 0)
+  )
+}
 
-/**
- * Small helper function that turns a place provided by remark into a from, to
- * offset indicator.
- *
- * @param   {Point|Position|undefined}      place     The place
- * @param   {Text}                          source    The source document
- *
- * @return  {{ from: number, to: number }}            The translated offset.
- */
-function placeToOffset (place: Point|Position|undefined, source: Text): { from: number, to: number } {
-  if (place === undefined) {
-    return { from: 0, to: 0 }
-  } else if ('start' in place) {
-    // It's a position
-    const { from } = placeToOffset(place.start, source)
-    const { to } = placeToOffset(place.end, source)
-    return { from, to }
-  } else {
-    // It's a point
-    const { column, line } = place
-    if (column == null || line == null) {
-      // BUG: The Markdown linter sometimes spits out objects that have these
-      // properties, but which are preset to null.
-      return { from: 0, to: 0 }
-    }
-    const offset = source.line(line).from + column - 1
-    return { from: offset, to: offset }
+export function flowmarkDiagnosticToCodeMirror (
+  diagnostic: FlowmarkLintDiagnostic,
+  doc: Text
+): Diagnostic {
+  const from = sourceOffset(doc, diagnostic.line, diagnostic.column)
+  const to = Math.max(
+    from,
+    sourceOffset(doc, diagnostic.end_line, diagnostic.end_column)
+  )
+  return {
+    from,
+    to,
+    severity: diagnostic.severity,
+    message: diagnostic.message,
+    source: `flowmark (${diagnostic.rule})`
   }
 }
 
 export const mdLint = linter(async view => {
-  // We're using a set since somehow the remark linter sometimes happily throws
-  // the same warnings
-  const diagnostics: Diagnostic[] = []
+  const result: FlowmarkLintResult = await window.ipc.invoke('application', {
+    command: 'lint-markdown',
+    payload: view.state.doc.toString()
+  })
 
-  const config = view.state.field(configField, false)
-  const emphasisMarker = config?.italicFormatting
-  const boldMarker = config?.boldFormatting
-  let boldSetting: 'consistent'|'*'|'_' = 'consistent'
-  if (boldMarker !== undefined && boldMarker === '**') {
-    boldSetting = '*'
-  } else if (boldMarker !== undefined) {
-    boldSetting = '_'
+  if (!result.ok) {
+    return [{
+      from: 0,
+      to: Math.min(1, view.state.doc.length),
+      severity: 'error',
+      message: `Flowmark linter unavailable: ${result.message}`,
+      source: 'flowmark-lint'
+    }]
   }
 
-  const result = await remark()
-    .use(remarkFrontmatter, [
-      // Either Pandoc-style frontmatters ...
-      { type: 'yaml', fence: { open: '---', close: '...' } },
-      // ... or Jekyll/Static site generators-style frontmatters.
-      { type: 'yaml', fence: { open: '---', close: '---' } }
-    ])
-    .use(remarkGfm)
-    .use(remarkMath)
-    .use(remarkLatexMath)
-    .use(remarkLint)
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-blockquote-indentation#
-    .use(remarkLintBlockquoteIndentation, 2)
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-checkbox-character-style
-    .use(remarkLintCheckboxCharacterStyle, { checked: 'consistent', unchecked: ' ' })
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-code-block-style
-    .use(remarkLintCodeBlockStyle, 'consistent')
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-emphasis-marker
-    .use(remarkLintEmphasisMarker, emphasisMarker ?? 'consistent')
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-fenced-code-marker
-    .use(remarkLintFencedCodeMarker, 'consistent')
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-heading-style
-    .use(remarkLintHeadingStyle, 'consistent')
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-link-title-style
-    .use(remarkLintLinkTitleStyle, '"')
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-ordered-list-marker-style
-    .use(remarkLintOrderedListMarkerStyle, '.')
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-rule-style
-    .use(remarkLintRuleStyle, 'consistent')
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-strong-marker
-    .use(remarkLintStrongMarker, boldSetting)
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-table-cell-padding
-    .use(remarkLintTableCellPadding, 'consistent')
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-list-item-bullet-indent
-    .use(remarkLintListItemBulletIndent)
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-list-item-indent
-    .use(remarkLintListItemIndent, 'one')
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-no-blockquote-without-marker
-    .use(remarkLintNoBlockquoteWithoutMarker)
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-hard-break-spaces
-    .use(remarkLintHardBreakSpaces)
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-no-duplicate-definitions
-    .use(remarkLintNoDuplicateDefinitions)
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-no-heading-content-indent
-    .use(remarkLintNoHeadingContentIndent)
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-no-inline-padding
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-no-shortcut-reference-image
-    .use(remarkLintNoShortcutReferenceImage)
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-no-shortcut-reference-link
-    .use(remarkLintNoShortcutReferenceLink)
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-no-unused-definitions
-    .use(remarkLintNoUnusedDefinitions)
-    // https://github.com/remarkjs/remark-lint/tree/main/packages/remark-lint-no-consecutive-blank-lines
-    .use(remarkLintNoConsecutiveBlankLines)
-    .process(view.state.doc.toString())
-
-  // Now we may or may not have messages that we can basically almost directly
-  // convert into diagnostics
-  for (const message of result.messages) {
-    diagnostics.push({
-      ...placeToOffset(message.place, view.state.doc),
-      severity: (message.fatal === true) ? 'error' : 'warning',
-      message: message.message,
-      // message.source is preferred, but can be undefined...?
-      source: (message.ruleId === null) ? 'remark-lint' : `remark-lint (${message.ruleId ?? ''})`
-    })
-  }
-
-  return diagnostics
+  return result.diagnostics.map(diagnostic =>
+    flowmarkDiagnosticToCodeMirror(diagnostic, view.state.doc)
+  )
 })

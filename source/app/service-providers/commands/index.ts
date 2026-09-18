@@ -36,6 +36,7 @@ import ImportLangFile from './import-lang-file'
 import ImportFiles from './import'
 import IncreasePomodoro from './increase-pomodoro'
 import LanguageTool from './language-tool'
+import LintMarkdown from './lint-markdown'
 import OpenAttachment from './open-attachment'
 import OpenAuxWindow from './open-aux-window'
 import Print from './print'
@@ -77,6 +78,7 @@ import type {
   UndoRenameOutcome
 } from '@common/pandoc-util/compute-reference-edits'
 import type { FormatResult } from '@common/modules/markdown-editor/commands/format-document'
+import type { FlowmarkLintResult } from '@dts/common/flowmark-lint'
 import type { LinkPreviewResult } from '@common/util/fetch-link-preview'
 import type { JustRepositoryCommands, RunJustRecipeRequest } from '@dts/common/justfile-commands'
 import { discoverJustfileCommands } from 'source/app/util/justfile-commands'
@@ -108,6 +110,7 @@ export const commands = [
   ImportLangFile,
   IncreasePomodoro,
   LanguageTool,
+  LintMarkdown,
   OpenAttachment,
   OpenAuxWindow,
   Print,
@@ -224,6 +227,10 @@ export type ApplicationIPCContract = {
   'format-document': {
     request: { payload: string }
     response: FormatResult
+  }
+  'lint-markdown': {
+    request: { payload: string }
+    response: FlowmarkLintResult
   }
   // Answered inline by run(): enumDictFiles().map(elem => elem.tag).
   'get-available-dictionaries': {

@@ -239,9 +239,11 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   generated `~/.pandoc/templates/css/mathjax-macros.json`; the desktop launcher
   regenerates that central projection before launch.
 - **Logs:** launcher `~/.cache/zettlr-pandoc-dev.log`; app `~/.config/Zettlr-Pandoc/logs/`.
-- **In-editor markdown linter** is `remark-lint`
-  (`source/common/modules/markdown-editor/linters/md-lint.ts`); its rule set is
-  hard-coded there (not GUI-configurable). The project's own linter is ESLint
+- **In-editor Markdown linter** is the standalone Flowmark linter pinned at
+  `vendor/flowmark` (`flowmark-lint`). Zettlr's
+  `source/common/modules/markdown-editor/linters/md-lint.ts` is only a
+  CodeMirror/IPC adapter; Markdown/Pandoc parsing and lint semantics belong in
+  Flowmark. The project's own source-code linter is ESLint
   (`eslint.config.mjs`).
 
 ## Traps (details in agent-memory: `agent-memory search --scope both`)

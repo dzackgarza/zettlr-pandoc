@@ -102,11 +102,11 @@ test-pandoc-config-integration:
 
 # Real-toolchain proof for issue #26: drives the production flowmark service
 # (source/app/util/flowmark-format.ts) with NO injected runner, so it runs the
-# exact production `uvx … flowmark --inplace --semantic …` command string
-# end-to-end against the real flowmark binary and asserts the semantic reflow.
-# uvx fetches flowmark from git (network), so this is deliberately NOT a
-# *.spec.ts file and is excluded from the default `just test` commit gate; run
-# it explicitly. Fails loudly (typed flowmark-absent) if flowmark can't launch.
+# exact production `uvx --from vendor/flowmark …` command string end-to-end
+# against the pinned submodule and asserts both formatting and lint behavior.
+# A cold uv cache may still install Python dependencies, so this is deliberately
+# NOT a *.spec.ts file and is excluded from the fastest `just test` commit gate;
+# run it explicitly. Fails loudly if the pinned Flowmark toolchain can't launch.
 test-flowmark-integration: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 180000 "test/flowmark-format-integration.ts"

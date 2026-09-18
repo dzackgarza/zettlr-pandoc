@@ -1,0 +1,4 @@
+[submodule "vendor/flowmark"]
+	path = vendor/flowmark
+	url = https://github.com/dzackgarza/flowmark.git
+	branch = main

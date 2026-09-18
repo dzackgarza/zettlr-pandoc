@@ -256,10 +256,18 @@ module.exports = {
     // resources directory. After the `generateAssets` step, this will also
     // include the Pandoc binary (this is why we cannot leave `extraResource`
     // undefined).
-    extraResource: process.platform === 'darwin' ? [
-      'resources/icons/icon.code.icns',
-      'resources/icons/Assets.car' // Contains the new Liquid Glass app icon
-    ] : []
+    extraResource: [
+      // Flowmark is a pinned git submodule and the sole Markdown formatter /
+      // linter syntax authority. Keep the complete Python project outside the
+      // asar so uvx can install/run this exact local source in production.
+      path.join(__dirname, 'vendor', 'flowmark'),
+      ...(process.platform === 'darwin'
+        ? [
+            'resources/icons/icon.code.icns',
+            'resources/icons/Assets.car' // Contains the new Liquid Glass app icon
+          ]
+        : [])
+    ]
   },
   plugins: [
     {
