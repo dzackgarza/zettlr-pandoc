@@ -143,6 +143,29 @@ outside`
     assert.match(panel?.textContent ?? '', /A set has/)
   })
 
+  it('recognizes Pandoc multiline fenced-div attributes with nested braces in quoted values', function () {
+    const doc = `:::{.theorem
+    title="{\\cite[Thm. 1.1]{AEGS25}}"
+    #thm:intro-main-theorem
+}
+The theorem body.
+:::
+
+outside`
+    const view = createEditor(doc)
+
+    const opening = view.dom.querySelector('pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]')
+    const panel = view.dom.querySelector('pandoc-div-wrapper[data-pandoc-div-family="result"]')
+    assert.ok(opening !== null, `expected a semantic theorem opening: ${view.dom.innerHTML}`)
+    assert.ok(panel !== null, 'expected the multiline opening to produce one theorem panel')
+    assert.equal(opening?.getAttribute('data-pandoc-div-label'), 'Theorem')
+    assert.equal(opening?.getAttribute('data-pandoc-authored-id'), 'thm:intro-main-theorem')
+    assert.ok(panel?.classList.contains('theorem'))
+    assert.match(opening?.getAttribute('title') ?? '', /\{\\cite\[Thm\. 1\.1\]\{AEGS25\}\}/)
+    assert.match(panel?.textContent ?? '', /The theorem body\./)
+    assert.doesNotMatch(panel?.textContent ?? '', /title=|thm:intro-main-theorem/)
+  })
+
   it('reveals the div shell while preserving cursor-local nested preview behavior', function () {
     const view = createEditor(hybridPreviewDoc, hybridPreviewDoc.indexOf('Ordinary'), hybridPreviewExtensions)
     const active = activeHybridDiv(view)

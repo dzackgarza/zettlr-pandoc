@@ -467,6 +467,15 @@ export interface Comment extends MDNode {
 export interface PandocDiv extends MDNode {
   type: 'PandocDiv'
   /**
+   * Exact authored source range of the div's braced Pandoc attribute list.
+   * Undefined for the legacy bare-class spelling (`::: theorem`).
+   *
+   * Consumers that need token coordinates must use this parsed range rather
+   * than re-scanning the opening physical line — Pandoc attribute lists may
+   * span several lines.
+   */
+  attributeRange?: { from: number, to: number }
+  /**
    * The string value of the content node.
    */
   value: string
@@ -897,6 +906,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         },
         from: node.from,
         to: node.to,
+        attributeRange: attr === null ? undefined : { from: attr.from, to: attr.to },
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
         value: content,
         children: [],

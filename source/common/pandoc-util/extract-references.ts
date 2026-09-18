@@ -273,14 +273,14 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
   }
 
   const visitPandocDiv = (node: PandocDiv): void => {
-    const openLineEnd = markdown.indexOf('\n', node.from)
-    const openLine = markdown.slice(node.from, openLineEnd === -1 || openLineEnd > node.to ? node.to : openLineEnd)
-    const brace = openLine.indexOf('{')
-    if (brace === -1) {
+    if (node.attributeRange === undefined) {
       return
     }
 
-    const located = locateAttribute(openLine.slice(brace), node.from + brace)
+    const located = locateAttribute(
+      markdown.slice(node.attributeRange.from, node.attributeRange.to),
+      node.attributeRange.from
+    )
     if (located === undefined) {
       return
     }

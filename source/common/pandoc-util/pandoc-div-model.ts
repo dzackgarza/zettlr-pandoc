@@ -180,8 +180,17 @@ export function divModelFromNode (doc: DivSourceDocument, node: SyntaxNode): Pan
   }
 
   const openingLine = doc.lineAt(node.from)
+  const openingSyntaxTo = Math.max(
+    marks[0].to,
+    attrs?.to ?? marks[0].to,
+    info?.to ?? marks[0].to,
+  )
+  // Pandoc permits fenced-div attributes to span physical lines. The opening
+  // shell ends on the line containing the final parsed attribute token, not
+  // necessarily on the colon fence's first line.
+  const openingEndLine = doc.lineAt(Math.max(node.from, openingSyntaxTo - 1))
   const closingLine = doc.lineAt(node.to)
-  const contentFrom = Math.min(openingLine.to + 1, closingLine.from)
+  const contentFrom = Math.min(openingEndLine.to + 1, closingLine.from)
   const attributes = attrs ? parsePandocAttributes(doc.sliceString(attrs.from, attrs.to)) : {}
   const classes = info ? [doc.sliceString(info.from, info.to)] : []
   if (attributes.classes) {
@@ -199,7 +208,7 @@ export function divModelFromNode (doc: DivSourceDocument, node: SyntaxNode): Pan
     from: node.from,
     to: node.to,
     openFrom: openingLine.from,
-    openTo: openingLine.to,
+    openTo: openingEndLine.to,
     contentFrom,
     contentTo: Math.max(contentFrom, closingLine.from - 1),
     closeFrom: closingLine.from,

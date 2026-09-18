@@ -111,6 +111,7 @@
     "d3": "^7.9.0",
     "diff": "^9.0.0",
     "dompurify": "^3.4.13",
+    "entities": "^8.0.0",
     "fast-levenshtein": "^3.0.0",
     "fix-path": "^5.0.0",
     "fzf": "^0.5.2",
