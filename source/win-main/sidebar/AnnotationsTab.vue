@@ -55,8 +55,6 @@
           v-on:click="navigateAnnotation(group.documentPath, card)"
         >
           <span class="annotation-ordinal">{{ card.ordinal }}</span>
-          <span class="annotation-line-locator">{{ card.lineLocator }}</span>
-          <span class="annotation-workspace-kind">{{ trans('Annotation') }}</span>
           <span class="annotation-workspace-summary">{{ card.instructionText }}</span>
         </button>
 
@@ -69,8 +67,6 @@
           v-on:click="navigate(group.documentPath, suggestion.range)"
         >
           <cds-icon shape="wand" role="presentation"></cds-icon>
-          <span class="annotation-line-locator">{{ suggestion.lineLocator }}</span>
-          <span class="annotation-workspace-kind">{{ trans('Change') }}</span>
           <span class="annotation-workspace-summary">{{ suggestion.description }}</span>
         </button>
       </div>
@@ -90,9 +86,9 @@
  *
  * Description:     Workspace-wide outstanding collaboration work, grouped by
  *                  document. Rows are navigation only: annotation details and
- *                  review changes are read in the document itself. Review
- *                  suggestions therefore show identity/claim/line here but
- *                  never duplicate the diff. Each document owns an Accept all
+ *                  review changes are read in the document itself. Rows lead
+ *                  with the full owner reason or proposal claim and never
+ *                  duplicate navigation metadata or the diff. Each document owns an Accept all
  *                  action and the panel header owns the workspace-wide one.
  *
  * END HEADER
@@ -295,8 +291,8 @@ body {
     display: grid;
     content-visibility: auto;
     contain-intrinsic-size: auto 28px;
-    grid-template-columns: auto auto auto minmax(0, 1fr);
-    align-items: center;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
     gap: 6px;
     width: 100%;
     min-height: 28px;
@@ -318,13 +314,6 @@ body {
       height: 14px;
       color: var(--annotation-text-muted);
     }
-  }
-
-  .annotation-workspace-kind,
-  .annotation-line-locator {
-    color: var(--annotation-text-muted);
-    font-size: var(--annotation-small-font-size);
-    white-space: nowrap;
   }
 
   .annotation-workspace-summary {

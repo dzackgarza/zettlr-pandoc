@@ -688,6 +688,9 @@ describe("workspace annotations panel structure", function () {
     assert.match(panel, /emit\('navigate'/);
     assert.doesNotMatch(panel, /SuggestionInspector|AnnotationInspector/);
     assert.doesNotMatch(panel, /suggestion-removed|suggestion-inserted/);
+    assert.doesNotMatch(panel, /annotation-line-locator/);
+    assert.doesNotMatch(panel, /annotation-workspace-kind/);
+    assert.doesNotMatch(panel, /trans\('Change'\)|trans\('Annotation'\)/);
     const summaryStyle = panel.match(/\.annotation-workspace-summary\s*\{([\s\S]*?)\}/)?.[1] ?? "";
     assert.doesNotMatch(summaryStyle, /text-overflow:\s*ellipsis/);
     assert.doesNotMatch(summaryStyle, /white-space:\s*nowrap/);

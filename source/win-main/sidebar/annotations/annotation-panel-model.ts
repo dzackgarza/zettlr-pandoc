@@ -233,8 +233,6 @@ export function suggestionIdsForPacketIds (review: ReviewDiffSession, packetIds:
 export interface SuggestionNavigatorView {
   suggestionId: string
   description: string
-  lineLocator: string
-  lineNumber: number
   range: SourceRange
 }
 
@@ -244,15 +242,11 @@ export interface SuggestionNavigatorView {
  * rendered, and sidebar rows only identify and navigate to that source range.
  */
 export function buildSuggestionNavigatorRows (review: ReviewDiffSession): SuggestionNavigatorView[] {
-  const lineIndex = createLineIndex(review.workingText)
   return review.suggestions.map(suggestion => {
     const firstAnchor = suggestion.anchors[0] ?? { from: suggestion.seam, to: suggestion.seam }
-    const lineNumber = lineIndex.lineOfPosition(firstAnchor.from)
     return {
       suggestionId: suggestion.suggestionId,
       description: suggestion.description,
-      lineLocator: `Ln ${lineNumber}`,
-      lineNumber,
       range: { from: firstAnchor.from, to: firstAnchor.to }
     }
   })
