@@ -1873,6 +1873,7 @@ paths:
   /openapi.yaml:
     get:
       operationId: getOpenApiSpec
+      x-openai-isConsequential: false
       summary: Serve the OpenAPI specification
       responses:
         '200':
@@ -1884,6 +1885,7 @@ paths:
   /openapi.json:
     get:
       operationId: getOpenApiSpecJson
+      x-openai-isConsequential: false
       summary: Serve the OpenAPI specification as JSON
       description: >-
         The identical document, parsed from the YAML per request so the two
@@ -1901,6 +1903,7 @@ paths:
   /health:
     get:
       operationId: health
+      x-openai-isConsequential: false
       summary: Protocol version, instance ID, and PID
       responses:
         '200':
@@ -1912,6 +1915,7 @@ paths:
   /v1/ping:
     get:
       operationId: ping
+      x-openai-isConsequential: false
       summary: Protocol version, instance ID, and PID
       responses:
         '200':
@@ -1923,6 +1927,7 @@ paths:
   /v1/capabilities:
     get:
       operationId: getCapabilities
+      x-openai-isConsequential: false
       summary: Supported features and limits
       responses:
         '200':
@@ -1934,6 +1939,7 @@ paths:
   /v1/context:
     get:
       operationId: getContext
+      x-openai-isConsequential: false
       summary: Focused view, focused document, and all open documents
       responses:
         '200':
@@ -1945,6 +1951,7 @@ paths:
   /v1/documents:
     get:
       operationId: listDocuments
+      x-openai-isConsequential: false
       summary: List open or loaded documents
       responses:
         '200':
@@ -1967,6 +1974,7 @@ paths:
   /v1/documents/{documentId}:
     get:
       operationId: getDocument
+      x-openai-isConsequential: false
       summary: Document metadata and review status
       parameters:
         - name: documentId
@@ -1990,6 +1998,7 @@ paths:
   /v1/documents/{documentId}/focus:
     post:
       operationId: focusDocument
+      x-openai-isConsequential: false
       summary: Focus or create an editor view for the document
       parameters:
         - name: documentId
@@ -2013,6 +2022,7 @@ paths:
   /v1/documents/{documentId}/content:
     get:
       operationId: readDocumentContent
+      x-openai-isConsequential: false
       summary: Read working or reference text by line slice
       description: >-
         Answers for every documentId GET /v1/workspace/files returns, whether
@@ -2068,6 +2078,7 @@ paths:
   /v1/documents/{documentId}/search:
     post:
       operationId: searchDocument
+      x-openai-isConsequential: false
       summary: Literal or regex search against the live buffer
       parameters:
         - name: documentId
@@ -2127,6 +2138,7 @@ paths:
   /v1/documents/{documentId}/proposals:
     post:
       operationId: submitProposal
+      x-openai-isConsequential: false
       summary: Submit an ordered batch of exact unified-diff claims
       description: >-
         The batch binds to the one baselineSha256 in the body and applies
@@ -2196,6 +2208,7 @@ paths:
   /v1/annotations:
     get:
       operationId: listAnnotations
+      x-openai-isConsequential: false
       summary: List annotations across every open document
       description: >-
         Aggregates every currently open document's annotations. Lifecycle —
@@ -2224,6 +2237,7 @@ paths:
   /v1/documents/{documentId}/annotations:
     get:
       operationId: listDocumentAnnotations
+      x-openai-isConsequential: false
       summary: List one document's annotations
       parameters:
         - name: documentId
@@ -2255,6 +2269,7 @@ paths:
   /v1/annotations/{annotationId}:
     get:
       operationId: getAnnotation
+      x-openai-isConsequential: false
       summary: Get one annotation's full detail
       parameters:
         - name: annotationId
@@ -2278,6 +2293,7 @@ paths:
   /v1/annotations/{annotationId}/messages:
     post:
       operationId: addAnnotationMessage
+      x-openai-isConsequential: false
       summary: Reply in an annotation's thread
       description: >-
         The only annotation mutation this API exposes (I3): lifecycle moves
@@ -2328,6 +2344,7 @@ paths:
   /v1/reviews:
     get:
       operationId: listReviews
+      x-openai-isConsequential: false
       summary: List all reviews, attached and detached
       description: >-
         Reviews attached to open documents, plus detached (sidecar-backed)
@@ -2345,6 +2362,7 @@ paths:
   /v1/reviews/{reviewId}:
     get:
       operationId: getReview
+      x-openai-isConsequential: false
       summary: Inspect a review
       description: >-
         Status plus review-level comments — the reviewer's channel back to
@@ -2374,6 +2392,7 @@ paths:
   /v1/reviews/{reviewId}/diff:
     get:
       operationId: getReviewDiff
+      x-openai-isConsequential: false
       summary: Retrieve the complete unresolved composite diff
       description: >-
         Answers for a detached review too, from the frozen texts in its
@@ -2400,6 +2419,7 @@ paths:
   /v1/reviews/{reviewId}/chunks:
     get:
       operationId: getReviewChunks
+      x-openai-isConsequential: false
       summary: Inspect current unresolved chunks
       description: >-
         Read this at the start of each turn. A chunk's comment is the
@@ -2432,6 +2452,7 @@ paths:
   /v1/reviews/{reviewId}/comments:
     post:
       operationId: addReviewComment
+      x-openai-isConsequential: false
       summary: Attach a review-level comment
       description: >-
         Communication without adjudication: the comment lands in the review's
@@ -2488,6 +2509,7 @@ paths:
   /v1/reviews/{reviewId}/packets:
     get:
       operationId: getReviewPackets
+      x-openai-isConsequential: false
       summary: Inspect the proposal-packet ledger
       description: >-
         Answers for a detached review too, from its sidecar's ledger; that
@@ -2514,6 +2536,7 @@ paths:
   /v1/proposals/{packetId}/retract:
     post:
       operationId: retractProposal
+      x-openai-isConsequential: false
       summary: Retract an untouched, most-recent packet
       parameters:
         - name: packetId
@@ -2557,6 +2580,7 @@ paths:
   /v1/reviews/{reviewId}/events:
     get:
       operationId: waitForReviewEvents
+      x-openai-isConsequential: false
       summary: Long-poll review events and status after a generation advance
       description: >-
         The "what changed since my last turn" query: pass your last
@@ -2617,6 +2641,7 @@ paths:
   /v1/views:
     get:
       operationId: listViews
+      x-openai-isConsequential: false
       summary: List active editor views
       responses:
         '200':
@@ -2628,6 +2653,7 @@ paths:
   /v1/workspace/files:
     get:
       operationId: listWorkspaceFiles
+      x-openai-isConsequential: false
       summary: List every file across the configured workspaces
       description: >-
         The agent's orientation entry point — all files the editor can see,
@@ -2643,6 +2669,7 @@ paths:
   /v1/workspaces:
     get:
       operationId: listWorkspaces
+      x-openai-isConsequential: false
       summary: List configured workspaces
       responses:
         '200':
@@ -2654,6 +2681,7 @@ paths:
   /v1/workspaces/{workspaceId}/documents:
     get:
       operationId: listWorkspaceDocuments
+      x-openai-isConsequential: false
       summary: List documents known to a workspace
       parameters:
         - name: workspaceId
@@ -2683,6 +2711,7 @@ paths:
   /v1/review-submissions:
     post:
       operationId: submitReview
+      x-openai-isConsequential: false
       summary: Submit a review by file path
       description: Resolve a workspace file, validate an optional baseline, submit
         ordered claims or a patch atomically, and focus unless disabled. A retry
@@ -2740,6 +2769,7 @@ paths:
   /v1/citations/databases:
     get:
       operationId: listCitationDatabases
+      x-openai-isConsequential: false
       summary: List loaded citation databases
       description: >-
         Returns metadata for every bibliography database currently loaded by
@@ -2755,6 +2785,7 @@ paths:
   /v1/citations/items:
     get:
       operationId: listCitationItems
+      x-openai-isConsequential: false
       summary: List all citation items from a database
       description: >-
         Returns every CSL item from the requested database. Defaults to
@@ -2784,6 +2815,7 @@ paths:
   /v1/citations/items/{citeKey}:
     get:
       operationId: getCitationItem
+      x-openai-isConsequential: false
       summary: Look up a single citation item by key
       parameters:
         - name: citeKey
@@ -2813,6 +2845,7 @@ paths:
   /v1/citations/render:
     post:
       operationId: renderCitation
+      x-openai-isConsequential: false
       summary: Render a formatted inline citation
       description: >-
         Passes the supplied cite items through the CSL engine and returns
@@ -2839,6 +2872,7 @@ paths:
   /v1/citations/bibliography:
     post:
       operationId: renderBibliography
+      x-openai-isConsequential: false
       summary: Render a formatted bibliography
       description: >-
         Renders a bibliography for the given cite keys through the CSL engine.
@@ -2864,6 +2898,7 @@ paths:
   /v1/macros:
     get:
       operationId: listMacros
+      x-openai-isConsequential: false
       summary: Inspect configured mathematical macros
       description: >-
         Returns every control word from the canonical macro tree, preserving
@@ -2892,6 +2927,7 @@ paths:
   /v1/figures:
     get:
       operationId: listFigures
+      x-openai-isConsequential: false
       summary: List the centralized figures directory
       description: >-
         Recursively lists files, directories, and symlinks under the same configured
@@ -2911,6 +2947,7 @@ paths:
                 $ref: '#/components/schemas/AgentErrorResponse'
     post:
       operationId: createFigure
+      x-openai-isConsequential: false
       summary: Create a TikZ figure source file
       description: >-
         Atomically creates one new UTF-8 `.tikz` file under the configured
@@ -2950,6 +2987,7 @@ paths:
   /v1/figures/search:
     get:
       operationId: searchFigures
+      x-openai-isConsequential: false
       summary: Search centralized figures
       description: >-
         Searches relative paths and UTF-8 file contents. Binary files participate in
@@ -2978,6 +3016,7 @@ paths:
   /v1/figures/content:
     get:
       operationId: readFigure
+      x-openai-isConsequential: false
       summary: Read a centralized figure file
       parameters:
         - name: path
@@ -3009,6 +3048,7 @@ paths:
                 $ref: '#/components/schemas/AgentErrorResponse'
     put:
       operationId: writeFigure
+      x-openai-isConsequential: false
       summary: Write a centralized figure file
       description: >-
         Atomically creates or replaces one file under the configured centralized
@@ -3050,6 +3090,7 @@ paths:
   /v1/lint:
     get:
       operationId: lintDocuments
+      x-openai-isConsequential: false
       summary: Lint documents by editor/workspace scope
       description: >-
         Runs the document lint stack over authoritative working text. focused checks

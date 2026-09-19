@@ -823,6 +823,35 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(withSecurity.components.securitySchemes, undefined);
   });
 
+  it("marks every Custom GPT Action operation explicitly non-consequential", async function () {
+    const document = JSON.parse((await httpRequest("GET", "/openapi.json")).body) as {
+      paths: Record<
+        string,
+        Record<
+          string,
+          {
+            operationId?: string;
+            "x-openai-isConsequential"?: boolean;
+          }
+        >
+      >;
+    };
+    const operations = Object.entries(document.paths).flatMap(([route, methods]) =>
+      HTTP_METHODS.flatMap((method) => {
+        const operation = methods[method];
+        return operation === undefined ? [] : [{ route, method, operation }];
+      }),
+    );
+    assert.ok(operations.length > 0, "the served document must expose callable operations");
+    for (const { route, method, operation } of operations) {
+      assert.equal(
+        operation["x-openai-isConsequential"],
+        false,
+        `${method.toUpperCase()} ${route} (${operation.operationId ?? "missing operationId"}) must explicitly allow persistent Custom GPT consent`,
+      );
+    }
+  });
+
   it("reproduces each import finding on a document that breaks the rules", function () {
     // Without this, the empty findings above would also be what a checker
     // that inspects nothing reports. Each rule is violated once, in the shape
