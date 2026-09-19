@@ -23,7 +23,7 @@ module.exports = {
     // Local desktop rebuilds are launch artifacts, not distribution files.
     // Preserve production semantics/tree-shaking while skipping the expensive
     // minifier pass. Release and ordinary package builds remain minified.
-    minimize: !isLocalPackage,
+    minimize: process.env.NODE_ENV === "production" && !isLocalPackage,
   },
   module: { rules },
   plugins: [

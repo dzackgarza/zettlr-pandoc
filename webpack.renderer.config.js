@@ -88,7 +88,7 @@ module.exports = {
     // measured at ~5 minutes on this workstation even with two workers. Keep
     // release/`just package` output minified, but let the explicit local
     // package profile skip this pure distribution-size optimization.
-    minimize: !isLocalPackage,
+    minimize: process.env.NODE_ENV === "production" && !isLocalPackage,
     // terser-webpack-plugin defaults to os.cpus().length - 1 workers, and
     // jest-worker runs them as THREADS, so every worker's V8 heap counts toward
     // the one webpack process's RSS: measured 7737 MiB peak across 14 renderer
