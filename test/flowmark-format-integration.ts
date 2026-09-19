@@ -77,14 +77,26 @@ describe('flowmark real-toolchain integration (issue #26)', function () {
     }
   })
 
-  it('reports genuine Markdown style through the same standalone linter', async function () {
+  it('does not turn formatter normalization into editor lint', async function () {
     const result = await lintMarkdownText('Use _emphasis_ in prose.\n')
     assert.equal(result.ok, true)
     if (result.ok) {
-      assert.ok(
-        result.diagnostics.some(diagnostic => diagnostic.rule === 'format/canonical'),
-        'real Markdown emphasis spelling must still be linted'
+      assert.deepEqual(
+        result.diagnostics,
+        [],
+        'a spelling the formatter would normalize is not a semantic defect'
       )
+    }
+  })
+
+  it('reports mathematical defects that normalization cannot decide', async function () {
+    const result = await lintMarkdownText('The map $Hom_R(M,N)$ has component $x_i_j$.\n')
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      const rules = new Set(result.diagnostics.map(diagnostic => diagnostic.rule))
+      assert.ok(rules.has('math/bare-operator'))
+      assert.ok(rules.has('math/repeated-subscript'))
+      assert.equal(rules.has('format/canonical'), false)
     }
   })
 

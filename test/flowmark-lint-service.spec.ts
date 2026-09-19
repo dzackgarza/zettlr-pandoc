@@ -25,14 +25,14 @@ describe('Flowmark lint service', function () {
       files: [{
         path: '-',
         diagnostics: [{
-          rule: 'format/canonical',
+          rule: 'reference/undefined',
           severity: 'warning',
-          message: 'canonicalize emphasis',
+          message: 'undefined reference',
           line: 2,
           column: 3,
           end_line: 2,
           end_column: 8,
-          replacement: '*x*'
+          replacement: null
         }]
       }]
     })
@@ -44,14 +44,14 @@ describe('Flowmark lint service', function () {
     assert.equal(result.ok, true)
     if (result.ok) {
       assert.deepEqual(result.diagnostics, [{
-        rule: 'format/canonical',
+        rule: 'reference/undefined',
         severity: 'warning',
-        message: 'canonicalize emphasis',
+        message: 'undefined reference',
         line: 2,
         column: 3,
         end_line: 2,
         end_column: 8,
-        replacement: '*x*'
+        replacement: null
       }])
     }
   })

@@ -18,9 +18,9 @@ describe('CodeMirror Flowmark diagnostic mapping', function () {
   it('maps Flowmark 1-based source coordinates exactly', function () {
     const doc = Text.of([ 'first', 'second line', 'third' ])
     const diagnostic = flowmarkDiagnosticToCodeMirror({
-      rule: 'format/canonical',
+      rule: 'reference/undefined',
       severity: 'warning',
-      message: 'canonical form',
+      message: 'undefined reference',
       line: 2,
       column: 2,
       end_line: 2,
@@ -29,7 +29,7 @@ describe('CodeMirror Flowmark diagnostic mapping', function () {
 
     assert.equal(diagnostic.from, doc.line(2).from + 1)
     assert.equal(diagnostic.to, doc.line(2).from + 6)
-    assert.equal(diagnostic.source, 'flowmark (format/canonical)')
+    assert.equal(diagnostic.source, 'flowmark (reference/undefined)')
   })
 
   it('clamps stale/out-of-bounds coordinates to the live document', function () {
