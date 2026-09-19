@@ -25,16 +25,14 @@
  * END HEADER
  */
 
-import { spawn } from 'child_process'
-import { createHash } from 'crypto'
-import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
-import { mkdir, writeFile } from 'fs/promises'
-import path from 'path'
+import { TEX_COMMAND_DECLARATION_RE } from "@common/util/tex-command-declarations";
+import { spawn } from "child_process";
+import { createHash } from "crypto";
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
 
-const REQUIRED_TIKZ_DATA_FILES = [
-  'filters/tikzcd.lua',
-  'filters/utilities.lua'
-] as const
+const REQUIRED_TIKZ_DATA_FILES = ["filters/tikzcd.lua", "filters/utilities.lua"] as const;
 
 /**
  * Handshake between the app and the shared tikzcd.lua implementation. Bump
@@ -42,34 +40,34 @@ const REQUIRED_TIKZ_DATA_FILES = [
  * cannot provide; startup preflight and explicit data-dir resolution both fail
  * loudly on a mismatch instead of silently degrading the live-preview contract.
  */
-export const TIKZ_RENDER_PROTOCOL = 3
-const TIKZ_RENDER_PROTOCOL_RE = /^-- ZETTLR_TIKZ_RENDER_PROTOCOL=(\d+)$/m
+export const TIKZ_RENDER_PROTOCOL = 3;
+const TIKZ_RENDER_PROTOCOL_RE = /^-- ZETTLR_TIKZ_RENDER_PROTOCOL=(\d+)$/m;
 
-function hasTikzDataFiles (dataDir: string): boolean {
-  return REQUIRED_TIKZ_DATA_FILES.every(relativePath => existsSync(path.join(dataDir, relativePath)))
+function hasTikzDataFiles(dataDir: string): boolean {
+  return REQUIRED_TIKZ_DATA_FILES.every((relativePath) =>
+    existsSync(path.join(dataDir, relativePath)),
+  );
 }
 
-export function tikzRenderProtocolVersion (dataDir: string): number|undefined {
-  const filterPath = path.join(dataDir, 'filters', 'tikzcd.lua')
+export function tikzRenderProtocolVersion(dataDir: string): number | undefined {
+  const filterPath = path.join(dataDir, "filters", "tikzcd.lua");
   if (!existsSync(filterPath)) {
-    return undefined
+    return undefined;
   }
-  const match = TIKZ_RENDER_PROTOCOL_RE.exec(readFileSync(filterPath, 'utf8'))
-  return match === null ? undefined : Number(match[1])
+  const match = TIKZ_RENDER_PROTOCOL_RE.exec(readFileSync(filterPath, "utf8"));
+  return match === null ? undefined : Number(match[1]);
 }
 
-function assertSupportedTikzDataDir (dataDir: string, label: string): void {
+function assertSupportedTikzDataDir(dataDir: string, label: string): void {
   if (!hasTikzDataFiles(dataDir)) {
-    throw new Error(
-      `${label} ${dataDir} must contain ` + REQUIRED_TIKZ_DATA_FILES.join(' and ')
-    )
+    throw new Error(`${label} ${dataDir} must contain ` + REQUIRED_TIKZ_DATA_FILES.join(" and "));
   }
-  const protocol = tikzRenderProtocolVersion(dataDir)
+  const protocol = tikzRenderProtocolVersion(dataDir);
   if (protocol !== TIKZ_RENDER_PROTOCOL) {
     throw new Error(
-      `${label} ${dataDir} carries TikZ render protocol ${protocol === undefined ? 'unknown' : protocol}; ` +
-      `Zettlr-Pandoc requires protocol ${TIKZ_RENDER_PROTOCOL}. Update the shared pandoc-config checkout instead of using a stale filter copy.`
-    )
+      `${label} ${dataDir} carries TikZ render protocol ${protocol === undefined ? "unknown" : protocol}; ` +
+        `Zettlr-Pandoc requires protocol ${TIKZ_RENDER_PROTOCOL}. Update the shared pandoc-config checkout instead of using a stale filter copy.`,
+    );
   }
 }
 
@@ -84,26 +82,23 @@ function assertSupportedTikzDataDir (dataDir: string, label: string): void {
  * checkout wins; without it rendering fails loudly rather than substituting a
  * private filter implementation.
  */
-export function resolveTikzDataDir (
-  configuredDir: string,
-  homeDir: string
-): string {
-  if (configuredDir !== '') {
-    assertSupportedTikzDataDir(configuredDir, 'Configured TikZ data directory')
-    return configuredDir
+export function resolveTikzDataDir(configuredDir: string, homeDir: string): string {
+  if (configuredDir !== "") {
+    assertSupportedTikzDataDir(configuredDir, "Configured TikZ data directory");
+    return configuredDir;
   }
 
-  const userPandocDir = path.join(homeDir, '.pandoc')
+  const userPandocDir = path.join(homeDir, ".pandoc");
   if (hasTikzDataFiles(userPandocDir)) {
-    assertSupportedTikzDataDir(userPandocDir, 'Shared Pandoc data tree')
-    return userPandocDir
+    assertSupportedTikzDataDir(userPandocDir, "Shared Pandoc data tree");
+    return userPandocDir;
   }
 
   throw new Error(
     `TikZ rendering requires the shared Pandoc data tree ${userPandocDir} to contain ` +
-    REQUIRED_TIKZ_DATA_FILES.join(' and ') +
-    '; the editor does not substitute an app-owned filter copy for missing shared Pandoc configuration.'
-  )
+      REQUIRED_TIKZ_DATA_FILES.join(" and ") +
+      "; the editor does not substitute an app-owned filter copy for missing shared Pandoc configuration.",
+  );
 }
 
 /**
@@ -111,64 +106,74 @@ export function resolveTikzDataDir (
  * standalone template. Zettlr does not synthesize a preamble or inject a
  * second macro set: ~/.pandoc owns that authoring environment.
  */
-export function resolveTikzTemplatePath (homeDir: string): string {
-  const templatePath = path.join(homeDir, '.pandoc', 'templates', 'standalone-tikz.tex')
+export function resolveTikzTemplatePath(homeDir: string): string {
+  const templatePath = path.join(homeDir, ".pandoc", "templates", "standalone-tikz.tex");
   if (!existsSync(templatePath)) {
     throw new Error(
       `TikZ live preview requires the owned template ${templatePath}; ` +
-      'create/restore ~/.pandoc/templates/standalone-tikz.tex so packages and user macros have one source of truth.'
-    )
+        "create/restore ~/.pandoc/templates/standalone-tikz.tex so packages and user macros have one source of truth.",
+    );
   }
-  return templatePath
+  return templatePath;
 }
 
-const TEX_COMMAND_DECLARATION_RE = /\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand|DeclareMathOperator)\*?\s*(?:\{\s*)?\\([A-Za-z@]+)|\\(?:def|gdef|edef|xdef)\s*\\([A-Za-z@]+)|\\let\s*\\([A-Za-z@]+)/gu
-const TEX_INPUT_RE = /\\(?:input|include)\s*\{([^}]+)\}/gu
-const TEX_PACKAGE_RE = /\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\s*\{([^}]+)\}/gu
-const QUIVER_SIMPLE_COMMAND_RE = /^\\(?:newcommand|renewcommand|providecommand)\*?\s*(?:\{\s*)?\\([A-Za-z@]+)\s*\}?\s*(?:\[(\d+)\])?\s*\{(.*)\}\s*$/u
-const QUIVER_SIMPLE_OPERATOR_RE = /^\\DeclareMathOperator(\*?)\s*(?:\{\s*)?\\([A-Za-z@]+)\s*\}?\s*\{(.*)\}\s*$/u
+const TEX_INPUT_RE = /\\(?:input|include)\s*\{([^}]+)\}/gu;
+const TEX_PACKAGE_RE = /\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\s*\{([^}]+)\}/gu;
+const QUIVER_SIMPLE_COMMAND_RE =
+  /^\\(?:newcommand|renewcommand|providecommand)\*?\s*(?:\{\s*)?\\([A-Za-z@]+)\s*\}?\s*(?:\[(\d+)\])?\s*\{(.*)\}\s*$/u;
+const QUIVER_SIMPLE_OPERATOR_RE =
+  /^\\DeclareMathOperator(\*?)\s*(?:\{\s*)?\\([A-Za-z@]+)\s*\}?\s*\{(.*)\}\s*$/u;
 
-function localTexFileIndex (root: string): string[] {
-  const result: string[] = []
-  if (!existsSync(root)) return result
+function localTexFileIndex(root: string): string[] {
+  const result: string[] = [];
+  if (!existsSync(root)) {
+    return result;
+  }
   const visit = (directory: string): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const absolute = path.join(directory, entry.name)
-      if (entry.isDirectory()) visit(absolute)
-      else if (entry.isFile() && /\.(?:tex|sty|cls)$/iu.test(entry.name)) result.push(absolute)
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        visit(absolute);
+      } else if (entry.isFile() && /\.(?:tex|sty|cls)$/iu.test(entry.name)) {
+        result.push(absolute);
+      }
     }
-  }
-  visit(root)
-  return result
+  };
+  visit(root);
+  return result;
 }
 
-function resolveLocalTexReference (
+function resolveLocalTexReference(
   reference: string,
-  extension: '.tex'|'.sty',
+  extension: ".tex" | ".sty",
   currentDirectory: string,
   roots: string[],
-  index: string[]
+  index: string[],
 ): string[] {
-  const normalized = reference.trim()
-  if (normalized === '' || normalized.includes('$')) return []
-  const withExtension = path.extname(normalized) === '' ? `${normalized}${extension}` : normalized
+  const normalized = reference.trim();
+  if (normalized === "" || normalized.includes("$")) {
+    return [];
+  }
+  const withExtension = path.extname(normalized) === "" ? `${normalized}${extension}` : normalized;
   const direct = [
     path.resolve(currentDirectory, withExtension),
-    ...roots.map(root => path.resolve(root, withExtension)),
-  ].filter(candidate => existsSync(candidate) && statSync(candidate).isFile())
-  if (direct.length > 0) return [...new Set(direct)]
+    ...roots.map((root) => path.resolve(root, withExtension)),
+  ].filter((candidate) => existsSync(candidate) && statSync(candidate).isFile());
+  if (direct.length > 0) {
+    return [...new Set(direct)];
+  }
 
-  const suffix = withExtension.replaceAll('\\', '/').replace(/^\.\//u, '')
-  const basename = path.basename(withExtension)
-  return index.filter(candidate => {
-    const unix = candidate.replaceAll('\\', '/')
-    return unix.endsWith(`/${suffix}`) || path.basename(candidate) === basename
-  })
+  const suffix = withExtension.replaceAll("\\", "/").replace(/^\.\//u, "");
+  const basename = path.basename(withExtension);
+  return index.filter((candidate) => {
+    const unix = candidate.replaceAll("\\", "/");
+    return unix.endsWith(`/${suffix}`) || path.basename(candidate) === basename;
+  });
 }
 
 interface TikzTemplateSource {
-  filePath: string
-  source: string
+  filePath: string;
+  source: string;
 }
 
 /**
@@ -177,35 +182,50 @@ interface TikzTemplateSource {
  * standard LaTeX catalogue owns those, while this traversal is only for the
  * user's maintained ~/.pandoc template/styles tree.
  */
-function tikzTemplateSources (templatePath: string): TikzTemplateSource[] {
-  const pandocRoot = path.dirname(path.dirname(templatePath))
-  const stylesRoot = path.join(pandocRoot, 'styles')
-  const templatesRoot = path.dirname(templatePath)
-  const roots = [stylesRoot, templatesRoot]
-  const index = [...localTexFileIndex(stylesRoot), ...localTexFileIndex(templatesRoot)]
-  const queue = [templatePath]
-  const visited = new Set<string>()
-  const sources: TikzTemplateSource[] = []
+function tikzTemplateSources(templatePath: string): TikzTemplateSource[] {
+  const pandocRoot = path.dirname(path.dirname(templatePath));
+  const stylesRoot = path.join(pandocRoot, "styles");
+  const templatesRoot = path.dirname(templatePath);
+  const roots = [stylesRoot, templatesRoot];
+  const index = [...localTexFileIndex(stylesRoot), ...localTexFileIndex(templatesRoot)];
+  const queue = [templatePath];
+  const visited = new Set<string>();
+  const sources: TikzTemplateSource[] = [];
 
   while (queue.length > 0) {
-    const filePath = queue.shift()!
-    const resolvedFile = path.resolve(filePath)
-    if (visited.has(resolvedFile) || !existsSync(resolvedFile)) continue
-    visited.add(resolvedFile)
-    const source = readFileSync(resolvedFile, 'utf8')
-    sources.push({ filePath: resolvedFile, source })
+    const filePath = queue.shift()!;
+    const resolvedFile = path.resolve(filePath);
+    if (visited.has(resolvedFile) || !existsSync(resolvedFile)) {
+      continue;
+    }
+    visited.add(resolvedFile);
+    const source = readFileSync(resolvedFile, "utf8");
+    sources.push({ filePath: resolvedFile, source });
 
     for (const match of source.matchAll(TEX_INPUT_RE)) {
-      queue.push(...resolveLocalTexReference(match[1], '.tex', path.dirname(resolvedFile), roots, index))
+      queue.push(
+        ...resolveLocalTexReference(match[1], ".tex", path.dirname(resolvedFile), roots, index),
+      );
     }
     for (const match of source.matchAll(TEX_PACKAGE_RE)) {
-      for (const packageName of match[1].split(',').map(name => name.trim()).filter(Boolean)) {
-        queue.push(...resolveLocalTexReference(packageName, '.sty', path.dirname(resolvedFile), roots, index))
+      for (const packageName of match[1]
+        .split(",")
+        .map((name) => name.trim())
+        .filter(Boolean)) {
+        queue.push(
+          ...resolveLocalTexReference(
+            packageName,
+            ".sty",
+            path.dirname(resolvedFile),
+            roots,
+            index,
+          ),
+        );
       }
     }
   }
 
-  return sources
+  return sources;
 }
 
 /**
@@ -219,23 +239,23 @@ function tikzTemplateSources (templatePath: string): TikzTemplateSource[] {
  * including both relative path and bytes means renaming, adding, removing or
  * editing any reachable local dependency invalidates the cache key.
  */
-export function tikzTemplateDependencyHash (templatePath: string): string {
-  const pandocRoot = path.dirname(path.dirname(templatePath))
+export function tikzTemplateDependencyHash(templatePath: string): string {
+  const pandocRoot = path.dirname(path.dirname(templatePath));
   const sources = tikzTemplateSources(templatePath)
     .map(({ filePath, source }) => ({
-      relativePath: path.relative(pandocRoot, filePath).replaceAll(path.sep, '/'),
-      source
+      relativePath: path.relative(pandocRoot, filePath).replaceAll(path.sep, "/"),
+      source,
     }))
-    .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+    .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 
-  const hash = createHash('sha1')
+  const hash = createHash("sha1");
   for (const entry of sources) {
-    hash.update(entry.relativePath)
-    hash.update('\0')
-    hash.update(entry.source)
-    hash.update('\0')
+    hash.update(entry.relativePath);
+    hash.update("\0");
+    hash.update(entry.source);
+    hash.update("\0");
   }
-  return hash.digest('hex')
+  return hash.digest("hex");
 }
 
 /**
@@ -244,45 +264,56 @@ export function tikzTemplateDependencyHash (templatePath: string): string {
  * packages are represented by the maintained standard LaTeX catalogue instead
  * of recursively indexing an entire TeX Live installation.
  */
-export function tikzTemplateCommands (templatePath: string): string[] {
-  const commands = new Set<string>()
+export function tikzTemplateCommands(templatePath: string): string[] {
+  const commands = new Set<string>();
   for (const { source } of tikzTemplateSources(templatePath)) {
     for (const match of source.matchAll(TEX_COMMAND_DECLARATION_RE)) {
-      const name = match[1] ?? match[2] ?? match[3]
-      if (name !== undefined) commands.add(`\\${name}`)
+      const name = match[1] ?? match[2] ?? match[3];
+      if (name !== undefined) {
+        commands.add(`\\${name}`);
+      }
     }
   }
 
-  return [...commands].sort((a, b) => a.localeCompare(b))
+  return [...commands].sort((a, b) => a.localeCompare(b));
 }
 
 export interface TikzTemplateCompletion {
-  label: string
+  label: string;
   /** Recoverable invocation arity; absent when the TeX declaration is too rich to infer safely. */
-  argumentCount?: number
+  argumentCount?: number;
   /** The authored declaration line, for completion documentation only. */
-  declaration?: string
+  declaration?: string;
   /** User-owned source file that declared the command. */
-  sourceFile?: string
+  sourceFile?: string;
 }
 
-function declarationArgumentCount (line: string, label: string): number|undefined {
-  if (/\\DeclareMathOperator\*?/u.test(line) || /\\let\s*/u.test(line)) return 0
-
-  const newCommand = /\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand)\*?[^\n]*?\[(\d+)\]/u.exec(line)
-  if (newCommand !== null) return Number(newCommand[1])
-
-  if (/\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand)\*?/u.test(line)) return 0
-
-  if (/\\(?:def|gdef|edef|xdef)\s*/u.test(line)) {
-    const commandAt = line.indexOf(label)
-    const afterName = commandAt === -1 ? line : line.slice(commandAt + label.length)
-    const parameterPrefix = afterName.split('{', 1)[0]
-    const params = [...parameterPrefix.matchAll(/#([1-9])/gu)].map(match => Number(match[1]))
-    return params.length === 0 ? 0 : Math.max(...params)
+function declarationArgumentCount(line: string, label: string): number | undefined {
+  if (/\\DeclareMathOperator\*?/u.test(line) || /\\let\s*/u.test(line)) {
+    return 0;
   }
 
-  return undefined
+  const newCommand =
+    /\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand)\*?[^\n]*?\[(\d+)\]/u.exec(
+      line,
+    );
+  if (newCommand !== null) {
+    return Number(newCommand[1]);
+  }
+
+  if (/\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand)\*?/u.test(line)) {
+    return 0;
+  }
+
+  if (/\\(?:def|gdef|edef|xdef)\s*/u.test(line)) {
+    const commandAt = line.indexOf(label);
+    const afterName = commandAt === -1 ? line : line.slice(commandAt + label.length);
+    const parameterPrefix = afterName.split("{", 1)[0];
+    const params = [...parameterPrefix.matchAll(/#([1-9])/gu)].map((match) => Number(match[1]));
+    return params.length === 0 ? 0 : Math.max(...params);
+  }
+
+  return undefined;
 }
 
 /**
@@ -291,27 +322,29 @@ function declarationArgumentCount (line: string, label: string): number|undefine
  * be recovered from the declaration line, the command remains searchable but
  * no argument scaffold is fabricated.
  */
-export function tikzTemplateCompletions (templatePath: string): TikzTemplateCompletion[] {
-  const completions = new Map<string, TikzTemplateCompletion>()
+export function tikzTemplateCompletions(templatePath: string): TikzTemplateCompletion[] {
+  const completions = new Map<string, TikzTemplateCompletion>();
   for (const { filePath, source } of tikzTemplateSources(templatePath)) {
     for (const match of source.matchAll(TEX_COMMAND_DECLARATION_RE)) {
-      const name = match[1] ?? match[2] ?? match[3]
-      if (name === undefined) continue
-      const label = `\\${name}`
-      const index = match.index ?? 0
-      const lineStart = source.lastIndexOf('\n', Math.max(0, index - 1)) + 1
-      const nextNewline = source.indexOf('\n', index)
-      const lineEnd = nextNewline === -1 ? source.length : nextNewline
-      const declaration = source.slice(lineStart, lineEnd).trim()
+      const name = match[1] ?? match[2] ?? match[3];
+      if (name === undefined) {
+        continue;
+      }
+      const label = `\\${name}`;
+      const index = match.index ?? 0;
+      const lineStart = source.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
+      const nextNewline = source.indexOf("\n", index);
+      const lineEnd = nextNewline === -1 ? source.length : nextNewline;
+      const declaration = source.slice(lineStart, lineEnd).trim();
       completions.set(label, {
         label,
         argumentCount: declarationArgumentCount(declaration, label),
-        declaration: declaration === '' ? undefined : declaration,
+        declaration: declaration === "" ? undefined : declaration,
         sourceFile: filePath,
-      })
+      });
     }
   }
-  return [...completions.values()].sort((a, b) => a.label.localeCompare(b.label))
+  return [...completions.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /**
@@ -319,29 +352,31 @@ export function tikzTemplateCompletions (templatePath: string): TikzTemplateComp
  * KaTeX/Quiver macro definitions. Complex and multiline TeX remains compiler-
  * only rather than being misrepresented by a different macro language.
  */
-export function tikzTemplateQuiverMacros (templatePath: string): Record<string, string> {
-  const macros: Record<string, string> = {}
+export function tikzTemplateQuiverMacros(templatePath: string): Record<string, string> {
+  const macros: Record<string, string> = {};
   for (const { source } of tikzTemplateSources(templatePath)) {
     for (const rawLine of source.split(/\r?\n/u)) {
-      const line = rawLine.trim()
-      if (line === '' || line.startsWith('%')) continue
-
-      const command = QUIVER_SIMPLE_COMMAND_RE.exec(line)
-      if (command !== null) {
-        macros[`\\${command[1]}`] = command[3]
-        continue
+      const line = rawLine.trim();
+      if (line === "" || line.startsWith("%")) {
+        continue;
       }
 
-      const operator = QUIVER_SIMPLE_OPERATOR_RE.exec(line)
+      const command = QUIVER_SIMPLE_COMMAND_RE.exec(line);
+      if (command !== null) {
+        macros[`\\${command[1]}`] = command[3];
+        continue;
+      }
+
+      const operator = QUIVER_SIMPLE_OPERATOR_RE.exec(line);
       if (operator !== null) {
-        macros[`\\${operator[2]}`] = `\\operatorname${operator[1]}{${operator[3]}}`
+        macros[`\\${operator[2]}`] = `\\operatorname${operator[1]}{${operator[3]}}`;
       }
     }
   }
-  return macros
+  return macros;
 }
 
-export type TikzCompletionIPCResponse = ReturnType<typeof tikzTemplateCompletions>
+export type TikzCompletionIPCResponse = ReturnType<typeof tikzTemplateCompletions>;
 
 export interface TikzRenderRequest {
   /**
@@ -352,10 +387,10 @@ export interface TikzRenderRequest {
    * which intentionally owns its own preamble and is not offered as a
    * microlocal template-owned live-preview target.
    */
-  source: string
-  kind: 'raw'|'fence'
+  source: string;
+  kind: "raw" | "fence";
   /** Source language. tikzcd fences are template-owned snippets, not standalone TeX documents. */
-  language: 'tikz'|'tikzcd'
+  language: "tikz" | "tikzcd";
   /**
    * The document the figure was authored in; the filter resolves the figure's
    * \input{…} against this file's directory.
@@ -368,18 +403,18 @@ export interface TikzRenderRequest {
    * therefore always supplied — a caller with no path passes the
    * configuration's own value, it does not omit the field.
    */
-  docPath: string
+  docPath: string;
   /** Normal renders use the filter cache; an explicit rerender bypasses it. */
-  cachePolicy?: 'use'|'refresh'
+  cachePolicy?: "use" | "refresh";
 }
 
 export interface TikzRenderConfig {
   /** The resolved shared/user-owned Pandoc data tree. */
-  tikzAssetDir: string
+  tikzAssetDir: string;
   /** User-owned standalone template used to wrap snippet figures. */
-  templatePath: string
+  templatePath: string;
   /** The app-owned render cache; SVGs land and persist here. */
-  cacheDir: string
+  cacheDir: string;
   /**
    * The environment every child process of this render runs under. It decides
    * which pandoc, pdflatex and pdf2svg are found, so it is an input to the
@@ -387,16 +422,16 @@ export interface TikzRenderConfig {
    * caller states which environment it is asking for and that decision is
    * recorded at the call site.
    */
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv;
 }
 
 export interface TikzCompileError {
   /** 1-based line within the figure body. */
-  line: number
+  line: number;
   /** The LaTeX bang-error message. */
-  message: string
+  message: string;
   /** The verbatim figure-body source line the error maps to. */
-  sourceLine: string
+  sourceLine: string;
 }
 
 /**
@@ -404,42 +439,42 @@ export interface TikzCompileError {
  * Standard LaTeX classes default to 10pt; standalone follows that convention.
  * A document/template may opt into another point size through documentclass.
  */
-export function latexBaseFontSizePt (latexSource: string): number {
-  const documentClass = /\\documentclass\s*(?:\[([^\]]*)\])?\s*\{[^}]+\}/.exec(latexSource)
+export function latexBaseFontSizePt(latexSource: string): number {
+  const documentClass = /\\documentclass\s*(?:\[([^\]]*)\])?\s*\{[^}]+\}/.exec(latexSource);
   if (documentClass === null) {
-    return 10
+    return 10;
   }
   const pointSize = documentClass[1]
-    ?.split(',')
-    .map(option => option.trim())
-    .find(option => /^\d+(?:\.\d+)?pt$/.test(option))
+    ?.split(",")
+    .map((option) => option.trim())
+    .find((option) => /^\d+(?:\.\d+)?pt$/.test(option));
   if (pointSize === undefined) {
-    return 10
+    return 10;
   }
-  const parsed = Number(pointSize.slice(0, -2))
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10
+  const parsed = Number(pointSize.slice(0, -2));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
 }
 
-function requestBaseFontSizePt (request: TikzRenderRequest, config: TikzRenderConfig): number {
-  const isFullDocument = request.kind === 'fence' && request.language === 'tikz' &&
+function requestBaseFontSizePt(request: TikzRenderRequest, config: TikzRenderConfig): number {
+  const isFullDocument =
+    request.kind === "fence" &&
+    request.language === "tikz" &&
     /\\documentclass/.test(request.source) &&
-    /\\begin\s*\{document\}/.test(request.source)
-  const latexSource = isFullDocument
-    ? request.source
-    : readFileSync(config.templatePath, 'utf8')
-  return latexBaseFontSizePt(latexSource)
+    /\\begin\s*\{document\}/.test(request.source);
+  const latexSource = isFullDocument ? request.source : readFileSync(config.templatePath, "utf8");
+  return latexBaseFontSizePt(latexSource);
 }
 
 export type TikzRenderResult =
-  {
-    ok: true
-    html: string
-    svg: string
-    svgPath: string
-    /** TeX point size corresponding to one ordinary diagram-label em. */
-    texFontSizePt: number
-  } |
-  { ok: false, kind: 'missing-tools', missing: string[] } |
+  | {
+      ok: true;
+      html: string;
+      svg: string;
+      svgPath: string;
+      /** TeX point size corresponding to one ordinary diagram-label em. */
+      texFontSizePt: number;
+    }
+  | { ok: false; kind: "missing-tools"; missing: string[] }
   /**
    * The toolchain probe itself failed. A tool that is not installed makes
    * spawn fail with ENOENT and is reported as 'missing-tools'; every other
@@ -449,16 +484,16 @@ export type TikzRenderResult =
    * is a wrong diagnosis, so the errno that ended the probe is carried and
    * the toolchain status stays unknown.
    */
-  { ok: false, kind: 'toolchain-probe-failed', tool: string, code: string } |
-  { ok: false, kind: 'compile-error', errors: TikzCompileError[], log: string } |
-  { ok: false, kind: 'pandoc-error', log: string } |
+  | { ok: false; kind: "toolchain-probe-failed"; tool: string; code: string }
+  | { ok: false; kind: "compile-error"; errors: TikzCompileError[]; log: string }
+  | { ok: false; kind: "pandoc-error"; log: string }
   /**
    * The render process was killed before it could finish (OOM killer, a
    * timeout kill, an interrupt). This is not pandoc reporting a problem: no
    * diagnostic was produced and nothing about the figure is known. The signal
    * that ended it is the information that distinguishes this outcome.
    */
-  { ok: false, kind: 'render-terminated', signal: NodeJS.Signals, log: string }
+  | { ok: false; kind: "render-terminated"; signal: NodeJS.Signals; log: string };
 
 /**
  * How the pandoc child process ended. Node's 'close' event carries exactly one
@@ -466,14 +501,14 @@ export type TikzRenderResult =
  * a signal. Both are real outcomes, so both are carried as their own case.
  */
 type PandocProcessOutcome =
-  { ended: 'exit', code: number, stdout: string, stderr: string } |
-  { ended: 'signal', signal: NodeJS.Signals, stdout: string, stderr: string }
+  | { ended: "exit"; code: number; stdout: string; stderr: string }
+  | { ended: "signal"; signal: NodeJS.Signals; stdout: string; stderr: string };
 
 /** The tools the filter shells out to, checked before any render. */
-const REQUIRED_TOOLS = [ 'pandoc', 'pdflatex', 'pdf2svg' ]
+const REQUIRED_TOOLS = ["pandoc", "pdflatex", "pdf2svg"];
 
 /** One marker line per figure-compile error: body-line|message|source. */
-const ERROR_MARKER_RE = /^\[tikzcd-figure-error\] (\d+)\|([^|]*)\|(.*)$/
+const ERROR_MARKER_RE = /^\[tikzcd-figure-error\] (\d+)\|([^|]*)\|(.*)$/;
 
 /**
  * What probing one executable established. 'absent' is the single errno that
@@ -481,9 +516,9 @@ const ERROR_MARKER_RE = /^\[tikzcd-figure-error\] (\d+)\|([^|]*)\|(.*)$/
  * nothing about the tool and is its own outcome.
  */
 type ToolProbe =
-  { status: 'available' } |
-  { status: 'absent' } |
-  { status: 'probe-failed', code: string }
+  | { status: "available" }
+  | { status: "absent" }
+  | { status: "probe-failed"; code: string };
 
 /**
  * Probes whether an executable is reachable in the given environment's PATH.
@@ -491,27 +526,33 @@ type ToolProbe =
  * rest are different facts and are reported as such rather than collapsed into
  * absence.
  */
-async function probeTool (tool: string, env: NodeJS.ProcessEnv): Promise<ToolProbe> {
+async function probeTool(tool: string, env: NodeJS.ProcessEnv): Promise<ToolProbe> {
   return await new Promise<ToolProbe>((resolve, reject) => {
-    const probe = spawn(tool, ['--version'], { env, stdio: 'ignore' })
-    probe.once('error', (error: NodeJS.ErrnoException) => {
+    const probe = spawn(tool, ["--version"], { env, stdio: "ignore" });
+    probe.once("error", (error: NodeJS.ErrnoException) => {
       if (error.code === undefined) {
-        reject(new Error(
-          `tikz-render: probing ${tool} emitted a child-process error carrying no errno code ` +
-          `(message=${error.message}). Node reports a failure to spawn as a SystemError whose code ` +
-          'names the cause; the probe classifies ENOENT as "not installed" and every other code as a ' +
-          'failed probe, and cannot classify an error with no code at all.'
-        ))
-        return
+        reject(
+          new Error(
+            `tikz-render: probing ${tool} emitted a child-process error carrying no errno code ` +
+              `(message=${error.message}). Node reports a failure to spawn as a SystemError whose code ` +
+              'names the cause; the probe classifies ENOENT as "not installed" and every other code as a ' +
+              "failed probe, and cannot classify an error with no code at all.",
+          ),
+        );
+        return;
       }
-      resolve(error.code === 'ENOENT' ? { status: 'absent' } : { status: 'probe-failed', code: error.code })
-    })
-    probe.once('spawn', () => {
+      resolve(
+        error.code === "ENOENT"
+          ? { status: "absent" }
+          : { status: "probe-failed", code: error.code },
+      );
+    });
+    probe.once("spawn", () => {
       // --version variants that wait on stdin must not hang the probe.
-      probe.kill()
-      resolve({ status: 'available' })
-    })
-  })
+      probe.kill();
+      resolve({ status: "available" });
+    });
+  });
 }
 
 /**
@@ -520,58 +561,65 @@ async function probeTool (tool: string, env: NodeJS.ProcessEnv): Promise<ToolPro
  * so reaching it with a null code means the runtime broke that contract and
  * the outcome below cannot be formed at all.
  */
-function assertExitedWithCode (code: number|null, signal: NodeJS.Signals|null): asserts code is number {
+function assertExitedWithCode(
+  code: number | null,
+  signal: NodeJS.Signals | null,
+): asserts code is number {
   if (code === null) {
     throw new Error(
-      'tikz-render: the pandoc child process closed carrying neither an exit code nor a signal ' +
-      `(code=${String(code)}, signal=${String(signal)}). Node's child_process 'close' event ` +
-      'guarantees exactly one of the two is non-null; the outcome handling in ' +
-      'source/app/util/tikz-render.ts is written against that guarantee.'
-    )
+      "tikz-render: the pandoc child process closed carrying neither an exit code nor a signal " +
+        `(code=${String(code)}, signal=${String(signal)}). Node's child_process 'close' event ` +
+        "guarantees exactly one of the two is non-null; the outcome handling in " +
+        "source/app/util/tikz-render.ts is written against that guarantee.",
+    );
   }
 }
 
 /**
  * Renders one TikZ figure to inline SVG through the shared Pandoc filter.
  */
-export async function renderTikz (request: TikzRenderRequest, config: TikzRenderConfig): Promise<TikzRenderResult> {
-  const env = config.env
-  const texFontSizePt = requestBaseFontSizePt(request, config)
+export async function renderTikz(
+  request: TikzRenderRequest,
+  config: TikzRenderConfig,
+): Promise<TikzRenderResult> {
+  const env = config.env;
+  const texFontSizePt = requestBaseFontSizePt(request, config);
   // Recompute on every request. The macro/style files are intentionally owned
   // outside the application and may change while Zettlr remains open; caching
   // this fingerprint in-process would recreate the exact stale-preview bug the
   // persistent figure cache is meant to avoid.
-  const renderContextHash = tikzTemplateDependencyHash(config.templatePath)
+  const renderContextHash = tikzTemplateDependencyHash(config.templatePath);
 
-  const missing: string[] = []
+  const missing: string[] = [];
   for (const tool of REQUIRED_TOOLS) {
-    const probe = await probeTool(tool, env)
-    if (probe.status === 'probe-failed') {
+    const probe = await probeTool(tool, env);
+    if (probe.status === "probe-failed") {
       // The remaining tools are deliberately not probed: with one probe broken
       // the toolchain status is unknown, and a partial "missing" list would
       // read as a complete diagnosis.
-      return { ok: false, kind: 'toolchain-probe-failed', tool, code: probe.code }
+      return { ok: false, kind: "toolchain-probe-failed", tool, code: probe.code };
     }
-    if (probe.status === 'absent') {
-      missing.push(tool)
+    if (probe.status === "absent") {
+      missing.push(tool);
     }
   }
   if (missing.length > 0) {
-    return { ok: false, kind: 'missing-tools', missing }
+    return { ok: false, kind: "missing-tools", missing };
   }
 
-  await mkdir(config.cacheDir, { recursive: true })
+  await mkdir(config.cacheDir, { recursive: true });
 
   // pandoc's markdown reader classifies a \begin{…} block as RawBlock latex
   // and a ```tikz fence as CodeBlock tikz — exactly the two surfaces the
   // filter handles.
-  const markdown = request.kind === 'raw'
-    ? `${request.source.trim()}\n`
-    : request.language === 'tikzcd'
-      ? `\\begin{tikzcd}\n${request.source}\n\\end{tikzcd}\n`
-      : `\`\`\`tikz\n${request.source}\n\`\`\`\n`
+  const markdown =
+    request.kind === "raw"
+      ? `${request.source.trim()}\n`
+      : request.language === "tikzcd"
+        ? `\\begin{tikzcd}\n${request.source}\n\\end{tikzcd}\n`
+        : `\`\`\`tikz\n${request.source}\n\`\`\`\n`;
 
-  const filterPath = path.join(config.tikzAssetDir, 'filters/tikzcd.lua')
+  const filterPath = path.join(config.tikzAssetDir, "filters/tikzcd.lua");
   const renderEnv: NodeJS.ProcessEnv = {
     ...env,
     PANDOC_DIR: config.tikzAssetDir,
@@ -580,78 +628,87 @@ export async function renderTikz (request: TikzRenderRequest, config: TikzRender
     // from its sibling styles tree. Keep that lookup owned by the same tree
     // even when the filter itself comes from an explicitly configured or
     // bundled data directory.
-    FIGURE_STYLES_DIR: path.join(path.dirname(path.dirname(config.templatePath)), 'styles'),
-    FIGURES_SOURCE_DIR: env.FIGURES_SOURCE_DIR ?? path.join(path.dirname(path.dirname(config.templatePath)), 'figures'),
+    FIGURE_STYLES_DIR: path.join(path.dirname(path.dirname(config.templatePath)), "styles"),
+    FIGURES_SOURCE_DIR:
+      env.FIGURES_SOURCE_DIR ??
+      path.join(path.dirname(path.dirname(config.templatePath)), "figures"),
     SVG_DIR: config.cacheDir,
     FIGURES_DIR: config.cacheDir,
     PANDOC_DOC_PATH: request.docPath,
     TIKZ_RENDER_CONTEXT_HASH: renderContextHash,
-    TIKZ_FORCE_REBUILD: request.cachePolicy === 'refresh' ? '1' : '0',
-  }
+    TIKZ_FORCE_REBUILD: request.cachePolicy === "refresh" ? "1" : "0",
+  };
 
   const outcome = await new Promise<PandocProcessOutcome>((resolve, reject) => {
-    const proc = spawn('pandoc', [ '-f', 'markdown', '-t', 'html', '--lua-filter', filterPath ], { env: renderEnv })
-    let out = ''
-    let err = ''
-    const timeoutMs = 30000
+    const proc = spawn("pandoc", ["-f", "markdown", "-t", "html", "--lua-filter", filterPath], {
+      env: renderEnv,
+    });
+    let out = "";
+    let err = "";
+    const timeoutMs = 30000;
     const timer = setTimeout(() => {
-      proc.kill('SIGTERM')
+      proc.kill("SIGTERM");
       setTimeout(() => {
         if (!proc.killed) {
-          proc.kill('SIGKILL')
+          proc.kill("SIGKILL");
         }
-      }, 2000).unref()
-    }, timeoutMs)
-    proc.stdout.on('data', chunk => { out += String(chunk) })
-    proc.stderr.on('data', chunk => { err += String(chunk) })
-    proc.once('error', (spawnError: Error) => {
-      clearTimeout(timer)
-      reject(spawnError)
-    })
-    proc.once('close', (exitCode, signal) => {
-      clearTimeout(timer)
+      }, 2000).unref();
+    }, timeoutMs);
+    proc.stdout.on("data", (chunk) => {
+      out += String(chunk);
+    });
+    proc.stderr.on("data", (chunk) => {
+      err += String(chunk);
+    });
+    proc.once("error", (spawnError: Error) => {
+      clearTimeout(timer);
+      reject(spawnError);
+    });
+    proc.once("close", (exitCode, signal) => {
+      clearTimeout(timer);
       if (signal !== null) {
-        resolve({ ended: 'signal', signal, stdout: out, stderr: err })
-        return
+        resolve({ ended: "signal", signal, stdout: out, stderr: err });
+        return;
       }
-      assertExitedWithCode(exitCode, signal)
-      resolve({ ended: 'exit', code: exitCode, stdout: out, stderr: err })
-    })
-    proc.stdin.end(markdown)
-  })
+      assertExitedWithCode(exitCode, signal);
+      resolve({ ended: "exit", code: exitCode, stdout: out, stderr: err });
+    });
+    proc.stdin.end(markdown);
+  });
 
-  if (outcome.ended === 'signal') {
+  if (outcome.ended === "signal") {
     // The render never ran to completion, so whatever landed on stderr is a
     // partial transcript, not a diagnostic about the figure. Reporting the
     // signal keeps a kill distinguishable from pandoc failing on its own.
-    return { ok: false, kind: 'render-terminated', signal: outcome.signal, log: outcome.stderr }
+    return { ok: false, kind: "render-terminated", signal: outcome.signal, log: outcome.stderr };
   }
 
-  const errors: TikzCompileError[] = []
-  for (const line of outcome.stderr.split('\n')) {
-    const match = ERROR_MARKER_RE.exec(line)
+  const errors: TikzCompileError[] = [];
+  for (const line of outcome.stderr.split("\n")) {
+    const match = ERROR_MARKER_RE.exec(line);
     if (match !== null) {
-      const reportedLine = Number(match[1])
-      const line = request.kind === 'fence' && request.language === 'tikzcd'
-        ? Math.max(1, reportedLine - 1)
-        : reportedLine
-      errors.push({ line, message: match[2], sourceLine: match[3] })
+      const reportedLine = Number(match[1]);
+      const line =
+        request.kind === "fence" && request.language === "tikzcd"
+          ? Math.max(1, reportedLine - 1)
+          : reportedLine;
+      errors.push({ line, message: match[2], sourceLine: match[3] });
     }
   }
 
   if (errors.length > 0) {
-    return { ok: false, kind: 'compile-error', errors, log: outcome.stderr }
+    return { ok: false, kind: "compile-error", errors, log: outcome.stderr };
   }
 
   if (outcome.code !== 0) {
-    return { ok: false, kind: 'pandoc-error', log: outcome.stderr }
+    return { ok: false, kind: "pandoc-error", log: outcome.stderr };
   }
 
-  const svgMarkup = outcome.stdout.match(/<svg[\s\S]*?<\/svg>/)?.[0]
+  const svgMarkup = outcome.stdout.match(/<svg[\s\S]*?<\/svg>/)?.[0];
   if (svgMarkup === undefined) {
     // The HTML writer omitted the figure: the filter dropped a block that did
     // not compile without a bang-error block to cite (or produced no SVG).
-    return { ok: false, kind: 'compile-error', errors: [], log: outcome.stderr }
+    return { ok: false, kind: "compile-error", errors: [], log: outcome.stderr };
   }
 
   // The viewer source path is itself content-sensitive. In particular an
@@ -661,13 +718,15 @@ export async function renderTikz (request: TikzRenderRequest, config: TikzRender
   // would see the same prop and could keep displaying its previous image even
   // though pdflatex really reran. Fold the actual SVG bytes into the path so a
   // changed render necessarily reaches the existing Viewer.js instance.
-  const requestHash = createHash('sha1')
-    .update(`${request.kind}\0${request.language}\0${request.docPath}\0${request.source}\0${renderContextHash}\0${svgMarkup}`)
-    .digest('hex')
-  const svgPath = path.join(config.cacheDir, `lightbox-${requestHash}.svg`)
-  await writeFile(svgPath, `<?xml version="1.0" encoding="UTF-8"?>\n${svgMarkup}\n`)
+  const requestHash = createHash("sha1")
+    .update(
+      `${request.kind}\0${request.language}\0${request.docPath}\0${request.source}\0${renderContextHash}\0${svgMarkup}`,
+    )
+    .digest("hex");
+  const svgPath = path.join(config.cacheDir, `lightbox-${requestHash}.svg`);
+  await writeFile(svgPath, `<?xml version="1.0" encoding="UTF-8"?>\n${svgMarkup}\n`);
 
   // Reaching here means the pandoc output carries an <svg>…</svg>: that is the
   // guarantee consumers of an ok result are entitled to assume of `html`.
-  return { ok: true, html: outcome.stdout, svg: svgMarkup, svgPath, texFontSizePt }
+  return { ok: true, html: outcome.stdout, svg: svgMarkup, svgPath, texFontSizePt };
 }

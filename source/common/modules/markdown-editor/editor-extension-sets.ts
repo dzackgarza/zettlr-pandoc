@@ -16,72 +16,93 @@
  * END HEADER
  */
 
-import { closeBrackets } from '@codemirror/autocomplete'
-import { history } from '@codemirror/commands'
-import { bracketMatching, codeFolding, foldGutter, indentOnInput, indentUnit, StreamLanguage } from '@codemirror/language'
-import { stex } from '@codemirror/legacy-modes/mode/stex'
-import { yaml } from '@codemirror/lang-yaml'
-import { search } from '@codemirror/search'
-import { Compartment, EditorState, Prec, type Extension } from '@codemirror/state'
+import { closeBrackets } from "@codemirror/autocomplete";
+import { history } from "@codemirror/commands";
+import { json, jsonParseLinter } from "@codemirror/lang-json";
+import { yaml } from "@codemirror/lang-yaml";
 import {
+  bracketMatching,
+  codeFolding,
+  foldGutter,
+  indentOnInput,
+  indentUnit,
+  StreamLanguage,
+} from "@codemirror/language";
+import { stex } from "@codemirror/legacy-modes/mode/stex";
+import { linter, lintGutter } from "@codemirror/lint";
+import { search } from "@codemirror/search";
+import { Compartment, EditorState, type Extension, Prec } from "@codemirror/state";
+import {
+  type DOMEventHandlers,
   drawSelection,
+  dropCursor,
   EditorView,
   lineNumbers,
-  dropCursor,
   type ViewUpdate,
-  type DOMEventHandlers
-} from '@codemirror/view'
-import { autocomplete } from './autocomplete'
-import { codeSyntaxHighlighter, markdownSyntaxHighlighter } from './theme/syntax'
-import markdownParser from './parser/markdown-parser'
-import { defaultContextMenu } from './plugins/default-context-menu'
-import { readabilityMode } from './plugins/readability'
-import { hookDocumentAuthority, type PullUpdateCallback, type PushUpdateCallback } from './plugins/remote-doc'
-import { lintGutter, linter } from '@codemirror/lint'
-import { spellcheck } from './linters/spellcheck'
-import { mdLint } from './linters/md-lint'
-import { countField, countPlugin } from './plugins/statistics-fields'
-import { tocField } from './plugins/toc-field'
-import { typewriter } from './plugins/typewriter'
-import { footnoteHover, filePreview, urlHover } from './tooltips'
-import { type EditorConfiguration, configField } from './util/configuration'
-import { highlightRanges } from './plugins/highlight-ranges'
-import { markdownFolding } from './code-folding/markdown'
-import { json, jsonParseLinter } from '@codemirror/lang-json'
-import { softwrapVisualIndent } from './plugins/visual-indent'
-import { backgroundLayers } from './plugins/code-background'
-import { emacs } from '@replit/codemirror-emacs'
-import { distractionFree } from './plugins/distraction-free'
-import { languageTool } from './linters/language-tool'
-import { renderers } from './renderers'
-import { mdPasteDropHandlers } from './plugins/md-paste-drop-handlers'
-import { footnoteBackground } from './plugins/footnote-background'
-import { footnoteGutter } from './plugins/footnote-gutter'
-import { textAnnotationsExtension } from './plugins/text-annotations'
-import { yamlFrontmatterLint } from './linters/yaml-frontmatter-lint'
+} from "@codemirror/view";
+import { emacs } from "@replit/codemirror-emacs";
+import { autocomplete } from "./autocomplete";
+import { snippetsUpdateField } from "./autocomplete/snippets";
+import { markdownFolding } from "./code-folding/markdown";
+import { zettlrKeymap } from "./keymaps";
+import { languageTool } from "./linters/language-tool";
+import { latexEnvironmentLint } from "./linters/latex-environment-lint";
+import { mdLint } from "./linters/md-lint";
+import { referenceLint } from "./linters/reference-lint";
+import { scholarlyLint } from "./linters/scholarly-lint";
+import { spellcheck } from "./linters/spellcheck";
+import { yamlFrontmatterLint } from "./linters/yaml-frontmatter-lint";
+import markdownParser from "./parser/markdown-parser";
+import { backgroundLayers } from "./plugins/code-background";
+import { defaultContextMenu } from "./plugins/default-context-menu";
+import { distractionFree } from "./plugins/distraction-free";
+import { footnoteBackground } from "./plugins/footnote-background";
+import { footnoteGutter } from "./plugins/footnote-gutter";
+import { highlightRanges } from "./plugins/highlight-ranges";
+import { highlightWhitespace } from "./plugins/highlight-whitespace";
+import { showLineNumbers } from "./plugins/line-numbers";
+import { mdPasteDropHandlers } from "./plugins/md-paste-drop-handlers";
+import { projectInfoField } from "./plugins/project-info-field";
+import { readabilityMode } from "./plugins/readability";
+import referenceKeyEditPrompt, {
+  type ReferenceKeyEditPromptIntent,
+} from "./plugins/reference-key-edit-prompt";
 import {
-  mainThemes, darkMode, useDarkModeEditor,
-  themeBerlinLight, themeBerlinDark,
-  themeBielefeldLight, themeBielefeldDark,
-  themeBordeauxLight, themeBordeauxDark,
-  themeFrankfurtLight, themeFrankfurtDark,
-  themeKarlMarxStadtLight, themeKarlMarxStadtDark
-} from './theme'
-import { highlightWhitespace } from './plugins/highlight-whitespace'
-import { showLineNumbers } from './plugins/line-numbers'
-import { tagClasses } from './plugins/tag-classes'
-import { snippetsUpdateField } from './autocomplete/snippets'
-import { quickTexField } from './quicktex'
-import { vimPlugin } from './plugins/vim-mode'
-import { projectInfoField } from './plugins/project-info-field'
-import { headingGutter } from './renderers/render-headings'
-import { citationTooltips } from './tooltips/citations'
-import { referenceTooltips } from './tooltips/references'
-import { referenceLint } from './linters/reference-lint'
-import { latexEnvironmentLint } from './linters/latex-environment-lint'
-import { workspaceReferencesField } from './plugins/workspace-references-field'
-import referenceKeyEditPrompt, { type ReferenceKeyEditPromptIntent } from './plugins/reference-key-edit-prompt'
-import { zettlrKeymap } from './keymaps'
+  hookDocumentAuthority,
+  type PullUpdateCallback,
+  type PushUpdateCallback,
+} from "./plugins/remote-doc";
+import { countField, countPlugin } from "./plugins/statistics-fields";
+import { tagClasses } from "./plugins/tag-classes";
+import { textAnnotationsExtension } from "./plugins/text-annotations";
+import { tocField } from "./plugins/toc-field";
+import { typewriter } from "./plugins/typewriter";
+import { vimPlugin } from "./plugins/vim-mode";
+import { softwrapVisualIndent } from "./plugins/visual-indent";
+import { workspaceReferencesField } from "./plugins/workspace-references-field";
+import { quickTexField } from "./quicktex";
+import { renderers } from "./renderers";
+import { headingGutter } from "./renderers/render-headings";
+import {
+  darkMode,
+  mainThemes,
+  themeBerlinDark,
+  themeBerlinLight,
+  themeBielefeldDark,
+  themeBielefeldLight,
+  themeBordeauxDark,
+  themeBordeauxLight,
+  themeFrankfurtDark,
+  themeFrankfurtLight,
+  themeKarlMarxStadtDark,
+  themeKarlMarxStadtLight,
+  useDarkModeEditor,
+} from "./theme";
+import { codeSyntaxHighlighter, markdownSyntaxHighlighter } from "./theme/syntax";
+import { filePreview, footnoteHover, urlHover } from "./tooltips";
+import { citationTooltips } from "./tooltips/citations";
+import { referenceTooltips } from "./tooltips/references";
+import { configField, type EditorConfiguration } from "./util/configuration";
 
 /**
  * This interface describes the required properties which the extension sets
@@ -89,21 +110,21 @@ import { zettlrKeymap } from './keymaps'
  * documents.
  */
 export interface CoreExtensionOptions {
-  initialConfig: EditorConfiguration
+  initialConfig: EditorConfiguration;
   remoteConfig: {
-    filePath: string
-    startVersion: number
-    pullUpdates: PullUpdateCallback
-    pushUpdates: PushUpdateCallback
-  }
-  updateListener: (update: ViewUpdate) => void
-  domEventsListeners: DOMEventHandlers<unknown>
+    filePath: string;
+    startVersion: number;
+    pullUpdates: PullUpdateCallback;
+    pushUpdates: PushUpdateCallback;
+  };
+  updateListener: (update: ViewUpdate) => void;
+  domEventsListeners: DOMEventHandlers<unknown>;
   /**
    * Called when the selection leaves a directly edited definition-id token
    * whose key changed (issue #1 Phase 6): the host confirms and runs the
    * workspace rename protocol, or declines and keeps the local edit.
    */
-  referenceKeyEditListener: (intent: ReferenceKeyEditPromptIntent) => void
+  referenceKeyEditListener: (intent: ReferenceKeyEditPromptIntent) => void;
 }
 
 /**
@@ -112,31 +133,34 @@ export interface CoreExtensionOptions {
  *
  * @var  {Compartment}
  */
-export const inputModeCompartment = new Compartment()
+export const inputModeCompartment = new Compartment();
 
-export function getMainEditorThemes (): Record<EditorConfiguration['theme'], { lightThemes: Extension[], darkThemes: Extension[] }> {
+export function getMainEditorThemes(): Record<
+  EditorConfiguration["theme"],
+  { lightThemes: Extension[]; darkThemes: Extension[] }
+> {
   return {
     berlin: {
-      lightThemes: [ mainThemes, themeBerlinLight ],
-      darkThemes: [ mainThemes, themeBerlinDark ]
+      lightThemes: [mainThemes, themeBerlinLight],
+      darkThemes: [mainThemes, themeBerlinDark],
     },
     bielefeld: {
-      lightThemes: [ mainThemes, themeBielefeldLight ],
-      darkThemes: [ mainThemes, themeBielefeldDark ]
+      lightThemes: [mainThemes, themeBielefeldLight],
+      darkThemes: [mainThemes, themeBielefeldDark],
     },
     bordeaux: {
-      lightThemes: [ mainThemes, themeBordeauxLight ],
-      darkThemes: [ mainThemes, themeBordeauxDark ]
+      lightThemes: [mainThemes, themeBordeauxLight],
+      darkThemes: [mainThemes, themeBordeauxDark],
     },
     frankfurt: {
-      lightThemes: [ mainThemes, themeFrankfurtLight ],
-      darkThemes: [ mainThemes, themeFrankfurtDark ]
+      lightThemes: [mainThemes, themeFrankfurtLight],
+      darkThemes: [mainThemes, themeFrankfurtDark],
     },
-    'karl-marx-stadt': {
-      lightThemes: [ mainThemes, themeKarlMarxStadtLight ],
-      darkThemes: [ mainThemes, themeKarlMarxStadtDark ]
-    }
-  }
+    "karl-marx-stadt": {
+      lightThemes: [mainThemes, themeKarlMarxStadtLight],
+      darkThemes: [mainThemes, themeKarlMarxStadtDark],
+    },
+  };
 }
 
 /**
@@ -161,20 +185,20 @@ export function getMainEditorThemes (): Record<EditorConfiguration['theme'], { l
  *
  * @return  {Extension[]}                    An array of core extensions
  */
-function getCoreExtensions (options: CoreExtensionOptions): Extension[] {
-  const inputMode: Extension[] = []
-  if (options.initialConfig.inputMode === 'vim') {
-    inputMode.push(vimPlugin())
-  } else if (options.initialConfig.inputMode === 'emacs') {
-    inputMode.push(emacs())
+function getCoreExtensions(options: CoreExtensionOptions): Extension[] {
+  const inputMode: Extension[] = [];
+  if (options.initialConfig.inputMode === "vim") {
+    inputMode.push(vimPlugin());
+  } else if (options.initialConfig.inputMode === "emacs") {
+    inputMode.push(emacs());
   }
 
-  const autoCloseBracketsConfig: Extension[] = []
+  const autoCloseBracketsConfig: Extension[] = [];
   if (options.initialConfig.autoCloseBrackets) {
-    autoCloseBracketsConfig.push(closeBrackets())
+    autoCloseBracketsConfig.push(closeBrackets());
   }
 
-  const themes = getMainEditorThemes()
+  const themes = getMainEditorThemes();
 
   return [
     EditorView.cursorScrollMargin.of({ x: 50, y: 50 }), // Corresponds to the padding set to the MainEditor.vue for now
@@ -183,7 +207,13 @@ function getCoreExtensions (options: CoreExtensionOptions): Extension[] {
     inputModeCompartment.of(inputMode),
     // Then, include the default keymap
     zettlrKeymap(options.initialConfig.shortcuts, options.initialConfig),
-    darkMode({ darkMode: useDarkModeEditor(options.initialConfig.darkMode, options.initialConfig.darkModeEditor), ...themes[options.initialConfig.theme] }),
+    darkMode({
+      darkMode: useDarkModeEditor(
+        options.initialConfig.darkMode,
+        options.initialConfig.darkModeEditor,
+      ),
+      ...themes[options.initialConfig.theme],
+    }),
     // CODE FOLDING
     codeFolding(),
     Prec.low(foldGutter()), // The fold gutter should appear next to the text content
@@ -200,13 +230,13 @@ function getCoreExtensions (options: CoreExtensionOptions): Extension[] {
     search({ top: true }), // Add a search
     // TAB SIZES/INDENTATION -> Depend on the configuration field
     EditorState.tabSize.from(configField, (val) => val.indentUnit),
-    indentUnit.from(configField, (val) => val.indentWithTabs ? '\t' : ' '.repeat(val.indentUnit)),
+    indentUnit.from(configField, (val) => (val.indentWithTabs ? "\t" : " ".repeat(val.indentUnit))),
     EditorView.lineWrapping, // Enable line wrapping,
     autoCloseBracketsConfig,
 
     // Add the configuration and preset it with whatever is in the cached
     // config.
-    configField.init(_state => JSON.parse(JSON.stringify(options.initialConfig))),
+    configField.init((_state) => structuredClone(options.initialConfig)),
     // The portable snippet catalogue is available in every editor type. The
     // Markdown autocomplete UI consumes it, while exact-prefix Tab/Space
     // expansion also works in LaTeX editors through the core keymap.
@@ -222,10 +252,10 @@ function getCoreExtensions (options: CoreExtensionOptions): Extension[] {
       options.remoteConfig.filePath,
       options.remoteConfig.startVersion,
       options.remoteConfig.pullUpdates,
-      options.remoteConfig.pushUpdates
+      options.remoteConfig.pushUpdates,
     ),
-    highlightRanges
-  ]
+    highlightRanges,
+  ];
 }
 
 /**
@@ -243,14 +273,14 @@ function getCoreExtensions (options: CoreExtensionOptions): Extension[] {
  *
  * @return  {Extension[]}                    An array of generic code extensions
  */
-function getGenericCodeExtensions (options: CoreExtensionOptions): Extension[] {
+function getGenericCodeExtensions(options: CoreExtensionOptions): Extension[] {
   return [
     ...getCoreExtensions(options),
     lineNumbers(),
     bracketMatching(),
     indentOnInput(),
     codeSyntaxHighlighter(),
-  ]
+  ];
 }
 
 /**
@@ -278,7 +308,7 @@ function getGenericCodeExtensions (options: CoreExtensionOptions): Extension[] {
  *
  * @return  {Extension[]}                    An array of Markdown extensions
  */
-export function getMarkdownExtensions (options: CoreExtensionOptions): Extension[] {
+export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[] {
   // The following linters are always active: The spellcheck because that is
   // turned on and off with the dictionary settings, and the yamlFrontmatterNode
   // because if that thing has an error, that thing has an error.
@@ -295,11 +325,11 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     // either way), or any other environment sitting inside a paragraph rather
     // than standing alone (a warning). Always active, for the same reason
     // referenceLint is.
-    latexEnvironmentLint
-  ]
+    latexEnvironmentLint,
+  ];
 
   if (options.initialConfig.lintMarkdown) {
-    mdLinterExtensions.push(mdLint)
+    mdLinterExtensions.push(mdLint, scholarlyLint);
   }
 
   // The correctness linters above report whatever the user's lint settings
@@ -308,13 +338,15 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
   // no diagnostic exists.
   mdLinterExtensions.push(
     lintGutter({
-      markerFilter (diagnostics) {
+      markerFilter(diagnostics) {
         // Show any linter warnings and errors in the gutter *except* wrongly
         // spelled words, since that would be weird.
-        return diagnostics.filter(d => d.source !== 'spellcheck' && d.source?.startsWith('language-tool') === false)
-      }
-    })
-  )
+        return diagnostics.filter(
+          (d) => d.source !== "spellcheck" && d.source?.startsWith("language-tool") === false,
+        );
+      },
+    }),
+  );
 
   return [
     ...getCoreExtensions(options),
@@ -325,7 +357,7 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     // We need our custom keymaps first
     // The parser generates the AST for the document ...
     markdownParser({
-      zknLinkParserConfig: { format: options.initialConfig.zknLinkFormat }
+      zknLinkParserConfig: { format: options.initialConfig.zknLinkFormat },
     }),
     // ... which can then be styled with a highlighter
     markdownSyntaxHighlighter(),
@@ -349,7 +381,7 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     // directly edited definition-id token (issue #1 Phase 6).
     referenceKeyEditPrompt({
       documentPath: options.remoteConfig.filePath,
-      onPrompt: options.referenceKeyEditListener
+      onPrompt: options.referenceKeyEditListener,
     }),
     markdownFolding, // Should be before footnoteGutter
     autocomplete,
@@ -366,8 +398,8 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     defaultContextMenu, // A default context menu
     softwrapVisualIndent, // Always indent visually
     tagClasses(), // Apply a custom class to each tag so that users can style them (#4589)
-    EditorView.domEventHandlers(options.domEventsListeners)
-  ]
+    EditorView.domEventHandlers(options.domEventsListeners),
+  ];
 }
 
 /**
@@ -379,11 +411,8 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
  *
  * @return  {Extension[]}                    An array of options for LaTeX files
  */
-export function getTexExtensions (options: CoreExtensionOptions): Extension[] {
-  return [
-    ...getGenericCodeExtensions(options),
-    StreamLanguage.define(stex)
-  ]
+export function getTexExtensions(options: CoreExtensionOptions): Extension[] {
+  return [...getGenericCodeExtensions(options), StreamLanguage.define(stex)];
 }
 
 /**
@@ -395,13 +424,9 @@ export function getTexExtensions (options: CoreExtensionOptions): Extension[] {
  *
  * @return  {Extension[]}                    An array of options for YAML files
  */
-export function getYAMLExtensions (options: CoreExtensionOptions): Extension[] {
-  return [
-    ...getGenericCodeExtensions(options),
-    yaml()
-  ]
+export function getYAMLExtensions(options: CoreExtensionOptions): Extension[] {
+  return [...getGenericCodeExtensions(options), yaml()];
 }
-
 
 /**
  * This public function returns a set of extensions required to display JSON
@@ -412,10 +437,6 @@ export function getYAMLExtensions (options: CoreExtensionOptions): Extension[] {
  *
  * @return  {Extension[]}                    An array of options for JSON files
  */
-export function getJSONExtensions (options: CoreExtensionOptions): Extension[] {
-  return [
-    ...getGenericCodeExtensions(options),
-    json(),
-    linter(jsonParseLinter())
-  ]
+export function getJSONExtensions(options: CoreExtensionOptions): Extension[] {
+  return [...getGenericCodeExtensions(options), json(), linter(jsonParseLinter())];
 }
