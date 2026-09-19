@@ -14,21 +14,26 @@
  * END HEADER
  */
 
-import type { TikzSourceBlock } from './tikz-block'
+import { type TikzSourceBlock, tikzBlockHasContiguousSource } from "./tikz-block";
 
 export interface TikzQuiverSourceSession {
-  kind: 'raw'|'fence'
-  blockFrom: number
-  blockTo: number
-  sourceFrom: number
-  sourceTo: number
+  kind: "raw" | "fence";
+  blockFrom: number;
+  blockTo: number;
+  sourceFrom: number;
+  sourceTo: number;
   /** Exact source bytes currently stored in [sourceFrom, sourceTo). */
-  source: string
+  source: string;
 }
 
-export function quiverSessionForBlock (block: TikzSourceBlock): TikzQuiverSourceSession {
-  if (block.language !== 'tikzcd') {
-    throw new Error(`Quiver sessions require tikzcd source, received ${block.language}`)
+export function quiverSessionForBlock(block: TikzSourceBlock): TikzQuiverSourceSession {
+  if (block.language !== "tikzcd") {
+    throw new Error(`Quiver sessions require tikzcd source, received ${block.language}`);
+  }
+  if (!tikzBlockHasContiguousSource(block)) {
+    throw new Error(
+      "Quiver cannot rewrite a raw tikzcd block whose semantic source crosses Markdown container markers",
+    );
   }
   return {
     kind: block.kind,
@@ -36,15 +41,15 @@ export function quiverSessionForBlock (block: TikzSourceBlock): TikzQuiverSource
     blockTo: block.to,
     sourceFrom: block.sourceFrom,
     sourceTo: block.sourceTo,
-    source: block.source
-  }
+    source: block.source,
+  };
 }
 
 /** Source handed to Quiver's native tikz-cd parser. */
-export function quiverSourceForSession (session: TikzQuiverSourceSession): string {
-  return session.kind === 'raw'
+export function quiverSourceForSession(session: TikzQuiverSourceSession): string {
+  return session.kind === "raw"
     ? session.source
-    : `\\begin{tikzcd}\n${session.source}\n\\end{tikzcd}`
+    : `\\begin{tikzcd}\n${session.source}\n\\end{tikzcd}`;
 }
 
 /**
@@ -53,39 +58,36 @@ export function quiverSourceForSession (session: TikzQuiverSourceSession): strin
  * no place to encode environment-level options, so refusing such an export is
  * safer than silently dropping those semantics.
  */
-export function sourceForQuiverExport (
-  session: TikzQuiverSourceSession,
-  exported: string
-): string {
-  const source = exported.trim()
-  if (session.kind === 'raw') {
-    return source
+export function sourceForQuiverExport(session: TikzQuiverSourceSession, exported: string): string {
+  const source = exported.trim();
+  if (session.kind === "raw") {
+    return source;
   }
 
-  const match = /^\\begin\{tikzcd\}[ \t]*\r?\n([\s\S]*?)\r?\n\\end\{tikzcd\}$/u.exec(source)
+  const match = /^\\begin\{tikzcd\}[ \t]*\r?\n([\s\S]*?)\r?\n\\end\{tikzcd\}$/u.exec(source);
   if (match === null) {
     throw new Error(
-      'Quiver exported a fenced tikzcd diagram with wrapper syntax that the fence body cannot represent. ' +
-      'Switch to TikZ source mode and use a raw \\begin{tikzcd} environment for environment-level options.'
-    )
+      "Quiver exported a fenced tikzcd diagram with wrapper syntax that the fence body cannot represent. " +
+        "Switch to TikZ source mode and use a raw \\begin{tikzcd} environment for environment-level options.",
+    );
   }
-  return match[1]
+  return match[1];
 }
 
 export interface TikzQuiverReplacement {
-  from: number
-  to: number
-  insert: string
-  next: TikzQuiverSourceSession
+  from: number;
+  to: number;
+  insert: string;
+  next: TikzQuiverSourceSession;
 }
 
 /** Pure range update for one Quiver-originated source replacement. */
-export function quiverReplacement (
+export function quiverReplacement(
   session: TikzQuiverSourceSession,
-  exported: string
+  exported: string,
 ): TikzQuiverReplacement {
-  const insert = sourceForQuiverExport(session, exported)
-  const delta = insert.length - session.source.length
+  const insert = sourceForQuiverExport(session, exported);
+  const delta = insert.length - session.source.length;
   return {
     from: session.sourceFrom,
     to: session.sourceTo,
@@ -94,7 +96,7 @@ export function quiverReplacement (
       ...session,
       blockTo: session.blockTo + delta,
       sourceTo: session.sourceTo + delta,
-      source: insert
-    }
-  }
+      source: insert,
+    },
+  };
 }

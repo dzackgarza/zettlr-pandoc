@@ -2,7 +2,7 @@
 
 import { markdownToAST } from "@common/modules/markdown-utils";
 import type { ASTNode } from "@common/modules/markdown-utils/markdown-ast";
-import { wholeEnvironment } from "@common/util/math-delimiters";
+import { MATH_ENVIRONMENTS, wholeEnvironment } from "@common/util/math-delimiters";
 import type { SourceLintDiagnostic } from "@common/util/source-lint-diagnostic";
 import { FIGURE_ENVIRONMENTS } from "@common/util/tikz-source-blocks";
 
@@ -44,6 +44,9 @@ export function latexEnvironmentLintText(markdown: string): SourceLintDiagnostic
 
     for (const match of text.matchAll(OPEN_LINE_RE)) {
       const environment = match[1];
+      if (MATH_ENVIRONMENTS.has(environment)) {
+        continue;
+      }
       const absolute = node.from + match.index;
       const lineStart = markdown.lastIndexOf("\n", Math.max(0, absolute - 1)) + 1;
       const nextNewline = markdown.indexOf("\n", absolute);
@@ -54,13 +57,10 @@ export function latexEnvironmentLintText(markdown: string): SourceLintDiagnostic
         to: lineEnd,
         severity: drawsAFigure ? "error" : "warning",
         message: drawsAFigure
-          ? `This \\begin{${environment}} is part of the paragraph around it, so the figure will not be drawn. ` +
-            "Markdown reads a line written directly under prose as a continuation of it. " +
-            "Put a blank line above the block and below its \\end, and it renders. " +
-            "Pandoc exports the figure either way, so an export will not show this."
-          : `This \\begin{${environment}} is part of the paragraph around it rather than a block of its own. ` +
-            "It still renders. Markdown reads a line written directly under prose as a continuation of it, " +
-            "so the environment belongs to that paragraph; a blank line above and below makes it stand alone.",
+          ? `Zettlr could not recognize this \\begin{${environment}} as a complete raw block. ` +
+            `Ensure it has a matching \\end{${environment}} and that the opener starts a line.`
+          : `Zettlr could not recognize this \\begin{${environment}} as a complete raw block. ` +
+            `Ensure it has a matching \\end{${environment}} and that the opener starts a line.`,
         source: "latex-environment-lint",
       });
     }

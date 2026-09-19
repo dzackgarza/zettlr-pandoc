@@ -4,16 +4,8 @@ import { type TikzSourceBlock, tikzSourceBlocksInMarkdown } from "@common/util/t
 import type { TikzRenderRequest, TikzRenderResult } from "source/app/util/tikz-render";
 
 function lineRange(block: TikzSourceBlock, lineNumber: number): { from: number; to: number } {
-  const lines = block.source.split("\n");
-  const index = Math.max(0, Math.min(lines.length - 1, lineNumber - 1));
-  let relative = 0;
-  for (let line = 0; line < index; line += 1) {
-    relative += lines[line].length + 1;
-  }
-  return {
-    from: block.sourceFrom + relative,
-    to: block.sourceFrom + relative + lines[index].length,
-  };
+  const index = Math.max(0, Math.min(block.sourceLineRanges.length - 1, lineNumber - 1));
+  return block.sourceLineRanges[index];
 }
 
 export async function tikzCompileLintText(

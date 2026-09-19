@@ -15,124 +15,149 @@
  * END HEADER
  */
 
-import { StreamLanguage, type StreamParser, type StringStream } from '@codemirror/language'
-import type { InlineParser } from '@lezer/markdown'
-import { tikzLanguage } from '@tikz-editor/lang-tikz'
+import { StreamLanguage, type StreamParser, type StringStream } from "@codemirror/language";
+import { stex } from "@codemirror/legacy-modes/mode/stex";
+import { rawLatexEnvironmentAtStart } from "@common/util/raw-latex-block";
+import { type ParseWrapper, parseMixed } from "@lezer/common";
+import { tikzLanguage } from "@tikz-editor/lang-tikz";
 
 interface TikzCdState {
-  optionDepth: number
-  inMath: boolean
+  optionDepth: number;
+  inMath: boolean;
+}
+
+function matches(stream: StringStream, pattern: string | RegExp): boolean {
+  const result = stream.match(pattern);
+  return result !== false && result !== null;
 }
 
 const tikzCdParser: StreamParser<TikzCdState> = {
-  name: 'tikzcd',
+  name: "tikzcd",
   startState: () => ({ optionDepth: 0, inMath: false }),
   // Make tikzcd a real CodeMirror language surface rather than merely a
   // highlighter. The editor's standard Mod-/ command reads commentTokens from
   // the active nested language, so raw and fenced tikzcd blocks can comment or
   // uncomment one or many selected lines with TeX's '%' line comment marker.
   languageData: {
-    commentTokens: { line: '%' }
+    commentTokens: { line: "%" },
   },
-  token: (stream: StringStream, state: TikzCdState): string|null => {
-    if (stream.eatSpace()) return null
-
-    if (stream.match(/^%.*/)) {
-      return 'lineComment'
+  token: (stream: StringStream, state: TikzCdState): string | null => {
+    if (stream.eatSpace()) {
+      return null;
     }
 
-    if (stream.match(/^\\begin\{tikzcd\}/) || stream.match(/^\\end\{tikzcd\}/)) {
-      return 'keyword'
+    if (matches(stream, /^%.*/)) {
+      return "lineComment";
     }
 
-    if (stream.match(/^\\(?:arrow|ar)\b/)) {
-      return 'keyword'
+    if (matches(stream, /^\\begin\{tikzcd\}/) || matches(stream, /^\\end\{tikzcd\}/)) {
+      return "keyword";
     }
 
-    if (stream.match(/^\\\\/)) {
-      return 'separator'
+    if (matches(stream, /^\\(?:arrow|ar)\b/)) {
+      return "keyword";
     }
 
-    if (stream.match(/^\\(?:[A-Za-z@]+|.)/)) {
-      return state.inMath ? 'macroName' : 'meta'
+    if (matches(stream, /^\\\\/)) {
+      return "separator";
     }
 
-    if (stream.match(/^\$\$/) || stream.match(/^\$/)) {
-      state.inMath = !state.inMath
-      return 'regexp'
+    if (matches(stream, /^\\(?:[A-Za-z@]+|.)/)) {
+      return state.inMath ? "macroName" : "meta";
     }
 
-    if (stream.match(/^&/)) {
-      return 'separator'
+    if (matches(stream, /^\$\$/) || matches(stream, /^\$/)) {
+      state.inMath = !state.inMath;
+      return "regexp";
     }
 
-    if (stream.match(/^\[/)) {
-      state.optionDepth++
-      return 'squareBracket'
+    if (matches(stream, /^&/)) {
+      return "separator";
     }
-    if (stream.match(/^\]/)) {
-      state.optionDepth = Math.max(0, state.optionDepth - 1)
-      return 'squareBracket'
+
+    if (matches(stream, /^\[/)) {
+      state.optionDepth++;
+      return "squareBracket";
+    }
+    if (matches(stream, /^\]/)) {
+      state.optionDepth = Math.max(0, state.optionDepth - 1);
+      return "squareBracket";
     }
 
     if (state.optionDepth > 0) {
-      if (stream.match(/^"(?:[^"\\]|\\.)*"/)) return 'string'
-      if (stream.match(/^'(?![A-Za-z])/)) return 'modifier'
-      if (stream.match(/^(?:[rlud]+)(?=\s*(?:,|\]|$))/)) return 'typeName'
-      if (stream.match(/^(?:bend\s+(?:left|right)|shift\s+(?:left|right)|crossing\s+over|phantom|swap|near\s+start|near\s+end|description|sloped|dashed|dotted|hook|two\s+heads|tail)(?=\s*(?:=|,|\]|$))/i)) return 'propertyName'
-      if (stream.match(/^[A-Za-z][A-Za-z0-9 _.-]*(?=\s*=)/)) return 'propertyName'
-      if (stream.match(/^=/)) return 'operator'
-      if (stream.match(/^,/)) return 'punctuation'
-      if (stream.match(/^-?\d+(?:\.\d+)?/)) return 'number'
-      if (stream.match(/^[^,\]=]+/)) return 'variableName'
+      if (matches(stream, /^"(?:[^"\\]|\\.)*"/)) {
+        return "string";
+      }
+      if (matches(stream, /^'(?![A-Za-z])/)) {
+        return "modifier";
+      }
+      if (matches(stream, /^(?:[rlud]+)(?=\s*(?:,|\]|$))/)) {
+        return "typeName";
+      }
+      if (
+        matches(
+          stream,
+          /^(?:bend\s+(?:left|right)|shift\s+(?:left|right)|crossing\s+over|phantom|swap|near\s+start|near\s+end|description|sloped|dashed|dotted|hook|two\s+heads|tail)(?=\s*(?:=|,|\]|$))/i,
+        )
+      ) {
+        return "propertyName";
+      }
+      if (matches(stream, /^[A-Za-z][A-Za-z0-9 _.-]*(?=\s*=)/)) {
+        return "propertyName";
+      }
+      if (matches(stream, /^=/)) {
+        return "operator";
+      }
+      if (matches(stream, /^,/)) {
+        return "punctuation";
+      }
+      if (matches(stream, /^-?\d+(?:\.\d+)?/)) {
+        return "number";
+      }
+      if (matches(stream, /^[^,\]=]+/)) {
+        return "variableName";
+      }
     }
 
-    if (stream.match(/^-?\d+(?:\.\d+)?/)) return 'number'
-    if (stream.match(/^[{}()]/)) return 'bracket'
+    if (matches(stream, /^-?\d+(?:\.\d+)?/)) {
+      return "number";
+    }
+    if (matches(stream, /^[{}()]/)) {
+      return "bracket";
+    }
 
-    stream.next()
-    return null
-  }
-}
+    stream.next();
+    return null;
+  },
+};
 
-export const tikzCdLanguage = StreamLanguage.define(tikzCdParser)
-export { tikzLanguage }
+export const tikzCdLanguage = StreamLanguage.define(tikzCdParser);
+export { tikzLanguage };
 
 const RAW_TIKZ_ENVIRONMENTS = new Map([
-  [ 'tikzpicture', tikzLanguage ],
-  [ 'tikzcd', tikzCdLanguage ]
-] as const)
+  ["tikzpicture", tikzLanguage],
+  ["tikzcd", tikzCdLanguage],
+] as const);
+const rawTexLanguage = StreamLanguage.define(stex);
 
 /**
- * Parses complete raw TikZ environments that Markdown otherwise treats as
- * ordinary paragraph text. The renderer still owns the surrounding Paragraph;
- * this parser contributes only the nested syntax tree used for highlighting.
+ * Mount language support into a structurally recognized raw LaTeX block.
+ * The block parser owns extent; this wrapper owns only syntax highlighting.
  */
-export const inlineTikzEnvironmentParser: InlineParser = {
-  name: 'inlineTikzEnvironment',
-  before: 'Escape',
-  parse: (ctx, next, pos) => {
-    if (next !== 92) return -1 // '\\'
-
-    const relative = pos - ctx.offset
-    const lineStart = ctx.text.lastIndexOf('\n', relative - 1) + 1
-    if (ctx.text.slice(lineStart, relative).trim() !== '') return -1
-
-    const rest = ctx.slice(pos, ctx.end)
-    const open = /^\\begin\{(tikzpicture|tikzcd)\}/.exec(rest)
-    if (open === null) return -1
-
-    const environment = open[1] as 'tikzpicture'|'tikzcd'
-    const closeToken = `\\end{${environment}}`
-    const closeOffset = rest.indexOf(closeToken, open[0].length)
-    if (closeOffset === -1) return -1
-
-    const closeTo = pos + closeOffset + closeToken.length
-    const source = ctx.slice(pos, closeTo)
-    const language = RAW_TIKZ_ENVIRONMENTS.get(environment)
-    if (language === undefined) return -1
-
-    const innerTree = ctx.elt(language.parser.parse(source), pos)
-    return ctx.addElement(ctx.elt('TikzRaw', pos, closeTo, [innerTree]))
-  }
+export function rawLatexLanguageParse(): ParseWrapper {
+  return parseMixed((node, input) => {
+    if (node.type.name !== "RawBlock") {
+      return null;
+    }
+    const environment = rawLatexEnvironmentAtStart(input.read(node.from, node.to));
+    if (environment === null) {
+      return null;
+    }
+    const language =
+      RAW_TIKZ_ENVIRONMENTS.get(environment as "tikzpicture" | "tikzcd") ?? rawTexLanguage;
+    return {
+      parser: language.parser,
+      overlay: (child) => child.type.name === "RawBlockContent",
+    };
+  });
 }

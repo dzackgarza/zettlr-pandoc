@@ -18,8 +18,57 @@ export interface TikzSourceBlock {
   sourceFrom: number;
   sourceTo: number;
   source: string;
+  sourceLineRanges: ReadonlyArray<{ from: number; to: number }>;
   kind: "raw" | "fence";
   language: "tikz" | "tikzcd";
+}
+
+export function contiguousSourceLineRanges(
+  source: string,
+  sourceFrom: number,
+): Array<{ from: number; to: number }> {
+  const ranges: Array<{ from: number; to: number }> = [];
+  let offset = 0;
+  for (const line of source.split("\n")) {
+    ranges.push({
+      from: sourceFrom + offset,
+      to: sourceFrom + offset + line.length,
+    });
+    offset += line.length + 1;
+  }
+  return ranges;
+}
+
+/**
+ * Whether the semantic TikZ source is stored as one contiguous authored range.
+ * Raw blocks inside Markdown containers (for example blockquotes and list
+ * items) may omit container markers from their semantic source; those blocks
+ * are renderable but cannot safely be replaced wholesale by a visual editor.
+ */
+export function tikzBlockHasContiguousSource(block: TikzSourceBlock): boolean {
+  if (block.sourceLineRanges.length === 0) {
+    return block.source.length === 0 && block.sourceFrom === block.sourceTo;
+  }
+  if (
+    block.sourceLineRanges[0].from !== block.sourceFrom ||
+    block.sourceLineRanges[block.sourceLineRanges.length - 1].to !== block.sourceTo
+  ) {
+    return false;
+  }
+
+  let semanticLength = 0;
+  for (let index = 0; index < block.sourceLineRanges.length; index += 1) {
+    const range = block.sourceLineRanges[index];
+    semanticLength += range.to - range.from;
+    if (index > 0) {
+      const previous = block.sourceLineRanges[index - 1];
+      if (range.from !== previous.to + 1) {
+        return false;
+      }
+      semanticLength += 1;
+    }
+  }
+  return semanticLength === block.source.length;
 }
 
 export function rawTikzEnvironment(paragraphText: string): string | null {
@@ -96,31 +145,32 @@ export function tikzSourceBlocksInMarkdown(markdown: string): TikzSourceBlock[] 
         sourceFrom,
         sourceTo: sourceFrom + node.source.length,
         source: node.source,
+        sourceLineRanges: contiguousSourceLineRanges(node.source, sourceFrom),
         kind: "fence",
         language,
       });
       return;
     }
 
-    if (node.type !== "Generic" || node.name !== "Paragraph") {
+    if (node.type === "RawBlock") {
+      const environment = rawTikzEnvironment(node.source);
+      const inputPath = rawTikzInput(node.source);
+      if (environment === null && inputPath === null) {
+        return;
+      }
+      blocks.push({
+        from: node.from,
+        to: node.to,
+        sourceFrom: node.from,
+        sourceTo: node.to,
+        source: node.source,
+        sourceLineRanges: node.sourceLineRanges,
+        kind: "raw",
+        language:
+          environment === "tikzcd" || inputPath?.endsWith(".tikzcd") === true ? "tikzcd" : "tikz",
+      });
       return;
     }
-    const source = markdown.slice(node.from, node.to);
-    const environment = rawTikzEnvironment(source);
-    const inputPath = rawTikzInput(source);
-    if (environment === null && inputPath === null) {
-      return;
-    }
-    blocks.push({
-      from: node.from,
-      to: node.to,
-      sourceFrom: node.from,
-      sourceTo: node.to,
-      source,
-      kind: "raw",
-      language:
-        environment === "tikzcd" || inputPath?.endsWith(".tikzcd") === true ? "tikzcd" : "tikz",
-    });
   });
   return blocks.sort((a, b) => a.from - b.from || a.to - b.to);
 }

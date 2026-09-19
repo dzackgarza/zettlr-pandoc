@@ -267,6 +267,57 @@ describe("TikZ editor widgets (issue #14)", function () {
     );
   });
 
+  it("renders a multiline raw tikzpicture inside a Pandoc div as one figure", async function () {
+    respond = {
+      ok: true,
+      html: FIGURE_HTML,
+      svg: SVG_OK,
+      svgPath: "/cache/multiline.svg",
+      texFontSizePt: 10,
+    };
+    const raw = [
+      "\\begin{tikzpicture}",
+      "",
+      "\\coordinate (d1) at (0,0);",
+      "",
+      "\\draw (d1) -- ++(1,1);",
+      "",
+      "\\end{tikzpicture}",
+    ].join("\n");
+    const doc = ["::: {.example}", "Before.", "", raw, "", "After.", ":::", ""].join("\n");
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: 0 },
+      extensions: [markdownParser(), configField, renderTikzFigures],
+    });
+    const view = new EditorView({ state, parent: document.body });
+    assert.ok(forceParsing(view, doc.length, 5000), "the multiline raw block must fully parse");
+    views.push(view);
+
+    await waitFor(
+      () => invocations.length === 1 && view.dom.querySelectorAll(".tikz-figure svg").length === 1,
+      "the complete raw environment to render as one SVG widget",
+    );
+    assert.strictEqual(invocations[0].payload.kind, "raw");
+    assert.strictEqual(invocations[0].payload.language, "tikz");
+    assert.strictEqual(invocations[0].payload.source, raw);
+    assert.ok(
+      !(view.dom.textContent ?? "").includes("\\begin{tikzpicture}"),
+      "the entire raw environment is replaced rather than leaving paragraph fragments behind",
+    );
+
+    const editState = EditorState.create({
+      doc,
+      selection: { anchor: doc.indexOf("\\draw") + 2 },
+      extensions: [markdownParser(), configField],
+    });
+    assert.strictEqual(
+      activeTikzBlock(editState)?.source,
+      raw,
+      "live preview resolves the same complete raw block as the inline renderer",
+    );
+  });
+
   it("carries the document path from the editor configuration into every render request", async function () {
     // \input resolution depends on where the document lives, so the request
     // must report the configuration's path rather than any value of its own.

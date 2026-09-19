@@ -17,57 +17,67 @@
  * END HEADER
  */
 
-import type { TikzLivePreviewTarget } from './tikz-live-preview'
-import { rawTikzEnvironment } from './tikz-block'
+import { rawTikzEnvironment, tikzBlockHasContiguousSource } from "./tikz-block";
+import type { TikzLivePreviewTarget } from "./tikz-live-preview";
 
-export type TikzPreviewModeId = 'tikz'|'quiver'|'visual'
+export type TikzPreviewModeId = "tikz" | "quiver" | "visual";
 
 export interface TikzPreviewModeDescriptor {
-  id: TikzPreviewModeId
-  label: string
-  refreshable: boolean
-  supports: (target: TikzLivePreviewTarget) => boolean
-  unavailableTitle: (target: TikzLivePreviewTarget) => string
+  id: TikzPreviewModeId;
+  label: string;
+  refreshable: boolean;
+  supports: (target: TikzLivePreviewTarget) => boolean;
+  unavailableTitle: (target: TikzLivePreviewTarget) => string;
 }
 
-function supportsVisualEditor (target: TikzLivePreviewTarget): boolean {
-  return target.language === 'tikz' && rawTikzEnvironment(target.source) === 'tikzpicture'
+function supportsVisualEditor(target: TikzLivePreviewTarget): boolean {
+  return (
+    target.language === "tikz" &&
+    rawTikzEnvironment(target.source) === "tikzpicture" &&
+    tikzBlockHasContiguousSource(target)
+  );
 }
 
 export const TIKZ_PREVIEW_MODES: readonly TikzPreviewModeDescriptor[] = [
   {
-    id: 'tikz',
-    label: 'TikZ',
+    id: "tikz",
+    label: "TikZ",
     refreshable: true,
     supports: () => true,
-    unavailableTitle: () => ''
+    unavailableTitle: () => "",
   },
   {
-    id: 'quiver',
-    label: 'Quiver',
+    id: "quiver",
+    label: "Quiver",
     refreshable: false,
-    supports: target => target.language === 'tikzcd',
-    unavailableTitle: () => 'Quiver is available only for tikzcd diagrams'
+    supports: (target) => target.language === "tikzcd" && tikzBlockHasContiguousSource(target),
+    unavailableTitle: (target) =>
+      target.language !== "tikzcd"
+        ? "Quiver is available only for tikzcd diagrams"
+        : "Quiver editing is unavailable while this raw block is nested in Markdown container syntax",
   },
   {
-    id: 'visual',
-    label: 'Visual',
+    id: "visual",
+    label: "Visual",
     refreshable: false,
     supports: supportsVisualEditor,
-    unavailableTitle: target => target.language === 'tikzcd'
-      ? 'The visual editor is for tikzpicture diagrams; tikzcd uses Quiver'
-      : 'The visual editor requires an authored tikzpicture environment'
-  }
-]
+    unavailableTitle: (target) =>
+      target.language === "tikzcd"
+        ? "The visual editor is for tikzpicture diagrams; tikzcd uses Quiver"
+        : !tikzBlockHasContiguousSource(target)
+          ? "Visual editing is unavailable while this raw block is nested in Markdown container syntax"
+          : "The visual editor requires an authored tikzpicture environment",
+  },
+];
 
-export function defaultTikzPreviewMode (target: TikzLivePreviewTarget): TikzPreviewModeId {
-  return target.language === 'tikzcd' ? 'quiver' : 'tikz'
+export function defaultTikzPreviewMode(target: TikzLivePreviewTarget): TikzPreviewModeId {
+  return target.language === "tikzcd" && tikzBlockHasContiguousSource(target) ? "quiver" : "tikz";
 }
 
-export function resolvedTikzPreviewMode (
+export function resolvedTikzPreviewMode(
   requested: TikzPreviewModeId,
-  target: TikzLivePreviewTarget
+  target: TikzLivePreviewTarget,
 ): TikzPreviewModeId {
-  const descriptor = TIKZ_PREVIEW_MODES.find(mode => mode.id === requested)
-  return descriptor?.supports(target) === true ? requested : defaultTikzPreviewMode(target)
+  const descriptor = TIKZ_PREVIEW_MODES.find((mode) => mode.id === requested);
+  return descriptor?.supports(target) === true ? requested : defaultTikzPreviewMode(target);
 }

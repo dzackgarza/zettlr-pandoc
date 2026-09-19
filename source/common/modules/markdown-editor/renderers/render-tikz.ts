@@ -301,7 +301,7 @@ class TikzWidget extends WidgetType {
 }
 
 function shouldHandleNode(node: SyntaxNodeRef): boolean {
-  return node.type.name === "Paragraph" || node.type.name === "FencedCode";
+  return node.type.name === "RawBlock" || node.type.name === "FencedCode";
 }
 
 function createWidget(state: EditorState, node: SyntaxNodeRef): TikzWidget | undefined {
@@ -310,7 +310,7 @@ function createWidget(state: EditorState, node: SyntaxNodeRef): TikzWidget | und
 }
 
 export const renderTikzFigures = [
-  renderBlockWidgets(["Paragraph", "FencedCode"], shouldHandleNode, createWidget),
+  renderBlockWidgets(["RawBlock", "FencedCode"], shouldHandleNode, createWidget),
   EditorView.baseTheme({
     ".tikz-figure": {
       display: "block",

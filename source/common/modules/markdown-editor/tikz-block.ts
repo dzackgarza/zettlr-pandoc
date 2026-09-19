@@ -17,7 +17,9 @@
 
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
+import { rawBlockLineRangesFromNode, rawBlockSourceFromNode } from "@common/util/raw-latex-block";
 import {
+  contiguousSourceLineRanges,
   rawTikzEnvironment,
   rawTikzInput,
   type TikzSourceBlock,
@@ -32,6 +34,7 @@ export {
   rawTikzEnvironment,
   rawTikzInput,
   type TikzSourceBlock,
+  tikzBlockHasContiguousSource,
   usesOwnedTikzTemplate,
 } from "@common/util/tikz-source-blocks";
 
@@ -43,31 +46,23 @@ export function tikzBlockForNode(
   state: EditorState,
   node: SyntaxNodeRef,
 ): TikzSourceBlock | undefined {
-  if (node.type.name === "Paragraph") {
-    const source = state.sliceDoc(node.from, node.to);
+  if (node.type.name === "RawBlock") {
+    const source = rawBlockSourceFromNode(node.node, (from, to) => state.sliceDoc(from, to));
     const environment = rawTikzEnvironment(source);
-    if (environment !== null) {
-      return {
-        from: node.from,
-        to: node.to,
-        sourceFrom: node.from,
-        sourceTo: node.to,
-        source,
-        kind: "raw",
-        language: environment === "tikzcd" ? "tikzcd" : "tikz",
-      };
-    }
-
     const inputPath = rawTikzInput(source);
-    if (inputPath !== null) {
+    if (environment !== null || inputPath !== null) {
       return {
         from: node.from,
         to: node.to,
         sourceFrom: node.from,
         sourceTo: node.to,
         source,
+        sourceLineRanges: rawBlockLineRangesFromNode(node.node, (from, to) =>
+          state.sliceDoc(from, to),
+        ),
         kind: "raw",
-        language: inputPath.endsWith(".tikzcd") ? "tikzcd" : "tikz",
+        language:
+          environment === "tikzcd" || inputPath?.endsWith(".tikzcd") === true ? "tikzcd" : "tikz",
       };
     }
 
@@ -97,6 +92,7 @@ export function tikzBlockForNode(
     sourceFrom: body.from,
     sourceTo: body.to,
     source: state.sliceDoc(body.from, body.to),
+    sourceLineRanges: contiguousSourceLineRanges(state.sliceDoc(body.from, body.to), body.from),
     kind: "fence",
     language,
   };
@@ -121,11 +117,7 @@ export function activeTikzBlock(state: EditorState): TikzSourceBlock | null {
   const assoc = probe === state.doc.length ? -1 : 1;
   let node = syntaxTree(state).resolveInner(probe, assoc);
 
-  while (
-    node.parent !== null &&
-    node.type.name !== "Paragraph" &&
-    node.type.name !== "FencedCode"
-  ) {
+  while (node.parent !== null && node.type.name !== "RawBlock" && node.type.name !== "FencedCode") {
     node = node.parent;
   }
 
@@ -155,7 +147,7 @@ export function tikzBlockAt(state: EditorState, pos: number): TikzSourceBlock | 
     let node = syntaxTree(state).resolveInner(probe, assoc);
     while (
       node.parent !== null &&
-      node.type.name !== "Paragraph" &&
+      node.type.name !== "RawBlock" &&
       node.type.name !== "FencedCode"
     ) {
       node = node.parent;

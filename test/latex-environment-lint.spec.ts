@@ -7,32 +7,24 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     A \begin{…} written directly under a line of prose is a
- *                  lazy paragraph continuation, so the parser folds it into
- *                  that paragraph instead of leaving it a block of its own.
- *
- *                  What that costs depends on the environment, and the two
- *                  cases carry different severities because they need
- *                  different things from the author. A figure environment
- *                  (tikzcd, tikzpicture) is not drawn at all — an error, with
- *                  a fix. Every other environment still renders; it is simply
- *                  part of a paragraph rather than a block, which is a
- *                  warning about the document's shape, not a defect.
- *
- *                  A message that overstated the second case would send the
- *                  author looking for a figure that was never missing, so the
- *                  cases below pin the severity, not just the count.
+ * Description:     Raw non-math LaTeX environments are first-class block
+ *                  syntax, matching Pandoc even without surrounding blank
+ *                  lines. This linter therefore only reports an environment
+ *                  opener that could not be recognized as a complete raw
+ *                  block (for example because its closing environment is
+ *                  missing). Math environments remain owned by the math
+ *                  parser and are never diagnosed here.
  *
  * END HEADER
  */
 
-import { strict as assert } from "assert";
-import { type Diagnostic } from "@codemirror/lint";
 import { forceParsing } from "@codemirror/language";
+import { type Diagnostic } from "@codemirror/lint";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import { strict as assert } from "assert";
 import { latexEnvironmentLintSource } from "source/common/modules/markdown-editor/linters/latex-environment-lint";
+import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 
 const FIGURE = "\\begin{tikzcd}\nE \\arrow[r] & B\n\\end{tikzcd}";
@@ -44,34 +36,58 @@ const ALIGN = "\\begin{align}\na &= b \\\\\nc &= d\n\\end{align}";
  * test/reference-lint.spec.ts, the sibling linter spec.
  */
 function polyfillJsdomForCodeMirror(): void {
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  const w = globalThis as any;
-  if (typeof w.requestAnimationFrame !== "function") {
-    w.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id);
+  if (typeof globalThis.requestAnimationFrame !== "function") {
+    const requestFrame = (callback: FrameRequestCallback): number =>
+      Number(setTimeout(() => callback(Date.now()), 0));
+    const cancelFrame = (id: number): void => {
+      clearTimeout(id);
+    };
+    Object.defineProperties(globalThis, {
+      requestAnimationFrame: { configurable: true, value: requestFrame, writable: true },
+      cancelAnimationFrame: { configurable: true, value: cancelFrame, writable: true },
+    });
   }
-  if (typeof w.window === "object" && typeof w.window.requestAnimationFrame !== "function") {
-    w.window.requestAnimationFrame = w.requestAnimationFrame;
-    w.window.cancelAnimationFrame = w.cancelAnimationFrame;
+  if (typeof window === "object" && typeof window.requestAnimationFrame !== "function") {
+    Object.defineProperties(window, {
+      requestAnimationFrame: {
+        configurable: true,
+        value: globalThis.requestAnimationFrame,
+        writable: true,
+      },
+      cancelAnimationFrame: {
+        configurable: true,
+        value: globalThis.cancelAnimationFrame,
+        writable: true,
+      },
+    });
   }
-  if (typeof w.ResizeObserver !== "function") {
-    w.ResizeObserver = class {
+  if (typeof globalThis.ResizeObserver !== "function") {
+    globalThis.ResizeObserver = class {
       observe(): void {}
       unobserve(): void {}
       disconnect(): void {}
-    };
-    if (typeof w.window === "object") {
-      w.window.ResizeObserver = w.ResizeObserver;
+    } as typeof ResizeObserver;
+    if (typeof window === "object") {
+      window.ResizeObserver = globalThis.ResizeObserver;
     }
   }
-  if (typeof w.Range?.prototype.getClientRects !== "function") {
-    w.Range.prototype.getClientRects = () => [];
-    w.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0, height: 0, left: 0, right: 0, top: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+  if (typeof Range.prototype.getClientRects !== "function") {
+    Range.prototype.getClientRects = () =>
+      Object.assign([], {
+        item: (_index: number): DOMRect | null => null,
+      }) as DOMRectList;
+    Range.prototype.getBoundingClientRect = () => ({
+      bottom: 0,
+      height: 0,
+      left: 0,
+      right: 0,
+      top: 0,
+      width: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
     });
   }
-  /* eslint-enable @typescript-eslint/no-explicit-any */
 }
 
 describe("LaTeX environment linter", function () {
@@ -104,7 +120,7 @@ describe("LaTeX environment linter", function () {
     return latexEnvironmentLintSource(viewFor(doc));
   }
 
-  describe("an environment that is its own block", function () {
+  describe("well-formed environments", function () {
     it("says nothing about a separated figure", function () {
       assert.deepEqual(lint(`A cartesian square\n\n${FIGURE}\n\nAfter.\n`), []);
     });
@@ -112,54 +128,14 @@ describe("LaTeX environment linter", function () {
     it("says nothing about a separated equation", function () {
       assert.deepEqual(lint(`Consider the identity\n\n${ALIGN}\n\nAfter.\n`), []);
     });
-  });
 
-  describe("a figure folded into its paragraph", function () {
-    it("is an error, because it is not drawn at all", function () {
-      const diagnostics = lint(`A cartesian square\n${FIGURE}\n\nAfter.\n`);
-      assert.equal(diagnostics.length, 1);
-      assert.equal(diagnostics[0].severity, "error");
-      assert.equal(diagnostics[0].source, "latex-environment-lint");
+    it("recognizes a raw figure immediately after prose without a blank line", function () {
+      assert.deepEqual(lint(`A cartesian square\n${FIGURE}\nAfter.\n`), []);
     });
 
-    it("marks the \\begin line, which is the line the author must move", function () {
-      const view = viewFor(`A cartesian square\n${FIGURE}\n\nAfter.\n`);
-      const [diagnostic] = latexEnvironmentLintSource(view);
-      assert.equal(view.state.doc.lineAt(diagnostic.from).number, 2);
-      assert.equal(
-        view.state.doc.sliceString(diagnostic.from, diagnostic.to),
-        "\\begin{tikzcd}",
-      );
-    });
-
-    it("flags a folded tikzpicture too", function () {
-      const doc = "A diagram follows\n\\begin{tikzpicture}\n\\draw (0,0) -- (1,1);\n\\end{tikzpicture}\n\nAfter.\n";
-      assert.equal(lint(doc)[0].severity, "error");
-    });
-  });
-
-  describe("any other environment folded into its paragraph", function () {
-    it("is a warning, not an error: it still renders", function () {
-      const diagnostics = lint(`Consider the identity\n${ALIGN}\nwhich holds.\n`);
-      assert.equal(diagnostics.length, 1);
-      assert.equal(diagnostics[0].severity, "warning");
-      assert.equal(diagnostics[0].source, "latex-environment-lint");
-    });
-
-    it("warns for a non-math environment as well", function () {
-      const doc = "Some prose\n\\begin{center}\nhello\n\\end{center}\n\nAfter.\n";
-      const diagnostics = lint(doc);
-      assert.equal(diagnostics.length, 1);
-      assert.equal(diagnostics[0].severity, "warning");
-    });
-
-    it("never calls a rendering equation undrawn", function () {
-      const [diagnostic] = lint(`Consider the identity\n${ALIGN}\nwhich holds.\n`);
-      assert.equal(
-        /not be drawn|will not render|never appears/.test(diagnostic.message),
-        false,
-        "an equation that renders must not be described as missing",
-      );
+    it("recognizes an ordinary raw LaTeX block immediately after prose", function () {
+      const center = "\\begin{center}\nhello\n\\end{center}";
+      assert.deepEqual(lint(`Some prose\n${center}\nAfter.\n`), []);
     });
   });
 
@@ -180,20 +156,24 @@ describe("LaTeX environment linter", function () {
     });
   });
 
-  describe("documents with several", function () {
-    it("reports one diagnostic per folded environment", function () {
-      const doc = `First\n${FIGURE}\n\nSecond\n${ALIGN}\n\nThird\n\n${FIGURE}\n`;
+  describe("malformed raw environments", function () {
+    it("reports an unterminated figure opener as an error", function () {
+      const doc = "Before.\n\\begin{tikzpicture}\n\\draw (0,0) -- (1,1);\n";
       const diagnostics = lint(doc);
-      assert.equal(diagnostics.length, 2, "the third is separated and must not be flagged");
-      assert.deepEqual(
-        diagnostics.map((d) => d.severity),
-        ["error", "warning"],
-        "the figure is an error and the equation a warning, in document order",
-      );
+      assert.equal(diagnostics.length, 1);
+      assert.equal(diagnostics[0].severity, "error");
+      assert.equal(diagnostics[0].source, "latex-environment-lint");
+      assert.match(diagnostics[0].message, /matching \\end\{tikzpicture\}/);
     });
 
-    it("reports one diagnostic, not two, for an environment glued on both sides", function () {
-      assert.equal(lint(`Before\n${FIGURE}\nAfter.\n`).length, 1);
+    it("reports an unterminated non-figure raw environment as a warning", function () {
+      const diagnostics = lint("Before.\n\\begin{center}\ntext\n");
+      assert.equal(diagnostics.length, 1);
+      assert.equal(diagnostics[0].severity, "warning");
+    });
+
+    it("does not diagnose a math environment owned by the math parser", function () {
+      assert.deepEqual(lint(`Before.\n${ALIGN}\nAfter.\n`), []);
     });
   });
 });

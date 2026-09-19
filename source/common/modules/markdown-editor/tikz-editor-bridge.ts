@@ -15,21 +15,28 @@
  * END HEADER
  */
 
-import type { TikzSourceBlock } from './tikz-block'
+import { type TikzSourceBlock, tikzBlockHasContiguousSource } from "./tikz-block";
 
 export interface TikzEditorSourceSession {
-  kind: 'raw'|'fence'
-  blockFrom: number
-  blockTo: number
-  sourceFrom: number
-  sourceTo: number
+  kind: "raw" | "fence";
+  blockFrom: number;
+  blockTo: number;
+  sourceFrom: number;
+  sourceTo: number;
   /** Exact source bytes currently stored in [sourceFrom, sourceTo). */
-  source: string
+  source: string;
 }
 
-export function tikzEditorSessionForBlock (block: TikzSourceBlock): TikzEditorSourceSession {
-  if (block.language !== 'tikz') {
-    throw new Error(`tikz-editor sessions require ordinary TikZ source, received ${block.language}`)
+export function tikzEditorSessionForBlock(block: TikzSourceBlock): TikzEditorSourceSession {
+  if (block.language !== "tikz") {
+    throw new Error(
+      `tikz-editor sessions require ordinary TikZ source, received ${block.language}`,
+    );
+  }
+  if (!tikzBlockHasContiguousSource(block)) {
+    throw new Error(
+      "tikz-editor cannot rewrite a raw TikZ block whose semantic source crosses Markdown container markers",
+    );
   }
   return {
     kind: block.kind,
@@ -37,26 +44,26 @@ export function tikzEditorSessionForBlock (block: TikzSourceBlock): TikzEditorSo
     blockTo: block.to,
     sourceFrom: block.sourceFrom,
     sourceTo: block.sourceTo,
-    source: block.source
-  }
+    source: block.source,
+  };
 }
 
 export interface TikzEditorReplacement {
-  from: number
-  to: number
-  insert: string
-  next: TikzEditorSourceSession
+  from: number;
+  to: number;
+  insert: string;
+  next: TikzEditorSourceSession;
 }
 
 /**
  * Replace the exact CodeMirror-owned TikZ bytes with tikz-editor's source.
  * No trimming, wrapping, parsing, or normalization occurs at this boundary.
  */
-export function tikzEditorReplacement (
+export function tikzEditorReplacement(
   session: TikzEditorSourceSession,
-  source: string
+  source: string,
 ): TikzEditorReplacement {
-  const delta = source.length - session.source.length
+  const delta = source.length - session.source.length;
   return {
     from: session.sourceFrom,
     to: session.sourceTo,
@@ -65,7 +72,7 @@ export function tikzEditorReplacement (
       ...session,
       blockTo: session.blockTo + delta,
       sourceTo: session.sourceTo + delta,
-      source
-    }
-  }
+      source,
+    },
+  };
 }
