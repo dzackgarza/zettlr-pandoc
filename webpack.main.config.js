@@ -2,6 +2,7 @@ const CopyWebpackPlugin = require("copy-webpack-plugin");
 const { DefinePlugin } = require("webpack");
 const path = require("path");
 const rules = require("./webpack.rules");
+const isLocalPackage = process.env.ZETTLR_LOCAL_PACKAGE === "1";
 
 const externals = {};
 
@@ -18,6 +19,12 @@ module.exports = {
   // Main entry point: the file that runs in the main process
   entry: "./source/main.ts",
   mode: process.env.NODE_ENV === "production" ? "production" : "development",
+  optimization: {
+    // Local desktop rebuilds are launch artifacts, not distribution files.
+    // Preserve production semantics/tree-shaking while skipping the expensive
+    // minifier pass. Release and ordinary package builds remain minified.
+    minimize: !isLocalPackage,
+  },
   module: { rules },
   plugins: [
     new CopyWebpackPlugin({

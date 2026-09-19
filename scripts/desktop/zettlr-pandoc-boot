@@ -112,12 +112,13 @@ spin_until_app_up() {
     fi
 
     frame=${frames:frame_index++%${#frames}:1}
+    elapsed=$(( SECONDS - start ))
     line=$(
       tail -n 60 "$log" |
         sed $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g; s/\r//g' |
         awk 'NF { line=$0 } END { print line }'
     )
-    printf '\r\033[K   %s  %s  %.48s' "$frame" "$spinner_label" "$line"
+    printf '\r\033[K   %s  %s [%ss]  %.48s' "$frame" "$spinner_label" "$elapsed" "$line"
     sleep 0.12
   done
 }
@@ -186,12 +187,15 @@ if [[ -x "$packaged_binary" && -f "$stamp_file" ]] && [[ $(<"$stamp_file") == "$
 else
   printf '\n   Source changed \342\200\224 rebuilding \033[1mZettlr-Pandoc\033[0m before launch\n\n'
   tput civis >/dev/null 2>&1
+  spinner_label='Building local package & starting'
   # `just package` computes and writes the stamp itself, fingerprinting
   # BEFORE the build so a mid-build edit reads as stale on the next launch.
+  # This is a local launch artifact, not a release: skip JS minification, which
+  # otherwise dominates rebuild time across the 14 renderer entrypoints.
   debug_port="--remote-debugging-port=27413"
   setsid sh -c '
     repo="$1"; binary="$2"; debug="$3"; shift 3
-    cd -- "$repo" && just package && exec "$binary" "$debug" "$@"
+    cd -- "$repo" && ZETTLR_LOCAL_PACKAGE=1 just package && exec "$binary" "$debug" "$@"
   ' sh "$repo" "$packaged_binary" "$debug_port" "$@" \
     >>"$log" 2>&1 </dev/null &
   launch_pid=$!

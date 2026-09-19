@@ -1,36 +1,42 @@
-const rules = require('./webpack.rules')
-const CopyWebpackPlugin = require('copy-webpack-plugin')
-const TerserPlugin = require('terser-webpack-plugin')
-const path = require('path')
+const rules = require("./webpack.rules");
+const CopyWebpackPlugin = require("copy-webpack-plugin");
+const TerserPlugin = require("terser-webpack-plugin");
+const path = require("path");
 
-const { VueLoaderPlugin } = require('vue-loader')
-const { DefinePlugin } = require('webpack')
-const isE2E = process.env.ZETTLR_E2E === '1'
+const { VueLoaderPlugin } = require("vue-loader");
+const { DefinePlugin } = require("webpack");
+const isE2E = process.env.ZETTLR_E2E === "1";
+const isLocalPackage = process.env.ZETTLR_LOCAL_PACKAGE === "1";
 
 const plugins = [
   // Apply webpack rules to the corresponding language blocks in .vue files
   new VueLoaderPlugin(),
   new CopyWebpackPlugin({
-    patterns: [{
-      from: 'node_modules/@mathjax/mathjax-newcm-font/chtml/woff2',
-      to: 'mathjax'
-    }, {
-      from: 'node_modules/@mathjax/mathjax-mhchem-font-extension/chtml/woff2',
-      to: 'mathjax'
-    }, {
-      // Quiver is a forked, vendored dependency. Keep its complete editor DOM,
-      // CSS, icons and local KaTeX distribution isolated under the main
-      // renderer rather than rebundling/reimplementing that interface in Vue.
-      from: 'vendor/quiver/src',
-      to: 'main_window/quiver',
-      globOptions: { ignore: ['**/tests/**'] }
-    }, {
-      // Ordinary TikZ visual editing is delegated to the pinned vendored
-      // tikz-editor fork. Its React/editor runtime stays isolated in an iframe
-      // exactly as Quiver does instead of entering Zettlr's Vue bundle.
-      from: 'vendor/tikz-editor/src',
-      to: 'main_window/tikz-editor'
-    }]
+    patterns: [
+      {
+        from: "node_modules/@mathjax/mathjax-newcm-font/chtml/woff2",
+        to: "mathjax",
+      },
+      {
+        from: "node_modules/@mathjax/mathjax-mhchem-font-extension/chtml/woff2",
+        to: "mathjax",
+      },
+      {
+        // Quiver is a forked, vendored dependency. Keep its complete editor DOM,
+        // CSS, icons and local KaTeX distribution isolated under the main
+        // renderer rather than rebundling/reimplementing that interface in Vue.
+        from: "vendor/quiver/src",
+        to: "main_window/quiver",
+        globOptions: { ignore: ["**/tests/**"] },
+      },
+      {
+        // Ordinary TikZ visual editing is delegated to the pinned vendored
+        // tikz-editor fork. Its React/editor runtime stays isolated in an iframe
+        // exactly as Quiver does instead of entering Zettlr's Vue bundle.
+        from: "vendor/tikz-editor/src",
+        to: "main_window/tikz-editor",
+      },
+    ],
   }),
 
   // Set a few Vue 3 options; see: http://link.vuejs.org/feature-flags
@@ -43,21 +49,27 @@ const plugins = [
     // the string itself. Typically, this is done either with alternate quotes,
     // such as '"production"', or by using JSON.stringify('production')."
     __GIT_COMMIT_HASH__: JSON.stringify(process.env.GIT_COMMIT_HASH),
-    __BUILD_DATE__: JSON.stringify((new Date()).toISOString()),
-    __UPDATES_DISABLED__: JSON.stringify(process.env.ZETTLR_DISABLE_UPDATE_CHECK !== undefined ? '1' : '0')
-  })
-]
+    __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
+    __UPDATES_DISABLED__: JSON.stringify(
+      process.env.ZETTLR_DISABLE_UPDATE_CHECK !== undefined ? "1" : "0",
+    ),
+  }),
+];
 
 rules.push({
   test: /\.less$/,
-  use: [{
-    loader: 'style-loader' // Create style nodes from JS strings
-  }, {
-    loader: 'css-loader' // Translate CSS into JS string
-  }, {
-    loader: 'less-loader' // Compile Less to CSS
-  }]
-})
+  use: [
+    {
+      loader: "style-loader", // Create style nodes from JS strings
+    },
+    {
+      loader: "css-loader", // Translate CSS into JS string
+    },
+    {
+      loader: "less-loader", // Compile Less to CSS
+    },
+  ],
+});
 
 module.exports = {
   module: { rules },
@@ -69,41 +81,42 @@ module.exports = {
   // variables must be set, which we're doing using cross-env in package.json.
   // E2E runs inspect the real browser, not compiler source maps. Omitting
   // those maps keeps repeated cold launches within the test machine's memory.
-  devtool: (process.env.NODE_ENV === 'production' || isE2E)
-    ? false
-    : 'source-map',
+  devtool: process.env.NODE_ENV === "production" || isE2E ? false : "source-map",
   optimization: {
+    // The installed desktop launcher needs a runnable packaged app, not a
+    // release artifact. Minifying all 14 renderer entrypoints with Terser was
+    // measured at ~5 minutes on this workstation even with two workers. Keep
+    // release/`just package` output minified, but let the explicit local
+    // package profile skip this pure distribution-size optimization.
+    minimize: !isLocalPackage,
     // terser-webpack-plugin defaults to os.cpus().length - 1 workers, and
     // jest-worker runs them as THREADS, so every worker's V8 heap counts toward
     // the one webpack process's RSS: measured 7737 MiB peak across 14 renderer
     // entries on a 12-core machine. That is what earlyoom kills mid-build,
     // leaving forge to report the signal death as exit 0. Output is unchanged —
     // only how many chunks are minified at once.
-    minimizer: [new TerserPlugin({ parallel: 2 })]
+    minimizer: [new TerserPlugin({ parallel: 2 })],
   },
   plugins,
   resolve: {
-    extensions: [
-      '.js', '.ts', '.jsx', '.tsx',
-      '.css', '.less', '.vue'
-    ],
+    extensions: [".js", ".ts", ".jsx", ".tsx", ".css", ".less", ".vue"],
     alias: {
-      source: [path.resolve(__dirname, 'source')],
-      '@common': [path.resolve(__dirname, 'source/common')],
-      '@providers': [path.resolve(__dirname, 'source/app/service-providers')],
-      '@dts': [path.resolve(__dirname, 'source/types')],
+      source: [path.resolve(__dirname, "source")],
+      "@common": [path.resolve(__dirname, "source/common")],
+      "@providers": [path.resolve(__dirname, "source/app/service-providers")],
+      "@dts": [path.resolve(__dirname, "source/types")],
       // fzf publishes `"type": "module"` yet routes require() to a UMD file,
       // which webpack then parses as an ESM file with zero exports. Since
       // ts-loader emits CommonJS (tsconfig `module`), `import { Fzf }` becomes
       // exactly such a require. Point the bare specifier straight at the ES
       // build (the package's exports map blocks deep imports, an alias does
       // not) so webpack's interop serves the real named exports.
-      fzf: path.resolve(__dirname, 'node_modules/fzf/dist/fzf.es.js')
+      fzf: path.resolve(__dirname, "node_modules/fzf/dist/fzf.es.js"),
     },
     fallback: {
       // Don't polyfill these modules
       path: false,
-      fs: false
-    }
-  }
-}
+      fs: false,
+    },
+  },
+};

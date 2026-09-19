@@ -270,7 +270,9 @@ def verify_artifact(build_out: str = "", build_err: str = "") -> None:
 
 
 def build_and_verify() -> None:
-    print(f"[verify-build] running production build (timeout {BUILD_TIMEOUT_S}s)...")
+    local_package = os.environ.get("ZETTLR_LOCAL_PACKAGE") == "1"
+    profile = "local unminified package" if local_package else "production build"
+    print(f"[verify-build] running {profile} (timeout {BUILD_TIMEOUT_S}s)...")
     fingerprint = source_fingerprint()
     electron_zip_dir = electron_packager_zip_dir()
     start = time.time_ns()
