@@ -25,6 +25,7 @@ import type {
   FigureFileResponse,
   FigureListResponse,
   FigureSearchResponse,
+  LintResponse,
   MacroInventoryResponse,
   ReadDocumentResponse,
 } from "@dts/common/agent-api";
@@ -417,8 +418,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const macroRoot = path.join(authoringHome, ".pandoc", "styles", "macros");
     const mathJaxRoot = path.join(authoringHome, ".pandoc", "templates", "css");
+    const templateRoot = path.join(authoringHome, ".pandoc", "templates");
     mkdirSync(path.join(macroRoot, "nested"), { recursive: true });
     mkdirSync(mathJaxRoot, { recursive: true });
+    mkdirSync(templateRoot, { recursive: true });
     writeFileSync(
       path.join(macroRoot, "tier1.tex"),
       ["\\newcommand{\\ZZ}{\\mathbb{Z}}", "\\DeclareMathOperator{\\Spec}{Spec}", ""].join("\n"),
@@ -430,6 +433,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     writeFileSync(
       path.join(mathJaxRoot, "mathjax-macros.json"),
       JSON.stringify({ ZZ: "\\mathbb{Z}", Spec: "\\operatorname{Spec}" }),
+    );
+    writeFileSync(
+      path.join(templateRoot, "standalone-tikz.tex"),
+      "\\documentclass{standalone}\n\\begin{document}\n$body$\n\\end{document}\n",
     );
 
     mkdirSync(path.join(figuresRoot, "diagrams"), { recursive: true });
@@ -457,6 +464,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
               port: 0,
             },
             tikz: {
+              dataDir: path.join(__dirname, "../static/tikz"),
               figuresDir: figuresRoot,
             },
           }),
@@ -1340,6 +1348,108 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const missing = await httpRequest("GET", "/v1/figures/content?path=missing.tikz");
     assert.equal(missing.status, 404, missing.body);
     assert.equal((JSON.parse(missing.body) as AgentErrorResponse).error.code, "FIGURE_NOT_FOUND");
+  });
+
+  it("lints focused, open, document, workspace, and all-workspace scopes over authoritative text", async function () {
+    const focusedPath = path.join(scratch, "lint-focused.md");
+    const otherOpenPath = path.join(scratch, "lint-open.md");
+    const closedPath = path.join(scratch, "lint-closed.md");
+    const focusedId = await openFile(focusedPath, "$\\DefinitelyMissing$\n\nTODO\n");
+    await openFile(otherOpenPath, "A clean open document.\n");
+    writeFileSync(closedPath, "???\n", "utf8");
+
+    const windowId = provider.windowKeys()[0];
+    const leafId = provider.leafIds(windowId)[0];
+    assert.ok(leafId !== undefined);
+    assert.equal(await provider.openFile(windowId, leafId, focusedPath), true);
+
+    const focused = await httpRequest("GET", "/v1/lint");
+    assert.equal(focused.status, 200, focused.body);
+    const focusedPayload = JSON.parse(focused.body) as LintResponse;
+    assertMatchesSchema(focusedPayload, "LintResponse");
+    assert.equal(focusedPayload.scope, "focused");
+    assert.deepEqual(
+      focusedPayload.documents.map((document) => document.documentId),
+      [focusedId],
+    );
+    assert.ok(
+      focusedPayload.documents[0].diagnostics.some(
+        (diagnostic) =>
+          diagnostic.source === "scholarly-lint" &&
+          diagnostic.message.includes("DefinitelyMissing"),
+      ),
+      focused.body,
+    );
+    assert.ok(focusedPayload.documents[0].diagnostics.some((diagnostic) => diagnostic.line >= 1));
+
+    const open = await httpRequest("GET", "/v1/lint?scope=open");
+    assert.equal(open.status, 200, open.body);
+    const openPayload = JSON.parse(open.body) as LintResponse;
+    assert.ok(openPayload.documents.some((document) => document.path === focusedPath));
+    assert.ok(openPayload.documents.some((document) => document.path === otherOpenPath));
+
+    const workspaceFiles = JSON.parse((await httpRequest("GET", "/v1/workspace/files")).body) as {
+      files: Array<{ documentId: string; path: string }>;
+    };
+    const closedId = workspaceFiles.files.find((file) => file.path === closedPath)?.documentId;
+    assert.ok(closedId !== undefined);
+
+    const document = await httpRequest(
+      "GET",
+      `/v1/lint?scope=document&documentId=${encodeURIComponent(closedId)}`,
+    );
+    assert.equal(document.status, 200, document.body);
+    const documentPayload = JSON.parse(document.body) as LintResponse;
+    assert.equal(documentPayload.documents.length, 1);
+    assert.equal(documentPayload.documents[0].path, closedPath);
+    assert.equal(documentPayload.documents[0].open, false);
+    assert.ok(
+      documentPayload.documents[0].diagnostics.some((diagnostic) =>
+        diagnostic.message.includes("???"),
+      ),
+    );
+
+    const workspace = await httpRequest(
+      "GET",
+      `/v1/lint?scope=workspace&workspaceId=${encodeURIComponent(scratch)}`,
+    );
+    assert.equal(workspace.status, 200, workspace.body);
+    const workspacePayload = JSON.parse(workspace.body) as LintResponse;
+    assert.ok(workspacePayload.documents.some((item) => item.path === closedPath));
+    assert.ok(workspacePayload.documents.some((item) => item.path === focusedPath));
+
+    const all = await httpRequest("GET", "/v1/lint?scope=all");
+    assert.equal(all.status, 200, all.body);
+    const allPayload = JSON.parse(all.body) as LintResponse;
+    assert.deepEqual(
+      new Set(allPayload.documents.map((item) => item.path)),
+      new Set(workspacePayload.documents.map((item) => item.path)),
+    );
+
+    const warningsOnly = await httpRequest(
+      "GET",
+      `/v1/lint?scope=document&documentId=${encodeURIComponent(focusedId)}&minimumSeverity=warning`,
+    );
+    assert.equal(warningsOnly.status, 200, warningsOnly.body);
+    const warningsPayload = JSON.parse(warningsOnly.body) as LintResponse;
+    assert.ok(warningsPayload.documents[0].diagnostics.length > 0);
+    assert.ok(
+      warningsPayload.documents[0].diagnostics.every(
+        (diagnostic) => diagnostic.severity !== "info",
+      ),
+    );
+  });
+
+  it("validates lint scope parameters instead of silently broadening the requested scope", async function () {
+    const missingDocument = await httpRequest("GET", "/v1/lint?scope=document");
+    assert.equal(missingDocument.status, 400, missingDocument.body);
+    const missingWorkspace = await httpRequest("GET", "/v1/lint?scope=workspace");
+    assert.equal(missingWorkspace.status, 400, missingWorkspace.body);
+    const unknownWorkspace = await httpRequest(
+      "GET",
+      `/v1/lint?scope=workspace&workspaceId=${encodeURIComponent(path.join(scratch, "missing"))}`,
+    );
+    assert.equal(unknownWorkspace.status, 404, unknownWorkspace.body);
   });
 
   describe("request body lifecycle", function () {

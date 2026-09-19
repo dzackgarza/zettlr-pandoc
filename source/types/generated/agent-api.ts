@@ -717,6 +717,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/lint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lint documents by editor/workspace scope
+         * @description Runs the document lint stack over authoritative working text. focused checks the focused Markdown document; open checks all open Markdown documents; document checks one documentId; workspace checks one configured workspace; all checks every Markdown document in every configured workspace.
+         */
+        get: operations["lintDocuments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1307,6 +1327,44 @@ export interface components {
             query: string;
             hits: components["schemas"]["FigureSearchHit"][];
             truncated: boolean;
+        };
+        LintSeverityCounts: {
+            error: number;
+            warning: number;
+            info: number;
+        };
+        LintDiagnostic: {
+            /** @description UTF-16 source offset of the diagnostic start. */
+            from: number;
+            /** @description UTF-16 source offset immediately after the diagnostic. */
+            to: number;
+            line: number;
+            column: number;
+            endLine: number;
+            endColumn: number;
+            /** @enum {string} */
+            severity: "error" | "warning" | "info";
+            message: string;
+            source: string;
+            rule?: string;
+        };
+        DocumentLintResult: {
+            documentId: string;
+            path: string;
+            name: string;
+            open: boolean;
+            focused: boolean;
+            revision: components["schemas"]["DocumentRevision"];
+            diagnostics: components["schemas"]["LintDiagnostic"][];
+            counts: components["schemas"]["LintSeverityCounts"];
+        };
+        LintResponse: {
+            /** @enum {string} */
+            scope: "focused" | "open" | "document" | "workspace" | "all";
+            documents: components["schemas"]["DocumentLintResult"][];
+            documentCount: number;
+            diagnosticCount: number;
+            counts: components["schemas"]["LintSeverityCounts"];
         };
     };
     responses: never;
@@ -2586,6 +2644,61 @@ export interface operations {
                 };
             };
             /** @description The figure file could not be persisted. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    lintDocuments: {
+        parameters: {
+            query?: {
+                scope?: "focused" | "open" | "document" | "workspace" | "all";
+                /** @description Required when scope=document. */
+                documentId?: string;
+                /** @description Required when scope=workspace; this is the workspace path returned by /v1/workspaces. */
+                workspaceId?: string;
+                /** @description Filters returned diagnostics while preserving document selection. */
+                minimumSeverity?: "info" | "warning" | "error";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lint diagnostics grouped by document with aggregate counts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LintResponse"];
+                };
+            };
+            /** @description The selected scope is missing its required document or workspace id. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description The requested document, workspace, or focused document was not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description A selected document could not be linted. */
             500: {
                 headers: {
                     [name: string]: unknown;

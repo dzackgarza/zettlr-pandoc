@@ -15,6 +15,7 @@ import {
 } from "@codemirror/autocomplete";
 import type { MathJaxMacro } from "@common/util/mathjax-config";
 import { mathJaxCompletionCatalogue } from "@common/util/mathtex-to-html";
+import { standardTexControlWords } from "@common/util/standard-tex-control-words";
 import latexWorkshopCommands from "../../../../../static/autocomplete/latex-workshop-commands.json";
 import latexWorkshopEnvironments from "../../../../../static/autocomplete/latex-workshop-environments.json";
 import { tikzBlockAt } from "../tikz-block";
@@ -258,7 +259,7 @@ const STANDARD_ENVIRONMENT_OPTIONS = latexEnvironmentOptions();
 export async function knownTexControlWords(): Promise<ReadonlySet<string>> {
   if (knownTexControlWordPromise === null) {
     knownTexControlWordPromise = (async () => {
-      const commands = new Set(STANDARD_LATEX_OPTIONS.map((option) => option.label));
+      const commands = new Set(standardTexControlWords());
       for (const label of mathJaxCompletionCatalogue().commands) {
         commands.add(label);
       }

@@ -32,6 +32,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { strict as assert } from "assert";
 import type { TikzRenderRequest, TikzRenderResult } from "source/app/util/tikz-render";
+import { tikzCompileLintSource } from "source/common/modules/markdown-editor/linters/tikz-compile-lint";
 import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   __resetTikzRenderMemoForTests,
@@ -498,6 +499,37 @@ describe("TikZ editor widgets (issue #14)", function () {
       !failedFigure.classList.contains("tikz-rendered"),
       "compile diagnostics do not inherit the successful edit-target surface",
     );
+  });
+
+  it("reports a failed TikZ compilation as an immediate CodeMirror lint error", async function () {
+    respond = (request) =>
+      request.kind === "raw"
+        ? {
+            ok: false,
+            kind: "compile-error",
+            errors: [
+              {
+                line: 2,
+                message: "Undefined control sequence.",
+                sourceLine: "A \\arrow[r] & B \\nope",
+              },
+            ],
+            log: "! Undefined control sequence.\n",
+          }
+        : {
+            ok: true,
+            html: `<div><span>${SVG_OK}</span></div>`,
+            svg: SVG_OK,
+            svgPath: "/cache/x.svg",
+            texFontSizePt: 10,
+          };
+    const view = createEditor();
+    const diagnostics = await tikzCompileLintSource(view);
+    const compile = diagnostics.find((diagnostic) => diagnostic.source === "tikz-compile");
+    assert.ok(compile !== undefined);
+    assert.equal(compile.severity, "error");
+    assert.match(compile.message, /Undefined control sequence/u);
+    assert.equal(view.state.doc.lineAt(compile.from).number, 4);
   });
 
   it("surfaces the real compiler log when a compile failure has no mapped source-line diagnostic", async function () {

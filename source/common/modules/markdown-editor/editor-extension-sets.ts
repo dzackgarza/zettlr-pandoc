@@ -51,6 +51,7 @@ import { mdLint } from "./linters/md-lint";
 import { referenceLint } from "./linters/reference-lint";
 import { scholarlyLint } from "./linters/scholarly-lint";
 import { spellcheck } from "./linters/spellcheck";
+import { tikzCompileLint } from "./linters/tikz-compile-lint";
 import { yamlFrontmatterLint } from "./linters/yaml-frontmatter-lint";
 import markdownParser from "./parser/markdown-parser";
 import { backgroundLayers } from "./plugins/code-background";
@@ -326,6 +327,11 @@ export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[
     // than standing alone (a warning). Always active, for the same reason
     // referenceLint is.
     latexEnvironmentLint,
+    // A source block which the live renderer cannot compile is a document
+    // correctness error at the authored TikZ line. The renderer and this lint
+    // source share one request memo, so immediate feedback does not duplicate
+    // compilation work while the figure widget is rendering.
+    tikzCompileLint,
   ];
 
   if (options.initialConfig.lintMarkdown) {

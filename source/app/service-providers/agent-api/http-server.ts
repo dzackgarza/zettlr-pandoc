@@ -21,6 +21,11 @@
  * END HEADER
  */
 
+import { hasMarkdownExt } from "@common/util/file-extention-checks";
+import {
+  getBibliographyForDescriptor,
+  resolveProjectContextForDescriptor,
+} from "@common/util/get-bibliography-for-descriptor";
 import { sha256Text } from "@common/util/sha256";
 import type {
   AddAnnotationMessageRequest,
@@ -32,6 +37,9 @@ import type {
   AgentErrorResponse,
   AgentEvent,
   FigureWriteRequest,
+  LintDiagnostic,
+  LintResponse,
+  LintSeverityCounts,
   PingResponse,
   ReadSide,
   RenderBibliographyRequest,
@@ -44,6 +52,8 @@ import type {
   SubmitProposalRequest,
 } from "@dts/common/agent-api";
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
+import type { CitationDatabase } from "@dts/common/citeproc";
+import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type CiteprocProvider from "@providers/citeproc";
 import { CiteprocRenderInvariantError } from "@providers/citeproc";
 import type DocumentManager from "@providers/documents";
@@ -58,8 +68,10 @@ import {
   sidecarUnresolvedChunks,
   toWirePacket,
 } from "@providers/documents/review-diff-store";
+import type FSAL from "@providers/fsal";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
+import type { WorkspaceReferenceState } from "@providers/references/reference-index";
 import crypto from "crypto";
 import { app } from "electron";
 import { get as levenshteinDistance } from "fast-levenshtein";
@@ -78,7 +90,9 @@ import {
   searchCentralFigures,
   writeCentralFigure,
 } from "../../util/central-figures-store";
+import { createDocumentLintContext, lintDocumentText } from "../../util/document-lint";
 import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
+import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
 import AgentDocumentQueries, { SearchPatternError, SearchTimeoutError } from "./document-queries";
 
 export { MAX_SEARCH_HITS } from "./document-queries";
@@ -246,9 +260,12 @@ export interface AgentApiHost {
     get: () => {
       agentApi?: { enabled: boolean; port: number };
       app: { openWorkspaces: string[] };
-      tikz?: { figuresDir: string };
+      tikz?: { dataDir?: string; figuresDir?: string };
     };
   };
+  references?: { getSnapshot(): WorkspaceReferenceState };
+  citeproc?: Pick<CiteprocProvider, "getItems">;
+  fsal?: Pick<FSAL, "getDescriptorFor" | "getAnyDirectoryDescriptor">;
 }
 
 export interface AgentApiRuntimeEnvironment {
@@ -759,6 +776,8 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => this.handleWriteFigure(res, c.request.query.path, c.request.requestBody),
+      lintDocuments: (c: OperationContext<"lintDocuments">, _req, res: http.ServerResponse) =>
+        this.handleLintDocuments(res, c.request.query),
 
       /**
        * The document decided the request was malformed. Its Ajv errors name
@@ -1786,6 +1805,253 @@ export default class AgentHTTPProvider extends ProviderContract {
         res,
         500,
         "PERSISTENCE_FAILED",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async lintDocumentAuthorityContext(
+    documentPath: string,
+  ): Promise<{ citationKeys: ReadonlySet<string> | null; projectRoots: string[] }> {
+    const provider = this._citeproc ?? this._app.citeproc;
+    let projectRoots: string[] = [];
+    let database: CitationDatabase = CITEPROC_MAIN_DB;
+    try {
+      if (this._app.fsal !== undefined) {
+        const descriptor = await this._app.fsal.getDescriptorFor(documentPath);
+        if (descriptor?.type === "file") {
+          const projectContext = await resolveProjectContextForDescriptor(
+            descriptor,
+            new Map(),
+            async (dirPath) => await this._app.fsal!.getAnyDirectoryDescriptor(dirPath),
+          );
+          if (projectContext !== null) {
+            projectRoots = [projectContext.rootPath];
+          }
+          database = getBibliographyForDescriptor(descriptor, projectContext?.project ?? null);
+        }
+      }
+      return {
+        citationKeys:
+          provider === undefined
+            ? null
+            : new Set(provider.getItems(database).map((item) => item.id)),
+        projectRoots,
+      };
+    } catch {
+      return { citationKeys: null, projectRoots };
+    }
+  }
+
+  private static lintCounts(diagnostics: readonly LintDiagnostic[]): LintSeverityCounts {
+    const counts: LintSeverityCounts = { error: 0, warning: 0, info: 0 };
+    for (const diagnostic of diagnostics) {
+      counts[diagnostic.severity] += 1;
+    }
+    return counts;
+  }
+
+  private static lintPosition(text: string, offset: number): { line: number; column: number } {
+    const bounded = Math.max(0, Math.min(offset, text.length));
+    let line = 1;
+    let lineStart = 0;
+    for (let index = 0; index < bounded; index += 1) {
+      if (text[index] === "\n") {
+        line += 1;
+        lineStart = index + 1;
+      }
+    }
+    return { line, column: bounded - lineStart + 1 };
+  }
+
+  private async handleLintDocuments(
+    res: http.ServerResponse,
+    query: NonNullable<AgentApiOperations["lintDocuments"]["parameters"]["query"]>,
+  ): Promise<void> {
+    const scope = query.scope ?? "focused";
+    const context = await this._queries.getContext();
+    const focusedDocumentId = context.focusedDocument?.documentId;
+    type Target = {
+      documentId: string;
+      path: string;
+      name: string;
+      open: boolean;
+      focused: boolean;
+    };
+    let targets: Target[] = [];
+
+    try {
+      if (scope === "focused") {
+        if (context.focusedDocument === undefined) {
+          this.sendError(res, 404, "NO_FOCUSED_DOCUMENT", "No document is focused");
+          return;
+        }
+        if (context.focusedDocument.type !== "markdown") {
+          this.sendError(res, 400, "INVALID_PARAMS", "The focused document is not Markdown");
+          return;
+        }
+        targets = [
+          {
+            documentId: context.focusedDocument.documentId,
+            path: context.focusedDocument.path,
+            name: context.focusedDocument.name,
+            open: true,
+            focused: true,
+          },
+        ];
+      } else if (scope === "open") {
+        targets = context.openDocuments
+          .filter((document) => document.type === "markdown")
+          .map((document) => ({
+            documentId: document.documentId,
+            path: document.path,
+            name: document.name,
+            open: true,
+            focused: document.documentId === focusedDocumentId,
+          }));
+      } else {
+        const workspaceFiles = await this._queries.listWorkspaceFiles();
+        if (scope === "document") {
+          if (query.documentId === undefined || query.documentId === "") {
+            this.sendError(res, 400, "INVALID_PARAMS", "scope=document requires documentId");
+            return;
+          }
+          const open = context.openDocuments.find(
+            (document) => document.documentId === query.documentId,
+          );
+          const workspaceFile = workspaceFiles.find((file) => file.documentId === query.documentId);
+          if (open === undefined && workspaceFile === undefined) {
+            this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
+            return;
+          }
+          const documentPath = open?.path ?? workspaceFile!.path;
+          if (!hasMarkdownExt(documentPath)) {
+            this.sendError(res, 400, "INVALID_PARAMS", "The requested document is not Markdown");
+            return;
+          }
+          targets = [
+            {
+              documentId: query.documentId,
+              path: documentPath,
+              name: open?.name ?? workspaceFile!.name,
+              open: open !== undefined || workspaceFile?.open === true,
+              focused: query.documentId === focusedDocumentId,
+            },
+          ];
+        } else {
+          if (scope === "workspace") {
+            if (query.workspaceId === undefined || query.workspaceId === "") {
+              this.sendError(res, 400, "INVALID_PARAMS", "scope=workspace requires workspaceId");
+              return;
+            }
+            if (
+              !this._queries
+                .listWorkspaces()
+                .some((workspace) => workspace.workspaceId === query.workspaceId)
+            ) {
+              this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
+              return;
+            }
+          }
+          const selected =
+            scope === "workspace"
+              ? workspaceFiles.filter((file) => file.workspaceId === query.workspaceId)
+              : workspaceFiles;
+          const seen = new Set<string>();
+          targets = selected
+            .filter((file) => hasMarkdownExt(file.path))
+            .filter((file) => {
+              if (seen.has(file.path)) {
+                return false;
+              }
+              seen.add(file.path);
+              return true;
+            })
+            .map((file) => ({
+              documentId: file.documentId,
+              path: file.path,
+              name: file.name,
+              open: file.open,
+              focused: file.documentId === focusedDocumentId,
+            }));
+        }
+      }
+
+      const runtimeEnv = this._runtimeEnvironment?.env ?? process.env;
+      const tikzConfig = this._app.config.get().tikz;
+      const lintContext = await createDocumentLintContext({
+        homeDirectory: this.authoringHomeDirectory(),
+        env: runtimeEnv,
+        referenceState: this._app.references?.getSnapshot(),
+        citationKeys: null,
+        tikzRenderConfig: resolveTikzRenderConfig(
+          tikzConfig?.dataDir ?? "",
+          tikzConfig?.figuresDir ?? "",
+          this.authoringHomeDirectory(),
+          app.getPath("userData"),
+          runtimeEnv,
+        ),
+      });
+      const severityWeight = { info: 0, warning: 1, error: 2 } as const;
+      const minimum = query.minimumSeverity ?? "info";
+      const documents: LintResponse["documents"] = [];
+
+      for (const target of targets) {
+        const read = await this._queries.readDocumentContent(
+          target.documentId,
+          "working",
+          1,
+          Number.MAX_SAFE_INTEGER,
+        );
+        if (read === undefined || read === "OUTSIDE_WORKSPACE") {
+          throw new Error(`Could not read selected lint document ${target.path}`);
+        }
+        const authorityContext = await this.lintDocumentAuthorityContext(target.path);
+        const sourceDiagnostics = await lintDocumentText(
+          read.content,
+          target.path,
+          lintContext,
+          authorityContext,
+        );
+        const diagnostics: LintDiagnostic[] = sourceDiagnostics
+          .filter((diagnostic) => severityWeight[diagnostic.severity] >= severityWeight[minimum])
+          .map((diagnostic) => {
+            const start = AgentHTTPProvider.lintPosition(read.content, diagnostic.from);
+            const end = AgentHTTPProvider.lintPosition(read.content, diagnostic.to);
+            return {
+              from: diagnostic.from,
+              to: diagnostic.to,
+              line: start.line,
+              column: start.column,
+              endLine: end.line,
+              endColumn: end.column,
+              severity: diagnostic.severity,
+              message: diagnostic.message,
+              source: diagnostic.source,
+              ...(diagnostic.rule === undefined ? {} : { rule: diagnostic.rule }),
+            };
+          });
+        documents.push({
+          ...target,
+          revision: read.revision,
+          diagnostics,
+          counts: AgentHTTPProvider.lintCounts(diagnostics),
+        });
+      }
+
+      const allDiagnostics = documents.flatMap((document) => document.diagnostics);
+      this.sendJson(res, 200, {
+        scope,
+        documents,
+        documentCount: documents.length,
+        diagnosticCount: allDiagnostics.length,
+        counts: AgentHTTPProvider.lintCounts(allDiagnostics),
+      });
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
         error instanceof Error ? error.message : String(error),
       );
     }

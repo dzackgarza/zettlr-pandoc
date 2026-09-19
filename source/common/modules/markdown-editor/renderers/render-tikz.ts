@@ -31,10 +31,11 @@ import { EditorView, WidgetType } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
 import { tikzCompilerLogExcerpt } from "@common/util/tikz-compiler-log";
 import { type SyntaxNodeRef } from "@lezer/common";
-import type { TikzRenderRequest, TikzRenderResult } from "source/app/util/tikz-render";
+import type { TikzRenderResult } from "source/app/util/tikz-render";
 import type { TikzSourceBlock } from "../tikz-block";
 import { tikzBlockForNode } from "../tikz-block";
 import { tikzWidthEm } from "../tikz-display-size";
+import { requestTikzRender } from "../tikz-render-client";
 import { configField } from "../util/configuration";
 import { renderBlockWidgets } from "./base-renderer";
 
@@ -45,38 +46,7 @@ import { renderBlockWidgets } from "./base-renderer";
  * rerender invisible when the caret later leaves the block and this inline
  * widget returns.
  */
-let renderMemo = new Map<string, Promise<TikzRenderResult>>();
-
-/** Test seam: clears the session memo so seam stubs see every request. */
-export function __resetTikzRenderMemoForTests(): void {
-  renderMemo = new Map();
-}
-
-function requestRender(request: TikzRenderRequest): Promise<TikzRenderResult> {
-  // docPath is semantically part of the render: relative \input{…} resolves
-  // from it. Two panes with byte-identical source but different document
-  // roots therefore must never share even an in-flight request.
-  const key = `${request.kind}\0${request.language}\0${request.docPath}\0${request.source}`;
-  const memoized = renderMemo.get(key);
-  if (memoized !== undefined) {
-    return memoized;
-  }
-  const pending: Promise<TikzRenderResult> = window.ipc.invoke("application", {
-    command: "tikz-render",
-    payload: request,
-  });
-  renderMemo.set(key, pending);
-  const clear = (): void => {
-    if (renderMemo.get(key) === pending) {
-      renderMemo.delete(key);
-    }
-  };
-  // Both handlers return void, so this cleanup chain resolves even when the
-  // IPC promise rejects; using .finally() here would create a second rejected
-  // promise with nobody to observe it.
-  void pending.then(clear, clear);
-  return pending;
-}
+export { __resetTikzRenderMemoForTests } from "../tikz-render-client";
 
 /**
  * Turns the render service's figure markup into the nodes to mount.
@@ -277,7 +247,7 @@ class TikzWidget extends WidgetType {
     // its absence is a wiring defect and reads as one.
     const docPath = view.state.field(configField).metadata.path;
     const editTitle = "Click to edit TikZ source";
-    requestRender({
+    requestTikzRender({
       source: this.block.source,
       kind: this.block.kind,
       language: this.block.language,

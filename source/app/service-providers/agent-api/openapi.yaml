@@ -1725,6 +1725,130 @@ components:
             $ref: '#/components/schemas/FigureSearchHit'
         truncated:
           type: boolean
+    LintSeverityCounts:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+        - warning
+        - info
+      properties:
+        error:
+          type: integer
+          minimum: 0
+        warning:
+          type: integer
+          minimum: 0
+        info:
+          type: integer
+          minimum: 0
+    LintDiagnostic:
+      type: object
+      additionalProperties: false
+      required:
+        - from
+        - to
+        - line
+        - column
+        - endLine
+        - endColumn
+        - severity
+        - message
+        - source
+      properties:
+        from:
+          type: integer
+          minimum: 0
+          description: UTF-16 source offset of the diagnostic start.
+        to:
+          type: integer
+          minimum: 0
+          description: UTF-16 source offset immediately after the diagnostic.
+        line:
+          type: integer
+          minimum: 1
+        column:
+          type: integer
+          minimum: 1
+        endLine:
+          type: integer
+          minimum: 1
+        endColumn:
+          type: integer
+          minimum: 1
+        severity:
+          type: string
+          enum:
+            - error
+            - warning
+            - info
+        message:
+          type: string
+        source:
+          type: string
+        rule:
+          type: string
+    DocumentLintResult:
+      type: object
+      additionalProperties: false
+      required:
+        - documentId
+        - path
+        - name
+        - open
+        - focused
+        - revision
+        - diagnostics
+        - counts
+      properties:
+        documentId:
+          type: string
+        path:
+          type: string
+        name:
+          type: string
+        open:
+          type: boolean
+        focused:
+          type: boolean
+        revision:
+          $ref: '#/components/schemas/DocumentRevision'
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/LintDiagnostic'
+        counts:
+          $ref: '#/components/schemas/LintSeverityCounts'
+    LintResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - scope
+        - documents
+        - documentCount
+        - diagnosticCount
+        - counts
+      properties:
+        scope:
+          type: string
+          enum:
+            - focused
+            - open
+            - document
+            - workspace
+            - all
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocumentLintResult'
+        documentCount:
+          type: integer
+          minimum: 0
+        diagnosticCount:
+          type: integer
+          minimum: 0
+        counts:
+          $ref: '#/components/schemas/LintSeverityCounts'
 paths:
   /openapi.yaml:
     get:
@@ -2861,6 +2985,76 @@ paths:
                 $ref: '#/components/schemas/AgentErrorResponse'
         '500':
           description: The figure file could not be persisted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/lint:
+    get:
+      operationId: lintDocuments
+      summary: Lint documents by editor/workspace scope
+      description: >-
+        Runs the document lint stack over authoritative working text. focused checks
+        the focused Markdown document; open checks all open Markdown documents;
+        document checks one documentId; workspace checks one configured workspace;
+        all checks every Markdown document in every configured workspace.
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - focused
+              - open
+              - document
+              - workspace
+              - all
+            default: focused
+        - name: documentId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Required when scope=document.
+        - name: workspaceId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Required when scope=workspace; this is the workspace path returned by /v1/workspaces.
+        - name: minimumSeverity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - info
+              - warning
+              - error
+            default: info
+          description: Filters returned diagnostics while preserving document selection.
+      responses:
+        '200':
+          description: Lint diagnostics grouped by document with aggregate counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LintResponse'
+        '400':
+          description: The selected scope is missing its required document or workspace id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '404':
+          description: The requested document, workspace, or focused document was not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '500':
+          description: A selected document could not be linted.
           content:
             application/json:
               schema:

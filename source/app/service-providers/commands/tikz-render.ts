@@ -20,16 +20,9 @@
 
 import { Mutex } from "async-mutex";
 import { app } from "electron";
-import path from "path";
 import { type AppServiceContainer } from "../../app-service-container";
-import { resolveCentralFiguresDirectory } from "../../util/central-figures-store";
-import {
-  renderTikz,
-  resolveTikzDataDir,
-  resolveTikzTemplatePath,
-  type TikzRenderRequest,
-  type TikzRenderResult,
-} from "../../util/tikz-render";
+import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
+import { renderTikz, type TikzRenderRequest, type TikzRenderResult } from "../../util/tikz-render";
 import ZettlrCommand from "./zettlr-command";
 
 export default class TikzRender extends ZettlrCommand {
@@ -41,33 +34,23 @@ export default class TikzRender extends ZettlrCommand {
   }
 
   async run(evt: string, arg: TikzRenderRequest): Promise<TikzRenderResult> {
-    const tikzAssetDir = resolveTikzDataDir(
-      this._app.config.get().tikz.dataDir,
-      app.getPath("home"),
-    );
-    const templatePath = resolveTikzTemplatePath(app.getPath("home"));
-    const figuresSourceDir = resolveCentralFiguresDirectory(
-      this._app.config.get().tikz.figuresDir,
-      app.getPath("home"),
-      process.env,
-    );
+    const config = this._app.config.get().tikz;
 
     // A pane-level live preview already collapses rapid edits to the newest
     // source. The mutex is the second boundary: several panes/inline widgets
     // still cannot fan out into concurrent pdflatex processes and peg the CPU.
     return await this.renderMutex.runExclusive(
       async () =>
-        await renderTikz(arg, {
-          tikzAssetDir,
-          templatePath,
-          figuresSourceDir,
-          cacheDir: path.join(app.getPath("userData"), "tikz-cache"),
-          // The main process is where the app's environment is known, so this is
-          // where the decision "renders run under the environment Electron was
-          // started with" is made and recorded — the render service never reaches
-          // for it.
-          env: process.env,
-        }),
+        await renderTikz(
+          arg,
+          resolveTikzRenderConfig(
+            config.dataDir,
+            config.figuresDir,
+            app.getPath("home"),
+            app.getPath("userData"),
+            process.env,
+          ),
+        ),
     );
   }
 }
