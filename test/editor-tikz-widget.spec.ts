@@ -539,6 +539,49 @@ describe("TikZ editor widgets (issue #14)", function () {
     );
   });
 
+  it("keeps compile diagnostics selectable instead of turning clicks into source-edit activation", async function () {
+    respond = (request) =>
+      request.kind === "raw"
+        ? {
+            ok: false,
+            kind: "compile-error",
+            errors: [
+              {
+                line: 2,
+                message: "Undefined control sequence.",
+                sourceLine: "A \\arrow[r] & B \\nope",
+              },
+            ],
+            log: "! Undefined control sequence.\nl.2 A \\arrow[r] & B \\nope\n",
+          }
+        : {
+            ok: true,
+            html: `<div><span>${SVG_OK}</span></div>`,
+            svg: SVG_OK,
+            svgPath: "/cache/x.svg",
+            texFontSizePt: 10,
+          };
+    const view = createEditor();
+    await waitFor(
+      () => view.dom.querySelector(".tikz-error") !== null,
+      "the selectable compile error box",
+    );
+
+    const box = view.dom.querySelector<HTMLElement>(".tikz-error");
+    assert.ok(box !== null);
+    const source = box.querySelector("code");
+    assert.ok(source !== null);
+    const selectionBefore = view.state.selection.main;
+    const click = new window.MouseEvent("click", { bubbles: true, cancelable: true });
+    const dispatched = source.dispatchEvent(click);
+
+    assert.equal(dispatched, true, "diagnostic clicks are not consumed by edit activation");
+    assert.equal(click.defaultPrevented, false);
+    assert.equal(view.state.selection.main.from, selectionBefore.from);
+    assert.equal(view.state.selection.main.to, selectionBefore.to);
+    assert.equal(getComputedStyle(box).userSelect, "text");
+  });
+
   it("names the missing tools when the toolchain is absent", async function () {
     respond = { ok: false, kind: "missing-tools", missing: ["pdflatex", "pdf2svg"] };
     const view = createEditor();

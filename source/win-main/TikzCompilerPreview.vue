@@ -266,6 +266,14 @@ onBeforeUnmount(() => {
   color: #a93226;
   background: rgba(192, 57, 43, 0.055);
   font-size: 0.78rem;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+
+  * {
+    user-select: text;
+    -webkit-user-select: text;
+  }
 
   details { margin-top: 4px; }
   summary { cursor: pointer; opacity: 0.8; }

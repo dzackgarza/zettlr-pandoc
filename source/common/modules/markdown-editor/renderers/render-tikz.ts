@@ -309,6 +309,10 @@ class TikzWidget extends WidgetType {
     // appropriate renderer. tikzcd defaults to Quiver there; ordinary TikZ is
     // locked to the vanilla renderer.
     elem.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".tikz-error") !== null) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       view.focus();
@@ -400,6 +404,12 @@ export const renderTikzFigures = [
       padding: "0.4em 0.8em",
       color: "#c0392b",
       cursor: "text",
+      userSelect: "text",
+      WebkitUserSelect: "text",
+    },
+    ".tikz-error *": {
+      userSelect: "text",
+      WebkitUserSelect: "text",
     },
   }),
 ];
