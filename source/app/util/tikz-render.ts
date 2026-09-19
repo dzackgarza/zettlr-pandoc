@@ -415,6 +415,8 @@ export interface TikzRenderConfig {
   templatePath: string;
   /** The app-owned render cache; SVGs land and persist here. */
   cacheDir: string;
+  /** Effective centralized source tree used for authored figure inputs. */
+  figuresSourceDir?: string;
   /**
    * The environment every child process of this render runs under. It decides
    * which pandoc, pdflatex and pdf2svg are found, so it is an input to the
@@ -630,6 +632,7 @@ export async function renderTikz(
     // bundled data directory.
     FIGURE_STYLES_DIR: path.join(path.dirname(path.dirname(config.templatePath)), "styles"),
     FIGURES_SOURCE_DIR:
+      config.figuresSourceDir ??
       env.FIGURES_SOURCE_DIR ??
       path.join(path.dirname(path.dirname(config.templatePath)), "figures"),
     SVG_DIR: config.cacheDir,

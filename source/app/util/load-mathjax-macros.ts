@@ -17,13 +17,40 @@
 
 import isFile from "@common/util/is-file";
 import { type MathJaxMacro, parseMathJaxMacros } from "@common/util/mathjax-config";
-import { texCommandDeclarations } from "@common/util/tex-command-declarations";
+import {
+  texCommandDeclarationEntries,
+  texCommandDeclarations,
+} from "@common/util/tex-command-declarations";
 import { type Dirent, promises as fs } from "fs";
 import path from "path";
 
 export const MATHJAX_MACROS_FILENAME = "mathjax-macros.json";
 
 const TEX_SOURCE_EXTENSIONS = new Set([".tex", ".sty", ".cls"]);
+
+export interface CanonicalMacroDeclaration {
+  sourcePath: string;
+  line: number;
+  declaration: string;
+  context: string;
+}
+
+export interface CanonicalMacroMathJaxDefinition {
+  replacement: string;
+  argumentCount: number;
+  optionalDefault?: string;
+}
+
+export interface CanonicalMacroEntry {
+  name: string;
+  declarations: CanonicalMacroDeclaration[];
+  mathjax?: CanonicalMacroMathJaxDefinition;
+}
+
+export interface CanonicalMacroInventory {
+  root: string;
+  macros: CanonicalMacroEntry[];
+}
 
 /** Resolve the generated MathJax projection owned by ~/.pandoc. */
 export function canonicalMathJaxMacrosPath(homeDirectory: string): string {
@@ -91,6 +118,88 @@ export async function loadCanonicalTexMacroCommands(homeDirectory: string): Prom
   }
 
   return [...commands].sort((a, b) => a.localeCompare(b));
+}
+
+function mathJaxDefinition(definition: MathJaxMacro): CanonicalMacroMathJaxDefinition {
+  if (typeof definition === "string") {
+    return { replacement: definition, argumentCount: 0 };
+  }
+  const [replacement, argumentCount, optionalDefault] = definition;
+  return optionalDefault === undefined
+    ? { replacement, argumentCount }
+    : { replacement, argumentCount, optionalDefault };
+}
+
+/**
+ * Inspect the complete canonical user macro vocabulary. Compiler-only TeX
+ * declarations and MathJax-projected declarations are merged by control word;
+ * duplicate authored declarations are deliberately preserved.
+ */
+export async function loadCanonicalMacroInventory(
+  homeDirectory: string,
+): Promise<CanonicalMacroInventory> {
+  const root = path.join(homeDirectory, ".pandoc", "styles", "macros");
+  const declarations = new Map<string, CanonicalMacroDeclaration[]>();
+  const queue: string[] = [root];
+
+  while (queue.length > 0) {
+    const directory = queue.shift();
+    if (directory === undefined) {
+      break;
+    }
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      if (directory === root) {
+        throw new Error(`Macro inspection requires the canonical authoring macro tree ${root}.`, {
+          cause: error,
+        });
+      }
+      throw error;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        queue.push(absolute);
+        continue;
+      }
+      if (!entry.isFile() || !TEX_SOURCE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+        continue;
+      }
+      const source = await fs.readFile(absolute, "utf8");
+      const sourcePath = path.relative(root, absolute).split(path.sep).join("/");
+      for (const found of texCommandDeclarationEntries(source)) {
+        const existing = declarations.get(found.name) ?? [];
+        existing.push({
+          sourcePath,
+          line: found.line,
+          declaration: found.declaration,
+          context: found.context,
+        });
+        declarations.set(found.name, existing);
+      }
+    }
+  }
+
+  const projected = await loadCanonicalMathJaxMacros(homeDirectory);
+  const names = new Set([
+    ...declarations.keys(),
+    ...Object.keys(projected).map((name) => `\\${name}`),
+  ]);
+  const macros = [...names]
+    .sort((a, b) => a.localeCompare(b))
+    .map((name): CanonicalMacroEntry => {
+      const projection = projected[name.slice(1)];
+      return {
+        name,
+        declarations: declarations.get(name) ?? [],
+        ...(projection === undefined ? {} : { mathjax: mathJaxDefinition(projection) }),
+      };
+    });
+
+  return { root, macros };
 }
 
 /**

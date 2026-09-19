@@ -18,46 +18,56 @@
  * END HEADER
  */
 
-import { app } from 'electron'
-import path from 'path'
-import { Mutex } from 'async-mutex'
-import ZettlrCommand from './zettlr-command'
+import { Mutex } from "async-mutex";
+import { app } from "electron";
+import path from "path";
+import { type AppServiceContainer } from "../../app-service-container";
+import { resolveCentralFiguresDirectory } from "../../util/central-figures-store";
 import {
   renderTikz,
   resolveTikzDataDir,
   resolveTikzTemplatePath,
   type TikzRenderRequest,
-  type TikzRenderResult
-} from '../../util/tikz-render'
-import { type AppServiceContainer } from '../../app-service-container'
+  type TikzRenderResult,
+} from "../../util/tikz-render";
+import ZettlrCommand from "./zettlr-command";
 
 export default class TikzRender extends ZettlrCommand {
   /** pdflatex is intentionally process-global bounded work, not per-pane work. */
-  private readonly renderMutex = new Mutex()
+  private readonly renderMutex = new Mutex();
 
-  constructor (app: AppServiceContainer) {
-    super(app, 'tikz-render')
+  constructor(app: AppServiceContainer) {
+    super(app, "tikz-render");
   }
 
-  async run (evt: string, arg: TikzRenderRequest): Promise<TikzRenderResult> {
+  async run(evt: string, arg: TikzRenderRequest): Promise<TikzRenderResult> {
     const tikzAssetDir = resolveTikzDataDir(
       this._app.config.get().tikz.dataDir,
-      app.getPath('home')
-    )
-    const templatePath = resolveTikzTemplatePath(app.getPath('home'))
+      app.getPath("home"),
+    );
+    const templatePath = resolveTikzTemplatePath(app.getPath("home"));
+    const figuresSourceDir = resolveCentralFiguresDirectory(
+      this._app.config.get().tikz.figuresDir,
+      app.getPath("home"),
+      process.env,
+    );
 
     // A pane-level live preview already collapses rapid edits to the newest
     // source. The mutex is the second boundary: several panes/inline widgets
     // still cannot fan out into concurrent pdflatex processes and peg the CPU.
-    return await this.renderMutex.runExclusive(async () => await renderTikz(arg, {
-      tikzAssetDir,
-      templatePath,
-      cacheDir: path.join(app.getPath('userData'), 'tikz-cache'),
-      // The main process is where the app's environment is known, so this is
-      // where the decision "renders run under the environment Electron was
-      // started with" is made and recorded — the render service never reaches
-      // for it.
-      env: process.env,
-    }))
+    return await this.renderMutex.runExclusive(
+      async () =>
+        await renderTikz(arg, {
+          tikzAssetDir,
+          templatePath,
+          figuresSourceDir,
+          cacheDir: path.join(app.getPath("userData"), "tikz-cache"),
+          // The main process is where the app's environment is known, so this is
+          // where the decision "renders run under the environment Electron was
+          // started with" is made and recorded — the render service never reaches
+          // for it.
+          env: process.env,
+        }),
+    );
   }
 }

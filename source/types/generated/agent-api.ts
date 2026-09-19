@@ -636,6 +636,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/macros": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect configured mathematical macros
+         * @description Returns every control word from the canonical macro tree, preserving duplicate declarations and attaching its MathJax projection when one exists.
+         */
+        get: operations["listMacros"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/figures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the centralized figures directory
+         * @description Recursively lists files, directories, and symlinks under the same configured centralized figure root used by TikZ compilation.
+         */
+        get: operations["listFigures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/figures/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search centralized figures
+         * @description Searches relative paths and UTF-8 file contents. Binary files participate in path matching but are not decoded for content search.
+         */
+        get: operations["searchFigures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/figures/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a centralized figure file */
+        get: operations["readFigure"];
+        /**
+         * Write a centralized figure file
+         * @description Atomically creates or replaces one file under the configured centralized figures directory. Missing parent directories are created.
+         */
+        put: operations["writeFigure"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -732,7 +813,7 @@ export interface components {
         };
         AgentError: {
             /** @enum {string} */
-            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "CITATION_DATABASE_NOT_LOADED" | "CITATION_NOT_FOUND" | "DUPLICATE_CLAIM_DESCRIPTION" | "BASELINE_MISMATCH";
+            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "CITATION_DATABASE_NOT_LOADED" | "CITATION_NOT_FOUND" | "FIGURE_NOT_FOUND" | "DUPLICATE_CLAIM_DESCRIPTION" | "BASELINE_MISMATCH";
             message: string;
             documentId?: string;
             expected?: components["schemas"]["DocumentRevision"];
@@ -1156,6 +1237,76 @@ export interface components {
             };
             /** @description Each entry is an HTML string for one bibliography item. */
             entries: string[];
+        };
+        MacroMathJaxDefinition: {
+            replacement: string;
+            argumentCount: number;
+            optionalDefault?: string;
+        };
+        MacroDeclaration: {
+            /** @description Path relative to the canonical ~/.pandoc/styles/macros tree. */
+            sourcePath: string;
+            line: number;
+            /** @description The physical source line containing the declaration. */
+            declaration: string;
+            /** @description A bounded source excerpt around the declaration. */
+            context: string;
+        };
+        MacroEntry: {
+            /** @description TeX control word including its leading backslash. */
+            name: string;
+            declarations: components["schemas"]["MacroDeclaration"][];
+            mathjax?: components["schemas"]["MacroMathJaxDefinition"];
+        };
+        MacroInventoryResponse: {
+            /** @description Absolute canonical macro-tree root. */
+            root: string;
+            count: number;
+            macros: components["schemas"]["MacroEntry"][];
+        };
+        FigureEntry: {
+            /** @description Path relative to the configured centralized figures directory. */
+            path: string;
+            /** @enum {string} */
+            kind: "file" | "directory" | "symlink";
+            size: number;
+            modifiedAt: string;
+        };
+        FigureListResponse: {
+            /** @description Absolute effective centralized figures directory. */
+            root: string;
+            count: number;
+            entries: components["schemas"]["FigureEntry"][];
+        };
+        FigureFileResponse: {
+            path: string;
+            size: number;
+            modifiedAt: string;
+            sha256: string;
+            /** @enum {string} */
+            encoding: "utf8" | "base64";
+            content: string;
+        };
+        FigureWriteRequest: {
+            content: string;
+            /**
+             * @default utf8
+             * @enum {string}
+             */
+            encoding: "utf8" | "base64";
+        };
+        FigureSearchHit: {
+            path: string;
+            /** @enum {string} */
+            matchType: "path" | "content";
+            line?: number;
+            excerpt: string;
+        };
+        FigureSearchResponse: {
+            root: string;
+            query: string;
+            hits: components["schemas"]["FigureSearchHit"][];
+            truncated: boolean;
         };
     };
     responses: never;
@@ -2258,6 +2409,184 @@ export interface operations {
             };
             /** @description The requested database is not loaded. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    listMacros: {
+        parameters: {
+            query?: {
+                /** @description Case-insensitive filter over name, source path, declaration, and context. */
+                query?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The configured macro inventory. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacroInventoryResponse"];
+                };
+            };
+            /** @description The canonical macro tree could not be inspected. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    listFigures: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Figure-tree entries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FigureListResponse"];
+                };
+            };
+            /** @description The figure tree could not be listed. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    searchFigures: {
+        parameters: {
+            query: {
+                query: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Figure search results. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FigureSearchResponse"];
+                };
+            };
+            /** @description The figure tree could not be searched. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    readFigure: {
+        parameters: {
+            query: {
+                /** @description Relative path under the configured centralized figures directory. */
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File bytes as UTF-8 when valid, otherwise base64. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FigureFileResponse"];
+                };
+            };
+            /** @description The relative path is unsafe or does not name a regular file. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description The figure file does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    writeFigure: {
+        parameters: {
+            query: {
+                /** @description Relative path under the configured centralized figures directory. */
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FigureWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description The file after the atomic write. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FigureFileResponse"];
+                };
+            };
+            /** @description The path or encoded content is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description The figure file could not be persisted. */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

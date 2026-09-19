@@ -15,11 +15,21 @@
  * END HEADER
  */
 
-import { userData } from "./headless-electron-harness.cjs";
-import Ajv2020 from "ajv/dist/2020";
-import { parse as parseYaml } from "yaml";
-import { type ReadDocumentResponse } from "@dts/common/agent-api";
+// This side-effect import must run before any main-process module import. It
+// installs the headless Electron module shim that those imports consume. Keep
+// the named import below for the harness-owned userData path.
+import "./headless-electron-harness.cjs";
+
+import type {
+  AgentErrorResponse,
+  FigureFileResponse,
+  FigureListResponse,
+  FigureSearchResponse,
+  MacroInventoryResponse,
+  ReadDocumentResponse,
+} from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
+import Ajv2020 from "ajv/dist/2020";
 import { strict as assert } from "assert";
 import { spawn } from "child_process";
 import { createPatch } from "diff";
@@ -40,8 +50,10 @@ import os from "os";
 import path from "path";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentManager from "source/app/service-providers/documents";
-import { sha256Text } from "source/common/util/sha256";
 import LogProvider from "source/app/service-providers/log";
+import { sha256Text } from "source/common/util/sha256";
+import { parse as parseYaml } from "yaml";
+import { userData } from "./headless-electron-harness.cjs";
 
 // ============================================================================
 // Contract conformance
@@ -65,10 +77,7 @@ interface PublishedNumericBounds {
 interface PublishedOperation {
   [field: string]: unknown;
   requestBody?: {
-    content: Record<
-      string,
-      { schema: { properties: Record<string, PublishedNumericBounds> } }
-    >;
+    content: Record<string, { schema: { properties: Record<string, PublishedNumericBounds> } }>;
   };
 }
 
@@ -204,6 +213,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   let provider: DocumentManager;
   let httpProvider: AgentHTTPProvider;
   let httpPort: number;
+  let authoringHome: string;
+  let figuresRoot: string;
   let saveDialogResponse = 2;
   let peerServers: http.Server[] = [];
   // The configured workspace set, read live by the config seam so a test can
@@ -400,24 +411,64 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
   beforeEach(async function () {
     scratch = mkdtempSync(path.join(os.tmpdir(), "zettlr-http-api-"));
+    authoringHome = mkdtempSync(path.join(os.tmpdir(), "zettlr-http-authoring-"));
+    figuresRoot = path.join(authoringHome, "central-figures");
     openWorkspaces = [scratch];
 
+    const macroRoot = path.join(authoringHome, ".pandoc", "styles", "macros");
+    const mathJaxRoot = path.join(authoringHome, ".pandoc", "templates", "css");
+    mkdirSync(path.join(macroRoot, "nested"), { recursive: true });
+    mkdirSync(mathJaxRoot, { recursive: true });
+    writeFileSync(
+      path.join(macroRoot, "tier1.tex"),
+      ["\\newcommand{\\ZZ}{\\mathbb{Z}}", "\\DeclareMathOperator{\\Spec}{Spec}", ""].join("\n"),
+    );
+    writeFileSync(
+      path.join(macroRoot, "nested", "compiler.tex"),
+      "\\newcommand{\\CompilerOnly}[1]{\\mathbf{#1}}\n",
+    );
+    writeFileSync(
+      path.join(mathJaxRoot, "mathjax-macros.json"),
+      JSON.stringify({ ZZ: "\\mathbb{Z}", Spec: "\\operatorname{Spec}" }),
+    );
+
+    mkdirSync(path.join(figuresRoot, "diagrams"), { recursive: true });
+    mkdirSync(path.join(figuresRoot, "images"), { recursive: true });
+    writeFileSync(
+      path.join(figuresRoot, "diagrams", "main.tikz"),
+      "\\begin{tikzpicture}\n\\node {elliptic surface};\n\\end{tikzpicture}\n",
+    );
+    writeFileSync(path.join(figuresRoot, "images", "pixel.bin"), Buffer.from([0, 255, 1, 254]));
+
     provider = await createProvider();
-    httpProvider = new AgentHTTPProvider(new LogProvider(), provider, {
-      config: {
-        get: () => ({
-          app: {
-            openWorkspaces,
-          },
-          agentApi: {
-            enabled: true,
-            // Kernel-assigned: the provider owns the bind and publishes the
-            // actual port, so no reservation can race the listener.
-            port: 0,
-          },
-        }),
+    httpProvider = new AgentHTTPProvider(
+      new LogProvider(),
+      provider,
+      {
+        config: {
+          get: () => ({
+            app: {
+              openWorkspaces,
+            },
+            agentApi: {
+              enabled: true,
+              // Kernel-assigned: the provider owns the bind and publishes the
+              // actual port, so no reservation can race the listener.
+              port: 0,
+            },
+            tikz: {
+              figuresDir: figuresRoot,
+            },
+          }),
+        },
       },
-    });
+      undefined,
+      undefined,
+      {
+        homeDirectory: authoringHome,
+        env: {},
+      },
+    );
     await httpProvider.boot();
     httpPort = Number.parseInt(
       readFileSync(path.join(userData, "agent-api.port"), "utf8").trim(),
@@ -444,6 +495,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     await httpProvider.shutdown();
     await provider.shutdown();
     rmSync(scratch, { recursive: true, force: true });
+    rmSync(authoringHome, { recursive: true, force: true });
   });
 
   it("review-submission applies a closed-file patch without changing focus and refuses a stale baseline", async function () {
@@ -465,11 +517,17 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       focus: false,
     };
     const inapplicable = await httpRequest("POST", "/v1/review-submissions", {
-      body: JSON.stringify({ ...request, patch: createPatch(filePath, "An unrelated baseline.\n", after), clientRequestId: "inapplicable" }),
+      body: JSON.stringify({
+        ...request,
+        patch: createPatch(filePath, "An unrelated baseline.\n", after),
+        clientRequestId: "inapplicable",
+      }),
     });
     assert.equal(inapplicable.status, 400);
     assert.equal(JSON.parse(inapplicable.body).error.code, "PATCH_NOT_APPLICABLE");
-    const response = await httpRequest("POST", "/v1/review-submissions", { body: JSON.stringify(request) });
+    const response = await httpRequest("POST", "/v1/review-submissions", {
+      body: JSON.stringify(request),
+    });
     assert.equal(response.status, 200, response.body);
     const result = JSON.parse(response.body);
     const content = await httpRequest("GET", `/v1/documents/${result.documentId}/content`);
@@ -497,13 +555,24 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const documentId = await openFile(filePath, before);
     const windowId = provider.windowKeys()[0];
     await provider.openFile(windowId, provider.leafIds(windowId)[0], filePath);
-    const annotation = await provider.createAnnotation(documentId, "owner", 9, 23, "Specify the hypotheses.", 0);
+    const annotation = await provider.createAnnotation(
+      documentId,
+      "owner",
+      9,
+      23,
+      "Specify the hypotheses.",
+      0,
+    );
     assert.ok("annotationId" in annotation);
     const priorPath = path.join(scratch, "previous-selection.md");
     await openFile(priorPath, "Another open document.\n");
     await provider.openFile(windowId, provider.leafIds(windowId)[0], priorPath);
     const claims = [
-      { description: "Specify finite dimension.", patch: createPatch(filePath, before, middle), addressesAnnotationIds: [annotation.annotationId] },
+      {
+        description: "Specify finite dimension.",
+        patch: createPatch(filePath, before, middle),
+        addressesAnnotationIds: [annotation.annotationId],
+      },
       { description: "Specify the field.", patch: createPatch(filePath, middle, after) },
     ];
     const outside = await httpRequest("POST", "/v1/review-submissions", {
@@ -524,7 +593,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const unlinked = await httpRequest("GET", `/v1/annotations/${annotation.annotationId}`);
     assert.deepEqual(JSON.parse(unlinked.body).proposalActions, []);
     const response = await httpRequest("POST", "/v1/review-submissions", {
-      body: JSON.stringify({ document: { uri: filePath }, claims, clientRequestId: "claims-submission" }),
+      body: JSON.stringify({
+        document: { uri: filePath },
+        claims,
+        clientRequestId: "claims-submission",
+      }),
     });
     assert.equal(response.status, 200, response.body);
     const result = JSON.parse(response.body);
@@ -533,7 +606,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const content = await httpRequest("GET", `/v1/documents/${result.documentId}/content`);
     assert.equal(JSON.parse(content.body).content, after);
     const packets = await httpRequest("GET", `/v1/reviews/${result.reviewId}/packets`);
-    assert.deepEqual(JSON.parse(packets.body).packets.map((packet: { description: string }) => packet.description), claims.map(claim => claim.description));
+    assert.deepEqual(
+      JSON.parse(packets.body).packets.map((packet: { description: string }) => packet.description),
+      claims.map((claim) => claim.description),
+    );
     const linked = await httpRequest("GET", `/v1/annotations/${annotation.annotationId}`);
     assert.equal(JSON.parse(linked.body).proposalActions[0].packetId, result.packetIds[0]);
   });
@@ -542,7 +618,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const filePath = path.join(scratch, "duplicate-descriptions.md");
     const before = "Let V be a vector space.\nAssume the form is symmetric.\n";
     const middle = "Let V be a finite-dimensional vector space.\nAssume the form is symmetric.\n";
-    const after = "Let V be a finite-dimensional vector space.\nAssume the form is symmetric and nondegenerate.\n";
+    const after =
+      "Let V be a finite-dimensional vector space.\nAssume the form is symmetric and nondegenerate.\n";
     writeFileSync(filePath, before);
     const documentId = await openFile(filePath, before);
 
@@ -564,7 +641,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }),
     });
     assert.equal(exact.status, 400, exact.body);
-    const exactError = JSON.parse(exact.body).error;
+    const exactError = (JSON.parse(exact.body) as AgentErrorResponse).error;
     assertMatchesSchema(exactError, "AgentError");
     assert.equal(exactError.code, "DUPLICATE_CLAIM_DESCRIPTION");
     assert.deepEqual(exactError.conflictingClaimIndices, [0, 1]);
@@ -576,7 +653,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.match(exactError.message, /why that particular change fixes the defect/);
 
     const unchangedAfterExact = await httpRequest("GET", `/v1/documents/${documentId}/content`);
-    assert.equal(JSON.parse(unchangedAfterExact.body).content, before);
+    assert.equal((JSON.parse(unchangedAfterExact.body) as ReadDocumentResponse).content, before);
 
     const fuzzyDescriptions = [
       "Correct this theorem statement by adding the missing hypothesis at this location.",
@@ -600,16 +677,17 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }),
     });
     assert.equal(fuzzy.status, 400, fuzzy.body);
-    const fuzzyError = JSON.parse(fuzzy.body).error;
+    const fuzzyError = (JSON.parse(fuzzy.body) as AgentErrorResponse).error;
     assertMatchesSchema(fuzzyError, "AgentError");
     assert.equal(fuzzyError.code, "DUPLICATE_CLAIM_DESCRIPTION");
     assert.deepEqual(fuzzyError.conflictingClaimIndices, [0, 1]);
+    assert.ok(fuzzyError.descriptionSimilarity !== undefined);
     assert.ok(fuzzyError.descriptionSimilarity >= 0.94);
     assert.ok(fuzzyError.descriptionSimilarity < 1);
     assert.match(fuzzyError.message, /rejection threshold: 94%/);
 
     const unchangedAfterFuzzy = await httpRequest("GET", `/v1/documents/${documentId}/content`);
-    assert.equal(JSON.parse(unchangedAfterFuzzy.body).content, before);
+    assert.equal((JSON.parse(unchangedAfterFuzzy.body) as ReadDocumentResponse).content, before);
   });
 
   it("fails enabled startup when the configured port is taken", async function () {
@@ -639,11 +717,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         collided.boot(),
         (error: NodeJS.ErrnoException) => error.code === "EADDRINUSE",
       );
-      assert.equal(
-        collided.isListening,
-        false,
-        "a failed boot must leave no listener behind",
-      );
+      assert.equal(collided.isListening, false, "a failed boot must leave no listener behind");
     } finally {
       await collided.shutdown();
       await new Promise<void>((resolve) => squatter.close(() => resolve()));
@@ -1026,12 +1100,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // The reviewer reads the chunk as text, so the change is reported the way
     // it reads -- one replaced word -- rather than as the letters a character
     // diff happens to share between "before" and "after".
-    assert.deepEqual(chunkBody.chunks.map((chunk) => chunk.workingText), ["after"]);
+    assert.deepEqual(
+      chunkBody.chunks.map((chunk) => chunk.workingText),
+      ["after"],
+    );
     assert.deepEqual(chunkBody.chunks[0].workingSpans, [{ from: 0, to: 5 }]);
     assert.equal(
-      chunkBody.chunks[0].workingSpans
-        .map((span) => revised.slice(span.from, span.to))
-        .join(""),
+      chunkBody.chunks[0].workingSpans.map((span) => revised.slice(span.from, span.to)).join(""),
       chunkBody.chunks[0].workingText,
     );
     assert.deepEqual(chunkBody.chunks[0].descriptions, ["standalone CLI proposition"]);
@@ -1146,13 +1221,125 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const documents = JSON.parse((await httpRequest("GET", "/v1/documents")).body) as {
       documents: Array<{ path: string }>;
     };
-    assert.equal(documents.documents.some((document) => document.path === filePath), false);
+    assert.equal(
+      documents.documents.some((document) => document.path === filePath),
+      false,
+    );
     const content = await httpRequest("GET", "/v1/workspace/files");
     assert.equal(content.status, 200);
     const files = JSON.parse(content.body) as { files: Array<{ path: string; open: boolean }> };
     const file = files.files.find((entry) => entry.path === filePath);
     assert.ok(file !== undefined);
     assert.equal(file.open, false);
+  });
+
+  it("exposes the complete canonical macro inventory with source and MathJax metadata", async function () {
+    const response = await httpRequest("GET", "/v1/macros");
+    assert.equal(response.status, 200, response.body);
+    const payload = JSON.parse(response.body) as MacroInventoryResponse;
+    assertMatchesSchema(payload, "MacroInventoryResponse");
+    assert.equal(payload.root, path.join(authoringHome, ".pandoc", "styles", "macros"));
+
+    const zz = payload.macros.find((macro) => macro.name === "\\ZZ");
+    assert.ok(zz !== undefined);
+    assert.ok(zz.mathjax !== undefined);
+    assert.equal(zz.mathjax.replacement, "\\mathbb{Z}");
+    assert.equal(zz.declarations[0].sourcePath, "tier1.tex");
+    assert.match(zz.declarations[0].context, /newcommand\{\\ZZ\}/u);
+
+    const compilerOnly = payload.macros.find((macro) => macro.name === "\\CompilerOnly");
+    assert.ok(compilerOnly !== undefined);
+    assert.equal(compilerOnly.mathjax, undefined);
+    assert.equal(compilerOnly.declarations[0].sourcePath, "nested/compiler.tex");
+
+    const filtered = await httpRequest("GET", "/v1/macros?query=compileronly");
+    assert.equal(filtered.status, 200, filtered.body);
+    const filteredPayload = JSON.parse(filtered.body) as MacroInventoryResponse;
+    assertMatchesSchema(filteredPayload, "MacroInventoryResponse");
+    assert.deepEqual(
+      filteredPayload.macros.map((macro) => macro.name),
+      ["\\CompilerOnly"],
+    );
+  });
+
+  it("lists and reads text and binary files from the configured centralized figures directory", async function () {
+    const listed = await httpRequest("GET", "/v1/figures");
+    assert.equal(listed.status, 200, listed.body);
+    const listPayload = JSON.parse(listed.body) as FigureListResponse;
+    assertMatchesSchema(listPayload, "FigureListResponse");
+    assert.equal(listPayload.root, figuresRoot);
+    assert.ok(listPayload.entries.some((entry) => entry.path === "diagrams/main.tikz"));
+    assert.ok(listPayload.entries.some((entry) => entry.path === "images/pixel.bin"));
+
+    const text = await httpRequest("GET", "/v1/figures/content?path=diagrams%2Fmain.tikz");
+    assert.equal(text.status, 200, text.body);
+    const textPayload = JSON.parse(text.body) as FigureFileResponse;
+    assertMatchesSchema(textPayload, "FigureFileResponse");
+    assert.equal(textPayload.encoding, "utf8");
+    assert.match(textPayload.content, /elliptic surface/u);
+
+    const binary = await httpRequest("GET", "/v1/figures/content?path=images%2Fpixel.bin");
+    assert.equal(binary.status, 200, binary.body);
+    const binaryPayload = JSON.parse(binary.body) as FigureFileResponse;
+    assertMatchesSchema(binaryPayload, "FigureFileResponse");
+    assert.equal(binaryPayload.encoding, "base64");
+    assert.equal(binaryPayload.content, Buffer.from([0, 255, 1, 254]).toString("base64"));
+  });
+
+  it("atomically writes nested UTF-8 and binary figure files through the API", async function () {
+    const source = "\\begin{tikzpicture}\n\\node {new figure};\n\\end{tikzpicture}\n";
+    const written = await httpRequest(
+      "PUT",
+      "/v1/figures/content?path=new%2Fnested%2Ffigure.tikz",
+      {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content: source, encoding: "utf8" }),
+      },
+    );
+    assert.equal(written.status, 200, written.body);
+    const writtenPayload = JSON.parse(written.body) as FigureFileResponse;
+    assertMatchesSchema(writtenPayload, "FigureFileResponse");
+    assert.equal(
+      readFileSync(path.join(figuresRoot, "new", "nested", "figure.tikz"), "utf8"),
+      source,
+    );
+
+    const bytes = Buffer.from([1, 2, 3, 4, 5]);
+    const binary = await httpRequest("PUT", "/v1/figures/content?path=images%2Fgenerated.bin", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content: bytes.toString("base64"), encoding: "base64" }),
+    });
+    assert.equal(binary.status, 200, binary.body);
+    assert.deepEqual(readFileSync(path.join(figuresRoot, "images", "generated.bin")), bytes);
+  });
+
+  it("searches figure paths and text contents while refusing traversal outside the configured root", async function () {
+    const searched = await httpRequest("GET", "/v1/figures/search?query=elliptic");
+    assert.equal(searched.status, 200, searched.body);
+    const searchPayload = JSON.parse(searched.body) as FigureSearchResponse;
+    assertMatchesSchema(searchPayload, "FigureSearchResponse");
+    assert.ok(
+      searchPayload.hits.some(
+        (hit) => hit.path === "diagrams/main.tikz" && hit.matchType === "content" && hit.line === 2,
+      ),
+    );
+
+    const pathSearch = await httpRequest("GET", "/v1/figures/search?query=pixel.bin");
+    assert.equal(pathSearch.status, 200, pathSearch.body);
+    const pathSearchPayload = JSON.parse(pathSearch.body) as FigureSearchResponse;
+    assert.ok(
+      pathSearchPayload.hits.some(
+        (hit) => hit.path === "images/pixel.bin" && hit.matchType === "path",
+      ),
+    );
+
+    const traversal = await httpRequest("GET", "/v1/figures/content?path=..%2Fescape.tikz");
+    assert.equal(traversal.status, 400, traversal.body);
+    assert.equal((JSON.parse(traversal.body) as AgentErrorResponse).error.code, "INVALID_PARAMS");
+
+    const missing = await httpRequest("GET", "/v1/figures/content?path=missing.tikz");
+    assert.equal(missing.status, 404, missing.body);
+    assert.equal((JSON.parse(missing.body) as AgentErrorResponse).error.code, "FIGURE_NOT_FOUND");
   });
 
   describe("request body lifecycle", function () {
@@ -1379,7 +1566,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const workspaces = await httpRequest("GET", "/v1/workspaces");
       assert.equal(workspaces.status, 200);
       assertMatchesSchema(JSON.parse(workspaces.body), "WorkspacesResponse");
-
     });
   });
 });

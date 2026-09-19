@@ -21,56 +21,65 @@
  * END HEADER
  */
 
+import { sha256Text } from "@common/util/sha256";
 import type {
-  AgentApiOperations,
-  AgentApiResponseBody,
-  AgentEvent,
   AddAnnotationMessageRequest,
   AddReviewCommentRequest,
+  AgentApiOperations,
+  AgentApiResponseBody,
   AgentError,
   AgentErrorCode,
   AgentErrorResponse,
+  AgentEvent,
+  FigureWriteRequest,
   PingResponse,
   ReadSide,
+  RenderBibliographyRequest,
+  RenderCitationRequest,
   ReviewEventsResponse,
   ReviewListEntry,
   ReviewMutationPrecondition,
+  ReviewSubmissionRequest,
   SearchDocumentRequest,
   SubmitProposalRequest,
-  ReviewSubmissionRequest,
-  RenderCitationRequest,
-  RenderBibliographyRequest,
 } from "@dts/common/agent-api";
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
-import CiteprocProvider, { CiteprocRenderInvariantError } from "@providers/citeproc";
+import type CiteprocProvider from "@providers/citeproc";
+import { CiteprocRenderInvariantError } from "@providers/citeproc";
 import type DocumentManager from "@providers/documents";
-import type { AnnotationFailure, ReviewFailure } from "@providers/documents/document-collaboration-application-service";
+import type {
+  AnnotationFailure,
+  ReviewFailure,
+} from "@providers/documents/document-collaboration-application-service";
+import {
+  classifyReviewState,
+  reviewPatch,
+  sidecarOutstandingChunks,
+  sidecarUnresolvedChunks,
+  toWirePacket,
+} from "@providers/documents/review-diff-store";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import crypto from "crypto";
 import { app } from "electron";
-import fs from "fs";
 import { get as levenshteinDistance } from "fast-levenshtein";
+import fs from "fs";
 import http from "http";
-import OpenAPIBackend, {
-  type Context,
-  type Document as OpenApiDefinition,
-} from "openapi-backend";
+import OpenAPIBackend, { type Context, type Document as OpenApiDefinition } from "openapi-backend";
 import path from "path";
 import { fileURLToPath } from "url";
-import { parseDocument, type Document } from "yaml";
+import { type Document, parseDocument } from "yaml";
 import {
-  classifyReviewState,
-  sidecarUnresolvedChunks,
-  reviewPatch,
-  sidecarOutstandingChunks,
-  toWirePacket,
-} from "@providers/documents/review-diff-store";
-import { sha256Text } from "@common/util/sha256";
-import AgentDocumentQueries, {
-  SearchPatternError,
-  SearchTimeoutError,
-} from "./document-queries";
+  CentralFigureInputError,
+  CentralFigureNotFoundError,
+  listCentralFigures,
+  readCentralFigure,
+  resolveCentralFiguresDirectory,
+  searchCentralFigures,
+  writeCentralFigure,
+} from "../../util/central-figures-store";
+import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
+import AgentDocumentQueries, { SearchPatternError, SearchTimeoutError } from "./document-queries";
 
 export { MAX_SEARCH_HITS } from "./document-queries";
 
@@ -123,7 +132,7 @@ function findClaimDescriptionCollision(
         continue;
       }
 
-      const similarity = 1 - (levenshteinDistance(first, second) / maxLength);
+      const similarity = 1 - levenshteinDistance(first, second) / maxLength;
       if (similarity >= CLAIM_DESCRIPTION_SIMILARITY_THRESHOLD) {
         return { firstIndex, secondIndex, similarity };
       }
@@ -177,6 +186,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   PERSISTENCE_FAILED: 500,
   CITATION_DATABASE_NOT_LOADED: 404,
   CITATION_NOT_FOUND: 404,
+  FIGURE_NOT_FOUND: 404,
   DUPLICATE_CLAIM_DESCRIPTION: 400,
   INTERNAL_ERROR: 500,
 };
@@ -204,7 +214,6 @@ class RequestAbandonedError extends Error {
     super("Client disconnected before the request body completed");
   }
 }
-
 
 /**
  * What openapi-backend hands a handler once it has matched the request against
@@ -237,8 +246,14 @@ export interface AgentApiHost {
     get: () => {
       agentApi?: { enabled: boolean; port: number };
       app: { openWorkspaces: string[] };
+      tikz?: { figuresDir: string };
     };
   };
+}
+
+export interface AgentApiRuntimeEnvironment {
+  homeDirectory: string;
+  env: NodeJS.ProcessEnv;
 }
 
 /**
@@ -283,6 +298,7 @@ export default class AgentHTTPProvider extends ProviderContract {
      * pass nothing.
      */
     private readonly _bodyDeadlineMs: number = REQUEST_BODY_DEADLINE_MS,
+    private readonly _runtimeEnvironment?: Partial<AgentApiRuntimeEnvironment>,
   ) {
     super();
     this._instanceId = crypto.randomUUID();
@@ -401,10 +417,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       await fs.promises.writeFile(this._portFilePath, `${boundPort}\n`, "utf8");
     } catch (error) {
       await this.shutdown();
-      throw new Error(
-        `Agent API could not publish its endpoint to ${this._portFilePath}`,
-        { cause: error },
-      );
+      throw new Error(`Agent API could not publish its endpoint to ${this._portFilePath}`, {
+        cause: error,
+      });
     }
     this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${boundPort}`);
   }
@@ -487,12 +502,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       this._log.error(
         "[AgentHTTPProvider] Node delivered an HTTP request without a method or URL.",
       );
-      this.sendError(
-        res,
-        400,
-        "INVALID_PARAMS",
-        "HTTP method and request target are required",
-      );
+      this.sendError(res, 400, "INVALID_PARAMS", "HTTP method and request target are required");
       return;
     }
     // The async wrapper is what makes a handler that throws synchronously
@@ -601,9 +611,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     res.writeHead(200, {
       "Content-Type": asJson ? "application/json" : "application/yaml",
     });
-    res.end(
-      asJson ? JSON.stringify(specification.toJSON(), null, 2) : specification.toString(),
-    );
+    res.end(asJson ? JSON.stringify(specification.toJSON(), null, 2) : specification.toString());
   }
 
   /**
@@ -639,11 +647,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) =>
-        this.handleListWorkspaceDocuments(
-          res,
-          c.request.params.workspaceId,
-          c.request.query.query,
-        ),
+        this.handleListWorkspaceDocuments(res, c.request.params.workspaceId, c.request.query.query),
 
       listDocuments: (_c, _req, res) => this.handleListDocuments(res),
       getDocument: (c: OperationContext<"getDocument">, _req, res: http.ServerResponse) =>
@@ -678,11 +682,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) =>
-        this.handleListDocumentAnnotations(
-          res,
-          c.request.params.documentId,
-          c.request.query.state,
-        ),
+        this.handleListDocumentAnnotations(res, c.request.params.documentId, c.request.query.state),
       getAnnotation: (c: OperationContext<"getAnnotation">, _req, res: http.ServerResponse) =>
         this.handleGetAnnotation(res, c.request.params.annotationId),
       addAnnotationMessage: (
@@ -690,11 +690,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) =>
-        this.handleAddAnnotationMessage(
-          res,
-          c.request.params.annotationId,
-          c.request.requestBody,
-        ),
+        this.handleAddAnnotationMessage(res, c.request.params.annotationId, c.request.requestBody),
 
       listReviews: (_c, _req, res) => this.handleListReviews(res),
       getReview: (c: OperationContext<"getReview">, _req, res: http.ServerResponse) =>
@@ -739,11 +735,8 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => this.handleListCitationItems(res, c.request.query.database),
-      getCitationItem: (
-        c: OperationContext<"getCitationItem">,
-        _req,
-        res: http.ServerResponse,
-      ) => this.handleGetCitationItem(res, c.request.params.citeKey, c.request.query.database),
+      getCitationItem: (c: OperationContext<"getCitationItem">, _req, res: http.ServerResponse) =>
+        this.handleGetCitationItem(res, c.request.params.citeKey, c.request.query.database),
       renderCitation: (
         c: OperationContext<"renderCitation", RenderCitationRequest>,
         _req,
@@ -754,6 +747,18 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => this.handleRenderBibliography(res, c.request.requestBody),
+      listMacros: (c: OperationContext<"listMacros">, _req, res: http.ServerResponse) =>
+        this.handleListMacros(res, c.request.query.query),
+      listFigures: (_c, _req, res) => this.handleListFigures(res),
+      searchFigures: (c: OperationContext<"searchFigures">, _req, res: http.ServerResponse) =>
+        this.handleSearchFigures(res, c.request.query.query),
+      readFigure: (c: OperationContext<"readFigure">, _req, res: http.ServerResponse) =>
+        this.handleReadFigure(res, c.request.query.path),
+      writeFigure: (
+        c: OperationContext<"writeFigure", FigureWriteRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleWriteFigure(res, c.request.query.path, c.request.requestBody),
 
       /**
        * The document decided the request was malformed. Its Ajv errors name
@@ -767,9 +772,7 @@ export default class AgentHTTPProvider extends ProviderContract {
           "INVALID_PARAMS",
           (c.validation.errors ?? [])
             .map((error) =>
-              typeof error === "string"
-                ? error
-                : `${error.instancePath} ${error.message}`.trim(),
+              typeof error === "string" ? error : `${error.instancePath} ${error.message}`.trim(),
             )
             .join("; ") || "Request does not match the published schema",
         ),
@@ -1037,25 +1040,41 @@ export default class AgentHTTPProvider extends ProviderContract {
       ? fileURLToPath(request.document.uri)
       : request.document.uri;
     if (!(await this._queries.isOpenable(requestedPath))) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document is outside configured workspace scope");
+      this.sendError(
+        res,
+        404,
+        "DOCUMENT_NOT_FOUND",
+        "Document is outside configured workspace scope",
+      );
       return;
     }
     const filePath = await fs.promises.realpath(requestedPath);
     const documentId = this._documents.ensureDocumentId(filePath);
-    const baseline = await this._queries.readDocumentContent(documentId, "working", 1, Number.MAX_SAFE_INTEGER);
+    const baseline = await this._queries.readDocumentContent(
+      documentId,
+      "working",
+      1,
+      Number.MAX_SAFE_INTEGER,
+    );
     if (baseline === undefined || baseline === "OUTSIDE_WORKSPACE") {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    const claims = request.claims !== undefined
-      ? request.claims
-      : [{ patch: request.patch!, description: request.description! }];
-    await this.handleSubmitProposal(res, documentId, {
-      baselineSha256: request.baseline?.sha256 ?? baseline.revision.sha256,
-      expectedReviewGeneration: baseline.reviewGeneration,
-      claims,
-      clientRequestId: request.clientRequestId,
-    }, request.focus !== false);
+    const claims =
+      request.claims !== undefined
+        ? request.claims
+        : [{ patch: request.patch!, description: request.description! }];
+    await this.handleSubmitProposal(
+      res,
+      documentId,
+      {
+        baselineSha256: request.baseline?.sha256 ?? baseline.revision.sha256,
+        expectedReviewGeneration: baseline.reviewGeneration,
+        claims,
+        clientRequestId: request.clientRequestId,
+      },
+      request.focus ?? true,
+    );
   }
 
   private async handleSubmitProposal(
@@ -1134,7 +1153,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         if (current !== undefined) {
           res.setHeader("ETag", `"sha256:${sha256Text(current.document.toString())}"`);
         }
-        this.sendError(res, 412, focus === undefined ? "REVISION_MISMATCH" : "BASELINE_MISMATCH", result.message);
+        this.sendError(
+          res,
+          412,
+          focus === undefined ? "REVISION_MISMATCH" : "BASELINE_MISMATCH",
+          result.message,
+        );
       } else {
         // Every other refusal, including ANNOTATION_NOT_FOUND — a claim's
         // addressesAnnotationIds named an id this document does not have.
@@ -1167,7 +1191,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       const view = this._documents.getFocusedView();
       const opened = await this._documents.openFile(view?.windowId, view?.leafId, filePath, true);
       if (!opened) {
-        throw new Error(`Review ${result.reviewId} committed, but document ${documentId} could not be focused`);
+        throw new Error(
+          `Review ${result.reviewId} committed, but document ${documentId} could not be focused`,
+        );
       }
     }
     this.sendJson(res, 200, {
@@ -1209,10 +1235,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, result);
   }
 
-  private async handleGetAnnotation(
-    res: http.ServerResponse,
-    annotationId: string,
-  ): Promise<void> {
+  private async handleGetAnnotation(res: http.ServerResponse, annotationId: string): Promise<void> {
     const annotation = await this._queries.getAnnotation(annotationId);
     if (annotation === undefined) {
       this.sendError(res, 404, "ANNOTATION_NOT_FOUND", "Annotation not found");
@@ -1246,12 +1269,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         body.expectedAnnotationGeneration,
       );
     if (!("messageId" in result)) {
-      this.sendError(
-        res,
-        STATUS_BY_CODE[result.code],
-        result.code,
-        result.message,
-      );
+      this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message);
       return;
     }
     const annotationGeneration = this._documents.annotationQueries.getAnnotations(
@@ -1266,29 +1284,29 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleListReviews(res: http.ServerResponse): Promise<void> {
-    const reviews: ReviewListEntry[] = (await this._documents.reviewQueries.listReviewQueries()).map(
-      (query) => {
-        if (query.attached) {
-          return {
-            ...query.status,
-            documentId: query.documentId,
-            documentPath: query.documentPath,
-            attached: true,
-          };
-        }
-        const { sidecar } = query;
-        const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
+    const reviews: ReviewListEntry[] = (
+      await this._documents.reviewQueries.listReviewQueries()
+    ).map((query) => {
+      if (query.attached) {
         return {
-          reviewId: sidecar.review.reviewId,
-          state: classifyReviewState(sidecar.review.invalidated, unresolvedChunks),
-          generation: sidecar.review.generation,
-          unresolvedChunks,
-          packetCount: sidecar.review.packets.length,
-          documentPath: sidecar.documentPath,
-          attached: false,
+          ...query.status,
+          documentId: query.documentId,
+          documentPath: query.documentPath,
+          attached: true,
         };
-      },
-    );
+      }
+      const { sidecar } = query;
+      const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
+      return {
+        reviewId: sidecar.review.reviewId,
+        state: classifyReviewState(sidecar.review.invalidated, unresolvedChunks),
+        generation: sidecar.review.generation,
+        unresolvedChunks,
+        packetCount: sidecar.review.packets.length,
+        documentPath: sidecar.documentPath,
+        attached: false,
+      };
+    });
     this.sendJson(res, 200, { reviews });
   }
 
@@ -1297,10 +1315,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    * 409 when the id names a detached review (it exists — /v1/reviews just
    * listed it — but its file is closed), 404 only when no review carries it.
    */
-  private async sendReviewLookupFailure(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): Promise<void> {
+  private async sendReviewLookupFailure(res: http.ServerResponse, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found.");
@@ -1316,12 +1331,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       );
       return;
     }
-    this.sendError(
-      res,
-      404,
-      "REVIEW_NOT_FOUND",
-      "Review not found.",
-    );
+    this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found.");
   }
 
   private async handleGetReview(res: http.ServerResponse, reviewId: string): Promise<void> {
@@ -1354,10 +1364,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewDiff(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): Promise<void> {
+  private async handleGetReviewDiff(res: http.ServerResponse, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1429,11 +1436,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       await this.sendReviewLookupFailure(res, reviewId);
       return;
     }
-    const result = await this._documents.addReviewComment(
-      reviewId,
-      text,
-      expectedReviewGeneration,
-    );
+    const result = await this._documents.addReviewComment(reviewId, text, expectedReviewGeneration);
     if (!result.ok) {
       this.sendError(
         res,
@@ -1456,10 +1459,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewChunks(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): Promise<void> {
+  private async handleGetReviewChunks(res: http.ServerResponse, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1491,10 +1491,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewPackets(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): Promise<void> {
+  private async handleGetReviewPackets(res: http.ServerResponse, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1558,10 +1555,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, { databases: this._citeproc.listDatabases() });
   }
 
-  private handleListCitationItems(
-    res: http.ServerResponse,
-    database: string | undefined,
-  ): void {
+  private handleListCitationItems(res: http.ServerResponse, database: string | undefined): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citation provider is not available");
       return;
@@ -1607,10 +1601,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
   }
 
-  private handleRenderCitation(
-    res: http.ServerResponse,
-    body: RenderCitationRequest,
-  ): void {
+  private handleRenderCitation(res: http.ServerResponse, body: RenderCitationRequest): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citation provider is not available");
       return;
@@ -1667,6 +1658,135 @@ export default class AgentHTTPProvider extends ProviderContract {
         404,
         "CITATION_DATABASE_NOT_LOADED",
         err instanceof Error ? err.message : `Database not loaded: ${db}`,
+      );
+    }
+  }
+
+  private authoringHomeDirectory(): string {
+    return this._runtimeEnvironment?.homeDirectory ?? app.getPath("home");
+  }
+
+  private centralFiguresDirectory(): string {
+    return resolveCentralFiguresDirectory(
+      this._app.config.get().tikz?.figuresDir ?? "",
+      this.authoringHomeDirectory(),
+      this._runtimeEnvironment?.env ?? process.env,
+    );
+  }
+
+  private async handleListMacros(
+    res: http.ServerResponse,
+    query: string | undefined,
+  ): Promise<void> {
+    try {
+      const inventory = await loadCanonicalMacroInventory(this.authoringHomeDirectory());
+      const needle = query?.trim().toLocaleLowerCase("en-US") ?? "";
+      const macros =
+        needle === ""
+          ? inventory.macros
+          : inventory.macros.filter((macro) => {
+              if (macro.name.toLocaleLowerCase("en-US").includes(needle)) {
+                return true;
+              }
+              if (macro.mathjax?.replacement.toLocaleLowerCase("en-US").includes(needle) === true) {
+                return true;
+              }
+              return macro.declarations.some(
+                (declaration) =>
+                  declaration.sourcePath.toLocaleLowerCase("en-US").includes(needle) ||
+                  declaration.declaration.toLocaleLowerCase("en-US").includes(needle) ||
+                  declaration.context.toLocaleLowerCase("en-US").includes(needle),
+              );
+            });
+      this.sendJson(res, 200, { root: inventory.root, count: macros.length, macros });
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleListFigures(res: http.ServerResponse): Promise<void> {
+    const root = this.centralFiguresDirectory();
+    try {
+      const entries = await listCentralFigures(root);
+      this.sendJson(res, 200, { root, count: entries.length, entries });
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleSearchFigures(res: http.ServerResponse, query: string): Promise<void> {
+    const root = this.centralFiguresDirectory();
+    try {
+      const result = await searchCentralFigures(root, query);
+      this.sendJson(res, 200, { root, query, ...result });
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleReadFigure(res: http.ServerResponse, relativePath: string): Promise<void> {
+    try {
+      this.sendJson(
+        res,
+        200,
+        await readCentralFigure(this.centralFiguresDirectory(), relativePath),
+      );
+    } catch (error) {
+      if (error instanceof CentralFigureNotFoundError) {
+        this.sendError(res, 404, "FIGURE_NOT_FOUND", error.message);
+        return;
+      }
+      if (error instanceof CentralFigureInputError) {
+        this.sendError(res, 400, "INVALID_PARAMS", error.message);
+        return;
+      }
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleWriteFigure(
+    res: http.ServerResponse,
+    relativePath: string,
+    body: FigureWriteRequest,
+  ): Promise<void> {
+    try {
+      const written = await writeCentralFigure(
+        this.centralFiguresDirectory(),
+        relativePath,
+        body.content,
+        body.encoding ?? "utf8",
+      );
+      this.sendJson(res, 200, written);
+    } catch (error) {
+      if (error instanceof CentralFigureInputError) {
+        this.sendError(res, 400, "INVALID_PARAMS", error.message);
+        return;
+      }
+      this.sendError(
+        res,
+        500,
+        "PERSISTENCE_FAILED",
+        error instanceof Error ? error.message : String(error),
       );
     }
   }
