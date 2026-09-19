@@ -36,6 +36,7 @@ import type {
   AgentErrorCode,
   AgentErrorResponse,
   AgentEvent,
+  FigureCreateRequest,
   FigureWriteRequest,
   LintDiagnostic,
   LintResponse,
@@ -82,8 +83,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { type Document, parseDocument } from "yaml";
 import {
+  CentralFigureAlreadyExistsError,
   CentralFigureInputError,
   CentralFigureNotFoundError,
+  createCentralTikzFigure,
   listCentralFigures,
   readCentralFigure,
   resolveCentralFiguresDirectory,
@@ -201,6 +204,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   CITATION_DATABASE_NOT_LOADED: 404,
   CITATION_NOT_FOUND: 404,
   FIGURE_NOT_FOUND: 404,
+  FIGURE_ALREADY_EXISTS: 409,
   DUPLICATE_CLAIM_DESCRIPTION: 400,
   INTERNAL_ERROR: 500,
 };
@@ -767,6 +771,11 @@ export default class AgentHTTPProvider extends ProviderContract {
       listMacros: (c: OperationContext<"listMacros">, _req, res: http.ServerResponse) =>
         this.handleListMacros(res, c.request.query.query),
       listFigures: (_c, _req, res) => this.handleListFigures(res),
+      createFigure: (
+        c: OperationContext<"createFigure", FigureCreateRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleCreateFigure(res, c.request.requestBody),
       searchFigures: (c: OperationContext<"searchFigures">, _req, res: http.ServerResponse) =>
         this.handleSearchFigures(res, c.request.query.query),
       readFigure: (c: OperationContext<"readFigure">, _req, res: http.ServerResponse) =>
@@ -1738,6 +1747,35 @@ export default class AgentHTTPProvider extends ProviderContract {
         res,
         500,
         "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleCreateFigure(
+    res: http.ServerResponse,
+    body: FigureCreateRequest,
+  ): Promise<void> {
+    try {
+      const created = await createCentralTikzFigure(
+        this.centralFiguresDirectory(),
+        body.path,
+        body.content,
+      );
+      this.sendJson(res, 201, created);
+    } catch (error) {
+      if (error instanceof CentralFigureAlreadyExistsError) {
+        this.sendError(res, 409, "FIGURE_ALREADY_EXISTS", error.message);
+        return;
+      }
+      if (error instanceof CentralFigureInputError) {
+        this.sendError(res, 400, "INVALID_PARAMS", error.message);
+        return;
+      }
+      this.sendError(
+        res,
+        500,
+        "PERSISTENCE_FAILED",
         error instanceof Error ? error.message : String(error),
       );
     }

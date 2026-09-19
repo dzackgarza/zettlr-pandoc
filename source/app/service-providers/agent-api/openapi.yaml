@@ -358,6 +358,7 @@ components:
             - CITATION_DATABASE_NOT_LOADED
             - CITATION_NOT_FOUND
             - FIGURE_NOT_FOUND
+            - FIGURE_ALREADY_EXISTS
             - DUPLICATE_CLAIM_DESCRIPTION
             - BASELINE_MISMATCH
         message:
@@ -1686,6 +1687,25 @@ components:
             - utf8
             - base64
           default: utf8
+    FigureCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - content
+      properties:
+        path:
+          type: string
+          minLength: 6
+          maxLength: 4096
+          pattern: '^.+\.tikz$'
+          description: >-
+            Relative destination under the configured centralized figures directory.
+            The filename must end in the lowercase `.tikz` extension; `.tikzcd` and
+            every other extension are refused.
+        content:
+          type: string
+          description: UTF-8 TikZ source written byte-for-byte to the new file.
     FigureSearchHit:
       type: object
       additionalProperties: false
@@ -2885,6 +2905,44 @@ paths:
                 $ref: '#/components/schemas/FigureListResponse'
         '500':
           description: The figure tree could not be listed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+    post:
+      operationId: createFigure
+      summary: Create a TikZ figure source file
+      description: >-
+        Atomically creates one new UTF-8 `.tikz` file under the configured
+        centralized figures directory. Parent directories are created as needed.
+        Existing files are never replaced by this operation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FigureCreateRequest'
+      responses:
+        '201':
+          description: The newly created TikZ source file.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FigureFileResponse'
+        '400':
+          description: The destination path is unsafe or is not a lowercase `.tikz` path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: A file already exists at the requested destination.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '500':
+          description: The TikZ source file could not be persisted.
           content:
             application/json:
               schema:

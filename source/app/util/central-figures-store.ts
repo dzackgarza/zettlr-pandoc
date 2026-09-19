@@ -43,6 +43,7 @@ const SEARCH_HIT_LIMIT = 500;
 
 export class CentralFigureInputError extends Error {}
 export class CentralFigureNotFoundError extends Error {}
+export class CentralFigureAlreadyExistsError extends Error {}
 
 function expandHome(value: string, homeDirectory: string): string {
   if (value === "~") {
@@ -272,6 +273,43 @@ export async function writeCentralFigure(
   try {
     await fs.writeFile(temporary, bytes, { flag: "wx" });
     await fs.rename(temporary, target.path);
+  } finally {
+    await fs.rm(temporary, { force: true });
+  }
+  return await readCentralFigure(root, target.relativePath);
+}
+
+/**
+ * Create one new authored TikZ source file without replacing an existing
+ * figure. The `.tikz` extension is part of this operation's domain contract,
+ * not merely an HTTP-schema convenience, so every caller gets the same rule.
+ */
+export async function createCentralTikzFigure(
+  root: string,
+  relativePath: string,
+  content: string,
+): Promise<CentralFigureReadResult> {
+  if (!relativePath.endsWith(".tikz")) {
+    throw new CentralFigureInputError("Created figure files must use the .tikz extension");
+  }
+
+  const target = await prepareWritableFile(root, relativePath);
+  const temporary = `${target.path}.zettlr-create-${process.pid}-${Date.now()}`;
+  try {
+    await fs.writeFile(temporary, content, { encoding: "utf8", flag: "wx" });
+    try {
+      // A hard-link publish is atomic and, unlike rename(), cannot replace an
+      // existing destination. The temporary file lives beside the target, so
+      // the link is guaranteed to stay on the same filesystem.
+      await fs.link(temporary, target.path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        throw new CentralFigureAlreadyExistsError(
+          `Figure file already exists: ${target.relativePath}`,
+        );
+      }
+      throw error;
+    }
   } finally {
     await fs.rm(temporary, { force: true });
   }

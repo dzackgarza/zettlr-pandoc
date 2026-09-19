@@ -93,6 +93,7 @@ export type MacroInventoryResponse = Schemas["MacroInventoryResponse"];
 export type FigureEntry = Schemas["FigureEntry"];
 export type FigureListResponse = Schemas["FigureListResponse"];
 export type FigureFileResponse = Schemas["FigureFileResponse"];
+export type FigureCreateRequest = Schemas["FigureCreateRequest"];
 export type FigureWriteRequest = Schemas["FigureWriteRequest"];
 export type FigureSearchHit = Schemas["FigureSearchHit"];
 export type FigureSearchResponse = Schemas["FigureSearchResponse"];

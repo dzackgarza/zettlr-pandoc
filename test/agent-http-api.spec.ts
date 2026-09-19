@@ -1321,6 +1321,54 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.deepEqual(readFileSync(path.join(figuresRoot, "images", "generated.bin")), bytes);
   });
 
+  it("creates only new lowercase .tikz figure source files", async function () {
+    const source = "\\begin{tikzpicture}\n\\draw (0,0) -- (1,1);\n\\end{tikzpicture}\n";
+    const created = await httpRequest("POST", "/v1/figures", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "generated/nested/new-figure.tikz", content: source }),
+    });
+    assert.equal(created.status, 201, created.body);
+    const payload = JSON.parse(created.body) as FigureFileResponse;
+    assertMatchesSchema(payload, "FigureFileResponse");
+    assert.equal(payload.path, "generated/nested/new-figure.tikz");
+    assert.equal(payload.encoding, "utf8");
+    assert.equal(payload.content, source);
+    assert.equal(
+      readFileSync(path.join(figuresRoot, "generated", "nested", "new-figure.tikz"), "utf8"),
+      source,
+    );
+
+    for (const invalidPath of [
+      "generated/not-tikz.tikzcd",
+      "generated/not-tikz.tex",
+      "generated/UPPER.TIKZ",
+    ]) {
+      const invalid = await httpRequest("POST", "/v1/figures", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: invalidPath, content: source }),
+      });
+      assert.equal(invalid.status, 400, `${invalidPath}: ${invalid.body}`);
+      assert.equal((JSON.parse(invalid.body) as AgentErrorResponse).error.code, "INVALID_PARAMS");
+      assert.equal(existsSync(path.join(figuresRoot, invalidPath)), false);
+    }
+
+    const replacement = "\\begin{tikzpicture}\n\\node {replacement};\n\\end{tikzpicture}\n";
+    const collision = await httpRequest("POST", "/v1/figures", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "generated/nested/new-figure.tikz", content: replacement }),
+    });
+    assert.equal(collision.status, 409, collision.body);
+    assert.equal(
+      (JSON.parse(collision.body) as AgentErrorResponse).error.code,
+      "FIGURE_ALREADY_EXISTS",
+    );
+    assert.equal(
+      readFileSync(path.join(figuresRoot, "generated", "nested", "new-figure.tikz"), "utf8"),
+      source,
+      "createFigure must never replace an existing figure",
+    );
+  });
+
   it("searches figure paths and text contents while refusing traversal outside the configured root", async function () {
     const searched = await httpRequest("GET", "/v1/figures/search?query=elliptic");
     assert.equal(searched.status, 200, searched.body);
