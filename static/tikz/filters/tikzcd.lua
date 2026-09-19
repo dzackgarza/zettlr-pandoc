@@ -101,6 +101,19 @@ local function emit_figure_compile_error(log_path, figure_body, preamble_lines)
       end
     end
   end
+
+  -- The mapped marker above is a convenience for editor line highlighting, not
+  -- a substitute for the compiler's own diagnostics.  Always forward the real
+  -- pdflatex log on failure so callers can present the actual TeX error even
+  -- when the narrow `! ...` / `l.NN` mapper cannot associate it with a figure
+  -- body line.  stderr is Pandoc's diagnostic channel; unlike stdout, writing
+  -- the log here cannot corrupt the filter's document output.
+  io.stderr:write("[tikzcd-pdflatex-log-begin]\n")
+  io.stderr:write(log_text)
+  if not log_text:match("\n$") then
+    io.stderr:write("\n")
+  end
+  io.stderr:write("[tikzcd-pdflatex-log-end]\n")
   return emitted
 end
 

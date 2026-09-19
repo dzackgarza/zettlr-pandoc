@@ -34,7 +34,7 @@
         {{ failureSummary }}
       </div>
       <details v-if="failureDetails !== ''">
-        <summary>Details</summary>
+        <summary>{{ failureDetailsLabel }}</summary>
         <pre>{{ failureDetails }}</pre>
       </details>
     </div>
@@ -59,44 +59,47 @@
  * END HEADER
  */
 
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
-import type { EditorView } from '@codemirror/view'
-import { reportError } from '@common/util/error-reporting'
+import type { EditorView } from "@codemirror/view";
 import {
   TikzLivePreviewController,
   type TikzLivePreviewState,
   type TikzLivePreviewTarget,
-  type TikzRenderFailure
-} from '@common/modules/markdown-editor/tikz-live-preview'
-import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-render'
-import TikzFigureViewer from './TikzFigureViewer.vue'
+  type TikzRenderFailure,
+} from "@common/modules/markdown-editor/tikz-live-preview";
+import { reportError } from "@common/util/error-reporting";
+import { tikzCompilerLogExcerpt, tikzCompilerLogHeadline } from "@common/util/tikz-compiler-log";
+import type { TikzRenderRequest, TikzRenderResult } from "source/app/util/tikz-render";
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import TikzFigureViewer from "./TikzFigureViewer.vue";
 
 const props = defineProps<{
-  target: TikzLivePreviewTarget
-  editorView: EditorView
-  fullscreen: boolean
-}>()
+  target: TikzLivePreviewTarget;
+  editorView: EditorView;
+  fullscreen: boolean;
+}>();
 
 const emit = defineEmits<{
-  (e: 'status', text: string): void
-  (e: 'busy', busy: boolean): void
-}>()
+  (e: "status", text: string): void;
+  (e: "busy", busy: boolean): void;
+}>();
 
-interface FigureViewerHandle { fit: () => void }
+interface FigureViewerHandle {
+  fit: () => void;
+}
 
-async function render (request: TikzRenderRequest): Promise<TikzRenderResult> {
+async function render(request: TikzRenderRequest): Promise<TikzRenderResult> {
   try {
-    return await window.ipc.invoke('application', {
-      command: 'tikz-render',
-      payload: request
-    })
+    return await window.ipc.invoke("application", {
+      command: "tikz-render",
+      payload: request,
+    });
   } catch (error) {
-    reportError('TikZ live preview IPC failed', error)
+    reportError("TikZ live preview IPC failed", error);
     return {
       ok: false,
-      kind: 'pandoc-error',
-      log: error instanceof Error ? error.message : String(error)
-    }
+      kind: "pandoc-error",
+      log: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -106,93 +109,118 @@ const EMPTY_STATE: TikzLivePreviewState = {
   failure: null,
   pending: false,
   rendering: false,
-  stale: false
-}
+  stale: false,
+};
 
-const state = shallowRef<TikzLivePreviewState>(EMPTY_STATE)
-const figureViewer = ref<FigureViewerHandle|null>(null)
+const state = shallowRef<TikzLivePreviewState>(EMPTY_STATE);
+const figureViewer = ref<FigureViewerHandle | null>(null);
 const controller = new TikzLivePreviewController(
   render,
-  next => { state.value = next },
-  250
-)
+  (next) => {
+    state.value = next;
+  },
+  250,
+);
 
 watch(
   () => props.target,
-  target => { controller.setTarget(target) },
-  { immediate: true }
-)
+  (target) => {
+    controller.setTarget(target);
+  },
+  { immediate: true },
+);
 
 watch(
   () => props.fullscreen,
   async () => {
-    await nextTick()
-    figureViewer.value?.fit()
-  }
-)
+    await nextTick();
+    figureViewer.value?.fit();
+  },
+);
 
 const statusText = computed(() => {
   if (state.value.failure !== null) {
-    return state.value.lastGood === null ? 'Render failed' : 'Last good render'
+    return state.value.lastGood === null ? "Render failed" : "Last good render";
   }
   if (state.value.pending) {
-    return state.value.lastGood === null ? 'Rendering…' : 'Updating…'
+    return state.value.lastGood === null ? "Rendering…" : "Updating…";
   }
-  return state.value.lastGood === null ? '' : 'Up to date'
-})
+  return state.value.lastGood === null ? "" : "Up to date";
+});
 
-watch(statusText, text => { emit('status', text) }, { immediate: true })
-watch(() => state.value.rendering, busy => { emit('busy', busy) }, { immediate: true })
+watch(
+  statusText,
+  (text) => {
+    emit("status", text);
+  },
+  { immediate: true },
+);
+watch(
+  () => state.value.rendering,
+  (busy) => {
+    emit("busy", busy);
+  },
+  { immediate: true },
+);
 
-function summarizeFailure (failure: TikzRenderFailure): string {
+function summarizeFailure(failure: TikzRenderFailure): string {
   switch (failure.kind) {
-    case 'compile-error': {
-      const first = failure.errors[0]
+    case "compile-error": {
+      const first = failure.errors[0];
       return first === undefined
-        ? 'TikZ failed to compile.'
-        : `TikZ line ${first.line}: ${first.message}`
+        ? tikzCompilerLogHeadline(failure.log) || "TikZ failed to compile without compiler output."
+        : `TikZ line ${first.line}: ${first.message}`;
     }
-    case 'missing-tools':
-      return `TikZ tools not found: ${failure.missing.join(', ')}`
-    case 'toolchain-probe-failed':
-      return `Could not check ${failure.tool}: ${failure.code}`
-    case 'pandoc-error':
-      return 'TikZ render failed.'
-    case 'render-terminated':
-      return `TikZ render was terminated by ${failure.signal}.`
+    case "missing-tools":
+      return `TikZ tools not found: ${failure.missing.join(", ")}`;
+    case "toolchain-probe-failed":
+      return `Could not check ${failure.tool}: ${failure.code}`;
+    case "pandoc-error":
+      return "TikZ render failed.";
+    case "render-terminated":
+      return `TikZ render was terminated by ${failure.signal}.`;
     default: {
-      const unhandled: never = failure
-      return String(unhandled)
+      const unhandled: never = failure;
+      return String(unhandled);
     }
   }
 }
 
-const failureSummary = computed(() => state.value.failure === null ? '' : summarizeFailure(state.value.failure))
+const failureSummary = computed(() =>
+  state.value.failure === null ? "" : summarizeFailure(state.value.failure),
+);
 
 const failureDetails = computed(() => {
-  const failure = state.value.failure
-  if (failure === null) return ''
-  if (failure.kind === 'compile-error') {
+  const failure = state.value.failure;
+  if (failure === null) {
+    return "";
+  }
+  if (failure.kind === "compile-error") {
     const mapped = failure.errors
-      .map(error => `line ${error.line}: ${error.message}\n${error.sourceLine}`)
-      .join('\n\n')
-    return mapped !== '' ? mapped : failure.log.split('\n').slice(-12).join('\n')
+      .map((error) => `line ${error.line}: ${error.message}\n${error.sourceLine}`)
+      .join("\n\n");
+    const compilerLog = tikzCompilerLogExcerpt(failure.log, 32);
+    return [mapped, compilerLog].filter((part) => part !== "").join("\n\nCompiler log:\n");
   }
-  if (failure.kind === 'pandoc-error' || failure.kind === 'render-terminated') {
-    return failure.log.split('\n').slice(-12).join('\n')
+  if (failure.kind === "pandoc-error" || failure.kind === "render-terminated") {
+    return failure.log.split("\n").slice(-12).join("\n");
   }
-  return ''
-})
+  return "";
+});
 
-function refresh (): void {
-  controller.forceRender()
+const failureDetailsLabel = computed(() =>
+  state.value.failure?.kind === "compile-error" ? "Compiler diagnostics" : "Details",
+);
+
+function refresh(): void {
+  controller.forceRender();
 }
 
-defineExpose({ refresh })
+defineExpose({ refresh });
 
 onBeforeUnmount(() => {
-  controller.dispose()
-})
+  controller.dispose();
+});
 </script>
 
 <style scoped lang="less">
