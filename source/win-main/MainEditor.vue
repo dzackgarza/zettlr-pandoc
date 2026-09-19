@@ -13,7 +13,6 @@
   >
     <div class="main-editor-workspace">
       <div
-        :id="`cm-text-${props.leafId}`"
         ref="editorHost"
         class="main-editor-host"
       />
@@ -63,9 +62,9 @@
  */
 
 import { reportError } from '@common/util/error-reporting'
-import MarkdownEditor, { type EditorViewPersistentState } from '@common/modules/markdown-editor'
+import MarkdownEditor from '@common/modules/markdown-editor'
 
-import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, toRef, onUpdated } from 'vue'
+import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, toRef, nextTick } from 'vue'
 import _ from 'underscore'
 import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
 import { hasMarkdownExt } from '@common/util/file-extention-checks'
@@ -163,7 +162,6 @@ const props = defineProps<{
   editorCommands: EditorCommands
   distractionFree: boolean
   file: OpenDocument
-  persistentStateMap: Map<string, EditorViewPersistentState>
 }>()
 
 const emit = defineEmits<{
@@ -189,6 +187,7 @@ const collaborationStore = useDocumentCollaborationStore()
  * store entry; nothing here pulls the sidecar or a session of its own.
  */
 const collaborationSession = computed(() => collaborationStore.sessionsByDocumentPath[props.file.path])
+const isActiveTab = computed(() => props.activeFile?.path === props.file.path)
 
 /**
  * The open selection-creation composer request (M6), or null when none is
@@ -225,14 +224,31 @@ function closeAnnotationComposer (): void {
 
 // UNREFFED STUFF
 let currentEditor: MarkdownEditor|null = null
+let editorLoadPromise: Promise<void>|null = null
 const activeTikzSource = shallowRef<TikzSourceBlock|null>(null)
 const activeEditorView = shallowRef<EditorView|null>(null)
 
+function ownsWindowActiveState (editor: MarkdownEditor|null = currentEditor): editor is MarkdownEditor {
+  return editor !== null &&
+    editor === currentEditor &&
+    isActiveTab.value &&
+    documentTreeStore.lastLeafId === props.leafId
+}
+
 function updateActiveTikzSource (editor: MarkdownEditor): void {
-  if (currentEditor !== editor || !hasMarkdownExt(editor.documentPath)) {
+  if (!ownsWindowActiveState(editor) || !hasMarkdownExt(editor.documentPath)) {
     return
   }
   activeTikzSource.value = findActiveTikzBlock(editor.instance.state)
+}
+
+function publishActiveEditorState (editor: MarkdownEditor): void {
+  if (!ownsWindowActiveState(editor)) {
+    return
+  }
+  windowStateStore.activeDocumentInfo = editor.documentInfo
+  windowStateStore.tableOfContents = editor.tableOfContents
+  updateActiveTikzSource(editor)
 }
 
 
@@ -259,7 +275,7 @@ function applyPendingNavigation (): void {
     return
   }
 
-  if (pendingNavigation.filePath !== currentEditor.documentPath) {
+  if (pendingNavigation.filePath !== currentEditor.documentPath || !isActiveTab.value) {
     return // The pane moved elsewhere; keep waiting or get superseded.
   }
 
@@ -289,6 +305,9 @@ function applyReviewDiffSession (session: ReviewDiffSession): void {
 
 // EVENT LISTENERS
 const stopCiteprocUpdates = ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
+  if (!isActiveTab.value) {
+    return
+  }
   const descriptor = activeFileDescriptor.value
 
   if (descriptor === undefined || descriptor.type !== 'file') {
@@ -322,6 +341,9 @@ const stopCiteprocUpdates = ipcRenderer.on('citeproc-database-updated', (_event,
 // recoverable-error boundary (closable toast, typed outcome); this catch
 // only guards against unexpected renderer-side faults.
 const stopReferenceUpdates = ipcRenderer.on('references', _event => {
+  if (!isActiveTab.value) {
+    return
+  }
   updateReferenceEntries().catch(e => {
     reportError('Could not update workspace reference entries', e)
   })
@@ -479,16 +501,18 @@ const stopReloads = ipcRenderer.on('reload-editors', _e => {
 
 // Update the file database whenever links have been updated
 const stopLinkUpdates = ipcRenderer.on('links', _e => {
+  if (!isActiveTab.value) {
+    return
+  }
   updateFileDatabase().catch(err => reportError('Could not update file database', err))
 })
 
 // MOUNTED HOOK
 onMounted(() => {
-  loadDocument().catch(reportDocumentLoadError)
-  // mainEditorWrapper is stable across a file switch (currentEditor's own
-  // DOM is replaced underneath it), so this one listener, attached once,
-  // catches every "Annotate for AI…" request for the pane's whole lifetime.
   mainEditorWrapper.value?.addEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer)
+  if (isActiveTab.value) {
+    activateTab().catch(reportDocumentLoadError)
+  }
 })
 
 onBeforeUnmount(() => {
@@ -500,34 +524,19 @@ onBeforeUnmount(() => {
   activeEditorView.value = null
   mainEditorWrapper.value?.removeEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer)
   if (currentEditor !== null) {
-    props.persistentStateMap.set(props.file.path, currentEditor.persistentState)
-    // Clear out the table of contents before unmounting the component.
-    windowStateStore.tableOfContents = undefined
     currentEditor.unmount()
   }
 })
 
-onUpdated(() => {
-  // We hook into the onUpdated lifecycle event since that will fire when the
-  // data for this component update, which includes visibility with the v-show
-  // directive. In case that the editor component is mounted and non-hidden, we
-  // will fire
-  if (currentEditor === null) {
+watch(isActiveTab, active => {
+  if (!active) {
+    activeTikzSource.value = null
+    annotationComposerRequest.value = null
     return
   }
-
-  const currentFilePath = currentEditor.documentPath
-  if (currentFilePath !== props.activeFile?.path) {
-    // File path has changed -> unmount and remount (duplicate code from
-    // onMounted and onBeforeUnmount hooks).
-    props.persistentStateMap.set(currentFilePath, currentEditor.persistentState)
-    currentEditor.unmount()
-    loadDocument().catch(reportDocumentLoadError)
-  }
-
-  if (!currentEditor.hasFocus()) {
-    currentEditor.focus()
-  }
+  nextTick()
+    .then(async () => { await activateTab() })
+    .catch(reportDocumentLoadError)
 })
 
 // DATA SETUP
@@ -845,9 +854,21 @@ const fsalFiles = computed<MDFileDescriptor[]>(() => {
 })
 
 // WATCHERS
-watch(useH1, () => { updateFileDatabase().catch(err => reportError('Could not update file database', err)) })
-watch(useTitle, () => { updateFileDatabase().catch(err => reportError('Could not update file database', err)) })
-watch(fsalFiles, () => { updateFileDatabase().catch(err => reportError('Could not update file database', err)) })
+watch(useH1, () => {
+  if (isActiveTab.value) {
+    updateFileDatabase().catch(err => reportError('Could not update file database', err))
+  }
+})
+watch(useTitle, () => {
+  if (isActiveTab.value) {
+    updateFileDatabase().catch(err => reportError('Could not update file database', err))
+  }
+})
+watch(fsalFiles, () => {
+  if (isActiveTab.value) {
+    updateFileDatabase().catch(err => reportError('Could not update file database', err))
+  }
+})
 
 watch(editorConfiguration, (newValue, oldValue) => {
   if (!_.isEqual(newValue, oldValue)) {
@@ -856,6 +877,9 @@ watch(editorConfiguration, (newValue, oldValue) => {
 })
 
 watch(globalSearchResults, () => {
+  if (!isActiveTab.value) {
+    return
+  }
   // TODO: I don't like that we need a timeout here.
   setTimeout(maybeHighlightSearchResults, 200)
 })
@@ -915,24 +939,20 @@ watch([
  * @return  {MarkdownEditor}       The requested editor
  */
 async function getEditorFor (doc: string): Promise<MarkdownEditor> {
-  const persistentState = props.persistentStateMap.get(doc)
   const editor = new MarkdownEditor(
     props.leafId,
     props.windowId,
     doc,
     documentAuthorityIPCAPI,
-    editorConfiguration.value,
-    persistentState
+    editorConfiguration.value
   )
 
   editor.on('document-load-error', reportDocumentLoadError)
 
   // Update the document info on corresponding events
   editor.on('loaded', () => {
-    if (currentEditor === editor) {
-      windowStateStore.activeDocumentInfo = currentEditor.documentInfo
-      windowStateStore.tableOfContents = currentEditor.tableOfContents
-      updateActiveTikzSource(editor)
+    if (ownsWindowActiveState(editor)) {
+      publishActiveEditorState(editor)
       // A pane navigation may have arrived before this editor finished
       // loading its document (issue #1 Phase 5); restore it now.
       applyPendingNavigation()
@@ -940,21 +960,21 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   })
 
   editor.on('change', () => {
-    if (currentEditor === editor) {
-      windowStateStore.tableOfContents = currentEditor.tableOfContents
+    if (ownsWindowActiveState(editor)) {
+      windowStateStore.tableOfContents = editor.tableOfContents
       updateActiveTikzSource(editor)
     }
   })
 
   editor.on('cursorActivity', () => {
-    if (currentEditor === editor) {
+    if (ownsWindowActiveState(editor)) {
       updateActiveTikzSource(editor)
     }
   })
 
   editor.on('docUpdate', () => {
-    if (currentEditor === editor) {
-      windowStateStore.activeDocumentInfo = currentEditor.documentInfo
+    if (ownsWindowActiveState(editor)) {
+      windowStateStore.activeDocumentInfo = editor.documentInfo
     }
   })
 
@@ -970,8 +990,8 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     // NOTE: The lastLeafId will be changed in the documentTreeStore in response
     // to an event from main (DP_EVENTS.ACTIVE_FILE) which will be emitted as a
     // result of our focus-leaf event above.
-    if (currentEditor === editor) {
-      windowStateStore.tableOfContents = currentEditor.tableOfContents
+    if (ownsWindowActiveState(editor)) {
+      windowStateStore.tableOfContents = editor.tableOfContents
     }
   })
 
@@ -1126,8 +1146,54 @@ async function loadDocument (): Promise<void> {
   if (pendingReviewDiffSession !== null) {
     applyReviewDiffSession(pendingReviewDiffSession)
   }
+  currentEditor.setAnnotations(collaborationSession.value?.annotations ?? EMPTY_ANNOTATION_SET)
+  currentEditor.setActiveAnnotation(collaborationStore.selectedAnnotationId)
+  currentEditor.setShowResolvedAnnotations(collaborationStore.showResolved)
   collaborationStore.ensureSession(props.file.path)
     .catch(err => reportError('Could not fetch the collaboration session', err))
+}
+
+async function ensureEditorLoaded (): Promise<boolean> {
+  if (currentEditor !== null) {
+    return false
+  }
+  if (editorLoadPromise === null) {
+    editorLoadPromise = loadDocument().finally(() => {
+      editorLoadPromise = null
+    })
+  }
+  await editorLoadPromise
+  return true
+}
+
+function refreshActiveEditorAuxiliaryState (): void {
+  maybeHighlightSearchResults()
+  updateFileDatabase().catch(err => reportError('Could not update file database', err))
+  updateReferenceEntries().catch(err => reportError('Could not update workspace reference entries', err))
+
+  const descriptor = activeFileDescriptor.value
+  if (descriptor?.type === 'file') {
+    getBibliographyForDescriptor(descriptor)
+      .then(updateCitationKeys)
+      .catch(err => reportError('Could not update citation keys', err))
+  }
+}
+
+async function activateTab (): Promise<void> {
+  const loadedNow = await ensureEditorLoaded()
+  const editor = currentEditor
+  if (editor === null || !isActiveTab.value) {
+    return
+  }
+
+  publishActiveEditorState(editor)
+  applyPendingNavigation()
+  if (!editor.hasFocus()) {
+    editor.focus()
+  }
+  if (!loadedNow) {
+    refreshActiveEditorAuxiliaryState()
+  }
 }
 
 function jtl (lineNumber: number): void {
