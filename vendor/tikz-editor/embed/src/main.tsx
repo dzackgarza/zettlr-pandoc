@@ -1,4 +1,4 @@
-import { StrictMode, Suspense, lazy, useEffect, useRef } from 'react';
+import { StrictMode, Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { setActiveEditorPlatform } from '@tikz-editor/app/platform/current';
 import { useEditorStore } from '@tikz-editor/app/store';
@@ -29,6 +29,7 @@ type HostMessage = {
 	fileName?: string;
 	name?: string;
 	modified?: boolean;
+	fullscreen?: boolean;
 	settings?: HostSettingsPatch;
 };
 
@@ -309,6 +310,8 @@ function loadIntoEditor(source: string, fileName = currentFileName) {
 }
 
 function HostBridge() {
+	const [fullscreen, setFullscreen] = useState(false);
+	const fullscreenRef = useRef(false);
 	const previousSourceRef = useRef<string | null>(null);
 	const previousSvgRef = useRef<string>('');
 	const pendingChangeRef = useRef<PendingEditorMessage | null>(null);
@@ -401,6 +404,10 @@ function HostBridge() {
 			} else if (action === 'settings') {
 				applyHostSettings(message.settings);
 				persistHostSettings(message.settings);
+			} else if (action === 'display') {
+				const nextFullscreen = message.fullscreen === true;
+				fullscreenRef.current = nextFullscreen;
+				setFullscreen(nextFullscreen);
 			} else if (action === 'save') {
 				flushPendingEditorMessages();
 				const source = useEditorStore.getState().source;
@@ -415,16 +422,34 @@ function HostBridge() {
 			}
 		};
 
+		const handleKeydown = (event: KeyboardEvent) => {
+			if (event.key !== 'Escape' || !fullscreenRef.current) return;
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			postToHost({ event: 'close-request' });
+		};
+
 		window.addEventListener('message', handleMessage);
+		window.addEventListener('keydown', handleKeydown, true);
 		return () => {
 			unsubscribe();
 			window.removeEventListener('message', handleMessage);
+			window.removeEventListener('keydown', handleKeydown, true);
 			if (changeTimerRef.current !== null) window.clearTimeout(changeTimerRef.current);
 			if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current);
 		};
 	}, []);
 
-	return null;
+	return fullscreen ? (
+		<button
+			type="button"
+			className="zettlr-exit-fullscreen"
+			title="Exit fullscreen (Esc)"
+			onClick={() => postToHost({ event: 'close-request' })}
+		>
+			Exit fullscreen
+		</button>
+	) : null;
 }
 
 setActiveEditorPlatform(createEmbedPlatform(DEFAULT_SOURCE));
