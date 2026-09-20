@@ -32,7 +32,7 @@ export function quiverSessionForBlock(block: TikzSourceBlock): TikzQuiverSourceS
   }
   if (!tikzBlockHasContiguousSource(block)) {
     throw new Error(
-      "Quiver cannot rewrite a raw tikzcd block whose semantic source crosses Markdown container markers",
+      "Quiver cannot edit this diagram while it is nested inside another Markdown block",
     );
   }
   return {
@@ -67,8 +67,8 @@ export function sourceForQuiverExport(session: TikzQuiverSourceSession, exported
   const match = /^\\begin\{tikzcd\}[ \t]*\r?\n([\s\S]*?)\r?\n\\end\{tikzcd\}$/u.exec(source);
   if (match === null) {
     throw new Error(
-      "Quiver exported a fenced tikzcd diagram with wrapper syntax that the fence body cannot represent. " +
-        "Switch to TikZ source mode and use a raw \\begin{tikzcd} environment for environment-level options.",
+      "This fenced tikzcd block cannot store the options Quiver added. " +
+        "Use a \\begin{tikzcd} ... \\end{tikzcd} block instead.",
     );
   }
   return match[1];

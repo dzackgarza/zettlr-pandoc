@@ -180,12 +180,12 @@ async function runAppendAndContinue (plan: AppendAndContinuePlan): Promise<void>
   })
 
   if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== 'directory') {
-    throw new Error(`Cannot append to the Project at ${plan.rootPath}: the path is not a workspace directory`)
+    throw new Error(`Can't update Project ${plan.rootPath}: that path is not an open folder`)
   }
 
   const settings: ProjectSettings|null = descriptor.settings.project
   if (settings === null) {
-    throw new Error(`Cannot append to the Project at ${plan.rootPath}: the directory carries no Project settings`)
+    throw new Error(`Can't update Project ${plan.rootPath}: no Project settings were found`)
   }
 
   await window.ipc.invoke('application', {
@@ -217,7 +217,7 @@ function applyFor (affordance: CompletionInsertionAffordance): typeof applyLabel
       // The append continuation surfaces failures through the recoverable
       // boundary (review B8): one closable error toast, never a silent
       // console-only line. The insertion above already happened either way.
-      void runRecoverably(async () => { await runAppendAndContinue(affordance.plan) }, trans('Appending to the Project'))
+      void runRecoverably(async () => { await runAppendAndContinue(affordance.plan) }, trans('Adding files to the Project'))
     }
   }
 

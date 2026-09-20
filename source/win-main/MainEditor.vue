@@ -1371,7 +1371,7 @@ function describeRenameRejection (reason: ReferenceRenameRejection): string {
     case 'malformed-key':
       return trans('Cannot rename: "%s" is not a valid reference key.', reason.newKey)
     case 'family-changed':
-      return trans('Cannot rename: references keep their family prefix ("%s:" cannot become "%s:").', reason.oldFamily, reason.newFamily)
+      return trans('Cannot rename: the reference type cannot change from "%s:" to "%s:".', reason.oldFamily, reason.newFamily)
     case 'collision':
       return trans('Cannot rename: %s is already defined in %s.', reason.newKey, reason.definitionPaths.join(', '))
     case 'unknown-key':

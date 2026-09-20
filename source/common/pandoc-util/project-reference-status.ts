@@ -73,8 +73,8 @@
  *     'standalone'         -> { kind: 'insert-with-export-warning' }
  *
  * projectStatusDisplayName(status): the exact user-facing status wording
- * shown in hovers ('In active Project', 'Omitted from active Project',
- * 'Another Project', 'Standalone document', 'This file').
+ * shown in hovers ('In current Project', 'Not included in current Project',
+ * 'Another Project', 'Outside any Project', 'This file').
  */
 
 import type { ProjectSettings } from '../../types/common/fsal'
@@ -232,7 +232,7 @@ export function applyAppendPlan (
  */
 export function appendToastMessage (plan: AppendAndContinuePlan): string {
   const names = plan.appendFiles.join(' and ')
-  return `Added ${names} to the active Project's export file list.`
+  return `Added ${names} to this Project's file list.`
 }
 
 /**
@@ -307,12 +307,12 @@ export function projectStatusDisplayName (status: ProjectReferenceStatus): strin
     case 'same-file':
       return 'This file'
     case 'in-active-project':
-      return 'In active Project'
+      return 'In current Project'
     case 'omitted-from-active-project':
-      return 'Omitted from active Project'
+      return 'Not included in current Project'
     case 'another-project':
       return 'Another Project'
     case 'standalone':
-      return 'Standalone document'
+      return 'Outside any Project'
   }
 }

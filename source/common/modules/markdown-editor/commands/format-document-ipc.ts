@@ -45,7 +45,7 @@ export function surfaceFormatResult(result: FormatResult): void {
 
   if (result.kind === "flowmark-absent") {
     showToast(
-      "flowmark is not available — install it (uvx) to format documents. The document was not changed.",
+      "Document formatting is unavailable because the formatter could not be started. The document was not changed.",
       "error",
     );
   } else {

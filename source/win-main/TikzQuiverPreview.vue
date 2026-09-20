@@ -219,7 +219,7 @@ const statusText = computed(() => {
   if (!hostReady.value) return 'Loading Quiver…'
   const compilerOnly = macroProjection.value?.unsupported.length ?? 0
   return compilerOnly > 0
-    ? `Synced · ${compilerOnly} macro${compilerOnly === 1 ? '' : 's'} compiler-only`
+    ? `Synced · ${compilerOnly} macro${compilerOnly === 1 ? '' : 's'} unavailable in Quiver`
     : 'Synced'
 })
 

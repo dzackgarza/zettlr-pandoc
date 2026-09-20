@@ -33,12 +33,12 @@ export interface PathRequirement { target: string, purpose: string }
  * latexmk, pdflatex, and biber; `just` runs the recipe itself.
  */
 export const REQUIRED_COMMANDS: CommandRequirement[] = [
-  { command: 'pandoc', purpose: 'document conversion for previews and every export' },
-  { command: 'just', purpose: 'PDF export — runs the ~/.pandoc compile-pandoc recipe' },
-  { command: 'latexmk', purpose: 'PDF build driver invoked by the compile-pandoc recipe' },
-  { command: 'pdflatex', purpose: 'PDF typesetting engine used by the recipe' },
-  { command: 'biber', purpose: 'bibliography resolution for PDF export' },
-  { command: 'pandoc-crossref', purpose: 'cross-file reference resolution in the Project export filter chain' }
+  { command: 'pandoc', purpose: 'preview and export' },
+  { command: 'just', purpose: 'PDF export' },
+  { command: 'latexmk', purpose: 'PDF export' },
+  { command: 'pdflatex', purpose: 'PDF export' },
+  { command: 'biber', purpose: 'PDF bibliography generation' },
+  { command: 'pandoc-crossref', purpose: 'cross-references in Project exports' }
 ]
 
 /**
@@ -49,19 +49,19 @@ export function requiredPaths (): PathRequirement[] {
   return [
     {
       target: path.join(pandocDir, 'justfile'),
-      purpose: 'the authoritative compile-pandoc PDF export recipe'
+      purpose: 'PDF export'
     },
     {
       target: path.join(pandocDir, 'filters', 'tikzcd.lua'),
-      purpose: 'the authoritative shared TikZ renderer used by the live editor preview'
+      purpose: 'TikZ preview rendering'
     },
     {
       target: path.join(pandocDir, 'filters', 'utilities.lua'),
-      purpose: 'the shared Lua helper loaded by the TikZ renderer'
+      purpose: 'TikZ preview rendering'
     },
     {
       target: path.join(pandocDir, 'templates', 'standalone-tikz.tex'),
-      purpose: 'the authoritative TikZ preview template and macro-injection boundary'
+      purpose: 'TikZ preview rendering'
     }
   ]
 }
@@ -225,14 +225,13 @@ export async function crossrefCompatibilityFailure (
   }
 
   if (result.status === 'incompatible') {
-    return `pandoc-crossref — built with Pandoc v${result.crossrefBuiltWithPandoc ?? '?'}, ` +
-      `but the installed pandoc is v${result.pandocVersion ?? '?'}; pandoc-crossref refuses ` +
-      'mismatched pandoc builds, so Project exports would fail at runtime'
+    return `pandoc-crossref was built for Pandoc v${result.crossrefBuiltWithPandoc ?? '?'}, ` +
+      `but Pandoc v${result.pandocVersion ?? '?'} is installed. Install matching versions before exporting Projects.`
   }
 
-  return 'pandoc-crossref — could not verify its pandoc build compatibility ' +
-    `(pandoc-crossref names ${result.crossrefBuiltWithPandoc !== undefined ? `Pandoc v${result.crossrefBuiltWithPandoc}` : 'no Pandoc build version'}; ` +
-    `pandoc reports ${result.pandocVersion !== undefined ? `v${result.pandocVersion}` : 'no version'})`
+  return 'Could not verify that pandoc-crossref matches the installed Pandoc version ' +
+    `(pandoc-crossref: ${result.crossrefBuiltWithPandoc !== undefined ? `Pandoc v${result.crossrefBuiltWithPandoc}` : 'version unknown'}; ` +
+    `Pandoc: ${result.pandocVersion !== undefined ? `v${result.pandocVersion}` : 'version unknown'}).`
 }
 
 /**
@@ -251,8 +250,8 @@ export async function tikzFilterCompatibilityFailure (): Promise<string|null> {
   if (actual === TIKZ_RENDER_PROTOCOL) {
     return null
   }
-  return `${filterPath} — TikZ render protocol ${actual === undefined ? 'unknown' : actual}; ` +
-    `this Zettlr-Pandoc build requires protocol ${TIKZ_RENDER_PROTOCOL}. Update the shared pandoc-config checkout.`
+  return `${filterPath} uses TikZ renderer protocol ${actual === undefined ? 'unknown' : actual}; ` +
+    `this app requires protocol ${TIKZ_RENDER_PROTOCOL}. Update the TikZ filter files under ~/.pandoc.`
 }
 
 /**

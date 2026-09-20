@@ -65,8 +65,8 @@ function assertSupportedTikzDataDir(dataDir: string, label: string): void {
   const protocol = tikzRenderProtocolVersion(dataDir);
   if (protocol !== TIKZ_RENDER_PROTOCOL) {
     throw new Error(
-      `${label} ${dataDir} carries TikZ render protocol ${protocol === undefined ? "unknown" : protocol}; ` +
-        `Zettlr-Pandoc requires protocol ${TIKZ_RENDER_PROTOCOL}. Update the shared pandoc-config checkout instead of using a stale filter copy.`,
+      `${label} ${dataDir} uses TikZ renderer protocol ${protocol === undefined ? "unknown" : protocol}, ` +
+        `but this app requires protocol ${TIKZ_RENDER_PROTOCOL}. Update the TikZ filter files in that directory.`,
     );
   }
 }

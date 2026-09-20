@@ -54,7 +54,7 @@ export const TIKZ_PREVIEW_MODES: readonly TikzPreviewModeDescriptor[] = [
     unavailableTitle: (target) =>
       target.language !== "tikzcd"
         ? "Quiver is available only for tikzcd diagrams"
-        : "Quiver editing is unavailable while this raw block is nested in Markdown container syntax",
+        : "Move this diagram out of the surrounding Markdown block to edit it in Quiver",
   },
   {
     id: "visual",
@@ -65,8 +65,8 @@ export const TIKZ_PREVIEW_MODES: readonly TikzPreviewModeDescriptor[] = [
       target.language === "tikzcd"
         ? "The visual editor is for tikzpicture diagrams; tikzcd uses Quiver"
         : !tikzBlockHasContiguousSource(target)
-          ? "Visual editing is unavailable while this raw block is nested in Markdown container syntax"
-          : "The visual editor requires an authored tikzpicture environment",
+          ? "Move this diagram out of the surrounding Markdown block to use the visual editor"
+          : "The visual editor requires a \\begin{tikzpicture} ... \\end{tikzpicture} block",
   },
 ];
 

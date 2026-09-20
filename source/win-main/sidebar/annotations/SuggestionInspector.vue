@@ -50,7 +50,7 @@
             type="text"
             class="suggestion-chunk-comment"
             v-bind:placeholder="trans('Comment…')"
-            v-bind:title="trans('Annotate this change without deciding it; clearing the field removes the note')"
+            v-bind:title="trans('Add a note without accepting or rejecting this change. Clear the field to remove the note.')"
             v-bind:disabled="busy"
             v-on:keydown.enter.prevent="commitComment(card)"
             v-on:blur="commitComment(card)"
@@ -180,7 +180,7 @@ watch(() => props.focusedChunkIds, ids => {
     .catch(err => reportError('[SuggestionInspector] Could not scroll to the linked proposal', err))
 })
 
-const outstandingLabel = computed(() => trans('%s outstanding', String(props.review.suggestions.length)))
+const outstandingLabel = computed(() => trans('%s pending', String(props.review.suggestions.length)))
 
 /** The note field of the chunk the reviewer is typing in right now, if any. */
 function isBeingTypedIn (chunkId: string): boolean {

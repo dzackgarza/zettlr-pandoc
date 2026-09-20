@@ -58,6 +58,6 @@ describe("tikz-editor source bridge", function () {
     block.sourceLineRanges = block.sourceLineRanges.map((range, index) =>
       index === 0 ? range : { from: range.from + 2, to: range.to + 2 },
     );
-    assert.throws(() => tikzEditorSessionForBlock(block), /Markdown container markers/u);
+    assert.throws(() => tikzEditorSessionForBlock(block), /nested inside another Markdown block/u);
   });
 });

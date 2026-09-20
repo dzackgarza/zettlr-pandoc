@@ -120,7 +120,7 @@
               <span class="section-number">03</span>
               <div>
                 <h2>{{ trans('Shape references') }}</h2>
-                <p>{{ trans('Cross-references use Pandoc citation syntax, so they can be grouped or have their prefix changed.') }}</p>
+                <p>{{ trans('Group references with semicolons, add text before them, or use -@ to suppress the automatic label.') }}</p>
               </div>
             </div>
             <dl class="example-list compact">
@@ -158,7 +158,7 @@
               <span class="section-number">05</span>
               <div>
                 <h2>{{ trans('Label theorem environments') }}</h2>
-                <p>{{ trans('Fenced divs with these classes become referenceable when their attribute block carries a prefixed identifier.') }}</p>
+                <p>{{ trans('Give theorem-like blocks one of these classes and a prefixed ID to number and cite them.') }}</p>
               </div>
             </div>
             <div class="theorem-table" role="table" v-bind:aria-label="trans('Theorem environment syntax')">
@@ -174,7 +174,7 @@
               </div>
             </div>
             <p class="fine-print">
-              {{ trans('Proof-like divs (proof, sketch, solution) stay unnumbered and unreferenceable.') }}
+              {{ trans('Proof, sketch, and solution blocks are not numbered and cannot be cited by ID.') }}
             </p>
           </section>
 
@@ -186,7 +186,7 @@
               <span class="section-number">06</span>
               <div>
                 <h2>{{ trans('Work with references') }}</h2>
-                <p>{{ trans('What the editor does with the labels and references you author.') }}</p>
+                <p>{{ trans('Ways to find, preview, follow, and rename references.') }}</p>
               </div>
             </div>
             <div class="topic-grid">

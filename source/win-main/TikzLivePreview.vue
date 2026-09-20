@@ -10,7 +10,7 @@
       <div
         class="tikz-live-preview-modes"
         role="group"
-        aria-label="Preview renderer"
+        aria-label="Preview mode"
       >
         <button
           v-for="provider in providers"
@@ -37,8 +37,8 @@
         v-if="activeProvider.refreshable"
         type="button"
         class="tikz-live-preview-action tikz-live-preview-refresh"
-        title="Force TikZ rerender (ignore cache)"
-        aria-label="Force TikZ rerender (ignore cache)"
+        title="Rebuild TikZ preview"
+        aria-label="Rebuild TikZ preview"
         @click="forceRefresh"
       >
         <span aria-hidden="true">↻</span>

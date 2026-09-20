@@ -186,7 +186,7 @@ export const expandQuickTexOnSpace: Command = view => {
 
   const decoded = decodeExpansion(sequence)
   if (decoded === null) {
-    reportError(`[QuickTeX] ${JSON.stringify(match.word)} uses Vim keycodes outside the supported evaluated expansion surface.`)
+    reportError(`[QuickTeX] Can't expand ${JSON.stringify(match.word)}: its replacement contains unsupported Vim keycodes.`)
     return false
   }
 

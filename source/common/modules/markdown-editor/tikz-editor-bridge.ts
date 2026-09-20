@@ -35,7 +35,7 @@ export function tikzEditorSessionForBlock(block: TikzSourceBlock): TikzEditorSou
   }
   if (!tikzBlockHasContiguousSource(block)) {
     throw new Error(
-      "tikz-editor cannot rewrite a raw TikZ block whose semantic source crosses Markdown container markers",
+      "The visual editor cannot edit this diagram while it is nested inside another Markdown block",
     );
   }
   return {

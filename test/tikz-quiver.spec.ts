@@ -69,7 +69,7 @@ describe("TikZ-cd ↔ Quiver source bridge", function () {
     assert.throws(
       () =>
         sourceForQuiverExport(session, "\\begin{tikzcd}[column sep=large]\nA & B\n\\end{tikzcd}"),
-      /cannot represent/,
+      /cannot store the options Quiver added/,
     );
   });
 
@@ -84,6 +84,6 @@ describe("TikZ-cd ↔ Quiver source bridge", function () {
     block.sourceLineRanges = block.sourceLineRanges.map((range, index) =>
       index === 0 ? range : { from: range.from + 2, to: range.to + 2 },
     );
-    assert.throws(() => quiverSessionForBlock(block), /Markdown container markers/u);
+    assert.throws(() => quiverSessionForBlock(block), /nested inside another Markdown block/u);
   });
 });

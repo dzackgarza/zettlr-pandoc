@@ -70,7 +70,7 @@ const countLabel = computed(() => {
 
 const noteLabel = computed(() => view.value.pendingCount > 0
   ? trans('%s of %s pending. Accept or reject each change in the diff below.', String(view.value.pendingCount), String(view.value.totalCount))
-  : trans('Every change of this proposal has been decided.'))
+  : trans('All changes have been accepted or rejected.'))
 </script>
 
 <style lang="less">
