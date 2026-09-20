@@ -538,7 +538,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     });
     assert.equal(response.status, 200, response.body);
     const result = JSON.parse(response.body);
-    const content = await httpRequest("GET", `/v1/documents/${result.documentId}/content`);
+    const content = await httpRequest(
+      "GET",
+      `/v1/documents/${result.documentId}?includeContent=true`,
+    );
     assert.equal(JSON.parse(content.body).content, after);
     assert.equal(result.focused, false);
     assert.deepEqual(provider.getFocusedView(), focused);
@@ -596,7 +599,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     });
     assert.equal(invalid.status, 404);
     assert.equal(JSON.parse(invalid.body).error.code, "ANNOTATION_NOT_FOUND");
-    const unchanged = await httpRequest("GET", `/v1/documents/${documentId}/content`);
+    const unchanged = await httpRequest(
+      "GET",
+      `/v1/documents/${documentId}?includeContent=true`,
+    );
     assert.equal(JSON.parse(unchanged.body).content, before);
     const unlinked = await httpRequest("GET", `/v1/annotations/${annotation.annotationId}`);
     assert.deepEqual(JSON.parse(unlinked.body).proposalActions, []);
@@ -611,9 +617,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const result = JSON.parse(response.body);
     assert.equal(result.focused, true);
     assert.equal(provider.getFocusedView()?.documentId, documentId);
-    const content = await httpRequest("GET", `/v1/documents/${result.documentId}/content`);
+    const content = await httpRequest(
+      "GET",
+      `/v1/documents/${result.documentId}?includeContent=true`,
+    );
     assert.equal(JSON.parse(content.body).content, after);
-    const packets = await httpRequest("GET", `/v1/reviews/${result.reviewId}/packets`);
+    const packets = await httpRequest("GET", `/v1/reviews/${result.reviewId}?view=packets`);
     assert.deepEqual(
       JSON.parse(packets.body).packets.map((packet: { description: string }) => packet.description),
       claims.map((claim) => claim.description),
@@ -660,7 +669,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.match(exactError.message, /what this claim changes there/);
     assert.match(exactError.message, /why that particular change fixes the defect/);
 
-    const unchangedAfterExact = await httpRequest("GET", `/v1/documents/${documentId}/content`);
+    const unchangedAfterExact = await httpRequest(
+      "GET",
+      `/v1/documents/${documentId}?includeContent=true`,
+    );
     assert.equal((JSON.parse(unchangedAfterExact.body) as ReadDocumentResponse).content, before);
 
     const fuzzyDescriptions = [
@@ -694,7 +706,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(fuzzyError.descriptionSimilarity < 1);
     assert.match(fuzzyError.message, /rejection threshold: 94%/);
 
-    const unchangedAfterFuzzy = await httpRequest("GET", `/v1/documents/${documentId}/content`);
+    const unchangedAfterFuzzy = await httpRequest(
+      "GET",
+      `/v1/documents/${documentId}?includeContent=true`,
+    );
     assert.equal((JSON.parse(unchangedAfterFuzzy.body) as ReadDocumentResponse).content, before);
   });
 
@@ -1026,7 +1041,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const documents = await httpRequest(
       "GET",
-      `/v1/workspaces/${encodeURIComponent(invalidWorkspace)}/documents`,
+      `/v1/workspaces?workspaceId=${encodeURIComponent(invalidWorkspace)}&include=documents`,
     );
     assert.equal(documents.status, 500);
     const documentsBody = JSON.parse(documents.body) as {
@@ -1084,10 +1099,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assertMatchesSchema(body, "DocumentSummary");
   });
 
-  it("GET /v1/documents/{id}/content returns live buffer with ETag", async function () {
+  it("GET /v1/documents/{id}?includeContent=true returns live buffer with ETag", async function () {
     const filePath = path.join(scratch, "read.md");
     const docId = await openFile(filePath, "alpha\nbeta\n");
-    const response = await httpRequest("GET", `/v1/documents/${docId}/content`);
+    const response = await httpRequest("GET", `/v1/documents/${docId}?includeContent=true`);
     assert.equal(response.status, 200);
     const body = JSON.parse(response.body) as ReadDocumentResponse;
     assert.ok(body.content.includes("alpha"));
@@ -1161,11 +1176,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(submitted.packetIds.length, 1);
     assert.equal(submitted.unresolvedChunks, 1);
 
-    const content = await httpRequest("GET", `/v1/documents/${documentId}/content`);
+    const content = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
     assert.equal(content.status, 200);
     assert.equal((JSON.parse(content.body) as ReadDocumentResponse).content, revised);
 
-    const chunks = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}/chunks`);
+    const chunks = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}?view=chunks`);
     assert.equal(chunks.status, 200);
     const chunkBody = JSON.parse(chunks.body) as {
       chunks: Array<{
@@ -1348,14 +1363,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(listPayload.entries.some((entry) => entry.path === "diagrams/main.tikz"));
     assert.ok(listPayload.entries.some((entry) => entry.path === "images/pixel.bin"));
 
-    const text = await httpRequest("GET", "/v1/figures/content?path=diagrams%2Fmain.tikz");
+    const text = await httpRequest("GET", "/v1/figures?action=read&path=diagrams%2Fmain.tikz");
     assert.equal(text.status, 200, text.body);
     const textPayload = JSON.parse(text.body) as FigureFileResponse;
     assertMatchesSchema(textPayload, "FigureFileResponse");
     assert.equal(textPayload.encoding, "utf8");
     assert.match(textPayload.content, /elliptic surface/u);
 
-    const binary = await httpRequest("GET", "/v1/figures/content?path=images%2Fpixel.bin");
+    const binary = await httpRequest("GET", "/v1/figures?action=read&path=images%2Fpixel.bin");
     assert.equal(binary.status, 200, binary.body);
     const binaryPayload = JSON.parse(binary.body) as FigureFileResponse;
     assertMatchesSchema(binaryPayload, "FigureFileResponse");
@@ -1365,14 +1380,15 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
   it("atomically writes nested UTF-8 and binary figure files through the API", async function () {
     const source = "\\begin{tikzpicture}\n\\node {new figure};\n\\end{tikzpicture}\n";
-    const written = await httpRequest(
-      "PUT",
-      "/v1/figures/content?path=new%2Fnested%2Ffigure.tikz",
-      {
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content: source, encoding: "utf8" }),
-      },
-    );
+    const written = await httpRequest("POST", "/v1/figures", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "write",
+        path: "new/nested/figure.tikz",
+        content: source,
+        encoding: "utf8",
+      }),
+    });
     assert.equal(written.status, 200, written.body);
     const writtenPayload = JSON.parse(written.body) as FigureFileResponse;
     assertMatchesSchema(writtenPayload, "FigureFileResponse");
@@ -1382,9 +1398,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
 
     const bytes = Buffer.from([1, 2, 3, 4, 5]);
-    const binary = await httpRequest("PUT", "/v1/figures/content?path=images%2Fgenerated.bin", {
+    const binary = await httpRequest("POST", "/v1/figures", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ content: bytes.toString("base64"), encoding: "base64" }),
+      body: JSON.stringify({
+        action: "write",
+        path: "images/generated.bin",
+        content: bytes.toString("base64"),
+        encoding: "base64",
+      }),
     });
     assert.equal(binary.status, 200, binary.body);
     assert.deepEqual(readFileSync(path.join(figuresRoot, "images", "generated.bin")), bytes);
@@ -1439,7 +1460,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   });
 
   it("searches figure paths and text contents while refusing traversal outside the configured root", async function () {
-    const searched = await httpRequest("GET", "/v1/figures/search?query=elliptic");
+    const searched = await httpRequest("GET", "/v1/figures?action=search&query=elliptic");
     assert.equal(searched.status, 200, searched.body);
     const searchPayload = JSON.parse(searched.body) as FigureSearchResponse;
     assertMatchesSchema(searchPayload, "FigureSearchResponse");
@@ -1449,7 +1470,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       ),
     );
 
-    const pathSearch = await httpRequest("GET", "/v1/figures/search?query=pixel.bin");
+    const pathSearch = await httpRequest("GET", "/v1/figures?action=search&query=pixel.bin");
     assert.equal(pathSearch.status, 200, pathSearch.body);
     const pathSearchPayload = JSON.parse(pathSearch.body) as FigureSearchResponse;
     assert.ok(
@@ -1458,11 +1479,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       ),
     );
 
-    const traversal = await httpRequest("GET", "/v1/figures/content?path=..%2Fescape.tikz");
+    const traversal = await httpRequest("GET", "/v1/figures?action=read&path=..%2Fescape.tikz");
     assert.equal(traversal.status, 400, traversal.body);
     assert.equal((JSON.parse(traversal.body) as AgentErrorResponse).error.code, "INVALID_PARAMS");
 
-    const missing = await httpRequest("GET", "/v1/figures/content?path=missing.tikz");
+    const missing = await httpRequest("GET", "/v1/figures?action=read&path=missing.tikz");
     assert.equal(missing.status, 404, missing.body);
     assert.equal((JSON.parse(missing.body) as AgentErrorResponse).error.code, "FIGURE_NOT_FOUND");
   });

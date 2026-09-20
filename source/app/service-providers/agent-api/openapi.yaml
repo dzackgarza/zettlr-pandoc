@@ -932,7 +932,7 @@ components:
           pattern: '^[0-9a-f]{64}$'
           description: >-
             SHA-256 of the working text this request was formed against —
-            `workingSha256` from GET /v1/reviews/{reviewId}/chunks. Binding
+            `workingSha256` from GET /v1/reviews/{reviewId}?view=chunks. Binding
             the request to the exact bytes makes an edit between the read and
             the request a REVISION_MISMATCH refusal instead of a retraction
             landing on text the caller never saw.

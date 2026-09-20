@@ -818,7 +818,7 @@ export interface components {
     ReviewMutationPrecondition: {
       /** @description The review generation this request was formed against — the `generation` of the chunk list, diff, or status you read. Every review mutation advances it, including the reviewer's decisions, so a request that carries a stale one was formed before somebody else's mutation landed and is refused as REVIEW_GENERATION_MISMATCH. */
       expectedReviewGeneration: number;
-      /** @description SHA-256 of the working text this request was formed against — `workingSha256` from GET /v1/reviews/{reviewId}/chunks. Binding the request to the exact bytes makes an edit between the read and the request a REVISION_MISMATCH refusal instead of a retraction landing on text the caller never saw. */
+      /** @description SHA-256 of the working text this request was formed against — `workingSha256` from GET /v1/reviews/{reviewId}?view=chunks. Binding the request to the exact bytes makes an edit between the read and the request a REVISION_MISMATCH refusal instead of a retraction landing on text the caller never saw. */
       expectedWorkingSha256: string;
     };
     AddReviewCommentRequest: {

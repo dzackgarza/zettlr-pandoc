@@ -215,7 +215,7 @@ async function openReview (
 ): Promise<string> {
   const documentId = documentIdOf(await client.get('/v1/documents'))
   const baselineSha256 = readSha256(
-    await client.get(`/v1/documents/${documentId}/content?side=working`)
+    await client.get(`/v1/documents/${documentId}?includeContent=true&side=working`)
   )
   const reviewId = reviewIdOf(await client.post(
     `/v1/documents/${documentId}/proposals`,
@@ -406,7 +406,7 @@ describe('saving after accepting a reviewed change', function () {
 
     const documentId = documentIdOf(await activeClient.get('/v1/documents'))
     const baselineSha256 = readSha256(
-      await activeClient.get(`/v1/documents/${documentId}/content?side=working`)
+      await activeClient.get(`/v1/documents/${documentId}?includeContent=true&side=working`)
     )
 
     await activeClient.post(
@@ -484,7 +484,7 @@ describe('saving after accepting a reviewed change', function () {
       STRICT_PHRASE,
       'e2e-review-diff-save-gate-note'
     )
-    const chunksPayload = await activeClient.get(`/v1/reviews/${reviewId}/chunks`)
+    const chunksPayload = await activeClient.get(`/v1/reviews/${reviewId}?view=chunks`)
     assert.ok(
       chunksPayload !== null &&
         typeof chunksPayload === 'object' &&
@@ -507,7 +507,7 @@ describe('saving after accepting a reviewed change', function () {
     await noteField.fill('Preserve this note across save')
     await noteField.press('Enter')
     const agentSeesNote = async (): Promise<boolean> => {
-      const payload = await activeClient.get(`/v1/reviews/${reviewId}/chunks`)
+      const payload = await activeClient.get(`/v1/reviews/${reviewId}?view=chunks`)
       if (payload === null || typeof payload !== 'object' || !('chunks' in payload) ||
         !Array.isArray(payload.chunks)) {
         return false
@@ -552,7 +552,7 @@ describe('saving after accepting a reviewed change', function () {
     )
     // The note is agent-readable on the chunk itself, and the chunk is
     // still outstanding after the save.
-    const afterChunks = await activeClient.get(`/v1/reviews/${reviewId}/chunks`)
+    const afterChunks = await activeClient.get(`/v1/reviews/${reviewId}?view=chunks`)
     assert.ok(
       afterChunks !== null && typeof afterChunks === 'object' &&
         'chunks' in afterChunks && Array.isArray(afterChunks.chunks),

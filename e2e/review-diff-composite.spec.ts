@@ -158,7 +158,7 @@ interface ChunkView {
  * index by position.
  */
 async function chunkViews (api: AgentClient, reviewId: string): Promise<ChunkView[]> {
-  const payload = await api.get(`/v1/reviews/${reviewId}/chunks`)
+  const payload = await api.get(`/v1/reviews/${reviewId}?view=chunks`)
   assert.ok(isRecord(payload) && Array.isArray(payload.chunks))
   const chunks = payload.chunks as ChunkView[]
   const startOf = (chunk: ChunkView): number => {
@@ -171,13 +171,13 @@ async function chunkViews (api: AgentClient, reviewId: string): Promise<ChunkVie
 
 /** The provider's authoritative working text, as bytes. */
 async function workingSide (api: AgentClient, documentId: string): Promise<string> {
-  const payload = await api.get(`/v1/documents/${documentId}/content?side=working`)
+  const payload = await api.get(`/v1/documents/${documentId}?includeContent=true&side=working`)
   return stringField(payload, 'content')
 }
 
 /** Every note the provider currently holds against a chunk of this review. */
 async function chunkNotes (api: AgentClient, reviewId: string): Promise<string[]> {
-  const payload = await api.get(`/v1/reviews/${reviewId}/chunks`)
+  const payload = await api.get(`/v1/reviews/${reviewId}?view=chunks`)
   assert.ok(isRecord(payload) && Array.isArray(payload.chunks))
   return payload.chunks
     .map(chunk => (isRecord(chunk) ? chunk.comment : undefined))
@@ -201,7 +201,7 @@ async function readPreconditions (
   api: AgentClient,
   documentId: string
 ): Promise<{ baselineSha256: string, expectedReviewGeneration: number }> {
-  const payload = await api.get(`/v1/documents/${documentId}/content?side=working`)
+  const payload = await api.get(`/v1/documents/${documentId}?includeContent=true&side=working`)
   assert.ok(isRecord(payload), 'content response must be an object')
   const { revision, reviewGeneration } = payload as {
     revision?: { sha256?: unknown }
@@ -366,7 +366,7 @@ describe('review-diff closure contract composite lifecycle', function () {
     // it by the one character it owns and the nothing it replaced; the
     // reviewer resolves it from its own card, which a chunk that renders no
     // visible text must still draw controls for.
-    const blankChunks = await api.get(`/v1/reviews/${reviewId}/chunks`)
+    const blankChunks = await api.get(`/v1/reviews/${reviewId}?view=chunks`)
     assert.ok(isRecord(blankChunks) && Array.isArray(blankChunks.chunks))
     const blankChunk = blankChunks.chunks.find(chunk =>
       isRecord(chunk) && chunk.referenceText === '' && chunk.workingText === '\n')
@@ -404,7 +404,7 @@ describe('review-diff closure contract composite lifecycle', function () {
     const reopenedReview = await api.get(`/v1/reviews/${reviewId}`)
     assert.ok(isRecord(reopenedReview) && Array.isArray(reopenedReview.comments))
     assert.ok(reopenedReview.comments.some(comment => isRecord(comment) && comment.text === 'overall composite note'))
-    const reopenedPackets = await api.get(`/v1/reviews/${reviewId}/packets`)
+    const reopenedPackets = await api.get(`/v1/reviews/${reviewId}?view=packets`)
     assert.ok(isRecord(reopenedPackets) && Array.isArray(reopenedPackets.packets))
     assert.deepEqual(
       reopenedPackets.packets.map(packet => isRecord(packet) ? packet.description : undefined),
@@ -428,7 +428,7 @@ describe('review-diff closure contract composite lifecycle', function () {
     // The restarted instance owns a fresh kernel-assigned port.
     const restartedApi = client(await readAgentApiPort(configDirectory, 60_000))
     await waitForReview(restartedPage)
-    const outstanding = await restartedApi.get(`/v1/reviews/${reviewId}/chunks`)
+    const outstanding = await restartedApi.get(`/v1/reviews/${reviewId}?view=chunks`)
     assert.ok(isRecord(outstanding) && Array.isArray(outstanding.chunks))
     // The display-math claim rewrote two lines, so it is outstanding as two
     // regions — and the note the reviewer wrote sits on the one they wrote it
@@ -502,7 +502,7 @@ describe('review-diff closure contract composite lifecycle', function () {
     assert.ok(isRecord(refused) && refused.ok === false)
     assert.equal((await readFile(documentPath, 'utf8')).includes('external disk edit'), true)
     const driftReviewId = stringField(driftReview, 'reviewId')
-    const driftChunks = await restartedApi.get(`/v1/reviews/${driftReviewId}/chunks`)
+    const driftChunks = await restartedApi.get(`/v1/reviews/${driftReviewId}?view=chunks`)
     assert.ok(isRecord(driftChunks) && Array.isArray(driftChunks.chunks) && driftChunks.chunks.length > 0)
     assert.ok(isRecord(driftChunks.chunks[0]))
     const driftChunkId = stringField(driftChunks.chunks[0], 'chunkId')

@@ -119,7 +119,7 @@ async function openDocumentId (api: AgentClient): Promise<string> {
 
 async function workingText (api: AgentClient): Promise<string> {
   const payload = await api.get(
-    `/v1/documents/${await openDocumentId(api)}/content?side=working`
+    `/v1/documents/${await openDocumentId(api)}?includeContent=true&side=working`
   )
   return stringField(payload, 'content')
 }
@@ -137,7 +137,7 @@ async function chunkListing (
   api: AgentClient,
   reviewId: string
 ): Promise<{ chunks: ChunkView[], generation: number, workingSha256: string }> {
-  const payload = await api.get(`/v1/reviews/${reviewId}/chunks`)
+  const payload = await api.get(`/v1/reviews/${reviewId}?view=chunks`)
   assert.ok(
     isRecord(payload) &&
       Array.isArray(payload.chunks) &&
@@ -160,7 +160,7 @@ async function proposalPreconditions (
   api: AgentClient,
   documentId: string
 ): Promise<{ baselineSha256: string, expectedReviewGeneration: number }> {
-  const payload = await api.get(`/v1/documents/${documentId}/content?side=working`)
+  const payload = await api.get(`/v1/documents/${documentId}?includeContent=true&side=working`)
   assert.ok(isRecord(payload) && isRecord(payload.revision))
   assert.equal(typeof payload.reviewGeneration, 'number')
   return {
