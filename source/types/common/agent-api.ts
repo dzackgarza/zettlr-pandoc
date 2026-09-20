@@ -111,8 +111,10 @@ export type AgentErrorResponse = Schemas["AgentErrorResponse"];
 
 /** The `side` query parameter of the content read, with its declared default applied. */
 export type ReadSide = NonNullable<
-  NonNullable<operations["readDocumentContent"]["parameters"]["query"]>["side"]
+  NonNullable<operations["getDocument"]["parameters"]["query"]>["side"]
 >;
+export type FigureSaveRequest = Schemas["FigureSaveRequest"];
+export type RenderCitationsRequest = Schemas["RenderCitationsRequest"];
 
 type JsonBody<Response> = Response extends {
   content: { "application/json": infer Body };

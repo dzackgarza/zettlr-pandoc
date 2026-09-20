@@ -874,6 +874,15 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }),
     );
     assert.ok(operations.length > 0, "the served document must expose callable operations");
+    assert.ok(
+      operations.length <= 30,
+      `OpenAPI spec operations (${operations.length}) must not exceed the 30-operation Custom GPT limit`,
+    );
+    assert.equal(
+      operations.length,
+      27,
+      "the consolidated OpenAPI spec must define exactly 27 operations",
+    );
     for (const { route, method, operation } of operations) {
       assert.equal(
         operation["x-openai-isConsequential"],
@@ -1784,6 +1793,16 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const workspaces = await httpRequest("GET", "/v1/workspaces");
       assert.equal(workspaces.status, 200);
       assertMatchesSchema(JSON.parse(workspaces.body), "WorkspacesResponse");
+    });
+
+    it("supports consolidated operations with query options", async function () {
+      const workspacesSummary = await httpRequest("GET", "/v1/workspaces?include=summary");
+      assert.equal(workspacesSummary.status, 200);
+      assertMatchesSchema(JSON.parse(workspacesSummary.body), "WorkspacesResponse");
+
+      const figuresList = await httpRequest("GET", "/v1/figures?action=list");
+      assert.equal(figuresList.status, 200);
+      assertMatchesSchema(JSON.parse(figuresList.body), "FigureListResponse");
     });
   });
 });

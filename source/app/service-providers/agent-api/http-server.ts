@@ -37,6 +37,7 @@ import type {
   AgentErrorResponse,
   AgentEvent,
   FigureCreateRequest,
+  FigureSaveRequest,
   FigureWriteRequest,
   LintDiagnostic,
   LintResponse,
@@ -45,6 +46,7 @@ import type {
   ReadSide,
   RenderBibliographyRequest,
   RenderCitationRequest,
+  RenderCitationsRequest,
   ReviewEventsResponse,
   ReviewListEntry,
   ReviewMutationPrecondition,
@@ -593,6 +595,108 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
     }
+    if (method === "GET") {
+      if (url.pathname === "/openapi.yaml") {
+        this.serveSpecification(req, res, false);
+        return;
+      }
+      if (url.pathname === "/openapi.json") {
+        this.serveSpecification(req, res, true);
+        return;
+      }
+      if (url.pathname === "/health") {
+        this.sendJson(res, 200, this.instanceIdentity());
+        return;
+      }
+      if (url.pathname === "/v1/help") {
+        this.serveHelp(req, res);
+        return;
+      }
+
+      // Legacy route compatibility rewrites
+      const workspaceDocsMatch = url.pathname.match(/^\/v1\/workspaces\/([^/]+)\/documents$/);
+      if (workspaceDocsMatch) {
+        url.pathname = "/v1/workspaces";
+        url.searchParams.set("workspaceId", decodeURIComponent(workspaceDocsMatch[1]));
+        url.searchParams.set("include", "documents");
+      }
+
+      const docContentMatch = url.pathname.match(/^\/v1\/documents\/([^/]+)\/content$/);
+      if (docContentMatch) {
+        url.pathname = `/v1/documents/${docContentMatch[1]}`;
+        url.searchParams.set("includeContent", "true");
+      }
+
+      const docAnnotationsMatch = url.pathname.match(/^\/v1\/documents\/([^/]+)\/annotations$/);
+      if (docAnnotationsMatch) {
+        url.pathname = "/v1/annotations";
+        url.searchParams.set("documentId", decodeURIComponent(docAnnotationsMatch[1]));
+      }
+
+      const reviewSliceMatch = url.pathname.match(/^\/v1\/reviews\/([^/]+)\/(diff|chunks|packets)$/);
+      if (reviewSliceMatch) {
+        url.pathname = `/v1/reviews/${reviewSliceMatch[1]}`;
+        url.searchParams.set("view", reviewSliceMatch[2]);
+      }
+
+      const citationItemMatch = url.pathname.match(/^\/v1\/citations\/items\/([^/]+)$/);
+      if (citationItemMatch) {
+        url.pathname = "/v1/citations";
+        url.searchParams.set("target", "items");
+        url.searchParams.set("citeKey", decodeURIComponent(citationItemMatch[1]));
+      } else if (url.pathname === "/v1/citations/items") {
+        url.pathname = "/v1/citations";
+        url.searchParams.set("target", "items");
+      } else if (url.pathname === "/v1/citations/databases") {
+        url.pathname = "/v1/citations";
+        url.searchParams.set("target", "databases");
+      }
+
+      if (url.pathname === "/v1/figures/search") {
+        url.pathname = "/v1/figures";
+        url.searchParams.set("action", "search");
+      } else if (url.pathname === "/v1/figures/content") {
+        url.pathname = "/v1/figures";
+        url.searchParams.set("action", "read");
+      }
+    }
+
+    if (method === "POST") {
+      if (url.pathname === "/v1/citations/render-bibliography") {
+        url.pathname = "/v1/citations/render";
+        if (body && typeof body === "object") {
+          (body as Record<string, unknown>).mode = "bibliography";
+        }
+      } else if (url.pathname === "/v1/citations/render") {
+        if (body && typeof body === "object" && !("mode" in body)) {
+          (body as Record<string, unknown>).mode = "citation";
+        }
+      }
+
+      if (url.pathname === "/v1/figures/create") {
+        url.pathname = "/v1/figures";
+        url.search = "";
+        if (body && typeof body === "object") {
+          (body as Record<string, unknown>).action = "create";
+        }
+      }
+    }
+
+    if (method === "PUT") {
+      if (url.pathname === "/v1/figures/content") {
+        method = "POST";
+        url.pathname = "/v1/figures";
+        const pathParam = url.searchParams.get("path");
+        url.search = "";
+        if (body && typeof body === "object") {
+          (body as Record<string, unknown>).action = "write";
+          if (pathParam && !("path" in body)) {
+            (body as Record<string, unknown>).path = pathParam;
+          }
+        }
+      }
+    }
+
     await this._api.handleRequest(
       {
         method,
@@ -668,11 +772,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     (context: Context, req: http.IncomingMessage, res: http.ServerResponse) => unknown
   > {
     return {
-      getOpenApiSpec: (_c, req, res) => this.serveSpecification(req, res, false),
-      getOpenApiSpecJson: (_c, req, res) => this.serveSpecification(req, res, true),
-      health: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
       getHelp: (_c, req, res) => this.serveHelp(req, res),
-      getV1Help: (_c, req, res) => this.serveHelp(req, res),
       ping: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
       getCapabilities: (_c, _req, res) =>
         this.sendJson(res, 200, {
@@ -686,25 +786,35 @@ export default class AgentHTTPProvider extends ProviderContract {
         }),
       getContext: (_c, _req, res) => this.handleGetContext(res),
       listViews: (_c, _req, res) => this.handleGetViews(res),
-      listWorkspaces: (_c, _req, res) => this.handleGetWorkspaces(res),
       listWorkspaceFiles: (_c, _req, res) => this.handleListWorkspaceFiles(res),
-      listWorkspaceDocuments: (
-        c: OperationContext<"listWorkspaceDocuments">,
+      listWorkspaces: (
+        c: OperationContext<"listWorkspaces">,
         _req,
         res: http.ServerResponse,
-      ) =>
-        this.handleListWorkspaceDocuments(res, c.request.params.workspaceId, c.request.query.query),
+      ) => {
+        if (c.request.query.workspaceId) {
+          return this.handleListWorkspaceDocuments(
+            res,
+            c.request.query.workspaceId,
+            c.request.query.query,
+          );
+        }
+        return this.handleGetWorkspaces(res);
+      },
 
       listDocuments: (_c, _req, res) => this.handleListDocuments(res),
-      getDocument: (c: OperationContext<"getDocument">, _req, res: http.ServerResponse) =>
-        this.handleGetDocument(res, c.request.params.documentId),
+      getDocument: (c: OperationContext<"getDocument">, _req, res: http.ServerResponse) => {
+        if (c.request.query.includeContent) {
+          return this.handleReadContent(res, c.request.params.documentId, {
+            side: c.request.query.side as ReadSide | undefined,
+            startLine: c.request.query.startLine,
+            endLine: c.request.query.endLine,
+          });
+        }
+        return this.handleGetDocument(res, c.request.params.documentId);
+      },
       focusDocument: (c: OperationContext<"focusDocument">, _req, res: http.ServerResponse) =>
         this.handleFocusDocument(res, c.request.params.documentId),
-      readDocumentContent: (
-        c: OperationContext<"readDocumentContent">,
-        _req,
-        res: http.ServerResponse,
-      ) => this.handleReadContent(res, c.request.params.documentId, c.request.query),
       searchDocument: (
         c: OperationContext<"searchDocument", SearchDocumentRequest>,
         _req,
@@ -721,14 +831,16 @@ export default class AgentHTTPProvider extends ProviderContract {
         res: http.ServerResponse,
       ) => this.handleReviewSubmission(res, c.request.requestBody),
 
-      listAnnotations: (c: OperationContext<"listAnnotations">, _req, res: http.ServerResponse) =>
-        this.handleListAnnotations(res, c.request.query.state),
-      listDocumentAnnotations: (
-        c: OperationContext<"listDocumentAnnotations">,
-        _req,
-        res: http.ServerResponse,
-      ) =>
-        this.handleListDocumentAnnotations(res, c.request.params.documentId, c.request.query.state),
+      listAnnotations: (c: OperationContext<"listAnnotations">, _req, res: http.ServerResponse) => {
+        if (c.request.query.documentId) {
+          return this.handleListDocumentAnnotations(
+            res,
+            c.request.query.documentId,
+            c.request.query.state,
+          );
+        }
+        return this.handleListAnnotations(res, c.request.query.state);
+      },
       getAnnotation: (c: OperationContext<"getAnnotation">, _req, res: http.ServerResponse) =>
         this.handleGetAnnotation(res, c.request.params.annotationId),
       addAnnotationMessage: (
@@ -739,14 +851,20 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.handleAddAnnotationMessage(res, c.request.params.annotationId, c.request.requestBody),
 
       listReviews: (_c, _req, res) => this.handleListReviews(res),
-      getReview: (c: OperationContext<"getReview">, _req, res: http.ServerResponse) =>
-        this.handleGetReview(res, c.request.params.reviewId),
-      getReviewDiff: (c: OperationContext<"getReviewDiff">, _req, res: http.ServerResponse) =>
-        this.handleGetReviewDiff(res, c.request.params.reviewId),
-      getReviewChunks: (c: OperationContext<"getReviewChunks">, _req, res: http.ServerResponse) =>
-        this.handleGetReviewChunks(res, c.request.params.reviewId),
-      getReviewPackets: (c: OperationContext<"getReviewPackets">, _req, res: http.ServerResponse) =>
-        this.handleGetReviewPackets(res, c.request.params.reviewId),
+      getReview: (c: OperationContext<"getReview">, _req, res: http.ServerResponse) => {
+        const view = c.request.query.view ?? "detail";
+        switch (view) {
+          case "diff":
+            return this.handleGetReviewDiff(res, c.request.params.reviewId);
+          case "chunks":
+            return this.handleGetReviewChunks(res, c.request.params.reviewId);
+          case "packets":
+            return this.handleGetReviewPackets(res, c.request.params.reviewId);
+          case "detail":
+          default:
+            return this.handleGetReview(res, c.request.params.reviewId);
+        }
+      },
       addReviewComment: (
         c: OperationContext<"addReviewComment", AddReviewCommentRequest>,
         _req,
@@ -758,58 +876,81 @@ export default class AgentHTTPProvider extends ProviderContract {
           c.request.requestBody.text,
           c.request.requestBody.expectedReviewGeneration,
         ),
+      retractProposal: (
+        c: OperationContext<"retractProposal", ReviewMutationPrecondition>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleRetractProposal(res, c.request.params.packetId, c.request.requestBody),
       waitForReviewEvents: (
         c: OperationContext<"waitForReviewEvents">,
         _req,
         res: http.ServerResponse,
       ) => this.handleWaitForReviewEvents(res, c.request.params.reviewId, c.request.query),
 
-      retractProposal: (
-        c: OperationContext<"retractProposal", ReviewMutationPrecondition>,
+      queryCitations: (c: OperationContext<"queryCitations">, _req, res: http.ServerResponse) => {
+        if (c.request.query.citeKey) {
+          return this.handleGetCitationItem(res, c.request.query.citeKey, c.request.query.database);
+        }
+        if (c.request.query.target === "databases") {
+          return this.handleListCitationDatabases(res);
+        }
+        return this.handleListCitationItems(res, c.request.query.database);
+      },
+      renderCitations: (
+        c: OperationContext<"renderCitations", RenderCitationsRequest>,
         _req,
         res: http.ServerResponse,
-      ) => this.handleRetractProposal(res, c.request.params.packetId, c.request.requestBody),
-
-      /**
-       * The document decided the request was malformed. Its Ajv errors name
-       * the offending field, which is more than the hand-written decoders
-       * could say about a body they refused wholesale.
-       */
-      listCitationDatabases: (_c, _req, res) => this.handleListCitationDatabases(res),
-      listCitationItems: (
-        c: OperationContext<"listCitationItems">,
-        _req,
-        res: http.ServerResponse,
-      ) => this.handleListCitationItems(res, c.request.query.database),
-      getCitationItem: (c: OperationContext<"getCitationItem">, _req, res: http.ServerResponse) =>
-        this.handleGetCitationItem(res, c.request.params.citeKey, c.request.query.database),
-      renderCitation: (
-        c: OperationContext<"renderCitation", RenderCitationRequest>,
-        _req,
-        res: http.ServerResponse,
-      ) => this.handleRenderCitation(res, c.request.requestBody),
-      renderBibliography: (
-        c: OperationContext<"renderBibliography", RenderBibliographyRequest>,
-        _req,
-        res: http.ServerResponse,
-      ) => this.handleRenderBibliography(res, c.request.requestBody),
+      ) => {
+        if (c.request.requestBody.mode === "bibliography") {
+          return this.handleRenderBibliography(res, {
+            database: c.request.requestBody.database,
+            citekeys: c.request.requestBody.citekeys ?? [],
+          });
+        }
+        return this.handleRenderCitation(res, {
+          database: c.request.requestBody.database,
+          citations: c.request.requestBody.citations ?? [],
+          composite: c.request.requestBody.composite,
+        });
+      },
       listMacros: (c: OperationContext<"listMacros">, _req, res: http.ServerResponse) =>
         this.handleListMacros(res, c.request.query.query),
-      listFigures: (_c, _req, res) => this.handleListFigures(res),
-      createFigure: (
-        c: OperationContext<"createFigure", FigureCreateRequest>,
+      queryFigures: (c: OperationContext<"queryFigures">, _req, res: http.ServerResponse) => {
+        const action = c.request.query.action ?? "list";
+        if (action === "search") {
+          return this.handleSearchFigures(res, c.request.query.query ?? "");
+        }
+        if (action === "read") {
+          if (!c.request.query.path) {
+            this.sendError(
+              res,
+              400,
+              "INVALID_PARAMS",
+              "Query parameter 'path' is required when action=read",
+            );
+            return;
+          }
+          return this.handleReadFigure(res, c.request.query.path);
+        }
+        return this.handleListFigures(res);
+      },
+      saveFigure: (
+        c: OperationContext<"saveFigure", FigureSaveRequest>,
         _req,
         res: http.ServerResponse,
-      ) => this.handleCreateFigure(res, c.request.requestBody),
-      searchFigures: (c: OperationContext<"searchFigures">, _req, res: http.ServerResponse) =>
-        this.handleSearchFigures(res, c.request.query.query),
-      readFigure: (c: OperationContext<"readFigure">, _req, res: http.ServerResponse) =>
-        this.handleReadFigure(res, c.request.query.path),
-      writeFigure: (
-        c: OperationContext<"writeFigure", FigureWriteRequest>,
-        _req,
-        res: http.ServerResponse,
-      ) => this.handleWriteFigure(res, c.request.query.path, c.request.requestBody),
+      ) => {
+        const action = c.request.requestBody.action ?? "create";
+        if (action === "create") {
+          return this.handleCreateFigure(res, {
+            path: c.request.requestBody.path,
+            content: c.request.requestBody.content,
+          });
+        }
+        return this.handleWriteFigure(res, c.request.requestBody.path, {
+          content: c.request.requestBody.content,
+          encoding: c.request.requestBody.encoding,
+        });
+      },
       lintDocuments: (c: OperationContext<"lintDocuments">, _req, res: http.ServerResponse) =>
         this.handleLintDocuments(res, c.request.query),
 
@@ -1700,7 +1841,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
       const [options, entries] = result;
-      this.sendJson(res, 200, { options, entries });
+      this.sendJson(res, 200, { options: { ...options }, entries });
     } catch (err) {
       if (err instanceof CiteprocRenderInvariantError) {
         this.sendError(res, 500, "INTERNAL_ERROR", err.message);

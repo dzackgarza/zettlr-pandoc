@@ -1491,6 +1491,32 @@ components:
           type: array
           items:
             type: string
+    RenderCitationsRequest:
+      type: object
+      required:
+        - mode
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum:
+            - citation
+            - bibliography
+          default: citation
+        database:
+          type: string
+          default: main
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/CiteItemInput'
+        composite:
+          type: boolean
+          default: false
+        citekeys:
+          type: array
+          items:
+            type: string
     CitationDatabasesResponse:
       type: object
       required:
@@ -1714,6 +1740,34 @@ components:
         content:
           type: string
           description: UTF-8 TikZ source written byte-for-byte to the new file.
+    FigureSaveRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - content
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: Relative destination under the configured centralized figures directory.
+        content:
+          type: string
+          description: File content as UTF-8 or base64.
+        action:
+          type: string
+          enum:
+            - create
+            - write
+          default: create
+          description: create fails with 409 if file exists; write replaces existing files.
+        encoding:
+          type: string
+          enum:
+            - utf8
+            - base64
+          default: utf8
     FigureSearchHit:
       type: object
       additionalProperties: false
@@ -1878,80 +1932,9 @@ components:
         counts:
           $ref: '#/components/schemas/LintSeverityCounts'
 paths:
-  /openapi.yaml:
-    get:
-      operationId: getOpenApiSpec
-      x-openai-isConsequential: false
-      summary: Serve the OpenAPI specification
-      responses:
-        '200':
-          description: OpenAPI YAML document
-          content:
-            application/yaml:
-              schema:
-                type: string
-  /openapi.json:
-    get:
-      operationId: getOpenApiSpecJson
-      x-openai-isConsequential: false
-      summary: Serve the OpenAPI specification as JSON
-      description: >-
-        The identical document, parsed from the YAML per request so the two
-        encodings cannot disagree. Offered because schema importers are not
-        uniformly willing to read YAML.
-      responses:
-        '200':
-          description: OpenAPI JSON document
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /health:
-    get:
-      operationId: health
-      x-openai-isConsequential: false
-      summary: Protocol version, instance ID, and PID
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PingResponse'
   /help:
     get:
       operationId: getHelp
-      x-openai-isConsequential: false
-      summary: Serve authoring help documentation
-      description: Returns authoring documentation from HELP.md in Markdown or JSON format.
-      parameters:
-        - name: format
-          in: query
-          required: false
-          description: Response format (markdown or json)
-          schema:
-            type: string
-            enum:
-              - markdown
-              - json
-      responses:
-        '200':
-          description: Authoring help documentation in Markdown or JSON
-          content:
-            text/markdown:
-              schema:
-                type: string
-            text/plain:
-              schema:
-                type: string
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HelpResponse'
-  /v1/help:
-    get:
-      operationId: getV1Help
       x-openai-isConsequential: false
       summary: Serve authoring help documentation
       description: Returns authoring documentation from HELP.md in Markdown or JSON format.
@@ -1994,7 +1977,7 @@ paths:
     get:
       operationId: getCapabilities
       x-openai-isConsequential: false
-      summary: Supported features and limits
+      summary: Report supported Agent API capabilities and formats
       responses:
         '200':
           description: OK
@@ -2006,7 +1989,7 @@ paths:
     get:
       operationId: getContext
       x-openai-isConsequential: false
-      summary: Focused view, focused document, and all open documents
+      summary: High-level overview of active editor views and open documents
       responses:
         '200':
           description: OK
@@ -2014,18 +1997,75 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EditorContext'
-  /v1/documents:
+  /v1/views:
     get:
-      operationId: listDocuments
+      operationId: listViews
       x-openai-isConsequential: false
-      summary: List open or loaded documents
+      summary: List active editor views
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DocumentListResponse'
+                $ref: '#/components/schemas/ViewsResponse'
+  /v1/workspace/files:
+    get:
+      operationId: listWorkspaceFiles
+      x-openai-isConsequential: false
+      summary: List every file across the configured workspaces
+      description: >-
+        The agent's orientation entry point — all files the editor can see,
+        flat, open or not. Files here can be read and reviewed immediately.
+      responses:
+        '200':
+          description: All workspace files.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceFilesResponse'
+  /v1/workspaces:
+    get:
+      operationId: listWorkspaces
+      x-openai-isConsequential: false
+      summary: List configured workspaces or documents within a workspace
+      parameters:
+        - name: workspaceId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional workspace ID to inspect documents in that workspace.
+        - name: include
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - summary
+              - documents
+            default: summary
+          description: Whether to return workspace summaries or documents.
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional search term when listing workspace documents.
+      responses:
+        '200':
+          description: Workspace listing or document list.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/WorkspacesResponse'
+                  - $ref: '#/components/schemas/WorkspaceDocumentsResponse'
+  /v1/documents:
+    get:
+      operationId: listDocuments
+      x-openai-isConsequential: false
+      summary: List open or loaded documents
       parameters:
         - name: state
           in: query
@@ -2035,26 +2075,65 @@ paths:
             enum:
               - open
             default: open
-          description: Reserved document-state filter for clients. Only open is currently
-            supported.
-  /v1/documents/{documentId}:
-    get:
-      operationId: getDocument
-      x-openai-isConsequential: false
-      summary: Document metadata and review status
-      parameters:
-        - name: documentId
-          in: path
-          required: true
-          schema:
-            type: string
+          description: Reserved document-state filter.
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DocumentSummary'
+                $ref: '#/components/schemas/DocumentListResponse'
+  /v1/documents/{documentId}:
+    get:
+      operationId: getDocument
+      x-openai-isConsequential: false
+      summary: Document metadata and optional text content
+      description: >-
+        Returns document metadata by default. Set includeContent=true to read
+        working or reference text lines with ETag revision header.
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: includeContent
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Whether to include the text content lines.
+        - name: side
+          in: query
+          schema:
+            type: string
+            enum:
+              - working
+              - reference
+            default: working
+          description: working is the live text; reference is the review baseline.
+        - name: startLine
+          in: query
+          schema:
+            type: integer
+        - name: endLine
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/DocumentSummary'
+                  - $ref: '#/components/schemas/ReadDocumentResponse'
         '404':
           description: Document not found
           content:
@@ -2080,63 +2159,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/FocusDocumentResponse'
         '404':
-          description: Document not found or outside configured workspace scope
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-  /v1/documents/{documentId}/content:
-    get:
-      operationId: readDocumentContent
-      x-openai-isConsequential: false
-      summary: Read working or reference text by line slice
-      description: >-
-        Answers for every documentId GET /v1/workspace/files returns, whether
-        or not the file is open; reading never opens a file or moves the
-        user's focus. A closed file answers from its detached review when it
-        has one and from disk otherwise. Re-read the working side before each
-        new proposal.
-      parameters:
-        - name: documentId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: side
-          in: query
-          schema:
-            type: string
-            enum:
-              - working
-              - reference
-            default: working
-          description: >-
-            working is the text your next patch must match, with every
-            accepted change already in it, and the side whose revision hash a
-            proposal needs; diff it against what you proposed to detect an
-            acceptance the reviewer tweaked. reference is the review baseline,
-            identical to working until a review exists.
-        - name: startLine
-          in: query
-          schema:
-            type: integer
-        - name: endLine
-          in: query
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: OK
-          headers:
-            ETag:
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReadDocumentResponse'
-        '404':
-          description: Document not found
+          description: Document not found or outside workspace
           content:
             application/json:
               schema:
@@ -2169,12 +2192,6 @@ paths:
                   default: 3
                   minimum: 0
                   maximum: 100
-                  description: >-
-                    Lines of surrounding text returned on each side of every
-                    hit. Every hit carries its own copy, so this multiplies
-                    the response by the number of hits and is capped rather
-                    than open-ended; a context outside this range is refused
-                    with INVALID_PARAMS.
       responses:
         '200':
           description: OK
@@ -2183,20 +2200,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/SearchDocumentResponse'
         '400':
-          description: >-
-            Invalid, unparseable, or over-length search pattern, or a context
-            outside the declared range
+          description: Invalid regex pattern
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
-        '422':
-          description: >-
-            Pattern evaluation exceeded the server's time budget
-            (SEARCH_TIMEOUT). The budget bounds the whole match, including a
-            single catastrophically backtracking execution, so an identical
-            retry costs the same wall time and fails again: simplify the
-            pattern instead.
+        '404':
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '408':
+          description: Search timed out
           content:
             application/json:
               schema:
@@ -2205,13 +2221,7 @@ paths:
     post:
       operationId: submitProposal
       x-openai-isConsequential: false
-      summary: Submit an ordered batch of exact unified-diff claims
-      description: >-
-        The batch binds to the one baselineSha256 in the body and applies
-        all-or-nothing; packetIds maps its packets in claim order.
-        Accepted material is already in the working text — do not resubmit
-        it. The reviewer may edit a chunk before accepting it, so diff your
-        proposal against the final text.
+      summary: Submit edits against an open document
       parameters:
         - name: documentId
           in: path
@@ -2226,47 +2236,102 @@ paths:
               $ref: '#/components/schemas/SubmitProposalRequest'
       responses:
         '200':
-          description: Proposal applied
+          description: Proposal accepted into review
+          headers:
+            ETag:
+              schema:
+                type: string
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubmitProposalResponse'
-        '412':
-          description: Stale revision (ETag mismatch)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '409':
-          description: Review generation conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
         '400':
-          description: >-
-            Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the
-            document drifted from the text you built against: re-read the
-            working content and rebuild the patch against it — a blind retry
-            fails identically. DUPLICATE_CLAIM_DESCRIPTION means two claim
-            descriptions are too similar; rewrite each as a distinct per-edit
-            diagnosis, change summary, and justification.
+          description: Invalid request payload or claims
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
         '404':
-          description: >-
-            The document does not exist or is outside the configured workspace
-            scope.
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: Revision mismatch or document closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '412':
+          description: Precondition failed
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '422':
+          description: Patch does not apply
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
         '500':
-          description: >-
-            The proposal could not be persisted or the server could not
-            complete the submission.
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/review-submissions:
+    post:
+      operationId: submitReview
+      x-openai-isConsequential: false
+      summary: Submit a review by file path
+      description: >-
+        Resolve a workspace file, validate an optional baseline, submit
+        ordered claims or a patch atomically, and focus unless disabled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewSubmissionRequest'
+      responses:
+        '200':
+          description: Review submission applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitProposalResponse'
+        '400':
+          description: Invalid payload or claims
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '404':
+          description: File not found in workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: Conflict or mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '412':
+          description: Baseline mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '422':
+          description: Patch does not apply
           content:
             application/json:
               schema:
@@ -2275,53 +2340,25 @@ paths:
     get:
       operationId: listAnnotations
       x-openai-isConsequential: false
-      summary: List annotations across every open document
-      description: >-
-        Aggregates every currently open document's annotations. Lifecycle —
-        resolve, reopen, reattach, delete, create — is owner-only (I3) and has
-        no operation here; only a thread's reply is agent-writable.
-      parameters:
-        - name: state
-          in: query
-          schema:
-            type: string
-            enum:
-              - open
-              - resolved
-            default: open
-          description: >-
-            open (the default) answers with annotations that still have a
-            thread to read or reply to; resolved answers with the ones that
-            do not.
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnnotationListResponse'
-  /v1/documents/{documentId}/annotations:
-    get:
-      operationId: listDocumentAnnotations
-      x-openai-isConsequential: false
-      summary: List one document's annotations
+      summary: List durable annotations across workspace or for one document
       parameters:
         - name: documentId
-          in: path
-          required: true
+          in: query
+          required: false
           schema:
             type: string
+          description: Optional document ID to filter annotations.
         - name: state
           in: query
+          required: false
           schema:
             type: string
             enum:
               - open
               - resolved
-          description: Omitted, both open and resolved annotations are returned.
       responses:
         '200':
-          description: OK
+          description: Annotations list.
           content:
             application/json:
               schema:
@@ -2336,7 +2373,7 @@ paths:
     get:
       operationId: getAnnotation
       x-openai-isConsequential: false
-      summary: Get one annotation's full detail
+      summary: Get a single annotation and its conversation thread
       parameters:
         - name: annotationId
           in: path
@@ -2345,7 +2382,7 @@ paths:
             type: string
       responses:
         '200':
-          description: OK
+          description: The annotation.
           content:
             application/json:
               schema:
@@ -2360,13 +2397,7 @@ paths:
     post:
       operationId: addAnnotationMessage
       x-openai-isConsequential: false
-      summary: Reply in an annotation's thread
-      description: >-
-        The only annotation mutation this API exposes (I3): lifecycle moves
-        (resolve, reopen, reattach, delete, create) are owner-only and
-        inexpressible here. Replaying clientRequestId returns the original
-        message instead of posting a duplicate, even against a stale
-        expectedAnnotationGeneration.
+      summary: Append a message to an annotation conversation thread
       parameters:
         - name: annotationId
           in: path
@@ -2381,7 +2412,7 @@ paths:
               $ref: '#/components/schemas/AddAnnotationMessageRequest'
       responses:
         '200':
-          description: Message posted, or the original message from a replayed clientRequestId
+          description: Appended message
           content:
             application/json:
               schema:
@@ -2393,16 +2424,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
         '409':
-          description: >-
-            ANNOTATION_GENERATION_MISMATCH when expectedAnnotationGeneration
-            is stale, or ANNOTATION_RESOLVED when the thread is resolved —
-            reopen it first. Neither refusal mutates anything.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '400':
-          description: Missing or empty text, or a missing clientRequestId
+          description: Document is closed
           content:
             application/json:
               schema:
@@ -2411,16 +2433,10 @@ paths:
     get:
       operationId: listReviews
       x-openai-isConsequential: false
-      summary: List all reviews, attached and detached
-      description: >-
-        Reviews attached to open documents, plus detached (sidecar-backed)
-        reviews on files that are currently closed. A returning turn starts
-        here: this is every review still carrying outstanding state, on files
-        nobody has open included. A detached review reattaches by opening its
-        documentPath.
+      summary: List all active and detached reviews across the workspace
       responses:
         '200':
-          description: OK
+          description: Review summaries.
           content:
             application/json:
               schema:
@@ -2429,88 +2445,44 @@ paths:
     get:
       operationId: getReview
       x-openai-isConsequential: false
-      summary: Inspect a review
-      description: >-
-        Status plus review-level comments — the reviewer's channel back to
-        you. Read them and the chunk notes at the start of each turn, and
-        address them with new claims. Answers for every reviewId /v1/reviews
-        lists: a detached review is served from its sidecar, with
-        attached=false and no documentRevision.
+      summary: Inspect a review and its diff, chunks, or packet ledger
       parameters:
         - name: reviewId
           in: path
           required: true
           schema:
             type: string
+        - name: view
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - detail
+              - diff
+              - chunks
+              - packets
+            default: detail
+          description: Which slice of the review to return.
       responses:
         '200':
-          description: OK
+          description: Review slice.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewDetailResponse'
+                oneOf:
+                  - $ref: '#/components/schemas/ReviewDetailResponse'
+                  - $ref: '#/components/schemas/ReviewDiffResponse'
+                  - $ref: '#/components/schemas/ReviewChunksResponse'
+                  - $ref: '#/components/schemas/ReviewPacketsResponse'
         '404':
           description: Review not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
-  /v1/reviews/{reviewId}/diff:
-    get:
-      operationId: getReviewDiff
-      x-openai-isConsequential: false
-      summary: Retrieve the complete unresolved composite diff
-      description: >-
-        Answers for a detached review too, from the frozen texts in its
-        sidecar; that response carries no documentId.
-      parameters:
-        - name: reviewId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReviewDiffResponse'
-        '404':
-          description: Review not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-  /v1/reviews/{reviewId}/chunks:
-    get:
-      operationId: getReviewChunks
-      x-openai-isConsequential: false
-      summary: Inspect current unresolved chunks
-      description: >-
-        Read this at the start of each turn. A chunk's comment is the
-        reviewer's question or objection — answer it with a revised claim
-        in your next submission. Every chunk here is undecided: the
-        reviewer accepts and rejects them in the editor, and this API
-        offers no way to decide them for them.
-      parameters:
-        - name: reviewId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: >-
-            The unresolved suggestions. A detached review answers from its
-            stored suggestion entities with the same stable ids and no
-            documentId.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReviewChunksResponse'
-        '404':
-          description: Review not found
+        '409':
+          description: Document closed
           content:
             application/json:
               schema:
@@ -2520,12 +2492,6 @@ paths:
       operationId: addReviewComment
       x-openai-isConsequential: false
       summary: Attach a review-level comment
-      description: >-
-        Communication without adjudication: the comment lands in the review's
-        comment list and advances the generation, so a long-poll on the
-        existing generation cursor wakes. Answer a chunk note here when the
-        answer is an argument; answer with a new claim when the answer is an
-        edit.
       parameters:
         - name: reviewId
           in: path
@@ -2540,61 +2506,19 @@ paths:
               $ref: '#/components/schemas/AddReviewCommentRequest'
       responses:
         '200':
-          description: OK
+          description: The review with the comment appended.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewCommentResponse'
+                $ref: '#/components/schemas/ReviewDetailResponse'
         '404':
           description: Review not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '400':
-          description: Missing or empty comment text
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
         '409':
-          description: >-
-            DOCUMENT_CLOSED — the review is detached: it exists, and
-            /v1/reviews lists it, but a comment cannot land while its file is
-            closed. Open its documentPath to reattach it.
-            Also REVISION_MISMATCH when expectedWorkingSha256 does not
-            match the live working text, and REVIEW_GENERATION_MISMATCH
-            when expectedReviewGeneration is not the review's current
-            generation; the error carries the actual revision and
-            generation, and neither refusal mutates anything.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-
-  /v1/reviews/{reviewId}/packets:
-    get:
-      operationId: getReviewPackets
-      x-openai-isConsequential: false
-      summary: Inspect the proposal-packet ledger
-      description: >-
-        Answers for a detached review too, from its sidecar's ledger; that
-        response carries no documentId.
-      parameters:
-        - name: reviewId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReviewPacketsResponse'
-        '404':
-          description: Review not found
+          description: Document closed
           content:
             application/json:
               schema:
@@ -2610,50 +2534,34 @@ paths:
           required: true
           schema:
             type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReviewMutationPrecondition'
       responses:
         '200':
-          description: OK
+          description: Packet retracted
+          headers:
+            ETag:
+              schema:
+                type: string
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/RetractProposalResponse'
-        '409':
-          description: >-
-            PACKET_NOT_RETRACTABLE when the packet is live but no longer the
-            retractable one: the error carries the owning reviewId, and the
-            suggestions stay up for the reviewer to dispose of. A packet the
-            reviewer has already adjudicated is never retractable — the
-            decision advanced the generation the packet was applied at.
-            DOCUMENT_CLOSED when the packet belongs to a detached review (one
-            listReviews reports with attached: false): the message names the
-            file to open.
-            Also REVISION_MISMATCH when expectedWorkingSha256 does not
-            match the live working text, and REVIEW_GENERATION_MISMATCH
-            when expectedReviewGeneration is not the review's current
-            generation; the error carries the actual revision and
-            generation, and neither refusal mutates anything.
+        '404':
+          description: Packet not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
-
+        '409':
+          description: Packet is not the most recent or document closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/reviews/{reviewId}/events:
     get:
       operationId: waitForReviewEvents
       x-openai-isConsequential: false
-      summary: Long-poll review events and status after a generation advance
-      description: >-
-        The "what changed since my last turn" query: pass your last
-        response's generation as afterGeneration. It answers at once if the
-        review already moved past that generation, otherwise blocks until a
-        decision, comment, or packet advances it — or until waitSeconds
-        elapses, answering with timedOut true.
+      summary: Poll review events and status after a generation advance
       parameters:
         - name: reviewId
           in: path
@@ -2681,10 +2589,9 @@ paths:
             minimum: 0
             maximum: 120
             default: 30
-          description: Deprecated alias for waitSeconds.
       responses:
         '200':
-          description: Review state and matching event history (or timed out)
+          description: Advance events or current status.
           content:
             application/json:
               schema:
@@ -2695,268 +2602,72 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
-        '409':
-          description: >-
-            DOCUMENT_CLOSED — the review is detached, so nothing can advance
-            its generation and the wait would never end. Open its
-            documentPath to reattach it, then poll.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-  /v1/views:
+  /v1/citations:
     get:
-      operationId: listViews
+      operationId: queryCitations
       x-openai-isConsequential: false
-      summary: List active editor views
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ViewsResponse'
-  /v1/workspace/files:
-    get:
-      operationId: listWorkspaceFiles
-      x-openai-isConsequential: false
-      summary: List every file across the configured workspaces
-      description: >-
-        The agent's orientation entry point — all files the editor can see,
-        open or not, flat across every configured workspace. Orient in this
-        order: workspace files -> documents -> reviews -> chunks.
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkspaceFilesResponse'
-  /v1/workspaces:
-    get:
-      operationId: listWorkspaces
-      x-openai-isConsequential: false
-      summary: List configured workspaces
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkspacesResponse'
-  /v1/workspaces/{workspaceId}/documents:
-    get:
-      operationId: listWorkspaceDocuments
-      x-openai-isConsequential: false
-      summary: List documents known to a workspace
+      summary: Query citation databases, item lists, or specific items
       parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: query
+        - name: target
           in: query
           required: false
           schema:
             type: string
-          description: Optional case-insensitive substring filter over file path.
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkspaceDocumentsResponse'
-        '404':
-          description: Workspace not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-  /v1/review-submissions:
-    post:
-      operationId: submitReview
-      x-openai-isConsequential: false
-      summary: Submit a review by file path
-      description: Resolve a workspace file, validate an optional baseline, submit
-        ordered claims or a patch atomically, and focus unless disabled. A retry
-        after mutation is refused; reread and rebase before a new submission.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReviewSubmissionRequest'
-      responses:
-        '200':
-          description: Proposal applied
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReviewSubmissionResponse'
-        '400':
-          description: 'Invalid or non-applicable patch. PATCH_NOT_APPLICABLE means the
-            document drifted from the text you built against: re-read the working
-            content and rebuild the patch against it — a blind retry fails
-            identically. DUPLICATE_CLAIM_DESCRIPTION means two claim descriptions
-            are too similar; rewrite each as a distinct per-edit diagnosis, change
-            summary, and justification.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '404':
-          description: The document does not exist or is outside the configured workspace
-            scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '409':
-          description: Review generation conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '412':
-          description: Stale revision (ETag mismatch)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '500':
-          description: The proposal could not be persisted or the server could not
-            complete the submission.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-  /v1/citations/databases:
-    get:
-      operationId: listCitationDatabases
-      x-openai-isConsequential: false
-      summary: List loaded citation databases
-      description: >-
-        Returns metadata for every bibliography database currently loaded by
-        the application. The main library and any file-local databases are
-        included.
-      responses:
-        '200':
-          description: The loaded databases.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CitationDatabasesResponse'
-  /v1/citations/items:
-    get:
-      operationId: listCitationItems
-      x-openai-isConsequential: false
-      summary: List all citation items from a database
-      description: >-
-        Returns every CSL item from the requested database. Defaults to
-        the main library when no database parameter is supplied.
-      parameters:
+            enum:
+              - items
+              - databases
+            default: items
         - name: database
           in: query
           required: false
           schema:
             type: string
             default: main
-          description: >-
-            Database path or "main" for the globally configured library.
-      responses:
-        '200':
-          description: Citation items.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CitationItemsResponse'
-        '404':
-          description: The requested database is not loaded.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-  /v1/citations/items/{citeKey}:
-    get:
-      operationId: getCitationItem
-      x-openai-isConsequential: false
-      summary: Look up a single citation item by key
-      parameters:
+          description: Database identifier. Defaults to main.
         - name: citeKey
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: database
           in: query
           required: false
           schema:
             type: string
-            default: main
+          description: Lookup a specific citation item by key.
       responses:
         '200':
-          description: The citation item.
+          description: Citation query results.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CitationItem'
+                oneOf:
+                  - $ref: '#/components/schemas/CitationItemsResponse'
+                  - $ref: '#/components/schemas/CitationDatabasesResponse'
+                  - $ref: '#/components/schemas/CitationItem'
         '404':
-          description: The cite key was not found in the requested database.
+          description: Database or cite key not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
   /v1/citations/render:
     post:
-      operationId: renderCitation
+      operationId: renderCitations
       x-openai-isConsequential: false
-      summary: Render a formatted inline citation
-      description: >-
-        Passes the supplied cite items through the CSL engine and returns
-        the formatted citation string.
+      summary: Render formatted inline citations or bibliographies
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RenderCitationRequest'
+              $ref: '#/components/schemas/RenderCitationsRequest'
       responses:
         '200':
-          description: The rendered citation.
+          description: Rendered citations or bibliography
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RenderCitationResponse'
+                oneOf:
+                  - $ref: '#/components/schemas/RenderCitationResponse'
+                  - $ref: '#/components/schemas/RenderBibliographyResponse'
         '404':
-          description: The requested database is not loaded.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-  /v1/citations/bibliography:
-    post:
-      operationId: renderBibliography
-      x-openai-isConsequential: false
-      summary: Render a formatted bibliography
-      description: >-
-        Renders a bibliography for the given cite keys through the CSL engine.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RenderBibliographyRequest'
-      responses:
-        '200':
-          description: The rendered bibliography entries.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RenderBibliographyResponse'
-        '404':
-          description: The requested database is not loaded.
+          description: Database not loaded
           content:
             application/json:
               schema:
@@ -2966,9 +2677,6 @@ paths:
       operationId: listMacros
       x-openai-isConsequential: false
       summary: Inspect configured mathematical macros
-      description: >-
-        Returns every control word from the canonical macro tree, preserving
-        duplicate declarations and attaching its MathJax projection when one exists.
       parameters:
         - name: query
           in: query
@@ -2976,179 +2684,114 @@ paths:
           schema:
             type: string
             maxLength: 256
-          description: Case-insensitive filter over name, source path, declaration, and context.
       responses:
         '200':
-          description: The configured macro inventory.
+          description: Configured macro inventory.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MacroInventoryResponse'
         '500':
-          description: The canonical macro tree could not be inspected.
+          description: Macro inspection failed
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
   /v1/figures:
     get:
-      operationId: listFigures
+      operationId: queryFigures
       x-openai-isConsequential: false
-      summary: List the centralized figures directory
-      description: >-
-        Recursively lists files, directories, and symlinks under the same configured
-        centralized figure root used by TikZ compilation.
-      responses:
-        '200':
-          description: Figure-tree entries.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FigureListResponse'
-        '500':
-          description: The figure tree could not be listed.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-    post:
-      operationId: createFigure
-      x-openai-isConsequential: false
-      summary: Create a TikZ figure source file
-      description: >-
-        Atomically creates one new UTF-8 `.tikz` file under the configured
-        centralized figures directory. Parent directories are created as needed.
-        Existing files are never replaced by this operation.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/FigureCreateRequest'
-      responses:
-        '201':
-          description: The newly created TikZ source file.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FigureFileResponse'
-        '400':
-          description: The destination path is unsafe or is not a lowercase `.tikz` path.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '409':
-          description: A file already exists at the requested destination.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '500':
-          description: The TikZ source file could not be persisted.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-  /v1/figures/search:
-    get:
-      operationId: searchFigures
-      x-openai-isConsequential: false
-      summary: Search centralized figures
-      description: >-
-        Searches relative paths and UTF-8 file contents. Binary files participate in
-        path matching but are not decoded for content search.
+      summary: List, search, or read centralized figures
       parameters:
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - list
+              - search
+              - read
+            default: list
         - name: query
           in: query
-          required: true
+          required: false
           schema:
             type: string
-            minLength: 1
             maxLength: 256
-      responses:
-        '200':
-          description: Figure search results.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FigureSearchResponse'
-        '500':
-          description: The figure tree could not be searched.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-  /v1/figures/content:
-    get:
-      operationId: readFigure
-      x-openai-isConsequential: false
-      summary: Read a centralized figure file
-      parameters:
+          description: Search term when action=search.
         - name: path
           in: query
-          required: true
+          required: false
           schema:
             type: string
-            minLength: 1
             maxLength: 4096
-          description: Relative path under the configured centralized figures directory.
+          description: Relative path when action=read.
       responses:
         '200':
-          description: File bytes as UTF-8 when valid, otherwise base64.
+          description: Figure listing, search results, or file contents.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FigureFileResponse'
+                oneOf:
+                  - $ref: '#/components/schemas/FigureListResponse'
+                  - $ref: '#/components/schemas/FigureSearchResponse'
+                  - $ref: '#/components/schemas/FigureFileResponse'
         '400':
-          description: The relative path is unsafe or does not name a regular file.
+          description: Invalid path or search parameters
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
         '404':
-          description: The figure file does not exist.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-    put:
-      operationId: writeFigure
-      x-openai-isConsequential: false
-      summary: Write a centralized figure file
-      description: >-
-        Atomically creates or replaces one file under the configured centralized
-        figures directory. Missing parent directories are created.
-      parameters:
-        - name: path
-          in: query
-          required: true
-          schema:
-            type: string
-            minLength: 1
-            maxLength: 4096
-          description: Relative path under the configured centralized figures directory.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/FigureWriteRequest'
-      responses:
-        '200':
-          description: The file after the atomic write.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FigureFileResponse'
-        '400':
-          description: The path or encoded content is invalid.
+          description: Figure file not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
         '500':
-          description: The figure file could not be persisted.
+          description: Figure operation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+    post:
+      operationId: saveFigure
+      x-openai-isConsequential: false
+      summary: Create or write a centralized figure file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FigureSaveRequest'
+      responses:
+        '200':
+          description: Figure saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FigureFileResponse'
+        '201':
+          description: Figure created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FigureFileResponse'
+        '400':
+          description: Invalid path or content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: Figure already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '500':
+          description: Figure persistence failed
           content:
             application/json:
               schema:
@@ -3158,15 +2801,9 @@ paths:
       operationId: lintDocuments
       x-openai-isConsequential: false
       summary: Lint documents by editor/workspace scope
-      description: >-
-        Runs the document lint stack over authoritative working text. focused checks
-        the focused Markdown document; open checks all open Markdown documents;
-        document checks one documentId; workspace checks one configured workspace;
-        all checks every Markdown document in every configured workspace.
       parameters:
         - name: scope
           in: query
-          required: false
           schema:
             type: string
             enum:
@@ -3175,51 +2812,43 @@ paths:
               - document
               - workspace
               - all
-            default: focused
         - name: documentId
           in: query
-          required: false
           schema:
             type: string
-          description: Required when scope=document.
         - name: workspaceId
           in: query
-          required: false
           schema:
             type: string
-          description: Required when scope=workspace; this is the workspace path returned by /v1/workspaces.
         - name: minimumSeverity
           in: query
-          required: false
           schema:
             type: string
             enum:
               - info
               - warning
               - error
-            default: info
-          description: Filters returned diagnostics while preserving document selection.
       responses:
         '200':
-          description: Lint diagnostics grouped by document with aggregate counts.
+          description: Lint diagnostics.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/LintResponse'
         '400':
-          description: The selected scope is missing its required document or workspace id.
+          description: Missing scope parameters
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
         '404':
-          description: The requested document, workspace, or focused document was not found.
+          description: Document or workspace not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
         '500':
-          description: A selected document could not be linted.
+          description: Lint failed
           content:
             application/json:
               schema:
