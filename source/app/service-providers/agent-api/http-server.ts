@@ -97,6 +97,7 @@ import { createDocumentLintContext, lintDocumentText } from "../../util/document
 import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
 import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
 import AgentDocumentQueries, { SearchPatternError, SearchTimeoutError } from "./document-queries";
+import { resolveHelpDocument } from "./help-content";
 
 export { MAX_SEARCH_HITS } from "./document-queries";
 
@@ -307,6 +308,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   private readonly _api: OpenAPIBackend;
   /** The published protocol version — `info.version` of the document. */
   private readonly _protocolVersion: string;
+  private readonly _helpText: string;
 
   constructor(
     private readonly _log: LogProvider,
@@ -323,6 +325,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   ) {
     super();
     this._instanceId = crypto.randomUUID();
+    this._helpText = resolveHelpDocument();
     this._queries = new AgentDocumentQueries(
       _documents,
       _documents.reviewQueries,
@@ -635,6 +638,26 @@ export default class AgentHTTPProvider extends ProviderContract {
     res.end(asJson ? JSON.stringify(specification.toJSON(), null, 2) : specification.toString());
   }
 
+  private serveHelp(req: http.IncomingMessage, res: http.ServerResponse): void {
+    const url = new URL(req.url ?? "", "http://127.0.0.1");
+    const accept = req.headers.accept ?? "";
+    const wantsJson =
+      (accept.includes("application/json") &&
+        !accept.includes("text/markdown") &&
+        !accept.includes("text/plain")) ||
+      url.searchParams.get("format") === "json";
+
+    if (wantsJson) {
+      this.sendJson(res, 200, { help: this._helpText });
+      return;
+    }
+
+    res.writeHead(200, {
+      "Content-Type": "text/markdown; charset=utf-8",
+    });
+    res.end(this._helpText);
+  }
+
   /**
    * One handler per operationId the document declares. Registered in strict
    * mode, so a name here that the document does not declare stops the provider
@@ -648,6 +671,8 @@ export default class AgentHTTPProvider extends ProviderContract {
       getOpenApiSpec: (_c, req, res) => this.serveSpecification(req, res, false),
       getOpenApiSpecJson: (_c, req, res) => this.serveSpecification(req, res, true),
       health: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
+      getHelp: (_c, req, res) => this.serveHelp(req, res),
+      getV1Help: (_c, req, res) => this.serveHelp(req, res),
       ping: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
       getCapabilities: (_c, _req, res) =>
         this.sendJson(res, 200, {

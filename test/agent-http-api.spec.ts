@@ -756,6 +756,37 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(response.body.includes("Zettlr-Pandoc Editor Agent API"));
   });
 
+  it("GET /help and /v1/help serve Markdown and JSON help documentation", async function () {
+    const rawHelp = readFileSync(path.join(__dirname, "../HELP.md"), "utf8");
+
+    // Markdown by default
+    const mdHelp = await httpRequest("GET", "/help");
+    assert.equal(mdHelp.status, 200);
+    assert.ok(mdHelp.headers["content-type"]?.includes("text/markdown"));
+    assert.equal(mdHelp.body, rawHelp);
+
+    const mdV1Help = await httpRequest("GET", "/v1/help");
+    assert.equal(mdV1Help.status, 200);
+    assert.ok(mdV1Help.headers["content-type"]?.includes("text/markdown"));
+    assert.equal(mdV1Help.body, rawHelp);
+
+    // JSON format via Accept header
+    const jsonHelp = await httpRequest("GET", "/help", {
+      headers: { accept: "application/json" },
+    });
+    assert.equal(jsonHelp.status, 200);
+    const parsed = JSON.parse(jsonHelp.body);
+    assert.equal(parsed.help, rawHelp);
+    assertMatchesSchema(parsed, "HelpResponse");
+
+    // JSON format via query parameter
+    const queryJson = await httpRequest("GET", "/v1/help?format=json");
+    assert.equal(queryJson.status, 200);
+    const parsedQuery = JSON.parse(queryJson.body);
+    assert.equal(parsedQuery.help, rawHelp);
+    assertMatchesSchema(parsedQuery, "HelpResponse");
+  });
+
   it("serves a parsable specification for a Host header that is not a YAML scalar", async function () {
     // The origin the caller reached is written into the served document. Any
     // header value is legal input here — `Host: example.com: x` arrives intact

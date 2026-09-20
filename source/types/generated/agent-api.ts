@@ -58,6 +58,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/help": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Serve authoring help documentation
+     * @description Returns authoring documentation from HELP.md in Markdown or JSON format.
+     */
+    get: operations["getHelp"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/help": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Serve authoring help documentation
+     * @description Returns authoring documentation from HELP.md in Markdown or JSON format.
+     */
+    get: operations["getV1Help"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/ping": {
     parameters: {
       query?: never;
@@ -749,7 +789,12 @@ export interface components {
       sha256: string;
     };
     /** @enum {string} */
-    ReviewState: "active" | "resolved-awaiting-save" | "completed" | "cleared" | "invalidated";
+    ReviewState:
+      | "active"
+      | "resolved-awaiting-save"
+      | "completed"
+      | "cleared"
+      | "invalidated";
     ReviewSummary: {
       reviewId: string;
       state: components["schemas"]["ReviewState"];
@@ -1120,6 +1165,10 @@ export interface components {
       /** @description The review generation this packet's application produced. */
       applicationGeneration: number;
     };
+    HelpResponse: {
+      /** @description Verbatim Markdown authoring help documentation. */
+      help: string;
+    };
     PingResponse: {
       protocolVersion: string;
       instanceId: string;
@@ -1191,7 +1240,8 @@ export interface components {
       reviewId: string;
       linkedAt: string;
       /** @enum {string} */
-      terminalOutcome?: "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
+      terminalOutcome?:
+        "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
     };
     /** @description A durable comment on a stretch of one document. Lifecycle (resolve, reopen, reattach, delete, create) is owner-only (I3) and has no operation in this API — only its thread accepts an agent reply. */
     AnnotationResponse: {
@@ -1499,6 +1549,50 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["PingResponse"];
+        };
+      };
+    };
+  };
+  getHelp: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Authoring help documentation in Markdown or JSON */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/markdown": string;
+          "text/plain": string;
+          "application/json": components["schemas"]["HelpResponse"];
+        };
+      };
+    };
+  };
+  getV1Help: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Authoring help documentation in Markdown or JSON */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/markdown": string;
+          "text/plain": string;
+          "application/json": components["schemas"]["HelpResponse"];
         };
       };
     };

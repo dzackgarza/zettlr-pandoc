@@ -76,6 +76,7 @@ export type WorkspaceDocumentEntry = Schemas["WorkspaceDocumentSummary"];
 export type WorkspaceDocumentsResponse = Schemas["WorkspaceDocumentsResponse"];
 export type WorkspaceFileEntry = Schemas["WorkspaceFileEntry"];
 export type WorkspaceFilesResponse = Schemas["WorkspaceFilesResponse"];
+export type HelpResponse = Schemas["HelpResponse"];
 export type PingResponse = Schemas["PingResponse"];
 export type CapabilitiesResponse = Schemas["CapabilitiesResponse"];
 export type CitationDatabaseSummary = Schemas["CitationDatabaseSummary"];

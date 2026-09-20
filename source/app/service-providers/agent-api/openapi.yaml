@@ -996,6 +996,14 @@ components:
         applicationGeneration:
           type: integer
           description: The review generation this packet's application produced.
+    HelpResponse:
+      type: object
+      required:
+        - help
+      properties:
+        help:
+          type: string
+          description: Verbatim Markdown authoring help documentation.
     PingResponse:
       type: object
       required:
@@ -1912,6 +1920,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PingResponse'
+  /help:
+    get:
+      operationId: getHelp
+      x-openai-isConsequential: false
+      summary: Serve authoring help documentation
+      description: Returns authoring documentation from HELP.md in Markdown or JSON format.
+      parameters:
+        - name: format
+          in: query
+          required: false
+          description: Response format (markdown or json)
+          schema:
+            type: string
+            enum:
+              - markdown
+              - json
+      responses:
+        '200':
+          description: Authoring help documentation in Markdown or JSON
+          content:
+            text/markdown:
+              schema:
+                type: string
+            text/plain:
+              schema:
+                type: string
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpResponse'
+  /v1/help:
+    get:
+      operationId: getV1Help
+      x-openai-isConsequential: false
+      summary: Serve authoring help documentation
+      description: Returns authoring documentation from HELP.md in Markdown or JSON format.
+      parameters:
+        - name: format
+          in: query
+          required: false
+          description: Response format (markdown or json)
+          schema:
+            type: string
+            enum:
+              - markdown
+              - json
+      responses:
+        '200':
+          description: Authoring help documentation in Markdown or JSON
+          content:
+            text/markdown:
+              schema:
+                type: string
+            text/plain:
+              schema:
+                type: string
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpResponse'
   /v1/ping:
     get:
       operationId: ping
